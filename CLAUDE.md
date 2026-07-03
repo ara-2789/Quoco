@@ -1,69 +1,303 @@
 # QUOCO — Claude Code Instructions
+# Read this file at the start of every session before writing any code.
+# Last updated: 3 July 2026 — v2.0 (restructured for Claude Code)
 
-## What is Quoco
-Quoco is a multi-tenant SaaS for construction contractors in India. Each construction company is a tenant. The product covers two stages:
+# This is the CORE file. Detailed reference lives in two linked files —
+# read them WHEN the task touches them, not every session:
+#   - docs/schema.md     → full database schema, migration order
+#   - docs/bot-flows.md  → full WhatsApp flow specs, DPR generation, templates
+# When a task touches the schema or a bot flow, open the relevant doc first.
 
-PRE-CONTRACT: AI-assisted tender document summarisation and BOQ (Bill of Quantities) price generation using RAG pipeline on Claude API.
+---
 
-POST-CONTRACT: Project management replacing WhatsApp groups and Excel. Core launch feature is a WhatsApp bot for daily site reporting.
+## 0. HOW WE WORK (read every time)
 
-## The WhatsApp Bot (core launch feature)
-- 8:00 AM: bot messages site engineers — collects 5 morning inputs (plan of action, manpower, execution plan, dependencies, hindrances)
-- 6:30 PM: bot re-engages — collects 4 evening inputs (daily output, schedule met yes/no, reason if no, tomorrow dependencies)
-- Claude API generates a Daily Progress Report (DPR) sent to PM and Owner every evening
-- Engineers can also start ad-hoc chats to report: safety incidents, expense invoices (photo/receipt), execution hindrances
-- All inputs accept text, photos, or handwritten notes — Claude Vision OCR extracts fields, engineer confirms
+- ONE feature per session. Never build multiple features in one prompt.
+- PLAN FIRST: before writing code, list the files you will touch and the
+  approach. Wait for my confirmation before writing.
+- Use /clear between every task to keep context clean.
+- Commit after every working, tested feature before starting the next.
+- If you give me code I do not fully understand, explain it until I do
+  before I accept it. I am solo and the only person who will ever debug this.
+- If anything I ask CONFLICTS with a rule in this file or the docs, STOP and
+  flag the conflict. Do not silently resolve it or pick one side.
+- If a fact you need (a model name, a library version, an API shape) might
+  have changed since your training, SAY SO and ask me to verify rather than
+  guessing. Wrong version strings and API shapes are silent runtime failures.
 
-## Tech Stack
-- Next.js 16 App Router with TypeScript
-- Supabase for database, auth, and file storage (pgvector for RAG later)
-- Tailwind CSS + shadcn/ui for components
-- Claude API (claude-sonnet-4-6) for OCR, DPR generation, BOQ generation
-- Twilio WhatsApp Business API for bot
-- Stripe for billing
-- Vercel for deployment
-- Resend for email
+---
 
-## Multi-Tenancy Rules (CRITICAL)
-- Every database table MUST have a tenant_id UUID column
-- Never query without filtering by tenant_id
-- Use tenant_id not organization_id
-- RLS enforced at DB layer using get_user_tenant_id() helper function
-- Supabase SSR client in server components and API routes only
-- Never use service role key on the client side
+## 1. WHAT IS QUOCO
 
-## User Roles (6 roles)
-pm, qs, engineer, subcontractor, client, admin
+Multi-tenant SaaS for construction contractors in India. Each subscribing
+company is a TENANT.
 
-## Database Tables (9 tables)
-1. tenants - one row per construction company
-2. users - extends auth.users, includes role and whatsapp_number
-3. projects - construction projects scoped to tenant
-4. project_members - links users to projects with a role
-5. whatsapp_sessions - bot state: phone_number, current_flow, current_step, context JSONB, expires_at
-6. daily_logs - morning_* and evening_* columns in one table, plus dpr_content TEXT
-7. safety_incidents - includes photo_url, ocr_confidence, pm_notified_at
-8. invoices - includes ocr_confidence, submitted_via, cost_head, image_url
-9. hindrances - includes impact_level, hindrance_type, dpr_included boolean
-10. vendors - supplier/subcontractor directory, includes trade_category and gstin
-11. vendor_invoices - incoming bills from vendors, linked to vendor_id and project_id, includes payment status
-12. ra_bills - RA Bills raised by contractor against project. Includes bill_number, period_from, period_to, gross_amount, retention_deduction, advance_recovery, net_payable, status (draft/submitted/approved/paid)
-13. ra_bill_payments - Payments received from client against each RA Bill. Includes amount_received, payment_date, payment_reference
-14. boq_items - Approved BOQ line items linked to project. Includes item_code, description, unit, quantity, rate, amount, trade_category
+Two modules — build POST-CONTRACT first:
 
-## Coding Rules
-- TypeScript always — no any types
-- One feature per session
-- Plan first, code after confirmation
-- Commit after every working feature
-- No placeholder functions or TODOs in committed code
-- Paste full error messages when debugging
+PRE-CONTRACT (Phase 2 — DO NOT build now): Tender Analyser, BOQ Estimator.
 
-## Auth
-Supabase Auth with magic link (email only, no passwords)
+POST-CONTRACT — Phase 1 Spine (build this):
+- WhatsApp bot: site engineers submit morning + evening check-ins.
+- Claude API generates a Daily Progress Report (DPR) sent to PM + Owner nightly.
+- PM web dashboard: projects, daily logs view, DPR archive.
 
-## Current Status
-- Next.js 16 project created
-- Supabase client configured (lib/supabase/client.ts, lib/supabase/server.ts, proxy.ts)
-- Environment variables set in .env.local
-- Next task: create database schema in supabase/migrations/001_core_schema.sql
+---
+
+## 2. SPINE vs FAST-FOLLOW
+
+Build SPINE first. Fast-Follow ships live to the same betas after Spine launch.
+When Claude Code asks what to build, answer from the SPINE list ONLY.
+
+SPINE — build and ship:
+- Auth, onboarding, engineer + owner registration
+- Morning check-in (6 Q), evening check-in (6 Q)
+- DPR generation (6 sections — see docs/bot-flows.md)
+- PM dashboard: Daily Logs view, DPR Archive
+- Scheduling, cron, jobs queue, RLS, E.164, Sentry, PITR
+- Razorpay payment links
+
+FAST-FOLLOW — fully specified, DO NOT build yet:
+- Ad-hoc safety / invoice / hindrance flows
+- DPR accountability engine (dependency roll-forward, escalation, resolve path)
+- DASH-05 invoice queue, DASH-06 safety log, DASH-07 hindrance tracker,
+  DASH-10 accountability view
+- BOT-30 Q6→hindrance promotion
+- resolutions table + source_key
+
+The Fast-Follow TABLES exist in the schema (so migrations are stable), but
+their FLOWS and dashboard views are not built in the Spine.
+
+---
+
+## 3. TECH STACK
+
+- Framework: Next.js App Router + TypeScript — App Router conventions only.
+  VERIFY the exact Next.js version in package.json; do not assume.
+- Database: Supabase (PostgreSQL) — auth, DB, storage, pgvector (enabled, nullable)
+- Auth: Supabase Auth — magic link only, no passwords, PKCE via @supabase/ssr
+- Storage: Supabase Storage — site photos only in Spine
+- AI: Claude API — DPR generation.
+  MODEL STRING: verify the current model string against
+  platform.claude.com/docs before Week 4 — model IDs change and a wrong
+  string is a silent runtime failure. Do not trust a string carried over
+  from an earlier session without checking.
+- WhatsApp: Twilio WhatsApp Business API — webhook at /api/whatsapp/webhook
+- Billing: Razorpay payment links — NOT Stripe (Stripe paused India onboarding)
+- Deployment: Vercel Pro — required for 6 IST cron times + 60s function timeout
+- Email: Resend — DPR delivery to owner
+- Monitoring: Sentry — wire Week 2 Day 1, all environments
+- UI: Tailwind CSS + shadcn/ui — VERIFY Tailwind major version in the repo
+
+---
+
+## 4. MULTI-TENANCY — CRITICAL, NON-NEGOTIABLE
+
+- Every table has a tenant_id UUID column, EXCEPT rate_catalog and
+  rate_catalog_history (Quoco-owned, shared across tenants).
+- NEVER query the DB without filtering by tenant_id.
+- Use tenant_id — NOT organization_id, org_id, or company_id.
+- RLS enforced at the DB layer via get_user_tenant_id() (see docs/schema.md).
+  Never rely on app-layer filtering alone.
+- Use the Supabase SSR client in server components + API routes.
+  NEVER the browser client on the server.
+- NEVER use the service role key client-side, or in any route reachable
+  without authentication.
+- All RLS policies verify tenant membership through auth.uid().
+- Cross-project scope: DASH views and DPR delivery are scoped to projects
+  where the PM has a project_members row — NOT all tenant projects.
+  Owner DPR content is strictly single-project scoped.
+
+---
+
+## 5. USER ROLES
+
+Six roles, TEXT on users table:
+CHECK (role IN ('pm','qs','engineer','owner','subcontractor','admin'))
+
+- The role was named 'client' in early schema. Canonical name is 'owner'.
+  Use 'owner' everywhere. (Rename lands in migration 006.)
+- admin — tenant creation, invites, billing, settings
+- pm    — projects, DPR review, engineer management
+- qs    — invoice review, BOQ (Phase 2)
+- engineer — WhatsApp bot user only. NO web login. auth_id = null.
+- owner    — receives DPR via WhatsApp + email. No web login in Phase 1.
+             auth_id = null.
+- subcontractor — Phase 2
+
+Engineer and owner rows have auth_id = null. Created by PMs, not via the
+email-invite auth flow. Do NOT create auth.users entries for them.
+
+---
+
+## 6. CODING RULES
+
+TypeScript
+- Always TypeScript. No `any` under any circumstances.
+- Generate DB types from the schema — do not hand-write them.
+
+Money
+- Every amount/rate/cost/value column: DECIMAL(12,2). No exceptions.
+- Never TEXT or FLOAT for money. invoices.amount is (12,2), not (10,2).
+
+Status columns
+- Always TEXT + CHECK constraint. Never ENUM types.
+- Adding a status value later = update the CHECK only.
+
+Database
+- Migrations in supabase/migrations/ as numbered files. 001–005 are LIVE —
+  do not edit them. New changes go in 006, 007, 008 in order.
+- Never edit schema directly in the Supabase dashboard.
+- Every table: id UUID PK DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ DEFAULT now().
+- Full schema + migration order: docs/schema.md.
+
+API routes
+- All /api/ routes require authentication.
+- Validate ALL inputs with Zod before processing.
+- WhatsApp webhook responds within 15 seconds.
+- ALL Claude API calls go through the jobs table — NEVER called synchronously
+  in the webhook handler (NFR-16). Queue detail: docs/bot-flows.md.
+
+Webhook specifics (bot-flows.md has the full rules)
+- Validate X-Twilio-Signature HMAC on every request; reject non-matching (403).
+- Idempotency: dedupe on Twilio message SID. A repeated SID is a no-op —
+  no duplicate rows, no duplicate replies.
+- Media: download from Twilio, re-upload to Supabase Storage (tenant-scoped),
+  store the SUPABASE url. NEVER persist a Twilio media URL — they expire.
+
+Secrets
+- NEVER hardcode a secret, key, token, or connection string in source.
+- NEVER console.log a key, token, or full auth header — even while debugging.
+- NEVER commit .env.local. Secrets come from env vars only (see Section 8).
+
+Errors
+- Wrap external calls in try/catch. Return structured errors — never expose
+  raw DB errors to the client. Log to Sentry in production.
+
+Session state
+- WhatsApp state lives in whatsapp_sessions — NEVER in memory. Serverless
+  functions have no persistent memory; all state is in the DB.
+- SELECT FOR UPDATE on the session row before any state change.
+- TTL + resume rules: docs/bot-flows.md (BOT-07).
+
+---
+
+## 7. TESTING & VERIFICATION — how "done" is defined
+
+A feature is NOT done until it is verified. For a solo build, this section
+is the safety net that replaces a second developer. Follow it every task.
+
+Definition of done (per task)
+- Code written AND its tests written AND tests green AND committed.
+- No `any`, zero TypeScript errors (`tsc --noEmit` clean).
+
+Tests are required, not optional
+- State-machine change → ships with its T-SM unit tests.
+- Parser change → ships with its T-PR tests.
+- Webhook change → ships with the relevant T-WH integration test
+  (including the forged-signature rejection, T-WH-01).
+- DPR generation → the eval harness (docs/bot-flows.md) is a REQUIRED
+  deliverable, not a nice-to-have. Golden-set cases must pass before DPR
+  work is considered done.
+- RLS change → a cross-tenant AND cross-project isolation test
+  (two-tenant fixture; PM sees only their projects; owner DPR single-project).
+
+How to verify locally (ask me to run these; show me the command)
+- DB change: run migrations against a Supabase BRANCH first, never prod.
+  Confirm no errors, then I review before it touches the real database.
+- Any change: `tsc --noEmit` clean + `npm test` green for the touched area.
+- Bot flow: exercise it end-to-end against the Twilio SANDBOX on a real
+  handset before calling it done. (Sandbox cannot send custom templates —
+  template + cron tests wait for the production sender.)
+
+If you cannot write a test for something, say so and explain why, so I can
+decide whether to accept it. Do not quietly skip the test.
+
+---
+
+## 8. ENVIRONMENT VARIABLES
+
+In .env.local — NEVER commit. NEXT_PUBLIC_ prefix ONLY for browser-safe values.
+
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=       ← server-side only, never expose to client
+ANTHROPIC_API_KEY=               ← server-side only
+TWILIO_ACCOUNT_SID=              ← server-side only
+TWILIO_AUTH_TOKEN=               ← server-side only
+TWILIO_WHATSAPP_NUMBER=          ← e.g. whatsapp:+14155238886
+RESEND_API_KEY=                  ← server-side only
+RAZORPAY_KEY_ID=                 ← server-side only
+RAZORPAY_KEY_SECRET=             ← server-side only
+SENTRY_DSN=
+NEXT_PUBLIC_APP_URL=             ← magic link redirect URL
+
+All non-NEXT_PUBLIC_ keys are used ONLY in server-side API routes.
+
+---
+
+## 9. FILE STRUCTURE
+
+quoco/
+├── CLAUDE.md                       ← this file (core rules)
+├── docs/
+│   ├── schema.md                   ← full schema + migration order
+│   └── bot-flows.md                ← full flows, DPR, templates, queue
+├── app/
+│   ├── (auth)/login, auth/callback ← done
+│   ├── (onboarding)/               ← done
+│   ├── (dashboard)/                ← shell, dashboard, projects done;
+│   │                                  daily-logs (Wk3), dprs (Wk4)
+│   └── api/
+│       ├── whatsapp/webhook/       ← Week 2
+│       ├── jobs/tick/              ← Week 2 (queue worker)
+│       └── cron/{morning,evening,nudges,dpr-generate,owner-deliver}/
+├── lib/
+│   ├── supabase/{client,server}    ← done
+│   ├── whatsapp/{session,normalise,flows/{morning,evening}}
+│   ├── dpr/{generate,render}       ← Week 4
+│   └── queue/jobs                  ← Week 2
+├── supabase/migrations/            ← 001–005 live; 006–008 pending
+├── types/database.ts
+└── proxy.ts                        ← done
+
+---
+
+## 10. CURRENT BUILD STATUS
+
+Week 1: COMPLETE
+- Supabase client (client.ts, server.ts, proxy.ts)
+- Magic link auth + PKCE callback working
+- Onboarding: complete_onboarding() RPC creates tenant + admin user
+- Dashboard shell: sidebar nav, welcome, project list
+- Project CRUD: create, list, detail, members
+- Migrations 001–005 live. TypeScript zero errors.
+- GitHub: github.com/ara-2789/Quoco
+- NOTE: sidebar shows Safety/Invoices/Hindrances nav items — those are
+  Fast-Follow. Hide or disable them for the Spine so beta PMs don't click
+  into empty sections.
+
+Week 2: STARTING
+Day 1 (before feature code):
+1. Vercel Pro provisioned
+2. Supabase Pro + PITR provisioned
+3. Sentry wired, all environments
+4. NFR-16 jobs table + /api/jobs/tick worker
+5. Twilio production sender application submitted
+6. 12 WhatsApp templates submitted to Meta
+7. Persona rename: grep 'client' → 'owner' in the codebase
+
+Then in Week 2:
+- Migration 006 — CHECKPOINT 1: booked second-pair-of-eyes review with the
+  developer friend BEFORE running on the real database. 006 decouples
+  users.id from auth.users — irreversible if wrong. Rehearse on a Supabase
+  branch snapshot first. Do not run 006 on prod before this review.
+- Webhook /api/whatsapp/webhook (HMAC, SID idempotency, media pipeline)
+- Session state machine (BOT-07 TTL resume, BOT-21 collision) — see bot-flows
+- E.164 normalisation
+- Morning flow Q1–Q6 incl. BOT-24 responsibility follow-up, BOT-20 site-closed
+- Engineer registration ENG-01/02/05/06
+
+Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
+"Week N" = sequence + estimate, not a deadline. A block is done when its
+EXIT GATE is green on a real handset.
