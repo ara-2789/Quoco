@@ -220,7 +220,17 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
 004 — pgvector extension (live)
 005 — auth trigger handle_new_user() (live)
 
-006 — auth surgery + column corrections (Week 2). CHECKPOINT 1 before running.
+006 — jobs table for NFR-16 async queue (LIVE — applied Week 2).
+       - jobs(id, created_at, type, payload JSONB, status CHECK(pending/
+         running/succeeded/failed), attempt_count, next_retry_at,
+         last_error, completed_at)
+       - idx_jobs_poll on (status, next_retry_at) WHERE status IN
+         ('pending','running')
+       - idx_jobs_type on (type, created_at)
+       No dependency on auth surgery — applied first since it was ready
+       first and has zero risk to existing data.
+
+007 — auth surgery + column corrections (Week 2). CHECKPOINT 1 before running.
        - Decouple users.id from auth.users FK
        - Add users.auth_id nullable FK
        - Update handle_new_user(): insert with generated id AND auth_id=NEW.id
@@ -238,8 +248,16 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        IRREVERSIBLE (decouples users.id). Rehearse on a Supabase branch
        snapshot; get the Checkpoint 1 review before running on prod.
 
-007 — dprs table + resolutions table + new columns (Week 4, before DPR work)
+008 — dprs table + resolutions table + new columns (Week 4, before DPR work)
 
-008 — constraints (run LAST — can fail if 006/007 incomplete):
+009 — constraints (run LAST — can fail if 007/008 incomplete):
        - whatsapp_sessions.phone_number UNIQUE
        - partial UNIQUE INDEX on users(whatsapp_number) WHERE status='active'
+
+NOTE ON CLI MIGRATION TRACKING: migrations 001-005 were originally applied
+via the Supabase dashboard SQL editor, not the CLI, so the CLI's remote
+tracking table had no record of them. Before pushing 006, this was repaired
+with `supabase migration repair --status applied 001` (through 005). Any
+future session using `supabase db push` for the first time should run
+`supabase migration list` first to confirm Local and Remote columns match
+before pushing — do not let the CLI attempt to re-run 001-005.

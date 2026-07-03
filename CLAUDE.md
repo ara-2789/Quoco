@@ -115,7 +115,8 @@ Six roles, TEXT on users table:
 CHECK (role IN ('pm','qs','engineer','owner','subcontractor','admin'))
 
 - The role was named 'client' in early schema. Canonical name is 'owner'.
-  Use 'owner' everywhere. (Rename lands in migration 006.)
+  Use 'owner' everywhere. (Rename lands in migration 007 — the auth
+  surgery migration. Migration 006 is the jobs queue table, applied first.)
 - admin — tenant creation, invites, billing, settings
 - pm    — projects, DPR review, engineer management
 - qs    — invoice review, BOQ (Phase 2)
@@ -144,8 +145,8 @@ Status columns
 - Adding a status value later = update the CHECK only.
 
 Database
-- Migrations in supabase/migrations/ as numbered files. 001–005 are LIVE —
-  do not edit them. New changes go in 006, 007, 008 in order.
+- Migrations in supabase/migrations/ as numbered files. 001–006 are LIVE —
+  do not edit them. New changes go in 007, 008, 009 in order.
 - Never edit schema directly in the Supabase dashboard.
 - Every table: id UUID PK DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ DEFAULT now().
@@ -257,7 +258,7 @@ quoco/
 │   ├── whatsapp/{session,normalise,flows/{morning,evening}}
 │   ├── dpr/{generate,render}       ← Week 4
 │   └── queue/jobs                  ← Week 2
-├── supabase/migrations/            ← 001–005 live; 006–008 pending
+├── supabase/migrations/            ← 001–006 live; 007–009 pending
 ├── types/database.ts
 └── proxy.ts                        ← done
 
@@ -277,21 +278,38 @@ Week 1: COMPLETE
   Fast-Follow. Hide or disable them for the Spine so beta PMs don't click
   into empty sections.
 
-Week 2: STARTING
-Day 1 (before feature code):
-1. Vercel Pro provisioned
-2. Supabase Pro + PITR provisioned
-3. Sentry wired, all environments
-4. NFR-16 jobs table + /api/jobs/tick worker
-5. Twilio production sender application submitted
-6. 12 WhatsApp templates submitted to Meta
-7. Persona rename: grep 'client' → 'owner' in the codebase
+Week 2: IN PROGRESS
+Day 1 checklist:
+1. Vercel Pro provisioned — DONE
+2. Supabase Pro + PITR provisioned — DONE
+3. Sentry wired, all environments — DONE (tested end-to-end, error confirmed
+   landing in Sentry dashboard)
+4. NFR-16 jobs table — DONE (migration 006, live). Queue helper library,
+   /api/jobs/tick worker, and Vercel cron config still pending.
+5. Twilio production sender application — BLOCKED ~2 weeks on company
+   registration. Cannot start until entity paperwork clears.
+6. 12 WhatsApp templates submitted to Meta — BLOCKED, same dependency as #5.
+7. Persona rename grep pass — DONE. Checked: only real 'client' role
+   reference is the CHECK constraint in 001_core_schema.sql (live, do not
+   edit directly — fixed via migration 007). All other 'client' hits in the
+   codebase are legitimate (Supabase SDK client, or the unrelated
+   projects.client_name/client_contact fields for Phase 2's external
+   building client concept, which correctly stay as-is).
 
-Then in Week 2:
-- Migration 006 — CHECKPOINT 1: booked second-pair-of-eyes review with the
-  developer friend BEFORE running on the real database. 006 decouples
-  users.id from auth.users — irreversible if wrong. Rehearse on a Supabase
-  branch snapshot first. Do not run 006 on prod before this review.
+NOTE: Supabase CLI migration tracking was out of sync — 001-005 were
+originally applied via the dashboard SQL editor, so the CLI had no local
+record of them. Repaired with `supabase migration repair --status applied`
+before pushing 006. Any future first-time `supabase db push` in a session
+should run `supabase migration list` first to confirm Local/Remote match.
+
+Then in Week 2 (remaining):
+- NFR-16 queue helper library (enqueue/claim/complete/fail functions)
+- /api/jobs/tick worker endpoint + Vercel cron config
+- Migration 007 (auth surgery) — CHECKPOINT 1: booked second-pair-of-eyes
+  review with the developer friend BEFORE running on the real database.
+  007 decouples users.id from auth.users — irreversible if wrong. Rehearse
+  on a Supabase branch snapshot first. Do not run 007 on prod before this
+  review.
 - Webhook /api/whatsapp/webhook (HMAC, SID idempotency, media pipeline)
 - Session state machine (BOT-07 TTL resume, BOT-21 collision) — see bot-flows
 - E.164 normalisation
