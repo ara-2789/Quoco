@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { isNewMessage } from '@/lib/whatsapp/idempotency'
+import { normalisePhoneNumber } from '@/lib/whatsapp/normalise'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
 // processing anything. Twilio signs each webhook request using your Auth
@@ -10,8 +12,6 @@ function validateTwilioSignature(
   twilioSignature: string,
   authToken: string,
 ): boolean {
-  // Twilio's signing algorithm: sort params by key, concatenate key+value
-  // pairs onto the URL, HMAC-SHA1 with the auth token, base64 encode.
   const sortedKeys = Object.keys(params).sort()
   let data = url
   for (const key of sortedKeys) {
@@ -32,8 +32,6 @@ function validateTwilioSignature(
 export async function POST(request: NextRequest) {
   const authToken = process.env.TWILIO_AUTH_TOKEN
   if (!authToken) {
-    // Fail closed: if the auth token isn't configured, reject everything
-    // rather than silently skip validation.
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
 
@@ -42,16 +40,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing signature' }, { status: 403 })
   }
 
-  // Twilio sends form-encoded data, not JSON.
   const formData = await request.formData()
   const params: Record<string, string> = {}
   formData.forEach((value, key) => {
     params[key] = value.toString()
   })
 
-  // Must match the exact URL Twilio was configured to call, including
-  // protocol and path. NEXT_PUBLIC_APP_URL should be the production URL
-  // once deployed (e.g. https://quoco-xxxx.vercel.app or a custom domain).
   const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/whatsapp/webhook`
 
   const isValid = validateTwilioSignature(webhookUrl, params, twilioSignature, authToken)
@@ -60,10 +54,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
   }
 
-  // TODO: message SID idempotency check (next task)
-  // TODO: session state machine dispatch (next session)
+  // Idempotency: Twilio retries webhook calls that don't respond fast
+  // enough or return non-2xx. A repeated MessageSid is a no-op — we
+  // already processed it, so just acknowledge without reprocessing.
+  const messageSid = params.MessageSid
+  if (!messageSid) {
+    return NextResponse.json({ error: 'Missing MessageSid' }, { status: 400 })
+  }
 
-  console.log('Validated Twilio webhook:', params)
+  const isNew = await isNewMessage(messageSid)
+  if (!isNew) {
+    console.log(`Duplicate message SID ${messageSid} — skipping (idempotent no-op)`)
+    return NextResponse.json({ status: 'duplicate_ignored' })
+  }
+
+  const fromNumber = normalisePhoneNumber(params.From ?? '')
+  const messageBody = params.Body ?? ''
+
+  // TODO: session state machine dispatch (next block)
+
+  console.log('Processing new WhatsApp message:', {
+    from: fromNumber,
+    body: messageBody,
+    sid: messageSid,
+  })
 
   return NextResponse.json({ status: 'received' })
 }
