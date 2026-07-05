@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { isNewMessage } from '@/lib/whatsapp/idempotency'
 import { normalisePhoneNumber } from '@/lib/whatsapp/normalise'
+import { createServiceClient } from '@/lib/supabase/service'
+import { acquireAndTransition } from '@/lib/whatsapp/session'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
 // processing anything. Twilio signs each webhook request using your Auth
@@ -26,6 +28,15 @@ function validateTwilioSignature(
   return crypto.timingSafeEqual(
     Buffer.from(expectedSignature),
     Buffer.from(twilioSignature),
+  )
+}
+
+// BOT-08 unregistered reply. Sent as TwiML so Twilio delivers it to the
+// sender. No session, no DB writes precede this.
+function notRegisteredResponse(): NextResponse {
+  return new NextResponse(
+    '<Response><Message>This number is not registered with Quoco. Contact your Project Manager.</Message></Response>',
+    { status: 200, headers: { 'Content-Type': 'text/xml' } },
   )
 }
 
@@ -54,9 +65,42 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
   }
 
-  // Idempotency: Twilio retries webhook calls that don't respond fast
-  // enough or return non-2xx. A repeated MessageSid is a no-op — we
-  // already processed it, so just acknowledge without reprocessing.
+  const fromNumber = normalisePhoneNumber(params.From ?? '')
+
+  // --- Registration + gate lookup FIRST (BOT-08 / ENG-02) ---------------
+  // This runs BEFORE the idempotency insert so an unregistered or gated
+  // number leaves ZERO storage footprint — not even a processed_messages
+  // row. BOT-08 forbids any trace tied to a number Quoco doesn't recognise
+  // or has blocked. The retry cost (re-running this indexed lookup on Twilio
+  // retries of unregistered numbers) is negligible and worth the guarantee.
+  const supabase = createServiceClient()
+  const { data: user, error: lookupError } = await supabase
+    .from('users')
+    .select('id, tenant_id, status, messaging_blocked')
+    .eq('whatsapp_number', fromNumber)
+    .maybeSingle()
+
+  if (lookupError) {
+    // Structured error only — never leak the raw DB error to the caller.
+    console.error('User lookup failed for inbound WhatsApp message:', lookupError.message)
+    return NextResponse.json({ error: 'Lookup failed' }, { status: 500 })
+  }
+
+  // Unregistered number: BOT-08 rejection, no session, no DB writes.
+  if (!user) {
+    return notRegisteredResponse()
+  }
+
+  // Gated-but-known number (pending / deactivated / messaging_blocked): silent
+  // 200 no-op. We do NOT send anything (never message a blocked number) and do
+  // NOT reveal that the number is known to Quoco. No session, no DB writes.
+  if (user.status !== 'active' || user.messaging_blocked) {
+    return NextResponse.json({ status: 'ignored' })
+  }
+
+  // --- Idempotency (only now that the number is a real active user) -----
+  // Twilio retries webhook calls that don't respond fast enough or return
+  // non-2xx. A repeated MessageSid is a no-op — we already processed it.
   const messageSid = params.MessageSid
   if (!messageSid) {
     return NextResponse.json({ error: 'Missing MessageSid' }, { status: 400 })
@@ -68,15 +112,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'duplicate_ignored' })
   }
 
-  const fromNumber = normalisePhoneNumber(params.From ?? '')
-  const messageBody = params.Body ?? ''
+  // --- Session acquire + transition -------------------------------------
+  // requestedFlow is null: an inbound reply only ADVANCES whatever flow is
+  // already active (BOT-07 resume). The webhook never STARTS a new flow —
+  // that is exclusively the cron trigger routes' job (not built yet), which
+  // will pass a requestedFlow and rely on this same function's BOT-21 queue.
+  const session = await acquireAndTransition({
+    phoneNumber: fromNumber,
+    tenantId: user.tenant_id,
+    userId: user.id,
+    requestedFlow: null,
+    caller: 'webhook',
+  })
 
-  // TODO: session state machine dispatch (next block)
-
-  console.log('Processing new WhatsApp message:', {
-    from: fromNumber,
-    body: messageBody,
-    sid: messageSid,
+  // TODO (flow work): dispatch on session.current_flow / current_step to send
+  // the next question. The morning/evening flows are not built yet, so today
+  // this is a stub — the session acquire/transition is the deliverable here.
+  console.log('WhatsApp session acquired:', {
+    phone: fromNumber,
+    flow: session.current_flow,
+    step: session.current_step,
+    pending: session.pending_flows.length,
   })
 
   return NextResponse.json({ status: 'received' })

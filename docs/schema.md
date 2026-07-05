@@ -234,7 +234,12 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        - Decouple users.id from auth.users FK
        - Add users.auth_id nullable FK
        - Update handle_new_user(): insert with generated id AND auth_id=NEW.id
-       - Add users.status, users.messaging_blocked
+       - Add users.status (NOT NULL DEFAULT 'active'), users.messaging_blocked
+         — NOTE: both were pulled forward into migration 012 (guarded, IF NOT
+         EXISTS) for the webhook's BOT-08/ENG-02 gate. 012's version is what
+         persists, so 007 MUST match exactly: status NOT NULL DEFAULT 'active',
+         messaging_blocked NOT NULL DEFAULT false. A looser definition here
+         would be silently skipped.
        - Add projects.owner_user_id
        - Add whatsapp_sessions.pending_flows
        - morning_dependencies, morning_hindrances → JSONB
