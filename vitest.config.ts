@@ -9,6 +9,12 @@ import { resolve } from 'node:path'
 loadDotenv({ path: resolve(__dirname, '.env.test') })
 
 export default defineConfig({
+  // Mirror the tsconfig `@/*` -> `./*` path alias so vite resolves `@/...`
+  // VALUE imports at runtime (tsc handles types, but erased type-only imports
+  // never exercised this until a test imported real values from `@/lib/...`).
+  resolve: {
+    alias: { '@': resolve(__dirname, '.') },
+  },
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],

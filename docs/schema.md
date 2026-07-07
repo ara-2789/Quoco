@@ -6,6 +6,26 @@ Migrations 001–005 are LIVE. The authoritative POST-migration state is below.
 Column notes: (BETA) = active Phase 1. (FUTURE) = nullable, no constraints,
 Phase 2/3 only. (FAST-FOLLOW) = Phase 1 but not Spine.
 
+>>> PASS-1 BLOCKER — READ THIS (added 2026-07-07):
+>>> The WhatsApp morning check-in flow (Pass 1: webhook + apply_morning_flow_turn
+>>> / migration 014, code-complete and test-verified as of 2026-07-07) CANNOT
+>>> SERVE A REAL ENGINEER YET. Reason: public.users.id still has a FK to
+>>> auth.users(id) (constraint users_id_fkey). Migration 007 (the auth surgery)
+>>> is what DROPS that FK so a users row can exist with auth_id = NULL and a
+>>> standalone id — which is exactly ENG-01's model (PM creates an engineer from
+>>> name + phone only, no email, no auth.users entry). 007 is NOT applied (blocked
+>>> at Checkpoint 1). Until 007 ships, no real engineer/owner row can be created,
+>>> so the bot logic works but NOBODY REAL CAN USE IT. This makes 007 a HARD
+>>> PREREQUISITE for Pass 1 to matter in practice, not just an eventual cleanup.
+>>> (The morning-flow integration tests sidestep this by creating their engineer
+>>> via supabase.auth.admin.createUser(), which is a test-only crutch, not the
+>>> production ENG-01 path.)
+>>> NOTE: line ~56 below says "Migration 006 decouples users.id" — that conflicts
+>>> with CLAUDE.md §5/§10, which assign the decouple to 007 (auth surgery). The
+>>> observed FK (users_id_fkey still present on prod + branch) confirms it is NOT
+>>> yet decoupled; treat 007 as the decoupling migration. Reconcile this line when
+>>> 007 is authored.
+
 ---
 
 ## RLS POLICY PATTERN

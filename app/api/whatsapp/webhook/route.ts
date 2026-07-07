@@ -3,7 +3,8 @@ import crypto from 'crypto'
 import { isNewMessage } from '@/lib/whatsapp/idempotency'
 import { normalisePhoneNumber } from '@/lib/whatsapp/normalise'
 import { createServiceClient } from '@/lib/supabase/service'
-import { acquireAndTransition } from '@/lib/whatsapp/session'
+import { applyMorningFlowTurn, buildMorningReply } from '@/lib/whatsapp/flows/morning'
+import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
 // processing anything. Twilio signs each webhook request using your Auth
@@ -31,6 +32,35 @@ function validateTwilioSignature(
   )
 }
 
+// Escape the five XML predefined entities before embedding free text in TwiML.
+// Engineer answers are arbitrary free text and can contain & < > " ' — none of
+// which may reach the XML body unescaped.
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+// TwiML with a single outbound message (same status/content-type shape as
+// notRegisteredResponse). Body is XML-escaped.
+function twimlMessage(text: string): NextResponse {
+  return new NextResponse(
+    `<Response><Message>${escapeXml(text)}</Message></Response>`,
+    { status: 200, headers: { 'Content-Type': 'text/xml' } },
+  )
+}
+
+// TwiML with no message — Twilio sends nothing. Used for the 'idle' outcome.
+function twimlEmpty(): NextResponse {
+  return new NextResponse('<Response></Response>', {
+    status: 200,
+    headers: { 'Content-Type': 'text/xml' },
+  })
+}
+
 // BOT-08 unregistered reply. Sent as TwiML so Twilio delivers it to the
 // sender. No session, no DB writes precede this.
 function notRegisteredResponse(): NextResponse {
@@ -38,6 +68,23 @@ function notRegisteredResponse(): NextResponse {
     '<Response><Message>This number is not registered with Quoco. Contact your Project Manager.</Message></Response>',
     { status: 200, headers: { 'Content-Type': 'text/xml' } },
   )
+}
+
+// A registered, active engineer with no project_members row — a real setup gap,
+// not a broken bot. Give them an actionable message rather than silence.
+function noProjectResponse(): NextResponse {
+  return twimlMessage(
+    'Your number is registered but not yet linked to a project. Contact your Project Manager to be added.',
+  )
+}
+
+// Shape of the single gate lookup (user row + embedded active-project rows).
+interface GateUser {
+  id: string
+  tenant_id: string
+  status: string
+  messaging_blocked: boolean
+  project_members: { project_id: string }[]
 }
 
 export async function POST(request: NextRequest) {
@@ -73,12 +120,16 @@ export async function POST(request: NextRequest) {
   // row. BOT-08 forbids any trace tied to a number Quoco doesn't recognise
   // or has blocked. The retry cost (re-running this indexed lookup on Twilio
   // retries of unregistered numbers) is negligible and worth the guarantee.
+  //
+  // The engineer's single active project is embedded in this SAME query
+  // (project_members(project_id)) — one round trip, read only after the gate
+  // passes. The gate itself still keys solely on status + messaging_blocked.
   const supabase = createServiceClient()
   const { data: user, error: lookupError } = await supabase
     .from('users')
-    .select('id, tenant_id, status, messaging_blocked')
+    .select('id, tenant_id, status, messaging_blocked, project_members(project_id)')
     .eq('whatsapp_number', fromNumber)
-    .maybeSingle()
+    .maybeSingle<GateUser>()
 
   if (lookupError) {
     // Structured error only — never leak the raw DB error to the caller.
@@ -112,28 +163,38 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'duplicate_ignored' })
   }
 
-  // --- Session acquire + transition -------------------------------------
-  // requestedFlow is null: an inbound reply only ADVANCES whatever flow is
-  // already active (BOT-07 resume). The webhook never STARTS a new flow —
-  // that is exclusively the cron trigger routes' job (not built yet), which
-  // will pass a requestedFlow and rely on this same function's BOT-21 queue.
-  const session = await acquireAndTransition({
+  // --- Resolve the engineer's active project (Pass 1: single project) ----
+  // schema.md: one active project per engineer, app-enforced. Take the first
+  // membership. A registered active engineer with none is a real setup gap —
+  // reply with an actionable message, not silence.
+  const projectId = user.project_members[0]?.project_id
+  if (!projectId) {
+    return noProjectResponse()
+  }
+
+  // --- Morning flow turn (single transactional RPC) ----------------------
+  // applyMorningFlowTurn REPLACES acquire_and_transition_session on this path:
+  // it takes the row lock, decides Q1/Q4, and writes session + daily_logs in
+  // ONE transaction. startFlow is env-gated and structurally cannot be true
+  // without ENABLE_TEST_FLOW_TRIGGER='true'.
+  const messageBody = params.Body ?? ''
+  const startFlow = isTestStartTrigger(messageBody)
+  if (startFlow) {
+    console.warn(
+      `TEST-ONLY flow trigger fired for ${fromNumber} — ENABLE_TEST_FLOW_TRIGGER must NOT be set in production`,
+    )
+  }
+
+  const result = await applyMorningFlowTurn({
     phoneNumber: fromNumber,
     tenantId: user.tenant_id,
     userId: user.id,
-    requestedFlow: null,
-    caller: 'webhook',
+    projectId,
+    message: messageBody,
+    startFlow,
   })
 
-  // TODO (flow work): dispatch on session.current_flow / current_step to send
-  // the next question. The morning/evening flows are not built yet, so today
-  // this is a stub — the session acquire/transition is the deliverable here.
-  console.log('WhatsApp session acquired:', {
-    phone: fromNumber,
-    flow: session.current_flow,
-    step: session.current_step,
-    pending: session.pending_flows.length,
-  })
-
-  return NextResponse.json({ status: 'received' })
+  // Reply text is single-sourced from morning.ts — never inline here.
+  const reply = buildMorningReply(result.outcome, result.currentStep)
+  return reply === '' ? twimlEmpty() : twimlMessage(reply)
 }
