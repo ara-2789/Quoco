@@ -259,6 +259,21 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        - whatsapp_sessions.phone_number UNIQUE
        - partial UNIQUE INDEX on users(whatsapp_number) WHERE status='active'
 
+013 — session-transition test lock probe (CREATE OR REPLACE of
+       acquire_and_transition_session, body-only; signature unchanged from
+       012's 7 params). Adds a test-only `_test_lock_acquired_at` diagnostic
+       merged into context ONLY when p_test_sleep_ms IS NOT NULL — never
+       present in any production row. Backs Test B's DB-side lock proof.
+
+       APPLIED TO PRODUCTION VIA SQL EDITOR on 2026-07-07, not via CLI
+       `db push`, due to an IPv6-only direct-connection host blocking CLI
+       access. supabase_migrations.schema_migrations does NOT have a row for
+       013 as a result — the function itself IS correctly live and verified
+       (see the has_013_probe check), but CLI tracking is out of sync. Run
+       `supabase migration repair --status applied 013` once CLI-to-production
+       connectivity is resolved, to keep the ledger honest before any future
+       migration is pushed via the CLI.
+
 NOTE ON CLI MIGRATION TRACKING: migrations 001-005 were originally applied
 via the Supabase dashboard SQL editor, not the CLI, so the CLI's remote
 tracking table had no record of them. Before pushing 006, this was repaired
