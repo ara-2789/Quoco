@@ -201,9 +201,13 @@ moot and 007 as a migration largely disappears — that is the point of §0.)*
      Postgres can plan it as an InitPlan (once per query) rather than per-row.
      The rewrite must preserve all three qualifiers — do not drop `STABLE`.
 
-6. **Rewrite `handle_new_user()`** — no longer a blind insert. It must *re-link*
-   to an existing pre-created profile when one matches, and insert only otherwise.
-   Full spec + security condition in §10.
+6. **Rewrite `handle_new_user()`** — INSERT-ONLY, but with a corrected insert.
+   Today it does `INSERT INTO users (id) VALUES (NEW.id)` (id = auth uid). Post-007
+   it must insert a **generated `id` + `auth_id = NEW.id`** — otherwise a fresh
+   signup is locked out (see R4). It stays a plain insert of a fresh stub; the
+   **re-link is explicitly DEFERRED** (there is no `users.email` to match on, and
+   it is coupled to the invitations deliverable — see §10b). Do not implement a
+   re-link in 007.
 
 7. **Rewrite `complete_onboarding()`** (005 RPC): its
    `UPDATE users ... WHERE id = auth.uid()` becomes `WHERE auth_id = auth.uid()`.
@@ -294,7 +298,7 @@ migrations and the app source.
 | Object | File | Current | Post-007 |
 |---|---|---|---|
 | `get_user_tenant_id()` | 002:12 | `WHERE id = auth.uid()` | `WHERE auth_id = auth.uid()` (keep STABLE/DEFINER/search_path) |
-| `handle_new_user()` | 005:39 | `INSERT INTO users (id) VALUES (NEW.id)` | re-link-or-insert; see §10 |
+| `handle_new_user()` | 005:39 | `INSERT INTO users (id) VALUES (NEW.id)` | INSERT-only: generated `id` + `auth_id = NEW.id` (re-link DEFERRED, §10b) |
 | `complete_onboarding()` | 005:60 | `UPDATE users ... WHERE id = auth.uid()` | `WHERE auth_id = auth.uid()` |
 
 ### 3b. RLS policies that use `auth.uid()` against `users.id` (all in 002, plus the 005 patch)
@@ -369,7 +373,7 @@ trigger references the identity equality.
 | R1 | Backfill skipped / ordered after the function swap | Owner/admin **locked out** — `get_user_tenant_id()` returns NULL, every RLS check fails, dashboard empty everywhere | Re-run `UPDATE users SET auth_id = id`. Mitigation: strict ordering + probe `SELECT count(*) FROM users WHERE auth_id IS NULL` must be **0** at migration end. |
 | R2 | A policy left half-migrated, OR `auth_id` non-unique | Total denial (safe-ish), or a login resolving to the wrong-tenant row → **cross-tenant read** | Re-apply the corrected policy; the `uq_users_auth_id` index makes the non-unique variant impossible. §3b table + two-JWT isolation test (T-007-03) are the guard. |
 | R3 | App code not shipped with the migration | New signup hits a broken onboarding lookup; project creation FK-violates | See the deploy-window analysis below — bounded, DB-first mandatory. |
-| R4 | `handle_new_user` blindly inserts (old behaviour) | Duplicate `users` row per returning/ pre-created human (see §10) | Fix trigger to re-link; `UPDATE` the stray row. Caught by T-007-04 (T-007-05 once invitations ship). |
+| R4 | `handle_new_user` keeps old behaviour (`INSERT ... (id) VALUES (NEW.id)`, sets no `auth_id`) | **Lockout**: the new row has `id = auth uid` but `auth_id = NULL`, so the fixed `get_user_tenant_id()` (now matching on `auth_id`) can never resolve them — the fresh signup is dead on arrival | Trigger must insert generated `id` + `auth_id = NEW.id`. Caught by T-007-04. *(The separate duplicate-profile risk lives in §10 behind the offboarding policy — not this row.)* |
 | R5 | FK drop fails on a differing constraint name | Migration aborts partway | Wrap 007 in a single `BEGIN…COMMIT`; look the constraint name up dynamically. |
 | R6 | Irreversibility | Once `users_id_fkey` is dropped and rows exist with `auth_id = NULL`, you cannot re-add the FK without deleting those rows or giving them auth.users entries | **Access-path is reversible; data-model is forward-only.** See the "oh no" runbook below. |
 
