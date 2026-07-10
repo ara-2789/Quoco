@@ -16,6 +16,33 @@
 --
 -- MUST run as a single transaction. Backfill (step 2) MUST precede the
 -- function swap (step 6) or the only real user is locked out (review R1).
+--
+-- RERUN SEMANTICS — read before re-running:
+--   * SINGLE-SHOT script. If a partial apply occurs via the SQL editor (running
+--     it outside a transaction, statement by statement), do NOT re-run it
+--     statement-by-statement — restore to the PITR mark and re-apply the WHOLE
+--     script. The file is fail-brittle by design (step 4 raises on a missing
+--     FK; DROP POLICY has no IF EXISTS), which is correct once declared.
+--   * This is a ONE-TIME surgery, not an idempotent migration.
+--   * The whole file is a single BEGIN..COMMIT, so a FAILED first attempt
+--     rolls back completely — it leaves NO partial state. "Re-running" after
+--     a failure therefore always starts from the clean pre-007 schema and is
+--     safe.
+--   * After a SUCCESSFUL apply, a second run ABORTS BY DESIGN at step 4: the
+--     FK-drop guard RAISE EXCEPTIONs because users.id -> auth.users no longer
+--     exists. That guard is the intended tripwire (a missing FK on rerun means
+--     the surgery already happened) — do not "fix" it by making step 4 a
+--     silent no-op; that would mask a partial-rerun where the column exists
+--     without its FK (review §5, the confdeltype='r' probe).
+--   * Individual statements are still guarded where cheap (ADD COLUMN /
+--     CREATE INDEX IF NOT EXISTS, backfill WHERE auth_id IS NULL, CREATE OR
+--     REPLACE functions, DROP TRIGGER IF EXISTS) so a clean-state rerun is
+--     smooth up to the step-4 tripwire.
+--
+-- APPLY-ORDER NOTE: 007 is numbered below 011-014 but applies to prod AFTER
+-- them (011-014 are already live). Audited: 011-014 take p_user_id as a
+-- caller-supplied param and never call auth.uid() or resolve users by id, so
+-- there is no cross-dependency — 007 applying out of numeric order is safe.
 -- =============================================================
 
 BEGIN;
@@ -52,30 +79,38 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_users_auth_id
 
 -- -------------------------------------------------------------
 -- 4. Drop the old users.id -> auth.users FK by DYNAMIC lookup
---    (do not hardcode the name; review R5). Fail loud if it is
---    unexpectedly absent rather than silently no-op.
+--    (do not hardcode the name; review R5). INTO STRICT so BOTH the
+--    zero-FK case (already dropped -> surgery already ran) and the
+--    two-FK case (ambiguous -> refuse to guess which to drop) fail
+--    loud instead of silently no-op'ing or dropping an arbitrary one.
 -- -------------------------------------------------------------
 DO $$
 DECLARE
   v_conname text;
 BEGIN
-  SELECT c.conname
-    INTO v_conname
-    FROM pg_constraint c
-   WHERE c.conrelid  = 'public.users'::regclass
-     AND c.contype   = 'f'
-     AND c.confrelid = 'auth.users'::regclass
-     AND c.conkey = ARRAY[
-       (SELECT a.attnum
-          FROM pg_attribute a
-         WHERE a.attrelid = 'public.users'::regclass
-           AND a.attname  = 'id')
-     ];
-
-  IF v_conname IS NULL THEN
-    RAISE EXCEPTION
-      '007: expected an FK on users.id -> auth.users, found none. Aborting.';
-  END IF;
+  BEGIN
+    SELECT c.conname
+      INTO STRICT v_conname
+      FROM pg_constraint c
+     WHERE c.conrelid  = 'public.users'::regclass
+       AND c.contype   = 'f'
+       AND c.confrelid = 'auth.users'::regclass
+       AND c.conkey = ARRAY[
+         (SELECT a.attnum
+            FROM pg_attribute a
+           WHERE a.attrelid = 'public.users'::regclass
+             AND a.attname  = 'id')
+       ];
+  EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+      RAISE EXCEPTION
+        '007: expected exactly one FK on users.id -> auth.users, found none '
+        '(already dropped? this migration is single-shot — see header). Aborting.';
+    WHEN TOO_MANY_ROWS THEN
+      RAISE EXCEPTION
+        '007: found MULTIPLE FKs on users.id -> auth.users; refusing to drop '
+        'one blindly. Resolve manually. Aborting.';
+  END;
 
   EXECUTE format('ALTER TABLE public.users DROP CONSTRAINT %I', v_conname);
 END $$;
@@ -107,10 +142,12 @@ AS $$
 $$;
 
 -- -------------------------------------------------------------
--- 6b. handle_new_user(): INSERT-ONLY, corrected insert.
---     Generated id (via the new default) + auth_id = NEW.id.
---     NO re-link logic — deferred to the invitations deliverable
---     (review §10b; there is no users.email to match on yet).
+-- 6b. handle_new_user(): INSERT-ONLY, corrected insert. Supplies id
+--     EXPLICITLY (gen_random_uuid()) rather than leaning on 4b's column
+--     default — self-contained, so a future migration dropping that default
+--     can't silently reintroduce R4. (4b's default stays for the ENG-01
+--     plain-insert path.) auth_id = NEW.id. NO re-link logic — deferred to
+--     the invitations deliverable (review §10b; no users.email to match yet).
 -- -------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
@@ -118,12 +155,18 @@ LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public
 AS $$
 BEGIN
-  INSERT INTO public.users (auth_id)
-  VALUES (NEW.id);
+  INSERT INTO public.users (id, auth_id)
+  VALUES (gen_random_uuid(), NEW.id);
   RETURN NEW;
 END;
 $$;
--- Trigger on_auth_user_created is unchanged; it already points here.
+
+-- Self-contained: (re)create the trigger here rather than assuming 005's
+-- CREATE TRIGGER still stands. DROP IF EXISTS keeps a clean-state rerun smooth.
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- -------------------------------------------------------------
 -- 6c. complete_onboarding(): match the caller by auth_id.
@@ -161,6 +204,11 @@ $$;
 --    CREATE POLICY has no OR REPLACE -> drop + recreate each.
 --    All "pure tenant" policies inherit the helper fix and are
 --    untouched (review §3b).
+--
+--    ROLE-TARGET CHECK (review round 2, item 4): every recreated policy below
+--    keeps its 002 original's target verbatim — FOR <cmd> TO authenticated,
+--    PERMISSIVE (the default). None widens to PUBLIC or flips to RESTRICTIVE.
+--    Verified pair-by-pair against 002_rls_policies.sql / 005 (users_select).
 -- -------------------------------------------------------------
 
 -- users_select (last defined in 005:30) — own row now via auth_id.

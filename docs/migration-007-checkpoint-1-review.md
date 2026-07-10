@@ -362,7 +362,53 @@ The **webhook** (`app/api/whatsapp/webhook/route.ts:129`) looks up the user by
 ### 3d. Triggers
 
 Only `on_auth_user_created` (→ `handle_new_user`, covered in 3a + §10). No other
-trigger references the identity equality.
+trigger references the identity equality. **007 now (re)creates this trigger
+itself** (`DROP TRIGGER IF EXISTS` + `CREATE TRIGGER`) instead of assuming 005's
+`CREATE TRIGGER` still stands — the trigger rewrite is self-contained.
+
+### 3e. Post-002/005 migrations (011–014) audited (review round 2)
+
+The reviewer asked whether the later applied migrations carry the same
+`auth.uid()`-vs-`users.id` assumption, and whether apply-**order** is a problem.
+
+**Grep + read of 011–014 — all 007-safe, no changes needed:**
+
+| Migration | What it does | `auth.uid()` / `users.id` join? |
+|---|---|---|
+| 011 `processed_messages` | webhook idempotency table | **none** |
+| 012 `acquire_and_transition_session` (+ guarded `users.status`/`messaging_blocked`) | session-transition RPC | **no** — `SECURITY DEFINER`, takes `p_user_id` as a **parameter**; never calls `auth.uid()`, never resolves `users` by `id` |
+| 013 test-lock probe variant | same RPC + `_test_lock_acquired_at` | **no** — same `p_user_id` param shape |
+| 014 `apply_morning_flow_turn` | writes `daily_logs.engineer_id = p_user_id` | **no** — `p_user_id` is caller-supplied; the webhook resolves the engineer by `whatsapp_number` (§3c, already correct post-007) |
+
+The invariant that makes them safe: **the webhook resolves a user by
+`whatsapp_number` and passes the resulting `users.id` in as `p_user_id`.** None
+of them derives identity from `auth.uid()`, so the equality 007 drops was never
+in their path.
+
+**Ordering — reasoned in both directions (review round 2, item 14):**
+A fresh `db reset` applies migrations in **filename order** (007 *before* 011–014);
+our branch rehearsal applied 007 *after* them (011–014 were already live). Both
+must be safe:
+
+- **Does 007 reference anything 011–014 create?** No. 007 touches only objects
+  that exist by 002/005: the `users` table + its FK/columns, `get_user_tenant_id`,
+  `handle_new_user`, `complete_onboarding`, and the 8 policies on
+  `tenants`/`users`/`project_members`/`daily_logs` — all defined in 001/002/005.
+  So in *fresh-reset* order (007 at position 7) every object 007 needs is already
+  present. ✓
+- **Do 011–014 reference anything 007 creates?** No — see the table above; they
+  never read `auth_id`, the new helper form, or the rewritten trigger. So in
+  *rehearsal* order (007 last) they were already applied against the pre-007
+  schema and don't care that 007 later changed it. ✓
+
+**Conclusion: 007 and 011–014 are independent; both apply orders are safe.** No
+residual doubt, so a scratch-branch fresh-reset is **not required** before prod
+(it would confirm the above cheaply if ever wanted). Separately, the *numbering*
+question — 007 applies out of numeric order on prod because 011–014 are already
+live — is cosmetic: recommend **keep it "007"** (renumbering to 015 would rewrite
+every reference across docs/tests/commits for no functional gain); note the
+out-of-order apply in the runbook, and the SQL-Editor + `migration repair`
+fallback applies it regardless if the CLI balks.
 
 ---
 
@@ -444,6 +490,7 @@ lockstep)** — process risks, exactly what a second reviewer catches best.
 | **partial unique index `uq_users_auth_id` exists** | absent | **present** |
 | FK `users_id_fkey` exists (query `pg_constraint`) | `true` | `false` |
 | **NEW `auth_id` FK to `auth.users` exists with delete rule RESTRICT** (query `pg_constraint` for the FK on `users.auth_id`, assert `confdeltype = 'r'`) | absent | **present, `confdeltype='r'`** |
+| **`users.id` has DEFAULT `gen_random_uuid()` (step 4b)** — query `pg_attrdef` joined to `pg_attribute` for `users.id`, assert the default expression is `gen_random_uuid()` | absent | **present** |
 | `SELECT count(*) FROM users WHERE auth_id IS NULL` | n/a | **0** (backfill worked — the simple invariant, per round-1) |
 | `get_user_tenant_id()` source contains `auth_id` | `false` | `true` |
 | `get_user_tenant_id()` is STABLE + SECURITY DEFINER + `search_path=public` | `true` | **still `true`** (rewrite preserved qualifiers) |
@@ -456,6 +503,17 @@ lockstep)** — process risks, exactly what a second reviewer catches best.
 > `IF NOT EXISTS` clause **silently no-ops the entire statement** and the FK never
 > gets created. Checking only "column exists" would pass while the FK is missing;
 > the `confdeltype='r'` probe is what actually catches that.
+
+> **Why the `pg_attrdef` id-default probe matters:** `T-007-04` proves the default
+> works *functionally* on the branch (a fresh signup gets a generated `id`). But
+> step 4b is a single `ALTER COLUMN ... SET DEFAULT`; on a **partial prod apply**
+> it could be the statement that didn't land, and nothing else in the checklist
+> would notice until the *first real signup* hit a NULL-`id` insert failure. The
+> `pg_attrdef` probe makes that omission visible at apply time, on prod, where it
+> matters — belt-and-braces alongside the functional test. (Example probe:
+> `SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d JOIN pg_attribute a
+> ON a.attrelid=d.adrelid AND a.attnum=d.adnum WHERE d.adrelid='public.users'::regclass
+> AND a.attname='id';` → expect `gen_random_uuid()`.)
 
 **Gate to prod:** branch probes all green **AND** full `npm test` green (unit +
 integration, incl. the two-JWT RLS isolation test, T-007-03) **AND** the
@@ -682,6 +740,70 @@ An engineer (`auth_id = NULL`) later needing dashboard access is **possible unde
 *pre*-007 schema; trivial post-007. **No UI exists for this yet — deliberately
 future work.** (Note: this is the one lifecycle transition option (a) shadow-auth
 would get almost for free — a fair point in (a)'s favour, recorded in §0.)
+
+---
+
+## 11. SECURITY & OPS FINDINGS (review round 2)
+
+### 11a. HIGH-1 — `users_update` permits self-privilege-escalation (PRE-EXISTING)
+
+**Not introduced by 007** — this policy has existed since 002 and 007 merely
+re-signs it verbatim (`id`→`auth_id`). Recording it here because 007's audit
+surfaced it and it is the highest-severity item in the file.
+
+`users_update` (002:81, re-created in 007 step 7) is:
+```sql
+USING (auth_id = auth.uid()) WITH CHECK (auth_id = auth.uid())
+```
+It has **no column restriction.** So any authenticated user can `UPDATE` **their
+own row** — which passes `WITH CHECK` (the row stays theirs) — and in the same
+statement set `role = 'admin'` or repoint `tenant_id` to another tenant. That is
+**self-serve privilege escalation / tenant hopping**, gated only by the client
+not sending those columns.
+
+- **Fix (fast-follow migration, reviewed separately):** stop relying on the
+  policy to bound columns. Revoke table-level UPDATE and grant it column-wise:
+  ```sql
+  REVOKE UPDATE ON public.users FROM authenticated;
+  GRANT  UPDATE (full_name, avatar_url) ON public.users TO authenticated;
+  ```
+  The **column-grant** approach (not policy gymnastics) is the clean fix —
+  Postgres rejects an UPDATE touching any column outside the grant before RLS is
+  even consulted.
+- **HARD DEADLINE:** land this **before a second real user exists in any tenant.**
+  Today the only authenticated user is the founder-admin, so the blast radius is
+  self-only; the moment a second PM is invited, it becomes cross-user. The friend
+  reviews that migration on its own.
+
+### 11b. `complete_onboarding` notes
+
+- **GRANT scope — checked, OK:** `005:86` grants EXECUTE **`TO authenticated`
+  only** (verified). A `SECURITY DEFINER` tenant-inserter callable by `anon`
+  would be a spam vector; it is not. No action.
+- **Add to the corrections-migration list:** the RPC's
+  `UPDATE users ... WHERE auth_id = auth.uid()` has **no zero-row guard** — if it
+  matches nothing it silently returns the freshly-inserted `tenant_id`, orphaning
+  a tenant with no admin. Add `GET DIAGNOSTICS` / `IF NOT FOUND THEN RAISE` so a
+  zero-row update **fails loud**.
+- **Known pre-existing behaviour (note, not a 007 blocker):** calling
+  `complete_onboarding` twice **mints a second tenant** each time (it always
+  INSERTs a tenant first). Fine for the single-founder flow today; revisit with
+  the invitations work.
+
+### 11c. Dashboard / environment findings (recorded)
+
+- **Vercel env scoping — FIXED:** envs were Production+Preview-scoped to prod
+  values. **Preview is now scoped to the test-db branch values**, so PR previews
+  (including this branch's) run against the **migrated** schema — the current
+  preview becomes a working demo of post-007 behaviour rather than erroring on the
+  missing `auth_id` column.
+- **Prod auth posture — consciously accepted:** the Email provider is enabled
+  (required for magic links) and Supabase exposes **no separate
+  password-disable toggle**. Accepted because **no prod user has a password set**,
+  and acquiring one requires the password-**reset email** flow — i.e. inbox
+  control, the *same* trust anchor as magic links, so it widens nothing.
+  Confirm-email is **ON**. The **test-db branch keeps password auth** (for the
+  two-JWT harness, §6) as a **deliberate branch/prod divergence**.
 
 ---
 

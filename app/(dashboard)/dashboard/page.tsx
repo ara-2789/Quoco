@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getProfile } from '@/lib/auth/profile'
 
 type ProjectRow = {
   id: string
@@ -27,29 +27,16 @@ function statusBadge(status: string) {
 
 export default async function DashboardPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // getProfile() gates auth (redirects if unauthenticated) and fail-louds on a
+  // missing profile — so profile is always present past this line.
+  const profile = await getProfile()
 
-  if (!user) redirect('/login')
+  const { data: members } = await supabase
+    .from('project_members')
+    .select('project_id, projects(id, name, status, contract_value)')
+    .eq('user_id', profile.id)
 
-  // Post-007: resolve the profile by auth_id first, then use its (decoupled)
-  // users.id as the project_members FK value. Sequential, not parallel, because
-  // the members query now depends on profile.id.
-  const { data: profile } = await supabase
-    .from('users')
-    .select('id, full_name')
-    .eq('auth_id', user.id)
-    .single()
-
-  const { data: members } = profile
-    ? await supabase
-        .from('project_members')
-        .select('project_id, projects(id, name, status, contract_value)')
-        .eq('user_id', profile.id)
-    : { data: null }
-
-  const firstName = profile?.full_name?.split(' ')[0] ?? 'there'
+  const firstName = profile.full_name?.split(' ')[0] ?? 'there'
   const projects = ((members ?? []) as unknown as MemberRow[])
     .map((m) => m.projects)
     .filter((p): p is ProjectRow => p !== null)

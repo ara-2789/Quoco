@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getProfile } from '@/lib/auth/profile'
 
 type ProjectRow = {
   id: string
@@ -38,25 +38,12 @@ function formatDate(date: string | null) {
 
 export default async function ProjectsPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const profile = await getProfile()
 
-  if (!user) redirect('/login')
-
-  // Post-007: users.id is decoupled from auth.uid(); resolve profile.id first.
-  const { data: profile } = await supabase
-    .from('users')
-    .select('id')
-    .eq('auth_id', user.id)
-    .single()
-
-  const { data: members } = profile
-    ? await supabase
-        .from('project_members')
-        .select('role, projects(id, name, status, contract_value, start_date, expected_end_date)')
-        .eq('user_id', profile.id)
-    : { data: null }
+  const { data: members } = await supabase
+    .from('project_members')
+    .select('role, projects(id, name, status, contract_value, start_date, expected_end_date)')
+    .eq('user_id', profile.id)
 
   const rows = ((members ?? []) as unknown as MemberRow[]).filter(
     (m): m is MemberRow & { projects: ProjectRow } => m.projects !== null,

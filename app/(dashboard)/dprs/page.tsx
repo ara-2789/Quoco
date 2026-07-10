@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getProfile } from '@/lib/auth/profile'
 
 type DprRow = {
   id: string
@@ -18,25 +18,12 @@ function formatDate(date: string) {
 
 export default async function DprsPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const profile = await getProfile()
 
-  if (!user) redirect('/login')
-
-  // Post-007: users.id is decoupled from auth.uid(); resolve profile.id first.
-  const { data: profile } = await supabase
-    .from('users')
-    .select('id')
-    .eq('auth_id', user.id)
-    .single()
-
-  const { data: memberRows } = profile
-    ? await supabase
-        .from('project_members')
-        .select('project_id')
-        .eq('user_id', profile.id)
-    : { data: null }
+  const { data: memberRows } = await supabase
+    .from('project_members')
+    .select('project_id')
+    .eq('user_id', profile.id)
 
   const projectIds = (memberRows ?? []).map((m) => m.project_id as string)
 

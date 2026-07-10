@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "check:profile-lookups": "node scripts/check-profile-lookups.mjs",
+    "prebuild": "npm run check:profile-lookups",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "pretest": "npm run check:profile-lookups",
     "test": "vitest run"
   },
   "dependencies": {

@@ -106,10 +106,13 @@ describe('migration 007 — auth surgery', () => {
       expect((aProjects ?? []).every((p) => p.tenant_id === TEST_TENANT_A_ID)).toBe(true)
 
       // Targeted read of B's project by A returns nothing (RLS filters it out).
-      const { data: crossRead } = await clientA
+      // Destructure error too: if the query ERRORED, data would be null and the
+      // `?? []` would make this pass for the wrong reason.
+      const { data: crossRead, error: crossErr } = await clientA
         .from('projects')
         .select('id')
         .eq('id', TEST_PROJECT_B_ID)
+      expect(crossErr).toBeNull()
       expect(crossRead ?? []).toHaveLength(0)
 
       // Symmetric: B sees only project B.
@@ -167,6 +170,128 @@ describe('migration 007 — auth surgery', () => {
         await db.from('users').delete().eq('auth_id', authId)
         await db.auth.admin.deleteUser(authId)
       }
+    }
+  })
+
+  // (T-007-05 is intentionally reserved for the deferred invitations re-link
+  //  test — review §6 — and is NOT part of the 007 gate. Next id is 06.)
+
+  // -------------------------------------------------------------------------
+  // T-007-06 — users_select isolation. That policy is the one rewritten with an
+  // OR (auth_id = auth.uid() OR tenant_id = get_user_tenant_id()), so it's the
+  // likeliest to be subtly wrong. Positive + negative, both directions.
+  // -------------------------------------------------------------------------
+  it('T-007-06: users_select shows only same-tenant rows (A sees A, not B; mirrored)', async () => {
+    let clientA: SupabaseClient | null = null
+    let clientB: SupabaseClient | null = null
+    try {
+      clientA = await jwtClient(TEST_007_USER_A_EMAIL, TEST_007_PASSWORD)
+      clientB = await jwtClient(TEST_007_USER_B_EMAIL, TEST_007_PASSWORD)
+
+      const { data: aUsers, error: aErr } = await clientA.from('users').select('id, tenant_id')
+      expect(aErr).toBeNull()
+      const aIds = (aUsers ?? []).map((u) => u.id)
+      expect(aIds).toContain(fx.profileAId) // sees itself
+      expect(aIds).not.toContain(fx.profileBId) // NOT tenant B's user
+      expect((aUsers ?? []).every((u) => u.tenant_id === TEST_TENANT_A_ID)).toBe(true)
+
+      const { data: bUsers, error: bErr } = await clientB.from('users').select('id, tenant_id')
+      expect(bErr).toBeNull()
+      const bIds = (bUsers ?? []).map((u) => u.id)
+      expect(bIds).toContain(fx.profileBId)
+      expect(bIds).not.toContain(fx.profileAId)
+      expect((bUsers ?? []).every((u) => u.tenant_id === TEST_TENANT_B_ID)).toBe(true)
+    } finally {
+      if (clientA) await clientA.auth.signOut()
+      if (clientB) await clientB.auth.signOut()
+    }
+  })
+
+  // -------------------------------------------------------------------------
+  // T-007-07 — cross-tenant WRITE denial (project_members). A is admin, so the
+  // role arm of the WITH CHECK passes; the TENANT arm must still deny a write
+  // scoped to tenant B. Makes the tenant arm executable, not faith-based.
+  // -------------------------------------------------------------------------
+  it('T-007-07: A cannot insert a project_members row scoped to tenant B', async () => {
+    const clientA = await jwtClient(TEST_007_USER_A_EMAIL, TEST_007_PASSWORD)
+    try {
+      const { data, error } = await clientA
+        .from('project_members')
+        .insert({
+          tenant_id: TEST_TENANT_B_ID, // not A's tenant -> WITH CHECK denies
+          project_id: TEST_PROJECT_B_ID,
+          user_id: fx.profileBId,
+          role: 'pm',
+        })
+        .select('id')
+      expect(error).not.toBeNull()
+      expect(data ?? []).toHaveLength(0)
+    } finally {
+      await clientA.auth.signOut()
+    }
+  })
+
+  // -------------------------------------------------------------------------
+  // T-007-08 — cross-tenant WRITE denial (daily_logs). tenant_id is A's (arm 1
+  // passes) but engineer_id is B's profile, so the rewritten
+  // `engineer_id = (SELECT id FROM users WHERE auth_id = auth.uid())` arm denies.
+  // Exercises the rewritten WITH CHECK subquery directly.
+  // -------------------------------------------------------------------------
+  it('T-007-08: A cannot insert a daily_logs row with another tenant engineer_id', async () => {
+    const clientA = await jwtClient(TEST_007_USER_A_EMAIL, TEST_007_PASSWORD)
+    try {
+      const { data, error } = await clientA
+        .from('daily_logs')
+        .insert({
+          tenant_id: TEST_TENANT_A_ID, // A's tenant -> arm 1 passes
+          project_id: TEST_PROJECT_A_ID,
+          engineer_id: fx.profileBId, // NOT A's profile -> arm 2 denies
+          log_date: '2026-07-10',
+        })
+        .select('id')
+      expect(error).not.toBeNull()
+      expect(data ?? []).toHaveLength(0)
+    } finally {
+      await clientA.auth.signOut()
+    }
+  })
+
+  // -------------------------------------------------------------------------
+  // T-007-09 — the RESTRICT FK, executable. §10a says deleting an auth user
+  // that still has a linked profile must fail (users.auth_id -> auth.users is
+  // ON DELETE RESTRICT). Turns "the FK error is the system working as designed"
+  // into a passing assertion.
+  // -------------------------------------------------------------------------
+  it('T-007-09: deleting an auth user with a linked profile fails (RESTRICT)', async () => {
+    const db = testClient()
+    const email = 'zz-007-restrict@quoco.test'
+
+    const { data: pre } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 })
+    const stale = pre?.users.find((u) => u.email === email)
+    if (stale) {
+      await db.from('users').delete().eq('auth_id', stale.id)
+      await db.auth.admin.deleteUser(stale.id)
+    }
+
+    const { data: created, error: createErr } = await db.auth.admin.createUser({
+      email,
+      email_confirm: true,
+    })
+    expect(createErr).toBeNull()
+    const authId = created!.user!.id
+    try {
+      // Trigger created a profile with auth_id = authId. Deleting the auth user
+      // must fail on the RESTRICT FK.
+      const { error: delErr } = await db.auth.admin.deleteUser(authId)
+      expect(delErr).not.toBeNull()
+
+      // And the profile survives (RESTRICT blocked; no cascade nulled it).
+      const { data: still } = await db.from('users').select('id').eq('auth_id', authId)
+      expect((still ?? []).length).toBe(1)
+    } finally {
+      // FK-safe cleanup: profile row first, THEN the auth user.
+      await db.from('users').delete().eq('auth_id', authId)
+      await db.auth.admin.deleteUser(authId)
     }
   })
 })
