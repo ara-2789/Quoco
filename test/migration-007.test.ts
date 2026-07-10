@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { profileForAuthId } from '@/lib/auth/profile-query'
 import {
   testClient,
   jwtClient,
@@ -27,8 +28,8 @@ import {
 //   T-007-07  cross-tenant WRITE denial: project_members tenant arm  — JWT
 //   T-007-08  cross-tenant WRITE denial: daily_logs WITH CHECK arm   — JWT
 //   T-007-09  RESTRICT FK executable: deleting a linked auth user fails — schema
-//   T-007-10  pre-onboarding self-read: fresh signup (tenant_id NULL) can read
-//             its own row via profileForAuthId's query shape — JWT client
+//   T-007-10  pre-onboarding self-read: fresh signup (tenant_id NULL) reads its
+//             own row via the REAL profileForAuthId — JWT client
 // Runs against the test-db branch (guarded by test/setup/guard.ts).
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -316,9 +317,9 @@ describe('migration 007 — auth surgery', () => {
   // right after exchangeCodeForSession, against a tenant-less row. No other test
   // exercises it. users_select resolves it via its FIRST arm
   // (auth_id = auth.uid()); the tenant arm can't help (get_user_tenant_id() is
-  // NULL here). We replicate profileForAuthId's EXACT query shape rather than
-  // import it, because lib/auth/profile.ts pulls in 'server-only', which throws
-  // under vitest.
+  // NULL here). Calls the REAL profileForAuthId (extracted to
+  // lib/auth/profile-query.ts, no 'server-only') with the signup's JWT client —
+  // the actual production code path, not a replica.
   // -------------------------------------------------------------------------
   it('T-007-10: a fresh signup can self-read its pre-onboarding row (tenant_id NULL)', async () => {
     const db = testClient()
@@ -344,25 +345,14 @@ describe('migration 007 — auth surgery', () => {
     try {
       client = await jwtClient(email, TEST_007_PASSWORD)
 
-      // profileForAuthId's exact query shape: PROFILE_COLUMNS, keyed on auth_id,
-      // .single(). The WHERE auth_id = authId + .single() (errors on 0 or >1) is
-      // the "exactly one row, and it's theirs" proof.
-      const { data, error } = await client
-        .from('users')
-        .select('id, tenant_id, full_name, role')
-        .eq('auth_id', authId)
-        .single<{
-          id: string
-          tenant_id: string | null
-          full_name: string | null
-          role: string | null
-        }>()
+      // The REAL function the auth callback runs post-exchange. It throws if the
+      // row is missing (0 rows) or on any query/RLS error, so reaching the
+      // assertions already proves exactly-one-row-and-it's-theirs.
+      const profile = await profileForAuthId(client, authId)
 
-      expect(error).toBeNull()
-      expect(data).not.toBeNull()
-      expect(data!.tenant_id).toBeNull() // pre-onboarding: no tenant yet
-      expect(data!.id).toMatch(UUID_RE)
-      expect(data!.id).not.toBe(authId) // decoupled: profile id != auth uid
+      expect(profile.tenant_id).toBeNull() // pre-onboarding: no tenant yet
+      expect(profile.id).toMatch(UUID_RE)
+      expect(profile.id).not.toBe(authId) // decoupled: profile id != auth uid
     } finally {
       if (client) await client.auth.signOut()
       // FK-safe cleanup: profile row first, THEN the auth user.
