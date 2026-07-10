@@ -19,8 +19,14 @@ import {
 // FK drop + auth_id introduction behaves as the approved plan requires:
 //   T-007-01  standalone engineer row (auth_id NULL) inserts        — schema
 //   T-007-02  get_user_tenant_id() resolves via auth_id             — JWT client
-//   T-007-03  two-tenant RLS isolation                              — JWT clients
+//   T-007-03  two-tenant RLS isolation (project reads)              — JWT clients
 //   T-007-04  handle_new_user makes exactly one row, id != auth uid — trigger/R4
+//   T-007-05  RESERVED — deferred invitations re-link test (review §6);
+//             NOT part of the 007 gate. Intentionally absent below.
+//   T-007-06  users_select isolation (the one OR-policy), both directions — JWT
+//   T-007-07  cross-tenant WRITE denial: project_members tenant arm  — JWT
+//   T-007-08  cross-tenant WRITE denial: daily_logs WITH CHECK arm   — JWT
+//   T-007-09  RESTRICT FK executable: deleting a linked auth user fails — schema
 // Runs against the test-db branch (guarded by test/setup/guard.ts).
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
