@@ -24,10 +24,19 @@ export default async function DprsPage() {
 
   if (!user) redirect('/login')
 
-  const { data: memberRows } = await supabase
-    .from('project_members')
-    .select('project_id')
-    .eq('user_id', user.id)
+  // Post-007: users.id is decoupled from auth.uid(); resolve profile.id first.
+  const { data: profile } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', user.id)
+    .single()
+
+  const { data: memberRows } = profile
+    ? await supabase
+        .from('project_members')
+        .select('project_id')
+        .eq('user_id', profile.id)
+    : { data: null }
 
   const projectIds = (memberRows ?? []).map((m) => m.project_id as string)
 

@@ -339,7 +339,7 @@ it *directly* as `users.id`. After 007 that equality is gone:
 |---|---|---|---|
 | `app/(auth)/auth/callback/route.ts:33` | `.from('users').eq('id', user.id)` | looks up profile by auth uid | `.eq('auth_id', user.id)` |
 | `app/(onboarding)/onboarding/page.tsx:21` | `getUser()` then `complete_onboarding` RPC | RPC now matches on `auth_id` (3a) | verify the RPC change covers it |
-| `app/(dashboard)/layout.tsx:26` | `getUser()` + profile lookup | profile lookup by `id` | `.eq('auth_id', user.id)` |
+| `app/(dashboard)/layout.tsx:26` | `getUser()` **only — no profile lookup** | — | **ERRATUM (verified at 007 impl): NO FIX NEEDED.** This row was wrong: the file only gates on `getUser()`/`redirect` and renders nav; there is no `users` query to repoint. Left in place for the audit trail. |
 | `app/(dashboard)/dashboard/page.tsx:37` | `.from('users').eq('id', user.id)` | profile by auth uid | `.eq('auth_id', user.id)` |
 | `app/(dashboard)/dashboard/page.tsx:41` | `.eq('user_id', user.id)` (project_members) | uses auth uid as `users.id` FK value | resolve profile.id first |
 | `app/(dashboard)/projects/page.tsx:50` | `.eq('user_id', user.id)` (project_members) | same | resolve profile.id first |

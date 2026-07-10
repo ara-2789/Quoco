@@ -33,13 +33,21 @@ export default async function DashboardPage() {
 
   if (!user) redirect('/login')
 
-  const [{ data: profile }, { data: members }] = await Promise.all([
-    supabase.from('users').select('full_name').eq('id', user.id).single(),
-    supabase
-      .from('project_members')
-      .select('project_id, projects(id, name, status, contract_value)')
-      .eq('user_id', user.id),
-  ])
+  // Post-007: resolve the profile by auth_id first, then use its (decoupled)
+  // users.id as the project_members FK value. Sequential, not parallel, because
+  // the members query now depends on profile.id.
+  const { data: profile } = await supabase
+    .from('users')
+    .select('id, full_name')
+    .eq('auth_id', user.id)
+    .single()
+
+  const { data: members } = profile
+    ? await supabase
+        .from('project_members')
+        .select('project_id, projects(id, name, status, contract_value)')
+        .eq('user_id', profile.id)
+    : { data: null }
 
   const firstName = profile?.full_name?.split(' ')[0] ?? 'there'
   const projects = ((members ?? []) as unknown as MemberRow[])

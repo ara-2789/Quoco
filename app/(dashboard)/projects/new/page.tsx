@@ -10,10 +10,13 @@ async function createProject(formData: FormData) {
 
   if (!user) redirect('/login')
 
+  // Post-007: users.id is decoupled from auth.uid(). Look the profile up by
+  // auth_id and select its id — that (not the auth uid) is the FK value that
+  // must be written into created_by / project_members.user_id below.
   const { data: profile } = await supabase
     .from('users')
-    .select('tenant_id')
-    .eq('id', user.id)
+    .select('id, tenant_id')
+    .eq('auth_id', user.id)
     .single()
 
   if (!profile) redirect('/login')
@@ -32,7 +35,7 @@ async function createProject(formData: FormData) {
       contract_value: contractValue,
       start_date: startDate,
       expected_end_date: endDate,
-      created_by: user.id,
+      created_by: profile.id,
     })
     .select('id')
     .single()
@@ -46,7 +49,7 @@ async function createProject(formData: FormData) {
   const { error: memberError } = await supabase.from('project_members').insert({
     tenant_id: profile.tenant_id,
     project_id: project.id,
-    user_id: user.id,
+    user_id: profile.id,
     role: 'pm',
   })
 

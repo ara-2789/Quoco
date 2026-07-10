@@ -27,10 +27,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login`)
   }
 
+  // Post-007: users.id is decoupled from auth.uid(); look up by auth_id.
   const { data: profile } = await supabase
     .from('users')
     .select('tenant_id')
-    .eq('id', user.id)
+    .eq('auth_id', user.id)
     .single()
 
   return NextResponse.redirect(
