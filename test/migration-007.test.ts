@@ -27,6 +27,8 @@ import {
 //   T-007-07  cross-tenant WRITE denial: project_members tenant arm  — JWT
 //   T-007-08  cross-tenant WRITE denial: daily_logs WITH CHECK arm   — JWT
 //   T-007-09  RESTRICT FK executable: deleting a linked auth user fails — schema
+//   T-007-10  pre-onboarding self-read: fresh signup (tenant_id NULL) can read
+//             its own row via profileForAuthId's query shape — JWT client
 // Runs against the test-db branch (guarded by test/setup/guard.ts).
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -231,6 +233,9 @@ describe('migration 007 — auth surgery', () => {
         })
         .select('id')
       expect(error).not.toBeNull()
+      // 42501 = RLS violation specifically — proves the WITH CHECK denied it,
+      // not a coincidental NOT NULL / CHECK / FK / typo failure.
+      expect(error?.code).toBe('42501')
       expect(data ?? []).toHaveLength(0)
     } finally {
       await clientA.auth.signOut()
@@ -256,6 +261,9 @@ describe('migration 007 — auth surgery', () => {
         })
         .select('id')
       expect(error).not.toBeNull()
+      // 42501 = RLS violation specifically — proves the WITH CHECK subquery
+      // denied it, not a coincidental NOT NULL / CHECK / FK / typo failure.
+      expect(error?.code).toBe('42501')
       expect(data ?? []).toHaveLength(0)
     } finally {
       await clientA.auth.signOut()
@@ -295,6 +303,68 @@ describe('migration 007 — auth surgery', () => {
       const { data: still } = await db.from('users').select('id').eq('auth_id', authId)
       expect((still ?? []).length).toBe(1)
     } finally {
+      // FK-safe cleanup: profile row first, THEN the auth user.
+      await db.from('users').delete().eq('auth_id', authId)
+      await db.auth.admin.deleteUser(authId)
+    }
+  })
+
+  // -------------------------------------------------------------------------
+  // T-007-10 — pre-onboarding self-read. A brand-new signup has tenant_id NULL
+  // the instant handle_new_user fires, BEFORE onboarding sets a tenant. This is
+  // the exact state the auth callback hits in production: profileForAuthId runs
+  // right after exchangeCodeForSession, against a tenant-less row. No other test
+  // exercises it. users_select resolves it via its FIRST arm
+  // (auth_id = auth.uid()); the tenant arm can't help (get_user_tenant_id() is
+  // NULL here). We replicate profileForAuthId's EXACT query shape rather than
+  // import it, because lib/auth/profile.ts pulls in 'server-only', which throws
+  // under vitest.
+  // -------------------------------------------------------------------------
+  it('T-007-10: a fresh signup can self-read its pre-onboarding row (tenant_id NULL)', async () => {
+    const db = testClient()
+    const email = 'zz-007-preonboard@quoco.test'
+
+    const { data: pre } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 })
+    const stale = pre?.users.find((u) => u.email === email)
+    if (stale) {
+      await db.from('users').delete().eq('auth_id', stale.id)
+      await db.auth.admin.deleteUser(stale.id)
+    }
+
+    // Password so the JWT client can sign in; email_confirm so login succeeds.
+    const { data: created, error: createErr } = await db.auth.admin.createUser({
+      email,
+      password: TEST_007_PASSWORD,
+      email_confirm: true,
+    })
+    expect(createErr).toBeNull()
+    const authId = created!.user!.id
+
+    let client: SupabaseClient | null = null
+    try {
+      client = await jwtClient(email, TEST_007_PASSWORD)
+
+      // profileForAuthId's exact query shape: PROFILE_COLUMNS, keyed on auth_id,
+      // .single(). The WHERE auth_id = authId + .single() (errors on 0 or >1) is
+      // the "exactly one row, and it's theirs" proof.
+      const { data, error } = await client
+        .from('users')
+        .select('id, tenant_id, full_name, role')
+        .eq('auth_id', authId)
+        .single<{
+          id: string
+          tenant_id: string | null
+          full_name: string | null
+          role: string | null
+        }>()
+
+      expect(error).toBeNull()
+      expect(data).not.toBeNull()
+      expect(data!.tenant_id).toBeNull() // pre-onboarding: no tenant yet
+      expect(data!.id).toMatch(UUID_RE)
+      expect(data!.id).not.toBe(authId) // decoupled: profile id != auth uid
+    } finally {
+      if (client) await client.auth.signOut()
       // FK-safe cleanup: profile row first, THEN the auth user.
       await db.from('users').delete().eq('auth_id', authId)
       await db.auth.admin.deleteUser(authId)
