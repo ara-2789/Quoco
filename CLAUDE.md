@@ -281,7 +281,16 @@ Week 1: COMPLETE
 Week 2: IN PROGRESS
 Day 1 checklist:
 1. Vercel Pro provisioned — DONE
-2. Supabase Pro + PITR provisioned — DONE
+2. ~~Supabase Pro + PITR provisioned — DONE~~
+   DATED CORRECTION (2026-07-10): this was WRONG. Supabase **Pro** is confirmed,
+   but **PITR was never actually enabled** — verified via the dashboard on
+   2026-07-10; only nightly scheduled physical backups exist. The false "PITR —
+   DONE" here is what the migration 007 rollback plan leaned on. See the dated
+   correction under §5(a) of docs/migration-007-checkpoint-1-review.md for the
+   consequence (reduced rollback granularity: hours-old snapshot vs near-instant
+   PITR) and the decision to proceed on the 2026-07-10 16:34:44 UTC scheduled
+   backup. To restore PITR granularity, enable PITR (still not done as of this
+   correction).
 3. Sentry wired, all environments — DONE (tested end-to-end, error confirmed
    landing in Sentry dashboard)
 4. NFR-16 jobs table — DONE (migration 006, live). Queue helper library,
