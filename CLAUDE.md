@@ -24,6 +24,13 @@
 - If a fact you need (a model name, a library version, an API shape) might
   have changed since your training, SAY SO and ask me to verify rather than
   guessing. Wrong version strings and API shapes are silent runtime failures.
+- ROLLBACK MECHANISMS ARE VERIFIED BY OBSERVATION, NEVER BY CHECKLIST STATUS.
+  Before any migration that depends on a backup, PITR, or restore path,
+  verify the mechanism exists by directly observing it (dashboard state,
+  restore-point UI, or an actual test restore) — never by trusting a "DONE"
+  in a checklist. Origin: the 007 apply (2026-07-10), where "PITR provisioned
+  — DONE" had been false for weeks and was caught only by direct dashboard
+  inspection on apply day. A record of a thing is not the thing.
 
 ---
 
