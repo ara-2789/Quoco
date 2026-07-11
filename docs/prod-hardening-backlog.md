@@ -69,3 +69,13 @@ sections should be **hidden/disabled for Spine betas** (so betas don't click int
 empty sections).
 
 **Fix:** verify current state and **hide/disable** if still live.
+
+## 8. HARD ORDERING: HIGH-1 fix must land BEFORE invitations ships
+
+HIGH-1 (users_update self-privilege-escalation, §11a of the 007 review) has
+deadline "before any second real user exists." The invitations deliverable is
+precisely what creates that second user. Therefore: the column-grants migration
+(REVOKE UPDATE / GRANT UPDATE (full_name, avatar_url)) must be drafted,
+reviewed by the developer friend, and applied to prod BEFORE any invitation
+flow work begins. Reviewer has asked to see the migration when drafted.
+Recorded 2026-07-10 per reviewer closeout feedback.
