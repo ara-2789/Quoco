@@ -482,8 +482,13 @@ lockstep)** — process risks, exactly what a second reviewer catches best.
   > new signups / check-ins during the window) would be lost on restore. R6's
   > "PITR is your rollback for the first minutes" mitigation (§4) is therefore
   > **weaker than stated** — factor this into the go/no-go. Options to restore the
-  > original granularity before applying: enable PITR now, or take a **fresh
-  > on-demand backup immediately before** the apply to shrink the loss window.
+  > original granularity before applying: enable PITR now~~, or take a **fresh
+  > on-demand backup immediately before** the apply to shrink the loss window~~.
+  > **UPDATE 2026-07-10:** the struck on-demand-backup option was **tested and
+  > found unavailable** — this plan exposes no on-demand backup without PITR
+  > (Database → Backups offers only the nightly scheduled backups). So the only
+  > way to restore granularity is to **enable PITR**; absent that, the
+  > 16:34:44 UTC scheduled backup stands as today's rollback point.
 - **(b) 30-minute investigation task: try the CLI against Supabase's *session
   pooler* connection string (IPv4).** The direct host is IPv6-only (what blocked
   013/014); the session pooler is IPv4 and may let `supabase db push` work
@@ -543,7 +548,7 @@ works, else SQL Editor + `supabase migration repair --status applied 007`).
 **Migration 014's pending prod apply:** apply 014 to prod **immediately after** 007
 is green on prod (007 is what makes real engineer rows possible, so
 `apply_morning_flow_turn` only becomes meaningful post-007). Sequence: ~~PITR mark~~
-**backup mark (scheduled backup 2026-07-10 16:34:44 UTC, or a fresh on-demand backup — PITR is not enabled; see the dated correction under §5(a))** →
+**backup mark (scheduled backup 2026-07-10 16:34:44 UTC~~, or a fresh on-demand backup~~ — PITR is not enabled, and on-demand backup tested unavailable 2026-07-10; see the dated correction under §5(a))** →
 007 prod → verify → 014 prod → verify → repair tracking for both. (Reviewer
 confirmed — §8 Q5.)
 
