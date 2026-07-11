@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { profileForAuthId } from '@/lib/auth/profile'
 import { NextRequest, NextResponse } from 'next/server'
 
 // Handles OAuth and magic-link redirect callbacks (not used by the OTP code flow).
@@ -27,13 +28,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login`)
   }
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('tenant_id')
-    .eq('id', user.id)
-    .single()
+  // Post-007: resolve the profile by auth_id. Reuse THIS client — it holds the
+  // just-exchanged session; a fresh createClient() here wouldn't see it yet
+  // (the session cookies are on the outgoing response, not the request).
+  const profile = await profileForAuthId(supabase, user.id)
 
   return NextResponse.redirect(
-    profile?.tenant_id ? `${origin}/dashboard` : `${origin}/onboarding`,
+    profile.tenant_id ? `${origin}/dashboard` : `${origin}/onboarding`,
   )
 }

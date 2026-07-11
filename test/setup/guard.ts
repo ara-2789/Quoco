@@ -17,13 +17,14 @@ function refFromUrl(url: string): string | null {
 export default function guard(): void {
   const url = process.env.SUPABASE_TEST_URL
   const key = process.env.SUPABASE_TEST_SERVICE_ROLE_KEY
+  const anon = process.env.SUPABASE_TEST_ANON_KEY
   const declaredRef = process.env.SUPABASE_TEST_PROJECT_REF
 
-  if (!url || !key || !declaredRef) {
+  if (!url || !key || !anon || !declaredRef) {
     throw new Error(
       '[guard] ABORT: .env.test is missing SUPABASE_TEST_URL, ' +
-        'SUPABASE_TEST_SERVICE_ROLE_KEY, or SUPABASE_TEST_PROJECT_REF. ' +
-        'Refusing to run.',
+        'SUPABASE_TEST_SERVICE_ROLE_KEY, SUPABASE_TEST_ANON_KEY, or ' +
+        'SUPABASE_TEST_PROJECT_REF. Refusing to run.',
     )
   }
 

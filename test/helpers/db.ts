@@ -21,20 +21,19 @@ export const TEST_PHONE_PREFIX = '+19995550'
 // is NOT NULL). Deterministic UUID so cleanup/re-runs are idempotent.
 export const TEST_TENANT_ID = '00000000-0000-4000-a000-00000000d013'
 
-// Morning-flow fixtures. The project uses a fixed UUID; the ENGINEER id is
-// DYNAMIC (created per-run via supabase.auth.admin.createUser) because
-// public.users.id still FKs auth.users(id) until migration 007 (auth surgery)
-// drops it — so a users row cannot exist without a matching auth.users row.
-// This is a TEST-ONLY crutch, NOT the production ENG-01 path (PM creates an
-// engineer from name+phone only, which only becomes possible post-007).
+// Morning-flow fixtures. The project uses a fixed UUID; the ENGINEER id is the
+// generated public.users id, captured at insert time. Post-007 the engineer is
+// created the REAL ENG-01 way — a plain users INSERT with auth_id = NULL, a
+// generated id, and NO auth.users entry (a WhatsApp user simply is not an auth
+// user). The pre-007 auth.admin.createUser() crutch is GONE: 007 dropped
+// users_id_fkey, so a users row no longer needs a backing auth.users row.
 export const TEST_PROJECT_ID = '00000000-0000-4000-a000-00000000f014'
-export const TEST_ENGINEER_EMAIL = 'zz-test-engineer@quoco.test'
 
-// Set by ensureMorningFixtures once the auth user exists; read via testEngineerId().
+// Set by ensureMorningFixtures once the engineer row exists; read via testEngineerId().
 let engineerId: string | null = null
 export function testEngineerId(): string {
   if (!engineerId) {
-    throw new Error('testEngineerId() called before ensureMorningFixtures() created the auth user')
+    throw new Error('testEngineerId() called before ensureMorningFixtures() created the engineer row')
   }
   return engineerId
 }
@@ -94,47 +93,46 @@ export async function removeTestTenant(): Promise<void> {
   if (error) throw new Error(`removeTestTenant failed: ${error.message}`)
 }
 
-// Create (or reuse) the auth.users row the engineer public.users row must point
-// at while users_id_fkey -> auth.users still exists (pre-migration-007). Reuses
-// an existing test auth user by email so re-runs are idempotent. Returns its id.
-async function ensureAuthEngineer(db: SupabaseClient): Promise<string> {
-  const { data: list, error: listErr } = await db.auth.admin.listUsers()
-  if (listErr) throw new Error(`ensureAuthEngineer listUsers failed: ${listErr.message}`)
-  const existing = list.users.find((u) => u.email === TEST_ENGINEER_EMAIL)
+// Create (or reuse) the engineer public.users row the REAL ENG-01 way: a plain
+// INSERT with auth_id = NULL and a generated id, no auth.users entry — only
+// possible post-007, which dropped users_id_fkey. Idempotent on the unique
+// whatsapp_number (users has no email column to key on). Returns the users id.
+async function ensureMorningEngineer(db: SupabaseClient): Promise<string> {
+  const { data: existing, error: selErr } = await db
+    .from('users')
+    .select('id')
+    .eq('whatsapp_number', TEST_ENGINEER_PHONE)
+    .maybeSingle<{ id: string }>()
+  if (selErr) throw new Error(`ensureMorningEngineer select failed: ${selErr.message}`)
   if (existing) return existing.id
 
-  const { data, error } = await db.auth.admin.createUser({
-    email: TEST_ENGINEER_EMAIL,
-    email_confirm: true,
-  })
-  if (error || !data.user) {
-    throw new Error(`ensureAuthEngineer createUser failed: ${error?.message ?? 'no user returned'}`)
-  }
-  return data.user.id
-}
-
-// Morning-flow fixtures: auth user + tenant + engineer user + project +
-// membership. The engineer id is dynamic (see ensureAuthEngineer). Idempotent.
-// Call in beforeAll.
-export async function ensureMorningFixtures(): Promise<void> {
-  const db = testClient()
-  await ensureTestTenant()
-
-  engineerId = await ensureAuthEngineer(db)
-
-  const { error: userErr } = await db.from('users').upsert(
-    {
-      id: engineerId,
+  const { data: ins, error } = await db
+    .from('users')
+    .insert({
       tenant_id: TEST_TENANT_ID,
       full_name: 'ZZ Test Engineer (morning-flow suite)',
       role: 'engineer',
       status: 'active',
       messaging_blocked: false,
       whatsapp_number: TEST_ENGINEER_PHONE,
-    },
-    { onConflict: 'id' },
-  )
-  if (userErr) throw new Error(`ensureMorningFixtures user failed: ${userErr.message}`)
+      auth_id: null,
+    })
+    .select('id')
+    .single<{ id: string }>()
+  if (error || !ins) {
+    throw new Error(`ensureMorningEngineer insert failed: ${error?.message ?? 'no row returned'}`)
+  }
+  return ins.id
+}
+
+// Morning-flow fixtures: tenant + engineer user (ENG-01 shape) + project +
+// membership. The engineer id is the generated profile id (see
+// ensureMorningEngineer). Idempotent. Call in beforeAll.
+export async function ensureMorningFixtures(): Promise<void> {
+  const db = testClient()
+  await ensureTestTenant()
+
+  engineerId = await ensureMorningEngineer(db)
 
   const { error: projErr } = await db.from('projects').upsert(
     {
@@ -166,8 +164,9 @@ export async function cleanupTestDailyLogs(): Promise<void> {
   if (error) throw new Error(`cleanupTestDailyLogs failed: ${error.message}`)
 }
 
-// Tear down the morning fixtures in FK-safe order. Call in afterAll. Deletes the
-// public.users row and then the backing auth.users row (admin API).
+// Tear down the morning fixtures in FK-safe order. Call in afterAll. Post-007
+// the engineer has NO auth.users entry (auth_id = NULL), so there is no auth row
+// to delete — just the public.users row.
 export async function removeMorningFixtures(): Promise<void> {
   const db = testClient()
 
@@ -187,9 +186,6 @@ export async function removeMorningFixtures(): Promise<void> {
   if (engineerId) {
     const { error: userErr } = await db.from('users').delete().eq('id', engineerId)
     if (userErr) throw new Error(`removeMorningFixtures user failed: ${userErr.message}`)
-
-    const { error: authErr } = await db.auth.admin.deleteUser(engineerId)
-    if (authErr) throw new Error(`removeMorningFixtures auth deleteUser failed: ${authErr.message}`)
 
     engineerId = null
   }
@@ -355,4 +351,182 @@ export function lockAcquiredAt(session: WhatsAppSession): number {
     throw new Error('_test_lock_acquired_at missing from context — did 013 apply to the branch?')
   }
   return new Date(raw).getTime()
+}
+
+// ===========================================================================
+// Migration 007 (auth surgery) — two-tenant, JWT-scoped test harness.
+//
+// The helpers above use the SERVICE-ROLE client, which BYPASSES RLS. That is
+// fine for seeding/cleanup, but an RLS isolation test run as service role is
+// green by definition and proves nothing (review §6). So 007's tests need
+// clients authenticated as REAL users with real session JWTs. We obtain those
+// by giving throwaway test auth users a password (branch-only — prod stays
+// magic-link-only) and calling signInWithPassword against an ANON-key client.
+//
+// Post-007, creating an auth user fires on_auth_user_created -> handle_new_user,
+// which inserts a public.users stub (generated id, auth_id = NEW.id). The
+// fixture then CLAIMS that stub (update by auth_id) into a tenant + role.
+// ===========================================================================
+
+// Two tenants for the isolation test. Distinct from TEST_TENANT_ID so the 007
+// suite never collides with the morning/session fixtures.
+export const TEST_TENANT_A_ID = '00000000-0000-4000-a000-0000000007a0'
+export const TEST_TENANT_B_ID = '00000000-0000-4000-a000-0000000007b0'
+export const TEST_PROJECT_A_ID = '00000000-0000-4000-a000-0000000007a1'
+export const TEST_PROJECT_B_ID = '00000000-0000-4000-a000-0000000007b1'
+
+export const TEST_007_USER_A_EMAIL = 'zz-007-user-a@quoco.test'
+export const TEST_007_USER_B_EMAIL = 'zz-007-user-b@quoco.test'
+// Throwaway password used ONLY to mint session JWTs for these branch-only test
+// users. Never a production credential; prod auth is magic-link email only.
+export const TEST_007_PASSWORD = 'zz-007-Rehearsal-Pw-9f3c'
+
+export interface TwoTenantFixtures {
+  authUserAId: string
+  authUserBId: string
+  profileAId: string
+  profileBId: string
+}
+
+// Build a fresh ANON-key client and sign in as the given user, returning a
+// client whose requests carry that user's JWT (so RLS actually applies).
+export async function jwtClient(email: string, password: string): Promise<SupabaseClient> {
+  const client = createClient(
+    process.env.SUPABASE_TEST_URL!,
+    process.env.SUPABASE_TEST_ANON_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  )
+  const { error } = await client.auth.signInWithPassword({ email, password })
+  if (error) throw new Error(`jwtClient signIn (${email}) failed: ${error.message}`)
+  return client
+}
+
+// Idempotently ensure an auth user with a known password exists; returns its id.
+// listUsers with a generous page so branch reuse can find the existing row.
+async function ensureAuthUser(
+  db: SupabaseClient,
+  email: string,
+  password: string,
+): Promise<string> {
+  const { data: list, error: listErr } = await db.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  })
+  if (listErr) throw new Error(`ensureAuthUser listUsers failed: ${listErr.message}`)
+
+  const existing = list.users.find((u) => u.email === email)
+  if (existing) {
+    const { error } = await db.auth.admin.updateUserById(existing.id, {
+      password,
+      email_confirm: true,
+    })
+    if (error) throw new Error(`ensureAuthUser updateUserById (${email}) failed: ${error.message}`)
+    return existing.id
+  }
+
+  const { data, error } = await db.auth.admin.createUser({ email, password, email_confirm: true })
+  if (error || !data.user) {
+    throw new Error(`ensureAuthUser createUser (${email}) failed: ${error?.message ?? 'no user'}`)
+  }
+  return data.user.id
+}
+
+// Claim the trigger-created public.users stub for authUserId into a tenant/role.
+// Update-by-auth_id if the stub exists (the normal post-007 path); otherwise
+// insert one (defensive — e.g. if a prior run deleted the stub but not the auth
+// user). Returns the users.id (which is decoupled from authUserId post-007).
+async function claimProfile(
+  db: SupabaseClient,
+  authUserId: string,
+  tenantId: string,
+  role: string,
+  fullName: string,
+): Promise<string> {
+  const { data: existing, error: selErr } = await db
+    .from('users')
+    .select('id')
+    .eq('auth_id', authUserId)
+    .maybeSingle<{ id: string }>()
+  if (selErr) throw new Error(`claimProfile select failed: ${selErr.message}`)
+
+  if (existing) {
+    const { error } = await db
+      .from('users')
+      .update({ tenant_id: tenantId, role, full_name: fullName })
+      .eq('auth_id', authUserId)
+    if (error) throw new Error(`claimProfile update failed: ${error.message}`)
+    return existing.id
+  }
+
+  const { data: ins, error } = await db
+    .from('users')
+    .insert({ auth_id: authUserId, tenant_id: tenantId, role, full_name: fullName })
+    .select('id')
+    .single<{ id: string }>()
+  if (error || !ins) throw new Error(`claimProfile insert failed: ${error?.message ?? 'no row'}`)
+  return ins.id
+}
+
+// Create two tenants, two JWT-capable users (one per tenant), and one project
+// per tenant (created_by that tenant's user) for the RLS isolation read.
+// Idempotent. Call in beforeAll.
+export async function ensureTwoTenantFixtures(): Promise<TwoTenantFixtures> {
+  const db = testClient()
+
+  for (const [id, slug, name] of [
+    [TEST_TENANT_A_ID, 'zz-007-tenant-a', 'ZZ 007 Tenant A'],
+    [TEST_TENANT_B_ID, 'zz-007-tenant-b', 'ZZ 007 Tenant B'],
+  ] as const) {
+    const { error } = await db.from('tenants').upsert({ id, slug, name }, { onConflict: 'id' })
+    if (error) throw new Error(`ensureTwoTenantFixtures tenant ${slug} failed: ${error.message}`)
+  }
+
+  const authUserAId = await ensureAuthUser(db, TEST_007_USER_A_EMAIL, TEST_007_PASSWORD)
+  const authUserBId = await ensureAuthUser(db, TEST_007_USER_B_EMAIL, TEST_007_PASSWORD)
+
+  const profileAId = await claimProfile(db, authUserAId, TEST_TENANT_A_ID, 'admin', 'ZZ 007 User A')
+  const profileBId = await claimProfile(db, authUserBId, TEST_TENANT_B_ID, 'admin', 'ZZ 007 User B')
+
+  for (const [id, tenantId, createdBy, name] of [
+    [TEST_PROJECT_A_ID, TEST_TENANT_A_ID, profileAId, 'ZZ 007 Project A'],
+    [TEST_PROJECT_B_ID, TEST_TENANT_B_ID, profileBId, 'ZZ 007 Project B'],
+  ] as const) {
+    const { error } = await db
+      .from('projects')
+      .upsert({ id, tenant_id: tenantId, created_by: createdBy, name }, { onConflict: 'id' })
+    if (error) throw new Error(`ensureTwoTenantFixtures project ${name} failed: ${error.message}`)
+  }
+
+  return { authUserAId, authUserBId, profileAId, profileBId }
+}
+
+// Tear down the two-tenant fixtures in FK-safe order. The auth_id FK is
+// RESTRICT, so public.users rows must go before their auth.users rows; and
+// projects.created_by is NO ACTION, so projects must go before their users.
+// Call in afterAll.
+export async function removeTwoTenantFixtures(): Promise<void> {
+  const db = testClient()
+  const tenantIds = [TEST_TENANT_A_ID, TEST_TENANT_B_ID]
+
+  const { error: pmErr } = await db.from('project_members').delete().in('tenant_id', tenantIds)
+  if (pmErr) throw new Error(`removeTwoTenantFixtures project_members failed: ${pmErr.message}`)
+
+  const { error: projErr } = await db.from('projects').delete().in('tenant_id', tenantIds)
+  if (projErr) throw new Error(`removeTwoTenantFixtures projects failed: ${projErr.message}`)
+
+  const { error: userErr } = await db.from('users').delete().in('tenant_id', tenantIds)
+  if (userErr) throw new Error(`removeTwoTenantFixtures users failed: ${userErr.message}`)
+
+  for (const email of [TEST_007_USER_A_EMAIL, TEST_007_USER_B_EMAIL]) {
+    const { data: list, error: listErr } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 })
+    if (listErr) throw new Error(`removeTwoTenantFixtures listUsers failed: ${listErr.message}`)
+    const u = list.users.find((x) => x.email === email)
+    if (u) {
+      const { error } = await db.auth.admin.deleteUser(u.id)
+      if (error) throw new Error(`removeTwoTenantFixtures deleteUser (${email}) failed: ${error.message}`)
+    }
+  }
+
+  const { error: tenErr } = await db.from('tenants').delete().in('id', tenantIds)
+  if (tenErr) throw new Error(`removeTwoTenantFixtures tenants failed: ${tenErr.message}`)
 }

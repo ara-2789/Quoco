@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getProfile } from '@/lib/auth/profile'
 
 type DprRow = {
   id: string
@@ -18,16 +18,12 @@ function formatDate(date: string) {
 
 export default async function DprsPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) redirect('/login')
+  const profile = await getProfile()
 
   const { data: memberRows } = await supabase
     .from('project_members')
     .select('project_id')
-    .eq('user_id', user.id)
+    .eq('user_id', profile.id)
 
   const projectIds = (memberRows ?? []).map((m) => m.project_id as string)
 

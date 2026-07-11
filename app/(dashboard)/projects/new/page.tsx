@@ -1,22 +1,14 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getProfile } from '@/lib/auth/profile'
 
 async function createProject(formData: FormData) {
   'use server'
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) redirect('/login')
-
-  const { data: profile } = await supabase
-    .from('users')
-    .select('tenant_id')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) redirect('/login')
+  // getProfile() gates auth and fail-louds on a missing profile. profile.id
+  // (the decoupled users.id, NOT the auth uid) is the FK value written into
+  // created_by / project_members.user_id below.
+  const profile = await getProfile()
 
   const name = (formData.get('name') as string).trim()
   const contractValueRaw = (formData.get('contract_value') as string).trim()
@@ -32,7 +24,7 @@ async function createProject(formData: FormData) {
       contract_value: contractValue,
       start_date: startDate,
       expected_end_date: endDate,
-      created_by: user.id,
+      created_by: profile.id,
     })
     .select('id')
     .single()
@@ -46,7 +38,7 @@ async function createProject(formData: FormData) {
   const { error: memberError } = await supabase.from('project_members').insert({
     tenant_id: profile.tenant_id,
     project_id: project.id,
-    user_id: user.id,
+    user_id: profile.id,
     role: 'pm',
   })
 

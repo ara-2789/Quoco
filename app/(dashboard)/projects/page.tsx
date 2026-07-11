@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getProfile } from '@/lib/auth/profile'
 
 type ProjectRow = {
   id: string
@@ -38,16 +38,12 @@ function formatDate(date: string | null) {
 
 export default async function ProjectsPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) redirect('/login')
+  const profile = await getProfile()
 
   const { data: members } = await supabase
     .from('project_members')
     .select('role, projects(id, name, status, contract_value, start_date, expected_end_date)')
-    .eq('user_id', user.id)
+    .eq('user_id', profile.id)
 
   const rows = ((members ?? []) as unknown as MemberRow[]).filter(
     (m): m is MemberRow & { projects: ProjectRow } => m.projects !== null,
