@@ -462,8 +462,28 @@ lockstep)** — process risks, exactly what a second reviewer catches best.
 **Before touching prod (round-1 additions, point 7):**
 - **(a) Snapshot / confirm PITR checkpoint immediately before the prod apply.** A
   point-in-time restore **is** the real rollback for the first minutes of an
-  irreversible migration — the original draft never said so. We have PITR (Week 2).
+  irreversible migration — the original draft never said so. ~~We have PITR (Week 2).~~
   Note the exact timestamp before applying so a restore target is unambiguous.
+
+  > ⚠️ **DATED CORRECTION — 2026-07-10 (FLAG FOR REVIEWER):** the struck line above
+  > is **wrong**. CLAUDE.md's Week-2 Day-1 checklist says *"Supabase Pro + PITR
+  > provisioned — DONE"*, and this doc leaned on it throughout the rollback plan.
+  > **On checking the actual dashboard today, PITR is NOT enabled** — only
+  > **nightly scheduled physical backups** exist. This was assumed, never
+  > verified, until now.
+  >
+  > **Decision (recorded, not silent):** proceed with the 007 prod apply today
+  > relying on the **most recent scheduled backup — 2026-07-10 16:34:44 UTC** — as
+  > the rollback point, instead of PITR.
+  >
+  > **Consequence — a real reduction in rollback granularity vs. what was reviewed
+  > and approved:** an **hours-old snapshot** instead of near-instant
+  > point-in-time restore. Any writes between the snapshot and a rollback (e.g.
+  > new signups / check-ins during the window) would be lost on restore. R6's
+  > "PITR is your rollback for the first minutes" mitigation (§4) is therefore
+  > **weaker than stated** — factor this into the go/no-go. Options to restore the
+  > original granularity before applying: enable PITR now, or take a **fresh
+  > on-demand backup immediately before** the apply to shrink the loss window.
 - **(b) 30-minute investigation task: try the CLI against Supabase's *session
   pooler* connection string (IPv4).** The direct host is IPv6-only (what blocked
   013/014); the session pooler is IPv4 and may let `supabase db push` work
@@ -522,7 +542,8 @@ works, else SQL Editor + `supabase migration repair --status applied 007`).
 
 **Migration 014's pending prod apply:** apply 014 to prod **immediately after** 007
 is green on prod (007 is what makes real engineer rows possible, so
-`apply_morning_flow_turn` only becomes meaningful post-007). Sequence: PITR mark →
+`apply_morning_flow_turn` only becomes meaningful post-007). Sequence: ~~PITR mark~~
+**backup mark (scheduled backup 2026-07-10 16:34:44 UTC, or a fresh on-demand backup — PITR is not enabled; see the dated correction under §5(a))** →
 007 prod → verify → 014 prod → verify → repair tracking for both. (Reviewer
 confirmed — §8 Q5.)
 
