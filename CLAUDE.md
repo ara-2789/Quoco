@@ -296,8 +296,13 @@ Day 1 checklist:
    correction under §5(a) of docs/migration-007-checkpoint-1-review.md for the
    consequence (reduced rollback granularity: hours-old snapshot vs near-instant
    PITR) and the decision to proceed on the 2026-07-10 16:34:44 UTC scheduled
-   backup. To restore PITR granularity, enable PITR (still not done as of this
-   correction).
+   backup. To restore PITR granularity, enable PITR ~~(still not done as of this
+   correction)~~.
+   DATED UPDATE (2026-07-12): PITR is now ENABLED and observation-verified on
+   prod — Database → Backups → Point in time shows an active restore window
+   (05 Jul → present) at 2-minute granularity. The reduced-granularity caveat
+   above applied to the 007 apply (2026-07-10) only; from 2026-07-12 the
+   near-instant PITR rollback path is real and observed, per CLAUDE.md §0.
 3. Sentry wired, all environments — DONE (tested end-to-end, error confirmed
    landing in Sentry dashboard)
 4. NFR-16 jobs table — DONE (migration 006, live). Queue helper library,
