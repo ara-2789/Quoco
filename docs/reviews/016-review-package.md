@@ -1,9 +1,10 @@
 # Migration 016 (corrections) — reviewer package addendum
 
 Branch: `feat/migration-016-corrections` (off `main @ 8a875b8`)
-Commit: `236fb0a`
+Commits: `236fb0a` (migration + tests), `4997ee3` (this package), `e5b3abe` (Section 1 comment fix)
 Files: `supabase/migrations/016_corrections.sql`, `test/migration-016.test.ts`
-Status at time of writing: pushed; **test-db apply held pending owner sign-off**.
+Status: **applied to the test-db branch and fully verified** — see §6.
+Prod apply held pending owner sign-off + external reviewer.
 
 This addendum exists because GitHub has previously served a stale branch cache to
 the reviewer (see the 015 package). Everything needed to review 016 is inline here.
@@ -143,10 +144,55 @@ suite.
 
 ---
 
-## 5. Apply plan (held)
+## 5. Apply plan
 
 test-db branch (`exfccwlrhoutkgrlikod`) first → run suite (expect 49/49) → then
 prod via SQL Editor (CLI auth-blocked at 28P01, as with 013/014/015) → manual
 ledger INSERT into supabase_migrations.schema_migrations (→ 13 rows) → probes →
 schema.md 016 entry folding the F1/F2/F7 doc-drift fixes (stripe-rename lie, stale
 "007 owns these items" block, stale 013-repair-pending note).
+
+The test-db half is **done and verified** (§6). The prod half is held pending
+owner sign-off + external reviewer.
+
+---
+
+## 6. Branch verification (test-db `exfccwlrhoutkgrlikod`, 2026-07-12)
+
+**Applied.** The full `BEGIN…COMMIT` block ran clean on a fresh full-paste.
+
+### The 42710 story (told straight)
+The first apply attempt surfaced `42710` (duplicate_object). This was **not a
+migration defect** — it was a SQL-Editor partial-selection artifact: a subset of
+the block was selected/run, so a later statement re-encountered an object an
+earlier (already-run) statement had created. Diagnosed by running the constraint
+probes (P1/P5) directly, which showed the true partial state rather than a genuine
+conflict. Re-running in a **fresh tab, full paste, selection deselected before
+Run** applied the whole transaction atomically and cleanly. → Runbook rule for the
+prod apply: **fresh tab, full paste, deselect before Run.**
+
+### Corrected premise (Section 1 comment)
+During verification the Section 1 header comment's premise was corrected (commit
+`e5b3abe`): the 001 inline `role` CHECK is **auto-named `users_role_check` by
+Postgres's `<table>_<column>_check` convention**, not server-random. The DO-block
+dynamic `INTO STRICT` lookup stays as insurance (fails loud on mis-count), but the
+"server-named" justification was wrong and is now accurate.
+
+### Catalog probes — all five green
+- **P1** `users_role_check` def = `CHECK ((role = ANY (ARRAY['pm','qs','engineer','owner','subcontractor','admin'])))` — `owner` in, `client` out.
+- **P2** `tenants`: `payment_customer_id` (text), `paid_until` (timestamptz), `last_payment_ref` (text) present; **no** `stripe_customer_id`.
+- **P3** `projects.owner_user_id` FK present, `confdeltype = r` (ON DELETE RESTRICT).
+- **P4** `daily_logs`: `is_holiday` (boolean), `holiday_reason` (text), `evening_dependencies` (jsonb), `morning_dependencies` (jsonb), `morning_hindrances` (jsonb) present; **no** `evening_dependencies_tomorrow` / `_structured`.
+- **P5** `safety_incidents.submitted_via` default = `'whatsapp_scheduled'::text`; CHECK = `CHECK ((submitted_via = ANY (ARRAY['whatsapp_scheduled','whatsapp_adhoc','web_app'])))`.
+
+### Suite — 49/49
+`npm test` against the migrated test-db branch: **7 files, 49 tests passed,
+EXIT=0** (7 new T-016 + 42 existing: 007×9, 015×6, morning-flow×8,
+session-transition×5, unit×14). `tsc --noEmit` clean, no `any`. `pretest`
+profile-lookup guard passed; the allowlist guard confirmed the run targeted the
+test-db branch.
+
+**Pre-registered watch item — RESOLVED as expected.** T-016-02 passed: the
+`no_data_found` RAISE surfaced through PostgREST as SQLSTATE **`P0002`** exactly as
+the assertion pre-registered, and the tenant-rollback leg confirmed no orphaned
+tenant. No fix required.
