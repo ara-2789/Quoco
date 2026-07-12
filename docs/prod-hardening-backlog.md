@@ -79,3 +79,17 @@ precisely what creates that second user. Therefore: the column-grants migration
 reviewed by the developer friend, and applied to prod BEFORE any invitation
 flow work begins. Reviewer has asked to see the migration when drafted.
 Recorded 2026-07-10 per reviewer closeout feedback.
+
+## 9. SYSTEMIC: audit ALL UPDATE policies for column-bounding (same class as HIGH-1)
+
+The same no-column-bounds RLS class as HIGH-1 (migration 015, users_update)
+exists on `projects_update`, `invoices_update`, `whatsapp_sessions_*` and other
+UPDATE policies — a `USING`/`WITH CHECK` that gates the *row* but never restricts
+*which columns* an authenticated client may write, leaving the table-level UPDATE
+grant as the only (absent) column bound.
+
+**Fix:** audit **all** UPDATE policies for column-bounding needs and apply the
+same REVOKE-table-UPDATE / GRANT-column-UPDATE fix where warranted. Same deadline
+logic as HIGH-1 — land before invitations ship (a second real user is what turns
+self-only blast radius into cross-user). Recorded 2026-07-13 per 015 round-3
+sign-off carry item #3.
