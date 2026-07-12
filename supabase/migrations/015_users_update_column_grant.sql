@@ -1,0 +1,82 @@
+-- =============================================================
+-- 015_users_update_column_grant.sql
+-- SECURITY — close the users_update self-privilege-escalation hole.
+--
+-- HIGH-1 (review §11a). PRE-EXISTING since 002 — NOT introduced by 007;
+-- 007 merely re-signed the policy verbatim (id -> auth_id). The users_update
+-- RLS policy is:
+--     USING (auth_id = auth.uid()) WITH CHECK (auth_id = auth.uid())
+-- with NO column restriction. So any authenticated user can UPDATE their OWN
+-- row (which satisfies WITH CHECK) and in the same statement set role='admin'
+-- or repoint tenant_id to another tenant -> self-serve privilege escalation /
+-- tenant hopping, gated only by the client choosing not to send those columns.
+--
+-- FIX (review §11a): do NOT rely on the policy to bound columns. Revoke the
+-- table-level UPDATE from `authenticated` and re-grant it column-wise. Postgres
+-- checks column-level privileges at the SQL layer, BEFORE RLS is consulted, so
+-- an UPDATE touching any column outside the grant is rejected (SQLSTATE 42501)
+-- regardless of the RLS policy. The RLS policy still bounds the write to the
+-- caller's own row; the column grant bounds WHICH columns they may write.
+--
+-- COLUMNS GRANTED: (full_name, avatar_url) — the only two self-service profile
+-- columns on users today (verified 001_core_schema.sql:40-41). Deliberately
+-- EXCLUDED: role, tenant_id, auth_id, status, messaging_blocked,
+-- whatsapp_number, hierarchy_level — the escalation / tenant-hop / impersonation
+-- surface. Widen this grant later (a one-line follow-up) ONLY if a real
+-- user-writable column is added; never speculatively.
+--
+-- Plan of record: docs/migration-007-checkpoint-1-review.md §11a (HIGH-1).
+-- Reviewed on its own by the external reviewer per §11a's requirement.
+--
+-- HARD DEADLINE (§11a): land BEFORE a second real user exists in any tenant.
+-- Today the only authenticated user is the founder-admin, so the blast radius
+-- is self-only; the moment a second PM is invited it becomes cross-user. Gates
+-- the ENG-01 / invitations work.
+--
+-- BLAST RADIUS — every authenticated (non-service-role) writer of users
+-- (review §3 audit):
+--   * complete_onboarding() RPC (005:76 / 007:191) writes tenant_id/full_name/
+--     role, but runs SECURITY DEFINER: its body executes with the FUNCTION
+--     OWNER's privileges, not the caller's, so this REVOKE does NOT touch it.
+--     Callers keep only EXECUTE (005:86), unchanged here.
+--   * handle_new_user() trigger INSERTs (not UPDATE) and is DEFINER-owned.
+--   * App server components (review §3c) only READ users (.eq('auth_id', ...));
+--     the onboarding page collects full_name via the complete_onboarding RPC,
+--     NOT a direct users UPDATE. No app path issues a direct authenticated
+--     UPDATE on public.users.
+--   * Webhook / 011-014 RPCs use the service role (bypasses grants) and never
+--     update users.
+-- => No legitimate path breaks. Only the raw-client escalation UPDATE closes.
+--
+-- RERUN SEMANTICS: fully idempotent. REVOKE and GRANT are declarative — running
+-- this twice leaves the same end state. No data touched, no schema changed.
+--
+-- ROLLBACK: fully reversible, no data/PITR dependency (unlike 007). Down path:
+--     GRANT UPDATE ON public.users TO authenticated;
+-- restores the pre-015 table-level grant.
+--
+-- PROD APPLY RUNBOOK: the prod apply step includes observing the PITR restore
+-- window state (Database -> Backups -> Point in time) immediately before
+-- applying — per CLAUDE.md §0 standing rule (rollback mechanisms verified by
+-- observation, never by checklist status). Trivial for a grants-only migration;
+-- the rule applies regardless.
+-- =============================================================
+
+BEGIN;
+
+-- -------------------------------------------------------------
+-- 1. Drop the blanket table-level UPDATE from authenticated. This is what
+--    currently lets a client write ANY column (role, tenant_id, ...) as long
+--    as RLS's WITH CHECK passes (the row stays theirs).
+-- -------------------------------------------------------------
+REVOKE UPDATE ON public.users FROM authenticated;
+
+-- -------------------------------------------------------------
+-- 2. Re-grant UPDATE only on the self-service profile columns. Anything not
+--    listed here is now rejected at the column-privilege layer (42501), upstream
+--    of RLS. RLS (users_update: auth_id = auth.uid()) still bounds the write to
+--    the caller's own row.
+-- -------------------------------------------------------------
+GRANT UPDATE (full_name, avatar_url) ON public.users TO authenticated;
+
+COMMIT;
