@@ -22,6 +22,8 @@ import {
 //   T-015-04  authenticated UPDATE of full_name/avatar_url -> allowed
 //   T-015-05  complete_onboarding RPC (SECURITY DEFINER) still writes role/
 //             tenant_id/full_name -> the REVOKE did not break the privileged writer
+//   T-015-06  cross-row write on a GRANTED column (A -> B's full_name) -> RLS
+//             row-bounds it to a zero-row no-op; B's row is untouched
 //
 // All escalation attempts fail with SQLSTATE 42501 (insufficient_privilege) at
 // the column-privilege layer — strictly upstream of RLS, NOT a silent zero-row
@@ -35,6 +37,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // User A's seeded profile full_name (helpers/db.ts claimProfile). T-015-04
 // mutates and restores it, so the fixture stays stable across the suite.
 const USER_A_FULL_NAME = 'ZZ 007 User A'
+// User B's seeded profile full_name — T-015-06 asserts it stays untouched.
+const USER_B_FULL_NAME = 'ZZ 007 User B'
 
 let fx: TwoTenantFixtures
 
@@ -234,5 +238,41 @@ describe('migration 015 — users_update column grant', () => {
       await db.auth.admin.deleteUser(authId)
       if (createdTenantId) await db.from('tenants').delete().eq('id', createdTenantId)
     }
+  })
+
+  // -------------------------------------------------------------------------
+  // T-015-06 — cross-row write on a GRANTED column. full_name IS granted, so the
+  // column-privilege layer PERMITS this UPDATE; what must stop it is RLS bounding
+  // the write to the caller's own row. User A targets User B's row by id. Expect
+  // a zero-row NO-OP (no error — the column grant is satisfied — but B's row is
+  // filtered out by users_update's USING (auth_id = auth.uid())).
+  //
+  // Grants bound COLUMNS; RLS bounds ROWS. T-015-01..03 guard the column half;
+  // this test guards the row half, so a future policy loosening (e.g. widening
+  // users_update's USING clause) cannot silently pass the suite.
+  // -------------------------------------------------------------------------
+  it('T-015-06: A cannot write B\'s row even on a granted column (RLS row-bounds it)', async () => {
+    const clientA = await jwtClient(TEST_007_USER_A_EMAIL, TEST_007_PASSWORD)
+    try {
+      const { data, error } = await clientA
+        .from('users')
+        .update({ full_name: 'hijacked' })
+        .eq('id', fx.profileBId) // B's row, not A's -> RLS USING filters it out
+        .select('id')
+      // No privilege error (full_name is granted); RLS makes it a zero-row no-op.
+      expect(error).toBeNull()
+      expect(data ?? []).toHaveLength(0)
+    } finally {
+      await clientA.auth.signOut()
+    }
+
+    // Service-role read-back: B's full_name is exactly the fixture baseline.
+    const db = testClient()
+    const { data: row } = await db
+      .from('users')
+      .select('full_name')
+      .eq('id', fx.profileBId)
+      .single<{ full_name: string }>()
+    expect(row?.full_name).toBe(USER_B_FULL_NAME)
   })
 })

@@ -25,8 +25,28 @@
 -- surface. Widen this grant later (a one-line follow-up) ONLY if a real
 -- user-writable column is added; never speculatively.
 --
+-- BROADER GRANT HARDENING (review round-2 finding #2): Supabase's default
+-- privileges GRANT ALL on every public table to BOTH `anon` AND `authenticated`
+-- at table-creation time. So today `anon` holds INSERT/UPDATE/DELETE on
+-- public.users, and `authenticated` holds INSERT/DELETE, purely by default —
+-- none of which any code path uses. RLS currently denies `anon` (no policy is
+-- written TO anon), so this is not exploitable today. But this migration's whole
+-- thesis is that the privilege layer should bound what the privilege layer can
+-- bound, rather than leaning on RLS as the only gate. Defence in depth: strip the
+-- unused table privileges so a future accidental `TO anon` policy, or an RLS
+-- regression, cannot become a write vector. After this migration:
+--   * anon:          NO INSERT / UPDATE / DELETE on public.users (SELECT
+--                    untouched here — no anon SELECT policy exists, so RLS still
+--                    denies reads; we only strip the write verbs by default).
+--   * authenticated: UPDATE only, column-scoped to (full_name, avatar_url);
+--                    NO INSERT, NO DELETE.
+-- Verified (Task 2a) that no legitimate path INSERTs/DELETEs users as either
+-- role: handle_new_user INSERTs as its SECURITY DEFINER owner, complete_onboarding
+-- only UPDATEs (also DEFINER), the webhook read uses the service role, and the
+-- test harness writes via the service-role client — all bypass these grants.
+--
 -- Plan of record: docs/migration-007-checkpoint-1-review.md §11a (HIGH-1).
--- Reviewed on its own by the external reviewer per §11a's requirement.
+-- Requires external review per §11a before prod apply.
 --
 -- HARD DEADLINE (§11a): land BEFORE a second real user exists in any tenant.
 -- Today the only authenticated user is the founder-admin, so the blast radius
@@ -51,15 +71,20 @@
 -- RERUN SEMANTICS: fully idempotent. REVOKE and GRANT are declarative — running
 -- this twice leaves the same end state. No data touched, no schema changed.
 --
--- ROLLBACK: fully reversible, no data/PITR dependency (unlike 007). Down path:
---     GRANT UPDATE ON public.users TO authenticated;
--- restores the pre-015 table-level grant.
+-- ROLLBACK: fully reversible, no data/PITR dependency (unlike 007). Down path
+-- restores the Supabase default privileges this migration narrowed:
+--     GRANT INSERT, UPDATE, DELETE ON public.users TO authenticated;
+--     GRANT INSERT, UPDATE, DELETE ON public.users TO anon;
+-- (Reverting only step 2's column grant — i.e. `GRANT UPDATE ON public.users TO
+--  authenticated` — is what undoes the ORIGINAL, already-applied 015; the two
+--  lines above additionally undo step 3's anon/authenticated write revokes.)
 --
 -- PROD APPLY RUNBOOK: the prod apply step includes observing the PITR restore
 -- window state (Database -> Backups -> Point in time) immediately before
 -- applying — per CLAUDE.md §0 standing rule (rollback mechanisms verified by
--- observation, never by checklist status). Trivial for a grants-only migration;
--- the rule applies regardless.
+-- observation, never by checklist status). (PITR enabled + observation-verified
+-- 2026-07-12: active restore window 05 Jul -> present, 2-min granularity.)
+-- Trivial for a grants-only migration; the rule applies regardless.
 -- =============================================================
 
 BEGIN;
@@ -78,5 +103,14 @@ REVOKE UPDATE ON public.users FROM authenticated;
 --    the caller's own row.
 -- -------------------------------------------------------------
 GRANT UPDATE (full_name, avatar_url) ON public.users TO authenticated;
+
+-- -------------------------------------------------------------
+-- 3. Defence in depth (review round-2 finding #2): strip the unused,
+--    default-granted write privileges. anon loses ALL write verbs; authenticated
+--    loses INSERT/DELETE (keeping only the column-scoped UPDATE from step 2).
+--    No code path uses these — see the BROADER GRANT HARDENING header + Task 2a.
+-- -------------------------------------------------------------
+REVOKE INSERT, UPDATE, DELETE ON public.users FROM anon;
+REVOKE INSERT, DELETE ON public.users FROM authenticated;
 
 COMMIT;
