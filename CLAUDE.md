@@ -303,10 +303,13 @@ Day 1 checklist:
    (05 Jul → present) at 2-minute granularity. The reduced-granularity caveat
    above applied to the 007 apply (2026-07-10) only; from 2026-07-12 the
    near-instant PITR rollback path is real and observed, per CLAUDE.md §0.
-   FINAL (2026-07-13): enablement date was 2026-07-12 (observed same day). The
+   FINAL (2026-07-12): enablement date was 2026-07-12 (observed same day). The
    2026-07-10 observation (not enabled) was correct — the restore window's
    retroactive reach to 05 Jul comes from Supabase exposing retained WAL/backup
    history at enablement, not from PITR having existed earlier. Chain closed.
+   [Date-corrected: this FINAL entry was first committed (fe3bd85) mislabelled
+   2026-07-13; actual date 2026-07-12. Corrected forward here, not by history
+   rewrite, since the reviewer may have pulled fe3bd85.]
 3. Sentry wired, all environments — DONE (tested end-to-end, error confirmed
    landing in Sentry dashboard)
 4. NFR-16 jobs table — DONE (migration 006, live). Queue helper library,

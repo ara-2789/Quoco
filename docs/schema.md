@@ -294,6 +294,28 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        connectivity is resolved, to keep the ledger honest before any future
        migration is pushed via the CLI.
 
+015 — users_update column grant — SECURITY (HIGH-1, review §11a).
+       REVOKE UPDATE ON public.users FROM authenticated; re-GRANT column-wise on
+       (full_name, avatar_url) only. Closes the pre-existing self-privilege-
+       escalation / tenant-hop hole where an authenticated user could UPDATE
+       their own row and set role='admin' or repoint tenant_id — RLS WITH CHECK
+       alone did not bound columns; Postgres rejects an UPDATE touching an
+       ungranted column at the privilege layer (42501), upstream of RLS. Also
+       (round-2 defence-in-depth) REVOKE INSERT,UPDATE,DELETE FROM anon and
+       INSERT,DELETE FROM authenticated — strips unused default-granted write
+       verbs. complete_onboarding (SECURITY DEFINER) unaffected — runs as owner.
+       Fully reversible (down: GRANT INSERT,UPDATE,DELETE ON public.users TO
+       authenticated + anon).
+
+       APPLIED TO PRODUCTION VIA SQL EDITOR on 2026-07-12 (CLI auth-blocked at
+       28P01; SQL Editor is the deliberate fallback, as with 013/014). Ledger
+       tracked via manual INSERT into supabase_migrations.schema_migrations the
+       same day (the SQL-Editor equivalent of `supabase migration repair
+       --status applied 015`); post-insert ledger = 12 rows. Verified on the
+       test-db branch (42/42) AND prod (probes A/B/C/D green) before + after
+       apply. External reviewer signed off round 3 (all six checks). Full
+       artifact package: docs/reviews/015-review-package.md.
+
 NOTE ON CLI MIGRATION TRACKING: migrations 001-005 were originally applied
 via the Supabase dashboard SQL editor, not the CLI, so the CLI's remote
 tracking table had no record of them. Before pushing 006, this was repaired
