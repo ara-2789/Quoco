@@ -91,5 +91,5 @@ grant as the only (absent) column bound.
 **Fix:** audit **all** UPDATE policies for column-bounding needs and apply the
 same REVOKE-table-UPDATE / GRANT-column-UPDATE fix where warranted. Same deadline
 logic as HIGH-1 — land before invitations ship (a second real user is what turns
-self-only blast radius into cross-user). Recorded 2026-07-13 per 015 round-3
+self-only blast radius into cross-user). Recorded 2026-07-12 per 015 round-3
 sign-off carry item #3.
