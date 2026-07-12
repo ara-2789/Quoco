@@ -489,6 +489,13 @@ lockstep)** — process risks, exactly what a second reviewer catches best.
   > (Database → Backups offers only the nightly scheduled backups). So the only
   > way to restore granularity is to **enable PITR**; absent that, the
   > 16:34:44 UTC scheduled backup stands as today's rollback point.
+  > **FINAL (2026-07-13):** PITR enablement date was **2026-07-12** (observed same
+  > day); it is now enabled + observation-verified on prod (active restore window,
+  > 2-min granularity). The 2026-07-10 observation (not enabled) was **correct** —
+  > the restore window's retroactive reach to 05 Jul comes from Supabase exposing
+  > retained WAL/backup history at enablement, **not** from PITR having existed
+  > earlier. Chain closed; from 2026-07-12 the near-instant PITR rollback path is
+  > real (migration 015's prod apply relies on it, not on a scheduled backup).
 - **(b) 30-minute investigation task: try the CLI against Supabase's *session
   pooler* connection string (IPv4).** The direct host is IPv6-only (what blocked
   013/014); the session pooler is IPv4 and may let `supabase db push` work
