@@ -43,9 +43,10 @@ BEGIN;
 --    excludes 'owner', so any UPDATE ... = 'owner' would be rejected while it
 --    stands (it "passes" today only because zero 'client' rows exist — not a
 --    guarantee to build on). Order: drop old constraint -> update data -> add
---    new constraint. The 001 inline CHECK is server-named; find it dynamically
---    (INTO STRICT, 007 pattern) so a mis-count fails loud rather than dropping
---    the wrong constraint.
+--    new constraint. The 001 inline CHECK is auto-named users_role_check by
+--    Postgres's <table>_<column>_check convention; we still find it dynamically
+--    (INTO STRICT, 007 pattern) as insurance so a mis-count fails loud rather
+--    than dropping the wrong constraint if that convention ever didn't hold.
 -- ----------------------------------------------------------------------------
 DO $$
 DECLARE
