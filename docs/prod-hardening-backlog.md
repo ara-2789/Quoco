@@ -102,3 +102,27 @@ folds in `owner_user_id`'s missing same-tenant enforcement (deferred out of 016 
 plain FK lets a project point at an owner row in another tenant; composite-FK /
 trigger territory), which belongs to this same systemic tenant-scoping pass.
 Reserved 2026-07-13 per 016 round-2 reviewer round.
+
+## 10. Introduce generated DB types + typed Supabase clients
+
+`types/database.ts` has **never existed** (`git log --all -- types/database.ts` →
+empty) and **no code imports generated DB types** — all three Supabase clients
+(`lib/supabase/client.ts`, `server.ts`, `service.ts`) call their `create*Client`
+constructors **untyped** (no `<Database>` generic). CLAUDE.md §9 lists
+`types/database.ts` and §6 says "Generate DB types from the schema — do not
+hand-write them," but the pipeline was never stood up.
+
+**Why it matters (real but not yet live):** the concern raised in the 016 review
+— schema/type drift silently biting future code — is genuine, but it only
+becomes live **the day generated types are introduced and the clients consume
+them**. Until then a shape change (like 016's) cannot break a types file that
+doesn't exist, and `tsc --noEmit` stays clean regardless.
+
+**Fix (its own feature — own session, own PR):** install the Supabase CLI +
+authenticate, `supabase gen types typescript --project-id <ref>` against the
+migrated branch, commit `types/database.ts`, wire the `<Database>` generic into
+the three clients, and add a regen step to the migration runbook so every future
+migration regenerates types as part of "done." **Sequencing:** whenever — likely
+alongside or just before the Week-3/4 code (daily-logs / DPR) that would first
+benefit from typed queries. Not an 016 merge gate. Recorded 2026-07-13 per 016
+round-2 reviewer round (F1 marked N/A for 016, routed to reviewer for confirm).
