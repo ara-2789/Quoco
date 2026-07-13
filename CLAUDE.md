@@ -142,6 +142,16 @@ email-invite auth flow. Do NOT create auth.users entries for them.
 TypeScript
 - Always TypeScript. No `any` under any circumstances.
 - Generate DB types from the schema — do not hand-write them.
+  DATED NOTE (2026-07-13, per 016 round-3 review): the generated-types pipeline
+  does NOT yet exist. The actual interim practice is: Supabase clients
+  (`client.ts`, `server.ts`, `service.ts`) are **untyped** (no `<Database>`
+  generic), and tests type individual reads inline with `.single<{...}>()`
+  generics. No `types/database.ts` has ever existed (see the §9 correction).
+  Generated-types adoption is DEFERRED to a NAMED milestone: a **dedicated PR
+  immediately after 016 merges, before Morning Flow Pass 2 merges**. That PR
+  stands up `supabase gen types`, wires `<Database>` into the three clients, and
+  activates this standing runbook-template line: **"regenerate types after every
+  schema migration"** (inert until the pipeline exists; mandatory from that PR on).
 
 Money
 - Every amount/rate/cost/value column: DECIMAL(12,2). No exceptions.
@@ -266,8 +276,11 @@ quoco/
 │   ├── dpr/{generate,render}       ← Week 4
 │   └── queue/jobs                  ← Week 2
 ├── supabase/migrations/            ← 001–006 live; 007–009 pending
-├── types/database.ts
 └── proxy.ts                        ← done
+# DATED CORRECTION (2026-07-13, per 016 round-3 review): a `types/database.ts`
+# entry was listed here but the file NEVER EXISTED (git log --all -- confirms
+# empty). Struck to stop it reading as a real artifact. Generated DB types are a
+# deferred milestone — see the dated note under §6.
 
 ---
 
