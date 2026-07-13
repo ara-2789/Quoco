@@ -31,6 +31,16 @@
   in a checklist. Origin: the 007 apply (2026-07-10), where "PITR provisioned
   — DONE" had been false for weeks and was caught only by direct dashboard
   inspection on apply day. A record of a thing is not the thing.
+- ARTIFACT PROVENANCE IS PINNED, NOT PARAPHRASED (standing rule since 2026-07-13,
+  per the 016 sign-off round). From migration 017 onward, every reviewer-package
+  artifact is pinned to the exact source, never retyped or summarised:
+    * file contents via `git show <sha>:path` (the SHA is what gets pasted to
+      prod — the terminal frame, commands visible, goes into the PR record);
+    * probe captures with the query text visible above its result;
+    * suite output with the commit SHA echoed at the top of the run.
+  Rationale: paraphrase drifts and GitHub can serve a stale branch cache to the
+  reviewer; a pinned `git show`/probe frame is verifiable and cache-proof. The
+  canonical apply skeleton lives in docs/migration-runbook-template.md.
 
 ---
 
