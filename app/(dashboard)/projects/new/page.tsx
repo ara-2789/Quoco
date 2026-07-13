@@ -10,6 +10,16 @@ async function createProject(formData: FormData) {
   // created_by / project_members.user_id below.
   const profile = await getProfile()
 
+  // getProfile() guarantees a profile exists, but the generated type marks
+  // users.tenant_id nullable (engineer/owner rows can be pre-tenant). A PM
+  // creating a project is always tenant-scoped, so a null here is a broken
+  // invariant — fail loud rather than write a null tenant_id via a `!` assert.
+  if (!profile.tenant_id) {
+    throw new Error(
+      `createProject: profile ${profile.id} has no tenant_id — cannot create a project`,
+    )
+  }
+
   const name = (formData.get('name') as string).trim()
   const contractValueRaw = (formData.get('contract_value') as string).trim()
   const startDate = (formData.get('start_date') as string).trim() || null
