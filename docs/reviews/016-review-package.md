@@ -147,10 +147,41 @@ suite.
 ## 5. Apply plan
 
 test-db branch (`exfccwlrhoutkgrlikod`) first → run suite (expect 49/49) → then
-prod via SQL Editor (CLI auth-blocked at 28P01, as with 013/014/015) → manual
-ledger INSERT into supabase_migrations.schema_migrations (→ 13 rows) → probes →
-schema.md 016 entry folding the F1/F2/F7 doc-drift fixes (stripe-rename lie, stale
-"007 owns these items" block, stale 013-repair-pending note).
+prod via SQL Editor → manual ledger INSERT into
+supabase_migrations.schema_migrations (→ 13 rows) → probes → schema.md 016 entry
+folding the F1/F2/F7 doc-drift fixes (stripe-rename lie, stale "007 owns these
+items" block, stale 013-repair-pending note).
+
+**Ledger method (reconciled).** Both 015 and 016 record their ledger row via a
+**manual `INSERT` into `supabase_migrations.schema_migrations` in the SQL
+Editor**. The `supabase migration repair --status applied` phrasing used for 015
+was the **CLI-equivalent label** for what that INSERT accomplishes, not the method
+actually executed — the CLI stays **28P01-blocked** for this project (auth), so no
+`repair`/`db push` ran for either migration. 016 uses the same manual INSERT; the
+ledger goes from 12 → 13 rows.
+
+**Pre-apply gate (prod) — definition probe, replaces the row-count probe.**
+Before pasting the migration, run the role-constraint definition check and read
+the pre-state, not just its cardinality:
+
+```sql
+SELECT conname, pg_get_constraintdef(oid) AS def
+FROM pg_constraint
+WHERE conrelid = 'public.users'::regclass
+  AND contype = 'c'
+  AND pg_get_constraintdef(oid) ILIKE '%role%';
+```
+
+- **Clean pre-state → proceed:** exactly **one** row whose `def` **contains
+  `'client'` and does NOT contain `'owner'`** (the untouched 001 constraint).
+- **Anything else → STOP:** zero rows, more than one row, or a `def` already
+  mentioning `'owner'` means the migration is partially applied or in an
+  unexpected state (this is exactly what the 42710 partial-selection would have
+  left behind, had it not rolled back). Do not paste; investigate first.
+
+Then: capture PITR restore point → fresh tab, full paste, **deselect before
+Run** → re-run the same probe (now: one row, `'owner'` present, `'client'`
+absent) → P2–P5 → manual ledger INSERT.
 
 The test-db half is **done and verified** (§6). The prod half is held pending
 owner sign-off + external reviewer.
@@ -161,15 +192,33 @@ owner sign-off + external reviewer.
 
 **Applied.** The full `BEGIN…COMMIT` block ran clean on a fresh full-paste.
 
-### The 42710 story (told straight)
+### The 42710 story (mechanism now fully closed)
 The first apply attempt surfaced `42710` (duplicate_object). This was **not a
-migration defect** — it was a SQL-Editor partial-selection artifact: a subset of
-the block was selected/run, so a later statement re-encountered an object an
-earlier (already-run) statement had created. Diagnosed by running the constraint
-probes (P1/P5) directly, which showed the true partial state rather than a genuine
-conflict. Re-running in a **fresh tab, full paste, selection deselected before
-Run** applied the whole transaction atomically and cleanly. → Runbook rule for the
-prod apply: **fresh tab, full paste, deselect before Run.**
+migration defect** — it was a SQL-Editor partial-selection artifact, and the exact
+mechanism is now understood end to end:
+
+1. The highlighted selection **started after the Section 1 DO block** — so the
+   dynamic `DROP CONSTRAINT` never ran. The selection began at the `ADD
+   CONSTRAINT users_role_check` statement.
+2. That `ADD` therefore ran **without the preceding DROP**, and collided with the
+   **original 001 constraint** — which is itself convention-named
+   `users_role_check` (Postgres's `<table>_<column>_check`). Same name already
+   present → `42710 duplicate_object`. (This is incidental confirmation that the
+   corrected auto-naming premise below is right: the collision *was* with the
+   identically-named original.)
+3. A multi-statement selection run in the SQL Editor **without an explicit
+   `BEGIN`** executes as **one implicit transaction**. So the `42710` failure
+   **rolled back everything in the selection**, including the `UPDATE … SET
+   role='owner'`. Nothing was half-applied.
+4. Confirmed by re-probing: the **pre-state was unchanged** — the original single
+   `users_role_check` still present, no data mutated. A **full re-run** (whole
+   file, fresh tab, nothing selected) applied the complete `BEGIN…COMMIT`
+   atomically and cleanly.
+
+→ Runbook rule for the prod apply: **fresh tab, full paste, deselect before Run**
+(a stray highlight is silently treated as "run only this"). The pre-apply
+definition probe below is the belt to that braces — it refuses to proceed unless
+the pre-state is exactly the one original `client`-bearing constraint.
 
 ### Corrected premise (Section 1 comment)
 During verification the Section 1 header comment's premise was corrected (commit
