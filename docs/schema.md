@@ -66,7 +66,7 @@ Standard policy for every tenant-scoped table:
 - plan TEXT DEFAULT 'trial' CHECK(trial/starter/growth/pro) (BETA)
 - trial_ends_at TIMESTAMPTZ (BETA)
 - payment_customer_id TEXT (BETA) — was stripe_customer_id, renamed in migration
-  016 (applied to prod 2026-07-12). [DATED CORRECTION 2026-07-13: this line
+  016 (applied to prod 2026-07-13). [DATED CORRECTION 2026-07-13: this line
   previously read "renamed in 006" — that was FALSE; no migration renamed it
   before 016. stripe_customer_id was live from 001 through 015; 016 did the rename.]
 - paid_until TIMESTAMPTZ (BETA)
@@ -263,7 +263,7 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        were EVICTED from 007 per checkpoint-1 review §1b — so a bug in a rename
        could never force rollback pressure on the irreversible auth change. The
        APPLIED 007 is IDENTITY-SURGERY ONLY. Those bullets shipped in
-       **migration 016** (applied to prod 2026-07-12) — see the 016 entry below.
+       **migration 016** (applied to prod 2026-07-13) — see the 016 entry below.
        The bullets are retained here for historical continuity, NOT as current
        truth; 016 is their authoritative home.
        - Decouple users.id from auth.users FK
@@ -353,16 +353,19 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        Deferred (NOT in 016): complete_onboarding double-call minting → invitations;
        owner_user_id same-tenant enforcement → migration 017 (backlog item 9).
 
-       APPLIED TO PRODUCTION VIA SQL EDITOR on 2026-07-12, from the PINNED branch
+       APPLIED TO PRODUCTION VIA SQL EDITOR on 2026-07-13, from the PINNED branch
        tip (git show <sha>:supabase/migrations/016_corrections.sql; frame in the
        review package). CLI auth-blocked at 28P01, SQL Editor is the deliberate
        fallback (as with 013/014/015). Ledger tracked via manual INSERT into
-       supabase_migrations.schema_migrations the same day; post-insert ledger = 13
-       rows. Verified on the test-db branch (50/50, incl. T-016-08) AND prod (six
-       probes P1–P6 green: role CHECK, tenants cols, owner_user_id confdeltype='r',
-       daily_logs shape, submitted_via default+CHECK, complete_onboarding
-       prosecdef+search_path). External reviewer signed off with pinned-artifact
-       provenance requirements. Full package: docs/reviews/016-review-package.md.
+       supabase_migrations.schema_migrations the same day (2026-07-13); post-insert
+       ledger = 13 rows. The six prod probes P1–P6 (role CHECK, tenants cols,
+       owner_user_id confdeltype='r', daily_logs shape, submitted_via
+       default+CHECK, complete_onboarding prosecdef+search_path) all green on
+       2026-07-13. DATE SPLIT: the branch rehearsal, the F3-1/F3-2/F5-1 data probes,
+       the test-db verification (50/50, incl. T-016-08), and the reviewer rounds
+       were 2026-07-12; the prod apply, the six prod probes, and the ledger INSERT
+       are 2026-07-13. External reviewer signed off with pinned-artifact provenance
+       requirements. Full package: docs/reviews/016-review-package.md.
 
 NOTE ON CLI MIGRATION TRACKING: migrations 001-005 were originally applied
 via the Supabase dashboard SQL editor, not the CLI, so the CLI's remote
