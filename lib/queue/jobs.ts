@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import type { Json } from '@/types/database'
 
 export type JobType =
   | 'dpr_generate'
@@ -36,7 +37,7 @@ function backoffSeconds(attemptCount: number): number {
  */
 export async function enqueueJob(
   type: JobType,
-  payload: Record<string, unknown>,
+  payload: Json,
 ): Promise<Job> {
   const supabase = createServiceClient()
 

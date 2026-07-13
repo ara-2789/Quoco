@@ -56,8 +56,11 @@ export async function acquireAndTransition(params: {
   const { data, error } = await supabase.rpc('acquire_and_transition_session', {
     p_phone_number: params.phoneNumber,
     p_tenant_id: params.tenantId,
-    p_user_id: params.userId,
-    p_requested_flow: params.requestedFlow,
+    // gen types marks these args non-null, but the DB function accepts null by
+    // design (userId null for an unregistered sender; requestedFlow null =
+    // "advance the active flow"). Cast until RPC arg typing is migrated.
+    p_user_id: params.userId as string,
+    p_requested_flow: params.requestedFlow as SessionFlow,
     p_caller: params.caller,
     ...(params.now !== undefined ? { p_now: params.now } : {}),
     ...(params.testSleepMs !== undefined ? { p_test_sleep_ms: params.testSleepMs } : {}),
@@ -69,7 +72,11 @@ export async function acquireAndTransition(params: {
     )
   }
 
-  return data as WhatsAppSession
+  // gen types now types .rpc() returns as Json, which doesn't structurally
+  // overlap the app-level WhatsAppSession (PendingFlow[] etc.). Cast through
+  // unknown for now — proper RPC return typing is deferred to the incremental
+  // call-site migration (no RPC plumbing this hour).
+  return data as unknown as WhatsAppSession
 }
 
 /**
@@ -92,5 +99,7 @@ export async function drainNextPendingFlow(params: {
     throw new Error(`drain_next_pending_flow failed for ${params.phoneNumber}: ${error.message}`)
   }
 
-  return (data as WhatsAppSession | null) ?? null
+  // Cast through unknown — see the note in acquireAndTransition; proper RPC
+  // return typing is deferred to the incremental call-site migration.
+  return (data as unknown as WhatsAppSession | null) ?? null
 }

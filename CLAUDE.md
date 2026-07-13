@@ -152,16 +152,22 @@ email-invite auth flow. Do NOT create auth.users entries for them.
 TypeScript
 - Always TypeScript. No `any` under any circumstances.
 - Generate DB types from the schema — do not hand-write them.
-  DATED NOTE (2026-07-13, per 016 round-3 review): the generated-types pipeline
-  does NOT yet exist. The actual interim practice is: Supabase clients
-  (`client.ts`, `server.ts`, `service.ts`) are **untyped** (no `<Database>`
-  generic), and tests type individual reads inline with `.single<{...}>()`
-  generics. No `types/database.ts` has ever existed (see the §9 correction).
-  Generated-types adoption is DEFERRED to a NAMED milestone: a **dedicated PR
-  immediately after 016 merges, before Morning Flow Pass 2 merges**. That PR
-  stands up `supabase gen types`, wires `<Database>` into the three clients, and
-  activates this standing runbook-template line: **"regenerate types after every
-  schema migration"** (inert until the pipeline exists; mandatory from that PR on).
+  DATED NOTE (2026-07-13, per 016 round-3 review) — SUPERSEDED 2026-07-13 by the
+  generated-types PR (feat/generated-db-types), see the ACTIVE note below. The
+  original note recorded the interim state: the pipeline did NOT yet exist,
+  clients were untyped, no `types/database.ts` existed, and adoption was DEFERRED
+  to the named milestone (a dedicated PR after 016 merges, before Morning Flow
+  Pass 2 merges).
+  DATED NOTE — ACTIVE (2026-07-13, feat/generated-db-types PR): the generated-types
+  pipeline is now STOOD UP. `types/database.ts` exists, generated via
+  `npx supabase gen types typescript --linked --schema public` against prod
+  (`jvxwqignooseazzmwhvl`; prod and test-db are schema-identical post-016). The
+  three Supabase clients (`client.ts`, `server.ts`, `service.ts`) now carry the
+  `<Database>` generic. Call sites are migrated INCREMENTALLY: existing inline
+  `.single<{...}>()` generics remain valid and stay until touched — the client
+  generic is additive. The standing runbook-template line **"regenerate types
+  after every schema migration"** is now ACTIVE (no longer inert): from this PR
+  on, every schema migration re-runs the gen command and commits the diff.
 
 Money
 - Every amount/rate/cost/value column: DECIMAL(12,2). No exceptions.
