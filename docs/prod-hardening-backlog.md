@@ -93,3 +93,12 @@ same REVOKE-table-UPDATE / GRANT-column-UPDATE fix where warranted. Same deadlin
 logic as HIGH-1 — land before invitations ship (a second real user is what turns
 self-only blast radius into cross-user). Recorded 2026-07-12 per 015 round-3
 sign-off carry item #3.
+
+**Migration number RESERVED: 017.** The audit's fix ships as `017_*` (the RLS
+column-bounding pass). 016 is the corrections migration; 017 is the next number
+and is now earmarked for this work so the deadline ("before invitations") is
+sequenced explicitly: **017 lands before any invitation-flow migration.** Also
+folds in `owner_user_id`'s missing same-tenant enforcement (deferred out of 016 —
+plain FK lets a project point at an owner row in another tenant; composite-FK /
+trigger territory), which belongs to this same systemic tenant-scoping pass.
+Reserved 2026-07-13 per 016 round-2 reviewer round.
