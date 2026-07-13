@@ -65,7 +65,10 @@ Standard policy for every tenant-scoped table:
 - slug TEXT UNIQUE NOT NULL (BETA)
 - plan TEXT DEFAULT 'trial' CHECK(trial/starter/growth/pro) (BETA)
 - trial_ends_at TIMESTAMPTZ (BETA)
-- payment_customer_id TEXT (BETA) — was stripe_customer_id, renamed in 006
+- payment_customer_id TEXT (BETA) — was stripe_customer_id, renamed in migration
+  016 (applied to prod 2026-07-12). [DATED CORRECTION 2026-07-13: this line
+  previously read "renamed in 006" — that was FALSE; no migration renamed it
+  before 016. stripe_customer_id was live from 001 through 015; 016 did the rename.]
 - paid_until TIMESTAMPTZ (BETA)
 - last_payment_ref TEXT (BETA)
 - gstin, cin, registered_address, pwd_class, iso_certifications,
@@ -250,7 +253,19 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        No dependency on auth surgery — applied first since it was ready
        first and has zero risk to existing data.
 
-007 — auth surgery + column corrections (Week 2). CHECKPOINT 1 before running.
+007 — auth surgery (Week 2). CHECKPOINT 1 before running.
+       DATED CORRECTION (2026-07-13): the header once read "auth surgery + column
+       corrections" and the COLUMN-CORRECTION bullets below (owner_user_id;
+       morning_* → JSONB; is_holiday/holiday_reason; evening_dependencies
+       consolidation; invoices.amount → DECIMAL(12,2); safety_incidents
+       submitted_via CHECK; hindrances.dpr_included DROP DEFAULT; tenants
+       stripe→payment rename + paid_until/last_payment_ref; users.role 'owner')
+       were EVICTED from 007 per checkpoint-1 review §1b — so a bug in a rename
+       could never force rollback pressure on the irreversible auth change. The
+       APPLIED 007 is IDENTITY-SURGERY ONLY. Those bullets shipped in
+       **migration 016** (applied to prod 2026-07-12) — see the 016 entry below.
+       The bullets are retained here for historical continuity, NOT as current
+       truth; 016 is their authoritative home.
        - Decouple users.id from auth.users FK
        - Add users.auth_id nullable FK
        - Update handle_new_user(): insert with generated id AND auth_id=NEW.id
@@ -289,10 +304,16 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        `db push`, due to an IPv6-only direct-connection host blocking CLI
        access. supabase_migrations.schema_migrations does NOT have a row for
        013 as a result — the function itself IS correctly live and verified
-       (see the has_013_probe check), but CLI tracking is out of sync. Run
-       `supabase migration repair --status applied 013` once CLI-to-production
-       connectivity is resolved, to keep the ledger honest before any future
-       migration is pushed via the CLI.
+       (see the has_013_probe check), but CLI tracking is out of sync.
+       DATED CORRECTION (2026-07-13): the original plan here — "run `supabase
+       migration repair --status applied 013` once CLI connectivity is resolved" —
+       is SUPERSEDED and was never executed. The CLI stays 28P01-blocked (auth),
+       not merely IPv6-blocked, and `migration repair` has NOT run for ANY
+       migration. The honest ledger method (used for 015 and 016) is a manual
+       INSERT into supabase_migrations.schema_migrations via the SQL Editor. If
+       013 still lacks a ledger row, backfill it the same way (manual INSERT) —
+       do NOT wait on the CLI. Verify 013's row presence by direct observation
+       before assuming either state (§0: a record is not the thing).
 
 015 — users_update column grant — SECURITY (HIGH-1, review §11a).
        REVOKE UPDATE ON public.users FROM authenticated; re-GRANT column-wise on
@@ -315,6 +336,33 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        test-db branch (42/42) AND prod (probes A/B/C/D green) before + after
        apply. External reviewer signed off round 3 (all six checks). Full
        artifact package: docs/reviews/015-review-package.md.
+
+016 — corrections (Week 2). The column/type fixes + the users.role 'client'→
+       'owner' rename EVICTED from 007 (review §1b), plus the §11b
+       complete_onboarding zero-row guard. Single BEGIN…COMMIT, fully reversible.
+       Items: users.role CHECK gains 'owner' (drop old CHECK → UPDATE data → add
+       users_role_check, in that order — rename INTO a previously-forbidden
+       value); tenants.stripe_customer_id → payment_customer_id + paid_until,
+       last_payment_ref; projects.owner_user_id UUID FK → users(id) ON DELETE
+       RESTRICT; daily_logs is_holiday/holiday_reason, drop
+       evening_dependencies_tomorrow, rename _structured → evening_dependencies,
+       morning_dependencies/morning_hindrances TEXT → JSONB; invoices.amount
+       (10,2) → (12,2); safety_incidents.submitted_via default realigned to
+       'whatsapp_scheduled' + CHECK; hindrances.dpr_included DROP DEFAULT;
+       complete_onboarding CREATE OR REPLACE with GET DIAGNOSTICS zero-row RAISE.
+       Deferred (NOT in 016): complete_onboarding double-call minting → invitations;
+       owner_user_id same-tenant enforcement → migration 017 (backlog item 9).
+
+       APPLIED TO PRODUCTION VIA SQL EDITOR on 2026-07-12, from the PINNED branch
+       tip (git show <sha>:supabase/migrations/016_corrections.sql; frame in the
+       review package). CLI auth-blocked at 28P01, SQL Editor is the deliberate
+       fallback (as with 013/014/015). Ledger tracked via manual INSERT into
+       supabase_migrations.schema_migrations the same day; post-insert ledger = 13
+       rows. Verified on the test-db branch (50/50, incl. T-016-08) AND prod (six
+       probes P1–P6 green: role CHECK, tenants cols, owner_user_id confdeltype='r',
+       daily_logs shape, submitted_via default+CHECK, complete_onboarding
+       prosecdef+search_path). External reviewer signed off with pinned-artifact
+       provenance requirements. Full package: docs/reviews/016-review-package.md.
 
 NOTE ON CLI MIGRATION TRACKING: migrations 001-005 were originally applied
 via the Supabase dashboard SQL editor, not the CLI, so the CLI's remote
