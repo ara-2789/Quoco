@@ -909,3 +909,51 @@ describe('migration 016 — corrections', () => {
 
 EXIT=0
 ```
+
+---
+
+## Artifact provenance — the record, told straight (2026-07-13)
+
+Requested by the reviewer for the PR record. Dated and honest, PITR-correction
+style. **Git is the tiebreaker for every claim below.**
+
+**The authoritative artifact** is `supabase/migrations/016_corrections.sql` at the
+branch tip (SHA in the provenance frame, `/tmp/016-provenance-frame.txt`). Its
+real git history is two commits: **`236fb0a`** (first commit of the file) and
+**`e5b3abe`** (a comment-only fix). `git show e5b3abe` changed four lines of the
+Section 1 header comment: an earlier draft justified the dynamic `INTO STRICT`
+constraint lookup by calling the 001 inline CHECK **"server-named"** (implying a
+random name). That premise was **wrong** — Postgres auto-names a single-column
+inline CHECK deterministically as `<table>_<column>_check`, i.e.
+`users_role_check`. The DO-block lookup was **retained** (it fails loud on a
+mis-count, cheap insurance), but the comment now states the real reason. The
+test-db `42710` on apply day independently confirmed the convention: the
+collision was against the identically-named original constraint.
+
+**Where "v1" came from, and the three contradictory artifacts.** During drafting,
+three versions of this file surfaced in the review exchange, and they did *not*
+agree — hence the reviewer's request to pin provenance:
+
+1. **v1 (prose only, never committed):** the first drafted Section 1 ordered the
+   role rename **data-before-constraint** — `UPDATE … SET role='owner'` *before*
+   dropping the old CHECK. The reviewer caught it as a latent `23514` (the
+   standing 001 CHECK forbids `'owner'`). It was corrected **before the first
+   git commit**. Proof it never entered history: `git log -S "UPDATE public.users
+   SET role = 'owner' WHERE role = 'client';" -- supabase/migrations/016_corrections.sql`
+   returns exactly one commit (`236fb0a`), and at `236fb0a` the order is already
+   DROP → UPDATE → ADD. The wrong order exists only in the pre-commit conversation.
+2. **empty uploads:** when the files were re-shared to the reviewer mid-review,
+   the uploads transmitted **empty** (a transport artifact, not a content
+   change). For a moment the reviewer had zero-content attachments that
+   contradicted both the prose and the committed file. Resolved by re-emitting
+   the full file inline (and later by folding the raw file into the review
+   package so the repo, not an attachment, is the source of truth).
+3. **the committed file:** `236fb0a` (correct DROP→UPDATE→ADD order) then
+   `e5b3abe` (comment premise corrected). This is the only artifact that was ever
+   real in git, and its tip is what was pinned and applied to prod.
+
+The lesson generalised into the standing rule (CLAUDE.md §0, 2026-07-13): pin
+every artifact to `git show <sha>:path` rather than paraphrase or attachment, so
+a three-way disagreement like this can never again turn on which copy someone
+happened to be looking at. No history was rewritten to produce this account; it
+is additive and verifiable from the log.
