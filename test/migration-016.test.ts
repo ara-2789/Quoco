@@ -51,6 +51,7 @@ afterEach(async () => {
   const db = testClient()
   await db.from('invoices').delete().eq('project_id', TEST_PROJECT_ID)
   await db.from('safety_incidents').delete().eq('project_id', TEST_PROJECT_ID)
+  await db.from('hindrances').delete().eq('project_id', TEST_PROJECT_ID)
   await db.from('daily_logs').delete().eq('project_id', TEST_PROJECT_ID)
   // Undo any owner_user_id we set on the fixture project.
   await db.from('projects').update({ owner_user_id: null }).eq('id', TEST_PROJECT_ID)
@@ -290,5 +291,41 @@ describe('migration 016 — corrections', () => {
     expect(okErr).toBeNull()
     expect(data?.owner_user_id).toBe(testEngineerId())
     // afterEach nulls owner_user_id back out.
+  })
+
+  // -------------------------------------------------------------------------
+  // T-016-08 — Section 7: hindrances.dpr_included default dropped. It is set by
+  // the DPR generation job, not defaulted at insert. Post-016, a row inserted
+  // WITHOUT dpr_included must land NULL (was DEFAULT true in 001), positively
+  // confirming the DROP DEFAULT.
+  //
+  // NOTE: submitted_via is set explicitly here. hindrances.submitted_via carries
+  // a latent 001 bug of its own — DEFAULT 'whatsapp', which is NOT in its CHECK
+  // set — so omitting it would trip 23514 for an unrelated reason. That default
+  // is out of 016's scope (016 fixed only safety_incidents' equivalent); setting
+  // it explicitly isolates this test to dpr_included.
+  //
+  // The catalog form (information_schema.columns.column_default IS NULL) is not
+  // asserted: PostgREST does not expose information_schema to the client, so the
+  // behavioural NULL-on-insert below IS the assertion the harness allows.
+  // -------------------------------------------------------------------------
+  it('T-016-08: hindrances.dpr_included has no default post-016 (insert omits it -> NULL)', async () => {
+    const db = testClient()
+    const { data, error } = await db
+      .from('hindrances')
+      .insert({
+        tenant_id: TEST_TENANT_ID,
+        project_id: TEST_PROJECT_ID,
+        reported_by: testEngineerId(),
+        submitted_via: 'whatsapp_scheduled', // avoid the unrelated 001 default-CHECK bug
+        description: 'ZZ 016 dpr_included default check',
+        // dpr_included deliberately omitted
+      })
+      .select('dpr_included')
+      .single<{ dpr_included: boolean | null }>()
+    expect(error).toBeNull()
+    // Was DEFAULT true in 001; after 016's DROP DEFAULT it must be NULL, not true.
+    expect(data?.dpr_included).toBeNull()
+    // afterEach deletes hindrances rows for the fixture project.
   })
 })
