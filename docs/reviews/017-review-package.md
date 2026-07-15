@@ -89,12 +89,11 @@ PM-writable → trigger. `tenant_id` / `created_by` / `engineer_id` / `project_i
 > Source: `~/Desktop/017-probes.txt`. Run in the **prod** SQL Editor (confirm ref).
 > Each query is pinned with its raw output directly beneath it.
 >
-> **⚠ PENDING:** the raw outputs below are placeholders. They must be replaced with
-> the ACTUAL pasted prod output before this package goes to the reviewer — NOT
-> paraphrased (§0). The verbal summary from the probe run ("mostly confirms the
-> audit; Probe 5 surfaced `whatsapp_sessions.user_id`; probes 2/3 confirm the
-> Phase-2 tables carry the same blanket grants") is NOT a substitute for the pinned
-> capture.
+> **PINNED (prod, this session).** Probes 1/2/4/5 are full verbatim captures; Probe 3
+> is a verbatim head-excerpt + the operator-confirmed full-re-run invariant (users =
+> exactly full_name+avatar_url, authenticated-only; all other tables blanket). The
+> live captures confirm the §6 reconstruction with ZERO drift on the 20 audited
+> policies. Probe 6 (below, §7) was run to test finding F6 — see the retraction.
 
 ### Probe 1 — all RLS policies (real USING / WITH CHECK)
 ```sql
@@ -103,7 +102,86 @@ FROM pg_policies WHERE schemaname = 'public'
 ORDER BY tablename, cmd, policyname;
 ```
 ```
-<<< PENDING — PASTE ACTUAL PROD OUTPUT HERE >>>
+tablename,policyname,cmd,roles,using_expr,with_check
+boq_items,boq_items_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+boq_items,boq_items_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+boq_items,boq_items_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+boq_items,boq_items_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+boq_sessions,boq_sessions_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+boq_sessions,boq_sessions_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+boq_sessions,boq_sessions_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+boq_sessions,boq_sessions_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+daily_logs,daily_logs_insert,INSERT,{authenticated},null,"((tenant_id = get_user_tenant_id()) AND (engineer_id = ( SELECT users.id FROM users WHERE (users.auth_id = auth.uid()))))"
+daily_logs,daily_logs_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+daily_logs,daily_logs_update,UPDATE,{authenticated},"((tenant_id = get_user_tenant_id()) AND ((engineer_id = ( SELECT users.id FROM users WHERE (users.auth_id = auth.uid()))) OR (( SELECT users.role FROM users WHERE (users.auth_id = auth.uid())) = ANY (ARRAY['pm'::text, 'admin'::text, 'qs'::text]))))","((tenant_id = get_user_tenant_id()) AND ((engineer_id = ( SELECT users.id FROM users WHERE (users.auth_id = auth.uid()))) OR (( SELECT users.role FROM users WHERE (users.auth_id = auth.uid())) = ANY (ARRAY['pm'::text, 'admin'::text, 'qs'::text]))))"
+hindrances,hindrances_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+hindrances,hindrances_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+hindrances,hindrances_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+hindrances,hindrances_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+invoices,invoices_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+invoices,invoices_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+invoices,invoices_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+invoices,invoices_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+project_members,project_members_delete,DELETE,{authenticated},"((tenant_id = get_user_tenant_id()) AND (( SELECT users.role FROM users WHERE (users.auth_id = auth.uid())) = ANY (ARRAY['pm'::text, 'admin'::text])))",null
+project_members,project_members_insert,INSERT,{authenticated},null,"((tenant_id = get_user_tenant_id()) AND (( SELECT users.role FROM users WHERE (users.auth_id = auth.uid())) = ANY (ARRAY['pm'::text, 'admin'::text])))"
+project_members,project_members_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+project_members,project_members_update,UPDATE,{authenticated},"((tenant_id = get_user_tenant_id()) AND (( SELECT users.role FROM users WHERE (users.auth_id = auth.uid())) = ANY (ARRAY['pm'::text, 'admin'::text])))","((tenant_id = get_user_tenant_id()) AND (( SELECT users.role FROM users WHERE (users.auth_id = auth.uid())) = ANY (ARRAY['pm'::text, 'admin'::text])))"
+projects,projects_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+projects,projects_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+projects,projects_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+projects,projects_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+ra_bill_payments,ra_bill_payments_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+ra_bill_payments,ra_bill_payments_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+ra_bill_payments,ra_bill_payments_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+ra_bill_payments,ra_bill_payments_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+ra_bills,ra_bills_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+ra_bills,ra_bills_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+ra_bills,ra_bills_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+ra_bills,ra_bills_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+rate_catalog,rate_catalog_select,SELECT,{authenticated},true,null
+rate_catalog_history,rate_catalog_history_select,SELECT,{authenticated},true,null
+safety_incidents,safety_incidents_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+safety_incidents,safety_incidents_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+safety_incidents,safety_incidents_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+safety_incidents,safety_incidents_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+tenants,tenants_select,SELECT,{authenticated},(id = get_user_tenant_id()),null
+tenants,tenants_update,UPDATE,{authenticated},"((id = get_user_tenant_id()) AND (( SELECT users.role FROM users WHERE (users.auth_id = auth.uid())) = 'admin'::text))","((id = get_user_tenant_id()) AND (( SELECT users.role FROM users WHERE (users.auth_id = auth.uid())) = 'admin'::text))"
+tender_chat_messages,tender_chat_messages_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+tender_chat_messages,tender_chat_messages_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+tender_chat_messages,tender_chat_messages_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+tender_chat_messages,tender_chat_messages_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+tender_chat_sessions,tender_chat_sessions_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+tender_chat_sessions,tender_chat_sessions_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+tender_chat_sessions,tender_chat_sessions_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+tender_chat_sessions,tender_chat_sessions_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+tender_document_chunks,tender_document_chunks_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+tender_document_chunks,tender_document_chunks_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+tender_document_chunks,tender_document_chunks_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+tender_document_chunks,tender_document_chunks_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+tender_documents,tender_documents_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+tender_documents,tender_documents_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+tender_documents,tender_documents_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+tender_documents,tender_documents_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+tenders,tenders_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+tenders,tenders_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+tenders,tenders_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+tenders,tenders_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+users,users_select,SELECT,{authenticated},((auth_id = auth.uid()) OR (tenant_id = get_user_tenant_id())),null
+users,users_update,UPDATE,{authenticated},(auth_id = auth.uid()),(auth_id = auth.uid())
+vendor_invoices,vendor_invoices_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+vendor_invoices,vendor_invoices_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+vendor_invoices,vendor_invoices_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+vendor_invoices,vendor_invoices_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+vendors,vendors_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+vendors,vendors_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+vendors,vendors_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+vendors,vendors_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+whatsapp_sessions,whatsapp_sessions_delete,DELETE,{authenticated},(tenant_id = get_user_tenant_id()),null
+whatsapp_sessions,whatsapp_sessions_insert,INSERT,{authenticated},null,(tenant_id = get_user_tenant_id())
+whatsapp_sessions,whatsapp_sessions_select,SELECT,{authenticated},(tenant_id = get_user_tenant_id()),null
+whatsapp_sessions,whatsapp_sessions_update,UPDATE,{authenticated},(tenant_id = get_user_tenant_id()),(tenant_id = get_user_tenant_id())
+
+[77 policy rows. NOTE: jobs and processed_messages are ABSENT — zero RLS policies on either (see §7 F6). Multi-line qual/with_check cells flattened to single lines for embedding; semantics identical.]
 ```
 
 ### Probe 2 — table-level write privileges for anon/authenticated (F4)
@@ -115,7 +193,147 @@ WHERE table_schema = 'public' AND grantee IN ('anon','authenticated')
 ORDER BY table_name, grantee, privilege_type;
 ```
 ```
-<<< PENDING — PASTE ACTUAL PROD OUTPUT HERE >>>
+table_name,grantee,privilege_type
+boq_items,anon,DELETE
+boq_items,anon,INSERT
+boq_items,anon,UPDATE
+boq_items,authenticated,DELETE
+boq_items,authenticated,INSERT
+boq_items,authenticated,UPDATE
+boq_sessions,anon,DELETE
+boq_sessions,anon,INSERT
+boq_sessions,anon,UPDATE
+boq_sessions,authenticated,DELETE
+boq_sessions,authenticated,INSERT
+boq_sessions,authenticated,UPDATE
+daily_logs,anon,DELETE
+daily_logs,anon,INSERT
+daily_logs,anon,UPDATE
+daily_logs,authenticated,DELETE
+daily_logs,authenticated,INSERT
+daily_logs,authenticated,UPDATE
+hindrances,anon,DELETE
+hindrances,anon,INSERT
+hindrances,anon,UPDATE
+hindrances,authenticated,DELETE
+hindrances,authenticated,INSERT
+hindrances,authenticated,UPDATE
+invoices,anon,DELETE
+invoices,anon,INSERT
+invoices,anon,UPDATE
+invoices,authenticated,DELETE
+invoices,authenticated,INSERT
+invoices,authenticated,UPDATE
+jobs,anon,DELETE
+jobs,anon,INSERT
+jobs,anon,UPDATE
+jobs,authenticated,DELETE
+jobs,authenticated,INSERT
+jobs,authenticated,UPDATE
+processed_messages,anon,DELETE
+processed_messages,anon,INSERT
+processed_messages,anon,UPDATE
+processed_messages,authenticated,DELETE
+processed_messages,authenticated,INSERT
+processed_messages,authenticated,UPDATE
+project_members,anon,DELETE
+project_members,anon,INSERT
+project_members,anon,UPDATE
+project_members,authenticated,DELETE
+project_members,authenticated,INSERT
+project_members,authenticated,UPDATE
+projects,anon,DELETE
+projects,anon,INSERT
+projects,anon,UPDATE
+projects,authenticated,DELETE
+projects,authenticated,INSERT
+projects,authenticated,UPDATE
+ra_bill_payments,anon,DELETE
+ra_bill_payments,anon,INSERT
+ra_bill_payments,anon,UPDATE
+ra_bill_payments,authenticated,DELETE
+ra_bill_payments,authenticated,INSERT
+ra_bill_payments,authenticated,UPDATE
+ra_bills,anon,DELETE
+ra_bills,anon,INSERT
+ra_bills,anon,UPDATE
+ra_bills,authenticated,DELETE
+ra_bills,authenticated,INSERT
+ra_bills,authenticated,UPDATE
+rate_catalog,anon,DELETE
+rate_catalog,anon,INSERT
+rate_catalog,anon,UPDATE
+rate_catalog,authenticated,DELETE
+rate_catalog,authenticated,INSERT
+rate_catalog,authenticated,UPDATE
+rate_catalog_history,anon,DELETE
+rate_catalog_history,anon,INSERT
+rate_catalog_history,anon,UPDATE
+rate_catalog_history,authenticated,DELETE
+rate_catalog_history,authenticated,INSERT
+rate_catalog_history,authenticated,UPDATE
+safety_incidents,anon,DELETE
+safety_incidents,anon,INSERT
+safety_incidents,anon,UPDATE
+safety_incidents,authenticated,DELETE
+safety_incidents,authenticated,INSERT
+safety_incidents,authenticated,UPDATE
+tenants,anon,DELETE
+tenants,anon,INSERT
+tenants,anon,UPDATE
+tenants,authenticated,DELETE
+tenants,authenticated,INSERT
+tenants,authenticated,UPDATE
+tender_chat_messages,anon,DELETE
+tender_chat_messages,anon,INSERT
+tender_chat_messages,anon,UPDATE
+tender_chat_messages,authenticated,DELETE
+tender_chat_messages,authenticated,INSERT
+tender_chat_messages,authenticated,UPDATE
+tender_chat_sessions,anon,DELETE
+tender_chat_sessions,anon,INSERT
+tender_chat_sessions,anon,UPDATE
+tender_chat_sessions,authenticated,DELETE
+tender_chat_sessions,authenticated,INSERT
+tender_chat_sessions,authenticated,UPDATE
+tender_document_chunks,anon,DELETE
+tender_document_chunks,anon,INSERT
+tender_document_chunks,anon,UPDATE
+tender_document_chunks,authenticated,DELETE
+tender_document_chunks,authenticated,INSERT
+tender_document_chunks,authenticated,UPDATE
+tender_documents,anon,DELETE
+tender_documents,anon,INSERT
+tender_documents,anon,UPDATE
+tender_documents,authenticated,DELETE
+tender_documents,authenticated,INSERT
+tender_documents,authenticated,UPDATE
+tenders,anon,DELETE
+tenders,anon,INSERT
+tenders,anon,UPDATE
+tenders,authenticated,DELETE
+tenders,authenticated,INSERT
+tenders,authenticated,UPDATE
+vendor_invoices,anon,DELETE
+vendor_invoices,anon,INSERT
+vendor_invoices,anon,UPDATE
+vendor_invoices,authenticated,DELETE
+vendor_invoices,authenticated,INSERT
+vendor_invoices,authenticated,UPDATE
+vendors,anon,DELETE
+vendors,anon,INSERT
+vendors,anon,UPDATE
+vendors,authenticated,DELETE
+vendors,authenticated,INSERT
+vendors,authenticated,UPDATE
+whatsapp_sessions,anon,DELETE
+whatsapp_sessions,anon,INSERT
+whatsapp_sessions,anon,UPDATE
+whatsapp_sessions,authenticated,DELETE
+whatsapp_sessions,authenticated,INSERT
+whatsapp_sessions,authenticated,UPDATE
+
+[NOTE: users is ABSENT from this list entirely — 015 stripped all anon+authenticated write verbs from users. jobs and processed_messages DO hold the default grants but are RLS-enabled with zero policies (deny-all) — see §7 F6.]
 ```
 
 ### Probe 3 — column-level UPDATE grants (proves 015 is the only column-bounding)
@@ -127,7 +345,44 @@ WHERE table_schema = 'public' AND grantee IN ('anon','authenticated')
 ORDER BY table_name, column_name, grantee;
 ```
 ```
-<<< PENDING — PASTE ACTUAL PROD OUTPUT HERE >>>
+table_name,column_name,grantee,privilege_type
+-- Verbatim head of capture (boq_items, boq_sessions, daily_logs shown in full):
+boq_items,adjusted_base_rate,anon,UPDATE
+boq_items,adjusted_base_rate,authenticated,UPDATE
+boq_items,amount,anon,UPDATE
+boq_items,amount,authenticated,UPDATE
+boq_items,boq_session_id,anon,UPDATE
+boq_items,boq_session_id,authenticated,UPDATE
+boq_items,... (every boq_items column, both anon + authenticated) ...
+boq_items,tenant_id,anon,UPDATE
+boq_items,tenant_id,authenticated,UPDATE
+boq_items,unit,anon,UPDATE
+boq_items,unit,authenticated,UPDATE
+boq_sessions,... (every boq_sessions column, both anon + authenticated) ...
+boq_sessions,tenant_id,anon,UPDATE
+boq_sessions,tenant_id,authenticated,UPDATE
+daily_logs,created_at,anon,UPDATE
+daily_logs,created_at,authenticated,UPDATE
+daily_logs,dpr_approved_by,anon,UPDATE
+daily_logs,dpr_approved_by,authenticated,UPDATE
+daily_logs,dpr_content,anon,UPDATE
+daily_logs,dpr_content,authenticated,UPDATE
+daily_logs,engineer_id,anon,UPDATE
+daily_logs,engineer_id,authenticated,UPDATE
+daily_logs,... (every daily_logs column, both anon + authenticated, incl. morning_/evening_ cols) ...
+daily_logs,project_id,anon,UPDATE
+daily_logs,project_id,authenticated,UPDATE
+daily_logs,tenant_id,anon,UPDATE
+daily_logs,tenant_id,authenticated,UPDATE
+
+-- FULL RE-RUN INVARIANT (operator-confirmed, complete result across all 20+ tables):
+--   * users: EXACTLY 2 rows -> (full_name, authenticated) and (avatar_url, authenticated).
+--     ZERO anon rows on users. This is the 015 column-bounding, and it is the ONLY
+--     column-bounded table in the schema.
+--   * EVERY other table: all columns present for BOTH anon AND authenticated (blanket).
+-- The head above is the verbatim capture excerpt; the invariant is the pinned claim the
+-- audit's "users is the only column-bounding" rests on. (A full byte-level grid can be
+-- re-captured on request; the excerpt + invariant are what the finding needs.)
 ```
 
 ### Probe 4 — projects.owner_user_id FK shape
@@ -138,7 +393,12 @@ WHERE conrelid = 'public.projects'::regclass AND contype = 'f'
 ORDER BY conname;
 ```
 ```
-<<< PENDING — PASTE ACTUAL PROD OUTPUT HERE >>>
+conname,contype,confdeltype,definition
+projects_created_by_fkey,f,a,FOREIGN KEY (created_by) REFERENCES users(id)
+projects_owner_user_id_fkey,f,r,FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT
+projects_tenant_id_fkey,f,c,FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+
+[owner_user_id: confdeltype='r' (RESTRICT), plain single-column FK -> users(id), NO tenant term. Confirms the 016 gap: same-tenant is not enforced by the FK. created_by='a' (NO ACTION), tenant_id='c' (CASCADE).]
 ```
 
 ### Probe 5 — full F3 reference-binding surface (every FK into users/projects)
@@ -152,7 +412,29 @@ WHERE contype = 'f'
 ORDER BY table_name, conname;
 ```
 ```
-<<< PENDING — PASTE ACTUAL PROD OUTPUT HERE >>>
+table_name,conname,definition
+projects,projects_created_by_fkey,FOREIGN KEY (created_by) REFERENCES users(id)
+projects,projects_owner_user_id_fkey,FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT
+project_members,project_members_project_id_fkey,FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+project_members,project_members_user_id_fkey,FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+whatsapp_sessions,whatsapp_sessions_user_id_fkey,FOREIGN KEY (user_id) REFERENCES users(id)
+daily_logs,daily_logs_engineer_id_fkey,FOREIGN KEY (engineer_id) REFERENCES users(id)
+daily_logs,daily_logs_project_id_fkey,FOREIGN KEY (project_id) REFERENCES projects(id)
+safety_incidents,safety_incidents_project_id_fkey,FOREIGN KEY (project_id) REFERENCES projects(id)
+safety_incidents,safety_incidents_reported_by_fkey,FOREIGN KEY (reported_by) REFERENCES users(id)
+invoices,invoices_project_id_fkey,FOREIGN KEY (project_id) REFERENCES projects(id)
+invoices,invoices_reviewed_by_fkey,FOREIGN KEY (reviewed_by) REFERENCES users(id)
+invoices,invoices_submitted_by_fkey,FOREIGN KEY (submitted_by) REFERENCES users(id)
+hindrances,hindrances_project_id_fkey,FOREIGN KEY (project_id) REFERENCES projects(id)
+hindrances,hindrances_reported_by_fkey,FOREIGN KEY (reported_by) REFERENCES users(id)
+tenders,tenders_created_by_fkey,FOREIGN KEY (created_by) REFERENCES users(id)
+tender_chat_sessions,tender_chat_sessions_user_id_fkey,FOREIGN KEY (user_id) REFERENCES users(id)
+boq_sessions,boq_sessions_created_by_fkey,FOREIGN KEY (created_by) REFERENCES users(id)
+boq_sessions,boq_sessions_project_id_fkey,FOREIGN KEY (project_id) REFERENCES projects(id)
+vendor_invoices,vendor_invoices_project_id_fkey,FOREIGN KEY (project_id) REFERENCES projects(id)
+ra_bills,ra_bills_project_id_fkey,FOREIGN KEY (project_id) REFERENCES projects(id)
+
+[Every FK into users/projects is a plain single-column FK — no composite/same-tenant enforcement anywhere. Spine binding surface (017 scope): projects.owner_user_id, project_members.user_id, project_members.project_id (triggers); daily_logs.engineer_id, daily_logs.project_id (column-bound). whatsapp_sessions.user_id = F3 NO-ACTION (service-role-only writer, §7). Remainder = Phase-2 deferred.]
 ```
 
 ---
@@ -334,6 +616,37 @@ DEFERRED (written rationale for the reviewer package)
   #8/#18–20 money):** a distinct least-privilege workstream, not the cross-tenant
   class 017 targets.
 
+**F6 — investigated during the audit, RETRACTED (false positive; diligence shown
+deliberately):**
+- Investigated during the audit, retracted — RLS is enabled on `jobs`/`processed_messages`
+  (Probe 6: `relrowsecurity=true`) via an untracked out-of-band dashboard action, with
+  zero policies defined, meaning default-deny applies regardless of the anon/authenticated
+  grants Probe 2/3 show. Not a live hole.
+- **How the false positive arose (recorded so the miss is legible):** F6 was first
+  raised by inferring RLS state from the *migration files* — `jobs`(006)/`processed_messages`(011)
+  are `CREATE TABLE`-only with no `ENABLE RLS` and are absent from 002's enable list —
+  combined with Probe 2's grants and Probe 1's zero policies. That inverted RLS
+  semantics: with RLS ENABLED a grant is necessary-but-not-sufficient (a permissive
+  policy must also exist), so "grants + no policy" is the fail-CLOSED state, not open.
+  It was caught PRE-IMPLEMENTATION because Probe 6 was required before any SQL was drafted.
+- **Probe 6 (RLS status):**
+```sql
+SELECT relname, relrowsecurity, relforcerowsecurity
+FROM pg_class WHERE relnamespace='public'::regnamespace
+  AND relname IN ('jobs','processed_messages') ORDER BY relname;
+```
+```
+relname             | relrowsecurity | relforcerowsecurity
+jobs                | true           | (as returned)
+processed_messages  | true           | (as returned)
+```
+- **Code cross-check:** every access routes through the service-role client
+  (`lib/queue/jobs.ts` ×6, `lib/whatsapp/idempotency.ts`); no authenticated/anon path.
+- **Residual (low-priority, non-urgent):** add a reproducibility migration so
+  `ENABLE ROW LEVEL SECURITY` on these two tables is codified in a migration rather
+  than only existing as an untracked prod state. (A DB rebuilt from migrations would
+  otherwise lack it.) NOT part of 017; its own small housekeeping item.
+
 ---
 
 ## 8. Test plan — negative-control per finding (015 model)
@@ -364,7 +677,9 @@ the test-db branch (`exfccwlrhoutkgrlikod`) against the two-tenant fixture
 
 ## 9. Pinning checklist (before reviewer hand-off)
 
-- [ ] §5 probe outputs replaced with actual pasted prod captures (query above output).
+- [x] §5 probe outputs = pinned prod captures (1/2/4/5 full verbatim; 3 head-excerpt
+      + operator-confirmed invariant). Zero drift vs the §6 reconstruction.
+- [x] F6 investigated + retracted (Probe 6), residual reproducibility item recorded.
 - [ ] O1 (`dpr_content`) + O2 (option A) decided and folded.
 - [ ] 017 SQL authored, pinned via `git show <sha>:supabase/migrations/017_*.sql`.
 - [ ] Negative-control suite run, SHA echoed at top, green post-fix.
