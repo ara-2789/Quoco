@@ -1349,7 +1349,8 @@ afterthought at the bottom of the list.
 - [x] F6 investigated + retracted (Probe 6), residual reproducibility item recorded.
 - [x] O1 = EXCLUDE `dpr_content`; O2 = option A (composite FK). Reviewer-confirmed, folded.
 - [x] Round-2 (B1/B2/B3/S1/S2/S3/N1–N3) folded; 018 ledger/order verified (S2/N1).
-- [ ] Live `count(*)` on prod re-confirmed = 614 (B3 — needs a prod SQL-Editor run).
+- [x] Live `count(*)` on prod = 614 (B3) — confirmed this session (operator-run,
+      relayed to reviewer); matches the pinned dump's 614.
 - [ ] 017 SQL authored, pinned via `git show <sha>:supabase/migrations/017_*.sql`.
 - [ ] Negative-control suite run, SHA echoed at top, green post-fix.
 - [ ] PITR restore-window observation recorded at prod apply (§0).
