@@ -1370,22 +1370,60 @@ afterthought at the bottom of the list.
 
 ---
 
-## 10. Reviewer FINAL LOOK — authored SQL + branch-verify (tip `34e65fd`)
+## 10. Reviewer FINAL LOOK — authored SQL + branch-verify (tip `69dac1a`; supersedes 34e65fd)
 
 > The reviewer's round-2 sign-off was of the **plan/audit**. This section is the
 > **actual implementation** for a final look before prod — he explicitly asked to
 > see the MATCH SIMPLE null-semantics handling and the corrected exclusions in the
 > real SQL. Risk class is **STRUCTURAL** (composite FK + UNIQUE index DDL), per §2.
 
-### 10.1 Branch-verify (test-db `exfccwlrhoutkgrlikod`) — clean before/after, SHA `34e65fd`
-Negative-control, same commit both runs (only the branch DB state changed by applying 017):
-- **PRE-APPLY:** full suite **95 / 102** — the **7 reds are the holes, open pre-fix**:
-  T-017-02/03/05/06 (composite-FK x-tenant bindings allowed), 07/08 (column-bound
-  writes allowed), 09 (anon soft-denied by RLS, not privilege-denied). The 4 greens
-  (canary 01, same-tenant 04, 015-regression 10, legit-writes 11) do not depend on 017.
-- **POST-APPLY:** full suite **102 / 102** — every hole closed (23503 for the FKs,
-  42501 for the column-bounding + anon strip), all 91 prior tests still green, zero
-  collateral. That is the reviewer's "prove open pre-fix, closed post-fix" pattern, met.
+### 10.1 Branch-verify (test-db `exfccwlrhoutkgrlikod`) — RAW artifacts (SF1)
+
+Real vitest output, not a summary. Two captures; SHA echoed at the top of each.
+(T-017-12 was added in the BF1/SF2/SF3 fix round, so it appears only in the
+post-apply capture; the pre-apply capture predates it.)
+
+**PRE-APPLY (holes open) — commit `34e65fd`, full suite:**
+```
+Test Files  1 failed | 9 passed (10)
+     Tests  7 failed | 95 passed (102)
+FAIL T-017-02  owner_user_id x-tenant UPDATE is rejected (23503)   [expected null not to be null]
+FAIL T-017-03  owner_user_id x-tenant INSERT is rejected (23503)   [expected null not to be null]
+FAIL T-017-05  project_members.user_id x-tenant INSERT (23503)     [expected null not to be null]
+FAIL T-017-06  project_members.project_id x-tenant INSERT (23503)  [expected null not to be null]
+FAIL T-017-07  projects.created_by -> 42501                        [expected null not to be null]
+FAIL T-017-08  daily_logs.engineer_id -> 42501                     [expected null not to be null]
+FAIL T-017-09  anon UPDATE rejected                                [expected null not to be null]
+PASS T-017-01 (canary), T-017-04 (same-tenant happy), T-017-10 (015 regr), T-017-11 (legit)
+```
+The 7 reds are precisely the 017-introduced protections, open pre-fix.
+
+**POST-APPLY (holes closed) — commit `69dac1a`, T-017 file:**
+```
+# commit: 69dac1a7118f8ccfbab2fb6a9a879e837d681b4f
+# target: test-db branch exfccwlrhoutkgrlikod
+ ✓ T-017-01 (canary): service-role morning RPC still writes engineer_id/project_id
+ ✓ T-017-02: owner_user_id x-tenant UPDATE is rejected (23503)
+ ✓ T-017-03: owner_user_id x-tenant INSERT is rejected (23503)
+ ✓ T-017-04: owner_user_id SAME-tenant UPDATE still succeeds
+ ✓ T-017-05: project_members.user_id x-tenant INSERT is rejected (23503)
+ ✓ T-017-06: project_members.project_id x-tenant INSERT is rejected (23503)
+ ✓ T-017-07: authenticated UPDATE of projects.created_by -> 42501
+ ✓ T-017-08: authenticated UPDATE of daily_logs.engineer_id -> 42501
+ ✓ T-017-09: anon UPDATE of projects is rejected
+ ✓ T-017-10 (regression 015): authenticated UPDATE of users.role -> 42501
+ ✓ T-017-11 (regression): legitimate authenticated writes still succeed
+ ✓ T-017-12 (SF3): tenant-move of a referenced owner is rejected by NO ACTION (23503)
+ Test Files  1 passed (1)   Tests  12 passed (12)
+```
+Full-suite post-apply = 103/103 (91 prior + 12 T-017). Zero collateral.
+
+**Probes A1/B/C (§10.4): NOT yet run — operator SQL-Editor step.** They read
+`pg_constraint` / `information_schema`, which PostgREST does not expose (service key
+hits the REST API, not the catalog) and the CLI is IPv6-blocked — the same wall as
+every probe this session. The suite's behavioral green (T-017-02..06, 12 all pass) is
+autonomous proof the composite FKs exist and enforce; the catalog probes are the
+pinned confirmation and must be run in the SQL Editor. NOT faked here.
 
 ### 10.2 Grant lists — LOCKED keep-as-drafted (provisioning, not behavior change)
 A grep of `app/` + `lib/` found **zero authenticated UPDATE code paths** on
@@ -1419,8 +1457,12 @@ the corrected exclusion sets (`contract_value` not `budget`; `dpr_content` exclu
 -- FOR KEY SHARE conflicts only on KEY columns, and tenant_id is not part of any
 -- unique index on users, so the lock never blocks a concurrent tenant_id repoint
 -- (the exact write the race worried about). The composite FK's atomicity comes from
--- the UNIQUE(id, tenant_id) INDEX. The FK is also RLS-independent (unlike the
--- trigger, whose correctness was coupled to RLS WITH CHECK pinning NEW.tenant_id).
+-- the UNIQUE(id, tenant_id) INDEX. NOTE the FK does not *permit-and-cascade* a
+-- referenced-tenant_id change — with ON UPDATE NO ACTION (Step 2) it REJECTS that
+-- write (fails loud with an FK violation), which is correct given tenant_id's
+-- immutability (007 §9): the guarantee is "no dangling cross-tenant reference can
+-- exist," not "cross-tenant moves are handled." The FK is also RLS-independent
+-- (unlike the trigger, whose correctness was coupled to RLS WITH CHECK on NEW.tenant_id).
 --
 -- APPLY: dashboard SQL Editor (CLI IPv6/28P01-blocked, see docs/schema.md 013 note),
 -- branch-verified first, artifact-provenance-pinned per §0. Regenerate types after.
@@ -1465,7 +1507,19 @@ ALTER TABLE public.projects
 -- and re-add it as a composite FK that also pins tenant_id, so the referenced row
 -- MUST live in the same tenant as the referencing row. Enforced on ALL writers
 -- (incl. service role — an FK is not bypassed by any role).
--- =============================================================================
+--
+-- ON UPDATE NO ACTION is stated EXPLICITLY on all three (BF1) — it is the default,
+-- but here it is an INTENTIONAL CHOICE, not an omission: tenant_id is immutable
+-- post-creation per 007 §9 (one auth account <-> one tenant, forever — a tenant-move
+-- is NOT a modeled operation), so no legitimate path ever UPDATEs a referenced
+-- (id, tenant_id) key and there is nothing for a cascade to do. If a referenced
+-- tenant_id ever WERE updated, NO ACTION correctly REJECTS it (fails loud with an FK
+-- violation) rather than silently cascading a tenant-move nobody designed.
+--   *** FORWARD-POINTER: a future tenant-move / tenant-merge feature MUST revisit ALL
+--   THREE FKs (projects.owner_user_id, project_members.user_id, project_members.
+--   project_id) before shipping — with NO ACTION, the tenant_id UPDATE will be
+--   rejected with an FK violation that surfaces on the *referenced* table (users /
+--   projects), which reads as a confusing error on an unrelated table if unexpected. ***
 
 -- projects.owner_user_id -> users(id, tenant_id).
 -- MATCH SIMPLE (the default): owner_user_id is NULLABLE, and under MATCH SIMPLE a
@@ -1477,7 +1531,7 @@ ALTER TABLE public.projects DROP CONSTRAINT projects_owner_user_id_fkey;
 ALTER TABLE public.projects
   ADD CONSTRAINT projects_owner_user_id_fkey
   FOREIGN KEY (owner_user_id, tenant_id) REFERENCES public.users (id, tenant_id)
-  ON DELETE RESTRICT;
+  ON UPDATE NO ACTION ON DELETE RESTRICT;
 
 -- project_members.user_id -> users(id, tenant_id). user_id is NOT NULL, so the check
 -- is ALWAYS enforced (MATCH SIMPLE vs FULL is moot). Preserves ON DELETE CASCADE.
@@ -1485,14 +1539,14 @@ ALTER TABLE public.project_members DROP CONSTRAINT project_members_user_id_fkey;
 ALTER TABLE public.project_members
   ADD CONSTRAINT project_members_user_id_fkey
   FOREIGN KEY (user_id, tenant_id) REFERENCES public.users (id, tenant_id)
-  ON DELETE CASCADE;
+  ON UPDATE NO ACTION ON DELETE CASCADE;
 
 -- project_members.project_id -> projects(id, tenant_id). NOT NULL, always enforced.
 ALTER TABLE public.project_members DROP CONSTRAINT project_members_project_id_fkey;
 ALTER TABLE public.project_members
   ADD CONSTRAINT project_members_project_id_fkey
   FOREIGN KEY (project_id, tenant_id) REFERENCES public.projects (id, tenant_id)
-  ON DELETE CASCADE;
+  ON UPDATE NO ACTION ON DELETE CASCADE;
 
 -- =============================================================================
 -- STEP 3 — COLUMN-BOUND OUT: projects. Revoke the blanket table UPDATE from
@@ -1531,9 +1585,19 @@ GRANT  UPDATE (
 -- STEP 5 — F4 anon write-strip (defense-in-depth, across ALL public tables).
 -- anon has no write policy today so this is not exploitable now, but the privilege
 -- layer should bound what it can bound (015's thesis). Strips anon INSERT/UPDATE/
--- DELETE on every base table in public. Idempotent; covers jobs/processed_messages
--- too (their RLS-enable is the SEPARATE F6 residual migration, independent of this).
+-- DELETE on every base table in public. Idempotent.
+--
+-- F4 IS NOT F6 (SF2 — different layers, do not conflate). This step operates on the
+-- GRANT layer (table privileges); F6 is about the RLS layer (relrowsecurity) on
+-- jobs/processed_messages. Stripping anon write-grants here neither substitutes for
+-- nor interacts with F6's RLS-enable state — a table can be RLS-enabled yet still
+-- carry stray grants, or grant-stripped yet RLS-disabled. F6 remains its own
+-- separate migration; this step does not close or affect it.
 -- SELECT is untouched (no anon SELECT policy exists; reads stay RLS-denied).
+-- rate_catalog / rate_catalog_history are read-only reference tables (SELECT-only
+-- policy, USING(true)); verified (SF2) NO code path or seed/import script writes them
+-- as anon (only writers would be service-role/admin loads), so revoking anon writes
+-- here breaks nothing.
 -- =============================================================================
 DO $$
 DECLARE r record;
