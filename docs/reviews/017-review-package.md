@@ -1367,3 +1367,292 @@ afterthought at the bottom of the list.
 - [ ] 017 SQL authored, pinned via `git show <sha>:supabase/migrations/017_*.sql`.
 - [ ] Negative-control suite run, SHA echoed at top, green post-fix.
 - [ ] PITR restore-window observation recorded at prod apply (§0).
+
+---
+
+## 10. Reviewer FINAL LOOK — authored SQL + branch-verify (tip `34e65fd`)
+
+> The reviewer's round-2 sign-off was of the **plan/audit**. This section is the
+> **actual implementation** for a final look before prod — he explicitly asked to
+> see the MATCH SIMPLE null-semantics handling and the corrected exclusions in the
+> real SQL. Risk class is **STRUCTURAL** (composite FK + UNIQUE index DDL), per §2.
+
+### 10.1 Branch-verify (test-db `exfccwlrhoutkgrlikod`) — clean before/after, SHA `34e65fd`
+Negative-control, same commit both runs (only the branch DB state changed by applying 017):
+- **PRE-APPLY:** full suite **95 / 102** — the **7 reds are the holes, open pre-fix**:
+  T-017-02/03/05/06 (composite-FK x-tenant bindings allowed), 07/08 (column-bound
+  writes allowed), 09 (anon soft-denied by RLS, not privilege-denied). The 4 greens
+  (canary 01, same-tenant 04, 015-regression 10, legit-writes 11) do not depend on 017.
+- **POST-APPLY:** full suite **102 / 102** — every hole closed (23503 for the FKs,
+  42501 for the column-bounding + anon strip), all 91 prior tests still green, zero
+  collateral. That is the reviewer's "prove open pre-fix, closed post-fix" pattern, met.
+
+### 10.2 Grant lists — LOCKED keep-as-drafted (provisioning, not behavior change)
+A grep of `app/` + `lib/` found **zero authenticated UPDATE code paths** on
+`projects`/`daily_logs` (read-only SELECT + a separate INSERT flow only; sole writers
+are the service-role morning RPC + queue worker). No PM-edit dashboard exists → the
+granted/excluded split changes no current behavior; excluding structural/identity +
+RPC-metadata columns is the conservative default. Full classification: §4 +
+`~/Desktop/017-grant-lists.txt`. Forward-pointer (also in the SQL header): a future
+PM-edit dashboard MUST widen specific columns (e.g. `log_date`) as features need them.
+
+### 10.3 Final authored SQL — pinned `git show 34e65fd:supabase/migrations/017_rls_column_bounding.sql`
+Note for the reviewer: **Step 2** carries the MATCH SIMPLE decision + the explicit
+DO-NOT-tighten-to-MATCH-FULL note on the nullable `owner_user_id`; **Steps 3/4** carry
+the corrected exclusion sets (`contract_value` not `budget`; `dpr_content` excluded).
+
+```sql
+-- supabase/migrations/017_rls_column_bounding.sql
+-- SECURITY — systemic follow-up to 015/HIGH-1. 015 column-bounded users_update;
+-- 017 closes the same CLASS of hole on every other UPDATE path, and adds the
+-- owner_user_id same-tenant enforcement deferred from 016 (backlog item 9).
+-- Full audit + pinned prod pre-state: docs/reviews/017-review-package.md.
+--
+-- RISK CLASS: STRUCTURAL (NOT grants-only). Per reviewer O2 = option A, the
+-- same-tenant guarantee is a UNIQUE index + composite FK, not a trigger. So this
+-- migration carries structural DDL (a new unique constraint + FK swaps) and takes
+-- the full runbook: PITR restore-window OBSERVED at prod apply (CLAUDE.md §0),
+-- reviewer-gated. The column-bounding / anon-strip steps are grants-class + reversible.
+--
+-- WHY COMPOSITE FK, NOT TRIGGER (reviewer B1): a BEFORE-trigger doing
+-- `SELECT ... FOR KEY SHARE` on the referenced user does NOT close the TOCTOU race —
+-- FOR KEY SHARE conflicts only on KEY columns, and tenant_id is not part of any
+-- unique index on users, so the lock never blocks a concurrent tenant_id repoint
+-- (the exact write the race worried about). The composite FK's atomicity comes from
+-- the UNIQUE(id, tenant_id) INDEX. The FK is also RLS-independent (unlike the
+-- trigger, whose correctness was coupled to RLS WITH CHECK pinning NEW.tenant_id).
+--
+-- APPLY: dashboard SQL Editor (CLI IPv6/28P01-blocked, see docs/schema.md 013 note),
+-- branch-verified first, artifact-provenance-pinned per §0. Regenerate types after.
+--
+-- ROLLBACK (reversible; no data loss): drop the composite FKs and re-add the plain
+-- single-column FKs; drop the UNIQUE(id, tenant_id) constraints; restore the blanket
+-- table UPDATE grants (GRANT UPDATE ON projects, daily_logs TO authenticated) and the
+-- anon write verbs. Down path spelled out at the file end.
+--
+-- COLUMN-GRANT LISTS ARE PROVISIONING, NOT A LIVE BEHAVIOR CHANGE (locked decision,
+-- keep-as-drafted). A grep of app/ + lib/ (2026-07-15) found ZERO authenticated UPDATE
+-- code paths on projects or daily_logs today: every touchpoint is a read-only SELECT
+-- (dashboard dprs/project-detail views) or a separate INSERT flow (projects/new); the
+-- only writers are the service-role morning-flow RPC (bypasses grants) and the
+-- service-role queue worker. There is NO PM-edit dashboard yet. So the granted/excluded
+-- split in Steps 3/4 changes no current behavior under EITHER choice — it is
+-- conservative provisioning for a future feature, excluding structural/identity and
+-- RPC-managed submission-metadata columns by default. Grant classification:
+-- ~/Desktop/017-grant-lists.txt / §4 of the review package.
+--   *** FORWARD-POINTER: when a PM-edit dashboard is eventually built, that work MUST
+--   consult this grant list and widen specific columns as needed (e.g. GRANT UPDATE
+--   (log_date) if a "correct submission date" feature ships). Do not assume the
+--   current exclusions are permanent product decisions — they are the safe default
+--   for "no writer exists yet." ***
+
+BEGIN;
+
+-- =============================================================================
+-- STEP 1 — UNIQUE(id, tenant_id) parents for the composite FKs.
+-- Both are strict SUPERSETS of the existing PRIMARY KEY(id): since id is already
+-- unique, every (id, tenant_id) pair is already unique, so these build instantly
+-- and CANNOT fail on existing data. They exist solely to be FK-referenceable.
+-- =============================================================================
+ALTER TABLE public.users
+  ADD CONSTRAINT users_id_tenant_id_key UNIQUE (id, tenant_id);
+
+ALTER TABLE public.projects
+  ADD CONSTRAINT projects_id_tenant_id_key UNIQUE (id, tenant_id);
+
+-- =============================================================================
+-- STEP 2 — Composite same-tenant FKs (option A). Drop each plain single-column FK
+-- and re-add it as a composite FK that also pins tenant_id, so the referenced row
+-- MUST live in the same tenant as the referencing row. Enforced on ALL writers
+-- (incl. service role — an FK is not bypassed by any role).
+-- =============================================================================
+
+-- projects.owner_user_id -> users(id, tenant_id).
+-- MATCH SIMPLE (the default): owner_user_id is NULLABLE, and under MATCH SIMPLE a
+-- NULL in ANY referencing column skips the check entirely — correct, because an
+-- unassigned owner (NULL) is a valid state. *** DO NOT change to MATCH FULL later ***:
+-- MATCH FULL would require both columns null-or-both-present and would reject a NULL
+-- owner on a (non-null) tenant row. Preserves 016's ON DELETE RESTRICT.
+ALTER TABLE public.projects DROP CONSTRAINT projects_owner_user_id_fkey;
+ALTER TABLE public.projects
+  ADD CONSTRAINT projects_owner_user_id_fkey
+  FOREIGN KEY (owner_user_id, tenant_id) REFERENCES public.users (id, tenant_id)
+  ON DELETE RESTRICT;
+
+-- project_members.user_id -> users(id, tenant_id). user_id is NOT NULL, so the check
+-- is ALWAYS enforced (MATCH SIMPLE vs FULL is moot). Preserves ON DELETE CASCADE.
+ALTER TABLE public.project_members DROP CONSTRAINT project_members_user_id_fkey;
+ALTER TABLE public.project_members
+  ADD CONSTRAINT project_members_user_id_fkey
+  FOREIGN KEY (user_id, tenant_id) REFERENCES public.users (id, tenant_id)
+  ON DELETE CASCADE;
+
+-- project_members.project_id -> projects(id, tenant_id). NOT NULL, always enforced.
+ALTER TABLE public.project_members DROP CONSTRAINT project_members_project_id_fkey;
+ALTER TABLE public.project_members
+  ADD CONSTRAINT project_members_project_id_fkey
+  FOREIGN KEY (project_id, tenant_id) REFERENCES public.projects (id, tenant_id)
+  ON DELETE CASCADE;
+
+-- =============================================================================
+-- STEP 3 — COLUMN-BOUND OUT: projects. Revoke the blanket table UPDATE from
+-- authenticated and re-grant ONLY the PM-editable business columns. Excluded (never
+-- authenticated-writable): tenant_id, created_by (attribution), id, created_at
+-- (structural/immutable). owner_user_id stays writable but is FK-guarded (Step 2).
+-- 42501 (upstream of RLS) now rejects any UPDATE touching an excluded column.
+-- =============================================================================
+REVOKE UPDATE ON public.projects FROM authenticated;
+GRANT  UPDATE (
+  name, client_name, client_contact, contract_type, contract_value,
+  expected_end_date, project_type, site_address, start_date, status,
+  tender_id, owner_user_id
+) ON public.projects TO authenticated;
+
+-- =============================================================================
+-- STEP 4 — COLUMN-BOUND OUT: daily_logs. Authenticated writers are pm/admin/qs
+-- corrections (engineers have auth_id=NULL, no web login — CLAUDE.md §5). Grant the
+-- observational / correction columns only. Excluded: engineer_id, project_id
+-- (identity — FK repoint surface), dpr_approved_by, dpr_content (O1 = exclude; DPR
+-- narrative editing is Fast-Follow, re-grant behind a role gate if/when it ships),
+-- dpr_generated_at + *_submitted_at/_via (RPC-managed submission metadata), id,
+-- tenant_id, created_at, log_date (structural/identity).
+-- =============================================================================
+REVOKE UPDATE ON public.daily_logs FROM authenticated;
+GRANT  UPDATE (
+  is_holiday, holiday_reason, weather,
+  morning_plan, morning_manpower_planned, morning_equipment,
+  morning_execution_plan, morning_dependencies, morning_hindrances,
+  evening_output, evening_output_quantities, evening_productive_manpower,
+  evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site,
+  evening_equipment_utilisation, evening_dependencies
+) ON public.daily_logs TO authenticated;
+
+-- =============================================================================
+-- STEP 5 — F4 anon write-strip (defense-in-depth, across ALL public tables).
+-- anon has no write policy today so this is not exploitable now, but the privilege
+-- layer should bound what it can bound (015's thesis). Strips anon INSERT/UPDATE/
+-- DELETE on every base table in public. Idempotent; covers jobs/processed_messages
+-- too (their RLS-enable is the SEPARATE F6 residual migration, independent of this).
+-- SELECT is untouched (no anon SELECT policy exists; reads stay RLS-denied).
+-- =============================================================================
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON public.%I FROM anon;', r.tablename);
+  END LOOP;
+END $$;
+
+COMMIT;
+
+-- =============================================================================
+-- DOWN (manual; run only to roll back):
+--   BEGIN;
+--   -- Step 2 reverse: restore plain single-column FKs
+--   ALTER TABLE public.project_members DROP CONSTRAINT project_members_project_id_fkey;
+--   ALTER TABLE public.project_members ADD CONSTRAINT project_members_project_id_fkey
+--     FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+--   ALTER TABLE public.project_members DROP CONSTRAINT project_members_user_id_fkey;
+--   ALTER TABLE public.project_members ADD CONSTRAINT project_members_user_id_fkey
+--     FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+--   ALTER TABLE public.projects DROP CONSTRAINT projects_owner_user_id_fkey;
+--   ALTER TABLE public.projects ADD CONSTRAINT projects_owner_user_id_fkey
+--     FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+--   -- Step 1 reverse
+--   ALTER TABLE public.projects DROP CONSTRAINT projects_id_tenant_id_key;
+--   ALTER TABLE public.users   DROP CONSTRAINT users_id_tenant_id_key;
+--   -- Step 3/4 reverse: restore blanket table UPDATE
+--   GRANT UPDATE ON public.projects   TO authenticated;
+--   GRANT UPDATE ON public.daily_logs TO authenticated;
+--   -- Step 5 reverse (only if a rebuild needs the Supabase defaults back):
+--   -- GRANT INSERT, UPDATE, DELETE ON <tables> TO anon;
+--   COMMIT;
+-- =============================================================================
+```
+
+### 10.4 Post-apply probes (drafted, HOLD — not yet run on prod)
+Constraint-existence for the composite FKs + UNIQUE parents, the narrowed Probe-3
+grant re-run, and the F4 anon-strip count. Full file: `/tmp/017-post-apply-probes.txt`.
+
+```
+================================================================
+Migration 017 — POST-APPLY probes (read-only). HOLD — do NOT run against
+prod until the pinned apply is done. Run in the SQL Editor pointed at the
+target (branch first, then prod), paste each result under its query. Pinned
+verification per CLAUDE.md §0.
+================================================================
+
+
+------------------------------------------------------------
+Probe A1 — composite FKs present with the (id, tenant_id) reference
+------------------------------------------------------------
+SELECT conrelid::regclass AS table_name, conname, pg_get_constraintdef(oid) AS definition
+FROM pg_constraint
+WHERE conname IN (
+  'projects_owner_user_id_fkey',
+  'project_members_user_id_fkey',
+  'project_members_project_id_fkey'
+)
+ORDER BY conname;
+
+-- EXPECTED (each is now COMPOSITE, referencing (id, tenant_id)):
+--  project_members_project_id_fkey | FOREIGN KEY (project_id, tenant_id) REFERENCES projects(id, tenant_id) ON DELETE CASCADE
+--  project_members_user_id_fkey    | FOREIGN KEY (user_id, tenant_id)    REFERENCES users(id, tenant_id)    ON DELETE CASCADE
+--  projects_owner_user_id_fkey     | FOREIGN KEY (owner_user_id, tenant_id) REFERENCES users(id, tenant_id) ON DELETE RESTRICT
+-- STOP if any still reads as a single-column FK (id only) — the drop/re-add didn't take.
+
+
+------------------------------------------------------------
+Probe A2 — UNIQUE(id, tenant_id) parents present
+------------------------------------------------------------
+SELECT conrelid::regclass AS table_name, conname, pg_get_constraintdef(oid) AS definition
+FROM pg_constraint
+WHERE conname IN ('users_id_tenant_id_key', 'projects_id_tenant_id_key')
+ORDER BY conname;
+
+-- EXPECTED:
+--  projects_id_tenant_id_key | UNIQUE (id, tenant_id)
+--  users_id_tenant_id_key    | UNIQUE (id, tenant_id)
+
+
+------------------------------------------------------------
+Probe B — narrowed column grants (Probe-3 re-run, projects + daily_logs)
+------------------------------------------------------------
+SELECT string_agg(format('%s | %s', table_name, column_name), E'\n'
+       ORDER BY table_name, column_name) AS granted
+FROM information_schema.role_column_grants
+WHERE table_schema = 'public' AND grantee = 'authenticated'
+  AND privilege_type = 'UPDATE' AND table_name IN ('projects', 'daily_logs');
+
+-- EXPECTED — projects (12 granted): client_contact, client_name, contract_type,
+--   contract_value, expected_end_date, name, owner_user_id, project_type,
+--   site_address, start_date, status, tender_id
+--   ABSENT (excluded): tenant_id, created_by, id, created_at
+-- EXPECTED — daily_logs (17 granted): evening_dependencies,
+--   evening_equipment_utilisation, evening_output, evening_output_quantities,
+--   evening_productive_manpower, evening_schedule_met, evening_schedule_miss_reason,
+--   evening_workers_on_site, holiday_reason, is_holiday, morning_dependencies,
+--   morning_equipment, morning_execution_plan, morning_hindrances,
+--   morning_manpower_planned, morning_plan, weather
+--   ABSENT (excluded): engineer_id, project_id, dpr_approved_by, dpr_content,
+--   dpr_generated_at, morning_submitted_at, morning_submitted_via,
+--   evening_submitted_at, evening_submitted_via, id, tenant_id, created_at, log_date
+-- STOP if any excluded column appears, or any expected granted column is missing.
+
+
+------------------------------------------------------------
+Probe C — F4 anon write-strip (anon holds NO write verb on any public table)
+------------------------------------------------------------
+SELECT count(*) AS anon_write_grants
+FROM information_schema.table_privileges
+WHERE table_schema = 'public' AND grantee = 'anon'
+  AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE');
+
+-- EXPECTED: 0  (pre-017 this was 3 per table x ~24 tables; F4 revoked all of them)
+-- Optional detail (if count != 0, list what survived):
+--   SELECT table_name, privilege_type FROM information_schema.table_privileges
+--   WHERE table_schema='public' AND grantee='anon'
+--     AND privilege_type IN ('INSERT','UPDATE','DELETE') ORDER BY table_name, privilege_type;
+```
