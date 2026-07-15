@@ -1,11 +1,24 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import type { Json } from '@/types/database'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
+import { parseLabourCount, isLabourAnswered, type LabourParse } from './parsers/labour'
+import { parseEquipment, isEquipmentAnswered, type EquipmentParse } from './parsers/equipment'
 
-// Morning check-in flow, Pass 1 (SKELETON). Only the two free-text questions:
-//   Q1 "Plan of action today"      -> daily_logs.morning_plan     (step 1)
-//   Q4 "Execution method/sequence" -> daily_logs.morning_execution_plan (step 4)
-// Q2/Q3 (parsing) and Q5/Q6 (multi-item + BOT-24 follow-up) are Pass 2 / Pass 3
-// and will slot into MORNING_STEP_ORDER and this decision later.
+// Morning check-in flow. Pass 1 shipped the two free-text questions; Pass 2
+// (migration 018) adds the two parsed questions:
+//   Q1 "Plan of action today"      -> daily_logs.morning_plan             (step 1, free text)
+//   Q2 "Workers planned by trade"  -> daily_logs.morning_manpower_planned (step 2, parsed)
+//   Q3 "Equipment on site + rate"  -> daily_logs.morning_equipment        (step 3, parsed)
+//   Q4 "Execution method/sequence" -> daily_logs.morning_execution_plan   (step 4, free text)
+// Q5/Q6 (multi-item + BOT-24 follow-up) are Pass 3 and will append to
+// MORNING_STEP_ORDER and this decision later.
+//
+// PASS-2 REASK BUDGET: Q2 and Q3 each allow ONE reask on an UNPARSEABLE answer
+// (Q2: no number; Q3: garbled — non-empty but nothing recognisable). After that
+// one reask the raw answer is accepted and the flow advances, so a field
+// engineer is never trapped. Empty/whitespace answers still reask unlimited
+// (Pass 1 semantics) and do NOT consume the budget. The per-step reask counters
+// live in session.context (q2_reask / q3_reask) and are merged, not replaced.
 //
 // AUTHORITY NOTE: dispatchMorningFlow below is a PURE mirror of the decision
 // logic in supabase/migrations/014_morning_flow_apply_turn.sql, for unit tests
@@ -26,9 +39,18 @@ export type MorningOutcome =
   | 'idle'
   | 'reask'
 
-// The in-scope question steps for Pass 1, in order. current_step stores the
-// question NUMBER currently awaited. Pass 2 inserts 2,3; Pass 3 appends 5,6.
-export const MORNING_STEP_ORDER: readonly number[] = [1, 4]
+// The in-scope question steps, in order. current_step stores the question
+// NUMBER currently awaited. Pass 2 inserted 2,3; Pass 3 appends 5,6.
+export const MORNING_STEP_ORDER: readonly number[] = [1, 2, 3, 4]
+
+// Pass-2 reask budget: one reask per parsed question on an unparseable answer.
+export const MORNING_PARSE_REASK_CAP = 1
+
+// Context keys holding the per-step reask counters (see the header note).
+const REASK_KEY: Readonly<Record<number, string>> = {
+  2: 'q2_reask',
+  3: 'q3_reask',
+}
 
 // ---------------------------------------------------------------------------
 // Reply copy — the SINGLE source of question/completion text, shared by the
@@ -36,6 +58,8 @@ export const MORNING_STEP_ORDER: readonly number[] = [1, 4]
 // outcome + current_step). Keeping it here means the two never diverge on copy.
 export const MORNING_QUESTIONS: Readonly<Record<number, string>> = {
   1: "Good morning! 🌞 What's your *plan of action* for today?",
+  2: 'How many *workers* today? You can just send a number, or a breakdown like "12 mason 8 helper".',
+  3: 'Any *equipment / machinery* on site? Send name + hire rate (e.g. "JCB 1500"), or reply "no" if none.',
   4: 'Got it. How will the work be carried out — your *execution method / sequence* for today?',
 }
 
@@ -79,6 +103,8 @@ export function buildMorningReply(outcome: MorningOutcome, currentStep: number):
 
 export type MorningDailyLogWrite = Partial<{
   morning_plan: string
+  morning_manpower_planned: LabourParse
+  morning_equipment: EquipmentParse
   morning_execution_plan: string
   morning_submitted_at: string
 }>
@@ -98,6 +124,29 @@ export interface MorningDispatchOptions {
   startFlow?: boolean
   /** Instant used for morning_submitted_at; injectable so tests are deterministic. */
   now?: string
+}
+
+/**
+ * Shared advance-vs-reask decision for the two PARSED steps (Q2/Q3). Kept in
+ * one place so the labour and equipment paths cannot drift, and so the SQL RPC
+ * has a single behaviour to mirror. Context is MERGED (never replaced): the
+ * per-step reask counter is updated and every other key preserved.
+ *   - answered            -> advance, clear this step's counter.
+ *   - unanswered, budget  -> reask, increment this step's counter.
+ *   - unanswered, over    -> accept the raw answer, advance, clear the counter.
+ */
+function decideParsedStep(
+  step: number,
+  ctx: Record<string, unknown>,
+  answered: boolean,
+): { outcome: MorningOutcome; nextStep: number; context: Record<string, unknown> } {
+  const key = REASK_KEY[step]
+  const prior = typeof ctx[key] === 'number' ? (ctx[key] as number) : 0
+
+  if (answered || prior >= MORNING_PARSE_REASK_CAP) {
+    return { outcome: 'advance', nextStep: step + 1, context: { ...ctx, [key]: 0 } }
+  }
+  return { outcome: 'reask', nextStep: step, context: { ...ctx, [key]: prior + 1 } }
 }
 
 /**
@@ -128,15 +177,31 @@ export function dispatchMorningFlow(
   } else if (session.current_flow === null) {
     outcome = submitted ? 'already_complete' : 'idle'
   } else if (session.current_flow === 'morning') {
+    const ctx = session.context ?? {}
     if (text === '') {
+      // Empty/whitespace: reask unlimited, no write, no budget consumed.
       outcome = 'reask'
     } else if (session.current_step === 1) {
-      // Q1 -> store morning_plan, advance to Q4.
+      // Q1 (free text) -> store morning_plan, advance to Q2.
       outcome = 'advance'
-      sessionUpdate = { current_step: 4 }
+      sessionUpdate = { current_step: 2 }
       dailyLogWrite = { morning_plan: text }
+    } else if (session.current_step === 2) {
+      // Q2 (parsed labour). Advance on a number, else reask once then accept.
+      const parse = parseLabourCount(text)
+      const decided = decideParsedStep(2, ctx, isLabourAnswered(parse))
+      outcome = decided.outcome
+      sessionUpdate = { current_step: decided.nextStep, context: decided.context }
+      if (decided.outcome === 'advance') dailyLogWrite = { morning_manpower_planned: parse }
+    } else if (session.current_step === 3) {
+      // Q3 (parsed equipment). Advance on none/known item, else reask once.
+      const parse = parseEquipment(text)
+      const decided = decideParsedStep(3, ctx, isEquipmentAnswered(parse))
+      outcome = decided.outcome
+      sessionUpdate = { current_step: decided.nextStep, context: decided.context }
+      if (decided.outcome === 'advance') dailyLogWrite = { morning_equipment: parse }
     } else if (session.current_step === 4) {
-      // Q4 -> store execution plan + submit, complete (step 0, marker set).
+      // Q4 (free text) -> store execution plan + submit, complete (step 0, marker).
       outcome = 'advance'
       sessionUpdate = { current_step: 0, context: { morning_submitted: true } }
       dailyLogWrite = { morning_execution_plan: text, morning_submitted_at: now }
@@ -182,6 +247,13 @@ export async function applyMorningFlowTurn(params: {
 }): Promise<MorningTurnResult> {
   const supabase = createServiceClient()
 
+  // Parse BOTH Pass-2 shapes unconditionally (pure + cheap) and hand the results
+  // to the RPC, which selects the one that matches the active step under its
+  // lock. This keeps parsing in TypeScript while the RPC stays the single
+  // authoritative decision+write. The *_ok flags drive advance-vs-reask.
+  const manpower = parseLabourCount(params.message)
+  const equipment = parseEquipment(params.message)
+
   const { data, error } = await supabase.rpc('apply_morning_flow_turn', {
     p_phone_number: params.phoneNumber,
     p_tenant_id: params.tenantId,
@@ -189,6 +261,15 @@ export async function applyMorningFlowTurn(params: {
     p_project_id: params.projectId,
     p_message: params.message,
     p_start_flow: params.startFlow,
+    // Q2/Q3 parses (migration 018): the RPC selects the one matching the active
+    // step under its lock; the *_ok flags drive advance-vs-reask. The parse
+    // objects are cast to Json because a concrete interface is not structurally
+    // assignable to the recursive Json index type — a permanent TS limitation,
+    // not a stale-types workaround.
+    p_manpower: manpower as unknown as Json,
+    p_manpower_ok: isLabourAnswered(manpower),
+    p_equipment: equipment as unknown as Json,
+    p_equipment_ok: isEquipmentAnswered(equipment),
     ...(params.now !== undefined ? { p_now: params.now } : {}),
     ...(params.testSleepMs !== undefined ? { p_test_sleep_ms: params.testSleepMs } : {}),
   })

@@ -63,6 +63,11 @@
 
 ## MORNING CHECK-IN (6 questions, one at a time)
 
+<!-- 2026-07-15 (Pass 2): a cofounder note describing Q3 as "bare activity names"
+     referred to the FREE-TEXT plan questions (Q1 plan / Q4 execution), NOT Q3.
+     Q3 remains equipment + hire rate per this spec. Terse Tamil/English tolerance
+     applies to all four morning questions. -->
+
 Q1: Plan of action today (free text) → morning_plan.
     'Site closed today' quick reply → is_holiday=true, holiday_reason;
     suppresses evening trigger + nudges for this engineer (BOT-20).
