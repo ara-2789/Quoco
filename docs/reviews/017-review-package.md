@@ -89,11 +89,11 @@ PM-writable → trigger. `tenant_id` / `created_by` / `engineer_id` / `project_i
 > Source: `~/Desktop/017-probes.txt`. Run in the **prod** SQL Editor (confirm ref).
 > Each query is pinned with its raw output directly beneath it.
 >
-> **PINNED (prod, this session).** Probes 1/2/4/5 are full verbatim captures; Probe 3
-> is a verbatim head-excerpt + the operator-confirmed full-re-run invariant (users =
-> exactly full_name+avatar_url, authenticated-only; all other tables blanket). The
-> live captures confirm the §6 reconstruction with ZERO drift on the 20 audited
-> policies. Probe 6 (below, §7) was run to test finding F6 — see the retraction.
+> **PINNED (prod, this session).** All five probes are full verbatim captures (Probe 3
+> is the complete `role_column_grants` dump — 613 rows — with `users` showing exactly
+> `full_name`+`avatar_url` for `authenticated` and zero anon, the sole column-bounded
+> table). The live captures confirm the §6 reconstruction with ZERO drift on the 20
+> audited policies. Probe 6 (§7) was run to test finding F6 — see the retraction.
 
 ### Probe 1 — all RLS policies (real USING / WITH CHECK)
 ```sql
@@ -338,52 +338,633 @@ whatsapp_sessions,authenticated,UPDATE
 
 ### Probe 3 — column-level UPDATE grants (proves 015 is the only column-bounding)
 ```sql
-SELECT table_name, column_name, grantee, privilege_type
+SELECT string_agg(format('%s | %s | %s | %s', table_name, column_name, grantee, privilege_type), E'\n'
+       ORDER BY table_name, column_name, grantee) AS dump
 FROM information_schema.role_column_grants
-WHERE table_schema = 'public' AND grantee IN ('anon','authenticated')
-  AND privilege_type = 'UPDATE'
-ORDER BY table_name, column_name, grantee;
+WHERE table_schema='public' AND grantee IN ('anon','authenticated') AND privilege_type='UPDATE';
 ```
 ```
-table_name,column_name,grantee,privilege_type
--- Verbatim head of capture (boq_items, boq_sessions, daily_logs shown in full):
-boq_items,adjusted_base_rate,anon,UPDATE
-boq_items,adjusted_base_rate,authenticated,UPDATE
-boq_items,amount,anon,UPDATE
-boq_items,amount,authenticated,UPDATE
-boq_items,boq_session_id,anon,UPDATE
-boq_items,boq_session_id,authenticated,UPDATE
-boq_items,... (every boq_items column, both anon + authenticated) ...
-boq_items,tenant_id,anon,UPDATE
-boq_items,tenant_id,authenticated,UPDATE
-boq_items,unit,anon,UPDATE
-boq_items,unit,authenticated,UPDATE
-boq_sessions,... (every boq_sessions column, both anon + authenticated) ...
-boq_sessions,tenant_id,anon,UPDATE
-boq_sessions,tenant_id,authenticated,UPDATE
-daily_logs,created_at,anon,UPDATE
-daily_logs,created_at,authenticated,UPDATE
-daily_logs,dpr_approved_by,anon,UPDATE
-daily_logs,dpr_approved_by,authenticated,UPDATE
-daily_logs,dpr_content,anon,UPDATE
-daily_logs,dpr_content,authenticated,UPDATE
-daily_logs,engineer_id,anon,UPDATE
-daily_logs,engineer_id,authenticated,UPDATE
-daily_logs,... (every daily_logs column, both anon + authenticated, incl. morning_/evening_ cols) ...
-daily_logs,project_id,anon,UPDATE
-daily_logs,project_id,authenticated,UPDATE
-daily_logs,tenant_id,anon,UPDATE
-daily_logs,tenant_id,authenticated,UPDATE
+boq_items | adjusted_base_rate | anon | UPDATE
+boq_items | adjusted_base_rate | authenticated | UPDATE
+boq_items | amount | anon | UPDATE
+boq_items | amount | authenticated | UPDATE
+boq_items | boq_session_id | anon | UPDATE
+boq_items | boq_session_id | authenticated | UPDATE
+boq_items | confidence_score | anon | UPDATE
+boq_items | confidence_score | authenticated | UPDATE
+boq_items | created_at | anon | UPDATE
+boq_items | created_at | authenticated | UPDATE
+boq_items | description | anon | UPDATE
+boq_items | description | authenticated | UPDATE
+boq_items | description_tsv | anon | UPDATE
+boq_items | description_tsv | authenticated | UPDATE
+boq_items | embedding | anon | UPDATE
+boq_items | embedding | authenticated | UPDATE
+boq_items | final_rate | anon | UPDATE
+boq_items | final_rate | authenticated | UPDATE
+boq_items | id | anon | UPDATE
+boq_items | id | authenticated | UPDATE
+boq_items | inflation_pct | anon | UPDATE
+boq_items | inflation_pct | authenticated | UPDATE
+boq_items | is_approved | anon | UPDATE
+boq_items | is_approved | authenticated | UPDATE
+boq_items | item_code | anon | UPDATE
+boq_items | item_code | authenticated | UPDATE
+boq_items | location_pct | anon | UPDATE
+boq_items | location_pct | authenticated | UPDATE
+boq_items | margin_pct | anon | UPDATE
+boq_items | margin_pct | authenticated | UPDATE
+boq_items | original_row_data | anon | UPDATE
+boq_items | original_row_data | authenticated | UPDATE
+boq_items | pricing_reasoning | anon | UPDATE
+boq_items | pricing_reasoning | authenticated | UPDATE
+boq_items | pricing_status | anon | UPDATE
+boq_items | pricing_status | authenticated | UPDATE
+boq_items | qty_pct | anon | UPDATE
+boq_items | qty_pct | authenticated | UPDATE
+boq_items | quantity | anon | UPDATE
+boq_items | quantity | authenticated | UPDATE
+boq_items | search_layer_used | anon | UPDATE
+boq_items | search_layer_used | authenticated | UPDATE
+boq_items | source_date | anon | UPDATE
+boq_items | source_date | authenticated | UPDATE
+boq_items | source_name | anon | UPDATE
+boq_items | source_name | authenticated | UPDATE
+boq_items | source_rate | anon | UPDATE
+boq_items | source_rate | authenticated | UPDATE
+boq_items | suggested_rate | anon | UPDATE
+boq_items | suggested_rate | authenticated | UPDATE
+boq_items | tenant_id | anon | UPDATE
+boq_items | tenant_id | authenticated | UPDATE
+boq_items | unit | anon | UPDATE
+boq_items | unit | authenticated | UPDATE
+boq_sessions | created_at | anon | UPDATE
+boq_sessions | created_at | authenticated | UPDATE
+boq_sessions | created_by | anon | UPDATE
+boq_sessions | created_by | authenticated | UPDATE
+boq_sessions | default_margin_pct | anon | UPDATE
+boq_sessions | default_margin_pct | authenticated | UPDATE
+boq_sessions | id | anon | UPDATE
+boq_sessions | id | authenticated | UPDATE
+boq_sessions | original_columns | anon | UPDATE
+boq_sessions | original_columns | authenticated | UPDATE
+boq_sessions | original_file_url | anon | UPDATE
+boq_sessions | original_file_url | authenticated | UPDATE
+boq_sessions | priced_items | anon | UPDATE
+boq_sessions | priced_items | authenticated | UPDATE
+boq_sessions | project_id | anon | UPDATE
+boq_sessions | project_id | authenticated | UPDATE
+boq_sessions | project_location | anon | UPDATE
+boq_sessions | project_location | authenticated | UPDATE
+boq_sessions | status | anon | UPDATE
+boq_sessions | status | authenticated | UPDATE
+boq_sessions | tenant_id | anon | UPDATE
+boq_sessions | tenant_id | authenticated | UPDATE
+boq_sessions | tender_id | anon | UPDATE
+boq_sessions | tender_id | authenticated | UPDATE
+boq_sessions | total_items | anon | UPDATE
+boq_sessions | total_items | authenticated | UPDATE
+daily_logs | created_at | anon | UPDATE
+daily_logs | created_at | authenticated | UPDATE
+daily_logs | dpr_approved_by | anon | UPDATE
+daily_logs | dpr_approved_by | authenticated | UPDATE
+daily_logs | dpr_content | anon | UPDATE
+daily_logs | dpr_content | authenticated | UPDATE
+daily_logs | dpr_generated_at | anon | UPDATE
+daily_logs | dpr_generated_at | authenticated | UPDATE
+daily_logs | engineer_id | anon | UPDATE
+daily_logs | engineer_id | authenticated | UPDATE
+daily_logs | evening_dependencies | anon | UPDATE
+daily_logs | evening_dependencies | authenticated | UPDATE
+daily_logs | evening_equipment_utilisation | anon | UPDATE
+daily_logs | evening_equipment_utilisation | authenticated | UPDATE
+daily_logs | evening_output | anon | UPDATE
+daily_logs | evening_output | authenticated | UPDATE
+daily_logs | evening_output_quantities | anon | UPDATE
+daily_logs | evening_output_quantities | authenticated | UPDATE
+daily_logs | evening_productive_manpower | anon | UPDATE
+daily_logs | evening_productive_manpower | authenticated | UPDATE
+daily_logs | evening_schedule_met | anon | UPDATE
+daily_logs | evening_schedule_met | authenticated | UPDATE
+daily_logs | evening_schedule_miss_reason | anon | UPDATE
+daily_logs | evening_schedule_miss_reason | authenticated | UPDATE
+daily_logs | evening_submitted_at | anon | UPDATE
+daily_logs | evening_submitted_at | authenticated | UPDATE
+daily_logs | evening_submitted_via | anon | UPDATE
+daily_logs | evening_submitted_via | authenticated | UPDATE
+daily_logs | evening_workers_on_site | anon | UPDATE
+daily_logs | evening_workers_on_site | authenticated | UPDATE
+daily_logs | holiday_reason | anon | UPDATE
+daily_logs | holiday_reason | authenticated | UPDATE
+daily_logs | id | anon | UPDATE
+daily_logs | id | authenticated | UPDATE
+daily_logs | is_holiday | anon | UPDATE
+daily_logs | is_holiday | authenticated | UPDATE
+daily_logs | log_date | anon | UPDATE
+daily_logs | log_date | authenticated | UPDATE
+daily_logs | morning_dependencies | anon | UPDATE
+daily_logs | morning_dependencies | authenticated | UPDATE
+daily_logs | morning_equipment | anon | UPDATE
+daily_logs | morning_equipment | authenticated | UPDATE
+daily_logs | morning_execution_plan | anon | UPDATE
+daily_logs | morning_execution_plan | authenticated | UPDATE
+daily_logs | morning_hindrances | anon | UPDATE
+daily_logs | morning_hindrances | authenticated | UPDATE
+daily_logs | morning_manpower_planned | anon | UPDATE
+daily_logs | morning_manpower_planned | authenticated | UPDATE
+daily_logs | morning_plan | anon | UPDATE
+daily_logs | morning_plan | authenticated | UPDATE
+daily_logs | morning_submitted_at | anon | UPDATE
+daily_logs | morning_submitted_at | authenticated | UPDATE
+daily_logs | morning_submitted_via | anon | UPDATE
+daily_logs | morning_submitted_via | authenticated | UPDATE
+daily_logs | project_id | anon | UPDATE
+daily_logs | project_id | authenticated | UPDATE
+daily_logs | tenant_id | anon | UPDATE
+daily_logs | tenant_id | authenticated | UPDATE
+daily_logs | weather | anon | UPDATE
+daily_logs | weather | authenticated | UPDATE
+hindrances | area_affected | anon | UPDATE
+hindrances | area_affected | authenticated | UPDATE
+hindrances | created_at | anon | UPDATE
+hindrances | created_at | authenticated | UPDATE
+hindrances | description | anon | UPDATE
+hindrances | description | authenticated | UPDATE
+hindrances | dpr_included | anon | UPDATE
+hindrances | dpr_included | authenticated | UPDATE
+hindrances | hindrance_type | anon | UPDATE
+hindrances | hindrance_type | authenticated | UPDATE
+hindrances | id | anon | UPDATE
+hindrances | id | authenticated | UPDATE
+hindrances | impact_level | anon | UPDATE
+hindrances | impact_level | authenticated | UPDATE
+hindrances | photo_url | anon | UPDATE
+hindrances | photo_url | authenticated | UPDATE
+hindrances | project_id | anon | UPDATE
+hindrances | project_id | authenticated | UPDATE
+hindrances | reported_by | anon | UPDATE
+hindrances | reported_by | authenticated | UPDATE
+hindrances | resolved_at | anon | UPDATE
+hindrances | resolved_at | authenticated | UPDATE
+hindrances | resolved_by | anon | UPDATE
+hindrances | resolved_by | authenticated | UPDATE
+hindrances | status | anon | UPDATE
+hindrances | status | authenticated | UPDATE
+hindrances | submitted_via | anon | UPDATE
+hindrances | submitted_via | authenticated | UPDATE
+hindrances | tenant_id | anon | UPDATE
+hindrances | tenant_id | authenticated | UPDATE
+invoices | amount | anon | UPDATE
+invoices | amount | authenticated | UPDATE
+invoices | cost_head | anon | UPDATE
+invoices | cost_head | authenticated | UPDATE
+invoices | created_at | anon | UPDATE
+invoices | created_at | authenticated | UPDATE
+invoices | gstin_extracted | anon | UPDATE
+invoices | gstin_extracted | authenticated | UPDATE
+invoices | id | anon | UPDATE
+invoices | id | authenticated | UPDATE
+invoices | image_url | anon | UPDATE
+invoices | image_url | authenticated | UPDATE
+invoices | invoice_date | anon | UPDATE
+invoices | invoice_date | authenticated | UPDATE
+invoices | invoice_number | anon | UPDATE
+invoices | invoice_number | authenticated | UPDATE
+invoices | line_items | anon | UPDATE
+invoices | line_items | authenticated | UPDATE
+invoices | ocr_confidence | anon | UPDATE
+invoices | ocr_confidence | authenticated | UPDATE
+invoices | project_id | anon | UPDATE
+invoices | project_id | authenticated | UPDATE
+invoices | reviewed_at | anon | UPDATE
+invoices | reviewed_at | authenticated | UPDATE
+invoices | reviewed_by | anon | UPDATE
+invoices | reviewed_by | authenticated | UPDATE
+invoices | status | anon | UPDATE
+invoices | status | authenticated | UPDATE
+invoices | submitted_by | anon | UPDATE
+invoices | submitted_by | authenticated | UPDATE
+invoices | submitted_via | anon | UPDATE
+invoices | submitted_via | authenticated | UPDATE
+invoices | tenant_id | anon | UPDATE
+invoices | tenant_id | authenticated | UPDATE
+invoices | vendor_id | anon | UPDATE
+invoices | vendor_id | authenticated | UPDATE
+invoices | vendor_name | anon | UPDATE
+invoices | vendor_name | authenticated | UPDATE
+jobs | attempt_count | anon | UPDATE
+jobs | attempt_count | authenticated | UPDATE
+jobs | completed_at | anon | UPDATE
+jobs | completed_at | authenticated | UPDATE
+jobs | created_at | anon | UPDATE
+jobs | created_at | authenticated | UPDATE
+jobs | id | anon | UPDATE
+jobs | id | authenticated | UPDATE
+jobs | last_error | anon | UPDATE
+jobs | last_error | authenticated | UPDATE
+jobs | next_retry_at | anon | UPDATE
+jobs | next_retry_at | authenticated | UPDATE
+jobs | payload | anon | UPDATE
+jobs | payload | authenticated | UPDATE
+jobs | status | anon | UPDATE
+jobs | status | authenticated | UPDATE
+jobs | type | anon | UPDATE
+jobs | type | authenticated | UPDATE
+processed_messages | created_at | anon | UPDATE
+processed_messages | created_at | authenticated | UPDATE
+processed_messages | id | anon | UPDATE
+processed_messages | id | authenticated | UPDATE
+processed_messages | message_sid | anon | UPDATE
+processed_messages | message_sid | authenticated | UPDATE
+processed_messages | processed_at | anon | UPDATE
+processed_messages | processed_at | authenticated | UPDATE
+project_members | created_at | anon | UPDATE
+project_members | created_at | authenticated | UPDATE
+project_members | id | anon | UPDATE
+project_members | id | authenticated | UPDATE
+project_members | project_id | anon | UPDATE
+project_members | project_id | authenticated | UPDATE
+project_members | role | anon | UPDATE
+project_members | role | authenticated | UPDATE
+project_members | tenant_id | anon | UPDATE
+project_members | tenant_id | authenticated | UPDATE
+project_members | user_id | anon | UPDATE
+project_members | user_id | authenticated | UPDATE
+projects | client_contact | anon | UPDATE
+projects | client_contact | authenticated | UPDATE
+projects | client_name | anon | UPDATE
+projects | client_name | authenticated | UPDATE
+projects | contract_type | anon | UPDATE
+projects | contract_type | authenticated | UPDATE
+projects | contract_value | anon | UPDATE
+projects | contract_value | authenticated | UPDATE
+projects | created_at | anon | UPDATE
+projects | created_at | authenticated | UPDATE
+projects | created_by | anon | UPDATE
+projects | created_by | authenticated | UPDATE
+projects | expected_end_date | anon | UPDATE
+projects | expected_end_date | authenticated | UPDATE
+projects | id | anon | UPDATE
+projects | id | authenticated | UPDATE
+projects | name | anon | UPDATE
+projects | name | authenticated | UPDATE
+projects | owner_user_id | anon | UPDATE
+projects | owner_user_id | authenticated | UPDATE
+projects | project_type | anon | UPDATE
+projects | project_type | authenticated | UPDATE
+projects | site_address | anon | UPDATE
+projects | site_address | authenticated | UPDATE
+projects | start_date | anon | UPDATE
+projects | start_date | authenticated | UPDATE
+projects | status | anon | UPDATE
+projects | status | authenticated | UPDATE
+projects | tenant_id | anon | UPDATE
+projects | tenant_id | authenticated | UPDATE
+projects | tender_id | anon | UPDATE
+projects | tender_id | authenticated | UPDATE
+ra_bill_payments | amount_received | anon | UPDATE
+ra_bill_payments | amount_received | authenticated | UPDATE
+ra_bill_payments | created_at | anon | UPDATE
+ra_bill_payments | created_at | authenticated | UPDATE
+ra_bill_payments | id | anon | UPDATE
+ra_bill_payments | id | authenticated | UPDATE
+ra_bill_payments | notes | anon | UPDATE
+ra_bill_payments | notes | authenticated | UPDATE
+ra_bill_payments | payment_date | anon | UPDATE
+ra_bill_payments | payment_date | authenticated | UPDATE
+ra_bill_payments | payment_reference | anon | UPDATE
+ra_bill_payments | payment_reference | authenticated | UPDATE
+ra_bill_payments | ra_bill_id | anon | UPDATE
+ra_bill_payments | ra_bill_id | authenticated | UPDATE
+ra_bill_payments | tenant_id | anon | UPDATE
+ra_bill_payments | tenant_id | authenticated | UPDATE
+ra_bills | advance_recovery | anon | UPDATE
+ra_bills | advance_recovery | authenticated | UPDATE
+ra_bills | approved_at | anon | UPDATE
+ra_bills | approved_at | authenticated | UPDATE
+ra_bills | bill_number | anon | UPDATE
+ra_bills | bill_number | authenticated | UPDATE
+ra_bills | created_at | anon | UPDATE
+ra_bills | created_at | authenticated | UPDATE
+ra_bills | gross_amount | anon | UPDATE
+ra_bills | gross_amount | authenticated | UPDATE
+ra_bills | id | anon | UPDATE
+ra_bills | id | authenticated | UPDATE
+ra_bills | net_payable | anon | UPDATE
+ra_bills | net_payable | authenticated | UPDATE
+ra_bills | period_from | anon | UPDATE
+ra_bills | period_from | authenticated | UPDATE
+ra_bills | period_to | anon | UPDATE
+ra_bills | period_to | authenticated | UPDATE
+ra_bills | project_id | anon | UPDATE
+ra_bills | project_id | authenticated | UPDATE
+ra_bills | retention_deduction | anon | UPDATE
+ra_bills | retention_deduction | authenticated | UPDATE
+ra_bills | status | anon | UPDATE
+ra_bills | status | authenticated | UPDATE
+ra_bills | submitted_at | anon | UPDATE
+ra_bills | submitted_at | authenticated | UPDATE
+ra_bills | tenant_id | anon | UPDATE
+ra_bills | tenant_id | authenticated | UPDATE
+rate_catalog | base_rate | anon | UPDATE
+rate_catalog | base_rate | authenticated | UPDATE
+rate_catalog | created_at | anon | UPDATE
+rate_catalog | created_at | authenticated | UPDATE
+rate_catalog | description | anon | UPDATE
+rate_catalog | description | authenticated | UPDATE
+rate_catalog | description_tsv | anon | UPDATE
+rate_catalog | description_tsv | authenticated | UPDATE
+rate_catalog | effective_date | anon | UPDATE
+rate_catalog | effective_date | authenticated | UPDATE
+rate_catalog | embedding | anon | UPDATE
+rate_catalog | embedding | authenticated | UPDATE
+rate_catalog | expiry_date | anon | UPDATE
+rate_catalog | expiry_date | authenticated | UPDATE
+rate_catalog | id | anon | UPDATE
+rate_catalog | id | authenticated | UPDATE
+rate_catalog | is_active | anon | UPDATE
+rate_catalog | is_active | authenticated | UPDATE
+rate_catalog | item_code | anon | UPDATE
+rate_catalog | item_code | authenticated | UPDATE
+rate_catalog | rate_max | anon | UPDATE
+rate_catalog | rate_max | authenticated | UPDATE
+rate_catalog | rate_min | anon | UPDATE
+rate_catalog | rate_min | authenticated | UPDATE
+rate_catalog | source_name | anon | UPDATE
+rate_catalog | source_name | authenticated | UPDATE
+rate_catalog | state_code | anon | UPDATE
+rate_catalog | state_code | authenticated | UPDATE
+rate_catalog | trade_category | anon | UPDATE
+rate_catalog | trade_category | authenticated | UPDATE
+rate_catalog | unit | anon | UPDATE
+rate_catalog | unit | authenticated | UPDATE
+rate_catalog_history | catalog_id | anon | UPDATE
+rate_catalog_history | catalog_id | authenticated | UPDATE
+rate_catalog_history | created_at | anon | UPDATE
+rate_catalog_history | created_at | authenticated | UPDATE
+rate_catalog_history | id | anon | UPDATE
+rate_catalog_history | id | authenticated | UPDATE
+rate_catalog_history | location | anon | UPDATE
+rate_catalog_history | location | authenticated | UPDATE
+rate_catalog_history | notes | anon | UPDATE
+rate_catalog_history | notes | authenticated | UPDATE
+rate_catalog_history | recorded_date | anon | UPDATE
+rate_catalog_history | recorded_date | authenticated | UPDATE
+rate_catalog_history | recorded_rate | anon | UPDATE
+rate_catalog_history | recorded_rate | authenticated | UPDATE
+rate_catalog_history | source_url | anon | UPDATE
+rate_catalog_history | source_url | authenticated | UPDATE
+safety_incidents | created_at | anon | UPDATE
+safety_incidents | created_at | authenticated | UPDATE
+safety_incidents | description | anon | UPDATE
+safety_incidents | description | authenticated | UPDATE
+safety_incidents | id | anon | UPDATE
+safety_incidents | id | authenticated | UPDATE
+safety_incidents | incident_type | anon | UPDATE
+safety_incidents | incident_type | authenticated | UPDATE
+safety_incidents | injury_status | anon | UPDATE
+safety_incidents | injury_status | authenticated | UPDATE
+safety_incidents | investigation_notes | anon | UPDATE
+safety_incidents | investigation_notes | authenticated | UPDATE
+safety_incidents | location | anon | UPDATE
+safety_incidents | location | authenticated | UPDATE
+safety_incidents | ocr_confidence | anon | UPDATE
+safety_incidents | ocr_confidence | authenticated | UPDATE
+safety_incidents | photo_url | anon | UPDATE
+safety_incidents | photo_url | authenticated | UPDATE
+safety_incidents | pm_notified_at | anon | UPDATE
+safety_incidents | pm_notified_at | authenticated | UPDATE
+safety_incidents | project_id | anon | UPDATE
+safety_incidents | project_id | authenticated | UPDATE
+safety_incidents | reported_by | anon | UPDATE
+safety_incidents | reported_by | authenticated | UPDATE
+safety_incidents | resolved_at | anon | UPDATE
+safety_incidents | resolved_at | authenticated | UPDATE
+safety_incidents | resolved_by | anon | UPDATE
+safety_incidents | resolved_by | authenticated | UPDATE
+safety_incidents | status | anon | UPDATE
+safety_incidents | status | authenticated | UPDATE
+safety_incidents | submitted_via | anon | UPDATE
+safety_incidents | submitted_via | authenticated | UPDATE
+safety_incidents | tenant_id | anon | UPDATE
+safety_incidents | tenant_id | authenticated | UPDATE
+tenants | annual_turnover | anon | UPDATE
+tenants | annual_turnover | authenticated | UPDATE
+tenants | cin | anon | UPDATE
+tenants | cin | authenticated | UPDATE
+tenants | created_at | anon | UPDATE
+tenants | created_at | authenticated | UPDATE
+tenants | gstin | anon | UPDATE
+tenants | gstin | authenticated | UPDATE
+tenants | id | anon | UPDATE
+tenants | id | authenticated | UPDATE
+tenants | iso_certifications | anon | UPDATE
+tenants | iso_certifications | authenticated | UPDATE
+tenants | last_payment_ref | anon | UPDATE
+tenants | last_payment_ref | authenticated | UPDATE
+tenants | name | anon | UPDATE
+tenants | name | authenticated | UPDATE
+tenants | paid_until | anon | UPDATE
+tenants | paid_until | authenticated | UPDATE
+tenants | payment_customer_id | anon | UPDATE
+tenants | payment_customer_id | authenticated | UPDATE
+tenants | plan | anon | UPDATE
+tenants | plan | authenticated | UPDATE
+tenants | profile_complete | anon | UPDATE
+tenants | profile_complete | authenticated | UPDATE
+tenants | pwd_class | anon | UPDATE
+tenants | pwd_class | authenticated | UPDATE
+tenants | registered_address | anon | UPDATE
+tenants | registered_address | authenticated | UPDATE
+tenants | slug | anon | UPDATE
+tenants | slug | authenticated | UPDATE
+tenants | trial_ends_at | anon | UPDATE
+tenants | trial_ends_at | authenticated | UPDATE
+tender_chat_messages | citations | anon | UPDATE
+tender_chat_messages | citations | authenticated | UPDATE
+tender_chat_messages | content | anon | UPDATE
+tender_chat_messages | content | authenticated | UPDATE
+tender_chat_messages | created_at | anon | UPDATE
+tender_chat_messages | created_at | authenticated | UPDATE
+tender_chat_messages | id | anon | UPDATE
+tender_chat_messages | id | authenticated | UPDATE
+tender_chat_messages | retrieved_chunk_ids | anon | UPDATE
+tender_chat_messages | retrieved_chunk_ids | authenticated | UPDATE
+tender_chat_messages | role | anon | UPDATE
+tender_chat_messages | role | authenticated | UPDATE
+tender_chat_messages | session_id | anon | UPDATE
+tender_chat_messages | session_id | authenticated | UPDATE
+tender_chat_messages | tenant_id | anon | UPDATE
+tender_chat_messages | tenant_id | authenticated | UPDATE
+tender_chat_messages | token_count | anon | UPDATE
+tender_chat_messages | token_count | authenticated | UPDATE
+tender_chat_sessions | created_at | anon | UPDATE
+tender_chat_sessions | created_at | authenticated | UPDATE
+tender_chat_sessions | id | anon | UPDATE
+tender_chat_sessions | id | authenticated | UPDATE
+tender_chat_sessions | last_message_at | anon | UPDATE
+tender_chat_sessions | last_message_at | authenticated | UPDATE
+tender_chat_sessions | status | anon | UPDATE
+tender_chat_sessions | status | authenticated | UPDATE
+tender_chat_sessions | system_prompt | anon | UPDATE
+tender_chat_sessions | system_prompt | authenticated | UPDATE
+tender_chat_sessions | tenant_id | anon | UPDATE
+tender_chat_sessions | tenant_id | authenticated | UPDATE
+tender_chat_sessions | tender_id | anon | UPDATE
+tender_chat_sessions | tender_id | authenticated | UPDATE
+tender_chat_sessions | title | anon | UPDATE
+tender_chat_sessions | title | authenticated | UPDATE
+tender_chat_sessions | user_id | anon | UPDATE
+tender_chat_sessions | user_id | authenticated | UPDATE
+tender_document_chunks | chunk_index | anon | UPDATE
+tender_document_chunks | chunk_index | authenticated | UPDATE
+tender_document_chunks | chunk_text | anon | UPDATE
+tender_document_chunks | chunk_text | authenticated | UPDATE
+tender_document_chunks | chunk_tsv | anon | UPDATE
+tender_document_chunks | chunk_tsv | authenticated | UPDATE
+tender_document_chunks | created_at | anon | UPDATE
+tender_document_chunks | created_at | authenticated | UPDATE
+tender_document_chunks | embedding | anon | UPDATE
+tender_document_chunks | embedding | authenticated | UPDATE
+tender_document_chunks | embedding_model | anon | UPDATE
+tender_document_chunks | embedding_model | authenticated | UPDATE
+tender_document_chunks | id | anon | UPDATE
+tender_document_chunks | id | authenticated | UPDATE
+tender_document_chunks | page_number | anon | UPDATE
+tender_document_chunks | page_number | authenticated | UPDATE
+tender_document_chunks | tenant_id | anon | UPDATE
+tender_document_chunks | tenant_id | authenticated | UPDATE
+tender_document_chunks | tender_document_id | anon | UPDATE
+tender_document_chunks | tender_document_id | authenticated | UPDATE
+tender_document_chunks | token_count | anon | UPDATE
+tender_document_chunks | token_count | authenticated | UPDATE
+tender_documents | created_at | anon | UPDATE
+tender_documents | created_at | authenticated | UPDATE
+tender_documents | document_type | anon | UPDATE
+tender_documents | document_type | authenticated | UPDATE
+tender_documents | embedding_model | anon | UPDATE
+tender_documents | embedding_model | authenticated | UPDATE
+tender_documents | file_name | anon | UPDATE
+tender_documents | file_name | authenticated | UPDATE
+tender_documents | file_type | anon | UPDATE
+tender_documents | file_type | authenticated | UPDATE
+tender_documents | file_url | anon | UPDATE
+tender_documents | file_url | authenticated | UPDATE
+tender_documents | id | anon | UPDATE
+tender_documents | id | authenticated | UPDATE
+tender_documents | processing_status | anon | UPDATE
+tender_documents | processing_status | authenticated | UPDATE
+tender_documents | tenant_id | anon | UPDATE
+tender_documents | tenant_id | authenticated | UPDATE
+tender_documents | tender_id | anon | UPDATE
+tender_documents | tender_id | authenticated | UPDATE
+tender_documents | vector_chunks_count | anon | UPDATE
+tender_documents | vector_chunks_count | authenticated | UPDATE
+tenders | ai_summary | anon | UPDATE
+tenders | ai_summary | authenticated | UPDATE
+tenders | clarifications | anon | UPDATE
+tenders | clarifications | authenticated | UPDATE
+tenders | client_name | anon | UPDATE
+tenders | client_name | authenticated | UPDATE
+tenders | created_at | anon | UPDATE
+tenders | created_at | authenticated | UPDATE
+tenders | created_by | anon | UPDATE
+tenders | created_by | authenticated | UPDATE
+tenders | estimated_value | anon | UPDATE
+tenders | estimated_value | authenticated | UPDATE
+tenders | id | anon | UPDATE
+tenders | id | authenticated | UPDATE
+tenders | qualification_flags | anon | UPDATE
+tenders | qualification_flags | authenticated | UPDATE
+tenders | status | anon | UPDATE
+tenders | status | authenticated | UPDATE
+tenders | submission_deadline | anon | UPDATE
+tenders | submission_deadline | authenticated | UPDATE
+tenders | tenant_id | anon | UPDATE
+tenders | tenant_id | authenticated | UPDATE
+tenders | title | anon | UPDATE
+tenders | title | authenticated | UPDATE
+users | avatar_url | authenticated | UPDATE
+users | full_name | authenticated | UPDATE
+vendor_invoices | amount | anon | UPDATE
+vendor_invoices | amount | authenticated | UPDATE
+vendor_invoices | created_at | anon | UPDATE
+vendor_invoices | created_at | authenticated | UPDATE
+vendor_invoices | due_date | anon | UPDATE
+vendor_invoices | due_date | authenticated | UPDATE
+vendor_invoices | id | anon | UPDATE
+vendor_invoices | id | authenticated | UPDATE
+vendor_invoices | invoice_date | anon | UPDATE
+vendor_invoices | invoice_date | authenticated | UPDATE
+vendor_invoices | invoice_number | anon | UPDATE
+vendor_invoices | invoice_number | authenticated | UPDATE
+vendor_invoices | notes | anon | UPDATE
+vendor_invoices | notes | authenticated | UPDATE
+vendor_invoices | payment_date | anon | UPDATE
+vendor_invoices | payment_date | authenticated | UPDATE
+vendor_invoices | project_id | anon | UPDATE
+vendor_invoices | project_id | authenticated | UPDATE
+vendor_invoices | status | anon | UPDATE
+vendor_invoices | status | authenticated | UPDATE
+vendor_invoices | tenant_id | anon | UPDATE
+vendor_invoices | tenant_id | authenticated | UPDATE
+vendor_invoices | vendor_id | anon | UPDATE
+vendor_invoices | vendor_id | authenticated | UPDATE
+vendors | auto_extracted | anon | UPDATE
+vendors | auto_extracted | authenticated | UPDATE
+vendors | bank_details | anon | UPDATE
+vendors | bank_details | authenticated | UPDATE
+vendors | created_at | anon | UPDATE
+vendors | created_at | authenticated | UPDATE
+vendors | email | anon | UPDATE
+vendors | email | authenticated | UPDATE
+vendors | gstin | anon | UPDATE
+vendors | gstin | authenticated | UPDATE
+vendors | id | anon | UPDATE
+vendors | id | authenticated | UPDATE
+vendors | name | anon | UPDATE
+vendors | name | authenticated | UPDATE
+vendors | needs_verification | anon | UPDATE
+vendors | needs_verification | authenticated | UPDATE
+vendors | phone | anon | UPDATE
+vendors | phone | authenticated | UPDATE
+vendors | rating | anon | UPDATE
+vendors | rating | authenticated | UPDATE
+vendors | status | anon | UPDATE
+vendors | status | authenticated | UPDATE
+vendors | tenant_id | anon | UPDATE
+vendors | tenant_id | authenticated | UPDATE
+vendors | trade_category | anon | UPDATE
+vendors | trade_category | authenticated | UPDATE
+whatsapp_sessions | context | anon | UPDATE
+whatsapp_sessions | context | authenticated | UPDATE
+whatsapp_sessions | created_at | anon | UPDATE
+whatsapp_sessions | created_at | authenticated | UPDATE
+whatsapp_sessions | current_flow | anon | UPDATE
+whatsapp_sessions | current_flow | authenticated | UPDATE
+whatsapp_sessions | current_step | anon | UPDATE
+whatsapp_sessions | current_step | authenticated | UPDATE
+whatsapp_sessions | expires_at | anon | UPDATE
+whatsapp_sessions | expires_at | authenticated | UPDATE
+whatsapp_sessions | id | anon | UPDATE
+whatsapp_sessions | id | authenticated | UPDATE
+whatsapp_sessions | pending_flows | anon | UPDATE
+whatsapp_sessions | pending_flows | authenticated | UPDATE
+whatsapp_sessions | phone_number | anon | UPDATE
+whatsapp_sessions | phone_number | authenticated | UPDATE
+whatsapp_sessions | tenant_id | anon | UPDATE
+whatsapp_sessions | tenant_id | authenticated | UPDATE
+whatsapp_sessions | updated_at | anon | UPDATE
+whatsapp_sessions | updated_at | authenticated | UPDATE
+whatsapp_sessions | user_id | anon | UPDATE
+whatsapp_sessions | user_id | authenticated | UPDATE
+```
 
--- FULL RE-RUN INVARIANT (operator-confirmed, complete result across all 20+ tables):
---   * users: EXACTLY 2 rows -> (full_name, authenticated) and (avatar_url, authenticated).
---     ZERO anon rows on users. This is the 015 column-bounding, and it is the ONLY
---     column-bounded table in the schema.
---   * EVERY other table: all columns present for BOTH anon AND authenticated (blanket).
--- The head above is the verbatim capture excerpt; the invariant is the pinned claim the
--- audit's "users is the only column-bounding" rests on. (A full byte-level grid can be
--- re-captured on request; the excerpt + invariant are what the finding needs.)
-```
+**Reading:** `users` appears with EXACTLY two rows — `avatar_url | authenticated` and
+`full_name | authenticated`, **zero anon rows** — the sole column-bounded table (015).
+Every other table lists all columns for BOTH `anon` and `authenticated` (blanket).
+`jobs`/`processed_messages` show column grants here but are RLS-enabled with zero
+policies (default-deny) — see §7 F6.
 
 ### Probe 4 — projects.owner_user_id FK shape
 ```sql
@@ -677,8 +1258,8 @@ the test-db branch (`exfccwlrhoutkgrlikod`) against the two-tenant fixture
 
 ## 9. Pinning checklist (before reviewer hand-off)
 
-- [x] §5 probe outputs = pinned prod captures (1/2/4/5 full verbatim; 3 head-excerpt
-      + operator-confirmed invariant). Zero drift vs the §6 reconstruction.
+- [x] §5 probe outputs = pinned prod captures (all five full verbatim; Probe 3 =
+      complete 613-row role_column_grants dump). Zero drift vs the §6 reconstruction.
 - [x] F6 investigated + retracted (Probe 6), residual reproducibility item recorded.
 - [ ] O1 (`dpr_content`) + O2 (option A) decided and folded.
 - [ ] 017 SQL authored, pinned via `git show <sha>:supabase/migrations/017_*.sql`.
