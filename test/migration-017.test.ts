@@ -7,6 +7,7 @@ import {
   removeTwoTenantFixtures,
   type TwoTenantFixtures,
   TEST_TENANT_A_ID,
+  TEST_TENANT_B_ID,
   TEST_PROJECT_A_ID,
   TEST_PROJECT_B_ID,
   TEST_007_USER_A_EMAIL,
@@ -245,5 +246,41 @@ describe('migration 017 — RLS column-bounding + owner_user_id same-tenant FK',
       .update({ full_name: 'ZZ 017 User A renamed' })
       .eq('id', fx.profileAId)
     expect(userErr).toBeNull()
+  })
+
+  // T-017-12 — SF3 / the scenario BF1 is really about. Bind owner_user_id LEGALLY
+  // (same-tenant), then try to move the referenced owner to another tenant. The
+  // composite FK is ON UPDATE NO ACTION, so the tenant_id UPDATE on USERS is rejected
+  // with an FK violation (surfacing on the users update, not projects) — proving a
+  // referenced (id, tenant_id) key cannot be moved out from under a live reference.
+  // Service role: this is DB-level FK behavior; authenticated can't UPDATE tenant_id
+  // at all (015 -> 42501), which would mask the FK check we want to assert.
+  it('T-017-12 (SF3): tenant-move of a referenced owner is rejected by NO ACTION (23503)', async () => {
+    const db = testClient()
+
+    // (1) legal same-tenant bind
+    const { error: bindErr } = await db
+      .from('projects')
+      .update({ owner_user_id: fx.profileAId })
+      .eq('id', TEST_PROJECT_A_ID)
+    expect(bindErr).toBeNull()
+
+    // (2) move the referenced owner to tenant B -> composite FK (owner_user_id,
+    //     tenant_id) on project A would dangle -> ON UPDATE NO ACTION rejects it.
+    const { error: moveErr } = await db
+      .from('users')
+      .update({ tenant_id: TEST_TENANT_B_ID })
+      .eq('id', fx.profileAId)
+    expect(moveErr).not.toBeNull()
+    expect(moveErr?.code).toBe('23503') // FK violation on the users UPDATE
+
+    // Belt-and-suspenders: the owner did NOT move.
+    const { data: still } = await db
+      .from('users')
+      .select('tenant_id')
+      .eq('id', fx.profileAId)
+      .single<{ tenant_id: string }>()
+    expect(still?.tenant_id).toBe(TEST_TENANT_A_ID)
+    // afterEach nulls owner_user_id back out.
   })
 })

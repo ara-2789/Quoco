@@ -15,8 +15,12 @@
 -- FOR KEY SHARE conflicts only on KEY columns, and tenant_id is not part of any
 -- unique index on users, so the lock never blocks a concurrent tenant_id repoint
 -- (the exact write the race worried about). The composite FK's atomicity comes from
--- the UNIQUE(id, tenant_id) INDEX. The FK is also RLS-independent (unlike the
--- trigger, whose correctness was coupled to RLS WITH CHECK pinning NEW.tenant_id).
+-- the UNIQUE(id, tenant_id) INDEX. NOTE the FK does not *permit-and-cascade* a
+-- referenced-tenant_id change — with ON UPDATE NO ACTION (Step 2) it REJECTS that
+-- write (fails loud with an FK violation), which is correct given tenant_id's
+-- immutability (007 §9): the guarantee is "no dangling cross-tenant reference can
+-- exist," not "cross-tenant moves are handled." The FK is also RLS-independent
+-- (unlike the trigger, whose correctness was coupled to RLS WITH CHECK on NEW.tenant_id).
 --
 -- APPLY: dashboard SQL Editor (CLI IPv6/28P01-blocked, see docs/schema.md 013 note),
 -- branch-verified first, artifact-provenance-pinned per §0. Regenerate types after.
@@ -61,7 +65,19 @@ ALTER TABLE public.projects
 -- and re-add it as a composite FK that also pins tenant_id, so the referenced row
 -- MUST live in the same tenant as the referencing row. Enforced on ALL writers
 -- (incl. service role — an FK is not bypassed by any role).
--- =============================================================================
+--
+-- ON UPDATE NO ACTION is stated EXPLICITLY on all three (BF1) — it is the default,
+-- but here it is an INTENTIONAL CHOICE, not an omission: tenant_id is immutable
+-- post-creation per 007 §9 (one auth account <-> one tenant, forever — a tenant-move
+-- is NOT a modeled operation), so no legitimate path ever UPDATEs a referenced
+-- (id, tenant_id) key and there is nothing for a cascade to do. If a referenced
+-- tenant_id ever WERE updated, NO ACTION correctly REJECTS it (fails loud with an FK
+-- violation) rather than silently cascading a tenant-move nobody designed.
+--   *** FORWARD-POINTER: a future tenant-move / tenant-merge feature MUST revisit ALL
+--   THREE FKs (projects.owner_user_id, project_members.user_id, project_members.
+--   project_id) before shipping — with NO ACTION, the tenant_id UPDATE will be
+--   rejected with an FK violation that surfaces on the *referenced* table (users /
+--   projects), which reads as a confusing error on an unrelated table if unexpected. ***
 
 -- projects.owner_user_id -> users(id, tenant_id).
 -- MATCH SIMPLE (the default): owner_user_id is NULLABLE, and under MATCH SIMPLE a
@@ -73,7 +89,7 @@ ALTER TABLE public.projects DROP CONSTRAINT projects_owner_user_id_fkey;
 ALTER TABLE public.projects
   ADD CONSTRAINT projects_owner_user_id_fkey
   FOREIGN KEY (owner_user_id, tenant_id) REFERENCES public.users (id, tenant_id)
-  ON DELETE RESTRICT;
+  ON UPDATE NO ACTION ON DELETE RESTRICT;
 
 -- project_members.user_id -> users(id, tenant_id). user_id is NOT NULL, so the check
 -- is ALWAYS enforced (MATCH SIMPLE vs FULL is moot). Preserves ON DELETE CASCADE.
@@ -81,14 +97,14 @@ ALTER TABLE public.project_members DROP CONSTRAINT project_members_user_id_fkey;
 ALTER TABLE public.project_members
   ADD CONSTRAINT project_members_user_id_fkey
   FOREIGN KEY (user_id, tenant_id) REFERENCES public.users (id, tenant_id)
-  ON DELETE CASCADE;
+  ON UPDATE NO ACTION ON DELETE CASCADE;
 
 -- project_members.project_id -> projects(id, tenant_id). NOT NULL, always enforced.
 ALTER TABLE public.project_members DROP CONSTRAINT project_members_project_id_fkey;
 ALTER TABLE public.project_members
   ADD CONSTRAINT project_members_project_id_fkey
   FOREIGN KEY (project_id, tenant_id) REFERENCES public.projects (id, tenant_id)
-  ON DELETE CASCADE;
+  ON UPDATE NO ACTION ON DELETE CASCADE;
 
 -- =============================================================================
 -- STEP 3 — COLUMN-BOUND OUT: projects. Revoke the blanket table UPDATE from
@@ -127,9 +143,19 @@ GRANT  UPDATE (
 -- STEP 5 — F4 anon write-strip (defense-in-depth, across ALL public tables).
 -- anon has no write policy today so this is not exploitable now, but the privilege
 -- layer should bound what it can bound (015's thesis). Strips anon INSERT/UPDATE/
--- DELETE on every base table in public. Idempotent; covers jobs/processed_messages
--- too (their RLS-enable is the SEPARATE F6 residual migration, independent of this).
+-- DELETE on every base table in public. Idempotent.
+--
+-- F4 IS NOT F6 (SF2 — different layers, do not conflate). This step operates on the
+-- GRANT layer (table privileges); F6 is about the RLS layer (relrowsecurity) on
+-- jobs/processed_messages. Stripping anon write-grants here neither substitutes for
+-- nor interacts with F6's RLS-enable state — a table can be RLS-enabled yet still
+-- carry stray grants, or grant-stripped yet RLS-disabled. F6 remains its own
+-- separate migration; this step does not close or affect it.
 -- SELECT is untouched (no anon SELECT policy exists; reads stay RLS-denied).
+-- rate_catalog / rate_catalog_history are read-only reference tables (SELECT-only
+-- policy, USING(true)); verified (SF2) NO code path or seed/import script writes them
+-- as anon (only writers would be service-role/admin loads), so revoking anon writes
+-- here breaks nothing.
 -- =============================================================================
 DO $$
 DECLARE r record;
