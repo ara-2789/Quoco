@@ -367,6 +367,44 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        are 2026-07-13. External reviewer signed off with pinned-artifact provenance
        requirements. Full package: docs/reviews/016-review-package.md.
 
+018 — morning flow Pass 2 (Q2 labour + Q3 equipment parsers). FUNCTION-ONLY:
+       no table/column DDL — CREATE OR REPLACE of apply_morning_flow_turn only
+       (both target columns, morning_manpower_planned + morning_equipment, are
+       pre-existing nullable JSONB from 001 / 016-era). Extends the morning flow
+       step order 1→4 to 1→2→3→4: Q2 writes the parsed labour object to
+       morning_manpower_planned (step 2), Q3 writes the parsed equipment object
+       to morning_equipment (step 3). Parsing is done in TypeScript (pure —
+       lib/whatsapp/flows/parsers/{labour,equipment}.ts); the webhook parses the
+       inbound unconditionally and passes p_manpower/p_equipment (+ _ok flags),
+       and the RPC selects the one matching the active step under its existing
+       lock. Signature goes 8-arg → 12-arg via DROP-FIRST (DROP FUNCTION the old
+       signature, then CREATE) so no overload survives. Locking semantics
+       unchanged beyond the anticipated context replace→merge on the parsed steps
+       (per-step q2_reask/q3_reask counters; BOT-07 next-day reset wipes them).
+       Feature-class, trivially reversible — NO external-reviewer gate.
+       STORAGE SHAPE: both parsed columns are OBJECTS, not the bare arrays the
+       bot-flows spec illustrates — morning_manpower_planned =
+       {planned_total, by_trade:[{trade,planned_count}], raw_text};
+       morning_equipment = {items:[{type,count,owned_or_hired,daily_hire_cost,
+       raw}], none, raw_text}. This preserves the raw answer even on a
+       "no equipment" turn (none:true, items:[]). READERS (Pass 3 evening Q5
+       BOT-22 echo, DPR, dashboard) MUST read `.items` and treat empty as
+       jsonb_array_length(morning_equipment->'items')=0. No reader exists yet
+       (verified 2026-07-15).
+
+       APPLIED TO PRODUCTION VIA SQL EDITOR on 2026-07-14, from the PINNED branch
+       tip 3d98cd3 (git show 3d98cd3:supabase/migrations/018_morning_flow_parsers.sql;
+       frame at /tmp/018-pinned-prod-apply.txt). CLI IPv6/28P01-blocked, SQL
+       Editor is the deliberate fallback (as with 013/014/015/016). Ledger tracked
+       via manual INSERT into supabase_migrations.schema_migrations
+       (version 018, name morning_flow_parsers); post-insert ledger = 14 rows.
+       Prod signature probe: exactly one apply_morning_flow_turn, 12-arg list
+       (n_args=12, n_defaults=6) — drop-first confirmed, no overload. types
+       re-regenerated from prod post-apply = ZERO diff vs the branch-generated
+       types/database.ts (confirmation gate passed). Branch verification: full
+       suite 91/91 green (incl. 13 morning-flow integration tests + the BOT-07
+       counter-wipe case) on test-db exfccwlrhoutkgrlikod.
+
 NOTE ON CLI MIGRATION TRACKING: migrations 001-005 were originally applied
 via the Supabase dashboard SQL editor, not the CLI, so the CLI's remote
 tracking table had no record of them. Before pushing 006, this was repaired
