@@ -25,6 +25,22 @@
 -- single-column FKs; drop the UNIQUE(id, tenant_id) constraints; restore the blanket
 -- table UPDATE grants (GRANT UPDATE ON projects, daily_logs TO authenticated) and the
 -- anon write verbs. Down path spelled out at the file end.
+--
+-- COLUMN-GRANT LISTS ARE PROVISIONING, NOT A LIVE BEHAVIOR CHANGE (locked decision,
+-- keep-as-drafted). A grep of app/ + lib/ (2026-07-15) found ZERO authenticated UPDATE
+-- code paths on projects or daily_logs today: every touchpoint is a read-only SELECT
+-- (dashboard dprs/project-detail views) or a separate INSERT flow (projects/new); the
+-- only writers are the service-role morning-flow RPC (bypasses grants) and the
+-- service-role queue worker. There is NO PM-edit dashboard yet. So the granted/excluded
+-- split in Steps 3/4 changes no current behavior under EITHER choice — it is
+-- conservative provisioning for a future feature, excluding structural/identity and
+-- RPC-managed submission-metadata columns by default. Grant classification:
+-- ~/Desktop/017-grant-lists.txt / §4 of the review package.
+--   *** FORWARD-POINTER: when a PM-edit dashboard is eventually built, that work MUST
+--   consult this grant list and widen specific columns as needed (e.g. GRANT UPDATE
+--   (log_date) if a "correct submission date" feature ships). Do not assume the
+--   current exclusions are permanent product decisions — they are the safe default
+--   for "no writer exists yet." ***
 
 BEGIN;
 

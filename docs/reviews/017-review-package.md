@@ -115,6 +115,19 @@ RLS-independent. This is a concrete advantage of A that the B2a analysis surface
 - **`tenants` DROPPED** — only risk is an admin editing their own tenant's billing
   = intra-tenant integrity = F5, no cross-tenant/escalation vector.
 
+**Grant lists are PROVISIONING, not a live behavior change (locked: keep-as-drafted).**
+A grep of `app/` + `lib/` (2026-07-15) found **zero authenticated `UPDATE` code paths**
+on `projects`/`daily_logs` today — every touchpoint is a read-only `SELECT` (dashboard
+`dprs` + project-detail views) or a separate `INSERT` (`projects/new`); the only writers
+are the service-role morning-flow RPC and the service-role queue worker (both bypass
+grants). There is **no PM-edit dashboard yet**, so the granted/excluded split changes no
+current behavior under either choice — it is conservative provisioning that excludes
+structural/identity + RPC-managed submission-metadata columns by default. **Forward-
+pointer (also in the migration header):** when a PM-edit dashboard is built, that work
+MUST consult the grant list and widen specific columns as needed (e.g. `log_date` for a
+"correct submission date" feature) — the current exclusions are the safe "no writer
+exists yet" default, not permanent product decisions.
+
 **What actually protects `daily_logs` (B2b — two writers, two complementary primary
 controls, not one-behind-the-other).** `daily_logs` has **two distinct writers**, and
 each control is the PRIMARY guarantee for a *different* one:
