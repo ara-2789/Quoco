@@ -1796,3 +1796,64 @@ $ git show 69dac1a:supabase/migrations/017_rls_column_bounding.sql | shasum -a 2
    `supabase_migrations.schema_migrations` (the CLI `migration repair` is 28P01-blocked
    for this project; manual INSERT is the real method) — then regenerate types, then
    the schema.md 017 entry after the ledger confirms.
+
+### §10.4 — Rehearsal staging + prod pre-state (2026-07-15)
+
+Additive staging notes for the step-1 branch re-rehearsal and the prod before/after
+probe pair. Nothing here is executed against prod.
+
+**Byte-identical body pin (suite checkout vs pinned body).** The suite green (§10.1,
+`edfc1e1`) is attributed to the pinned `69dac1a` body; that attribution is pinned, not
+asserted:
+```
+$ git diff 69dac1a edfc1e1 -- supabase/migrations/017_rls_column_bounding.sql
+        (empty output; exit 0)
+$ git show 69dac1a:supabase/migrations/017_rls_column_bounding.sql | shasum -a 256
+7b06ed81c9f0ca8602c0a694c600593d20b2a04c1bc68e7be2997f168b5255a5  -
+```
+The errata commits between `69dac1a` and `edfc1e1` touched only this package file; the
+migration body is byte-identical, so the suite exercised the exact pinned body.
+
+**Prod pre-state capture — read-only, the "before" side of the prod probe pair. Run on
+prod (`jvxwqignooseazzmwhvl`) FIRST. STOP if it does not match the expected pre-017
+shape** — the teardown/rehearsal only represents prod if prod's current constraints are
+the plain single-column FKs, and the prod UP would otherwise error (e.g. a `DROP
+CONSTRAINT` on a name that differs, or `ADD … UNIQUE` on a key that already exists).
+
+```sql
+-- 2a) FK definitions as they exist on prod today
+SELECT conrelid::regclass AS table_name, conname, pg_get_constraintdef(oid) AS definition
+FROM pg_constraint
+WHERE conname IN ('projects_owner_user_id_fkey','project_members_user_id_fkey','project_members_project_id_fkey')
+ORDER BY conname;
+-- EXPECTED (pre-017, PLAIN single-column; matches Probe 4/5 pinned earlier this session
+-- AND the teardown-restored branch state):
+--   project_members_project_id_fkey | FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+--   project_members_user_id_fkey    | FOREIGN KEY (user_id)    REFERENCES users(id)    ON DELETE CASCADE
+--   projects_owner_user_id_fkey     | FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT
+-- STOP if any is already COMPOSITE (id, tenant_id) or a name is missing.
+
+-- 2b) action semantics on prod today
+SELECT conname, confupdtype, confdeltype FROM pg_constraint
+WHERE conname IN ('projects_owner_user_id_fkey','project_members_user_id_fkey','project_members_project_id_fkey')
+ORDER BY conname;
+-- EXPECTED: confupdtype='a' all three; confdeltype 'c'/'c'/'r' (members/members/owner).
+
+-- 2c) anon write-grants on prod today (same query as Probe C)
+SELECT count(*) AS anon_write_grants
+FROM information_schema.table_privileges
+WHERE table_schema='public' AND grantee='anon' AND privilege_type IN ('INSERT','UPDATE','DELETE');
+-- EXPECTED: NONZERO (pinned Probe 2 earlier showed anon holding INSERT/UPDATE/DELETE
+-- across public tables; no 017 on prod yet). Drives the anon-gap note below.
+```
+
+**Anon-gap note (where Step 5 first really executes).** The branch rehearsal does NOT
+re-grant anon (recommended — no reason to re-open anon writes even momentarily), so the
+UP's Step 5 `REVOKE` no-ops on the branch and branch **Probe C validates end-state only**.
+Given prod's anon write-grants are nonzero (pinned Probe 2; re-confirmed by 2c), Step 5's
+**first real execution is the prod apply** — accepted because `REVOKE` is simple and
+idempotent, with prod post-apply Probe C (`= 0`) as the confirmation. (If 2c returns 0,
+this gap is vacuous; update this note accordingly.)
+
+**No post-rehearsal teardown.** After step 1 the branch ends in the same post-017 state
+it is already in; nothing to undo.
