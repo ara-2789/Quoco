@@ -1881,3 +1881,71 @@ anon_write_grants = 69   (nonzero -> anon-gap note is non-vacuous; Step 5 first 
 Verdict: PASS on all three; no composite FKs and no UNIQUE(id,tenant_id) parents on
 prod (implied by the plain-FK result). This is the pinned "before" side; the prod
 "after" side is captured post prod-apply (revised sequence step 5).
+
+### §10.4 — E-017-02 CLOSED: branch re-rehearsal of the 69dac1a body (2026-07-15)
+
+Dated addendum (additive; the E-017-02 "OPEN" text above is left intact). The
+rehearsal-body delta is now **CLOSED**: the exact pinned `69dac1a` body was executed
+clean on the test-db branch (`exfccwlrhoutkgrlikod`), all five catalog probes match
+expected, and the suite is green. Revised-sequence **step 1 = DONE**.
+
+Body pinned (verified): `git show 69dac1a:supabase/migrations/017_rls_column_bounding.sql
+| shasum -a 256` = `7b06ed81c9f0ca8602c0a694c600593d20b2a04c1bc68e7be2997f168b5255a5`.
+
+Raw captures (operator-run, pasted verbatim):
+```
+-- (1) Teardown (restore pre-017)        -> Success. No rows returned.
+-- (2) Re-apply pinned 69dac1a body      -> Success. No rows returned.
+
+-- A1) composite FK definitions:
+project_members | project_members_project_id_fkey | FOREIGN KEY (project_id, tenant_id) REFERENCES projects(id, tenant_id) ON DELETE CASCADE
+project_members | project_members_user_id_fkey    | FOREIGN KEY (user_id, tenant_id) REFERENCES users(id, tenant_id) ON DELETE CASCADE
+projects        | projects_owner_user_id_fkey     | FOREIGN KEY (owner_user_id, tenant_id) REFERENCES users(id, tenant_id) ON DELETE RESTRICT
+
+-- A2) UNIQUE parents:
+projects | projects_id_tenant_id_key | UNIQUE (id, tenant_id)
+users    | users_id_tenant_id_key    | UNIQUE (id, tenant_id)
+
+-- B) narrowed grants (29 rows = 17 daily_logs + 12 projects):
+daily_logs: evening_dependencies, evening_equipment_utilisation, evening_output,
+  evening_output_quantities, evening_productive_manpower, evening_schedule_met,
+  evening_schedule_miss_reason, evening_workers_on_site, holiday_reason, is_holiday,
+  morning_dependencies, morning_equipment, morning_execution_plan, morning_hindrances,
+  morning_manpower_planned, morning_plan, weather   (17)
+projects: client_contact, client_name, contract_type, contract_value, expected_end_date,
+  name, owner_user_id, project_type, site_address, start_date, status, tender_id   (12)
+  (excluded cols confirmed ABSENT: daily_logs engineer_id/project_id/dpr_approved_by/
+   dpr_content/dpr_generated_at/*_submitted_*/id/tenant_id/created_at/log_date;
+   projects tenant_id/created_by/id/created_at)
+
+-- C) anon write-grants:
+anon_write_grants = 0     (prod pre-state was 69; F4 REVOKE executed clean on the branch)
+
+-- D) FK action semantics:
+project_members_project_id_fkey | confupdtype=a | confdeltype=c
+project_members_user_id_fkey    | confupdtype=a | confdeltype=c
+projects_owner_user_id_fkey     | confupdtype=a | confdeltype=r
+
+-- Suite (test-db branch):
+Test Files  10 passed (10)
+     Tests  103 passed (103)
+```
+
+SHA provenance (the suite paste omitted the `git rev-parse HEAD` line): pinned instead
+by invariance — both the migration body and the test file are byte-identical across the
+run range, so the run exercised the pinned artifacts regardless of the exact checkout:
+```
+$ git diff 69dac1a e5d5206 -- supabase/migrations/017_rls_column_bounding.sql   # (empty; exit 0)
+$ git diff 69dac1a e5d5206 -- test/migration-017.test.ts                        # (empty; exit 0)
+```
+
+**E-017-01 impact:** the prior unpinned/unverified operator probe run is now superseded
+by these pinned captures (per E-017-01's own "superseded entirely" clause).
+
+**Revised apply sequence — status:**
+1. [DONE] Branch re-rehearsal of pinned `69dac1a` — clean apply + A1/A2/B/C/D + suite 103/103 (this addendum).
+2. [OUTSTANDING] Reviewer final sign-off on this evidence.
+3. [OUTSTANDING] PITR restore-window observation on prod.
+4. [OUTSTANDING] Pinned prod apply (`69dac1a`, sha256 above).
+5. [OUTSTANDING] Re-run A1/A2/B/C/D on prod (the "after" side; "before" already pinned).
+6. [OUTSTANDING] Manual ledger INSERT `017` -> regen types -> schema.md entry after ledger confirms.
