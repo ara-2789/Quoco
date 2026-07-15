@@ -1939,6 +1939,18 @@ $ git diff 69dac1a e5d5206 -- supabase/migrations/017_rls_column_bounding.sql   
 $ git diff 69dac1a e5d5206 -- test/migration-017.test.ts                        # (empty; exit 0)
 ```
 
+**CONVENTION-DEVIATION DISCLOSURE (dated 2026-07-15, for the reviewer's ruling).** The
+reviewer set the "commit SHA echoed at the top of the run" convention (SF1). That was
+NOT met here: the **operator paste omitted the `git rev-parse HEAD` line**. Run-artifact
+identity was **established instead via an invariance pin** — empty diffs on the migration
+body **and** the test file across **all candidate checkouts** — rather than the planned
+SHA echo. The candidate-checkout range is `69dac1a..e5d5206`, and it provably contains
+the run: the suite started 19:26:05 IST; `e5d5206` (the prod-pre-state pin) is timestamped
+19:15:38 IST — before the run — and `827c81a` (this addendum's parent work) was committed
+only *after* the run in response to the suite paste. So the checkout was necessarily in
+that range, over which both files are byte-identical. This substitute is offered for the
+**reviewer to rule on**; it is not asserted as equivalent to the agreed convention.
+
 **E-017-01 impact:** the prior unpinned/unverified operator probe run is now superseded
 by these pinned captures (per E-017-01's own "superseded entirely" clause).
 
@@ -1949,3 +1961,9 @@ by these pinned captures (per E-017-01's own "superseded entirely" clause).
 4. [OUTSTANDING] Pinned prod apply (`69dac1a`, sha256 above).
 5. [OUTSTANDING] Re-run A1/A2/B/C/D on prod (the "after" side; "before" already pinned).
 6. [OUTSTANDING] Manual ledger INSERT `017` -> regen types -> schema.md entry after ledger confirms.
+
+Steps 3–6 are staged, gated, in the **prod run sheet: `docs/reviews/017-prod-runsheet.md`**
+(⛔ GATED — do not execute until reviewer final sign-off). It carries the PITR-observation
+checklist, the pre-apply shasum re-verification, the apply block, the prod "after" probes
+A1–D (paired to the pinned "before"), the manual ledger INSERT + type regen + schema.md
+close-out, and the STOP rule.
