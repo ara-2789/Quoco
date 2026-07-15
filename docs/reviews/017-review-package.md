@@ -1719,4 +1719,80 @@ WHERE table_schema = 'public' AND grantee = 'anon'
 --   SELECT table_name, privilege_type FROM information_schema.table_privileges
 --   WHERE table_schema='public' AND grantee='anon'
 --     AND privilege_type IN ('INSERT','UPDATE','DELETE') ORDER BY table_name, privilege_type;
+
+
+------------------------------------------------------------
+Probe D — composite-FK action semantics (confupdtype / confdeltype per FK)
+------------------------------------------------------------
+SELECT conname, confupdtype, confdeltype
+FROM pg_constraint
+WHERE conname IN (
+  'projects_owner_user_id_fkey',
+  'project_members_user_id_fkey',
+  'project_members_project_id_fkey'
+)
+ORDER BY conname;
+
+-- EXPECTED (per FK):
+--   project_members_project_id_fkey | confupdtype='a' | confdeltype='c'
+--   project_members_user_id_fkey    | confupdtype='a' | confdeltype='c'
+--   projects_owner_user_id_fkey     | confupdtype='a' | confdeltype='r'
+-- confupdtype: 'a' = NO ACTION (all three, BF1). confdeltype: 'r' = RESTRICT
+-- (owner_user_id, preserving 016), 'c' = CASCADE (both project_members FKs).
+-- NOTE: confupdtype='a' confirms RUNTIME SEMANTICS only. NO ACTION is the Postgres
+-- default, so the catalog cannot distinguish an explicit clause from an implicit one
+-- ('a' either way). The EXPLICITNESS of `ON UPDATE NO ACTION` (BF1) is proven by the
+-- pinned 69dac1a DDL (sha256 in the E-017-02 pin), NOT by this probe.
 ```
+
+### §10.4 — Errata (2026-07-15)
+
+Errata discipline: additive dated corrections; the original §10.4 text above is
+left intact.
+
+**E-017-01 — Probe status clarified (no captured probe evidence exists yet).** The
+original §10.4 correctly marks probes A1/A2/B/C as "drafted, HOLD — not yet run."
+Reaffirming and sharpening that, to prevent any misreading downstream:
+- Probes A1, A2, B, C have **NO CAPTURED OUTPUT anywhere in this package** — not from
+  prod, not from the test-db branch. An operator-side SQL-Editor run on the branch is
+  reported but was never pasted back or pinned; it is treated as **unverified** and is
+  **SUPERSEDED ENTIRELY by the re-rehearsal captures in step 1 of the revised
+  sequence**.
+- **Probe D** (`confupdtype`/`confdeltype` per FK) is **authored below (§10.4), not yet
+  run**.
+- The only **PINNED** evidence today is **behavioral, not catalog-level**: suite
+  T-017-02..06 + T-017-12 (green at `69dac1a`, §10.1) exercise the FK rejections, and
+  T-017-12 specifically exercises the `ON UPDATE NO ACTION` tenant-move rejection. The
+  catalog probes (A1/A2/B/C/D) remain the outstanding *definition-level* confirmation.
+- These probes are required at **two** points, neither yet done: (a) branch rehearsal
+  of the exact prod body, and (b) prod post-apply.
+
+**E-017-02 — Rehearsal-body delta disclosed (OPEN, not yet closed).** The test-db
+branch was applied once, from the **pre-BF1 body (`34e65fd`)**. The body pinned for
+the prod apply is **`69dac1a`** (adds explicit `ON UPDATE NO ACTION` per BF1). The two
+are **behaviorally identical** — `ON UPDATE NO ACTION` is the Postgres default, which
+`pg_get_constraintdef` omits either way — so the branch's live FK behavior already
+matches `69dac1a`, and the suite is green against it. **However:** the exact `69dac1a`
+text has **not been executed in any environment**. This delta is therefore **disclosed
+but NOT closed**; a re-rehearsal of the `69dac1a` body on the branch (clean apply +
+probe captures + suite green) is **outstanding**.
+
+Deterministic body pin (verifiable now; independent of any environment):
+```
+$ git show 69dac1a:supabase/migrations/017_rls_column_bounding.sql | shasum -a 256
+7b06ed81c9f0ca8602c0a694c600593d20b2a04c1bc68e7be2997f168b5255a5  -
+```
+
+**Revised apply sequence (outstanding steps flagged):**
+1. [OUTSTANDING] Branch re-rehearsal of the pinned `69dac1a` body — re-apply on the
+   test-db branch, capture raw apply log, run A1/A2/B/C/D in the SQL Editor, suite
+   green. Closes E-017-02 and supersedes any prior unpinned probe run (E-017-01).
+2. [OUTSTANDING] Reviewer final sign-off on the real (branch) evidence.
+3. [OUTSTANDING] PITR restore-window observation on prod (CLAUDE.md §0).
+4. [OUTSTANDING] Pinned prod apply (`/tmp/017-pinned-prod-apply.txt`, body `69dac1a`,
+   sha256 above).
+5. [OUTSTANDING] Re-run A1/A2/B/C/D on prod, raw output captured.
+6. [OUTSTANDING] Ledger row for `017` — manual INSERT into
+   `supabase_migrations.schema_migrations` (the CLI `migration repair` is 28P01-blocked
+   for this project; manual INSERT is the real method) — then regenerate types, then
+   the schema.md 017 entry after the ledger confirms.
