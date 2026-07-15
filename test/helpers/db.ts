@@ -1,6 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
 import type { MorningOutcome } from '@/lib/whatsapp/flows/morning'
+import { parseLabourCount, isLabourAnswered } from '@/lib/whatsapp/flows/parsers/labour'
+import { parseEquipment, isEquipmentAnswered } from '@/lib/whatsapp/flows/parsers/equipment'
 
 // ---------------------------------------------------------------------------
 // Test-db access helpers. These build their OWN Supabase client straight from
@@ -256,6 +258,11 @@ export async function applyMorningFlowTurn(params: {
   testSleepMs?: number
 }): Promise<MorningTurnRow> {
   const db = testClient()
+  // Mirror the production wrapper: parse both Pass-2 shapes unconditionally and
+  // pass them (+ *_ok flags) so the RPC selects by active step. See the cast
+  // note in lib/whatsapp/flows/morning.ts (params added by migration 018).
+  const manpower = parseLabourCount(params.message)
+  const equipment = parseEquipment(params.message)
   const { data, error } = await db.rpc('apply_morning_flow_turn', {
     p_phone_number: params.phone,
     p_tenant_id: params.tenantId ?? TEST_TENANT_ID,
@@ -263,6 +270,10 @@ export async function applyMorningFlowTurn(params: {
     p_project_id: params.projectId ?? TEST_PROJECT_ID,
     p_message: params.message,
     p_start_flow: params.startFlow,
+    p_manpower: manpower,
+    p_manpower_ok: isLabourAnswered(manpower),
+    p_equipment: equipment,
+    p_equipment_ok: isEquipmentAnswered(equipment),
     ...(params.now !== undefined ? { p_now: params.now } : {}),
     ...(params.testSleepMs !== undefined ? { p_test_sleep_ms: params.testSleepMs } : {}),
   })
@@ -303,12 +314,15 @@ export async function seedSession(row: {
   if (error) throw new Error(`seedSession failed: ${error.message}`)
 }
 
-// Shape of a daily_logs row (only the columns Pass 1 touches; nulls elsewhere).
+// Shape of a daily_logs row (only the morning columns the flow touches; nulls
+// elsewhere). Pass 2 adds the two parsed JSONB columns.
 export interface DailyLogRow {
   project_id: string
   engineer_id: string
   log_date: string
   morning_plan: string | null
+  morning_manpower_planned: unknown | null
+  morning_equipment: unknown | null
   morning_execution_plan: string | null
   morning_submitted_at: string | null
 }
@@ -320,7 +334,7 @@ export async function getDailyLog(logDate: string): Promise<DailyLogRow | null> 
   const { data, error } = await db
     .from('daily_logs')
     .select(
-      'project_id, engineer_id, log_date, morning_plan, morning_execution_plan, morning_submitted_at',
+      'project_id, engineer_id, log_date, morning_plan, morning_manpower_planned, morning_equipment, morning_execution_plan, morning_submitted_at',
     )
     .eq('project_id', TEST_PROJECT_ID)
     .eq('engineer_id', testEngineerId())
