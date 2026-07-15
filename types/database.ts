@@ -1583,6 +1583,10 @@ export type Database = {
       }
       apply_morning_flow_turn: {
         Args: {
+          p_equipment?: Json
+          p_equipment_ok?: boolean
+          p_manpower?: Json
+          p_manpower_ok?: boolean
           p_message: string
           p_now?: string
           p_phone_number: string

@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
-import type { Database } from '@/types/database'
+import type { Json } from '@/types/database'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
 import { parseLabourCount, isLabourAnswered, type LabourParse } from './parsers/labour'
 import { parseEquipment, isEquipmentAnswered, type EquipmentParse } from './parsers/equipment'
@@ -261,17 +261,18 @@ export async function applyMorningFlowTurn(params: {
     p_project_id: params.projectId,
     p_message: params.message,
     p_start_flow: params.startFlow,
-    // p_manpower / p_equipment (+ *_ok) are added by migration 018; generated
-    // types still reflect the pre-018 signature until the post-apply
-    // `supabase gen types` regen. Cast through unknown so the extra args
-    // type-check now (they ARE sent at runtime); regen removes the need.
-    p_manpower: manpower,
+    // Q2/Q3 parses (migration 018): the RPC selects the one matching the active
+    // step under its lock; the *_ok flags drive advance-vs-reask. The parse
+    // objects are cast to Json because a concrete interface is not structurally
+    // assignable to the recursive Json index type — a permanent TS limitation,
+    // not a stale-types workaround.
+    p_manpower: manpower as unknown as Json,
     p_manpower_ok: isLabourAnswered(manpower),
-    p_equipment: equipment,
+    p_equipment: equipment as unknown as Json,
     p_equipment_ok: isEquipmentAnswered(equipment),
     ...(params.now !== undefined ? { p_now: params.now } : {}),
     ...(params.testSleepMs !== undefined ? { p_test_sleep_ms: params.testSleepMs } : {}),
-  } as unknown as Database['public']['Functions']['apply_morning_flow_turn']['Args'])
+  })
 
   if (error) {
     throw new Error(`apply_morning_flow_turn failed for ${params.phoneNumber}: ${error.message}`)
