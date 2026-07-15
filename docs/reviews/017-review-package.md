@@ -1857,3 +1857,27 @@ this gap is vacuous; update this note accordingly.)
 
 **No post-rehearsal teardown.** After step 1 the branch ends in the same post-017 state
 it is already in; nothing to undo.
+
+### §10.4 — Prod pre-state capture, "before" side (2026-07-15, PINNED)
+
+Real read-only captures from prod (`jvxwqignooseazzmwhvl`), run before any apply.
+All match the expected pre-017 shape → prod is clean pre-017 and the branch
+rehearsal is representative.
+
+```
+-- 2a) prod FK definitions (plain single-column, pre-017):
+project_members | project_members_project_id_fkey | FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+project_members | project_members_user_id_fkey    | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+projects        | projects_owner_user_id_fkey     | FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT
+
+-- 2b) prod action semantics:
+project_members_project_id_fkey | confupdtype=a | confdeltype=c
+project_members_user_id_fkey    | confupdtype=a | confdeltype=c
+projects_owner_user_id_fkey     | confupdtype=a | confdeltype=r
+
+-- 2c) prod anon write-grants:
+anon_write_grants = 69   (nonzero -> anon-gap note is non-vacuous; Step 5 first executes on prod)
+```
+Verdict: PASS on all three; no composite FKs and no UNIQUE(id,tenant_id) parents on
+prod (implied by the plain-FK result). This is the pinned "before" side; the prod
+"after" side is captured post prod-apply (revised sequence step 5).
