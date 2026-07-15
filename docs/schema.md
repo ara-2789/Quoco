@@ -154,7 +154,12 @@ Standard policy for every tenant-scoped table:
   [{type, available_hours, actual_hours, idle_reason}] (BETA)
 - evening_dependencies JSONB — [{item, responsible_party, required_by_time}] (BETA)
 - evening_submitted_at TIMESTAMPTZ (BETA)
-- dpr_content TEXT — DROPPED in migration 007 when dprs table is created
+- dpr_content TEXT — LIVE on prod. [CORRECTED 2026-07-15, migration 017 audit S2:
+  the prior note "DROPPED in migration 007 when dprs table is created" was STALE/FALSE
+  — no migration ever dropped it (grep: only 001 creates it; the sole daily_logs
+  DROP COLUMN in the tree is 016's evening_dependencies_tomorrow), and no dprs table
+  was ever created. Confirmed live via Probe 3 (column grants present) + generated
+  types (dpr_content: string | null). The 007 dprs/drop was planned, never executed.]
 - morning_submitted_via TEXT, evening_submitted_via TEXT, weather TEXT,
   dpr_approved_by UUID (all FUTURE)
 - UNIQUE(project_id, engineer_id, log_date)

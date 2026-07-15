@@ -36,13 +36,24 @@ class of hole, and add the `owner_user_id` same-tenant enforcement deferred from
 **OPEN — reviewer decides:**
 - **O1 — `daily_logs.dpr_content`:** keep (PM edits the DPR narrative) vs. exclude
   from the `authenticated` UPDATE grant (DPR body is generated, not hand-edited).
-  Flagged, not silently decided.
-- **O2 — option A override:** the reviewer may prefer the stronger, declarative,
-  always-on **composite FK** (`(tenant_id, owner_user_id) REFERENCES
-  users(tenant_id, id)`) over the trigger. This needs `UNIQUE(id, tenant_id)` on
-  `users` = **structural DDL**, which raises 017 out of the grants risk class.
-  Deliberately avoided by default; his call whether the stronger guarantee is
-  worth the schema change.
+  Flagged, not silently decided. NOTE (S2): `dpr_content` is a **live** column — the
+  schema.md claim that 007 dropped it was stale/false (corrected 2026-07-15); the
+  drop and the `dprs` table never happened. So O1 is a real decision about a real
+  column, confirmed present in Probe 3 + generated types.
+- **O2 — same-tenant enforcement mechanism (honest framing per reviewer B1):**
+  **always-atomic (A) vs. lock-augmented trigger (B).** NOT "stronger vs. cheaper."
+  - **B (recommended):** the same-tenant trigger, augmented with
+    `PERFORM 1 FROM users WHERE id = NEW.owner_user_id AND tenant_id = NEW.tenant_id
+    FOR KEY SHARE;` — the `FOR KEY SHARE` takes the same row lock the composite FK
+    uses internally, closing the TOCTOU window (a concurrent change to the referenced
+    user's `tenant_id` between the check and commit) **atomically**. Stays in 015's
+    risk class: no `UNIQUE(id, tenant_id)` DDL on `users`.
+  - **A (override):** composite FK `(tenant_id, owner_user_id) REFERENCES
+    users(tenant_id, id)` — atomicity is structural/declarative and always-on, but
+    needs `UNIQUE(id, tenant_id)` on `users` = **structural DDL**, raising 017 out of
+    the grants risk class.
+  Both are always-atomic once B carries `FOR KEY SHARE`; the real trade is
+  *declarative-structural (A)* vs. *imperative-in-grants-class (B)*. Reviewer confirms.
 
 ---
 
@@ -56,14 +67,26 @@ Two tools, chosen by whether `authenticated` **legitimately writes** the column:
   `WITH CHECK` cannot bound columns; only the grant can.
 - **SAME-TENANT TRIGGER** (option B): columns `authenticated` *does* legitimately
   write (a PM sets them) but whose value must stay in-tenant — so they can't be
-  excluded from the grant. `BEFORE INSERT/UPDATE` raises if the referenced row's
-  `tenant_id <> NEW.tenant_id`. Fires regardless of the service role (only RLS is
-  bypassed, not triggers), so it also validates legitimate writes without breaking
-  them.
+  excluded from the grant. `BEFORE INSERT/UPDATE` checks the referenced row's
+  `tenant_id` against `NEW.tenant_id` **with `SELECT ... FOR KEY SHARE`** on that row
+  (per B1): the lock is the same primitive a composite FK uses internally, so the
+  check and the commit are atomic — no TOCTOU window where a concurrent update to the
+  referenced user's `tenant_id` slips between them. Raises if they differ. Fires
+  regardless of the service role (only RLS is bypassed, not triggers), so it also
+  validates legitimate writes without breaking them.
 
 Why the split matters: `owner_user_id` / `project_members.user_id,project_id` are
 PM-writable → trigger. `tenant_id` / `created_by` / `engineer_id` / `project_id`
 (daily_logs) / `dpr_approved_by` are never writable by `authenticated` → excluded.
+
+**Trigger correctness coupling (B2a — documented, not a bug):** the
+`project_members` (and `owner_user_id`) trigger compares the referenced row's
+`tenant_id` to `NEW.tenant_id`. That is only a same-tenant guarantee **because RLS's
+`WITH CHECK` pins `NEW.tenant_id` to the caller's own tenant.** If that policy is ever
+loosened (e.g. a future change lets `tenant_id` be set freely), the trigger silently
+stops protecting anything — it would faithfully compare two attacker-controlled
+values. The trigger and the RLS tenant-pin are a **coupled pair**; neither is
+sufficient alone. Any future edit to the tenant `WITH CHECK` must re-verify this.
 
 ---
 
@@ -73,7 +96,7 @@ PM-writable → trigger. `tenant_id` / `created_by` / `engineer_id` / `project_i
   `project_members.user_id`, `project_members.project_id` (INSERT + UPDATE).
 - **COLUMN-BOUND OUT** (`REVOKE UPDATE … FROM authenticated; GRANT UPDATE(<safe>) …`):
   - `projects` → exclude `tenant_id`, `created_by`; keep `owner_user_id`
-    (trigger-guarded), `name`, `client_name`, `client_contact`, `status`, `budget`.
+    (trigger-guarded), `name`, `client_name`, `client_contact`, `status`, `contract_value`.
   - `daily_logs` → exclude `engineer_id`, `project_id`, `dpr_approved_by`; keep
     `is_holiday`, `holiday_reason`, `weather`, morning_/evening_ correction cols.
     **`dpr_content` = O1 (open).**
@@ -81,6 +104,15 @@ PM-writable → trigger. `tenant_id` / `created_by` / `engineer_id` / `project_i
   change.
 - **`tenants` DROPPED** — only risk is an admin editing their own tenant's billing
   = intra-tenant integrity = F5, no cross-tenant/escalation vector.
+
+**What actually protects `daily_logs` (B2b — do not overclaim column-bounding).** The
+`daily_logs` rows are written by the morning/evening flow through the **service-role
+RPC** (`apply_morning_flow_turn`, migrations 014/018), which sets `engineer_id`/
+`project_id` from server-resolved session state and bypasses grants entirely. **That
+RPC being correct is the primary guarantee** that a log is bound to the right engineer
+and project. The column-bounding here is **defense-in-depth** — it removes a *direct*
+`authenticated` REST path to repoint those FKs — **not** the primary control. Column-
+bounding alone is explicitly *not* "the fix"; it hardens a surface the RPC already owns.
 
 ---
 
@@ -90,7 +122,8 @@ PM-writable → trigger. `tenant_id` / `created_by` / `engineer_id` / `project_i
 > Each query is pinned with its raw output directly beneath it.
 >
 > **PINNED (prod, this session).** All five probes are full verbatim captures (Probe 3
-> is the complete `role_column_grants` dump — 613 rows — with `users` showing exactly
+> is the complete `role_column_grants` dump — 614 rows (306 anon + 308 authenticated)
+> — with `users` showing exactly
 > `full_name`+`avatar_url` for `authenticated` and zero anon, the sole column-bounded
 > table). The live captures confirm the §6 reconstruction with ZERO drift on the 20
 > audited policies. Probe 6 (§7) was run to test finding F6 — see the retraction.
@@ -1061,7 +1094,7 @@ DECISIONS LOCKED (this session):
                                                                                    GRANT UPDATE(full_name, avatar_url))
 
 3   projects                 tenant_id = get_user_tenant_id()  [NO role gate]      No        owner_user_id -> users (X-TENANT, 016 gap), created_by -> users,      CROSS-TENANT (F3, HIGH)         Spine — owner_user_id TRIGGER +
-                                                                                             client_name, client_contact, budget, status                                                         column-bound in 017
+                                                                                             client_name, client_contact, contract_value, status                                                 column-bound in 017
 
 4   project_members          tenant_id AND actor.role IN (pm, admin)               No        user_id -> users (X-TENANT), project_id -> projects (X-TENANT)        CROSS-TENANT (F3)               Spine — same-tenant TRIGGER
                                                                                              [both legit PM-writable -> trigger, not column-bound]                                                (user_id + project_id) in 017.
@@ -1102,9 +1135,9 @@ DECISIONS LOCKED (this session):
 
 18  vendor_invoices          tenant_id = get_user_tenant_id()                      No        project_id, vendor_id (refs); amount                                 BENIGN x-tenant; MED integrity  Phase-2 — defer
 
-19  ra_bills                 tenant_id = get_user_tenant_id()                      No        project_id -> projects; amount                                       BENIGN x-tenant; MED integrity  Phase-2 — defer
+19  ra_bills                 tenant_id = get_user_tenant_id()                      No        project_id -> projects; gross_amount, net_payable                    BENIGN x-tenant; MED integrity  Phase-2 — defer
 
-20  ra_bill_payments         tenant_id = get_user_tenant_id()                      No        ra_bill_id -> ra_bills; amount                                       BENIGN x-tenant; MED integrity  Phase-2 — defer
+20  ra_bill_payments         tenant_id = get_user_tenant_id()                      No        ra_bill_id -> ra_bills; amount_received                              BENIGN x-tenant; MED integrity  Phase-2 — defer
 ------------------------------------------------------------------------------------------------------------------------
 
 READING OF THE TABLE
@@ -1141,7 +1174,7 @@ WHAT LANDS IN 017 (Spine-only; column sets below for line-by-line review)
     project_members.user_id + project_members.project_id (INSERT+UPDATE).
   - COLUMN-BOUND OUT (REVOKE UPDATE + re-GRANT the safe cols) on:
       projects     -> exclude tenant_id, created_by (keep owner_user_id [trigger-
-                      guarded], name, client_name, client_contact, status, budget)
+                      guarded], name, client_name, client_contact, status, contract_value)
       daily_logs   -> exclude engineer_id, project_id, dpr_approved_by
                       (keep is_holiday, holiday_reason, weather, the morning_/
                        evening_ correction cols)
@@ -1155,8 +1188,8 @@ WHAT LANDS IN 017 (Spine-only; column sets below for line-by-line review)
 F3 NO-ACTION, STATED EXPLICITLY (not silently skipped)
   - whatsapp_sessions.user_id -> users(id) [plain FK, Probe 5]: technically the
     same F3 reference-binding class, BUT no enforcement in 017. Rationale: the ONLY
-    writer of whatsapp_sessions is the service role (webhook + the 011-014/018
-    RPCs), which bypasses RLS AND column grants AND is trusted to set user_id
+    writer of whatsapp_sessions is the service role (webhook + the 011-014 RPCs and
+    018 / Morning Flow Pass 2), which bypasses RLS AND column grants AND is trusted to set user_id
     correctly — identical reasoning to daily_logs.dpr_approved_by. No authenticated
     path writes user_id, so there is no caller for a trigger to constrain; adding
     one would guard a door no untrusted actor can reach. If a future authenticated
@@ -1180,12 +1213,15 @@ DEFERRED (written rationale for the reviewer package)
 
 **F3 NO-ACTION, stated explicitly (not silently skipped):**
 - `whatsapp_sessions.user_id → users(id)` [plain FK, Probe 5]: same F3 class, but
-  **no enforcement in 017**. The only writer of `whatsapp_sessions` is the service
-  role (webhook + the 011-014/018 RPCs), which bypasses RLS AND column grants AND
-  is trusted to set `user_id` correctly — identical reasoning to
-  `daily_logs.dpr_approved_by`. No `authenticated` path writes `user_id`, so there
-  is no caller for a trigger to constrain. Revisit if a future authenticated write
-  path to `whatsapp_sessions` is added.
+  **no enforcement in 017**. Consistent with the `daily_logs` framing (B2b): the
+  **real protection is that the sole writer is the service-role path** — the webhook
+  and the session/queue/idempotency RPCs (migrations 011–014) and the morning-flow
+  RPC (migration 014, extended by **018 — Morning Flow Pass 2, merged `05cdf2a`**),
+  which bypass RLS and grants and are trusted to set `user_id` from server-resolved
+  state. There is **no `authenticated` write path** to `whatsapp_sessions.user_id`, so
+  (unlike `daily_logs`) there isn't even a direct REST surface to column-bound or a
+  caller for a trigger to constrain — hence no-action rather than defense-in-depth.
+  Revisit if a future authenticated write path to `whatsapp_sessions` is added.
 
 **Deferred:**
 - **F3 Phase-2 reference cols (#10–20):** probes 2/3 confirm these tables carry the
@@ -1223,34 +1259,49 @@ processed_messages  | true           | (as returned)
 ```
 - **Code cross-check:** every access routes through the service-role client
   (`lib/queue/jobs.ts` ×6, `lib/whatsapp/idempotency.ts`); no authenticated/anon path.
-- **Residual (low-priority, non-urgent):** add a reproducibility migration so
-  `ENABLE ROW LEVEL SECURITY` on these two tables is codified in a migration rather
-  than only existing as an untracked prod state. (A DB rebuilt from migrations would
-  otherwise lack it.) NOT part of 017; its own small housekeeping item.
+- **Residual (TRACKED + PRIORITIZED — not casual; reframed per reviewer S3):** the
+  RLS-enabled-with-default-deny state on `jobs`/`processed_messages` exists **only as
+  untracked prod dashboard state**. A db rebuild / branch-reset / DR-restore from the
+  migration set would come up with these tables **RLS-DISABLED and all Probe-2/3 grants
+  live** — i.e. the very anon/authenticated write+read exposure F6 first suspected,
+  now real in any rebuilt environment. A migration to codify `ENABLE ROW LEVEL
+  SECURITY` (+ deny-by-default) on both tables is **required before any future
+  environment rebuild, branch reset, or DR restore is trusted.** Not blocking 017, but
+  a tracked, prioritized backlog item — NOT housekeeping. (Own migration number, own
+  small package.)
 
 ---
 
 ## 8. Test plan — negative-control per finding (015 model)
 
 Pattern per finding: **prove the hole OPEN pre-fix** (a raw `authenticated` client
-statement that succeeds today) **and CLOSED post-fix** (same statement rejected —
-trigger `RAISE` for the binding class, SQLSTATE 42501 for column-bounding). Run on
-the test-db branch (`exfccwlrhoutkgrlikod`) against the two-tenant fixture
-(`TEST_TENANT_A/B`, as used by T-007-03/07/08). Estimated ~14–18 new tests.
+statement that succeeds today) **and CLOSED post-fix** (same statement rejected).
+**Assertions key on `error.code` (SQLSTATE), never message text (N2)** — matching
+015's T-015-01/02/03 (`expect(error?.code).toBe('42501')`): column-bounding rejections
+assert `42501` (insufficient_privilege); the same-tenant trigger asserts the SQLSTATE
+its `RAISE` raises with (a chosen `ERRCODE`, e.g. `23514`/a custom class — fixed in the
+migration so the test pins the code, not the string). Run on the test-db branch
+(`exfccwlrhoutkgrlikod`) against the two-tenant fixture (`TEST_TENANT_A/B`, as used by
+T-007-03/07/08). Estimated ~14–18 new tests.
+
+**Order (N3): the service-role RPC regression runs FIRST.** Its failure means the bot
+has stopped working for every engineer (morning/evening flows can't write) — a far
+larger blast radius than any single hole staying open — so it is the canary, not an
+afterthought at the bottom of the list.
 
 | ID | Finding | Pre-fix (open) | Post-fix (closed) |
 |----|---------|----------------|-------------------|
-| T-017-01 | `projects.owner_user_id` x-tenant (UPDATE) | tenant-A user sets `owner_user_id` = tenant-B user id → succeeds | trigger `RAISE` |
-| T-017-02 | `projects.owner_user_id` x-tenant (INSERT) | same via INSERT → succeeds | trigger `RAISE` |
-| T-017-03 | `projects.owner_user_id` SAME-tenant (happy path) | — | still succeeds (no false-positive) |
-| T-017-04 | `project_members.user_id` x-tenant (UPDATE+INSERT) | pm binds tenant-B user → succeeds | trigger `RAISE` |
-| T-017-05 | `project_members.project_id` x-tenant | pm points membership at tenant-B project → succeeds | trigger `RAISE` |
-| T-017-06 | `projects` column-bound | authenticated UPDATE of `tenant_id`/`created_by` → succeeds | 42501 |
-| T-017-07 | `daily_logs` column-bound | authenticated UPDATE of `engineer_id`/`project_id`/`dpr_approved_by` → succeeds | 42501 |
-| T-017-08 | anon write strip (F4) | (default grants present) | anon UPDATE rejected |
-| T-017-09 | REGRESSION: 015 users protections | — | role/tenant_id UPDATE still 42501 |
-| T-017-10 | REGRESSION: legitimate writes | — | pm renames project, user sets full_name → succeed |
-| T-017-11 | REGRESSION: service-role RPC | — | morning-flow RPC still writes engineer_id/project_id (grants bypassed) |
+| **T-017-01** | **REGRESSION (CANARY — runs first): service-role RPC** | — | morning-flow RPC still writes `engineer_id`/`project_id` (grants + trigger do NOT block the service role). Failure ⇒ bot down for all engineers. |
+| T-017-02 | `projects.owner_user_id` x-tenant (UPDATE) | tenant-A user sets `owner_user_id` = tenant-B user id → succeeds | trigger SQLSTATE |
+| T-017-03 | `projects.owner_user_id` x-tenant (INSERT) | same via INSERT → succeeds | trigger SQLSTATE |
+| T-017-04 | `projects.owner_user_id` SAME-tenant (happy path) | — | still succeeds (no false-positive) |
+| T-017-05 | `project_members.user_id` x-tenant (UPDATE+INSERT) | pm binds tenant-B user → succeeds | trigger SQLSTATE |
+| T-017-06 | `project_members.project_id` x-tenant | pm points membership at tenant-B project → succeeds | trigger SQLSTATE |
+| T-017-07 | `projects` column-bound | authenticated UPDATE of `tenant_id`/`created_by` → succeeds | `42501` |
+| T-017-08 | `daily_logs` column-bound | authenticated UPDATE of `engineer_id`/`project_id`/`dpr_approved_by` → succeeds | `42501` |
+| T-017-09 | anon write strip (F4) | (default grants present) | anon UPDATE rejected |
+| T-017-10 | REGRESSION: 015 users protections | — | role/tenant_id UPDATE still `42501` |
+| T-017-11 | REGRESSION: legitimate writes | — | pm renames project, user sets full_name → succeed |
 
 (`dpr_content` gets a column-bound test only if O1 resolves to "exclude".)
 
@@ -1259,7 +1310,9 @@ the test-db branch (`exfccwlrhoutkgrlikod`) against the two-tenant fixture
 ## 9. Pinning checklist (before reviewer hand-off)
 
 - [x] §5 probe outputs = pinned prod captures (all five full verbatim; Probe 3 =
-      complete 613-row role_column_grants dump). Zero drift vs the §6 reconstruction.
+      complete 614-row role_column_grants dump; 306 anon + 308 authenticated). Zero
+      drift vs the §6 reconstruction. [B3: the earlier "613" was a wc -l undercount —
+      the dump's last line has no trailing newline; live count(*) to be re-confirmed = 614.]
 - [x] F6 investigated + retracted (Probe 6), residual reproducibility item recorded.
 - [ ] O1 (`dpr_content`) + O2 (option A) decided and folded.
 - [ ] 017 SQL authored, pinned via `git show <sha>:supabase/migrations/017_*.sql`.
