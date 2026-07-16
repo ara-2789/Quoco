@@ -154,7 +154,12 @@ Standard policy for every tenant-scoped table:
   [{type, available_hours, actual_hours, idle_reason}] (BETA)
 - evening_dependencies JSONB — [{item, responsible_party, required_by_time}] (BETA)
 - evening_submitted_at TIMESTAMPTZ (BETA)
-- dpr_content TEXT — DROPPED in migration 007 when dprs table is created
+- dpr_content TEXT — LIVE on prod. [CORRECTED 2026-07-15, migration 017 audit S2:
+  the prior note "DROPPED in migration 007 when dprs table is created" was STALE/FALSE
+  — no migration ever dropped it (grep: only 001 creates it; the sole daily_logs
+  DROP COLUMN in the tree is 016's evening_dependencies_tomorrow), and no dprs table
+  was ever created. Confirmed live via Probe 3 (column grants present) + generated
+  types (dpr_content: string | null). The 007 dprs/drop was planned, never executed.]
 - morning_submitted_via TEXT, evening_submitted_via TEXT, weather TEXT,
   dpr_approved_by UUID (all FUTURE)
 - UNIQUE(project_id, engineer_id, log_date)
@@ -366,6 +371,47 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        were 2026-07-12; the prod apply, the six prod probes, and the ledger INSERT
        are 2026-07-13. External reviewer signed off with pinned-artifact provenance
        requirements. Full package: docs/reviews/016-review-package.md.
+
+017 — RLS column-bounding audit + owner_user_id same-tenant enforcement.
+       STRUCTURAL, reviewer-gated. Systemic follow-up to 015/HIGH-1: closes the
+       same CLASS of column-privilege hole on every UPDATE path, and adds the
+       owner_user_id same-tenant enforcement deferred from 016 (backlog item 9).
+       Five steps: (1) ADD UNIQUE(id, tenant_id) on users + projects (strict
+       supersets of the PK — build instantly, cannot fail on data); (2) swap three
+       plain single-column FKs for COMPOSITE same-tenant FKs — projects.owner_user_id
+       + project_members.user_id → users(id, tenant_id), project_members.project_id →
+       projects(id, tenant_id), all ON UPDATE NO ACTION (explicit, BF1) so a
+       cross-tenant repoint fails loud rather than cascading; owner FK MATCH SIMPLE
+       (nullable owner skips check — DO NOT change to MATCH FULL); (3) REVOKE blanket
+       UPDATE on projects from authenticated, re-GRANT 12 business columns only;
+       (4) same on daily_logs, re-GRANT 17 observational/correction columns only
+       (excludes dpr_content per O1, identity/RPC-metadata cols); (5) F4 anon
+       write-strip across all public tables (defense-in-depth; F4 ≠ F6, does not
+       touch RLS-enable state). Column-grant lists are PROVISIONING not a behavior
+       change — grep (2026-07-15) found ZERO authenticated UPDATE code paths on
+       either table today (no PM-edit dashboard exists). WHY composite FK not trigger
+       (B1): FOR KEY SHARE conflicts only on KEY cols and tenant_id is in no unique
+       index, so a trigger lock never blocks the repoint; the UNIQUE index gives the
+       FK its atomicity, RLS-independently. Reversible — DOWN path (restore plain FKs,
+       drop UNIQUE parents, restore blanket grants) at the migration file end.
+
+       APPLIED TO PRODUCTION VIA SQL EDITOR on 2026-07-16, from the PINNED commit
+       69dac1a (git show 69dac1a:supabase/migrations/017_rls_column_bounding.sql;
+       sha256 7b06ed81c9f0ca8602c0a694c600593d20b2a04c1bc68e7be2997f168b5255a5;
+       frame at /tmp/017-pinned-prod-apply.txt). CLI IPv6/28P01-blocked, SQL Editor
+       is the deliberate fallback (as with 013–016/018). PITR restore-window OBSERVED
+       live pre-apply per CLAUDE.md §0 (2026-07-16: active window 09 Jul 2026
+       22:01:51 → 15 Jul 2026 22:07:46, 2-min granularity, UTC+05:30). Ledger tracked
+       via manual INSERT into supabase_migrations.schema_migrations (version 017, name
+       rls_column_bounding); post-insert ledger = 15 rows. Prod after-probes (paired
+       against the pinned "before"): A1 three composite FKs; A2 both UNIQUE(id,tenant_id)
+       parents; B 29 column grants (17 daily_logs + 12 projects, excluded cols absent);
+       C anon write-grants 69 → 0 (Step 5's first real revoke-from-populated run —
+       branch ran it as a no-op on an already-empty set); D confupdtype a/a/a +
+       confdeltype r/c/c. Branch re-rehearsal of the exact 69dac1a body: clean apply,
+       A1–D pass, suite 103/103 on test-db exfccwlrhoutkgrlikod. Full package +
+       errata (E-017-01/02) + run sheet: docs/reviews/017-review-package.md,
+       docs/reviews/017-prod-runsheet.md.
 
 018 — morning flow Pass 2 (Q2 labour + Q3 equipment parsers). FUNCTION-ONLY:
        no table/column DDL — CREATE OR REPLACE of apply_morning_flow_turn only

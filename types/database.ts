@@ -573,10 +573,10 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "project_members_project_id_fkey"
-            columns: ["project_id"]
+            columns: ["project_id", "tenant_id"]
             isOneToOne: false
             referencedRelation: "projects"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "tenant_id"]
           },
           {
             foreignKeyName: "project_members_tenant_id_fkey"
@@ -587,10 +587,10 @@ export type Database = {
           },
           {
             foreignKeyName: "project_members_user_id_fkey"
-            columns: ["user_id"]
+            columns: ["user_id", "tenant_id"]
             isOneToOne: false
             referencedRelation: "users"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "tenant_id"]
           },
         ]
       }
@@ -659,10 +659,10 @@ export type Database = {
           },
           {
             foreignKeyName: "projects_owner_user_id_fkey"
-            columns: ["owner_user_id"]
+            columns: ["owner_user_id", "tenant_id"]
             isOneToOne: false
             referencedRelation: "users"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "tenant_id"]
           },
           {
             foreignKeyName: "projects_tenant_id_fkey"
