@@ -30,6 +30,30 @@ directly observing its live state, never by trusting a settings toggle.
 4. If the window is NOT rendered / not active → **STOP** (no recovery path; do not
    apply).
 
+### PINNED OBSERVATION (2026-07-16, fresh — the apply-time §0 observation)
+
+Observed live, replacing the placeholder above:
+
+- **Observed via:** Supabase Dashboard → Database → Backups → Point in Time
+  (prod project `jvxwqignooseazzmwhvl`)
+- **Observation wall-clock:** 2026-07-16 (today)
+- **Recovery retention:** up to 7 days, 2-minute change-log granularity
+- **Database restore available from (earliest):** 09 Jul 2026, 22:01:51
+- **Latest restore available at:** 15 Jul 2026, 22:07:46
+- **Timezone shown:** UTC+05:30
+
+Verdict: **active window rendered → PITR recovery path confirmed present.** Item 4
+(PITR pre-flight) is CLEARED for the apply.
+
+This **supersedes the 2026-07-12 observation** cited in `017-review-package.md` §10.4:
+that was the last prior observation; this is the fresh one required at apply time per
+CLAUDE.md §0 (a record of a thing is not the thing).
+
+**Freshness caveat:** this observation was made ~today, at/near the scheduled apply. The
+"latest restore available at" moves forward continuously; the gate is that the window
+**exists**, not that this exact timestamp is reused. **If the apply slips more than a day
+or two from 2026-07-16, re-observe before proceeding** (repeat steps 1–3, re-pin here).
+
 ---
 
 ## b. Pre-apply shasum re-verification (guard against a touched staged file)
