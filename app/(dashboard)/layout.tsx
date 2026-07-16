@@ -31,7 +31,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="flex min-h-screen bg-gray-50">
       <aside className="w-60 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-5 py-4 border-b border-gray-200">
-          <span className="text-xl font-bold text-gray-900 tracking-tight">Quoco</span>
+          <span className="text-xl font-semibold text-gray-900 tracking-tight">Quoco</span>
           <p className="text-xs text-gray-500 mt-0.5">Construction Management</p>
         </div>
 

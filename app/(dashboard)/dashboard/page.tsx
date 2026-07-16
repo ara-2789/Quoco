@@ -44,7 +44,7 @@ export default async function DashboardPage() {
   return (
     <div className="p-8 max-w-5xl">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Welcome, {firstName}</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Welcome, {firstName}</h1>
         <p className="text-gray-500 mt-1 text-sm">
           Here&apos;s what&apos;s happening across your projects.
         </p>

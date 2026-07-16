@@ -43,7 +43,7 @@ export default async function DprsPage() {
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Daily Progress Reports</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Daily Progress Reports</h1>
         <p className="text-gray-500 text-sm mt-1">
           AI-generated DPRs from WhatsApp check-ins across your projects.
         </p>
