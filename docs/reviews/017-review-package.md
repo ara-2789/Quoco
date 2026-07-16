@@ -1919,7 +1919,10 @@ projects: client_contact, client_name, contract_type, contract_value, expected_e
    projects tenant_id/created_by/id/created_at)
 
 -- C) anon write-grants:
-anon_write_grants = 0     (prod pre-state was 69; F4 REVOKE executed clean on the branch)
+anon_write_grants = 0     (branch anon grant set was ALREADY empty (0) before Step 5 ran,
+                           so the F4 REVOKE was a NO-OP success here — it validates the
+                           end-state (0), NOT the revoke-from-populated path. The real
+                           revoke-from-nonzero path (prod 69 -> 0) is exercised only on prod.)
 
 -- D) FK action semantics:
 project_members_project_id_fkey | confupdtype=a | confdeltype=c
@@ -1950,6 +1953,21 @@ the run: the suite started 19:26:05 IST; `e5d5206` (the prod-pre-state pin) is t
 only *after* the run in response to the suite paste. So the checkout was necessarily in
 that range, over which both files are byte-identical. This substitute is offered for the
 **reviewer to rule on**; it is not asserted as equivalent to the agreed convention.
+
+**Full-tree upgrade (dated 2026-07-16, closing the deviation).** The invariance pin above
+was per-file (migration body + test file). It is now upgraded to the **whole tree** via a
+file-level stat across the same range:
+```
+$ git diff --stat 69dac1a e5d5206
+ docs/reviews/017-review-package.md | 261 ++++++++++++++++++++++++++++++++++---
+ 1 file changed, 243 insertions(+), 18 deletions(-)
+```
+Only `docs/reviews/017-review-package.md` changed across the range — **nothing under
+`supabase/migrations/`, `test/`, or the vitest config**. So the run over any checkout in
+`69dac1a..e5d5206` used identical migration SQL, identical test code, AND an identical test
+harness. This upgrades the substitute from "the two files are identical" to "there are no
+code/test/harness changes anywhere in range," which closes the dirty-tree gap the reviewer
+flagged for the artifacts that matter to this run.
 
 **E-017-01 impact:** the prior unpinned/unverified operator probe run is now superseded
 by these pinned captures (per E-017-01's own "superseded entirely" clause).

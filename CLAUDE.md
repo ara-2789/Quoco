@@ -37,7 +37,12 @@
     * file contents via `git show <sha>:path` (the SHA is what gets pasted to
       prod — the terminal frame, commands visible, goes into the PR record);
     * probe captures with the query text visible above its result;
-    * suite output with the commit SHA echoed at the top of the run.
+    * suite output with the commit SHA echoed at the top of the run — AND, since
+      the 017 round (2026-07-16, reviewer round 2), an empty `git status --porcelain`
+      line captured alongside that SHA. Rationale: the SHA alone names the commit but
+      not the working tree; a dirty tree can run code that differs from the named SHA.
+      SHA echo + empty `--porcelain` together prove the run used exactly the committed
+      artifacts. Both lines are part of every future suite capture, not just this one.
   Rationale: paraphrase drifts and GitHub can serve a stale branch cache to the
   reviewer; a pinned `git show`/probe frame is verifiable and cache-proof. The
   canonical apply skeleton lives in docs/migration-runbook-template.md.
