@@ -6,6 +6,9 @@
 # read them WHEN the task touches them, not every session:
 #   - docs/schema.md     → full database schema, migration order
 #   - docs/bot-flows.md  → full WhatsApp flow specs, DPR generation, templates
+#   - docs/design-principles.md → UX rules, persona rules, copy tone, visual system
+#     (once §6 is filled in). Read this when a task touches any user-facing
+#     surface: WhatsApp bot copy/flow structure, PM dashboard, or DPR/owner content.
 # When a task touches the schema or a bot flow, open the relevant doc first.
 
 ---
