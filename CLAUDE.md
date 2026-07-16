@@ -109,6 +109,11 @@ their FLOWS and dashboard views are not built in the Spine.
 - Email: Resend — DPR delivery to owner
 - Monitoring: Sentry — wire Week 2 Day 1, all environments
 - UI: Tailwind CSS + shadcn/ui — VERIFY Tailwind major version in the repo
+  DATED NOTE (2026-07-16, per the DASH-03 token proposal): shadcn/ui is NOT yet
+  initialized (no components.json). Adopt it when a component needs its
+  accessibility primitives (dialogs, dropdowns, comboboxes) — status chips/tokens
+  don't require it. Tailwind is v4 (^4.3.1): CSS-first config via @theme in
+  app/globals.css, no tailwind.config.js.
 
 ---
 
