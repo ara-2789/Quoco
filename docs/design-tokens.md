@@ -5,11 +5,11 @@
 # Created 2026-07-16, ahead of DASH-03 (first dashboard screen). Reviewed & approved
 # before any component code was written.
 #
-# STATUS: PROPOSAL — not yet wired. None of the tokens below exist in
-# app/globals.css yet. This file is the reviewed spec; the @theme custom properties
-# in §1 get written into globals.css as part of DASH-03, when the first component
-# consumes them. Until then, --color-status-* are not defined and must not be
-# referenced in code.
+# STATUS: WIRED IN DASH-03 (2026-07-18). The §1 @theme custom properties are now
+# defined in app/globals.css and consumed by components/ui/status-chip.tsx (their
+# first consumer). The pre-DASH-03 status of this file was: "PROPOSAL — not yet
+# wired; none of the tokens exist in globals.css yet." That is no longer true —
+# --color-status-* are live and may be referenced in code.
 
 ## Environment (verified against the repo, 2026-07-16)
 
@@ -36,6 +36,17 @@ subtle border. This extends the one convention already in the codebase (`bg-red-
 | **Amber** | at-risk / legitimate-gap   | `bg-amber-50` | `text-amber-800` | `border-amber-200` | ~7:1  ✅ AA | #fffbeb / #92400e |
 | **Green** | on-track                   | `bg-green-50` | `text-green-800` | `border-green-200` | ~7.4:1 ✅ AA | #f0fdf4 / #166534 |
 | **Blue**  | informational              | `bg-blue-50`  | `text-blue-800`  | `border-blue-200`  | ~8:1  ✅ AA | #eff6ff / #1e40af |
+
+**DATED REFINEMENT (2026-07-18, per DASH-03):** Amber's role is narrowed to
+genuine open gaps; legitimately-excluded absences (holiday, messaging_blocked)
+use Blue/informational instead, so Rule 5.3's accountability-fairness distinction
+is visible at the chip level, not just in label text.
+
+**DATED REFINEMENT (2026-07-18, per DASH-03):** `muted` is a neutral UI treatment
+for "no status yet" (e.g., a half not yet due), NOT a 5th semantic role. It
+uses standard neutral gray, not a `--color-status-*` token, and must never be
+extended to represent an actual site-condition judgment. The semantic system
+remains exactly 4 roles (§6).
 
 Notes:
 - **Amber uses `-800` text, not `-700`** — amber/yellow on light backgrounds is the
