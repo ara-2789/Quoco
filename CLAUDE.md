@@ -281,6 +281,18 @@ NEXT_PUBLIC_APP_URL=             ← magic link redirect URL
 
 All non-NEXT_PUBLIC_ keys are used ONLY in server-side API routes.
 
+KNOWN VERCEL CONFIG GAP (2026-07-21, non-urgent, track + fix separately): the
+Preview-scoped NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (and related
+Supabase vars) are pinned to ONE branch — feat/migration-007-auth-surgery (a
+leftover from that migration's review) — instead of "All Preview branches." So
+every OTHER branch's preview deploy gets NO Supabase config, and proxy.ts's
+middleware (createServerClient + getUser on every request) throws → "Internal
+Server Error" on EVERY route of that preview, even though the build is green.
+This bit the feat/bot-27-reactivation-clear preview and is easy to misread as a
+code bug. FIX: in Vercel → Project → Settings → Environment Variables, re-scope
+those Preview vars to "All Preview branches." (Build-time is unaffected — these
+vars are only read at request time.)
+
 ---
 
 ## 9. FILE STRUCTURE
