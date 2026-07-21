@@ -55,5 +55,7 @@ export async function profileForAuthId(
     )
   }
 
+  // Tradeoff acknowledged (same class as query.ts's casts): select-string vs.
+  // generated types. Safe because errors/missing-row above already fail loud.
   return data as Profile
 }

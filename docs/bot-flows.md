@@ -197,6 +197,19 @@ owner NEVER receives empty content.
      engineer).
    - Factual wording: "Rajesh — evening not submitted today (missed 3 of
      last 5 site-operating days)."
+   - ⚠️ CROSS-DATE CONSTRAINT (per DASH-03, 2026-07-18) — READ BEFORE BUILDING
+     THIS. `messaging_blocked` is a CURRENT user-state flag, NOT a per-day
+     fact: there is no record of when a number was blocked/unblocked. The
+     accountability engine MUST NOT feed present-time `messaging_blocked` into
+     any HISTORICAL (multi-day) accountability math — doing so would
+     retroactively excuse gaps on days the engineer may well have been
+     reachable. Any cross-date `messaging_blocked` read is a BUG until a
+     block-history mechanism exists (e.g. a `messaging_block_events` audit
+     trail, or a per-day flag stamped onto `daily_logs`). CONTRAST: `is_holiday`
+     IS safe to use historically because it is stored ON the `daily_logs` row (a
+     per-day fact). This constraint currently lives only as a code gate in
+     `lib/daily-logs/status.ts` (the DASH-03 board applies `messaging_blocked`
+     to TODAY only) — see it and `design-decisions-beta-feedback.md` §3.1 first.
 
 Sections Hindrances / Dependencies / Red Flags / Recommendations are
 FAST-FOLLOW — they ship with the accountability engine, not the Spine.
