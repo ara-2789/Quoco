@@ -53,6 +53,9 @@ export async function clearMessagingBlock(
   userId: string,
   tenantId: string,
 ): Promise<{ error: string | null; cleared: boolean }> {
+  // profile-lookup-guard:allow-id-eq — userId is a resolved users.id (the webhook
+  // resolves it by whatsapp_number; engineers have auth_id=null / no auth uid),
+  // never an auth.uid(). See bot-flows.md §3c "already correct post-007".
   const { data, error } = await supabase
     .from('users')
     .update({ messaging_blocked: false })
