@@ -281,6 +281,18 @@ NEXT_PUBLIC_APP_URL=             ← magic link redirect URL
 
 All non-NEXT_PUBLIC_ keys are used ONLY in server-side API routes.
 
+KNOWN VERCEL CONFIG GAP (2026-07-21, non-urgent, track + fix separately): the
+Preview-scoped NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (and related
+Supabase vars) are pinned to ONE branch — feat/migration-007-auth-surgery (a
+leftover from that migration's review) — instead of "All Preview branches." So
+every OTHER branch's preview deploy gets NO Supabase config, and proxy.ts's
+middleware (createServerClient + getUser on every request) throws → "Internal
+Server Error" on EVERY route of that preview, even though the build is green.
+This bit the feat/bot-27-reactivation-clear preview and is easy to misread as a
+code bug. FIX: in Vercel → Project → Settings → Environment Variables, re-scope
+those Preview vars to "All Preview branches." (Build-time is unaffected — these
+vars are only read at request time.)
+
 ---
 
 ## 9. FILE STRUCTURE
@@ -385,6 +397,33 @@ Then in Week 2 (remaining):
 - E.164 normalisation
 - Morning flow Q1–Q6 incl. BOT-24 responsibility follow-up, BOT-20 site-closed
 - Engineer registration ENG-01/02/05/06
+
+BOT-27 reactivation CLEAR-HALF — DONE (2026-07-21, feat/bot-27-reactivation-clear).
+Webhook clears messaging_blocked + TwiML-acks an active-but-blocked engineer's
+inbound; pure decideInboundGate() + clearMessagingBlock() in
+lib/whatsapp/reactivation.ts, unit-tested + a direct clear-half DB test. Opt-in
+TEMPLATE re-send deferred (blocked on Twilio sender). See bot-flows.md BOT-27.
+
+TESTING DEBT — WEBHOOK HTTP HARNESS (opened 2026-07-21, tracked, NOT fixed).
+CLAUDE.md §7 requires every webhook change to ship with a T-WH integration test,
+"including the forged-signature rejection, T-WH-01". That harness DOES NOT EXIST
+today — T-WH-01 is referenced in §7 but was never built (no HTTP-level webhook
+test in the repo; only the pure-decision + DB-IO layers are covered). The BOT-27
+clear-half (feat/bot-27-reactivation-clear) shipped WITHOUT it — a conscious
+deviation approved for that PR: it is inherited debt 2a does not fix but knowingly
+adds to. Do not let this silently persist: the next substantive webhook change
+should either build the harness (construct Twilio-signed formData; assert
+signature rejection + the clear/idempotency behaviour) or consciously re-defer it
+here. The rule stops applying only if someone decides so on the record.
+  NAMED FUTURE TEST (deferred with the harness, recorded so the reasoning
+  survives): a ROUTE-LEVEL test proving RETRY-AFTER-CLEAR cannot fall into the
+  morning flow — i.e. an inbound from an active+blocked engineer clears the flag,
+  and a Twilio RETRY of that SAME MessageSid (now an active+unblocked user) is a
+  no-op, NOT a morning-flow turn. This is the exact scenario the "consume the SID
+  BEFORE the clear" ordering in route.ts exists to prevent (see the ACCEPTED
+  FAILURE WINDOW comment there); the ordering is currently only argued in comments
+  and covered obliquely by the pure idempotency unit — the route-level proof waits
+  on the harness.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its

@@ -126,6 +126,48 @@ Q6: Tomorrow's dependencies + responsibility. Same pattern as morning Q5/Q6.
   business-initiated messages to a STOP'd number until the USER messages
   first). Runbook: PM asks the engineer to text the Quoco number; on that
   inbound, clear messaging_blocked and re-run opt-in (BOT-27).
+  - IMPLEMENTATION STATUS (2026-07-21): the CLEAR-HALF is built — the webhook,
+    on an inbound from an engineer gated SOLELY by messaging_blocked
+    (status='active' AND messaging_blocked=true), clears the flag and sends a
+    within-session TwiML acknowledgement. Idempotent on MessageSid so a Twilio
+    retry cannot fall through into the morning flow. Logic split into a pure
+    decideInboundGate() + clearMessagingBlock() IO in lib/whatsapp/reactivation.ts.
+  - DEFERRED: re-firing the quoco_engineer_optin TEMPLATE is NOT built — it needs
+    the outbound sender + Twilio production approval (BLOCKED, CLAUDE.md §10). The
+    within-session TwiML ack stands in until then; no business-initiated send occurs.
+  - CANONICAL DEFINITION of messaging_blocked (2026-07-21, per BOT-27 review B1) —
+    the flag's ONE owner-model, so both consumers (the webhook clear-half and the
+    DASH-03 board chip) stop assuming opposite semantics. `messaging_blocked` is
+    ENGINEER opt-out / consent state: the engineer set it (a WhatsApp STOP), and
+    only the engineer clears it (by messaging in — the clear-half above). It is
+    NOT a PM silencing tool. A PM who wants to durably silence or remove someone
+    uses status='deactivated' (which the clear-half correctly NEVER lifts —
+    see the safety invariant below). Consequently the DASH-03 chip's PM affordance
+    is INSTRUCTIONAL only ("ask the engineer to text START to reconnect"), never a
+    button that flips the flag — a PM cannot un-opt-out on the engineer's behalf,
+    the same way Quoco cannot business-initiate to a STOP'd number.
+  - SAFETY INVARIANT — the clear-half reactivates ONLY an engineer whose sole
+    gate is the block (status still 'active'). A non-active status
+    (pending / deactivated) stays gated regardless of the flag: a deactivated
+    engineer is NEVER silently reactivated by texting in. COUPLING FOR THE SET
+    STAGE (STOP-detection, still unbuilt): blocking MUST flip only
+    messaging_blocked and leave status='active' — if the SET stage instead set
+    status='deactivated', this clear-path would (correctly) refuse to reactivate
+    and the flow would dead-end. Read this before building the SET stage.
+  - CONSENT-SAFETY COUPLING (2026-07-21, per BOT-27 review B2) — the clear trigger
+    is CURRENTLY "any inbound," which is a known interim compliance gap: a doubled
+    STOP, or a reply to the opt-out confirmation, would reactivate someone who just
+    opted OUT. The SET stage MUST close this:
+    (1) STOP-keyword detection runs BEFORE the reactivate branch — an inbound that
+        IS a STOP (or opt-out confirmation) must set/keep the block, never clear it.
+    (2) Once buildable, the clear trigger becomes an EXPLICIT resume keyword
+        (START / RESUME), not "any message" — so an accidental or opt-out message
+        cannot reactivate. This is why the DASH-03 / 2b PM copy must say "text
+        START to reconnect," NOT "text us to reconnect."
+    (3) FUTURE-AUTHOR CHECK (do not resolve now): verify whether Twilio's
+        platform-level Advanced Opt-Out would block a STOP'd number UPSTREAM of the
+        webhook entirely (the inbound may never reach us). If so, the whole
+        keyword-detection design changes — confirm before building the SET stage.
 - Owner row created at project creation (DASH-02): role='owner', auth_id=null,
   tenant_id set, from form fields. projects.owner_user_id references it (ENG-07).
 

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import crypto from 'crypto'
 import { isNewMessage } from '@/lib/whatsapp/idempotency'
 import { normalisePhoneNumber } from '@/lib/whatsapp/normalise'
 import { createServiceClient } from '@/lib/supabase/service'
 import { applyMorningFlowTurn, buildMorningReply } from '@/lib/whatsapp/flows/morning'
 import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
+import { decideInboundGate, clearMessagingBlock } from '@/lib/whatsapp/reactivation'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
 // processing anything. Twilio signs each webhook request using your Auth
@@ -26,10 +28,19 @@ function validateTwilioSignature(
     .update(Buffer.from(data, 'utf-8'))
     .digest('base64')
 
-  return crypto.timingSafeEqual(
-    Buffer.from(expectedSignature),
-    Buffer.from(twilioSignature),
-  )
+  const expectedBuf = Buffer.from(expectedSignature)
+  const providedBuf = Buffer.from(twilioSignature)
+
+  // timingSafeEqual THROWS RangeError on length-mismatched buffers. A garbage
+  // X-Twilio-Signature of the wrong length would otherwise become an unhandled
+  // 500 — and Twilio retries 5xx, so malformed-signature probes create retry
+  // noise (S1). A length mismatch is invalid by definition; return false. Length
+  // is not secret, so short-circuiting here is not a timing leak.
+  if (expectedBuf.length !== providedBuf.length) {
+    return false
+  }
+
+  return crypto.timingSafeEqual(expectedBuf, providedBuf)
 }
 
 // Escape the five XML predefined entities before embedding free text in TwiML.
@@ -53,10 +64,14 @@ function twimlMessage(text: string): NextResponse {
   )
 }
 
-// TwiML with no message — Twilio sends nothing. Used for the 'idle' outcome.
-function twimlEmpty(): NextResponse {
+// TwiML with no message — Twilio sends nothing. Used for the 'idle' outcome and
+// for every no-op / error response to a signature-valid Twilio request, so the
+// body is always valid TwiML (returning JSON makes Twilio's debugger log schema
+// warnings — N1). `status` lets an error path keep its 5xx (Twilio retries those)
+// while still answering in TwiML.
+function twimlEmpty(status = 200): NextResponse {
   return new NextResponse('<Response></Response>', {
-    status: 200,
+    status,
     headers: { 'Content-Type': 'text/xml' },
   })
 }
@@ -132,9 +147,13 @@ export async function POST(request: NextRequest) {
     .maybeSingle<GateUser>()
 
   if (lookupError) {
-    // Structured error only — never leak the raw DB error to the caller.
-    console.error('User lookup failed for inbound WhatsApp message:', lookupError.message)
-    return NextResponse.json({ error: 'Lookup failed' }, { status: 500 })
+    // Observe in Sentry (S3), never leak the raw DB error to the caller. Keep the
+    // 500 so Twilio retries a transient DB blip; answer in TwiML (N1). This runs
+    // before idempotency, so a retry re-attempts the lookup cleanly.
+    Sentry.captureException(lookupError, {
+      tags: { feature: 'bot-27-reactivation', stage: 'gate-lookup' },
+    })
+    return twimlEmpty(500)
   }
 
   // Unregistered number: BOT-08 rejection, no session, no DB writes.
@@ -142,11 +161,69 @@ export async function POST(request: NextRequest) {
     return notRegisteredResponse()
   }
 
-  // Gated-but-known number (pending / deactivated / messaging_blocked): silent
-  // 200 no-op. We do NOT send anything (never message a blocked number) and do
-  // NOT reveal that the number is known to Quoco. No session, no DB writes.
-  if (user.status !== 'active' || user.messaging_blocked) {
-    return NextResponse.json({ status: 'ignored' })
+  // --- Gate decision (BOT-08 gate + BOT-27 reactivation clear-half) -------
+  // decideInboundGate is a pure function (unit-tested in reactivation.test.ts):
+  //   'gated_noop' → pending / deactivated (any flag): silent no-op, no writes,
+  //                  no disclosure that the number is known. Unchanged BOT-08.
+  //   'reactivate' → active engineer gated ONLY by messaging_blocked: clear the
+  //                  block (BOT-27 clear-half), ack, stop. A deactivated+blocked
+  //                  engineer is NOT reactivated — it is 'gated_noop'.
+  //   'proceed'    → active + unblocked: fall through to the normal flow.
+  const gate = decideInboundGate(user)
+
+  if (gate === 'gated_noop') {
+    return twimlEmpty()
+  }
+
+  if (gate === 'reactivate') {
+    // Idempotency FIRST: a Twilio retry of the reconnect message must be a no-op
+    // and must NOT fall through into the morning flow after the flag is cleared.
+    // Recording a processed_messages row for this KNOWN, re-consenting engineer is
+    // a deliberate, narrow relaxation of BOT-08's "gated numbers leave zero
+    // footprint" rule (that rule targets UNKNOWN numbers, not a registered
+    // engineer who just re-opened the session by messaging in).
+    //
+    // ACCEPTED FAILURE WINDOW (S3): the SID is consumed HERE, before the clear
+    // below. So if the clear then fails, the engineer stays blocked with no reply
+    // until their NEXT inbound (this SID now no-ops as a duplicate). That is the
+    // deliberately SAFER ordering: clearing before consuming the SID would let a
+    // Twilio retry of this same message fall through into the morning flow after
+    // the flag was cleared. We trade a rare "stuck until next message" support
+    // case (visible in Sentry) for never mis-triggering the flow on a retry.
+    const reactSid = params.MessageSid
+    if (!reactSid) {
+      return twimlEmpty(400)
+    }
+    const isNewReact = await isNewMessage(reactSid)
+    if (!isNewReact) {
+      return twimlEmpty()
+    }
+
+    const { error: clearError, cleared } = await clearMessagingBlock(
+      supabase,
+      user.id,
+      user.tenant_id,
+    )
+    if (clearError) {
+      Sentry.captureException(new Error(clearError), {
+        tags: { feature: 'bot-27-reactivation', stage: 'clear' },
+      })
+      return twimlEmpty(500)
+    }
+    if (!cleared) {
+      // Zero rows matched: the TOCTOU guard fired — the engineer was deactivated
+      // (or otherwise no longer status='active') between the gate read and this
+      // write. Do NOT send a "reconnected" ack that would misrepresent state.
+      return twimlEmpty()
+    }
+
+    // Within-session TwiML reply — a REPLY to their inbound, not a
+    // business-initiated template, so it is permitted for a just-unblocked number
+    // (their message reopened the 24h window). NOT the quoco_engineer_optin
+    // template (deferred, blocked on the production sender). Copy is intentionally
+    // minimal: it does NOT promise scheduled check-ins, which still need the
+    // production sender (N2). The reconnect message does NOT enter the morning flow.
+    return twimlMessage("You're reconnected to Quoco.")
   }
 
   // --- Idempotency (only now that the number is a real active user) -----

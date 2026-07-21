@@ -20,7 +20,16 @@ const ALLOW = new Set(['lib/auth/profile.ts'])
 const FROM_USERS = /from\(\s*['"]users['"]\s*\)/
 const EQ_ID = /\.eq\(\s*['"]id['"]\s*,/
 
+// Inline, per-file opt-out for a JUSTIFIED .eq('id', ...) — where the id is a
+// resolved users.id (not an auth uid), so the pre-007 bug class cannot occur. A
+// file carrying this tag is suppressed but STILL PRINTED below, so the exemption
+// is auditable in the build log, never silent. This does NOT relax the
+// FROM_USERS/EQ_ID detection — it only lets a reviewed call site opt out on the
+// record. Keep the tag adjacent to the query it justifies.
+const ALLOW_TAG = 'profile-lookup-guard:allow-id-eq'
+
 const offenders = []
+const suppressed = []
 
 function walk(dir) {
   let entries
@@ -39,11 +48,24 @@ function walk(dir) {
     const rel = relative('.', p)
     if (ALLOW.has(rel)) continue
     const src = readFileSync(p, 'utf8')
-    if (FROM_USERS.test(src) && EQ_ID.test(src)) offenders.push(rel)
+    if (FROM_USERS.test(src) && EQ_ID.test(src)) {
+      if (src.includes(ALLOW_TAG)) suppressed.push(rel)
+      else offenders.push(rel)
+    }
   }
 }
 
 for (const r of ROOTS) walk(r)
+
+// Print every suppression so a justified exemption is auditable in the build
+// log, never silent (a whole-file tag could otherwise mask a future real bug).
+if (suppressed.length > 0) {
+  console.log(
+    `• profile-lookup guard: ${suppressed.length} file(s) opted out via ` +
+      `"${ALLOW_TAG}" (reviewed .eq('id', ...) on a resolved users.id):`,
+  )
+  for (const s of suppressed) console.log('    ' + s)
+}
 
 if (offenders.length > 0) {
   console.error(
