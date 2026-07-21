@@ -152,7 +152,7 @@ function ErrorState({ date }: { date: string }) {
         <p className="text-sm font-semibold">Couldn&apos;t load check-ins</p>
       </div>
       <p className="mx-auto max-w-md text-sm text-red-700/80">
-        Something went wrong reading today&apos;s logs — this is not a report that no one checked in.
+        Something went wrong reading these logs — this is not a report that no one checked in.
         Please retry.
       </p>
       <a
