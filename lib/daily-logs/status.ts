@@ -96,7 +96,11 @@ export function deriveHalfStatus(
 
   const ist = istParts(now)
 
-  // 3. Messaging blocked — legitimate, excluded; carries a PM unblock action.
+  // 3. Messaging blocked — legitimate, excluded. Per BOT-27's canonical
+  // definition (bot-flows.md), messaging_blocked is ENGINEER opt-out/consent
+  // state, cleared only by the engineer messaging in — NOT a PM silencing tool
+  // and NOT PM-clearable. The PM affordance on this chip is INSTRUCTIONAL only
+  // ("ask them to text START to reconnect"), never a flag-flipping button.
   // DATED LIMITATION (2026-07-18, per DASH-03 review S1): `messagingBlocked` is
   // the engineer's CURRENT user-state, not a per-day fact. Applying it to a PAST
   // date would retroactively excuse a gap the engineer may well have been

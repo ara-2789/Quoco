@@ -403,6 +403,15 @@ adds to. Do not let this silently persist: the next substantive webhook change
 should either build the harness (construct Twilio-signed formData; assert
 signature rejection + the clear/idempotency behaviour) or consciously re-defer it
 here. The rule stops applying only if someone decides so on the record.
+  NAMED FUTURE TEST (deferred with the harness, recorded so the reasoning
+  survives): a ROUTE-LEVEL test proving RETRY-AFTER-CLEAR cannot fall into the
+  morning flow — i.e. an inbound from an active+blocked engineer clears the flag,
+  and a Twilio RETRY of that SAME MessageSid (now an active+unblocked user) is a
+  no-op, NOT a morning-flow turn. This is the exact scenario the "consume the SID
+  BEFORE the clear" ordering in route.ts exists to prevent (see the ACCEPTED
+  FAILURE WINDOW comment there); the ordering is currently only argued in comments
+  and covered obliquely by the pure idempotency unit — the route-level proof waits
+  on the harness.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its

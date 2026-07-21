@@ -42,15 +42,26 @@ export function decideInboundGate(user: GateDecisionUser): InboundGate {
 // Atomically clear the block for an active engineer (single-row, single-column
 // UPDATE — no transaction needed). Scoped by BOTH id and tenant_id defensively.
 // The caller passes the service client already in use by the webhook.
+//
+// TOCTOU guard (S2): the UPDATE re-asserts `status = 'active'` rather than
+// trusting the earlier gate read. If a PM deactivates the engineer between the
+// gate check and this write, the predicate no longer matches and the flag is NOT
+// cleared. `.select('id')` makes the match observable: `cleared` is true only if
+// a row actually matched, so the caller can withhold the ack on a zero-row write.
 export async function clearMessagingBlock(
   supabase: SupabaseClient,
   userId: string,
   tenantId: string,
-): Promise<{ error: string | null }> {
-  const { error } = await supabase
+): Promise<{ error: string | null; cleared: boolean }> {
+  const { data, error } = await supabase
     .from('users')
     .update({ messaging_blocked: false })
     .eq('id', userId)
     .eq('tenant_id', tenantId)
-  return { error: error ? error.message : null }
+    .eq('status', 'active')
+    .select('id')
+  if (error) {
+    return { error: error.message, cleared: false }
+  }
+  return { error: null, cleared: (data?.length ?? 0) > 0 }
 }
