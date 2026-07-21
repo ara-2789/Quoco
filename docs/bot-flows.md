@@ -126,6 +126,23 @@ Q6: Tomorrow's dependencies + responsibility. Same pattern as morning Q5/Q6.
   business-initiated messages to a STOP'd number until the USER messages
   first). Runbook: PM asks the engineer to text the Quoco number; on that
   inbound, clear messaging_blocked and re-run opt-in (BOT-27).
+  - IMPLEMENTATION STATUS (2026-07-21): the CLEAR-HALF is built — the webhook,
+    on an inbound from an engineer gated SOLELY by messaging_blocked
+    (status='active' AND messaging_blocked=true), clears the flag and sends a
+    within-session TwiML acknowledgement. Idempotent on MessageSid so a Twilio
+    retry cannot fall through into the morning flow. Logic split into a pure
+    decideInboundGate() + clearMessagingBlock() IO in lib/whatsapp/reactivation.ts.
+  - DEFERRED: re-firing the quoco_engineer_optin TEMPLATE is NOT built — it needs
+    the outbound sender + Twilio production approval (BLOCKED, CLAUDE.md §10). The
+    within-session TwiML ack stands in until then; no business-initiated send occurs.
+  - SAFETY INVARIANT — the clear-half reactivates ONLY an engineer whose sole
+    gate is the block (status still 'active'). A non-active status
+    (pending / deactivated) stays gated regardless of the flag: a deactivated
+    engineer is NEVER silently reactivated by texting in. COUPLING FOR THE SET
+    STAGE (STOP-detection, still unbuilt): blocking MUST flip only
+    messaging_blocked and leave status='active' — if the SET stage instead set
+    status='deactivated', this clear-path would (correctly) refuse to reactivate
+    and the flow would dead-end. Read this before building the SET stage.
 - Owner row created at project creation (DASH-02): role='owner', auth_id=null,
   tenant_id set, from form fields. projects.owner_user_id references it (ENG-07).
 

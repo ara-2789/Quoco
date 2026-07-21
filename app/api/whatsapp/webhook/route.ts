@@ -5,6 +5,7 @@ import { normalisePhoneNumber } from '@/lib/whatsapp/normalise'
 import { createServiceClient } from '@/lib/supabase/service'
 import { applyMorningFlowTurn, buildMorningReply } from '@/lib/whatsapp/flows/morning'
 import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
+import { decideInboundGate, clearMessagingBlock } from '@/lib/whatsapp/reactivation'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
 // processing anything. Twilio signs each webhook request using your Auth
@@ -142,11 +143,50 @@ export async function POST(request: NextRequest) {
     return notRegisteredResponse()
   }
 
-  // Gated-but-known number (pending / deactivated / messaging_blocked): silent
-  // 200 no-op. We do NOT send anything (never message a blocked number) and do
-  // NOT reveal that the number is known to Quoco. No session, no DB writes.
-  if (user.status !== 'active' || user.messaging_blocked) {
+  // --- Gate decision (BOT-08 gate + BOT-27 reactivation clear-half) -------
+  // decideInboundGate is a pure function (unit-tested in reactivation.test.ts):
+  //   'gated_noop' → pending / deactivated (any flag): silent no-op, no writes,
+  //                  no disclosure that the number is known. Unchanged BOT-08.
+  //   'reactivate' → active engineer gated ONLY by messaging_blocked: clear the
+  //                  block (BOT-27 clear-half), ack, stop. A deactivated+blocked
+  //                  engineer is NOT reactivated — it is 'gated_noop'.
+  //   'proceed'    → active + unblocked: fall through to the normal flow.
+  const gate = decideInboundGate(user)
+
+  if (gate === 'gated_noop') {
     return NextResponse.json({ status: 'ignored' })
+  }
+
+  if (gate === 'reactivate') {
+    // Idempotency FIRST: a Twilio retry of the reconnect message must be a no-op
+    // and must NOT fall through into the morning flow after the flag is cleared.
+    // Recording a processed_messages row for this KNOWN, re-consenting engineer is
+    // a deliberate, narrow relaxation of BOT-08's "gated numbers leave zero
+    // footprint" rule (that rule targets UNKNOWN numbers, not a registered
+    // engineer who just re-opened the session by messaging in).
+    const reactSid = params.MessageSid
+    if (!reactSid) {
+      return NextResponse.json({ error: 'Missing MessageSid' }, { status: 400 })
+    }
+    const isNewReact = await isNewMessage(reactSid)
+    if (!isNewReact) {
+      return NextResponse.json({ status: 'duplicate_ignored' })
+    }
+
+    const { error: clearError } = await clearMessagingBlock(supabase, user.id, user.tenant_id)
+    if (clearError) {
+      console.error('BOT-27 reactivation clear failed:', clearError)
+      return NextResponse.json({ error: 'Reactivation failed' }, { status: 500 })
+    }
+
+    // Within-session TwiML reply — a REPLY to their inbound, not a
+    // business-initiated template, so it is permitted for a just-unblocked number
+    // (their message reopened the 24h window). NOT the quoco_engineer_optin
+    // template (that send is deferred, blocked on the production sender). The
+    // reconnect message does NOT enter the morning flow.
+    return twimlMessage(
+      "You're reconnected to Quoco. You'll receive your check-ins again.",
+    )
   }
 
   // --- Idempotency (only now that the number is a real active user) -----
