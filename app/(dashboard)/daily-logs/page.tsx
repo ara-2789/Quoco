@@ -1,16 +1,16 @@
+import { CircleAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
 import { StatusChip } from '@/components/ui/status-chip'
 import { deriveHalfStatus, type Half, type HalfStatus } from '@/lib/daily-logs/status'
 import { DEFAULT_CUTOFFS } from '@/lib/daily-logs/cutoffs'
-import { getDailyLogsBoard, istDateString, type EngineerCard } from '@/lib/daily-logs/query'
+import { getDailyLogsBoard, type EngineerCard } from '@/lib/daily-logs/query'
+import { istDateString, isValidCalendarDate } from '@/lib/daily-logs/date'
 import { DateNav } from './date-nav'
 
 // DASH-03 Daily Logs — PM triage board. One card per engineer per day, morning
 // + evening halves. Read-only this pass (Rule 4.3 inline correction is a
 // deferred follow-up). Scoped to the PM's projects via project_members (§4).
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 function formatTime(iso: string | null): string {
   if (!iso) return ''
@@ -51,11 +51,15 @@ export default async function DailyLogsPage({
   const now = new Date()
   const today = istDateString(now)
   const params = await searchParams
-  // Validate the date param: well-formed and not in the future; else fall back to today.
-  let date = params.date && DATE_RE.test(params.date) ? params.date : today
+  // Validate the date param: a REAL calendar date (round-trips through Date, so
+  // "2026-02-31" / "2026-13-01" are rejected rather than silently rolling over
+  // and hitting Postgres as an invalid literal — S2), and not in the future.
+  // Fall back to today on any failure.
+  let date = params.date && isValidCalendarDate(params.date) ? params.date : today
   if (date > today) date = today
 
-  const boards = await getDailyLogsBoard(supabase, profile.id, date)
+  const result = await getDailyLogsBoard(supabase, profile.id, date)
+  const boards = result.status === 'ok' ? result.boards : []
   const hasAnyEngineer = boards.some((b) => b.engineers.length > 0)
 
   return (
@@ -71,7 +75,9 @@ export default async function DailyLogsPage({
         <DateNav date={date} today={today} />
       </div>
 
-      {boards.length === 0 ? (
+      {result.status === 'error' ? (
+        <ErrorState date={date} />
+      ) : boards.length === 0 ? (
         <EmptyState
           title="No projects yet."
           body="Daily Logs appear here once you create a project and assign site engineers to it."
@@ -80,7 +86,7 @@ export default async function DailyLogsPage({
       ) : !hasAnyEngineer ? (
         <EmptyState
           title="No engineers assigned yet."
-          body="Check-ins appear here once you add site engineers to your projects and they opt in to the morning WhatsApp prompt."
+          body="Check-ins appear here once you add site engineers to your projects."
           action={{ href: '/projects', label: 'Manage projects →' }}
         />
       ) : (
@@ -128,6 +134,32 @@ function EmptyState({
       <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">{body}</p>
       <a href={action.href} className="mt-3 inline-block text-sm text-blue-600 hover:underline">
         {action.label}
+      </a>
+    </div>
+  )
+}
+
+// Distinct FAILED-READ state (B1). Deliberately red-bordered and icon-marked so
+// it is visually unmistakable from both the neutral empty state (grey/white) and
+// the amber "Not checked in" gap chips — a data-load failure must never read as
+// "nobody checked in". The error itself is already on Sentry (see query.ts);
+// this only offers the PM a retry.
+function ErrorState({ date }: { date: string }) {
+  return (
+    <div className="rounded-lg border border-red-200 bg-red-50 p-12 text-center">
+      <div className="mb-2 flex items-center justify-center gap-2 text-red-700">
+        <CircleAlert className="h-5 w-5" aria-hidden="true" />
+        <p className="text-sm font-semibold">Couldn&apos;t load check-ins</p>
+      </div>
+      <p className="mx-auto max-w-md text-sm text-red-700/80">
+        Something went wrong reading today&apos;s logs — this is not a report that no one checked in.
+        Please retry.
+      </p>
+      <a
+        href={`/daily-logs?date=${date}`}
+        className="mt-3 inline-block rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
+      >
+        Retry
       </a>
     </div>
   )

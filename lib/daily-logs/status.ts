@@ -94,8 +94,18 @@ export function deriveHalfStatus(
     }
   }
 
+  const ist = istParts(now)
+
   // 3. Messaging blocked — legitimate, excluded; carries a PM unblock action.
-  if (messagingBlocked) {
+  // DATED LIMITATION (2026-07-18, per DASH-03 review S1): `messagingBlocked` is
+  // the engineer's CURRENT user-state, not a per-day fact. Applying it to a PAST
+  // date would retroactively excuse a gap the engineer may well have been
+  // reachable for — historical block-state is UNKNOWABLE until a block-history
+  // mechanism exists. So this branch is scoped to TODAY only; past dates fall
+  // through to the clock logic regardless of the current flag. Documented in
+  // docs/design-decisions-beta-feedback.md §3.1. (Contrast is_holiday above,
+  // which is stored ON the daily_logs row and so is historically accurate.)
+  if (messagingBlocked && logDate === ist.date) {
     return {
       state: 'messaging_blocked',
       variant: 'info',
@@ -107,7 +117,6 @@ export function deriveHalfStatus(
   // 4 vs 5 — missing. Only TODAY (in IST) can be "awaiting"; any past date's
   // cutoff has definitively passed, so a blank half is a gap without consulting
   // the clock.
-  const ist = istParts(now)
   const cutoff = cutoffMinutes(half === 'morning' ? cutoffs.morning : cutoffs.evening)
 
   if (logDate < ist.date) {

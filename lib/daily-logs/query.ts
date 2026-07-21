@@ -1,4 +1,6 @@
+import * as Sentry from '@sentry/nextjs'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { PostgrestError } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import type { LogHalfInput } from './status'
 
@@ -26,6 +28,22 @@ export type ProjectBoard = {
   engineers: EngineerCard[]
 }
 
+// Discriminated result so the page can tell "loaded, genuinely empty" apart from
+// "the read FAILED". A failed read must NEVER fall through to an empty/all-amber
+// board — that would render a data-loss event as "nobody checked in" (B1).
+export type BoardResult =
+  | { status: 'ok'; boards: ProjectBoard[] }
+  | { status: 'error' }
+
+// Report a failed board read to Sentry and return the error result. Centralised
+// so all three queries surface identically (loud event, not a silent lie).
+function reportReadFailure(stage: string, error: PostgrestError): { status: 'error' } {
+  Sentry.captureException(error, {
+    tags: { feature: 'dash-03-daily-logs', stage },
+  })
+  return { status: 'error' }
+}
+
 type MemberProject = { project_id: string; projects: { id: string; name: string } | null }
 type RosterRow = {
   project_id: string
@@ -42,22 +60,26 @@ export async function getDailyLogsBoard(
   supabase: SupabaseClient<Database>,
   pmUserId: string,
   logDate: string,
-): Promise<ProjectBoard[]> {
-  // 1. The PM's projects (scope).
-  const { data: memberData } = await supabase
+): Promise<BoardResult> {
+  // 1. The PM's projects (scope). A read error here is fatal to the board — do
+  // NOT discard it and proceed with an empty project set (B1).
+  const { data: memberData, error: memberErr } = await supabase
     .from('project_members')
     .select('project_id, projects(id, name)')
     .eq('user_id', pmUserId)
+
+  if (memberErr) return reportReadFailure('projects', memberErr)
 
   const projects = ((memberData ?? []) as unknown as MemberProject[]).filter(
     (m): m is MemberProject & { projects: { id: string; name: string } } =>
       m.projects !== null,
   )
   const projectIds = projects.map((p) => p.project_id)
-  if (projectIds.length === 0) return []
+  if (projectIds.length === 0) return { status: 'ok', boards: [] }
 
   // 2. Engineer roster for those projects + 3. logs for the date — independent,
-  // run concurrently.
+  // run concurrently. Either failing is fatal (a swallowed logs error would
+  // render every half as "Not checked in" — the exact all-amber lie B1 bans).
   const [rosterRes, logsRes] = await Promise.all([
     supabase
       .from('project_members')
@@ -72,6 +94,9 @@ export async function getDailyLogsBoard(
       .in('project_id', projectIds)
       .eq('log_date', logDate),
   ])
+
+  if (rosterRes.error) return reportReadFailure('roster', rosterRes.error)
+  if (logsRes.error) return reportReadFailure('logs', logsRes.error)
 
   const roster = (rosterRes.data ?? []) as unknown as RosterRow[]
   const logs = (logsRes.data ?? []) as unknown as LogRow[]
@@ -113,17 +138,6 @@ export async function getDailyLogsBoard(
   // Sort engineers by name for stable rendering; drop empty projects last.
   const boards = [...boardByProject.values()]
   for (const b of boards) b.engineers.sort((a, c) => a.engineerName.localeCompare(c.engineerName))
-  return boards.sort((a, b) => a.projectName.localeCompare(b.projectName))
-}
-
-/** IST calendar date "YYYY-MM-DD" for a UTC instant (the board's default date). */
-export function istDateString(now: Date): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now)
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
-  return `${get('year')}-${get('month')}-${get('day')}`
+  boards.sort((a, b) => a.projectName.localeCompare(b.projectName))
+  return { status: 'ok', boards }
 }

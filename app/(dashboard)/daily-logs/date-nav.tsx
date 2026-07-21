@@ -2,12 +2,16 @@
 
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { isValidCalendarDate } from '@/lib/daily-logs/date'
 
 // Date stepper for the Daily Logs board. Drives ?date=YYYY-MM-DD. Pure string
 // math on the calendar date (no timezone concern — the date is already an IST
-// calendar day chosen server-side).
+// calendar day chosen server-side). The page only ever passes a validated date,
+// but these helpers guard defensively so a malformed value can never silently
+// roll over (Date.UTC(2026, 1, 31) -> 03 Mar) and mislabel the day (S2).
 
 function shift(date: string, days: number): string {
+  if (!isValidCalendarDate(date)) return date
   const [y, m, d] = date.split('-').map(Number)
   const dt = new Date(Date.UTC(y, m - 1, d))
   dt.setUTCDate(dt.getUTCDate() + days)
@@ -15,6 +19,7 @@ function shift(date: string, days: number): string {
 }
 
 function pretty(date: string): string {
+  if (!isValidCalendarDate(date)) return date
   const [y, m, d] = date.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IN', {
     weekday: 'short',

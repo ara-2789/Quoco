@@ -71,6 +71,26 @@ Submission and finalization are **TWO separate fields**:
 - The system **NEVER fabricates a submission.** The engineer gets **one
   informational message** when their check-in is auto-closed.
 
+### 3.1 messaging_blocked is current-state, not history (DASH-03 limitation)
+
+**DATED NOTE (2026-07-18, per DASH-03 review S1).** `users.messaging_blocked` is
+a **current** flag on the user row — there is no per-day record of when a number
+was blocked or unblocked. The Daily Logs board (DASH-03) therefore applies the
+"Messaging blocked → legitimate absence, excluded from accountability" treatment
+**only to TODAY's card**. For any PAST date, the board ignores the current
+`messaging_blocked` flag and falls through to the normal cutoff-clock logic
+(submitted → ok; else → gap), because whether the engineer was actually blocked
+on that historical day is **unknowable** with today's schema.
+
+This is a **documented limitation, not an accident**: retroactively excusing a
+past gap on the strength of a flag that may have flipped since would silently
+corrupt the very accountability fairness Rule 5.3 is meant to protect. When a
+block-history mechanism exists (e.g. a `messaging_block_events` audit trail, or a
+per-day flag stamped onto `daily_logs` like `is_holiday`), the past-date branch
+can consult real history instead. Until then, `is_holiday` (stored ON the
+`daily_logs` row, hence historically accurate) is the only absence excluded on
+past dates. Enforced in `lib/daily-logs/status.ts`.
+
 ## 4. Disappearing messages
 
 - **No API control exists** (verify against current Meta docs at sender setup).

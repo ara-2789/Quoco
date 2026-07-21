@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { deriveHalfStatus, type LogHalfInput } from '@/lib/daily-logs/status'
 import { DEFAULT_CUTOFFS } from '@/lib/daily-logs/cutoffs'
+import { istDateString, isValidCalendarDate } from '@/lib/daily-logs/date'
 
 // Pure unit tests for the DASH-03 per-half status logic. Covers all five rows of
 // the plan table plus the Asia/Kolkata conversion regression guard.
@@ -33,11 +34,21 @@ describe('deriveHalfStatus', () => {
     expect(s.countsForAccountability).toBe(false)
   })
 
-  it('row 3 — messaging_blocked is blue/info and excluded', () => {
+  it('row 3 — messaging_blocked TODAY is blue/info and excluded', () => {
+    // logDate === today (LATE_TODAY is 23:59 IST on 2026-07-18).
     const s = deriveHalfStatus(blank, true, 'evening', '2026-07-18', LATE_TODAY, cutoffs)
     expect(s.state).toBe('messaging_blocked')
     expect(s.variant).toBe('info')
     expect(s.countsForAccountability).toBe(false)
+  })
+
+  it('S1 — messaging_blocked on a PAST date does NOT excuse the gap', () => {
+    // Current block-state is unknowable for history: a past blank half must fall
+    // through to the clock logic and read as a real gap, not a free pass.
+    const s = deriveHalfStatus(blank, true, 'evening', '2026-07-17', LATE_TODAY, cutoffs)
+    expect(s.state).toBe('missing')
+    expect(s.variant).toBe('risk')
+    expect(s.countsForAccountability).toBe(true)
   })
 
   it('holiday takes precedence over the missing-cutoff branch', () => {
@@ -96,5 +107,54 @@ describe('deriveHalfStatus', () => {
     const now = new Date('2026-07-18T18:45:00Z') // 00:15 IST on the 19th
     const s = deriveHalfStatus(blank, false, 'morning', '2026-07-19', now, cutoffs)
     expect(s.state).toBe('awaiting')
+  })
+
+  // --- Evening cutoff boundary (the whole-day tests above are morning-only;
+  // the evening path was green only by symmetry — exercise it explicitly, N3). ---
+  it('N3 — evening, today, BEFORE 19:30 cutoff, missing → awaiting', () => {
+    // 19:00 IST 2026-07-18 = 13:30 UTC — before the 19:30 evening cutoff.
+    const now = new Date('2026-07-18T13:30:00Z')
+    const s = deriveHalfStatus(blank, false, 'evening', '2026-07-18', now, cutoffs)
+    expect(s.state).toBe('awaiting')
+    expect(s.label).toBe('Awaiting evening')
+  })
+
+  it('N3 — evening, today, AFTER 19:30 cutoff, missing → gap', () => {
+    // 20:00 IST 2026-07-18 = 14:30 UTC — after the 19:30 evening cutoff.
+    const now = new Date('2026-07-18T14:30:00Z')
+    const s = deriveHalfStatus(blank, false, 'evening', '2026-07-18', now, cutoffs)
+    expect(s.state).toBe('missing')
+    expect(s.variant).toBe('risk')
+  })
+
+  it('N3 — evening cutoff does not fire early using the morning time', () => {
+    // 11:00 IST = 05:30 UTC: past MORNING 10:30 but far before EVENING 19:30.
+    // The evening half must still be "awaiting", proving each half reads its own
+    // cutoff (guards against a copy-paste that used cutoffs.morning for both).
+    const now = new Date('2026-07-18T05:30:00Z')
+    const s = deriveHalfStatus(blank, false, 'evening', '2026-07-18', now, cutoffs)
+    expect(s.state).toBe('awaiting')
+  })
+})
+
+describe('date helpers', () => {
+  it('istDateString — UTC instant maps to the correct IST calendar day', () => {
+    // 18:45 UTC on 2026-07-18 is 00:15 IST on 2026-07-19 (past IST midnight).
+    expect(istDateString(new Date('2026-07-18T18:45:00Z'))).toBe('2026-07-19')
+    // 12:00 UTC on 2026-07-18 is 17:30 IST — same day.
+    expect(istDateString(new Date('2026-07-18T12:00:00Z'))).toBe('2026-07-18')
+    // 20:00 UTC on 2026-07-18 is 01:30 IST on the 19th.
+    expect(istDateString(new Date('2026-07-18T20:00:00Z'))).toBe('2026-07-19')
+  })
+
+  it('isValidCalendarDate — accepts real dates, rejects shape-valid non-dates', () => {
+    expect(isValidCalendarDate('2026-07-18')).toBe(true)
+    expect(isValidCalendarDate('2024-02-29')).toBe(true) // real leap day
+    expect(isValidCalendarDate('2026-02-31')).toBe(false) // the repro — rolls to Mar
+    expect(isValidCalendarDate('2026-13-01')).toBe(false) // month 13
+    expect(isValidCalendarDate('2026-00-10')).toBe(false) // month 0
+    expect(isValidCalendarDate('2025-02-29')).toBe(false) // not a leap year
+    expect(isValidCalendarDate('2026-7-18')).toBe(false) // not zero-padded
+    expect(isValidCalendarDate('not-a-date')).toBe(false)
   })
 })
