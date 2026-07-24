@@ -281,7 +281,7 @@ NEXT_PUBLIC_APP_URL=             ← magic link redirect URL
 
 All non-NEXT_PUBLIC_ keys are used ONLY in server-side API routes.
 
-KNOWN VERCEL CONFIG GAP (2026-07-21, non-urgent, track + fix separately): the
+~~KNOWN VERCEL CONFIG GAP (2026-07-21, non-urgent, track + fix separately): the
 Preview-scoped NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (and related
 Supabase vars) are pinned to ONE branch — feat/migration-007-auth-surgery (a
 leftover from that migration's review) — instead of "All Preview branches." So
@@ -291,7 +291,12 @@ Server Error" on EVERY route of that preview, even though the build is green.
 This bit the feat/bot-27-reactivation-clear preview and is easy to misread as a
 code bug. FIX: in Vercel → Project → Settings → Environment Variables, re-scope
 those Preview vars to "All Preview branches." (Build-time is unaffected — these
-vars are only read at request time.)
+vars are only read at request time.)~~
+
+RESOLVED (2026-07-24): confirmed in Vercel → Settings → Environment Variables
+that NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (Preview) are both
+scoped to "All Preview Branches," not a single branch. Gap was apparently
+fixed same-day as discovery (2026-07-21) but never marked resolved here.
 
 ---
 
@@ -326,6 +331,20 @@ quoco/
 ---
 
 ## 10. CURRENT BUILD STATUS
+
+### [2026-07-24] next 16.2.11 security patch — postcss/sharp overrides
+PR #11. next@16.2.11 still hard-pins vulnerable transitives: postcss@8.4.31,
+sharp@^0.34.5. Added package.json overrides (postcss ^8.5.15, sharp ^0.35.0)
+to force patched versions. Verified: fast-uri (only prod-reachable incidental
+bump) confirmed absent from .next/ build output; prod builds on Turbopack so
+the @sentry webpack-plugin path never executes.
+
+Re-evaluate/remove these overrides when Next 16.3 goes stable — it's expected
+to bundle patched postcss/sharp natively, making the overrides dead weight.
+
+Known gap: sharp override is unverified at runtime — no next/image usage
+exists yet, so the image-optimization path is currently inert. Add an
+optimized-image smoke test to the Week-3 photos PR before that ships.
 
 Week 1: COMPLETE
 - Supabase client (client.ts, server.ts, proxy.ts)
