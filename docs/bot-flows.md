@@ -198,6 +198,18 @@ all call sites. (Tests: T-PR-06 — all input shapes normalise identically.)
 Triggered when ALL active engineers complete evening check-in, OR at 8:00 PM,
 whichever first. UPSERT against dprs(project_id, log_date).
 
+> DEPENDENCY — PM CORRECTIONS ARE AUTHORITATIVE (recorded 2026-07-25, migration 019).
+> Rule 4.3 inline correction (DASH-03) lets a PM edit daily_logs scalar fields
+> after check-in, audit-logged in **daily_log_edits** (the source of truth for
+> post-check-in edits). When this generator is built it MUST consult
+> daily_log_edits for the (project_id, log_date) being generated and treat a
+> corrected column's latest new_value as authoritative over the raw check-in
+> value. As of 019 this is unbuilt (no generator exists — the dpr_generate job
+> handler still throws "No handler implemented yet"), so 019 ships ONLY the
+> audit trail + an explicit hook; do NOT wire correction-surfacing logic until
+> the generator itself exists. Distinct from the Fast-Follow `resolutions` table
+> (the accountability engine) — different concept, do not conflate.
+
 ### Generation claim — prevents concurrent regen race (DPR-23)
 Before generating, claim by upserting dprs with:
   generation_status='running', generator_job_id=<this_job>, started_at=now()
