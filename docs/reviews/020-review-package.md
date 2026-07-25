@@ -310,3 +310,18 @@ Reviewer-required; do IN ORDER, pinning each result back here:
 6. **[NEW, reviewer] Real webhook-triggered apply_morning_flow_turn on PROD**
    post-apply — an actual inbound drives the service-role RPC end-to-end, proving
    service_role's real caller still works (not just that it passes the ACL abstractly).
+
+## 8. PROD apply — pinned execution log
+
+Each runsheet step's result, pinned as executed (one at a time).
+
+### Step 1 — PITR observation (pre-apply, §0) ✅
+Observed on PROD (`jvxwqignooseazzmwhvl`, **PRODUCTION** confirmed), 2026-07-25:
+```
+Restore available from:      18 Jul 2026, 22:01:07 IST (UTC+05:30)
+Latest restore available at: 25 Jul 2026, 17:17:49 IST
+Window:                      rolling ~7-day PITR, current as of observation.
+```
+Rollback mechanism confirmed **live by direct observation** (§0), not by checklist.
+NB: 020 is grants-only + DOWN-reversible, so PITR is the backstop, not the primary
+rollback path.
