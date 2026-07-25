@@ -308,8 +308,12 @@ Redirect URLs → add https://quoco-six.vercel.app/** AND a preview wildcard
 https://quoco-git-*-quoco.vercel.app/** (+ http://localhost:3000/** for local) so
 each preview's dynamic emailRedirectTo is honored instead of falling back. VERIFY
 BY OBSERVATION (§0), not dashboard-said-so: request a magic link from a preview
-and confirm the email's redirect_to is that preview, not the Site URL. [Mark
-RESOLVED here once observed.]
+and confirm the email's redirect_to is that preview, not the Site URL.
+RESOLVED (observed 2026-07-25): after the Site URL fix, the magic-link redirect
+from the test-db signup landed correctly (no 404) — the same signup that produced
+the 020 review package's §6 evidence. Observed on test-db; the PROD-side
+confirmation rides with the real prod magic-link signup on the 020 runsheet
+(020-review-package.md §7 item 5).
 
 SAME DEAD BRANCH, BITTEN TWICE: feat/migration-007-auth-surgery has now been the
 stale pin behind TWO real bugs this session — the Vercel Preview Supabase env
