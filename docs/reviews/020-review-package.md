@@ -363,3 +363,14 @@ exists there), covering the prove-closed the test-db run structurally could not.
 out of the prod push, so `daily_log_edits` / `correct_daily_log` are NOT on prod.
 019 proceeds only on its own fresh-branch round-2 rehearsal (PR #14 decision) —
 after this 020 apply, per the merge-order gate.
+
+### Step 4 — Smoke check A: authenticated dashboard read (PROD) ✅
+Logged in as the real founder-admin (Ara); loaded two tenant-scoped pages on prod:
+- `/dashboard` — "Welcome, Ara" + "Your Projects" clean empty-state ("No projects
+  yet" + Create CTA); no error.
+- `/daily-logs` — renders today's date (Sat, 25 Jul 2026) + the clean empty-state
+  (§5 pattern); no error.
+Both evaluated tenant-scoped RLS — which calls `get_user_tenant_id()` as the
+querying `authenticated` role — and returned valid results. A broken grant would
+have surfaced as `42501` / an error page. **Landmine 1 confirmed LIVE on prod**,
+in practice, not just in the `proacl` table.
