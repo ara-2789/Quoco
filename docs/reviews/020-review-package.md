@@ -261,15 +261,25 @@ be checked. This is a hard technical limit, not an incomplete check.
 ## 6. Test-db real-signup evidence (landmine 2)
 
 Prove-closed pins T-020-09 (a trigger *simulation* — auth-user insert → stub
-exists). A **real** magic-link signup was also done during rehearsal; its
-confirming row-existence SELECT should be pinned here (not just the test):
+exists). A **real** magic-link signup was also done during rehearsal; the SELECT
+below is the actual confirming result, not just the simulation.
 
+Query (test-db — PREVIEW badge visible):
 ```sql
--- [PASTE: SELECT id, auth_id, created_at FROM public.users WHERE auth_id = '<new signup auth uid>';]
+SELECT id, auth_id, full_name, created_at FROM public.users ORDER BY created_at DESC LIMIT 5;
 ```
+
+Top row (the real signup):
 ```
-[PASTE result — 1 row, proving handle_new_user fired for the REAL signup]
+id:         3b90804d-da64-4910-8c27-7ec13bb2016d
+auth_id:    2927eedb-458d-4fdb-b9b3-d62e7dccd275
+full_name:  NULL   (expected — stub row from handle_new_user; filled at onboarding)
+created_at: 2026-07-25 09:09:31.306628+00
 ```
+**Reading:** the stub row exists → `handle_new_user` fired end-to-end for a **real
+signup after 020's revoke** (landmine 2 confirmed on test-db, beyond the T-020-09
+simulation). `id ≠ auth_id` confirms the post-007 decoupling held for this signup;
+`full_name` NULL is the expected pre-onboarding stub shape.
 
 ## 7. Outstanding for the PROD apply (gated before PR #14 / 019)
 
