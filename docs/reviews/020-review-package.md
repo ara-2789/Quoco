@@ -356,3 +356,10 @@ rls_auto_enable()                                      | true  | {postgres=X/pos
 unchanged. Matches the design exactly, verified **directly on PROD**.
 `rls_auto_enable` is now closed on prod — the DO-block REVOKE ran (the function
 exists there), covering the prove-closed the test-db run structurally could not.
+
+### Step 3b — Merge-order gate: 019 did NOT land on prod ✅
+`supabase migration list` (post-push, linked to prod) shows Remote ending at
+`…018, 020` — **no `019` row anywhere**. Confirms the 019 aid was correctly kept
+out of the prod push, so `daily_log_edits` / `correct_daily_log` are NOT on prod.
+019 proceeds only on its own fresh-branch round-2 rehearsal (PR #14 decision) —
+after this 020 apply, per the merge-order gate.
