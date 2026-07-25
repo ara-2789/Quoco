@@ -325,3 +325,34 @@ Window:                      rolling ~7-day PITR, current as of observation.
 Rollback mechanism confirmed **live by direct observation** (§0), not by checklist.
 NB: 020 is grants-only + DOWN-reversible, so PITR is the backstop, not the primary
 rollback path.
+
+### Step 2 — apply 020 to PROD ✅
+`supabase db push` against `jvxwqignooseazzmwhvl`. Pre-flight guarded: linked ref
+verified = prod, and the **019 aid was removed from local first** so only 020 was
+pending (019 could not ride along onto prod — the merge-order gate). Applied
+successfully; confirmed by the closed `proacl` state below.
+
+### Step 3 — proacl prove-closed on PROD ✅
+
+**§1a-closed — `rls_auto_enable` (prod):**
+```
+rls_auto_enable() | is_definer: true | owner: postgres | proacl: {postgres=X/postgres,service_role=X/postgres}
+```
+
+**§1b-closed — batch across all 8 (prod; `rls_auto_enable` now present):**
+```
+acquire_and_transition_session(...)                    | true  | {postgres=X/postgres,service_role=X/postgres}
+apply_morning_flow_turn(...)                           | true  | {postgres=X/postgres,service_role=X/postgres}
+complete_onboarding(text,text,text)                    | true  | {postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}
+drain_next_pending_flow(text,timestamp with time zone) | true  | {postgres=X/postgres,service_role=X/postgres}
+get_user_tenant_id()                                   | true  | {postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}
+handle_new_user()                                      | true  | {postgres=X/postgres,service_role=X/postgres,supabase_auth_admin=X/postgres}
+quoco_same_ist_day(...)                                | false | {=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,...}  (unchanged, as intended)
+rls_auto_enable()                                      | true  | {postgres=X/postgres,service_role=X/postgres}
+```
+**Reading:** PUBLIC (`=X/postgres`) and `anon` are gone from all six hardened fns
+**and** `rls_auto_enable`; `complete_onboarding` + `get_user_tenant_id` retain
+`authenticated`; `handle_new_user` gains `supabase_auth_admin`; `quoco_same_ist_day`
+unchanged. Matches the design exactly, verified **directly on PROD**.
+`rls_auto_enable` is now closed on prod — the DO-block REVOKE ran (the function
+exists there), covering the prove-closed the test-db run structurally could not.
