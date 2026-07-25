@@ -158,8 +158,20 @@ export async function ensureMorningFixtures(): Promise<void> {
   if (memberErr) throw new Error(`ensureMorningFixtures member failed: ${memberErr.message}`)
 }
 
-// Delete every daily_logs row this suite could have written. Keyed on the fixed
-// test project id, so nothing survives across runs. Call in afterEach.
+// Delete daily_logs rows written by the morning/session suites — keyed on
+// TEST_PROJECT_ID (the morning-flow project) ONLY. Call in afterEach.
+//
+// TEST-DB HYGIENE DEBT (2026-07-25): the name reads as "clean all test
+// daily_logs" but it only covers TEST_PROJECT_ID. A suite that seeds daily_logs
+// on a DIFFERENT project is NOT cleaned here and must delete its own rows —
+// e.g. migration-017 seeds (project A, user A, 2026-07-15) and never removes it
+// (its cleanup targets the morning project, not project A). PROOF THIS BITES:
+// migration-019's suite would have collided with that surviving row on
+// daily_logs' UNIQUE(project_id, engineer_id, log_date); it now uses dates no
+// other suite writes (2026-09-19) to stay decoupled. Fix later by renaming to
+// cleanupMorningDailyLogs(), parameterising the project scope, or having 017
+// clean its own seed. Not urgent — documented so the next author doesn't
+// re-derive it from a mystery unique_violation.
 export async function cleanupTestDailyLogs(): Promise<void> {
   const db = testClient()
   const { error } = await db.from('daily_logs').delete().eq('project_id', TEST_PROJECT_ID)
