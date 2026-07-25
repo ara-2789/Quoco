@@ -196,6 +196,77 @@ export type Database = {
           },
         ]
       }
+      daily_log_edits: {
+        Row: {
+          column_name: string
+          created_at: string
+          daily_logs_id: string
+          edited_by: string
+          id: string
+          log_date: string
+          new_value: Json | null
+          old_value: Json | null
+          project_id: string
+          source: string
+          tenant_id: string
+        }
+        Insert: {
+          column_name: string
+          created_at?: string
+          daily_logs_id: string
+          edited_by: string
+          id?: string
+          log_date: string
+          new_value?: Json | null
+          old_value?: Json | null
+          project_id: string
+          source?: string
+          tenant_id: string
+        }
+        Update: {
+          column_name?: string
+          created_at?: string
+          daily_logs_id?: string
+          edited_by?: string
+          id?: string
+          log_date?: string
+          new_value?: Json | null
+          old_value?: Json | null
+          project_id?: string
+          source?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_log_edits_daily_logs_id_fkey"
+            columns: ["daily_logs_id"]
+            isOneToOne: false
+            referencedRelation: "daily_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_log_edits_edited_by_fkey"
+            columns: ["edited_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_log_edits_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_log_edits_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_logs: {
         Row: {
           created_at: string | null
@@ -1600,6 +1671,10 @@ export type Database = {
       }
       complete_onboarding: {
         Args: { p_company_name: string; p_full_name: string; p_slug: string }
+        Returns: string
+      }
+      correct_daily_log: {
+        Args: { p_column: string; p_daily_logs_id: string; p_new_value: Json }
         Returns: string
       }
       drain_next_pending_flow: {
