@@ -504,6 +504,12 @@ here. The rule stops applying only if someone decides so on the record.
   and covered obliquely by the pure idempotency unit — the route-level proof waits
   on the harness.
 
+PROD SMOKE CHECK DEFERRED (2026-07-25): migration 020's real webhook-driven
+apply_morning_flow_turn end-to-end check is deferred pending a Twilio
+sandbox-joined handset + labeled test engineer. See
+docs/reviews/020-review-package.md §7-6 for full reasoning and partial coverage
+already in place. Target: within 1-2 days of this note.
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
