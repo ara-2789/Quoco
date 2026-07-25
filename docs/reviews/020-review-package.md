@@ -245,11 +245,54 @@ green. Door shut, no collateral damage.
 
 ---
 
-## Outstanding for the PROD apply (gated before PR #14 / 019)
+## 5. Log-retention exploitation check (was it ever hit?)
+
+The three parameter-trusting fns have been anon-callable since **012 (2026-07-05)**
+— **20 days** before this hardening. To convert "probably never exploited" into a
+checked fact, PostgREST request logs for `/rpc/{apply_morning_flow_turn,
+acquire_and_transition_session, drain_next_pending_flow}` should be scanned for any
+**non-service-role** caller across that window.
+
+**DETERMINATION: [PENDING maintainer dashboard read — record ONE of the three]:**
+- **checked-clean** — logs cover 2026-07-05→now, no non-service-role calls to those
+  endpoints (paste the log query + result to pin here).
+- **checked-dirty** — such calls exist → escalate.
+- **UNVERIFIABLE** — retention window < 20 days, so the 012→now period is already
+  gone. **Likely outcome:** Supabase API/PostgREST log retention on Pro is ~1–7 days
+  (longer only with a Logs add-on), well short of 20. Record which, **with the
+  observed retention window**, from Dashboard → Logs & Analytics. The authoring
+  environment has no log access, so this cannot be resolved from the repo — it
+  needs the dashboard read **before prod apply**.
+
+## 6. Test-db real-signup evidence (landmine 2)
+
+Prove-closed pins T-020-09 (a trigger *simulation* — auth-user insert → stub
+exists). A **real** magic-link signup was also done during rehearsal; its
+confirming row-existence SELECT should be pinned here (not just the test):
+
+```sql
+-- [PASTE: SELECT id, auth_id, created_at FROM public.users WHERE auth_id = '<new signup auth uid>';]
+```
+```
+[PASTE result — 1 row, proving handle_new_user fired for the REAL signup]
+```
+
+## 7. Outstanding for the PROD apply (gated before PR #14 / 019)
+
+Reviewer-required; do IN ORDER, pinning each result back here:
 
 1. Apply 020 to prod (observe the PITR window first, §0).
-2. Re-run the §1a query on prod → confirm `rls_auto_enable`'s `proacl` no longer
-   carries PUBLIC/anon/authenticated; pin that output here as §1a-closed.
-3. Re-run §1b (or the dedicated queries) on prod → confirm the six hardened
-   functions closed on prod too; pin.
-4. Untruncated re-pull of any `proacl` needed for byte-exact sign-off (caveat above).
+2. **proacl prove-closed (prod):** re-run §1a on prod → `rls_auto_enable` no longer
+   carries PUBLIC/anon/authenticated; pin as §1a-closed.
+3. **proacl prove-closed (prod):** re-run §1b / dedicated queries on prod → the six
+   hardened fns closed on prod too; pin. Untruncated re-pull for byte-exact sign-off.
+4. **[NEW, reviewer] Real authenticated dashboard read on PROD** post-apply — an
+   actual logged-in PM loads a tenant-scoped page and sees rows. Landmine 1 verified
+   on prod, **not inferred from test-db**.
+5. **[NEW, reviewer] Real magic-link signup on PROD** post-apply, end-to-end (or an
+   explicit, reasoned decision to defer). Landmine 2 verified on prod. NB: the Auth
+   Site URL fix (CLAUDE.md §8) must be confirmed first, or the signup redirect 404s
+   independently of 020.
+6. **[NEW, reviewer] Real webhook-triggered apply_morning_flow_turn on PROD**
+   post-apply — an actual inbound drives the service-role RPC end-to-end, proving
+   service_role's real caller still works (not just that it passes the ACL abstractly).

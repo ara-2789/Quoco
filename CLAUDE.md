@@ -428,6 +428,28 @@ control (into a migration) the next time it's touched. Known entries:
   * (historical) 001-005 — applied via the dashboard SQL editor, later reconciled
     into the migration set (see the note above); listed for completeness.
 
+SECURITY INCIDENT — anon-callable SECURITY DEFINER RPCs (migration 020, 2026-07-25).
+All SEVEN public SECURITY DEFINER function grants were over-broad (PostgreSQL's
+default PUBLIC EXECUTE, live since 012 / 2026-07-05); 020 closes all seven. But
+the ACTUALLY-EXPLOITABLE surface was NARROWER than "seven" — do not overstate it:
+  * EXPLOITABLE (the hole) — the THREE parameter-trusting fns
+    (acquire_and_transition_session, apply_morning_flow_turn,
+    drain_next_pending_flow): they take p_user_id/p_tenant_id as caller input,
+    derive NO identity from auth.uid(), and return non-trigger types, so the
+    public ANON key could call them via PostgREST /rpc/ and forge check-in /
+    session data for any engineer — bypassing the webhook, Twilio HMAC, and
+    idempotency.
+  * BOUNDED — complete_onboarding: anon-invocable but self-guards on auth.uid()
+    (016 zero-row RAISE rolls back), so an anon call achieves nothing.
+  * NOT EXPLOITABLE, hardened for defense-in-depth only — handle_new_user
+    (RETURNS trigger) and rls_auto_enable (RETURNS event_trigger): PostgREST does
+    NOT expose trigger-returning functions as /rpc/ endpoints AT ALL, so their ACL
+    was never a callable vector. get_user_tenant_id under anon just returns NULL
+    (no auth.uid() → no row) — harmless. quoco_same_ist_day is a pure helper, out
+    of scope.
+Pinned evidence: docs/reviews/020-review-package.md. Log-retention exploitation
+check: see that package (§ log-retention).
+
 Then in Week 2 (remaining):
 - NFR-16 queue helper library (enqueue/claim/complete/fail functions)
 - /api/jobs/tick worker endpoint + Vercel cron config
