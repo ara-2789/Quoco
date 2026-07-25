@@ -374,3 +374,22 @@ Both evaluated tenant-scoped RLS — which calls `get_user_tenant_id()` as the
 querying `authenticated` role — and returned valid results. A broken grant would
 have surfaced as `42501` / an error page. **Landmine 1 confirmed LIVE on prod**,
 in practice, not just in the `proacl` table.
+
+### Step 5 — Smoke check B: magic-link signup (PROD) ✅
+Address: `aravindanrajamani+smoke020@gmail.com` — greppable + self-labelling;
+**permanent** per §10a (deactivation-only, 007 RESTRICT FK — stays a stub forever).
+- Magic link **resolved on prod (no 404)** → the Auth Site URL fix is confirmed on
+  **PROD**, not just test-db.
+- Onboarding page loaded (expected for a new signup) but was **NOT completed** — no
+  "Create workspace" click, fields were faded placeholders (not pre-filled), navigated
+  away. So `complete_onboarding` did NOT run; **no orphan tenant minted**.
+- Stub `public.users` row confirmed on prod:
+```
+id:         1a010e27-155d-4ad0-80c0-89a430b0689d
+auth_id:    3198b1e0-32ff-4e7e-836e-362e8cfd6d0c
+full_name:  NULL   (expected pre-onboarding stub)
+created_at: 2026-07-25 15:56:30.75276+00
+```
+**Reading:** `handle_new_user` fired for a **real prod signup after 020's revoke** —
+the stub exists (**landmine 2 confirmed live on prod**). `id ≠ auth_id` confirms
+post-007 decoupling held. Stopped at the stub per the smoke discipline; no tenant.
