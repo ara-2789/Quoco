@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { type SupabaseClient } from '@supabase/supabase-js'
 import {
   testClient,
@@ -119,9 +119,13 @@ beforeAll(async () => {
   jwtA = await jwtClient(TEST_007_USER_A_EMAIL, TEST_007_PASSWORD)
 })
 
-afterEach(async () => {
-  // Re-seed the mutable rows to a known baseline and clear audit rows, so tests
-  // are order-independent.
+beforeEach(async () => {
+  // Establish a known baseline BEFORE each test (incl. the first): seed the
+  // rows and clear audit rows. Must be beforeEach, not afterEach — afterEach
+  // runs AFTER a test, so the first test would execute against unseeded rows
+  // (correct_daily_log then RAISEs P0002 "no daily_logs row"). Re-seeding via
+  // upsert(onConflict:'id') also resets any mutation a prior test made, so the
+  // suite is order-independent.
   await seedLog(ROW_MEMBER, TEST_TENANT_A_ID, TEST_PROJECT_A_ID, fx.profileAId, LOG_DATE, {
     weather: 'cloudy', is_holiday: false, evening_workers_on_site: 10,
   })
