@@ -393,3 +393,52 @@ created_at: 2026-07-25 15:56:30.75276+00
 **Reading:** `handle_new_user` fired for a **real prod signup after 020's revoke** —
 the stub exists (**landmine 2 confirmed live on prod**). `id ≠ auth_id` confirms
 post-007 decoupling held. Stopped at the stub per the smoke discipline; no tenant.
+
+### Step 6 — Smoke check C: real webhook-driven `apply_morning_flow_turn` (PROD) ⏸ DEFERRED
+**DEFERRED (not skipped) — 2026-07-25.** No Twilio sandbox-joined handset or
+registered test engineer currently available on prod. Rather than stand up new test
+infrastructure under prod-apply time pressure, this check is explicitly deferred to
+**within the next 1–2 days**.
+
+**Partial coverage already in place (reduces, does not eliminate, the residual risk):**
+1. **§1b-closed's prod `proacl` probe** directly confirms `service_role=X` is present
+   on `apply_morning_flow_turn`'s grant list post-apply — the exact grant this check
+   would exercise.
+2. **T-020-05** (ACL canary, passed on test-db): `service_role` passes the ACL layer
+   and fails deeper, not at `42501`.
+3. **Structurally**, 020 only narrowed PUBLIC/anon/authenticated; `service_role` went
+   from implicitly-covered-by-PUBLIC to an **explicit dedicated grant** — which cannot
+   be *more* restrictive. The main residual risk this check catches is a **typo** in
+   the GRANT's role name / target function / argument list — which the `proacl` probe
+   already disproves by showing the correct grant landed.
+
+**RESIDUAL RISK NOT COVERED:** whether the **full webhook call chain** (HMAC validate
+→ SID dedup → engineer resolution → service-role RPC → DB write) still works
+end-to-end in practice on prod, as opposed to the RPC's ACL layer in isolation.
+
+**Plan:** complete within 1–2 days using a sandbox-joined handset + a clearly-labelled
+test engineer (same permanent-artifact discipline as `smoke-020`). Update this entry
+**DEFERRED → CLOSED** once done.
+
+## 9. Summary — 020 prod apply
+
+Migration 020 is **applied to prod** (`jvxwqignooseazzmwhvl`) and the hardening is
+verified directly on prod: the `proacl` prove-closed (§8 Step 3) matches the design
+exactly, and the merge-order gate held (019 is not on prod — §8 Step 3b).
+
+Prod post-apply checks: **5 of 6 complete and pinned**; the 6th (real webhook-driven
+`apply_morning_flow_turn`) is on an **explicit, dated deferral** (§8 Step 6 — 1–2 days)
+with partial coverage already in place — **not an open gap**.
+
+| Check | Status |
+|---|---|
+| §0 PITR observation | ✅ pinned |
+| Apply 020 to prod | ✅ pinned |
+| `proacl` prove-closed (§1a/§1b) | ✅ pinned |
+| Merge-order gate (019 off prod) | ✅ pinned |
+| Smoke A — authenticated read | ✅ pinned |
+| Smoke B — magic-link signup | ✅ pinned |
+| Smoke C — webhook `apply_morning_flow_turn` | ⏸ DEFERRED (1–2 days) |
+
+**Next:** close §8 Step 6 within 1–2 days; then 019 (PR #14) proceeds on its fresh
+round-2 rehearsal branch, per the merge-order gate.
