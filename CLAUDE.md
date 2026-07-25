@@ -319,6 +319,15 @@ env scopes, Supabase Auth URLs, any dashboard setting or hardcoded string) for
 that branch name and purge it wholesale, rather than fixing one surface at a time
 as each bug surfaces.
 
+SWEEP COMPLETE (2026-07-25): a full Vercel + Supabase dashboard sweep for that
+branch name was done and is CLEAN — no additional stale references beyond the two
+above. Checked: Vercel Environment Variables (all envs), Deployment Protection,
+Domains; Supabase (BOTH main AND test-db) Auth email templates (Magic Link uses
+{{ .ConfirmationURL }}, no hardcoded URLs), Database Webhooks (none configured),
+Edge Functions (none deployed — empty "deploy your first function" screen). Repo
+code/config is also grep-clean. So the pattern is closed at two instances; the
+standing rule above still holds if a THIRD surface ever appears.
+
 ---
 
 ## 9. FILE STRUCTURE
