@@ -253,16 +253,10 @@ checked fact, PostgREST request logs for `/rpc/{apply_morning_flow_turn,
 acquire_and_transition_session, drain_next_pending_flow}` should be scanned for any
 **non-service-role** caller across that window.
 
-**DETERMINATION: [PENDING maintainer dashboard read — record ONE of the three]:**
-- **checked-clean** — logs cover 2026-07-05→now, no non-service-role calls to those
-  endpoints (paste the log query + result to pin here).
-- **checked-dirty** — such calls exist → escalate.
-- **UNVERIFIABLE** — retention window < 20 days, so the 012→now period is already
-  gone. **Likely outcome:** Supabase API/PostgREST log retention on Pro is ~1–7 days
-  (longer only with a Logs add-on), well short of 20. Record which, **with the
-  observed retention window**, from Dashboard → Logs & Analytics. The authoring
-  environment has no log access, so this cannot be resolved from the repo — it
-  needs the dashboard read **before prod apply**.
+**DETERMINATION: UNVERIFIABLE** — Pro plan, 7-day log retention (confirmed via
+Supabase's Log date range dialog), exposure window was 20 days (2026-07-05 to
+2026-07-25). Logs from the relevant period have rolled off retention and cannot
+be checked. This is a hard technical limit, not an incomplete check.
 
 ## 6. Test-db real-signup evidence (landmine 2)
 
