@@ -293,10 +293,20 @@ Reviewer-required; do IN ORDER, pinning each result back here:
 4. **[NEW, reviewer] Real authenticated dashboard read on PROD** post-apply — an
    actual logged-in PM loads a tenant-scoped page and sees rows. Landmine 1 verified
    on prod, **not inferred from test-db**.
-5. **[NEW, reviewer] Real magic-link signup on PROD** post-apply, end-to-end (or an
-   explicit, reasoned decision to defer). Landmine 2 verified on prod. NB: the Auth
-   Site URL fix (CLAUDE.md §8) must be confirmed first, or the signup redirect 404s
-   independently of 020.
+5. **[NEW, reviewer] Real magic-link signup on PROD** post-apply — landmine 2 on
+   prod. **SMOKE-TEST DISCIPLINE (reviewer, required):**
+   - Use a deliberately **greppable, self-labelling** disposable address:
+     `smoke-020@<our domain>`. This identity is **PERMANENT** — per §10a's binding
+     offboarding policy (deactivation only, NO auth-row deletion, enforced by 007's
+     RESTRICT FK), it can never be cleaned up, so it must clearly announce itself
+     as a smoke test to whoever finds it later.
+   - **STOP the instant** the magic link resolves (no 404) AND the stub
+     `public.users` row is confirmed to exist. Do **NOT** complete onboarding —
+     that calls `complete_onboarding` and mints a real **tenant**; an orphan
+     smoke-test tenant in prod is exactly the ledger debt already tracked. The stub
+     row alone is complete proof for landmine 2; nothing further is needed.
+   - This step also provides the PROD-side confirmation of the Auth Site URL fix
+     (CLAUDE.md §8, observed on test-db) — the redirect landing (no 404) is that proof.
 6. **[NEW, reviewer] Real webhook-triggered apply_morning_flow_turn on PROD**
    post-apply — an actual inbound drives the service-role RPC end-to-end, proving
    service_role's real caller still works (not just that it passes the ACL abstractly).
