@@ -1277,6 +1277,11 @@ DEFERRED (written rationale for the reviewer package)
 - **F5 least-privilege / role gates + intra-tenant integrity (#1 tenants billing,
   #8/#18–20 money):** a distinct least-privilege workstream, not the cross-tenant
   class 017 targets.
+  - Read-side item for this workstream: `users_select` is column-agnostic and
+    ships every `users` column (incl. `whatsapp_number` PII) to any tenant member.
+    Primary tracking is **007 review §11d**; as of DASH-03 2b (2026-07-25) the
+    dashboard ships `whatsapp_number` to the client for `messaging_blocked`
+    engineers, so this is a live client surface, not just a latent policy shape.
 
 **F6 — investigated during the audit, RETRACTED (false positive; diligence shown
 deliberately):**

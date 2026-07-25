@@ -18,6 +18,9 @@ export type EngineerCard = {
   engineerId: string
   engineerName: string
   messagingBlocked: boolean
+  /** E.164 (with +) or null — the column is nullable. Used only to build the
+   *  reactivation "Forward to" wa.me link; never displayed directly. */
+  engineerWhatsappNumber: string | null
   /** The daily_logs row for this engineer on this date, or null if none exists. */
   log: (LogHalfInput & { evening_output: string | null; morning_plan: string | null }) | null
 }
@@ -47,7 +50,12 @@ function reportReadFailure(stage: string, error: PostgrestError): { status: 'err
 type MemberProject = { project_id: string; projects: { id: string; name: string } | null }
 type RosterRow = {
   project_id: string
-  users: { id: string; full_name: string | null; messaging_blocked: boolean | null } | null
+  users: {
+    id: string
+    full_name: string | null
+    messaging_blocked: boolean | null
+    whatsapp_number: string | null
+  } | null
 }
 type LogRow = LogHalfInput & {
   project_id: string
@@ -83,7 +91,7 @@ export async function getDailyLogsBoard(
   const [rosterRes, logsRes] = await Promise.all([
     supabase
       .from('project_members')
-      .select('project_id, users(id, full_name, messaging_blocked)')
+      .select('project_id, users(id, full_name, messaging_blocked, whatsapp_number)')
       .in('project_id', projectIds)
       .eq('role', 'engineer'),
     supabase
@@ -122,6 +130,7 @@ export async function getDailyLogsBoard(
       engineerId: r.users.id,
       engineerName: r.users.full_name ?? 'Unnamed engineer',
       messagingBlocked: r.users.messaging_blocked ?? false,
+      engineerWhatsappNumber: r.users.whatsapp_number ?? null,
       log: log
         ? {
             morning_submitted_at: log.morning_submitted_at,

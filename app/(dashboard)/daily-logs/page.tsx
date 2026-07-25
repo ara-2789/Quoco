@@ -1,12 +1,15 @@
+import * as Sentry from '@sentry/nextjs'
 import { CircleAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
 import { StatusChip } from '@/components/ui/status-chip'
 import { deriveHalfStatus, type Half, type HalfStatus } from '@/lib/daily-logs/status'
 import { DEFAULT_CUTOFFS } from '@/lib/daily-logs/cutoffs'
-import { getDailyLogsBoard, type EngineerCard } from '@/lib/daily-logs/query'
+import { getDailyLogsBoard } from '@/lib/daily-logs/query'
 import { istDateString, isValidCalendarDate } from '@/lib/daily-logs/date'
+import { formatQuocoNumber } from '@/lib/daily-logs/reactivate-copy'
 import { DateNav } from './date-nav'
+import { ReactivateCta } from './reactivate-cta'
 
 // DASH-03 Daily Logs — PM triage board. One card per engineer per day, morning
 // + evening halves. Read-only this pass (Rule 4.3 inline correction is a
@@ -29,9 +32,7 @@ function labelFor(status: HalfStatus, submittedAt: string | null): string {
   return status.label
 }
 
-function HalfRow({ half, card, logDate, now }: { half: Half; card: EngineerCard; logDate: string; now: Date }) {
-  const status = deriveHalfStatus(card.log, card.messagingBlocked, half, logDate, now, DEFAULT_CUTOFFS)
-  const submittedAt = half === 'morning' ? card.log?.morning_submitted_at ?? null : card.log?.evening_submitted_at ?? null
+function HalfRow({ half, status, submittedAt }: { half: Half; status: HalfStatus; submittedAt: string | null }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1">
       <span className="text-xs text-gray-500">{half === 'morning' ? 'Morning' : 'Evening'}</span>
@@ -61,6 +62,35 @@ export default async function DailyLogsPage({
   const result = await getDailyLogsBoard(supabase, profile.id, date)
   const boards = result.status === 'ok' ? result.boards : []
   const hasAnyEngineer = boards.some((b) => b.engineers.length > 0)
+
+  // Quoco WhatsApp number for the reactivation CTA. Business number, not a secret
+  // — read server-side and passed as a prop (no NEXT_PUBLIC_ needed). Stored with
+  // Twilio's "whatsapp:" prefix (CLAUDE.md §8); strip it for display.
+  const rawQuocoNumber = process.env.TWILIO_WHATSAPP_NUMBER
+  const quocoNumber = rawQuocoNumber ? formatQuocoNumber(rawQuocoNumber) : null
+
+  // If any engineer is messaging_blocked TODAY but we have no number to show, the
+  // CTA degrades to instruction-only (still names START). That's degraded-but-
+  // functioning, not a failure — surface it as a Sentry WARNING (not exception),
+  // and only when a CTA would actually render (skip the pass entirely when the
+  // env is set, the normal path).
+  if (quocoNumber === null) {
+    const anyBlocked = boards.some((b) =>
+      b.engineers.some(
+        (eng) =>
+          deriveHalfStatus(eng.log, eng.messagingBlocked, 'morning', date, now, DEFAULT_CUTOFFS).state ===
+            'messaging_blocked' ||
+          deriveHalfStatus(eng.log, eng.messagingBlocked, 'evening', date, now, DEFAULT_CUTOFFS).state ===
+            'messaging_blocked',
+      ),
+    )
+    if (anyBlocked) {
+      Sentry.captureMessage(
+        'DASH-03 reactivate CTA degraded: TWILIO_WHATSAPP_NUMBER unset',
+        'warning',
+      )
+    }
+  }
 
   return (
     <div className="p-8">
@@ -98,17 +128,34 @@ export default async function DailyLogsPage({
                 <p className="text-sm text-gray-400">No engineers assigned to this project.</p>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {board.engineers.map((eng) => (
-                    <div key={eng.engineerId} className="rounded-lg border border-gray-200 bg-white p-4">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-900">{eng.engineerName}</span>
+                  {board.engineers.map((eng) => {
+                    const morningStatus = deriveHalfStatus(eng.log, eng.messagingBlocked, 'morning', date, now, DEFAULT_CUTOFFS)
+                    const eveningStatus = deriveHalfStatus(eng.log, eng.messagingBlocked, 'evening', date, now, DEFAULT_CUTOFFS)
+                    // Card-level, not per-half: messaging_blocked is a user-level
+                    // state, so the CTA renders ONCE. Gating on the derived state
+                    // (rather than the raw flag) keeps status.ts the single source
+                    // of the today-only rule — no past-date CTA.
+                    const isBlocked =
+                      morningStatus.state === 'messaging_blocked' || eveningStatus.state === 'messaging_blocked'
+                    return (
+                      <div key={eng.engineerId} className="rounded-lg border border-gray-200 bg-white p-4">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-900">{eng.engineerName}</span>
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                          <HalfRow half="morning" status={morningStatus} submittedAt={eng.log?.morning_submitted_at ?? null} />
+                          <HalfRow half="evening" status={eveningStatus} submittedAt={eng.log?.evening_submitted_at ?? null} />
+                        </div>
+                        {isBlocked && (
+                          <ReactivateCta
+                            engineerName={eng.engineerName}
+                            engineerWhatsappNumber={eng.engineerWhatsappNumber}
+                            quocoNumber={quocoNumber}
+                          />
+                        )}
                       </div>
-                      <div className="divide-y divide-gray-100">
-                        <HalfRow half="morning" card={eng} logDate={date} now={now} />
-                        <HalfRow half="evening" card={eng} logDate={date} now={now} />
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </section>

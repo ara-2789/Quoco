@@ -146,6 +146,15 @@ Q6: Tomorrow's dependencies + responsibility. Same pattern as morning Q5/Q6.
     is INSTRUCTIONAL only ("ask the engineer to text START to reconnect"), never a
     button that flips the flag — a PM cannot un-opt-out on the engineer's behalf,
     the same way Quoco cannot business-initiate to a STOP'd number.
+  - IMPLEMENTED (2b, 2026-07-25): the DASH-03 board renders that instructional
+    affordance — a native <details> "How to reactivate" disclosure on a
+    messaging_blocked engineer's card (TODAY only, gated on the derived chip
+    state), with copy-to-clipboard of the Quoco number and a wa.me "Forward to
+    <engineer>" deep link. The copy says "text START," per B2 below. It is
+    instructional ONLY: the component holds NO write surface (no supabase client,
+    no server action, no fetch), enforced by a static source guard. See
+    app/(dashboard)/daily-logs/reactivate-cta.tsx + lib/daily-logs/reactivate-copy.ts,
+    and design-decisions-beta-feedback.md §3.2.
   - SAFETY INVARIANT — the clear-half reactivates ONLY an engineer whose sole
     gate is the block (status still 'active'). A non-active status
     (pending / deactivated) stays gated regardless of the flag: a deactivated

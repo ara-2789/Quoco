@@ -91,6 +91,33 @@ can consult real history instead. Until then, `is_holiday` (stored ON the
 `daily_logs` row, hence historically accurate) is the only absence excluded on
 past dates. Enforced in `lib/daily-logs/status.ts`.
 
+### 3.2 messaging_blocked chip → instructional-only reactivation CTA (2b)
+
+**DATED NOTE (2026-07-25, DASH-03 / BOT-27 2b).** The Daily Logs board renders a
+PM-facing reactivation affordance on a `messaging_blocked` engineer's card: a
+low-emphasis native `<details>` "How to reactivate" disclosure (**today's card
+only** — the same gate as §3.1, since the block state is derived per-half and
+only fires for today), with copy-to-clipboard of the Quoco WhatsApp number and a
+`wa.me` "Forward to <engineer>" deep link pre-filled with a forwardable message.
+It renders **once per card** (the block is user-level, not per-half).
+
+**Instructional ONLY — never a flag-flipping button.** Per BOT-27's canonical
+definition, `messaging_blocked` is engineer consent-state, cleared only by the
+engineer texting in; a PM cannot un-opt-out on their behalf. So no dashboard
+control mutates the flag: the CTA component (`reactivate-cta.tsx`) holds no
+supabase client, server action, or fetch, and a static source test
+(`test/unit/reactivate-copy.test.ts`) enforces that "no false unblock" invariant.
+
+**Copy says "text START," not "text us."** The interim clear-half currently
+reactivates on ANY inbound (an intentional interim generosity), but the SET stage
+will gate resume on the explicit START/RESUME keyword (bot-flows.md B2). The UI
+teaches that FUTURE contract now, so the copy needn't change and engineers/PMs
+aren't retrained when keyword-gating ships.
+
+**Degraded path:** if `TWILIO_WHATSAPP_NUMBER` is unset, the CTA falls back to
+instruction-only (still says START; no number, copy button, or forward link) and
+emits a Sentry **warning** — degraded-but-functioning, not a failure.
+
 ## 4. Disappearing messages
 
 - **No API control exists** (verify against current Meta docs at sender setup).
