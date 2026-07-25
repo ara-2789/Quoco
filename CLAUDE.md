@@ -293,6 +293,45 @@ code bug. FIX: in Vercel → Project → Settings → Environment Variables, re-
 those Preview vars to "All Preview branches." (Build-time is unaffected — these
 vars are only read at request time.)
 
+KNOWN SUPABASE AUTH CONFIG GAP (2026-07-25): magic-link signup emails baked a
+redirect_to pointing at the DEAD feat/migration-007-auth-surgery branch preview
+URL (quoco-git-feat-migration-007-auth-surgery-quoco.vercel.app → 404). NOT a
+code bug — login/page.tsx + auth/callback/route.ts derive the domain dynamically
+from request headers (origin/host) and are correct. The dead URL comes from
+Supabase Auth's dashboard SITE URL, still pinned to that 007 branch: Supabase
+falls back to the Site URL whenever the code-supplied emailRedirectTo is NOT in
+the Redirect URLs allowlist, and branch-preview URLs weren't allowlisted — so
+every preview's magic link fell back to the stale Site URL. FIX (Supabase
+Dashboard → Authentication → URL Configuration): Site URL → the real prod domain
+(https://quoco-six.vercel.app — confirm this is the canonical/custom domain);
+Redirect URLs → add https://quoco-six.vercel.app/** AND a preview wildcard
+https://quoco-git-*-quoco.vercel.app/** (+ http://localhost:3000/** for local) so
+each preview's dynamic emailRedirectTo is honored instead of falling back. VERIFY
+BY OBSERVATION (§0), not dashboard-said-so: request a magic link from a preview
+and confirm the email's redirect_to is that preview, not the Site URL.
+RESOLVED (observed 2026-07-25): after the Site URL fix, the magic-link redirect
+from the test-db signup landed correctly (no 404) — the same signup that produced
+the 020 review package's §6 evidence. Observed on test-db; the PROD-side
+confirmation rides with the real prod magic-link signup on the 020 runsheet
+(020-review-package.md §7 item 5).
+
+SAME DEAD BRANCH, BITTEN TWICE: feat/migration-007-auth-surgery has now been the
+stale pin behind TWO real bugs this session — the Vercel Preview Supabase env
+vars (note above) and this Auth Site URL — both leftovers from that migration's
+review era. Assume more may be lurking: grep every prod config surface (Vercel
+env scopes, Supabase Auth URLs, any dashboard setting or hardcoded string) for
+that branch name and purge it wholesale, rather than fixing one surface at a time
+as each bug surfaces.
+
+SWEEP COMPLETE (2026-07-25): a full Vercel + Supabase dashboard sweep for that
+branch name was done and is CLEAN — no additional stale references beyond the two
+above. Checked: Vercel Environment Variables (all envs), Deployment Protection,
+Domains; Supabase (BOTH main AND test-db) Auth email templates (Magic Link uses
+{{ .ConfirmationURL }}, no hardcoded URLs), Database Webhooks (none configured),
+Edge Functions (none deployed — empty "deploy your first function" screen). Repo
+code/config is also grep-clean. So the pattern is closed at two instances; the
+standing rule above still holds if a THIRD surface ever appears.
+
 ---
 
 ## 9. FILE STRUCTURE
@@ -384,6 +423,46 @@ record of them. Repaired with `supabase migration repair --status applied`
 before pushing 006. Any future first-time `supabase db push` in a session
 should run `supabase migration list` first to confirm Local/Remote match.
 
+OUT-OF-BAND DB OBJECTS (tracked registry — 2026-07-25). Objects that exist on
+PROD but have NO migration-file source (created via the dashboard SQL editor or
+other out-of-band action). These are a standing liability: prod drifts from
+test-db and from the migration set, so a DR restore / branch reset / rebuild
+comes up WITHOUT them, and reviews can miss them (they aren't in the files).
+RULE: catalogue every one here the moment it's found, and bring it under version
+control (into a migration) the next time it's touched. Known entries:
+  * `rls_auto_enable()` — SECURITY DEFINER, owner=postgres, broad default
+    PUBLIC/anon/authenticated EXECUTE. On PROD only (absent on test-db); no
+    migration history. Being brought under version control for the FIRST TIME via
+    migration 020 (the function-EXECUTE hardening pass) — 020 is the first file to
+    reference it. Invocation path confirmed during the 020 rehearsal (see 020).
+  * `jobs` / `processed_messages` RLS-enabled state — `relrowsecurity=true` set
+    out-of-band (017 review F6); default-deny holds on prod but a rebuild comes up
+    RLS-DISABLED. Codify via its own migration before any environment rebuild.
+  * (historical) 001-005 — applied via the dashboard SQL editor, later reconciled
+    into the migration set (see the note above); listed for completeness.
+
+SECURITY INCIDENT — anon-callable SECURITY DEFINER RPCs (migration 020, 2026-07-25).
+All SEVEN public SECURITY DEFINER function grants were over-broad (PostgreSQL's
+default PUBLIC EXECUTE, live since 012 / 2026-07-05); 020 closes all seven. But
+the ACTUALLY-EXPLOITABLE surface was NARROWER than "seven" — do not overstate it:
+  * EXPLOITABLE (the hole) — the THREE parameter-trusting fns
+    (acquire_and_transition_session, apply_morning_flow_turn,
+    drain_next_pending_flow): they take p_user_id/p_tenant_id as caller input,
+    derive NO identity from auth.uid(), and return non-trigger types, so the
+    public ANON key could call them via PostgREST /rpc/ and forge check-in /
+    session data for any engineer — bypassing the webhook, Twilio HMAC, and
+    idempotency.
+  * BOUNDED — complete_onboarding: anon-invocable but self-guards on auth.uid()
+    (016 zero-row RAISE rolls back), so an anon call achieves nothing.
+  * NOT EXPLOITABLE, hardened for defense-in-depth only — handle_new_user
+    (RETURNS trigger) and rls_auto_enable (RETURNS event_trigger): PostgREST does
+    NOT expose trigger-returning functions as /rpc/ endpoints AT ALL, so their ACL
+    was never a callable vector. get_user_tenant_id under anon just returns NULL
+    (no auth.uid() → no row) — harmless. quoco_same_ist_day is a pure helper, out
+    of scope.
+Pinned evidence: docs/reviews/020-review-package.md. Log-retention exploitation
+check: see that package (§ log-retention).
+
 Then in Week 2 (remaining):
 - NFR-16 queue helper library (enqueue/claim/complete/fail functions)
 - /api/jobs/tick worker endpoint + Vercel cron config
@@ -424,6 +503,12 @@ here. The rule stops applying only if someone decides so on the record.
   FAILURE WINDOW comment there); the ordering is currently only argued in comments
   and covered obliquely by the pure idempotency unit — the route-level proof waits
   on the harness.
+
+PROD SMOKE CHECK DEFERRED (2026-07-25): migration 020's real webhook-driven
+apply_morning_flow_turn end-to-end check is deferred pending a Twilio
+sandbox-joined handset + labeled test engineer. See
+docs/reviews/020-review-package.md §7-6 for full reasoning and partial coverage
+already in place. Target: within 1-2 days of this note.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
