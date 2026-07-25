@@ -384,6 +384,24 @@ record of them. Repaired with `supabase migration repair --status applied`
 before pushing 006. Any future first-time `supabase db push` in a session
 should run `supabase migration list` first to confirm Local/Remote match.
 
+OUT-OF-BAND DB OBJECTS (tracked registry — 2026-07-25). Objects that exist on
+PROD but have NO migration-file source (created via the dashboard SQL editor or
+other out-of-band action). These are a standing liability: prod drifts from
+test-db and from the migration set, so a DR restore / branch reset / rebuild
+comes up WITHOUT them, and reviews can miss them (they aren't in the files).
+RULE: catalogue every one here the moment it's found, and bring it under version
+control (into a migration) the next time it's touched. Known entries:
+  * `rls_auto_enable()` — SECURITY DEFINER, owner=postgres, broad default
+    PUBLIC/anon/authenticated EXECUTE. On PROD only (absent on test-db); no
+    migration history. Being brought under version control for the FIRST TIME via
+    migration 020 (the function-EXECUTE hardening pass) — 020 is the first file to
+    reference it. Invocation path confirmed during the 020 rehearsal (see 020).
+  * `jobs` / `processed_messages` RLS-enabled state — `relrowsecurity=true` set
+    out-of-band (017 review F6); default-deny holds on prod but a rebuild comes up
+    RLS-DISABLED. Codify via its own migration before any environment rebuild.
+  * (historical) 001-005 — applied via the dashboard SQL editor, later reconciled
+    into the migration set (see the note above); listed for completeness.
+
 Then in Week 2 (remaining):
 - NFR-16 queue helper library (enqueue/claim/complete/fail functions)
 - /api/jobs/tick worker endpoint + Vercel cron config
