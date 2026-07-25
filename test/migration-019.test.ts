@@ -38,7 +38,10 @@ import {
 //   T-019-08  past-date correction is allowed (§3.3) — happy path on an old date
 
 const PROJECT_A2_ID = '00000000-0000-4000-a000-00000000019a' // tenant A, non-member
-const LOG_DATE = '2026-07-15'
+// Dates unique to THIS suite — kept clear of the 017 suite's project-A seed
+// (2026-07-15), since daily_logs has UNIQUE(project_id, engineer_id, log_date)
+// and both suites use project A + user A.
+const LOG_DATE = '2026-09-19'
 const PAST_LOG_DATE = '2026-01-05'
 
 let fx: TwoTenantFixtures
