@@ -43,6 +43,11 @@ export function buildForwardMessage(engineerName: string, quocoNumber: string): 
   return `Hi ${engineerName}, please text START to ${quocoNumber} on WhatsApp so we can send you your daily check-ins again.`
 }
 
+// SILENT-FAILURE DEPENDENCY (NFR-15): this trusts whatsapp_number to be stored
+// E.164-normalised (enforced at every write path per NFR-15). A non-normalised
+// number here produces a wrong-but-well-formed wa.me link that fails with NO
+// visible error — the PM's WhatsApp just opens to the wrong/no contact. There is
+// no validation at this layer; the guarantee lives upstream at the write paths.
 /**
  * wa.me deep link opening the PM's WhatsApp to the ENGINEER, pre-filled with the
  * forward message. wa.me wants digits only in the path, so the engineer's E.164

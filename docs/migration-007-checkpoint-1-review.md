@@ -838,6 +838,28 @@ not sending those columns.
   Confirm-email is **ON**. The **test-db branch keeps password auth** (for the
   two-JWT harness, §6) as a **deliberate branch/prod divergence**.
 
+### 11d. `users_select` is column-agnostic — read-side sibling of 11a (recorded)
+
+`users_select` (002:77, re-signed in 007:216) is
+`USING (auth_id = auth.uid() OR tenant_id = get_user_tenant_id())` with **no
+column restriction** — RLS cannot bound columns. So any authenticated tenant
+member can `SELECT` **every column of every same-tenant `users` row**:
+`full_name`, `whatsapp_number` (a phone number — PII), `hierarchy_level`, etc.
+015 column-bounded `users_update` but deliberately left SELECT untouched (015's
+scope was the write-escalation hole only), so the read side remains unbounded.
+This is **intra-tenant, not cross-tenant** — RLS still bounds reads to the
+caller's tenant — so it is a least-privilege / read-scope concern, not a
+tenant-isolation hole. Fix class is deferred to the least-privilege workstream
+(**F5**, docs/reviews/017-review-package.md): column-level SELECT grants, a
+narrowed view, or per-query column lists.
+
+- **INHERITED FACT (DASH-03 2b, 2026-07-25):** the dashboard now ships
+  `whatsapp_number` to the **client** for `messaging_blocked` engineers — the
+  reactivation CTA builds a `wa.me` deep link from it (see
+  design-decisions-beta-feedback.md §3.2). So this is no longer a purely latent
+  policy-shape observation: a real client surface now transmits the column to the
+  PM's browser. Any read-scoping / column-level SELECT work must account for it.
+
 ---
 
 ### Appendix — how the current state was verified (not from docs)
