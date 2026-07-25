@@ -293,6 +293,32 @@ code bug. FIX: in Vercel → Project → Settings → Environment Variables, re-
 those Preview vars to "All Preview branches." (Build-time is unaffected — these
 vars are only read at request time.)
 
+KNOWN SUPABASE AUTH CONFIG GAP (2026-07-25): magic-link signup emails baked a
+redirect_to pointing at the DEAD feat/migration-007-auth-surgery branch preview
+URL (quoco-git-feat-migration-007-auth-surgery-quoco.vercel.app → 404). NOT a
+code bug — login/page.tsx + auth/callback/route.ts derive the domain dynamically
+from request headers (origin/host) and are correct. The dead URL comes from
+Supabase Auth's dashboard SITE URL, still pinned to that 007 branch: Supabase
+falls back to the Site URL whenever the code-supplied emailRedirectTo is NOT in
+the Redirect URLs allowlist, and branch-preview URLs weren't allowlisted — so
+every preview's magic link fell back to the stale Site URL. FIX (Supabase
+Dashboard → Authentication → URL Configuration): Site URL → the real prod domain
+(https://quoco-six.vercel.app — confirm this is the canonical/custom domain);
+Redirect URLs → add https://quoco-six.vercel.app/** AND a preview wildcard
+https://quoco-git-*-quoco.vercel.app/** (+ http://localhost:3000/** for local) so
+each preview's dynamic emailRedirectTo is honored instead of falling back. VERIFY
+BY OBSERVATION (§0), not dashboard-said-so: request a magic link from a preview
+and confirm the email's redirect_to is that preview, not the Site URL. [Mark
+RESOLVED here once observed.]
+
+SAME DEAD BRANCH, BITTEN TWICE: feat/migration-007-auth-surgery has now been the
+stale pin behind TWO real bugs this session — the Vercel Preview Supabase env
+vars (note above) and this Auth Site URL — both leftovers from that migration's
+review era. Assume more may be lurking: grep every prod config surface (Vercel
+env scopes, Supabase Auth URLs, any dashboard setting or hardcoded string) for
+that branch name and purge it wholesale, rather than fixing one surface at a time
+as each bug surfaces.
+
 ---
 
 ## 9. FILE STRUCTURE
