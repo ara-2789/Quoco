@@ -53,6 +53,17 @@
 --   second-pair-of-eyes review — same tier as 007/015/016/017: this carries a
 --   SECURITY DEFINER function and a genuine write path, not app-code only.
 --   Regenerate types/database.ts after apply and commit the diff (§6).
+--
+-- ROUND-1 REVIEW REVISIONS FOLDED (2026-07-26): this file incorporates the eight
+--   required changes from round 1 (reviewed-WITH-changes, not approved):
+--     1. REVOKE EXECUTE … FROM PUBLIC, anon alongside the GRANT (ACL section).
+--     2. ACL comment cites 020's Class-2 convention (not "mirrors complete_onboarding").
+--     3. new test T-019-09 — anon-client call rejected at the ACL (the REVOKE).
+--     4. NULL/type convention pinned (comment at (i); test T-019-10 clear-to-NULL).
+--     5. size guard at the trust boundary (guard (c2), cap 100 KB).
+--     6. DPR-hook comment: "latest per (daily_logs_id, column_name)", not "authoritative".
+--     7. guard (e) comment cites 017's composite FKs for the membership⇒tenant implication.
+--     8. table CHECK comment: the CHECK/CASE whitelist duplication is load-bearing.
 -- =============================================================================
 
 BEGIN;
@@ -77,6 +88,12 @@ CREATE TABLE public.daily_log_edits (
   column_name   TEXT NOT NULL CHECK (column_name IN (
     -- the 9 scalar columns from 017's daily_logs grant; TEXT+CHECK per §6.
     -- Widen (not re-type) when JSONB-column editing ships in a later pass.
+    -- LOAD-BEARING — DO NOT DROP (review item 8): this CHECK deliberately
+    -- DUPLICATES the RPC's CASE whitelist (guard (c)). Two independent gates that
+    -- must agree: if a future edit widens the CASE but forgets this CHECK (or vice
+    -- versa), the write fails CLOSED — the stricter gate rejects — instead of
+    -- silently persisting an un-whitelisted column. The redundancy IS the safety;
+    -- do not "simplify" it away.
     'is_holiday', 'holiday_reason', 'weather',
     'morning_plan', 'morning_execution_plan',
     'evening_output', 'evening_schedule_met',
@@ -95,9 +112,10 @@ CREATE INDEX idx_daily_log_edits_project_date  ON public.daily_log_edits(project
 COMMENT ON TABLE public.daily_log_edits IS
   'Audit trail + source of truth for post-check-in PM corrections to daily_logs '
   '(Rule 4.3, migration 019). Written ONLY by correct_daily_log(). DPR HOOK: a '
-  'future dpr_generate handler MUST read this by (project_id, log_date) and treat '
-  'a corrected column''s new_value as authoritative over the raw check-in value '
-  'when rendering the owner DPR. See docs/bot-flows.md DPR section.';
+  'future dpr_generate handler MUST read this by (project_id, log_date) and, per '
+  'corrected column, take the LATEST edit per (daily_logs_id, column_name) — '
+  'ORDER BY created_at DESC LIMIT 1 — as authoritative over the raw check-in value '
+  '(a column can be corrected more than once). See docs/bot-flows.md DPR section.';
 
 -- -----------------------------------------------------------------------------
 -- 2. RLS: SELECT only, project-scoped to match DASH-03 read scope. No
@@ -182,6 +200,17 @@ BEGIN
       USING ERRCODE = 'insufficient_privilege';
   END IF;
 
+  -- (c2) Size guard at the trust boundary (review item 5): a scalar correction is
+  -- tiny; cap the jsonb payload so an authenticated PM cannot bloat the daily_logs
+  -- row / audit trail with a large value. 100 KB is far above any legit scalar
+  -- (a long free-text plan is well under 1 KB) and well below abuse — adjust only
+  -- if a real column ever needs more.
+  IF pg_column_size(p_new_value) > 100000 THEN
+    RAISE EXCEPTION 'correct_daily_log: new_value too large (% bytes, cap 100000)',
+      pg_column_size(p_new_value)
+      USING ERRCODE = 'program_limit_exceeded';
+  END IF;
+
   -- (d) Lock + read the target row (TOCTOU: lock before reading the old value).
   SELECT project_id, tenant_id, log_date
     INTO v_project_id, v_tenant_id, v_log_date
@@ -192,7 +221,12 @@ BEGIN
       USING ERRCODE = 'no_data_found';
   END IF;
 
-  -- (e) Tenant assert (defense in depth; the membership check below implies it).
+  -- (e) Tenant assert (defense in depth). NB (review item 7): guard (f)'s
+  -- membership check IMPLIES same-tenant ONLY because 017 made project_members's
+  -- FKs composite same-tenant ((project_id, tenant_id) -> projects, (user_id,
+  -- tenant_id) -> users), so a membership row cannot span tenants. This explicit
+  -- assert is the belt to that suspenders — keep it even though (f) implies it;
+  -- if 017's composite FKs were ever relaxed, this becomes the sole guard.
   IF v_tenant_id <> get_user_tenant_id() THEN
     RAISE EXCEPTION 'correct_daily_log: cross-tenant target'
       USING ERRCODE = 'insufficient_privilege';
@@ -217,6 +251,15 @@ BEGIN
     RETURN NULL;
   END IF;
 
+  -- NULL / TYPE CONVENTION (review item 4 — the caller/wrapper contract):
+  --   * p_new_value is the column's value as JSONB. A JSON scalar must match the
+  --     column's NATURAL to_jsonb() output — a boolean column expects JSON
+  --     true/false, an integer column a JSON number, a text column a JSON string —
+  --     NOT a quoted string for a boolean/int. (The future Server-Action wrapper's
+  --     Zod MUST enforce this per-column shape before calling.)
+  --   * Passing SQL NULL (not JSON 'null') CLEARS the field: ($1 #>> '{}') is
+  --     NULL, so the column is set NULL and the audit row's new_value is NULL.
+  --     Covered by the clear-to-NULL happy-path test (T-019-10).
   -- (i) Write the one whitelisted column, coercing jsonb -> the column's base
   -- type (%I is whitelisted, %s is a fixed CASE literal — both safe).
   EXECUTE format(
@@ -238,8 +281,18 @@ BEGIN
 END;
 $$;
 
--- Only authenticated callers (mirrors complete_onboarding 005:86); never anon.
-GRANT EXECUTE ON FUNCTION public.correct_daily_log(UUID, TEXT, JSONB) TO authenticated;
+-- EXECUTE ACL — 020's Class-2 convention (review items 1 & 2).
+-- 020 split the public SECURITY DEFINER functions into two classes; correct_daily_log
+-- is Class 2: it derives the caller from auth.uid() and re-checks role + membership
+-- IN-BODY, so the ACL is REVOKE-the-default-PUBLIC/anon-grant, GRANT authenticated.
+-- The REVOKE is the load-bearing half: without it PostgREST would expose /rpc/
+-- correct_daily_log to the anon key (the exact default-PUBLIC-EXECUTE hole 020 closed
+-- for the seven pre-existing functions). correct_daily_log is born here, so it gets
+-- the same treatment at creation rather than needing a later hardening pass.
+-- (The in-body auth.uid() guard is defence-in-depth BEHIND this ACL, not instead of it;
+--  T-019-09 asserts the REVOKE at the ACL, T-019-07 asserts the in-body PM-only guard.)
+REVOKE EXECUTE ON FUNCTION public.correct_daily_log(UUID, TEXT, JSONB) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.correct_daily_log(UUID, TEXT, JSONB) TO authenticated;
 
 COMMIT;
 

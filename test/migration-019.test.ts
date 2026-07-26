@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { type SupabaseClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
   testClient,
   jwtClient,
@@ -36,6 +36,14 @@ import {
 //   T-019-06  no-op (new == old) → returns null, NO audit row recorded
 //   T-019-07  PM-only: a non-pm member is rejected → 42501
 //   T-019-08  past-date correction is allowed (§3.3) — happy path on an old date
+//   T-019-09  anon-client call rejected at the ACL — the REVOKE (review item 3).
+//             Distinct from T-019-07's IN-BODY guard: this proves the EXECUTE
+//             grant itself denies anon, so PostgREST never enters the function.
+//             Both surface 42501, so this asserts the ACL-layer message
+//             ("permission denied for function") — the only signal that tells the
+//             two apart — in addition to the code.
+//   T-019-10  clear-to-NULL happy path (review item 4): SQL NULL clears a field →
+//             column set NULL, audit row with new_value NULL.
 
 const PROJECT_A2_ID = '00000000-0000-4000-a000-00000000019a' // tenant A, non-member
 // Dates unique to THIS suite — kept clear of the 017 suite's project-A seed
@@ -44,8 +52,15 @@ const PROJECT_A2_ID = '00000000-0000-4000-a000-00000000019a' // tenant A, non-me
 const LOG_DATE = '2026-09-19'
 const PAST_LOG_DATE = '2026-01-05'
 
+function anonClient(): SupabaseClient {
+  return createClient(process.env.SUPABASE_TEST_URL!, process.env.SUPABASE_TEST_ANON_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+}
+
 let fx: TwoTenantFixtures
 let jwtA: SupabaseClient
+const anon = anonClient()
 
 // Deterministic daily_logs ids so assertions/cleanup are stable across re-runs.
 const ROW_MEMBER = '00000000-0000-4000-a000-0000000190a1' // project A (member)
@@ -213,5 +228,36 @@ describe('migration 019 — correct_daily_log RPC', () => {
     expect(error).toBeNull()
     expect(await readCol(ROW_MEMBER_PAST, 'weather')).toBe('sunny')
     expect(await editCount(ROW_MEMBER_PAST)).toBe(1)
+  })
+
+  it('T-019-09: anon client is denied at the EXECUTE ACL (the REVOKE), not the in-body guard', async () => {
+    // Proves review item 1: REVOKE EXECUTE … FROM PUBLIC, anon. The anon key
+    // cannot even ENTER correct_daily_log — PostgREST rejects at the function
+    // ACL. Both the ACL and the in-body auth.uid() guard raise 42501, so the
+    // ACL-layer message is the only signal that distinguishes them; assert both.
+    const { error } = await correct(anon, ROW_MEMBER, 'weather', 'sunny')
+    expect(error?.code).toBe('42501')
+    expect(error?.message).toMatch(/permission denied for function/i)
+    expect(await readCol(ROW_MEMBER, 'weather')).toBe('cloudy') // unchanged
+    expect(await editCount(ROW_MEMBER)).toBe(0)
+  })
+
+  it('T-019-10: clear-to-NULL — SQL NULL clears the field and audits new_value NULL', async () => {
+    // Review item 4: passing SQL NULL (not JSON 'null') clears the column.
+    const { data, error } = await correct(jwtA, ROW_MEMBER, 'weather', null)
+    expect(error).toBeNull()
+    expect(typeof data).toBe('string') // an edit row WAS written (not a no-op)
+    expect(await readCol(ROW_MEMBER, 'weather')).toBeNull()
+    expect(await editCount(ROW_MEMBER)).toBe(1)
+    // the audit row records the clear: new_value NULL, old_value the prior 'cloudy'
+    const db = testClient()
+    const { data: edit, error: e2 } = await db
+      .from('daily_log_edits')
+      .select('old_value, new_value')
+      .eq('daily_logs_id', ROW_MEMBER)
+      .single()
+    expect(e2).toBeNull()
+    expect(edit?.new_value).toBeNull()
+    expect(edit?.old_value).toBe('cloudy')
   })
 })

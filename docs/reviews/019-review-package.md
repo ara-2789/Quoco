@@ -6,15 +6,28 @@ on a fresh git branch off `main` (which includes 020), **supersedes the stale dr
 #14**, and follows the 017/020 review-package pattern.
 
 - Migration: `supabase/migrations/019_daily_log_corrections.sql`
-- Tests: `test/migration-019.test.ts` (8 tests, T-019-01→08)
+- Tests: `test/migration-019.test.ts` (10 tests, T-019-01→10 — two added folding the
+  round-1 review: T-019-09 anon-ACL rejection, T-019-10 clear-to-NULL)
 - Types: `types/database.ts` (regenerated post-apply; +75 lines, `daily_log_edits`
   + `correct_daily_log`)
 
-## Provenance / pinning
-- **Commit reviewed:** `9a4016138804611301980326be37de7b264baa21`
-- **`git status --porcelain`:** *(empty — clean tree)*
-- The migration file is **byte-identical** to the round-1 reviewed/approved version
-  (git-verified: last & only change was the original `136d78b`; never revised after).
+## Provenance / pinning — corrected (2026-07-26)
+An earlier draft of this section misstated the round-1 status. The accurate history:
+
+- **Round 1 was reviewed WITH REQUIRED CHANGES — not approved.** The reviewer
+  returned **eight required revisions** (the same review that surfaced the 020
+  seven-function anon-RPC hole). See the list in the migration header
+  ("ROUND-1 REVIEW REVISIONS FOLDED").
+- The file rehearsed in round 1/round 2 was therefore **byte-identical to the
+  UNREVISED original** (`136d78b`), **not** to an approved version — there was no
+  approved version to be identical to.
+- **This round (2026-07-26):** all eight revisions are now **folded into the file**
+  (REVOKE-FROM-PUBLIC ACL, size guard, NULL-convention + DPR-hook + 017 + CHECK
+  comments, two new tests). The migration is now **revised**, so the round-2
+  prove-closed evidence below (8 tests, unrevised file) is **superseded** by the
+  **10-test round-3 re-rehearsal** — see "Re-rehearsal (round 3) — COMPLETE" below.
+- The round-3 re-rehearsal is **done and clean** (10/10 pass, types unchanged); the
+  commit SHA + confirmed-empty `git status --porcelain` are pinned at sign-off.
 
 ## Design decision set (what to verify against)
 Not a fabricated N-item review — these are the decisions actually made in planning
@@ -65,6 +78,11 @@ So round 2 used **teardown-and-reuse of the schema-complete test-db** instead:
    no-op path returns NULL — handle null in the future Server Action.)
 
 ### prove-closed — raw output (test-db, post-teardown, post-apply)
+> **SUPERSEDED (2026-07-26).** This 8-test run was against the UNREVISED file. The
+> eight round-1 revisions are now folded (incl. two new tests → 10 total), so this
+> output no longer matches the file. Retained for history; the authoritative
+> evidence is the round-3 re-rehearsal (10 tests), pinned under "Re-rehearsal
+> (round 3)" below once run.
 ```
 ✓ test/migration-019.test.ts (8 tests) 16161ms
    ✓ T-019-01: PM corrects a scalar on a member-project row → updated + one audit row (atomic)  1283ms
@@ -84,8 +102,117 @@ audits atomically (T-019-01), **the scope-gap closure rejects a same-tenant
 non-member with the RPC's own guard (T-019-03)** — the single most important test —
 and cross-tenant / disallowed-column / no-op / PM-only / past-date all behave.
 
+## Re-rehearsal (round 3) — COMPLETE (2026-07-26)
+The eight round-1 revisions are folded; the file is revised and the suite is 10 tests.
+Re-rehearsed from scratch on the cleaned test-db (`exfccwlrhoutkgrlikod`), same
+sequence as round 2:
+
+**teardown → prove-open → apply revised file → prove-closed → types-regen.** Result:
+
+1. **Teardown** — confirmed clean: `daily_logs`/`correct_daily_log` probe returned
+   NULL/NULL and `schema_migrations` had **0 rows for 019** (019 genuinely pending).
+2. **Prove-open** (before apply): **10/10 fail with `PGRST202`** (function not found)
+   — up from 8, correctly including the two new tests (T-019-09, T-019-10). Confirms
+   the suite exercises the real object and the new tests are wired in.
+3. **Apply**: only `019_daily_log_corrections.sql` pushed; no errors.
+4. **Prove-closed** (after apply): **10/10 pass** — see raw output below. The
+   scope-gap guard (T-019-03) still holds; **T-019-09 confirms anon is rejected at
+   the ACL layer specifically** (the `REVOKE`, not just the in-body guard);
+   **T-019-10 confirms clear-to-NULL** semantics.
+5. **Types-regen**: `git diff types/database.ts` produced **NO output** — genuinely
+   unchanged, as expected (the revisions touch neither the table nor the function
+   shape).
+
+### prove-closed (round 3) — 10/10 pass
+```
+✓ test/migration-019.test.ts (10 tests)
+   ✓ T-019-01: PM corrects a scalar on a member-project row → updated + one audit row (atomic)
+   ✓ T-019-02: boolean and integer casts work
+   ✓ T-019-03: SCOPE GAP — same-tenant NON-member project is rejected, no write
+   ✓ T-019-04: cross-tenant target is rejected, no write
+   ✓ T-019-05: disallowed columns (JSONB col + identity col) are rejected
+   ✓ T-019-06: no-op (new == old) returns null and records NO audit row
+   ✓ T-019-07: PM-only — a non-pm member is rejected
+   ✓ T-019-08: correction on a PAST date is allowed (§3.3, no date gate)
+   ✓ T-019-09: anon client is denied at the EXECUTE ACL (the REVOKE), not the in-body guard
+   ✓ T-019-10: clear-to-NULL — SQL NULL clears the field and audits new_value NULL
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+```
+
+**Provenance:** the round-3 revisions (folded migration, +2 tests, docs, §0 rule,
+B2 appendix, Supabase bug draft) are committed together; the commit SHA and a
+confirmed-empty `git status --porcelain` are recorded at sign-off in the PR record.
+
 ## Outstanding (before prod)
 1. **Developer-friend review** — 019 carries a SECURITY DEFINER RPC + a genuine write
    path, so it's the same review tier as 007/015/017/020.
 2. **Prod apply** (out-of-order vs 020 → `--include-all`, like the rehearsal), observe
    the PITR window first (§0), then **regenerate types against prod** and commit.
+
+---
+
+## Appendix B2 — the fresh-branch replay defect (PR #17), evidence in-thread
+
+The rehearsal sequence above abandoned the originally-planned fresh Supabase branch.
+Bringing the actual PR #17 finding into this thread (not just a link), because it is
+the reason a "faithful clone" preview branch is currently NOT trustworthy for a
+migration rehearsal.
+
+**The contradiction.** On a freshly-provisioned branch, `schema_migrations` reports
+007 as applied, yet the column 007 is supposed to add — `users.auth_id` — is absent.
+A migration recorded as applied did not leave its schema effect. Literal query
+results from the first broken fresh branch (`xonkuhnguknfmliimdop`):
+
+**Query 1 — `schema_migrations` (007 recorded as applied):**
+```json
+[
+  {"version": "001", "name": "core_schema"},
+  {"version": "002", "name": "rls_policies"},
+  {"version": "003", "name": "indexes"},
+  {"version": "004", "name": "pgvector"},
+  {"version": "005", "name": "auth_trigger"},
+  {"version": "006", "name": "jobs_queue"},
+  {"version": "007", "name": "auth_surgery"},
+  {"version": "011", "name": "processed_messages"},
+  {"version": "012", "name": "whatsapp_session_transition"},
+  {"version": "013", "name": "session_transition_test_lock_probe"},
+  {"version": "014", "name": "morning_flow_apply_turn"},
+  {"version": "015", "name": "users_update_column_grant"},
+  {"version": "016", "name": "corrections"},
+  {"version": "017", "name": "rls_column_bounding"},
+  {"version": "018", "name": "morning_flow_parsers"}
+]
+```
+
+**Query 2 — `users` columns (`auth_id` absent):**
+```
+id, created_at, tenant_id, full_name, avatar_url, role, whatsapp_number,
+hierarchy_level, reporting_manager_id, delegation_active, employee_id,
+status, messaging_blocked
+```
+`auth_id` does not appear — yet Query 1 lists `007 auth_surgery` as applied.
+
+**TWO anomalies, both from this same branch, both feeding the "fresh branch ≠
+faithful clone" finding:**
+1. **`users.auth_id` absent** despite 007 recorded applied (the cross-schema-FK
+   replay defect — root cause below).
+2. **020 missing entirely** from `schema_migrations` — the ledger ends at 018; 007
+   is out of numeric order among 011–018 but present, whereas 020 (applied on prod
+   and test-db) never appears on the fresh branch at all. A second reason the fresh
+   branch does not reflect the real migration set.
+
+**Root cause.** 007 adds the column with
+`ADD COLUMN IF NOT EXISTS auth_id UUID REFERENCES auth.users(id)`. On Supabase's
+fresh-branch replay the cross-schema FK to `auth.users` cannot resolve at replay
+time; combined with `IF NOT EXISTS`, the statement degrades to a **NOTICE, not an
+error**, so the migration is still **recorded as applied** while the column never
+lands. Standard linear `psql` replay would add the column — so this is a
+Supabase-branch replay behaviour, **not a logic bug in 007**. Prod dodged it because
+007 was applied out-of-order via the SQL editor after 011–014, against a live
+`auth.users`.
+
+**Consequence for this review:** a fresh-branch rehearsal of 019 fails in fixture
+setup (`column users.auth_id does not exist`) before any 019 assertion runs — which
+is why round 2/3 rehearse on the teardown-and-reuse of the schema-complete test-db.

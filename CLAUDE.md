@@ -49,6 +49,21 @@
   Rationale: paraphrase drifts and GitHub can serve a stale branch cache to the
   reviewer; a pinned `git show`/probe frame is verifiable and cache-proof. The
   canonical apply skeleton lives in docs/migration-runbook-template.md.
+- REHEARSE ON A CLEANED EXISTING BRANCH, NOT A FRESH PROVISION — CONDITIONAL RULE
+  (2026-07-26, from the 019 round-2 rehearsal; PR #17). A freshly-provisioned
+  Supabase branch is NOT a faithful prod clone: two independent fresh branches both
+  came up MISSING `users.auth_id` even though `schema_migrations` recorded 007 as
+  applied. Root cause: 007's `ADD COLUMN IF NOT EXISTS auth_id … REFERENCES
+  auth.users(id)` — the cross-schema FK to `auth.users` cannot resolve during
+  Supabase's fresh-branch replay, and `IF NOT EXISTS` degrades the failure to a
+  NOTICE, so the migration records as applied while the column never lands. (Not a
+  007 logic bug; standard linear `psql` replay adds the column. Evidence pinned in
+  docs/reviews/019-review-package.md Appendix B2.) UNTIL this fresh-branch replay
+  defect is re-tested and confirmed FIXED (by Supabase, or by re-ordering 007's FK
+  so replay resolves it), rehearse migrations by TEARING DOWN and reusing the
+  schema-complete test-db, never on a fresh branch. This rule LAPSES once a fresh
+  provision is observed to come up WITH `users.auth_id` present — it is a
+  work-around for a live defect, not a permanent preference.
 
 ---
 
