@@ -2,7 +2,7 @@
 
 Rehearsal evidence for **019** (Rule 4.3 inline correction: `daily_log_edits` audit
 table + `correct_daily_log` SECURITY DEFINER RPC). This is the **round-2** rehearsal
-on a fresh branch off `main` (which includes 020), **supersedes the stale draft PR
+on a fresh git branch off `main` (which includes 020), **supersedes the stale draft PR
 #14**, and follows the 017/020 review-package pattern.
 
 - Migration: `supabase/migrations/019_daily_log_corrections.sql`
