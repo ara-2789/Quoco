@@ -52,18 +52,31 @@
 - REHEARSE ON A CLEANED EXISTING BRANCH, NOT A FRESH PROVISION — CONDITIONAL RULE
   (2026-07-26, from the 019 round-2 rehearsal; PR #17). A freshly-provisioned
   Supabase branch is NOT a faithful prod clone: two independent fresh branches both
-  came up MISSING `users.auth_id` even though `schema_migrations` recorded 007 as
-  applied. Root cause: 007's `ADD COLUMN IF NOT EXISTS auth_id … REFERENCES
-  auth.users(id)` — the cross-schema FK to `auth.users` cannot resolve during
-  Supabase's fresh-branch replay, and `IF NOT EXISTS` degrades the failure to a
-  NOTICE, so the migration records as applied while the column never lands. (Not a
-  007 logic bug; standard linear `psql` replay adds the column. Evidence pinned in
-  docs/reviews/019-review-package.md Appendix B2.) UNTIL this fresh-branch replay
-  defect is re-tested and confirmed FIXED (by Supabase, or by re-ordering 007's FK
-  so replay resolves it), rehearse migrations by TEARING DOWN and reusing the
+  came up MISSING `users.auth_id` even though `schema_migrations` recorded 007 (which
+  adds that column) as applied. MECHANISM UNCONFIRMED — do not assert one: an earlier
+  note guessed "`IF NOT EXISTS` degrades to a NOTICE," which is WRONG (`IF NOT EXISTS`
+  only skips when the column already exists, so it can't explain a genuinely-absent
+  column) and has been retracted. What IS established: standard linear `psql` replay
+  DOES add the column (not a 007 logic bug), and it involves a cross-schema FK into
+  `auth.users`; the real failure mode is an open question filed with Supabase
+  (docs/reviews/supabase-fresh-branch-auth-id-bug.md). Evidence pinned in
+  docs/reviews/019-review-package.md Appendix B2. UNTIL this fresh-branch behaviour is
+  re-tested and confirmed FIXED, rehearse migrations by TEARING DOWN and reusing the
   schema-complete test-db, never on a fresh branch. This rule LAPSES once a fresh
-  provision is observed to come up WITH `users.auth_id` present — it is a
-  work-around for a live defect, not a permanent preference.
+  provision is observed to come up WITH `users.auth_id` present — it is a work-around
+  for a live defect, not a permanent preference.
+- SUPERSEDING PR CARRIES THE REVIEWER-ITEMS LIST FORWARD, ITEM-BY-ITEM (standing rule
+  since 2026-07-26; origin: the 019 round-1→round-3 near-miss where eight
+  reviewer-required revisions were briefly treated as non-existent because they lived
+  only in the prior review, not the new PR). When a PR supersedes another (a fresh
+  branch replacing a stale draft, a re-cut PR, a v2), the OPEN reviewer-items from the
+  superseded PR do NOT get a clean slate: migrate them into the new PR's body as an
+  EXPLICIT per-item checklist, each marked LANDED (with where it was folded) or
+  DEFERRED (with why + where tracked). A superseding PR that silently drops the prior
+  review's open items is not allowed — the checklist is the mechanism that makes a
+  dropped item impossible to miss. Applies to the review package too: it must state
+  which round was reviewed-WITH-CHANGES vs. approved, so "byte-identical to the
+  reviewed file" can never be misread as "approved."
 
 ---
 

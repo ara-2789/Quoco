@@ -53,8 +53,9 @@ and encoded in the migration:
 The round-1 rehearsal ran on the standing test-db; round 2 needed a clean pre-019
 state. The **originally-decided fresh Supabase branch was abandoned** because a fresh
 branch is not a faithful prod clone: **two independent fresh branches both came up
-missing `users.auth_id`** (007's `ADD COLUMN IF NOT EXISTS … REFERENCES auth.users(id)`
-is silently no-op'd by Supabase's fresh-branch replay). Full finding + the resulting
+missing `users.auth_id`** even though `schema_migrations` recorded 007 (which adds
+that column) as applied. The mechanism is unconfirmed (see Appendix B2 — it is an
+open question for Supabase, not an established fact). Full finding + the resulting
 §0 standing rule: **PR #17** / CLAUDE.md §0 ("REHEARSE ON A CLEANED EXISTING BRANCH").
 
 So round 2 used **teardown-and-reuse of the schema-complete test-db** instead:
@@ -203,15 +204,26 @@ faithful clone" finding:**
    and test-db) never appears on the fresh branch at all. A second reason the fresh
    branch does not reflect the real migration set.
 
-**Root cause.** 007 adds the column with
-`ADD COLUMN IF NOT EXISTS auth_id UUID REFERENCES auth.users(id)`. On Supabase's
-fresh-branch replay the cross-schema FK to `auth.users` cannot resolve at replay
-time; combined with `IF NOT EXISTS`, the statement degrades to a **NOTICE, not an
-error**, so the migration is still **recorded as applied** while the column never
-lands. Standard linear `psql` replay would add the column — so this is a
-Supabase-branch replay behaviour, **not a logic bug in 007**. Prod dodged it because
-007 was applied out-of-order via the SQL editor after 011–014, against a live
-`auth.users`.
+**Root cause (hypothesis — UNCONFIRMED).** The mechanism is not established; the only
+established facts are the two frames above (ledger says 007 applied; `auth_id` absent),
+reproduced on two independent fresh branches. What we can say:
+
+- 007 adds the column with
+  `ADD COLUMN IF NOT EXISTS auth_id UUID REFERENCES auth.users(id)` — a cross-schema
+  FK into `auth.users`.
+- A standard linear `psql` replay of the migration set **does** add the column (that is
+  how the test-db has it), so this is specific to Supabase's fresh-branch provisioning,
+  **not a logic bug in 007**.
+- Prod dodged it because 007 was applied out-of-order via the SQL editor after 011–014,
+  against a live `auth.users`.
+
+What we **cannot** yet explain is the actual failure mode — how a genuinely-absent
+column ends up recorded as applied. An earlier draft here asserted "`IF NOT EXISTS`
+degrades the failure to a NOTICE"; that is **wrong** and has been struck — `IF NOT
+EXISTS` only skips when the column ALREADY exists, so it cannot explain a column that
+was never added. The real mechanism (FK-resolution timing during branch replay?
+partial/ignored replay of certain statements? something else) is an **open question
+for Supabase to diagnose** — filed via `docs/reviews/supabase-fresh-branch-auth-id-bug.md`.
 
 **Consequence for this review:** a fresh-branch rehearsal of 019 fails in fixture
 setup (`column users.auth_id does not exist`) before any 019 assertion runs — which
