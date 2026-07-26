@@ -394,7 +394,26 @@ created_at: 2026-07-25 15:56:30.75276+00
 the stub exists (**landmine 2 confirmed live on prod**). `id ≠ auth_id` confirms
 post-007 decoupling held. Stopped at the stub per the smoke discipline; no tenant.
 
-### Step 6 — Smoke check C: real webhook-driven `apply_morning_flow_turn` (PROD) ⏸ DEFERRED
+### Step 6 — Smoke check C: real webhook-driven `apply_morning_flow_turn` (PROD) ✅ CLOSED
+**CLOSED 2026-07-26** (within the deferral window). Verified **stronger than the
+planned single-turn proof**: a FULL multi-turn morning flow ran end-to-end through
+the real webhook + `service_role`, via a one-off `whatsapp_sessions` seed at Q1
+(Option B — no prod test-trigger flag):
+- Q1 (plan) → Q2 (workers `5`) → Q3 (equipment `JCB 5 1000`) → Q4 (execution
+  `Shuttering foundation excavation`) → "Morning check-in complete. Have a
+  productive day on site!"
+- All four turns processed by `apply_morning_flow_turn` via `service_role` on prod.
+- `daily_logs` (engineer `3534756b…`, project `acef67fe…`, `2026-07-26`):
+  `morning_plan = 'Test plan- block A'`, `morning_submitted_at = 2026-07-26 06:48:54.558637+00`.
+
+**Reading:** the full webhook chain (HMAC validate → SID dedup → engineer resolution
+→ service-role RPC → DB writes) works end-to-end on prod post-020, across a **genuine
+multi-turn session** — the residual risk the deferral flagged is now closed. Test
+artifacts (engineer + session) deactivated per the standing artifact discipline.
+
+---
+_Original deferral, retained for provenance:_
+
 **DEFERRED (not skipped) — 2026-07-25.** No Twilio sandbox-joined handset or
 registered test engineer currently available on prod. Rather than stand up new test
 infrastructure under prod-apply time pressure, this check is explicitly deferred to
@@ -426,9 +445,8 @@ Migration 020 is **applied to prod** (`jvxwqignooseazzmwhvl`) and the hardening 
 verified directly on prod: the `proacl` prove-closed (§8 Step 3) matches the design
 exactly, and the merge-order gate held (019 is not on prod — §8 Step 3b).
 
-Prod post-apply checks: **5 of 6 complete and pinned**; the 6th (real webhook-driven
-`apply_morning_flow_turn`) is on an **explicit, dated deferral** (§8 Step 6 — 1–2 days)
-with partial coverage already in place — **not an open gap**.
+Prod post-apply checks: **6 of 6 complete and pinned** (Smoke C closed 2026-07-26,
+within its deferral window, with stronger-than-required multi-turn evidence).
 
 | Check | Status |
 |---|---|
@@ -438,7 +456,7 @@ with partial coverage already in place — **not an open gap**.
 | Merge-order gate (019 off prod) | ✅ pinned |
 | Smoke A — authenticated read | ✅ pinned |
 | Smoke B — magic-link signup | ✅ pinned |
-| Smoke C — webhook `apply_morning_flow_turn` | ⏸ DEFERRED (1–2 days) |
+| Smoke C — webhook `apply_morning_flow_turn` | ✅ CLOSED (2026-07-26, full Q1–Q4 flow) |
 
-**Next:** close §8 Step 6 within 1–2 days; then 019 (PR #14) proceeds on its fresh
-round-2 rehearsal branch, per the merge-order gate.
+**020 is fully landed and verified on prod.** Next: **019 (PR #14)** proceeds on its
+fresh round-2 rehearsal branch off updated `main`, per the merge-order gate.
