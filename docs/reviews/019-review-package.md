@@ -146,11 +146,25 @@ sequence as round 2:
 B2 appendix, Supabase bug draft) are committed together; the commit SHA and a
 confirmed-empty `git status --porcelain` are recorded at sign-off in the PR record.
 
-## Outstanding (before prod)
-1. **Developer-friend review** — 019 carries a SECURITY DEFINER RPC + a genuine write
-   path, so it's the same review tier as 007/015/017/020.
-2. **Prod apply** (out-of-order vs 020 → `--include-all`, like the rehearsal), observe
-   the PITR window first (§0), then **regenerate types against prod** and commit.
+## Outstanding — ALL CLOSED (2026-07-26)
+1. **Developer-friend review — CLOSED.** Reviewed at the 007/015/017/020 tier
+   (SECURITY DEFINER RPC + genuine write path); all eight round-1 required revisions
+   folded and re-verified (10/10), approved for prod.
+2. **Prod apply — CLOSED.** 019 is live on prod, verified by observation:
+   - **Reviewed/applied commit:** `65a69e723dd5a396f1a21679cf1e022c64750505`
+     (branch `feat/019-daily-log-corrections-v2`, clean tree — `git status
+     --porcelain` empty at apply time).
+   - **Applied out-of-order vs the already-live 020** (`--include-all` territory,
+     faithful to the rehearsal).
+   - **ACL verified on prod — born hardened as designed.** `correct_daily_log`'s
+     `proacl` grants EXECUTE to **`{postgres, authenticated, service_role}` only** —
+     **anon and PUBLIC both stripped** (the `REVOKE … FROM PUBLIC, anon` half of
+     review item 1 confirmed on the live function, not just in the file).
+   - **Types regenerated against prod — empty diff.** `git diff types/database.ts`
+     produced no output, matching the round-3 rehearsal exactly (the revisions touch
+     neither table nor function shape), so no types churn to commit.
+
+Nothing remains open for 019.
 
 ---
 
