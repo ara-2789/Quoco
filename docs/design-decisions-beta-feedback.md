@@ -118,6 +118,31 @@ aren't retrained when keyword-gating ships.
 instruction-only (still says START; no number, copy button, or forward link) and
 emits a Sentry **warning** — degraded-but-functioning, not a failure.
 
+### 3.3 Inline corrections are allowed on PAST dates — and why that's safe (019)
+
+**DATED NOTE (2026-07-25, Rule 4.3 inline correction, migration 019).** The
+`correct_daily_log` RPC does **not** date-gate: a PM may correct a `daily_logs`
+scalar field on **any** past date they're scoped to, not just today. This is a
+**deliberate contrast with §3.1's messaging-blocked-today-only rule**, and the
+difference is the whole point:
+
+- **§3.1 refuses past dates** because `messaging_blocked` is a **present-time
+  flag** with no per-day history — applying today's flag to a historical day
+  would *retroactively invent* a fact (that the engineer was unreachable then)
+  that may never have been true. That would corrupt accountability.
+- **§3.3 permits past dates** because a correction does the **opposite**: it
+  fixes the **factual record of what actually happened** on that day (a
+  mistyped headcount, a wrong weather note). Nothing is being retroactively
+  *misapplied*; a wrong record is being made right. And unlike the flag, the
+  correction is **fully audited** — `daily_log_edits` keeps who/when/old/new —
+  so the edit is transparent, not a silent history rewrite.
+
+So the absence of a date gate here is intentional, not an oversight. The
+integrity guard is the **audit trail**, not a time window: every past-date edit
+is attributable and reversible-in-record. (Enforced in migration 019; the
+membership + PM-only + column-whitelist guards live in the RPC, not in a date
+check.)
+
 ## 4. Disappearing messages
 
 - **No API control exists** (verify against current Meta docs at sender setup).

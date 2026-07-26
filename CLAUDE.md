@@ -49,26 +49,39 @@
   Rationale: paraphrase drifts and GitHub can serve a stale branch cache to the
   reviewer; a pinned `git show`/probe frame is verifiable and cache-proof. The
   canonical apply skeleton lives in docs/migration-runbook-template.md.
-- REHEARSE ON A CLEANED EXISTING BRANCH, NOT A FRESH PROVISION (standing rule since
-  2026-07-26). A freshly-provisioned Supabase branch is NOT a reliably faithful
-  clone of prod: its schema is built by REPLAYING the migration files linearly from
-  scratch, which (a) omits prod's out-of-band objects (see the OUT-OF-BAND DB
-  OBJECTS registry in §10), and (b) can SILENTLY drop schema prod actually has.
-  Confirmed the hard way during 019's round-2 rehearsal: TWO independent fresh
-  branches BOTH came up MISSING `users.auth_id` even though 007 was recorded as
-  applied. Cause: 007's `ADD COLUMN IF NOT EXISTS auth_id UUID REFERENCES
-  auth.users(id)` (007:55-57) — a cross-schema FK to the platform-managed `auth`
-  schema, inside an `IF NOT EXISTS` — is silently no-op'd by Supabase's fresh-branch
-  replay, and the `IF NOT EXISTS` hides it (NOTICE, not error → migration still
-  records as applied). Under standard Postgres a clean replay WOULD add the column,
-  so this is a Supabase-branch-replay incompatibility, not a 007 logic bug. Prod
-  never hit it because 007 was applied out-of-order (after 011-014) via the SQL
-  editor — never a clean linear replay. LESSON: for a rehearsal, tear down the
-  stale objects on an existing schema-complete branch (e.g. test-db) and re-apply
-  there. This REVERSES the earlier (2026-07-25) 019 decision to rehearse on a fresh
-  branch — that decision's premise ("fresh = faithful prod clone") is false. The
-  cross-schema-auth-FK-in-ADD-COLUMN-IF-NOT-EXISTS pattern (007) is the specific
-  known-fragile shape; watch for it if a fresh provision is ever unavoidable.
+- REHEARSE ON A CLEANED EXISTING BRANCH, NOT A FRESH PROVISION — CONDITIONAL RULE
+  (2026-07-26, from the 019 round-2 rehearsal; PR #17). A freshly-provisioned
+  Supabase branch is NOT a faithful prod clone: its schema is built by REPLAYING the
+  migration files linearly from scratch, which (a) omits prod's out-of-band objects
+  (see the OUT-OF-BAND DB OBJECTS registry in §10), and (b) was observed to come up
+  MISSING `users.auth_id` — two independent fresh branches both lacked the column even
+  though `schema_migrations` recorded 007 (which adds it, 007:55-57) as applied.
+  MECHANISM UNCONFIRMED — do not assert one: an earlier
+  note guessed "`IF NOT EXISTS` degrades to a NOTICE," which is WRONG (`IF NOT EXISTS`
+  only skips when the column already exists, so it can't explain a genuinely-absent
+  column) and has been retracted. What IS established: standard linear `psql` replay
+  DOES add the column (not a 007 logic bug), and it involves a cross-schema FK into
+  `auth.users`; the real failure mode is an open question filed with Supabase
+  (docs/reviews/supabase-fresh-branch-auth-id-bug.md). Prod never hit it because 007
+  was applied out-of-order (after 011-014) via the SQL editor, not a clean linear
+  replay. Evidence pinned in
+  docs/reviews/019-review-package.md Appendix B2. UNTIL this fresh-branch behaviour is
+  re-tested and confirmed FIXED, rehearse migrations by TEARING DOWN and reusing the
+  schema-complete test-db, never on a fresh branch. This rule LAPSES once a fresh
+  provision is observed to come up WITH `users.auth_id` present — it is a work-around
+  for a live defect, not a permanent preference.
+- SUPERSEDING PR CARRIES THE REVIEWER-ITEMS LIST FORWARD, ITEM-BY-ITEM (standing rule
+  since 2026-07-26; origin: the 019 round-1→round-3 near-miss where eight
+  reviewer-required revisions were briefly treated as non-existent because they lived
+  only in the prior review, not the new PR). When a PR supersedes another (a fresh
+  branch replacing a stale draft, a re-cut PR, a v2), the OPEN reviewer-items from the
+  superseded PR do NOT get a clean slate: migrate them into the new PR's body as an
+  EXPLICIT per-item checklist, each marked LANDED (with where it was folded) or
+  DEFERRED (with why + where tracked). A superseding PR that silently drops the prior
+  review's open items is not allowed — the checklist is the mechanism that makes a
+  dropped item impossible to miss. Applies to the review package too: it must state
+  which round was reviewed-WITH-CHANGES vs. approved, so "byte-identical to the
+  reviewed file" can never be misread as "approved."
 
 ---
 
