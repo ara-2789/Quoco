@@ -49,6 +49,26 @@
   Rationale: paraphrase drifts and GitHub can serve a stale branch cache to the
   reviewer; a pinned `git show`/probe frame is verifiable and cache-proof. The
   canonical apply skeleton lives in docs/migration-runbook-template.md.
+- REHEARSE ON A CLEANED EXISTING BRANCH, NOT A FRESH PROVISION (standing rule since
+  2026-07-26). A freshly-provisioned Supabase branch is NOT a reliably faithful
+  clone of prod: its schema is built by REPLAYING the migration files linearly from
+  scratch, which (a) omits prod's out-of-band objects (see the OUT-OF-BAND DB
+  OBJECTS registry in §10), and (b) can SILENTLY drop schema prod actually has.
+  Confirmed the hard way during 019's round-2 rehearsal: TWO independent fresh
+  branches BOTH came up MISSING `users.auth_id` even though 007 was recorded as
+  applied. Cause: 007's `ADD COLUMN IF NOT EXISTS auth_id UUID REFERENCES
+  auth.users(id)` (007:55-57) — a cross-schema FK to the platform-managed `auth`
+  schema, inside an `IF NOT EXISTS` — is silently no-op'd by Supabase's fresh-branch
+  replay, and the `IF NOT EXISTS` hides it (NOTICE, not error → migration still
+  records as applied). Under standard Postgres a clean replay WOULD add the column,
+  so this is a Supabase-branch-replay incompatibility, not a 007 logic bug. Prod
+  never hit it because 007 was applied out-of-order (after 011-014) via the SQL
+  editor — never a clean linear replay. LESSON: for a rehearsal, tear down the
+  stale objects on an existing schema-complete branch (e.g. test-db) and re-apply
+  there. This REVERSES the earlier (2026-07-25) 019 decision to rehearse on a fresh
+  branch — that decision's premise ("fresh = faithful prod clone") is false. The
+  cross-schema-auth-FK-in-ADD-COLUMN-IF-NOT-EXISTS pattern (007) is the specific
+  known-fragile shape; watch for it if a fresh provision is ever unavoidable.
 
 ---
 
