@@ -27,15 +27,15 @@ Per CLAUDE.md §0 — artifacts are pinned to source, never paraphrased.
 | Suite run | 169/169, SHA echoed + empty `git status --porcelain` (§8) |
 | Types gate | zero diff, byte-identical `sha256 e48cfb04…59ef` (§9) |
 
-> **RAW-CAPTURE STATUS (read before signing this off).** The rehearsal was
-> executed by the owner in the Supabase SQL Editor; the assistant that drafted
-> this package never had planner access (no PostgREST plan endpoint on either
-> project, no `psql`, no DB password — see §2.0). Every measured value below is
-> as **reported** by the owner during the step-by-step rehearsal. Per §0
-> ("pinned, not paraphrased"), the reported values are NOT a substitute for the
-> frames: each evidence block marked `PASTE RAW CAPTURE` must have the literal
-> SQL Editor output pasted in before this package is considered complete. The
-> numbers are stated alongside so a paste that disagrees is immediately visible.
+**RAW-CAPTURE STATUS: COMPLETE (2026-07-27).** Every evidence block below holds
+the literal SQL Editor output captured during the rehearsal. The rehearsal was
+executed by the owner; the assistant that drafted this package never had planner
+access (no PostgREST plan endpoint on either project, no `psql`, no DB password
+— see §2.0), so the frames were captured by the owner and pasted in verbatim.
+Earlier drafts of this package carried `PASTE RAW CAPTURE` placeholders with the
+*reported* values stated alongside; those placeholders are now replaced by the
+frames themselves, per §0 ("pinned, not paraphrased"). No value below is a
+summary, a reconstruction, or a paraphrase.
 
 ---
 
@@ -93,7 +93,7 @@ a planner were tried and all failed: PostgREST's plan endpoint (`PGRST107`,
 disabled on **both** projects), `psql` (not installed), and a DB connection
 string (absent from `.env.local`, `.env.test`, `~/.supabase`). The rehearsal
 below is how the inference was converted into an observation — and it was run as
-a **hard gate**: had 2b shown an index scan, 021 would have been redesigned
+a **hard gate**: had 2.3 shown an index scan, 021 would have been redesigned
 rather than applied.
 
 ### 2.1 The mismatch
@@ -122,18 +122,39 @@ path with a seq-scan path in a BitmapOr, so the whole node degrades to a Seq Sca
 That scan runs **every 60 seconds forever** (`vercel.json` cron `* * * * *`) over
 a table with no pruning mechanism.
 
-### 2.2 Seed (test-db)
+### 2.2 Pre-state (test-db)
+
+```sql
+SELECT tablename, indexname, indexdef
+FROM pg_indexes
+WHERE schemaname = 'public'
+  AND tablename IN ('jobs','processed_messages','whatsapp_sessions')
+ORDER BY tablename, indexname;
+```
+
+```
+tablename,indexname,indexdef
+jobs,idx_jobs_poll,"CREATE INDEX idx_jobs_poll ON public.jobs USING btree (status, next_retry_at) WHERE (status = ANY (ARRAY['pending'::text, 'running'::text]))"
+jobs,idx_jobs_type,"CREATE INDEX idx_jobs_type ON public.jobs USING btree (type, created_at)"
+jobs,jobs_pkey,CREATE UNIQUE INDEX jobs_pkey ON public.jobs USING btree (id)
+processed_messages,idx_processed_messages_sid,CREATE INDEX idx_processed_messages_sid ON public.processed_messages USING btree (message_sid)
+processed_messages,processed_messages_message_sid_key,CREATE UNIQUE INDEX processed_messages_message_sid_key ON public.processed_messages USING btree (message_sid)
+processed_messages,processed_messages_pkey,CREATE UNIQUE INDEX processed_messages_pkey ON public.processed_messages USING btree (id)
+whatsapp_sessions,idx_whatsapp_sessions_phone_number,CREATE INDEX idx_whatsapp_sessions_phone_number ON public.whatsapp_sessions USING btree (phone_number)
+whatsapp_sessions,idx_whatsapp_sessions_tenant_id,CREATE INDEX idx_whatsapp_sessions_tenant_id ON public.whatsapp_sessions USING btree (tenant_id)
+whatsapp_sessions,uq_whatsapp_sessions_phone_number,CREATE UNIQUE INDEX uq_whatsapp_sessions_phone_number ON public.whatsapp_sessions USING btree (phone_number)
+whatsapp_sessions,whatsapp_sessions_pkey,CREATE UNIQUE INDEX whatsapp_sessions_pkey ON public.whatsapp_sessions USING btree (id)
+```
+
+**10 rows.** All three drop targets present. `idx_jobs_poll`'s definition matches
+006:17 exactly — test-db is not drifted, so the rehearsal exercises the same
+paths the prod apply will.
+
+### 2.3 Seed (test-db)
 
 200,000 rows via `generate_series`, marked `type = 'zz_explain_probe'`
 (`jobs.type` has no CHECK — 006:7 — so the marker inserts cleanly and makes
-cleanup exact). Pre-seed `count(*)` = 0.
-
-| status | attempt_count | rows | role |
-|---|---:|---:|---|
-| `succeeded` | 1 | 180,000 | the accumulation nothing prunes |
-| `failed` | 5 | 15,000 | dead-letter, permanent (NFR-17) |
-| `failed` | 2 | 4,990 | retryable |
-| `pending` | 0 | 10 | live work |
+cleanup exact).
 
 `next_retry_at` is **deliberately non-uniform**: dead-letter ~30 days past,
 retryable ~1 hour past, pending ~5 minutes past. That ordering is what makes §4.2
@@ -141,11 +162,20 @@ measurable — under uniform timestamps the dead-letter distinction is invisible
 `ANALYZE jobs` run before any EXPLAIN.
 
 ```
-PASTE RAW CAPTURE — seed verification (GROUP BY status, attempt_count)
-Reported: 4 rows exactly as tabulated above; total 200,000.
+jobs_rows_before
+0
+
+status,attempt_count,rows,oldest_due,newest_due
+failed,2,4990,2026-07-27 07:49:07.614758+00,2026-07-27 07:49:07.614758+00
+failed,5,15000,2026-06-27 08:49:08.614758+00,2026-06-27 12:59:07.614758+00
+pending,0,10,2026-07-27 08:44:07.614758+00,2026-07-27 08:44:07.614758+00
+succeeded,1,180000,2026-05-28 08:49:07.614758+00,2026-05-28 08:49:07.614758+00
 ```
 
-### 2.3 BEFORE plan — THE GATE
+Total 200,000; pre-seed count 0. The dead-letter band spans ~4.17 hours 30 days
+back, matching `make_interval(secs => i - 180000)` over i = 180001…195000.
+
+### 2.4 BEFORE plan — THE GATE
 
 ```sql
 EXPLAIN (ANALYZE, BUFFERS)
@@ -158,80 +188,150 @@ LIMIT 3;
 ```
 
 ```
-PASTE RAW CAPTURE — BEFORE plan
-Reported: Parallel Seq Scan on jobs
-          Rows Removed by Filter ≈ 97,500/worker (the ~195,000 non-matching rows)
-          Buffers: shared hit=2877 (full heap read)
-          Sort node present (no index serving ORDER BY)
-          Execution Time: 50.549 ms
+QUERY PLAN
+Limit  (cost=6334.10..6334.44 rows=3 width=107) (actual time=40.657..50.050 rows=3 loops=1)
+  Buffers: shared hit=2877
+  ->  Gather Merge  (cost=6334.10..7598.87 rows=10998 width=107) (actual time=40.656..50.046 rows=3 loops=1)
+        Workers Planned: 1
+        Workers Launched: 1
+        Buffers: shared hit=2877
+        ->  Sort  (cost=5334.09..5361.58 rows=10998 width=107) (actual time=35.275..35.276 rows=3 loops=2)
+              Sort Key: next_retry_at
+              Sort Method: top-N heapsort  Memory: 25kB
+              Buffers: shared hit=2877
+              Worker 0:  Sort Method: top-N heapsort  Memory: 25kB
+              ->  Parallel Seq Scan on jobs  (cost=0.00..5191.94 rows=10998 width=107) (actual time=33.319..34.556 rows=2500 loops=2)
+                    Filter: ((status = ANY ('{pending,failed}'::text[])) AND (attempt_count < 5) AND (next_retry_at <= now()))
+                    Rows Removed by Filter: 97500
+                    Buffers: shared hit=2839
+Planning:
+  Buffers: shared hit=212
+Planning Time: 1.237 ms
+Execution Time: 50.549 ms
 ```
 
-### 2.4 BEFORE — real-execution corroboration
+`Parallel Seq Scan on jobs`. `Rows Removed by Filter: 97500` per worker across 2
+loops = 195,000 discarded to find 5,000. `Buffers: shared hit=2877` — the whole
+heap. A `Sort` node is present because no index serves `ORDER BY next_retry_at`.
+**Execution Time: 50.549 ms.**
+
+### 2.5 BEFORE — real-execution corroboration
 
 `EXPLAIN` shows what the planner *would* choose for one statement. This shows
-what it *did* choose, ten times, via a `DO` block executing the production query
-in a loop, with `pg_stat_user_indexes` read either side.
+what it *did* choose, ten times, via a `DO` block running the production query in
+a loop, with `pg_stat_user_indexes` read either side.
 
 ```
-PASTE RAW CAPTURE — pg_stat_user_indexes before/after the 10× loop
-Reported: idx_jobs_poll.idx_scan = 0, unchanged across 10 real executions.
+BEFORE the 10× loop:
+indexrelname,idx_scan,idx_tup_read,idx_tup_fetch
+idx_jobs_poll,0,0,0
+idx_jobs_type,0,0,0
+jobs_pkey,0,0,0
+
+AFTER the 10× loop:
+indexrelname,idx_scan,idx_tup_read,idx_tup_fetch
+idx_jobs_poll,0,0,0
+idx_jobs_type,0,0,0
+jobs_pkey,0,0,0
 ```
 
-**`idx_scan = 0` is stronger than "unmoved"** — the index built for this query has
-never been used in its lifetime on test-db.
+**`idx_jobs_poll.idx_scan = 0`, unchanged across ten real executions** — and 0 is
+stronger than "unmoved": the index built for this query has never been used in
+its lifetime on test-db.
 
 ---
 
 ## 3. Prove-closed — the fix, measured
 
-### 3.1 AFTER plan (identical query text — paired frame)
+### 3.1 Post-apply index list (test-db)
 
 ```
-PASTE RAW CAPTURE — AFTER plan
-Reported: Index Scan using idx_jobs_claim on jobs
-          Index Cond only — NO Filter: line at all
-          No Sort node
-          No parallelism (no Gather / Workers Planned)
-          Buffers: shared hit=1 read=2  (3 total)
-          Execution Time: 0.149 ms
+indexname,indexdef
+idx_jobs_claim,"CREATE INDEX idx_jobs_claim ON public.jobs USING btree (next_retry_at) WHERE ((status = ANY (ARRAY['pending'::text, 'failed'::text])) AND (attempt_count < 5))"
+idx_jobs_type,"CREATE INDEX idx_jobs_type ON public.jobs USING btree (type, created_at)"
+jobs_pkey,CREATE UNIQUE INDEX jobs_pkey ON public.jobs USING btree (id)
+processed_messages_message_sid_key,CREATE UNIQUE INDEX processed_messages_message_sid_key ON public.processed_messages USING btree (message_sid)
+processed_messages_pkey,CREATE UNIQUE INDEX processed_messages_pkey ON public.processed_messages USING btree (id)
+idx_whatsapp_sessions_tenant_id,CREATE INDEX idx_whatsapp_sessions_tenant_id ON public.whatsapp_sessions USING btree (tenant_id)
+uq_whatsapp_sessions_phone_number,CREATE UNIQUE INDEX uq_whatsapp_sessions_phone_number ON public.whatsapp_sessions USING btree (phone_number)
+whatsapp_sessions_pkey,CREATE UNIQUE INDEX whatsapp_sessions_pkey ON public.whatsapp_sessions USING btree (id)
 ```
 
-| | BEFORE | AFTER | Δ |
+`idx_jobs_claim` created with `next_retry_at` as the indexed column and both
+predicate halves intact. All three drop targets gone. Both safety-critical
+indexes present.
+
+### 3.2 AFTER plan (identical query text — paired against §2.4)
+
+```
+QUERY PLAN
+Limit  (cost=0.29..0.36 rows=3 width=107) (actual time=0.053..0.055 rows=3 loops=1)
+  Buffers: shared hit=1 read=2
+  ->  Index Scan using idx_jobs_claim on jobs  (cost=0.29..498.55 rows=18697 width=107) (actual time=0.052..0.053 rows=3 loops=1)
+        Index Cond: (next_retry_at <= now())
+        Buffers: shared hit=1 read=2
+Planning:
+  Buffers: shared hit=209 read=1
+Planning Time: 1.416 ms
+Execution Time: 0.149 ms
+```
+
+| | BEFORE (§2.4) | AFTER | Δ |
 |---|---:|---:|---:|
 | Scan node | Parallel Seq Scan | Index Scan | — |
 | Buffers | 2,877 | 3 | **959× fewer** |
 | Execution time | 50.549 ms | 0.149 ms | **~340×** |
 | Sort node | present | absent | eliminated |
+| Parallelism | Gather Merge, 1 worker | none | eliminated |
 
-The absent `Filter:` line is the substantive detail: because `status` and
-`attempt_count` live in the index **predicate**, Postgres treats every entry as
-already qualifying and re-checks nothing. Only `Index Cond: (next_retry_at <= now())`
-remains.
+Two details worth reading closely:
 
-### 3.2 AFTER — real-execution corroboration
+**There is no `Filter:` line at all.** Because `status` and `attempt_count` live
+in the index **predicate**, Postgres treats every entry as already qualifying and
+re-checks nothing. Only `Index Cond: (next_retry_at <= now())` remains. That is
+the predicate design working exactly as intended.
 
-```
-PASTE RAW CAPTURE — pg_stat_user_indexes after the 10× loop
-Reported: idx_jobs_claim.idx_scan 1 → 11 (clean +10).
-```
+**`rows=18697` is an estimate, not a count.** The index contains 5,000 entries
+(§4.2). Postgres's selectivity estimation for partial indexes is approximate; the
+estimate is harmless here because `LIMIT 3` stops the scan after three rows —
+visible in `actual … rows=3`.
 
-Paired against §2.4 — where `idx_jobs_poll` sat at 0 through ten identical
-executions — this is the before/after stated as observed behaviour, not planner
-intent.
-
-### 3.3 Index size
+### 3.3 AFTER — real-execution corroboration
 
 ```
-PASTE RAW CAPTURE — pg_relation_size per index on jobs
-Reported: idx_jobs_claim   56 kB
-          idx_jobs_type  9,728 kB
-          jobs_pkey      8,232 kB
+BEFORE the 10× loop:
+indexrelname,idx_scan,idx_tup_read,idx_tup_fetch
+idx_jobs_claim,1,3,3
+idx_jobs_type,0,0,0
+jobs_pkey,0,0,0
+
+AFTER the 10× loop:
+indexrelname,idx_scan,idx_tup_read,idx_tup_fetch
+idx_jobs_claim,11,33,33
+idx_jobs_type,0,0,0
+jobs_pkey,0,0,0
+```
+
+**`idx_jobs_claim.idx_scan` 1 → 11, a clean +10** (the leading 1 is the
+`EXPLAIN ANALYZE` in §3.2), with `idx_tup_read` 3 → 33 confirming three rows per
+execution. Paired against §2.5 — where `idx_jobs_poll` sat at 0 through ten
+identical executions — this is the before/after stated as observed behaviour, not
+planner intent.
+
+### 3.4 Index sizes
+
+```
+indexrelname,size
+idx_jobs_claim,56 kB
+idx_jobs_type,9728 kB
+jobs_pkey,8232 kB
 ```
 
 Noted for the record, not acted on: `idx_jobs_type` is ~174× the size of the
-index that does the actual work and still has **zero readers** (nothing queries
-`jobs` by `type`). Its deferral is deliberate (§6) — this measurement is evidence
-for revisiting it, not for widening 021.
+index that does the actual work and still has **zero readers** across every
+capture in this package (`idx_scan` = 0 in §2.5 and §3.3 alike). Its deferral is
+deliberate (§6) — this measurement is evidence for revisiting it, not for
+widening 021.
 
 ---
 
@@ -247,7 +347,7 @@ re-derived later.
 Leading with `status` (2-3 distinct values, effectively no selectivity) cannot
 serve `ORDER BY next_retry_at` across multiple statuses without a sort. Leading
 with `next_retry_at` lets **one** index scan serve the range filter, the ORDER BY
-and the LIMIT — the walk stops after 3 rows. §3.1's absent Sort node is that
+and the LIMIT — the walk stops after 3 rows. §3.2's absent Sort node is that
 choice, measured.
 
 ### 4.2 The dead-letter trap — the deciding reason
@@ -264,12 +364,18 @@ better camouflage**: the planner would use the index, and it would slow down on
 every permanent failure. Measured:
 
 ```
-PASTE RAW CAPTURE — entries_if_status_only vs entries_as_shipped
-Reported: 20,000  vs  5,000
+entries_if_status_only,entries_as_shipped
+20000,5000
 ```
 
 15,000 permanently-dead rows excluded from the index by putting `attempt_count`
 in the predicate rather than leaving it to a runtime filter.
+
+§5a corroborates the mechanism from the other direction: relaxing the query bound
+to `attempt_count < 7` makes the scan match `rows=10000 loops=2` = 20,000 and
+discard `90000 × 2` = 180,000 — i.e. exactly the 15,000 dead-letter rows joining
+the 5,000 live ones, leaving only the `succeeded` band. The dead-letter effect is
+visible in the plan's own row counts.
 
 ### 4.3 The coupling this introduces, and its mitigation
 
@@ -299,20 +405,81 @@ dead-letter Sentry alerting is built.
 Three plans, same session, same data, same statistics; only the predicate text
 varies.
 
-```
-PASTE RAW CAPTURE — 5a: attempt_count < 7 (MAX_ATTEMPTS drift)
-Reported: Parallel Seq Scan, 2877 buffers, 49.036 ms
-```
+### 5a. `attempt_count < 7` — MAX_ATTEMPTS drift
 
 ```
-PASTE RAW CAPTURE — 5b: status IN ('pending','failed','running') (status drift)
-Reported: Seq Scan, 2877 buffers, 52.144 ms
+QUERY PLAN
+Limit  (cost=6345.94..6346.28 rows=3 width=107) (actual time=40.718..48.912 rows=3 loops=1)
+  Buffers: shared hit=2877
+  ->  Gather Merge  (cost=6345.94..7716.05 rows=11914 width=107) (actual time=40.717..48.908 rows=3 loops=1)
+        Workers Planned: 1
+        Workers Launched: 1
+        Buffers: shared hit=2877
+        ->  Sort  (cost=5345.93..5375.71 rows=11914 width=107) (actual time=35.591..35.592 rows=2 loops=2)
+              Sort Key: next_retry_at
+              Sort Method: top-N heapsort  Memory: 25kB
+              Buffers: shared hit=2877
+              Worker 0:  Sort Method: top-N heapsort  Memory: 25kB
+              ->  Parallel Seq Scan on jobs  (cost=0.00..5191.94 rows=11914 width=107) (actual time=28.162..33.017 rows=10000 loops=2)
+                    Filter: ((status = ANY ('{pending,failed}'::text[])) AND (attempt_count < 7) AND (next_retry_at <= now()))
+                    Rows Removed by Filter: 90000
+                    Buffers: shared hit=2839
+Planning:
+  Buffers: shared hit=223
+Planning Time: 1.302 ms
+Execution Time: 49.036 ms
 ```
 
+### 5b. status list + `'running'` — status drift
+
 ```
-PASTE RAW CAPTURE — 5c: CONTROL, unmodified production query
-Reported: Index Scan using idx_jobs_claim, buffers=3, 0.123 ms
+QUERY PLAN
+Limit  (cost=6481.16..6481.50 rows=3 width=107) (actual time=43.204..52.012 rows=3 loops=1)
+  Buffers: shared hit=2877
+  ->  Gather Merge  (cost=6481.16..7745.93 rows=10998 width=107) (actual time=43.202..52.008 rows=3 loops=1)
+        Workers Planned: 1
+        Workers Launched: 1
+        Buffers: shared hit=2877
+        ->  Sort  (cost=5481.15..5508.64 rows=10998 width=107) (actual time=38.263..38.264 rows=3 loops=2)
+              Sort Key: next_retry_at
+              Sort Method: top-N heapsort  Memory: 25kB
+              Buffers: shared hit=2877
+              Worker 0:  Sort Method: top-N heapsort  Memory: 25kB
+              ->  Parallel Seq Scan on jobs  (cost=0.00..5339.00 rows=10998 width=107) (actual time=36.353..37.523 rows=2500 loops=2)
+                    Filter: ((attempt_count < 5) AND (status = ANY ('{pending,failed,running}'::text[])) AND (next_retry_at <= now()))
+                    Rows Removed by Filter: 97500
+                    Buffers: shared hit=2839
+Planning:
+  Buffers: shared hit=210
+Planning Time: 1.101 ms
+Execution Time: 52.144 ms
 ```
+
+Note `Rows Removed by Filter: 97500` — **identical to §2.4**. No `'running'` rows
+exist, so adding that status changes nothing about the data; the only thing it
+changes is that the predicate is no longer implied. That isolates the
+predicate-implication failure from any data effect.
+
+### 5c. CONTROL — unmodified production query
+
+```
+QUERY PLAN
+Limit  (cost=0.29..0.36 rows=3 width=107) (actual time=0.034..0.036 rows=3 loops=1)
+  Buffers: shared hit=3
+  ->  Index Scan using idx_jobs_claim on jobs  (cost=0.29..498.55 rows=18697 width=107) (actual time=0.033..0.034 rows=3 loops=1)
+        Index Cond: (next_retry_at <= now())
+        Buffers: shared hit=3
+Planning:
+  Buffers: shared hit=210
+Planning Time: 1.092 ms
+Execution Time: 0.123 ms
+```
+
+| | Scan | Buffers | Time |
+|---|---|---:|---:|
+| 5a `attempt_count < 7` | Parallel Seq Scan | 2,877 | 49.036 ms |
+| 5b status + `'running'` | Parallel Seq Scan | 2,877 | 52.144 ms |
+| **5c control (unmodified)** | **Index Scan** | **3** | **0.123 ms** |
 
 5a is the `MAX_ATTEMPTS` drift scenario made concrete. 5b is the scenario where a
 future author builds the stale-claim sweep for orphaned `running` jobs (§6) by
@@ -322,6 +489,9 @@ argue the index simply stopped working); with it, the only variable is the
 predicate text, so the three frames demonstrate the *mechanism*, not just the
 outcome.
 
+(5c reads `shared hit=3` where §3.2 read `hit=1 read=2` — same three buffers,
+differing only in cache warmth between the two runs.)
+
 ---
 
 ## 6. Explicitly out of scope
@@ -329,11 +499,12 @@ outcome.
 Recorded so neither reads as an oversight.
 
 **`idx_jobs_type` — DEFERRED, not dropped.** Non-partial, indexes every job
-forever, 9,728 kB at 200k rows, and nothing queries by `type`. It is a genuine
-growth liability, but it differs in kind from 021's three changes: those are
-*provably redundant or provably unusable*, this one is merely *currently unused*,
-and a jobs-by-type admin view is plausible. Dropping it is a product bet; 021
-contains only provable facts. Owner decision, 2026-07-27.
+forever, 9,728 kB at 200k rows (§3.4), and `idx_scan = 0` in every counter
+capture in this package. It is a genuine growth liability, but it differs in kind
+from 021's three changes: those are *provably redundant or provably unusable*,
+this one is merely *currently unused*, and a jobs-by-type admin view is
+plausible. Dropping it is a product bet; 021 contains only provable facts. Owner
+decision, 2026-07-27.
 
 **Orphaned `running` jobs — real latent bug, unrelated to indexing.** `claimJobs`
 reads only `pending`/`failed`, so a worker dying between `status='running'`
@@ -351,25 +522,28 @@ policy exists for any table. See the audit origin in CLAUDE.md §10.
 
 ## 7. Paired inventory probes
 
-Identical query text before and after, so the frames are directly comparable:
+Identical query text before and after, so the frames are directly comparable.
+The BEFORE frame is §2.2 (10 rows); the AFTER frame is §3.1 (8 rows) — three
+dropped, one created.
 
-```sql
-SELECT tablename, indexname, indexdef
-FROM pg_indexes
-WHERE schemaname = 'public'
-  AND tablename IN ('jobs','processed_messages','whatsapp_sessions')
-ORDER BY tablename, indexname;
-```
+### Completeness check (test-db, post-021)
 
-**test-db BEFORE: 10 rows. test-db AFTER: 8 rows** (three dropped, one created).
-Post-apply completeness check (FULL OUTER JOIN against the expected post-021
-set): **8/8 `ok`**, nothing missing, nothing unexpected.
+A FULL OUTER JOIN of the actual index set against the expected post-021 set, so
+the verdict does not depend on counting rows by eye:
 
 ```
-PASTE RAW CAPTURE — test-db before (10 rows)
-PASTE RAW CAPTURE — test-db after (8 rows)
-PASTE RAW CAPTURE — completeness check (8/8 ok)
+tablename,indexname,verdict
+jobs,idx_jobs_claim,ok
+jobs,idx_jobs_type,ok
+jobs,jobs_pkey,ok
+processed_messages,processed_messages_message_sid_key,ok
+processed_messages,processed_messages_pkey,ok
+whatsapp_sessions,idx_whatsapp_sessions_tenant_id,ok
+whatsapp_sessions,uq_whatsapp_sessions_phone_number,ok
+whatsapp_sessions,whatsapp_sessions_pkey,ok
 ```
+
+**8/8 `ok`** — nothing missing, nothing unexpected.
 
 ### Safety assertions — the two indexes that must survive
 
@@ -378,35 +552,47 @@ PASTE RAW CAPTURE — completeness check (8/8 ok)
 | `uq_whatsapp_sessions_phone_number` | backs `ON CONFLICT (phone_number)` in every session RPC; dropping it breaks the morning flow outright |
 | `processed_messages_message_sid_key` | raises the `23505` that `isNewMessage` depends on; dropping it breaks webhook idempotency |
 
-Both confirmed present post-apply on test-db. Both must be re-confirmed on prod
-(§10 step D). The naming similarity between
+Both confirmed present post-apply on test-db (§3.1, and `ok` above). Both must be
+re-confirmed on prod (§10 step D). The naming similarity between
 `idx_whatsapp_sessions_phone_number` (dropped) and
 `uq_whatsapp_sessions_phone_number` (kept) is the single likeliest fatal typo in
 this migration; the unit test asserts no DROP statement names the `uq_` one.
 
 ### Cleanup
 
-`DELETE FROM jobs WHERE type = 'zz_explain_probe'` → 200,000 removed;
-`count(*)` back to **0**, matching the pre-seed baseline exactly.
-`VACUUM ANALYZE jobs` clean. Post-cleanup index list identical to the after-frame
-— cleanup touched only data.
-
 ```
-PASTE RAW CAPTURE — post-cleanup count(*) = 0 and 8-row index list
+jobs_rows_after_cleanup
+0
+
+tablename,indexname
+jobs,idx_jobs_claim
+jobs,idx_jobs_type
+jobs,jobs_pkey
+processed_messages,processed_messages_message_sid_key
+processed_messages,processed_messages_pkey
+whatsapp_sessions,idx_whatsapp_sessions_tenant_id
+whatsapp_sessions,uq_whatsapp_sessions_phone_number
+whatsapp_sessions,whatsapp_sessions_pkey
 ```
 
-### Reconciliation note (2026-07-27)
+`DELETE FROM jobs WHERE type = 'zz_explain_probe'` → 200,000 removed; `count(*)`
+back to **0**, matching the pre-seed baseline (§2.3) exactly. `VACUUM ANALYZE
+jobs` clean. Post-cleanup index list identical to §3.1 — cleanup touched only
+data.
 
-The first reading of the after-frame appeared to show a net −1 rather than the
-expected −2. Reconciled: the expected complete set is **10**, and 10 − 3 + 1 = 8,
-so the after-count was correct and the *baseline* reading was short by one row.
-Cause: one row (`idx_processed_messages_sid`) was lost in chat rendering during
-transcription, not absent from the database. Confirmed by the 8/8 completeness
-check and by prod's own before-frame showing all three drop targets present with
-definitions matching their migration files. **No schema drift.** Recorded because
-the alternative explanation — a drop target genuinely missing on test-db — would
-have meant the rehearsal never exercised that drop, and that distinction was
-worth resolving before proceeding rather than after.
+### Transcription note (2026-07-27)
+
+During the step-by-step rehearsal, one intermediate reading of the pre-state was
+transcribed as 9 rows rather than 10, which briefly made the after-count look
+like a net −1 instead of −2. Resolved: the authoritative capture is the 10-row
+frame pinned in §2.2 (the missing line was `whatsapp_sessions_pkey`, lost in chat
+rendering, not absent from the database), and 10 − 3 + 1 = 8 matches §3.1
+exactly. Corroborated independently by the 8/8 completeness check above and by
+prod's own before-frame (§10 step B) showing all three drop targets present.
+**No schema drift, on either environment.** Recorded because the alternative
+explanation — a drop target genuinely missing on test-db — would have meant the
+rehearsal never exercised that drop, and that distinction was worth resolving
+before proceeding rather than after.
 
 ---
 
@@ -488,18 +674,24 @@ prior state, and no row is created, altered or deleted. Stated explicitly rather
 than skipped silently, per §0's insistence that a record is not the thing.
 
 **B. Pre-apply state probe (read-only) — ALREADY CAPTURED, 2026-07-27.**
-Prod returned **10 rows**, with all three drop targets present and their
-`indexdef` matching their migration-file definitions:
 
 ```
+tablename,indexname,indexdef
 jobs,idx_jobs_poll,"CREATE INDEX idx_jobs_poll ON public.jobs USING btree (status, next_retry_at) WHERE (status = ANY (ARRAY['pending'::text, 'running'::text]))"
+jobs,idx_jobs_type,"CREATE INDEX idx_jobs_type ON public.jobs USING btree (type, created_at)"
+jobs,jobs_pkey,CREATE UNIQUE INDEX jobs_pkey ON public.jobs USING btree (id)
 processed_messages,idx_processed_messages_sid,CREATE INDEX idx_processed_messages_sid ON public.processed_messages USING btree (message_sid)
+processed_messages,processed_messages_message_sid_key,CREATE UNIQUE INDEX processed_messages_message_sid_key ON public.processed_messages USING btree (message_sid)
+processed_messages,processed_messages_pkey,CREATE UNIQUE INDEX processed_messages_pkey ON public.processed_messages USING btree (id)
 whatsapp_sessions,idx_whatsapp_sessions_phone_number,CREATE INDEX idx_whatsapp_sessions_phone_number ON public.whatsapp_sessions USING btree (phone_number)
+whatsapp_sessions,idx_whatsapp_sessions_tenant_id,CREATE INDEX idx_whatsapp_sessions_tenant_id ON public.whatsapp_sessions USING btree (tenant_id)
+whatsapp_sessions,uq_whatsapp_sessions_phone_number,CREATE UNIQUE INDEX uq_whatsapp_sessions_phone_number ON public.whatsapp_sessions USING btree (phone_number)
+whatsapp_sessions,whatsapp_sessions_pkey,CREATE UNIQUE INDEX whatsapp_sessions_pkey ON public.whatsapp_sessions USING btree (id)
 ```
 
-PROCEED condition: all three present (met). Prod is **not** drifted on any of
-them, so the apply exercises all three drops — the same paths the rehearsal
-exercised.
+**10 rows, byte-identical to test-db's pre-state (§2.2).** PROCEED condition: all
+three drop targets present (met). Prod is **not** drifted on any of them, so the
+apply exercises exactly the paths the rehearsal exercised.
 
 **C. Apply (write).** Fresh tab. Full paste of the pinned body:
 `git show 19b1e39:supabase/migrations/021_index_hygiene.sql | pbcopy`
@@ -513,11 +705,12 @@ Applying at this size is deliberate: at ~1M `processed_messages` rows the same
 drop would stall webhook inserts and `CONCURRENTLY` (which forbids the
 transaction wrapper) would become mandatory.
 
-**D. Post-apply probes (read-only).** Re-run the §7 inventory query on prod and
+**D. Post-apply probes (read-only).** Re-run the §2.2 inventory query on prod and
 pair it against step B. Assert: `idx_jobs_claim` present with `next_retry_at`
 leading and `attempt_count < 5` in the predicate; the three targets absent;
 **`uq_whatsapp_sessions_phone_number` and `processed_messages_message_sid_key`
-both present**; `idx_jobs_type` and all three `*_pkey` untouched. Expect 8 rows.
+both present**; `idx_jobs_type` and all three `*_pkey` untouched. Expect 8 rows
+matching §3.1. Then run the §7 completeness check and expect 8/8 `ok`.
 
 **E. Ledger INSERT (write) + verify.**
 
@@ -550,7 +743,8 @@ that is expected, not a failure.
 |---|---|
 | Risk | Very low — index-only, zero data mutation, exact-inverse DOWN, no ACL/RLS/function change |
 | Reversibility | Complete. DOWN block reconstructs the prior state exactly; no backup dependency |
-| Evidence | Empirical: 340× measured, with negative controls and a methodological control |
+| Evidence | Empirical: 50.549 ms → 0.149 ms, 2,877 → 3 buffers, with negative controls and a methodological control |
 | Blast radius if wrong | Two named indexes must survive (§7); both asserted pre- and post-apply, and by unit test |
 | External reviewer | Not gated — 018 precedent, owner-agreed 2026-07-27 |
-| Prod status | **NOT APPLIED.** Before-frame captured; runbook §10 ready to execute |
+| Raw captures | **Complete** — every evidence block holds literal SQL Editor output |
+| Prod status | **NOT APPLIED.** Before-frame captured (§10 B); runbook ready to execute |
