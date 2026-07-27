@@ -254,7 +254,18 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
          last_error, completed_at)
        - idx_jobs_poll on (status, next_retry_at) WHERE status IN
          ('pending','running')
+         SUPERSEDED BY 021 (2026-07-27): this index was never usable by the
+         real claim query — claimJobs filters status IN ('pending','failed'),
+         which does not imply this predicate, so Postgres could not use it and
+         the 60-second poll fell back to a Seq Scan. Observed, not inferred
+         (idx_scan = 0 across 10 real executions). 021 drops it and creates
+         idx_jobs_claim. See the 021 entry below.
        - idx_jobs_type on (type, created_at)
+         NOTE (2026-07-27, per the 021 audit): non-partial, so it indexes every
+         job forever, and nothing queries jobs by type today (9,728 kB at 200k
+         rows vs idx_jobs_claim's 56 kB). DEFERRED from 021 deliberately — it is
+         unused, not redundant or broken, so dropping it is a product bet rather
+         than hygiene. Revisit if no reader appears.
        No dependency on auth surgery — applied first since it was ready
        first and has zero risk to existing data.
 
@@ -450,6 +461,53 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        types/database.ts (confirmation gate passed). Branch verification: full
        suite 91/91 green (incl. 13 morning-flow integration tests + the BOT-07
        counter-wipe case) on test-db exfccwlrhoutkgrlikod.
+
+021 — index hygiene + claim-poll index. INDEX-ONLY: no table/column DDL, no
+       function bodies, no ACL/RLS change, ZERO data mutation. Three changes,
+       each provably redundant or provably unusable:
+       - DROP idx_jobs_poll, CREATE idx_jobs_claim on (next_retry_at)
+         WHERE status IN ('pending','failed') AND attempt_count < 5.
+         Leading with next_retry_at lets ONE index scan serve the range filter,
+         the ORDER BY and the LIMIT (no Sort node). attempt_count is in the
+         PREDICATE, not left to a runtime filter, because dead-letter rows
+         (attempt_count = 5, status stays 'failed', next_retry_at = moment of
+         death) are permanent per NFR-17 and their PAST next_retry_at sorts them
+         to the FRONT of an ascending scan — a status-only predicate would make
+         every poll walk the whole dead set first (measured: 20,000 index entries
+         vs 5,000 as shipped).
+       - DROP idx_processed_messages_sid — duplicates the index that 011:11's
+         `message_sid ... UNIQUE` already creates. isNewMessage depends on the
+         CONSTRAINT's 23505, not on this index; the constraint is untouched.
+       - DROP idx_whatsapp_sessions_phone_number (003:49, plain) — superseded by
+         uq_whatsapp_sessions_phone_number (012:34, UNIQUE), which backs
+         ON CONFLICT (phone_number) in 012/013/014/018 and is NOT touched.
+       LOAD-BEARING COUPLING: the `attempt_count < 5` predicate must stay equal to
+       MAX_ATTEMPTS (lib/queue/jobs.ts:26). Drift makes the index silently
+       unusable — no error, no symptom. Guarded by test/unit/jobs-claim-index.test.ts
+       (two gates that must agree, the 019 CHECK/CASE discipline).
+       Rehearsed on test-db (cleaned existing branch, per §0 — not a fresh
+       provision) with 200k representative rows. Measured: Seq Scan 2,877 buffers
+       / 50.549 ms -> Index Scan 3 buffers / 0.149 ms (~340x); idx_jobs_poll
+       idx_scan 0 across 10 real executions vs idx_jobs_claim +10. Negative
+       controls (attempt_count < 7; status list + 'running') both revert to Seq
+       Scan. Suite 169/169. Types regen zero diff.
+       Fully reversible — exact-inverse DOWN at the migration file end; NO PITR
+       dependency (rollback does not lean on a backup). No external-reviewer gate
+       (018 precedent). Package: docs/reviews/021-review-package.md.
+
+       APPLIED TO PRODUCTION: **PENDING** as of 2026-07-27. Prod pre-apply frame
+       captured (all three drop targets present, definitions matching their
+       migration files). This entry is updated to "applied" only AFTER the ledger
+       INSERT confirms, per the runbook — no "applied" line before it is true (§0).
+
+DOC GAP (noted 2026-07-27, not fixed here): this MIGRATION ORDER list has no
+entries for 011, 012, 014, 019 or 020, though all are applied to prod. They are
+described elsewhere (011/012/014 in the WHATSAPP BOT table notes; 019/020 in
+CLAUDE.md §10 and their review packages), but the list below is not a complete
+index of the migration set and should not be read as one. Backfilling those five
+entries needs their real apply dates and ledger positions reconstructed from the
+review packages — a separate pass, deliberately not bundled into an index-only
+migration's PR.
 
 NOTE ON CLI MIGRATION TRACKING: migrations 001-005 were originally applied
 via the Supabase dashboard SQL editor, not the CLI, so the CLI's remote

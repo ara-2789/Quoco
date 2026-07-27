@@ -565,6 +565,42 @@ deactivated per the standing artifact discipline. Full evidence:
 docs/reviews/020-review-package.md §8 Step 6. (Was DEFERRED 2026-07-25; closed
 within the 1-2 day window.)
 
+DATA RETENTION POSTURE — AUDITED 2026-07-27, NO POLICY EXISTS YET.
+A read-only audit of the five WhatsApp-flow tables found that NOTHING deletes or
+archives a row anywhere in the system: no DELETE/TRUNCATE in any migration, no
+pg_cron job in the migration set, no TTL trigger, no archival table. The only
+cleanup code in the repo is test-suite-only (test/helpers/db.ts, keyed on the
++19995550 fake-phone prefix, test-db only). vercel.json declares exactly one cron
+(/api/jobs/tick, every minute) and that worker contains no deletion.
+  * daily_logs, daily_log_edits, jobs, processed_messages — all grow unbounded.
+  * whatsapp_sessions does NOT: uq_whatsapp_sessions_phone_number (012:34) caps it
+    at ONE row per phone number, reused in place via ON CONFLICT. Its ceiling is
+    distinct numbers ever seen, not messages or days. Needs no retention policy.
+  * whatsapp_sessions.expires_at is WRITTEN AND NEVER READ — no WHERE, no
+    comparison, in SQL or TypeScript. The real session lifecycle is
+    quoco_same_ist_day(p_now, updated_at) (018:105), an IST calendar-day
+    comparison. So BOT-07's "30-minute TTL" is not enforced today; that is not a
+    bug (both same-day branches of the spec resume identically, so the TTL has no
+    behavioural consequence to enforce) but it becomes load-bearing the moment a
+    resume-specific message ships per Rule 3.6.
+  * processed_messages is the fastest-growing table: one row per INBOUND message,
+    ~13/engineer/site-day at full Spine (~195k/yr at 50 engineers). Rows are
+    permanently useless after ~24h — Twilio retries within minutes, and the
+    idempotency check never SELECTs (it inserts and catches 23505). 011:20-23
+    already suggests a 7-day prune; nothing implements it. NOTE: there is no index
+    on created_at, so that prune would seq-scan the whole table — BRIN on
+    created_at is the right support (append-only, physically time-ordered), not a
+    btree.
+THREE DIFFERENT TREATMENTS, do not conflate: processed_messages is pure hygiene
+(prune freely); jobs is hygiene with a caveat (prune 'succeeded', KEEP 'failed' —
+the NFR-17 dead-letter record); daily_logs + daily_log_edits are NOT hygiene at
+all — they are the business record behind every DPR ever sent, and 019 makes
+daily_log_edits the SOURCE OF TRUTH the future generator must consult. Retention
+there is a compliance question (how long a contractor must retain daily progress
+records), never a storage one.
+Migration 021 came out of this audit but removes INDEX OVERHEAD ONLY — it prunes
+nothing. Full audit + growth model: docs/reviews/021-review-package.md.
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
