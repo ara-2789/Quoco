@@ -1,0 +1,148 @@
+-- =============================================================================
+-- 021_index_hygiene.sql
+-- Index-only migration. Three changes, every one provably redundant or provably
+-- unusable — no judgment calls, no data mutation, exact-inverse DOWN.
+--
+-- WHAT THIS DOES
+--   1. jobs — replace idx_jobs_poll (unusable by the real claim query) with
+--      idx_jobs_claim, whose predicate the query actually implies.
+--   2. processed_messages — drop idx_processed_messages_sid, a duplicate of the
+--      index the UNIQUE constraint already creates.
+--   3. whatsapp_sessions — drop idx_whatsapp_sessions_phone_number, superseded
+--      by 012's uq_whatsapp_sessions_phone_number and never cleaned up.
+--
+-- ORIGIN: the 2026-07-27 retention/index audit. All three are latent — invisible
+-- at today's volumes (jobs 0 rows, processed_messages 5, whatsapp_sessions 1) and
+-- degrading from the moment real traffic starts. Applying now is deliberate: at
+-- these sizes the locks below are held for microseconds, whereas at ~1M
+-- processed_messages rows the same DROP would stall webhook inserts and
+-- CONCURRENTLY (which forbids the transaction wrapper) would become mandatory.
+--
+-- NOT IN SCOPE (deliberate, recorded so it isn't mistaken for an oversight):
+--   * idx_jobs_type — non-partial, indexes every job forever, and nothing queries
+--     by type today. DEFERRED, not dropped: unlike the three above it is merely
+--     UNUSED, not redundant or broken, and a jobs-by-type admin view is plausible.
+--     Dropping it is a product bet; this file contains only provable facts.
+--   * Orphaned 'running' jobs — claimJobs only reads pending/failed, so a worker
+--     that dies between status='running' (jobs.ts:94) and completeJob/failJob
+--     strands that job permanently. Real bug, unrelated to indexing. NOTE: this
+--     file drops the only index that covered 'running'; that is NOT a regression
+--     (nothing queries 'running' — grep: written only), but a future stale-claim
+--     sweep will need its own index and must not assume one survives here.
+--
+-- NO PITR DEPENDENCY (CLAUDE.md §0): rollback is the exact-inverse DOWN block at
+-- the end of this file, not a restore. No row is created, altered, or deleted.
+-- =============================================================================
+
+BEGIN;
+
+-- -----------------------------------------------------------------------------
+-- 1. jobs: replace the unusable poll index with one matching the real query.
+--
+-- THE DEFECT. idx_jobs_poll (006:17) is:
+--     (status, next_retry_at) WHERE status IN ('pending','running')
+-- but claimJobs (lib/queue/jobs.ts:70-77) issues:
+--     WHERE status IN ('pending','failed')
+--       AND next_retry_at <= now()
+--       AND attempt_count < 5
+--     ORDER BY next_retry_at ASC LIMIT 3
+-- A partial index is usable only when the query predicate IMPLIES the index
+-- predicate. status IN ('pending','failed') does not imply status IN
+-- ('pending','running') — 'failed' rows are absent from the index, so scanning it
+-- would return wrong results. Postgres can split the IN into OR branches and
+-- BitmapOr them, and the status='pending' branch WOULD qualify, but the
+-- status='failed' branch has no usable index; Postgres will not mix an index path
+-- with a seq-scan path in a BitmapOr, so the whole node degrades to a Seq Scan.
+-- That scan runs every 60 seconds forever (vercel.json cron '* * * * *') over a
+-- table nothing prunes. Invisible today at 0 rows; linear from the first job.
+--
+-- WHY REPLACE RATHER THAN WIDEN THE PREDICATE. Widening to
+-- WHERE status IN ('pending','failed','running') would make the index usable and
+-- would still be wrong, for two reasons:
+--   (a) Column order. Leading with `status` (2-3 distinct values, no selectivity)
+--       cannot serve ORDER BY next_retry_at across multiple statuses without a
+--       sort. Leading with next_retry_at lets ONE index scan serve the range
+--       filter, the ORDER BY, and the LIMIT — the walk stops after 3 rows.
+--   (b) The dead-letter trap, which is the deciding reason. failJob
+--       (jobs.ts:148-158) leaves an exhausted job at status='failed',
+--       attempt_count=5, next_retry_at=<moment of death>. Those rows are
+--       permanent by design (NFR-17) and nothing deletes them. They satisfy
+--       status + next_retry_at forever, and their PAST next_retry_at sorts them
+--       to the FRONT of an ascending scan — so a status-only predicate would make
+--       every poll walk the entire accumulated dead-letter set before reaching
+--       live work. That is the same linear degradation in better camouflage: the
+--       planner would use the index, and it would slow down on every permanent
+--       failure. Excluding attempt_count at the PREDICATE bounds this index by
+--       LIVE work instead of by lifetime failures.
+--
+-- LOAD-BEARING — DO NOT CHANGE IN ISOLATION. The `attempt_count < 5` below MUST
+-- stay numerically equal to MAX_ATTEMPTS in lib/queue/jobs.ts:26. If that constant
+-- moves and this predicate does not, the query predicate stops implying the index
+-- predicate and this index SILENTLY becomes unusable — reintroducing the exact
+-- defect being fixed here, with no error and no failing behaviour to notice.
+-- test/unit/jobs-claim-index.test.ts reads both files and fails on drift. This is
+-- the same two-independent-gates-that-must-agree discipline as 019's duplicated
+-- CHECK/CASE column whitelist; the comment on each side names the other.
+--
+-- (The long-term shape that removes this coupling entirely — giving exhausted
+--  jobs a distinct terminal status so the predicate needs no integer at all —
+--  changes the status CHECK and NFR-17 semantics, so it is deliberately NOT in
+--  this index-only migration. Revisit when dead-letter Sentry alerting is built.)
+-- -----------------------------------------------------------------------------
+DROP INDEX IF EXISTS idx_jobs_poll;
+
+CREATE INDEX idx_jobs_claim ON public.jobs (next_retry_at)
+  WHERE status IN ('pending', 'failed') AND attempt_count < 5;
+
+-- -----------------------------------------------------------------------------
+-- 2. processed_messages: drop the duplicate SID index.
+--
+-- 011:11 declares message_sid TEXT NOT NULL UNIQUE, which creates its own btree
+-- (processed_messages_message_sid_key). 011:17 then creates a SECOND index on the
+-- same single column; its own comment concedes the duplication ("UNIQUE constraint
+-- already creates one, but explicit for clarity"). Two identical btrees on one
+-- column means every INSERT maintains both.
+--
+-- SAFE BECAUSE: isNewMessage (lib/whatsapp/idempotency.ts:15-27) never SELECTs —
+-- it inserts and catches 23505. That unique violation is raised by the CONSTRAINT,
+-- whose backing index is NOT touched here. Dropping the duplicate cannot affect
+-- idempotency.
+--
+-- WHY IT MATTERS MOST HERE: processed_messages takes one INSERT per inbound
+-- WhatsApp message — the highest-frequency write in the system, inside the
+-- 15-second webhook budget — and is the fastest-growing table (~13 rows per
+-- engineer per site-operating day at full Spine).
+-- -----------------------------------------------------------------------------
+DROP INDEX IF EXISTS idx_processed_messages_sid;
+
+-- -----------------------------------------------------------------------------
+-- 3. whatsapp_sessions: drop the phone_number index superseded by 012's UNIQUE.
+--
+-- 003:49 created a plain index on phone_number. 012:34 later created
+-- uq_whatsapp_sessions_phone_number (UNIQUE) on the same column — required by the
+-- ON CONFLICT (phone_number) upsert every session RPC depends on — and did not
+-- remove the older plain one. The UNIQUE index fully covers every lookup the
+-- plain index could serve.
+--
+-- SAFETY-CRITICAL DISTINCTION: this drops idx_whatsapp_sessions_phone_number
+-- (003, plain). It does NOT touch uq_whatsapp_sessions_phone_number (012, UNIQUE),
+-- which backs ON CONFLICT in 012/013/014/018. Confusing the two would break the
+-- morning flow outright. The post-apply probe asserts the UNIQUE one is present.
+-- -----------------------------------------------------------------------------
+DROP INDEX IF EXISTS idx_whatsapp_sessions_phone_number;
+
+COMMIT;
+
+-- =============================================================================
+-- DOWN / ROLLBACK (reference — index-only, exact inverse, no PITR dependency)
+-- -----------------------------------------------------------------------------
+-- BEGIN;
+--   DROP INDEX IF EXISTS idx_jobs_claim;
+--   CREATE INDEX idx_jobs_poll ON public.jobs (status, next_retry_at)
+--       WHERE status IN ('pending', 'running');
+--   CREATE INDEX idx_processed_messages_sid
+--       ON public.processed_messages (message_sid);
+--   CREATE INDEX IF NOT EXISTS idx_whatsapp_sessions_phone_number
+--       ON public.whatsapp_sessions (phone_number);
+-- COMMIT;
+-- =============================================================================
