@@ -495,10 +495,27 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        dependency (rollback does not lean on a backup). No external-reviewer gate
        (018 precedent). Package: docs/reviews/021-review-package.md.
 
-       APPLIED TO PRODUCTION: **PENDING** as of 2026-07-27. Prod pre-apply frame
-       captured (all three drop targets present, definitions matching their
-       migration files). This entry is updated to "applied" only AFTER the ledger
-       INSERT confirms, per the runbook — no "applied" line before it is true (§0).
+       APPLIED TO PRODUCTION VIA SQL EDITOR on 2026-07-27, from the PINNED commit
+       19b1e39 (git show 19b1e39:supabase/migrations/021_index_hygiene.sql; sha256
+       bcf16a2436a6f36841264b6cdc574b992e1f1303774d2814f8946011acf83802). CLI
+       28P01-blocked, SQL Editor is the deliberate fallback (as with 013-020).
+       No PITR observation gate — 021's rollback does not depend on a backup
+       (exact-inverse DOWN, zero data mutation); stated rather than skipped
+       silently, per §0. Pre-apply frame captured on prod first (10 rows, all
+       three drop targets present, definitions matching their migration files) —
+       prod was not drifted, so the apply exercised exactly the rehearsed paths.
+       Post-apply verification (runbook steps D-F, all observed on apply day):
+       index inventory matches the expected post-state — idx_jobs_claim present,
+       the three drop targets absent, and the two must-survive indexes
+       (uq_whatsapp_sessions_phone_number, processed_messages_message_sid_key)
+       both still present. Ledger tracked via manual INSERT into
+       supabase_migrations.schema_migrations (version 021, name index_hygiene),
+       count observed 17 -> 18 rows across the INSERT (before/after observation,
+       not an asserted number). types re-regenerated from prod post-apply = ZERO
+       diff vs the committed types/database.ts (confirmation gate passed).
+       DEFERRED, ~1 week out: re-read pg_stat_user_indexes on prod for
+       idx_jobs_claim.idx_scan. It will read 0 until the first real job type
+       ships (the queue has no handlers yet) — expected, not a failure.
 
 DOC GAP (noted 2026-07-27, not fixed here): this MIGRATION ORDER list has no
 entries for 011, 012, 014, 019 or 020, though all are applied to prod. They are
