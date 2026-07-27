@@ -663,6 +663,12 @@ return zero.
 
 ## 10. PROD apply — runbook (NOT YET EXECUTED)
 
+**DATED CORRECTION (2026-07-27).** APPLIED 2026-07-27 — see `docs/schema.md` for
+confirmation. This runbook section and §11's "NOT APPLIED" status are now
+historical; the migration is live on prod. The body below is left exactly as
+reviewed (pinned, not rewritten) — read it as the plan that was executed, not as
+outstanding work.
+
 Instance of `docs/migration-runbook-template.md`. Strict alternation; owner
 confirms at each step. Point the SQL Editor at **prod** (`jvxwqignooseazzmwhvl`)
 and confirm the project ref before any write step.
@@ -738,6 +744,10 @@ that is expected, not a failure.
 ---
 
 ## 11. Summary
+
+**DATED CORRECTION (2026-07-27).** The "Prod status" row below is historical —
+021 was APPLIED to prod on 2026-07-27; see `docs/schema.md` for confirmation. The
+row is left unedited because this table is the pinned pre-apply record.
 
 | | |
 |---|---|
