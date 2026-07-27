@@ -32,10 +32,10 @@ the literal SQL Editor output captured during the rehearsal. The rehearsal was
 executed by the owner; the assistant that drafted this package never had planner
 access (no PostgREST plan endpoint on either project, no `psql`, no DB password
 — see §2.0), so the frames were captured by the owner and pasted in verbatim.
-Earlier drafts of this package carried `PASTE RAW CAPTURE` placeholders with the
-*reported* values stated alongside; those placeholders are now replaced by the
-frames themselves, per §0 ("pinned, not paraphrased"). No value below is a
-summary, a reconstruction, or a paraphrase.
+Earlier drafts of this package carried placeholder blocks with the *reported*
+values stated alongside; those placeholders are now replaced by the frames
+themselves, per §0 ("pinned, not paraphrased"). No value below is a summary, a
+reconstruction, or a paraphrase.
 
 ---
 
