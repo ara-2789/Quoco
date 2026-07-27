@@ -128,14 +128,49 @@ Standard policy for every tenant-scoped table:
 - expires_at TIMESTAMPTZ DEFAULT now() + INTERVAL '30 minutes' (BETA)
 - updated_at TIMESTAMPTZ DEFAULT now() (BETA)
 
+### processed_messages — migration 011 (LIVE). Webhook SID idempotency.
+- id UUID PK, created_at TIMESTAMPTZ DEFAULT now()
+- message_sid TEXT NOT NULL UNIQUE — Twilio's message SID
+- processed_at TIMESTAMPTZ DEFAULT now()
+- Purpose: a repeated Twilio SID must be a no-op (no duplicate rows, no
+  duplicate replies). isNewMessage (lib/whatsapp/idempotency.ts) never SELECTs —
+  it INSERTs and catches the 23505 raised by the UNIQUE CONSTRAINT. The
+  constraint, not any secondary index, is load-bearing: 021 dropped the
+  duplicate idx_processed_messages_sid and idempotency was unaffected.
+- NO tenant_id — a deviation from CLAUDE.md §4's every-table rule. The row is
+  webhook-level dedupe keyed on a globally-unique Twilio SID and holds no tenant
+  data. Recorded as an observation, not a blessing; whether it should be
+  tenant-scoped is an open decision, not something this doc settles.
+- RLS: enabled on prod OUT-OF-BAND (no migration source) — see the out-of-band
+  registry in CLAUDE.md §10. A rebuild comes up RLS-DISABLED.
+- GROWTH: fastest-growing table in the system (~13 rows per engineer per
+  site-day). Rows are useless after ~24h; 011:20-23 suggests a 7-day prune and
+  nothing implements it. A prune needs BRIN on created_at (append-only,
+  time-ordered), not btree — there is no index on created_at today.
+
 ### daily_logs
 - id, created_at, tenant_id (BETA)
 - project_id UUID NOT NULL REFERENCES projects(id) (BETA)
 - engineer_id UUID NOT NULL REFERENCES users(id) (BETA)
 - log_date DATE NOT NULL DEFAULT CURRENT_DATE (BETA)
 - morning_plan TEXT (BETA)
-- morning_manpower_planned JSONB — [{trade, planned_count}] (BETA)
-- morning_equipment JSONB — [{type, count, owned_or_hired, daily_hire_cost}] (BETA)
+- morning_manpower_planned JSONB — an OBJECT, not a bare array (BETA):
+  {planned_total: number|null, by_trade: [{trade, planned_count}], raw_text}
+- morning_equipment JSONB — an OBJECT, not a bare array (BETA):
+  {items: [{type, count, owned_or_hired, daily_hire_cost, raw}], none: boolean,
+   raw_text}
+  [DATED CORRECTION 2026-07-27: both lines above previously showed the BARE
+  ARRAYS the bot-flows spec illustrates. That was never what shipped — migration
+  018 writes the OBJECT forms above (see 018's STORAGE SHAPE block in MIGRATION
+  ORDER), verified against the live parsers lib/whatsapp/flows/parsers/labour.ts
+  (LabourParse) and equipment.ts (EquipmentParse). The object form is what makes
+  a "no equipment" turn representable — none:true with items:[] — while still
+  preserving the engineer's raw answer in raw_text.
+  READERS MUST read morning_equipment->'items', NOT the column as an array, and
+  treat empty as jsonb_array_length(morning_equipment->'items') = 0. Reading
+  either column as a top-level array returns nothing and fails silently. As of
+  2026-07-27 no reader exists yet (evening Q5 BOT-22 echo, DPR, dashboard are
+  all unbuilt) — this correction lands BEFORE the first one is written.]
 - morning_execution_plan TEXT (BETA)
 - morning_dependencies JSONB — [{item, responsible_party}] (BETA)
   NOTE: was TEXT in original 001 — corrected to JSONB in 006
@@ -163,6 +198,39 @@ Standard policy for every tenant-scoped table:
 - morning_submitted_via TEXT, evening_submitted_via TEXT, weather TEXT,
   dpr_approved_by UUID (all FUTURE)
 - UNIQUE(project_id, engineer_id, log_date)
+
+### daily_log_edits — migration 019 (LIVE). PM correction audit trail.
+- id UUID PK, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+- tenant_id UUID NOT NULL REFERENCES tenants(id)
+- daily_logs_id UUID NOT NULL REFERENCES daily_logs(id)
+- project_id UUID NOT NULL REFERENCES projects(id)
+- log_date DATE NOT NULL
+- column_name TEXT NOT NULL CHECK — the 9 SCALAR columns from 017's grant:
+  is_holiday, holiday_reason, weather, morning_plan, morning_execution_plan,
+  evening_output, evening_schedule_met, evening_schedule_miss_reason,
+  evening_workers_on_site. The 8 JSONB-array columns are deliberately NOT
+  correctable in v1 (a different UI problem, deferred pass).
+- old_value JSONB, new_value JSONB
+- edited_by UUID NOT NULL REFERENCES users(id)
+- source TEXT NOT NULL DEFAULT 'pm_inline_correction' CHECK(pm_inline_correction)
+- Indexes: idx_daily_log_edits_daily_logs_id; idx_daily_log_edits_project_date
+- SOURCE OF TRUTH, not just an audit log: a future dpr_generate handler MUST
+  consult this table for post-check-in edits. A DPR generated from daily_logs
+  alone is stale by design.
+- Written only via correct_daily_log() — the column write and the audit row are
+  one transaction. RLS enabled; anon and authenticated are stripped of
+  INSERT/UPDATE/DELETE, so there is no path that edits a log without an audit row.
+- correct_daily_log RETURNS UUID and RETURNS NULL on a no-op (019:251). The
+  GENERATED TYPE says `string`, not `string | null` — callers must handle null
+  regardless of what types/database.ts claims.
+- LOAD-BEARING DUPLICATION — DO NOT "SIMPLIFY": the column_name CHECK above
+  duplicates the RPC's internal CASE whitelist on purpose. Two independent gates
+  that must agree; if one is widened and the other is not, the write fails CLOSED
+  rather than silently persisting an un-whitelisted column. Same discipline as
+  021's index-predicate/MAX_ATTEMPTS coupling test.
+- RETENTION: this and daily_logs are NOT hygiene tables — they are the business
+  record behind every DPR ever sent. Retention here is a compliance question,
+  never a storage one (CLAUDE.md §10).
 
 ### dprs — NEW in migration 007 (do not create until Week 4)
 - id, created_at, tenant_id UUID NOT NULL (BETA)
@@ -310,6 +378,46 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        - whatsapp_sessions.phone_number UNIQUE
        - partial UNIQUE INDEX on users(whatsapp_number) WHERE status='active'
 
+011 — processed_messages: WhatsApp webhook SID idempotency (LIVE).
+       - CREATE TABLE processed_messages (see the table section above) with
+         message_sid TEXT NOT NULL UNIQUE, plus idx_processed_messages_sid — a
+         duplicate of the index the UNIQUE constraint already creates, which its
+         own comment concedes and which 021 later drops.
+       NUMBERING: took 011 rather than 008/009/010 because 007/008/009 were
+       RESERVED for planned work (auth surgery / dprs / constraints) and this
+       table depends on none of them (011's header states this). There has never
+       been a migration 010 — the number was skipped, not lost.
+       APPLIED TO PRODUCTION: yes — present in prod's ledger (proven by the count
+       arithmetic under 019/021 below). EXACT DATE NOT RECONSTRUCTED: no apply
+       date or method is recorded anywhere in the repo; 011 predates the
+       pinned-artifact discipline (standing only from 017). BOUNDS: file
+       committed 2026-07-05; the ledger stood at 11 rows on 2026-07-10 (015
+       package #6) which is exactly 001-007 + 011-014, and CLAUDE.md §0 records
+       007 being applied out-of-order "after 011-014" — so 011 was live on prod
+       by 2026-07-10. Do not narrow this to a specific day without evidence.
+
+012 — atomic WhatsApp session acquire + transition + drain (BOT-07/21/26) (LIVE).
+       - CREATE OR REPLACE acquire_and_transition_session, drain_next_pending_flow,
+         quoco_same_ist_day. The last one is the REAL session lifecycle — an IST
+         calendar-day comparison — NOT whatsapp_sessions.expires_at, which is
+         written and never read (see the whatsapp_sessions note above).
+       - CREATE UNIQUE INDEX uq_whatsapp_sessions_phone_number — required by the
+         ON CONFLICT (phone_number) upsert every session RPC depends on
+         (012/013/014/018). This is NOT the plain 003 index that 021 drops;
+         confusing the two breaks the morning flow outright.
+       - PULLED FORWARD from the blocked 007/009, all guarded IF NOT EXISTS:
+         whatsapp_sessions.pending_flows, users.status, users.messaging_blocked.
+         The webhook's BOT-08/ENG-02 gate needed them before 007 could clear
+         Checkpoint 1. This is why those columns exist on prod despite 007's
+         applied body not being the thing that delivered them.
+       SECURITY ORIGIN: the over-broad default PUBLIC EXECUTE grant on the
+       SECURITY DEFINER functions dates from here — the hole migration 020 closes
+       (CLAUDE.md §10 SECURITY INCIDENT).
+       APPLIED TO PRODUCTION on 2026-07-05 — the one date in this group that IS
+       pinned, twice and independently: CLAUDE.md §10 ("live since 012 /
+       2026-07-05") and docs/reviews/020-review-package.md ("anon-callable since
+       012 (2026-07-05)"). Apply METHOD not recorded.
+
 013 — session-transition test lock probe (CREATE OR REPLACE of
        acquire_and_transition_session, body-only; signature unchanged from
        012's 7 params). Adds a test-only `_test_lock_acquired_at` diagnostic
@@ -330,6 +438,23 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        013 still lacks a ledger row, backfill it the same way (manual INSERT) —
        do NOT wait on the CLI. Verify 013's row presence by direct observation
        before assuming either state (§0: a record is not the thing).
+
+014 — morning flow Pass 1: apply_morning_flow_turn (LIVE). FUNCTION-ONLY, no DDL.
+       The SINGLE transactional RPC that applies one inbound turn of the morning
+       flow. Pass 1 is a deliberate SKELETON — it proves the shape on the two
+       free-text questions only: Q1 "plan of action" -> daily_logs.morning_plan,
+       Q4 "execution method/sequence" -> daily_logs.morning_execution_plan.
+       Q2/Q3 land in 018 (which extends this same function 8-arg -> 12-arg via
+       DROP-FIRST); Q5/Q6 are Pass 3, unbuilt.
+       WHY IT IS ONE FUNCTION: the Supabase JS client cannot hold a transaction
+       open across multiple PostgREST calls — each .rpc()/.from() commits
+       independently — so the whole turn (session lock, step advance, daily_logs
+       write) must be one server-side call or it is not atomic.
+       APPLIED TO PRODUCTION: yes. EXACT DATE NOT RECONSTRUCTED — same gap as
+       011. BOUNDS: file committed 2026-07-07; ledger tracking for BOTH 013 and
+       014 was repaired on 2026-07-10 with schema_migrations verified at 11 rows
+       (015 package #6); 007 was applied after 011-014 on 2026-07-10. So 014 was
+       live on prod by 2026-07-10.
 
 015 — users_update column grant — SECURITY (HIGH-1, review §11a).
        REVOKE UPDATE ON public.users FROM authenticated; re-GRANT column-wise on
@@ -462,6 +587,52 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        suite 91/91 green (incl. 13 morning-flow integration tests + the BOT-07
        counter-wipe case) on test-db exfccwlrhoutkgrlikod.
 
+019 — daily_log_edits + correct_daily_log: Rule 4.3 inline correction (DASH-03).
+       - CREATE TABLE daily_log_edits (see the table section above) — RLS enabled,
+         anon/authenticated stripped of INSERT/UPDATE/DELETE, two indexes.
+       - correct_daily_log RPC — applies the daily_logs column write AND the audit
+         row in one transaction. EXECUTE revoked from PUBLIC, granted narrowly.
+         RETURNS UUID; RETURNS NULL on a no-op (019:251) even though the generated
+         type says `string`.
+       SCALAR-ONLY v1: the 9 text/boolean/integer columns from 017's grant. The 8
+       JSONB-array columns are deliberately NOT correctable — deferred pass.
+       LOAD-BEARING DUPLICATION: the table CHECK's column list duplicates the RPC's
+       CASE whitelist ON PURPOSE — two gates that must agree, so drift fails CLOSED.
+       Do not "simplify" it away. 021's MAX_ATTEMPTS coupling test follows this.
+       APPLIED TO PRODUCTION: yes — PROVEN BY LEDGER ARITHMETIC, since no apply
+       frame was pinned. The ledger stood at 15 rows after 017 (017 entry); the
+       021 apply observed 17 -> 18. 15 + 019 + 020 = 17 is the only way to reach
+       17, so both 019 and 020 have rows. EXACT DATE NOT RECONSTRUCTED. BOUNDS:
+       after 2026-07-25 (020's apply required 019 to be OFF prod at that moment —
+       the merge-order gate, 020 package §8 Step 2) and before 021's apply on
+       2026-07-27. The 019 package records the round-3 rehearsal (2026-07-26) but
+       no prod apply. Package: docs/reviews/019-review-package.md.
+
+020 — function EXECUTE hardening. SECURITY (HIGH, PRE-EXISTING).
+       Every public SECURITY DEFINER function carried PostgreSQL's default PUBLIC
+       EXECUTE grant, live since 012 (2026-07-05). PUBLIC includes anon, so the
+       public anon key could reach them through PostgREST /rpc/. 020 REVOKEs from
+       PUBLIC and re-GRANTs narrowly across all seven.
+       EXPLOITABILITY WAS NARROWER THAN "SEVEN" — do not overstate it. Three were
+       genuinely exploitable (acquire_and_transition_session,
+       apply_morning_flow_turn, drain_next_pending_flow — parameter-trusting, they
+       take p_user_id/p_tenant_id as caller input and derive no identity from
+       auth.uid(), so anon could forge check-in data for any engineer, bypassing
+       the webhook, Twilio HMAC and idempotency). complete_onboarding is bounded
+       (self-guards on auth.uid()). The trigger/event-trigger-returning ones
+       (handle_new_user, rls_auto_enable) were NEVER PostgREST-callable — hardened
+       for defense-in-depth only. Full breakdown: CLAUDE.md §10.
+       FIRST migration to reference rls_auto_enable — an out-of-band prod object
+       with no migration source, brought under version control here (see the
+       out-of-band registry, CLAUDE.md §10).
+       APPLIED TO PRODUCTION on 2026-07-25 via `supabase db push` — the EXCEPTION
+       among 013-021, which all used the SQL Editor. Prod ref jvxwqignooseazzmwhvl,
+       PITR window observed pre-apply the same day (§0). Pre-flight: 019 was
+       removed from local first so it could not ride along (merge-order gate).
+       Post-apply proacl prove-closed pinned; 6 of 6 prod checks complete, the last
+       (Smoke C, webhook-driven apply_morning_flow_turn) closed 2026-07-26 with a
+       full Q1-Q4 flow. Package: docs/reviews/020-review-package.md.
+
 021 — index hygiene + claim-poll index. INDEX-ONLY: no table/column DDL, no
        function bodies, no ACL/RLS change, ZERO data mutation. Three changes,
        each provably redundant or provably unusable:
@@ -517,14 +688,29 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        idx_jobs_claim.idx_scan. It will read 0 until the first real job type
        ships (the queue has no handlers yet) — expected, not a failure.
 
-DOC GAP (noted 2026-07-27, not fixed here): this MIGRATION ORDER list has no
-entries for 011, 012, 014, 019 or 020, though all are applied to prod. They are
-described elsewhere (011/012/014 in the WHATSAPP BOT table notes; 019/020 in
-CLAUDE.md §10 and their review packages), but the list below is not a complete
-index of the migration set and should not be read as one. Backfilling those five
-entries needs their real apply dates and ledger positions reconstructed from the
-review packages — a separate pass, deliberately not bundled into an index-only
-migration's PR.
+DOC GAP — RESOLVED 2026-07-27 (superseding the note first raised the same day).
+Entries for 011, 012, 014, 019 and 020 are now present above, so this list IS a
+complete index of the migration set: 001-007 and 011-021, with 008/009 listed as
+PLANNED-NOT-BUILT (no files exist) and 010 never having existed. Two corrections
+to what the original note claimed: (a) it said 011/012/014 were "described
+elsewhere in the WHATSAPP BOT table notes" — they were NOT; every mention of them
+was an incidental citation from another migration's entry, so the gap was larger
+than recorded; (b) it assumed apply dates could be reconstructed from the review
+packages. Only 012 (2026-07-05) and 020 (2026-07-25) could be. 011, 014 and 019
+carry EXPLICIT "date not reconstructed" markers with evidence bounds instead of
+invented dates (§0). Note that supabase_migrations.schema_migrations cannot
+supply them either: every ledger INSERT used across 013-021 writes only
+(version, name, statements), and this project numbers versions '001'-'021' rather
+than as timestamps — so there is no date in the ledger to read. Recovering exact
+days would mean the Supabase SQL Editor query history, not the database.
+
+STILL-OPEN DOC DEBT (logged 2026-07-27, deliberately not fixed in this pass):
+line 122's "UNIQUE added in migration 008" is stale (012 delivered it, and 012's
+own header says schema.md assigned it to 009 — the two docs disagree about a
+reserved number for a thing that shipped elsewhere); the "WHATSAPP BOT (5 tables
+— active)" header now sits above 8 subsections; and `### dprs` is documented in
+full but was never created on prod (see the 2026-07-15 correction under
+daily_logs.dpr_content).
 
 NOTE ON CLI MIGRATION TRACKING: migrations 001-005 were originally applied
 via the Supabase dashboard SQL editor, not the CLI, so the CLI's remote
