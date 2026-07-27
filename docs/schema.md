@@ -114,12 +114,30 @@ Standard policy for every tenant-scoped table:
 
 ---
 
-## WHATSAPP BOT (5 tables — active)
+## WHATSAPP BOT (8 documented — 4 live, 3 Fast-Follow, 1 never created)
+[DATED CORRECTION 2026-07-27: this header read "5 tables — active". Counted
+directly, 8 ### subsections sit under it and they are NOT all live, so the old
+label was wrong on both the number and the "active". Breakdown, per each
+subsection's own status line: LIVE = whatsapp_sessions, processed_messages,
+daily_logs, daily_log_edits. FAST-FOLLOW (table exists, flow unbuilt) =
+safety_incidents, invoices, hindrances. NEVER CREATED = dprs. Re-count this
+label whenever a subsection is added or removed.]
 
 ### whatsapp_sessions
 - id, created_at, tenant_id (BETA)
 - user_id UUID REFERENCES users(id) (BETA)
-- phone_number TEXT NOT NULL — UNIQUE added in migration 008 (BETA)
+- phone_number TEXT NOT NULL — UNIQUE delivered by migration 012, LIVE (BETA):
+  uq_whatsapp_sessions_phone_number (012:34, guarded IF NOT EXISTS)
+  [DATED CORRECTION 2026-07-27: this line read "UNIQUE added in migration 008",
+  wrong on both halves. (a) 008 never reserved it — THIS FILE's own 009 entry is
+  where whatsapp_sessions.phone_number UNIQUE was reserved, and 012's header
+  agrees ("whatsapp_sessions.phone_number UNIQUE -> planned migration 009"), so
+  the "008" was an internal inconsistency, not a competing plan. (b) Neither
+  reserved migration delivered it anyway: 008 and 009 are both still UNBUILT (no
+  files exist). 012 created the UNIQUE index early and guarded it, because
+  ON CONFLICT (phone_number) — which every session RPC depends on — cannot work
+  without it. Do NOT confuse this with the plain 003 index on the same column;
+  that one was redundant and 021 dropped it.]
 - current_flow TEXT CHECK(morning/evening/safety/invoice/hindrance) (BETA)
 - current_step INTEGER DEFAULT 0 (BETA)
 - context JSONB DEFAULT '{}' (BETA)
@@ -232,7 +250,22 @@ Standard policy for every tenant-scoped table:
   record behind every DPR ever sent. Retention here is a compliance question,
   never a storage one (CLAUDE.md §10).
 
-### dprs — NEW in migration 007 (do not create until Week 4)
+### dprs — ⚠️ DOES NOT EXIST ON PROD. PLANNED TABLE, NEVER CREATED.
+> **⚠️ READ BEFORE USING ANYTHING BELOW.** No migration has ever created this
+> table. The columns documented here are a DESIGN, not a live schema — querying
+> `dprs` on prod fails, and nothing in the codebase reads or writes it.
+> The header previously read "NEW in migration 007 (do not create until Week 4)";
+> 007 is applied and is IDENTITY-SURGERY ONLY — the dprs/drop work was evicted
+> from it at checkpoint-1 review and never executed. See the 007 entry in
+> MIGRATION ORDER, and the corroborating 2026-07-15 correction under
+> `daily_logs.dpr_content` above ("no dprs table was ever created", confirmed via
+> the 017 audit's Probe 3 + generated types). Today the table is assigned to
+> migration **008**, which is UNBUILT (no file exists).
+> CONSEQUENCE: DPR content currently lives in `daily_logs.dpr_content` (TEXT,
+> live on prod), NOT here. Anything built before 008 ships must use that column.
+> [Marker added 2026-07-27 — the section was fully specified with no indication
+> it was unbuilt, which reads as a live table at a glance.]
+
 - id, created_at, tenant_id UUID NOT NULL (BETA)
 - project_id UUID NOT NULL REFERENCES projects(id) (BETA)
 - log_date DATE NOT NULL (BETA)
@@ -375,8 +408,13 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
 008 — dprs table + resolutions table + new columns (Week 4, before DPR work)
 
 009 — constraints (run LAST — can fail if 007/008 incomplete):
-       - whatsapp_sessions.phone_number UNIQUE
+       - whatsapp_sessions.phone_number UNIQUE — ALREADY DELIVERED by 012
+         (012:34, IF NOT EXISTS). NOT outstanding work. If 009 is ever authored
+         it MUST keep this step idempotent or it collides with what 012 created
+         (012's header states the requirement).
        - partial UNIQUE INDEX on users(whatsapp_number) WHERE status='active'
+         — still outstanding. Note this is users.whatsapp_number, a DIFFERENT
+         column from whatsapp_sessions.phone_number above.
 
 011 — processed_messages: WhatsApp webhook SID idempotency (LIVE).
        - CREATE TABLE processed_messages (see the table section above) with
@@ -704,13 +742,23 @@ supply them either: every ledger INSERT used across 013-021 writes only
 than as timestamps — so there is no date in the ledger to read. Recovering exact
 days would mean the Supabase SQL Editor query history, not the database.
 
-STILL-OPEN DOC DEBT (logged 2026-07-27, deliberately not fixed in this pass):
-line 122's "UNIQUE added in migration 008" is stale (012 delivered it, and 012's
-own header says schema.md assigned it to 009 — the two docs disagree about a
-reserved number for a thing that shipped elsewhere); the "WHATSAPP BOT (5 tables
-— active)" header now sits above 8 subsections; and `### dprs` is documented in
-full but was never created on prod (see the 2026-07-15 correction under
-daily_logs.dpr_content).
+DOC DEBT — ALL THREE CLOSED 2026-07-27 (logged earlier the same day, fixed in a
+follow-up pass). For the record, and because two of the three turned out to be
+worse than logged:
+  1. The stale phone_number cross-reference is corrected in place (see the dated
+     correction under whatsapp_sessions). It was NOT a disagreement between two
+     docs, as the debt note guessed: schema.md's own 009 entry and 012's header
+     AGREE that 009 reserved it, so the "008" was an internal inconsistency
+     inside this file. 012 delivered it early, guarded. The 009 entry above now
+     marks that bullet as already-delivered so it stops reading as pending work.
+  2. The WHATSAPP BOT header is recounted (8, with a live/Fast-Follow/never-
+     created breakdown, since "active" was as wrong as "5").
+  3. `### dprs` now carries a prominent DOES-NOT-EXIST marker, cross-referenced
+     to the 2026-07-15 dpr_content correction and to 007's identity-surgery-only
+     scope. Its old header ("NEW in migration 007") was doubly stale — 007 is
+     applied and never created it; the table is now assigned to unbuilt 008.
+No doc debt is currently logged against this file. Add the next one here rather
+than leaving it only in a session transcript.
 
 NOTE ON CLI MIGRATION TRACKING: migrations 001-005 were originally applied
 via the Supabase dashboard SQL editor, not the CLI, so the CLI's remote
