@@ -266,6 +266,21 @@ the flow doc. This entry is the first written record of their ENTRY CONDITION.
 > currently stopping it from reading as settled-and-written-down.
 > No `stream` column exists on `project_members` or `daily_logs` today, so every
 > decision below needs schema work that is not yet designed or numbered.
+>
+> **NOT AN EVENING-FLOW BLOCKER — verified 2026-07-28.** Evening's v1 scope
+> (Q1-Q3, Q4 step 1, Q5, Q6) references `stream` **nowhere**: the evening spec
+> (`bot-flows.md:91-111`) contains no occurrence of stream/discipline/trade; none
+> of the eight `evening_*` columns carries or joins on it; and the
+> `quoco_evening_checkin` template takes `{{1}}` name, `{{2}}` project,
+> `{{3}}` morning plan — no stream variable. So the storage-design gap above is a
+> **fully separate, parallel task**, and evening may be built to completion
+> without it. Decision 1's "evening reads the day's snapshot" rule binds only
+> **once stream ships** — it is a constraint on that future feature, not a
+> dependency of evening v1.
+> FORWARD-COUPLING, noted so it is cheap later: evening's RPC must already SELECT
+> the current-day `daily_logs` row for Q5's auto-skip. When stream lands, the
+> snapshot can ride on that SAME read — so the evening design should keep that
+> SELECT in one place rather than inlining it per-branch.
 
 **DECIDED — 1. Mid-project reassignment uses the DAY'S SNAPSHOT, not the live
 value.** A PM may reassign an engineer's stream mid-project. When that happens,
