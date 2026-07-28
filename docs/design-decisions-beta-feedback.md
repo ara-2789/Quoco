@@ -5,7 +5,7 @@
 > is authorised by this document.** Nothing here touches migration 007 (auth
 > surgery); implementation rides in later migrations/passes as noted per item.
 >
-> Last updated: 2026-07-09.
+> Last updated: 2026-07-28 (§7 added — ad-hoc flow menu trigger condition).
 
 ---
 
@@ -205,3 +205,49 @@ corrections migration), NOT 007.**
 - **Explicitly NOT adding:**
   - percent-complete self-assessments (unreliable);
   - any new daily questions beyond the six (flow-burden ceiling).
+
+## 7. Ad-hoc flow menu — trigger condition (2026-07-28)
+
+Scope note: the ad-hoc flows themselves (Safety / Hindrance / Invoice) are
+**Fast-Follow** per CLAUDE.md §2 and have **no flow spec in `docs/bot-flows.md`
+yet** — BOT-30 is named in CLAUDE.md's Fast-Follow list but appears nowhere in
+the flow doc. This entry is the first written record of their ENTRY CONDITION.
+**Discussion only — no implementation authorised**, per this document's header.
+
+- **DECIDED — the menu fires on an unrecognized inbound ONLY when the engineer
+  is IDLE** (no active session, no current flow). Deliberately narrower than
+  "any unrecognized input, always."
+
+- **WHY the narrow form — it would otherwise collide with the re-ask mechanic.**
+  Rule 3.5 (design-principles.md) says an unparseable reply gets one example and
+  **one re-ask**, then whatever comes next is **accepted and flagged
+  low-confidence for PM review** — never a dead end. An engineer mid-flow who
+  sends a garbled equipment answer must get that re-ask nudge. If the ad-hoc
+  menu also fired on unrecognized input, the same garbled answer would have two
+  claimants and the engineer would be pushed out of the flow he was completing.
+  Gating on idle keeps the two mechanisms disjoint by construction: mid-flow
+  unrecognized input belongs to Rule 3.5, idle unrecognized input belongs to the
+  menu.
+
+- **SEPARATE MECHANISM from BOT-19 — which stays exactly as-is.** BOT-19 is a
+  *specific keyword*, *mid-flow*, queued via `pending_flows`, **safety only**.
+  The menu is *any unrecognized input*, *idle only*, and offers a choice of
+  three flows. Different trigger, different state, different scope — do not
+  merge them or let one's behaviour drift into the other.
+  - **Mechanism nuance, recorded so the rationale doesn't get misremembered:**
+    BOT-19 does **not** preempt a running flow. Per bot-flows.md ("Safety keyword
+    mid-flow → add safety to `pending_flows`, finish current flow, then process
+    safety") it **queues** safety and processes it **after** the active flow
+    completes; BOT-26 gives it priority 0, so it jumps ahead of every OTHER
+    queued item but still waits for the flow in progress. So the accurate
+    statement is "safety can't wait *behind other queued work*," not "safety
+    can't wait for the current flow to finish." Whether safety SHOULD preempt is
+    a separate question this entry does not open.
+
+- **OPEN QUESTION — NOT DECIDED.** Should `hindrance` (or similar keywords) be
+  able to interrupt an **ACTIVE** flow the way safety does, instead of only
+  firing at idle? That would need its own `pending_flows` entry type and a
+  deliberate priority decision against BOT-26's existing order
+  (safety=0, scheduled_trigger=1, other=2). It does **not** fall out of "any
+  unrecognized input" by default and must not be assumed. **Revisit when the
+  ad-hoc flows are actually being built** — not before.
