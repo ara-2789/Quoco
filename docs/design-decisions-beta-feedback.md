@@ -5,7 +5,7 @@
 > is authorised by this document.** Nothing here touches migration 007 (auth
 > surgery); implementation rides in later migrations/passes as noted per item.
 >
-> Last updated: 2026-07-28 (§7 added — ad-hoc flow menu trigger condition).
+> Last updated: 2026-07-28 (§7 ad-hoc flow menu trigger; §8 engineer stream).
 
 ---
 
@@ -251,3 +251,133 @@ the flow doc. This entry is the first written record of their ENTRY CONDITION.
   (safety=0, scheduled_trigger=1, other=2). It does **not** fall out of "any
   unrecognized input" by default and must not be assumed. **Revisit when the
   ad-hoc flows are actually being built** — not before.
+
+## 8. Engineer STREAM (discipline) — CLOSED (2026-07-28)
+
+> **⚠️ RECORDING GAP — read first.** These three decisions were taken in
+> discussion and are recorded here as stated. The **prior** stream work they
+> build on is **NOT in this repo**: a `grep -ri stream` over `docs/`, `lib/`,
+> `app/`, `supabase/` and `types/` finds nothing, no commit on any branch
+> mentions it, and this file had no stream section before today. In particular
+> the **"snapshot-hybrid storage design"** that decision 1 depends on, and the
+> "three original open questions" this section closes, exist only in
+> conversation. **Capture the storage design before any of this is built** —
+> decision 1 is unimplementable without it, and this note is the only thing
+> currently stopping it from reading as settled-and-written-down.
+> No `stream` column exists on `project_members` or `daily_logs` today, so every
+> decision below needs schema work that is not yet designed or numbered.
+
+**DECIDED — 1. Mid-project reassignment uses the DAY'S SNAPSHOT, not the live
+value.** A PM may reassign an engineer's stream mid-project. When that happens,
+that day's **evening** flow must use the stream **snapshotted onto that day's
+`daily_logs` row at morning check-in time** — never `project_members`' current
+live value.
+- **Rationale:** morning's data (plan, manpower, equipment) was already reported
+  under whatever stream was active then. Evening must stay internally consistent
+  with the same day's snapshot rather than retroactively adopting a same-day
+  reassignment.
+- **Effective date of a reassignment: the NEXT day's snapshot.** It never
+  rewrites the current day.
+- Consistent with, and reusing, the snapshot-hybrid storage design (see the
+  recording gap above — that design still needs writing down).
+
+**DECIDED — 2. An engineer covering two streams is a VALUE, not a structure.**
+Simultaneous two-stream coverage is **not** modelled as structural
+multi-assignment. Instead **"Combined"** (or a compound value such as
+"Civil + Electrical") is itself a valid single stream value the PM can assign.
+- **Rationale:** structural multi-assignment would force a redesign of
+  `project_members`' and `daily_logs`' unique constraints for a rare case.
+- **Cost: zero schema change beyond what stream storage already requires.**
+
+**DECIDED — 3. Stream vocabulary is TENANT/PROJECT-CONFIGURABLE, not a fixed
+global list.** Implementation implication, stated plainly because it is larger
+than it looks: this needs a real **admin-managed table (Quoco defaults + tenant
+override)** — the same ownership pattern already used for `rate_catalog` /
+`rate_catalog_history` (schema.md) and already chosen for `productivity_standards`
+in §6 above. **Not a hardcoded list**, and not a CHECK constraint.
+
+**All original open questions now answered — this section is CLOSED:**
+
+| Question | Resolution |
+|---|---|
+| Who assigns stream? | The **PM** |
+| Does it change mid-project? | **Yes**, PM-driven — with the snapshot-consistency rule (decision 1) |
+| Can one engineer span two streams? | **Yes**, via a "Combined" **value** — not structurally (decision 2) |
+| Is the vocabulary fixed or configurable? | **Tenant-configurable**, admin-managed table (decision 3) |
+
+(Four questions are listed above; the closing note that prompted this section
+said "three." Recorded as four because four were asked — flagging rather than
+silently dropping one.)
+
+**Consequence for the parsers, not yet decided.** Decision 3 means the trade
+vocabulary the WhatsApp parsers map against becomes tenant data. Today
+`lib/whatsapp/flows/parsers/lexicon.ts` is a compile-time constant consumed by
+functions documented as "PURE — no Supabase, no IO". Tenant-configurable
+vocabulary does not force those parsers to do IO, but it does force the
+vocabulary to be **injected** into them (`parse(raw)` → `parse(raw, vocab)`).
+That is a signature-level change to shipped morning-flow code and needs its own
+decision before evening Q4 is built. See the lexicon findings recorded against
+this section's investigation.
+
+**Nothing here is authorised for build** — per this document's header.
+
+## 9. Evening flow Q4 — v1 scope (2026-07-28)
+
+Placement note: recorded here rather than in a separate evening-flow document
+because no such document exists, and because this decision partially answers
+§6's DECIDE-BEFORE-PASS-2 "controlled vocabulary" flag — it belongs next to the
+flag it responds to. **Discussion only, no implementation authorised.**
+
+**DECIDED — Q4 step 1 (headcount): free text + `parseLabourCount`.** Same
+low-risk pattern as morning Q2, already proven in production. Re-ask trigger is
+`planned_total === null` (no digit anywhere in the answer).
+
+**DECIDED — Q4 step 2 (productivity/idle): AGGREGATE-ONLY v1.**
+- **Ships:** `evening_workers_on_site` + total productive/idle counts + the idle
+  reason as **free text**.
+- **Does NOT ship:** trade-level attribution `[{trade, actual_count}]`.
+  **Deferred explicitly — this is a scope decision, not an omission.**
+
+**Why trade attribution is deferred — three independent reasons, each verified
+against the code on 2026-07-28:**
+1. **No fallback or re-ask signal exists.** `canonicalTrade` returns `null` on an
+   unrecognized token and `labour.ts:54-57` simply omits it from `by_trade` while
+   still counting its number toward `planned_total`. Nothing distinguishes
+   "recognized the trade" from "didn't" — so no re-ask can be triggered and no
+   flag can be raised. The failure is silent by construction.
+2. **Coverage is heavily Civil-biased.** 21 of 26 trade aliases belong to the
+   four civil trades, with rich transliterated Tamil (`mesthiri`, `thozhilaali`,
+   `thachan`). `electrician` has 2 aliases and `plumber` has 1 — **neither has
+   any Tamil or transliterated form at all.** Vernacular input, which is the
+   entire reason the parser exists, is effectively unsupported outside Civil.
+3. **Multi-word trade names cannot match AT ALL.** Attribution is single-token
+   and positional (`canonicalTrade(tokens[i+1])`, falling back to `tokens[i-1]`).
+   "pipe fitter", "cable jointer", "steel fixer" are unrecognizable no matter how
+   many aliases are added — this is an **architectural gap in the tokenizer, not
+   missing data**. Multi-word names are disproportionately Electrical/Plumbing,
+   i.e. exactly where §8's tenant-configurable stream vocabulary is heading.
+
+**Consequence had it shipped anyway:** trade-attributed rows would silently feed
+the future DPR efficiency calculation (§6: `efficiency % = actual ÷ (headcount ×
+standard)`) with unreliable joins on precisely the terms most likely to appear as
+stream coverage widens. A broken join there returns **wrong numbers, not an
+error** — the failure mode §6 predicted in its own words ("the efficiency joins
+die on free-text trade names").
+
+**Relationship to §6:** this answers that flag **for evening Q4 only**, and by
+deferring the structured half rather than by deciding the vocabulary. §6's
+DECIDE-BEFORE-PASS-2 flag stays **OPEN** for everything else it covers (morning
+Q2's `by_trade`, the activity vocabulary, plan-as-list).
+
+**Revisit when** either a trade picker ships (buttons / numbered options, per
+§6's own recommendation) **or** the lexicon gains n-gram matching plus an
+unmapped-term signal. Not before.
+
+### 9.1 HONEST GAP — the low-confidence flag does not exist → MOVED
+
+Rule 3.5's promised low-confidence flag is **not implemented** (the
+accept-and-advance half is; the flag half is not). It was first written down
+here, then **promoted to CLAUDE.md §10 as "PARSER DEBT — RULE 3.5's
+LOW-CONFIDENCE FLAG DOES NOT EXIST"** because it is cross-cutting — it affects
+every future consumer of parsed check-in data, not just evening. **Read the full
+entry there**; it is not restated here, so this section cannot drift from it.

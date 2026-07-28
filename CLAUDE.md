@@ -601,6 +601,28 @@ records), never a storage one.
 Migration 021 came out of this audit but removes INDEX OVERHEAD ONLY — it prunes
 nothing. Full audit + growth model: docs/reviews/021-review-package.md.
 
+PARSER DEBT — RULE 3.5's LOW-CONFIDENCE FLAG DOES NOT EXIST (opened 2026-07-28,
+tracked, NOT fixed). Cross-cutting: affects EVERY future consumer of parsed
+check-in data, not one flow. Rule 3.5 (docs/design-principles.md:31 — note:
+design-principles, NOT bot-flows, where it is sometimes miscited) promises that an
+unparseable reply gets one example, ONE re-ask, then "accept whatever comes and
+flag it low-confidence for PM review."
+  * The ACCEPT-AND-ADVANCE half IS implemented — morning's per-step re-ask budget
+    (MORNING_PARSE_REASK_CAP; q2_reask/q3_reask counters in session context,
+    mirrored in the 018 RPC).
+  * The FLAG half is NOT. LabourParse is {planned_total, by_trade, raw_text} and
+    EquipmentParse is {items, none, raw_text} — neither carries a confidence
+    field, and no daily_logs column records one.
+CONSEQUENCE: an answer accepted AFTER exhausting its re-ask is indistinguishable
+from a cleanly-parsed one, and the PM has nothing to review — Rule 3.5's promise
+is half-kept. Live since Pass 2 (migration 018). Until this is built, anything
+consuming parsed data (DPR generation, dashboard, the §6 efficiency calculations)
+MUST assume no confidence signal exists and treat every parsed value as equally
+trusted, because that is the current reality. Do not design a consumer that reads
+a confidence field expecting it to be populated. Origin + full reasoning:
+docs/design-decisions-beta-feedback.md §9 (evening Q4 v1 scope), where this was
+first written down before being promoted here as cross-cutting debt.
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
