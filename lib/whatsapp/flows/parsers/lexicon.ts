@@ -158,3 +158,154 @@ export const RATE_STOPWORDS: ReadonlySet<string> = new Set([
   ...OWNED_WORDS,
   ...HIRED_WORDS,
 ])
+
+// ---------------------------------------------------------------------------
+// EVENING FLOW (Pass 1). Everything below serves the evening parsers; nothing
+// above it changed. Same contract as the morning half: recognition is
+// ENRICHMENT, never a gate — with ONE deliberate exception, the yes/no
+// classification for Q2, which genuinely has to resolve to a BOOLEAN column.
+// ---------------------------------------------------------------------------
+
+// Measurement units (evening Q1). Maps a lowercased token -> canonical unit.
+// Indian site vocabulary: quantities arrive as "slab 120 sqm", "12 cum concrete",
+// "40 bags cement". An unrecognised unit is NOT an error — the quantity and the
+// activity still store, and unit lands null.
+const UNIT_ALIASES: Readonly<Record<string, string>> = {
+  // area
+  sqm: 'sqm',
+  sqmt: 'sqm',
+  sqmtr: 'sqm',
+  sqft: 'sqft',
+  sft: 'sqft',
+  // volume
+  cum: 'cum',
+  cbm: 'cum',
+  cft: 'cft',
+  brass: 'brass', // 100 cft — standard Indian aggregate/sand unit
+  // length
+  rmt: 'rmt',
+  rft: 'rft',
+  m: 'm',
+  km: 'km',
+  // count / mass
+  nos: 'nos',
+  no: 'nos',
+  bags: 'bags',
+  bag: 'bags',
+  kg: 'kg',
+  ton: 'ton',
+  tonne: 'ton',
+  mt: 'ton',
+  ltr: 'ltr',
+  litre: 'ltr',
+  liters: 'ltr',
+}
+
+export function canonicalUnit(token: string): string | null {
+  return UNIT_ALIASES[token.toLowerCase()] ?? null
+}
+
+// Words that describe the measurement rather than the activity — excluded from
+// becoming an activity name. Mirrors RATE_STOPWORDS' role on the equipment side.
+export const QUANTITY_STOPWORDS: ReadonlySet<string> = new Set([
+  'of',
+  'done',
+  'completed',
+  'complete',
+  'finished',
+  'today',
+  'approx',
+  'about',
+  'around',
+  'total',
+  'work',
+  'a',
+  'an',
+  'the',
+  'and',
+  'plus',
+  ...Object.keys(UNIT_ALIASES),
+])
+
+// ---------------------------------------------------------------------------
+// Yes / no classification (evening Q2 "was the plan met?").
+//
+// COVERAGE HONESTY (read before extending): the affirmative list below is
+// English plus the three standard transliterations of ஆமா/ஆம். It is DELIBERATELY
+// short. The morning lexicon's vernacular depth (mesthiri, thozhilaali, kannar…)
+// came from the cofounder; inventing Tamil affirmatives without that review
+// would put unverified terms on the one evening path that resolves to a stored
+// BOOLEAN. Anything unmatched falls to the documented not-met path rather than
+// guessing — see the Q2 note in migration 022. Extend WITH cofounder review.
+const YES_WORDS: ReadonlySet<string> = new Set([
+  'yes',
+  'y',
+  'yeah',
+  'yep',
+  'yup',
+  'ok',
+  'okay',
+  'done',
+  'completed',
+  'complete',
+  'finished',
+  'achieved',
+  'met',
+  'full',
+  'fully',
+  'aama',
+  'ama',
+  'aam',
+])
+
+// Explicit negatives AND partials. Partial answers are classified NOT MET on
+// purpose: "half done" is not a met plan, and routing them to Q3 captures the
+// shortfall in the engineer's own words instead of rounding it up to success.
+const NO_WORDS: ReadonlySet<string> = new Set([
+  'no',
+  'n',
+  'nope',
+  'not',
+  'notdone',
+  'incomplete',
+  'pending',
+  'partly',
+  'partial',
+  'partially',
+  'mostly',
+  'half',
+  'some',
+  'delayed',
+  'missed',
+  'short',
+])
+
+export interface YesNoClassification {
+  /** true = plan met, false = not met. Meaningful only when `ok` is true. */
+  met: boolean
+  /** Did we classify confidently? false drives the Q2 reask. */
+  ok: boolean
+}
+
+/**
+ * Classify a Q2 answer. Token-wise so "yes fully done" and "no, half only"
+ * both resolve. A NEGATIVE token anywhere wins over an affirmative one:
+ * "yes but only half" is not a met plan, and the pessimistic reading is the one
+ * that asks Q3 and captures the reason.
+ */
+export function classifyYesNo(text: string): YesNoClassification {
+  const cleaned = text.trim().toLowerCase()
+  if (cleaned === '') return { met: false, ok: false }
+
+  const tokens = cleaned.split(/[\s,.!]+/).filter(Boolean)
+
+  // Negatives are checked first and win outright — including the shared
+  // NONE_WORDS negatives (illa / illai / kidaiyathu) already used by Q3.
+  if (tokens.some((t) => NO_WORDS.has(t) || isNoneSentinel(t))) {
+    return { met: false, ok: true }
+  }
+  if (tokens.some((t) => YES_WORDS.has(t))) {
+    return { met: true, ok: true }
+  }
+  return { met: false, ok: false }
+}
