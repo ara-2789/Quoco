@@ -623,6 +623,18 @@ a confidence field expecting it to be populated. Origin + full reasoning:
 docs/design-decisions-beta-feedback.md §9 (evening Q4 v1 scope), where this was
 first written down before being promoted here as cross-cutting debt.
 
+HIGH-1 (users_update self-privilege-escalation) — CLOSED by migration 015,
+applied to prod 2026-07-12, dual-verified and externally reviewed. Full
+record: docs/schema.md:497-517 + docs/reviews/015-review-package.md. Standing
+regression guard: test/migration-015.test.ts (6 tests, real authenticated JWT
+clients — never service-role, which bypasses both RLS and column grants and
+would pass by construction). Independently re-confirmed on prod 2026-08-03:
+authenticated holds column-level UPDATE on (full_name, avatar_url) only, no
+table-level UPDATE. Full re-confirmation evidence: 015-review-package.md §7.
+This entry exists because CLAUDE.md previously had zero reference to 015,
+causing an external audit to flag it as possibly-unfixed — a cross-reference
+gap, not a fix gap (P3 data point).
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
