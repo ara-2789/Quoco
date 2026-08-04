@@ -281,6 +281,14 @@ Tests are required, not optional
   work is considered done.
 - RLS change → a cross-tenant AND cross-project isolation test
   (two-tenant fixture; PM sees only their projects; owner DPR single-project).
+- State-loss regression (a fix for data silently dropped/overwritten) → assert
+  the END STATE of the full realistic sequence, not the mechanism the fix
+  targeted. A test asserting the predicted mechanism goes green the moment
+  that one fix lands and hides sibling defects upstream of it — origin:
+  migration 022's reverse-order test, which drove the full realistic sequence
+  (evening completes → morning starts → morning completes) and caught a
+  second, unnamed instance of the bug a mechanism-targeted test would have
+  missed (docs/reviews/022-review-package.md).
 
 How to verify locally (ask me to run these; show me the command)
 - DB change: run migrations against a Supabase BRANCH first, never prod.
@@ -634,6 +642,57 @@ table-level UPDATE. Full re-confirmation evidence: 015-review-package.md §7.
 This entry exists because CLAUDE.md previously had zero reference to 015,
 causing an external audit to flag it as possibly-unfixed — a cross-reference
 gap, not a fix gap (P3 data point).
+
+EQUIPMENT daily_hire_cost — A COUNT IN A MONEY FIELD (opened 2026-08-05,
+tracked, NOT fixed). Pre-existing 018-era parser behavior, surfaced during
+migration 022's review (R5 rehearsal, engineer C: "1 JCB, 2 mixers" parsed to
+daily_hire_cost: 1 / daily_hire_cost: 2, count: null on both). equipment.ts's
+parseChunk (018, unrelated to 022, deliberately left alone there — see
+docs/reviews/022-review-package.md §10) reads the FIRST number in a chunk as a
+daily hire RATE, never a count, by design ("the field gives rates ('JCB
+1500'), not counts" — equipment.ts:50-54). A terse answer that leads with a
+count rather than a rate ("2 mixers", "1 JCB") lands that count directly in a
+field two future consumers will read as money:
+  * design-decisions-beta-feedback.md §6 — "Machinery wastage ₹ = idle hours
+    × hire rate," a weekly-review costing calculation.
+  * bot-flows.md's DPR generation job — "Idle cost per machine = daily_hire_
+    cost × (1 − actual_hours/available_hours)," computed IN CODE and injected
+    as a FACT into the Claude prompt (bot-flows.md, "What the job does").
+CONSEQUENCE: neither consumer has any signal that a given daily_hire_cost is a
+miscaptured count rather than a real rate. The DPR path is the sharper risk —
+a count masquerading as a rate becomes a stated currency figure in the
+generated report itself, not a visible error a PM would catch and question.
+Until this is fixed, any future consumer of morning_equipment MUST treat
+daily_hire_cost as unverified and MUST NOT assume it is always a genuine rate.
+Same class of finding as PARSER DEBT above (a downstream consumer inherits a
+silent gap unless warned here first) — this entry exists so the next author
+gets the warning, not the surprise. Full finding + citations:
+docs/reviews/022-review-package.md §10.
+
+Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
+flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
+(Q1-Q3) is live, hardened inline (020 discipline); apply_morning_flow_turn
+gains 'wrong_flow' (was 018's 'idle') and — reviewer round 2 — both its
+context-writing sites now merge instead of replace, closing a defect a
+reverse-order regression test found that the original single-site fix did
+not cover (full finding: docs/reviews/022-review-package.md §9). PITR
+observed before apply (full 7-day window); pre-apply baseline pinned as the
+rollback reference (morning's body was still 018's, md5(prosrc)
+6a762d496bb0e49f3fc2f29728d154bd — not sha256, corrected per schema.md);
+post-apply ACL + both body hashes
+confirmed on prod, matching test-db exactly. Ledger entry (version '022')
+was MISSING from the original runbook draft — added retroactively once
+caught, row count observed 18 -> 19 across the manual INSERT (§0: observed,
+not asserted), CLI still 28P01-blocked. Full record: docs/schema.md's own
+022 entry (fuller than this pointer — read that one, not this one, for the
+complete pre/post-apply evidence).
+  NOT closed out by this apply: real webhook-triggered apply_evening_flow_turn
+  proof stays OPEN, blocked on the webhook-wiring deliverable
+  (022-review-package.md §10) — nothing on prod can reach evening's RPC via
+  the real webhook until a cron or the webhook itself is wired to call it,
+  which 022 does not do. Restart-semantics decision also stays OPEN
+  (design-decisions-beta-feedback.md §10, DECIDE-BEFORE-CRON-PR) — whoever
+  builds that wiring inherits both.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its

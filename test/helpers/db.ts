@@ -1,8 +1,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
 import type { MorningOutcome } from '@/lib/whatsapp/flows/morning'
+import type { EveningOutcome } from '@/lib/whatsapp/flows/evening'
 import { parseLabourCount, isLabourAnswered } from '@/lib/whatsapp/flows/parsers/labour'
 import { parseEquipment, isEquipmentAnswered } from '@/lib/whatsapp/flows/parsers/equipment'
+import { parseQuantities } from '@/lib/whatsapp/flows/parsers/quantities'
+import { classifyYesNo } from '@/lib/whatsapp/flows/parsers/lexicon'
 
 // ---------------------------------------------------------------------------
 // Test-db access helpers. These build their OWN Supabase client straight from
@@ -293,6 +296,54 @@ export async function applyMorningFlowTurn(params: {
   return data as MorningTurnRow
 }
 
+// Result shape returned by apply_evening_flow_turn (jsonb) — same shape as
+// MorningTurnRow, distinct outcome union.
+export interface EveningTurnRow {
+  outcome: EveningOutcome
+  current_flow: SessionFlow | null
+  current_step: number
+  log_date: string
+}
+
+// Wrapper over the single transactional evening-flow RPC (migration 022).
+// Parameter names match apply_evening_flow_turn's SQL signature EXACTLY
+// (p_phone_number, p_tenant_id, p_user_id, p_project_id, p_message,
+// p_start_flow, p_parse, p_parse_ok, p_now, p_test_sleep_ms). Mirrors the
+// production wrapper (lib/whatsapp/flows/evening.ts): both parse shapes are
+// computed unconditionally and sent KEYED BY STEP ID — the RPC selects the
+// entry matching the step it resolves under its lock (see the 022 header note
+// on why this is not "the parse for the active step"). Engineer/project
+// default to the (shared, not morning-specific) fixtures but can be
+// overridden.
+export async function applyEveningFlowTurn(params: {
+  phone: string
+  message: string
+  startFlow: boolean
+  tenantId?: string
+  userId?: string
+  projectId?: string
+  now?: string
+  testSleepMs?: number
+}): Promise<EveningTurnRow> {
+  const db = testClient()
+  const quantities = parseQuantities(params.message)
+  const yesno = classifyYesNo(params.message)
+  const { data, error } = await db.rpc('apply_evening_flow_turn', {
+    p_phone_number: params.phone,
+    p_tenant_id: params.tenantId ?? TEST_TENANT_ID,
+    p_user_id: params.userId ?? testEngineerId(),
+    p_project_id: params.projectId ?? TEST_PROJECT_ID,
+    p_message: params.message,
+    p_start_flow: params.startFlow,
+    p_parse: { '1': quantities, '2': { met: yesno.met } },
+    p_parse_ok: { '1': true, '2': yesno.ok },
+    ...(params.now !== undefined ? { p_now: params.now } : {}),
+    ...(params.testSleepMs !== undefined ? { p_test_sleep_ms: params.testSleepMs } : {}),
+  })
+  if (error) throw new Error(`apply_evening_flow_turn failed: ${error.message}`)
+  return data as EveningTurnRow
+}
+
 // ---------------------------------------------------------------------------
 // Direct seeding / reading helpers (bypass the RPC to control or inspect state)
 // ---------------------------------------------------------------------------
@@ -326,8 +377,8 @@ export async function seedSession(row: {
   if (error) throw new Error(`seedSession failed: ${error.message}`)
 }
 
-// Shape of a daily_logs row (only the morning columns the flow touches; nulls
-// elsewhere). Pass 2 adds the two parsed JSONB columns.
+// Shape of a daily_logs row (the morning + evening Pass-1 columns either flow
+// touches; nulls elsewhere).
 export interface DailyLogRow {
   project_id: string
   engineer_id: string
@@ -337,6 +388,11 @@ export interface DailyLogRow {
   morning_equipment: unknown | null
   morning_execution_plan: string | null
   morning_submitted_at: string | null
+  evening_output: string | null
+  evening_output_quantities: unknown | null
+  evening_schedule_met: boolean | null
+  evening_schedule_miss_reason: string | null
+  evening_submitted_at: string | null
 }
 
 // Read the daily_logs row for the fixture engineer/project on a given log_date.
@@ -346,7 +402,7 @@ export async function getDailyLog(logDate: string): Promise<DailyLogRow | null> 
   const { data, error } = await db
     .from('daily_logs')
     .select(
-      'project_id, engineer_id, log_date, morning_plan, morning_manpower_planned, morning_equipment, morning_execution_plan, morning_submitted_at',
+      'project_id, engineer_id, log_date, morning_plan, morning_manpower_planned, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_schedule_met, evening_schedule_miss_reason, evening_submitted_at',
     )
     .eq('project_id', TEST_PROJECT_ID)
     .eq('engineer_id', testEngineerId())

@@ -6,6 +6,7 @@ import {
   MORNING_COMPLETE_REPLY,
   MORNING_ALREADY_COMPLETE_REPLY,
   MORNING_IDLE_REPLY,
+  MORNING_WRONG_FLOW_REPLY,
 } from '@/lib/whatsapp/flows/morning'
 import { parseLabourCount } from '@/lib/whatsapp/flows/parsers/labour'
 import { parseEquipment } from '@/lib/whatsapp/flows/parsers/equipment'
@@ -138,6 +139,26 @@ describe('dispatchMorningFlow (pure decision mirror)', () => {
     expect(d.reply).toBe(MORNING_COMPLETE_REPLY)
   })
 
+  // 9b. Q4 completion MERGES context, never replaces (022 fix, reviewer B2).
+  //     If evening already completed earlier the same day, morning completing
+  //     afterwards must NOT wipe evening_submitted. Also proves q2_reask/
+  //     q3_reask are stripped (morning's own counters) while an unrelated key
+  //     survives untouched.
+  it('advance Q4: MERGES context — evening_submitted and unrelated keys survive, own counters stripped', () => {
+    const session = makeSession({
+      current_flow: 'morning',
+      current_step: 4,
+      context: { evening_submitted: true, q2_reask: 0, q3_reask: 1, some_other_key: 'x' },
+    })
+    const d = dispatchMorningFlow(session, 'Crew A then Crew B', { now: FIXED_NOW })
+    expect(d.outcome).toBe('advance')
+    expect(d.sessionUpdate.context).toEqual({
+      evening_submitted: true,
+      some_other_key: 'x',
+      morning_submitted: true,
+    })
+  })
+
   // 10. already_complete — idle + marker, no startFlow: says so, no write.
   it('already_complete: idle session with the completion marker, no write', () => {
     const session = makeSession({ current_flow: null, context: { morning_submitted: true } })
@@ -177,12 +198,14 @@ describe('dispatchMorningFlow (pure decision mirror)', () => {
     expect(d.reply).toBe(MORNING_QUESTIONS[1])
   })
 
-  // 14. non-morning flow active — scopes out to idle, no misfire.
-  it('non-morning flow active: scopes out to idle, no write', () => {
+  // 14. non-morning flow active — 022 fix: reports wrong_flow, not idle, so the
+  //     webhook can retry against the correct RPC instead of silently
+  //     swallowing the turn (the SID is already consumed by that point).
+  it('non-morning flow active: reports wrong_flow, not idle, no write', () => {
     const session = makeSession({ current_flow: 'evening', current_step: 2 })
     const d = dispatchMorningFlow(session, 'some evening answer')
-    expect(d.outcome).toBe('idle')
+    expect(d.outcome).toBe('wrong_flow')
     expect(d.dailyLogWrite).toBeNull()
-    expect(d.reply).toBe(MORNING_IDLE_REPLY)
+    expect(d.reply).toBe(MORNING_WRONG_FLOW_REPLY)
   })
 })

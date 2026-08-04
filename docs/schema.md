@@ -726,6 +726,85 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        idx_jobs_claim.idx_scan. It will read 0 until the first real job type
        ships (the queue has no handlers yet) — expected, not a failure.
 
+022 — evening check-in flow Pass 1 (apply_evening_flow_turn) + CONTEXT
+       DISCIPLINE. New SECURITY DEFINER RPC covering Q1 (work done +
+       quantities enrichment), Q2 (plan met? — parsed yes/no, conditional
+       branch), Q3 (miss reason, only when Q2 = No). Hardened inline, not as a
+       follow-up: REVOKE PUBLIC/anon/authenticated + GRANT service_role only,
+       in the same transaction that creates it (020 discipline). Ships
+       alongside two changes to apply_morning_flow_turn: its ELSE branch now
+       returns 'wrong_flow' instead of 018's 'idle' when a different flow is
+       active, so a mis-routed turn is reported rather than silently
+       swallowed after the Twilio SID is consumed; and — CONTEXT DISCIPLINE,
+       added during reviewer round 2 — both of morning's context-writing
+       sites (start, Q4 completion) now merge context instead of replacing
+       it, matching the rule evening's own two sites already followed.
+       Reviewer round 2 also found a defect the original single-site fix
+       (Q4 completion only) did not cover: morning's START branch did the
+       same bare-replace wipe, caught by a reverse-order regression test
+       (evening completes -> morning starts -> morning completes -> assert
+       both markers coexist) rather than a test asserting the targeted
+       fix's own predicted mechanism. Full finding, rehearsal evidence (two
+       catalog-check rounds, 232/232 automated tests), and the runbook:
+       docs/reviews/022-review-package.md §9 (the finding), §6 (catalog
+       checks), §7 (test evidence).
+
+       A cross-cutting decision was flagged, not resolved, by the CONTEXT
+       DISCIPLINE fix: morning's start branch restarts an already-completed
+       flow unconditionally (unchanged by 022) and the completion marker now
+       SURVIVES that restart (previously it didn't) — strictly better, but a
+       genuine behaviour change nothing has decided should be allowed at all.
+       DECIDE-BEFORE-CRON-PR, recorded in
+       docs/design-decisions-beta-feedback.md §10 (RESTART SEMANTICS).
+
+       APPLIED TO PRODUCTION VIA SQL EDITOR on 2026-08-05, from the PINNED
+       commit 6bbbc59 (git show 6bbbc59:supabase/migrations/022_evening_flow_apply_turn.sql;
+       sha256 f7e1ee6dfe76bfaed27a6af416c8fcaa9c31aa87d924a353bc95206f7b23acfb).
+       CLI 28P01-blocked, SQL Editor is the deliberate fallback (as with
+       013-021).
+       PITR observation gate (§0) — observed directly on prod before the
+       apply: full rolling 7-day window, current as of observation
+       (28 Jul 22:06:49 -> 04 Aug 22:06:49 IST).
+       PRE-APPLY BASELINE, the rollback reference point: apply_morning_flow_turn
+       on prod was confirmed still 018's body — 6981 chars,
+       md5(prosrc) 6a762d496bb0e49f3fc2f29728d154bd (the catalog probe's own
+       hash function, 32 hex chars — NOT sha256; mislabelled in an earlier
+       draft of this entry and corrected here, same provenance-error class as
+       the swapped file/hash labels caught earlier this round) — with both
+       diagnostic flags (body_has_wrong_flow, morning_start_has_site1_fix)
+       false, and
+       apply_evening_flow_turn confirmed absent. Prod was not drifted; the
+       apply exercised exactly the rehearsed paths.
+       POST-APPLY VERIFICATION, observed directly on prod: ACLs on both
+       functions — acl_is_default_public=false, single overload each,
+       grantees limited to postgres + service_role only, no
+       anon/authenticated/PUBLIC row on either. Both function bodies match
+       test-db EXACTLY: apply_morning_flow_turn 8263 chars /
+       md5(prosrc) fe6cc6c01f10b7e0c4d701ff8dfe66a5, apply_evening_flow_turn
+       9016 chars / md5(prosrc) 08ac80270b431ddf3d94feae219fee2b (both from
+       the catalog probe's md5(p.prosrc) column — not sha256; same correction
+       as the pre-apply baseline above), and morning_start_has_site1_fix=true
+       (the reviewer-round-2 fix confirmed live on prod, not just test-db).
+       LEDGER — MISSING FROM THE ORIGINAL RUNBOOK, added retroactively. The
+       022 runbook as first drafted (review package §11) had no ledger step
+       at all; steps A-F never touched schema_migrations, and the raw SQL
+       apply (step C) creates the function objects but records nothing in
+       the ledger. Caught only when step G was reached. Manual INSERT into
+       supabase_migrations.schema_migrations (version '022', name
+       'evening_flow_apply_turn') — row count OBSERVED both sides, not
+       asserted (§0): 18 -> 19 across the INSERT. Confirming SELECT: exactly
+       one row at version '022', no duplicate, no typo'd version string.
+       types re-regenerated from prod post-apply: apply_evening_flow_turn now
+       present in Database['public']['Functions'] (+15 lines); tsc --noEmit
+       fully clean (both known R6-gap errors gone).
+       NOT closed out by this apply — genuinely OPEN: the real
+       webhook-triggered apply_evening_flow_turn proof (runbook step E) is
+       blocked on the webhook-wiring deliverable (review package §10) —
+       nothing can reach evening's RPC via the real webhook until a cron or
+       the webhook itself is wired to call it, which this migration does not
+       do. "Applied" here means the migration's SQL is live and verified on
+       prod, not that the feature is fully closed out end to end.
+
 DOC GAP — RESOLVED 2026-07-27 (superseding the note first raised the same day).
 Entries for 011, 012, 014, 019 and 020 are now present above, so this list IS a
 complete index of the migration set: 001-007 and 011-021, with 008/009 listed as
