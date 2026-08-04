@@ -654,3 +654,49 @@ UPDATE** (all 7). Migration 015 only names `anon` and `authenticated` in its
 REVOKE/GRANT statements, so `service_role` is untouched — which is why the webhook
 (service-role client) and the test harness (service-role client) keep working.
 This is the second half of check #1 and the last item of #5.
+
+---
+
+## 7. Re-confirmation appendix — 2026-08-03 (independent, prod, ~3 weeks post-apply)
+
+**Not first-time closure evidence.** The original 2026-07-12 apply already had
+its own prod probes (§5 A/B/C, §6) confirming this. This appendix records a
+**separate, later** re-check: an external process audit (the 2026-08-03 P0
+process-hardening work order) independently re-verified prod state — without
+awareness of this package, since CLAUDE.md carried no reference to 015 at the
+time (the gap that entry in CLAUDE.md §10 now closes). The audit's own
+verification came back clean; nothing here changes the migration's status.
+
+**Literal probe output, as reported by the auditor:**
+
+```
+Table-level UPDATE on users:
+grantee,privilege_type
+postgres,UPDATE
+postgres,UPDATE
+service_role,UPDATE
+
+(authenticated is ABSENT — no table-level UPDATE)
+
+Column-level UPDATE grants to authenticated:
+grantee,privilege_type,column_name
+authenticated,UPDATE,avatar_url
+authenticated,UPDATE,full_name
+```
+
+Matches §5 Probe A (authenticated: exactly `avatar_url` + `full_name` at
+column level) and Probe B (zero table-level UPDATE rows for authenticated)
+exactly, three weeks later — no drift.
+
+**Caveat, self-flagged by the auditor:** the probe query filtered
+`table_name='users'` without a schema qualifier, so the `postgres` rows above
+include `auth.users` columns too (hence two `postgres,UPDATE` rows instead of
+one). Doesn't affect the finding; qualify with `table_schema='public'` on any
+re-run (§5/§6's original probes already do this correctly, via
+`information_schema.table_privileges`/`role_table_grants` filtered on
+`table_schema = 'public'`).
+
+**Test suite status at re-confirmation time:** `test/migration-015.test.ts`
+(§2, 6 tests: T-015-01..06) ran clean as part of an unrelated PR's full
+test-suite pass the same day (2026-08-03) — still the standing regression
+guard, unchanged since round 3.
