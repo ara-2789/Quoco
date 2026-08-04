@@ -261,4 +261,30 @@ describe('apply_evening_flow_turn (evening flow, Pass 1) + morning wrong_flow mi
     expect(r.current_flow).toBeNull()
     expect(await getDailyLog(LOG_DATE)).toBeNull()
   })
+
+  // 13. context-merge, REVERSE direction (reviewer B2). T-022-08 proved
+  //     morning -> evening; this proves evening -> morning. Before the fix,
+  //     morning's Q4 completion did a bare context REPLACE, which would have
+  //     silently wiped evening_submitted here — the bug is born in 022 (018
+  //     never had a second flow to collide with), not inherited from it.
+  it('T-022-13: context-merge REVERSE — evening completes first, then morning; both markers coexist', async () => {
+    const phone = testPhone('413')
+    await applyEveningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
+    await applyEveningFlowTurn({ phone, message: 'some work done', startFlow: false, now: P_NOW })
+    await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW })
+    expect((await readSession(phone))?.context).toEqual({ evening_submitted: true })
+
+    await applyMorningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
+    await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now: P_NOW })
+    await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now: P_NOW })
+    await applyMorningFlowTurn({ phone, message: 'JCB 1500', startFlow: false, now: P_NOW })
+    await applyMorningFlowTurn({ phone, message: 'Crew A then Crew B', startFlow: false, now: P_NOW })
+
+    const session = await readSession(phone)
+    expect(session?.context).toEqual({ evening_submitted: true, morning_submitted: true })
+
+    const log = await getDailyLog(LOG_DATE)
+    expect(log?.evening_submitted_at).not.toBeNull()
+    expect(log?.morning_submitted_at).not.toBeNull()
+  })
 })

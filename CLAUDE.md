@@ -281,6 +281,14 @@ Tests are required, not optional
   work is considered done.
 - RLS change → a cross-tenant AND cross-project isolation test
   (two-tenant fixture; PM sees only their projects; owner DPR single-project).
+- State-loss regression (a fix for data silently dropped/overwritten) → assert
+  the END STATE of the full realistic sequence, not the mechanism the fix
+  targeted. A test asserting the predicted mechanism goes green the moment
+  that one fix lands and hides sibling defects upstream of it — origin:
+  migration 022's reverse-order test, which drove the full realistic sequence
+  (evening completes → morning starts → morning completes) and caught a
+  second, unnamed instance of the bug a mechanism-targeted test would have
+  missed (docs/reviews/022-review-package.md).
 
 How to verify locally (ask me to run these; show me the command)
 - DB change: run migrations against a Supabase BRANCH first, never prod.

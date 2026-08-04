@@ -3,15 +3,59 @@
 -- Evening check-in flow, Pass 1 (Q1-Q3) + the cross-flow routing hardening.
 --
 -- WHAT THIS DOES
---   1. CREATE OR REPLACE apply_morning_flow_turn -- exactly ONE line of the 018
---      body changes: the non-morning ELSE branch returns 'wrong_flow' instead of
---      'idle'. The rest is byte-identical to 018 (the block was extracted from
---      018 mechanically, not retyped).
+--   1. CREATE OR REPLACE apply_morning_flow_turn -- two KINDS of change to the
+--      018 body, not a line count (a count was accurate through two reviewer
+--      rounds and stopped being true on the third -- see CONTEXT DISCIPLINE,
+--      below, for why a count is the wrong way to describe this class of fix):
+--        (a) the non-morning ELSE branch returns 'wrong_flow' instead of
+--            'idle' -- see WHY 'wrong_flow' EXISTS, below.
+--        (b) morning's two context-writing sites (START and Q4 COMPLETE) are
+--            brought into line with the rule evening's sites already follow
+--            -- see CONTEXT DISCIPLINE, below.
+--      The rest is byte-identical to 018 (the block was extracted from 018
+--      mechanically, not retyped).
 --   2. CREATE apply_evening_flow_turn -- the evening twin of the morning RPC.
 --      Pass 1 covers Q1 (work done + quantities), Q2 (plan met?) and Q3 (miss
 --      reason, conditional on Q2 = No). Q4/Q5 land in Pass 2; Q6 is deferred
 --      alongside morning's own unbuilt Q5/Q6 (design-decisions §9).
 --   3. Lock EXECUTE down on the new function (020 discipline).
+--
+-- CONTEXT DISCIPLINE -- ONE RULE, FOUR SITES.
+-- THE RULE: a flow's context write strips only that flow's OWN in-flight
+-- counters and merges everything else -- never a bare replace or wipe. Every
+-- site in either RPC that writes session.context must follow it.
+--   * Morning START     -- FIXED here (022, third reviewer-approved change):
+--     context := context - 'q2_reask' - 'q3_reask'.
+--   * Morning Q4 COMPLETE -- FIXED here (022, reviewer B2):
+--     context := (context - 'q2_reask' - 'q3_reask') || {'morning_submitted': true}.
+--   * Evening START     -- correct by design: context := context - 'e2_reask'.
+--   * Evening COMPLETE  -- correct by design:
+--     context := (context - 'e2_reask') || {'evening_submitted': true}.
+--
+-- WHY EVENING WAS NEVER WRONG. Morning's two violations are inherited from
+-- 018, where a bare replace/wipe was harmless -- morning was the ONLY flow,
+-- so nothing else ever lived in context for a wipe to destroy. Evening's
+-- author had no such history and no single-flow assumption to unlearn:
+-- evening was written INTO the two-flow world this migration creates, so
+-- both its sites obey the rule from their first line. That is the exact trap
+-- for whoever adds a FIFTH site (Q5, a future flow, anything touching
+-- context): copying the nearest existing line of code instead of the rule
+-- above. Follow the rule, not the precedent.
+--
+-- RESTART SEMANTICS -- A BEHAVIOUR CHANGE, NOT JUST A FIX (flagged for the
+-- cron/webhook-wiring PR, not resolved here). Morning START fires on
+-- p_start_flow AND current_flow IS NULL -- it does NOT check
+-- morning_submitted. So a second start trigger on an already-completed day
+-- restarts the flow; that was true before this change too. What changes is
+-- what a restart DOES to the marker: under the old wipe, restarting destroyed
+-- morning_submitted, and the flow's own eventual completion would silently
+-- re-set it -- a later inbound in between would misread 'idle' instead of
+-- 'already_complete'. Under the strip, the marker SURVIVES a restart. That is
+-- strictly better than the old behaviour, but it is a genuine change to the
+-- restart path, not merely a preservation fix, and nothing has yet decided
+-- whether a start trigger SHOULD restart an already-completed flow at all.
+-- Tracked as a DECIDE-BEFORE-CRON-PR item in
+-- docs/design-decisions-beta-feedback.md (search RESTART SEMANTICS).
 --
 -- WHY 'wrong_flow' EXISTS -- read before touching the webhook.
 -- The webhook picks WHICH rpc to call from an UNLOCKED read of
@@ -46,10 +90,12 @@
 BEGIN;
 
 -- -----------------------------------------------------------------------------
--- 1. apply_morning_flow_turn -- 018's body with the single ELSE-branch change.
---    Signature identical to 018 (12 args), so this REPLACES in place and the
---    020 ACL survives. Do not reformat this block: it is a mechanical extract,
---    and keeping it diffable against 018 is the point.
+-- 1. apply_morning_flow_turn -- 018's body with the wrong_flow ELSE branch and
+--    both context-writing sites brought into line with CONTEXT DISCIPLINE
+--    (see the file header; each site is marked inline below). Signature
+--    identical to 018 (12 args), so this REPLACES in place and the 020 ACL
+--    survives. Do not reformat this block: it is a mechanical extract, and
+--    keeping it diffable against 018 is the point.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION apply_morning_flow_turn(
   p_phone_number  TEXT,
@@ -112,7 +158,15 @@ BEGIN
     IF v_session.current_flow IS NULL THEN
       v_session.current_flow := 'morning';
       v_session.current_step := 1;
-      v_session.context      := '{}'::jsonb;
+      -- CONTEXT DISCIPLINE, site 1 of 4 (see file header) -- 022's THIRD
+      -- change, added after the reviewer's second pass. 018 wiped context to
+      -- '{}' here; harmless then (morning was the only flow), but this is the
+      -- FIRST write of a restart, and a restart on an already-completed day
+      -- would otherwise destroy evening_submitted before Q4 ever runs -- the
+      -- exact gap T-022-13 (reverse-order) caught and a completion-only fix
+      -- could not. Strip only morning's own counters; see RESTART SEMANTICS
+      -- in the file header for the behaviour change this implies.
+      v_session.context      := v_session.context - 'q2_reask' - 'q3_reask';
       v_outcome := 'start';
     ELSE
       v_outcome := 'reask';
@@ -163,11 +217,14 @@ BEGIN
       END IF;
 
     ELSIF v_session.current_step = 4 THEN
-      -- Q4 (free text) -> execution plan + submitted_at, COMPLETE. Full context
-      -- replace here is intentional: completion drops all in-flight counters.
+      -- Q4 (free text) -> execution plan + submitted_at, COMPLETE.
+      -- CONTEXT DISCIPLINE, site 2 of 4 (see file header) -- reviewer B2.
+      -- 018's bare replace was safe only while morning was the only flow;
+      -- this merges instead, mirroring evening's own completion exactly.
       v_session.current_flow := NULL;
       v_session.current_step := 0;
-      v_session.context      := jsonb_build_object('morning_submitted', true);
+      v_session.context      := (v_session.context - 'q2_reask' - 'q3_reask')
+                                || jsonb_build_object('morning_submitted', true);
       v_outcome := 'advance';
       v_col     := 'execution';
 
@@ -180,7 +237,8 @@ BEGIN
     -- webhook can retry against the correct RPC. Returning 'idle' here would make
     -- a mis-routed turn indistinguishable from a genuine no-flow inbound, and the
     -- engineer's answer would be silently swallowed (the SID is already consumed).
-    -- THIS IS THE ONLY CHANGE TO THE 018 BODY -- see the header note.
+    -- The wrong_flow ELSE-branch change -- see WHY 'wrong_flow' EXISTS in the
+    -- file header (a separate kind of change from CONTEXT DISCIPLINE, above).
     v_outcome := 'wrong_flow';
   END IF;
 
@@ -287,13 +345,10 @@ $fn$;
 -- a reask -- design-decisions §9 records why structured extraction is not
 -- trusted as a gate on this product.
 --
--- CONTEXT IS MERGED, NEVER REPLACED. Morning's completion does
--- context := jsonb_build_object('morning_submitted', true) -- a full replace,
--- which was safe while only one flow existed per day. Evening MUST NOT copy it:
--- replacing would wipe morning_submitted, and a later inbound would then read
--- 'idle' instead of 'already_complete'. Evening merges its own marker and strips
--- only its OWN in-flight counters. Morning's shipped replace is deliberately
--- left alone (scoped decision, 2026-07-28).
+-- CONTEXT DISCIPLINE applies here too (evening sites 3 and 4 of 4) -- see the
+-- rule, the full four-site inventory, and WHY EVENING WAS NEVER WRONG in the
+-- file header. Not restated here; this comment stays a pointer on purpose so
+-- the rule has exactly one canonical statement.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION apply_evening_flow_turn(
   p_phone_number  TEXT,
@@ -371,8 +426,8 @@ BEGIN
     IF v_session.current_flow IS NULL THEN
       v_session.current_flow := 'evening';
       v_session.current_step := 1;
-      -- Start clears only EVENING's own counters. morning_submitted survives --
-      -- see the CONTEXT IS MERGED note above.
+      -- CONTEXT DISCIPLINE, site 3 of 4 (see file header). Clears only
+      -- EVENING's own counter; morning_submitted survives.
       v_session.context := v_session.context - 'e2_reask';
       v_outcome := 'start';
     ELSE
@@ -451,7 +506,8 @@ BEGIN
     v_outcome := 'wrong_flow';
   END IF;
 
-  -- (3a) COMPLETION -- MERGE the marker, never replace (see the header note).
+  -- (3a) COMPLETION -- CONTEXT DISCIPLINE, site 4 of 4 (see file header).
+  -- MERGE the marker, never replace.
   IF v_complete THEN
     v_session.current_flow := NULL;
     v_session.current_step := 0;

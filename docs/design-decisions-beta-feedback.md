@@ -396,3 +396,44 @@ here, then **promoted to CLAUDE.md §10 as "PARSER DEBT — RULE 3.5's
 LOW-CONFIDENCE FLAG DOES NOT EXIST"** because it is cross-cutting — it affects
 every future consumer of parsed check-in data, not just evening. **Read the full
 entry there**; it is not restated here, so this section cannot drift from it.
+
+## 10. RESTART SEMANTICS — start triggers restart completed flows (2026-08-05)
+
+**DECIDE-BEFORE-CRON-PR.** Surfaced during migration 022's third reviewer round
+(the CONTEXT DISCIPLINE fix — `apply_morning_flow_turn`'s start branch stopped
+wiping `session.context` to `'{}'` and started stripping only its own
+counters, matching evening's own start branch). That fix changed what a
+restart DOES to the completion marker, but it did **not** decide, and nothing
+before it had decided, whether a restart should be **allowed** at all.
+
+**The fact, unchanged by 022:** `apply_morning_flow_turn`'s start branch fires
+whenever `p_start_flow` is true and `current_flow IS NULL` — it does **not**
+check `morning_submitted`. So a second start trigger arriving on a day morning
+already completed **restarts the flow**, today, regardless of this fix.
+
+**What 022 changed:** only what survives that restart. Before, wiping context
+to `'{}'` destroyed `morning_submitted` immediately, and — because the restart
+also overwrites `current_flow`/`current_step` — a later inbound arriving before
+the flow re-completed would misread `already_complete` as `idle`. After,
+stripping only `q2_reask`/`q3_reask` means the marker **survives** a restart.
+Strictly better than the old behaviour, but still a **behaviour change to the
+restart path**, not merely a preservation fix — worth being honest about
+rather than filing purely as a bugfix.
+
+**The open decision, for whichever PR wires a cron or scheduled trigger to
+`p_start_flow`:** should a start trigger restart an already-completed flow at
+all? Three candidate semantics, undecided:
+- **fire-and-start** — current behaviour (restart unconditionally); now safe
+  re: the marker, but still re-asks Q1 on a day the engineer already finished.
+- **start-on-reply** — only start if the engineer's message wasn't itself
+  interpretable as an answer to a still-pending question (requires a decision
+  on what "pending" means with no active flow).
+- **refuse-when-submitted** — start branch checks `morning_submitted` (mirror
+  the check `already_complete` already makes in the non-start path) and
+  no-ops or replies `already_complete` instead of restarting.
+
+**Not resolved here.** 022 fixes the marker-survival bug; it does not pick a
+restart semantic. The cron/webhook-wiring PR that first makes `p_start_flow`
+reachable from a real trigger (today it is reachable only via the env-gated
+test token — see `022_evening_flow_apply_turn.sql`'s header and
+`docs/reviews/022-review-package.md` §9) must decide before shipping.

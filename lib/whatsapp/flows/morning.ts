@@ -21,23 +21,30 @@ import { parseEquipment, isEquipmentAnswered, type EquipmentParse } from './pars
 // live in session.context (q2_reask / q3_reask) and are merged, not replaced.
 //
 // AUTHORITY NOTE: dispatchMorningFlow below is a PURE mirror of the decision
-// logic in supabase/migrations/014_morning_flow_apply_turn.sql, for unit tests
-// and documentation. It is NOT authoritative — production behaviour is entirely
+// logic in apply_morning_flow_turn — originally 014_morning_flow_apply_turn.sql,
+// now 022_evening_flow_apply_turn.sql (which re-creates the same function with
+// two changes: the wrong_flow outcome and the Q4 completion merge, both
+// mirrored below). It is NOT authoritative — production behaviour is entirely
 // determined by that RPC (which owns the row lock, the BOT-07 next-day reset,
 // and the atomic session + daily_logs writes). A green dispatchMorningFlow unit
 // test is not on its own proof of production correctness; the branch
 // integration tests against apply_morning_flow_turn are.
 
 // ---------------------------------------------------------------------------
-// Outcomes. The three spec'd ones plus two Pass-1 terminals:
-//   reask — empty/whitespace answer to the active question (re-ask, no write).
-//   idle  — inbound with no active morning flow, not yet completed today.
+// Outcomes. The three spec'd ones plus three Pass-1/022 terminals:
+//   reask       — empty/whitespace answer to the active question (re-ask, no write).
+//   idle        — inbound with no active morning flow, not yet completed today.
+//   wrong_flow  — a DIFFERENT flow (evening) is active. 022 changed the RPC's
+//                 ELSE branch from 'idle' to this; see evening.ts's identical
+//                 outcome for why (a mis-routed turn must be reported, not
+//                 silently swallowed after the Twilio SID is consumed).
 export type MorningOutcome =
   | 'start'
   | 'advance'
   | 'already_complete'
   | 'idle'
   | 'reask'
+  | 'wrong_flow'
 
 // The in-scope question steps, in order. current_step stores the question
 // NUMBER currently awaited. Pass 2 inserted 2,3; Pass 3 appends 5,6.
@@ -72,6 +79,11 @@ export const MORNING_ALREADY_COMPLETE_REPLY =
 // idle produces no outbound message (no active flow, nothing to say).
 export const MORNING_IDLE_REPLY = ''
 
+// wrong_flow is never rendered: the webhook retries against the evening RPC
+// and replies with THAT result. Present so buildMorningReply is total —
+// mirrors EVENING_WRONG_FLOW_REPLY in evening.ts exactly.
+export const MORNING_WRONG_FLOW_REPLY = ''
+
 /**
  * Build the outbound reply for a resolved turn, from the outcome and the
  * post-turn current_step. Used by BOTH the pure mirror and the webhook so reply
@@ -90,6 +102,8 @@ export function buildMorningReply(outcome: MorningOutcome, currentStep: number):
       return MORNING_ALREADY_COMPLETE_REPLY
     case 'idle':
       return MORNING_IDLE_REPLY
+    case 'wrong_flow':
+      return MORNING_WRONG_FLOW_REPLY
   }
 }
 
@@ -201,16 +215,24 @@ export function dispatchMorningFlow(
       sessionUpdate = { current_step: decided.nextStep, context: decided.context }
       if (decided.outcome === 'advance') dailyLogWrite = { morning_equipment: parse }
     } else if (session.current_step === 4) {
-      // Q4 (free text) -> store execution plan + submit, complete (step 0, marker).
+      // Q4 (free text) -> store execution plan + submit, complete (step 0,
+      // marker MERGED not replaced — 022 fix, see the migration's Q4 comment:
+      // a bare replace would wipe evening_submitted if evening ran earlier
+      // the same day). Mirrors evening's own completedContext() exactly.
+      const nextContext: Record<string, unknown> = { ...ctx, morning_submitted: true }
+      delete nextContext[REASK_KEY[2]]
+      delete nextContext[REASK_KEY[3]]
       outcome = 'advance'
-      sessionUpdate = { current_step: 0, context: { morning_submitted: true } }
+      sessionUpdate = { current_step: 0, context: nextContext }
       dailyLogWrite = { morning_execution_plan: text, morning_submitted_at: now }
     } else {
       outcome = 'reask'
     }
   } else {
-    // Non-morning flow active — not this function's concern in Pass 1.
-    outcome = 'idle'
+    // A DIFFERENT flow (evening) is active — 022 changed the RPC's ELSE branch
+    // from 'idle' to 'wrong_flow' so a mis-routed turn is reported, not
+    // silently swallowed. This mirror tracks that.
+    outcome = 'wrong_flow'
   }
 
   const stepForReply = sessionUpdate.current_step ?? session.current_step
