@@ -1652,6 +1652,21 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      apply_evening_flow_turn: {
+        Args: {
+          p_message: string
+          p_now?: string
+          p_parse?: Json
+          p_parse_ok?: Json
+          p_phone_number: string
+          p_project_id: string
+          p_start_flow: boolean
+          p_tenant_id: string
+          p_test_sleep_ms?: number
+          p_user_id: string
+        }
+        Returns: Json
+      }
       apply_morning_flow_turn: {
         Args: {
           p_equipment?: Json
