@@ -631,6 +631,32 @@ a confidence field expecting it to be populated. Origin + full reasoning:
 docs/design-decisions-beta-feedback.md §9 (evening Q4 v1 scope), where this was
 first written down before being promoted here as cross-cutting debt.
 
+EQUIPMENT daily_hire_cost — A COUNT IN A MONEY FIELD (opened 2026-08-05,
+tracked, NOT fixed). Pre-existing 018-era parser behavior, surfaced during
+migration 022's review (R5 rehearsal, engineer C: "1 JCB, 2 mixers" parsed to
+daily_hire_cost: 1 / daily_hire_cost: 2, count: null on both). equipment.ts's
+parseChunk (018, unrelated to 022, deliberately left alone there — see
+docs/reviews/022-review-package.md §10) reads the FIRST number in a chunk as a
+daily hire RATE, never a count, by design ("the field gives rates ('JCB
+1500'), not counts" — equipment.ts:50-54). A terse answer that leads with a
+count rather than a rate ("2 mixers", "1 JCB") lands that count directly in a
+field two future consumers will read as money:
+  * design-decisions-beta-feedback.md §6 — "Machinery wastage ₹ = idle hours
+    × hire rate," a weekly-review costing calculation.
+  * bot-flows.md's DPR generation job — "Idle cost per machine = daily_hire_
+    cost × (1 − actual_hours/available_hours)," computed IN CODE and injected
+    as a FACT into the Claude prompt (bot-flows.md, "What the job does").
+CONSEQUENCE: neither consumer has any signal that a given daily_hire_cost is a
+miscaptured count rather than a real rate. The DPR path is the sharper risk —
+a count masquerading as a rate becomes a stated currency figure in the
+generated report itself, not a visible error a PM would catch and question.
+Until this is fixed, any future consumer of morning_equipment MUST treat
+daily_hire_cost as unverified and MUST NOT assume it is always a genuine rate.
+Same class of finding as PARSER DEBT above (a downstream consumer inherits a
+silent gap unless warned here first) — this entry exists so the next author
+gets the warning, not the surprise. Full finding + citations:
+docs/reviews/022-review-package.md §10.
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
