@@ -767,8 +767,12 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        (28 Jul 22:06:49 -> 04 Aug 22:06:49 IST).
        PRE-APPLY BASELINE, the rollback reference point: apply_morning_flow_turn
        on prod was confirmed still 018's body — 6981 chars,
-       sha256 6a762d496bb0e49f3fc2f29728d154bd — with both diagnostic flags
-       (body_has_wrong_flow, morning_start_has_site1_fix) false, and
+       md5(prosrc) 6a762d496bb0e49f3fc2f29728d154bd (the catalog probe's own
+       hash function, 32 hex chars — NOT sha256; mislabelled in an earlier
+       draft of this entry and corrected here, same provenance-error class as
+       the swapped file/hash labels caught earlier this round) — with both
+       diagnostic flags (body_has_wrong_flow, morning_start_has_site1_fix)
+       false, and
        apply_evening_flow_turn confirmed absent. Prod was not drifted; the
        apply exercised exactly the rehearsed paths.
        POST-APPLY VERIFICATION, observed directly on prod: ACLs on both
@@ -776,10 +780,11 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        grantees limited to postgres + service_role only, no
        anon/authenticated/PUBLIC row on either. Both function bodies match
        test-db EXACTLY: apply_morning_flow_turn 8263 chars /
-       sha256 fe6cc6c01f10b7e0c4d701ff8dfe66a5, apply_evening_flow_turn
-       9016 chars / sha256 08ac80270b431ddf3d94feae219fee2b, and
-       morning_start_has_site1_fix=true (the reviewer-round-2 fix confirmed
-       live on prod, not just test-db).
+       md5(prosrc) fe6cc6c01f10b7e0c4d701ff8dfe66a5, apply_evening_flow_turn
+       9016 chars / md5(prosrc) 08ac80270b431ddf3d94feae219fee2b (both from
+       the catalog probe's md5(p.prosrc) column — not sha256; same correction
+       as the pre-apply baseline above), and morning_start_has_site1_fix=true
+       (the reviewer-round-2 fix confirmed live on prod, not just test-db).
        LEDGER — MISSING FROM THE ORIGINAL RUNBOOK, added retroactively. The
        022 runbook as first drafted (review package §11) had no ledger step
        at all; steps A-F never touched schema_migrations, and the raw SQL

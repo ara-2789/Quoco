@@ -665,8 +665,9 @@ context-writing sites now merge instead of replace, closing a defect a
 reverse-order regression test found that the original single-site fix did
 not cover (full finding: docs/reviews/022-review-package.md §9). PITR
 observed before apply (full 7-day window); pre-apply baseline pinned as the
-rollback reference (morning's body was still 018's, sha256
-6a762d496bb0e49f3fc2f29728d154bd); post-apply ACL + both body hashes
+rollback reference (morning's body was still 018's, md5(prosrc)
+6a762d496bb0e49f3fc2f29728d154bd — not sha256, corrected per schema.md);
+post-apply ACL + both body hashes
 confirmed on prod, matching test-db exactly. Ledger entry (version '022')
 was MISSING from the original runbook draft — added retroactively once
 caught, row count observed 18 -> 19 across the manual INSERT (§0: observed,

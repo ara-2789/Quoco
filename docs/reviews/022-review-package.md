@@ -742,10 +742,13 @@ Prod was not drifted; the apply below exercised exactly the rehearsed paths.
 `acl_is_default_public = false`, single overload each, grantees limited to
 `postgres` + `service_role` only — no `anon`/`authenticated`/`PUBLIC` row on
 either. Bodies match test-db **exactly**: `apply_morning_flow_turn` 8263
-chars / sha256 `fe6cc6c01f10b7e0c4d701ff8dfe66a5`,
-`apply_evening_flow_turn` 9016 chars / sha256
-`08ac80270b431ddf3d94feae219fee2b`, and `morning_start_has_site1_fix = true`
-— the reviewer-round-2 fix confirmed live on prod, not just test-db.
+chars / `prosrc_md5` `fe6cc6c01f10b7e0c4d701ff8dfe66a5`,
+`apply_evening_flow_turn` 9016 chars / `prosrc_md5`
+`08ac80270b431ddf3d94feae219fee2b` (the catalog probe's `md5(p.prosrc)`
+column, §6.2 — not sha256; corrected here and in `schema.md`'s matching
+entry, same provenance-error class as the swapped file/hash labels §0
+already caught this round), and `morning_start_has_site1_fix = true` — the
+reviewer-round-2 fix confirmed live on prod, not just test-db.
 
 **E. Ledger INSERT (write) + verify** ✅ — **retroactively added, see the
 restructuring note above.** CLI `migration repair` is 28P01-blocked for this
