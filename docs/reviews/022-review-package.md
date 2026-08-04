@@ -95,7 +95,7 @@ equally weighted.**
 
 | | Project ref | State |
 |---|---|---|
-| **prod** | `jvxwqignooseazzmwhvl` | 022 **NOT APPLIED** as of this package |
+| **prod** | `jvxwqignooseazzmwhvl` | 022 **APPLIED 2026-08-05** (§11) — all three CONTEXT DISCIPLINE fixes live, ACL + body hashes verified, ledger confirmed. Real webhook-triggered proof stays OPEN (§10, §11 deferred block). |
 | **test-db** | `exfccwlrhoutkgrlikod` | 022 applied; R5 rehearsed; ZZ Smoke fixtures cleaned (R5f) |
 
 Rehearsed on the cleaned existing test-db per the CLAUDE.md §0 conditional
@@ -679,8 +679,9 @@ SID dedup → engineer resolution → `service_role` RPC → DB write), the way
 020's Step 6 closed for morning (`020-review-package.md` §8 Step 6, a full
 Q1–Q4 flow through the real webhook). This one genuinely waits on the
 webhook-wiring deliverable above — there is no way to trigger evening via
-the real webhook until that lands. Scheduled for the prod-apply runbook
-below, §11 step E — not yet executed.
+the real webhook until that lands. Tracked in the prod-apply runbook below,
+§11's deferred/unlettered block — not a numbered step, since it isn't a
+fixed point in that sequence; not yet executed.
 
 **Equipment `daily_hire_cost` quirk — pre-existing, unrelated to 022, left
 alone, now tracked as a named debt entry.** Visible in §4's literal capture
@@ -701,62 +702,90 @@ as its own debt-register entry: **CLAUDE.md §10, "EQUIPMENT
 
 ---
 
-## 11. PROD apply — runbook (NOT YET EXECUTED)
+## 11. PROD apply — runbook (APPLIED — 2026-08-05)
 
 Instance of `docs/migration-runbook-template.md`. Strict alternation; owner
-confirms at each step. Point the SQL Editor at **prod** (`jvxwqignooseazzmwhvl`)
-and confirm the project ref before any write step.
+confirmed at each step. Executed against **prod** (`jvxwqignooseazzmwhvl`).
 
-**A. PITR observation** — required before any prod apply per CLAUDE.md §0.
-Observe the restore window directly (dashboard), not by trusting a prior
-"enabled" note.
+**Restructuring note, so this reads correctly for whoever opens it next:**
+the original draft of this runbook had **no ledger step at all** — steps A-D
+and F-H never touched `schema_migrations`, and the raw SQL apply (step C)
+creates the function objects but records nothing in the ledger. Caught only
+when step G (doc updates) was reached and the ledger turned out to have
+never been inserted. Added retroactively as step **E**, in the position it
+should have held from the start (immediately after post-apply verification,
+matching the 015/019/020/021 precedent), not tacked on after the fact. The
+real webhook-triggered proof, previously lettered E in the first draft, is
+moved to its own unlettered block after H — it isn't a fixed point in this
+sequence, it's an indefinitely-deferred follow-up blocked on unrelated
+future work (§10), and giving it a fixed letter implied an ordering it
+doesn't actually have.
 
-**B. Pre-apply state probe (read-only).** Confirm `apply_evening_flow_turn`
-absent on prod; confirm `apply_morning_flow_turn`'s current `prosrc` still
-matches 018 (not already 022) — the §6.2 A2 query, re-run on prod.
+**A. PITR observation** ✅ — required before any prod apply per CLAUDE.md §0.
+Observed directly on prod (dashboard), not trusted from a prior note: full
+rolling 7-day restore window, current as of observation
+(28 Jul 22:06:49 → 04 Aug 22:06:49 IST).
 
-**C. Apply (write).** Fresh tab, full paste of the pinned body:
+**B. Pre-apply state probe (read-only)** ✅ — confirmed clean:
+`apply_evening_flow_turn` absent on prod; `apply_morning_flow_turn`'s
+`prosrc` still matched 018 exactly — 6981 chars, sha256
+`6a762d496bb0e49f3fc2f29728d154bd`, both diagnostic flags
+(`body_has_wrong_flow`, `morning_start_has_site1_fix`) false. **This is the
+rollback reference point** — pinned here and in `schema.md`'s 022 entry.
+Prod was not drifted; the apply below exercised exactly the rehearsed paths.
+
+**C. Apply (write)** ✅ — full paste of the pinned body:
 `git show 6bbbc59:supabase/migrations/022_evening_flow_apply_turn.sql | pbcopy`
-(clipboard hash must equal `f7e1ee6d…23acfb`). Deselect before running.
+(clipboard hash `f7e1ee6d…23acfb`). Applied, success.
 
-**D. Post-apply probes (read-only).** Re-run §6.2's A1/A2 queries on prod;
-assert the same ACL shape, `body_has_wrong_flow = true` for both functions,
-and `morning_start_has_site1_fix = true`. Re-run the §4-shape queries
-against a throwaway/disposable phone, NOT the ZZ Smoke fixtures (those were
-deliberately deleted, R5f) — never seed permanent prod test data without the
-standing artifact-disposal discipline (020 precedent: deactivation only,
-never delete a row with an irreversible FK).
+**D. Post-apply probes (read-only)** ✅ — both clean. ACLs: both functions
+`acl_is_default_public = false`, single overload each, grantees limited to
+`postgres` + `service_role` only — no `anon`/`authenticated`/`PUBLIC` row on
+either. Bodies match test-db **exactly**: `apply_morning_flow_turn` 8263
+chars / sha256 `fe6cc6c01f10b7e0c4d701ff8dfe66a5`,
+`apply_evening_flow_turn` 9016 chars / sha256
+`08ac80270b431ddf3d94feae219fee2b`, and `morning_start_has_site1_fix = true`
+— the reviewer-round-2 fix confirmed live on prod, not just test-db.
 
-**E. Real webhook-triggered `apply_evening_flow_turn` on PROD.** Blocked on
-the webhook-wiring deliverable, §10 — cannot execute until that lands
-(nothing can reach evening's RPC via the real webhook before then). Tracked
-here so the runbook doesn't silently skip it once wiring does land: same
-discipline as 020 Step 6, a real inbound through the production webhook,
-`service_role` end-to-end, a disposable/deactivated test engineer per the
-standing artifact discipline.
+**E. Ledger INSERT (write) + verify** ✅ — **retroactively added, see the
+restructuring note above.** CLI `migration repair` is 28P01-blocked for this
+project (as with 013-021); the manual INSERT is the real method.
 
-**F. Post-apply types regen (R6).** `npx supabase gen types typescript
---linked --schema public`; expect `apply_evening_flow_turn` to appear in
-`types/database.ts`'s `Database['public']['Functions']`; commit the diff;
-confirm `tsc --noEmit` goes clean (both §10 errors should disappear).
+```sql
+INSERT INTO supabase_migrations.schema_migrations (version, name, statements)
+VALUES ('022', 'evening_flow_apply_turn', ARRAY[]::text[]);
+```
 
-**G. `schema.md` / CLAUDE.md §10.** Update the 022 entry from "pending" to
-applied only after C+D confirm — no "applied" line asserted before it's true.
-(This is CLAUDE.md's own §10, a different document's numbering from this
-package's §10/§11 — not to be confused with either.)
+Row count **observed on both sides, not asserted** (§0): 18 → 19 across the
+INSERT. Confirming `SELECT`: exactly one row at version `'022'`, no
+duplicate, no typo'd version string.
 
-**H. Merge ordering — explicit, because reversing it breaks the production
-build.** The PR must **not** merge before F confirms. Correct order:
-**apply (C) → R6 regen + commit (F) → CI/build green → merge.** The reason
-this needs to be a named step rather than assumed: PR #20's Vercel preview
-is **currently red**, and it's red for the exact known cause in §10 —
-`types/database.ts` doesn't know `apply_evening_flow_turn` exists yet, so
-the same two `tsc` errors that show locally fail the preview build.
-Merging before F would put that same failure on `main`'s production build,
-not just a preview. The red preview is expected and explained, not a
-separate problem to chase — it clears at F, and F cannot run before C. The
-PR body carries a line stating this explicitly, so it isn't mistaken for an
-unrelated CI break by anyone reviewing the checks tab.
+**F. Post-apply types regen (R6)** ✅ — `npx supabase gen types typescript
+--linked --schema public`. `apply_evening_flow_turn` now present in
+`types/database.ts`'s `Database['public']['Functions']` (+15 lines,
+committed). `tsc --noEmit` fully clean — both known R6-gap errors gone.
+
+**G. `schema.md` / CLAUDE.md §10** ✅ — both updated from no-entry to
+applied, only after C+D+E confirmed. (CLAUDE.md's own §10 — a different
+document's numbering from this package's §10/§11.)
+
+**H. Merge ordering** ✅ satisfied — apply (C) → R6 regen + commit (F) → CI
+green → merge. PR #20's Vercel preview was red for the known cause (F not
+yet run); confirm it flips green now that F is committed and pushed before
+merging.
+
+---
+
+**DEFERRED, unlettered — real webhook-triggered `apply_evening_flow_turn` on
+PROD.** Not part of the sequence above: blocked on the webhook-wiring
+deliverable (§10), which this migration does not implement. Nothing on prod
+can reach evening's RPC via the real webhook until a cron or the webhook
+itself is wired to call it. Tracked here so it isn't silently skipped once
+wiring does land: same discipline as 020 Step 6 — a real inbound through
+the production webhook, `service_role` end-to-end, a disposable/deactivated
+test engineer per the standing artifact discipline. **"Applied" (this
+section's header) means the migration's SQL is live and verified on prod —
+it does not mean this is closed out.**
 
 ---
 
@@ -771,8 +800,8 @@ unrelated CI break by anyone reviewing the checks tab.
 | Third-site CONTEXT DISCIPLINE defect | Found by the reverse-order test T-022-13, not named by the original review; fixed, reviewer-approved (§9) |
 | Restart-semantics consequence | Flagged, not resolved — DECIDE-BEFORE-CRON-PR in `design-decisions-beta-feedback.md` §10 (§9) |
 | Equipment `daily_hire_cost` quirk | Pre-existing 018-era debt, out of scope for this PR, now tracked as its own CLAUDE.md §10 entry (§10) |
-| Known follow-ups | R6 types regen (deferred by design, §10); structural evening-unreachability pinned by grep, `ENABLE_TEST_FLOW_TRIGGER` prod value as a separate standing checklist item (§10); webhook-wiring deliverable with the double-wrong_flow edge defined (§10); `service_role` real-webhook proof, blocked on webhook-wiring (§11 step E) |
+| Known follow-ups | Structural evening-unreachability pinned by grep, `ENABLE_TEST_FLOW_TRIGGER` prod value as a separate standing checklist item (§10); webhook-wiring deliverable with the double-wrong_flow edge defined (§10); `service_role` real-webhook proof, genuinely OPEN, blocked on webhook-wiring (§11, deferred/unlettered block) |
 | Test suite | 232/232, zero regressions, pinned to commit `6bbbc59` |
-| `tsc --noEmit` | 2 errors, both explained and expected per §10 — resolves automatically after R6 |
-| Merge ordering | apply → R6 regen + commit → CI green → merge (§11 step H) — do not merge on a red preview without confirming the cause matches §10 |
-| Prod status | **NOT APPLIED.** Runbook ready (§11); requires owner go-ahead |
+| `tsc --noEmit` | Clean — R6 regen complete (§11 step F). Both previously-known errors gone. |
+| Merge ordering | apply → R6 regen + commit → CI green → merge (§11 step H) — **satisfied**; confirm the Vercel preview has actually flipped green before merging |
+| Prod status | **APPLIED 2026-08-05** (§11, steps A-H). Ledger confirmed (18→19). Real webhook-triggered proof stays OPEN — not closed out by this apply. |

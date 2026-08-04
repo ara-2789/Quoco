@@ -657,6 +657,30 @@ silent gap unless warned here first) — this entry exists so the next author
 gets the warning, not the surprise. Full finding + citations:
 docs/reviews/022-review-package.md §10.
 
+Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
+flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
+(Q1-Q3) is live, hardened inline (020 discipline); apply_morning_flow_turn
+gains 'wrong_flow' (was 018's 'idle') and — reviewer round 2 — both its
+context-writing sites now merge instead of replace, closing a defect a
+reverse-order regression test found that the original single-site fix did
+not cover (full finding: docs/reviews/022-review-package.md §9). PITR
+observed before apply (full 7-day window); pre-apply baseline pinned as the
+rollback reference (morning's body was still 018's, sha256
+6a762d496bb0e49f3fc2f29728d154bd); post-apply ACL + both body hashes
+confirmed on prod, matching test-db exactly. Ledger entry (version '022')
+was MISSING from the original runbook draft — added retroactively once
+caught, row count observed 18 -> 19 across the manual INSERT (§0: observed,
+not asserted), CLI still 28P01-blocked. Full record: docs/schema.md's own
+022 entry (fuller than this pointer — read that one, not this one, for the
+complete pre/post-apply evidence).
+  NOT closed out by this apply: real webhook-triggered apply_evening_flow_turn
+  proof stays OPEN, blocked on the webhook-wiring deliverable
+  (022-review-package.md §10) — nothing on prod can reach evening's RPC via
+  the real webhook until a cron or the webhook itself is wired to call it,
+  which 022 does not do. Restart-semantics decision also stays OPEN
+  (design-decisions-beta-feedback.md §10, DECIDE-BEFORE-CRON-PR) — whoever
+  builds that wiring inherits both.
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
