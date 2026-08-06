@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import crypto from 'crypto'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { isNewMessage } from '@/lib/whatsapp/idempotency'
 import { normalisePhoneNumber } from '@/lib/whatsapp/normalise'
 import { createServiceClient } from '@/lib/supabase/service'
 import { applyMorningFlowTurn, buildMorningReply } from '@/lib/whatsapp/flows/morning'
+import { dispatchInboundTurn } from '@/lib/whatsapp/dispatch'
 import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
 import { decideInboundGate, clearMessagingBlock } from '@/lib/whatsapp/reactivation'
 
@@ -102,7 +104,21 @@ interface GateUser {
   project_members: { project_id: string }[]
 }
 
-export async function POST(request: NextRequest) {
+/**
+ * The real request-handling logic. Extracted from POST so a test harness can
+ * call it directly with an injected client — same optional-supabaseClient
+ * shape already used by readCurrentFlow / applyMorningFlowTurn /
+ * applyEveningFlowTurn / dispatchInboundTurn (lib/whatsapp/{session,
+ * flows/morning,flows/evening,dispatch}.ts), extended to this one remaining
+ * file. POST below is a one-line wrapper supplying today's exact production
+ * default (createServiceClient()) — this function is the ONLY implementation
+ * of webhook handling; there is no separate test assembly that can drift
+ * from what POST actually runs.
+ */
+export async function handleWebhookPost(
+  request: NextRequest,
+  deps: { supabaseClient?: SupabaseClient } = {},
+): Promise<NextResponse> {
   const authToken = process.env.TWILIO_AUTH_TOKEN
   if (!authToken) {
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
@@ -139,7 +155,7 @@ export async function POST(request: NextRequest) {
   // The engineer's single active project is embedded in this SAME query
   // (project_members(project_id)) — one round trip, read only after the gate
   // passes. The gate itself still keys solely on status + messaging_blocked.
-  const supabase = createServiceClient()
+  const supabase = deps.supabaseClient ?? createServiceClient()
   const { data: user, error: lookupError } = await supabase
     .from('users')
     .select('id, tenant_id, status, messaging_blocked, project_members(project_id)')
@@ -194,7 +210,7 @@ export async function POST(request: NextRequest) {
     if (!reactSid) {
       return twimlEmpty(400)
     }
-    const isNewReact = await isNewMessage(reactSid)
+    const isNewReact = await isNewMessage(reactSid, supabase)
     if (!isNewReact) {
       return twimlEmpty()
     }
@@ -234,7 +250,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing MessageSid' }, { status: 400 })
   }
 
-  const isNew = await isNewMessage(messageSid)
+  const isNew = await isNewMessage(messageSid, supabase)
   if (!isNew) {
     console.log(`Duplicate message SID ${messageSid} — skipping (idempotent no-op)`)
     return NextResponse.json({ status: 'duplicate_ignored' })
@@ -249,29 +265,51 @@ export async function POST(request: NextRequest) {
     return noProjectResponse()
   }
 
-  // --- Morning flow turn (single transactional RPC) ----------------------
-  // applyMorningFlowTurn REPLACES acquire_and_transition_session on this path:
-  // it takes the row lock, decides Q1/Q4, and writes session + daily_logs in
-  // ONE transaction. startFlow is env-gated and structurally cannot be true
-  // without ENABLE_TEST_FLOW_TRIGGER='true'.
   const messageBody = params.Body ?? ''
   const startFlow = isTestStartTrigger(messageBody)
+
+  // --- Test-only flow start (env-gated sentinel) --------------------------
+  // startFlow structurally cannot be true without ENABLE_TEST_FLOW_TRIGGER=
+  // 'true'. Only morning has a starter — dispatch.ts's own header explains why
+  // evening deliberately doesn't yet (design-decisions-beta-feedback.md §11).
+  // Kept as a direct applyMorningFlowTurn call: dispatchInboundTurn is scoped
+  // to ORDINARY replies only (its own header says so), starting a flow is a
+  // separate, explicit directive.
   if (startFlow) {
     console.warn(
       `TEST-ONLY flow trigger fired for ${fromNumber} — ENABLE_TEST_FLOW_TRIGGER must NOT be set in production`,
     )
+    const result = await applyMorningFlowTurn({
+      phoneNumber: fromNumber,
+      tenantId: user.tenant_id,
+      userId: user.id,
+      projectId,
+      message: messageBody,
+      startFlow: true,
+      supabaseClient: supabase,
+    })
+    const reply = buildMorningReply(result.outcome, result.currentStep)
+    return reply === '' ? twimlEmpty() : twimlMessage(reply)
   }
 
-  const result = await applyMorningFlowTurn({
+  // --- Ordinary inbound reply: dispatch to whichever flow is active -------
+  // dispatchInboundTurn (lib/whatsapp/dispatch.ts) REPLACES the previous
+  // hardcoded-to-morning call here: it reads current_flow, tries the matching
+  // RPC, and retries the other flow exactly once on 'wrong_flow'. Migration
+  // 022's review package named this wiring as its §10 deliverable — this is
+  // that wiring. Reply text is single-sourced from morning.ts/evening.ts via
+  // dispatchInboundTurn's own reply builders — never inlined here.
+  const { reply } = await dispatchInboundTurn({
     phoneNumber: fromNumber,
     tenantId: user.tenant_id,
     userId: user.id,
     projectId,
     message: messageBody,
-    startFlow,
+    supabaseClient: supabase,
   })
-
-  // Reply text is single-sourced from morning.ts — never inline here.
-  const reply = buildMorningReply(result.outcome, result.currentStep)
   return reply === '' ? twimlEmpty() : twimlMessage(reply)
+}
+
+export async function POST(request: NextRequest) {
+  return handleWebhookPost(request)
 }

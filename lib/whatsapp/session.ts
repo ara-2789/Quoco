@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 
 // Flow types allowed on whatsapp_sessions.current_flow (migration 001 CHECK).
@@ -29,6 +30,39 @@ export interface WhatsAppSession {
   pending_flows: PendingFlow[]
   expires_at: string
   updated_at: string
+}
+
+/**
+ * UNLOCKED read of current_flow for a phone number — used ONLY by
+ * dispatch.ts to pick which RPC to try FIRST. Migration 022's own header
+ * documents why an unlocked read here is safe: the RPC that actually gets
+ * called re-reads the session UNDER THE LOCK before writing anything, so a
+ * stale read here can mis-ROUTE a turn but can never write wrong data.
+ * Returns null when no session row exists yet, or current_flow is null
+ * (idle) — dispatch.ts treats both the same way (default to morning).
+ */
+export async function readCurrentFlow(
+  phoneNumber: string,
+  /**
+   * Injected client, defaulting to createServiceClient() (today's exact
+   * behaviour) when omitted — same shape as clearMessagingBlock's own
+   * client parameter (lib/whatsapp/reactivation.ts).
+   */
+  supabaseClient?: SupabaseClient,
+): Promise<SessionFlow | null> {
+  const supabase = supabaseClient ?? createServiceClient()
+
+  const { data, error } = await supabase
+    .from('whatsapp_sessions')
+    .select('current_flow')
+    .eq('phone_number', phoneNumber)
+    .maybeSingle<{ current_flow: SessionFlow | null }>()
+
+  if (error) {
+    throw new Error(`readCurrentFlow failed for ${phoneNumber}: ${error.message}`)
+  }
+
+  return data?.current_flow ?? null
 }
 
 /**
