@@ -855,6 +855,35 @@ external calls.
   functionally safe — the error was real and invisible to Sentry for the
   same reason this needs fixing, not because nothing went wrong.
 
+MIGRATION 023 APPLIED TO PRODUCTION (2026-08-07, 20:44 IST). `public.dprs`
+created — Phase 0 of the Claude API / DPR generation build — and
+`daily_logs.dpr_content` dropped (0 rows, probe-backed both pre-apply and
+again at apply time). `app/(dashboard)/dprs/page.tsx` was already repointed
+at the new table and on prod since the PR merged ahead of this apply
+(deliberate option-B ordering, docs/reviews/023-review-package.md §7 —
+`types/database.ts` was regenerated against test-db BEFORE the apply and
+confirmed BYTE-IDENTICAL against a fresh prod regen AFTER it, sha256
+match, no drift). PITR observed by direct dashboard inspection before the
+apply (CLAUDE.md §0, not a checklist entry); rollback target 20:43 IST, 7
+Aug 2026. All six post-apply verification queries on prod matched the
+test-db rehearsal exactly — columns, RLS state (`relrowsecurity=true`,
+`relforcerowsecurity=false`), policy shape (`dprs_select`,
+`roles={authenticated}`), `relacl`
+(`{postgres=arwdDxtm,anon=rDxtm,authenticated=rDxtm,service_role=arwdDxtm}`),
+constraints, `dpr_content`'s absence. `ensure_rls` (the prod-only event
+trigger tracked in the OUT-OF-BAND DB OBJECTS registry above;
+023-review-package.md §4) fired exactly as predicted and was a non-event.
+Full record: docs/schema.md's own `dprs` entry and
+docs/reviews/023-review-package.md §12 — fuller than this pointer, read
+those for the complete evidence.
+  NOT closed out by this apply: the DPR generator itself (Phase 1 — the
+  Claude API client, the `dpr_generate` job handler) does not exist yet;
+  `dprs` is schema-only until that ships. Migration 024 (the systemic
+  `anon`/`authenticated` TRUNCATE/REFERENCES/TRIGGER grant sweep,
+  023-review-package.md §3) stays deferred, not part of this apply. The
+  DPRS PAGE SWALLOWS QUERY ERRORS gap above also stays open — unrelated to
+  this apply, not fixed by it.
+
 Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
 flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
 (Q1-Q3) is live, hardened inline (020 discipline); apply_morning_flow_turn

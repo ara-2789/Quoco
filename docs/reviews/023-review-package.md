@@ -1023,5 +1023,101 @@ No merge step here — it already happened, per the ordering note above.
 | CI / merge-gating | **RESOLVED — option (B) chosen over the recommended (A).** `types/database.ts` regenerated against test-db (`c00232d`), diffed clean against the prior prod-derived file (only the 023 delta, nothing else), all four local CI-equivalent checks green. Rationale: (A) would have forced apply-before-merge, reproducing the prod-ahead-of-`main` condition §0's fresh-branch rule exists because of, and opened a real window where the column drop and the old `page.tsx` coexist. Prod re-verification planned for immediately post-apply — corrected expectation is **byte-identical**, not "one expected addition" (that original expectation was disproved by the `c00232d` diff itself; `rls_auto_enable` is never `gen types`-emitted at all) (§7) |
 | Reviewer round | **SKIPPED, five reasons on the record** — `ensure_rls` resolved benign, policy byte-identical to an already-shipped-and-reviewed 019 policy, rehearsal cleared every check against a pinned SHA, the drop is provably data-free, and this PR carries a live-JWT proof 019 itself shipped without (§8) |
 | Follow-ups tracked, not blocking | Migration 024 + lint rule (§3); dead-link fix already landed separately (§9) |
-| Merge status | **MERGEABLE NOW** — CI green locally on the test-db-derived types (§7). Runbook (§10) begins AFTER merge, not before — the ordering is inverted from an earlier draft of this package by deliberate decision, not oversight. |
-| Prod status | **NOT APPLIED.** Rehearsed clean on test-db only (§2). Runbook (§10) is planned steps, not an executed record; step A (PITR) requires direct dashboard inspection at apply time, not a reference to a prior "DONE." |
+| Merge status | **MERGED** — PR #34, `0807fb3`, 2026-08-07. CI was green locally on the test-db-derived types (§7) before merge; the runbook (§10) ran AFTER, per the deliberate ordering decided there. *(Row read "MERGEABLE NOW" until the merge actually happened — superseded here, not rewritten.)* |
+| Prod status | **APPLIED — 2026-08-07, 20:44 IST.** Full evidence in §12. *(Row read "NOT APPLIED" before the apply — superseded here, not rewritten; §2 still accurately describes the rehearsal that preceded it.)* |
+
+---
+
+## 12. PROD APPLY — EXECUTED (2026-08-07, 20:44 IST)
+
+**023 is live on prod.** This section is the executed record §9/§10 were
+planned steps for — append-only, closing the package, not editing earlier
+sections' "not applied" language out from under them (§0's provenance
+discipline: corrections are dated additions, not silent rewrites).
+
+**RAW-CAPTURE STATUS for this section, same convention as the rest of the
+package**: the apply timestamp, the six post-apply query results, the
+pre-apply probe re-read, and the PITR observation were all executed by the
+owner directly on prod and relayed here as a rolled-up summary, not pasted
+as raw per-query output — graded **NARRATIVE-CONFIRMED**, the same
+standard §2's own post-apply test-db verification uses, not inflated to
+LITERAL just because the stakes are higher here. The `types/database.ts`
+byte-identical confirmation below IS LITERAL — run directly, diff and
+sha256 both captured in this same session, immediately after being told
+the apply had completed.
+
+### Apply
+
+**Timestamp: 2026-08-07, 20:44 IST.**
+
+**Pre-apply probe, re-read at apply time** (not trusted from the number
+captured while drafting the migration, per that comment's own instruction,
+and per migration 016's precedent):
+```
+total_rows=1, non_null_dpr_content=0
+```
+Unchanged from the earlier reading (§2) — the column was still 0-non-null
+at the moment of the drop, as required for it to be genuinely data-free.
+
+**PITR**: observed by direct dashboard inspection before the apply,
+per CLAUDE.md §0 (Database → Backups → Point in Time, looked at directly,
+not recalled from CLAUDE.md §10's 2026-07-12 enablement note). Rollback
+target: **20:43 IST, 7 Aug 2026** — one minute before the apply, the
+correct granularity for an apply this size.
+
+### Post-apply verification — six checks, all matching the test-db rehearsal exactly
+
+| Check | Prod result | Matches test-db rehearsal (§2)? |
+|---|---|---|
+| Columns | 13, types/defaults matching the DDL | Yes |
+| RLS enabled | `relrowsecurity=true`, `relforcerowsecurity=false` | Yes |
+| Policy shape | one `dprs_select`, `polcmd=r`, `roles={authenticated}`, `with_check` null, `using_expr` carries both the `tenant_id` check and the `project_members` EXISTS | Yes |
+| `dpr_content` gone | zero rows for that column | Yes |
+| Grants / `relacl` | `{postgres=arwdDxtm,anon=rDxtm,authenticated=rDxtm,service_role=arwdDxtm}` — **identical character-for-character** to test-db | Yes |
+| Constraints | six, matching by name and definition; `generator_job_id` in no FK | Yes |
+
+**`ensure_rls` — the one prod-only variable this rehearsal couldn't
+exercise (§4) — was a non-event, exactly as predicted, not just
+hoped**: `relforcerowsecurity=false` on prod, same value test-db reaches
+by a different path (023's own explicit `ENABLE ROW LEVEL SECURITY`
+statement, since the trigger doesn't exist there to act first). The
+fresh-branch-rule class of risk §4 flagged — an out-of-band prod object
+rehearsal genuinely cannot exercise — is now closed by direct observation,
+not by the earlier reasoning alone.
+
+### Types regen (step F) — LITERAL, run in this session, immediately after being told the apply completed
+
+```
+$ npx supabase gen types typescript --linked --schema public
+```
+Diffed against the committed test-db-derived file (`c00232d`):
+```
+$ diff types/database.ts <prod-regen>
+(no output — exit 0)
+$ shasum -a 256 types/database.ts <prod-regen>
+4a17865b19fa94c58b7345a8fc8d4abaaf25dae5d063a7c14826bd50f4896711  types/database.ts
+4a17865b19fa94c58b7345a8fc8d4abaaf25dae5d063a7c14826bd50f4896711  <prod-regen>
+```
+**Byte-identical.** No new commit was needed — the file committed at
+`c00232d` already is the true prod-sourced content, one apply early. This
+is the drift check §7's "Decision: (B), not (A)" section named as the
+thing that would prove or disprove the option-B call, run for real rather
+than assumed: it passed. The corrected step-F expectation (byte-identical,
+not "one addition" — `1650a5a`) held exactly as re-derived.
+
+### What this closes
+
+**The rehearsal methodology itself is now evidenced, not just trusted.**
+Every check this package ran against test-db before the apply — schema
+shape, RLS behavior, grants, constraints, and the types-generation
+provenance question specifically — came back identical on prod. That is
+the actual justification for CLAUDE.md §0's "rehearse on a cleaned
+existing test-db branch" rule: not that rehearsal is assumed to transfer,
+but that it visibly did, checked point by point, with the one prod-only
+divergence this package could find (`ensure_rls`) named in advance,
+reasoned through, and confirmed harmless rather than discovered as a
+surprise at apply time.
+
+**023 is closed.** Migration 024 (§3) stays deferred — proposed, not
+written, not gating anything here. The DPR generator (Phase 1) is the next
+piece of work and starts from a real `dprs` table, not a design.

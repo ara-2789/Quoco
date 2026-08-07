@@ -222,6 +222,13 @@ label whenever a subsection is added or removed.]
   `dprs` table (see that entry above); `app/(dashboard)/dprs/page.tsx` is
   repointed at `dprs` in the same migration's PR, since dropping this column
   first would break that page.]
+  [DATED UPDATE 2026-08-07, 20:44 IST: APPLIED. Migration 023 ran on prod at
+  20:44 IST — this column is now DROPPED there. The "NOT YET applied"
+  wording directly above describes the state as of the PR merge (which
+  deliberately preceded the apply — see the `dprs` entry below); it is
+  superseded by this line, not deleted, since it was accurate when written.
+  Post-apply probe confirmed zero rows lost (there were zero non-null rows
+  to lose). Full evidence: docs/reviews/023-review-package.md §12.]
 - morning_submitted_via TEXT, evening_submitted_via TEXT, weather TEXT,
   dpr_approved_by UUID (all FUTURE)
 - UNIQUE(project_id, engineer_id, log_date)
@@ -259,10 +266,39 @@ label whenever a subsection is added or removed.]
   record behind every DPR ever sent. Retention here is a compliance question,
   never a storage one (CLAUDE.md §10).
 
-### dprs — migration 023 (WRITTEN + REHEARSED ON TEST-DB, 2026-08-07 — NOT YET APPLIED TO PROD)
-> DATED UPDATE (2026-08-07): the ⚠️ banner directly below is HISTORICAL —
-> preserved for provenance, not current. `supabase/migrations/023_dpr_reports.sql`
-> now creates this table for real: written, rehearsed clean against test-db
+### dprs — migration 023 (LIVE on prod, applied 2026-08-07 20:44 IST)
+> DATED UPDATE (2026-08-07, 20:44 IST): APPLIED TO PROD. The "WRITTEN +
+> REHEARSED ON TEST-DB... NOT YET APPLIED TO PROD" box directly below is now
+> HISTORICAL — it correctly described the pre-apply state and is preserved
+> for provenance, not current. All six post-apply verification queries on
+> prod returned output IDENTICAL to the test-db rehearsal: 13 columns
+> matching types/defaults; `relrowsecurity=true`, `relforcerowsecurity=false`;
+> one `dprs_select` policy (`polcmd=r`, `roles={authenticated}`,
+> `with_check` null, `using_expr` carrying both the `tenant_id` check and
+> the `EXISTS` over `project_members`); `daily_logs.dpr_content` absent
+> (zero rows); `relacl` identical character-for-character
+> (`{postgres=arwdDxtm,anon=rDxtm,authenticated=rDxtm,service_role=arwdDxtm}`);
+> six constraints matching by name and definition, `generator_job_id` in no
+> foreign key. Pre-apply probe taken again at apply time (not trusted from
+> the migration file's own header comment, per that comment's own
+> instruction): `total_rows=1, non_null_dpr_content=0` — unchanged from the
+> earlier reading. `ensure_rls` (the prod-only event trigger — OUT-OF-BAND
+> DB OBJECTS registry, CLAUDE.md §10; `023-review-package.md` §4) was a
+> non-event: `relforcerowsecurity=false` on prod, same as test-db where the
+> trigger doesn't exist at all — fired exactly as predicted, changed
+> nothing observable. PITR observed by direct dashboard inspection before
+> the apply (CLAUDE.md §0, not a checklist entry); rollback target 20:43
+> IST, 7 Aug 2026. `types/database.ts` was regenerated against test-db
+> BEFORE this apply (the option-B decision, `023-review-package.md` §7) and
+> confirmed BYTE-IDENTICAL — sha256 match, zero diff lines — against a
+> fresh regen taken directly against prod AFTER the apply: the drift check
+> that decision depended on passed, retroactively validating it rather than
+> merely assuming it would. Full evidence: `docs/reviews/023-review-package.md`
+> §12.
+>
+> HISTORICAL (2026-08-07, pre-apply) — preserved for provenance, not
+> current. `supabase/migrations/023_dpr_reports.sql` created this table:
+> written, rehearsed clean against test-db
 > (`exfccwlrhoutkgrlikod`) via the SQL Editor (CLI is linked to prod; 023
 > contains an `ALTER TABLE daily_logs DROP COLUMN dpr_content`, so CLI push
 > was deliberately not used per CLAUDE.md §0), every post-apply verification
