@@ -63,7 +63,6 @@ export default async function DprsPage() {
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
                 <th className="px-4 py-3 font-medium text-gray-600">Project</th>
                 <th className="px-4 py-3 font-medium text-gray-600">Date</th>
-                <th className="px-4 py-3 font-medium text-gray-600"></th>
               </tr>
             </thead>
             <tbody>
@@ -73,14 +72,6 @@ export default async function DprsPage() {
                     {dpr.projects?.name ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-600">{formatDate(dpr.log_date)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <a
-                      href={`/dashboard/dprs/${dpr.id}`}
-                      className="text-sm text-blue-600 hover:underline"
-                    >
-                      View
-                    </a>
-                  </td>
                 </tr>
               ))}
             </tbody>

@@ -207,12 +207,21 @@ label whenever a subsection is added or removed.]
   [{type, available_hours, actual_hours, idle_reason}] (BETA)
 - evening_dependencies JSONB — [{item, responsible_party, required_by_time}] (BETA)
 - evening_submitted_at TIMESTAMPTZ (BETA)
-- dpr_content TEXT — LIVE on prod. [CORRECTED 2026-07-15, migration 017 audit S2:
-  the prior note "DROPPED in migration 007 when dprs table is created" was STALE/FALSE
-  — no migration ever dropped it (grep: only 001 creates it; the sole daily_logs
-  DROP COLUMN in the tree is 016's evening_dependencies_tomorrow), and no dprs table
-  was ever created. Confirmed live via Probe 3 (column grants present) + generated
+- dpr_content TEXT — LIVE on prod as of this note's original writing.
+  [CORRECTED 2026-07-15, migration 017 audit S2: the prior note "DROPPED in
+  migration 007 when dprs table is created" was STALE/FALSE — no migration
+  ever dropped it (grep: only 001 creates it; the sole daily_logs DROP COLUMN
+  in the tree is 016's evening_dependencies_tomorrow), and no dprs table was
+  ever created. Confirmed live via Probe 3 (column grants present) + generated
   types (dpr_content: string | null). The 007 dprs/drop was planned, never executed.]
+  [DATED UPDATE 2026-08-07: migration 023 drops this column — rehearsed clean
+  on test-db (0 non-null rows observed, both on prod and test-db, before the
+  drop; see docs/reviews/023-review-package.md). NOT YET applied to prod —
+  this column is still live there as of this update. The per-engineer
+  `daily_logs.dpr_content` interim path is superseded by the project-level
+  `dprs` table (see that entry above); `app/(dashboard)/dprs/page.tsx` is
+  repointed at `dprs` in the same migration's PR, since dropping this column
+  first would break that page.]
 - morning_submitted_via TEXT, evening_submitted_via TEXT, weather TEXT,
   dpr_approved_by UUID (all FUTURE)
 - UNIQUE(project_id, engineer_id, log_date)
@@ -250,21 +259,41 @@ label whenever a subsection is added or removed.]
   record behind every DPR ever sent. Retention here is a compliance question,
   never a storage one (CLAUDE.md §10).
 
-### dprs — ⚠️ DOES NOT EXIST ON PROD. PLANNED TABLE, NEVER CREATED.
-> **⚠️ READ BEFORE USING ANYTHING BELOW.** No migration has ever created this
-> table. The columns documented here are a DESIGN, not a live schema — querying
-> `dprs` on prod fails, and nothing in the codebase reads or writes it.
+### dprs — migration 023 (WRITTEN + REHEARSED ON TEST-DB, 2026-08-07 — NOT YET APPLIED TO PROD)
+> DATED UPDATE (2026-08-07): the ⚠️ banner directly below is HISTORICAL —
+> preserved for provenance, not current. `supabase/migrations/023_dpr_reports.sql`
+> now creates this table for real: written, rehearsed clean against test-db
+> (`exfccwlrhoutkgrlikod`) via the SQL Editor (CLI is linked to prod; 023
+> contains an `ALTER TABLE daily_logs DROP COLUMN dpr_content`, so CLI push
+> was deliberately not used per CLAUDE.md §0), every post-apply verification
+> query passed (columns, RLS, policy shape, grants, constraints). **Rehearsed
+> is not applied** — as of this entry `dprs` still does not exist on PROD,
+> only on test-db. Precisely two departures from the design below, both
+> recorded in 023's own migration-file comments, not restated here: RLS is
+> scoped via `project_members` (NOT tenant-wide — see 023's "RLS SCOPING"
+> comment, which also records why the policy is deliberately PM-only, never
+> owner-facing); `generator_job_id` is deliberately NOT a foreign key to
+> `jobs.id` (`jobs` rows are a pruning candidate — see 023's own comment).
+> No `SECURITY DEFINER` RPC exists for this table — only `service_role`
+> writes, from the dpr_generate job handler (not yet built — see 023's "WHY
+> NO SECURITY DEFINER RPC" comment). Full rehearsal evidence:
+> `docs/reviews/023-review-package.md`.
+>
+> **⚠️ HISTORICAL — READ BEFORE USING ANYTHING BELOW THIS BOX, superseded by
+> the update above.** No migration had ever created this table as of
+> 2026-07-27. The columns documented below were a DESIGN, not a live schema.
 > The header previously read "NEW in migration 007 (do not create until Week 4)";
 > 007 is applied and is IDENTITY-SURGERY ONLY — the dprs/drop work was evicted
 > from it at checkpoint-1 review and never executed. See the 007 entry in
 > MIGRATION ORDER, and the corroborating 2026-07-15 correction under
 > `daily_logs.dpr_content` above ("no dprs table was ever created", confirmed via
-> the 017 audit's Probe 3 + generated types). Today the table is assigned to
-> migration **008**, which is UNBUILT (no file exists).
-> CONSEQUENCE: DPR content currently lives in `daily_logs.dpr_content` (TEXT,
-> live on prod), NOT here. Anything built before 008 ships must use that column.
-> [Marker added 2026-07-27 — the section was fully specified with no indication
-> it was unbuilt, which reads as a live table at a glance.]
+> the 017 audit's Probe 3 + generated types). The table was then assigned to
+> migration **008**, which was UNBUILT (no file existed) — it landed as 023
+> instead, per CLAUDE.md §6's "next unused number" rule (008-010 were never
+> created; see the P1 correction pass).
+> CONSEQUENCE AS OF 2026-07-27 (also now historical): DPR content lived in
+> `daily_logs.dpr_content` (TEXT). That column is DROPPED by 023 (rehearsed
+> clean — see the update above) once 023 reaches prod.
 
 - id, created_at, tenant_id UUID NOT NULL (BETA)
 - project_id UUID NOT NULL REFERENCES projects(id) (BETA)

@@ -808,6 +808,23 @@ spirit as the CANDIDATE CI CHECK entry above: recorded so it's available
 when that work starts, not requiring rediscovery from a PR thread.
 CLOSES WHEN: folded into the P3 plan at kickoff.
 
+DASH-04 DPR ARCHIVE SHIPS LIST-ONLY IN MIGRATION 023's PR (2026-08-07). The
+page (`app/(dashboard)/dprs/page.tsx`) had a "View" link to a per-DPR detail
+route that has never existed — `app/(dashboard)/dprs/[id]/page.tsx` was never
+built, so bot-flows.md's DASH-04 spec ("list + full view") has only ever
+shipped its list half. The link also predated the 023 repoint entirely (it
+was broken in the original stub, confirmed via `git show` against the exact
+commit that touched this file) and was wrong-shaped on top of being a dead
+end: `/dashboard/dprs/${id}` — the `(dashboard)` segment is a Next.js route
+GROUP and contributes no URL segment; every other link in this app already
+omits it, this href was the one outlier. Removed (link + its `<th>`/`<td>`)
+rather than fixed, since a corrected-but-still-dead link would still 404 and
+there's no DPR content to view yet regardless (nothing populates `dprs`
+until the generator ships — see the Claude API / DPR generation Phase 0-1
+work). Whoever builds the detail route needs BOTH facts, not just that a
+link is now gone: the route needs to be built from scratch (nothing to
+resurrect), and the URL must NOT carry the `(dashboard)` prefix when it is.
+
 Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
 flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
 (Q1-Q3) is live, hardened inline (020 discipline); apply_morning_flow_turn
