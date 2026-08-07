@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "pretest": "npm run check:profile-lookups",
     "test": "vitest run"
   },

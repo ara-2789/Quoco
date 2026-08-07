@@ -4,7 +4,7 @@ export default function OnboardingLayout({ children }: { children: React.ReactNo
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <span className="text-3xl font-semibold text-gray-900 tracking-tight">Quoco</span>
-          <p className="text-sm text-gray-500 mt-1">Let's set up your workspace</p>
+          <p className="text-sm text-gray-500 mt-1">Let&apos;s set up your workspace</p>
         </div>
         {children}
       </div>

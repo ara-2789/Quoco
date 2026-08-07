@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
@@ -148,12 +149,12 @@ export default async function NewProjectPage({
             >
               Create Project
             </button>
-            <a
+            <Link
               href="/projects"
               className="bg-white border border-gray-300 text-gray-700 rounded-md px-5 py-2 text-sm font-medium hover:bg-gray-50 transition-colors"
             >
               Cancel
-            </a>
+            </Link>
           </div>
         </form>
       </div>
