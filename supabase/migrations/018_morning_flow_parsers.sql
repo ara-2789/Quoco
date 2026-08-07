@@ -247,3 +247,24 @@ BEGIN
   );
 END;
 $fn$;
+
+-- ----------------------------------------------------------------------------
+-- THROWAWAY — P2 stage 2 acceptance-criterion probe (docs/reviews/p2-ci-gates.md).
+-- Proves the exceptions file is keyed NARROWLY: a NEW SECURITY DEFINER
+-- function added to an OLD file that already has its own rule-1 exceptions
+-- (this file's apply_morning_flow_turn entry, hardened by migration 020)
+-- must NOT silently inherit that exemption. If it passes, the exceptions
+-- file's keying is file-wide somewhere and the linter is already defeated.
+--
+-- THIS FUNCTION MUST NEVER ACTUALLY APPLY ANYWHERE — not to test-db, not to
+-- prod. This addition is reverted on this same branch once the RED run is
+-- captured; 018_morning_flow_parsers.sql is never actually edited on main,
+-- and this PR is never merged.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION zz_ci_probe_function()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT true;
+$$;
