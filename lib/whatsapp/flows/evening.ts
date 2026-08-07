@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Json } from '@/types/database'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
@@ -251,8 +252,16 @@ export async function applyEveningFlowTurn(params: {
   now?: string
   /** TEST-ONLY: forces a mid-transaction pause to prove the row lock serialises. */
   testSleepMs?: number
+  /**
+   * Injected client, defaulting to createServiceClient() (today's exact
+   * behaviour) when omitted. Same shape as clearMessagingBlock's own
+   * client parameter (lib/whatsapp/reactivation.ts) — lets a test pass
+   * testClient() instead of the prod-resolving default, without changing
+   * any existing call site.
+   */
+  supabaseClient?: SupabaseClient
 }): Promise<EveningTurnResult> {
-  const supabase = createServiceClient()
+  const supabase = params.supabaseClient ?? createServiceClient()
 
   // Parse EVERY parsed step's shape unconditionally (pure + cheap) and hand them
   // to the RPC KEYED BY STEP ID. The RPC selects the entry matching the step it

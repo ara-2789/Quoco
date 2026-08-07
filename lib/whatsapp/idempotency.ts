@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 
 /**
@@ -9,8 +10,16 @@ import { createServiceClient } from '@/lib/supabase/service'
  * insert will fail with a unique violation if the SID was already recorded,
  * which we catch and treat as "already processed" rather than an error.
  */
-export async function isNewMessage(messageSid: string): Promise<boolean> {
-  const supabase = createServiceClient()
+export async function isNewMessage(
+  messageSid: string,
+  /**
+   * Injected client, defaulting to createServiceClient() (today's exact
+   * behaviour) when omitted — same shape as readCurrentFlow / dispatch.ts /
+   * handleWebhookPost's own supabaseClient param.
+   */
+  supabaseClient?: SupabaseClient,
+): Promise<boolean> {
+  const supabase = supabaseClient ?? createServiceClient()
 
   const { error } = await supabase
     .from('processed_messages')

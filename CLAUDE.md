@@ -82,6 +82,23 @@
   dropped item impossible to miss. Applies to the review package too: it must state
   which round was reviewed-WITH-CHANGES vs. approved, so "byte-identical to the
   reviewed file" can never be misread as "approved."
+- REVIEW REQUESTS AT THIS TIER OPEN WITH A REPO-STATE HEADER (standing rule
+  since 2026-08-07, from PR #22's B1 near-miss). A reviewer's context is a
+  conversation, not a clone — between rounds the repo moves, and a reviewer
+  working from memory or a cached GitHub diff can build an entire blocker on a
+  premise that stopped being true days earlier. Origin: B1 flagged
+  webhook-wiring PR #22 for a types-regen/merge-ordering hazard that had
+  already been resolved and merged via migration 022's own PR; the reviewer
+  caught it himself only because a stale GitHub page visibly contradicted
+  itself, and explicitly noted his own verification was a weaker evidence
+  class than a live catalog probe. From 2026-08-07, every review request at
+  019/020/021/022-tier opens with a two-line repo-state header: `main @
+  <sha>`; `supabase migration list` local/remote; and the last runbook
+  executed, with its date. Costs ten seconds to produce. Converts "reviewer
+  assumes state" into "reviewer checks a pinned input" — the header alone
+  would have made B1 impossible to write, since it would have shown 022
+  already merged and applied before the reviewer needed to derive that from a
+  diff.
 
 ---
 
@@ -564,6 +581,35 @@ here. The rule stops applying only if someone decides so on the record.
   and covered obliquely by the pure idempotency unit — the route-level proof waits
   on the harness.
 
+CLOSED (2026-08-07): test/webhook.test.ts now exists (10 tests, committed
+8a24399, feat/022-evening-flow-apply-turn) — the harness this entry tracked as
+missing across two deferrals (BOT-27's clear-half took the first; migration
+022's review noted the second and named the outstanding test below). It calls
+handleWebhookPost (app/api/whatsapp/webhook/route.ts) directly with an
+injected test-db client — the SAME function POST calls in production, not a
+separate assembly — via genuinely Twilio-signed requests (an independent
+HMAC-SHA1 re-implementation in the test file, not a stub or bypass).
+  WHY IT STALLED TWICE: not neglect — the harness was structurally blocked
+  until six functions in this path (readCurrentFlow, applyMorningFlowTurn,
+  applyEveningFlowTurn, dispatchInboundTurn, handleWebhookPost, isNewMessage)
+  each independently constructing its own createServiceClient() gained an
+  injected-client parameter; the test env deliberately never configures that
+  client, and the block was invisible until someone actually tried to test it.
+  T-WH-01 is included; its claim is precise, not broader than earned: the
+  .env.test TWILIO_AUTH_TOKEN is a fixed, obviously-fake value, so T-WH-01
+  proves validateTwilioSignature's algorithm correctly REJECTS a non-matching
+  signature — it does NOT prove production's real Vercel-configured token is
+  itself correct. "Signature validation is tested" does not extend that far;
+  that remains a separate, unverified claim.
+  The NAMED FUTURE TEST above is also closed, not left to outlive this entry:
+  T-WH-07 runs exactly that sequence — reactivate clears messaging_blocked,
+  the SAME MessageSid retried now finds decideInboundGate returning 'proceed'
+  (not 'reactivate'), and the ordinary path's own idempotency check catches it
+  as a duplicate before it can reach a morning-flow turn. Verified three ways:
+  response body, no session row created, no daily_logs row written.
+Full test list and design rationale live in test/webhook.test.ts's own header
+comment — not restated here.
+
 PROD SMOKE CHECK RESOLVED (2026-07-26): migration 020's real webhook-driven
 apply_morning_flow_turn end-to-end check is DONE — a full multi-turn morning flow
 (Q1 plan → Q2 → Q3 → Q4 → "check-in complete") ran through the real webhook +
@@ -668,6 +714,37 @@ Same class of finding as PARSER DEBT above (a downstream consumer inherits a
 silent gap unless warned here first) — this entry exists so the next author
 gets the warning, not the surprise. Full finding + citations:
 docs/reviews/022-review-package.md §10.
+
+CANDIDATE CI CHECK — NO createServiceClient() WHERE AN INJECTED CLIENT COULD
+BE ACCEPTED (opened 2026-08-07, tracked, NOT built). Surfaced while building
+the webhook HTTP harness (test/webhook.test.ts, CLOSED above): six functions
+in the WhatsApp inbound path — readCurrentFlow, applyMorningFlowTurn,
+applyEveningFlowTurn, dispatchInboundTurn, handleWebhookPost, isNewMessage —
+each independently constructed its own createServiceClient() instead of
+accepting one as a parameter, and the harness could not reach test-db through
+ANY of them until all six gained an injected-client parameter. The fix
+pattern was not new to invent: clearMessagingBlock (lib/whatsapp/
+reactivation.ts) already took its client as a parameter, one directory over,
+before any of the six were touched — the pattern existed and was simply not
+applied consistently.
+  WHAT IT WOULD FORBID: createServiceClient() called inside a function body
+  where an injected-client parameter is a viable alternative (i.e. the
+  function is reachable from application code that could pass one down) —
+  flag the call at write time, not leave it to be rediscovered.
+  WHY IT'S WORTH ENFORCING: the failure mode is invisible until someone tries
+  to test the code — by which point the constructing function may already
+  have several call sites, and the fix becomes a multi-function refactor
+  instead of a one-line addition made at write time.
+NOT a rule to follow by hand today. Writing this as prose for a human to
+self-apply would BE the honour-system enforcement gap the process-hardening
+work order's P2 (CI gates) exists to close — so this is captured strictly as
+a CANDIDATE CHECK for when P2 is built, not a standing style rule. It belongs
+in P2's stage 1 (tsc/lint/test) — it is a TypeScript/source rule, not a
+migration-file rule, so it does NOT belong in that work order's stage-2
+migration-linter table. The work order itself is NOT committed to this repo
+as of 2026-08-07 — the only trace found is docs/reviews/015-review-package.md
+§7, which refers to it as an external process audit, not a repo artifact.
+Capture only; nothing here is enforced until P2 exists.
 
 Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
 flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn

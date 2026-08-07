@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Json } from '@/types/database'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
@@ -266,8 +267,16 @@ export async function applyMorningFlowTurn(params: {
   now?: string
   /** TEST-ONLY: forces a mid-transaction pause to prove the row lock serialises. */
   testSleepMs?: number
+  /**
+   * Injected client, defaulting to createServiceClient() (today's exact
+   * behaviour) when omitted. Same shape as clearMessagingBlock's own
+   * client parameter (lib/whatsapp/reactivation.ts) — lets a test pass
+   * testClient() instead of the prod-resolving default, without changing
+   * any existing call site.
+   */
+  supabaseClient?: SupabaseClient
 }): Promise<MorningTurnResult> {
-  const supabase = createServiceClient()
+  const supabase = params.supabaseClient ?? createServiceClient()
 
   // Parse BOTH Pass-2 shapes unconditionally (pure + cheap) and hand the results
   // to the RPC, which selects the one that matches the active step under its
