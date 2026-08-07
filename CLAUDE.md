@@ -1,14 +1,16 @@
 # QUOCO — Claude Code Instructions
 # Read this file at the start of every session before writing any code.
-# Last updated: 3 July 2026 — v2.0 (restructured for Claude Code)
+# Last updated: 7 August 2026 — v2.1 (P1 correction pass, process-hardening
+# work order — factual corrections only; restructuring is P3, deliberately
+# separate)
 
 # This is the CORE file. Detailed reference lives in two linked files —
 # read them WHEN the task touches them, not every session:
 #   - docs/schema.md     → full database schema, migration order
 #   - docs/bot-flows.md  → full WhatsApp flow specs, DPR generation, templates
 #   - docs/design-principles.md → UX rules, persona rules, copy tone, visual system
-#     (once §6 is filled in). Read this when a task touches any user-facing
-#     surface: WhatsApp bot copy/flow structure, PM dashboard, or DPR/owner content.
+#     Read this when a task touches any user-facing surface: WhatsApp bot
+#     copy/flow structure, PM dashboard, or DPR/owner content.
 # When a task touches the schema or a bot flow, open the relevant doc first.
 
 ---
@@ -195,8 +197,18 @@ Six roles, TEXT on users table:
 CHECK (role IN ('pm','qs','engineer','owner','subcontractor','admin'))
 
 - The role was named 'client' in early schema. Canonical name is 'owner'.
-  Use 'owner' everywhere. (Rename lands in migration 007 — the auth
-  surgery migration. Migration 006 is the jobs queue table, applied first.)
+  Use 'owner' everywhere. Already true today — the CHECK constraint above
+  is live. CORRECTED (2026-08-07, P1 pass): this previously said the rename
+  "lands in migration 007." Wrong migration — 007's own header explicitly
+  EVICTS it ("client -> owner role rename -> corrections migration") so a
+  bug in a rename could never force rollback pressure on 007's irreversible
+  auth-identity surgery. The rename actually lands in migration 016
+  (016_corrections.sql — the corrections migration 007 evicted it to):
+  drops the 001-era CHECK, `UPDATE ... SET role = 'owner' WHERE role =
+  'client'`, adds the current CHECK. Applied on both test-db and prod
+  (confirmed via `supabase migration list --linked`: 016 present on both
+  local and remote). No sequencing risk to carry forward — role='owner' is
+  a valid CHECK value now, not a future one.
 - admin — tenant creation, invites, billing, settings
 - pm    — projects, DPR review, engineer management
 - qs    — invoice review, BOQ (Phase 2)
@@ -241,8 +253,16 @@ Status columns
 - Adding a status value later = update the CHECK only.
 
 Database
-- Migrations in supabase/migrations/ as numbered files. 001–006 are LIVE —
-  do not edit them. New changes go in 007, 008, 009 in order.
+- Migrations in supabase/migrations/ as numbered files. EVERY numbered file
+  currently present in that directory is LIVE — do not edit any of them.
+  Author new changes as the next UNUSED number; confirm the true next number
+  with `ls supabase/migrations/` and `supabase migration list` (don't trust
+  a number carried over from an earlier session — CORRECTED 2026-08-07, P1
+  pass: this used to hardcode "001–006 live, new changes go in 007/008/009,"
+  which was accurate in July but by design goes stale the moment migrations
+  pass 009 — migrations are now through 022, with a gap at 008-010 that were
+  never created. A number-listing rule can't go stale the same way; a
+  hardcoded range can and did).
 - Never edit schema directly in the Supabase dashboard.
 - Every table: id UUID PK DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ DEFAULT now().
@@ -414,16 +434,26 @@ quoco/
 │       ├── jobs/tick/              ← Week 2 (queue worker)
 │       └── cron/{morning,evening,nudges,dpr-generate,owner-deliver}/
 ├── lib/
-│   ├── supabase/{client,server}    ← done
+│   ├── supabase/{client,server,service} ← done (3 clients — client.ts,
+│   │                                        server.ts, service.ts)
 │   ├── whatsapp/{session,normalise,flows/{morning,evening}}
 │   ├── dpr/{generate,render}       ← Week 4
 │   └── queue/jobs                  ← Week 2
-├── supabase/migrations/            ← 001–006 live; 007–009 pending
+├── supabase/migrations/            ← every numbered file present is LIVE;
+│                                      confirm the current set with
+│                                      `ls supabase/migrations/` (§6)
+├── types/database.ts               ← generated DB types, live (§6) —
+│                                      regenerated after every schema
+│                                      migration, most recently 022's step F
 └── proxy.ts                        ← done
-# DATED CORRECTION (2026-07-13, per 016 round-3 review): a `types/database.ts`
-# entry was listed here but the file NEVER EXISTED (git log --all -- confirms
-# empty). Struck to stop it reading as a real artifact. Generated DB types are a
-# deferred milestone — see the dated note under §6.
+# CORRECTED (2026-08-07, P1 pass): this list previously (a) omitted
+# service.ts (only client/server were named, contradicting §6's own "three
+# Supabase clients"), and (b) carried a STRUCK note claiming types/database.ts
+# "NEVER EXISTED" and calling generated types a deferred milestone — both
+# stale since the generated-types PR (2026-07-13, same day as that struck
+# note) stood the pipeline up; the file has existed and been regenerated on
+# every schema migration since. §6 was already correct; this section
+# contradicted it. Reconciled to match §6, not restated separately.
 
 ---
 
