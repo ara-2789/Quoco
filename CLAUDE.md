@@ -775,6 +775,7 @@ migration-linter table. The work order itself is NOT committed to this repo
 as of 2026-08-07 — the only trace found is docs/reviews/015-review-package.md
 §7, which refers to it as an external process audit, not a repo artifact.
 Capture only; nothing here is enforced until P2 exists.
+CLOSES WHEN: folded into the P2 stage-1 (tsc/lint/test) plan at kickoff.
 
 P3 SCOPE CAPTURE — RULES-FILE STALENESS TRIAGE TEST (opened 2026-08-07,
 tracked, NOT applied file-wide). Origin: the §6 migration-numbering fix in
@@ -805,6 +806,7 @@ letting it live only in a PR comment.
 NOT itself a P3 plan — a capture of two inputs P3 should start from, same
 spirit as the CANDIDATE CI CHECK entry above: recorded so it's available
 when that work starts, not requiring rediscovery from a PR thread.
+CLOSES WHEN: folded into the P3 plan at kickoff.
 
 Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
 flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
