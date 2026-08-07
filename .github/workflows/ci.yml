@@ -1,0 +1,99 @@
+name: CI
+
+# STAGE 1 of the process-hardening work order's P2 (CI gates). Runs on every
+# PR into main and every push to main; NOT yet required by branch
+# protection — a deliberate, separate step (P2 decision 4) that only
+# happens after the red/green acceptance-criterion PR has actually been
+# observed. Until then this workflow reports status but cannot block a
+# merge.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Confirmed 2026-08-07 against Vercel → Settings → Build and
+          # Deployment → Node.js Version = 24.x. Also in .nvmrc at the repo
+          # root; re-check both if either ever needs to change, since
+          # neither can drift from the other or from what Vercel actually
+          # builds with without silently invalidating this gate.
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    name: Test (real test-db)
+    runs-on: ubuntu-latest
+    # DO NOT add ${{ github.ref }} (or anything branch/PR-scoped) to the
+    # group below. That is the standard GitHub Actions idiom elsewhere, and
+    # it is WRONG here specifically: the fixtures this suite writes to
+    # (TEST_TENANT_ID, TEST_PROJECT_ID, TEST_ENGINEER_PHONE — fixed,
+    # deterministic UUIDs in test/helpers/db.ts, same rows regardless of
+    # which branch runs) are shared PROJECT-WIDE, not per-branch. Two
+    # DIFFERENT PRs' test jobs running at the same moment collide exactly
+    # like two runs on the same branch would — a ref-scoped group would let
+    # them run concurrently and corrupt each other's fixture state, which
+    # is the one failure mode this concurrency block exists to prevent. The
+    # fixed literal name below is what makes every run of this job, from
+    # every branch and every trigger, queue behind whichever is already
+    # running, project-wide.
+    concurrency:
+      group: ci-test-db-suite
+      # NEVER true. Cancelling a run mid-suite skips afterEach/afterAll
+      # cleanup (test/helpers/db.ts) and strands fixture rows in test-db —
+      # queuing costs CI minutes; cancelling costs test-db integrity.
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+        env:
+          # test/setup/guard.ts hard-aborts the entire run unless these
+          # resolve to the single allowed test-db project ref
+          # (exfccwlrhoutkgrlikod) — this can never reach prod, even if a
+          # secret here were misconfigured. .env.test itself is gitignored
+          # and never present in a CI checkout; vitest.config.ts's
+          # loadDotenv() no-ops when the file is absent and leaves these
+          # already-set process.env values untouched, so CI-native secret
+          # injection is the only source here, not a synthesized file.
+          #
+          # SUPABASE_TEST_PROJECT_REF and NEXT_PUBLIC_APP_URL are not
+          # actually sensitive (the ref is already public throughout this
+          # repo's own docs; the URL is a fixed fake value,
+          # https://test.invalid) — stored as secrets anyway for setup
+          # uniformity with the four that are.
+          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          SUPABASE_TEST_PROJECT_REF: ${{ secrets.SUPABASE_TEST_PROJECT_REF }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
