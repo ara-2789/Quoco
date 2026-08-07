@@ -776,6 +776,36 @@ as of 2026-08-07 — the only trace found is docs/reviews/015-review-package.md
 §7, which refers to it as an external process audit, not a repo artifact.
 Capture only; nothing here is enforced until P2 exists.
 
+P3 SCOPE CAPTURE — RULES-FILE STALENESS TRIAGE TEST (opened 2026-08-07,
+tracked, NOT applied file-wide). Origin: the §6 migration-numbering fix in
+the P1 correction pass (PR #23) replaced a hardcoded range ("001-006 live,
+new changes go in 007/008/009") with a rule that names the check command
+instead of a number — the reviewer generalized that single fix into a
+reusable test during that PR's review, worth recording here rather than
+letting it live only in a PR comment.
+  THE TRIAGE TEST: any line in this file that will become false through the
+  mere passage of normal work — a number, a "pending," a "not yet" — either
+  becomes a SELF-VERIFYING rule (name the command, as the §6 fix did) or
+  MOVES TO THE DATED LOG (§10, as every other correction in this file
+  already does). Applied file-wide, this is most of P3's triage decided in
+  advance: for every remaining line, the test itself says which bucket it
+  falls into — P3 doesn't need to invent a sorting method, only run this one
+  against the whole file.
+  THE LENGTH OBSERVATION: P1 added 30 net lines to this file (43
+  insertions, 13 deletions — commit 991cc8a), whose
+  known failure mode (the reason §1-9 were split out into linked docs at
+  all) is length-driven instruction loss — the more that's in front of a
+  fresh session, the more of it can silently go unread or deprioritized.
+  Each P1 correction correctly carries its dated history, per this file's
+  own standing provenance discipline — right for a correction pass, since
+  silently rewriting history is exactly what §0 forbids. But that means
+  corrections ACCUMULATE length rather than shrink it, which makes evicting
+  resolved dated history out of the live instructions (the heart of what P3
+  is for) MORE necessary after this pass, not less.
+NOT itself a P3 plan — a capture of two inputs P3 should start from, same
+spirit as the CANDIDATE CI CHECK entry above: recorded so it's available
+when that work starts, not requiring rediscovery from a PR thread.
+
 Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
 flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
 (Q1-Q3) is live, hardened inline (020 discipline); apply_morning_flow_turn
