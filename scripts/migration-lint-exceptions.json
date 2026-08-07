@@ -1,0 +1,320 @@
+[
+  {
+    "file": "001_core_schema.sql",
+    "object": "tenants",
+    "rule": "tenant-id-required",
+    "reason": "Self-referential -- tenants IS the tenant; there is nothing for it to reference."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "rate_catalog",
+    "rule": "tenant-id-required",
+    "reason": "Quoco-owned, shared across all tenants by design -- CLAUDE.md \u00a74's own named exception to the multi-tenancy rule."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "rate_catalog_history",
+    "rule": "tenant-id-required",
+    "reason": "Quoco-owned, shared across all tenants by design -- CLAUDE.md \u00a74's own named exception to the multi-tenancy rule."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tenants",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "users",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "projects",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "project_members",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "whatsapp_sessions",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "daily_logs",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "safety_incidents",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "invoices",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "hindrances",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tenders",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tender_documents",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tender_document_chunks",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tender_chat_sessions",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tender_chat_messages",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "boq_sessions",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "boq_items",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "rate_catalog",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "rate_catalog_history",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "vendors",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "vendor_invoices",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "ra_bills",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "ra_bill_payments",
+    "rule": "rls-required",
+    "reason": "RLS enabled in 002_rls_policies.sql, the deliberate schema-then-policy split for 001's initial table set -- grep -c confirms exactly 22 ENABLE ROW LEVEL SECURITY statements there, 0 in 001."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tenants.annual_turnover",
+    "rule": "money-column-precision",
+    "reason": "Named exception -- CLAUDE.md's schema lists annual_turnover as DECIMAL(15,2) deliberately, wider precision than the DECIMAL(12,2) standard for a company-scale currency figure."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "invoices.amount",
+    "rule": "money-column-precision",
+    "reason": "Original 001 definition was DECIMAL(10,2); fixed to DECIMAL(12,2) by migration 016 (016_corrections.sql:117-118, ALTER COLUMN amount TYPE DECIMAL(12,2)) -- same shape as the no-orphan-security-definer cluster: corrected later, in a different file, which this linter's single-file scan can't see on its own."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "boq_items.final_rate",
+    "rule": "money-column-precision",
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "boq_items.source_rate",
+    "rule": "money-column-precision",
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "boq_items.adjusted_base_rate",
+    "rule": "money-column-precision",
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "boq_items.suggested_rate",
+    "rule": "money-column-precision",
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "rate_catalog.base_rate",
+    "rule": "money-column-precision",
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "rate_catalog.rate_min",
+    "rule": "money-column-precision",
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "rate_catalog.rate_max",
+    "rule": "money-column-precision",
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "rate_catalog_history.recorded_rate",
+    "rule": "money-column-precision",
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tender_documents.processing_status",
+    "rule": "status-column-shape",
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator, not yet built) stub column -- bare TEXT, no CHECK constraint yet."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "boq_items.pricing_status",
+    "rule": "status-column-shape",
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator, not yet built) stub column -- bare TEXT, no CHECK constraint yet."
+  },
+  {
+    "file": "002_rls_policies.sql",
+    "object": "get_user_tenant_id",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "005_auth_trigger.sql",
+    "object": "handle_new_user",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "005_auth_trigger.sql",
+    "object": "complete_onboarding",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "006_jobs_queue.sql",
+    "object": "jobs",
+    "rule": "tenant-id-required",
+    "reason": "TRACKED GAP, not verified-safe. jobs has NO documented tenant_id/RLS deviation note anywhere in docs/schema.md (checked directly: no ### jobs heading, only a migration-changelog-style mention) -- unlike processed_messages, this asymmetry is itself a finding, not a design decision that was checked and found fine. RLS half: CLAUDE.md's OUT-OF-BAND DB OBJECTS registry (relrowsecurity set out-of-band on prod, no migration source; a rebuild comes up RLS-DISABLED)."
+  },
+  {
+    "file": "006_jobs_queue.sql",
+    "object": "jobs",
+    "rule": "rls-required",
+    "reason": "TRACKED GAP, not verified-safe. jobs has NO documented tenant_id/RLS deviation note anywhere in docs/schema.md (checked directly: no ### jobs heading, only a migration-changelog-style mention) -- unlike processed_messages, this asymmetry is itself a finding, not a design decision that was checked and found fine. RLS half: CLAUDE.md's OUT-OF-BAND DB OBJECTS registry (relrowsecurity set out-of-band on prod, no migration source; a rebuild comes up RLS-DISABLED)."
+  },
+  {
+    "file": "007_auth_surgery.sql",
+    "object": "get_user_tenant_id",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "007_auth_surgery.sql",
+    "object": "handle_new_user",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "007_auth_surgery.sql",
+    "object": "complete_onboarding",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "011_processed_messages.sql",
+    "object": "processed_messages",
+    "rule": "tenant-id-required",
+    "reason": "TRACKED GAP, not verified-safe. docs/schema.md's own processed_messages entry: \"NO tenant_id -- a deviation from CLAUDE.md \u00a74's every-table rule... Recorded as an observation, not a blessing; whether it should be tenant-scoped is an open decision, not something this doc settles.\" RLS half: CLAUDE.md's OUT-OF-BAND DB OBJECTS registry (relrowsecurity set out-of-band on prod, no migration source; a rebuild comes up RLS-DISABLED)."
+  },
+  {
+    "file": "011_processed_messages.sql",
+    "object": "processed_messages",
+    "rule": "rls-required",
+    "reason": "TRACKED GAP, not verified-safe. docs/schema.md's own processed_messages entry: \"NO tenant_id -- a deviation from CLAUDE.md \u00a74's every-table rule... Recorded as an observation, not a blessing; whether it should be tenant-scoped is an open decision, not something this doc settles.\" RLS half: CLAUDE.md's OUT-OF-BAND DB OBJECTS registry (relrowsecurity set out-of-band on prod, no migration source; a rebuild comes up RLS-DISABLED)."
+  },
+  {
+    "file": "012_whatsapp_session_transition.sql",
+    "object": "acquire_and_transition_session",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "012_whatsapp_session_transition.sql",
+    "object": "drain_next_pending_flow",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "013_session_transition_test_lock_probe.sql",
+    "object": "acquire_and_transition_session",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "014_morning_flow_apply_turn.sql",
+    "object": "apply_morning_flow_turn",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "016_corrections.sql",
+    "object": "complete_onboarding",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "018_morning_flow_parsers.sql",
+    "object": "apply_morning_flow_turn",
+    "rule": "no-orphan-security-definer",
+    "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  }
+]
