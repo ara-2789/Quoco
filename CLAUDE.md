@@ -698,6 +698,37 @@ silent gap unless warned here first) — this entry exists so the next author
 gets the warning, not the surprise. Full finding + citations:
 docs/reviews/022-review-package.md §10.
 
+CANDIDATE CI CHECK — NO createServiceClient() WHERE AN INJECTED CLIENT COULD
+BE ACCEPTED (opened 2026-08-07, tracked, NOT built). Surfaced while building
+the webhook HTTP harness (test/webhook.test.ts, CLOSED above): six functions
+in the WhatsApp inbound path — readCurrentFlow, applyMorningFlowTurn,
+applyEveningFlowTurn, dispatchInboundTurn, handleWebhookPost, isNewMessage —
+each independently constructed its own createServiceClient() instead of
+accepting one as a parameter, and the harness could not reach test-db through
+ANY of them until all six gained an injected-client parameter. The fix
+pattern was not new to invent: clearMessagingBlock (lib/whatsapp/
+reactivation.ts) already took its client as a parameter, one directory over,
+before any of the six were touched — the pattern existed and was simply not
+applied consistently.
+  WHAT IT WOULD FORBID: createServiceClient() called inside a function body
+  where an injected-client parameter is a viable alternative (i.e. the
+  function is reachable from application code that could pass one down) —
+  flag the call at write time, not leave it to be rediscovered.
+  WHY IT'S WORTH ENFORCING: the failure mode is invisible until someone tries
+  to test the code — by which point the constructing function may already
+  have several call sites, and the fix becomes a multi-function refactor
+  instead of a one-line addition made at write time.
+NOT a rule to follow by hand today. Writing this as prose for a human to
+self-apply would BE the honour-system enforcement gap the process-hardening
+work order's P2 (CI gates) exists to close — so this is captured strictly as
+a CANDIDATE CHECK for when P2 is built, not a standing style rule. It belongs
+in P2's stage 1 (tsc/lint/test) — it is a TypeScript/source rule, not a
+migration-file rule, so it does NOT belong in that work order's stage-2
+migration-linter table. The work order itself is NOT committed to this repo
+as of 2026-08-07 — the only trace found is docs/reviews/015-review-package.md
+§7, which refers to it as an external process audit, not a repo artifact.
+Capture only; nothing here is enforced until P2 exists.
+
 Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
 flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
 (Q1-Q3) is live, hardened inline (020 discipline); apply_morning_flow_turn
