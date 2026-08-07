@@ -825,6 +825,36 @@ work). Whoever builds the detail route needs BOTH facts, not just that a
 link is now gone: the route needs to be built from scratch (nothing to
 resurrect), and the URL must NOT carry the `(dashboard)` prefix when it is.
 
+DPRS PAGE SWALLOWS QUERY ERRORS (opened 2026-08-07, tracked, NOT fixed —
+this instruction failed to land the first time it was sent, mid-session,
+while another tool call was running; recorded here now on the retry so it
+doesn't depend on a message actually arriving). `app/(dashboard)/dprs/page.tsx`
+destructures only `{ data }` from the `dprs` query — `error` is never
+read. `dprs = (data ?? []) as unknown as DprRow[]` collapses "genuinely
+zero rows" and "the query failed" into the identical empty array, so a
+failed read renders the SAME "No DPRs generated yet" state as a working
+page with nothing in it yet. A PM has no way to tell "the system hasn't
+generated anything" from "the system is broken" — the page actively hides
+the exact failure that should make them escalate. NEEDS, before real PMs
+are on this page: a distinct error state (visually different from the
+empty state) and Sentry capture of the swallowed error — this route
+currently violates CLAUDE.md §6's "log to Sentry in production" rule for
+external calls.
+  WHY THE 023 MERGE-BEFORE-APPLY WINDOW WAS HARMLESS, NOT JUST LUCKY —
+  this same bug is the reason, worth recording rather than treating as a
+  coincidence. Migration 023 (docs/reviews/023-review-package.md §7,
+  option B) merged to `main` and deployed to prod BEFORE its own apply, so
+  between merge and apply prod's live `page.tsx` queried a `dprs` table
+  that did not exist there yet. That query genuinely errored on every
+  request during that window (`relation "public.dprs" does not exist` or
+  the PostgREST equivalent) — and because the error is swallowed, prod did
+  NOT 500 or show a broken page: it silently rendered the ordinary
+  empty-archive state, indistinguishable BY CONSTRUCTION OF THIS BUG from
+  "no DPRs generated yet," which is also the page's true state before real
+  generation exists regardless. The window was cosmetically silent, not
+  functionally safe — the error was real and invisible to Sentry for the
+  same reason this needs fixing, not because nothing went wrong.
+
 Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
 flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
 (Q1-Q3) is live, hardened inline (020 discipline); apply_morning_flow_turn
