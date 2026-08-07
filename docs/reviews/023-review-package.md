@@ -11,18 +11,21 @@ safe to stage.
 
 - Migration: `supabase/migrations/023_dpr_reports.sql`
 - App: `app/(dashboard)/dprs/page.tsx` (repointed; separately, its
-  pre-existing dead "View" link removed — see §8, tracked in CLAUDE.md §10,
+  pre-existing dead "View" link removed — see §9, tracked in CLAUDE.md §10,
   not part of 023's own migration content)
 - Docs: `docs/schema.md` (both the `dprs` and `daily_logs.dpr_content`
   entries updated to reflect this migration's actual state)
 - Tests: `test/migration-023.test.ts` — **written, run against test-db,
   green: 6/6 assertions pass, 1 `it.todo`** (§6)
+- Types: `types/database.ts` — **regenerated against TEST-DB** (a
+  deliberate, temporary departure from the usual prod-source default,
+  decided and reasoned in §7), diffed clean, re-verification against prod
+  planned for immediately after the apply
 
-**STATUS: WRITTEN + REHEARSED CLEAN ON TEST-DB. NOT YET APPLIED TO PROD.**
-Everything in this package describes rehearsal, not a prod apply — §9's
-runbook is planned steps, not an executed record. §7 covers a real
-consequence of that: this PR's `tsc --noEmit` is red until the apply
-happens, and CI now gates merges on it.
+**STATUS: WRITTEN + REHEARSED CLEAN ON TEST-DB. MERGEABLE. NOT YET APPLIED
+TO PROD.** CI is green locally on every gate (§7) — this PR can merge
+before the apply, by decision (option B, §7), not because the apply
+already happened. §10's runbook is planned steps, not an executed record.
 
 ---
 
@@ -98,7 +101,10 @@ so precisely rather than letting a summary read as a paste:
   used to check the "matches 022" claim were read/run directly, not
   recalled from earlier in this conversation. That claim was made
   unverified in chat before this package existed; §7 states plainly that
-  it does not hold, rather than carrying it forward.
+  it does not hold, rather than carrying it forward. The decision recorded
+  there (option B) and its evidence — the full diff against the committed
+  file, `tsc`/`eslint`/migration-lint/full-suite output — are all LITERAL,
+  run directly while making this update.
 
 ---
 
@@ -752,32 +758,32 @@ migration in this repo's history to hit this exact interaction: a schema
 change whose types cannot exist before the apply, landing after CI became
 load-bearing.
 
-### Options — laid out, not acted on
+### Options as originally laid out — HISTORICAL, kept for the record; the
+decision below OVERRIDES (B)'s "rejected" verdict here, it does not stand
 
 - **(A) Accept red until apply.** Leave `typecheck` failing; branch
   protection blocks the merge button by construction until the runbook's
   steps C (apply) through F (regen) complete. Not a new risk CI
   introduces — every migration here has always applied out-of-band via the
-  SQL Editor, never by merging to `main`, and §9's own runbook already
-  sequences "apply → regen + commit → CI green → merge" at step H, written
-  before this question came up. CI mainly makes that ordering enforced
-  rather than merely intended: a reviewer can still read a red-CI PR's
-  diff, they just can't click merge early. Cost: the PR sits visibly red
-  on GitHub for however long review takes before the apply happens — a
-  cosmetic state, not a functional one.
-- **(B) Regenerate from test-db now, commit, go green immediately.**
-  Rejected on provenance grounds, not convenience. CLAUDE.md §6's regen
-  discipline and this migration's own runbook (§9 step F) both specify
-  regenerating against PROD specifically, and the "verify by observation on
-  the actual target, not a rehearsal proxy" discipline running through this
-  whole package (§0, the `ensure_rls` divergence in §4) argues directly
-  against treating test-db's schema as interchangeable with prod's for this
-  purpose — even though in THIS case the DDL rehearsed byte-identically and
-  the generated types would almost certainly come out identical either way.
-  It would also produce a committed `types/database.ts` indistinguishable
-  from a genuine prod regen unless explicitly labeled otherwise — the same
-  "record reads stronger than reality" failure mode already named for the
-  `it.todo` decision in §6.
+  SQL Editor, never by merging to `main`, and §10's own runbook already
+  sequenced "apply → regen + commit → CI green → merge" at what was then
+  step H, written before this question came up. CI mainly makes that
+  ordering enforced rather than merely intended: a reviewer can still read
+  a red-CI PR's diff, they just can't click merge early. Cost: the PR sits
+  visibly red on GitHub for however long review takes before the apply
+  happens — a cosmetic state, not a functional one.
+- **(B) Regenerate from test-db now, commit, go green immediately.** As
+  originally weighed here: rejected on provenance grounds, not convenience
+  — CLAUDE.md §6's regen discipline and this migration's own runbook (now
+  §10 step F) both specify regenerating against PROD specifically, and the
+  "verify by observation on the actual target, not a rehearsal proxy"
+  discipline running through this whole package (§0, the `ensure_rls`
+  divergence in §4) argues directly against treating test-db's schema as
+  interchangeable with prod's for this purpose. **This verdict did NOT
+  hold** — see "Decision: (B), not (A)" immediately below, which weighs a
+  cost this framing missed (A's own prod-ahead-of-`main` risk) and adds the
+  verification step (the diff, re-checked again post-apply) that resolves
+  the provenance objection rather than ignoring it.
 - **(C) Bypass branch protection for this one PR.** Not recommended:
   protection went load-bearing eight days before this PR, specifically to
   close the honour-system gap process-hardening existed to remove;
@@ -787,15 +793,134 @@ load-bearing.
   drop and the page repoint to land together, so there's no smaller PR that
   avoids referencing `dprs` from a typed client path.
 
-**Recommendation: (A).** Costs nothing beyond a red check sitting on an
-unmerged branch during review, matches the runbook's own already-planned
-ordering, and doesn't compromise anything §0 or §6 care about. **Not acted
-on** — CI config, the runbook, and the apply sequence are all unchanged
-pending your call.
+**Recommendation offered: (A).** Overruled, deliberately — see below.
+
+### Decision: (B), not (A) — reasoning on the record
+
+(A) requires applying to prod before merge, which puts prod ahead of
+`main`. That is the exact condition migration 007 created by being applied
+out of order — and §0's fresh-branch rule exists BECAUSE of that
+divergence (a fresh branch replays migration files linearly and comes up
+missing `users.auth_id`, because prod's real history isn't a linear replay
+of what's in `main`). Recommending (A) here would have manufactured a
+smaller instance of the same problem this package's own §4 was written to
+respect. (A) also opens a live window where `daily_logs.dpr_content` is
+dropped on prod while the OLD `page.tsx` — still reading that column — is
+whatever's actually deployed, since deployment tracks `main`, not the
+database. That is precisely the failure 023's own header note (DPR_CONTENT
+DROP — SEQUENCING) exists to prevent by keeping the drop and the repoint in
+one PR; (A) would have reintroduced it at the deploy-timing layer even
+though both land in the same commit. Neither risk is worth taking to
+preserve a provenance preference for *where the types file's default
+source* is on this one PR.
+
+### What (B) actually does to §6's rule, and why that's not a shortcut
+
+§6's "generate against prod" default exists to guarantee the committed
+file describes the real, currently-live schema — not to privilege
+`--linked` as a ritual. Test-db, right now, is prod's schema plus 023 (and
+only 023 — see §2/§4's own drift checks). A file generated from test-db is
+therefore content-identical to what prod's file will be once 023 applies,
+with one named, already-predicted exception (`ensure_rls`, prod-only,
+appears as a function). The rule's actual purpose — the file matches
+reality — is met either way; only the literal source flag is temporarily
+substituted, and that substitution is checked, not assumed, both now (the
+diff below) and again after the apply (§10 step F).
+
+**Command, same form as every prior regen (`e7d57fb`), source swapped:**
+```
+npx supabase gen types typescript --project-id exfccwlrhoutkgrlikod --schema public
+```
+
+**Full diff against the previously-committed (prod-derived, post-022)
+file — LITERAL, 70 lines, every line accounted for:**
+```
+274d273  <  dpr_content: string | null            (daily_logs.Row)
+306d304  <  dpr_content?: string | null            (daily_logs.Insert)
+338d335  <  dpr_content?: string | null            (daily_logs.Update)
+383a381,443  >  [new] dprs: { Row / Insert / Update / Relationships }
+```
+The `dprs` block added matches the DDL exactly: 13 columns, FKs to
+`projects` and `tenants` only (`generator_job_id` correctly absent from
+`Relationships`), `delivery_status`/`generation_status` typed as plain
+`string` (Supabase's generator doesn't infer CHECK-constraint unions,
+expected). No `rls_auto_enable` in this diff — expected, since test-db
+lacks the function entirely (§4). **Nothing outside the 023 change
+surfaced.** If it had, that would have been schema drift between the
+committed prod-derived file's assumed baseline and test-db's actual
+current state, independent of 023 — worth stopping for; it didn't happen.
+
+**All three CI gates plus the full suite verified locally, not assumed
+green from the diff alone:**
+```
+$ npx tsc --noEmit                     → clean, zero output
+$ npm run lint                          → 0 errors, 2 pre-existing warnings
+                                           (other files, unrelated to 023)
+$ node scripts/lint-migrations.mjs      → clean, 53 known/exempted
+$ npm test                              → 25 files, 255 passed, 1 todo
+```
+
+Committed as `c00232d`, with the provenance and the planned prod
+re-verification stated directly in the commit message, not only here.
+
+### Step 3 (planned, NOT executed) — the check that actually proves the rule's purpose was met
+
+Immediately after the prod apply (§10 step F): regenerate against prod
+(`--linked`, the true default) and diff against the file committed here.
+**Expected difference: exactly one addition** — `rls_auto_enable` appearing
+in `Database['public']['Functions']`, since `gen types` includes functions
+and that one is prod-only (§4). If the diff matches that exactly, commit
+the prod-regenerated file as the final state — completing the
+"temporarily varied, now reconciled" arc, not leaving the test-db-derived
+file as a permanent stand-in. **If the diff shows anything beyond that one
+addition, STOP — do not commit over it, surface it before proceeding.**
+That would mean real test-db/prod drift, not the expected 023-only delta,
+and is exactly the class of divergence §0's fresh-branch rule and §4's
+`ensure_rls` finding both warn is possible between these two databases.
 
 ---
 
-## 8. Explicitly out of scope / already handled separately
+## 8. Reviewer round — SKIPPED for 023, reasoning on the record
+
+Per CLAUDE.md's own standing discipline (§0's provenance rules, the
+`SUPERSEDING PR` rule's spirit of never silently dropping a process step),
+a skip needs to be a recorded decision, not an absence someone has to infer
+later. Migrations 007 and 019 both had an explicit second-pair-of-eyes
+round; 023 does not. Five reasons, together, not any one alone:
+
+1. **The `ensure_rls` question (§4) resolved benign**, not merely
+   "probably fine" — read directly from `prosrc`, the firing-order argument
+   is mechanical (the trigger's own `command_tag` filter excludes `ALTER
+   TABLE`), and the one piece that isn't fully empirical (does 020's
+   `REVOKE EXECUTE` gate firing) is flagged as reasoned-not-tested rather
+   than asserted with false confidence.
+2. **`dprs_select` is byte-identical to `daily_log_edits_select`** (019),
+   a policy that already went through its own review round and has been on
+   prod since 2026-07-26 with no reported issue.
+3. **The rehearsal cleared every check (§2) against a pinned SHA** —
+   columns, RLS, policy shape, grants, constraints — the same discipline a
+   human reviewer would apply by eye, done against the actual object.
+4. **The `dpr_content` drop is provably data-free on prod** — the pre-apply
+   probe (§2) is a direct read, not an inference, and (B)'s decision above
+   independently closes the timing risk a human reviewer would otherwise
+   exist to catch.
+5. **This PR carries a live-JWT isolation proof (§6) that 019 shipped
+   without.** 023 is, by this specific measure, more thoroughly evidenced
+   ex-ante than the migration whose policy it copies — a second human
+   reviewer would be checking a shape already validated behaviorally, not
+   only on paper.
+
+None of these individually would justify skipping review on a migration
+this session has otherwise treated with 017-022 tier rigor. Together, the
+honest read is that a review round here would be re-deriving conclusions
+this package already reached by direct observation, not catching something
+those methods would plausibly miss. If that judgment turns out wrong, the
+record above is what to check against — not a vague "seemed fine at the
+time."
+
+---
+
+## 9. Explicitly out of scope / already handled separately
 
 - **Dead "View" link on the DPR Archive page** — found during this review,
   fixed in a follow-up commit (`c1d8005`, same branch) rather than left
@@ -812,19 +937,35 @@ pending your call.
 
 ---
 
-## 9. PROD apply — runbook (NOT YET EXECUTED — planned steps only)
+## 10. PROD apply — runbook (NOT YET EXECUTED — planned steps only)
 
 Following the same strict-alternation template as 017-022
-(`docs/migration-runbook-template.md`), NOT run yet:
+(`docs/migration-runbook-template.md`). **Ordering note, per §7's decision
+(B):** merge precedes this runbook, not the other way around — the PR
+merges to `main` once CI is green on the test-db-derived types (already
+true), and this runbook begins AFTER that merge, not before it. This
+inverts what an earlier draft of this package had assumed (apply-then-
+merge, option A) — recorded here so the change of order isn't silently
+lost between drafts.
 
-- [ ] **A. PITR window observation** — dashboard, before any write.
+- [ ] **A. PITR window observation — DIRECT DASHBOARD INSPECTION, not a
+  checklist line.** This is CLAUDE.md §0's standing rule by name, not a
+  restatement for tone: Database → Backups → Point in Time on the actual
+  Supabase dashboard, read at apply time, by eye. A "PITR — DONE" in this
+  document, a prior package, or CLAUDE.md §10 does NOT satisfy this step —
+  the origin case for the rule (the 007 apply, 2026-07-10) is exactly a
+  "DONE" checklist entry that had been false for weeks, caught only because
+  someone looked at the dashboard directly instead of trusting the record.
+  This step is not complete until the restore window has actually been
+  looked at during THIS apply, not recalled from §10's 2026-07-12
+  enablement note.
 - [ ] **B. Pre-apply state probe (read-only)** — re-run the `dpr_content`
   count query above against PROD, at apply time, not trusting the number
   captured earlier in this package as still current (same discipline
   migration 016 and this migration's own header comment both name).
 - [ ] **C. Apply (write)** — pinned SQL from `git show`, full paste,
   deselect, run.
-- [ ] **C.1 Log check (new, from §4)** — check apply-time Postgres logs for
+- [ ] **C.1 Log check (§4)** — check apply-time Postgres logs for
   `rls_auto_enable: enabled RLS on public.dprs`, fired by the `ensure_rls`
   event trigger on the `CREATE TABLE dprs` statement. Expected and
   confirmatory, not alarming — its *absence* is the more interesting
@@ -832,29 +973,32 @@ Following the same strict-alternation template as 017-022
 - [ ] **D. Post-apply probes** — the same six checks from §2, re-run
   against PROD.
 - [ ] **E. Ledger INSERT + verify.**
-- [ ] **F. Types regen** — `types/database.ts`, against PROD this time (not
-  the rehearsal-only test-db proof already done against this same
-  migration during rehearsal — see the working notes for that dry run).
+- [ ] **F. Types regen verification (§7 step 3)** — regenerate against PROD
+  (`--linked`, the true default), diff against the file already committed
+  here (test-db-derived, `c00232d`). Expected: exactly one addition,
+  `rls_auto_enable` in `Functions`. If the diff matches, commit the
+  prod-regenerated file as the final, reconciled state. **If it shows
+  anything more, STOP — do not commit, surface it first.**
 - [ ] **G. `schema.md` update** — from "rehearsed, not applied" to
   "applied," only after E confirms.
-- [ ] **H. Merge ordering** — apply → regen + commit → CI green → merge.
-  §7 lays out why this ordering is currently mandatory, not just tidy: the
-  PR cannot merge before F regardless, since `tsc --noEmit` stays red until
-  then.
+
+No merge step here — it already happened, per the ordering note above.
 
 ---
 
-## 10. Summary
+## 11. Summary
 
 | | |
 |---|---|
 | Risk | Low-moderate — new table (additive) + one small destructive-but-data-free column drop (0 rows, probe-backed); no `SECURITY DEFINER` surface at all (deliberately avoided) |
 | Reversibility | DOWN block drops `dprs`, re-adds `dpr_content TEXT`; data loss from the drop is nil (0 rows pre-drop) |
-| Evidence | Rehearsal narrative-confirmed against explicit pass conditions (§2), migration-lint literal-clean including a live rule demonstration (§5), TRUNCATE finding literal-empirical on both databases (§3), RLS isolation suite literal-green on test-db (§6) |
+| Evidence | Rehearsal narrative-confirmed against explicit pass conditions (§2), migration-lint literal-clean including a live rule demonstration (§5), TRUNCATE finding literal-empirical on both databases (§3), RLS isolation suite literal-green on test-db (§6), full CI gate set (typecheck/lint/migration-lint/test) literal-green locally (§7) |
 | New finding — access | `anon`/`authenticated` hold TRUNCATE/REFERENCES/TRIGGER on all 25 public tables, systemic since 001, empirically confirmed exploitable-in-principle but not via PostgREST — 020-class, not a live hole; mechanism (`pg_default_acl`, two grantors) and `postgres`'s inability to touch the `supabase_admin`-owned entry both confirmed by observation, on both databases (§3) |
 | New finding — apply mechanics | `ensure_rls` event trigger (`rls_auto_enable`) is armed and prod-only; will fire once, redundantly and harmlessly, on 023's `CREATE TABLE dprs` statement; 020's EXECUTE revoke does not gate event-trigger firing (reasoned from documented Postgres semantics, flagged as such, not empirically isolated) (§4) |
 | Migration-lint | Clean, 53 (unchanged), zero new exceptions entries — first new migration since CI went load-bearing; `no-orphan-security-definer` demonstrated live against a throwaway fixture, fires on the orphan case and clears on the 020 pattern (§5) |
 | RLS isolation test | **Written, green: 6/6 pass + 1 `it.todo`.** Centrepiece (T-023-01/02) is the first live-JWT proof anywhere in this repo of the nested-EXISTS policy shape also shipped, untested this way, on `daily_log_edits` (019) (§6) |
-| New finding — CI/merge | This PR's `tsc --noEmit` is red until the prod apply (types can't exist before the table does) and branch protection is load-bearing since 2026-08-07 — 023 is the first migration to hit this exact interaction. The "matches 022" comparison made in conversation does not hold, checked and corrected here. Three options laid out, (A) accept-red-until-apply recommended, none acted on (§7) |
-| Follow-ups tracked, not blocking | Migration 024 + lint rule (§3); dead-link fix already landed separately (§8) |
-| Prod status | **NOT APPLIED.** Rehearsed clean on test-db only (§2). Runbook is planned steps (§9), not an executed record. |
+| CI / merge-gating | **RESOLVED — option (B) chosen over the recommended (A).** `types/database.ts` regenerated against test-db (`c00232d`), diffed clean against the prior prod-derived file (only the 023 delta, nothing else), all four local CI-equivalent checks green. Rationale: (A) would have forced apply-before-merge, reproducing the prod-ahead-of-`main` condition §0's fresh-branch rule exists because of, and opened a real window where the column drop and the old `page.tsx` coexist. Prod re-verification (exactly one expected addition, `rls_auto_enable`) planned for immediately post-apply, not skipped (§7) |
+| Reviewer round | **SKIPPED, five reasons on the record** — `ensure_rls` resolved benign, policy byte-identical to an already-shipped-and-reviewed 019 policy, rehearsal cleared every check against a pinned SHA, the drop is provably data-free, and this PR carries a live-JWT proof 019 itself shipped without (§8) |
+| Follow-ups tracked, not blocking | Migration 024 + lint rule (§3); dead-link fix already landed separately (§9) |
+| Merge status | **MERGEABLE NOW** — CI green locally on the test-db-derived types (§7). Runbook (§10) begins AFTER merge, not before — the ordering is inverted from an earlier draft of this package by deliberate decision, not oversight. |
+| Prod status | **NOT APPLIED.** Rehearsed clean on test-db only (§2). Runbook (§10) is planned steps, not an executed record; step A (PITR) requires direct dashboard inspection at apply time, not a reference to a prior "DONE." |
