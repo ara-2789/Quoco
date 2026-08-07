@@ -4,7 +4,7 @@ import { getProfile } from '@/lib/auth/profile'
 type DprRow = {
   id: string
   log_date: string
-  dpr_content: string
+  content: string | null
   projects: { name: string } | null
 }
 
@@ -31,10 +31,10 @@ export default async function DprsPage() {
 
   if (projectIds.length > 0) {
     const { data } = await supabase
-      .from('daily_logs')
-      .select('id, log_date, dpr_content, projects(name)')
+      .from('dprs')
+      .select('id, log_date, content, projects(name)')
       .in('project_id', projectIds)
-      .not('dpr_content', 'is', null)
+      .not('content', 'is', null)
       .order('log_date', { ascending: false })
 
     dprs = (data ?? []) as unknown as DprRow[]
