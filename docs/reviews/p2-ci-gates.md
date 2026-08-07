@@ -1,22 +1,28 @@
-# P2 — CI gates: stage 1 evidence
+# P2 — CI gates: evidence (stage 1 + stage 2)
 
-Process-hardening work order's P2, stage 1 (typecheck/lint/test). Not a
-migration — no schema change, no prod apply, so this is a lighter record
-than the 017–022 series, per the P2 design decisions: what matters here is
-the two pieces of evidence a config file's own existence can't prove by
-itself — that it actually runs, and that it actually catches something.
+Process-hardening work order's P2. Not a migration — no schema change, no
+prod apply, so this is a lighter record than the 017–022 series, per the
+P2 design decisions: what matters here is the evidence a config file's own
+existence can't prove by itself — that it actually runs, and that it
+actually catches something, for both stages.
 
 - Workflow: `.github/workflows/ci.yml`, `.nvmrc` (Node 24, confirmed
   against Vercel → Settings → Build and Deployment → Node.js Version, not
-  guessed)
-- PR: [#27](https://github.com/ara-2789/Quoco/pull/27) — **open, not yet
-  merged** as of this writing. Held deliberately until this evidence
-  existed (P2 design decision 4: non-blocking to start, then a separate,
-  dated flip to required — wire it, verify it, then lean on it, matching
-  this project's PITR/Sentry precedent).
-- Branch protection: **not yet enabled.** This workflow reports on every
-  PR/push but cannot block a merge until that's turned on as its own
-  explicit step, after this evidence and after #27 merges.
+  guessed). Four jobs: `Typecheck`, `Lint`, `Migration Lint`, `Test (real
+  test-db)`.
+- Stage 1 (typecheck/lint/test): [#27](https://github.com/ara-2789/Quoco/pull/27),
+  merged. Stage 2 (migration linter): [#31](https://github.com/ara-2789/Quoco/pull/31),
+  merged. Acceptance-criterion throwaways: [#29](https://github.com/ara-2789/Quoco/pull/29)
+  (stage 1), [#32](https://github.com/ara-2789/Quoco/pull/32) (stage 2) —
+  both closed, never merged.
+- **Branch protection: ENABLED, in two dated steps**, per P2 design
+  decision 4 (non-blocking to start, then a separate flip to required —
+  wire it, verify it, then lean on it, matching this project's PITR/Sentry
+  precedent). `Typecheck`/`Lint`/`Test (real test-db)` required
+  **2026-08-07** (after §2's acceptance criterion); `Migration Lint` added
+  to the required list later the same day, after §5's acceptance
+  criterion. Confirmed both times via a fresh `gh api
+  repos/.../branches/main/protection` read, not just the `PUT` response.
 
 ---
 
@@ -235,7 +241,119 @@ checked against the table above, not re-approximated.)
 
 ---
 
-## 4. Known follow-up, not urgent, not part of this PR's scope
+## 4. Stage 2 implementation — 53 entries, not 50, and why
+
+The investigation in §3 was a throwaway probe. Building `scripts/lint-migrations.mjs`
+for real (fixed rule logic, then run with an **empty** exceptions file)
+found **53** violations, not 50 — three more, all in
+`money-column-precision`, all chased down before being written into the
+exceptions file as real:
+
+- **`rate_catalog.rate_min` / `rate_catalog.rate_max`** — genuinely missed
+  by the §3 probe: its money-name regex required a leading character
+  before the keyword, so a bare-named column (nothing before "rate") was
+  invisible to it. Same cluster as the other 6 Phase-2 rate-precision
+  mismatches — now 8, not 6.
+- **`boq_sessions.priced_items`** — a real false positive from the *real*
+  implementation, caught before it reached the exceptions file. `INTEGER`,
+  a count, not money — `MONEY_NAME` matched "price" as a substring of
+  "priced_items". `\b`-bounded regex can't fix this: `_` is a word
+  character in JS regex, so `\brate\b` matches neither "rate" inside
+  "final_rate" (a real hit that must keep matching) nor "price" inside
+  "priced_items" (a false one that must stop) — both read as one
+  continuous word-run to `\b` either way. Fixed with token-exact matching:
+  split the column name on `_`, check for an exact-match token.
+- **`invoices.amount`** — the one worth stating plainly rather than
+  quietly filing away. `001`'s original definition is `DECIMAL(10,2)`.
+  Before treating this as a live bug (it would have been a sharp one —
+  CLAUDE.md's own coding rule uses this exact column as its canonical
+  example of *correct* behavior: *"invoices.amount is (12,2), not
+  (10,2)"*), checked whether a later migration silently fixed it:
+  **`016_corrections.sql:117-118`** does —
+  `ALTER TABLE public.invoices ALTER COLUMN amount TYPE DECIMAL(12,2);`.
+  Not a live bug. Same shape as the `no-orphan-security-definer` cluster:
+  corrected later, in a different file, invisible to a linter that only
+  reads one file at a time. Also checked whether any of the *other*
+  flagged rate columns were secretly fixed the same way — grepped every
+  `ALTER COLUMN ... TYPE` touching a money-ish name across all of
+  001–022; `invoices.amount` is the only one.
+
+**Final: 53 entries** — `rls-required` 24, `no-orphan-security-definer` 12,
+`money-column-precision` 10, `tenant-id-required` 5, `status-column-shape`
+2. Generated from the real linter's own `node scripts/lint-migrations.mjs
+--json` output (a debug flag on the script itself, not CI-facing), not
+hand-transcribed — exact string matching mattered here, not prose. Each of
+the 53 entries is a narrow `(file, object, rule)` triple with its own
+reason, verified to have zero duplicate keys.
+
+---
+
+## 5. Stage 2 acceptance criterion — two probes, one PR
+
+Per the design decision from §3: an exceptions file keyed loosely enough
+to protect nothing would still make the linter go green. One probe proves
+the linter fires; a second, specifically targeting an already-exempted
+file, proves the *keying* is what's supposed to make it fire — a property
+that was, until this section, asserted rather than demonstrated.
+
+**PR: [#32](https://github.com/ara-2789/Quoco/pull/32) (closed, never
+merged — throwaway).** Both probes carry an explicit header stating they
+must never actually apply anywhere, same discipline as §2's probe file.
+
+1. **New violation, new file.** `999_zz_ci_acceptance_probe.sql` —
+   `CREATE TABLE zz_ci_probe_table` with no `tenant_id`, no RLS enable.
+2. **New violation, OLD already-exempted file — the granularity proof.**
+   A new `SECURITY DEFINER` function (`zz_ci_probe_function`, no
+   `REVOKE`/`GRANT` anywhere in the file — confirmed by grep that
+   `018_morning_flow_parsers.sql` has zero `REVOKE`/`GRANT` statements at
+   all before this addition) appended to `018_morning_flow_parsers.sql` —
+   a file that already carries its own `no-orphan-security-definer`
+   exception (`apply_morning_flow_turn`, hardened by 020). If the
+   exceptions file's keying were file-wide anywhere, this would pass
+   silently.
+
+### RED
+
+```
+migration-lint: 3 violation(s) not covered by scripts/migration-lint-exceptions.json:
+
+  018_morning_flow_parsers.sql: zz_ci_probe_function  [no-orphan-security-definer]
+  999_zz_ci_acceptance_probe.sql: zz_ci_probe_table  [tenant-id-required]
+  999_zz_ci_acceptance_probe.sql: zz_ci_probe_table  [rls-required]
+```
+
+`018`'s pre-existing `apply_morning_flow_turn` exception did **not**
+silently cover the new `zz_ci_probe_function` in the same file — the
+granularity holds. Confirmed on the real CI run, not just locally:
+
+| Job | Result | Run |
+|---|---|---|
+| Migration Lint | **fail** (21s) | `https://github.com/ara-2789/Quoco/actions/runs/31168830948/job/92835759108` |
+
+### GREEN
+
+Same branch: `999_zz_ci_acceptance_probe.sql` deleted;
+`018_morning_flow_parsers.sql` restored via `git checkout origin/main --
+<file>`, confirmed byte-identical to `main` (`git diff origin/main --
+<file>` empty before committing the revert).
+
+```
+migration-lint: clean. 53 known violation(s), all exempted.
+```
+
+| Job | Result | Run |
+|---|---|---|
+| Migration Lint | **pass** (22s) | `https://github.com/ara-2789/Quoco/actions/runs/31169406675/job/92837561737` |
+
+PR #32 closed without merging. **Acceptance criterion satisfied for both
+probes** — the same rule, isolating a genuinely new violation AND
+correctly refusing to let an old file's exception bleed onto a new object
+in it, both observed failing for the right reason and passing after the
+fix, both run URLs independently checkable.
+
+---
+
+## 6. Known follow-up, not urgent, not part of this PR's scope
 
 **`actions/checkout@v4` / `actions/setup-node@v4` deprecation.** Every run
 in this document carries this warning:
@@ -256,15 +374,23 @@ failing for real.
 
 ---
 
-## 5. Status / next steps
+## 7. Status / next steps
 
 - [x] Stage 1 workflow lands, runs correctly (§1).
-- [x] Acceptance criterion — RED then GREEN, both pinned (§2).
-- [ ] Merge PR #27.
-- [ ] Enable branch protection requiring `typecheck` / `lint` / `test` —
-      its own explicit, dated step, not a side effect of merging #27.
-- [ ] Stage 2 (migration linter) — investigation findings captured (§3);
-      not yet built.
+- [x] Stage 1 acceptance criterion — RED then GREEN, both pinned (§2).
+- [x] PR #27 merged.
+- [x] Branch protection enabled requiring `Typecheck` / `Lint` / `Test
+      (real test-db)` — **2026-08-07**, its own explicit, dated step
+      (confirmed via a fresh API read, not the `PUT` response).
+- [x] Stage 2 (migration linter) — investigation findings captured (§3),
+      implemented (§4), PR #31 merged.
+- [x] Stage 2 acceptance criterion — both probes, RED then GREEN, both
+      pinned (§5).
+- [x] Branch protection updated to also require `Migration Lint` —
+      **2026-08-07**, same day, its own separate dated step after §5's
+      criterion (confirmed via a fresh API read).
 - [ ] Stage 3 (types-drift check, test-db-scoped per the P2 design
       decisions) — not yet built.
-- [ ] `actions/*@v5` bump (§3) — not urgent, tracked here.
+- [ ] `actions/*@v5` bump (§6) — not urgent, tracked here.
+- [ ] `jobs`'s missing `docs/schema.md` deviation note (§3) — a real, small
+      doc gap surfaced during the stage 2 investigation, not yet fixed.
