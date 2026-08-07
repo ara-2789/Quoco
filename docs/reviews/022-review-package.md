@@ -767,6 +767,17 @@ duplicate, no typo'd version string.
 --linked --schema public`. `apply_evening_flow_turn` now present in
 `types/database.ts`'s `Database['public']['Functions']` (+15 lines,
 committed). `tsc --noEmit` fully clean — both known R6-gap errors gone.
+  DATED NOTE (2026-08-07, from PR #22's review, B1): F's success criterion
+  above — regen ADDS the function — describes only the ORIGINAL run
+  (`e7d57fb`). `apply_evening_flow_turn` is now already committed in
+  `types/database.ts`, so any FUTURE regen against an unchanged schema must
+  diff EMPTY, not add the function again. A later regen that still shows the
+  function being added would mean this file and prod's actual catalog have
+  diverged — it would not be F succeeding a second time. Flagged because a
+  reviewer went looking for why `tsc` was clean in a later PR that touched no
+  migration, found no explanation in that PR's own package, and had to
+  reconstruct this from history — see `docs/reviews/webhook-wiring-review-package.md`
+  §5 for where that provenance now lives going forward.
 
 **G. `schema.md` / CLAUDE.md §10** ✅ — both updated from no-entry to
 applied, only after C+D+E confirmed. (CLAUDE.md's own §10 — a different

@@ -82,6 +82,23 @@
   dropped item impossible to miss. Applies to the review package too: it must state
   which round was reviewed-WITH-CHANGES vs. approved, so "byte-identical to the
   reviewed file" can never be misread as "approved."
+- REVIEW REQUESTS AT THIS TIER OPEN WITH A REPO-STATE HEADER (standing rule
+  since 2026-08-07, from PR #22's B1 near-miss). A reviewer's context is a
+  conversation, not a clone — between rounds the repo moves, and a reviewer
+  working from memory or a cached GitHub diff can build an entire blocker on a
+  premise that stopped being true days earlier. Origin: B1 flagged
+  webhook-wiring PR #22 for a types-regen/merge-ordering hazard that had
+  already been resolved and merged via migration 022's own PR; the reviewer
+  caught it himself only because a stale GitHub page visibly contradicted
+  itself, and explicitly noted his own verification was a weaker evidence
+  class than a live catalog probe. From 2026-08-07, every review request at
+  019/020/021/022-tier opens with a two-line repo-state header: `main @
+  <sha>`; `supabase migration list` local/remote; and the last runbook
+  executed, with its date. Costs ten seconds to produce. Converts "reviewer
+  assumes state" into "reviewer checks a pinned input" — the header alone
+  would have made B1 impossible to write, since it would have shown 022
+  already merged and applied before the reviewer needed to derive that from a
+  diff.
 
 ---
 

@@ -207,6 +207,14 @@ only thing that differs between production (`undefined` → falls through to
 wants to falsify the no-divergence claim, this four-line tail is the entire
 surface to check — there is nowhere else for a second path to hide.
 
+One deliberately untested residual: the harness always supplies
+`deps.supabaseClient`, so the `undefined → createServiceClient()` default
+branch — `POST`'s own line plus the default expression in
+`handleWebhookPost`'s signature, both trivially inspectable — is never
+exercised, for the same reason the injection existed in the first place:
+`.env.test` withholds prod credentials, so testing that branch would require
+exactly what the harness exists to avoid.
+
 ---
 
 ## 5. Automated test evidence — LITERAL
@@ -267,7 +275,15 @@ Both counts were confirmed green-to-green at every intermediate step
 (guard test, then `dispatch.test.ts`, then the client-injection step with
 zero new tests, then `webhook.test.ts`), not just at this final pin.
 
-`tsc --noEmit`: clean, exit 0.
+`tsc --noEmit`: clean, exit 0 — **not because of anything in this PR.**
+`apply_evening_flow_turn` entered `types/database.ts` in commit `e7d57fb`
+("chore(022): regenerate types post-prod-apply (R6)"), run as `npx supabase
+gen types typescript --linked --schema public` against **prod**, immediately
+after 022's own apply on 2026-08-05. That commit predates this PR entirely —
+it is 022's own step F, already on `main` before this branch's four commits
+exist — and `types/database.ts` does not appear anywhere in this PR's file
+list (`git diff --stat babeb48 fecb0f3 -- types/database.ts` is empty;
+confirmed independently via `gh pr view 22 --json files`).
 
 **Evening reachability — grep, LITERAL, resolves a claim from 022's package
 that is now stale.** 022's package (§10) stated flatly: *"the webhook
