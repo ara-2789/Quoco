@@ -1,11 +1,16 @@
 name: CI
 
-# STAGE 1 of the process-hardening work order's P2 (CI gates). Runs on every
-# PR into main and every push to main; NOT yet required by branch
-# protection — a deliberate, separate step (P2 decision 4) that only
-# happens after the red/green acceptance-criterion PR has actually been
-# observed. Until then this workflow reports status but cannot block a
-# merge.
+# STAGE 1 of the process-hardening work order's P2 (CI gates) — typecheck,
+# lint, test. LOAD-BEARING as of 2026-08-07: branch protection on main
+# requires all three (Typecheck / Lint / Test (real test-db)), flipped on
+# as its own separate, dated decision after the red/green acceptance
+# criterion in docs/reviews/p2-ci-gates.md §2 was actually observed, not
+# assumed.
+#
+# STAGE 2 (migration-lint) is new here and NOT yet required by branch
+# protection — same non-blocking-first rollout as stage 1: land it, prove
+# it with its own red/green acceptance criterion (docs/reviews/p2-ci-gates.md),
+# THEN a separate branch-protection update adds it to the required list.
 
 on:
   pull_request:
@@ -45,6 +50,18 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run lint
+
+  migration-lint:
+    name: Migration Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint:migrations
 
   test:
     name: Test (real test-db)

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "check:profile-lookups": "node scripts/check-profile-lookups.mjs",
+    "lint:migrations": "node scripts/lint-migrations.mjs",
     "prebuild": "npm run check:profile-lookups",
     "build": "next build",
     "start": "next start",
