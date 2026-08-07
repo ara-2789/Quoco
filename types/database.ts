@@ -271,7 +271,6 @@ export type Database = {
         Row: {
           created_at: string | null
           dpr_approved_by: string | null
-          dpr_content: string | null
           dpr_generated_at: string | null
           engineer_id: string
           evening_dependencies: Json | null
@@ -303,7 +302,6 @@ export type Database = {
         Insert: {
           created_at?: string | null
           dpr_approved_by?: string | null
-          dpr_content?: string | null
           dpr_generated_at?: string | null
           engineer_id: string
           evening_dependencies?: Json | null
@@ -335,7 +333,6 @@ export type Database = {
         Update: {
           created_at?: string | null
           dpr_approved_by?: string | null
-          dpr_content?: string | null
           dpr_generated_at?: string | null
           engineer_id?: string
           evening_dependencies?: Json | null
@@ -381,6 +378,69 @@ export type Database = {
           },
           {
             foreignKeyName: "daily_logs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dprs: {
+        Row: {
+          content: string | null
+          created_at: string
+          delivered_owner_at: string | null
+          delivery_status: string
+          generated_at: string | null
+          generation_status: string
+          generator_job_id: string | null
+          id: string
+          last_regenerated_at: string | null
+          log_date: string
+          project_id: string
+          structured: Json | null
+          tenant_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          delivered_owner_at?: string | null
+          delivery_status?: string
+          generated_at?: string | null
+          generation_status?: string
+          generator_job_id?: string | null
+          id?: string
+          last_regenerated_at?: string | null
+          log_date: string
+          project_id: string
+          structured?: Json | null
+          tenant_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          delivered_owner_at?: string | null
+          delivery_status?: string
+          generated_at?: string | null
+          generation_status?: string
+          generator_job_id?: string | null
+          id?: string
+          last_regenerated_at?: string | null
+          log_date?: string
+          project_id?: string
+          structured?: Json | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dprs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dprs_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
