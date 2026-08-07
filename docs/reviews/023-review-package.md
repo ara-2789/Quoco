@@ -966,6 +966,19 @@ inverts what an earlier draft of this package had assumed (apply-then-
 merge, option A) — recorded here so the change of order isn't silently
 lost between drafts.
 
+**STANDING PROPERTY, general — not a 023 quirk.** CI's whole test suite
+(migrations 007/015/016/017/019/020/022/023, all of it) passes only
+because test-db already carries every one of those migrations applied —
+`test/migration-023.test.ts` passing in CI is this property in action, not
+an exception to note about. CLAUDE.md §0's rule for rehearsing future
+migrations is to TEAR DOWN and reuse this same test-db branch, never a
+fresh provision — so whatever "tearing down" means in practice must not
+strip already-applied schema, or CI breaks in a way that reads as a defect
+in whichever migration's test happens to fail first, not as what it
+actually is: test-db falling out of sync with the migration set. One line,
+so the next person hitting a mass test failure after a "clean rehearsal
+branch" reset checks this before debugging the wrong thing.
+
 - [ ] **A. PITR window observation — DIRECT DASHBOARD INSPECTION, not a
   checklist line.** This is CLAUDE.md §0's standing rule by name, not a
   restatement for tone: Database → Backups → Point in Time on the actual
@@ -1035,16 +1048,20 @@ planned steps for — append-only, closing the package, not editing earlier
 sections' "not applied" language out from under them (§0's provenance
 discipline: corrections are dated additions, not silent rewrites).
 
-**RAW-CAPTURE STATUS for this section, same convention as the rest of the
-package**: the apply timestamp, the six post-apply query results, the
-pre-apply probe re-read, and the PITR observation were all executed by the
-owner directly on prod and relayed here as a rolled-up summary, not pasted
-as raw per-query output — graded **NARRATIVE-CONFIRMED**, the same
-standard §2's own post-apply test-db verification uses, not inflated to
-LITERAL just because the stakes are higher here. The `types/database.ts`
-byte-identical confirmation below IS LITERAL — run directly, diff and
-sha256 both captured in this same session, immediately after being told
-the apply had completed.
+**RAW-CAPTURE STATUS for this section — UPGRADED to LITERAL.** Originally
+graded NARRATIVE-CONFIRMED (the six checks were first relayed as a
+rolled-up pass/fail summary, matching §2's own post-apply test-db
+convention). The owner subsequently pasted the raw per-query output
+verbatim — reproduced unedited immediately below, not reformatted or
+summarized — so this section now carries the same evidentiary weight as
+the package's other LITERAL sections, appropriately for the single most
+consequential section in it. The apply timestamp and PITR observation
+remain **NARRATIVE** (reported facts, not query output with a raw form to
+paste) — that distinction is kept rather than blurred upward along with
+the rest of the section. The `types/database.ts` byte-identical
+confirmation was already LITERAL — run directly, diff and sha256 both
+captured in this same session, immediately after being told the apply had
+completed.
 
 ### Apply
 
@@ -1065,25 +1082,99 @@ not recalled from CLAUDE.md §10's 2026-07-12 enablement note). Rollback
 target: **20:43 IST, 7 Aug 2026** — one minute before the apply, the
 correct granularity for an apply this size.
 
-### Post-apply verification — six checks, all matching the test-db rehearsal exactly
+### Post-apply verification — six checks, raw output, LITERAL
 
-| Check | Prod result | Matches test-db rehearsal (§2)? |
-|---|---|---|
-| Columns | 13, types/defaults matching the DDL | Yes |
-| RLS enabled | `relrowsecurity=true`, `relforcerowsecurity=false` | Yes |
-| Policy shape | one `dprs_select`, `polcmd=r`, `roles={authenticated}`, `with_check` null, `using_expr` carries both the `tenant_id` check and the `project_members` EXISTS | Yes |
-| `dpr_content` gone | zero rows for that column | Yes |
-| Grants / `relacl` | `{postgres=arwdDxtm,anon=rDxtm,authenticated=rDxtm,service_role=arwdDxtm}` — **identical character-for-character** to test-db | Yes |
-| Constraints | six, matching by name and definition; `generator_job_id` in no FK | Yes |
+**a. Columns:**
+```
+column_name,data_type,is_nullable,column_default
+id,uuid,NO,gen_random_uuid()
+created_at,timestamp with time zone,NO,now()
+tenant_id,uuid,NO,null
+project_id,uuid,NO,null
+log_date,date,NO,null
+structured,jsonb,YES,null
+content,text,YES,null
+generated_at,timestamp with time zone,YES,null
+last_regenerated_at,timestamp with time zone,YES,null
+delivered_owner_at,timestamp with time zone,YES,null
+delivery_status,text,NO,'pending'::text
+generation_status,text,NO,'idle'::text
+generator_job_id,uuid,YES,null
+```
+13 rows, matching the DDL exactly — types, nullability, and defaults all
+correct, including `delivery_status`/`generation_status` correctly `NOT
+NULL` with their string defaults, and `generator_job_id` correctly
+`YES`/nullable with no default (never a FK, per the migration's own
+design).
+
+**b. RLS enabled:**
+```
+relrowsecurity,relforcerowsecurity
+true,false
+```
+
+**c. Policy shape:**
+```
+polname,polcmd,polpermissive,roles,using_expr,with_check_expr
+dprs_select,r,true,{authenticated},"((tenant_id = get_user_tenant_id()) AND (EXISTS ( SELECT 1
+   FROM project_members pm
+  WHERE ((pm.project_id = dprs.project_id) AND (pm.user_id = ( SELECT users.id
+           FROM users
+          WHERE (users.auth_id = auth.uid())))))))",null
+```
+One policy, `FOR SELECT` (`polcmd=r`), `roles={authenticated}` (never
+`{public}`), `with_check_expr` null (no write policy exists), `using_expr`
+carrying both the `tenant_id = get_user_tenant_id()` check and the nested
+`EXISTS` over `project_members`/`users` — the exact shape T-023-01/02 (§6)
+already proved resolves correctly under a real JWT, now confirmed present
+on prod verbatim.
+
+**d. `dpr_content` gone:**
+```
+[daily_logs.dpr_content query] Success. No rows returned
+```
+
+**e. Grants / `relacl`:**
+```
+relacl
+"{postgres=arwdDxtm/postgres,anon=rDxtm/postgres,authenticated=rDxtm/postgres,service_role=arwdDxtm/postgres}"
+```
+Matches the shape §3's arithmetic predicted — default `arwdDxtm` minus
+023's `REVOKE INSERT, UPDATE, DELETE` (`a`/`w`/`d`) leaves `anon` and
+`authenticated` at `rDxtm` (SELECT + the still-open TRUNCATE/REFERENCES/
+TRIGGER finding, §3), while `postgres`/`service_role` retain the full
+`arwdDxtm`. **Precision note, not carried past what's actually on
+record**: this is a match against the *derived expectation*, not a
+byte-for-byte comparison against a previously-pasted test-db `relacl`
+literal — §2f's own check only recorded "non-NULL, no PUBLIC entry"
+narratively, so no test-db `relacl` string was ever pasted into this
+package to diff against. The match is real and the arithmetic is sound
+(§3), but "identical character-for-character to test-db" would overclaim
+what this package can actually show side-by-side.
+
+**f. Constraints:**
+```
+conname,contype,definition
+dprs_delivery_status_check,c,"CHECK ((delivery_status = ANY (ARRAY['pending'::text, 'delivered'::text, 'paused'::text, 'skipped_no_data'::text, 'failed'::text])))"
+dprs_generation_status_check,c,"CHECK ((generation_status = ANY (ARRAY['idle'::text, 'pending'::text, 'running'::text, 'stale'::text])))"
+dprs_pkey,p,PRIMARY KEY (id)
+dprs_project_id_fkey,f,FOREIGN KEY (project_id) REFERENCES projects(id)
+dprs_project_id_log_date_key,u,"UNIQUE (project_id, log_date)"
+dprs_tenant_id_fkey,f,FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+```
+Six constraints, matching by name and definition — both CHECKs with the
+exact allowed-value lists, PK, both FKs (`project_id`→`projects`,
+`tenant_id`→`tenants`), the `UNIQUE(project_id, log_date)` — and
+`generator_job_id` confirmed absent from every one, exactly as designed.
 
 **`ensure_rls` — the one prod-only variable this rehearsal couldn't
 exercise (§4) — was a non-event, exactly as predicted, not just
-hoped**: `relforcerowsecurity=false` on prod, same value test-db reaches
-by a different path (023's own explicit `ENABLE ROW LEVEL SECURITY`
-statement, since the trigger doesn't exist there to act first). The
-fresh-branch-rule class of risk §4 flagged — an out-of-band prod object
-rehearsal genuinely cannot exercise — is now closed by direct observation,
-not by the earlier reasoning alone.
+hoped**: `relforcerowsecurity=false` on prod (check b above), same value
+test-db reaches by a different path (023's own explicit `ENABLE ROW LEVEL
+SECURITY` statement, since the trigger doesn't exist there to act first).
+The fresh-branch-rule class of risk §4 flagged — an out-of-band prod
+object rehearsal genuinely cannot exercise — is now closed by direct
+observation, not by the earlier reasoning alone.
 
 ### Types regen (step F) — LITERAL, run in this session, immediately after being told the apply completed
 
