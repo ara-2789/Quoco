@@ -867,16 +867,34 @@ re-verification stated directly in the commit message, not only here.
 
 Immediately after the prod apply (§10 step F): regenerate against prod
 (`--linked`, the true default) and diff against the file committed here.
-**Expected difference: exactly one addition** — `rls_auto_enable` appearing
-in `Database['public']['Functions']`, since `gen types` includes functions
-and that one is prod-only (§4). If the diff matches that exactly, commit
-the prod-regenerated file as the final state — completing the
-"temporarily varied, now reconciled" arc, not leaving the test-db-derived
-file as a permanent stand-in. **If the diff shows anything beyond that one
-addition, STOP — do not commit over it, surface it before proceeding.**
-That would mean real test-db/prod drift, not the expected 023-only delta,
-and is exactly the class of divergence §0's fresh-branch rule and §4's
-`ensure_rls` finding both warn is possible between these two databases.
+
+**CORRECTED — expectation was wrong when first written, fixed before this
+step runs, not after.** The original version of this section predicted
+"exactly one addition, `rls_auto_enable` in `Functions`." That does not
+follow from the evidence already in this package, and the `c00232d` diff
+itself disproves it directly: the file `c00232d` REPLACED was PROD-derived
+(post-022) and `rls_auto_enable` has existed on prod the whole time (§4).
+If `gen types` emitted event-trigger functions into `Functions` at all,
+that function's REMOVAL would have appeared in the `c00232d` diff (§7
+above) — it didn't; the diff was exactly the 023 delta and nothing else.
+So `gen types` does not emit it, full stop — not "emits it, and it happens
+to cancel out." Consistent with 020's own finding: `rls_auto_enable`
+`RETURNS event_trigger`, and PostgREST never exposes trigger-returning
+functions as `/rpc/` endpoints, which is almost certainly why Supabase's
+generator excludes them from `Functions` in the first place (only
+RPC-reachable functions belong there).
+
+**Corrected expectation: the prod-regenerated file must be BYTE-IDENTICAL
+to the one committed here (`c00232d`).** Not "one expected addition" —
+zero difference, full stop. If it's identical, no new commit is even
+needed (the committed file already IS the true prod-sourced content, just
+generated one step early). **If the diff shows ANY difference at all —
+not just "more than expected" — STOP, do not commit over it, surface it
+before proceeding.** Any difference is real test-db/prod drift; writing
+the check as "acceptable if it's just the one addition" would have
+licensed waving through exactly the drift this step exists to catch, since
+that framing quietly pre-approved a difference that was never actually
+going to appear.
 
 ---
 
@@ -973,12 +991,17 @@ lost between drafts.
 - [ ] **D. Post-apply probes** — the same six checks from §2, re-run
   against PROD.
 - [ ] **E. Ledger INSERT + verify.**
-- [ ] **F. Types regen verification (§7 step 3)** — regenerate against PROD
-  (`--linked`, the true default), diff against the file already committed
-  here (test-db-derived, `c00232d`). Expected: exactly one addition,
-  `rls_auto_enable` in `Functions`. If the diff matches, commit the
-  prod-regenerated file as the final, reconciled state. **If it shows
-  anything more, STOP — do not commit, surface it first.**
+- [ ] **F. Types regen verification (§7 step 3, CORRECTED)** — regenerate
+  against PROD (`--linked`, the true default), diff against the file
+  already committed here (test-db-derived, `c00232d`). **Expected: BYTE-
+  IDENTICAL — zero difference, not "one expected addition."** `rls_auto_enable`
+  does NOT appear in `gen types` output on either database (it `RETURNS
+  event_trigger`, never PostgREST-exposed, and the `c00232d` diff already
+  proves the generator excludes it — see §7 for why the original "one
+  addition" expectation was wrong). If identical, no new commit is needed.
+  **If there is ANY difference at all, STOP — do not commit, surface it
+  first.** Do not treat a difference as acceptable because it looks small
+  or expected-shaped — nothing is expected here.
 - [ ] **G. `schema.md` update** — from "rehearsed, not applied" to
   "applied," only after E confirms.
 
@@ -997,7 +1020,7 @@ No merge step here — it already happened, per the ordering note above.
 | New finding — apply mechanics | `ensure_rls` event trigger (`rls_auto_enable`) is armed and prod-only; will fire once, redundantly and harmlessly, on 023's `CREATE TABLE dprs` statement; 020's EXECUTE revoke does not gate event-trigger firing (reasoned from documented Postgres semantics, flagged as such, not empirically isolated) (§4) |
 | Migration-lint | Clean, 53 (unchanged), zero new exceptions entries — first new migration since CI went load-bearing; `no-orphan-security-definer` demonstrated live against a throwaway fixture, fires on the orphan case and clears on the 020 pattern (§5) |
 | RLS isolation test | **Written, green: 6/6 pass + 1 `it.todo`.** Centrepiece (T-023-01/02) is the first live-JWT proof anywhere in this repo of the nested-EXISTS policy shape also shipped, untested this way, on `daily_log_edits` (019) (§6) |
-| CI / merge-gating | **RESOLVED — option (B) chosen over the recommended (A).** `types/database.ts` regenerated against test-db (`c00232d`), diffed clean against the prior prod-derived file (only the 023 delta, nothing else), all four local CI-equivalent checks green. Rationale: (A) would have forced apply-before-merge, reproducing the prod-ahead-of-`main` condition §0's fresh-branch rule exists because of, and opened a real window where the column drop and the old `page.tsx` coexist. Prod re-verification (exactly one expected addition, `rls_auto_enable`) planned for immediately post-apply, not skipped (§7) |
+| CI / merge-gating | **RESOLVED — option (B) chosen over the recommended (A).** `types/database.ts` regenerated against test-db (`c00232d`), diffed clean against the prior prod-derived file (only the 023 delta, nothing else), all four local CI-equivalent checks green. Rationale: (A) would have forced apply-before-merge, reproducing the prod-ahead-of-`main` condition §0's fresh-branch rule exists because of, and opened a real window where the column drop and the old `page.tsx` coexist. Prod re-verification planned for immediately post-apply — corrected expectation is **byte-identical**, not "one expected addition" (that original expectation was disproved by the `c00232d` diff itself; `rls_auto_enable` is never `gen types`-emitted at all) (§7) |
 | Reviewer round | **SKIPPED, five reasons on the record** — `ensure_rls` resolved benign, policy byte-identical to an already-shipped-and-reviewed 019 policy, rehearsal cleared every check against a pinned SHA, the drop is provably data-free, and this PR carries a live-JWT proof 019 itself shipped without (§8) |
 | Follow-ups tracked, not blocking | Migration 024 + lint rule (§3); dead-link fix already landed separately (§9) |
 | Merge status | **MERGEABLE NOW** — CI green locally on the test-db-derived types (§7). Runbook (§10) begins AFTER merge, not before — the ordering is inverted from an earlier draft of this package by deliberate decision, not oversight. |
