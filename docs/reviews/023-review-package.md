@@ -11,16 +11,18 @@ safe to stage.
 
 - Migration: `supabase/migrations/023_dpr_reports.sql`
 - App: `app/(dashboard)/dprs/page.tsx` (repointed; separately, its
-  pre-existing dead "View" link removed — see §7, tracked in CLAUDE.md §10,
+  pre-existing dead "View" link removed — see §8, tracked in CLAUDE.md §10,
   not part of 023's own migration content)
 - Docs: `docs/schema.md` (both the `dprs` and `daily_logs.dpr_content`
   entries updated to reflect this migration's actual state)
-- Tests: `test/migration-023.test.ts` — **queued, not yet written as of
-  this package** (§6)
+- Tests: `test/migration-023.test.ts` — **written, run against test-db,
+  green: 6/6 assertions pass, 1 `it.todo`** (§6)
 
 **STATUS: WRITTEN + REHEARSED CLEAN ON TEST-DB. NOT YET APPLIED TO PROD.**
-Everything in this package describes rehearsal, not a prod apply — §8's
-runbook is planned steps, not an executed record.
+Everything in this package describes rehearsal, not a prod apply — §9's
+runbook is planned steps, not an executed record. §7 covers a real
+consequence of that: this PR's `tsc --noEmit` is red until the apply
+happens, and CI now gates merges on it.
 
 ---
 
@@ -30,13 +32,19 @@ Per CLAUDE.md §0 — artifacts are pinned to source, never paraphrased.
 
 | Artifact | Pin |
 |---|---|
-| Commit | `c1d8005b2e6ba9906e5aa3d9c63a4f9cd63a7930` |
+| Commit | `fe62d90c4c7f31cc89840d5da08457062804f7a7` |
 | Branch | `feat/023-dpr-reports` |
 | `git status --porcelain` at that commit | `''` (empty — clean tree) |
-| `023_dpr_reports.sql` | sha256 `afb7c9de4ca8aa73e0234a012b92e079caf6664a23ecea41e7a7a587e8ea89b3` |
+| `023_dpr_reports.sql` | sha256 `afb7c9de4ca8aa73e0234a012b92e079caf6664a23ecea41e7a7a587e8ea89b3` (unchanged since `8de1ae8`) |
 | `app/(dashboard)/dprs/page.tsx` | sha256 `058fdf27709216b4752a87154d4bc66e850e24a1f56a9a1073d0fe0da46fb685` |
 | `CLAUDE.md` | sha256 `692ee250bd882263b7c928d6e98265c5e9d2b4d9f86f7fc4048c0cf4c83a65b6` |
 | `docs/schema.md` | sha256 `cd59d3c41b2bc7bfb5225aa91ca3a3d5b4dc09470389bd74fa7d5be34c800c81` |
+| `test/migration-023.test.ts` | sha256 `36a7c4e7670c4b4d01197a71b5a3e1275e3af414357de1a7f11444771bfe300a` |
+
+This document's own commit (adding/updating this file) necessarily lands
+AFTER `fe62d90` — same chicken-and-egg every package in this series has had
+(the file can't hash itself). The pin above describes everything this
+package draws evidence FROM; it does not need to chase its own HEAD.
 
 Each hash computed individually — filename and hash printed on the same
 line, never reassembled from a batch — per the discipline 022's package
@@ -80,6 +88,17 @@ so precisely rather than letting a summary read as a paste:
   demonstration: the throwaway fixture file was created, the linter run
   against it (twice — failing, then passing), and deleted, all directly by
   me, with the output pasted unedited.
+- **§6 (RLS isolation test) — LITERAL.** `test/migration-023.test.ts` was
+  written, run directly against test-db via `npx vitest run`, and the
+  passing output pasted unedited. The `42501` message text was captured via
+  a standalone probe script, run and deleted the same way as §5's lint
+  fixture — not inferred from the test's own loose regex match.
+- **§7 (CI / merge-gating) — LITERAL.** `.github/workflows/ci.yml`'s own
+  content, `package.json`'s `typecheck` script, and every `git log` date
+  used to check the "matches 022" claim were read/run directly, not
+  recalled from earlier in this conversation. That claim was made
+  unverified in chat before this package existed; §7 states plainly that
+  it does not hold, rather than carrying it forward.
 
 ---
 
@@ -541,7 +560,7 @@ as available if wanted, not assumed necessary.
 policies, no effect on `daily_logs` (no `CREATE TABLE` there). Confidence:
 HIGH on "what the function does to RLS state" (read directly from `prosrc`,
 LITERAL); HIGH-but-not-empirically-isolated on "020's revoke doesn't block
-firing" (documented PostgreSQL trigger semantics, not a live test). §8's
+firing" (documented PostgreSQL trigger semantics, not a live test). §9's
 runbook adds a step to look for `rls_auto_enable: enabled RLS on
 public.dprs` in the apply-time Postgres logs as confirmatory evidence that
 the mechanism behaved as read here — its *absence* would be the more
@@ -610,31 +629,173 @@ be caught at CI time, not rediscovered the way the original seven were.
 
 ---
 
-## 6. RLS isolation test (CLAUDE.md §7) — status
+## 6. RLS isolation test (CLAUDE.md §7) — RESULTS
 
-**Does not exist yet — queued as the very next step after this package.**
-CLAUDE.md §7 requires every RLS change to ship with a cross-tenant AND
-cross-project isolation test (two-tenant fixture; PM sees only their
-projects). §2f above proves the policy's *text* is shaped correctly; it
-does not prove *behavior*.
+**Written, run against test-db, green.** `test/migration-023.test.ts`,
+committed at `fe62d90`. §2f proved the policy's *text* is shaped correctly;
+this proves *behavior*, under real JWT sessions, not service-role (which
+bypasses RLS by construction and would pass trivially).
 
-**Confirmed constraint that shapes how it gets written**: `TRUNCATE` cannot
-be asserted by an automated `supabase-js` test — no PostgREST verb exists
-for it, which is the exact fact that makes it unreachable via the anon key
-in the first place. `test/migration-023.test.ts` will narrow its write-path
-assertion to what's actually testable ("no INSERT/UPDATE/DELETE via
-PostgREST clients," never "no write path at all") and carry an explicit,
-un-asserted tracked-gap comment for TRUNCATE/REFERENCES/TRIGGER, citing
-§3's empirical result and naming migration 024 + the new lint rule as what
-closes it. Decided over extending `test/helpers/db.ts` with a raw-Postgres
-capability (rejected: revisits the same connection constraint that blocked
-running the `SET ROLE` test from code at all, and would add a direct
-Postgres connection string/password to CI as new credential surface on a
-project whose last two migrations were both about over-broad access).
+**Full run, LITERAL:**
+```
+$ npx vitest run test/migration-023.test.ts
+✓ test/migration-023.test.ts (7 tests | 1 skipped) 8006ms
+  ✓ T-023-04: authenticated cannot INSERT, UPDATE, or DELETE via PostgREST — code 42501, no write path  633ms
+  ✓ T-023-05: UNIQUE(project_id, log_date) rejects a duplicate  464ms
+  ✓ T-023-06: CHECK rejects a bad delivery_status and a bad generation_status  304ms
+Test Files  1 passed (1)
+     Tests  6 passed | 1 todo (7)
+```
+
+**T-023-01/T-023-02 (the centrepiece) passed WITH the presence assertion
+intact.** `jwtA` — a PM who is a member of project A1 and deliberately NOT
+a member of same-tenant project A2 — queried `dprs` filtered to `[A1, A2]`
+and separately to `[A1, B1]` (tenant B) and got back exactly `{A1}` both
+times, never an empty set. This distinction is load-bearing, not
+decorative: a total lockout (neither row visible) would satisfy an
+absence-only assertion just as well as correct scoping would, so both
+tests assert the present row explicitly rather than only the missing one.
+
+**Why this result matters beyond 023**: `dprs_select`'s USING clause
+(`tenant_id = get_user_tenant_id() AND EXISTS(project_members ... users
+...)`) is byte-identical to `daily_log_edits_select` (019:128-137).
+Grepping `test/` for any place that SELECTs `daily_log_edits` through a
+real JWT client turns up nothing — 019's own suite reaches that table only
+indirectly, through the `correct_daily_log` SECURITY DEFINER RPC, which
+bypasses RLS on write. **T-023-01/02 are therefore the first live-JWT
+validation anywhere in this repo of a nested-EXISTS policy pattern already
+shipped to prod on `daily_log_edits`.** Recorded explicitly here, not just
+in conversation, so whoever next touches `daily_log_edits` can find this
+result instead of re-deriving it from scratch: the pattern resolves
+correctly under a real authenticated session — not merely by schema
+inspection, which is all 019 ever proved of it.
+
+**T-023-04's `42501` message, captured rather than guessed:**
+```json
+{"code":"42501","message":"permission denied for table dprs",
+ "hint":"Grant the required privileges to the current role with: GRANT INSERT ON public.dprs TO anon;"}
+```
+`"table"`, not `"relation"` — the loose `/permission denied/i` matcher in
+the test was the right call rather than pinning an unobserved guess.
+
+**A real ambiguity this message surfaced, and how the test closes it, not
+just notes it**: the hint names whichever role actually lacked the
+privilege — `anon` and `authenticated` both produce `42501` on a write
+attempt here, so the code alone can't distinguish them, and a T-023-04
+that accidentally ran under an `anon` session would prove nothing about
+`authenticated` having no write path, which is the entire point of the
+test. T-023-04 resolves this by deliberately reusing `jwtA` — the exact
+client object T-023-01 already proved carries a genuine authenticated
+session (only a real authenticated JWT could have returned a
+`dprs_select`-scoped row there; T-023-03 shows `anon` gets an empty array,
+not an error, on the identical query shape) — rather than re-asserting
+authentication inside T-023-04 itself. The test file documents this
+reasoning inline (not just here), specifically so a future edit that swaps
+in a fresh client for one call doesn't silently reopen the ambiguity.
+
+**T-023-07 — the TRUNCATE/REFERENCES/TRIGGER gap — is `it.todo`, not a
+comment alone**: it surfaces in every `npm test` run output line, not only
+to someone who opens this file, per the standing concern that this
+project's records tend to read stronger than what they cover. Heading
+narrowed to "cannot be tested via PostgREST" (never "no write path at
+all"); cites §3's empirical `1, 0` TRUNCATE result and names migration 024
++ the new lint rule as what actually closes it.
 
 ---
 
-## 7. Explicitly out of scope / already handled separately
+## 7. CI / merge-gating — `tsc --noEmit` is red until the prod apply, verified not assumed
+
+`app/(dashboard)/dprs/page.tsx` (repointed at `dprs` in this same PR) fails
+`tsc --noEmit` today — `types/database.ts` has no `dprs` entry until it's
+regenerated, and that regen has to run against PROD (§8 step F; CLAUDE.md
+§6), which doesn't have the table yet. This was first waved off in
+conversation as "expected, matches migration 022's own pattern" —
+unverified when said. Checked here, and corrected rather than carried
+forward, because that specific phrase ("matches X's pattern") is the shape
+this session has already had to walk back twice before.
+
+### Does CI actually gate merges on this? — yes, LITERAL
+
+`.github/workflows/ci.yml`'s own header: *"STAGE 1 of the process-hardening
+work order's P2 (CI gates) — typecheck, lint, test. LOAD-BEARING as of
+2026-08-07: branch protection on main requires all three (Typecheck / Lint
+/ Test (real test-db))."* The `typecheck` job runs `npm run typecheck`,
+which `package.json:13` defines as `tsc --noEmit`. No conditional, no
+carve-out for a migration whose types can't exist before it's applied.
+**This PR cannot merge to `main` while `tsc --noEmit` is red — plainly
+yes.**
+
+### Does migration 022 actually establish that precedent? — checked; no, it doesn't
+
+```
+$ git log --diff-filter=A --format='%h %ad %s' --date=short -- .github/workflows/ci.yml
+8582855 2026-08-07 ci: add stage 1 workflow (typecheck, lint, test) — P2 CI gates
+
+$ git log --format='%h %ad %s' --date=short -1 88d60ca   # 022 feature commit
+88d60ca 2026-08-03 feat(022): evening check-in flow Pass 1 (apply_evening_flow_turn)
+$ git log --format='%h %ad %s' --date=short -1 6bbbc59   # 022 fix commit
+6bbbc59 2026-08-05 fix(022): CONTEXT DISCIPLINE — merge context at all 4 sites, not 2
+$ git log --format='%h %ad %s' --date=short -1 e7d57fb   # 022's own type regen
+e7d57fb 2026-08-05 chore(022): regenerate types post-prod-apply (R6)
+```
+
+`ci.yml` did not exist until `8582855` (2026-08-07). Every 022 commit — the
+feature, the fix, and its own post-apply type regen — landed on 2026-08-03
+and 2026-08-05, two days before CI, let alone branch protection, existed.
+**022 never had to clear a load-bearing `tsc` gate with an open type-gap,
+because there was no gate to clear.** One part of the earlier claim does
+hold and is worth keeping: 022's regen genuinely was its own commit,
+sequenced strictly after the prod apply (the commit message says
+"post-prod-apply (R6)" verbatim) — that shape is real. But "matches 022's
+pattern" as a claim about clearing CI is false, and 023 is the first
+migration in this repo's history to hit this exact interaction: a schema
+change whose types cannot exist before the apply, landing after CI became
+load-bearing.
+
+### Options — laid out, not acted on
+
+- **(A) Accept red until apply.** Leave `typecheck` failing; branch
+  protection blocks the merge button by construction until the runbook's
+  steps C (apply) through F (regen) complete. Not a new risk CI
+  introduces — every migration here has always applied out-of-band via the
+  SQL Editor, never by merging to `main`, and §9's own runbook already
+  sequences "apply → regen + commit → CI green → merge" at step H, written
+  before this question came up. CI mainly makes that ordering enforced
+  rather than merely intended: a reviewer can still read a red-CI PR's
+  diff, they just can't click merge early. Cost: the PR sits visibly red
+  on GitHub for however long review takes before the apply happens — a
+  cosmetic state, not a functional one.
+- **(B) Regenerate from test-db now, commit, go green immediately.**
+  Rejected on provenance grounds, not convenience. CLAUDE.md §6's regen
+  discipline and this migration's own runbook (§9 step F) both specify
+  regenerating against PROD specifically, and the "verify by observation on
+  the actual target, not a rehearsal proxy" discipline running through this
+  whole package (§0, the `ensure_rls` divergence in §4) argues directly
+  against treating test-db's schema as interchangeable with prod's for this
+  purpose — even though in THIS case the DDL rehearsed byte-identically and
+  the generated types would almost certainly come out identical either way.
+  It would also produce a committed `types/database.ts` indistinguishable
+  from a genuine prod regen unless explicitly labeled otherwise — the same
+  "record reads stronger than reality" failure mode already named for the
+  `it.todo` decision in §6.
+- **(C) Bypass branch protection for this one PR.** Not recommended:
+  protection went load-bearing eight days before this PR, specifically to
+  close the honour-system gap process-hardening existed to remove;
+  bypassing it on its first real collision with a migration undercuts the
+  reason it exists. Not structurally avoidable by splitting the PR either —
+  023's own header note (DPR_CONTENT DROP — SEQUENCING) requires the column
+  drop and the page repoint to land together, so there's no smaller PR that
+  avoids referencing `dprs` from a typed client path.
+
+**Recommendation: (A).** Costs nothing beyond a red check sitting on an
+unmerged branch during review, matches the runbook's own already-planned
+ordering, and doesn't compromise anything §0 or §6 care about. **Not acted
+on** — CI config, the runbook, and the apply sequence are all unchanged
+pending your call.
+
+---
+
+## 8. Explicitly out of scope / already handled separately
 
 - **Dead "View" link on the DPR Archive page** — found during this review,
   fixed in a follow-up commit (`c1d8005`, same branch) rather than left
@@ -651,7 +812,7 @@ project whose last two migrations were both about over-broad access).
 
 ---
 
-## 8. PROD apply — runbook (NOT YET EXECUTED — planned steps only)
+## 9. PROD apply — runbook (NOT YET EXECUTED — planned steps only)
 
 Following the same strict-alternation template as 017-022
 (`docs/migration-runbook-template.md`), NOT run yet:
@@ -677,19 +838,23 @@ Following the same strict-alternation template as 017-022
 - [ ] **G. `schema.md` update** — from "rehearsed, not applied" to
   "applied," only after E confirms.
 - [ ] **H. Merge ordering** — apply → regen + commit → CI green → merge.
+  §7 lays out why this ordering is currently mandatory, not just tidy: the
+  PR cannot merge before F regardless, since `tsc --noEmit` stays red until
+  then.
 
 ---
 
-## 9. Summary
+## 10. Summary
 
 | | |
 |---|---|
 | Risk | Low-moderate — new table (additive) + one small destructive-but-data-free column drop (0 rows, probe-backed); no `SECURITY DEFINER` surface at all (deliberately avoided) |
 | Reversibility | DOWN block drops `dprs`, re-adds `dpr_content TEXT`; data loss from the drop is nil (0 rows pre-drop) |
-| Evidence | Rehearsal narrative-confirmed against explicit pass conditions (§2), migration-lint literal-clean including a live rule demonstration (§5), TRUNCATE finding literal-empirical on both databases (§3) |
+| Evidence | Rehearsal narrative-confirmed against explicit pass conditions (§2), migration-lint literal-clean including a live rule demonstration (§5), TRUNCATE finding literal-empirical on both databases (§3), RLS isolation suite literal-green on test-db (§6) |
 | New finding — access | `anon`/`authenticated` hold TRUNCATE/REFERENCES/TRIGGER on all 25 public tables, systemic since 001, empirically confirmed exploitable-in-principle but not via PostgREST — 020-class, not a live hole; mechanism (`pg_default_acl`, two grantors) and `postgres`'s inability to touch the `supabase_admin`-owned entry both confirmed by observation, on both databases (§3) |
 | New finding — apply mechanics | `ensure_rls` event trigger (`rls_auto_enable`) is armed and prod-only; will fire once, redundantly and harmlessly, on 023's `CREATE TABLE dprs` statement; 020's EXECUTE revoke does not gate event-trigger firing (reasoned from documented Postgres semantics, flagged as such, not empirically isolated) (§4) |
 | Migration-lint | Clean, 53 (unchanged), zero new exceptions entries — first new migration since CI went load-bearing; `no-orphan-security-definer` demonstrated live against a throwaway fixture, fires on the orphan case and clears on the 020 pattern (§5) |
-| RLS isolation test | Not yet written — queued next, with a confirmed testability constraint on the TRUNCATE case (§6) |
-| Follow-ups tracked, not blocking | Migration 024 + lint rule (§3); dead-link fix already landed separately (§7) |
-| Prod status | **NOT APPLIED.** Rehearsed clean on test-db only (§2). Runbook is planned steps (§8), not an executed record. |
+| RLS isolation test | **Written, green: 6/6 pass + 1 `it.todo`.** Centrepiece (T-023-01/02) is the first live-JWT proof anywhere in this repo of the nested-EXISTS policy shape also shipped, untested this way, on `daily_log_edits` (019) (§6) |
+| New finding — CI/merge | This PR's `tsc --noEmit` is red until the prod apply (types can't exist before the table does) and branch protection is load-bearing since 2026-08-07 — 023 is the first migration to hit this exact interaction. The "matches 022" comparison made in conversation does not hold, checked and corrected here. Three options laid out, (A) accept-red-until-apply recommended, none acted on (§7) |
+| Follow-ups tracked, not blocking | Migration 024 + lint rule (§3); dead-link fix already landed separately (§8) |
+| Prod status | **NOT APPLIED.** Rehearsed clean on test-db only (§2). Runbook is planned steps (§9), not an executed record. |
