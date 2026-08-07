@@ -564,6 +564,35 @@ here. The rule stops applying only if someone decides so on the record.
   and covered obliquely by the pure idempotency unit — the route-level proof waits
   on the harness.
 
+CLOSED (2026-08-07): test/webhook.test.ts now exists (10 tests, committed
+8a24399, feat/022-evening-flow-apply-turn) — the harness this entry tracked as
+missing across two deferrals (BOT-27's clear-half took the first; migration
+022's review noted the second and named the outstanding test below). It calls
+handleWebhookPost (app/api/whatsapp/webhook/route.ts) directly with an
+injected test-db client — the SAME function POST calls in production, not a
+separate assembly — via genuinely Twilio-signed requests (an independent
+HMAC-SHA1 re-implementation in the test file, not a stub or bypass).
+  WHY IT STALLED TWICE: not neglect — the harness was structurally blocked
+  until six functions in this path (readCurrentFlow, applyMorningFlowTurn,
+  applyEveningFlowTurn, dispatchInboundTurn, handleWebhookPost, isNewMessage)
+  each independently constructing its own createServiceClient() gained an
+  injected-client parameter; the test env deliberately never configures that
+  client, and the block was invisible until someone actually tried to test it.
+  T-WH-01 is included; its claim is precise, not broader than earned: the
+  .env.test TWILIO_AUTH_TOKEN is a fixed, obviously-fake value, so T-WH-01
+  proves validateTwilioSignature's algorithm correctly REJECTS a non-matching
+  signature — it does NOT prove production's real Vercel-configured token is
+  itself correct. "Signature validation is tested" does not extend that far;
+  that remains a separate, unverified claim.
+  The NAMED FUTURE TEST above is also closed, not left to outlive this entry:
+  T-WH-07 runs exactly that sequence — reactivate clears messaging_blocked,
+  the SAME MessageSid retried now finds decideInboundGate returning 'proceed'
+  (not 'reactivate'), and the ordinary path's own idempotency check catches it
+  as a duplicate before it can reach a morning-flow turn. Verified three ways:
+  response body, no session row created, no daily_logs row written.
+Full test list and design rationale live in test/webhook.test.ts's own header
+comment — not restated here.
+
 PROD SMOKE CHECK RESOLVED (2026-07-26): migration 020's real webhook-driven
 apply_morning_flow_turn end-to-end check is DONE — a full multi-turn morning flow
 (Q1 plan → Q2 → Q3 → Q4 → "check-in complete") ran through the real webhook +
