@@ -42,6 +42,27 @@ import {
 // `now` is already injected for determinism. A caller that omits it gets the
 // "no morning equipment" (skip) behaviour by default, since that's the safer
 // default for a test that isn't specifically about the skip decision.
+//
+// TRACKED (2026-08-08, not fixed) — DOES THIS MIRROR HAVE A PURPOSE AT ALL?
+// Checked, not assumed: dispatchEveningFlow (and matchEquipmentHoursItems)
+// have ZERO references anywhere in test/ — no unit test calls them, and
+// nothing in production code calls them either (dispatchInboundTurn and
+// route.ts both call applyEveningFlowTurn directly, never this function).
+// The pattern itself is NOT vestigial, though — morning's own mirror
+// (dispatchMorningFlow) has the identical "not authoritative, for tests and
+// docs" framing AND real, dedicated coverage (test/unit/morning-dispatch.
+// test.ts, 15 tests exercising its decision logic directly, in isolation,
+// with no RPC/DB involved). That comparison is the point: this pattern WAS
+// load-bearing when built out fully. Evening's copy of it is incomplete by
+// omission, not vestigial by design — it was written to the same contract
+// morning's mirror keeps, just never given the test half that gives a pure
+// mirror its reason to exist. The fix this points toward, if ever built, is
+// almost certainly NOT "delete the mirror" but "give it what morning's
+// already has" — a dedicated test/unit/evening-dispatch.test.ts exercising
+// dispatchEveningFlow's decisions (including matchEquipmentHoursItems' tier
+// logic) directly, the same shape as morning-dispatch.test.ts, not a
+// cross-check against the RPC. Not built. Scope it in or leave it tracked —
+// this comment is the record either way.
 
 // ---------------------------------------------------------------------------
 // Outcomes. Unchanged by Pass 2 — the same six outcomes cover every step.
