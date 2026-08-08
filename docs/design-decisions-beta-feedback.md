@@ -437,3 +437,50 @@ restart semantic. The cron/webhook-wiring PR that first makes `p_start_flow`
 reachable from a real trigger (today it is reachable only via the env-gated
 test token — see `022_evening_flow_apply_turn.sql`'s header and
 `docs/reviews/022-review-package.md` §9) must decide before shipping.
+
+## 11. DPR section 5 has no source — a PRIOR gap, surfaced while scoping
+evening Q4/Q5 (2026-08-08)
+
+**OPEN PRODUCT QUESTION — not solved here, tracked so it doesn't get
+rediscovered as a surprise when section 5 is actually built.**
+
+bot-flows.md's DPR GENERATION spec names section 5 "Tomorrow's Plan —
+**engineer's stated plan** + dependencies." Migration 024 (evening Q4
+headcount/productivity + Q5 equipment hours) does not touch this — it was
+scoped Q4/Q5 only, Q6 (tomorrow's dependencies) deliberately deferred
+alongside it (see that migration's own header). But scoping Q4/Q5 required
+reading the full evening question list closely enough to notice: **no
+evening question — built, deferred, or spec'd — ever asks the engineer what
+tomorrow's plan is.** Evening's six questions (bot-flows.md) cover today's
+work, today's schedule variance, today's headcount/productivity, today's
+equipment, and tomorrow's *dependencies* (Q6) — dependencies are not a plan.
+Nothing captures "stated plan" at all.
+
+**This is not the same gap Q6 being out-of-scope creates.** Even once Q6
+ships in full, section 5 would still be half-sourced: dependencies would
+exist, "engineer's stated plan" would not, because no question was ever
+designed to ask for it. This predates migration 024 entirely — it's a gap in
+the ORIGINAL bot-flows.md spec, just never surfaced until someone read the
+evening question list against the DPR section list side by side.
+
+**Options, not decided here:**
+- Add a seventh evening question (breaks the six-question ceiling —
+  design-principles.md's Core Thesis names this a "design law, not a
+  preference": "any new capture must replace or piggyback, never append").
+- Fold a plan capture into an existing question (Q6's own follow-up, or a
+  piggyback on Q1) — replace-not-append, per the Core Thesis's own
+  corollary.
+- Source section 5's "plan" half from MORNING instead of evening — morning
+  already asks "plan of action today" (Q1); a DPR generated the same evening
+  could reasonably read tomorrow's plan as "the plan the engineer will state
+  tomorrow morning," which doesn't exist yet at generation time — meaning
+  this option would require either delaying part of section 5's generation
+  or accepting it as forward-looking only for the dependencies half.
+- Ship section 5 as dependencies-only in Spine v1, explicitly narrowing the
+  DPR spec rather than silently under-delivering it — the DPR eval harness
+  (bot-flows.md's own "REQUIRED deliverable" section) would need a golden
+  case asserting this is intentional, not a missed field.
+
+**Not resolved here.** Whoever builds the DPR generator (Phase 1) or Q6
+inherits this — read this entry before assuming section 5 is "just Q6's
+output plus a label."

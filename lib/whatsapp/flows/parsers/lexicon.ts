@@ -237,7 +237,9 @@ export const QUANTITY_STOPWORDS: ReadonlySet<string> = new Set([
 // would put unverified terms on the one evening path that resolves to a stored
 // BOOLEAN. Anything unmatched falls to the documented not-met path rather than
 // guessing — see the Q2 note in migration 022. Extend WITH cofounder review.
-const YES_WORDS: ReadonlySet<string> = new Set([
+// Exported (unlike TRADE_ALIASES etc.) so PRODUCTIVITY_STOPWORDS below can
+// spread them rather than duplicating the list and risking drift.
+export const YES_WORDS: ReadonlySet<string> = new Set([
   'yes',
   'y',
   'yeah',
@@ -261,7 +263,7 @@ const YES_WORDS: ReadonlySet<string> = new Set([
 // Explicit negatives AND partials. Partial answers are classified NOT MET on
 // purpose: "half done" is not a met plan, and routing them to Q3 captures the
 // shortfall in the engineer's own words instead of rounding it up to success.
-const NO_WORDS: ReadonlySet<string> = new Set([
+export const NO_WORDS: ReadonlySet<string> = new Set([
   'no',
   'n',
   'nope',
@@ -309,3 +311,27 @@ export function classifyYesNo(text: string): YesNoClassification {
   }
   return { met: false, ok: false }
 }
+
+// ---------------------------------------------------------------------------
+// EVENING FLOW Q4 step 2 (productivity/idle, Pass 2). Reuses classifyYesNo's
+// own YES_WORDS/NO_WORDS for the all-productive/some-idle classification
+// (NO_WORDS already includes "partly/partial/partially/mostly/half/some" —
+// exactly the vocabulary a "some idle" answer uses) — nothing new needed
+// there. This set is ONLY for building idle_reason: every classification word
+// ("no", "mostly", "yes"...) stays in the answer's raw_text but is stripped
+// from the reason text so "no 2 idle waiting for cement" reads as "waiting
+// for cement", not "no idle waiting for cement", and a bare "mostly" (no
+// separate reason given) reads as idle_reason: null, not idle_reason:
+// "mostly". Spreads YES_WORDS/NO_WORDS rather than duplicating them so this
+// can never drift from classifyYesNo's own vocabulary.
+export const PRODUCTIVITY_STOPWORDS: ReadonlySet<string> = new Set([
+  'idle',
+  'are',
+  'is',
+  'were',
+  'a',
+  'an',
+  'the',
+  ...YES_WORDS,
+  ...NO_WORDS,
+])
