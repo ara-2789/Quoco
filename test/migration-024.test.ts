@@ -288,7 +288,12 @@ describe('apply_evening_flow_turn Pass 2 (Q4 headcount/productivity, Q5 equipmen
     await reachStep4(phone, P_NOW)
     await applyEveningFlowTurn({ phone, message: '10', startFlow: false, now: P_NOW })
     const advance = await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW })
-    expect(advance.equipment_echo).toEqual([{ type: 'jcb' }, { type: 'concrete_mixer' }])
+    // equipment_echo returns the FULL stored morning_equipment item, not a
+    // {type}-only projection — matches T-024-08's own (correct) property
+    // check, not a strict deep-equal, which fails against the real shape
+    // (count/daily_hire_cost/owned_or_hired/raw are also present).
+    expect(advance.equipment_echo).toHaveLength(2)
+    expect(advance.equipment_echo?.map((e) => e.type)).toEqual(['jcb', 'concrete_mixer'])
 
     // Engineer answers machine 2 FIRST, machine 1 SECOND — labels make this
     // unambiguous regardless of reply order.
@@ -539,7 +544,14 @@ describe('apply_evening_flow_turn Pass 2 (Q4 headcount/productivity, Q5 equipmen
     expect((session?.context as Record<string, unknown>)?.['evening_submitted']).toBe(true)
 
     const replay = await applyEveningFlowTurn({ phone, message: 'anything', startFlow: false, now: P_NOW })
-    expect(replay.outcome).toBe('idle') // no active evening flow to resume — already completed
+    // already_complete, not idle — evening_submitted:true survived morning's
+    // later completion (the exact CONTEXT DISCIPLINE property this test is
+    // for), and already_complete is 022's own existing semantic for that
+    // state, not something new. My first version of this assertion expected
+    // 'idle' with a comment that itself said "already completed" — the
+    // comment described already_complete correctly and the assertion named
+    // the wrong constant for it.
+    expect(replay.outcome).toBe('already_complete')
   })
 
   it('T-024-15: wrong_flow still reported correctly at steps 4, 5, and 6', async () => {
