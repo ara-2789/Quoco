@@ -69,6 +69,16 @@ import {
 //   T-024-21  ARITHMETIC GUARD: actual_hours > available_hours rejected —
 //             the exact numbers ("1 8") the pre-label-fix bug would have
 //             produced from a compliant "1) 8 6" reply
+//   T-024-22  CONFIDENCE FIX 1: step 4's OWN budget exhausted on an
+//             unparseable headcount (e4_headcount stays NULL) -> a clean
+//             step-5 parse must still stamp confidence='low', not 'high' —
+//             the object spans two steps, so does the flag. Also confirms
+//             evening_workers_on_site and productive_count both land NULL,
+//             not a fabricated 0.
+//   T-024-23  CONFIDENCE FIX 2: step 5's OWN budget exhausted on a totally
+//             unclassifiable productivity answer -> idle_count and
+//             productive_count must both be NULL ("not captured"), never a
+//             fabricated 0 that reads as "everyone was productive"
 //   T-024-11  Q5 reask carries the SAME equipment_echo again (data-driven
 //             prompt, not a generic "didn't get that")
 //   T-024-12  Q2=Yes now routes to step 4 instead of completing (022's
@@ -420,6 +430,55 @@ describe('apply_evening_flow_turn Pass 2 (Q4 headcount/productivity, Q5 equipmen
     const reask = await applyEveningFlowTurn({ phone, message: '1 8', startFlow: false, now: P_NOW })
     expect(reask.outcome).toBe('reask')
     expect(reask.current_step).toBe(6)
+  })
+
+  it('T-024-22: CONFIDENCE FIX 1 — step 4 budget exhausted unparsed -> step 5 stamps confidence=low even on a clean parse', async () => {
+    const phone = testPhone('422')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+
+    // Step 4's OWN budget: two unparseable headcount answers in a row.
+    // Second one advances anyway (budget exhausted) with e4_headcount
+    // still NULL, since neither answer had a digit.
+    const reask4 = await applyEveningFlowTurn({ phone, message: 'some workers', startFlow: false, now: P_NOW })
+    expect(reask4.outcome).toBe('reask')
+    const advance4 = await applyEveningFlowTurn({ phone, message: 'still no number', startFlow: false, now: P_NOW })
+    expect(advance4.outcome).toBe('advance')
+    expect(advance4.current_step).toBe(5)
+
+    // Step 5's OWN parse is perfectly clean — "yes" classifies confidently.
+    // If confidence only looked at THIS step, it would be 'high'.
+    const r = await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW })
+    expect(r.outcome).toBe('advance')
+    expect(r.current_step).toBe(0) // auto-skip, no morning equipment
+
+    const log = await getDailyLog(LOG_DATE)
+    expect(log?.evening_workers_on_site).toBeNull() // NOT a fabricated 0
+    expect(log?.evening_productive_manpower?.confidence).toBe('low') // spans step 4, not just step 5
+    expect(log?.evening_productive_manpower?.productive_count).toBeNull() // can't compute without a real headcount
+  })
+
+  it('T-024-23: CONFIDENCE FIX 2 — step 5 unclassifiable after budget -> idle_count and productive_count both NULL, never a fabricated 0', async () => {
+    const phone = testPhone('423')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+    await applyEveningFlowTurn({ phone, message: '10', startFlow: false, now: P_NOW }) // real headcount this time
+
+    // Step 5's OWN budget: two totally unclassifiable productivity answers.
+    const reask5 = await applyEveningFlowTurn({ phone, message: 'site is busy', startFlow: false, now: P_NOW })
+    expect(reask5.outcome).toBe('reask')
+    const r = await applyEveningFlowTurn({ phone, message: 'still unclear', startFlow: false, now: P_NOW })
+    expect(r.outcome).toBe('advance')
+    expect(r.current_step).toBe(0)
+
+    const log = await getDailyLog(LOG_DATE)
+    const manpower = log?.evening_productive_manpower
+    expect(manpower?.confidence).toBe('low')
+    // The bug this replaces: idle_count defaulted to 0, making
+    // productive_count come out as the full headcount (10) — "everyone was
+    // productive", read from an answer nobody understood.
+    expect(manpower?.idle_count).toBeNull()
+    expect(manpower?.productive_count).toBeNull()
   })
 
   it('T-024-11: Q5 reask carries the same equipment_echo again', async () => {

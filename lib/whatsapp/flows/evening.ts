@@ -5,7 +5,7 @@ import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
 import { classifyYesNo } from './parsers/lexicon'
 import { parseQuantities, type QuantitiesParse } from './parsers/quantities'
 import { parseLabourCount, isLabourAnswered } from './parsers/labour'
-import { parseProductivity, isProductivityAnswered, type ProductivityParse } from './parsers/productivity'
+import { parseProductivity, isProductivityAnswered } from './parsers/productivity'
 import {
   parseEquipmentHours,
   isEquipmentHoursAnswered,
@@ -202,8 +202,18 @@ export type EveningDailyLogWrite = Partial<{
   evening_output_quantities: QuantitiesParse
   evening_schedule_met: boolean
   evening_schedule_miss_reason: string
-  evening_workers_on_site: number
-  evening_productive_manpower: ProductivityParse & { confidence: 'high' | 'low' }
+  evening_workers_on_site: number | null // null when step 4's own budget was exhausted unparsed — see migration FIX 1
+  evening_productive_manpower: {
+    // NOT ProductivityParse's own all_productive — matches the RPC's ACTUAL
+    // stored shape (024_evening_flow_q4_q5.sql), which never stores
+    // all_productive at all. Found as a real shape mismatch while fixing the
+    // two CONFIDENCE FLAG bugs below, corrected here rather than left.
+    productive_count: number | null // null when headcount OR idle_count is null — never fabricated
+    idle_count: number | null // null means genuinely unknown, never defaulted to 0
+    idle_reason: string | null
+    raw_text: string
+    confidence: 'high' | 'low'
+  }
   evening_equipment_utilisation: {
     items: Array<{
       morning_item_index: number | null
@@ -462,15 +472,38 @@ export function dispatchEveningFlow(
         outcome = 'reask'
         sessionUpdate = { context: { ...ctx, [EVENING_Q5_REASK_KEY]: prior + 1 } }
       } else {
-        const confidence: 'high' | 'low' = answered ? 'high' : 'low'
-        const allProductive = parse.all_productive ?? false // budget exhausted, still unclassifiable -> SOME IDLE
+        // headcount: null (NOT 0) when step 4's own context value is
+        // missing/non-numeric — e.g. step 4 exhausted its own reask budget
+        // on an unparseable answer (planned_total null -> e4_headcount
+        // never set). Defaulting this to 0 was itself a bug of the same
+        // class as the two fixed below, found while fixing them: it would
+        // have silently produced "0 workers on site" instead of "not
+        // captured".
         const headcount =
-          typeof ctx[EVENING_Q4_HEADCOUNT_KEY] === 'number'
-            ? (ctx[EVENING_Q4_HEADCOUNT_KEY] as number)
-            : 0
-        const idleCount = allProductive ? 0 : Math.max(parse.idle_count ?? 0, 0)
-        const productiveManpower: ProductivityParse & { confidence: 'high' | 'low' } = {
-          all_productive: allProductive,
+          typeof ctx[EVENING_Q4_HEADCOUNT_KEY] === 'number' ? (ctx[EVENING_Q4_HEADCOUNT_KEY] as number) : null
+
+        // FIX 1 — confidence must reflect BOTH steps. productive_count is
+        // derived from headcount (a STEP 4 value), so a clean step-5 parse
+        // stamped confidence='high' even when step 4's own headcount was
+        // never actually captured. See the migration's matching note for
+        // the full trace.
+        const confidence: 'high' | 'low' = answered && headcount !== null ? 'high' : 'low'
+
+        const allProductive = parse.all_productive ?? false // boolean forced false on exhausted+unclassifiable — see FIX 2 below for why the COUNT is not also forced
+
+        // FIX 2 — idle_count stays exactly as parsed, NULL included, never
+        // defaulted to 0. Defaulting it made productive_count come out as
+        // the FULL headcount on an unclassifiable answer — "everyone was
+        // productive", the opposite of what "some idle, count unknown" (the
+        // forced-false boolean above) actually means, and the rosiest
+        // possible reading of an answer nobody understood.
+        const idleCount = allProductive ? 0 : parse.idle_count
+
+        const productiveCount =
+          headcount === null || idleCount === null ? null : Math.max(headcount - idleCount, 0)
+
+        const productiveManpower: EveningDailyLogWrite['evening_productive_manpower'] = {
+          productive_count: productiveCount,
           idle_count: idleCount,
           idle_reason: parse.idle_reason,
           raw_text: parse.raw_text,

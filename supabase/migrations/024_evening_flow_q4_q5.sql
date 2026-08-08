@@ -87,6 +87,38 @@
 --   a DIFFERENT signal from the one above — see MATCH TIERS below for what
 --   it means there (inferred-vs-stated join, not accept-after-budget).
 --
+--   TWO MORE FIXES, FOUND BEFORE REHEARSAL, BOTH THE SAME CLASS AS THE
+--   RUPEE-FIGURE RISK ABOVE — the record asserting what the system doesn't
+--   actually know, in the step 4/5 seam this time rather than the
+--   daily_hire_cost/hours seam:
+--     1. CONFIDENCE SPANS TWO STEPS, NOT ONE. evening_productive_manpower's
+--        productive_count is derived from v_headcount — a STEP 4 value — but
+--        the confidence flag was computed from p_parse_ok->'5' alone. If
+--        step 4 exhausted ITS OWN budget on an unparseable headcount
+--        (planned_total NULL -> e4_headcount NULL -> v_headcount NULL here),
+--        a clean step-5 parse would stamp a productive_count computed from a
+--        headcount nobody actually gave as confidence='high'. Fixed: v_headcount
+--        is read before v_confidence is computed, and v_confidence now checks
+--        v_headcount IS NULL too.
+--     2. AN UNCLASSIFIABLE ANSWER MUST NOT DEFAULT TO "EVERYONE WAS
+--        PRODUCTIVE." When budget is exhausted and all_productive is still
+--        NULL, the boolean is forced to false ("some idle") — but the
+--        original code then computed idle_count via
+--        COALESCE(v_idle_count, 0), turning a genuinely-unknown count into a
+--        confident zero, which made productive_count come out as the FULL
+--        headcount: the stored record asserted "0 idle, everyone
+--        productive" — the exact opposite of what the "some idle, count
+--        unknown" comment said the fallback was, and the rosiest possible
+--        reading of an answer nobody understood, on a report whose entire
+--        commercial value is surfacing problems a contractor would
+--        otherwise miss. Fixed: idle_count is stored exactly as parsed, NULL
+--        included, never defaulted; productive_count is NULL whenever either
+--        input (v_headcount or v_idle_count) is NULL, computed once and
+--        reused by both write branches so they can't disagree with each
+--        other. A generator reading a NULL productive_count can say "not
+--        captured" — reading a fabricated 0 or a fabricated full headcount,
+--        it cannot tell the difference from a real answer.
+--
 -- EQUIPMENT JOIN KEY / MATCH TIERS — DECIDED BEFORE THE PARSER WAS WRITTEN,
 --   REVISED ONCE MORE BEFORE REHEARSAL (see LABEL BUG below for the other
 --   pre-rehearsal fix). DPR section 4 needs Q5's hours matched to morning
@@ -242,7 +274,8 @@ DECLARE
   v_morning_count      INTEGER;
   v_headcount          INTEGER;
   v_all_productive     BOOLEAN;
-  v_idle_count         INTEGER;
+  v_idle_count         INTEGER;            -- NULL means genuinely unknown, never defaulted to 0 (see step 5)
+  v_productive_count   INTEGER;            -- NULL when either input is NULL — computed once, reused by both writes
   v_confidence         TEXT;
   v_equip_items        JSONB;
   v_equipment_echo     JSONB   := NULL;    -- returned to the caller when step 6 becomes active
@@ -385,28 +418,61 @@ BEGIN
       -- §9) — no trade breakdown, ever. See parseProductivity's header.
       v_reask := COALESCE((v_session.context->>'e5_reask')::int, 0);
       IF COALESCE((p_parse_ok->>'5')::boolean, false) OR v_reask >= 1 THEN
-        -- CONFIDENCE FLAG — see the file header. 'low' fires on exactly the
-        -- moment Rule 3.5 describes: budget exhausted, answer accepted anyway.
+        -- v_headcount read FIRST, deliberately, so the CONFIDENCE FLAG below
+        -- can see it — see the two fixes this block carries, found before
+        -- rehearsal, both the same class as the DPR idle-cost risk this
+        -- whole confidence mechanism exists for: the record asserting what
+        -- the system doesn't actually know.
+        v_headcount := (v_session.context->>'e4_headcount')::int;
+
+        -- CONFIDENCE FLAG FIX 1 — the object this stamps spans TWO steps
+        -- (productive_count is derived from v_headcount, a STEP 4 value),
+        -- so the flag has to span both too. Checking p_parse_ok->'5' alone
+        -- misses this: if step 4 exhausted ITS OWN budget on an unparseable
+        -- headcount (planned_total NULL -> e4_headcount NULL ->
+        -- v_headcount NULL here), the stored productive_count would be
+        -- computed from a headcount nobody actually gave, and a clean step-5
+        -- parse would stamp that fabricated number confidence='high'.
         v_confidence := CASE WHEN NOT COALESCE((p_parse_ok->>'5')::boolean, false)
+                                OR v_headcount IS NULL
                               THEN 'low' ELSE 'high' END;
 
         v_all_productive := (p_parse->'5'->>'all_productive')::boolean;
         IF v_all_productive IS NULL THEN
-          -- Budget exhausted and STILL unclassifiable -> SOME IDLE, count
-          -- unknown. Mirrors evening_schedule_met's own established
-          -- precedent (022's Q2 comment): pick the concrete, conservative
-          -- value rather than leave a boolean-typed downstream computation
-          -- with a NULL to propagate.
+          -- Budget exhausted and STILL unclassifiable -> treat the BOOLEAN as
+          -- SOME IDLE (mirrors evening_schedule_met's own established
+          -- precedent, 022's Q2 comment: pick the concrete, conservative
+          -- value rather than leave a boolean-typed field NULL). The COUNT is
+          -- a separate question — see FIX 2 immediately below; forcing the
+          -- boolean does not license inventing a number for the count.
           v_all_productive := false;
         END IF;
 
-        v_headcount  := (v_session.context->>'e4_headcount')::int;
+        -- CONFIDENCE FLAG FIX 2 — idle_count is read and left AS PARSED,
+        -- NULL included; never defaulted to 0 here. The bug this replaces:
+        -- COALESCE(v_idle_count, 0) turned "genuinely unknown" into "zero
+        -- idle", which made productive_count come out as the FULL headcount
+        -- — the record asserting "everyone was productive" as the resting
+        -- state for an answer nobody understood, the exact opposite of what
+        -- the accompanying comment said the fallback was ("some idle, count
+        -- unknown") and the rosiest possible reading on a report whose
+        -- entire commercial value is surfacing problems, not hiding them
+        -- under uncertainty. NULL propagates to v_productive_count below,
+        -- and from there to the stored record — "not captured", not "zero".
         v_idle_count := (p_parse->'5'->>'idle_count')::int;
         IF v_all_productive THEN
-          v_idle_count := 0;
-        ELSE
-          v_idle_count := GREATEST(COALESCE(v_idle_count, 0), 0);
+          v_idle_count := 0;  -- "all productive" IS a real, confident zero
         END IF;
+        -- else: v_idle_count stays exactly what the parser gave — NULL means
+        -- genuinely unknown (e.g. "mostly", no count offered), a real number
+        -- means a real number. Never coerced.
+
+        -- productive_count computed ONCE, NULL-aware, reused by both write
+        -- branches below so the two INSERTs can never disagree with each
+        -- other on this logic.
+        v_productive_count := CASE WHEN v_headcount IS NULL OR v_idle_count IS NULL
+                                    THEN NULL
+                                    ELSE GREATEST(v_headcount - v_idle_count, 0) END;
 
         -- Q5 AUTO-SKIP DECISION (BOT-22) — the single current-day daily_logs
         -- read 022's Pass-1 reserved block anticipated, issued for real here.
@@ -670,7 +736,7 @@ BEGIN
       (p_tenant_id, p_project_id, p_user_id, v_log_date,
        v_headcount,
        jsonb_build_object(
-         'productive_count', GREATEST(COALESCE(v_headcount, 0) - v_idle_count, 0),
+         'productive_count', v_productive_count,
          'idle_count',       v_idle_count,
          'idle_reason',      p_parse->'5'->>'idle_reason',
          'raw_text',         p_parse->'5'->>'raw_text',
@@ -693,7 +759,7 @@ BEGIN
       (p_tenant_id, p_project_id, p_user_id, v_log_date,
        v_headcount,
        jsonb_build_object(
-         'productive_count', GREATEST(COALESCE(v_headcount, 0) - v_idle_count, 0),
+         'productive_count', v_productive_count,
          'idle_count',       v_idle_count,
          'idle_reason',      p_parse->'5'->>'idle_reason',
          'raw_text',         p_parse->'5'->>'raw_text',
