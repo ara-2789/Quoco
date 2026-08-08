@@ -3,7 +3,7 @@ import { readCurrentFlow } from './session'
 import { applyMorningFlowTurn, buildMorningReply } from './flows/morning'
 import type { MorningOutcome } from './flows/morning'
 import { applyEveningFlowTurn, buildEveningReply } from './flows/evening'
-import type { EveningOutcome } from './flows/evening'
+import type { EveningOutcome, EquipmentEchoItem } from './flows/evening'
 
 // Webhook-wiring deliverable named in migration 022's review package (§10).
 // Implements the retry contract from that migration's own header ("call the
@@ -40,10 +40,17 @@ export const FLOW_RACE_REPLY =
 type Flow = 'morning' | 'evening'
 
 // Discriminated on `flow` so the reply builder below can narrow to the
-// correct outcome type without a cast.
+// correct outcome type without a cast. evening carries an extra
+// equipmentEcho — Q5's prompt is data-driven (024_evening_flow_q4_q5.sql),
+// unlike every other step's static text; morning has no equivalent.
 type Attempt =
   | { flow: 'morning'; outcome: MorningOutcome; currentStep: number }
-  | { flow: 'evening'; outcome: EveningOutcome; currentStep: number }
+  | {
+      flow: 'evening'
+      outcome: EveningOutcome
+      currentStep: number
+      equipmentEcho: EquipmentEchoItem[] | null
+    }
 
 interface DispatchParams {
   phoneNumber: string
@@ -125,13 +132,18 @@ async function attempt(
     ...(common.now !== undefined ? { now: common.now } : {}),
     ...(common.supabaseClient !== undefined ? { supabaseClient: common.supabaseClient } : {}),
   })
-  return { flow: 'evening', outcome: result.outcome, currentStep: result.currentStep }
+  return {
+    flow: 'evening',
+    outcome: result.outcome,
+    currentStep: result.currentStep,
+    equipmentEcho: result.equipmentEcho,
+  }
 }
 
 function replyFor(a: Attempt): string {
   return a.flow === 'morning'
     ? buildMorningReply(a.outcome, a.currentStep)
-    : buildEveningReply(a.outcome, a.currentStep)
+    : buildEveningReply(a.outcome, a.currentStep, a.equipmentEcho ?? undefined)
 }
 
 /**

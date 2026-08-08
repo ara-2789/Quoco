@@ -24,6 +24,23 @@ import {
 // timing guard, context-merge in both directions, already_complete
 // idempotency, and wrong_flow in both directions (including the direct proof
 // that 022's one-line morning edit is live, not 018's original 'idle' body).
+//
+// UPDATED FOR 024 (2026-08-08). Migration 024 (Q4/Q5) deliberately changed
+// TWO of the edges this file tests: Q2="yes" and Q3-completion no longer
+// complete the flow — both now hand off to step 4 instead (024's own header,
+// "Q2=YES / Q3 HAND-OFF"). That's not a regression in 024; it's the documented
+// point of it, and this file's own tests for those two edges (T-022-04,
+// T-022-05) were testing 022's ORIGINAL Pass-1-only behavior, which the
+// now-applied function no longer exhibits. Five tests here updated to match:
+// T-022-04 and T-022-05 now assert the hand-off (current_step=4, not
+// complete) instead of completion — full completion coverage for those exact
+// edges lives in test/migration-024.test.ts (T-024-12, T-024-13) instead, not
+// duplicated here. T-022-06, T-022-08, and T-022-13 needed their setup
+// extended through steps 4-6 to reach genuine completion at all, since Q2/Q3
+// alone no longer gets there — updated, not deleted, since the PROPERTY each
+// one verifies (already_complete idempotency, context-merge in both
+// directions) is still real and still 022+024's joint concern, just reached
+// by a longer path now.
 
 const P_NOW = '2026-04-10T19:00:00+05:30' // 19:00 IST, 10 Apr — evening check-in time
 const P_LATER_SAME_DAY = '2026-04-10T19:30:00+05:30' // same IST day
@@ -106,57 +123,63 @@ describe('apply_evening_flow_turn (evening flow, Pass 1) + morning wrong_flow mi
     expect(log?.evening_submitted_at).toBeNull()
   })
 
-  // 4. Q3 (miss reason) — completes: writes the reason + submitted_at, session
-  //    resets with the marker MERGED. Completion-timing guard's second half:
-  //    submitted_at is set on THIS turn, one turn after Q2 resolved.
-  it('T-022-04: Q3 (miss reason) — completes: writes reason + submitted_at, session resets', async () => {
+  // 4. Q3 (miss reason) — UPDATED BY 024: writes the reason on this turn, but
+  //    now HANDS OFF to step 4 instead of completing (024's own "Q2=YES / Q3
+  //    HAND-OFF" note). Full completion for this edge: T-024-13.
+  it('T-022-04: Q3 (miss reason) — writes the reason, hands off to step 4 (024), does not complete', async () => {
     const phone = testPhone('404')
     await applyEveningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
     await applyEveningFlowTurn({ phone, message: 'some work done', startFlow: false, now: P_NOW })
     await applyEveningFlowTurn({ phone, message: 'no', startFlow: false, now: P_NOW })
     const r = await applyEveningFlowTurn({ phone, message: 'RMC truck delayed', startFlow: false, now: P_NOW })
     expect(r.outcome).toBe('advance')
-    expect(r.current_flow).toBeNull()
-    expect(r.current_step).toBe(0)
+    expect(r.current_flow).toBe('evening') // NOT null — 024 changed this edge
+    expect(r.current_step).toBe(4) // NOT 0 — hands off, see T-024-13
 
     const log = await getDailyLog(LOG_DATE)
     expect(log?.evening_schedule_miss_reason).toBe('RMC truck delayed')
-    expect(log?.evening_submitted_at).not.toBeNull()
+    expect(log?.evening_submitted_at).toBeNull() // not yet — completion moved downstream
 
     const session = await readSession(phone)
-    expect(session?.current_flow).toBeNull()
-    expect(session?.context).toEqual({ evening_submitted: true })
+    expect(session?.current_flow).toBe('evening')
+    expect(session?.current_step).toBe(4)
   })
 
-  // 5. Q2 = "yes" — THE OTHER CONDITIONAL EDGE: completes AT STEP 2, Q3
-  //    skipped entirely. Completion-timing guard, opposite direction:
-  //    submitted_at is set on the SAME turn that resolves Q2.
-  it('T-022-05: Q2="yes" — the other conditional edge: completes at step 2, Q3 skipped', async () => {
+  // 5. Q2 = "yes" — Q3 still skipped (unchanged), but UPDATED BY 024: hands
+  //    off to step 4 instead of completing at step 2. Full completion for
+  //    this edge: T-024-12.
+  it('T-022-05: Q2="yes" — Q3 still skipped, hands off to step 4 (024) instead of completing', async () => {
     const phone = testPhone('405')
     await applyEveningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
     await applyEveningFlowTurn({ phone, message: 'some work done', startFlow: false, now: P_NOW })
     const r = await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW })
     expect(r.outcome).toBe('advance')
-    expect(r.current_flow).toBeNull()
-    expect(r.current_step).toBe(0) // NOT 3 — the skip proof
+    expect(r.current_flow).toBe('evening')
+    expect(r.current_step).toBe(4) // NOT 3 (Q3 still skipped), NOT 0 (see T-024-12)
 
     const log = await getDailyLog(LOG_DATE)
     expect(log?.evening_schedule_met).toBe(true)
     expect(log?.evening_schedule_miss_reason).toBeNull() // Q3 never asked
-    expect(log?.evening_submitted_at).not.toBeNull() // same turn, contrast T-022-03/04
+    expect(log?.evening_submitted_at).toBeNull() // completion moved downstream, see T-024
 
     const session = await readSession(phone)
-    expect(session?.context).toEqual({ evening_submitted: true })
+    expect(session?.current_step).toBe(4)
   })
 
   // 6. already_complete — a further inbound after completion writes nothing;
-  //    the timestamp from the completing turn is frozen.
+  //    the timestamp from the completing turn is frozen. UPDATED BY 024:
+  //    completion is no longer reachable via Q2 alone — setup extended
+  //    through steps 4-5, auto-skipping Q5 (no morning submission on this
+  //    phone at all — BOT-22 NULL case).
   it('T-022-06: already_complete — post-completion inbound writes nothing, timestamp frozen', async () => {
     const phone = testPhone('406')
     await applyEveningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
     await applyEveningFlowTurn({ phone, message: 'some work done', startFlow: false, now: P_NOW })
-    await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW })
+    await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW }) // -> step 4
+    await applyEveningFlowTurn({ phone, message: '10', startFlow: false, now: P_NOW }) // -> step 5
+    await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW }) // Q5 auto-skips -> complete
     const submittedBefore = (await getDailyLog(LOG_DATE))?.evening_submitted_at
+    expect(submittedBefore).not.toBeNull()
 
     const r = await applyEveningFlowTurn({ phone, message: 'thanks', startFlow: false, now: P_LATER_SAME_DAY })
     expect(r.outcome).toBe('already_complete')
@@ -178,12 +201,18 @@ describe('apply_evening_flow_turn (evening flow, Pass 1) + morning wrong_flow mi
 
   // 8. context-merge, direction B (on COMPLETE) — both markers coexist once
   //    morning AND evening have each completed on the same session/day.
+  //    UPDATED BY 024: completeMorning() submits REAL equipment ('JCB 1500'),
+  //    so evening's Q5 does NOT auto-skip here — setup extended through step
+  //    6 (equipment hours) to reach genuine completion.
   it('T-022-08: context-merge on complete — both markers coexist after morning AND evening complete', async () => {
     const phone = testPhone('408')
     await completeMorning(phone, P_NOW)
     await applyEveningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
     await applyEveningFlowTurn({ phone, message: 'some work done', startFlow: false, now: P_NOW })
-    await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW })
+    await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW }) // -> step 4
+    await applyEveningFlowTurn({ phone, message: '10', startFlow: false, now: P_NOW }) // -> step 5
+    await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW }) // morning HAS equipment -> step 6
+    await applyEveningFlowTurn({ phone, message: '8 6', startFlow: false, now: P_NOW }) // Q5 -> complete
 
     const session = await readSession(phone)
     expect(session?.context).toEqual({ morning_submitted: true, evening_submitted: true })
@@ -267,11 +296,16 @@ describe('apply_evening_flow_turn (evening flow, Pass 1) + morning wrong_flow mi
   //     morning's Q4 completion did a bare context REPLACE, which would have
   //     silently wiped evening_submitted here — the bug is born in 022 (018
   //     never had a second flow to collide with), not inherited from it.
+  // UPDATED BY 024: evening has NO morning submission at all when it runs
+  // (that's the whole point of this test — evening first) — Q5 auto-skips
+  // (BOT-22 NULL case), so setup only needs to extend through step 4-5.
   it('T-022-13: context-merge REVERSE — evening completes first, then morning; both markers coexist', async () => {
     const phone = testPhone('413')
     await applyEveningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
     await applyEveningFlowTurn({ phone, message: 'some work done', startFlow: false, now: P_NOW })
-    await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW })
+    await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW }) // -> step 4
+    await applyEveningFlowTurn({ phone, message: '10', startFlow: false, now: P_NOW }) // -> step 5
+    await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW }) // Q5 auto-skips -> complete
     expect((await readSession(phone))?.context).toEqual({ evening_submitted: true })
 
     await applyMorningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })

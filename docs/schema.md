@@ -198,13 +198,56 @@ label whenever a subsection is added or removed.]
 - is_holiday BOOLEAN DEFAULT false (BETA)
 - holiday_reason TEXT (BETA)
 - evening_output TEXT (BETA)
-- evening_output_quantities JSONB — [{activity, quantity, unit}] (BETA)
+- evening_output_quantities JSONB (BETA)
+  [DATED CORRECTION 2026-08-08: this line previously showed the BARE ARRAY
+  `[{activity, quantity, unit}]` bot-flows.md's spec illustrates — the SAME
+  class of error the 2026-07-27 correction fixed on morning_manpower_planned/
+  morning_equipment, just never applied here because nothing read this column
+  until migration 024 was drafted. The column has been LIVE since migration
+  022 (2026-08-05); its actual, verified-against-code shape is an OBJECT, not
+  a bare array: `{items: [{activity, quantity, unit, raw}], raw_text}` — see
+  lib/whatsapp/flows/parsers/quantities.ts (QuantitiesParse) and 022:525
+  (`p_parse->'1'`, the whole object, stored verbatim). READERS MUST read
+  evening_output_quantities->'items', not the column as an array.]
 - evening_schedule_met BOOLEAN (BETA)
 - evening_schedule_miss_reason TEXT (BETA)
-- evening_workers_on_site INTEGER (BETA)
-- evening_productive_manpower JSONB (BETA)
-- evening_equipment_utilisation JSONB —
-  [{type, available_hours, actual_hours, idle_reason}] (BETA)
+- evening_workers_on_site INTEGER — migration 024 (WRITTEN, NOT YET
+  REHEARSED OR APPLIED, 2026-08-08). Column itself has existed, untouched,
+  since 001_core_schema.sql; 024 is the first thing that writes it (Q4 step
+  1, headcount — reuses parseLabourCount verbatim, only planned_total
+  persisted). Written together with evening_productive_manpower in the same
+  transaction, never alone — see that entry below for why.
+- evening_productive_manpower JSONB — migration 024 (WRITTEN, NOT YET
+  REHEARSED OR APPLIED, 2026-08-08). AGGREGATE-ONLY v1
+  (design-decisions-beta-feedback.md §9, 2026-07-28 — DECIDED before 024 was
+  written) — no trade-level breakdown, ever; see that decision for the three
+  reasons it's deferred. Shape, object-wrapped per the same convention as
+  every other parsed column in this table (never the bare array an earlier
+  draft of this note showed):
+  `{productive_count, idle_count, idle_reason, raw_text, confidence}`.
+  `confidence` ('high'|'low') is Rule 3.5's low-confidence flag — the FIRST
+  place it exists anywhere in this schema (CLAUDE.md §10's PARSER DEBT entry
+  tracks its absence everywhere else) — built here specifically, not as
+  general hygiene, because this field and evening_equipment_utilisation's own
+  `actual_hours`/`available_hours` feed DPR section 4's idle-cost currency
+  arithmetic directly; see 024_evening_flow_q4_q5.sql's own CONFIDENCE FLAG
+  note for the full reasoning.
+- evening_equipment_utilisation JSONB — migration 024 (WRITTEN, NOT YET
+  REHEARSED OR APPLIED, 2026-08-08). AUTO-SKIPPED (stored as an empty items
+  array) when morning_equipment is NULL (no morning submission at all — the
+  case migration 022's own reserved-block comment's pinned skip test would
+  have MISSED, jsonb_array_length(NULL->'items') being NULL not 0; fixed in
+  024) or empty (morning explicitly said no equipment). Object-wrapped, per
+  the same convention:
+  `{items: [{morning_item_index, type, available_hours, actual_hours,
+  idle_reason, raw}], raw_text, confidence}`.
+  `morning_item_index` is the ACTUAL join key back to
+  `morning_equipment.items` — POSITION, not `type`: two machines of the SAME
+  type at different hire rates (two JCBs) would collide on a type-string
+  join, since morning_equipment carries no other distinguishing field
+  between them. `type` is still stored per entry, for display only. See
+  024_evening_flow_q4_q5.sql's EQUIPMENT JOIN KEY note for the full
+  reasoning and how the echo order guarantees the join resolves.
 - evening_dependencies JSONB — [{item, responsible_party, required_by_time}] (BETA)
 - evening_submitted_at TIMESTAMPTZ (BETA)
 - dpr_content TEXT — LIVE on prod as of this note's original writing.
