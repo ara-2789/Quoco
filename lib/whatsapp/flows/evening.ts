@@ -138,6 +138,19 @@ export const EVENING_WRONG_FLOW_REPLY = ''
 // prompt needs to render. Mirrors the RPC's `equipment_echo` return value
 // (morning_equipment->'items', see the migration's ECHO ORDER note) and the
 // pure mirror's injected options.morningEquipmentItems.
+//
+// TRACKED DEBT (2026-08-08, not fixed): this type UNDER-describes what the
+// RPC actually returns. `v_equipment_echo := v_morning_equipment->'items'`
+// (024_evening_flow_q4_q5.sql) hands back the FULL stored morning_equipment
+// item — type, count, daily_hire_cost, owned_or_hired, raw — not a
+// {type}-only projection (found via a real test failure, T-024-16, which
+// asserted the narrower shape this type claims). Harmless today: nothing
+// reads the extra fields, and TS's structural typing doesn't complain about
+// a value carrying MORE than its declared type. Costs someone real time the
+// day they need daily_hire_cost off the echo (e.g. rendering "JCB — hired
+// at ₹1500/day" in the Q5 prompt) and this type says it isn't there. Fix
+// either by widening this type to match, or by having the RPC actually
+// project down to {type} at the source — not decided, not built.
 export interface EquipmentEchoItem {
   type: string
 }
@@ -486,8 +499,9 @@ export function dispatchEveningFlow(
         // derived from headcount (a STEP 4 value), so a clean step-5 parse
         // stamped confidence='high' even when step 4's own headcount was
         // never actually captured. See the migration's matching note for
-        // the full trace.
-        const confidence: 'high' | 'low' = answered && headcount !== null ? 'high' : 'low'
+        // the full trace. `let`, not `const` — the ARITHMETIC GUARD below
+        // can downgrade this further.
+        let confidence: 'high' | 'low' = answered && headcount !== null ? 'high' : 'low'
 
         const allProductive = parse.all_productive ?? false // boolean forced false on exhausted+unclassifiable — see FIX 2 below for why the COUNT is not also forced
 
@@ -497,7 +511,21 @@ export function dispatchEveningFlow(
         // productive", the opposite of what "some idle, count unknown" (the
         // forced-false boolean above) actually means, and the rosiest
         // possible reading of an answer nobody understood.
-        const idleCount = allProductive ? 0 : parse.idle_count
+        let idleCount = allProductive ? 0 : parse.idle_count
+
+        // ARITHMETIC GUARD — idle_count > headcount is impossible. Same
+        // class as Q5's actual_hours > available_hours guard
+        // (equipment-hours.ts): a signature that means a misparse, not a
+        // real answer. Checked here, not in productivity.ts, because the
+        // parser has no access to headcount (cross-step, same reason FIX 1
+        // lives here too). Invalidates rather than clamps — silently
+        // computing Math.max(headcount - idleCount, 0) is exactly the
+        // "everyone was productive" fabrication FIX 2 already closed for
+        // the unclassifiable case, reachable a second way.
+        if (idleCount !== null && headcount !== null && idleCount > headcount) {
+          idleCount = null
+          confidence = 'low'
+        }
 
         const productiveCount =
           headcount === null || idleCount === null ? null : Math.max(headcount - idleCount, 0)

@@ -79,6 +79,11 @@ import {
 //             unclassifiable productivity answer -> idle_count and
 //             productive_count must both be NULL ("not captured"), never a
 //             fabricated 0 that reads as "everyone was productive"
+//   T-024-24  ARITHMETIC GUARD (FIX 3, found in a LATER review pass, after
+//             024's first apply to test-db): idle_count > headcount is
+//             impossible — a real, cleanly-parsed pair, fires on the FIRST
+//             attempt, no budget exhaustion needed. Invalidated to NULL +
+//             confidence='low', not silently clamped to a confident 0.
 //   T-024-11  Q5 reask carries the SAME equipment_echo again (data-driven
 //             prompt, not a generic "didn't get that")
 //   T-024-12  Q2=Yes now routes to step 4 instead of completing (022's
@@ -484,6 +489,31 @@ describe('apply_evening_flow_turn Pass 2 (Q4 headcount/productivity, Q5 equipmen
     // productive", read from an answer nobody understood.
     expect(manpower?.idle_count).toBeNull()
     expect(manpower?.productive_count).toBeNull()
+  })
+
+  it('T-024-24: ARITHMETIC GUARD — idle_count > headcount is impossible, invalidated not clamped, on the FIRST attempt', async () => {
+    const phone = testPhone('424')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+    await applyEveningFlowTurn({ phone, message: '5', startFlow: false, now: P_NOW }) // headcount=5
+
+    // idle_count=8 > headcount=5 — a real, cleanly-parsed, but IMPOSSIBLE
+    // pair. Classifies confidently (ok=true) on the very first attempt, no
+    // budget exhaustion needed — this guard has to fire independently of
+    // the CONFIDENCE FIX 1/2 triggers.
+    const r = await applyEveningFlowTurn({ phone, message: '8 idle, machine broke', startFlow: false, now: P_NOW })
+    expect(r.outcome).toBe('advance')
+    expect(r.current_step).toBe(0)
+
+    const log = await getDailyLog(LOG_DATE)
+    const manpower = log?.evening_productive_manpower
+    // The bug this replaces: GREATEST(5 - 8, 0) = 0, silently clamped, with
+    // confidence left 'high' since the parse itself was clean — a
+    // confident, fabricated "zero productive" from an impossible pair.
+    expect(manpower?.idle_count).toBeNull()
+    expect(manpower?.productive_count).toBeNull()
+    expect(manpower?.confidence).toBe('low')
+    expect(log?.evening_workers_on_site).toBe(5) // headcount itself is real and unaffected
   })
 
   it('T-024-11: Q5 reask carries the same equipment_echo again', async () => {

@@ -87,10 +87,17 @@
 --   a DIFFERENT signal from the one above — see MATCH TIERS below for what
 --   it means there (inferred-vs-stated join, not accept-after-budget).
 --
---   TWO MORE FIXES, FOUND BEFORE REHEARSAL, BOTH THE SAME CLASS AS THE
---   RUPEE-FIGURE RISK ABOVE — the record asserting what the system doesn't
---   actually know, in the step 4/5 seam this time rather than the
---   daily_hire_cost/hours seam:
+--   THREE MORE FIXES, ALL THE SAME CLASS AS THE RUPEE-FIGURE RISK ABOVE —
+--   the record asserting what the system doesn't actually know, in the
+--   step 4/5 seam this time rather than the daily_hire_cost/hours seam.
+--   FIXES 1 AND 2 were found and fixed before this migration's FIRST
+--   rehearsal/apply to test-db. FIX 3 was found in a LATER review pass,
+--   AFTER that first apply — this function needs to be re-applied
+--   (CREATE OR REPLACE again) to test-db before FIX 3 is actually exercised
+--   by anything; do not read T-024 going green as proof of FIX 3 until that
+--   re-apply has happened. Said here plainly rather than left to be
+--   inferred from a diff, matching this whole file's own standing rule
+--   about pinning provenance rather than assuming it.
 --     1. CONFIDENCE SPANS TWO STEPS, NOT ONE. evening_productive_manpower's
 --        productive_count is derived from v_headcount — a STEP 4 value — but
 --        the confidence flag was computed from p_parse_ok->'5' alone. If
@@ -118,6 +125,24 @@
 --        other. A generator reading a NULL productive_count can say "not
 --        captured" — reading a fabricated 0 or a fabricated full headcount,
 --        it cannot tell the difference from a real answer.
+--     3. IDLE_COUNT > HEADCOUNT IS IMPOSSIBLE, AND WAS SILENTLY CLAMPED, NOT
+--        FLAGGED. Same class as Q5's own actual_hours > available_hours
+--        guard (equipment-hours.ts) — found in the same later review pass
+--        that found FIX 3 needs its own re-apply (see above). Before this
+--        fix, an idle_count exceeding headcount (e.g. headcount=5,
+--        idle_count=8 — a real but impossible pair) fed straight into
+--        GREATEST(v_headcount - v_idle_count, 0), clamping productive_count
+--        to 0 silently, with confidence left untouched (still 'high' if the
+--        parse itself was otherwise clean) — a confident, fabricated "zero
+--        productive" from a number that was never plausible. Checked here,
+--        not in productivity.ts, because the parser has no access to
+--        headcount at all (cross-step, same structural reason FIX 1 lives
+--        in the RPC rather than the parser). Fixed: idle_count > headcount
+--        invalidates idle_count to NULL and forces confidence to 'low',
+--        which cascades into productive_count also becoming NULL via the
+--        same NULL-propagation FIX 2 already built — this is FIX 2's
+--        fabrication reachable a second way, through a real-but-impossible
+--        number instead of a missing one, not a new failure mode.
 --
 -- EQUIPMENT JOIN KEY / MATCH TIERS — DECIDED BEFORE THE PARSER WAS WRITTEN,
 --   REVISED ONCE MORE BEFORE REHEARSAL (see LABEL BUG below for the other
@@ -466,6 +491,23 @@ BEGIN
         -- else: v_idle_count stays exactly what the parser gave — NULL means
         -- genuinely unknown (e.g. "mostly", no count offered), a real number
         -- means a real number. Never coerced.
+
+        -- ARITHMETIC GUARD — idle_count > headcount is impossible (can't
+        -- have more idle workers than were on site at all). Same class as
+        -- Q5's actual_hours > available_hours guard (equipment-hours.ts) —
+        -- a signature that means a misparse, not a real answer. Checked
+        -- HERE, not in the parser: productivity.ts has no access to
+        -- headcount at all (a step-4 value, cross-step — the same reason
+        -- the CONFIDENCE FLAG fixes above live in the RPC, not the parser).
+        -- Invalidates rather than clamps: the code this replaces silently
+        -- computed GREATEST(headcount - idle_count, 0), which is exactly
+        -- the "everyone was productive" fabrication the FIX above already
+        -- closed for the unclassifiable case — reachable a second way,
+        -- through a real but impossible number instead of a missing one.
+        IF v_idle_count IS NOT NULL AND v_headcount IS NOT NULL AND v_idle_count > v_headcount THEN
+          v_idle_count := NULL;
+          v_confidence := 'low';
+        END IF;
 
         -- productive_count computed ONCE, NULL-aware, reused by both write
         -- branches below so the two INSERTs can never disagree with each
