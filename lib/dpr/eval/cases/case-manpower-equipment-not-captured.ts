@@ -7,8 +7,11 @@ import type {
   TomorrowsPlanFacts,
 } from '../../schema'
 
-// GOLDEN CASE #1 — does the model paper over a genuine data hole with
-// plausible prose instead of admitting the gap? Migration 024 built an
+// GOLDEN CASE — manpower/equipment NULL-handling. NOT one of bot-flows.md's
+// eight numbered minimum cases — this one is additional, motivated by the
+// Claude API client spike's arithmetic-boundary finding (2026-08-09): does
+// the model paper over a genuine data hole with plausible prose instead of
+// admitting the gap? Migration 024 built an
 // entire confidence/NULL-propagation apparatus (headcount, productivity,
 // equipment hours) specifically so this question is answerable. If the DPR
 // prompt smooths a NULL into confident narrative, that apparatus is
@@ -36,7 +39,7 @@ import type {
 //   (lib/dpr/schema.ts, next to the data_status probe comment: a
 //   'not_captured' section renders code-side templated text, never the
 //   model's note) makes the note unreachable regardless of what it says.
-//   'partial' has no equivalent backstop. A case #1 pass means "labels the
+//   'partial' has no equivalent backstop. A pass here means "labels the
 //   gap correctly," not "handles the gap correctly." Do not let it be read
 //   as the stronger claim.
 //
@@ -52,7 +55,7 @@ import type {
 //   golden case" and "that's a unit test" and ends up neither.
 
 export const executionFacts: ExecutionOutputFacts = {
-  quantities: [{ activity: 'poured M25 concrete, Tower 2 slab level 3', quantity: 40, unit: 'cum' }],
+  quantities: [{ activity: 'poured M25 concrete, Tower 2 slab level 3', quantity: { status: 'reported', value: 40 }, unit: 'cum' }],
 }
 
 export const scheduleFacts: ScheduleFacts = {

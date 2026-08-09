@@ -2,12 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { computeIdleCost } from '@/lib/dpr/idle-cost'
 import type { CapturedNumber } from '@/lib/dpr/schema'
 
-// Case #3 from bot-flows.md's DPR eval minimum-case list ("idle-equipment
+// Item 3 from bot-flows.md's DPR eval minimum-case list ("idle-equipment
 // arithmetic") — filed here, not lib/dpr/eval/cases/, because it's a pure
 // arithmetic regression fixture, not a model eval: computeIdleCost never
 // calls Claude, and every assertion below is deterministic. Filing it beside
-// golden cases would mislabel what a green run means (see case #1's own
-// file for the golden-case convention this deliberately isn't).
+// golden cases would mislabel what a green run means (see
+// lib/dpr/eval/cases/case-manpower-equipment-not-captured.ts for the
+// golden-case convention this deliberately isn't).
 //
 // Also covers the "suppress idle cost when the hire rate is untrusted" rule
 // (CLAUDE.md §10, "A COUNT IN A MONEY FIELD") — nothing tested this before:

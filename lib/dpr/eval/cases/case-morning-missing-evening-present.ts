@@ -7,7 +7,7 @@ import type {
   TomorrowsPlanFacts,
 } from '../../schema'
 
-// GOLDEN CASE #7 (bot-flows.md minimum cases: "morning-missing /
+// GOLDEN CASE (bot-flows.md minimum cases, item 7: "morning-missing /
 // evening-present") — an engineer submits the evening check-in with no
 // morning submission that day at all. schema.md already documents the
 // concrete consequence: evening_equipment_utilisation AUTO-SKIPS to an empty
@@ -20,8 +20,9 @@ import type {
 // not depend on morning having happened at all.
 //
 // Sections 1 and 2 are boring-and-complete, same isolation principle as
-// case #1: the only thing under test is whether "no morning" correctly
-// narrows to JUST the equipment section, not the whole DPR.
+// case-manpower-equipment-not-captured.ts: the only thing under test is
+// whether "no morning" correctly narrows to JUST the equipment section, not
+// the whole DPR.
 //
 // WHAT THIS CASE DOES NOT PROVE:
 //
@@ -34,14 +35,15 @@ import type {
 //   doesn't exist yet. A pass here says "the model behaves correctly given
 //   the right input," not "the pipeline correctly produces that input."
 //
-//   Same 'complete' vs 'not_captured' asymmetry as case #1: manpower_data_
-//   status === 'complete' proves the model didn't treat a morning-optional
-//   section as a gap. It does not verify manpower_idle_reason_note's actual
-//   content is accurate — no structural guarantee there, same reasoning as
-//   case #1's 'partial' caveat.
+//   Same 'complete' vs 'not_captured' asymmetry as
+//   case-manpower-equipment-not-captured.ts: manpower_data_status ===
+//   'complete' proves the model didn't treat a morning-optional section as
+//   a gap. It does not verify manpower_idle_reason_note's actual content is
+//   accurate — no structural guarantee there, same reasoning as that case's
+//   'partial' caveat.
 
 export const executionFacts: ExecutionOutputFacts = {
-  quantities: [{ activity: 'shuttering, Tower 1 column grid C3-C5', quantity: 12, unit: 'nos' }],
+  quantities: [{ activity: 'shuttering, Tower 1 column grid C3-C5', quantity: { status: 'reported', value: 12 }, unit: 'nos' }],
 }
 
 export const scheduleFacts: ScheduleFacts = {

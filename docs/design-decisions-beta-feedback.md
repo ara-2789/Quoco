@@ -489,69 +489,119 @@ morning-flow work, not evening, and not scoped now.
 bot-flows.md's section 5 definition is amended to match this decision — see
 its own entry, not restated here.
 
-## 12. DPR rollup rule — undefined, surfaced while scoping golden case #5
-(opened 2026-08-09, NOT decided here)
+## 12. DPR rollup rule — DECIDED: suppress narrowly, not by section
+(decided 2026-08-09; opened as an open question the same day while scoping
+golden case #5)
 
-**OPEN PRODUCT QUESTION.** `daily_logs` is `UNIQUE(project_id, engineer_id,
-log_date)` — one row per engineer, per day. `dprs` is `UNIQUE(project_id,
-log_date)` — one row per project, per day. bot-flows.md's own generation
-spec already says "Aggregate all daily_logs rows for the project on that
-date" — so on any day with more than one engineer, N per-engineer rows
-become ONE DPR, and **nothing anywhere defines the rule that turns N rows
-into one number.** This surfaced while scoping golden case #5
-("contradictory numbers flagged, not averaged") — but it's bigger than
-conflicts: the question is unanswered even when every engineer's report is
-internally consistent and simply describes a different slice of the same
-site-day.
+**DECISION: safe default now, revisit with real data.** `daily_logs` is
+`UNIQUE(project_id, engineer_id, log_date)` — one row per engineer, per day.
+`dprs` is `UNIQUE(project_id, log_date)` — one row per project, per day.
+bot-flows.md's own generation spec says "Aggregate all daily_logs rows for
+the project on that date" — so on any day with more than one engineer, N
+per-engineer rows become ONE DPR, and nothing previously defined the rule
+that turns N rows into one number. This is a GENERATOR-LOGIC decision, not a
+schema change (`CapturedCount`/`CapturedNumber` in lib/dpr/schema.ts are
+untouched) and not a question-rewording (evening Q4's wording is untouched)
+— both stay on the table as later options, not adopted now.
 
-**Three sections, three different flavors of the same question:**
+**The rule is narrow suppression, not blanket section-level suppression.** A
+blanket "multi-engineer day → sections 1/3/4 all not_captured" would make
+the DPR worthless every day for any two-engineer project — worse than an
+imprecise number, and unnecessary, because most of a typical day's data
+isn't actually ambiguous. Per section:
 
-- **Manpower (section 3, headcount/productivity):** two engineers each
-  report a headcount. Do they represent DIFFERENT crews on one project
-  (correct answer: sum) or the SAME whole-site estimate reported twice
-  (summing double-counts)? Code cannot tell these apart from the numbers
-  alone — it's a fact about how the engineers were actually asked to report,
-  which nothing in the schema captures today.
-- **Execution (section 1, quantities):** if two engineers report the SAME
-  activity ("slab pour"), are their quantities two PARTS of one pour
-  (sum) or the same fact logged twice (duplicate, don't sum)? If they report
-  DIFFERENT activities, simple concatenation is probably right and this
-  question doesn't even arise — the ambiguity is specifically same-activity
-  overlap.
-- **Equipment (section 4):** the sharpest edge. Two engineers may each log
-  the SAME physical JCB in their own `morning_equipment` — there is no
-  shared identifier across engineers' rows (each engineer's equipment list
-  is independently indexed; `morning_item_index`, per schema.ts's own join-
-  key note, is only unique WITHIN one engineer's row). Naively concatenating
-  two engineers' equipment lists would DOUBLE the machine and double its
-  idle cost — a real currency figure, stated to the owner, wrong by 2x. This
-  isn't an aggregation-math question like the other two; it's an IDENTITY
-  RESOLUTION problem (is engineer A's item 0 the same physical machine as
-  engineer B's item 1?) with no data to resolve it against today.
+- **Execution (§1):** list ALL activities from ALL engineers, with
+  quantities. Suppress the quantity ONLY for an activity reported by more
+  than one engineer — the activity itself still appears. Distinct
+  activities are not ambiguous and are never touched.
+- **Manpower (§3):** suppress the aggregate headcount/productivity
+  UNCONDITIONALLY on any multi-engineer day — this is the one genuinely
+  unresolvable case. The ambiguity lives in the QUESTION ITSELF ("workers on
+  site" doesn't distinguish "my crew" from "the whole site"), so two
+  engineers coincidentally reporting the same number doesn't resolve
+  anything either — there is no per-value comparison that could rescue this
+  one the way §1/§4's overlap check does.
+- **Equipment (§4):** suppress ONLY items whose `type` appears across more
+  than one engineer. Distinct types keep their hours and idle cost
+  untouched — the ambiguity is specifically same-type collision (is
+  engineer A's JCB the same physical machine as engineer B's JCB?), not
+  equipment data in general.
+- **Schedule (§2), Tomorrow's Plan (§5), Accountability (§6):** unaffected.
+  Per-engineer by nature — no rollup, no aggregation, nothing to suppress.
+- **Single-engineer project-days: entirely unaffected.**
 
-**What each answer implies for `CapturedCount`/`CapturedNumber`
-(lib/dpr/schema.ts):**
+**CORRECTION to the framing above (2026-08-09), verified against prod, not
+assumed.** This entry originally said single-engineer-heavy beta usage means
+"this decision costs the DPR nothing in practice today" — imprecise in a way
+worth naming: manpower suppression on a multi-engineer project isn't
+occasional, it's UNCONDITIONAL AND PERMANENT — every day, for the life of
+that project, until the reword ships. Section 3 is one of only two sections
+where the DPR states a number that reads as money-adjacent to a contractor
+(headcount/productivity). A customer with two engineers on one project would
+get a DPR with a permanently blank labour section, not an occasionally
+imprecise one. Whether that's actually a live problem depends entirely on
+whether any project TODAY has more than one active engineer — checked, not
+assumed:
 
-- **Sum:** no shape change — a single rolled-up value is still one number.
-  Silently wrong for manpower/equipment when the "different slice" premise
-  is false, and code has no way to detect that it's false.
-- **Pick one (e.g. max, or a designated lead-engineer report):** no shape
-  change either, but this is close to the "silently average or pick"
-  failure golden case #5 exists specifically to rule out — picking one
-  number and discarding the other loses a real disagreement, which is a
-  narrower version of the same problem sum has.
-- **Flag multiplicity, don't reduce to one value:** genuinely changes the
-  wrapper shape — `CapturedCount` would need something like a
-  `per_engineer: Array<{engineer_id, value}>` alongside (or instead of) a
-  single `value`, plus a status meaning "conflicting reports, not resolved."
-  Every downstream consumer (DPR render, future dashboard, any costing math)
-  now has to handle a multi-valued fact instead of one number — a bigger
-  ripple than it looks from this section alone.
+```sql
+SELECT p.id, p.name, count(*) AS engineer_count
+FROM project_members pm
+JOIN projects p ON p.id = pm.project_id
+JOIN users u ON u.id = pm.user_id
+WHERE u.role = 'engineer' AND u.status = 'active'
+GROUP BY p.id, p.name
+HAVING count(*) > 1;
+```
 
-**Not decided here on purpose.** "A contractor with two engineers on one
-tower wants '45 workers on site,' not '23 and 22'" is a real instinct but
-explicitly not a spec — recorded as raised, not adopted. Equipment's
-identity-resolution problem in particular may need a different answer than
-manpower's pure aggregation-math one; this may not be a single rule at all.
-Golden case #1 ("complete two-engineer day") is blocked on this decision —
-it cannot be written until a rollup rule exists to assert against.
+Run against prod (`jvxwqignooseazzmwhvl`) via `supabase db query --linked`,
+2026-08-09: **zero rows.** No project currently has more than one active
+engineer. The deferral is genuinely free today — there is no project this
+decision silently degrades right now. This is a snapshot, not a permanent
+exemption: the moment a second active engineer joins any project's
+`project_members`, that project's manpower section goes permanently
+not_captured under this rule, and the question-reword stops being a
+follow-up and becomes pre-launch work for that specific customer. Re-run
+this query before onboarding any project expected to run two-plus
+engineers, not on a fixed schedule.
+
+**Instrumentation — proposed here, NOT built.** "Revisit with real data"
+produces no data unless something records it. The generator needs to log,
+per DPR, whether suppression fired and which rule triggered it
+(`multi_engineer_manpower` / `same_activity_overlap` / `same_type_equipment`).
+Candidate homes, not chosen:
+  - a JSONB field on `dprs` (e.g. `suppression_log`) — durable, queryable
+    across every DPR ever generated, colocated with the artifact it
+    describes. Leaning here as the default candidate, since answering "how
+    often does this actually fire" is the whole point of deferring the real
+    decision, and that answer needs to be queryable in aggregate later.
+  - a Sentry breadcrumb — cheap, uses monitoring already wired (CLAUDE.md
+    §6), but not natively aggregable the way a DB column is; would need a
+    separate report built on top.
+  - a plain counter (jobs payload or a small dedicated table) — cheapest,
+    but loses the day/project/activity-type detail that a future rewording
+    decision would actually need to read.
+
+**Question-rewording stays on the table — the likely follow-up, not adopted
+now.** Manpower's ambiguity is a QUESTION-DESIGN problem, not an
+aggregation-math one: evening Q4 could ask "workers in YOUR area today"
+instead of "workers on site," eliminating the ambiguity at the source rather
+than suppressing after the fact. This is the natural next move once the
+instrumentation above shows how often multi-engineer manpower suppression
+actually fires in practice — not scoped now, and this decision doesn't
+block it later.
+
+**Built against this rule:** `SuppressionNote` (lib/dpr/schema.ts) — a
+per-item way to say "this fact is not_captured because the rollup rule
+suppressed it, and here's which rule and how many engineers collided"
+(distinct from ordinary not_captured, same reasoning `CapturedCount`'s own
+zero/absent split was built on), attached to `ManpowerFacts` (section-wide,
+unconditional) and per-item to execution quantities and equipment items.
+The "complete two-engineer day" golden case
+(lib/dpr/eval/cases/case-complete-two-engineer-day.ts) is built against it —
+its own headline finding: that case name can no longer mean "all five
+model-touched sections are 'complete'," since manpower is unconditionally
+suppressed the moment a second engineer submits, by design. That case's
+equipment-item aggregate indexing (how two engineers' distinct-type items
+get merged into one list) is marked PROVISIONAL in its own file, not
+promoted here — it sidesteps this section's equipment identity-resolution
+problem for the no-collision case only, and does not answer it.

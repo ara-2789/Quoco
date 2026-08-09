@@ -1,6 +1,6 @@
 import type { ExecutionOutputFacts, ScheduleFacts, ManpowerFacts, EquipmentFacts, TomorrowsPlanFacts } from '../../schema'
 
-// GOLDEN CASE #4 (bot-flows.md minimum cases: "vernacular answers") —
+// GOLDEN CASE (bot-flows.md minimum cases, item 4: "vernacular answers") —
 // MANUAL-REVIEW ONLY. Filed in eval/manual-cases/, not eval/cases/, so its
 // location alone says "not asserted" — the mistake case #3 flagged (filing
 // an arithmetic fixture beside model evals mislabels what a green run
@@ -29,7 +29,7 @@ import type { ExecutionOutputFacts, ScheduleFacts, ManpowerFacts, EquipmentFacts
 // same as an untested code path, not as a pass.
 
 export const executionFacts: ExecutionOutputFacts = {
-  quantities: [{ activity: 'RCC column casting, Tower 2 grid B2', quantity: 3, unit: 'nos' }],
+  quantities: [{ activity: 'RCC column casting, Tower 2 grid B2', quantity: { status: 'reported', value: 3 }, unit: 'nos' }],
 }
 
 export const scheduleFacts: ScheduleFacts = {

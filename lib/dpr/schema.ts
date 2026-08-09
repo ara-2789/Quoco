@@ -42,12 +42,40 @@ export interface CapturedNumber {
   value: number | null // decimal (hours, Rs); null iff status !== 'reported'
 }
 
+// A section/item is 'not_captured' for one of two DIFFERENT reasons, and
+// they must not collapse into the same shape any more than zero-vs-absent
+// does: nobody ever reported it, OR the §12 rollup rule deliberately
+// withheld a value that MULTIPLE engineers reported (project-day rollup:
+// daily_logs is per-engineer, dprs is per-project — see
+// docs/design-decisions-beta-feedback.md §12). SuppressionNote is present
+// only in the second case.
+export type SuppressionReason = 'multi_engineer_manpower' | 'same_activity_overlap' | 'same_type_equipment'
+export interface SuppressionNote {
+  reason: SuppressionReason
+  engineer_count: number // how many engineers' reports collided — what makes
+  // the note renderable ("reported by 2 engineers — not aggregated") rather
+  // than a bare marker.
+}
+
 // ---------------------------------------------------------------------------
 // Facts — code-owned. Never sent as an output_config field to the model.
 // ---------------------------------------------------------------------------
 
+export interface ExecutionQuantityFact {
+  activity: string
+  unit: string
+  quantity: CapturedNumber
+  // Present only when quantity.status === 'not_captured' because MORE THAN
+  // ONE engineer reported this SAME activity name (§12) — not because
+  // nobody reported it. One item per distinct activity: two engineers both
+  // reporting "slab pour" is ONE item with a suppressed quantity, never two
+  // rows for the same real-world activity. Distinct activities are never
+  // touched and never carry this field.
+  suppressed?: SuppressionNote
+}
+
 export interface ExecutionOutputFacts {
-  quantities: Array<{ activity: string; quantity: number; unit: string }>
+  quantities: ExecutionQuantityFact[]
   // from daily_logs.evening_output_quantities.items — code pass-through,
   // untouched by the model. Numbers here are reported, not derived.
 }
@@ -64,6 +92,13 @@ export interface ManpowerFacts {
   idle_count: CapturedCount // evening_productive_manpower.idle_count
   utilisation_pct: CapturedNumber // CODE-COMPUTED: productive_count / headcount.
   // not_captured if either input is not_captured — never divide through a gap.
+  // Present whenever MORE THAN ONE engineer submitted for this project-day
+  // (§12) — UNCONDITIONALLY, not contingent on the numbers actually
+  // disagreeing. The ambiguity is in what the question SCOPES to ("workers
+  // on site" doesn't distinguish "my crew" from "the whole site"), which a
+  // coincidental numeric match between two engineers doesn't resolve
+  // either. When present, all four fields above are 'not_captured' together.
+  suppressed?: SuppressionNote
 }
 
 export interface EquipmentItemFacts {
@@ -82,6 +117,14 @@ export interface EquipmentItemFacts {
   // untrusted, rather than compute confidently off a bad rate. The detection
   // heuristic is not decided here — this is a flag for the generator, not a
   // fix.
+  // Present when this item's `type` was ALSO reported by another engineer
+  // (§12) — distinct from ordinary not_captured (nobody reported it).
+  // Distinct types across engineers are never touched. When present, the
+  // four Captured* fields above are all 'not_captured' together — see §12
+  // for why "is engineer A's JCB the same physical machine as engineer B's"
+  // has no data to resolve it against today, hence suppress rather than
+  // guess.
+  suppressed?: SuppressionNote
 }
 
 export interface EquipmentFacts {
@@ -143,14 +186,14 @@ export type DataStatus = 'complete' | 'partial' | 'not_captured'
 // PROBE FOR DISAGREEMENT, not a source of truth. Code cross-checks the
 // model's declared data_status against its own Facts after the call — a
 // mismatch (model says 'complete' where code knows a Fact is
-// 'not_captured') is exactly the papering-over-a-NULL failure mode golden
-// case #1 (see memory / next-session notes) exists to catch. If this field
-// is ever "simplified away" because it looks redundant with information code
-// already has, that check goes with it. The redundancy IS the mechanism —
-// do not remove it to deduplicate.
+// 'not_captured') is exactly the papering-over-a-NULL failure mode
+// lib/dpr/eval/cases/case-manpower-equipment-not-captured.ts exists to
+// catch. If this field is ever "simplified away" because it looks redundant
+// with information code already has, that check goes with it. The
+// redundancy IS the mechanism — do not remove it to deduplicate.
 //
 // THE OTHER HALF OF THIS MECHANISM — decided 2026-08-09, while designing
-// golden case #1: a section whose FINAL data_status is 'not_captured' (code's
+// that case: a section whose FINAL data_status is 'not_captured' (code's
 // own Facts, not the model's declaration — the cross-check above is what
 // reconciles the two) renders CODE-SIDE templated text in that section, e.g.
 // "Not captured today.", NEVER the model's own note field for that section.
@@ -165,6 +208,39 @@ export type DataStatus = 'complete' | 'partial' | 'not_captured'
 // already knows pre-call the section will be 'not_captured' for reasons
 // other than the model's own declaration — headcount fully missing, say).
 // Not addressed here; recorded so it isn't rediscovered as a surprise cost.
+//
+// §12 SUPPRESSION COMPOSES WITH THIS RULE — confirmed, with one required
+// extension. Manpower composes DIRECTLY: a SuppressionNote on ManpowerFacts
+// always accompanies manpower_data_status === 'not_captured' (§12's
+// suppression is section-wide and unconditional), so the render rule above
+// already makes the model's manpower_idle_reason_note unreachable — code
+// renders "reported by N engineers — not aggregated" from the
+// SuppressionNote instead of the generic "Not captured today.", and the
+// owner never sees anything that reads like a missing submission (the
+// product concern §12 raised: "not captured" on a section TWO people
+// answered would misread as "the engineer didn't report," which is unfair
+// to the engineer and undercuts section 6, the one place the DPR
+// legitimately names people for missing submissions).
+//
+// Execution and equipment do NOT compose for free — they needed the rule
+// EXTENDED to ITEM granularity, stated explicitly here because it doesn't
+// follow automatically from the section-level version above: an execution-
+// quantity item or an equipment item can be individually 'not_captured'
+// (suppressed) while its SECTION is 'partial' or even 'complete' overall —
+// unlike manpower, suppression there is per-item, not section-wide. So the
+// render rule applies PER ITEM for these two sections: an item carrying a
+// SuppressionNote renders code-side text for that item specifically
+// ("slab pour — reported by 2 engineers, quantity not aggregated"),
+// regardless of what the model wrote and regardless of the section's
+// overall data_status. Residual, not fully structural: execution_narrative
+// is a single free-text field for the WHOLE section (digits allowed,
+// containment-checked, not banned — see the Judgment digit-rules note
+// below), so nothing stops the model's OWN prose from stating an invented
+// combined figure for a suppressed activity unless the prompt is built so
+// the disallowed combined number never appears anywhere in the input text
+// — at which point the containment check catches it as invention, same as
+// any other uncontained digit. This is a prompt-construction discipline the
+// schema cannot enforce by itself; flagged so it isn't assumed solved.
 
 export interface EquipmentItemJudgment {
   morning_item_index: number // must match the EquipmentItemFacts item it comments on
