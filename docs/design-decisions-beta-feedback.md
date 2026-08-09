@@ -488,3 +488,70 @@ morning-flow work, not evening, and not scoped now.
 
 bot-flows.md's section 5 definition is amended to match this decision — see
 its own entry, not restated here.
+
+## 12. DPR rollup rule — undefined, surfaced while scoping golden case #5
+(opened 2026-08-09, NOT decided here)
+
+**OPEN PRODUCT QUESTION.** `daily_logs` is `UNIQUE(project_id, engineer_id,
+log_date)` — one row per engineer, per day. `dprs` is `UNIQUE(project_id,
+log_date)` — one row per project, per day. bot-flows.md's own generation
+spec already says "Aggregate all daily_logs rows for the project on that
+date" — so on any day with more than one engineer, N per-engineer rows
+become ONE DPR, and **nothing anywhere defines the rule that turns N rows
+into one number.** This surfaced while scoping golden case #5
+("contradictory numbers flagged, not averaged") — but it's bigger than
+conflicts: the question is unanswered even when every engineer's report is
+internally consistent and simply describes a different slice of the same
+site-day.
+
+**Three sections, three different flavors of the same question:**
+
+- **Manpower (section 3, headcount/productivity):** two engineers each
+  report a headcount. Do they represent DIFFERENT crews on one project
+  (correct answer: sum) or the SAME whole-site estimate reported twice
+  (summing double-counts)? Code cannot tell these apart from the numbers
+  alone — it's a fact about how the engineers were actually asked to report,
+  which nothing in the schema captures today.
+- **Execution (section 1, quantities):** if two engineers report the SAME
+  activity ("slab pour"), are their quantities two PARTS of one pour
+  (sum) or the same fact logged twice (duplicate, don't sum)? If they report
+  DIFFERENT activities, simple concatenation is probably right and this
+  question doesn't even arise — the ambiguity is specifically same-activity
+  overlap.
+- **Equipment (section 4):** the sharpest edge. Two engineers may each log
+  the SAME physical JCB in their own `morning_equipment` — there is no
+  shared identifier across engineers' rows (each engineer's equipment list
+  is independently indexed; `morning_item_index`, per schema.ts's own join-
+  key note, is only unique WITHIN one engineer's row). Naively concatenating
+  two engineers' equipment lists would DOUBLE the machine and double its
+  idle cost — a real currency figure, stated to the owner, wrong by 2x. This
+  isn't an aggregation-math question like the other two; it's an IDENTITY
+  RESOLUTION problem (is engineer A's item 0 the same physical machine as
+  engineer B's item 1?) with no data to resolve it against today.
+
+**What each answer implies for `CapturedCount`/`CapturedNumber`
+(lib/dpr/schema.ts):**
+
+- **Sum:** no shape change — a single rolled-up value is still one number.
+  Silently wrong for manpower/equipment when the "different slice" premise
+  is false, and code has no way to detect that it's false.
+- **Pick one (e.g. max, or a designated lead-engineer report):** no shape
+  change either, but this is close to the "silently average or pick"
+  failure golden case #5 exists specifically to rule out — picking one
+  number and discarding the other loses a real disagreement, which is a
+  narrower version of the same problem sum has.
+- **Flag multiplicity, don't reduce to one value:** genuinely changes the
+  wrapper shape — `CapturedCount` would need something like a
+  `per_engineer: Array<{engineer_id, value}>` alongside (or instead of) a
+  single `value`, plus a status meaning "conflicting reports, not resolved."
+  Every downstream consumer (DPR render, future dashboard, any costing math)
+  now has to handle a multi-valued fact instead of one number — a bigger
+  ripple than it looks from this section alone.
+
+**Not decided here on purpose.** "A contractor with two engineers on one
+tower wants '45 workers on site,' not '23 and 22'" is a real instinct but
+explicitly not a spec — recorded as raised, not adopted. Equipment's
+identity-resolution problem in particular may need a different answer than
+manpower's pure aggregation-math one; this may not be a single rule at all.
+Golden case #1 ("complete two-engineer day") is blocked on this decision —
+it cannot be written until a rollup rule exists to assert against.
