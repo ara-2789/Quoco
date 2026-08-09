@@ -438,49 +438,53 @@ reachable from a real trigger (today it is reachable only via the env-gated
 test token — see `022_evening_flow_apply_turn.sql`'s header and
 `docs/reviews/022-review-package.md` §9) must decide before shipping.
 
-## 11. DPR section 5 has no source — a PRIOR gap, surfaced while scoping
-evening Q4/Q5 (2026-08-08)
+## 11. DPR section 5 decision — narrowed to what's derivable, no 7th question
+(decided 2026-08-09; opened as an open question 2026-08-08 while scoping
+evening Q4/Q5)
 
-**OPEN PRODUCT QUESTION — not solved here, tracked so it doesn't get
-rediscovered as a surprise when section 5 is actually built.**
-
-bot-flows.md's DPR GENERATION spec names section 5 "Tomorrow's Plan —
-**engineer's stated plan** + dependencies." Migration 024 (evening Q4
-headcount/productivity + Q5 equipment hours) does not touch this — it was
-scoped Q4/Q5 only, Q6 (tomorrow's dependencies) deliberately deferred
-alongside it (see that migration's own header). But scoping Q4/Q5 required
-reading the full evening question list closely enough to notice: **no
+**DECIDED.** bot-flows.md's DPR GENERATION spec named section 5 "Tomorrow's
+Plan — engineer's stated plan + dependencies." Scoping migration 024 (evening
+Q4 headcount/productivity + Q5 equipment hours) surfaced a prior gap: no
 evening question — built, deferred, or spec'd — ever asks the engineer what
-tomorrow's plan is.** Evening's six questions (bot-flows.md) cover today's
-work, today's schedule variance, today's headcount/productivity, today's
-equipment, and tomorrow's *dependencies* (Q6) — dependencies are not a plan.
-Nothing captures "stated plan" at all.
+tomorrow's plan is. Evening's six questions cover today's work, today's
+schedule variance, today's headcount/productivity, today's equipment, and
+tomorrow's *dependencies* (Q6) — dependencies are not a plan. Nothing
+captures "stated plan," and this predates migration 024 entirely; it's a gap
+in the original bot-flows.md spec, never surfaced until the evening question
+list was read against the DPR section list side by side.
 
-**This is not the same gap Q6 being out-of-scope creates.** Even once Q6
-ships in full, section 5 would still be half-sourced: dependencies would
-exist, "engineer's stated plan" would not, because no question was ever
-designed to ask for it. This predates migration 024 entirely — it's a gap in
-the ORIGINAL bot-flows.md spec, just never surfaced until someone read the
-evening question list against the DPR section list side by side.
+A first pass at a fix ("60 planned, 40 done, 20 outstanding") turned out to
+overstate what's derivable: **no planned quantity is captured anywhere in the
+real schema.** Morning Q1 is free text (`morning_plan`), never
+quantity-parsed. Evening Q1 captures ACTUAL quantities only. Evening Q2 is
+yes/no, Q3 is free text. A numeric planned-vs-done-vs-outstanding figure is
+not computable from real data — that example came from the spike's fabricated
+input (see `scripts/spike-dpr-claude.mjs`), not from the schema.
 
-**Options, not decided here:**
-- Add a seventh evening question (breaks the six-question ceiling —
-  design-principles.md's Core Thesis names this a "design law, not a
-  preference": "any new capture must replace or piggyback, never append").
-- Fold a plan capture into an existing question (Q6's own follow-up, or a
-  piggyback on Q1) — replace-not-append, per the Core Thesis's own
-  corollary.
-- Source section 5's "plan" half from MORNING instead of evening — morning
-  already asks "plan of action today" (Q1); a DPR generated the same evening
-  could reasonably read tomorrow's plan as "the plan the engineer will state
-  tomorrow morning," which doesn't exist yet at generation time — meaning
-  this option would require either delaying part of section 5's generation
-  or accepting it as forward-looking only for the dependencies half.
-- Ship section 5 as dependencies-only in Spine v1, explicitly narrowing the
-  DPR spec rather than silently under-delivering it — the DPR eval harness
-  (bot-flows.md's own "REQUIRED deliverable" section) would need a golden
-  case asserting this is intentional, not a missed field.
+**Decision: section 5 = Q6's dependencies (once Q6 ships) + qualitative
+carry-forward of the plan-not-met reason from evening Q2/Q3. NO derived
+quantity, no inferred intent.** e.g. "Slab pour incomplete — JCB breakdown,
+vendor callout pending."
 
-**Not resolved here.** Whoever builds the DPR generator (Phase 1) or Q6
-inherits this — read this entry before assuming section 5 is "just Q6's
-output plus a label."
+**A seventh evening question was rejected**, not left open: evening is
+already six messages at the end of a site day, and completion rate is the
+binding constraint on the whole product (design-principles.md's Core
+Thesis — "any new capture must replace or piggyback, never append"). Folding
+a plan capture into an existing question was also rejected for Spine v1 —
+narrowing the DPR spec to what's actually sourced beats quietly
+under-delivering a field that reads as populated.
+
+**Consequence:** section 5 emits "not captured" in every golden case until Q6
+ships — but now with a known target shape (dependencies + qualitative
+carry-forward), not an unresolved question. The DPR eval harness's golden
+case for this must assert the narrowing is intentional, not a missed field.
+
+**UPGRADE PATH, not a task — recorded for whoever next touches the morning
+flow:** parsing a planned quantity out of morning Q1 would do two things at
+once — make section 5 quantitative, AND upgrade section 2 (Schedule vs Plan)
+from qualitative met/not-met to a real numeric variance. That single change
+would most improve the DPR's substance of any option considered here. It is
+morning-flow work, not evening, and not scoped now.
+
+bot-flows.md's section 5 definition is amended to match this decision — see
+its own entry, not restated here.
