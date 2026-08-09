@@ -252,7 +252,14 @@ owner NEVER receives empty content.
 2. Schedule vs Plan — planned vs actual, variance
 3. Manpower Utilisation — headcount, productivity %, idle reasons
 4. Equipment Utilisation — hours per machine, utilisation %, idle cost Rs
-5. Tomorrow's Plan — engineer's stated plan + dependencies
+5. Tomorrow's Plan — Q6's dependencies (once Q6 ships) + qualitative
+   carry-forward of the plan-not-met reason from evening Q2/Q3. NO derived
+   quantity, no inferred intent — no evening question captures a planned
+   quantity for tomorrow, and morning Q1 is free text, never quantity-parsed,
+   so a numeric "planned vs done vs outstanding" figure is not computable from
+   real data. e.g. "Slab pour incomplete — JCB breakdown, vendor callout
+   pending." Emits "not captured" until Q6 ships. Decision + full reasoning:
+   design-decisions-beta-feedback.md §11.
 6. Accountability — MISSING SUBMISSIONS ONLY:
    - Engineer name + morning/evening status + 7-day pattern.
    - Pattern EXCLUDES holiday days (is_holiday=true) AND messaging_blocked

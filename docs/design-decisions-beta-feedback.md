@@ -438,49 +438,170 @@ reachable from a real trigger (today it is reachable only via the env-gated
 test token — see `022_evening_flow_apply_turn.sql`'s header and
 `docs/reviews/022-review-package.md` §9) must decide before shipping.
 
-## 11. DPR section 5 has no source — a PRIOR gap, surfaced while scoping
-evening Q4/Q5 (2026-08-08)
+## 11. DPR section 5 decision — narrowed to what's derivable, no 7th question
+(decided 2026-08-09; opened as an open question 2026-08-08 while scoping
+evening Q4/Q5)
 
-**OPEN PRODUCT QUESTION — not solved here, tracked so it doesn't get
-rediscovered as a surprise when section 5 is actually built.**
-
-bot-flows.md's DPR GENERATION spec names section 5 "Tomorrow's Plan —
-**engineer's stated plan** + dependencies." Migration 024 (evening Q4
-headcount/productivity + Q5 equipment hours) does not touch this — it was
-scoped Q4/Q5 only, Q6 (tomorrow's dependencies) deliberately deferred
-alongside it (see that migration's own header). But scoping Q4/Q5 required
-reading the full evening question list closely enough to notice: **no
+**DECIDED.** bot-flows.md's DPR GENERATION spec named section 5 "Tomorrow's
+Plan — engineer's stated plan + dependencies." Scoping migration 024 (evening
+Q4 headcount/productivity + Q5 equipment hours) surfaced a prior gap: no
 evening question — built, deferred, or spec'd — ever asks the engineer what
-tomorrow's plan is.** Evening's six questions (bot-flows.md) cover today's
-work, today's schedule variance, today's headcount/productivity, today's
-equipment, and tomorrow's *dependencies* (Q6) — dependencies are not a plan.
-Nothing captures "stated plan" at all.
+tomorrow's plan is. Evening's six questions cover today's work, today's
+schedule variance, today's headcount/productivity, today's equipment, and
+tomorrow's *dependencies* (Q6) — dependencies are not a plan. Nothing
+captures "stated plan," and this predates migration 024 entirely; it's a gap
+in the original bot-flows.md spec, never surfaced until the evening question
+list was read against the DPR section list side by side.
 
-**This is not the same gap Q6 being out-of-scope creates.** Even once Q6
-ships in full, section 5 would still be half-sourced: dependencies would
-exist, "engineer's stated plan" would not, because no question was ever
-designed to ask for it. This predates migration 024 entirely — it's a gap in
-the ORIGINAL bot-flows.md spec, just never surfaced until someone read the
-evening question list against the DPR section list side by side.
+A first pass at a fix ("60 planned, 40 done, 20 outstanding") turned out to
+overstate what's derivable: **no planned quantity is captured anywhere in the
+real schema.** Morning Q1 is free text (`morning_plan`), never
+quantity-parsed. Evening Q1 captures ACTUAL quantities only. Evening Q2 is
+yes/no, Q3 is free text. A numeric planned-vs-done-vs-outstanding figure is
+not computable from real data — that example came from the spike's fabricated
+input (see `scripts/spike-dpr-claude.mjs`), not from the schema.
 
-**Options, not decided here:**
-- Add a seventh evening question (breaks the six-question ceiling —
-  design-principles.md's Core Thesis names this a "design law, not a
-  preference": "any new capture must replace or piggyback, never append").
-- Fold a plan capture into an existing question (Q6's own follow-up, or a
-  piggyback on Q1) — replace-not-append, per the Core Thesis's own
-  corollary.
-- Source section 5's "plan" half from MORNING instead of evening — morning
-  already asks "plan of action today" (Q1); a DPR generated the same evening
-  could reasonably read tomorrow's plan as "the plan the engineer will state
-  tomorrow morning," which doesn't exist yet at generation time — meaning
-  this option would require either delaying part of section 5's generation
-  or accepting it as forward-looking only for the dependencies half.
-- Ship section 5 as dependencies-only in Spine v1, explicitly narrowing the
-  DPR spec rather than silently under-delivering it — the DPR eval harness
-  (bot-flows.md's own "REQUIRED deliverable" section) would need a golden
-  case asserting this is intentional, not a missed field.
+**Decision: section 5 = Q6's dependencies (once Q6 ships) + qualitative
+carry-forward of the plan-not-met reason from evening Q2/Q3. NO derived
+quantity, no inferred intent.** e.g. "Slab pour incomplete — JCB breakdown,
+vendor callout pending."
 
-**Not resolved here.** Whoever builds the DPR generator (Phase 1) or Q6
-inherits this — read this entry before assuming section 5 is "just Q6's
-output plus a label."
+**A seventh evening question was rejected**, not left open: evening is
+already six messages at the end of a site day, and completion rate is the
+binding constraint on the whole product (design-principles.md's Core
+Thesis — "any new capture must replace or piggyback, never append"). Folding
+a plan capture into an existing question was also rejected for Spine v1 —
+narrowing the DPR spec to what's actually sourced beats quietly
+under-delivering a field that reads as populated.
+
+**Consequence:** section 5 emits "not captured" in every golden case until Q6
+ships — but now with a known target shape (dependencies + qualitative
+carry-forward), not an unresolved question. The DPR eval harness's golden
+case for this must assert the narrowing is intentional, not a missed field.
+
+**UPGRADE PATH, not a task — recorded for whoever next touches the morning
+flow:** parsing a planned quantity out of morning Q1 would do two things at
+once — make section 5 quantitative, AND upgrade section 2 (Schedule vs Plan)
+from qualitative met/not-met to a real numeric variance. That single change
+would most improve the DPR's substance of any option considered here. It is
+morning-flow work, not evening, and not scoped now.
+
+bot-flows.md's section 5 definition is amended to match this decision — see
+its own entry, not restated here.
+
+## 12. DPR rollup rule — DECIDED: suppress narrowly, not by section
+(decided 2026-08-09; opened as an open question the same day while scoping
+golden case #5)
+
+**DECISION: safe default now, revisit with real data.** `daily_logs` is
+`UNIQUE(project_id, engineer_id, log_date)` — one row per engineer, per day.
+`dprs` is `UNIQUE(project_id, log_date)` — one row per project, per day.
+bot-flows.md's own generation spec says "Aggregate all daily_logs rows for
+the project on that date" — so on any day with more than one engineer, N
+per-engineer rows become ONE DPR, and nothing previously defined the rule
+that turns N rows into one number. This is a GENERATOR-LOGIC decision, not a
+schema change (`CapturedCount`/`CapturedNumber` in lib/dpr/schema.ts are
+untouched) and not a question-rewording (evening Q4's wording is untouched)
+— both stay on the table as later options, not adopted now.
+
+**The rule is narrow suppression, not blanket section-level suppression.** A
+blanket "multi-engineer day → sections 1/3/4 all not_captured" would make
+the DPR worthless every day for any two-engineer project — worse than an
+imprecise number, and unnecessary, because most of a typical day's data
+isn't actually ambiguous. Per section:
+
+- **Execution (§1):** list ALL activities from ALL engineers, with
+  quantities. Suppress the quantity ONLY for an activity reported by more
+  than one engineer — the activity itself still appears. Distinct
+  activities are not ambiguous and are never touched.
+- **Manpower (§3):** suppress the aggregate headcount/productivity
+  UNCONDITIONALLY on any multi-engineer day — this is the one genuinely
+  unresolvable case. The ambiguity lives in the QUESTION ITSELF ("workers on
+  site" doesn't distinguish "my crew" from "the whole site"), so two
+  engineers coincidentally reporting the same number doesn't resolve
+  anything either — there is no per-value comparison that could rescue this
+  one the way §1/§4's overlap check does.
+- **Equipment (§4):** suppress ONLY items whose `type` appears across more
+  than one engineer. Distinct types keep their hours and idle cost
+  untouched — the ambiguity is specifically same-type collision (is
+  engineer A's JCB the same physical machine as engineer B's JCB?), not
+  equipment data in general.
+- **Schedule (§2), Tomorrow's Plan (§5), Accountability (§6):** unaffected.
+  Per-engineer by nature — no rollup, no aggregation, nothing to suppress.
+- **Single-engineer project-days: entirely unaffected.**
+
+**CORRECTION to the framing above (2026-08-09), verified against prod, not
+assumed.** This entry originally said single-engineer-heavy beta usage means
+"this decision costs the DPR nothing in practice today" — imprecise in a way
+worth naming: manpower suppression on a multi-engineer project isn't
+occasional, it's UNCONDITIONAL AND PERMANENT — every day, for the life of
+that project, until the reword ships. Section 3 is one of only two sections
+where the DPR states a number that reads as money-adjacent to a contractor
+(headcount/productivity). A customer with two engineers on one project would
+get a DPR with a permanently blank labour section, not an occasionally
+imprecise one. Whether that's actually a live problem depends entirely on
+whether any project TODAY has more than one active engineer — checked, not
+assumed:
+
+```sql
+SELECT p.id, p.name, count(*) AS engineer_count
+FROM project_members pm
+JOIN projects p ON p.id = pm.project_id
+JOIN users u ON u.id = pm.user_id
+WHERE u.role = 'engineer' AND u.status = 'active'
+GROUP BY p.id, p.name
+HAVING count(*) > 1;
+```
+
+Run against prod (`jvxwqignooseazzmwhvl`) via `supabase db query --linked`,
+2026-08-09: **zero rows.** No project currently has more than one active
+engineer. The deferral is genuinely free today — there is no project this
+decision silently degrades right now. This is a snapshot, not a permanent
+exemption: the moment a second active engineer joins any project's
+`project_members`, that project's manpower section goes permanently
+not_captured under this rule, and the question-reword stops being a
+follow-up and becomes pre-launch work for that specific customer. Re-run
+this query before onboarding any project expected to run two-plus
+engineers, not on a fixed schedule.
+
+**Instrumentation — proposed here, NOT built.** "Revisit with real data"
+produces no data unless something records it. The generator needs to log,
+per DPR, whether suppression fired and which rule triggered it
+(`multi_engineer_manpower` / `same_activity_overlap` / `same_type_equipment`).
+Candidate homes, not chosen:
+  - a JSONB field on `dprs` (e.g. `suppression_log`) — durable, queryable
+    across every DPR ever generated, colocated with the artifact it
+    describes. Leaning here as the default candidate, since answering "how
+    often does this actually fire" is the whole point of deferring the real
+    decision, and that answer needs to be queryable in aggregate later.
+  - a Sentry breadcrumb — cheap, uses monitoring already wired (CLAUDE.md
+    §6), but not natively aggregable the way a DB column is; would need a
+    separate report built on top.
+  - a plain counter (jobs payload or a small dedicated table) — cheapest,
+    but loses the day/project/activity-type detail that a future rewording
+    decision would actually need to read.
+
+**Question-rewording stays on the table — the likely follow-up, not adopted
+now.** Manpower's ambiguity is a QUESTION-DESIGN problem, not an
+aggregation-math one: evening Q4 could ask "workers in YOUR area today"
+instead of "workers on site," eliminating the ambiguity at the source rather
+than suppressing after the fact. This is the natural next move once the
+instrumentation above shows how often multi-engineer manpower suppression
+actually fires in practice — not scoped now, and this decision doesn't
+block it later.
+
+**Built against this rule:** `SuppressionNote` (lib/dpr/schema.ts) — a
+per-item way to say "this fact is not_captured because the rollup rule
+suppressed it, and here's which rule and how many engineers collided"
+(distinct from ordinary not_captured, same reasoning `CapturedCount`'s own
+zero/absent split was built on), attached to `ManpowerFacts` (section-wide,
+unconditional) and per-item to execution quantities and equipment items.
+The "complete two-engineer day" golden case
+(lib/dpr/eval/cases/case-complete-two-engineer-day.ts) is built against it —
+its own headline finding: that case name can no longer mean "all five
+model-touched sections are 'complete'," since manpower is unconditionally
+suppressed the moment a second engineer submits, by design. That case's
+equipment-item aggregate indexing (how two engineers' distinct-type items
+get merged into one list) is marked PROVISIONAL in its own file, not
+promoted here — it sidesteps this section's equipment identity-resolution
+problem for the no-collision case only, and does not answer it.
