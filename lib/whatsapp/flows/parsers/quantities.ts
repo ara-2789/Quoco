@@ -29,6 +29,32 @@ export interface QuantityItem {
   unit: string | null
   /** The chunk exactly as the engineer wrote it. */
   raw: string
+  /**
+   * TRUE when this chunk contained a numeric token beyond the first —
+   * same guard, same root cause, as productivity.ts's own numbers_discarded
+   * (found together, 2026-08-10, sandbox smoke test): "Poured 40 cum M25
+   * slab level3" drops the 25 from "M25" and the 3 from "level3" via the
+   * identical `if (quantity === null) { ... } else { continue }` shape.
+   * NOT YET surfaced as a stored confidence field — evening_output_
+   * quantities has no confidence concept at all today, unlike
+   * evening_productive_manpower / evening_equipment_utilisation (024).
+   * The whole QuantitiesParse is stored verbatim in daily_logs, so this
+   * flag DOES persist to the DB, but nothing renders or reasons about it
+   * yet. Recorded as the same class of gap CLAUDE.md §10's PARSER DEBT
+   * entry already tracks, not solved here.
+   *
+   * LATENT SHAPE MISMATCH (flagged 2026-08-10, not fixed): this field is
+   * declared required on QuantityItem, but every evening_output_quantities
+   * row written BEFORE this change landed has no such key in its stored
+   * JSONB at all — TypeScript's static shape says the field always exists;
+   * the real data underneath a row written yesterday says otherwise. No
+   * consumer reads this column today (lib/dpr/ has zero references to
+   * quantities as of this note), so nothing is broken yet — but the first
+   * reader that trusts the type over the data will get `undefined` where
+   * the type promises `boolean`. Whoever builds that reader needs to know
+   * this field's presence is generation-dependent, not universal.
+   */
+  numbers_discarded: boolean
 }
 
 export interface QuantitiesParse {
@@ -68,6 +94,7 @@ function parseChunk(chunk: string): QuantityItem | null {
   let quantity: number | null = null
   let unit: string | null = null
   const activityWords: string[] = []
+  let numbers_discarded = false
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]
@@ -75,7 +102,8 @@ function parseChunk(chunk: string): QuantityItem | null {
 
     if (/^\d+$/.test(t) && next !== undefined && ORDINAL_SUFFIXES.has(next)) {
       // "2" + "nd" -> one activity word "2nd"; the suffix token is consumed
-      // here so the outer loop never reprocesses it as its own token.
+      // here so the outer loop never reprocesses it as its own token. Not a
+      // discard: the digit is meaningfully used, just as text not quantity.
       activityWords.push(t + next)
       i++
       continue
@@ -83,8 +111,16 @@ function parseChunk(chunk: string): QuantityItem | null {
 
     if (/^\d+(\.\d+)?$/.test(t)) {
       // First number in the chunk is the quantity. Decimals are real on site
-      // ("12.5 cum"), so they parse rather than truncating.
-      if (quantity === null) quantity = parseFloat(t)
+      // ("12.5 cum"), so they parse rather than truncating. Every number
+      // after the first is DISCARDED — dropped silently before this guard,
+      // now flagged. This is what turned "M25" into a bare unit-alias
+      // collision ("m") plus a vanished "25" — see numbers_discarded's own
+      // doc comment above.
+      if (quantity === null) {
+        quantity = parseFloat(t)
+      } else {
+        numbers_discarded = true
+      }
       continue
     }
 
@@ -102,6 +138,7 @@ function parseChunk(chunk: string): QuantityItem | null {
   return {
     activity: activityWords.length > 0 ? activityWords.join(' ') : null,
     quantity,
+    numbers_discarded,
     unit,
     raw: chunk.trim(),
   }

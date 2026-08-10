@@ -101,6 +101,33 @@ import {
 //             does not retroactively change an already-completed evening.
 //   T-024-15  wrong_flow still reported correctly from every new step
 //             (morning active, evening inbound arrives while at step 4/5/6)
+//   T-024-25  THE ACTUAL INCIDENT (2026-08-10 sandbox smoke test): "15
+//             productive, 3 idle waiting for material" against headcount 18
+//             — productive/idle NOT inverted, confidence=high (both stated,
+//             sum to headcount)
+//   T-024-26  both counts stated but contradict headcount (10+3≠18) —
+//             invalidated to NULL/NULL, confidence=low, never a tiebreak
+//   T-024-27  productive-only ("18 productive"), no idle number — derived
+//             the mirror direction (idle_count=0), confidence=high
+//   T-024-28  THE GENERAL GUARD: a discarded number ("5" in "5 10 idle")
+//             downgrades confidence even though idle_count(10) resolves
+//             cleanly via the anchor — the guard fires independent of
+//             whether the specific dropped number happened to matter
+//   T-024-29  two numbers, NEITHER anchored ("15, 3 waiting for material")
+//             — genuinely ambiguous, accepted (not a reask loop) and
+//             flagged low-confidence, never a positional guess
+//   T-024-30  DEFECT 1 (design review, before 025 was ever committed): a
+//             YES_WORD ("ok") must not mask a stated idle count —
+//             "ok, 2 idle waiting for cement" used to hit the all-
+//             productive early return and discard the real count entirely
+//   T-024-31  DEFECT 2: a stated productive count exceeding headcount
+//             ("20 productive" against 18) is invalidated, never clamped
+//             to a confident 111%-utilisation reading
+//   T-024-32  DEFECT 3: a stated productive count with UNKNOWN headcount
+//             (step 4's own budget exhausted first) is not silently
+//             dropped — confidence reflects the loss even though the
+//             number itself still can't be stored without a headcount to
+//             check it against
 
 const P_NOW = '2026-04-10T19:00:00+05:30' // 19:00 IST, 10 Apr — evening check-in time
 const LOG_DATE = '2026-04-10'
@@ -595,5 +622,169 @@ describe('apply_evening_flow_turn Pass 2 (Q4 headcount/productivity, Q5 equipmen
     // reports wrong_flow (evening is active), the direction that matters here.
     const r = await applyMorningFlowTurn({ phone, message: 'anything', startFlow: false, now: P_NOW })
     expect(r.outcome).toBe('wrong_flow')
+  })
+
+  // T-024-25 through T-024-29 — the 2026-08-10 sandbox smoke test incident
+  // and its fix. See productivity.ts's own SEVERE BUG note for the full
+  // trace; these confirm the same behaviour at the RPC level, not just the
+  // pure parser.
+
+  it('T-024-25: THE ACTUAL INCIDENT — "15 productive, 3 idle waiting for material" against headcount 18, NOT inverted', async () => {
+    const phone = testPhone('425')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+    await applyEveningFlowTurn({ phone, message: '18', startFlow: false, now: P_NOW })
+
+    const r = await applyEveningFlowTurn({
+      phone,
+      message: '15 productive, 3 idle waiting for material',
+      startFlow: false,
+      now: P_NOW,
+    })
+    expect(r.outcome).toBe('advance')
+
+    const log = await getDailyLog(LOG_DATE)
+    const manpower = log?.evening_productive_manpower
+    expect(manpower?.productive_count).toBe(15)
+    expect(manpower?.idle_count).toBe(3)
+    expect(manpower?.idle_reason).toBe('waiting for material')
+    expect(manpower?.confidence).toBe('high') // both numbers stated AND they sum to headcount
+  })
+
+  it('T-024-26: both counts stated but CONTRADICT headcount — invalidated, never a tiebreak', async () => {
+    const phone = testPhone('426')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+    await applyEveningFlowTurn({ phone, message: '18', startFlow: false, now: P_NOW })
+
+    // 10 + 3 = 13, not 18 — a real contradiction, not noise.
+    const r = await applyEveningFlowTurn({ phone, message: '10 productive, 3 idle', startFlow: false, now: P_NOW })
+    expect(r.outcome).toBe('advance')
+
+    const log = await getDailyLog(LOG_DATE)
+    const manpower = log?.evening_productive_manpower
+    expect(manpower?.productive_count).toBeNull()
+    expect(manpower?.idle_count).toBeNull()
+    expect(manpower?.confidence).toBe('low')
+  })
+
+  it('T-024-27: productive-only ("18 productive"), no idle number — derived the mirror direction', async () => {
+    const phone = testPhone('427')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+    await applyEveningFlowTurn({ phone, message: '18', startFlow: false, now: P_NOW })
+
+    const r = await applyEveningFlowTurn({ phone, message: '18 productive', startFlow: false, now: P_NOW })
+    expect(r.outcome).toBe('advance')
+
+    const log = await getDailyLog(LOG_DATE)
+    const manpower = log?.evening_productive_manpower
+    expect(manpower?.productive_count).toBe(18)
+    expect(manpower?.idle_count).toBe(0)
+    expect(manpower?.confidence).toBe('high')
+  })
+
+  it('T-024-28: THE GENERAL GUARD — a discarded number downgrades confidence even when idle_count otherwise resolves cleanly', async () => {
+    const phone = testPhone('428')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+    await applyEveningFlowTurn({ phone, message: '15', startFlow: false, now: P_NOW })
+
+    // "10 idle" resolves via the anchor; "5" has no anchor and is
+    // discarded. idle_count still comes out non-null (10) — confidence
+    // must go low anyway, precisely because a number was seen and dropped.
+    const r = await applyEveningFlowTurn({ phone, message: '5 10 idle', startFlow: false, now: P_NOW })
+    expect(r.outcome).toBe('advance')
+
+    const log = await getDailyLog(LOG_DATE)
+    const manpower = log?.evening_productive_manpower
+    expect(manpower?.idle_count).toBe(10)
+    expect(manpower?.confidence).toBe('low')
+  })
+
+  it('T-024-29: two numbers, NEITHER anchored — genuinely ambiguous, accepted and flagged, never guessed', async () => {
+    const phone = testPhone('429')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+    await applyEveningFlowTurn({ phone, message: '18', startFlow: false, now: P_NOW })
+
+    const r = await applyEveningFlowTurn({ phone, message: '15, 3 waiting for material', startFlow: false, now: P_NOW })
+    expect(r.outcome).toBe('advance') // accepted, not a reask loop — see isProductivityAnswered's own note
+
+    const log = await getDailyLog(LOG_DATE)
+    const manpower = log?.evening_productive_manpower
+    expect(manpower?.productive_count).toBeNull()
+    expect(manpower?.idle_count).toBeNull()
+    expect(manpower?.confidence).toBe('low')
+  })
+
+  // T-024-30 through T-024-32 — three more defects found in design review
+  // of 025's first draft, BEFORE it was ever committed, pushed, or applied
+  // to prod. Fixed in place (amended 025, not a 026) — see that migration's
+  // own header for the full incident-by-incident record.
+
+  it('T-024-30: DEFECT 1 — a YES_WORD ("ok") must not mask a stated idle count', async () => {
+    const phone = testPhone('430')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+    await applyEveningFlowTurn({ phone, message: '18', startFlow: false, now: P_NOW })
+
+    // Pre-fix: classifyYesNo saw "ok" (a YES_WORD, no NO_WORD present,
+    // 'idle' is not a NO_WORD either) and hit the all-productive early
+    // return — the real "2 idle" was never even reached, let alone parsed.
+    const r = await applyEveningFlowTurn({ phone, message: 'ok, 2 idle waiting for cement', startFlow: false, now: P_NOW })
+    expect(r.outcome).toBe('advance')
+
+    const log = await getDailyLog(LOG_DATE)
+    const manpower = log?.evening_productive_manpower
+    expect(manpower?.idle_count).toBe(2)
+    expect(manpower?.productive_count).toBe(16) // 18 - 2, derived normally — headcount known, nothing discarded
+    expect(manpower?.idle_reason).toBe('waiting for cement')
+    expect(manpower?.confidence).toBe('high')
+  })
+
+  it('T-024-31: DEFECT 2 — a productive count exceeding headcount is invalidated, never clamped', async () => {
+    const phone = testPhone('431')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+    await applyEveningFlowTurn({ phone, message: '18', startFlow: false, now: P_NOW })
+
+    // Pre-fix: idleCount = Math.max(18 - 20, 0) = 0, productiveCount = 20 —
+    // 111% utilisation, confidence='high', no guard at all on this direction.
+    const r = await applyEveningFlowTurn({ phone, message: '20 productive', startFlow: false, now: P_NOW })
+    expect(r.outcome).toBe('advance')
+
+    const log = await getDailyLog(LOG_DATE)
+    const manpower = log?.evening_productive_manpower
+    expect(manpower?.idle_count).toBeNull()
+    expect(manpower?.productive_count).toBeNull()
+    expect(manpower?.confidence).toBe('low')
+  })
+
+  it('T-024-32: DEFECT 3 — a stated productive count with unknown headcount is not silently dropped', async () => {
+    const phone = testPhone('432')
+    await completeMorningNoEquipment(phone, P_NOW)
+    await reachStep4(phone, P_NOW)
+
+    // Exhaust step 4's OWN budget on unparseable headcount answers — same
+    // technique as T-024-22 — so e4_headcount is never set (v_headcount
+    // stays NULL going into step 5).
+    const reask4 = await applyEveningFlowTurn({ phone, message: 'some workers', startFlow: false, now: P_NOW })
+    expect(reask4.outcome).toBe('reask')
+    const advance4 = await applyEveningFlowTurn({ phone, message: 'still no number', startFlow: false, now: P_NOW })
+    expect(advance4.outcome).toBe('advance')
+
+    // Step 5's own parse is clean and DOES anchor a productive count — the
+    // productive-only ELSIF cannot fire (headcount unknown), so pre-fix
+    // this branch dropped v_productive_count_stated with no record of it
+    // anywhere.
+    const r = await applyEveningFlowTurn({ phone, message: '15 productive', startFlow: false, now: P_NOW })
+    expect(r.outcome).toBe('advance')
+
+    const log = await getDailyLog(LOG_DATE)
+    const manpower = log?.evening_productive_manpower
+    expect(manpower?.productive_count).toBeNull() // correctly not fabricated without a headcount to check it against
+    expect(manpower?.idle_count).toBeNull()
+    expect(manpower?.confidence).toBe('low')
   })
 })

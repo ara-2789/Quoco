@@ -232,8 +232,11 @@ export type EveningDailyLogWrite = Partial<{
     // stored shape (024_evening_flow_q4_q5.sql), which never stores
     // all_productive at all. Found as a real shape mismatch while fixing the
     // two CONFIDENCE FLAG bugs below, corrected here rather than left.
-    productive_count: number | null // null when headcount OR idle_count is null — never fabricated
-    idle_count: number | null // null means genuinely unknown, never defaulted to 0
+    productive_count: number | null // null when headcount OR idle_count is null, OR when a
+    // stated productive_count contradicted a stated idle_count (they don't
+    // sum to headcount) — invalidated, never a tiebreak (2026-08-10)
+    idle_count: number | null // null means genuinely unknown, never defaulted to 0 — same
+    // contradiction case invalidates this too, together with productive_count
     idle_reason: string | null
     raw_text: string
     confidence: 'high' | 'low'
@@ -538,8 +541,85 @@ export function dispatchEveningFlow(
           confidence = 'low'
         }
 
-        const productiveCount =
-          headcount === null || idleCount === null ? null : Math.max(headcount - idleCount, 0)
+        // RECONCILIATION, added 2026-08-10 (sandbox smoke test — see
+        // productivity.ts's own SEVERE BUG note for the full incident).
+        // parse.productive_count is populated only when the engineer's
+        // reply anchored a number to the word "productive" ("15
+        // productive, 3 idle") — the common idle-only case leaves it null
+        // and falls straight to the pre-existing derivation below,
+        // unchanged. When it IS present:
+        //   - idle also known, and they SUM TO HEADCOUNT: real
+        //     confirmation, stronger than derivation — use both as parsed
+        //     rather than re-deriving over them.
+        //   - idle also known, but they DON'T sum to headcount: a genuine
+        //     contradiction. Neither number is trustworthy alone — not a
+        //     tiebreak, same posture as the idle>headcount guard just
+        //     above: invalidate both, never silently pick one.
+        //   - idle NOT known (productive-only, e.g. "18 productive"):
+        //     derive idle the other direction, the mirror of the
+        //     idle-only case this file already handled.
+        let productiveCount: number | null
+        if (idleCount !== null && parse.productive_count !== null && headcount !== null) {
+          if (idleCount + parse.productive_count === headcount) {
+            productiveCount = parse.productive_count
+          } else {
+            idleCount = null
+            productiveCount = null
+            confidence = 'low'
+          }
+        } else if (idleCount === null && parse.productive_count !== null && headcount !== null) {
+          // DEFECT 2 — the mirror of the idle>headcount guard above had no
+          // equivalent: headcount 18, "20 productive" produced idle=0,
+          // productive=20 at confidence 'high' with no check at all. Same
+          // posture as that guard — invalidate, never clamp into a
+          // confident reading a real headcount could not support.
+          if (parse.productive_count > headcount) {
+            idleCount = null
+            productiveCount = null
+            confidence = 'low'
+          } else {
+            idleCount = Math.max(headcount - parse.productive_count, 0)
+            productiveCount = parse.productive_count
+          }
+        } else {
+          productiveCount = headcount === null || idleCount === null ? null : Math.max(headcount - idleCount, 0)
+          // DEFECT 3 — CORRECTED 2026-08-10, same day as the original fix:
+          // the comment this replaces claimed this branch "flags, doesn't
+          // lose silently" — false, and worth naming precisely rather than
+          // leaving misdescribed (this project has been bitten before by a
+          // comment misstating whether a guard was load-bearing). The
+          // number IS still lost: when headcount is unknown AND the parser
+          // anchored a productive count ("15 productive" with no headcount
+          // to check it against), the productive-only ELSIF above cannot
+          // fire (it requires headcount !== null), so this branch runs and
+          // parse.productive_count is never written anywhere — this `if`
+          // sets confidence, nothing more, and does NOT recover the number.
+          // ACCEPTED, not fixed: with headcount unknown there is no
+          // utilisation figure to render regardless of which number
+          // survives, so dropping the bare count to not_captured is the
+          // honest outcome, not a compromise. And on the CURRENT confidence
+          // formula (`answered && headcount !== null ? 'high' : 'low'`,
+          // just above) headcount===null ALREADY forces 'low' before this
+          // `if` ever runs — so today this is a no-op, redundant with that
+          // formula, not an independent fix. Kept anyway as an explicit
+          // guard for the day that formula's headcount-null condition is
+          // ever narrowed or removed — at which point this stops being
+          // redundant and starts being the only thing catching this case.
+          if (headcount === null && parse.productive_count !== null) {
+            confidence = 'low'
+          }
+        }
+
+        // THE GENERAL GUARD — a numeric token the parser saw and could not
+        // place is itself a reason not to trust this answer, independent
+        // of whether idleCount/productiveCount still came out non-null
+        // from OTHER tokens in the same message. See productivity.ts's own
+        // THE GENERAL GUARD note for why this matters more than the
+        // reconciliation above: it protects against phrasings nobody has
+        // written yet, not just the one this incident found.
+        if (parse.numbers_discarded) {
+          confidence = 'low'
+        }
 
         const productiveManpower: EveningDailyLogWrite['evening_productive_manpower'] = {
           productive_count: productiveCount,
