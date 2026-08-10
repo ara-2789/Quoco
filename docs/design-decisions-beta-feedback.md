@@ -526,9 +526,54 @@ isn't actually ambiguous. Per section:
   untouched — the ambiguity is specifically same-type collision (is
   engineer A's JCB the same physical machine as engineer B's JCB?), not
   equipment data in general.
-- **Schedule (§2), Tomorrow's Plan (§5), Accountability (§6):** unaffected.
-  Per-engineer by nature — no rollup, no aggregation, nothing to suppress.
+- **Schedule (§2):** suppress UNCONDITIONALLY on any multi-engineer day —
+  same rule, same reason as manpower. **CORRECTED 2026-08-10** — this bullet
+  originally listed §2 alongside §5/§6 as "unaffected." Wrong; see the
+  dated correction immediately below for why.
+- **Tomorrow's Plan (§5), Accountability (§6):** unaffected. Per-engineer by
+  nature — no rollup, no aggregation, nothing to suppress.
 - **Single-engineer project-days: entirely unaffected.**
+
+**CORRECTION (2026-08-10) — §2 was miscategorized as unaffected; my own
+error, caught while building the fact assembler (lib/dpr/assemble.ts), not
+by anyone else.** The original bullet grouped Schedule with Tomorrow's Plan
+and Accountability under "per-engineer by nature — no rollup, no
+aggregation, nothing to suppress." That reasoning is correct for §5/§6 but
+does NOT hold for §2: `evening_schedule_met` is exactly as per-engineer as
+`evening_workers_on_site` is — one boolean per engineer, one field
+(`ScheduleFacts.schedule_met`) to hold it for the whole project-day. On a
+multi-engineer day, two engineers' booleans face the identical problem two
+engineers' headcounts do: there is no way to collapse them into one value
+without silently discarding one engineer's answer, REGARDLESS of whether
+the two answers happen to agree — a coincidental match doesn't make the
+collapse safe, any more than it does for manpower.
+
+**Fixed:** §2 now suppresses unconditionally on any multi-engineer day,
+exactly like §3, via the same `SuppressionNote` mechanism —
+`ScheduleFacts.schedule_met` goes `null` accompanied by
+`suppressed: {reason: 'multi_engineer_schedule', engineer_count}`, never a
+silent, unlabelled `null` that would collapse "two engineers, two different
+true answers" into the same shape as "nobody reported." That collapse is
+exactly the distinction `CapturedCount` already makes for zero-vs-absent,
+`SuppressionNote` for suppressed-vs-absent, and `low_confidence` for
+shaky-vs-solid — §2 doesn't get to be the one place it's allowed, least of
+all silently.
+
+**Reason named `multi_engineer_schedule`, deliberately NOT a
+`disagreement`-flavored name.** Q2 asks whether THAT ENGINEER's own plan
+(following their own Q1) was met. Two engineers answering differently are
+stating two SEPARATE facts about two separate areas of the same project —
+not contradicting each other. Naming the reason around "disagreement" would
+have encoded that misreading into the type permanently, for every future
+reader of the enum, not just this correction's author.
+
+**Recorded, not built:** once a multi-engineer project actually exists,
+§2 should report something like "1 of 2 engineers met today's plan" — true,
+useful, discards nothing. Suppression is the INTERIM answer only because
+this whole rollup rule defers the real shape until the case occurs (the
+prod query earlier in this section found zero multi-engineer projects
+today) — not a statement that suppression is the right permanent design for
+schedule data.
 
 **CORRECTION to the framing above (2026-08-09), verified against prod, not
 assumed.** This entry originally said single-engineer-heavy beta usage means
@@ -580,6 +625,17 @@ Candidate homes, not chosen:
   - a plain counter (jobs payload or a small dedicated table) — cheapest,
     but loses the day/project/activity-type detail that a future rewording
     decision would actually need to read.
+
+**UPDATE (2026-08-10) — the fact assembler (lib/dpr/assemble.ts) needed no
+extra bookkeeping to support this.** Every suppression `mergeDprFacts`
+applies is already carried in the returned `DprFacts` as a `SuppressionNote`
+on the relevant Fact — the assembler doesn't separately log anything itself.
+Writing those notes into a durable `dprs.suppression_log` (the JSONB
+candidate above) is still deferred: it needs a migration, which is planned
+but deliberately not written yet — the assembler was kept reviewable on its
+own first. Whoever adds that migration reads the `SuppressionNote`s already
+present on a generated `DprFacts` object; no new signal needs to be
+invented.
 
 **Question-rewording stays on the table — the likely follow-up, not adopted
 now.** Manpower's ambiguity is a QUESTION-DESIGN problem, not an

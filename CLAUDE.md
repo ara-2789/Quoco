@@ -909,6 +909,64 @@ complete pre/post-apply evidence).
   (design-decisions-beta-feedback.md §10, DECIDE-BEFORE-CRON-PR) — whoever
   builds that wiring inherits both.
 
+019's CORRECTABLE-COLUMN SET DOESN'T COVER WHAT IT NEEDS TO — TWO INSTANCES
+(opened 2026-08-10, tracked, NOT fixed; surfaced while planning the DPR fact
+assembler, lib/dpr/assemble.ts). Migration 019 made `daily_log_edits` the
+source of truth for 9 SCALAR `daily_logs` columns; the 8 JSONB columns were
+deliberately excluded ("a different UI problem, deferred pass" — schema.md's
+daily_log_edits entry). That exclusion now has two concrete costs, not just
+a UI gap:
+  * The confidence:'low' flag (024, evening_productive_manpower / evening_
+    equipment_utilisation — see lib/dpr/schema.ts's low_confidence field and
+    the OPTION C reasoning next to it) lives entirely inside the excluded
+    JSONB. A PM reading a low-confidence DPR figure has NO way to correct
+    it — the flag points at something unactionable. An unactionable flag is
+    worse than no flag: it tells the PM something is wrong without giving
+    them a path to fix it.
+  * Section 1 has the same shape, sharper: `evening_output` (the free-text
+    narrative) IS correctable but feeds no DprFacts field today;
+    `evening_output_quantities` (what the DPR actually shows) is NOT
+    correctable. A PM who spots a wrong quantity in a generated report has
+    no way to fix it at all — not even the indirect "the flag exists but
+    can't be acted on" of the first instance; there's no flag either, just
+    a wrong number with no correction path.
+  Both belong against 019's correctable-column set, not against the
+  assembler that surfaced them — recorded here, not solved. Do NOT add a
+  field like `execution_narrative_source` to paper over the second instance
+  without addressing the underlying JSONB-correctability gap; that would
+  hide the problem behind a new Fact field while leaving the actual
+  correction path (or lack of one) untouched.
+
+REGENERATION-ON-CORRECTION DOES NOT EXIST (opened 2026-08-10, tracked, NOT
+fixed; same origin as the entry above). bot-flows.md's "Late data before
+9 PM owner send" section covers new SUBMISSIONS arriving before delivery
+(silent UPSERT regen) — it says nothing about a PM CORRECTION arriving at
+any time, before or after generation, and nothing in the codebase re-
+triggers generation off a `daily_log_edits` write. State the consequence
+precisely, because it is worse than it first sounds: this is not merely a
+missed 9 PM send. A correction made AFTER a DPR has already generated (and
+especially after it has already been delivered to the owner) leaves the
+ARCHIVED DPR permanently wrong while `daily_logs`/`daily_log_edits` — the
+actual source of truth — are right. A late send is a timing problem; this
+is a standing discrepancy between the record a PM believes is correct and
+the record an owner already received, with nothing watching for it. Whoever
+wires cron/webhook-triggered regeneration (already tracked as OPEN against
+migration 022, above) inherits this too — it is a third thing that trigger
+needs to account for, not just new submissions and the existing late-data
+path.
+  FORWARD NOTE, added 2026-08-10: lib/dpr/assemble.ts's parseCorrectedBoolean
+  / parseCorrectedInteger throw when a daily_log_edits.new_value's runtime
+  type doesn't match its column — deliberately. Throwing means no DPR gets
+  generated, which is VISIBLE and gets investigated; silently skipping a
+  malformed correction would mean the owner reads a pre-correction number
+  with nothing to flag it, which is invisible and wrong. That posture is
+  correct today, where assemble.ts has no caller to catch anything. Once the
+  `dpr_generate` job handler exists, this throw MUST land in DPR-24's
+  failed-delivery path (delivery_status='failed', Sentry alert, PM + founder
+  notified — bot-flows.md's own Failed delivery section), not crash a cron
+  invocation silently. A fourth thing the dispatch/regeneration layer needs
+  to account for, alongside the three above.
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
