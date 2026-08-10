@@ -750,3 +750,37 @@ and compliance problem — Meta throttles messaging limits based on quality
 rating, and repeated sends to an opted-out number degrades that rating for
 the WHOLE product, not this feature. Tracked in CLAUDE.md §10, next to the
 Twilio production-sender work it blocks, not in this document.
+
+## 14. Does Q5 need to ask for available hours at all?
+(recorded 2026-08-10, NOT decided — surfaced while revising Q5's prompt
+wording ahead of the evening-flow sandbox smoke test, deliberately not
+acted on now)
+
+**The question, as raised, not resolved:** for a hired machine on an
+ordinary day, "hours available" is usually just the working day and rarely
+varies — the engineer is being asked to state something close to a
+constant, machine after machine, every evening. Q5 is already the longest
+question in the flow (per-machine, two numbers plus an optional reason);
+asking for a number that's rarely informative doubles the typing for
+comparatively little signal. If `available_hours` defaulted to a standard
+value (the working day) and Q5 only asked for `actual_hours` (+ idle reason
+when it's short), that would roughly halve the question's burden.
+
+**Why this isn't decided here:** completion rate is the constraint
+everything else in this flow bends around (§11's section-5 decision, the
+six-question ceiling in design-principles.md's Core Thesis) — cutting Q5's
+burden is exactly the kind of change that constraint should drive. But a
+default has real failure modes this entry doesn't work through: a machine
+that DIDN'T get the full working day (arrived late, broke down mid-morning,
+was reassigned) would have its `available_hours` silently wrong unless the
+engineer remembers to override it, and idle-cost arithmetic
+(`lib/dpr/idle-cost.ts`) is exactly the currency-figure computation this
+whole design has been careful not to feed a wrong number into. Whether a
+default is safe enough to ship, what the default value should be, and
+whether/how an engineer overrides it, are real product questions, not
+implementation details — not decided by this entry.
+
+**When to decide:** before the Twilio production sender clears, not now —
+changing Q5's shape is exactly the kind of thing that should happen once,
+deliberately, not be revised again right after real engineers have started
+answering it under the current shape.
