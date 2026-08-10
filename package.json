@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
     "dev": "next dev",
     "check:profile-lookups": "node scripts/check-profile-lookups.mjs",
     "lint:migrations": "node scripts/lint-migrations.mjs",
