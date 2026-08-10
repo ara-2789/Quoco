@@ -102,6 +102,29 @@
 --     the productive count anyway with headcount left not_captured — honest,
 --     but adds a section-5 render case nothing downstream handles today;
 --     low confidence + not_captured is the smaller correct change.
+--   [DATED CORRECTION, 2026-08-10, same day as the paragraph above — caught
+--   independently during verification, not by this file's own author. The
+--   paragraph above gets TWO claims wrong; both are worth naming precisely
+--   rather than silently edited away, since this header is what a future
+--   reader hits FIRST, before the inline comment 300+ lines below it that
+--   already carries the corrected version.
+--     (a) "at whatever confidence the turn already had (usually 'high')" is
+--     FALSE. CONFIDENCE FLAG FIX 1, earlier in this same function (and its
+--     mirror in evening.ts), already forces confidence to 'low' whenever
+--     headcount IS NULL — unconditionally, before step 5's own logic even
+--     runs. In the exact scenario this defect describes, confidence was
+--     ALREADY 'low', always, never "usually high."
+--     (b) "worth fixing, not accepting. Fixed:" is the OPPOSITE of what the
+--     code actually does. The guard sets confidence, nothing more — it does
+--     NOT recover the stated productive number, which is still never
+--     written anywhere in that branch. The number loss is ACCEPTED, not
+--     fixed: with headcount unknown there is no utilisation figure to
+--     render regardless of which number survives, so dropping the bare
+--     count to not_captured is the honest outcome, not a compromise still
+--     owed. Search this file for "DEFECT 3 — CORRECTED" for the full,
+--     already-corrected reasoning at the guard itself — this note exists so
+--     a reader who stops at the header doesn't carry the wrong claim past
+--     it.]
 -- Every amendment above is IDEMPOTENT with THE GENERAL GUARD that follows
 -- it — each only ever sets confidence to 'low', never contradicts a 'low'
 -- already set by another guard.
