@@ -34,12 +34,49 @@ export type CapturedCountStatus = 'reported' | 'zero' | 'not_captured'
 export interface CapturedCount {
   status: CapturedCountStatus
   value: number | null // integer; null iff status !== 'reported'
+  // DECIDED 2026-08-10, while planning the fact assembler — OPTION C of
+  // three considered for 024's confidence:'low' signal (evening_
+  // productive_manpower / evening_equipment_utilisation, set when Rule
+  // 3.5's reask budget was exhausted and the answer accepted anyway).
+  //   A — map to status: 'not_captured'. Rejected: throws away a value
+  //     that's probably fine (a low-confidence 45 is still likely ~45),
+  //     and the loss is PERMANENT with no path back — daily_log_edits'
+  //     019 correctable-column set excludes the JSONB columns this signal
+  //     lives in, so a PM can never fix it. Worse: it makes an engineer
+  //     who answered twice (past the reask budget) indistinguishable from
+  //     one who never replied at all — the same fairness problem §12's
+  //     SuppressionNote exists to prevent, recreated here.
+  //   B — pass through as 'reported', drop the bit. Rejected: discards the
+  //     doubt instead of the value — the second, more final loss of the
+  //     one signal Rule 3.5 promises ("flag for low-confidence PM
+  //     review") but that nothing downstream has ever implemented
+  //     (CLAUDE.md §10's PARSER DEBT entry). Losing it here closes that
+  //     off for good, at the last layer before the owner sees the number.
+  //   C (chosen) — carry both: keep status/value as the parser reported
+  //     them, add this field as a THIRD, additive signal. Not a new
+  //     concept — the same pattern CapturedCount already uses twice
+  //     (status itself splits zero from absent; SuppressionNote splits
+  //     suppressed from absent) applied a third time: reported-but-doubted
+  //     is a different fact from reported-cleanly or not_captured, so it
+  //     gets its own signal instead of collapsing into one of the other
+  //     two. PAYOFF: a section carrying a low-confidence fact can honestly
+  //     declare data_status 'partial' rather than either extreme, and this
+  //     is the FIRST actual implementation of Rule 3.5's flag-for-PM-
+  //     review promise, not another entry tracking that it doesn't exist.
+  //     Two real follow-up gaps this surfaces, recorded (not solved) in
+  //     CLAUDE.md §10 rather than here: the flag currently points at data
+  //     the 019 correctable-column set has no path to fix, and the same
+  //     shape recurs sharper in section 1 (evening_output_quantities).
+  low_confidence?: true
 }
 
 export type CapturedNumberStatus = 'reported' | 'not_captured'
 export interface CapturedNumber {
   status: CapturedNumberStatus
   value: number | null // decimal (hours, Rs); null iff status !== 'reported'
+  low_confidence?: true // see CapturedCount's low_confidence for the full
+  // reasoning — same field, same decision, applies here for
+  // evening_equipment_utilisation's hours (available_hours/actual_hours).
 }
 
 // A section/item is 'not_captured' for one of two DIFFERENT reasons, and
@@ -49,7 +86,11 @@ export interface CapturedNumber {
 // daily_logs is per-engineer, dprs is per-project — see
 // docs/design-decisions-beta-feedback.md §12). SuppressionNote is present
 // only in the second case.
-export type SuppressionReason = 'multi_engineer_manpower' | 'same_activity_overlap' | 'same_type_equipment'
+export type SuppressionReason =
+  | 'multi_engineer_manpower'
+  | 'same_activity_overlap'
+  | 'same_type_equipment'
+  | 'multi_engineer_schedule'
 export interface SuppressionNote {
   reason: SuppressionReason
   engineer_count: number // how many engineers' reports collided — what makes
@@ -81,9 +122,45 @@ export interface ExecutionOutputFacts {
 }
 
 export interface ScheduleFacts {
-  schedule_met: boolean | null // daily_logs.evening_schedule_met; null = not captured.
+  schedule_met: boolean | null // daily_logs.evening_schedule_met. null means
+  // one of TWO DIFFERENT things, same distinction CapturedCount already
+  // makes for zero vs absent: nobody answered, OR — see `suppressed` below
+  // — more than one engineer answered and the rollup rule withheld a
+  // single value. These must not collapse into the same unlabelled null.
   // No planned QUANTITY exists anywhere in the schema (§11's correction) —
   // this section has never had real arithmetic to guard against.
+  //
+  // CORRECTED 2026-08-10 (my own error, §12's original text): this section
+  // was first written up as "unaffected" by the §12 rollup rule, on the
+  // reasoning that schedule/tomorrow's-plan/accountability are "per-
+  // engineer by nature." That reasoning doesn't hold here — schedule_met
+  // is exactly as per-engineer as headcount is (one boolean per engineer,
+  // one field to hold it), and suppresses the same way manpower does.
+  // §12 in design-decisions-beta-feedback.md carries the dated correction;
+  // this is where the actual behavior lives.
+  //
+  // Present whenever MORE THAN ONE engineer submitted for this project-day
+  // — UNCONDITIONALLY, matching manpower's own rule and for the same
+  // reason: even two engineers who happen to both answer 'true' can't be
+  // safely collapsed into one boolean without losing which engineer said
+  // what. Passing through only when engineers happen to agree would make
+  // behavior depend on the data's CONTENT rather than its shape — the same
+  // kind of accidental, undocumented mapping this whole low_confidence/
+  // SuppressionNote effort exists to rule out.
+  //
+  // WHY `multi_engineer_schedule`, NEVER a disagreement-flavored reason:
+  // Q2 asks whether THAT ENGINEER's own plan (following their own Q1) was
+  // met. Two engineers answering differently are stating two SEPARATE
+  // facts about two separate areas of the same project, not contradicting
+  // each other. A `disagreement`-named reason would encode a misreading of
+  // the underlying question into the type permanently.
+  //
+  // RECORDED, NOT BUILT: once multi-engineer projects exist, this section
+  // should report something like "1 of 2 engineers met today's plan" —
+  // true, useful, discards nothing. Suppression is the INTERIM answer only
+  // because §12 defers the real shape until the case actually occurs (the
+  // prod query in §12 found zero multi-engineer projects today).
+  suppressed?: SuppressionNote
 }
 
 export interface ManpowerFacts {
@@ -160,6 +237,22 @@ export interface AccountabilityEntry {
   // today (missed 3 of last 5 site-operating days)." Never model-generated.
 }
 
+// The fact assembler's output — one project-day's worth of Facts, code-owned,
+// pre-model. `accountability` is DELIBERATELY ABSENT here: it needs its own
+// 7-day-window aggregator (holiday/messaging_blocked exclusion, per
+// AccountabilityEntry's own note) that doesn't exist yet — same blocker
+// already tracked against golden case #2. lib/dpr/assemble.ts's
+// mergeDprFacts computes everything below; accountability is assembled
+// separately, later, not folded in here to avoid scope creep into an
+// unbuilt aggregator.
+export interface DprFacts {
+  execution: ExecutionOutputFacts
+  schedule: ScheduleFacts
+  manpower: ManpowerFacts
+  equipment: EquipmentFacts
+  tomorrows_plan: TomorrowsPlanFacts
+}
+
 // ---------------------------------------------------------------------------
 // Judgment — the model's entire output. Digit rules are per-field-purpose,
 // not uniform:
@@ -210,14 +303,16 @@ export type DataStatus = 'complete' | 'partial' | 'not_captured'
 // Not addressed here; recorded so it isn't rediscovered as a surprise cost.
 //
 // §12 SUPPRESSION COMPOSES WITH THIS RULE — confirmed, with one required
-// extension. Manpower composes DIRECTLY: a SuppressionNote on ManpowerFacts
-// always accompanies manpower_data_status === 'not_captured' (§12's
-// suppression is section-wide and unconditional), so the render rule above
-// already makes the model's manpower_idle_reason_note unreachable — code
-// renders "reported by N engineers — not aggregated" from the
-// SuppressionNote instead of the generic "Not captured today.", and the
-// owner never sees anything that reads like a missing submission (the
-// product concern §12 raised: "not captured" on a section TWO people
+// extension. Manpower AND schedule compose DIRECTLY (schedule joined this
+// bucket 2026-08-10 — see ScheduleFacts's own CORRECTED note; it was first
+// miscategorized as unaffected): a SuppressionNote on ManpowerFacts or
+// ScheduleFacts always accompanies that section's data_status ===
+// 'not_captured' (both suppress section-wide and unconditionally), so the
+// render rule above already makes the model's note for that section
+// unreachable — code renders "reported by N engineers — not aggregated"
+// from the SuppressionNote instead of the generic "Not captured today.",
+// and the owner never sees anything that reads like a missing submission
+// (the product concern §12 raised: "not captured" on a section TWO people
 // answered would misread as "the engineer didn't report," which is unfair
 // to the engineer and undercuts section 6, the one place the DPR
 // legitimately names people for missing submissions).
