@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Json } from '@/types/database'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
-import { classifyYesNo } from './parsers/lexicon'
+import { classifyYesNo, equipmentLabel } from './parsers/lexicon'
 import { parseQuantities, type QuantitiesParse } from './parsers/quantities'
 import { parseLabourCount, isLabourAnswered } from './parsers/labour'
 import { parseProductivity, isProductivityAnswered } from './parsers/productivity'
@@ -172,7 +172,7 @@ export interface EquipmentEchoItem {
 // real handset; that confirmation is the whole point of the sandbox run
 // this wording was written for.
 export function buildEquipmentHoursPrompt(items: readonly EquipmentEchoItem[]): string {
-  const lines = items.map((item, i) => `${i + 1}) ${item.type}`).join('\n')
+  const lines = items.map((item, i) => `${i + 1}) ${equipmentLabel(item.type)}`).join('\n')
   return (
     'For each machine below, reply with its number, hours on site, hours ' +
     'actually run, and a reason if it was idle. Like this: 1) 8 6 waiting for fuel\n' +

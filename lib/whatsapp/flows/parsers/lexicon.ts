@@ -78,6 +78,27 @@ export function canonicalEquipment(token: string): string | null {
   return EQUIPMENT_ALIASES[token.toLowerCase()] ?? null
 }
 
+// Display labels for the Q5 equipment prompt — what a site engineer actually
+// reads on his phone. Humanize is the RULE, not the fallback: split on '_',
+// capitalize each word. That renders every current canonical type correctly
+// except acronyms, AND renders the unmatched raw tokens equipment.ts:66 can
+// store ("hydra", "bobcat") correctly too, which a lookup table cannot.
+// The override map is for acronyms and anything humanize gets wrong — one
+// entry today. A new canonical type added to EQUIPMENT_ALIASES renders
+// correctly with no change here; that is the point of this shape.
+const EQUIPMENT_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+  jcb: 'JCB',
+}
+
+export function equipmentLabel(type: string): string {
+  const key = type.trim().toLowerCase()
+  const override = EQUIPMENT_LABEL_OVERRIDES[key]
+  if (override) return override
+  const words = key.split('_').filter(Boolean)
+  if (words.length === 0) return 'Equipment'
+  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
 // ---------------------------------------------------------------------------
 // "No equipment" sentinels (Q3 only). A terse negative that must normalise to a
 // clean answered-empty state (none:true), NOT a reask. Covers English + common
