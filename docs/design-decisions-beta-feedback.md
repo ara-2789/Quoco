@@ -784,3 +784,30 @@ implementation details — not decided by this entry.
 changing Q5's shape is exactly the kind of thing that should happen once,
 deliberately, not be revised again right after real engineers have started
 answering it under the current shape.
+
+## 15. Q4b prompt could anchor to headcount — recorded, not built
+(2026-08-10, surfaced fixing the productive/idle inversion bug)
+
+**The idea.** Q4b (`EVENING_QUESTIONS[5]`) currently asks "how many were
+idle and why" against a headcount already captured one step earlier (Q4a).
+The prompt could restate that number back to the engineer — "Of the 18 on
+site, how many were idle?" — making a single number unambiguous by
+construction (there's only one blank left to fill) and making the phrasing
+that caused the 2026-08-10 incident ("15 productive, 3 idle...") far less
+natural to produce, since the question no longer reads as open-ended.
+
+**Why this is recorded, not built.** It reduces how OFTEN parser robustness
+gets exercised by a genuinely ambiguous reply — it does not replace the
+anchor-word pairing or THE GENERAL GUARD (`numbers_discarded`,
+`lib/whatsapp/flows/parsers/productivity.ts`) built the same day. An
+engineer can still answer "15 productive, 3 idle" against a headcount-
+anchored prompt if that's how they think to phrase it; the parser has to be
+correct regardless of the question's wording. Prompt wording narrows the
+distribution of real answers; it doesn't bound it. Treating it as a
+substitute for parser robustness would be the same mistake the original 17
+tests made at a different layer — designing for the phrasings the author
+expects, not the ones a real person sends.
+
+**Not scoped now** — a genuine wording change to shipped copy, same
+category of decision as §14, deserving its own deliberate pass rather than
+being folded into a bug-fix migration.

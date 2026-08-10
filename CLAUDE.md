@@ -913,6 +913,44 @@ those for the complete evidence.
   DPRS PAGE SWALLOWS QUERY ERRORS gap above also stays open — unrelated to
   this apply, not fixed by it.
 
+HAND-MIRRORED RECONCILIATION, TWO COPIES, NOTHING ENFORCES AGREEMENT (opened
+2026-08-10, tracked, NOT fixed). Migration 025 (unapplied — see below) fixes a
+severe productive/idle inversion bug by adding the SAME reconciliation logic
+in two places that have to agree by construction and nothing else:
+lib/whatsapp/flows/evening.ts's TS "pure mirror" (predicts what the RPC will
+do, used by callers before the RPC call) and 025's own PL/pgSQL body (what
+actually writes daily_logs). This is not a new pattern — the whole reason 025
+needed a SQL change at all, on top of the TS-side fix, is that this same
+migration's RPC already had its own independent, duplicate implementation of
+the ORIGINAL idle/productive derivation, silently diverged from the parser it
+was meant to reflect. The design-review pass that caught Defects 1-3 in 025's
+first draft (2026-08-10, before the file was ever committed) found all three
+by hand-tracing BOTH copies separately — nothing in the test suite or the
+type system would have caught a divergence between them if one copy had been
+fixed and the other missed, which is close to what actually happened on the
+first pass (the TS fix alone shipped 4 of 5 new integration tests red,
+because the SQL copy never read the parser's new fields at all). This is the
+FOURTH defect of this general shape found in this repo's history (three
+instances fixed by inspection in this review pass, this fourth one is
+structural and wasn't). NEEDED: a test that runs both copies (the TS mirror
+directly, and the RPC via a real call) against the SAME fixture set and
+asserts identical output — not built here, deliberately deferred, and named
+as the FIRST item for the next session rather than left to be rediscovered.
+
+MIGRATION 025 WRITTEN, REHEARSED, NOT YET APPLIED (2026-08-10). Fixes the
+productive/idle inversion bug found by the evening-flow sandbox smoke test
+(see docs/design-decisions-beta-feedback.md and productivity.ts's own SEVERE
+BUG note) plus three further defects found in design review before the file
+was ever committed (see 025's own header for the full incident-by-incident
+record — a YES_WORD masking a stated idle count, a missing upper guard on
+the productive-only derivation, and a stated productive count silently
+dropped when headcount is unknown). Rehearsed against test-db twice (before
+and after the design-review amendment) — full T-024 suite green both times,
+31/31 on the second pass. Confirmed via direct `pg_proc.prosrc` probe, not
+just a green suite, that prod is still running 024's original (buggy) body.
+Not committed, not pushed, not applied — waiting on explicit go-ahead, same
+discipline as every other prod-affecting change this session.
+
 Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
 flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
 (Q1-Q3) is live, hardened inline (020 discipline); apply_morning_flow_turn

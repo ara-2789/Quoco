@@ -12,7 +12,7 @@ describe('parseQuantities', () => {
   it('single item: activity + quantity + unit', () => {
     const p = parseQuantities('slab concrete 120 sqm')
     expect(p.items).toEqual([
-      { activity: 'slab concrete', quantity: 120, unit: 'sqm', raw: 'slab concrete 120 sqm' },
+      { activity: 'slab concrete', quantity: 120, unit: 'sqm', raw: 'slab concrete 120 sqm', numbers_discarded: false },
     ])
     expect(p.raw_text).toBe('slab concrete 120 sqm')
   })
@@ -38,7 +38,7 @@ describe('parseQuantities', () => {
   it('no quantity at all: activity only, still a valid item', () => {
     const p = parseQuantities('finished the column shuttering')
     expect(p.items).toEqual([
-      { activity: 'column shuttering', quantity: null, unit: null, raw: 'finished the column shuttering' },
+      { activity: 'column shuttering', quantity: null, unit: null, raw: 'finished the column shuttering', numbers_discarded: false },
     ])
   })
 
@@ -80,8 +80,8 @@ describe('parseQuantities', () => {
 
   it('first number in a chunk wins when no ordinal is involved', () => {
     const p = parseQuantities('100 rmt piping plus 50 rft cable tray')
-    expect(p.items[0]).toMatchObject({ activity: 'piping', quantity: 100, unit: 'rmt' })
-    expect(p.items[1]).toMatchObject({ activity: 'cable tray', quantity: 50, unit: 'rft' })
+    expect(p.items[0]).toMatchObject({ activity: 'piping', quantity: 100, unit: 'rmt', numbers_discarded: false })
+    expect(p.items[1]).toMatchObject({ activity: 'cable tray', quantity: 50, unit: 'rft', numbers_discarded: false })
   })
 
   it('empty answer: neutral non-answer, never a reask trigger (Q1 is not gated)', () => {
@@ -98,5 +98,32 @@ describe('parseQuantities', () => {
   it('raw is preserved per item, exactly as the engineer wrote that chunk', () => {
     const p = parseQuantities('Slab Concrete 120 SQM')
     expect(p.items[0].raw).toBe('Slab Concrete 120 SQM')
+  })
+})
+
+describe('parseQuantities — numbers_discarded (2026-08-10, found alongside the productivity bug)', () => {
+  it('THE RECORDED FINDING: "Poured 40 cum M25 slab level3" drops the grade and level numerals', () => {
+    const p = parseQuantities('Poured 40 cum M25 slab level3')
+    expect(p.items[0]).toMatchObject({
+      activity: 'poured slab level',
+      quantity: 40,
+      unit: 'cum',
+      numbers_discarded: true,
+    })
+  })
+
+  it('a bare second number in one chunk (no ordinal, no unit) trips the guard', () => {
+    const p = parseQuantities('slab 40 cum 12')
+    expect(p.items[0]).toMatchObject({ activity: 'slab', quantity: 40, unit: 'cum', numbers_discarded: true })
+  })
+
+  it('an ordinal-suffixed number ("2nd") is consumed meaningfully, NOT a discard', () => {
+    const p = parseQuantities('block work 2nd floor 45 sqm')
+    expect(p.items[0]).toMatchObject({ numbers_discarded: false })
+  })
+
+  it('a single, clean number never trips the guard', () => {
+    const p = parseQuantities('slab concrete 120 sqm')
+    expect(p.items[0]).toMatchObject({ numbers_discarded: false })
   })
 })

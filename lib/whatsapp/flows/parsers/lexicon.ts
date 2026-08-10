@@ -324,8 +324,15 @@ export function classifyYesNo(text: string): YesNoClassification {
 // separate reason given) reads as idle_reason: null, not idle_reason:
 // "mostly". Spreads YES_WORDS/NO_WORDS rather than duplicating them so this
 // can never drift from classifyYesNo's own vocabulary.
+// 'productive' added 2026-08-10 (sandbox smoke test bug): promoted from an
+// ordinary reason-word to a recognised ANCHOR alongside 'idle' in
+// productivity.ts's number-pairing pass, so it must also be a stopword here
+// — otherwise a resolved "15 productive" would leak the literal word
+// "productive" into idle_reason instead of being consumed as the anchor
+// that assigned the number.
 export const PRODUCTIVITY_STOPWORDS: ReadonlySet<string> = new Set([
   'idle',
+  'productive',
   'are',
   'is',
   'were',

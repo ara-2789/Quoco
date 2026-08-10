@@ -81,3 +81,111 @@ describe('parseProductivity', () => {
     expect(p.idle_reason).toBe('cement delay')
   })
 })
+
+describe('parseProductivity — anchor-word pairing (2026-08-10 fix, real sandbox bug)', () => {
+  it('THE ACTUAL INCIDENT: "15 productive, 3 idle waiting for material" — both counts correct, not inverted', () => {
+    const p = parseProductivity('15 productive, 3 idle waiting for material')
+    expect(p.all_productive).toBe(false)
+    expect(p.productive_count).toBe(15)
+    expect(p.idle_count).toBe(3)
+    expect(p.idle_reason).toBe('waiting for material')
+    expect(p.numbers_discarded).toBe(false)
+  })
+
+  it('order-independent: "3 idle, 15 productive" resolves identically to the incident phrasing', () => {
+    const p = parseProductivity('3 idle, 15 productive')
+    expect(p.productive_count).toBe(15)
+    expect(p.idle_count).toBe(3)
+  })
+
+  it('productive-only, no idle number at all: "18 productive"', () => {
+    const p = parseProductivity('18 productive')
+    expect(p.all_productive).toBe(false)
+    expect(p.productive_count).toBe(18)
+    expect(p.idle_count).toBeNull()
+    expect(p.numbers_discarded).toBe(false)
+  })
+
+  it('idle-only still defaults with no anchor at all — unchanged, backward compatible', () => {
+    const p = parseProductivity('3 idle waiting for material')
+    expect(p.idle_count).toBe(3)
+    expect(p.productive_count).toBeNull()
+    expect(p.numbers_discarded).toBe(false)
+  })
+})
+
+describe('parseProductivity — numbers_discarded: the general guard, independent of anchor words', () => {
+  it('two numbers, NEITHER anchored: genuinely ambiguous, not a positional guess', () => {
+    const p = parseProductivity('15, 3 waiting for material')
+    expect(p.idle_count).toBeNull()
+    expect(p.productive_count).toBeNull()
+    expect(p.numbers_discarded).toBe(true)
+  })
+
+  it('a number with no anchor, arriving alongside one that IS anchored, is discarded rather than guessed', () => {
+    const p = parseProductivity('5 10 idle')
+    expect(p.idle_count).toBe(10)
+    expect(p.productive_count).toBeNull()
+    expect(p.numbers_discarded).toBe(true)
+  })
+
+  it('single unanchored number (the common, unambiguous case) never trips the guard', () => {
+    const p = parseProductivity('2 idle waiting for cement')
+    expect(p.numbers_discarded).toBe(false)
+  })
+
+  it('a YES_WORD with a trailing number now falls through instead of short-circuiting (was wrong pre-Defect-1-fix)', () => {
+    // Superseded expectation: this test originally asserted all_productive:
+    // true here, treating the trailing "18" as harmless. Post-fix it is
+    // exactly why hasDigit gates the early return — "yes all 18 productive"
+    // anchors productive_count:18 instead of discarding it. See DEFECT 1
+    // in productivity.ts's own header for the full incident this covers.
+    const p = parseProductivity('yes all 18 productive')
+    expect(p.all_productive).toBe(false)
+    expect(p.productive_count).toBe(18)
+    expect(p.idle_count).toBeNull()
+    expect(p.numbers_discarded).toBe(false)
+  })
+
+  it('a YES_WORD with no digit and no idle word still short-circuits cleanly', () => {
+    const p = parseProductivity('yes all productive')
+    expect(p.all_productive).toBe(true)
+    expect(p.numbers_discarded).toBe(false)
+  })
+})
+
+describe('parseProductivity — DEFECT 1: a YES_WORD must not mask a stated idle count', () => {
+  it('THE DEFECT: "ok, 2 idle waiting for cement" — ok is a YES_WORD, idle is not a NO_WORD, used to discard the count entirely', () => {
+    const p = parseProductivity('ok, 2 idle waiting for cement')
+    expect(p.all_productive).toBe(false)
+    expect(p.idle_count).toBe(2)
+    expect(p.idle_reason).toBe('waiting for cement')
+    expect(p.numbers_discarded).toBe(false)
+  })
+
+  it('"yes all productive" — unchanged: no digit, no idle word, still short-circuits', () => {
+    const p = parseProductivity('yes all productive')
+    expect(p.all_productive).toBe(true)
+    expect(p.idle_count).toBeNull()
+    expect(p.productive_count).toBeNull()
+  })
+
+  it('"ok" alone — unchanged: no digit, no idle word, still short-circuits', () => {
+    const p = parseProductivity('ok')
+    expect(p.all_productive).toBe(true)
+  })
+
+  it('"yes all 18 productive" — falls through, anchors productive_count:18, idle stays null', () => {
+    const p = parseProductivity('yes all 18 productive')
+    expect(p.all_productive).toBe(false)
+    expect(p.productive_count).toBe(18)
+    expect(p.idle_count).toBeNull()
+  })
+
+  it('"ok 2 idle waiting for cement" — the fix: falls through, idle_count:2, reason preserved', () => {
+    const p = parseProductivity('ok 2 idle waiting for cement')
+    expect(p.all_productive).toBe(false)
+    expect(p.idle_count).toBe(2)
+    expect(p.idle_reason).toBe('waiting for cement')
+  })
+})
