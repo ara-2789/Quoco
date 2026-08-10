@@ -15,13 +15,15 @@ import {
 // headcount/productivity, Q5 equipment hours). Run ONLY against the test-db
 // branch — the allowlist globalSetup guard hard-aborts otherwise.
 //
-// NOT YET RUNNABLE AGAINST TEST-DB — 024 has not been rehearsed/applied there
-// as of this commit. Same convention as every migration test in this series
-// (019's own header names it explicitly): run BEFORE the migration is applied
-// = every call errors "function does not exist" or exercises 022's Pass-1-
-// only body, proving this suite targets the real object rather than a mock;
-// green only after rehearsal. Do not read a red run of this file today as a
-// defect — it is the expected pre-rehearsal state.
+// [DATED CORRECTION 2026-08-10: this header previously said "NOT YET
+// RUNNABLE AGAINST TEST-DB — 024 has not been rehearsed/applied there,"
+// with the pre-rehearsal-red framing that followed it. Wrong as of this
+// correction, third time this project's docs have claimed a migration
+// wasn't applied when it was (docs/schema.md carries the fuller version of
+// this same correction). 024 IS rehearsed and applied on test-db — this
+// suite is verified GREEN, all 23 tests, run directly against the
+// test-db branch. A red run of this file today IS a real regression, not
+// an expected pre-rehearsal state.]
 //
 //   T-024-01  Q4a happy path: headcount answered, advances to step 5, nothing
 //             written to daily_logs yet (held until step 5 resolves)

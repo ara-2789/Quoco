@@ -211,14 +211,14 @@ label whenever a subsection is added or removed.]
   evening_output_quantities->'items', not the column as an array.]
 - evening_schedule_met BOOLEAN (BETA)
 - evening_schedule_miss_reason TEXT (BETA)
-- evening_workers_on_site INTEGER — migration 024 (WRITTEN, NOT YET
-  REHEARSED OR APPLIED, 2026-08-08). Column itself has existed, untouched,
+- evening_workers_on_site INTEGER — migration 024 (LIVE — see the
+  dated correction below). Column itself has existed, untouched,
   since 001_core_schema.sql; 024 is the first thing that writes it (Q4 step
   1, headcount — reuses parseLabourCount verbatim, only planned_total
   persisted). Written together with evening_productive_manpower in the same
   transaction, never alone — see that entry below for why.
-- evening_productive_manpower JSONB — migration 024 (WRITTEN, NOT YET
-  REHEARSED OR APPLIED, 2026-08-08). AGGREGATE-ONLY v1
+- evening_productive_manpower JSONB — migration 024 (LIVE — see the
+  dated correction below). AGGREGATE-ONLY v1
   (design-decisions-beta-feedback.md §9, 2026-07-28 — DECIDED before 024 was
   written) — no trade-level breakdown, ever; see that decision for the three
   reasons it's deferred. Shape, object-wrapped per the same convention as
@@ -232,8 +232,8 @@ label whenever a subsection is added or removed.]
   `actual_hours`/`available_hours` feed DPR section 4's idle-cost currency
   arithmetic directly; see 024_evening_flow_q4_q5.sql's own CONFIDENCE FLAG
   note for the full reasoning.
-- evening_equipment_utilisation JSONB — migration 024 (WRITTEN, NOT YET
-  REHEARSED OR APPLIED, 2026-08-08). AUTO-SKIPPED (stored as an empty items
+- evening_equipment_utilisation JSONB — migration 024 (LIVE — see the
+  dated correction below). AUTO-SKIPPED (stored as an empty items
   array) when morning_equipment is NULL (no morning submission at all — the
   case migration 022's own reserved-block comment's pinned skip test would
   have MISSED, jsonb_array_length(NULL->'items') being NULL not 0; fixed in
@@ -248,6 +248,23 @@ label whenever a subsection is added or removed.]
   between them. `type` is still stored per entry, for display only. See
   024_evening_flow_q4_q5.sql's EQUIPMENT JOIN KEY note for the full
   reasoning and how the echo order guarantees the join resolves.
+
+  [DATED CORRECTION 2026-08-10: the three entries above previously read
+  "(WRITTEN, NOT YET REHEARSED OR APPLIED, 2026-08-08)" for all three
+  columns. Wrong as of this correction — migration 024 is LIVE. Verified
+  directly, not assumed: `apply_evening_flow_turn` exists on the linked
+  project with the expected 024 signature, all three columns exist, and the
+  full T-024 suite (23 tests) passes green against test-db. `supabase
+  migration list --linked` still shows an empty `remote` column for 024 —
+  that is NOT evidence against this; 023 shows the identical empty-remote
+  pattern despite being confirmed applied via the SQL-editor runbook (its
+  own dated entries below), the same CLI-tracking lag this repo has hit
+  before. This is the THIRD time this project's docs have claimed a
+  migration wasn't applied when it was — the miss here specifically:
+  024's prod apply updated a separate handoff document but never came back
+  to update schema.md or this test header, unlike 023, where PR #36 did
+  exactly that. See also test/migration-024.test.ts's own header, corrected
+  the same day for the identical stale claim about test-db.]
 - evening_dependencies JSONB — [{item, responsible_party, required_by_time}] (BETA)
 - evening_submitted_at TIMESTAMPTZ (BETA)
 - dpr_content TEXT — LIVE on prod as of this note's original writing.
