@@ -159,12 +159,23 @@ export interface EquipmentEchoItem {
 // list is stored — that fixed order IS the join-key guarantee the migration's
 // EQUIPMENT JOIN KEY note relies on (the engineer's Nth reply chunk maps back
 // to the Nth echoed machine by construction of this exact template).
+// WORDING, revised 2026-08-10 (sandbox smoke test — TIER 1 needs a labelled
+// reply to be reachable, and the original wording put the decoding AFTER
+// the example: "1) 8 6 waiting for fuel" ... "(available hours, actual
+// hours run, idle reason)" — someone scanning on a phone reads the example
+// before knowing what the numbers mean, and the example itself omitted the
+// leading "1)", so a terse reply pattern-matches the unlabelled part of the
+// example, not the "in this order" instruction. Decoding now comes FIRST,
+// the example is labelled, "reply with its number" is imperative rather
+// than implied by "in this order". "hours on site" replaces "available
+// hours" — more concrete to a site engineer. Not yet confirmed against a
+// real handset; that confirmation is the whole point of the sandbox run
+// this wording was written for.
 export function buildEquipmentHoursPrompt(items: readonly EquipmentEchoItem[]): string {
   const lines = items.map((item, i) => `${i + 1}) ${item.type}`).join('\n')
   return (
-    'Equipment hours today — for each machine, send *available hours*, ' +
-    '*actual hours run*, and an idle reason if any (e.g. "8 6 waiting for fuel"), ' +
-    'one line per machine, in this order:\n' +
+    'For each machine below, reply with its number, hours on site, hours ' +
+    'actually run, and a reason if it was idle. Like this: 1) 8 6 waiting for fuel\n' +
     lines
   )
 }
