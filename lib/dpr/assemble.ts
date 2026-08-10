@@ -29,9 +29,15 @@ import type {
 
 export interface CorrectedDailyLogRow {
   engineer_id: string
-  // §1 — NOT correctable (JSONB). Raw quantity is a plain number here;
-  // CapturedNumber-wrapping happens during merge, not before.
-  evening_output_quantities: { items: Array<{ activity: string; quantity: number; unit: string }> } | null
+  // §1 — NOT correctable (JSONB). quantity is number | null, not number:
+  // this row is a cast over untyped JSONB (assembleDprFacts casts, doesn't
+  // validate — see its own note), so the type must admit what the runtime
+  // value can actually be, not what a clean write would produce.
+  // CapturedNumber-wrapping happens during merge, via wrapNumber, not by
+  // hand — a hand-built { status: 'reported', value } here would let a
+  // null quantity through claiming 'reported' with no value, the exact
+  // state the wrapper exists to prevent.
+  evening_output_quantities: { items: Array<{ activity: string; quantity: number | null; unit: string }> } | null
   // §2 — correctable (scalar). Already corrected by the caller.
   evening_schedule_met: boolean | null
   // §3 headcount — correctable (scalar, evening_workers_on_site). Already
@@ -106,7 +112,7 @@ export function mergeDprFacts(rows: CorrectedDailyLogRow[], opts: MergeDprFactsO
   // duplicate (one engineer reporting the same activity twice) would
   // inflate the collision count; that's a parser-level concern, not
   // handled here.
-  const activityGroups = new Map<string, Array<{ activity: string; unit: string; quantity: number }>>()
+  const activityGroups = new Map<string, Array<{ activity: string; unit: string; quantity: number | null }>>()
   for (const row of rows) {
     for (const item of row.evening_output_quantities?.items ?? []) {
       const key = normalizeActivity(item.activity)
@@ -125,7 +131,7 @@ export function mergeDprFacts(rows: CorrectedDailyLogRow[], opts: MergeDprFactsO
         suppressed: { reason: 'same_activity_overlap' as const, engineer_count: items.length },
       }
     }
-    return { activity: first.activity, unit: first.unit, quantity: { status: 'reported' as const, value: first.quantity } }
+    return { activity: first.activity, unit: first.unit, quantity: wrapNumber(first.quantity) }
   })
 
   // ---- §2 Schedule — CORRECTED 2026-08-10: originally miscategorized as
@@ -163,12 +169,25 @@ export function mergeDprFacts(rows: CorrectedDailyLogRow[], opts: MergeDprFactsO
           const pm = row?.evening_productive_manpower ?? null
           const productive_count = wrapCount(pm?.productive_count ?? null, pm?.confidence)
           const idle_count = wrapCount(pm?.idle_count ?? null, pm?.confidence)
+          // GUARD, added 2026-08-10: productive_count > headcount is
+          // impossible at 024's WRITE time (productive_count is derived as
+          // headcount − idle_count, floored at 0) — but evening_workers_
+          // on_site is CORRECTABLE and evening_productive_manpower is NOT
+          // (JSONB, outside 019's correctable set). A PM correcting
+          // headcount downward (20 → 10) leaves productive_count at the
+          // original 20, and without this guard the DPR would state
+          // impossible utilisation (200%) — manufactured BY the correction
+          // feature meant to make the report more accurate, not less. Not
+          // clamped: not_captured matches this file's posture everywhere
+          // else a value can't be trusted, rather than inventing a
+          // "corrected" productive_count nobody actually reported.
           const utilisation_pct =
             headcount.status === 'not_captured' ||
             productive_count.status === 'not_captured' ||
             headcount.value === null ||
             productive_count.value === null ||
-            headcount.value <= 0
+            headcount.value <= 0 ||
+            productive_count.value > headcount.value
               ? notCapturedNumber
               : withInheritedLowConfidence(
                   { status: 'reported', value: (productive_count.value / headcount.value) * 100 },
@@ -268,15 +287,22 @@ export function mergeDprFacts(rows: CorrectedDailyLogRow[], opts: MergeDprFactsO
 // -----------------------------------------------------------------------
 // Thin IO wrapper. Fetches daily_logs + daily_log_edits for (project_id,
 // log_date) via the INJECTED client, applies the latest correction per
-// (daily_logs_id, column_name) for the 9 correctable columns onto the raw
-// row, builds CorrectedDailyLogRow[], and calls mergeDprFacts(). The JSONB
-// columns are read as-is (never correctable) and cast to their known
-// parser-output shapes — schema.md's DATED CORRECTION notes are the source
-// for these shapes; no runtime schema validation beyond null-guarding, same
-// trust level the rest of this codebase already extends to these columns.
+// (daily_logs_id, column_name) for the two correctable columns this file
+// actually consumes (evening_schedule_met, evening_workers_on_site — see
+// CLAUDE.md §10's tracked gap for why the other 7 of 019's 9 correctable
+// columns feed no DprFacts field today), builds CorrectedDailyLogRow[], and
+// calls mergeDprFacts(). The JSONB columns are read as-is (never
+// correctable) and cast to their known parser-output shapes — schema.md's
+// DATED CORRECTION notes are the source for these shapes; no runtime schema
+// validation beyond null-guarding, same trust level the rest of this
+// codebase already extends to these columns. The two correctable columns
+// below get more than that — see parseCorrectedBoolean/parseCorrectedInteger.
 // -----------------------------------------------------------------------
 
-const CORRECTABLE_SCALAR_COLUMNS = [
+// The full set 019 made correctable, kept for documentation even though
+// only evening_schedule_met / evening_workers_on_site are consumed into a
+// typed CorrectedDailyLogRow field today — see CLAUDE.md §10.
+export const CORRECTABLE_SCALAR_COLUMNS = [
   'is_holiday',
   'holiday_reason',
   'weather',
@@ -287,6 +313,36 @@ const CORRECTABLE_SCALAR_COLUMNS = [
   'evening_schedule_miss_reason',
   'evening_workers_on_site',
 ] as const
+
+// daily_log_edits.new_value is JSONB. Migration 019's own NULL/TYPE
+// CONVENTION comment requires a JSON scalar matching the target column's
+// NATURAL to_jsonb() type — a JSON number for an integer column, a JSON
+// boolean for a boolean column — but nothing enforces that today; 019's own
+// text defers enforcement to "the future Server-Action wrapper's Zod,"
+// which does not exist yet. Casting new_value straight into a typed field
+// (`as boolean | null` / `as number | null`) asserts a contract nothing
+// currently guarantees: a correction stored as the JSON STRING "10" would
+// satisfy neither cast at compile time, TypeScript cannot catch it at
+// runtime, and downstream arithmetic often coerces just well enough to
+// look right while strict comparisons (`=== 0`, `> headcount`) silently
+// misclassify. Parse and validate explicitly — fail loud on a mismatch
+// rather than propagate a value of the wrong runtime type, matching this
+// codebase's existing fail-closed posture for integrity violations (019's
+// own column whitelist fails closed the same way).
+
+export function parseCorrectedBoolean(column: string, rawValue: boolean | null, editValue: unknown): boolean | null {
+  if (editValue === undefined) return rawValue
+  if (editValue === null) return null // SQL NULL clears the field — 019's own convention.
+  if (typeof editValue === 'boolean') return editValue
+  throw new Error(`daily_log_edits.new_value for boolean column "${column}" was not a boolean: ${JSON.stringify(editValue)}`)
+}
+
+export function parseCorrectedInteger(column: string, rawValue: number | null, editValue: unknown): number | null {
+  if (editValue === undefined) return rawValue
+  if (editValue === null) return null
+  if (typeof editValue === 'number' && Number.isFinite(editValue)) return editValue
+  throw new Error(`daily_log_edits.new_value for integer column "${column}" was not a finite number: ${JSON.stringify(editValue)}`)
+}
 
 export async function assembleDprFacts(
   client: SupabaseClient,
@@ -328,14 +384,11 @@ export async function assembleDprFacts(
   }
 
   const correctedRows: CorrectedDailyLogRow[] = logs.map((row) => {
-    const corrected: Record<string, unknown> = { ...row }
-    for (const column of CORRECTABLE_SCALAR_COLUMNS) {
-      const key = `${row.id}:${column}`
-      if (latestEditByKey.has(key)) corrected[column] = latestEditByKey.get(key)
-    }
+    const scheduleMetEdit = latestEditByKey.get(`${row.id}:evening_schedule_met`)
+    const workersOnSiteEdit = latestEditByKey.get(`${row.id}:evening_workers_on_site`)
 
     const eveningOutputQuantities = row.evening_output_quantities as {
-      items: Array<{ activity: string; quantity: number; unit: string }>
+      items: Array<{ activity: string; quantity: number | null; unit: string }>
     } | null
     const eveningProductiveManpower = row.evening_productive_manpower as {
       productive_count: number | null
@@ -351,8 +404,8 @@ export async function assembleDprFacts(
     return {
       engineer_id: row.engineer_id as string,
       evening_output_quantities: eveningOutputQuantities,
-      evening_schedule_met: corrected.evening_schedule_met as boolean | null,
-      evening_workers_on_site: corrected.evening_workers_on_site as number | null,
+      evening_schedule_met: parseCorrectedBoolean('evening_schedule_met', row.evening_schedule_met, scheduleMetEdit),
+      evening_workers_on_site: parseCorrectedInteger('evening_workers_on_site', row.evening_workers_on_site, workersOnSiteEdit),
       evening_productive_manpower: eveningProductiveManpower,
       morning_equipment: morningEquipment,
       evening_equipment_utilisation: eveningEquipmentUtilisation,

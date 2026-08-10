@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mergeDprFacts } from '@/lib/dpr/assemble'
+import { mergeDprFacts, parseCorrectedBoolean, parseCorrectedInteger } from '@/lib/dpr/assemble'
 import type { CorrectedDailyLogRow } from '@/lib/dpr/assemble'
 
 // Pure unit tests for mergeDprFacts — the fact assembler's deterministic
@@ -244,5 +244,82 @@ describe('mergeDprFacts — zero rows', () => {
     expect(facts.schedule.schedule_met).toBeNull()
     expect(facts.manpower.headcount).toEqual({ status: 'not_captured', value: null })
     expect(facts.equipment.items).toEqual([])
+  })
+})
+
+describe('mergeDprFacts — utilisation guard: a PM correction cannot manufacture >100%', () => {
+  it('productive_count > headcount (post-correction) yields not_captured, never a clamp or an impossible %', () => {
+    // Simulates the exact scenario: 024 wrote productive_count=20 when
+    // headcount was 20; a PM later corrects evening_workers_on_site down to
+    // 10 (evening_productive_manpower is JSONB, not correctable — it still
+    // says 20). Without the guard this would compute (20/10)*100 = 200%.
+    const facts = mergeDprFacts([
+      row({
+        evening_workers_on_site: 10,
+        evening_productive_manpower: { productive_count: 20, idle_count: 0, confidence: 'high' },
+      }),
+    ])
+    expect(facts.manpower.utilisation_pct).toEqual({ status: 'not_captured', value: null })
+    // Not clamped — the raw (now-inconsistent) figures are preserved as
+    // originally captured, not silently altered.
+    expect(facts.manpower.headcount).toEqual({ status: 'reported', value: 10 })
+    expect(facts.manpower.productive_count).toEqual({ status: 'reported', value: 20 })
+  })
+
+  it('productive_count === headcount (fully productive) still computes normally — the guard is > only, not >=', () => {
+    const facts = mergeDprFacts([
+      row({
+        evening_workers_on_site: 10,
+        evening_productive_manpower: { productive_count: 10, idle_count: 0, confidence: 'high' },
+      }),
+    ])
+    expect(facts.manpower.utilisation_pct).toEqual({ status: 'reported', value: 100 })
+  })
+})
+
+describe('mergeDprFacts — execution quantity null (fix #3): wrapNumber, not a hand-built "reported"', () => {
+  it('a null quantity in the JSONB yields not_captured, never a bare "reported" with no value', () => {
+    const facts = mergeDprFacts([
+      row({ evening_output_quantities: { items: [{ activity: 'Shuttering', quantity: null, unit: 'nos' }] } }),
+    ])
+    expect(facts.execution.quantities).toEqual([{ activity: 'Shuttering', unit: 'nos', quantity: { status: 'not_captured', value: null } }])
+  })
+})
+
+describe('parseCorrectedBoolean / parseCorrectedInteger — explicit conversion, not a cast (fix #2)', () => {
+  it('boolean: no edit (undefined) falls back to the raw column value', () => {
+    expect(parseCorrectedBoolean('evening_schedule_met', true, undefined)).toBe(true)
+  })
+
+  it('boolean: SQL NULL correction (edit present, value null) clears the field', () => {
+    expect(parseCorrectedBoolean('evening_schedule_met', true, null)).toBeNull()
+  })
+
+  it('boolean: a genuine JSON boolean correction is accepted', () => {
+    expect(parseCorrectedBoolean('evening_schedule_met', true, false)).toBe(false)
+  })
+
+  it('boolean: a malformed correction (wrong runtime type) throws rather than silently propagating', () => {
+    expect(() => parseCorrectedBoolean('evening_schedule_met', true, 'false')).toThrow(/was not a boolean/)
+  })
+
+  it('integer: no edit (undefined) falls back to the raw column value', () => {
+    expect(parseCorrectedInteger('evening_workers_on_site', 20, undefined)).toBe(20)
+  })
+
+  it('integer: SQL NULL correction clears the field', () => {
+    expect(parseCorrectedInteger('evening_workers_on_site', 20, null)).toBeNull()
+  })
+
+  it('integer: a genuine JSON number correction is accepted', () => {
+    expect(parseCorrectedInteger('evening_workers_on_site', 20, 10)).toBe(10)
+  })
+
+  it('integer: a stringified number ("10" instead of 10) throws rather than silently coercing', () => {
+    expect(() => parseCorrectedInteger('evening_workers_on_site', 20, '10')).toThrow(/was not a finite number/)
+  })
+
+  it('integer: NaN/non-finite throws', () => {
+    expect(() => parseCorrectedInteger('evening_workers_on_site', 20, Number.NaN)).toThrow(/was not a finite number/)
   })
 })
