@@ -54,7 +54,7 @@ export interface CorrectedDailyLogRow {
   // §4 hours — NOT correctable (JSONB). confidence is ONE flag for the
   // whole reply (every item in it), same convention as productivity's.
   evening_equipment_utilisation: {
-    items: Array<{ morning_item_index: number; type: string; available_hours: number | null; actual_hours: number | null }>
+    items: Array<{ morning_item_index: number | null; type: string; available_hours: number | null; actual_hours: number | null }>
     confidence: 'high' | 'low'
   } | null
 }
@@ -217,13 +217,23 @@ export function mergeDprFacts(rows: CorrectedDailyLogRow[], opts: MergeDprFactsO
     const morningItems = row.morning_equipment?.items ?? []
     const eveningUtil = row.evening_equipment_utilisation
     for (const eveningItem of eveningUtil?.items ?? []) {
-      const morningItem = morningItems[eveningItem.morning_item_index]
+      // morning_item_index is null for a tier-4 unmatched chunk (024) — an
+      // explicit "no match," not merely a missing lookup. Handled here
+      // rather than relying on array indexing with a null to fail safely
+      // by luck: honestly typing this field (number | null) is what forces
+      // this branch to exist at all.
+      const morningItem = eveningItem.morning_item_index === null ? undefined : morningItems[eveningItem.morning_item_index]
       rawItems.push({
         type: eveningItem.type,
         available_hours: eveningItem.available_hours,
         actual_hours: eveningItem.actual_hours,
         daily_hire_cost: morningItem?.daily_hire_cost ?? null,
-        confidence: eveningUtil?.confidence ?? 'high',
+        // Default 'low', not 'high': absence of a confidence field means we
+        // don't know whether the parse was confident — resolving "don't
+        // know" to "confident" would invert the whole point of the flag.
+        // Pure insurance, not an expected path: 024 always writes this
+        // field; nothing wrote evening_equipment_utilisation before 024.
+        confidence: eveningUtil?.confidence ?? 'low',
       })
     }
   }
@@ -329,6 +339,16 @@ export const CORRECTABLE_SCALAR_COLUMNS = [
 // rather than propagate a value of the wrong runtime type, matching this
 // codebase's existing fail-closed posture for integrity violations (019's
 // own column whitelist fails closed the same way).
+//
+// FORWARD NOTE (CLAUDE.md §10, REGENERATION-ON-CORRECTION DOES NOT EXIST):
+// throwing is right HERE, today, precisely because assemble.ts has no
+// caller yet — a thrown error means no DPR, which is visible and gets
+// investigated, versus silently skipping a bad correction and letting the
+// owner read a pre-correction number with nothing to flag it. Once the
+// dpr_generate job handler exists, this throw MUST land in DPR-24's
+// failed-delivery path (delivery_status='failed', Sentry, PM + founder
+// notified), not crash a cron invocation silently. Whoever builds that
+// handler needs to catch this, not let it propagate unhandled.
 
 export function parseCorrectedBoolean(column: string, rawValue: boolean | null, editValue: unknown): boolean | null {
   if (editValue === undefined) return rawValue
@@ -397,7 +417,7 @@ export async function assembleDprFacts(
     } | null
     const morningEquipment = row.morning_equipment as { items: Array<{ type: string; daily_hire_cost: number | null }> } | null
     const eveningEquipmentUtilisation = row.evening_equipment_utilisation as {
-      items: Array<{ morning_item_index: number; type: string; available_hours: number | null; actual_hours: number | null }>
+      items: Array<{ morning_item_index: number | null; type: string; available_hours: number | null; actual_hours: number | null }>
       confidence: 'high' | 'low'
     } | null
 

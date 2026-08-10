@@ -954,6 +954,18 @@ wires cron/webhook-triggered regeneration (already tracked as OPEN against
 migration 022, above) inherits this too — it is a third thing that trigger
 needs to account for, not just new submissions and the existing late-data
 path.
+  FORWARD NOTE, added 2026-08-10: lib/dpr/assemble.ts's parseCorrectedBoolean
+  / parseCorrectedInteger throw when a daily_log_edits.new_value's runtime
+  type doesn't match its column — deliberately. Throwing means no DPR gets
+  generated, which is VISIBLE and gets investigated; silently skipping a
+  malformed correction would mean the owner reads a pre-correction number
+  with nothing to flag it, which is invisible and wrong. That posture is
+  correct today, where assemble.ts has no caller to catch anything. Once the
+  `dpr_generate` job handler exists, this throw MUST land in DPR-24's
+  failed-delivery path (delivery_status='failed', Sentry alert, PM + founder
+  notified — bot-flows.md's own Failed delivery section), not crash a cron
+  invocation silently. A fourth thing the dispatch/regeneration layer needs
+  to account for, alongside the three above.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
