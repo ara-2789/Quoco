@@ -590,6 +590,35 @@ inbound; pure decideInboundGate() + clearMessagingBlock() in
 lib/whatsapp/reactivation.ts, unit-tested + a direct clear-half DB test. Opt-in
 TEMPLATE re-send deferred (blocked on Twilio sender). See bot-flows.md BOT-27.
 
+BOT-27's SET-HALF DOES NOT EXIST — messaging_blocked IS NEVER SET TRUE (opened
+2026-08-10, tracked, PRE-LAUNCH — not DPR backlog, not general debt; surfaced
+while establishing facts for the §6 accountability aggregator, before deciding
+how to handle its 7-day pattern). Grepped every write path in app/, lib/,
+supabase/migrations/: the ONLY place messaging_blocked is ever set true in this
+repo is test fixtures (test/reactivation-db.test.ts, test/webhook.test.ts),
+simulating a pre-blocked state so the CLEAR half has something to clear. In
+application code, only clearMessagingBlock() (lib/whatsapp/reactivation.ts)
+ever writes this column, and it only ever writes false. There is no Twilio
+status-callback endpoint (app/api/whatsapp/ contains exactly one route, the
+inbound webhook) and no cron job touches this column. A real WhatsApp STOP —
+or any other outbound delivery failure — currently sets nothing and is
+detected nowhere.
+  CONSEQUENCE, stated plainly: an engineer who opts out keeps getting
+  messaged, because nothing notices they opted out. This is not primarily a
+  DPR-quality issue, though it does surface there too (see design-decisions-
+  beta-feedback.md §13's accountability-pattern decision, which found this
+  while establishing whether §6's pattern was safe to compute) — it is a
+  WhatsApp Business quality-rating and compliance problem in its own right.
+  Meta throttles messaging limits based on quality rating; repeated sends to
+  an opted-out number degrades that rating for the WHOLE product, not one
+  feature or section.
+  PRE-LAUNCH, not backlog: needs a set-half — a Twilio status-callback
+  endpoint, or detecting the inbound STOP text itself, whichever this
+  integration actually surfaces — before the production sender (item 5,
+  Week 2 checklist above) carries real opt-out traffic. BOT-27's clear-half
+  was built and tested against a set-half that was assumed to exist and
+  doesn't.
+
 TESTING DEBT — WEBHOOK HTTP HARNESS (opened 2026-07-21, tracked, NOT fixed).
 CLAUDE.md §7 requires every webhook change to ship with a T-WH integration test,
 "including the forged-signature rejection, T-WH-01". That harness DOES NOT EXIST

@@ -661,3 +661,92 @@ equipment-item aggregate indexing (how two engineers' distinct-type items
 get merged into one list) is marked PROVISIONAL in its own file, not
 promoted here — it sidesteps this section's equipment identity-resolution
 problem for the no-collision case only, and does not answer it.
+
+## 13. Accountability (§6) — ship per-day status, suppress the 7-day pattern
+(decided 2026-08-10)
+
+**THE FACT THAT DECIDED THIS.** Before picking how to handle the pattern's
+`messaging_blocked` exclusion, we established what actually sets that flag.
+Grepped every write path in `app/`, `lib/`, `supabase/migrations/`: **nothing
+in application code ever sets `messaging_blocked = true`.** The only writer
+is `clearMessagingBlock()` (`lib/whatsapp/reactivation.ts`), and it only
+ever writes `false`. The only places the value is ever `true` are test
+fixtures, simulating a pre-blocked state so the clear-half has something to
+clear. There is no Twilio status-callback endpoint and no cron job touches
+this column. Full grep record: this section's own history in conversation;
+tracked as its own item in CLAUDE.md §10 (search "BOT-27's SET-HALF").
+
+That finding replaced the original question. It wasn't "how contaminated is
+the pattern by past blocks" (options A/B/C, weighed before this fact was
+established) — it's that **nothing was ever excluded, because the flag has
+never been true in production, so there's no historical block data to
+contaminate anything.** But the finding also exposed a BIGGER problem than
+the one being asked about.
+
+**THE BIGGER PROBLEM: outbound delivery is entirely unobserved.** No
+status-callback endpoint means an outbound 7pm prompt that silently failed
+to deliver — bad number, carrier issue, a STOP that went undetected because
+nothing sets `messaging_blocked` either — leaves EXACTLY the same evidence
+as an engineer who received the question and ignored it: no `daily_logs`
+row. Design-principles.md's Rule 5.3 requires ruling out legitimate absence
+BEFORE a name appears in this section at all. "We never delivered the
+question" is the single most legitimate absence there is, and today it is
+completely invisible to any query this codebase can run.
+
+**DECISION:**
+- **Ship the per-day status.** "No evening check-in recorded today" is a
+  fact about our records, not a claim about the person — it needs neither
+  prerequisite below, and it's genuinely knowable now.
+- **Suppress the 7-day pattern entirely — not caveated, left out.** The
+  pattern is what turns a status line into an accusation: it aggregates
+  days we cannot confirm were even deliverable into a single number that
+  reads as proven. A stated caveat next to a wrong number doesn't fix this
+  — bot-flows.md's own example format ("missed 3 of last 5...") states the
+  count with the same declarative confidence as everything else in a DPR,
+  and a precise wrong number is harder to argue with, and more damaging,
+  than an honest absence of one. Same shape as idle cost suppressed on an
+  untrusted hire rate, or `productive_count` left `not_captured` rather
+  than fabricated (lib/dpr/idle-cost.ts, lib/dpr/schema.ts) — not a new
+  principle, the same one applied to a section that names a person instead
+  of a quantity.
+- **`'unconfirmed'` kept as a third status**, same family as
+  `CapturedCount`'s zero-vs-absent, `SuppressionNote`'s suppressed-vs-absent,
+  and `low_confidence`'s shaky-vs-solid — a fourth member, not a new idea.
+  Triggered only by same-day peer corroboration (another roster engineer on
+  the same project reported `is_holiday=true`); a fully silent day (nobody
+  on the roster has a row) has no evidence either way and stays `missing`,
+  worded factually rather than accusatorially either way.
+- **Per-half status and pattern fields, window excluding today**, kept in
+  the `AccountabilityEntry` type even though the pattern isn't computed
+  (`morning_pattern`/`evening_pattern` are always `null`) — so turning the
+  pattern on later is a fill-in at the aggregator, not a type redesign that
+  ripples into every consumer. Per-half because bot-flows.md's own example
+  ties a pattern to a specific half, making one shared value ambiguous.
+  Today excluded from any future window because the example states today's
+  miss in prose and then gives the pattern separately — including today
+  would double-count the same failure twice in one sentence.
+
+**THE TWO PREREQUISITES, tracked as blockers on §6's headline output, not
+as general debt:**
+1. **Delivery-status observability** — a Twilio status-callback endpoint (or
+   equivalent), so an undelivered send is distinguishable from real silence.
+   Does not exist.
+2. **Block history** — a per-day record of `messaging_blocked` state (an
+   audit trail, or a flag stamped onto `daily_logs` like `is_holiday`
+   already is). Does not exist. Currently moot in practice (nothing sets
+   the flag at all — see below), but becomes load-bearing again the moment
+   prerequisite 1's sibling problem is fixed for opt-outs specifically.
+
+Without the 7-day pattern, §6 is a status line, not its spec'd headline —
+that's acknowledged, not minimized. Golden case #2 ("evening missing for
+one engineer") asserts against the per-day status only; it does not — and
+currently cannot — assert against a pattern.
+
+**SEPARATE, PRE-LAUNCH ITEM — not filed here as a DPR concern, because it
+isn't one.** "Nothing sets `messaging_blocked = true`" has a consequence
+well outside this section: an engineer who texts STOP keeps getting
+messaged, because nothing notices. That's a WhatsApp Business quality-rating
+and compliance problem — Meta throttles messaging limits based on quality
+rating, and repeated sends to an opted-out number degrades that rating for
+the WHOLE product, not this feature. Tracked in CLAUDE.md §10, next to the
+Twilio production-sender work it blocks, not in this document.

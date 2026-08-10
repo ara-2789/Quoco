@@ -216,6 +216,22 @@ export interface TomorrowsPlanFacts {
   // from daily_logs.evening_dependencies — empty until Q6 ships.
 }
 
+// A THIRD status alongside submitted/missing — same family as CapturedCount's
+// zero-vs-absent split, SuppressionNote's suppressed-vs-absent, and
+// low_confidence's shaky-vs-solid: 'unconfirmed' means no record exists AND
+// there is specific reason to think this may be a legitimate absence, not
+// just silence. Currently the only trigger is corroboration: another
+// engineer on the SAME project, SAME day, reported is_holiday=true. Kept
+// distinct from 'missing' (no record, no particular counter-evidence)
+// deliberately — collapsing the two would either over-excuse (treat every
+// silence as possibly-holiday) or under-protect (ignore real peer evidence).
+export type AccountabilityHalfStatus = 'submitted' | 'missing' | 'unconfirmed'
+
+export interface AccountabilityPattern {
+  missed_count: number
+  window_days: number
+}
+
 export interface AccountabilityEntry {
   // SECTION 6 IS ENTIRELY CODE. No model call, no Judgment counterpart —
   // bot-flows.md already fully specifies this shape; don't redesign it here.
@@ -223,28 +239,68 @@ export interface AccountabilityEntry {
   // other in this schema; it happens to never touch the model because the
   // model has nothing qualitative to add to "did they submit or not."
   engineer_name: string
-  morning_status: 'submitted' | 'missing'
-  evening_status: 'submitted' | 'missing'
-  pattern: {
-    missed_count: number
-    window_days: number // 7-day pattern, holiday + messaging_blocked days
-    // excluded from BOTH numerator and denominator (bot-flows.md's own
-    // CROSS-DATE CONSTRAINT — messaging_blocked is a current-state flag, not
-    // historical; do not read it across dates without a block-history
-    // mechanism).
-  }
-  status_note: string // code-templated, e.g. "Rajesh — evening not submitted
-  // today (missed 3 of last 5 site-operating days)." Never model-generated.
+  // Per-half, not shared — bot-flows.md's own example ties a pattern to
+  // whichever half is being reported ("evening not submitted today (missed
+  // 3 of last 5...)"), so one shared status/pattern for both halves would
+  // be ambiguous whenever they differ.
+  morning_status: AccountabilityHalfStatus
+  evening_status: AccountabilityHalfStatus
+  // PATTERN FIELDS EXIST BUT ARE NOT COMPUTED — see
+  // ACCOUNTABILITY_PATTERN_SUPPRESSED below for the full reasoning. Always
+  // null in this build. Kept in the type (not deleted) so turning the
+  // pattern on later is a fill-in at the aggregator, not a redesign of this
+  // shape or of every consumer that reads it.
+  morning_pattern: AccountabilityPattern | null
+  evening_pattern: AccountabilityPattern | null
+  // Worded as a fact about OUR RECORDS, never a claim about the person —
+  // "No evening check-in recorded today," not "Rajesh missed evening
+  // check-in" or any wording implying he ignored it. Decided 2026-08-10
+  // after establishing that outbound delivery failures are entirely
+  // unobserved (no Twilio status-callback endpoint exists) — "we never
+  // delivered the question" is indistinguishable, in our data, from
+  // silence, and Rule 5.3 requires ruling out legitimate absence before a
+  // name appears at all. Code-templated. Never model-generated.
+  status_note: string
 }
 
+// SEVENTH-DAY PATTERN FORCED SUPPRESSED — decided 2026-08-10, not a
+// temporary implementation gap. Two prerequisites, BOTH required before a
+// pattern is trustworthy enough to ship:
+//   1. DELIVERY-STATUS OBSERVABILITY — there is no Twilio status-callback
+//      endpoint (app/api/whatsapp/ has exactly one route, inbound only).
+//      An outbound 7pm prompt that silently failed to deliver leaves
+//      EXACTLY the same evidence — no daily_logs row — as an engineer who
+//      saw the message and ignored it. A 7-day count built on that
+//      evidence isn't a measurement, it's a guess wearing a number.
+//   2. BLOCK HISTORY — messaging_blocked has no per-day record (bot-flows.md's
+//      own CROSS-DATE CONSTRAINT; design-decisions-beta-feedback.md §3.1).
+//      MOOT AS OF 2026-08-10 IN PRACTICE (CLAUDE.md §10: no code path
+//      anywhere ever sets messaging_blocked=true, so no historical block
+//      data exists to contaminate a pattern today) — but a real
+//      prerequisite once that set-half is built (tracked pre-launch,
+//      CLAUDE.md §10, separate from this DPR item), since an undetected
+//      STOP is the SAME missing-evidence problem as #1, one layer up.
+// A blanket suppression, not a per-engineer SuppressionNote: every pattern
+// is withheld, unconditionally, for the same two reasons, which is why this
+// is a forced constant (matching TOMORROWS_PLAN_DATA_STATUS_FORCED's own
+// shape below) rather than a per-instance marker. The PER-DAY status still
+// ships — "no check-in recorded" needs neither prerequisite, it's a fact
+// about records, not an aggregate claim. The pattern is what turns that
+// fact into an accusation with a number attached, and a wrong number is
+// harder to argue with than an honest absence of one — same shape as idle
+// cost suppressed on an untrusted hire rate, or productive_count left
+// not_captured rather than fabricated. Full reasoning + the two blockers as
+// tracked items: docs/design-decisions-beta-feedback.md §13.
+export const ACCOUNTABILITY_PATTERN_SUPPRESSED = true
+
 // The fact assembler's output — one project-day's worth of Facts, code-owned,
-// pre-model. `accountability` is DELIBERATELY ABSENT here: it needs its own
-// 7-day-window aggregator (holiday/messaging_blocked exclusion, per
-// AccountabilityEntry's own note) that doesn't exist yet — same blocker
-// already tracked against golden case #2. lib/dpr/assemble.ts's
-// mergeDprFacts computes everything below; accountability is assembled
-// separately, later, not folded in here to avoid scope creep into an
-// unbuilt aggregator.
+// pre-model. `accountability` is DELIBERATELY ABSENT here, still — not
+// because it's unbuilt (lib/dpr/accountability.ts now exists) but because
+// its fetch shape is genuinely different from mergeDprFacts's: a
+// project_members-driven roster + absence check, not a set of already-
+// fetched daily_logs rows (see accountability.ts's own header). A future
+// top-level orchestrator combines both; DprFacts itself stays scoped to
+// what mergeDprFacts computes.
 export interface DprFacts {
   execution: ExecutionOutputFacts
   schedule: ScheduleFacts

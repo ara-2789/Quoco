@@ -1,0 +1,5 @@
+#!/bin/sh
+branch=$(git symbolic-ref --short HEAD)
+[ "$branch" = "main" ] || exit 0
+echo "Refusing to commit directly to main — branch first (CLAUDE.md §0)." >&2
+exit 1
