@@ -99,14 +99,21 @@ function suppressionText(note: SuppressionNote): Standalone {
 }
 
 // Bare counts (headcount, productive_count, idle_count) — no unit, no
-// currency, just the number or the not-captured phrase, in each of the two
-// flavors. headcount and utilisation_pct are always their own line
-// (Standalone); productive_count and idle_count are always composed
-// together on one line (Inline) — see renderManpower.
-function fmtCountStandalone(c: CapturedCount | CapturedNumber): Standalone {
-  return c.status === 'not_captured' ? NOT_CAPTURED_STANDALONE : standalone(String(c.value))
-}
-
+// currency, just the number or the not-captured phrase.
+//
+// THE RULE, STATED PRECISELY (2026-08-11, Aravind's Fix 1 audit — see that
+// audit's own note below for what it found): Inline vs Standalone is NOT
+// decided by whether a value happens to share a literal line with a
+// sibling. It's decided by what KIND of content the value is. A "Label:
+// value" line — headcount, utilisation, hours, money, a boolean — states a
+// short DATA VALUE; the label is already doing the framing work, so the
+// value itself must be a bare Inline fragment, even when it is the only
+// thing on its line. Standalone is reserved for values that ARE a complete
+// EXPLANATION with no separate label doing that job — a model's note, a
+// suppression sentence, a collapsed block's one-line summary. "Own line"
+// was the wrong test — it's what led headcount/utilisation_pct to be
+// mistyped as Standalone in the first pass; both are label:value fields
+// that happen not to share a line with a sibling, not explanations.
 function fmtCountInline(c: CapturedCount | CapturedNumber): Inline {
   return c.status === 'not_captured' ? NOT_CAPTURED_INLINE : inline(String(c.value))
 }
@@ -127,14 +134,14 @@ function formatIndianCurrency(value: number): string {
 }
 
 // Money fields (idle_cost, daily_hire_cost) — ₹ + Indian grouping, or the
-// not-captured phrase with no unit tacked on. daily_hire_cost is never
-// composed inline today (Standalone only); idle_cost IS, on the equipment
-// line (Inline).
-function fmtMoneyStandalone(c: CapturedNumber): Standalone {
-  if (c.status !== 'reported' || c.value === null) return NOT_CAPTURED_STANDALONE
-  return standalone(formatIndianCurrency(c.value))
-}
-
+// not-captured phrase. Both are "Label: value" data fields per the rule
+// above — Inline, even though daily_hire_cost isn't composed onto a
+// content line today (it's `structured`-only). Fixed alongside idle_cost
+// in the Fix 1 audit: it was mistyped Standalone, with zero CURRENT
+// visible effect only because nothing prints it in content yet — the same
+// latent-inconsistency shape as headcount/utilisation_pct, just not yet
+// exposed. Fixed now rather than left as a landmine for the day content
+// does surface it.
 function fmtMoneyInline(c: CapturedNumber): Inline {
   if (c.status !== 'reported' || c.value === null) return NOT_CAPTURED_INLINE
   return inline(formatIndianCurrency(c.value))
@@ -154,8 +161,9 @@ function fmtHoursInline(c: CapturedNumber): Inline {
 // A raw JS boolean must never reach rendered content (2026-08-11 finding —
 // "Plan met: true" is not what an owner reads). "Yes"/"No" pairs naturally
 // with the existing "Plan met:" line prefix without repeating "plan met".
-function fmtBoolean(value: boolean): string {
-  return value ? 'Yes' : 'No'
+// Inline — a "Label: value" field per the rule above.
+function fmtBoolean(value: boolean): Inline {
+  return inline(value ? 'Yes' : 'No')
 }
 
 // ---- §1 Execution -----------------------------------------------------
@@ -185,10 +193,15 @@ function renderExecutionItem(item: ExecutionQuantityFact): RenderedExecutionItem
 // ---- §3 Manpower --------------------------------------------------------
 
 interface RenderedManpower {
-  headcount: Standalone
+  // headcount and utilisation_pct are Inline, same as productive_count/
+  // idle_count — see fmtCountInline's own comment for the corrected rule
+  // (2026-08-11 Fix 1 audit): "own line" doesn't make a field Standalone,
+  // being a label:value DATA field does. Both were mistyped Standalone in
+  // the first pass.
+  headcount: Inline
   productive_count: Inline
   idle_count: Inline
-  utilisation_pct: Standalone
+  utilisation_pct: Inline
   note: Standalone
   // Present ONLY when the whole section is suppressed (§12) — lets
   // renderContent collapse the section to ONE line instead of repeating the
@@ -212,10 +225,10 @@ function renderManpower(facts: DprFacts['manpower'], judgment: DprJudgment): Ren
   if (facts.suppressed) {
     const text = suppressionText(facts.suppressed)
     return {
-      headcount: NOT_CAPTURED_STANDALONE,
+      headcount: NOT_CAPTURED_INLINE,
       productive_count: NOT_CAPTURED_INLINE,
       idle_count: NOT_CAPTURED_INLINE,
-      utilisation_pct: NOT_CAPTURED_STANDALONE,
+      utilisation_pct: NOT_CAPTURED_INLINE,
       note: text,
       suppressed: facts.suppressed,
     }
@@ -229,19 +242,19 @@ function renderManpower(facts: DprFacts['manpower'], judgment: DprJudgment): Ren
   // collapse the same way the suppressed branch does.
   if (isManpowerNoteDiscarded(facts)) {
     return {
-      headcount: NOT_CAPTURED_STANDALONE,
+      headcount: NOT_CAPTURED_INLINE,
       productive_count: NOT_CAPTURED_INLINE,
       idle_count: NOT_CAPTURED_INLINE,
-      utilisation_pct: NOT_CAPTURED_STANDALONE,
+      utilisation_pct: NOT_CAPTURED_INLINE,
       note: NOT_CAPTURED_STANDALONE,
       wholly_blank: true,
     }
   }
   return {
-    headcount: fmtCountStandalone(facts.headcount),
+    headcount: fmtCountInline(facts.headcount),
     productive_count: fmtCountInline(facts.productive_count),
     idle_count: fmtCountInline(facts.idle_count),
-    utilisation_pct: facts.utilisation_pct.status === 'not_captured' ? NOT_CAPTURED_STANDALONE : standalone(`${facts.utilisation_pct.value}%`),
+    utilisation_pct: facts.utilisation_pct.status === 'not_captured' ? NOT_CAPTURED_INLINE : inline(`${facts.utilisation_pct.value}%`),
     // isManpowerNoteDiscarded is false here, so the model was given the
     // note field and judgment.manpower_idle_reason_note is real prose, not
     // a normalization default — no fallback needed.
@@ -255,7 +268,10 @@ interface RenderedEquipmentItem {
   type: string
   available_hours: Inline
   actual_hours: Inline
-  daily_hire_cost: Standalone
+  // Inline, per the Fix 1 audit (2026-08-11) — see fmtMoneyInline's own
+  // comment. Was mistyped Standalone; harmless today only because nothing
+  // prints this field in content yet.
+  daily_hire_cost: Inline
   idle_cost: Inline
   note: Standalone
   // Present when EITHER the item is Facts-suppressed (§12) OR every
@@ -286,7 +302,7 @@ function renderEquipmentItem(item: EquipmentItemFacts, judgment: DprJudgment): R
       type: item.type,
       available_hours: NOT_CAPTURED_INLINE,
       actual_hours: NOT_CAPTURED_INLINE,
-      daily_hire_cost: NOT_CAPTURED_STANDALONE,
+      daily_hire_cost: NOT_CAPTURED_INLINE,
       idle_cost: NOT_CAPTURED_INLINE,
       note: text,
       blank: text,
@@ -297,7 +313,7 @@ function renderEquipmentItem(item: EquipmentItemFacts, judgment: DprJudgment): R
     type: item.type,
     available_hours: fmtHoursInline(item.available_hours),
     actual_hours: fmtHoursInline(item.actual_hours),
-    daily_hire_cost: fmtMoneyStandalone(item.daily_hire_cost),
+    daily_hire_cost: fmtMoneyInline(item.daily_hire_cost),
     idle_cost: fmtMoneyInline(item.idle_cost),
     // isEquipmentItemNoteDiscarded is false here, so this item was one of
     // the eligible indices the model was asked about — modelNote should
@@ -375,7 +391,10 @@ function computeDataGaps(facts: DprFacts, manpower: RenderedManpower): string[] 
 export interface RenderedDpr {
   structured: {
     execution: { items: RenderedExecutionItem[]; narrative: string; data_status: string }
-    schedule: { met: string; note: string; data_status: string }
+    // met: Inline | Standalone, not Inline alone — see renderDpr's own
+    // comment on the schedule.suppressed branch for why the suppressed
+    // case is a genuine, flagged exception, not a typing oversight.
+    schedule: { met: Inline | Standalone; note: Standalone; data_status: string }
     manpower: RenderedManpower & { data_status: string }
     equipment: { items: RenderedEquipmentItem[]; data_status: string }
     tomorrows_plan: { note: string; data_status: string }
@@ -393,11 +412,24 @@ export interface RenderedDpr {
 export function renderDpr(facts: DprFacts, judgment: DprJudgment, accountability: AccountabilityEntry[]): RenderedDpr {
   const executionItems = facts.execution.quantities.map(renderExecutionItem)
 
+  // FIX 1 AUDIT FINDING, FLAGGED NOT FIXED (2026-08-11): the suppressed
+  // branch forces a full Standalone sentence into `met`, glued after the
+  // "Plan met:" label ("Plan met: 2 engineers reported schedule status
+  // separately..."), and repeats the SAME sentence into `note` right below
+  // it — the identical "same explanation, multiple times" shape Part 1
+  // fixed for manpower (RenderedManpower.suppressed) and equipment
+  // (RenderedEquipmentItem.blank). Schedule never received that collapse
+  // treatment. Out of scope for Fix 1 (a flavor-consistency fix, not a
+  // restructuring one) — recorded here so it is findable, not silently
+  // left to be rediscovered as a "new" bug later. The `met: Inline |
+  // Standalone` union exists BECAUSE of this exception: a real union, not
+  // a dishonest cast, since this branch genuinely does hold a Standalone
+  // sentence, unlike the not_captured branch below.
   const schedule = facts.schedule.suppressed
     ? { met: suppressionText(facts.schedule.suppressed), note: suppressionText(facts.schedule.suppressed) }
     : {
-        met: facts.schedule.schedule_met === null ? NOT_CAPTURED_STANDALONE : fmtBoolean(facts.schedule.schedule_met),
-        note: facts.schedule.schedule_met === false ? judgment.schedule_miss_reason_note : '',
+        met: facts.schedule.schedule_met === null ? NOT_CAPTURED_INLINE : fmtBoolean(facts.schedule.schedule_met),
+        note: facts.schedule.schedule_met === false ? standalone(judgment.schedule_miss_reason_note) : standalone(''),
       }
 
   const manpower = renderManpower(facts.manpower, judgment)
@@ -478,9 +510,30 @@ function renderContent(s: RenderedDpr['structured']): string {
   }
   lines.push('')
 
-  lines.push("TOMORROW'S PLAN")
-  lines.push(`  ${s.tomorrows_plan.note}`)
-  lines.push('')
+  // FIX 2 (2026-08-11, Aravind): suppressed entirely while Q6 does not
+  // exist. Printing "Not captured today." here duplicated the more
+  // accurate WHAT THIS REPORT DOES NOT KNOW line below ("not yet asked in
+  // this version of the check-in") three lines apart, on every single
+  // report — and the duplicated pair actively disagreed: "not captured"
+  // implies the question was asked and went unanswered, which is false
+  // pre-Q6. The gaps line is the one true explanation; this section adds
+  // nothing but a second, less accurate one.
+  //
+  // Driven off TOMORROWS_PLAN_DATA_STATUS_FORCED DIRECTLY — the same
+  // module-level constant computeDataGaps checks — not off
+  // s.tomorrows_plan.data_status (which is only equal to it because
+  // nothing else assigns that field today) and not off a runtime null/
+  // empty check on s.tomorrows_plan.note. A runtime check on rendered
+  // state could ALSO be true post-Q6, on a day an engineer legitimately
+  // has zero dependencies to report — a real, different state this
+  // section must not suppress. Checking the constant is what makes this
+  // section reappear automatically the day Q6 ships, with nothing to
+  // remember to undo.
+  if (TOMORROWS_PLAN_DATA_STATUS_FORCED !== 'not_captured') {
+    lines.push("TOMORROW'S PLAN")
+    lines.push(`  ${s.tomorrows_plan.note}`)
+    lines.push('')
+  }
 
   // Placed after the substantive sections and before ACCOUNTABILITY —
   // Rule 5.2 (docs/design-principles.md): decisions/key drivers first,
