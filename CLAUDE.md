@@ -124,6 +124,61 @@
   SQL Editor was genuinely providing that a hash can't: a human present at
   the moment of change. The SQL Editor remains acceptable; it is no longer
   required.
+- `supabase db push` IS NEVER USED AGAINST ANY DATABASE — TEST-DB INCLUDED
+  (hard rule, not a preference, since 2026-08-11, from the migration-026
+  rehearsal incident). `db push` decides what to apply by diffing the LOCAL
+  migration directory against the target's `schema_migrations` LEDGER — and
+  this project's history is full of that ledger lagging the actual applied
+  schema (001-005 originally; a separate prod-ledger gap for 023/024/025
+  recorded elsewhere in this file; and, this incident, test-db). When the
+  ledger lags, `db push` cannot tell "already applied, ledger just hasn't
+  caught up" from "genuinely never applied" — it re-runs whatever it
+  believes is missing regardless. On test-db here, that meant re-running 022
+  (`CREATE OR REPLACE FUNCTION apply_evening_flow_turn`) over a body that
+  already had 024 AND 025 correctly applied, silently reverting the
+  productive/idle inversion fix — the exact bug 025 exists to prevent,
+  restored by the tool meant to apply migrations safely. Caught only because
+  a body-hash re-probe happened to run for an unrelated reason (a migration
+  026 stale-detection mechanism being rehearsed at the time); the CI suite
+  (T-024) would have failed on the very next run against test-db, with
+  nothing connecting that failure to "someone ran db push" for whoever saw
+  it. FIX APPLIED same-session: `025_evening_productivity_reconciliation.sql`
+  re-applied directly (`supabase db query --linked -f <path>`), re-probed
+  (`body_md5` back to `9bd64d28c9cbf0056c7fd63a83c12d3b`, `body_len` 35150,
+  matching the reference recorded at prod's own 025 apply), T-024 confirmed
+  31/31 green against test-db afterward. Migrations are applied ONE FILE AT A
+  TIME — `supabase db query --linked -f <file>` (per the PROD APPLIES rule
+  above) or the SQL Editor — against every database without exception; the
+  ledger-lag failure mode above is not specific to prod, so the restriction
+  above isn't either anymore.
+- NO DATABASE-ALTERING COMMAND IS EVER BACKGROUNDED, AND ANY COMMAND CARRYING
+  AN INTERACTIVE CONFIRMATION RUNS IN THE FOREGROUND WITH THE CONFIRMATION
+  REPORTED BEFORE PROCEEDING (standing rule since 2026-08-11, same incident).
+  The `db push` above ran as a backgrounded, non-interactive process; its own
+  `[Y/n]` confirmation prompt was defaulted through by the CLI, with no
+  explicit "yes" ever given by a human or relayed by Claude Code on a
+  human's behalf. THIS IS THE MORE SERIOUS OF THE TWO FAILURES IN THIS
+  INCIDENT, NOT THE LESSER ONE: a command capable of altering a database must
+  never also be capable of confirming itself. Backgrounding removes the one
+  moment a human — or Claude Code relaying to a human — would otherwise see
+  the confirmation prompt and be able to stop it. Applies regardless of which
+  database is targeted, including test-db; "it's only test-db" was exactly
+  the reasoning that made backgrounding feel low-risk here, and the incident
+  above is why that reasoning doesn't hold on its own terms.
+- WHY THIS HAPPENED, RECORDED ALONGSIDE THE TWO RULES ABOVE BECAUSE IT IS WHAT
+  CREATED THE OPENING FOR THEM TO FIRE (2026-08-11, same incident). A
+  stale-detection mechanism for `dprs.generation_status` had correctly been
+  brought back as a proposal and confirmed before any code was written — the
+  PLAN FIRST rule at the top of this section was followed for that part.
+  What wasn't separated out: once building started, writing the migration
+  file and REHEARSING it against a real database ran as an undifferentiated
+  continuation of "build," not as its own, separately-flagged, higher-risk
+  step. Application code and a database-touching rehearsal are not the same
+  risk tier and should never be collapsed into one uninterrupted stretch of
+  execution — the pause that a separate checkpoint before the rehearsal step
+  would have forced is exactly the pause in which the `db push` choice and
+  the backgrounding choice would have been visible before either one ran, not
+  after.
 
 ---
 
