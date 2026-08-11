@@ -308,6 +308,67 @@ function renderEquipmentItem(item: EquipmentItemFacts, judgment: DprJudgment): R
   }
 }
 
+// ---- "WHAT THIS REPORT DOES NOT KNOW" --------------------------------
+//
+// Aravind's finding (2026-08-11): §6 prints "All engineers submitted both
+// check-ins today" directly above sections full of blanks — to an owner
+// those contradict: if everyone reported, why does the report know
+// nothing? §6 only ever answers "did they check in at all" (a binary on
+// submission PRESENCE); it says nothing about whether a submitted check-in
+// yielded USABLE DATA, and Part 1's collapse fix (renderManpower/
+// renderEquipmentItem, above) made each individual blank read cleanly but
+// still didn't say WHY it's blank.
+//
+// SMALL VERSION, undifferentiated cause (2026-08-11, Aravind's decision —
+// docs/design-decisions-beta-feedback.md §22 has the full investigation).
+// Of the four possible causes a blank field can have — never asked, asked-
+// with-no-usable-answer, withheld by §12 policy, or a system fault that
+// silently lost a real answer — this covers ONLY the first two:
+//   - never asked (Q6 not built) — TOMORROWS_PLAN_DATA_STATUS_FORCED
+//     already ties this to whether Q6 has shipped; reusing it here means
+//     this line disappears on its own the moment that changes, not by
+//     someone remembering to delete it.
+//   - asked, no usable answer — scoped here to the manpower-productivity
+//     shape specifically (headcount known, productivity/idle not), the
+//     case Aravind's original finding was about.
+// §12 suppression (withheld by policy) is deliberately NOT covered here —
+// it already gets a full inline explanation within its own section
+// (manpower.note / equipment item .blank), and duplicating that sentence
+// in a second place would be exactly the redundancy Part 1 just removed
+// elsewhere. A possible system fault is NOT covered either, and must not
+// be implied: §22's investigation found no way to distinguish "the
+// engineer didn't answer" from "we lost it" with data available today —
+// asserting a specific cause here would be a claim this system cannot
+// back up.
+//
+// NAMES NO ENGINEER, for either cause covered — same records-not-person
+// posture as lib/dpr/accountability.ts's own noteFor() and §6 itself
+// (Rule 5.3, docs/design-principles.md): a data gap is a property of the
+// report, never a person, and per §22, attributing a productivity gap to
+// a specific engineer is not something this system can currently do
+// safely — the "asked, no usable answer" cause is not reliably
+// distinguishable from "we lost it" with data available today, so
+// attribution would overclaim what's actually known.
+function computeDataGaps(facts: DprFacts, manpower: RenderedManpower): string[] {
+  const gaps: string[] = []
+
+  if (TOMORROWS_PLAN_DATA_STATUS_FORCED === 'not_captured') {
+    gaps.push("Tomorrow's Plan: not yet asked in this version of the check-in.")
+  }
+
+  // Deliberately excludes the suppressed and wholly_blank cases — both
+  // already carry a full inline explanation within §3 itself. Reaching
+  // this branch with a real gap means headcount was captured (otherwise
+  // wholly_blank would be true) but productivity/idle was not.
+  if (!manpower.suppressed && !manpower.wholly_blank) {
+    if (facts.manpower.productive_count.status === 'not_captured' || facts.manpower.idle_count.status === 'not_captured') {
+      gaps.push('Manpower productivity: not answered today.')
+    }
+  }
+
+  return gaps
+}
+
 // ---- §6 Accountability — entirely code, no model, no rendering choice to
 // make: schema.ts's AccountabilityEntry already IS the render shape.
 
@@ -318,6 +379,12 @@ export interface RenderedDpr {
     manpower: RenderedManpower & { data_status: string }
     equipment: { items: RenderedEquipmentItem[]; data_status: string }
     tomorrows_plan: { note: string; data_status: string }
+    // Plain-English lines, computed by computeDataGaps (above) — one per
+    // blank field this system can honestly explain the cause of. Empty on
+    // a day with no explainable gaps; renderContent omits the section
+    // header entirely rather than printing it empty (Rule 4.1/5.6, docs/
+    // design-principles.md — don't clutter a clean report).
+    data_gaps: string[]
     accountability: AccountabilityEntry[]
   }
   content: string
@@ -347,6 +414,7 @@ export function renderDpr(facts: DprFacts, judgment: DprJudgment, accountability
     manpower: { ...manpower, data_status: judgment.manpower_data_status },
     equipment: { items: equipmentItems, data_status: judgment.equipment_data_status },
     tomorrows_plan: tomorrowsPlan,
+    data_gaps: computeDataGaps(facts, manpower),
     accountability,
   }
 
@@ -413,6 +481,21 @@ function renderContent(s: RenderedDpr['structured']): string {
   lines.push("TOMORROW'S PLAN")
   lines.push(`  ${s.tomorrows_plan.note}`)
   lines.push('')
+
+  // Placed after the substantive sections and before ACCOUNTABILITY —
+  // Rule 5.2 (docs/design-principles.md): decisions/key drivers first,
+  // flagged gaps next, full detail last. Accountability (who's missing
+  // entirely) is a different signal from this section (what's missing
+  // from those who DID report) and calls for a different PM action —
+  // kept separate rather than merged, per Aravind's decision. Omitted
+  // entirely when there's nothing to explain, not printed empty.
+  if (s.data_gaps.length > 0) {
+    lines.push('WHAT THIS REPORT DOES NOT KNOW')
+    for (const gap of s.data_gaps) {
+      lines.push(`  - ${gap}`)
+    }
+    lines.push('')
+  }
 
   lines.push('ACCOUNTABILITY')
   if (s.accountability.length === 0) {

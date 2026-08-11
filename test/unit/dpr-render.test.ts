@@ -451,3 +451,91 @@ describe("renderDpr — golden-case fixture drift regression: EquipmentItemFacts
     expect(result.content).toContain('- concrete_mixer:')
   })
 })
+
+describe('renderDpr — "WHAT THIS REPORT DOES NOT KNOW" (Part 3, small version, 2026-08-11)', () => {
+  it("always includes the Tomorrow's Plan gap pre-Q6 — TOMORROWS_PLAN_DATA_STATUS_FORCED, not a hardcoded line", () => {
+    const result = renderDpr(emptyFacts, baseJudgment, [])
+    expect(result.structured.data_gaps).toContain("Tomorrow's Plan: not yet asked in this version of the check-in.")
+    expect(result.content).toContain('WHAT THIS REPORT DOES NOT KNOW')
+    expect(result.content).toContain("  - Tomorrow's Plan: not yet asked in this version of the check-in.")
+  })
+
+  it('a fully complete manpower section (emptyFacts) does NOT add a manpower gap line — only the always-present Tomorrow\'s Plan one', () => {
+    const result = renderDpr(emptyFacts, baseJudgment, [])
+    expect(result.structured.data_gaps).toEqual(["Tomorrow's Plan: not yet asked in this version of the check-in."])
+  })
+
+  it('a partial manpower section (headcount known, productivity/idle not) adds the manpower-productivity gap line — the exact shape Aravind\'s finding was about', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'reported', value: 4 },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+      },
+    }
+    const judgment: DprJudgment = { ...baseJudgment, manpower_idle_reason_note: 'Productivity not reported today.' }
+    const result = renderDpr(facts, judgment, [])
+    expect(result.structured.data_gaps).toEqual([
+      "Tomorrow's Plan: not yet asked in this version of the check-in.",
+      'Manpower productivity: not answered today.',
+    ])
+    expect(result.content).toContain('  - Manpower productivity: not answered today.')
+  })
+
+  it('a SUPPRESSED manpower section does NOT duplicate the suppression sentence here — it is already fully explained inline in §3', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'not_captured', value: null },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+        suppressed: { reason: 'multi_engineer_manpower', engineer_count: 2 },
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.data_gaps).toEqual(["Tomorrow's Plan: not yet asked in this version of the check-in."])
+    expect(result.content).not.toContain('Manpower productivity:')
+  })
+
+  it('a wholly not_captured (unsuppressed) manpower section does NOT duplicate the collapse line here either', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'not_captured', value: null },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.data_gaps).toEqual(["Tomorrow's Plan: not yet asked in this version of the check-in."])
+    expect(result.content).not.toContain('Manpower productivity:')
+  })
+
+  it('never names an engineer, for either gap covered', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'reported', value: 4 },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    for (const gap of result.structured.data_gaps) {
+      expect(gap).not.toMatch(/^[A-Z][a-z]+ [A-Z]/) // no "Firstname Lastname —" style prefix
+    }
+  })
+
+  it('is a separate section from ACCOUNTABILITY, not folded into it — different signal, different PM action', () => {
+    const result = renderDpr(emptyFacts, baseJudgment, [])
+    const gapsIndex = result.content.indexOf('WHAT THIS REPORT DOES NOT KNOW')
+    const accountabilityIndex = result.content.indexOf('ACCOUNTABILITY')
+    expect(gapsIndex).toBeGreaterThan(-1)
+    expect(accountabilityIndex).toBeGreaterThan(gapsIndex)
+  })
+})
