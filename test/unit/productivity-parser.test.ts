@@ -188,4 +188,58 @@ describe('parseProductivity — DEFECT 1: a YES_WORD must not mask a stated idle
     expect(p.idle_count).toBe(2)
     expect(p.idle_reason).toBe('waiting for cement')
   })
+
+  // ANCHOR-MATCH STRENGTH (2026-08-12, external review of the 024+025
+  // catch-up package) — see this file's own header note for the full
+  // incident. 'all' is not a YES_WORD, so neither of the next two messages
+  // short-circuits at classifyYesNo; both fall through to Pass 1, where the
+  // pre-fix AFTER fallback claimed the number for 'productive' with no
+  // signal that it was a guess.
+
+  it('"all productive, 2 left early" — no confident BEFORE match for \'productive\' within bound; AFTER claims "2" but as a WEAK match', () => {
+    const p = parseProductivity('all productive, 2 left early')
+    expect(p.all_productive).toBe(false)
+    expect(p.productive_count).toBe(2)
+    expect(p.idle_count).toBeNull()
+    expect(p.numbers_discarded).toBe(true) // the weak-match signal, not a literally-discarded token
+  })
+
+  it('"yes all productive, 2 machines idle" — same shape, \'idle\' also finds nothing within reach', () => {
+    const p = parseProductivity('yes all productive, 2 machines idle')
+    expect(p.all_productive).toBe(false)
+    expect(p.productive_count).toBe(2)
+    expect(p.idle_count).toBeNull()
+    expect(p.numbers_discarded).toBe(true)
+  })
+
+  it('"3 men idle, 15 men productive" — BOUNDED BACKWARD SCAN: one intervening token ("men") is within bound, both anchors resolve via a STRONG BEFORE match', () => {
+    const p = parseProductivity('3 men idle, 15 men productive')
+    expect(p.idle_count).toBe(3)
+    expect(p.productive_count).toBe(15)
+    expect(p.numbers_discarded).toBe(false) // both STRONG — no weak match, nothing discarded
+  })
+
+  it('NEGATIVE — "ok 2 idle waiting for cement" stays a STRONG (immediate) BEFORE match, not weak', () => {
+    const p = parseProductivity('ok 2 idle waiting for cement')
+    expect(p.idle_count).toBe(2)
+    expect(p.numbers_discarded).toBe(false)
+  })
+
+  it('NEGATIVE — "yes all 18 productive" stays a STRONG (immediate) BEFORE match, not weak', () => {
+    const p = parseProductivity('yes all 18 productive')
+    expect(p.productive_count).toBe(18)
+    expect(p.numbers_discarded).toBe(false)
+  })
+
+  it('backward scan does not reach past the bound — two intervening non-digit tokens between a number and its anchor stay unpaired, falling to Pass 2 or discard', () => {
+    // "15" is TWO tokens back from 'productive' ("site", "men") — outside
+    // BEFORE_SCAN_MAX_BACK (bounded to one intervening token). No AFTER
+    // number exists either, so 'productive' claims nothing at all here;
+    // "15" is left for Pass 2, which — being the only unclaimed digit and
+    // idle_count still null — defaults it to idle_count instead (Pass 2's
+    // own long-standing behaviour, unchanged by this fix).
+    const p = parseProductivity('15 site men productive')
+    expect(p.productive_count).toBeNull()
+    expect(p.idle_count).toBe(15)
+  })
 })

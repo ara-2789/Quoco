@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
 import {
   applyEveningFlowTurn,
   applyMorningFlowTurn,
+  completeMorningNoEquipment,
+  reachStep4,
   ensureMorningFixtures,
   removeMorningFixtures,
   cleanupTestSessions,
@@ -132,13 +134,9 @@ import {
 const P_NOW = '2026-04-10T19:00:00+05:30' // 19:00 IST, 10 Apr — evening check-in time
 const LOG_DATE = '2026-04-10'
 
-async function completeMorningNoEquipment(phone: string, now: string): Promise<void> {
-  await applyMorningFlowTurn({ phone, message: '', startFlow: true, now })
-  await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: 'no', startFlow: false, now }) // Q3: explicit none
-  await applyMorningFlowTurn({ phone, message: 'Crew A then Crew B', startFlow: false, now })
-}
+// completeMorningNoEquipment / reachStep4 moved to test/helpers/db.ts
+// (2026-08-12) so the new productivity-reconciliation mirror test file
+// shares one definition instead of a second hand-copy.
 
 async function completeMorningWithEquipment(phone: string, now: string, equipmentReply: string): Promise<void> {
   await applyMorningFlowTurn({ phone, message: '', startFlow: true, now })
@@ -146,14 +144,6 @@ async function completeMorningWithEquipment(phone: string, now: string, equipmen
   await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now })
   await applyMorningFlowTurn({ phone, message: equipmentReply, startFlow: false, now })
   await applyMorningFlowTurn({ phone, message: 'Crew A then Crew B', startFlow: false, now })
-}
-
-// Drive evening to the start of Q4 (step 4) via the Q2=Yes edge (shortest
-// path — Q1 -> Q2 yes -> step 4, per 024's routing change).
-async function reachStep4(phone: string, now: string): Promise<void> {
-  await applyEveningFlowTurn({ phone, message: '', startFlow: true, now })
-  await applyEveningFlowTurn({ phone, message: 'Slab concrete 120 sqm', startFlow: false, now })
-  await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now })
 }
 
 beforeAll(async () => {

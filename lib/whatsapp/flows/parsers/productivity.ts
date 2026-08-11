@@ -85,11 +85,19 @@ export interface ProductivityParse {
   // Remaining free text once every claimed number, anchor word, and
   // PRODUCTIVITY_STOPWORDS token is stripped. null when nothing is left.
   idle_reason: string | null
-  // TRUE when this message contained a numeric token that could not be
-  // placed into idle_count or productive_count — see THE GENERAL GUARD
-  // above. The caller must treat this as a confidence-lowering signal on
-  // its own, never silently ignore it because idle_count/productive_count
-  // still came out non-null from OTHER tokens in the same message.
+  // BROADER THAN ITS NAME, DELIBERATELY (2026-08-12, external review of the
+  // 024+025 catch-up package — see CLAUDE.md §10 for the note recording
+  // why this was not renamed). Originally meant only "a numeric token could
+  // not be placed into idle_count or productive_count" — THE GENERAL GUARD
+  // above. Since the STRONG/WEAK anchor-match fix (same date, this file's
+  // ANCHOR-MATCH STRENGTH note), this flag ALSO fires when a number WAS
+  // placed, but only via a weak (AFTER-anchor) match — "all productive, 2
+  // left early" places "2" as productive_count via the AFTER fallback, with
+  // nothing discarded in the literal sense, yet this flag is still true,
+  // because an AFTER match is a guess about which anchor a number belongs
+  // to, not a confirmed pairing. The caller must treat this as a single
+  // confidence-lowering signal covering BOTH cases — never silently ignore
+  // it because idle_count/productive_count still came out non-null.
   numbers_discarded: boolean
   // Always preserved verbatim (trimmed) — the raw answer never gets lost.
   raw_text: string
@@ -150,30 +158,87 @@ export function parseProductivity(raw: string): ProductivityParse {
   // this: each anchor word looks for ITS OWN nearest unclaimed number, and
   // is itself marked used once it finds one, so a later number can't be
   // mis-paired with an anchor word that already has a partner.
-  // Prefers the number immediately BEFORE the anchor ("15 productive", "3
-  // idle" — number-then-word, the pattern both the real incident and its
-  // reordering use); falls back to AFTER when nothing usable precedes it
-  // ("productive 15").
+  //
+  // ANCHOR-MATCH STRENGTH (2026-08-12, external review of the 024+025
+  // catch-up package). BEFORE is confident; AFTER is a guess. "15
+  // productive" and "3 idle" are unambiguous — the number IS the anchor's.
+  // "productive 15" is the same pairing read backwards. But a number
+  // sitting after an anchor for a DIFFERENT reason — "all productive, 2
+  // left early", where "2" belongs to "left early", not to "productive" —
+  // looks IDENTICAL to the AFTER shape with no way to tell them apart
+  // syntactically. Two real messages produced exactly this ambiguity and
+  // were stored as confidently-inverted figures: "all productive, 2 left
+  // early" and "yes all productive, 2 machines idle" (neither contains a
+  // YES_WORD/NO_WORD pairing that resolves them upstream — 'all' is not a
+  // YES_WORD, so classifyYesNo cannot short-circuit either one). Both
+  // reached this pass unclassified-or-contradicted and fell through to the
+  // AFTER fallback, which had no way to flag the guess as a guess.
+  // BEFORE now attempts a bounded backward scan (see BEFORE_SCAN_MAX_BACK
+  // below) before falling back to AFTER; AFTER, when it fires, sets
+  // isWeakMatch — folded into numbers_discarded below (see that field's own
+  // updated comment for why it was reused rather than given a new name).
+  //
+  // BEFORE_SCAN_MAX_BACK = 2 (the immediately-preceding token, or one
+  // token further back when a single non-digit token sits between the
+  // number and its anchor) — bounded, and bounded to exactly this,
+  // deliberately conservative rather than a round number. The only real
+  // message in this parser's history needing ANY backward skip at all is
+  // "3 men idle, 15 men productive" — one descriptive noun ("men") between
+  // count and anchor. There is no second observed shape needing a wider
+  // gap; the bound is not padded for one. If a real message surfaces later
+  // needing more, widen it FROM that evidence, not ahead of it.
+  // NOT CLAUSE-AWARE, AND THIS IS A REAL GAP, NAMED NOT SOLVED: tokens are
+  // produced by splitDigitBoundaries(...).split(/[\s,]+/) — commas and
+  // whitespace collapse into the same separator, so nothing in `tokens`
+  // marks where a comma actually was. A bound that refused to scan across
+  // a clause boundary would be the structurally correct fix; it isn't
+  // achievable without changing the tokenizer to preserve comma positions
+  // first, which is out of scope for this fix. The bound below happens to
+  // keep a message like "poured 40 cum, then 3 idle" safe (an unrelated
+  // number from an earlier clause is virtually always more than 2 tokens
+  // back from an anchor in a real message), but that safety is a
+  // consequence of the chosen number being small, not a structural
+  // guarantee — a clause-spanning false pairing bounded to exactly 2 tokens
+  // back is not ruled out by this fix, only made unlikely in practice.
+  const BEFORE_SCAN_MAX_BACK = 2
+
   let idle_count: number | null = null
   let productive_count: number | null = null
+  let hasWeakMatch = false
   const claimedDigits = new Set<number>()
   for (let i = 0; i < tokens.length; i++) {
     const anchor = tokens[i]
     if (anchor !== 'idle' && anchor !== 'productive') continue
     if ((anchor === 'idle' && idle_count !== null) || (anchor === 'productive' && productive_count !== null)) continue
 
-    const prevIdx = i - 1
-    const nextIdx = i + 1
     let numberIdx: number | null = null
-    if (prevIdx >= 0 && /^\d+$/.test(tokens[prevIdx]) && !claimedDigits.has(prevIdx)) {
-      numberIdx = prevIdx
-    } else if (nextIdx < tokens.length && /^\d+$/.test(tokens[nextIdx]) && !claimedDigits.has(nextIdx)) {
-      numberIdx = nextIdx
+
+    // BEFORE — confident, tried first, bounded.
+    for (let back = 1; back <= BEFORE_SCAN_MAX_BACK; back++) {
+      const idx = i - back
+      if (idx < 0) break
+      if (/^\d+$/.test(tokens[idx]) && !claimedDigits.has(idx)) {
+        numberIdx = idx
+        break
+      }
     }
-    if (numberIdx === null) continue // anchor word with no available number neighbor
+
+    // AFTER — weak, only tried when nothing usable precedes the anchor
+    // within the bound above.
+    let isWeakMatch = false
+    if (numberIdx === null) {
+      const nextIdx = i + 1
+      if (nextIdx < tokens.length && /^\d+$/.test(tokens[nextIdx]) && !claimedDigits.has(nextIdx)) {
+        numberIdx = nextIdx
+        isWeakMatch = true
+      }
+    }
+
+    if (numberIdx === null) continue // anchor word with no available number neighbor within reach
 
     const value = parseInt(tokens[numberIdx], 10)
     claimedDigits.add(numberIdx)
+    if (isWeakMatch) hasWeakMatch = true
     if (anchor === 'idle') idle_count = value
     else productive_count = value
   }
@@ -191,7 +256,7 @@ export function parseProductivity(raw: string): ProductivityParse {
     if (/^\d+$/.test(tokens[i]) && !claimed.has(i)) unclaimedDigitIndices.push(i)
   }
 
-  let numbers_discarded = false
+  let numbers_discarded = hasWeakMatch // see this field's comment on the interface: broadened on purpose
   if (unclaimedDigitIndices.length === 1 && idle_count === null) {
     idle_count = parseInt(tokens[unclaimedDigitIndices[0]], 10)
     claimed.add(unclaimedDigitIndices[0])
