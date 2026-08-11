@@ -101,6 +101,29 @@
   would have made B1 impossible to write, since it would have shown 022
   already merged and applied before the reviewer needed to derive that from a
   diff.
+- PROD APPLIES MAY USE `supabase db query --linked -f <file>`, NOT ONLY THE
+  SQL EDITOR (standing rule since 2026-08-11, Aravind's decision, from
+  migration 025's apply). Superseded a prior instruction requiring the
+  Supabase SQL Editor with the project selector confirmed visually — that
+  requirement assumed browser/GUI access exists, which it does not in every
+  environment Claude Code runs in. `supabase db query --linked -f <file>` is
+  now an accepted apply path PROVIDED all three hold:
+    a. the linked project ref is printed and pasted immediately before the
+       apply, in the same output — not recalled from earlier in the session;
+    b. a pre-apply and post-apply hash of the affected object is captured and
+       compared, with the post-apply hash matching an independently
+       re-probed rehearsal reference (re-probed live, not read from a log
+       line — see the REHEARSE ON A CLEANED EXISTING BRANCH rule above for
+       why a stale reference can't be trusted on its own);
+    c. Claude Code never issues the apply command without an explicit
+       go-ahead from Aravind in the same exchange.
+  Rationale: the SQL Editor rule's real purpose was preventing an apply
+  against the wrong database — a pasted project ref plus a hash comparison
+  is STRONGER evidence of that than a human glance at a dropdown, which
+  leaves no audit trail at all. Condition (c) preserves the one thing the
+  SQL Editor was genuinely providing that a hash can't: a human present at
+  the moment of change. The SQL Editor remains acceptable; it is no longer
+  required.
 
 ---
 
@@ -994,7 +1017,7 @@ observed on both sides, no duplicates. `types/database.ts` regenerated
 against prod and diffed empty, confirmed rather than assumed (025 changes a
 function body only, same 10-arg signature).
 
-PROCESS NOTE — DECISION NEEDED FROM ARAVIND, NOT SETTLED HERE: this apply
+~~PROCESS NOTE — DECISION NEEDED FROM ARAVIND, NOT SETTLED HERE: this apply
 used `supabase db query --linked -f <file>` against prod rather than the
 Supabase SQL Editor the runbook specified — flagged live during the run, not
 silently substituted. No browser/GUI access exists in this environment to do
@@ -1006,7 +1029,16 @@ also used once against prod. Open question: amend the standing instruction
 to accept `db query --linked -f <file>` as the documented prod-apply path
 going forward, or keep "SQL Editor" as the rule and treat this apply as a
 one-off exception forced by tooling access, not a precedent. Not resolved
-here.
+here.~~
+
+DATED RESOLUTION (2026-08-11, Aravind's decision): resolved, not left open.
+See §0's new "PROD APPLIES MAY USE `supabase db query --linked -f <file>`"
+standing rule — `db query` is now the documented path, conditional on the
+three requirements listed there (project ref pasted fresh, hash comparison
+against an independently re-probed reference, explicit go-ahead per apply).
+This migration's own apply already met all three, evidenced above; the rule
+now generalizes that to every future prod apply rather than re-litigating it
+each time.
 
 Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
 flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
