@@ -1093,6 +1093,60 @@ frozen as of 025's apply, so nothing is at risk while it stays untouched. A
 gate tied to the triggering event fires exactly when it matters, instead of
 competing with whatever else the next session happens to prioritize.
 
+CONDITIONAL GATE RETIRED, REPLACED BY A CONTINUOUSLY-RUNNING TEST (2026-08-12,
+Aravind's decision, external review of the 024+025 catch-up package). The
+gate above assumed the risk it guarded — the TS mirror and the SQL body
+silently diverging — could only materialise when one of the two copies is
+NEXT EDITED, and that "the evening flow is complete and frozen... so nothing
+is at risk while it stays untouched." Both halves of that assumption are now
+known false, by two independent incidents, neither of which involved editing
+either copy:
+  1. THE DB PUSH INCIDENT (CLAUDE.md §0, this same file). Rehearsing an
+     UNRELATED migration (026) required catching test-db up on 022-025;
+     `supabase db push`'s ledger-lag blind spot caused 022's CREATE OR
+     REPLACE to silently overwrite test-db's already-correct 025 body with
+     a pre-024 one. No one edited evening.ts or apply_evening_flow_turn.
+     The SQL copy still drifted.
+  2. THE FRESH-BRANCH auth_id REPLAY BUG (docs/reviews/supabase-fresh-
+     branch-auth-id-bug.md), earlier and independent: a freshly-provisioned
+     Supabase branch's REPLAY of the migration files from scratch was
+     observed to come up missing a column two independent branches both
+     needed, with no single migration responsible and no edit triggering
+     it — schema drift from the mechanics of replay itself, not from
+     anyone changing a file.
+Two instances of the same shape — drift with no authored edit as the
+trigger — is what overturns the gate's premise: a mechanism that only fires
+on an intentional edit is structurally blind to drift that doesn't come from
+one, and this project now has direct evidence that kind of drift is not
+rare enough to assume away. REPLACED with
+`test/productivity-reconciliation-mirror.test.ts`: one shared fixture table
+(headcount + raw reply -> expected idle_count/productive_count/confidence),
+run twice — once against `dispatchEveningFlow` directly (no DB), once
+against `apply_evening_flow_turn` via a real RPC call on test-db. A case
+added to only one side is not expressible, since both halves iterate the
+SAME array. This test runs on every CI invocation, same as any other suite
+— it has no dependency on anyone remembering an edit happened, which is
+exactly the property the retired gate lacked. Includes explicit NEGATIVE
+cases (messages that must stay `confidence: 'high'`) alongside the cases
+that must go `'low'` — a suite that only asserts the low-confidence
+direction would pass even if every message were pushed toward low
+confidence, and a report that never states a number confidently is not a
+report anyone pays for.
+
+RECORDED, GATED, NOT BUILT: the long-term shape this points toward. The TS
+mirror is not load-bearing at runtime today — the webhook acts on the RPC's
+returned outcome and step, never on the mirror's predicted counts
+(dispatchEveningFlow's own AUTHORITY NOTE, evening.ts) — so the two-copy
+design exists for tests and documentation, not because production needs
+both. The eventual right shape is likely a SINGLE source of truth (the RPC)
+with the TS copy demoted to a test oracle rather than a second independent
+implementation asserted to agree with the first. Gated behind
+`productivity-reconciliation-mirror.test.ts` actually existing and staying
+green for a while first — demoting the mirror before there's a proven,
+continuously-run agreement check would remove the one thing currently
+proving the two copies match, with nothing yet in place to prove a
+single-source rewrite is equivalent. Not built here.
+
 MIGRATION 025 APPLIED TO PRODUCTION (2026-08-11, 09:35 IST). Supersedes the
 entry immediately below — kept struck-through, not deleted, per this file's
 own correction discipline.

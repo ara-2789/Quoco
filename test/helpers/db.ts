@@ -371,6 +371,30 @@ export async function applyEveningFlowTurn(params: {
   return data as EveningTurnRow
 }
 
+// Drives a full morning check-in to completion with an explicit "no
+// equipment" answer at Q3. Moved here from test/migration-024.test.ts
+// (2026-08-12, the productivity-reconciliation mirror test) so a second
+// test file needing the identical setup imports one shared definition
+// instead of a second hand-copy — the same class of divergence risk this
+// project has been burned by for production code, avoided here for test
+// setup before it had the chance to recur.
+export async function completeMorningNoEquipment(phone: string, now: string): Promise<void> {
+  await applyMorningFlowTurn({ phone, message: '', startFlow: true, now })
+  await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now })
+  await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now })
+  await applyMorningFlowTurn({ phone, message: 'no', startFlow: false, now }) // Q3: explicit none
+  await applyMorningFlowTurn({ phone, message: 'Crew A then Crew B', startFlow: false, now })
+}
+
+// Drives evening to the start of Q4 (step 4) via the Q2=Yes edge (shortest
+// path — Q1 -> Q2 yes -> step 4, per 024's routing change). Moved here
+// alongside completeMorningNoEquipment above, same reasoning.
+export async function reachStep4(phone: string, now: string): Promise<void> {
+  await applyEveningFlowTurn({ phone, message: '', startFlow: true, now })
+  await applyEveningFlowTurn({ phone, message: 'Slab concrete 120 sqm', startFlow: false, now })
+  await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now })
+}
+
 // ---------------------------------------------------------------------------
 // Direct seeding / reading helpers (bypass the RPC to control or inspect state)
 // ---------------------------------------------------------------------------
