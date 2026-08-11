@@ -1010,6 +1010,80 @@ produced `idle_count` 15 / `productive_count` 3 — inverted. Both the test
 engineer (`status='deactivated'`) and its session (flow/step reset to
 null/0) were deactivated afterward, per the standing artifact discipline.
 
+PRESERVED ARTIFACT (2026-08-11, before being overwritten): the `daily_logs`
+row above was subsequently REUSED and OVERWRITTEN by the same-day evening-
+flow sandbox scenario 2/3 smoke run (same engineer, project, log_date — the
+RPC upserts on that triple, so a same-day re-run of the flow always lands on
+the same row). The values quoted in the paragraph above (18 / 15 / 3 /
+"waiting for jamaan") will no longer be readable from `daily_logs` once that
+run completes. This is the verbatim pre-overwrite read, the actual record of
+what the 025 apply proved, captured for exactly that reason:
+
+```
+{
+  "engineer_id": "3534756b-2a32-4b91-954b-0bab15c2dba1",
+  "project_id": "acef67fe-e775-439d-82b8-5b8526868d6d",
+  "log_date": "2026-08-11",
+  "evening_workers_on_site": 18,
+  "evening_productive_manpower": {
+    "confidence": "high",
+    "idle_count": 3,
+    "idle_reason": "waiting for jamaan",
+    "productive_count": 15,
+    "raw_text": "15 productive 3 idle waiting for jamaan"
+  },
+  "evening_equipment_utilisation": {
+    "confidence": null,
+    "items": [],
+    "raw_text": null
+  },
+  "evening_submitted_at": "2026-08-11 03:59:11.644979+00"
+}
+```
+
+EVENING FLOW SANDBOX SCENARIOS 2/3 — CLOSED (2026-08-11, same day as the
+apply, against prod). The original bug was found by exactly one hand-run
+scenario; that same narrowness of coverage is what let the inversion reach
+prod in the first place, so the remaining scenarios were run rather than
+left implied. Three rounds, all against prod, same test engineer
+(3534756b), reactivated and re-deactivated around the work:
+
+- **Round 1 (Scenario 2 — terse/unlabelled replies)**: `yes` (Q2) ->
+  `12` (Q4a) -> `2` (Q4b, bare number, no anchor word). Bot replies observed
+  directly: `yes` produced the headcount question immediately (Q3 correctly
+  skipped), `2` produced "Evening check-in complete" with no equipment
+  prompt in between. Stored: `evening_schedule_met` true,
+  `evening_workers_on_site` 12, `evening_productive_manpower` `{idle_count:
+  2, productive_count: 10, idle_reason: null, confidence: "high", raw_text:
+  "2"}`. The unanchored-single-number default (unchanged by the Defect 1
+  fix) still works correctly on prod.
+- **Round 1 also closes Scenario 3 (Q5 auto-skip, BOT-22)**: no morning
+  equipment existed for this engineer/day, so the same round triggered the
+  auto-skip path. `evening_equipment_utilisation` stored exactly
+  `{"items": [], "confidence": null, "raw_text": null}` — checked precisely,
+  not assumed: this is NOT a fabricated zero (no numeric field exists here
+  to have defaulted wrong, unlike the idle_count-defaulted-to-0 class of bug
+  024 already fixed) and NOT a null column — it is the deliberate
+  not-captured shape the auto-skip write path (024) has always produced.
+- **Round 2 (Defect 1 phrasing, a YES_WORD plus a number — never
+  round-tripped on prod before this)**: re-seeded to step 4, `12` (Q4a) ->
+  `Ok 2 idle waiting for cement` (Q4b). Stored: `evening_workers_on_site`
+  12, `evening_productive_manpower` `{idle_count: 2, productive_count: 10,
+  idle_reason: "waiting for cement", confidence: "high", raw_text: "Ok 2
+  idle waiting for cement"}`. `idle_reason` is exactly "waiting for
+  cement" — `'ok'` was consumed as a stopword, not leaked into the reason
+  text. PRE-FIX this exact message produced `all_productive: true` ->
+  `idle_count` 0, `productive_count` 12, confidence "high" — two idle men
+  reported and recorded as a fully productive day, confidently wrong. It
+  does not on prod today.
+
+Test engineer deactivated and session reset (flow/step null/0) after the
+final round, same discipline as every other round this session. **Evening
+flow's sandbox coverage is now complete** — all three flow shapes flagged
+as never having been round-tripped (terse/unlabelled, auto-skip, and the
+Defect-1-specific YES_WORD-plus-number phrasing) have each been proven on
+prod, not just on test-db.
+
 Ledger repaired in the same pass: `'023'`, `'024'`, and `'025'` were ALL
 THREE missing (023/024 from the pre-existing CLI-tracking lag already
 documented elsewhere in this file; 025 because it was new) — 19 -> 22 rows,

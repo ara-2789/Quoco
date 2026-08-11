@@ -853,3 +853,38 @@ never has to (and structurally cannot) perform that transformation itself.
 This is a spec item for that build, not a comment to rediscover — whoever
 builds `dpr_generate` should treat this section as a requirement, not
 optional polish.
+
+## 17. `numbers_discarded` isn't persisted — a low confidence can't be
+explained after the fact (2026-08-11, surfaced running the evening-flow
+scenario 2/3 smoke test against prod)
+
+**The gap.** `numbers_discarded` (`productivity.ts`, added alongside the
+2026-08-10 inversion fix) is THE GENERAL GUARD — any numeric token the
+parser sees but can't place downgrades confidence to `'low'`. It does its
+job: `evening_productive_manpower.confidence` reflects it. But the flag
+itself is never written to `daily_logs` — only its EFFECT (confidence
+downgraded) survives; the CAUSE does not. `FIX 1` (headcount unknown) also
+forces `confidence: 'low'`, through the same single field. So a PM (or the
+future DPR generator) looking at a `'low'` confidence value has no way to
+tell WHICH guard fired: a genuinely ambiguous reply with a discarded
+number, or simply a missing headcount from an earlier step, or (in
+principle) some future third guard added the same way. One field, several
+possible causes, none distinguishable after the write.
+
+**Why this isn't a bug.** Nothing today reads `confidence` expecting to
+explain WHY it's low — the DPR generator doesn't exist yet, and the
+WhatsApp flow itself doesn't re-ask based on this field (024's reask
+budget is separate, already spent by the time this guard evaluates). No
+live behaviour depends on the missing distinction.
+
+**Why it matters for the generator build, specifically.** A DPR that
+tells a PM "manpower utilisation not shown — low confidence" is a
+reasonable sentence. A DPR that could instead say "manpower utilisation
+not shown — the engineer's reply had an unrecognised number we couldn't
+place" versus "— headcount wasn't captured earlier in the flow" is a
+BETTER sentence, and today's schema cannot support writing either specific
+version — only the generic one. Whoever builds `dpr_generate` needs to
+either accept the generic explanation as permanent product scope, or widen
+`evening_productive_manpower`'s stored shape (a `confidence_reason` field
+or similar) before the generator's copy is written, not after. Recorded as
+a generator-build consideration, not a defect to fix now.
