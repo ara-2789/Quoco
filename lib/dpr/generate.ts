@@ -229,12 +229,22 @@ export class DprValidationError extends Error {
   }
 }
 
+// `client` is a REQUIRED parameter, no default (2026-08-12, approved
+// alongside Phase 3's dpr_generate handler) — matches the injected-client
+// convention already used throughout this codebase (assembleDprFacts/
+// assembleAccountability's SupabaseClient parameter, clearMessagingBlock's
+// own client parameter). Every caller constructs and passes its own
+// `new Anthropic()`; a test passes a mock instead. The previous shape
+// (constructing the client internally) made this function untestable
+// without either module-mocking the SDK or making a real, billed API call
+// — the same testability gap this project already closed for Supabase
+// clients, closed here for the same reason.
 export async function generateDprJudgment(
+  client: Anthropic,
   facts: DprFacts,
   narrative: NarrativeContext | null,
   meta: GenerateMeta,
 ): Promise<GenerateResult> {
-  const client = new Anthropic()
   const equipmentIndices = eligibleEquipmentIndices(facts)
   const promptText = buildPrompt(facts, narrative, meta)
 
@@ -311,8 +321,7 @@ export async function generateDprJudgment(
 // so they call the model directly and run validateJudgment against their
 // own exported Facts afterward — same validator, different prompt source,
 // still exercising the real checks.
-export async function callDprModel(promptText: string, facts: DprFacts): Promise<GenerateResult> {
-  const client = new Anthropic()
+export async function callDprModel(client: Anthropic, promptText: string, facts: DprFacts): Promise<GenerateResult> {
   const start = Date.now()
   const response = await client.messages.create({
     model: MODEL,

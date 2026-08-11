@@ -68,16 +68,22 @@ const CASES: ReconciliationCase[] = [
     expected: { idle_count: 3, productive_count: 15, confidence: 'high' },
   },
   {
-    name: 'WEAK AFTER MATCH — "all" is not a YES_WORD, no BEFORE digit within bound for \'productive\', falls back to AFTER',
+    name: 'WEAK AFTER MATCH — "all" is not a YES_WORD, no BEFORE digit within bound for \'productive\', falls back to AFTER; claimed but NOT stored — both counts null, not a guess (2026-08-12, second pass on this fix)',
     headcount: 18,
     reply: 'all productive, 2 left early',
-    expected: { idle_count: 16, productive_count: 2, confidence: 'low' },
+    expected: { idle_count: null, productive_count: null, confidence: 'low' },
   },
   {
-    name: 'WEAK AFTER MATCH, second shape — a YES_WORD is present but a digit + \'idle\' still route through number-pairing, same AFTER guess',
+    name: 'WEAK AFTER MATCH, second shape — a YES_WORD is present but a digit + \'idle\' still route through number-pairing, same AFTER guess, same claimed-not-stored outcome',
     headcount: 18,
     reply: 'yes all productive, 2 machines idle',
-    expected: { idle_count: 16, productive_count: 2, confidence: 'low' },
+    expected: { idle_count: null, productive_count: null, confidence: 'low' },
+  },
+  {
+    name: 'THE TRAP CASE — "productive 15": if the weak match left the digit unclaimed, Pass 2\'s single-unclaimed-defaults-to-idle rule would resolve this to idle_count:15, confidence HIGH, a brand-new confidently-inverted bug created by the fix itself. Must come out null/null/low.',
+    headcount: 18,
+    reply: 'productive 15',
+    expected: { idle_count: null, productive_count: null, confidence: 'low' },
   },
   {
     name: 'BOUNDED BACKWARD SCAN — one intervening non-digit token ("men") on each anchor, both STRONG BEFORE matches, sum agrees',

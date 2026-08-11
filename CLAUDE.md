@@ -498,8 +498,32 @@ RAZORPAY_KEY_ID=                 ← server-side only
 RAZORPAY_KEY_SECRET=             ← server-side only
 SENTRY_DSN=
 NEXT_PUBLIC_APP_URL=             ← magic link redirect URL
+CRON_SECRET=                     ← server-side only, secures /api/jobs/tick
+                                    and /api/cron/dpr-generate — see below
 
 All non-NEXT_PUBLIC_ keys are used ONLY in server-side API routes.
+
+CRON_SECRET — ADDED 2026-08-12, MANUAL STEP STILL OUTSTANDING (this
+environment has no Vercel dashboard/authenticated-CLI access to complete
+it; `vercel env ls` requires a login this session cannot provide). Both
+`/api/jobs/tick` and `/api/cron/dpr-generate` now check
+`Authorization: Bearer <CRON_SECRET>` on every request and fail closed
+(401) if `CRON_SECRET` is unset — see lib/cron/auth.ts for the incident
+this closes (jobs/tick previously had NO auth at all, live in
+production) and lib/cron/auth.ts's own header comment for the exact
+mechanism, verified directly against Vercel's current "Securing cron
+jobs" docs, not assumed from training. TO FINISH THIS: (1) generate a
+random string of at least 16 characters (a password generator is fine —
+this is Vercel's own recommendation); (2) add it to `.env.local` as
+`CRON_SECRET=<value>` for local testing; (3) add the SAME value to the
+Vercel project's Environment Variables (Production AND Preview) via the
+dashboard or an authenticated `vercel env add CRON_SECRET` — Vercel
+automatically attaches it as the `Authorization` header on every
+cron-triggered request once it's set there, no other configuration
+needed. Until step 3 is done, BOTH routes will 401 every real cron
+invocation in production, not just unauthorized requests — this is a
+deliberate fail-closed default, not a bug, but it means these routes
+will not actually run until the secret is provisioned.
 
 ~~KNOWN VERCEL CONFIG GAP (2026-07-21, non-urgent, track + fix separately): the
 Preview-scoped NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (and related

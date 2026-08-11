@@ -24,6 +24,7 @@
 import { config } from 'dotenv'
 config({ path: '.env.local' })
 
+import Anthropic from '@anthropic-ai/sdk'
 import { callDprModel } from '../lib/dpr/generate'
 import { validateJudgment } from '../lib/dpr/validate'
 import { renderDpr } from '../lib/dpr/render'
@@ -31,6 +32,7 @@ import * as caseComplete from '../lib/dpr/eval/cases/case-complete-two-engineer-
 import * as caseNotCaptured from '../lib/dpr/eval/cases/case-manpower-equipment-not-captured'
 import * as caseMorningMissing from '../lib/dpr/eval/cases/case-morning-missing-evening-present'
 
+const anthropic = new Anthropic()
 const META = { project_name: 'Site A - Tower 2', log_date: '2026-08-09' }
 
 const CASES = [
@@ -86,7 +88,7 @@ async function main() {
 
     let result
     try {
-      result = await callDprModel(c.rawInputText, c.facts)
+      result = await callDprModel(anthropic, c.rawInputText, c.facts)
     } catch (err) {
       console.error(`  FAILED TO GENERATE: ${err instanceof Error ? err.message : String(err)}`)
       continue
