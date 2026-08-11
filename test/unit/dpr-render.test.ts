@@ -84,7 +84,7 @@ describe('renderDpr — suppression composes with the not_captured render rule (
       },
     }
     const result = renderDpr(facts, baseJudgment, [])
-    expect(result.structured.manpower.note).toBe('Reported by 2 engineers — manpower not aggregated.')
+    expect(result.structured.manpower.note).toBe('2 engineers reported manpower separately for this project today, so the figures are not combined.')
     expect(result.structured.manpower.note).not.toBe('Not captured today.')
   })
 
@@ -104,7 +104,7 @@ describe('renderDpr — suppression composes with the not_captured render rule (
       },
     }
     const result = renderDpr(facts, baseJudgment, [])
-    expect(result.structured.execution.items[0].quantity).toBe('Reported by 2 engineers — quantity not aggregated.')
+    expect(result.structured.execution.items[0].quantity).toBe('2 engineers reported this same activity, so the quantity is not combined.')
     expect(result.structured.execution.items[1].quantity).toBe('8')
   })
 
@@ -130,7 +130,7 @@ describe('renderDpr — suppression composes with the not_captured render rule (
       equipment_items: [{ morning_item_index: 0, idle_reason_note: 'Machine was idle waiting for fuel.' }],
     }
     const result = renderDpr(facts, judgment, [])
-    expect(result.structured.equipment.items[0].note).toBe('Reported by 2 engineers — utilisation not aggregated.')
+    expect(result.structured.equipment.items[0].note).toBe('2 engineers reported this same type of equipment, so the utilisation figures are not combined.')
     expect(result.content).not.toContain('Machine was idle waiting for fuel.')
   })
 })
@@ -167,5 +167,167 @@ describe('renderDpr — content is a real string, not just structured JSON', () 
     const result = renderDpr(facts, baseJudgment, [])
     expect(result.content).toContain('Completed shuttering work.')
     expect(result.content).toContain('shuttering: 8 nos')
+  })
+})
+
+describe('renderDpr — a raw JS boolean must never reach rendered content', () => {
+  it('schedule_met true renders as "Yes", not "true"', () => {
+    const facts: DprFacts = { ...emptyFacts, schedule: { schedule_met: true } }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.schedule.met).toBe('Yes')
+    expect(result.content).toContain('Plan met: Yes')
+    expect(result.content).not.toContain('true')
+  })
+
+  it('schedule_met false renders as "No", not "false"', () => {
+    const facts: DprFacts = { ...emptyFacts, schedule: { schedule_met: false } }
+    const judgment = { ...baseJudgment, schedule_miss_reason_note: 'Delayed due to rain.' }
+    const result = renderDpr(facts, judgment, [])
+    expect(result.structured.schedule.met).toBe('No')
+    expect(result.content).toContain('Plan met: No')
+    expect(result.content).not.toContain('false')
+  })
+
+  it('schedule_met null (not captured) still renders the not-captured phrase, not a boolean or "null"', () => {
+    const facts: DprFacts = { ...emptyFacts, schedule: { schedule_met: null } }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.schedule.met).toBe('Not captured today.')
+  })
+})
+
+describe('renderDpr — Indian currency formatting for money fields (idle_cost, daily_hire_cost)', () => {
+  it('a small idle cost (375) renders with ₹ and no unnecessary grouping', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'JCB',
+            available_hours: { status: 'reported', value: 8 },
+            actual_hours: { status: 'reported', value: 6 },
+            daily_hire_cost: { status: 'reported', value: 1500 },
+            idle_cost: { status: 'reported', value: 375 },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.equipment.items[0].idle_cost).toBe('₹375')
+    expect(result.structured.equipment.items[0].daily_hire_cost).toBe('₹1,500')
+  })
+
+  it('a larger figure uses Indian digit grouping (lakh convention: ₹1,50,000, not ₹150,000)', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'Crane',
+            available_hours: { status: 'reported', value: 8 },
+            actual_hours: { status: 'reported', value: 8 },
+            daily_hire_cost: { status: 'reported', value: 150000 },
+            idle_cost: { status: 'reported', value: 0 },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.equipment.items[0].daily_hire_cost).toBe('₹1,50,000')
+  })
+
+  it('a not_captured money value renders the phrase, never "₹null" or "₹undefined"', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'JCB',
+            available_hours: { status: 'not_captured', value: null },
+            actual_hours: { status: 'not_captured', value: null },
+            daily_hire_cost: { status: 'not_captured', value: null },
+            idle_cost: { status: 'not_captured', value: null },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.equipment.items[0].idle_cost).toBe('Not captured today.')
+    expect(result.structured.equipment.items[0].daily_hire_cost).toBe('Not captured today.')
+  })
+})
+
+describe('renderDpr — THE "Not captured today.h" BUG: a not-captured hours value must never carry a unit suffix', () => {
+  it('a not_captured available_hours/actual_hours renders the bare phrase, no "h" appended, anywhere it appears', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'Concrete Mixer',
+            available_hours: { status: 'not_captured', value: null },
+            actual_hours: { status: 'not_captured', value: null },
+            daily_hire_cost: { status: 'not_captured', value: null },
+            idle_cost: { status: 'not_captured', value: null },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.equipment.items[0].available_hours).toBe('Not captured today.')
+    expect(result.structured.equipment.items[0].actual_hours).toBe('Not captured today.')
+    expect(result.content).not.toContain('Not captured today.h')
+  })
+
+  it('a real reported hours value DOES carry the "h" suffix, baked into the value itself', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'JCB',
+            available_hours: { status: 'reported', value: 8 },
+            actual_hours: { status: 'reported', value: 6 },
+            daily_hire_cost: { status: 'reported', value: 1500 },
+            idle_cost: { status: 'reported', value: 375 },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.equipment.items[0].available_hours).toBe('8h')
+    expect(result.structured.equipment.items[0].actual_hours).toBe('6h')
+  })
+})
+
+describe('renderDpr — suppressed manpower renders ONCE for the whole section, not once per field', () => {
+  it('the content block has exactly one suppression line under MANPOWER UTILISATION, not four', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'not_captured', value: null },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+        suppressed: { reason: 'multi_engineer_manpower', engineer_count: 2 },
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    const suppressionLine = '2 engineers reported manpower separately for this project today, so the figures are not combined.'
+    const occurrences = result.content.split(suppressionLine).length - 1
+    expect(occurrences).toBe(1)
+    expect(result.content).not.toContain('Headcount:')
+    expect(result.content).not.toContain('Productive:')
+  })
+})
+
+describe('renderDpr — the zero-equipment case renders an explicit "no equipment" line, not a blank section', () => {
+  it('empty equipment.items produces a readable line under EQUIPMENT UTILISATION', () => {
+    const result = renderDpr(emptyFacts, baseJudgment, [])
+    expect(result.content).toContain('No equipment reported this morning.')
   })
 })

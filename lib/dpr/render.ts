@@ -37,19 +37,72 @@ import { TOMORROWS_PLAN_DATA_STATUS_FORCED } from './schema'
 
 const NOT_CAPTURED_TEXT = 'Not captured today.'
 
-const SUPPRESSION_LABEL: Record<SuppressionNote['reason'], string> = {
-  multi_engineer_manpower: 'manpower',
-  multi_engineer_schedule: 'schedule status',
-  same_activity_overlap: 'quantity',
-  same_type_equipment: 'utilisation',
+// Owner-facing prose for a §12 suppression, per reason — replaces internal
+// vocabulary ("not aggregated") with a plain explanation of WHY a figure is
+// withheld (2026-08-11, first real golden-case output review: an owner does
+// not know what "not aggregated" means; this states the actual situation —
+// more than one engineer reported the same thing separately, so the report
+// declines to guess whether to sum or pick one).
+const SUPPRESSION_PROSE: Record<SuppressionNote['reason'], (count: number) => string> = {
+  multi_engineer_manpower: (n) =>
+    `${n} engineers reported manpower separately for this project today, so the figures are not combined.`,
+  multi_engineer_schedule: (n) =>
+    `${n} engineers reported schedule status separately for this project today, so it is not combined into a single answer.`,
+  same_activity_overlap: (n) => `${n} engineers reported this same activity, so the quantity is not combined.`,
+  same_type_equipment: (n) =>
+    `${n} engineers reported this same type of equipment, so the utilisation figures are not combined.`,
 }
 
 function suppressionText(note: SuppressionNote): string {
-  return `Reported by ${note.engineer_count} engineers — ${SUPPRESSION_LABEL[note.reason]} not aggregated.`
+  return SUPPRESSION_PROSE[note.reason](note.engineer_count)
 }
 
-function capturedText(c: CapturedCount | CapturedNumber): string {
+// Bare counts (headcount, productive_count, idle_count) — no unit, no
+// currency, just the number or the not-captured phrase.
+function fmtCount(c: CapturedCount | CapturedNumber): string {
   return c.status === 'not_captured' ? NOT_CAPTURED_TEXT : String(c.value)
+}
+
+// Indian digit grouping (lakh/crore convention): the last three digits form
+// one group, everything before that groups in pairs of two going left —
+// ₹1,50,000, not ₹150,000. Decimal part is dropped when it's exactly .00
+// (₹375, not ₹375.00) since idle cost is usually a clean figure; kept when
+// it isn't (a genuine fractional-hour idle-cost computation).
+function formatIndianCurrency(value: number): string {
+  const negative = value < 0
+  const [intPart, decPart] = Math.abs(value).toFixed(2).split('.')
+  const lastThree = intPart.slice(-3)
+  const rest = intPart.slice(0, -3)
+  const grouped = rest === '' ? lastThree : `${rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',')},${lastThree}`
+  const decimalSuffix = decPart === '00' ? '' : `.${decPart}`
+  return `${negative ? '-' : ''}₹${grouped}${decimalSuffix}`
+}
+
+// Money fields (idle_cost, daily_hire_cost) — ₹ + Indian grouping, or the
+// not-captured phrase with no unit tacked on.
+function fmtMoney(c: CapturedNumber): string {
+  if (c.status !== 'reported' || c.value === null) return NOT_CAPTURED_TEXT
+  return formatIndianCurrency(c.value)
+}
+
+// Hour fields (available_hours, actual_hours) — unit is baked into the
+// formatted string here, not appended later by the content template. This
+// is the fix for the "Not captured today.h" bug: appending "h" in the
+// template unconditionally, after the value was already either a number or
+// the not-captured phrase, glued a bare unit suffix onto prose that was
+// never a number to begin with. Baking it in here means there is only ONE
+// place that decides whether a unit suffix applies, and it decides
+// correctly by construction — no template downstream can get it wrong.
+function fmtHours(c: CapturedNumber): string {
+  if (c.status !== 'reported' || c.value === null) return NOT_CAPTURED_TEXT
+  return `${c.value}h`
+}
+
+// A raw JS boolean must never reach rendered content (2026-08-11 finding —
+// "Plan met: true" is not what an owner reads). "Yes"/"No" pairs naturally
+// with the existing "Plan met:" line prefix without repeating "plan met".
+function fmtBoolean(value: boolean): string {
+  return value ? 'Yes' : 'No'
 }
 
 // ---- §1 Execution -----------------------------------------------------
@@ -63,7 +116,7 @@ interface RenderedExecutionItem {
 function renderExecutionItem(item: ExecutionQuantityFact): RenderedExecutionItem {
   return {
     activity: item.activity,
-    quantity: item.suppressed ? suppressionText(item.suppressed) : capturedText(item.quantity),
+    quantity: item.suppressed ? suppressionText(item.suppressed) : fmtCount(item.quantity),
     unit: item.suppressed ? '' : item.unit,
   }
 }
@@ -76,21 +129,33 @@ interface RenderedManpower {
   idle_count: string
   utilisation_pct: string
   note: string
+  // Present ONLY when the whole section is suppressed (§12) — lets
+  // renderContent collapse the section to ONE line instead of repeating the
+  // same suppression sentence across headcount/productive/idle/utilisation/
+  // note (2026-08-11 finding: it was printing four times in one section).
+  suppressed?: SuppressionNote
 }
 
 function renderManpower(facts: DprFacts['manpower'], judgment: DprJudgment): RenderedManpower {
   if (facts.suppressed) {
     const text = suppressionText(facts.suppressed)
-    return { headcount: text, productive_count: text, idle_count: text, utilisation_pct: text, note: text }
+    return {
+      headcount: text,
+      productive_count: text,
+      idle_count: text,
+      utilisation_pct: text,
+      note: text,
+      suppressed: facts.suppressed,
+    }
   }
   const allNotCaptured =
     facts.headcount.status === 'not_captured' &&
     facts.productive_count.status === 'not_captured' &&
     facts.idle_count.status === 'not_captured'
   return {
-    headcount: capturedText(facts.headcount),
-    productive_count: capturedText(facts.productive_count),
-    idle_count: capturedText(facts.idle_count),
+    headcount: fmtCount(facts.headcount),
+    productive_count: fmtCount(facts.productive_count),
+    idle_count: fmtCount(facts.idle_count),
     utilisation_pct: facts.utilisation_pct.status === 'not_captured' ? NOT_CAPTURED_TEXT : `${facts.utilisation_pct.value}%`,
     note: allNotCaptured ? NOT_CAPTURED_TEXT : judgment.manpower_idle_reason_note,
   }
@@ -116,10 +181,10 @@ function renderEquipmentItem(item: EquipmentItemFacts, judgment: DprJudgment): R
   const modelNote = judgment.equipment_items.find((j) => j.morning_item_index === item.morning_item_index)
   return {
     type: item.type,
-    available_hours: capturedText(item.available_hours),
-    actual_hours: capturedText(item.actual_hours),
-    daily_hire_cost: capturedText(item.daily_hire_cost),
-    idle_cost: capturedText(item.idle_cost),
+    available_hours: fmtHours(item.available_hours),
+    actual_hours: fmtHours(item.actual_hours),
+    daily_hire_cost: fmtMoney(item.daily_hire_cost),
+    idle_cost: fmtMoney(item.idle_cost),
     note: allNotCaptured ? NOT_CAPTURED_TEXT : (modelNote?.idle_reason_note ?? NOT_CAPTURED_TEXT),
   }
 }
@@ -145,7 +210,7 @@ export function renderDpr(facts: DprFacts, judgment: DprJudgment, accountability
   const schedule = facts.schedule.suppressed
     ? { met: suppressionText(facts.schedule.suppressed), note: suppressionText(facts.schedule.suppressed) }
     : {
-        met: facts.schedule.schedule_met === null ? NOT_CAPTURED_TEXT : String(facts.schedule.schedule_met),
+        met: facts.schedule.schedule_met === null ? NOT_CAPTURED_TEXT : fmtBoolean(facts.schedule.schedule_met),
         note: facts.schedule.schedule_met === false ? judgment.schedule_miss_reason_note : '',
       }
 
@@ -187,15 +252,30 @@ function renderContent(s: RenderedDpr['structured']): string {
   lines.push('')
 
   lines.push('MANPOWER UTILISATION')
-  lines.push(`  Headcount: ${s.manpower.headcount}`)
-  lines.push(`  Productive: ${s.manpower.productive_count}, Idle: ${s.manpower.idle_count}`)
-  lines.push(`  Utilisation: ${s.manpower.utilisation_pct}`)
-  lines.push(`  ${s.manpower.note}`)
+  if (s.manpower.suppressed) {
+    // ONE line for the whole section — was FOUR (headcount, productive/idle,
+    // utilisation, note all repeating the same sentence). See
+    // RenderedManpower.suppressed's own comment for why.
+    lines.push(`  ${suppressionText(s.manpower.suppressed)}`)
+  } else {
+    lines.push(`  Headcount: ${s.manpower.headcount}`)
+    lines.push(`  Productive: ${s.manpower.productive_count}, Idle: ${s.manpower.idle_count}`)
+    lines.push(`  Utilisation: ${s.manpower.utilisation_pct}`)
+    lines.push(`  ${s.manpower.note}`)
+  }
   lines.push('')
 
   lines.push('EQUIPMENT UTILISATION')
+  if (s.equipment.items.length === 0) {
+    // The zero-equipment case (2026-08-11 fix): an absent/empty
+    // equipment_items IS "no equipment," not a rendering gap — say so
+    // explicitly rather than leaving a header with nothing under it.
+    lines.push('  No equipment reported this morning.')
+  }
   for (const item of s.equipment.items) {
-    lines.push(`  - ${item.type}: ${item.available_hours}h available, ${item.actual_hours}h actual, idle cost ${item.idle_cost}`)
+    // No hardcoded unit suffix here — fmtHours/fmtMoney already bake in "h"
+    // / "₹" (or produce the bare not-captured phrase) at the value layer.
+    lines.push(`  - ${item.type}: ${item.available_hours} available, ${item.actual_hours} actual, idle cost ${item.idle_cost}`)
     lines.push(`    ${item.note}`)
   }
   lines.push('')

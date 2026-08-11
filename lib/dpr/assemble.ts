@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { computeIdleCost } from './idle-cost'
+import { equipmentLabel } from '@/lib/whatsapp/flows/parsers/lexicon'
 import type {
   CapturedCount,
   CapturedNumber,
@@ -250,7 +251,13 @@ export function mergeDprFacts(rows: CorrectedDailyLogRow[], opts: MergeDprFactsO
     if (items.length > 1) {
       equipmentItems.push({
         morning_item_index: nextIndex++,
-        type: items[0].type,
+        // Humanized here, at the Facts layer (2026-08-11 finding: PR #45's
+        // WhatsApp Q5 fix humanized the same raw type for the prompt, but
+        // this DPR path re-introduced the raw string — assemble.ts §16's
+        // own tracked debt entry named this exact fix, before it was ever
+        // observed in real output). A label a human reads must be
+        // code-owned, never left to render.ts or the model.
+        type: equipmentLabel(items[0].type),
         available_hours: notCapturedNumber,
         actual_hours: notCapturedNumber,
         daily_hire_cost: notCapturedNumber,
@@ -275,7 +282,7 @@ export function mergeDprFacts(rows: CorrectedDailyLogRow[], opts: MergeDprFactsO
     )
     equipmentItems.push({
       morning_item_index: nextIndex++,
-      type: item.type,
+      type: equipmentLabel(item.type), // humanized — see the suppressed-branch comment above
       available_hours,
       actual_hours,
       daily_hire_cost,

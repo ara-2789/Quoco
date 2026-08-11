@@ -973,3 +973,63 @@ produces false positives on legitimate rephrasing), not a tweak to the
 existing set-membership check. Recorded as the recovery path if beta
 usage shows this gap is actually exploited — not built speculatively
 against a failure mode not yet observed in real output.
+
+## 20. First real generator run: decision (c) cost nothing measurable, and a
+real cost-per-DPR figure (2026-08-11, PR #50 follow-up — first live calls
+against Claude, not a fixture or a dry run)
+
+**Decision (c)'s empirical answer.** §18 accepted a real tradeoff blind —
+moving `schedule_miss_reason_note` and `tomorrows_plan_carry_forward_note`
+to no-digit, at the cost of specificity ("delayed by 3 hours" becomes
+"delayed"), rather than let raw engineer digits into the report. The first
+two real golden cases to actually generate (case-complete-two-engineer-day,
+case-manpower-equipment-not-captured — the third, zero-equipment case,
+hadn't been fixed yet at the time of this run) came back with:
+
+- **Zero containment violations.** Neither case's `execution_narrative`
+  cited an uncontained digit.
+- **Zero no-digit violations**, on the first attempt, no retries. Every one
+  of the four no-digit fields — `schedule_miss_reason_note`,
+  `manpower_idle_reason_note`, both cases' `equipment_items[].
+  idle_reason_note`, `tomorrows_plan_carry_forward_note` — came back as
+  clean prose with no digit characters at all, and nothing in the prose
+  reads as contorted or evasive from having to avoid one.
+
+**What this means, stated precisely — this is two real data points, not a
+statistically powered claim.** It's real evidence the model can write a
+coherent no-digit sentence without needing the literal number, in the exact
+shape decision (c) worried about (a schedule miss reason, a carry-forward
+note). It is not proof this holds at scale, under every real phrasing beta
+users will send, or that the model never needs the number to stay coherent.
+Recorded as the first evidence, to be added to as more real runs happen —
+not treated as the question closed for good.
+
+**Cost per DPR, measured, not estimated.**
+
+| Case | Input tokens | Output tokens | Latency | Cost |
+|---|---|---|---|---|
+| case-complete-two-engineer-day | 1887 | 880 | 10273ms | $0.018861 |
+| case-manpower-equipment-not-captured | 1727 | 473 | 11247ms | $0.012276 |
+
+Average: **≈$0.0156/DPR** (n=2, golden-case fixtures rather than live
+production Facts — a rough figure, not a robust average; will firm up as
+more real project-days run).
+
+**Priced at the standard rate ($3/$15 per MTok), not the $2/$10
+introductory rate live through 2026-08-31** (`generate.ts`'s own comment on
+`INPUT_COST_PER_MTOK`/`OUTPUT_COST_PER_MTOK` states this explicitly, for
+the same reason: these figures must read correctly after the introductory
+window closes, not just today). If run before 2026-08-31, real cost is
+roughly a third lower than the table above.
+
+| Scope | Monthly cost (1 DPR/day × 30 days) |
+|---|---|
+| 1 project | ≈$0.47 |
+| 10 projects | ≈$4.67 |
+| 50 projects | ≈$23.36 |
+
+At any of these scales, DPR generation cost is not the constraint on
+shipping this feature — it's negligible against Twilio, hosting, or any
+other line item this product already carries. Worth having the number on
+record precisely because it settles the question rather than leaving it as
+an assumption.

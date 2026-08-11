@@ -16,7 +16,7 @@ import { createServiceClient } from '../lib/supabase/service'
 import { assembleDprFacts } from '../lib/dpr/assemble'
 import { assembleAccountability } from '../lib/dpr/accountability'
 import { fetchNarrativeContext } from '../lib/dpr/narrative-context'
-import { generateDprJudgment, ContainmentViolationError } from '../lib/dpr/generate'
+import { generateDprJudgment, DprValidationError } from '../lib/dpr/generate'
 import { renderDpr } from '../lib/dpr/render'
 
 async function main() {
@@ -41,8 +41,8 @@ async function main() {
   try {
     result = await generateDprJudgment(facts, narrative, { project_name: project.name, log_date: logDate })
   } catch (err) {
-    if (err instanceof ContainmentViolationError) {
-      console.error(`CONTAINMENT VIOLATION — no row written. ${err.message}`)
+    if (err instanceof DprValidationError) {
+      console.error(`VALIDATION FAILED — no row written. ${err.message}`)
       process.exit(1)
     }
     throw err

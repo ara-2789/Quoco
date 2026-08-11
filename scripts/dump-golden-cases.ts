@@ -11,10 +11,10 @@
 // buildPrompt — they were written before that function existed, and
 // rewriting them to go through it would mean modifying files that are this
 // generator's own acceptance criteria. callDprModel (generate.ts) is used
-// directly instead, then containment is checked against the SAME
-// buildExecutionCorpus function the real pipeline uses, against each
-// case's own exported Facts — so this exercises the real containment
-// logic, just with a hand-authored prompt in place of an assembled one.
+// directly instead, then validateJudgment is run against the SAME function
+// the real pipeline uses, against each case's own exported Facts — so this
+// exercises the real containment AND no-digit checks, just with a
+// hand-authored prompt in place of an assembled one.
 // No narrative context exists for these fixtures (they're Facts-only,
 // no daily_logs row) — the no-digit fields will be sparser than a live
 // run's; noted in the output, not hidden.
@@ -24,8 +24,8 @@
 import { config } from 'dotenv'
 config({ path: '.env.local' })
 
-import { callDprModel, ContainmentViolationError } from '../lib/dpr/generate'
-import { buildExecutionCorpus, checkContainment } from '../lib/dpr/containment'
+import { callDprModel } from '../lib/dpr/generate'
+import { validateJudgment } from '../lib/dpr/validate'
 import { renderDpr } from '../lib/dpr/render'
 import * as caseComplete from '../lib/dpr/eval/cases/case-complete-two-engineer-day'
 import * as caseNotCaptured from '../lib/dpr/eval/cases/case-manpower-equipment-not-captured'
@@ -94,12 +94,15 @@ async function main() {
       continue
     }
 
-    const corpus = buildExecutionCorpus(c.facts.execution, META)
-    const containmentResult = checkContainment(result.judgment.execution_narrative, corpus)
-    console.log(`\n--- CONTAINMENT (execution_narrative) ---`)
-    console.log(containmentResult.ok ? 'PASS — no uncontained digits' : `VIOLATION — uncontained: ${containmentResult.violations.join(', ')}`)
-    if (!containmentResult.ok) {
-      console.log('(This would throw ContainmentViolationError in the real pipeline — reported here, not enforced, since dump scripts should never silently stop mid-batch.)')
+    const validationResult = validateJudgment(result.judgment, c.facts.execution, META)
+    console.log(`\n--- VALIDATION (containment + no-digit) ---`)
+    if (validationResult.ok) {
+      console.log('PASS — no violations')
+    } else {
+      for (const v of validationResult.violations) {
+        console.log(`VIOLATION [${v.kind}] ${v.field}: ${v.detail}`)
+      }
+      console.log('(This would throw DprValidationError in the real pipeline — reported here, not enforced, since dump scripts should never silently stop mid-batch.)')
     }
 
     console.log(`\n--- USAGE / COST ---`)
@@ -123,10 +126,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  if (err instanceof ContainmentViolationError) {
-    console.error(err.message)
-  } else {
-    console.error(err)
-  }
+  console.error(err)
   process.exit(1)
 })

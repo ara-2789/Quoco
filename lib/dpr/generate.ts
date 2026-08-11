@@ -1,16 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { buildExecutionCorpus, checkContainment } from './containment'
 import { DPR_JUDGMENT_SCHEMA } from './schema'
 import type { DprFacts, DprJudgment } from './schema'
 import type { NarrativeContext } from './narrative-context'
+import { validateJudgment, type ValidationViolation } from './validate'
 
-// The Anthropic client wrapper + containment enforcement — the primary
-// deliverable of this slice (2026-08-11 DPR generator slice), per Aravind's
-// framing: "the Facts/Judgment boundary is the design's core claim and it
-// is currently unenforced in running code." Everything above the final
-// check in generateDprJudgment exists to get a real DprJudgment response;
-// the containment check is the first code anywhere in this repo that
-// actually RUNS the check schema.ts only ever declared in comments.
+// The Anthropic client wrapper — the primary deliverable of this slice
+// (2026-08-11 DPR generator slice), per Aravind's framing: "the Facts/
+// Judgment boundary is the design's core claim and it is currently
+// unenforced in running code." Everything above the final check in
+// generateDprJudgment exists to get a real DprJudgment response; the actual
+// enforcement (validateJudgment, lib/dpr/validate.ts) is the first code
+// anywhere in this repo that actually RUNS the checks schema.ts only ever
+// declared in comments.
 
 const MODEL = 'claude-sonnet-5'
 // Verified 2026-08-11 against the claude-api skill's cached pricing table,
@@ -135,19 +136,44 @@ const SYSTEM_PROMPT =
 // static DPR_JUDGMENT_SCHEMA export (schema.ts's own comment) — restricted
 // here to the indices actually sent for THIS call, since the valid set
 // differs every call and can't be hardcoded into that static export.
-function buildPerCallSchema(equipmentIndices: number[]): typeof DPR_JUDGMENT_SCHEMA {
+//
+// ZERO-EQUIPMENT CASE — third attempt, 2026-08-11 (found running the first
+// real golden-case batch). A day with no morning equipment produces
+// equipmentIndices = []. Two prior approaches both 400'd:
+//   1. `enum: []` on morning_item_index — INVALID JSON Schema per the API
+//      (`Enum must be a non-empty array`), not merely unsatisfiable.
+//   2. `maxItems: 0` on the equipment_items array — also rejected
+//      (`For 'array' type, property 'maxItems' is not supported`); this
+//      API's structured-output schema compiler doesn't support that
+//      keyword at all.
+// RESOLVED: DELETE equipment_items from both `properties` and `required`
+// entirely when there's nothing to constrain it to. This is the common
+// shape for a small site, not an edge case, so it can't be left to throw.
+// `additionalProperties: false` (already on this schema) then makes it
+// structurally impossible for the model to emit an equipment_items key at
+// all — no unsupported keyword needed, because nothing is being
+// constrained; the property simply isn't part of the schema for this call.
+// The judgment normalization right after JSON.parse (below, both call
+// sites) treats the resulting absent key the same as an empty array, so
+// every downstream consumer (validateJudgment, renderDpr) can keep
+// assuming equipment_items is always an array, matching DprJudgment's type.
+export function buildPerCallSchema(equipmentIndices: number[]): typeof DPR_JUDGMENT_SCHEMA {
   const schema = JSON.parse(JSON.stringify(DPR_JUDGMENT_SCHEMA)) as typeof DPR_JUDGMENT_SCHEMA
-  ;(schema.properties.equipment_items.items.properties.morning_item_index as { enum?: number[] }).enum = equipmentIndices
+  if (equipmentIndices.length === 0) {
+    delete (schema.properties as unknown as Record<string, unknown>).equipment_items
+    ;(schema as unknown as { required: string[] }).required = (schema.required as readonly string[]).filter(
+      (f) => f !== 'equipment_items',
+    )
+  } else {
+    ;(schema.properties.equipment_items.items.properties.morning_item_index as { enum?: number[] }).enum = equipmentIndices
+  }
   return schema
 }
 
-export class ContainmentViolationError extends Error {
-  constructor(
-    public readonly field: string,
-    public readonly violations: number[],
-  ) {
-    super(`Containment violation in ${field}: uncontained digit(s) ${violations.join(', ')} — not traceable to this section's own Facts.`)
-    this.name = 'ContainmentViolationError'
+export class DprValidationError extends Error {
+  constructor(public readonly violations: ValidationViolation[]) {
+    super(`DPR validation failed (${violations.length} violation(s)): ${violations.map((v) => `${v.field} [${v.kind}]: ${v.detail}`).join('; ')}`)
+    this.name = 'DprValidationError'
   }
 }
 
@@ -175,6 +201,14 @@ export async function generateDprJudgment(
     throw new Error(`No text block in response. stop_reason: ${response.stop_reason}`)
   }
   const judgment = JSON.parse(textBlock.text) as DprJudgment
+  // Normalize: when equipmentIndices was empty, buildPerCallSchema deletes
+  // equipment_items from the schema entirely (see its own comment), so the
+  // model's response has no such key at all. Default to [] right here, at
+  // the parse boundary, so every downstream consumer (the identity-echo
+  // loop below, validateJudgment, renderDpr) can keep assuming
+  // equipment_items is always an array, matching DprJudgment's declared
+  // (non-optional) type — no scattered undefined-guards elsewhere.
+  judgment.equipment_items = judgment.equipment_items ?? []
 
   // Identity-echo validation (schema.ts's own required check, next to the
   // morning_item_index comment): returned indices must be a subset of the
@@ -188,22 +222,22 @@ export async function generateDprJudgment(
     }
   }
 
-  // THE CONTAINMENT CHECK — the primary deliverable of this slice.
-  // Section-scoped, Reading A (Aravind's decision): execution_narrative's
-  // digits must trace to execution Facts only, never the whole prompt and
-  // never another section's Facts. See lib/dpr/containment.ts for why.
-  // No cast: GenerateMeta structurally satisfies ContainmentMeta (both
-  // require project_name; GenerateMeta's extra log_date field is simply
-  // unused here, which is fine — this is a variable, not an object
-  // literal, so no excess-property check applies).
-  const corpus = buildExecutionCorpus(facts.execution, meta)
-  const containmentResult = checkContainment(judgment.execution_narrative, corpus)
-  if (!containmentResult.ok) {
+  // VALIDATION — the primary deliverable of this slice. ONE validator, ONE
+  // failure path (lib/dpr/validate.ts): containment (section-scoped, Reading
+  // A — execution_narrative's digits must trace to execution Facts only,
+  // never the whole prompt, never another section) AND the four no-digit
+  // fields, checked together, every violation reported, not first-failure-
+  // only. No cast needed: GenerateMeta structurally satisfies ContainmentMeta
+  // (both require project_name; GenerateMeta's extra log_date field is
+  // simply unused here — this is a variable, not an object literal, so no
+  // excess-property check applies).
+  const validationResult = validateJudgment(judgment, facts.execution, meta)
+  if (!validationResult.ok) {
     // THIS SLICE: throw. No dprs row gets written; nothing silently ships
     // unvalidated content. The eventual production answer — feed into the
     // existing Failed Delivery path (bot-flows.md DPR-24), never fall back
     // to delivering the violating text — is named, not built here.
-    throw new ContainmentViolationError('execution_narrative', containmentResult.violations)
+    throw new DprValidationError(validationResult.violations)
   }
 
   const usage = { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens }
@@ -213,11 +247,11 @@ export async function generateDprJudgment(
 }
 
 // Low-level entrypoint for the golden-case runner (scripts/dump-golden-
-// cases.mjs): those fixtures hand-author their own rawInputText (mirroring
+// cases.ts): those fixtures hand-author their own rawInputText (mirroring
 // the deleted spike script's style) rather than going through buildPrompt,
-// so they call the model directly and run containment against their own
-// exported Facts afterward — same containment function, different prompt
-// source, still exercising the real check.
+// so they call the model directly and run validateJudgment against their
+// own exported Facts afterward — same validator, different prompt source,
+// still exercising the real checks.
 export async function callDprModel(promptText: string, equipmentIndices: number[]): Promise<GenerateResult> {
   const client = new Anthropic()
   const start = Date.now()
@@ -234,6 +268,14 @@ export async function callDprModel(promptText: string, equipmentIndices: number[
     throw new Error(`No text block in response. stop_reason: ${response.stop_reason}`)
   }
   const judgment = JSON.parse(textBlock.text) as DprJudgment
+  // Normalize: when equipmentIndices was empty, buildPerCallSchema deletes
+  // equipment_items from the schema entirely (see its own comment), so the
+  // model's response has no such key at all. Default to [] right here, at
+  // the parse boundary, so every downstream consumer (the identity-echo
+  // loop below, validateJudgment, renderDpr) can keep assuming
+  // equipment_items is always an array, matching DprJudgment's declared
+  // (non-optional) type — no scattered undefined-guards elsewhere.
+  judgment.equipment_items = judgment.equipment_items ?? []
   const usage = { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens }
   const cost_usd = (usage.input_tokens / 1_000_000) * INPUT_COST_PER_MTOK + (usage.output_tokens / 1_000_000) * OUTPUT_COST_PER_MTOK
   return { judgment, usage, latency_ms, cost_usd }
