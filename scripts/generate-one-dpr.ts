@@ -11,6 +11,7 @@
 import { config } from 'dotenv'
 config({ path: '.env.local' })
 
+import Anthropic from '@anthropic-ai/sdk'
 import type { Json } from '../types/database'
 import { createServiceClient } from '../lib/supabase/service'
 import { assembleDprFacts } from '../lib/dpr/assemble'
@@ -27,6 +28,7 @@ async function main() {
   }
 
   const client = createServiceClient()
+  const anthropic = new Anthropic()
 
   const { data: project, error: projectError } = await client.from('projects').select('name, tenant_id').eq('id', projectId).single()
   if (projectError) throw projectError
@@ -39,7 +41,7 @@ async function main() {
   console.log('Calling Claude...')
   let result
   try {
-    result = await generateDprJudgment(facts, narrative, { project_name: project.name, log_date: logDate })
+    result = await generateDprJudgment(anthropic, facts, narrative, { project_name: project.name, log_date: logDate })
   } catch (err) {
     if (err instanceof DprValidationError) {
       console.error(`VALIDATION FAILED — no row written. ${err.message}`)

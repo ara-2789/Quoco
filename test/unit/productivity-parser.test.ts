@@ -196,18 +196,25 @@ describe('parseProductivity — DEFECT 1: a YES_WORD must not mask a stated idle
   // pre-fix AFTER fallback claimed the number for 'productive' with no
   // signal that it was a guess.
 
-  it('"all productive, 2 left early" — no confident BEFORE match for \'productive\' within bound; AFTER claims "2" but as a WEAK match', () => {
+  it('"all productive, 2 left early" — no confident BEFORE match for \'productive\' within bound; AFTER claims "2" but WEAK MATCHES ARE CLAIMED, NEVER STORED — both counts null, not a guess', () => {
     const p = parseProductivity('all productive, 2 left early')
     expect(p.all_productive).toBe(false)
-    expect(p.productive_count).toBe(2)
+    expect(p.productive_count).toBeNull()
     expect(p.idle_count).toBeNull()
     expect(p.numbers_discarded).toBe(true) // the weak-match signal, not a literally-discarded token
   })
 
-  it('"yes all productive, 2 machines idle" — same shape, \'idle\' also finds nothing within reach', () => {
+  it('"yes all productive, 2 machines idle" — same shape, \'idle\' also finds nothing within reach (its only candidate digit was already claimed by the weak match above)', () => {
     const p = parseProductivity('yes all productive, 2 machines idle')
     expect(p.all_productive).toBe(false)
-    expect(p.productive_count).toBe(2)
+    expect(p.productive_count).toBeNull()
+    expect(p.idle_count).toBeNull()
+    expect(p.numbers_discarded).toBe(true)
+  })
+
+  it('"productive 15" — THE TRAP CASE: if the weak match left "15" unclaimed instead of claimed, Pass 2\'s single-unclaimed-defaults-to-idle rule would resolve this to idle_count:15, numbers_discarded:false, confidence HIGH — a brand-new confidently-inverted bug created by this very fix. Must not happen.', () => {
+    const p = parseProductivity('productive 15')
+    expect(p.productive_count).toBeNull()
     expect(p.idle_count).toBeNull()
     expect(p.numbers_discarded).toBe(true)
   })

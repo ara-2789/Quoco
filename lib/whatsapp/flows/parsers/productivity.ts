@@ -75,12 +75,16 @@ export interface ProductivityParse {
   all_productive: boolean | null
   // The idle-anchored number, or the single unanchored number when idle
   // was not itself anchored (see ANCHOR-WORD PAIRING above). null when
-  // all_productive is true, unclassifiable, or genuinely ambiguous.
+  // all_productive is true, unclassifiable, genuinely ambiguous, OR when
+  // 'idle' only found a number via a weak AFTER-anchor match (see WEAK
+  // MATCHES ARE CLAIMED, NEVER STORED, below — numbers_discarded is true
+  // in that last case, distinguishing it from the other three).
   idle_count: number | null
   // The productive-anchored number ("15 productive"). null whenever no
-  // number was anchored to 'productive' — including the common case where
-  // only idle_count was given, which is NOT an error, just an unanswered
-  // question the RPC derives from headcount as it always has.
+  // number was CONFIDENTLY anchored to 'productive' — the common case
+  // where only idle_count was given (not an error, an unanswered question
+  // the RPC derives from headcount as it always has), AND the weak-match
+  // case above.
   productive_count: number | null
   // Remaining free text once every claimed number, anchor word, and
   // PRODUCTIVITY_STOPWORDS token is stripped. null when nothing is left.
@@ -90,14 +94,14 @@ export interface ProductivityParse {
   // why this was not renamed). Originally meant only "a numeric token could
   // not be placed into idle_count or productive_count" — THE GENERAL GUARD
   // above. Since the STRONG/WEAK anchor-match fix (same date, this file's
-  // ANCHOR-MATCH STRENGTH note), this flag ALSO fires when a number WAS
-  // placed, but only via a weak (AFTER-anchor) match — "all productive, 2
-  // left early" places "2" as productive_count via the AFTER fallback, with
-  // nothing discarded in the literal sense, yet this flag is still true,
-  // because an AFTER match is a guess about which anchor a number belongs
-  // to, not a confirmed pairing. The caller must treat this as a single
-  // confidence-lowering signal covering BOTH cases — never silently ignore
-  // it because idle_count/productive_count still came out non-null.
+  // ANCHOR-MATCH STRENGTH note), this flag ALSO fires whenever a number was
+  // only reachable via a weak (AFTER-anchor) match — "all productive, 2
+  // left early" claims "2" via the AFTER fallback but, as of the second
+  // pass on this fix (see WEAK MATCHES ARE CLAIMED, NEVER STORED below),
+  // does NOT place it into idle_count/productive_count either — the number
+  // is neither a confirmed pairing nor silently guessed at, just accounted
+  // for. The caller must treat this as a single confidence-lowering signal
+  // covering both the genuinely-unplaceable case and the weak-match case.
   numbers_discarded: boolean
   // Always preserved verbatim (trimmed) — the raw answer never gets lost.
   raw_text: string
@@ -175,8 +179,29 @@ export function parseProductivity(raw: string): ProductivityParse {
   // AFTER fallback, which had no way to flag the guess as a guess.
   // BEFORE now attempts a bounded backward scan (see BEFORE_SCAN_MAX_BACK
   // below) before falling back to AFTER; AFTER, when it fires, sets
-  // isWeakMatch — folded into numbers_discarded below (see that field's own
-  // updated comment for why it was reused rather than given a new name).
+  // numbers_discarded (folded in below — see that field's own updated
+  // comment for why it was reused rather than given a new name).
+  //
+  // WEAK MATCHES ARE CLAIMED, NEVER STORED (second pass on this same fix,
+  // same date, external review of the branch before merge). The first
+  // version of this fix let a weak AFTER match populate idle_count/
+  // productive_count with the guessed value, just flagged low-confidence.
+  // That recreates exactly the bug this fix exists to close, one level
+  // down: if the AFTER fallback instead left the digit UNCLAIMED on a weak
+  // match, PASS 2 below (single unclaimed number, idle not yet anchored ->
+  // defaults to idle) would silently claim it — "productive 15" would
+  // resolve to idle_count: 15, numbers_discarded: false, confidence: HIGH,
+  // a BRAND NEW confidently-inverted case, created by the fix meant to
+  // remove that shape of bug. So a weak match marks the digit CLAIMED
+  // (removing it from Pass 2's pool entirely) while leaving BOTH
+  // idle_count and productive_count null and setting numbers_discarded —
+  // claimed-and-withheld, not unclaimed-and-later-misassigned.
+  // COST, STATED PLAINLY: the AFTER fallback no longer produces a usable
+  // pairing for anyone. It exists now only to consume the digit so Pass 2
+  // cannot mis-assign it — a real answer like "productive 15" now yields
+  // NOTHING but a low-confidence flag, not even a guess a human could
+  // inspect. If a real message later shows this phrasing is common enough
+  // to matter, the right fix is a reask, not restoring the guess.
   //
   // BEFORE_SCAN_MAX_BACK = 2 (the immediately-preceding token, or one
   // token further back when a single non-digit token sits between the
@@ -211,36 +236,36 @@ export function parseProductivity(raw: string): ProductivityParse {
     if (anchor !== 'idle' && anchor !== 'productive') continue
     if ((anchor === 'idle' && idle_count !== null) || (anchor === 'productive' && productive_count !== null)) continue
 
-    let numberIdx: number | null = null
-
-    // BEFORE — confident, tried first, bounded.
+    // BEFORE — confident, tried first, bounded. Found -> claim it AND
+    // store the value; this is a real pairing, not a guess.
+    let beforeIdx: number | null = null
     for (let back = 1; back <= BEFORE_SCAN_MAX_BACK; back++) {
       const idx = i - back
       if (idx < 0) break
       if (/^\d+$/.test(tokens[idx]) && !claimedDigits.has(idx)) {
-        numberIdx = idx
+        beforeIdx = idx
         break
       }
     }
-
-    // AFTER — weak, only tried when nothing usable precedes the anchor
-    // within the bound above.
-    let isWeakMatch = false
-    if (numberIdx === null) {
-      const nextIdx = i + 1
-      if (nextIdx < tokens.length && /^\d+$/.test(tokens[nextIdx]) && !claimedDigits.has(nextIdx)) {
-        numberIdx = nextIdx
-        isWeakMatch = true
-      }
+    if (beforeIdx !== null) {
+      const value = parseInt(tokens[beforeIdx], 10)
+      claimedDigits.add(beforeIdx)
+      if (anchor === 'idle') idle_count = value
+      else productive_count = value
+      continue
     }
 
-    if (numberIdx === null) continue // anchor word with no available number neighbor within reach
-
-    const value = parseInt(tokens[numberIdx], 10)
-    claimedDigits.add(numberIdx)
-    if (isWeakMatch) hasWeakMatch = true
-    if (anchor === 'idle') idle_count = value
-    else productive_count = value
+    // AFTER — weak, only tried when nothing usable precedes the anchor
+    // within the bound above. Found -> claim it, but do NOT store the
+    // value into idle_count/productive_count — see WEAK MATCHES ARE
+    // CLAIMED, NEVER STORED above for why storing a guess here is exactly
+    // the bug this fix exists to close, and why leaving it unclaimed
+    // instead would recreate it a different way.
+    const nextIdx = i + 1
+    if (nextIdx < tokens.length && /^\d+$/.test(tokens[nextIdx]) && !claimedDigits.has(nextIdx)) {
+      claimedDigits.add(nextIdx)
+      hasWeakMatch = true
+    }
   }
   const claimed = claimedDigits
 

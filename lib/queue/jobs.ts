@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Json } from '@/types/database'
 
@@ -35,11 +36,24 @@ function backoffSeconds(attemptCount: number): number {
  * or anywhere Claude API work needs to happen — NEVER call Claude directly
  * inline (NFR-16).
  */
+// `client` is OPTIONAL, defaulting to createServiceClient() (today's exact
+// behaviour when omitted) — 2026-08-12, added while building the
+// dpr_generate cron trigger, which needed to call enqueueJob against
+// test-db in an integration test and could not: this function always
+// constructed its own service client internally, with no way to point it
+// at anything else. Same shape as applyEveningFlowTurn's own
+// supabaseClient parameter (lib/whatsapp/flows/evening.ts) — closes this
+// specific instance of CLAUDE.md §10's CANDIDATE CI CHECK ("no
+// createServiceClient() where an injected client could be accepted"),
+// applied to all four functions in this file for the same reason, not
+// just this one — a test exercising any of them would have hit the
+// identical wall.
 export async function enqueueJob(
   type: JobType,
   payload: Json,
+  client?: SupabaseClient,
 ): Promise<Job> {
-  const supabase = createServiceClient()
+  const supabase = client ?? createServiceClient()
 
   const { data, error } = await supabase
     .from('jobs')
@@ -63,8 +77,8 @@ export async function enqueueJob(
  * call this with limit=3 per invocation). Atomically marks them 'running'
  * so no other worker invocation picks up the same job.
  */
-export async function claimJobs(limit: number = 3): Promise<Job[]> {
-  const supabase = createServiceClient()
+export async function claimJobs(limit: number = 3, client?: SupabaseClient): Promise<Job[]> {
+  const supabase = client ?? createServiceClient()
 
   // Select jobs that are pending/failed-with-retry-due, oldest first.
   const { data: candidates, error: selectError } = await supabase
@@ -106,8 +120,8 @@ export async function claimJobs(limit: number = 3): Promise<Job[]> {
 }
 
 /** Mark a job as successfully completed. */
-export async function completeJob(jobId: string): Promise<void> {
-  const supabase = createServiceClient()
+export async function completeJob(jobId: string, client?: SupabaseClient): Promise<void> {
+  const supabase = client ?? createServiceClient()
 
   const { error } = await supabase
     .from('jobs')
@@ -131,8 +145,9 @@ export async function completeJob(jobId: string): Promise<void> {
 export async function failJob(
   jobId: string,
   errorMessage: string,
+  client?: SupabaseClient,
 ): Promise<{ willRetry: boolean }> {
-  const supabase = createServiceClient()
+  const supabase = client ?? createServiceClient()
 
   const { data: current, error: fetchError } = await supabase
     .from('jobs')
