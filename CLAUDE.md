@@ -957,8 +957,22 @@ FOURTH defect of this general shape found in this repo's history (three
 instances fixed by inspection in this review pass, this fourth one is
 structural and wasn't). NEEDED: a test that runs both copies (the TS mirror
 directly, and the RPC via a real call) against the SAME fixture set and
-asserts identical output — not built here, deliberately deferred, and named
-as the FIRST item for the next session rather than left to be rediscovered.
+asserts identical output — ~~not built here, deliberately deferred, and named
+as the FIRST item for the next session rather than left to be rediscovered.~~
+
+DATED AMENDMENT (2026-08-11, Aravind's decision): the "FIRST item for the
+next session" framing is retired — it slipped three sessions running (this
+one included) and would slip again, since a date-based deferral competes
+with whatever the next session's actual priority turns out to be and always
+loses. Replaced with a CONDITIONAL GATE instead of a date: this pure-mirror
+test is REQUIRED BEFORE the next change to `lib/whatsapp/flows/evening.ts`
+or to the evening RPC (`apply_evening_flow_turn`) — whichever comes first.
+Not required before unrelated work. Rationale: the risk this test guards
+against — the TS mirror and the SQL body silently diverging — can only
+materialise when that code is next edited; the evening flow is complete and
+frozen as of 025's apply, so nothing is at risk while it stays untouched. A
+gate tied to the triggering event fires exactly when it matters, instead of
+competing with whatever else the next session happens to prioritize.
 
 MIGRATION 025 APPLIED TO PRODUCTION (2026-08-11, 09:35 IST). Supersedes the
 entry immediately below — kept struck-through, not deleted, per this file's
