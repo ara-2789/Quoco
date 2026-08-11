@@ -888,3 +888,88 @@ either accept the generic explanation as permanent product scope, or widen
 `evening_productive_manpower`'s stored shape (a `confidence_reason` field
 or similar) before the generator's copy is written, not after. Recorded as
 a generator-build consideration, not a defect to fix now.
+
+## 18. Containment Reading A resolved as (c): raw text stays prompt input,
+moved to no-digit output — specificity lost, not relaxed (2026-08-11, DPR
+generator slice, Aravind's decision)
+
+**The question.** `schedule_miss_reason_note` and `tomorrows_plan_carry_
+forward_note` were originally digits-allowed, containment-checked against
+"the input text it was given" (schema.ts's pre-2026-08-11 comment) — the
+engineer's own raw free text (`evening_schedule_miss_reason`). Under strict
+Reading A (containment against code-owned `DprFacts` values only, not raw
+prompt text), that raw text is not itself a Fact, so a digit the model
+echoed from it would have no legitimate source to trace to — the two
+options were (a) promote the raw text into a new `DprFacts` field so it
+becomes code-owned, or (c) keep feeding it as prompt input but move the two
+output fields to no-digit, matching sections 3 & 4's notes.
+
+**Resolved: (c).** The Facts/Judgment split governs what the model may
+OUTPUT, never what it may READ — feeding raw text as input was never the
+boundary reading A protects. (a) was rejected because it blesses every
+digit an engineer typed in free text as publishable: an engineer writing
+"only 40 of 100 done" would produce a DPR number that never passed through
+the quantity pipeline, able to directly contradict the code-owned execution
+Facts in the same report. That is Reading B narrowed to one field, not a
+different thing from it — the whole reason Reading A was chosen is that
+engineer free text is not a verified source.
+
+**The specificity this costs, named plainly:** "delayed by 3 hours" becomes
+"delayed." No duration, no count, no measured quantity survives into either
+field's output — only the qualitative shape of the reason. This is not
+treated as a stopgap grudgingly accepted; it's the same rule already
+governing sections 3 and 4's notes, applied consistently rather than
+carved out as a third category for these two fields.
+
+**The recovery path, if beta shows this matters:** capturing the specific
+number as a REAL, structured question — e.g. a dedicated "how many hours
+were lost" follow-up with its own parser, feeding a typed `DprFacts` field
+the same way `evening_productive_manpower` does — not relaxing this rule to
+let raw digits back into model output. If engineers or PMs surface a real
+need for the duration figure, the fix is capturing it properly upstream,
+the same way every other number in this schema is captured: through a
+parser, into a Fact, containment-checked like everything else. Loosening
+containment to solve it would recreate exactly the problem (c) exists to
+close.
+
+## 19. Containment's named limitation: identifier-digit blessing within one
+section (opened 2026-08-11, PR #50 design review, NOT fixed)
+
+**The gap.** `buildExecutionCorpus` (lib/dpr/containment.ts) normalizes
+every digit-bearing token in the model's output to a `Set<number>` and
+checks membership — containment is NUMERIC-SET membership, not
+token-in-context matching. An activity Fact named "M25 slab" puts the bare
+number `25` into the corpus (via the activity-string pass, the same
+mechanism that legitimately makes ordinals and identifiers free — see
+schema.ts's digit-rules note). Once `25` is in the corpus, the model may
+correctly write "M25" back — but could ALSO write "25 bays" or "25
+workers" and pass containment, because the check only asks "is 25 anywhere
+in this section's Facts," never "does 25 in THIS sentence refer to the
+same thing it did in the Facts."
+
+**Why this matters precisely.** This is the SAME class of fabrication
+section-scoping (§ approved in this PR's design review) was built to stop
+— a real digit reused to dress up an invented figure — just surviving
+WITHIN one section instead of across sections. Section-scoping closes the
+cross-section case (a real equipment rate cited as an execution quantity);
+it does not close this narrower, same-section case (a real identifier
+digit cited as a fabricated quantity in the same narrative).
+
+**What the check DOES catch, stated precisely so this isn't oversold:** a
+number with no source anywhere in execution Facts — the actual incident
+class this slice was built to catch, and the common case by far (most
+fabrications invent a number that isn't real anywhere, not one that
+happens to share a digit with a real identifier).
+
+**What it does NOT catch:** a real identifier digit reused as a fabricated
+magnitude in the same section, as in the M25 example above.
+
+**Why not fixed here.** Closing this properly needs token-plus-context
+matching — e.g. requiring the digit's surrounding words to overlap with
+the source phrase it came from, not just requiring the digit itself to
+appear somewhere in the section. That is real design work (what counts as
+"enough" surrounding-word overlap, how to handle paraphrase, whether it
+produces false positives on legitimate rephrasing), not a tweak to the
+existing set-membership check. Recorded as the recovery path if beta
+usage shows this gap is actually exploited — not built speculatively
+against a failure mode not yet observed in real output.

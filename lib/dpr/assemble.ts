@@ -290,6 +290,14 @@ export function mergeDprFacts(rows: CorrectedDailyLogRow[], opts: MergeDprFactsO
     equipment: { items: equipmentItems },
     // §5 forced empty/not_captured pre-Q6 regardless of engineer count —
     // TOMORROWS_PLAN_DATA_STATUS_FORCED (schema.ts) already owns this.
+    // TRANSITIONAL, same shape as that constant (flagged here 2026-08-11,
+    // not fixed): this is a hardcoded [], not a read of
+    // daily_logs.evening_dependencies — that column already exists on prod
+    // (docs/schema.md) but is always empty pre-Q6, so hardcoding costs
+    // nothing today. The moment Q6 ships, this MUST become a real read of
+    // that column (and rows would need to carry it, same as the other JSONB
+    // columns above) — if this file is read after Q6 ships and `[]` is still
+    // hardcoded here, that is a bug, not a stable design choice.
     tomorrows_plan: { dependencies: [] },
   }
 }

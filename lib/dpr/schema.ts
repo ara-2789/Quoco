@@ -1,11 +1,15 @@
 // DPR OUTPUT SCHEMA — the boundary between what code computes and what the
-// model is asked to write. Not wired to a real API call yet: this module
-// defines the shape the future generator (lib/dpr/generate) uses to build
-// the prompt and the output_config it sends, and the shape it merges the
-// response into. scripts/spike-dpr-claude.mjs proved the request/response
-// wire shapes against live docs; this file is the real schema built on top
-// of that, per docs/design-decisions-beta-feedback.md §11 and bot-flows.md's
-// DPR GENERATION section.
+// model is asked to write. This module defines the shape lib/dpr/generate.ts
+// uses to build the prompt and the output_config it sends, and the shape
+// lib/dpr/render.ts merges the response into. The original spike script
+// (scripts/spike-dpr-claude.mjs) proved the request/response wire shapes
+// against live docs and was deleted once generate.ts superseded it — its
+// schema also sent `accountability` to the model as an output field, which
+// this file's own SECTION 6 IS ENTIRELY CODE decision (below) explicitly
+// forbids; do not resurrect that shape from the spike's git history without
+// re-reading why it was rejected. Built per
+// docs/design-decisions-beta-feedback.md §11 and bot-flows.md's DPR
+// GENERATION section.
 //
 // TWO DISJOINT POOLS, per section:
 //   - Facts — every number, full stop. Parsed from daily_logs or computed in
@@ -15,7 +19,11 @@
 //     in, so it structurally cannot emit one for these values.
 //   - Judgment — the model's entire output_config schema (DPR_JUDGMENT_SCHEMA
 //     below). Narrative synthesis + a handful of typed categorical fields.
-//     Merged with Facts into the final structured_content AFTER the call.
+//     Merged with Facts into the dprs row's TWO storage columns (023's
+//     schema, NOT one "structured_content" field — CORRECTED 2026-08-11,
+//     this comment previously named a single field that was never real):
+//     `structured` JSONB (all 6 sections) and `content` TEXT (rendered
+//     human-readable form). lib/dpr/render.ts produces both, after the call.
 //
 // Only sections 3 and 4 have real code-computed arithmetic (utilisation %,
 // idle cost) — section 2 has no planned quantity to vary against (see §11's
@@ -312,20 +320,46 @@ export interface DprFacts {
 // ---------------------------------------------------------------------------
 // Judgment — the model's entire output. Digit rules are per-field-purpose,
 // not uniform:
-//   - Sections 3 & 4 notes: NO-DIGIT pattern. These sections sit directly
-//     next to code-computed arithmetic (utilisation %, idle cost) — a digit
-//     here is almost certainly the model recomputing or restating a number
-//     it was never given a field for.
-//   - Section 1's narrative and sections 2 & 5's notes: digits ALLOWED. These
-//     are qualitative paraphrases of free text that may legitimately carry
-//     identifiers ("M25", "Tower 2", "level 3") — a blanket digit ban makes
-//     them unreproducible without banning arithmetic, since identifiers
-//     aren't arithmetic. Guarded instead by a CONTAINMENT check: every
-//     digit-bearing token in the model's output must appear in the input
-//     text it was given. Catches invention (a number with no source) without
-//     banning legitimate transcription, and without asserting on prose shape
-//     — it's a token-membership check against a known source, not a regex
-//     search for wording.
+//   - Sections 2, 3, 4 & 5 notes: NO-DIGIT pattern. Sections 3 & 4 sit
+//     directly next to code-computed arithmetic (utilisation %, idle cost) —
+//     a digit here is almost certainly the model recomputing or restating a
+//     number it was never given a field for. Sections 2 & 5
+//     (schedule_miss_reason_note, tomorrows_plan_carry_forward_note) joined
+//     this bucket 2026-08-11 — see the DATED AMENDMENT below; they were
+//     originally digits-allowed+containment-checked.
+//   - Section 1's narrative only: digits ALLOWED. Qualitative synthesis of
+//     execution Facts that may legitimately carry identifiers ("M25",
+//     "Tower 2", "level 3") — a blanket digit ban makes them unreproducible
+//     without banning arithmetic, since identifiers aren't arithmetic.
+//     Guarded by a CONTAINMENT check (lib/dpr/containment.ts): every
+//     digit-bearing token in this field must appear in that SECTION's own
+//     Facts (execution Facts + project/date framing) — SECTION-SCOPED, not
+//     whole-prompt. A real equipment hire-rate number echoed into
+//     execution_narrative is a fabrication wearing a real number; only
+//     section-scoping catches it, since a whole-prompt or whole-Facts corpus
+//     would pass it as "contained" purely because it's real somewhere else.
+//     This field does NOT double as a whole-day summary — if it needs to
+//     gesture at a cause from another section, it does so in words, zero
+//     digits; the reader sees that section's own numbers rendered separately,
+//     right beside that section's own note.
+//
+//   DATED AMENDMENT (2026-08-11, Aravind's decision): schedule_miss_reason_note
+//   and tomorrows_plan_carry_forward_note were originally digits-allowed,
+//   containment-checked against "the input text it was given" — i.e. the
+//   engineer's own raw free text (evening_schedule_miss_reason), which is
+//   NOT a DprFacts value. That was Reading B of the containment rule (contain
+//   against the whole prompt) narrowed to two fields, not a different thing
+//   from it: an engineer writing "only 40 of 100 done" in free text would
+//   produce a DPR number that never passed through the quantity pipeline,
+//   able to directly contradict the code-owned execution Facts in the same
+//   report. RESOLVED: raw text is still fed to the model as PROMPT INPUT for
+//   these two fields (the Facts/Judgment split governs what the model may
+//   OUTPUT, never what it may READ) — but the fields themselves moved to
+//   NO-DIGIT, the same rule already governing sections 3 & 4's notes. Not a
+//   third category; consistency with the existing rule, not a compromise.
+//   Specificity is lost ("delayed by 3 hours" becomes "delayed") — recorded,
+//   with the accepted recovery path, in
+//   docs/design-decisions-beta-feedback.md §18.
 // ---------------------------------------------------------------------------
 
 export type DataStatus = 'complete' | 'partial' | 'not_captured'
@@ -399,11 +433,14 @@ export interface EquipmentItemJudgment {
 }
 
 export interface DprJudgment {
-  execution_narrative: string // digits allowed, containment-checked
+  execution_narrative: string // digits allowed, containment-checked (section-scoped
+  // against execution Facts — see the Judgment digit-rules note above)
   execution_data_status: DataStatus
 
-  schedule_miss_reason_note: string // digits allowed, containment-checked;
-  // meaningful only when schedule_met === false
+  schedule_miss_reason_note: string // no-digit (moved 2026-08-11 from digits-
+  // allowed — see the DATED AMENDMENT above); meaningful only when
+  // schedule_met === false. Raw miss-reason text still reaches the model as
+  // prompt input, just never as permitted output.
   schedule_data_status: DataStatus
 
   manpower_idle_reason_note: string // no-digit
@@ -412,7 +449,9 @@ export interface DprJudgment {
   equipment_items: EquipmentItemJudgment[] // no-digit per item
   equipment_data_status: DataStatus
 
-  tomorrows_plan_carry_forward_note: string // digits allowed, containment-checked
+  tomorrows_plan_carry_forward_note: string // no-digit (moved 2026-08-11,
+  // same amendment as schedule_miss_reason_note — shares the same raw
+  // source text, evening Q2/Q3)
   // tomorrows_plan_data_status is DELIBERATELY ABSENT — see
   // TOMORROWS_PLAN_DATA_STATUS_FORCED below. This is not asymmetric by
   // design; it's transitional scaffolding around Q6 not existing yet.
@@ -432,17 +471,17 @@ export interface DprJudgment {
 export const TOMORROWS_PLAN_DATA_STATUS_FORCED: DataStatus = 'not_captured'
 
 // Fields validated by CONTAINMENT (every digit-bearing token in the model's
-// output must appear in the source text it was given) rather than by a
-// schema-level pattern. This check runs in code after the response — it
-// isn't expressible as a JSON Schema constraint, and it is NOT a per-golden-
-// case prose assertion: it's one uniform structural invariant applied
-// identically to every field in this list, the same way the no-digit
-// pattern is a uniform invariant applied to the fields below it.
-export const CONTAINMENT_CHECKED_JUDGMENT_FIELDS = [
-  'execution_narrative',
-  'schedule_miss_reason_note',
-  'tomorrows_plan_carry_forward_note',
-] as const
+// output must appear in that FIELD'S OWN SECTION Facts — SECTION-SCOPED, not
+// whole-prompt; see lib/dpr/containment.ts) rather than by a schema-level
+// pattern. This check runs in code after the response — it isn't expressible
+// as a JSON Schema constraint, and it is NOT a per-golden-case prose
+// assertion: it's a structural invariant.
+//
+// Down to ONE field as of the 2026-08-11 amendment above — schedule_miss_
+// reason_note and tomorrows_plan_carry_forward_note moved to NO_DIGIT_
+// JUDGMENT_FIELDS below. This is the correct, narrowed result of that
+// change, not a sign the mechanism collapsed.
+export const CONTAINMENT_CHECKED_JUDGMENT_FIELDS = ['execution_narrative'] as const
 
 // Fields where the schema applies the no-digit pattern structurally.
 // NOT VERIFIED: whether Anthropic's json_schema structured-output mode
@@ -464,8 +503,10 @@ export const CONTAINMENT_CHECKED_JUDGMENT_FIELDS = [
 const NO_DIGIT_PATTERN = '^[^0-9]*$'
 
 export const NO_DIGIT_JUDGMENT_FIELDS = [
+  'schedule_miss_reason_note',
   'manpower_idle_reason_note',
   'equipment_items[].idle_reason_note',
+  'tomorrows_plan_carry_forward_note',
 ] as const
 
 // ---------------------------------------------------------------------------
@@ -484,14 +525,15 @@ export const DPR_JUDGMENT_SCHEMA = {
     execution_narrative: {
       type: 'string',
       description:
-        'Narrative synthesis of what was done today. Digits allowed only for identifiers/quantities present in the source text (e.g. "M25", "Tower 2", "level 3") — every digit-bearing token must be traceable to the input. Do not compute or invent a number.',
+        'Narrative synthesis of what was done today, for THIS section only. Digits allowed only for identifiers/quantities present in this section\'s own Facts (e.g. "M25", "Tower 2", "level 3") — every digit-bearing token must be traceable to execution Facts specifically, not any other section. Do not compute, invent, or borrow a number from elsewhere.',
     },
     execution_data_status: { type: 'string', enum: ['complete', 'partial', 'not_captured'] },
 
     schedule_miss_reason_note: {
       type: 'string',
+      pattern: NO_DIGIT_PATTERN,
       description:
-        'Qualitative paraphrase of why plan and actual diverged, when they did. Digits allowed only if present in the source text.',
+        'Qualitative reason why plan and actual diverged, when they did. No digits — if a duration or count matters, describe it in words (e.g. "delayed" not "delayed by 3 hours"); nothing here is computed or injected separately, so there is no code-owned number for a digit to trace to.',
     },
     schedule_data_status: { type: 'string', enum: ['complete', 'partial', 'not_captured'] },
 
@@ -528,8 +570,9 @@ export const DPR_JUDGMENT_SCHEMA = {
 
     tomorrows_plan_carry_forward_note: {
       type: 'string',
+      pattern: NO_DIGIT_PATTERN,
       description:
-        'Qualitative carry-forward of the plan-not-met reason (evening Q2/Q3), applied forward. No derived quantity — none exists in the source data. Digits allowed only if present in the source text.',
+        'Qualitative carry-forward of the plan-not-met reason (evening Q2/Q3), applied forward. No digits and no derived quantity — none exists in the source data, and nothing here is computed or injected separately.',
     },
   },
   required: [
