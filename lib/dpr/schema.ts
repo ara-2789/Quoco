@@ -190,7 +190,11 @@ export interface EquipmentItemFacts {
   morning_item_index: number // join key — POSITION, not type (schema.md's
   // EQUIPMENT JOIN KEY note: two same-type machines at different rates would
   // collide on a type-string join).
-  type: string
+  type: string // HUMANIZED display label (lib/whatsapp/flows/parsers/
+  // lexicon.ts's equipmentLabel(), applied by assemble.ts) — "Concrete
+  // Mixer", not the raw canonical storage key "concrete_mixer". A label a
+  // human reads is code-owned at the Facts layer, same discipline as every
+  // other value here; render.ts and the model never touch it.
   available_hours: CapturedNumber
   actual_hours: CapturedNumber
   daily_hire_cost: CapturedNumber
@@ -483,25 +487,47 @@ export const TOMORROWS_PLAN_DATA_STATUS_FORCED: DataStatus = 'not_captured'
 // change, not a sign the mechanism collapsed.
 export const CONTAINMENT_CHECKED_JUDGMENT_FIELDS = ['execution_narrative'] as const
 
-// Fields where the schema applies the no-digit pattern structurally.
-// NOT VERIFIED: whether Anthropic's json_schema structured-output mode
-// enforces the `pattern` keyword during constrained decoding (confirmed
-// during the spike: `type` / `properties` / `required` / `additionalProperties`
-// are enforced; `pattern` specifically was not checked against live docs —
-// verify before relying on it). If unenforced, the type-level guarantee
-// still holds regardless: no field below is typed `number`, so the model
-// cannot return one in a JSON-valid response either way. `pattern` is
-// defense-in-depth against a digit smuggled into a string, not the primary
-// guarantee.
+// Fields where the no-digit rule applies. The RULE has not changed since the
+// 2026-08-11 amendment above — these four fields still may not contain a
+// digit. What changed (also 2026-08-11, same day, discovered running the
+// first real golden-case batch) is WHERE it's enforced.
 //
-// One deliberate exception to "no field is typed number":
-// equipment_items[].morning_item_index is an integer, but it's an identity
-// echo of an index the model was itself given, not a computed value — the
-// generator must validate the returned indices are a subset of the ones it
-// sent, closing the one place a number could otherwise leak through as
-// model output.
-const NO_DIGIT_PATTERN = '^[^0-9]*$'
-
+// DATED CORRECTION: this file previously enforced no-digit via a JSON Schema
+// `pattern: '^[^0-9]*$'` on each of these four fields (three scalar fields
+// plus one inside an array item, so effectively four separate compiled
+// constraints). That schema is NOT what ships — every real call using it
+// returned `400 Schema is too complex for compilation. Try reducing the
+// number of tools or simplifying tool schemas.` Confirmed by direct test,
+// not assumed: an identical request with every `pattern` key stripped and
+// nothing else changed succeeded. An unbounded negated character class
+// (`^[^0-9]*$`) has to compile into a constrained-decoding grammar, and four
+// of them was enough to cross whatever complexity limit the API enforces —
+// the 2026-08-11 decision (c) that moved two MORE fields onto this pattern
+// (schedule_miss_reason_note, tomorrows_plan_carry_forward_note, on top of
+// the pre-existing manpower_idle_reason_note and the array-item idle_reason_
+// note) is what pushed the schema over that limit; it worked before that
+// change added the third and fourth pattern site.
+//
+// RESOLVED: enforcement moved to code, in lib/dpr/validate.ts's
+// validateJudgment() — run AFTER the response, in the same pass as the
+// containment check, both checks reporting every violation together rather
+// than stopping at the first. This is not merely a workaround for the 400:
+// code-side checking is also STRICTLY BETTER for prose quality. Constrained
+// decoding cannot backtrack — if the model is already mid-sentence when it
+// would otherwise write a digit, the grammar forces it to contort the
+// sentence to avoid one it's already committed to, rather than write the
+// digit and let a downstream check catch it. A code-side check accepts that
+// tradeoff explicitly: a violation now costs a wasted call (the response is
+// generated, then rejected) rather than being structurally impossible to
+// produce. That cost is accepted, not hidden.
+//
+// One deliberate exception to "no field is typed number", unaffected by any
+// of this: equipment_items[].morning_item_index is an integer, but it's an
+// identity echo of an index the model was itself given, not a computed
+// value — the generator validates the returned indices are a subset of the
+// ones it sent (generate.ts), a different check from validateJudgment(),
+// closing the one place a number could otherwise leak through as model
+// output.
 export const NO_DIGIT_JUDGMENT_FIELDS = [
   'schedule_miss_reason_note',
   'manpower_idle_reason_note',
@@ -531,7 +557,12 @@ export const DPR_JUDGMENT_SCHEMA = {
 
     schedule_miss_reason_note: {
       type: 'string',
-      pattern: NO_DIGIT_PATTERN,
+      // maxLength 400 (~60-70 words): a real reason here is a short phrase
+      // or one or two sentences ("delayed, cement shortage") — generous
+      // headroom over that without permitting runaway generation. No-digit
+      // enforced in code (validateJudgment, lib/dpr/validate.ts), not here
+      // — see the NO_DIGIT_JUDGMENT_FIELDS comment above for why.
+      maxLength: 400,
       description:
         'Qualitative reason why plan and actual diverged, when they did. No digits — if a duration or count matters, describe it in words (e.g. "delayed" not "delayed by 3 hours"); nothing here is computed or injected separately, so there is no code-owned number for a digit to trace to.',
     },
@@ -539,7 +570,9 @@ export const DPR_JUDGMENT_SCHEMA = {
 
     manpower_idle_reason_note: {
       type: 'string',
-      pattern: NO_DIGIT_PATTERN,
+      // maxLength 400 — same reasoning as schedule_miss_reason_note above.
+      // No-digit enforced in code, not here.
+      maxLength: 400,
       description:
         'Qualitative reason for manpower idle time, if any. No digits — utilisation % and headcounts are computed in code and injected separately; this field is reasoning, not a number.',
     },
@@ -557,7 +590,9 @@ export const DPR_JUDGMENT_SCHEMA = {
           },
           idle_reason_note: {
             type: 'string',
-            pattern: NO_DIGIT_PATTERN,
+            // maxLength 400 — same reasoning as the other no-digit fields.
+            // No-digit enforced in code, not here.
+            maxLength: 400,
             description:
               'Qualitative reason this machine was idle, if any. No digits — hours and idle cost are computed in code and injected separately.',
           },
@@ -570,7 +605,9 @@ export const DPR_JUDGMENT_SCHEMA = {
 
     tomorrows_plan_carry_forward_note: {
       type: 'string',
-      pattern: NO_DIGIT_PATTERN,
+      // maxLength 400 — same reasoning as the other no-digit fields.
+      // No-digit enforced in code, not here.
+      maxLength: 400,
       description:
         'Qualitative carry-forward of the plan-not-met reason (evening Q2/Q3), applied forward. No digits and no derived quantity — none exists in the source data, and nothing here is computed or injected separately.',
     },

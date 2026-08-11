@@ -67,7 +67,134 @@ describe('renderDpr — manpower not_captured guarantee', () => {
     const result = renderDpr(facts, judgment, [])
     expect(result.structured.manpower.note).toBe('Productivity not reported today.')
     expect(result.structured.manpower.headcount).toBe('4')
-    expect(result.structured.manpower.productive_count).toBe('Not captured today.')
+    // Inline flavor (2026-08-11 root-cause fix): productive_count/idle_count
+    // are composed onto one line ("Productive: X, Idle: Y") and therefore
+    // never carry the Standalone sentence's terminal punctuation.
+    expect(result.structured.manpower.productive_count).toBe('not captured')
+    expect(result.content).toContain('Productive: not captured, Idle: not captured')
+    // THE ROOT-CAUSE BUG, directly: a Standalone sentence composed inline
+    // produced "Not captured today.," (sentence + comma). Must never
+    // recur, for any field, anywhere in content.
+    expect(result.content).not.toContain('Not captured today.,')
+  })
+})
+
+describe('renderDpr — FIX 1 (2026-08-11): every field in one manpower block uses the SAME flavor, not a mix', () => {
+  it('the exact reported shape — headcount known, productivity/idle/utilisation all not_captured — reads consistently across all four lines', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'reported', value: 4 },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+      },
+    }
+    const judgment: DprJudgment = { ...baseJudgment, manpower_idle_reason_note: 'Productivity not reported today.' }
+    const result = renderDpr(facts, judgment, [])
+    // The bug, precisely: utilisation_pct rendered the Standalone sentence
+    // while productive_count/idle_count (same block, two lines up) rendered
+    // the Inline fragment — a register clash within one block, even though
+    // utilisation isn't comma-composed with a sibling. "Own line" was never
+    // the right test; "is this a label:value field" is (see fmtCountInline's
+    // header comment).
+    expect(result.structured.manpower.utilisation_pct).toBe('not captured')
+    expect(result.content).toContain('  Utilisation: not captured')
+    expect(result.content).not.toContain('Utilisation: Not captured today.')
+    // headcount, per the same audit — was also Standalone, now Inline. Not
+    // exercised by "not captured" here (headcount IS reported in this
+    // fixture), but the flavor is asserted directly regardless.
+    expect(result.structured.manpower.headcount).toBe('4')
+  })
+
+  it('headcount not_captured while other manpower fields ARE captured (reachable in principle, not exercised by any golden case) also renders Inline, not Standalone', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'not_captured', value: null },
+        productive_count: { status: 'reported', value: 5 },
+        idle_count: { status: 'reported', value: 1 },
+        utilisation_pct: { status: 'reported', value: 83 },
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.manpower.headcount).toBe('not captured')
+    expect(result.content).toContain('  Headcount: not captured')
+    expect(result.content).not.toContain('Headcount: Not captured today.')
+  })
+})
+
+describe('renderDpr — FIX 1 (2026-08-11): schedule.met is Inline for the not_captured case, matching every other label:value field', () => {
+  it('"Plan met:" is a label:value line — the not_captured case must not glue a Standalone sentence after it', () => {
+    const facts: DprFacts = { ...emptyFacts, schedule: { schedule_met: null } }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.content).toContain('Plan met: not captured')
+    expect(result.content).not.toContain('Plan met: Not captured today.')
+  })
+
+  it('the suppressed case is a KNOWN, FLAGGED exception (Standalone half of the union) — not fixed here, still duplicates met/note; recorded, not silently patched over', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      schedule: { schedule_met: null, suppressed: { reason: 'multi_engineer_schedule', engineer_count: 2 } },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    const sentence = '2 engineers reported schedule status separately for this project today, so it is not combined into a single answer.'
+    expect(result.structured.schedule.met).toBe(sentence)
+    expect(result.structured.schedule.note).toBe(sentence)
+  })
+})
+
+describe('renderDpr — FIX 2 (2026-08-11): TOMORROW\'S PLAN is suppressed entirely pre-Q6; the gaps line is the sole mention', () => {
+  it('the section header and its note never appear in content while TOMORROWS_PLAN_DATA_STATUS_FORCED is not_captured', () => {
+    const result = renderDpr(emptyFacts, baseJudgment, [])
+    expect(result.content).not.toContain("TOMORROW'S PLAN")
+    // The structured field is still populated for API/dashboard consumers —
+    // only the CONTENT text section is suppressed, not the underlying data.
+    expect(result.structured.tomorrows_plan.note).toBe('Not captured today.')
+    expect(result.structured.tomorrows_plan.data_status).toBe('not_captured')
+  })
+
+  it("the gaps line remains the SOLE mention of tomorrow's plan in content — no duplicate, no disagreement", () => {
+    const result = renderDpr(emptyFacts, baseJudgment, [])
+    // Case-insensitive on purpose: catches both the removed ALL-CAPS header
+    // ("TOMORROW'S PLAN") and the gaps line's Title Case ("Tomorrow's
+    // Plan") as the same concept — exactly one mention should survive,
+    // regardless of casing.
+    const occurrences = (result.content.match(/tomorrow'?s?\s*plan/gi) ?? []).length
+    expect(occurrences).toBe(1)
+    expect(result.content).toContain("  - Tomorrow's Plan: not yet asked in this version of the check-in.")
+  })
+})
+
+describe('renderDpr — wholly not-captured manpower (unsuppressed) collapses to ONE line, same as suppressed', () => {
+  it('a single engineer whose whole manpower answer is not_captured renders one line, not four', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'not_captured', value: null },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+      },
+    }
+    const judgment: DprJudgment = { ...baseJudgment, manpower_idle_reason_note: 'Fully productive today.' }
+    const result = renderDpr(facts, judgment, [])
+    expect(result.structured.manpower.wholly_blank).toBe(true)
+    expect(result.structured.manpower.suppressed).toBeUndefined()
+    // Isolate the MANPOWER UTILISATION section specifically — "Not
+    // captured today." legitimately also appears under TOMORROW'S PLAN
+    // (forced pre-Q6, unrelated to this fix), so counting the whole
+    // document would over-count. Exactly one non-empty line under this
+    // section's own header, not four.
+    const section = result.content.split('MANPOWER UTILISATION\n')[1].split('\n\nEQUIPMENT')[0]
+    const nonEmptyLines = section.split('\n').filter((l) => l.trim().length > 0)
+    expect(nonEmptyLines).toEqual(['  Not captured today.'])
+    expect(result.content).not.toContain('Headcount:')
+    expect(result.content).not.toContain('Productive:')
+    // The model's note is unreachable here too — isManpowerNoteDiscarded
+    // forced it out of the per-call schema, same guarantee as the fully
+    // suppressed case.
+    expect(result.content).not.toContain('Fully productive today.')
   })
 })
 
@@ -84,7 +211,7 @@ describe('renderDpr — suppression composes with the not_captured render rule (
       },
     }
     const result = renderDpr(facts, baseJudgment, [])
-    expect(result.structured.manpower.note).toBe('Reported by 2 engineers — manpower not aggregated.')
+    expect(result.structured.manpower.note).toBe('2 engineers reported manpower separately for this project today, so the figures are not combined.')
     expect(result.structured.manpower.note).not.toBe('Not captured today.')
   })
 
@@ -104,7 +231,7 @@ describe('renderDpr — suppression composes with the not_captured render rule (
       },
     }
     const result = renderDpr(facts, baseJudgment, [])
-    expect(result.structured.execution.items[0].quantity).toBe('Reported by 2 engineers — quantity not aggregated.')
+    expect(result.structured.execution.items[0].quantity).toBe('2 engineers reported this same activity, so the quantity is not combined.')
     expect(result.structured.execution.items[1].quantity).toBe('8')
   })
 
@@ -130,8 +257,19 @@ describe('renderDpr — suppression composes with the not_captured render rule (
       equipment_items: [{ morning_item_index: 0, idle_reason_note: 'Machine was idle waiting for fuel.' }],
     }
     const result = renderDpr(facts, judgment, [])
-    expect(result.structured.equipment.items[0].note).toBe('Reported by 2 engineers — utilisation not aggregated.')
+    expect(result.structured.equipment.items[0].note).toBe('2 engineers reported this same type of equipment, so the utilisation figures are not combined.')
     expect(result.content).not.toContain('Machine was idle waiting for fuel.')
+    // A suppressed equipment item collapses to ONE line too (2026-08-11 —
+    // "same principle as the suppressed-manpower block," extended to
+    // equipment for BOTH suppression and wholly-not-captured, via the
+    // shared isEquipmentItemNoteDiscarded predicate). Previously this case
+    // rendered the suppression sentence four times, an unexercised
+    // instance of the exact bug the wholly-not-captured case surfaced.
+    expect(result.structured.equipment.items[0].blank).toBe(
+      '2 engineers reported this same type of equipment, so the utilisation figures are not combined.',
+    )
+    expect(result.content).toContain('  - jcb: 2 engineers reported this same type of equipment, so the utilisation figures are not combined.')
+    expect(result.content).not.toContain('available,')
   })
 })
 
@@ -167,5 +305,328 @@ describe('renderDpr — content is a real string, not just structured JSON', () 
     const result = renderDpr(facts, baseJudgment, [])
     expect(result.content).toContain('Completed shuttering work.')
     expect(result.content).toContain('shuttering: 8 nos')
+  })
+})
+
+describe('renderDpr — a raw JS boolean must never reach rendered content', () => {
+  it('schedule_met true renders as "Yes", not "true"', () => {
+    const facts: DprFacts = { ...emptyFacts, schedule: { schedule_met: true } }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.schedule.met).toBe('Yes')
+    expect(result.content).toContain('Plan met: Yes')
+    expect(result.content).not.toContain('true')
+  })
+
+  it('schedule_met false renders as "No", not "false"', () => {
+    const facts: DprFacts = { ...emptyFacts, schedule: { schedule_met: false } }
+    const judgment = { ...baseJudgment, schedule_miss_reason_note: 'Delayed due to rain.' }
+    const result = renderDpr(facts, judgment, [])
+    expect(result.structured.schedule.met).toBe('No')
+    expect(result.content).toContain('Plan met: No')
+    expect(result.content).not.toContain('false')
+  })
+
+  it('schedule_met null (not captured) still renders the not-captured phrase, not a boolean or "null" — Inline flavor, since "Plan met:" is a label:value line (Fix 1 audit, 2026-08-11)', () => {
+    const facts: DprFacts = { ...emptyFacts, schedule: { schedule_met: null } }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.schedule.met).toBe('not captured')
+    expect(result.content).toContain('Plan met: not captured')
+    expect(result.content).not.toContain('Plan met: Not captured today.')
+  })
+})
+
+describe('renderDpr — Indian currency formatting for money fields (idle_cost, daily_hire_cost)', () => {
+  it('a small idle cost (375) renders with ₹ and no unnecessary grouping', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'JCB',
+            available_hours: { status: 'reported', value: 8 },
+            actual_hours: { status: 'reported', value: 6 },
+            daily_hire_cost: { status: 'reported', value: 1500 },
+            idle_cost: { status: 'reported', value: 375 },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.equipment.items[0].idle_cost).toBe('₹375')
+    expect(result.structured.equipment.items[0].daily_hire_cost).toBe('₹1,500')
+  })
+
+  it('a larger figure uses Indian digit grouping (lakh convention: ₹1,50,000, not ₹150,000)', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'Crane',
+            available_hours: { status: 'reported', value: 8 },
+            actual_hours: { status: 'reported', value: 8 },
+            daily_hire_cost: { status: 'reported', value: 150000 },
+            idle_cost: { status: 'reported', value: 0 },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.equipment.items[0].daily_hire_cost).toBe('₹1,50,000')
+  })
+
+  it('a not_captured money value renders the phrase, never "₹null" or "₹undefined" — and, being wholly blank, collapses per-field to the Inline/Standalone defaults', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'JCB',
+            available_hours: { status: 'not_captured', value: null },
+            actual_hours: { status: 'not_captured', value: null },
+            daily_hire_cost: { status: 'not_captured', value: null },
+            idle_cost: { status: 'not_captured', value: null },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    // Every field here is not_captured and the item isn't suppressed — this
+    // is the wholly-blank collapse case, not a partial one. idle_cost AND
+    // daily_hire_cost are both Inline (Fix 1 audit, 2026-08-11 — both are
+    // "Label: value" money fields, same class as headcount/utilisation_pct;
+    // daily_hire_cost was mistyped Standalone in the first pass, harmless
+    // only because nothing prints it in content yet). `blank` is the one
+    // genuine Standalone explanation here — a complete sentence, no label.
+    expect(result.structured.equipment.items[0].idle_cost).toBe('not captured')
+    expect(result.structured.equipment.items[0].daily_hire_cost).toBe('not captured')
+    expect(result.structured.equipment.items[0].blank).toBe('Not captured today.')
+  })
+})
+
+describe('renderDpr — THE "Not captured today.h" BUG: a not-captured hours value must never carry a unit suffix', () => {
+  it('a not_captured available_hours/actual_hours renders the bare phrase, no "h" appended, anywhere it appears — and the wholly-blank item collapses to one content line', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'Concrete Mixer',
+            available_hours: { status: 'not_captured', value: null },
+            actual_hours: { status: 'not_captured', value: null },
+            daily_hire_cost: { status: 'not_captured', value: null },
+            idle_cost: { status: 'not_captured', value: null },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    // Inline flavor — this item is wholly blank, so these are never
+    // actually composed into the content line (it collapses instead), but
+    // the structured values still carry the correct not-captured flavor
+    // for their field type.
+    expect(result.structured.equipment.items[0].available_hours).toBe('not captured')
+    expect(result.structured.equipment.items[0].actual_hours).toBe('not captured')
+    expect(result.content).not.toContain('Not captured today.h')
+    expect(result.content).not.toContain('not capturedh')
+    expect(result.content).toContain('  - Concrete Mixer: Not captured today.')
+    expect(result.content).not.toContain('available,')
+  })
+
+  it('a real reported hours value DOES carry the "h" suffix, baked into the value itself', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'JCB',
+            available_hours: { status: 'reported', value: 8 },
+            actual_hours: { status: 'reported', value: 6 },
+            daily_hire_cost: { status: 'reported', value: 1500 },
+            idle_cost: { status: 'reported', value: 375 },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.equipment.items[0].available_hours).toBe('8h')
+    expect(result.structured.equipment.items[0].actual_hours).toBe('6h')
+  })
+})
+
+describe('renderDpr — suppressed manpower renders ONCE for the whole section, not once per field', () => {
+  it('the content block has exactly one suppression line under MANPOWER UTILISATION, not four', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'not_captured', value: null },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+        suppressed: { reason: 'multi_engineer_manpower', engineer_count: 2 },
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    const suppressionLine = '2 engineers reported manpower separately for this project today, so the figures are not combined.'
+    const occurrences = result.content.split(suppressionLine).length - 1
+    expect(occurrences).toBe(1)
+    expect(result.content).not.toContain('Headcount:')
+    expect(result.content).not.toContain('Productive:')
+  })
+})
+
+describe('renderDpr — the zero-equipment case renders an explicit "no equipment" line, not a blank section', () => {
+  it('empty equipment.items produces a readable line under EQUIPMENT UTILISATION', () => {
+    const result = renderDpr(emptyFacts, baseJudgment, [])
+    expect(result.content).toContain('No equipment reported this morning.')
+  })
+})
+
+describe('renderDpr — a PARTIALLY captured equipment item composes real and not-captured values on one line correctly', () => {
+  it('one hour known, one not — no period-then-unit-label bug ("Not captured today. actual")', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'JCB',
+            available_hours: { status: 'reported', value: 8 },
+            actual_hours: { status: 'not_captured', value: null },
+            daily_hire_cost: { status: 'reported', value: 1500 },
+            idle_cost: { status: 'not_captured', value: null },
+          },
+        ],
+      },
+    }
+    const judgment: DprJudgment = { ...baseJudgment, equipment_items: [{ morning_item_index: 0, idle_reason_note: 'Actual hours not confirmed.' }] }
+    const result = renderDpr(facts, judgment, [])
+    // Not wholly blank — available_hours IS captured — so this renders the
+    // detailed two-line block, not the collapse. Every not-captured
+    // fragment inside it must be the lowercase Inline flavor, with no
+    // stray period before the next word.
+    expect(result.content).toContain('  - JCB: 8h available, not captured actual, idle cost not captured')
+    expect(result.content).not.toContain('Not captured today. actual')
+    expect(result.content).not.toContain('Not captured today.,')
+  })
+})
+
+describe("renderDpr — golden-case fixture drift regression: EquipmentItemFacts.type must already be a humanized label", () => {
+  it('a raw canonical type (e.g. an un-humanized lexicon key) passes through render.ts unchanged — humanization is the Facts assembler\'s job, not render\'s, so a fixture that skips it produces exactly the raw string it was given', () => {
+    // render.ts never calls equipmentLabel() itself (lib/dpr/assemble.ts
+    // does, at Facts-assembly time) — this test documents that boundary so
+    // a future reader doesn't go looking for a humanization step in this
+    // file. If EquipmentItemFacts.type is wrong here, the bug is upstream.
+    const facts: DprFacts = {
+      ...emptyFacts,
+      equipment: {
+        items: [
+          {
+            morning_item_index: 0,
+            type: 'concrete_mixer', // deliberately raw, to prove the passthrough
+            available_hours: { status: 'reported', value: 8 },
+            actual_hours: { status: 'reported', value: 8 },
+            daily_hire_cost: { status: 'reported', value: 800 },
+            idle_cost: { status: 'reported', value: 0 },
+          },
+        ],
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.equipment.items[0].type).toBe('concrete_mixer')
+    expect(result.content).toContain('- concrete_mixer:')
+  })
+})
+
+describe('renderDpr — "WHAT THIS REPORT DOES NOT KNOW" (Part 3, small version, 2026-08-11)', () => {
+  it("always includes the Tomorrow's Plan gap pre-Q6 — TOMORROWS_PLAN_DATA_STATUS_FORCED, not a hardcoded line", () => {
+    const result = renderDpr(emptyFacts, baseJudgment, [])
+    expect(result.structured.data_gaps).toContain("Tomorrow's Plan: not yet asked in this version of the check-in.")
+    expect(result.content).toContain('WHAT THIS REPORT DOES NOT KNOW')
+    expect(result.content).toContain("  - Tomorrow's Plan: not yet asked in this version of the check-in.")
+  })
+
+  it('a fully complete manpower section (emptyFacts) does NOT add a manpower gap line — only the always-present Tomorrow\'s Plan one', () => {
+    const result = renderDpr(emptyFacts, baseJudgment, [])
+    expect(result.structured.data_gaps).toEqual(["Tomorrow's Plan: not yet asked in this version of the check-in."])
+  })
+
+  it('a partial manpower section (headcount known, productivity/idle not) adds the manpower-productivity gap line — the exact shape Aravind\'s finding was about', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'reported', value: 4 },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+      },
+    }
+    const judgment: DprJudgment = { ...baseJudgment, manpower_idle_reason_note: 'Productivity not reported today.' }
+    const result = renderDpr(facts, judgment, [])
+    expect(result.structured.data_gaps).toEqual([
+      "Tomorrow's Plan: not yet asked in this version of the check-in.",
+      'Manpower productivity: not answered today.',
+    ])
+    expect(result.content).toContain('  - Manpower productivity: not answered today.')
+  })
+
+  it('a SUPPRESSED manpower section does NOT duplicate the suppression sentence here — it is already fully explained inline in §3', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'not_captured', value: null },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+        suppressed: { reason: 'multi_engineer_manpower', engineer_count: 2 },
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.data_gaps).toEqual(["Tomorrow's Plan: not yet asked in this version of the check-in."])
+    expect(result.content).not.toContain('Manpower productivity:')
+  })
+
+  it('a wholly not_captured (unsuppressed) manpower section does NOT duplicate the collapse line here either', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'not_captured', value: null },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    expect(result.structured.data_gaps).toEqual(["Tomorrow's Plan: not yet asked in this version of the check-in."])
+    expect(result.content).not.toContain('Manpower productivity:')
+  })
+
+  it('never names an engineer, for either gap covered', () => {
+    const facts: DprFacts = {
+      ...emptyFacts,
+      manpower: {
+        headcount: { status: 'reported', value: 4 },
+        productive_count: { status: 'not_captured', value: null },
+        idle_count: { status: 'not_captured', value: null },
+        utilisation_pct: { status: 'not_captured', value: null },
+      },
+    }
+    const result = renderDpr(facts, baseJudgment, [])
+    for (const gap of result.structured.data_gaps) {
+      expect(gap).not.toMatch(/^[A-Z][a-z]+ [A-Z]/) // no "Firstname Lastname —" style prefix
+    }
+  })
+
+  it('is a separate section from ACCOUNTABILITY, not folded into it — different signal, different PM action', () => {
+    const result = renderDpr(emptyFacts, baseJudgment, [])
+    const gapsIndex = result.content.indexOf('WHAT THIS REPORT DOES NOT KNOW')
+    const accountabilityIndex = result.content.indexOf('ACCOUNTABILITY')
+    expect(gapsIndex).toBeGreaterThan(-1)
+    expect(accountabilityIndex).toBeGreaterThan(gapsIndex)
   })
 })

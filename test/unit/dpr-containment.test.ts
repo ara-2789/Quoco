@@ -162,3 +162,33 @@ describe('checkContainment — NAMED LIMITATION (docs/design-decisions-beta-feed
     expect(result.ok).toBe(true) // documents the gap — this SHOULD fail in an ideal check, and does not
   })
 })
+
+describe('buildExecutionCorpus — equipmentLabel() humanization (2026-08-11, PR #45+equipment-labels) does not affect containment at all', () => {
+  it('a digit-bearing equipment identifier does not enter the execution corpus, because buildExecutionCorpus never receives equipment Facts — only ExecutionOutputFacts', () => {
+    // "Cat320" is what equipmentLabel('cat320') produces for an unmatched
+    // raw token that happens to contain digits (a model/identifier number,
+    // e.g. a CAT 320 excavator) — a concrete case where the humanized
+    // label DOES carry a digit, not just the digit-free "JCB Excavator"
+    // example. buildExecutionCorpus's own type signature only accepts
+    // ExecutionOutputFacts (compiler-enforced, not just untested) — the
+    // real call site in generate.ts always passes facts.execution, never
+    // facts.equipment — so this digit has no path into the corpus
+    // regardless of what equipmentLabel() ever produces.
+    const meta = { project_name: 'Site A' }
+    const execution: ExecutionOutputFacts = {
+      quantities: [{ activity: 'shuttering', quantity: { status: 'reported', value: 40 }, unit: 'cum' }],
+    }
+    const corpus = buildExecutionCorpus(execution, meta)
+    // 320 was never given to buildExecutionCorpus in any form (it lives
+    // only in a hypothetical EquipmentItemFacts.type, a different type this
+    // function doesn't accept) — confirm it is genuinely absent, not
+    // coincidentally present via some other path.
+    expect(corpus.has(320)).toBe(false)
+    // A narrative citing 320 correctly fails containment either way, same
+    // as any other invented number — equipment-label humanization changes
+    // nothing about this outcome.
+    const result = checkContainment('Completed 320 units of shuttering.', corpus)
+    expect(result.ok).toBe(false)
+    expect(result.violations).toEqual([320])
+  })
+})

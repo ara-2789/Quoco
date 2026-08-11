@@ -973,3 +973,430 @@ produces false positives on legitimate rephrasing), not a tweak to the
 existing set-membership check. Recorded as the recovery path if beta
 usage shows this gap is actually exploited — not built speculatively
 against a failure mode not yet observed in real output.
+
+## 20. First real generator run: decision (c) cost nothing measurable, and a
+real cost-per-DPR figure (2026-08-11, PR #50 follow-up — first live calls
+against Claude, not a fixture or a dry run)
+
+**Decision (c)'s empirical answer.** §18 accepted a real tradeoff blind —
+moving `schedule_miss_reason_note` and `tomorrows_plan_carry_forward_note`
+to no-digit, at the cost of specificity ("delayed by 3 hours" becomes
+"delayed"), rather than let raw engineer digits into the report. The first
+two real golden cases to actually generate (case-complete-two-engineer-day,
+case-manpower-equipment-not-captured — the third, zero-equipment case,
+hadn't been fixed yet at the time of this run) came back with:
+
+- **Zero containment violations.** Neither case's `execution_narrative`
+  cited an uncontained digit.
+- **Zero no-digit violations**, on the first attempt, no retries. Every one
+  of the four no-digit fields — `schedule_miss_reason_note`,
+  `manpower_idle_reason_note`, both cases' `equipment_items[].
+  idle_reason_note`, `tomorrows_plan_carry_forward_note` — came back as
+  clean prose with no digit characters at all, and nothing in the prose
+  reads as contorted or evasive from having to avoid one.
+
+**What this means, stated precisely — this is two real data points, not a
+statistically powered claim.** It's real evidence the model can write a
+coherent no-digit sentence without needing the literal number, in the exact
+shape decision (c) worried about (a schedule miss reason, a carry-forward
+note). It is not proof this holds at scale, under every real phrasing beta
+users will send, or that the model never needs the number to stay coherent.
+Recorded as the first evidence, to be added to as more real runs happen —
+not treated as the question closed for good.
+
+**Cost per DPR, measured, not estimated.**
+
+| Case | Input tokens | Output tokens | Latency | Cost |
+|---|---|---|---|---|
+| case-complete-two-engineer-day | 1887 | 880 | 10273ms | $0.018861 |
+| case-manpower-equipment-not-captured | 1727 | 473 | 11247ms | $0.012276 |
+
+Average: **≈$0.0156/DPR** (n=2, golden-case fixtures rather than live
+production Facts — a rough figure, not a robust average; will firm up as
+more real project-days run).
+
+**Priced at the standard rate ($3/$15 per MTok), not the $2/$10
+introductory rate live through 2026-08-31** (`generate.ts`'s own comment on
+`INPUT_COST_PER_MTOK`/`OUTPUT_COST_PER_MTOK` states this explicitly, for
+the same reason: these figures must read correctly after the introductory
+window closes, not just today). If run before 2026-08-31, real cost is
+roughly a third lower than the table above.
+
+| Scope | Monthly cost (1 DPR/day × 30 days) |
+|---|---|
+| 1 project | ≈$0.47 |
+| 10 projects | ≈$4.67 |
+| 50 projects | ≈$23.36 |
+
+At any of these scales, DPR generation cost is not the constraint on
+shipping this feature — it's negligible against Twilio, hosting, or any
+other line item this product already carries. Worth having the number on
+record precisely because it settles the question rather than leaving it as
+an assumption.
+
+## 21. Impersonal narrative — no named individuals in the DPR (2026-08-11,
+Aravind's decision, PR #51 review)
+
+**Decision.** The DPR narrative must not attribute site work to named
+individuals. It reports site output — what was done, where, how much — not
+who did it. Enforced globally in `SYSTEM_PROMPT` (`lib/dpr/generate.ts`),
+not scoped to `execution_narrative` alone, because the rule is the same for
+every free-text field the model writes. The prohibition also covers
+indirect identification ("the engineer who reported first," "the senior
+engineer," "the second team") — a model that complies with the letter of a
+no-names rule while still pointing at a specific person through description
+is worse than naming outright: the document *looks* anonymised while an
+owner reading it can still work out who is meant.
+
+**Rationale:**
+
+(a) §6's accountability view is deliberately worded records-not-person, so
+a missing check-in reads as a data gap, not an accusation. A narrative
+naming individuals on the same document contradicts that stance directly.
+
+(b) The DPR reaches the project owner. Attributing a shortfall to a named
+engineer in a client-facing document politicises a daily operational
+report.
+
+(c) Nothing is lost — per-engineer submission status stays visible in §6
+regardless of narrative wording.
+
+(d) **Contractor naming is banned here too, but that is a separate
+question, deliberately left undecided.** A subcontractor is a commercial
+counterparty, not an employee — "the electrical contractor did not turn up"
+is operationally useful to an owner in a way that naming an individual
+engineer is not, and the politicisation argument in (b) does not transfer
+cleanly to a firm. It is held under the same ban for beta anyway, for a
+different reason: the name arrives as unverified free text from a WhatsApp
+message, and a wrongly-named firm in a client-facing document is its own
+liability, independent of the politicisation question. Revisit once beta
+usage shows whether owners actually ask for contractor-level attribution.
+Do not read this line item as settled the way (a)-(c) are — it is a
+scope-narrowing note, not a closed decision.
+
+**Origin.** Surfaced in the first live golden-case run (§20): with no such
+instruction, `case-complete-two-engineer-day`'s `execution_narrative` named
+both reporting engineers verbatim ("Rajesh's crew completed shuttering
+work... Suresh's crew carried out RCC column casting"), sourced from that
+case's raw input text. Confirmed fixed by a second live run against the
+same case after the `SYSTEM_PROMPT` addition — see the DPR generator PR
+for the rendered before/after.
+
+## 22. "What this report does not know" — a blank field's CAUSE, not just its
+presence (2026-08-11, Aravind's finding, PR #51 review round 3)
+
+**The finding.** §6 (accountability) prints "All engineers submitted both
+check-ins today" directly above sections that are still blank. To an owner
+those two facts contradict: if everyone reported, why does the report know
+nothing? §6 only ever answers "did they check in at all" — a binary on
+submission PRESENCE. It says nothing about whether a submitted check-in
+yielded USABLE DATA, and a blank field on its own carries no recorded
+cause. Part 1's rendering fix (Inline/Standalone split, the wholly-blank
+collapse) made each individual blank read cleanly instead of repeating
+"Not captured today." three or four times — but cleanliness isn't
+causation. It still didn't say WHY a field is blank.
+
+**The four possible causes, and which are actually distinguishable with
+data that exists today — checked, not assumed.** A blank field can mean:
+(1) never asked (the flow question doesn't exist yet), (2) asked, no
+usable answer given, (3) withheld by §12's multi-engineer suppression
+policy, or (4) a system fault — the engineer answered correctly and the
+pipeline lost or mangled it before persisting. The 2026-08-10 productivity
+inversion bug is proof case (4) is not hypothetical.
+
+Checked each against `docs/schema.md`'s actual column definitions, not
+memory:
+
+- **Cause 1 is fully solved already**, and by the RIGHT mechanism.
+  `TOMORROWS_PLAN_DATA_STATUS_FORCED` (`lib/dpr/schema.ts`) is a
+  compile-time constant tied to whether Q6 has shipped — more trustworthy
+  than a per-row DB flag, which could in principle drift from reality;
+  a hardcoded pre-Q6 constant cannot, until it's literally removed at ship
+  time.
+- **Cause 2 is fully solved already** too, via `CapturedCount`/
+  `CapturedNumber`'s existing `not_captured` status — that status IS
+  "asked, no usable answer," by construction, wherever cause 1 doesn't
+  apply.
+- **Cause 3 is fully solved already**, via `SuppressionNote` — though its
+  meaning is under revision; see §24.
+- **Cause 4 is NOT solved, and cannot be solved with today's data for
+  every field — uneven, not uniformly absent.** `evening_productive_
+  manpower` and `evening_equipment_utilisation`/`morning_equipment` DO
+  preserve the engineer's raw reply text alongside the parsed values
+  (`raw_text` at the whole-answer level, `raw` per item —
+  `docs/schema.md` lines 227, 243) — a human reading that text after the
+  fact COULD spot a mismatch (this is literally how the 2026-08-10
+  inversion bug was actually found). But `evening_workers_on_site`
+  (headcount) preserves NO raw text at all: migration 024 "reuses
+  parseLabourCount verbatim, only planned_total persisted" — the parser's
+  other output, including anything resembling raw text, is discarded at
+  write time (`docs/schema.md` lines 214-219). For headcount specifically,
+  the honest answer is: never stored, not recoverable even by hand.
+
+  More importantly, even where raw text IS preserved, **nothing today
+  compares it to the parsed value.** The raw text is a forensic record a
+  human can go read during an incident investigation — not something
+  `assemble.ts` or the DPR generator cross-checks automatically at report
+  time. "Detectable" has two different answers depending on whether it
+  means "a human doing archaeology could tell" (yes, for most fields) or
+  "the system can tell, automatically, tonight" (no, for any field,
+  today).
+
+**Consequence for §6-adjacent wording: case 2's attribution to a named
+engineer is UNSAFE, and this is a materially different answer than
+originally assumed possible.** Since case 2 (asked, no answer) and case 4
+(system fault) cannot currently be distinguished automatically — and never
+can be for headcount, absent a schema change — an automatic per-night
+report cannot safely say "this engineer didn't answer" rather than "we
+lost it." Naming an engineer for a gap this system cannot actually attest
+the CAUSE of would overclaim what's known, in a document the contractor's
+client reads. The section built from this finding therefore names no
+cause more specific than "not answered" / "not yet asked," and — as a
+direct consequence — names no engineer, for any cause, matching
+`lib/dpr/accountability.ts:69-72`'s existing records-not-person convention
+and Rule 5.3 (`docs/design-principles.md`).
+
+**BUILT (2026-08-11), small version, undifferentiated cause.** A new
+section, `WHAT THIS REPORT DOES NOT KNOW`, in `renderContent`
+(`lib/dpr/render.ts`), placed after `TOMORROW'S PLAN` and before
+`ACCOUNTABILITY` — Rule 5.2's ordering (decisions/key drivers first,
+flagged gaps next, full detail last) — and kept as its OWN section rather
+than folded into §6: a missing check-in and an unusable answer call for
+different PM actions (reactivation/engagement vs. data-quality), and
+merging the two signals into one would destroy that distinction. Omitted
+entirely (not printed empty) when there is nothing to explain — Rule
+4.1/5.6, don't clutter a clean report.
+
+Covers ONLY cause 1 (Tomorrow's Plan, via the existing
+`TOMORROWS_PLAN_DATA_STATUS_FORCED` constant — the line disappears on its
+own at Q6 ship time, nothing to remember to delete) and cause 2, scoped
+specifically to the manpower-productivity shape the original finding was
+about (headcount captured, productivity/idle not). Cause 3 (§12
+suppression) is deliberately excluded — already fully explained inline
+within its own section (`manpower.note` / an equipment item's `.blank`);
+restating it here would be the exact same-sentence-in-multiple-places
+redundancy Part 1 just removed elsewhere. Cause 4 is not claimed at all,
+per the finding above — no field asserts a system fault occurred, because
+this system cannot currently tell.
+
+`computeDataGaps()` (`lib/dpr/render.ts`) is render/prompt-layer only: no
+new `DprFacts` field, no RPC change, no migration — it reads Facts/
+Judgment state the pipeline already computes and displays elsewhere.
+`RenderedDpr.structured` gains `data_gaps: string[]` alongside `content`'s
+new section, for a future PM dashboard surface to consume directly rather
+than parsing rendered text.
+
+Extending this to causes 3/4, or to other sections (schedule, equipment),
+is future work, not implied as already covered — see §24 for cause 3's
+fate under Part 2, and the "rough size" note in the PR discussion for what
+building cause 4 detection would actually require (raw-text preservation
+added to `evening_workers_on_site`, a new comparison heuristic with its
+own false-positive risk, a new `DprFacts` field) — deliberately NOT
+bundled into this pass.
+
+## 23. Rejected: restricting beta to one engineer per project (2026-08-11,
+Aravind's decision, recorded so it does not get re-proposed)
+
+**Considered and rejected**, while scoping §24's per-engineer reporting
+design. Never an enforced rule to begin with — confirmed by grep across
+every migration file in `supabase/migrations/`: the only relevant
+uniqueness constraint anywhere in the schema is `daily_logs`'
+`UNIQUE(project_id, engineer_id, log_date)` (one row per engineer per
+day). Nothing caps how many engineers a project can have, in schema, RPC,
+or dashboard. §12's own prod query (this file, above) found zero
+multi-engineer projects TODAY — an observed fact about current usage, not
+a designed-in restriction.
+
+**Rejected for two reasons.** (1) §24's per-engineer reporting design
+removes the reason such a restriction would exist — the unresolvable
+ambiguity §12 suppresses today stops being unresolvable once the report
+shows both engineers' figures separately instead of collapsing them. (2)
+An unenforced ASSUMPTION would be worse than either building the
+restriction for real or not having it at all: §12 itself already named the
+exact failure mode — "a customer with two engineers on one project would
+get a DPR with a permanently blank labour section, not an occasionally
+imprecise one." Relying on an informal, unenforced "beta customers only
+have one engineer" belief is the same risk with no mechanism backing it —
+a silent trap the day a customer adds a second engineer, waiting to be
+discovered in production rather than caught here.
+
+## 24. Per-engineer reporting replaces §12 suppression — APPROVED IN DESIGN,
+DEFERRED IN BUILD (2026-08-11, Aravind's decision, PR #51 review round 3)
+
+**Decision in principle.** Stop suppressing manpower/schedule/equipment/
+execution figures on a multi-engineer day. Report what EACH engineer
+reported, separately, and give the PM the power to resolve overlaps in the
+app. Nothing is discarded; the resolution lands with the only party who
+can actually know whether two headcounts are one crew counted twice or two
+crews on different blocks. See §23 for the rejected alternative (restrict
+beta to one engineer) this decision supersedes the need for.
+
+**GATE, NOT A DATE (2026-08-11).** Built when the first project with two
+active engineers exists, whichever comes first with an explicit decision
+by Aravind — not before, and not on a calendar date. Zero such projects
+exist today (§12's prod query), so §12 suppression is currently dormant —
+this design costs nothing to leave unbuilt while that stays true. A
+date-based deferral has already failed repeatedly in this project (the
+migration-025 pure-mirror test deferral slipped three sessions running
+before being replaced with a conditional gate, CLAUDE.md §10) — a
+date competes with whatever the next session's actual priority turns out
+to be and loses; a gate tied to the triggering event fires exactly when it
+matters, not before, and cannot slip.
+
+**The full design, so it doesn't need to be re-derived when the gate
+fires:**
+
+**(a) Reconciliation setting is per-project, not per-day.** A nullable
+column on `projects`: `manpower_reconciliation_mode: 'disjoint_scopes' |
+'overlapping_scopes' | null`. Project-level, not a per-engineer-pair
+table — the only shape any current (hypothetical) data would support is
+one relationship per project. Captured at FIRST COLLISION (the first day
+two engineers actually report for one project), not at project setup — a
+PM won't reliably know in advance whether two engineers' scopes will
+overlap; grounding the question in an observed instance matches this
+project's "verify by observation" posture (CLAUDE.md §0). Persists to the
+project row, stays editable. Default before answered: `null` — never
+attempt a combined total, always show the per-engineer split
+unreconciled.
+
+**(b) Staging — confirmed, no migration for the split itself.** The
+per-engineer SPLIT (showing raw figures separately, no combined total) is
+entirely a Facts-shape + prompt + render change, within the existing
+`dprs.structured` (JSONB) / `dprs.content` (TEXT) columns — no migration.
+The RECONCILIATION UI — (a)'s `manpower_reconciliation_mode` column, and
+wherever a PM's resolved-total override would be stored — needs one,
+deliberately staged second.
+
+**(c) Generalizing across the four `SuppressionReason`s — uneven, not
+uniform.**
+- `multi_engineer_manpower`, `multi_engineer_schedule` generalize
+  cleanly. Schedule specifically should build exactly what §12 already
+  named ("1 of 2 engineers met today's plan") — not reinvented — though
+  showing the literal per-engineer values (same shape as manpower) is
+  favored over a computed "N of M" summary sentence, since a summary is
+  itself a small aggregation decision (what about a third engineer who
+  didn't answer at all?).
+- `same_activity_overlap` (execution, §1) generalizes STRUCTURALLY (show
+  both, don't discard) but stays a PER-DAY PM JUDGMENT CALL, not a
+  persisted per-project setting like (a)'s. Two engineers reporting
+  "shuttering, grid C1" might be the same work counted twice, or two
+  genuinely separate pours sharing a name — unlike manpower/schedule, this
+  isn't a stable property of the project, it varies day to day.
+- `same_type_equipment` (§4) is an OPEN QUESTION for whoever builds the
+  reconciliation UI — it sits between the two: generalizes structurally,
+  and IF a project has stably-assigned distinct machines per engineer
+  ("Engineer A always runs JCB #1"), a per-project setting like (a)'s
+  would make sense — but that shouldn't be assumed as the common case
+  without evidence from real usage.
+- `SuppressionNote` does NOT disappear as a concept, but its meaning
+  shifts from "discard, show nothing but a sentence" to "collided, shown
+  separately, not yet reconciled." **RENAME TO MAKE AT BUILD TIME, noted
+  now so it isn't rediscovered**: something like `unreconciled` reads more
+  honestly than `suppressed` once nothing is actually being hidden.
+
+**(d) `DprFacts` shape — the part most likely to be underestimated.**
+Manpower and schedule become per-engineer LISTS — the only two sections
+currently a single aggregate-or-suppressed object rather than a list.
+Propose always an array, even length 1 for single-engineer days, so
+there's one code path regardless of engineer count (this project's own
+recurring lesson against hand-mirrored branches silently diverging,
+CLAUDE.md §10). Equipment/execution are already lists — the
+`byType`/`activityGroups` grouping-and-suppress branch in `assemble.ts`
+disappears entirely once collisions stop collapsing; every engineer's item
+becomes its own entry, but `EquipmentItemFacts`/`ExecutionQuantityFact`
+need an `engineer_id`/`engineer_name` field added (neither carries
+engineer attribution today, since the old aggregate assembler only ever
+needed a COUNT of colliding engineers, never WHICH ones), and `type` alone
+stops being a sufficient display label once two same-typed items can
+legitimately coexist.
+
+Containment corpus construction barely changes — it already builds from a
+list of numeric values, indifferent to attribution. Item 8's impersonal-
+narrative decision (no named individuals, direct or indirect) means the
+model can never write "Engineer A poured 40 cum" regardless, which mostly
+resolves the sharper version of this question (could the model misattribute
+a real number to the wrong engineer in a sentence a reader could act on?)
+as a side effect — a favorable interaction between the two decisions, not
+independently proven here.
+
+**The part most likely to be missed**: manpower/schedule's no-digit note
+fields (`manpower_idle_reason_note`, `schedule_miss_reason_note`) are
+single strings today, one per section. Per-engineer lists raise the
+question of whether each engineer gets their own note — if so, that's a
+`DprJudgment` schema change too, not just Facts, and `isManpowerNoteDiscarded`/
+`isScheduleNoteDiscarded` (`lib/dpr/discarded-fields.ts`) need to
+generalize from a single boolean to a per-entry predicate — the same shape
+`isEquipmentItemNoteDiscarded` already has. Item 6's per-call-schema-
+shaping work (`buildPerCallSchema`, `lib/dpr/generate.ts`) would multiply
+across N engineer entries, not run once per section.
+
+**Prompt guardrail — DEFENCE-IN-DEPTH, NOT A MUST-HAVE. Correction to the
+original proposal (2026-08-11, Aravind).** The original proposal called a
+new `SYSTEM_PROMPT` instruction ("do not sum or average per-engineer
+figures into a combined statement") a must-have. Downgraded: the
+STRUCTURAL protections already cover the dangerous case. The manpower and
+schedule note fields are no-digit, so a summed figure cannot appear there
+at all. A summed manpower figure in `execution_narrative` would fail
+containment, because the corpus is section-scoped and manpower values are
+not in execution's corpus. What the instruction actually adds is coverage
+of QUALITATIVE aggregation ("together the figures suggest a larger
+workforce") — real, but a materially smaller and different risk than the
+arithmetic one, which structure already forecloses. Add the instruction
+for that narrower purpose; describe it accurately as defence-in-depth when
+it's added, not as the control — this project's standing lesson (the
+whole reason the arithmetic boundary is enforced at the type level, not by
+instruction) is that an instruction is not an enforcement mechanism, and
+calling one a must-have invites a future author to rely on it as if it
+were.
+
+**Render**: the Inline/Standalone collapse work (Part 1, this session)
+doesn't disappear — it multiplies. Each per-engineer entry independently
+needs the same partial-vs-blank handling one section needed before.
+
+**Golden fixtures**: `case-complete-two-engineer-day.ts` needs the most
+rework of any file this design touches — its entire premise (manpower
+suppressed, `manpower_data_status === 'not_captured'`) becomes wrong; it
+currently asserts against exactly the behavior this design removes. At
+least one NEW golden case is also needed — none of the current three
+exercise "two engineers, both report real, different manpower numbers,
+shown separately," a materially new scenario, not a variant of an
+existing one.
+
+**(e) Readability.** Collapse the per-engineer manpower block to one line
+per engineer once N > 1 (`Engineer A: 15 on site, 12 productive, 3 idle` /
+`Engineer B: 8 on site, 8 productive, 0 idle`), reserving the current
+4-line detailed block for the single-engineer case where it already reads
+well. A real UX decision, not a mechanical one — `docs/design-
+principles.md` should be consulted before finalizing wording/layout, not
+freelanced in a render change, per CLAUDE.md's own instruction for any
+user-facing surface. Rough ceiling before a plain-text WhatsApp/email
+report reads as a wall of numbers: somewhere around 4-5 engineers per
+section — an estimate, not a measurement. Past that, a summary-first shape
+("5 engineers reported manpower — full breakdown on the dashboard") with
+detail deferred to the PM web view is one option, but whether the DPR text
+stays the single source of truth for any roster size is a bigger product
+question, left open here.
+
+**(f) What the owner sees before reconciliation.** A framing sentence
+must precede any split figures — never a raw juxtaposition with no
+explanation: "Two engineers reported on this project today. Their figures
+are shown separately below because the site coverage overlap between them
+has not been confirmed." Same register as the Part 1 `SUPPRESSION_PROSE`
+rewrite (this session) — plain explanation, no claimed total, no internal
+vocabulary; this design doesn't need a new voice, just the same one no
+longer used to justify hiding the numbers.
+
+Owner's and PM's copy should DIFFER, flagged as a real decision rather
+than assumed: the owner shouldn't be handed an unresolved gap to interpret
+themselves — that IS the "reads like a system that cannot count" risk
+this design exists to avoid triggering. Owner's copy: the split, always
+with the explanatory sentence, never a bare call-to-action aimed at the
+PM's own app. PM's copy (where the reconciliation UI lives): the same
+split plus an actionable prompt ("Resolve: same site, or different
+crews?"). Extends the existing owner/PM content-scoping precedent
+(CLAUDE.md §4 — owner DPR content is strictly single-project scoped) along
+a different axis — detail level, not project scope — rather than
+inventing a new principle.
+
+**Full origin and proposal discussion**: PR #51 review round 3
+(2026-08-11).

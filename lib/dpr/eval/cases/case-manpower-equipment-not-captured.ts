@@ -69,11 +69,16 @@ export const manpowerFacts: ManpowerFacts = {
   utilisation_pct: { status: 'not_captured', value: null },
 }
 
+// `type` is the HUMANIZED display label assemble.ts's mergeDprFacts writes
+// (equipmentLabel()) — see case-complete-two-engineer-day.ts's equipmentFacts
+// comment for the full explanation of why this fixture holds the humanized
+// label rather than the raw canonical 'concrete_mixer' it previously did
+// (CORRECTED 2026-08-11).
 export const equipmentFacts: EquipmentFacts = {
   items: [
     {
       morning_item_index: 0,
-      type: 'concrete_mixer',
+      type: 'Concrete Mixer',
       available_hours: { status: 'not_captured', value: null },
       actual_hours: { status: 'not_captured', value: null },
       daily_hire_cost: { status: 'not_captured', value: null },
