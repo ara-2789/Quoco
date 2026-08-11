@@ -36,14 +36,54 @@ import { isManpowerNoteDiscarded, isEquipmentItemNoteDiscarded } from './discard
 // rendered as-is. Only the not_captured guarantee above is structurally
 // enforced.
 
-const NOT_CAPTURED_TEXT = 'Not captured today.'
+// ROOT CAUSE (2026-08-11, Aravind's finding, on top of the "Not captured
+// today.h" fix above): a single sentence, "Not captured today.", was used
+// BOTH as a standalone statement (its own line) AND as a fragment
+// interpolated into a line composed from several fields — producing "Not
+// captured today.," (sentence + comma, from "Productive: X, Idle: Y") and
+// "Not captured today. available" (sentence + unit label, from the
+// equipment line). The "h"-suffix bug above was the SAME root cause in a
+// narrower form: a value meant for composition was treated as if it were
+// already a complete, standalone piece of text.
+//
+// Splitting the STRING alone would not have prevented this — a call site
+// could still silently interpolate a standalone sentence into a slot meant
+// for an inline fragment, with nothing catching it until someone read the
+// output. Inline and Standalone are NOMINALLY TYPED here (each an
+// intersection with a private, compile-time-only brand the other type
+// lacks) specifically so that mistake becomes a TypeScript error, not
+// something that ships and gets caught by a human reading rendered prose.
+// A RenderedManpower/RenderedEquipmentItem field declared Inline cannot
+// accept a Standalone value, or vice versa, without an explicit `as` cast —
+// which is visible in review and greppable, unlike a naming convention two
+// formatter functions can silently drift apart from.
+declare const InlineBrand: unique symbol
+declare const StandaloneBrand: unique symbol
+type Inline = string & { readonly [InlineBrand]: true }
+type Standalone = string & { readonly [StandaloneBrand]: true }
+
+function inline(text: string): Inline {
+  return text as Inline
+}
+function standalone(text: string): Standalone {
+  return text as Standalone
+}
+
+// STANDALONE: a complete sentence, terminal punctuation included — used
+// where the value IS the whole statement (its own line, or the whole
+// explanation for a collapsed block).
+const NOT_CAPTURED_STANDALONE: Standalone = standalone('Not captured today.')
+// INLINE: lowercase, no terminal punctuation — used where the value is one
+// fragment among several composed onto a single line with commas/labels.
+const NOT_CAPTURED_INLINE: Inline = inline('not captured')
 
 // Owner-facing prose for a §12 suppression, per reason — replaces internal
 // vocabulary ("not aggregated") with a plain explanation of WHY a figure is
 // withheld (2026-08-11, first real golden-case output review: an owner does
 // not know what "not aggregated" means; this states the actual situation —
 // more than one engineer reported the same thing separately, so the report
-// declines to guess whether to sum or pick one).
+// declines to guess whether to sum or pick one). Always a complete
+// sentence — Standalone by construction, never composed inline.
 const SUPPRESSION_PROSE: Record<SuppressionNote['reason'], (count: number) => string> = {
   multi_engineer_manpower: (n) =>
     `${n} engineers reported manpower separately for this project today, so the figures are not combined.`,
@@ -54,14 +94,21 @@ const SUPPRESSION_PROSE: Record<SuppressionNote['reason'], (count: number) => st
     `${n} engineers reported this same type of equipment, so the utilisation figures are not combined.`,
 }
 
-function suppressionText(note: SuppressionNote): string {
-  return SUPPRESSION_PROSE[note.reason](note.engineer_count)
+function suppressionText(note: SuppressionNote): Standalone {
+  return standalone(SUPPRESSION_PROSE[note.reason](note.engineer_count))
 }
 
 // Bare counts (headcount, productive_count, idle_count) — no unit, no
-// currency, just the number or the not-captured phrase.
-function fmtCount(c: CapturedCount | CapturedNumber): string {
-  return c.status === 'not_captured' ? NOT_CAPTURED_TEXT : String(c.value)
+// currency, just the number or the not-captured phrase, in each of the two
+// flavors. headcount and utilisation_pct are always their own line
+// (Standalone); productive_count and idle_count are always composed
+// together on one line (Inline) — see renderManpower.
+function fmtCountStandalone(c: CapturedCount | CapturedNumber): Standalone {
+  return c.status === 'not_captured' ? NOT_CAPTURED_STANDALONE : standalone(String(c.value))
+}
+
+function fmtCountInline(c: CapturedCount | CapturedNumber): Inline {
+  return c.status === 'not_captured' ? NOT_CAPTURED_INLINE : inline(String(c.value))
 }
 
 // Indian digit grouping (lakh/crore convention): the last three digits form
@@ -80,23 +127,28 @@ function formatIndianCurrency(value: number): string {
 }
 
 // Money fields (idle_cost, daily_hire_cost) — ₹ + Indian grouping, or the
-// not-captured phrase with no unit tacked on.
-function fmtMoney(c: CapturedNumber): string {
-  if (c.status !== 'reported' || c.value === null) return NOT_CAPTURED_TEXT
-  return formatIndianCurrency(c.value)
+// not-captured phrase with no unit tacked on. daily_hire_cost is never
+// composed inline today (Standalone only); idle_cost IS, on the equipment
+// line (Inline).
+function fmtMoneyStandalone(c: CapturedNumber): Standalone {
+  if (c.status !== 'reported' || c.value === null) return NOT_CAPTURED_STANDALONE
+  return standalone(formatIndianCurrency(c.value))
+}
+
+function fmtMoneyInline(c: CapturedNumber): Inline {
+  if (c.status !== 'reported' || c.value === null) return NOT_CAPTURED_INLINE
+  return inline(formatIndianCurrency(c.value))
 }
 
 // Hour fields (available_hours, actual_hours) — unit is baked into the
-// formatted string here, not appended later by the content template. This
-// is the fix for the "Not captured today.h" bug: appending "h" in the
-// template unconditionally, after the value was already either a number or
-// the not-captured phrase, glued a bare unit suffix onto prose that was
-// never a number to begin with. Baking it in here means there is only ONE
-// place that decides whether a unit suffix applies, and it decides
-// correctly by construction — no template downstream can get it wrong.
-function fmtHours(c: CapturedNumber): string {
-  if (c.status !== 'reported' || c.value === null) return NOT_CAPTURED_TEXT
-  return `${c.value}h`
+// formatted string here, not appended later by the content template (the
+// original fix for the "Not captured today.h" bug — see the header comment
+// above for how this same shape recurred and got the general fix). Always
+// Inline: available/actual hours are only ever composed onto the equipment
+// line, never printed alone.
+function fmtHoursInline(c: CapturedNumber): Inline {
+  if (c.status !== 'reported' || c.value === null) return NOT_CAPTURED_INLINE
+  return inline(`${c.value}h`)
 }
 
 // A raw JS boolean must never reach rendered content (2026-08-11 finding —
@@ -110,55 +162,90 @@ function fmtBoolean(value: boolean): string {
 
 interface RenderedExecutionItem {
   activity: string
-  quantity: string
+  // Inline: composed onto one line with `unit` in renderContent
+  // (`${quantity}${unit ? ' ' + unit : ''}`). A not_captured, unsuppressed
+  // quantity ("engineer answered the unit but not the number") would hit
+  // the exact same bug class Aravind named for manpower/equipment — "Not
+  // captured today. nos" — if this were Standalone; fixed here alongside
+  // those two, not left as a third latent instance.
+  quantity: Inline
   unit: string
 }
 
 function renderExecutionItem(item: ExecutionQuantityFact): RenderedExecutionItem {
-  return {
-    activity: item.activity,
-    quantity: item.suppressed ? suppressionText(item.suppressed) : fmtCount(item.quantity),
-    unit: item.suppressed ? '' : item.unit,
+  if (item.suppressed) {
+    // unit is forced to '' below, so nothing is ever composed onto this
+    // value — a Standalone sentence displayed alone is safe; the inline()
+    // wrap here is a type-level formality, not a live composition risk.
+    return { activity: item.activity, quantity: inline(suppressionText(item.suppressed)), unit: '' }
   }
+  return { activity: item.activity, quantity: fmtCountInline(item.quantity), unit: item.unit }
 }
 
 // ---- §3 Manpower --------------------------------------------------------
 
 interface RenderedManpower {
-  headcount: string
-  productive_count: string
-  idle_count: string
-  utilisation_pct: string
-  note: string
+  headcount: Standalone
+  productive_count: Inline
+  idle_count: Inline
+  utilisation_pct: Standalone
+  note: Standalone
   // Present ONLY when the whole section is suppressed (§12) — lets
   // renderContent collapse the section to ONE line instead of repeating the
   // same suppression sentence across headcount/productive/idle/utilisation/
   // note (2026-08-11 finding: it was printing four times in one section).
   suppressed?: SuppressionNote
+  // Present ONLY when the section is NOT suppressed but every underlying
+  // field is independently not_captured (isManpowerNoteDiscarded's second
+  // branch — a single engineer whose whole manpower answer went
+  // unanswered). Same collapse-to-one-line treatment as `suppressed`,
+  // added 2026-08-11 alongside the equipment version of this fix — no
+  // fixture exercises this shape yet (every current golden case's blank
+  // manpower is the multi-engineer suppressed case), but the underlying
+  // bug shape (repeating "not captured" across headcount/productive/idle/
+  // utilisation/note) is identical, so it gets the identical fix rather
+  // than being left as a latent, not-yet-observed instance.
+  wholly_blank?: true
 }
 
 function renderManpower(facts: DprFacts['manpower'], judgment: DprJudgment): RenderedManpower {
   if (facts.suppressed) {
     const text = suppressionText(facts.suppressed)
     return {
-      headcount: text,
-      productive_count: text,
-      idle_count: text,
-      utilisation_pct: text,
+      headcount: NOT_CAPTURED_STANDALONE,
+      productive_count: NOT_CAPTURED_INLINE,
+      idle_count: NOT_CAPTURED_INLINE,
+      utilisation_pct: NOT_CAPTURED_STANDALONE,
       note: text,
       suppressed: facts.suppressed,
     }
   }
+  // isManpowerNoteDiscarded (lib/dpr/discarded-fields.ts) is the SAME
+  // predicate generate.ts's buildPerCallSchema uses to decide whether the
+  // model was even given a manpower_idle_reason_note field to write — one
+  // shared source of truth, not two copies that have to agree. When it's
+  // true here (and facts.suppressed is false), every one of
+  // headcount/productive_count/idle_count is independently not_captured —
+  // collapse the same way the suppressed branch does.
+  if (isManpowerNoteDiscarded(facts)) {
+    return {
+      headcount: NOT_CAPTURED_STANDALONE,
+      productive_count: NOT_CAPTURED_INLINE,
+      idle_count: NOT_CAPTURED_INLINE,
+      utilisation_pct: NOT_CAPTURED_STANDALONE,
+      note: NOT_CAPTURED_STANDALONE,
+      wholly_blank: true,
+    }
+  }
   return {
-    headcount: fmtCount(facts.headcount),
-    productive_count: fmtCount(facts.productive_count),
-    idle_count: fmtCount(facts.idle_count),
-    utilisation_pct: facts.utilisation_pct.status === 'not_captured' ? NOT_CAPTURED_TEXT : `${facts.utilisation_pct.value}%`,
-    // isManpowerNoteDiscarded (lib/dpr/discarded-fields.ts) is the SAME
-    // predicate generate.ts's buildPerCallSchema uses to decide whether the
-    // model was even given a manpower_idle_reason_note field to write —
-    // one shared source of truth, not two copies that have to agree.
-    note: isManpowerNoteDiscarded(facts) ? NOT_CAPTURED_TEXT : judgment.manpower_idle_reason_note,
+    headcount: fmtCountStandalone(facts.headcount),
+    productive_count: fmtCountInline(facts.productive_count),
+    idle_count: fmtCountInline(facts.idle_count),
+    utilisation_pct: facts.utilisation_pct.status === 'not_captured' ? NOT_CAPTURED_STANDALONE : standalone(`${facts.utilisation_pct.value}%`),
+    // isManpowerNoteDiscarded is false here, so the model was given the
+    // note field and judgment.manpower_idle_reason_note is real prose, not
+    // a normalization default — no fallback needed.
+    note: standalone(judgment.manpower_idle_reason_note),
   }
 }
 
@@ -166,28 +253,58 @@ function renderManpower(facts: DprFacts['manpower'], judgment: DprJudgment): Ren
 
 interface RenderedEquipmentItem {
   type: string
-  available_hours: string
-  actual_hours: string
-  daily_hire_cost: string
-  idle_cost: string
-  note: string
+  available_hours: Inline
+  actual_hours: Inline
+  daily_hire_cost: Standalone
+  idle_cost: Inline
+  note: Standalone
+  // Present when EITHER the item is Facts-suppressed (§12) OR every
+  // rendered field is independently not_captured (isEquipmentItemNoteDiscarded's
+  // second branch) — the "wholly not-captured equipment line" fix
+  // (2026-08-11): previously every field printed the same phrase
+  // separately (available/actual/idle cost on one line, the note on a
+  // second), FOUR occurrences for one machine. When present, renderContent
+  // prints ONE line — this text, no unit labels, no separate note line —
+  // instead of the two-line detailed block. Holds the actual explanation
+  // (the suppression sentence, or the generic not-captured phrase), so
+  // content never has to recompute it separately from `note`.
+  blank?: Standalone
 }
 
 function renderEquipmentItem(item: EquipmentItemFacts, judgment: DprJudgment): RenderedEquipmentItem {
-  if (item.suppressed) {
-    const text = suppressionText(item.suppressed)
-    return { type: item.type, available_hours: text, actual_hours: text, daily_hire_cost: text, idle_cost: text, note: text }
+  // isEquipmentItemNoteDiscarded (lib/dpr/discarded-fields.ts) — same
+  // shared predicate generate.ts uses to decide which item indices the
+  // model is even allowed to comment on. True here means either
+  // Facts-suppressed OR available_hours AND actual_hours are BOTH
+  // not_captured — and idle_cost is computed FROM those two hours
+  // (computeIdleCost, lib/dpr/idle-cost.ts), so it is necessarily
+  // not_captured too whenever this branch fires. Nothing rendered for this
+  // item carries real data — collapse to one line.
+  if (isEquipmentItemNoteDiscarded(item)) {
+    const text = item.suppressed ? suppressionText(item.suppressed) : NOT_CAPTURED_STANDALONE
+    return {
+      type: item.type,
+      available_hours: NOT_CAPTURED_INLINE,
+      actual_hours: NOT_CAPTURED_INLINE,
+      daily_hire_cost: NOT_CAPTURED_STANDALONE,
+      idle_cost: NOT_CAPTURED_INLINE,
+      note: text,
+      blank: text,
+    }
   }
   const modelNote = judgment.equipment_items.find((j) => j.morning_item_index === item.morning_item_index)
   return {
     type: item.type,
-    available_hours: fmtHours(item.available_hours),
-    actual_hours: fmtHours(item.actual_hours),
-    daily_hire_cost: fmtMoney(item.daily_hire_cost),
-    idle_cost: fmtMoney(item.idle_cost),
-    // isEquipmentItemNoteDiscarded — same shared predicate generate.ts uses
-    // to decide which item indices the model is even allowed to comment on.
-    note: isEquipmentItemNoteDiscarded(item) ? NOT_CAPTURED_TEXT : (modelNote?.idle_reason_note ?? NOT_CAPTURED_TEXT),
+    available_hours: fmtHoursInline(item.available_hours),
+    actual_hours: fmtHoursInline(item.actual_hours),
+    daily_hire_cost: fmtMoneyStandalone(item.daily_hire_cost),
+    idle_cost: fmtMoneyInline(item.idle_cost),
+    // isEquipmentItemNoteDiscarded is false here, so this item was one of
+    // the eligible indices the model was asked about — modelNote should
+    // always be found by identity-echo (generate.ts's own check on the
+    // response). The fallback covers only a malformed/incomplete response
+    // slipping past that check; not the normal path.
+    note: modelNote ? standalone(modelNote.idle_reason_note) : NOT_CAPTURED_STANDALONE,
   }
 }
 
@@ -212,7 +329,7 @@ export function renderDpr(facts: DprFacts, judgment: DprJudgment, accountability
   const schedule = facts.schedule.suppressed
     ? { met: suppressionText(facts.schedule.suppressed), note: suppressionText(facts.schedule.suppressed) }
     : {
-        met: facts.schedule.schedule_met === null ? NOT_CAPTURED_TEXT : fmtBoolean(facts.schedule.schedule_met),
+        met: facts.schedule.schedule_met === null ? NOT_CAPTURED_STANDALONE : fmtBoolean(facts.schedule.schedule_met),
         note: facts.schedule.schedule_met === false ? judgment.schedule_miss_reason_note : '',
       }
 
@@ -222,7 +339,7 @@ export function renderDpr(facts: DprFacts, judgment: DprJudgment, accountability
   // §5 is FORCED not_captured pre-Q6 regardless of what the model said —
   // TOMORROWS_PLAN_DATA_STATUS_FORCED (schema.ts) already owns this; render
   // must not surface tomorrows_plan_carry_forward_note here until Q6 ships.
-  const tomorrowsPlan = { note: NOT_CAPTURED_TEXT, data_status: TOMORROWS_PLAN_DATA_STATUS_FORCED }
+  const tomorrowsPlan = { note: NOT_CAPTURED_STANDALONE, data_status: TOMORROWS_PLAN_DATA_STATUS_FORCED }
 
   const structured: RenderedDpr['structured'] = {
     execution: { items: executionItems, narrative: judgment.execution_narrative, data_status: judgment.execution_data_status },
@@ -254,11 +371,13 @@ function renderContent(s: RenderedDpr['structured']): string {
   lines.push('')
 
   lines.push('MANPOWER UTILISATION')
-  if (s.manpower.suppressed) {
+  if (s.manpower.suppressed || s.manpower.wholly_blank) {
     // ONE line for the whole section — was FOUR (headcount, productive/idle,
-    // utilisation, note all repeating the same sentence). See
-    // RenderedManpower.suppressed's own comment for why.
-    lines.push(`  ${suppressionText(s.manpower.suppressed)}`)
+    // utilisation, note all repeating the same sentence). `note` already
+    // carries the right text for either trigger (the suppression sentence,
+    // or the generic not-captured phrase) — see renderManpower, no need to
+    // recompute it here.
+    lines.push(`  ${s.manpower.note}`)
   } else {
     lines.push(`  Headcount: ${s.manpower.headcount}`)
     lines.push(`  Productive: ${s.manpower.productive_count}, Idle: ${s.manpower.idle_count}`)
@@ -275,8 +394,17 @@ function renderContent(s: RenderedDpr['structured']): string {
     lines.push('  No equipment reported this morning.')
   }
   for (const item of s.equipment.items) {
-    // No hardcoded unit suffix here — fmtHours/fmtMoney already bake in "h"
-    // / "₹" (or produce the bare not-captured phrase) at the value layer.
+    if (item.blank !== undefined) {
+      // ONE line for a machine with nothing to report — was FOUR occurrences
+      // of "Not captured today." (available/actual/idle cost on one
+      // composed line, the note repeating it again on a second). See
+      // RenderedEquipmentItem.blank's own comment.
+      lines.push(`  - ${item.type}: ${item.blank}`)
+      continue
+    }
+    // No hardcoded unit suffix here — fmtHoursInline/fmtMoneyInline already
+    // bake in "h" / "₹" (or the lowercase inline not-captured fragment) at
+    // the value layer.
     lines.push(`  - ${item.type}: ${item.available_hours} available, ${item.actual_hours} actual, idle cost ${item.idle_cost}`)
     lines.push(`    ${item.note}`)
   }

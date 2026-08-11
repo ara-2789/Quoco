@@ -107,13 +107,29 @@ export const manpowerFacts: ManpowerFacts = {
   suppressed: { reason: 'multi_engineer_manpower', engineer_count: 2 },
 }
 
+// `type` below is the HUMANIZED display label assemble.ts's mergeDprFacts
+// actually writes into EquipmentItemFacts.type (equipmentLabel(), lib/
+// whatsapp/flows/parsers/lexicon.ts — schema.ts's own field comment says so
+// too). These fixtures hand-author DprFacts directly and bypass
+// mergeDprFacts entirely, so nothing forces that here — CORRECTED
+// 2026-08-11 (Aravind's finding, dump-golden-cases.ts output review): this
+// item previously read `type: 'jcb_excavator'`, which is not just
+// un-humanized but INVALID — the real EQUIPMENT_ALIASES lexicon has no
+// combined "jcb_excavator" canonical type at all; "jcb" and "excavator" are
+// two SEPARATE canonical types (jcb -> 'JCB' via an override, excavator ->
+// 'Excavator' via the default split-and-capitalize rule). That value could
+// never have come out of the real assembler — this fixture was asserting
+// against an input shape the pipeline cannot produce. Set to the humanized
+// label for the 'jcb' canonical type (matching the rawInputText's "JCB" and
+// this file's own header comment naming it a JCB), not a fixed-up
+// 'jcb_excavator'.
 export const equipmentFacts: EquipmentFacts = {
   items: [
     {
       // aggregate-assembly index 0 (Rajesh's row) — see the AGGREGATE ITEM
       // INDEXING note above, not Rajesh's own raw morning_item_index.
       morning_item_index: 0,
-      type: 'jcb_excavator',
+      type: 'JCB',
       available_hours: { status: 'reported', value: 8 },
       actual_hours: { status: 'reported', value: 6 },
       daily_hire_cost: { status: 'reported', value: 1500 },
@@ -122,7 +138,7 @@ export const equipmentFacts: EquipmentFacts = {
     {
       // aggregate-assembly index 1 (Suresh's row).
       morning_item_index: 1,
-      type: 'concrete_mixer',
+      type: 'Concrete Mixer',
       available_hours: { status: 'reported', value: 8 },
       actual_hours: { status: 'reported', value: 8 },
       daily_hire_cost: { status: 'reported', value: 800 },
