@@ -1033,3 +1033,51 @@ shipping this feature — it's negligible against Twilio, hosting, or any
 other line item this product already carries. Worth having the number on
 record precisely because it settles the question rather than leaving it as
 an assumption.
+
+## 21. Impersonal narrative — no named individuals in the DPR (2026-08-11,
+Aravind's decision, PR #51 review)
+
+**Decision.** The DPR narrative must not attribute site work to named
+individuals. It reports site output — what was done, where, how much — not
+who did it. Enforced globally in `SYSTEM_PROMPT` (`lib/dpr/generate.ts`),
+not scoped to `execution_narrative` alone, because the rule is the same for
+every free-text field the model writes. The prohibition also covers
+indirect identification ("the engineer who reported first," "the senior
+engineer," "the second team") — a model that complies with the letter of a
+no-names rule while still pointing at a specific person through description
+is worse than naming outright: the document *looks* anonymised while an
+owner reading it can still work out who is meant.
+
+**Rationale:**
+
+(a) §6's accountability view is deliberately worded records-not-person, so
+a missing check-in reads as a data gap, not an accusation. A narrative
+naming individuals on the same document contradicts that stance directly.
+
+(b) The DPR reaches the project owner. Attributing a shortfall to a named
+engineer in a client-facing document politicises a daily operational
+report.
+
+(c) Nothing is lost — per-engineer submission status stays visible in §6
+regardless of narrative wording.
+
+(d) **Contractor naming is banned here too, but that is a separate
+question, deliberately left undecided.** A subcontractor is a commercial
+counterparty, not an employee — "the electrical contractor did not turn up"
+is operationally useful to an owner in a way that naming an individual
+engineer is not, and the politicisation argument in (b) does not transfer
+cleanly to a firm. It is held under the same ban for beta anyway, for a
+different reason: the name arrives as unverified free text from a WhatsApp
+message, and a wrongly-named firm in a client-facing document is its own
+liability, independent of the politicisation question. Revisit once beta
+usage shows whether owners actually ask for contractor-level attribution.
+Do not read this line item as settled the way (a)-(c) are — it is a
+scope-narrowing note, not a closed decision.
+
+**Origin.** Surfaced in the first live golden-case run (§20): with no such
+instruction, `case-complete-two-engineer-day`'s `execution_narrative` named
+both reporting engineers verbatim ("Rajesh's crew completed shuttering
+work... Suresh's crew carried out RCC column casting"), sourced from that
+case's raw input text. Confirmed fixed by a second live run against the
+same case after the `SYSTEM_PROMPT` addition — see the DPR generator PR
+for the rendered before/after.

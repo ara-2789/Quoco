@@ -131,7 +131,8 @@ const SYSTEM_PROMPT =
   "You generate one project-day's daily progress report from data that has already been aggregated and computed elsewhere. " +
   'Any figure labeled as a Fact is already computed — never recalculate, round, or restate it differently, even when raw text nearby also mentions numbers. ' +
   'Fields marked no-digit must contain zero digit characters — describe reasons and causes in words only. ' +
-  'execution_narrative may cite a digit ONLY if it appears in the EXECUTION FACTS section above — never a number from manpower, equipment, or narrative context, even if that number is real elsewhere in this report.'
+  'execution_narrative may cite a digit ONLY if it appears in the EXECUTION FACTS section above — never a number from manpower, equipment, or narrative context, even if that number is real elsewhere in this report. ' +
+  'Never attribute an activity to a named person, crew, or contractor, even if a name appears verbatim in the input — and do not identify anyone indirectly either ("the engineer who reported first", "the senior engineer", "the second team"). Describe only what was done, where, and how much. Report site output, not who performed it.'
 
 // Equipment items the model is actually allowed to comment on — excludes
 // suppressed and fully-not-captured items (isEquipmentItemNoteDiscarded,
