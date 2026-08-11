@@ -56,9 +56,29 @@ export interface ContainmentMeta {
 //     ordinal-suffix handling already keeps a token like "2nd" attached to
 //     the activity string rather than stripped as a number, so it arrives
 //     here as ordinary Fact text, not a special case.
-//   - every REPORTED quantity value (never 'not_captured' — there is no
-//     value to add). See the NAMED LIMITATION block below for what this
-//     check does NOT catch even within that set.
+//   - every REPORTED quantity value, INCLUDING a legitimate 0 — quantity is
+//     CapturedNumber (schema.ts), whose status is only 'reported' or
+//     'not_captured'; there is no separate 'zero' state to special-case,
+//     and none is needed: assemble.ts's wrapNumber already stores a
+//     genuine zero as {status: 'reported', value: 0}, and the check below
+//     (`status === 'reported' && value !== null`) already includes it,
+//     since 0 !== null. CapturedCount's three-way 'reported'/'zero'/
+//     'not_captured' split (headcount, productive_count, idle_count) is a
+//     DIFFERENT type, deliberately not reused here — CORRECTED 2026-08-11,
+//     design review: this comment previously implied quantity carried that
+//     same three-way split and that the code was missing a 'zero' branch.
+//     It doesn't and isn't. CapturedCount's 'zero' exists because a
+//     headcount/idle zero can arrive by a route that carries no number at
+//     all — "all productive" is an affirmative zero, and collapsing it
+//     into 'not_captured' was a real bug (024/025's own fix). A quantity
+//     has no equivalent route: an engineer either states a number (which
+//     may be 0) or states none, which is 'not_captured' — there is no
+//     third case a route could produce. Widening CapturedNumber to add a
+//     'zero' state would create a case no code path can ever populate,
+//     that every consumer would still have to handle. The asymmetry
+//     between the two types is deliberate, not an oversight.
+//     See the NAMED LIMITATION block below for what this check does NOT
+//     catch even within the reported set.
 //   - project name framing, unambiguously code-provided. Deliberately NOT
 //     log_date — see ContainmentMeta's own comment for why.
 // A suppressed item's activity name is still legitimate corpus (only its
