@@ -179,6 +179,70 @@
   would have forced is exactly the pause in which the `db push` choice and
   the backgrounding choice would have been visible before either one ran, not
   after.
+- EXTERNAL REVIEW GATE — TRIGGER CONDITIONS, DEFINED (standing rule since
+  2026-08-11, Aravind's decision). Migrations 024 and 025 — a live RPC gaining
+  new steps, then a fix to a real production inversion bug in that same RPC —
+  never went to external review. Asked why, the honest answer was that nothing
+  DEFINED when the gate applies, so it depended on someone remembering. That is
+  the same failure shape as the `db push` incident above, one level up: a rule
+  that exists only as something a person has to recall, rather than something
+  that fires on its own trigger, will eventually not fire. This entry is that
+  trigger, so the next migration's author checks a condition instead of relying
+  on memory.
+  A migration (or a PR bundling several — if ANY migration in the PR trips a
+  trigger, the WHOLE PR needs the package, not a partial review) requires an
+  external review package (docs/migration-runbook-template.md's shape) when it:
+    a. CREATES OR MODIFIES a live function's LOGIC — what it computes, what it
+       writes, who it lets do what. Narrowed to logic deliberately, not "any
+       SQL touching a function": a comment or error-message wording change
+       touching the same `CREATE OR REPLACE FUNCTION` statement would trip a
+       literal "modifies a function" reading, and a trigger that fires on
+       genuinely inert changes erodes the same way any over-firing alert does
+       — people stop trusting it. TRADEOFF, NAMED AND ACCEPTED, NOT RESOLVED:
+       "this change is just cosmetic" is exactly the kind of self-assessment
+       an author can talk themselves into wrongly; narrowing to logic trades a
+       false-positive risk for a judgment-call risk. Both migrations 024 and
+       025 are unambiguous logic changes either way this is read — the
+       narrowing doesn't exist to let those two off the hook.
+    b. CREATES OR MODIFIES WHAT CAN CALL, READ, OR WRITE AN EXISTING OBJECT —
+       grants, RLS policies, SECURITY DEFINER status. THE IMPORTANT ONE OF THE
+       FIVE, called out by name: migration 020 — this project's actual
+       security incident, seven functions shipped with PostgreSQL's default
+       PUBLIC EXECUTE — changed NO function logic at all, only EXECUTE grants.
+       Condition (a) alone would not have caught it. A gate that would have
+       missed 020 is not a gate; this condition exists specifically because
+       020 already proved (a) is not sufficient on its own.
+    c. Touches auth or identity.
+    d. Is destructive or irreversible.
+    e. Moves money.
+  "CREATES or modifies," throughout (a) and (b), not "modifies" alone — a
+  brand-new SECURITY DEFINER function, or a new table with wrong RLS from day
+  one, has no prior safe state to fall back on and is at least as dangerous as
+  a bad change to an existing one.
+  THE TRIGGER IS SUBJECT MATTER, NOT DDL SHAPE. An "additive" migration — a
+  new nullable column, syntactically the safest shape this file's own
+  migration-lint rules recognize — still trips (e) if what consumes that
+  column moves money, still trips (c) if it feeds an auth path. Whether a
+  migration reads as ADD COLUMN or DROP TABLE says nothing about which of
+  these five conditions it trips; a large-looking additive migration that
+  touches none of them still doesn't need the package, and a one-line change
+  that trips (b) does.
+  NOT a new concept — a generalization of existing practice. Individual
+  migration headers already draw exactly this line ad hoc, per migration:
+  023's own header states "RISK CLASS: mostly additive... reversible without
+  PITR... the drop is irreversible," and 016 states the same shape for its own
+  column drop. This entry turns that already-existing habit into a checkable
+  condition instead of leaving it as prose a future author has to reconstruct
+  by reading the header's tone.
+  NOT required for additive, trivially reversible, feature-class changes that
+  trip none of (a)-(e) — e.g. migration 021 (index hygiene) or a migration
+  adding one nullable diagnostic column with no function, grant, RLS, auth, or
+  money surface touched.
+  RETROACTIVE CATCH-UP: migrations 024 and 025 both trip (a) and were never
+  reviewed externally. A combined catch-up package for both is tracked in
+  docs/reviews/024-025-review-package.md (written 2026-08-11) — see that
+  file for the retroactive-not-gating framing, since both are already live on
+  prod.
 
 ---
 
@@ -1265,6 +1329,47 @@ path.
   notified — bot-flows.md's own Failed delivery section), not crash a cron
   invocation silently. A fourth thing the dispatch/regeneration layer needs
   to account for, alongside the three above.
+
+JOBS TABLE HAS NO CLAIMED-AT / STALE MECHANISM EITHER — SIBLING GAP TO
+`dprs.generation_status='stale'`, NAMED, NOT BUILT (opened 2026-08-11, tracked,
+NOT fixed). Surfaced while designing migration 026 (`dprs.generation_
+claimed_at` — the mechanism proposed for detecting a `dprs` row stuck at
+`generation_status='running'` when the process generating it died mid-call).
+Migration 026 itself is NOT committed and NOT shipped: it's a correct design
+waiting on a real end-to-end latency measurement (the 3-minute figure
+originally proposed was grounded in the Claude API call alone, not the full
+handler, and was correctly rejected rather than shipped provisional) and on
+DPR-24's hold logic being written to treat `'stale'` as an exhausted-
+generation failure — without that, `'stale'` would be a status nothing reacts
+to, which is just a different flavour of stuck. Resequenced: build the
+`dpr_generate` handler (Phase 3) first, instrument it, measure real p99 over
+actual project-days, THEN derive the sweep interval from that and ship 026
+with the measurement in its own header.
+
+The sibling gap, found while checking whether `dprs`' mechanism could just
+reuse an existing one on `jobs` instead of adding a new column: it can't,
+because **`jobs` has no equivalent mechanism to reuse.** `claimJobs`
+(`lib/queue/jobs.ts`) marks a job `'running'` via a plain `UPDATE`, with no
+claim/heartbeat timestamp recorded anywhere. If the WORKER PROCESS handling a
+job dies mid-execution — the identical failure mode migration 026 exists to
+catch on `dprs` — the job stays `status='running'` forever. `claimJobs`' own
+WHERE clause only ever selects `status IN ('pending', 'failed')` — a job stuck
+at `'running'` is invisible to retry permanently, and `jobs.status`'s CHECK
+constraint (`pending/running/succeeded/failed`) has no `'stale'`-equivalent
+value to transition it to even if something noticed.
+
+Same root cause as the `dprs` gap, one layer down, and broader: it affects
+EVERY job type this queue will ever run, not one table. NOT urgent today —
+`/api/jobs/tick` claims and dispatches nothing real yet (every case in
+`dispatchJob` still throws `'No handler implemented yet'`), so no job has ever
+actually been `'running'` long enough for this to matter in practice. TRIGGER
+CONDITION, so this doesn't need rediscovering later: **real the day Phase 4
+ships** — the first cron-enqueued `dpr_generate` job is also the first job in
+this system's history whose worker process can plausibly die mid-execution
+(a Claude call, several DB round-trips) while `claimJobs` believes it's still
+in progress. Whoever ships Phase 4 inherits this; it should be closed before
+or alongside that ship, not treated as later cleanup once real jobs are
+actually running unattended.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
