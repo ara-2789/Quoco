@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { buildExecutionCorpus, checkContainment, type ContainmentMeta } from './containment'
+import { buildExecutionCorpus, checkContainment } from './containment'
 import { DPR_JUDGMENT_SCHEMA } from './schema'
 import type { DprFacts, DprJudgment } from './schema'
 import type { NarrativeContext } from './narrative-context'
@@ -192,7 +192,11 @@ export async function generateDprJudgment(
   // Section-scoped, Reading A (Aravind's decision): execution_narrative's
   // digits must trace to execution Facts only, never the whole prompt and
   // never another section's Facts. See lib/dpr/containment.ts for why.
-  const corpus = buildExecutionCorpus(facts.execution, meta as ContainmentMeta)
+  // No cast: GenerateMeta structurally satisfies ContainmentMeta (both
+  // require project_name; GenerateMeta's extra log_date field is simply
+  // unused here, which is fine — this is a variable, not an object
+  // literal, so no excess-property check applies).
+  const corpus = buildExecutionCorpus(facts.execution, meta)
   const containmentResult = checkContainment(judgment.execution_narrative, corpus)
   if (!containmentResult.ok) {
     // THIS SLICE: throw. No dprs row gets written; nothing silently ships

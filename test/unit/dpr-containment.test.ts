@@ -86,12 +86,29 @@ describe('buildExecutionCorpus', () => {
     expect(corpus.has(2)).toBe(true) // from "Tower 2" in the activity string
   })
 
-  it('includes project name and log date framing', () => {
+  it('includes project name framing', () => {
     const corpus = buildExecutionCorpus({ quantities: [] }, meta)
     expect(corpus.has(2)).toBe(true) // "Tower 2" in project_name
-    expect(corpus.has(2026)).toBe(true)
-    expect(corpus.has(8)).toBe(true)
-    expect(corpus.has(9)).toBe(true)
+  })
+
+  it('does NOT include log_date digits — design review, 2026-08-11: month (1-12) and day (1-31) sit in the same magnitude band as real construction quantities, and the model has no legitimate reason to cite the date (render.ts prints it code-side)', () => {
+    // meta.log_date is '2026-08-09' in this suite's fixture; none of its
+    // components should leak into the corpus via project/date framing.
+    const corpus = buildExecutionCorpus({ quantities: [] }, meta)
+    expect(corpus.has(2026)).toBe(false)
+    expect(corpus.has(8)).toBe(false)
+    expect(corpus.has(9)).toBe(false)
+  })
+
+  it('THE REGRESSION THIS FIX PREVENTS: a fabricated quantity matching a date component would have passed containment before this fix — it must not now', () => {
+    const execution: ExecutionOutputFacts = { quantities: [] }
+    const corpus = buildExecutionCorpus(execution, meta)
+    // meta.log_date '2026-08-09' — before the fix, "9" would have been in
+    // the corpus via date framing, letting a fabricated "completed 9 units"
+    // pass. It must not pass now.
+    const result = checkContainment('Completed 9 units of shuttering today.', corpus)
+    expect(result.ok).toBe(false)
+    expect(result.violations).toEqual([9])
   })
 })
 
@@ -126,5 +143,22 @@ describe('checkContainment — section-scoped, not whole-prompt', () => {
   it('no digits at all trivially passes', () => {
     const result = checkContainment('Shuttering work progressed well today.', corpus)
     expect(result.ok).toBe(true)
+  })
+})
+
+describe('checkContainment — NAMED LIMITATION (docs/design-decisions-beta-feedback.md §19): identifier-digit blessing within one section', () => {
+  it('a real identifier digit ("M25") can be reused as a fabricated same-magnitude quantity in the SAME section — this is a known, accepted gap, not a silent one', () => {
+    const meta = { project_name: 'Site A' }
+    const execution: ExecutionOutputFacts = {
+      quantities: [{ activity: 'poured M25 concrete', quantity: { status: 'reported', value: 40 }, unit: 'cum' }],
+    }
+    const corpus = buildExecutionCorpus(execution, meta)
+    // "25" is legitimately in the corpus via the "M25" identifier — this is
+    // the correct, desired behavior (see the ordinal/identifier tests
+    // above). The limitation is what happens NEXT: that same "25" can be
+    // cited as an unrelated, fabricated quantity and still pass, because
+    // containment is set-membership, not token-in-context matching.
+    const result = checkContainment('Completed 25 bays of shuttering today.', corpus)
+    expect(result.ok).toBe(true) // documents the gap — this SHOULD fail in an ideal check, and does not
   })
 })

@@ -33,10 +33,15 @@ export function extractDigitTokens(text: string): Set<number> {
 
 export interface ContainmentMeta {
   project_name: string
-  log_date: string // 'YYYY-MM-DD' — its digit components (year, month, day)
-  // are legitimate corpus members on their own, not just as one token; the
-  // extraction regex already splits on the hyphens, so "2026-08-09" yields
-  // {2026, 8, 9} without any special-casing here.
+  // DELIBERATELY NO log_date FIELD (removed 2026-08-11, design review): a
+  // date's digit components (month 1-12, day 1-31) sit in exactly the same
+  // magnitude band as real construction quantities. Including them bought
+  // nothing — execution_narrative has no reason to cite the date, since
+  // render.ts prints it code-side in the DPR header — while costing two
+  // free small integers the model could emit as a fabricated quantity
+  // every single day. project_name stays: its digits are stable
+  // identifiers ("Phase 2"), not magnitudes, so naming the project is
+  // legitimate narrative content.
 }
 
 // Execution section's corpus, and ONLY execution's — section-scoped, not a
@@ -51,17 +56,37 @@ export interface ContainmentMeta {
 //     ordinal-suffix handling already keeps a token like "2nd" attached to
 //     the activity string rather than stripped as a number, so it arrives
 //     here as ordinary Fact text, not a special case.
-//   - every REPORTED or ZERO quantity value (never 'not_captured' — there is
-//     no value to add).
-//   - project name + log date framing, unambiguously code-provided.
+//   - every REPORTED quantity value (never 'not_captured' — there is no
+//     value to add). See the NAMED LIMITATION block below for what this
+//     check does NOT catch even within that set.
+//   - project name framing, unambiguously code-provided. Deliberately NOT
+//     log_date — see ContainmentMeta's own comment for why.
 // A suppressed item's activity name is still legitimate corpus (only its
 // quantity is withheld) — already covered by the activity-string pass below,
 // no separate branch needed.
+//
+// NAMED LIMITATION, not fixed here (flagged in design review, 2026-08-11):
+// extractDigitTokens normalizes to a Set<number> — containment is NUMERIC-
+// SET MEMBERSHIP, not token-in-context matching. An activity named "M25
+// slab" puts the bare number 25 into the corpus (from the identifier, via
+// the activity-string pass) — after which the model may legitimately write
+// "M25" back, but could ALSO write "25 bays" or "25 workers" and pass,
+// because the check only asks "is 25 anywhere in this section's Facts,"
+// never "does 25 in THIS sentence refer to the same thing it did in the
+// Facts." This is the same class of fabrication section-scoping was built
+// to stop (a real digit reused to dress up an invented figure) — surviving
+// WITHIN one section rather than across sections. What this check DOES
+// catch: a number with no source anywhere in execution Facts. What it does
+// NOT catch: a real identifier digit reused as a fabricated magnitude in
+// the same section. Fixing this properly needs token-plus-context matching
+// (e.g. requiring the digit's surrounding words to overlap with the source
+// phrase it came from), which is real design work, not a tweak — recovery
+// path if beta shows this matters, not built now. Full writeup:
+// docs/design-decisions-beta-feedback.md §19.
 export function buildExecutionCorpus(execution: ExecutionOutputFacts, meta: ContainmentMeta): Set<number> {
   const corpus = new Set<number>()
 
   for (const token of extractDigitTokens(meta.project_name)) corpus.add(token)
-  for (const token of extractDigitTokens(meta.log_date)) corpus.add(token)
 
   for (const item of execution.quantities) {
     for (const token of extractDigitTokens(item.activity)) corpus.add(token)

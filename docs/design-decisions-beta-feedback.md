@@ -931,3 +931,45 @@ the same way every other number in this schema is captured: through a
 parser, into a Fact, containment-checked like everything else. Loosening
 containment to solve it would recreate exactly the problem (c) exists to
 close.
+
+## 19. Containment's named limitation: identifier-digit blessing within one
+section (opened 2026-08-11, PR #50 design review, NOT fixed)
+
+**The gap.** `buildExecutionCorpus` (lib/dpr/containment.ts) normalizes
+every digit-bearing token in the model's output to a `Set<number>` and
+checks membership — containment is NUMERIC-SET membership, not
+token-in-context matching. An activity Fact named "M25 slab" puts the bare
+number `25` into the corpus (via the activity-string pass, the same
+mechanism that legitimately makes ordinals and identifiers free — see
+schema.ts's digit-rules note). Once `25` is in the corpus, the model may
+correctly write "M25" back — but could ALSO write "25 bays" or "25
+workers" and pass containment, because the check only asks "is 25 anywhere
+in this section's Facts," never "does 25 in THIS sentence refer to the
+same thing it did in the Facts."
+
+**Why this matters precisely.** This is the SAME class of fabrication
+section-scoping (§ approved in this PR's design review) was built to stop
+— a real digit reused to dress up an invented figure — just surviving
+WITHIN one section instead of across sections. Section-scoping closes the
+cross-section case (a real equipment rate cited as an execution quantity);
+it does not close this narrower, same-section case (a real identifier
+digit cited as a fabricated quantity in the same narrative).
+
+**What the check DOES catch, stated precisely so this isn't oversold:** a
+number with no source anywhere in execution Facts — the actual incident
+class this slice was built to catch, and the common case by far (most
+fabrications invent a number that isn't real anywhere, not one that
+happens to share a digit with a real identifier).
+
+**What it does NOT catch:** a real identifier digit reused as a fabricated
+magnitude in the same section, as in the M25 example above.
+
+**Why not fixed here.** Closing this properly needs token-plus-context
+matching — e.g. requiring the digit's surrounding words to overlap with
+the source phrase it came from, not just requiring the digit itself to
+appear somewhere in the section. That is real design work (what counts as
+"enough" surrounding-word overlap, how to handle paraphrase, whether it
+produces false positives on legitimate rephrasing), not a tweak to the
+existing set-membership check. Recorded as the recovery path if beta
+usage shows this gap is actually exploited — not built speculatively
+against a failure mode not yet observed in real output.
