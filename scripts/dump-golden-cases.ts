@@ -84,11 +84,9 @@ async function main() {
     console.log(`CASE: ${c.name}`)
     console.log('='.repeat(80))
 
-    const equipmentIndices = c.facts.equipment.items.map((i) => i.morning_item_index)
-
     let result
     try {
-      result = await callDprModel(c.rawInputText, equipmentIndices)
+      result = await callDprModel(c.rawInputText, c.facts)
     } catch (err) {
       console.error(`  FAILED TO GENERATE: ${err instanceof Error ? err.message : String(err)}`)
       continue

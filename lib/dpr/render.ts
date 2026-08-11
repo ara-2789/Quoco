@@ -9,6 +9,7 @@ import type {
   SuppressionNote,
 } from './schema'
 import { TOMORROWS_PLAN_DATA_STATUS_FORCED } from './schema'
+import { isManpowerNoteDiscarded, isEquipmentItemNoteDiscarded } from './discarded-fields'
 
 // Merges Facts + validated Judgment + Accountability into the dprs row's TWO
 // storage columns (023's schema): `structured` JSONB (all 6 sections) and
@@ -148,16 +149,16 @@ function renderManpower(facts: DprFacts['manpower'], judgment: DprJudgment): Ren
       suppressed: facts.suppressed,
     }
   }
-  const allNotCaptured =
-    facts.headcount.status === 'not_captured' &&
-    facts.productive_count.status === 'not_captured' &&
-    facts.idle_count.status === 'not_captured'
   return {
     headcount: fmtCount(facts.headcount),
     productive_count: fmtCount(facts.productive_count),
     idle_count: fmtCount(facts.idle_count),
     utilisation_pct: facts.utilisation_pct.status === 'not_captured' ? NOT_CAPTURED_TEXT : `${facts.utilisation_pct.value}%`,
-    note: allNotCaptured ? NOT_CAPTURED_TEXT : judgment.manpower_idle_reason_note,
+    // isManpowerNoteDiscarded (lib/dpr/discarded-fields.ts) is the SAME
+    // predicate generate.ts's buildPerCallSchema uses to decide whether the
+    // model was even given a manpower_idle_reason_note field to write —
+    // one shared source of truth, not two copies that have to agree.
+    note: isManpowerNoteDiscarded(facts) ? NOT_CAPTURED_TEXT : judgment.manpower_idle_reason_note,
   }
 }
 
@@ -177,7 +178,6 @@ function renderEquipmentItem(item: EquipmentItemFacts, judgment: DprJudgment): R
     const text = suppressionText(item.suppressed)
     return { type: item.type, available_hours: text, actual_hours: text, daily_hire_cost: text, idle_cost: text, note: text }
   }
-  const allNotCaptured = item.available_hours.status === 'not_captured' && item.actual_hours.status === 'not_captured'
   const modelNote = judgment.equipment_items.find((j) => j.morning_item_index === item.morning_item_index)
   return {
     type: item.type,
@@ -185,7 +185,9 @@ function renderEquipmentItem(item: EquipmentItemFacts, judgment: DprJudgment): R
     actual_hours: fmtHours(item.actual_hours),
     daily_hire_cost: fmtMoney(item.daily_hire_cost),
     idle_cost: fmtMoney(item.idle_cost),
-    note: allNotCaptured ? NOT_CAPTURED_TEXT : (modelNote?.idle_reason_note ?? NOT_CAPTURED_TEXT),
+    // isEquipmentItemNoteDiscarded — same shared predicate generate.ts uses
+    // to decide which item indices the model is even allowed to comment on.
+    note: isEquipmentItemNoteDiscarded(item) ? NOT_CAPTURED_TEXT : (modelNote?.idle_reason_note ?? NOT_CAPTURED_TEXT),
   }
 }
 
