@@ -1010,6 +1010,37 @@ produced `idle_count` 15 / `productive_count` 3 — inverted. Both the test
 engineer (`status='deactivated'`) and its session (flow/step reset to
 null/0) were deactivated afterward, per the standing artifact discipline.
 
+PRESERVED ARTIFACT (2026-08-11, before being overwritten): the `daily_logs`
+row above was subsequently REUSED and OVERWRITTEN by the same-day evening-
+flow sandbox scenario 2/3 smoke run (same engineer, project, log_date — the
+RPC upserts on that triple, so a same-day re-run of the flow always lands on
+the same row). The values quoted in the paragraph above (18 / 15 / 3 /
+"waiting for jamaan") will no longer be readable from `daily_logs` once that
+run completes. This is the verbatim pre-overwrite read, the actual record of
+what the 025 apply proved, captured for exactly that reason:
+
+```
+{
+  "engineer_id": "3534756b-2a32-4b91-954b-0bab15c2dba1",
+  "project_id": "acef67fe-e775-439d-82b8-5b8526868d6d",
+  "log_date": "2026-08-11",
+  "evening_workers_on_site": 18,
+  "evening_productive_manpower": {
+    "confidence": "high",
+    "idle_count": 3,
+    "idle_reason": "waiting for jamaan",
+    "productive_count": 15,
+    "raw_text": "15 productive 3 idle waiting for jamaan"
+  },
+  "evening_equipment_utilisation": {
+    "confidence": null,
+    "items": [],
+    "raw_text": null
+  },
+  "evening_submitted_at": "2026-08-11 03:59:11.644979+00"
+}
+```
+
 Ledger repaired in the same pass: `'023'`, `'024'`, and `'025'` were ALL
 THREE missing (023/024 from the pre-existing CLI-tracking lag already
 documented elsewhere in this file; 025 because it was new) — 19 -> 22 rows,
