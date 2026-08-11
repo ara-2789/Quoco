@@ -811,3 +811,45 @@ expects, not the ones a real person sends.
 **Not scoped now** — a genuine wording change to shipped copy, same
 category of decision as §14, deserving its own deliberate pass rather than
 being folded into a bug-fix migration.
+
+## 16. assemble.ts copies raw equipment `type` into DprFacts — a Facts/Judgment
+boundary violation waiting to happen, not built yet (2026-08-11, surfaced
+during PR #45's equipment-label humanize fix)
+
+**The finding.** PR #45 fixed `buildEquipmentHoursPrompt` (the WhatsApp Q5
+prompt) so a site engineer reads "1) JCB" instead of "1) jcb". While
+confirming no other render path had the same raw-string problem, a second
+site was found: `lib/dpr/assemble.ts` (lines 227, 242, 253, 278) copies
+`item.type` — the same raw canonical storage key ("jcb", "concrete_mixer")
+— straight into `DprFacts` for the equipment section, unchanged from the
+morning/evening parsers' storage shape.
+
+**Why this matters, precisely.** `DprFacts` is the Facts side of this
+project's Facts/Judgment split (`lib/dpr/schema.ts`) — the whole design
+principle behind that split is that every number and label a PM or owner
+reads in a DPR should be traceable to code, not to something the model
+decided. A `DprFacts.type` value of `"concrete_mixer"` handed to the DPR
+generator means one of two things happens when the report renders "Concrete
+Mixer": either the model performs that humanization itself (a
+transformation happening on the JUDGMENT side of a boundary explicitly
+built to keep transformations on the FACTS side), or nothing renders it and
+the report shows the raw token instead. Neither is the intended shape —
+the humanization this project just built for the WhatsApp prompt
+(`equipmentLabel()`, `lib/whatsapp/flows/parsers/lexicon.ts`) should be the
+SAME function feeding both surfaces, not reinvented differently (or left
+undone) on the DPR side.
+
+**Why this is recorded, not fixed.** The `dpr_generate` job handler does not
+exist yet (CLAUDE.md §10) — `assemble.ts` has no caller that renders its
+output to a human today, so there is no live bug, only a spec gap waiting
+for the generator to be built. Fixing `assemble.ts` now, ahead of the
+generator, would be guessing at a consumer's needs before the consumer
+exists.
+
+**Fix, when the generator is built:** call `equipmentLabel()` at the Facts
+layer (`assemble.ts`) when constructing the equipment `DprFacts` entries, so
+the Fact itself already carries the humanized label and the DPR generator
+never has to (and structurally cannot) perform that transformation itself.
+This is a spec item for that build, not a comment to rediscover — whoever
+builds `dpr_generate` should treat this section as a requirement, not
+optional polish.

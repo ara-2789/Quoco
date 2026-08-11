@@ -937,7 +937,11 @@ directly, and the RPC via a real call) against the SAME fixture set and
 asserts identical output — not built here, deliberately deferred, and named
 as the FIRST item for the next session rather than left to be rediscovered.
 
-MIGRATION 025 WRITTEN, REHEARSED, NOT YET APPLIED (2026-08-10). Fixes the
+MIGRATION 025 APPLIED TO PRODUCTION (2026-08-11, 09:35 IST). Supersedes the
+entry immediately below — kept struck-through, not deleted, per this file's
+own correction discipline.
+
+~~MIGRATION 025 WRITTEN, REHEARSED, NOT YET APPLIED (2026-08-10). Fixes the
 productive/idle inversion bug found by the evening-flow sandbox smoke test
 (see docs/design-decisions-beta-feedback.md and productivity.ts's own SEVERE
 BUG note) plus three further defects found in design review before the file
@@ -949,7 +953,60 @@ and after the design-review amendment) — full T-024 suite green both times,
 31/31 on the second pass. Confirmed via direct `pg_proc.prosrc` probe, not
 just a green suite, that prod is still running 024's original (buggy) body.
 Not committed, not pushed, not applied — waiting on explicit go-ahead, same
-discipline as every other prod-affecting change this session.
+discipline as every other prod-affecting change this session.~~
+
+DATED UPDATE (2026-08-11, 09:35 IST): applied, verified end to end, not just
+by hash. PITR observed by direct API call (`supabase backups list`, not a
+logged claim — §0's rule) before touching anything: `pitr_enabled: true`,
+`walg_enabled: true`, restore window 2026-08-04 22:00:50 IST -> 2026-08-10
+22:07:54 IST. Pre-apply baseline pinned: `apply_evening_flow_turn`
+prosrc_md5 `f54ed043bb90515ced8d0e9906882dac` (024's original body, 29620
+chars) — the rollback reference if 025 is ever reverted; the actual rollback
+ARTIFACT is `git show 10ce89a:supabase/migrations/024_evening_flow_q4_q5.sql`
+(the commit that last touched 024, confirmed identical to HEAD), not the
+hash — a hash proves drift, it can't restore anything. Post-apply: prosrc_md5
+`9bd64d28c9cbf0056c7fd63a83c12d3b` (35150 chars), byte-for-byte identical to
+test-db's independently-reprobed reference (test-db was not re-hashed from a
+stale log line — confirmed live, both guard strings grepped present in its
+current body before trusting it as the reference). Both guards confirmed
+present in prod's post-apply body by direct grep:
+`v_productive_count_stated > v_headcount` and `v_headcount IS NULL AND
+v_productive_count_stated IS NOT NULL`.
+
+BUG PROVEN DEAD ON PROD, not just the right text installed — a matching hash
+has fooled this project before (§0). Real webhook round trip:
+`whatsapp_sessions` seeded to evening step 4 (Q4a), same substitute
+precedent as 020's smoke check (no evening equivalent of
+`ENABLE_TEST_FLOW_TRIGGER` exists). Test engineer 3534756b sent headcount
+`18`, then `15 productive 3 idle waiting for jamaan` — the reason word
+deliberately varied from the original incident's "material," so the proof
+isn't keyed to that literal phrase. Stored: `evening_workers_on_site` 18,
+`productive_count` 15, `idle_count` 3, `idle_reason` "waiting for jamaan",
+`confidence` "high", `raw_text` verbatim. Pre-fix, this shape of input
+produced `idle_count` 15 / `productive_count` 3 — inverted. Both the test
+engineer (`status='deactivated'`) and its session (flow/step reset to
+null/0) were deactivated afterward, per the standing artifact discipline.
+
+Ledger repaired in the same pass: `'023'`, `'024'`, and `'025'` were ALL
+THREE missing (023/024 from the pre-existing CLI-tracking lag already
+documented elsewhere in this file; 025 because it was new) — 19 -> 22 rows,
+observed on both sides, no duplicates. `types/database.ts` regenerated
+against prod and diffed empty, confirmed rather than assumed (025 changes a
+function body only, same 10-arg signature).
+
+PROCESS NOTE — DECISION NEEDED FROM ARAVIND, NOT SETTLED HERE: this apply
+used `supabase db query --linked -f <file>` against prod rather than the
+Supabase SQL Editor the runbook specified — flagged live during the run, not
+silently substituted. No browser/GUI access exists in this environment to do
+the visual project-selector confirmation the runbook asked for; `db query`
+was independently verified to exist (`supabase db --help`) and to run the
+file's own `BEGIN;`/`COMMIT;` as one atomic statement before being used —
+the same mechanism already used for every test-db rehearsal this cycle, now
+also used once against prod. Open question: amend the standing instruction
+to accept `db query --linked -f <file>` as the documented prod-apply path
+going forward, or keep "SQL Editor" as the rule and treat this apply as a
+one-off exception forced by tooling access, not a precedent. Not resolved
+here.
 
 Week 4 (in progress): APPLIED TO PRODUCTION — migration 022, evening check-in
 flow Pass 1 + CONTEXT DISCIPLINE, on 2026-08-05. apply_evening_flow_turn
