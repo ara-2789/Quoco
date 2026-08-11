@@ -888,3 +888,46 @@ either accept the generic explanation as permanent product scope, or widen
 `evening_productive_manpower`'s stored shape (a `confidence_reason` field
 or similar) before the generator's copy is written, not after. Recorded as
 a generator-build consideration, not a defect to fix now.
+
+## 18. Containment Reading A resolved as (c): raw text stays prompt input,
+moved to no-digit output — specificity lost, not relaxed (2026-08-11, DPR
+generator slice, Aravind's decision)
+
+**The question.** `schedule_miss_reason_note` and `tomorrows_plan_carry_
+forward_note` were originally digits-allowed, containment-checked against
+"the input text it was given" (schema.ts's pre-2026-08-11 comment) — the
+engineer's own raw free text (`evening_schedule_miss_reason`). Under strict
+Reading A (containment against code-owned `DprFacts` values only, not raw
+prompt text), that raw text is not itself a Fact, so a digit the model
+echoed from it would have no legitimate source to trace to — the two
+options were (a) promote the raw text into a new `DprFacts` field so it
+becomes code-owned, or (c) keep feeding it as prompt input but move the two
+output fields to no-digit, matching sections 3 & 4's notes.
+
+**Resolved: (c).** The Facts/Judgment split governs what the model may
+OUTPUT, never what it may READ — feeding raw text as input was never the
+boundary reading A protects. (a) was rejected because it blesses every
+digit an engineer typed in free text as publishable: an engineer writing
+"only 40 of 100 done" would produce a DPR number that never passed through
+the quantity pipeline, able to directly contradict the code-owned execution
+Facts in the same report. That is Reading B narrowed to one field, not a
+different thing from it — the whole reason Reading A was chosen is that
+engineer free text is not a verified source.
+
+**The specificity this costs, named plainly:** "delayed by 3 hours" becomes
+"delayed." No duration, no count, no measured quantity survives into either
+field's output — only the qualitative shape of the reason. This is not
+treated as a stopgap grudgingly accepted; it's the same rule already
+governing sections 3 and 4's notes, applied consistently rather than
+carved out as a third category for these two fields.
+
+**The recovery path, if beta shows this matters:** capturing the specific
+number as a REAL, structured question — e.g. a dedicated "how many hours
+were lost" follow-up with its own parser, feeding a typed `DprFacts` field
+the same way `evening_productive_manpower` does — not relaxing this rule to
+let raw digits back into model output. If engineers or PMs surface a real
+need for the duration figure, the fix is capturing it properly upstream,
+the same way every other number in this schema is captured: through a
+parser, into a Fact, containment-checked like everything else. Loosening
+containment to solve it would recreate exactly the problem (c) exists to
+close.

@@ -1,0 +1,85 @@
+import type { ExecutionOutputFacts } from './schema'
+
+// THE CONTAINMENT CHECK — the one piece of code that actually enforces the
+// Facts/Judgment boundary schema.ts declares. Pure, no IO, no API call.
+// Before this file, CONTAINMENT_CHECKED_JUDGMENT_FIELDS named which fields
+// needed checking and the no-digit pattern protected the rest structurally,
+// but nothing ever ran the check itself — the boundary was documented, not
+// enforced. This closes that gap for the one field that still needs it
+// after the 2026-08-11 amendment (schema.ts): execution_narrative.
+//
+// READING A (Aravind's decision, 2026-08-11): containment against CODE-OWNED
+// FACT VALUES only, never the whole prompt or an engineer's raw free text.
+// The corpus and the section it's built for must MATCH — see
+// buildExecutionCorpus below for why it's scoped to execution Facts alone,
+// not a union of every section's Facts.
+
+// Every digit-bearing token in a string, normalized to a comparable number so
+// "4,730" (thousands separator) and "4730", or "37.50" and "37.5", compare
+// equal regardless of which side happens to carry the formatting. Currency
+// symbols and other non-digit prefixes are irrelevant here — the regex only
+// captures the digit run itself, never what precedes it.
+const DIGIT_TOKEN = /\d[\d,]*(\.\d+)?/g
+
+export function extractDigitTokens(text: string): Set<number> {
+  const matches = text.match(DIGIT_TOKEN) ?? []
+  const tokens = new Set<number>()
+  for (const match of matches) {
+    const value = Number(match.replace(/,/g, ''))
+    if (!Number.isNaN(value)) tokens.add(value)
+  }
+  return tokens
+}
+
+export interface ContainmentMeta {
+  project_name: string
+  log_date: string // 'YYYY-MM-DD' — its digit components (year, month, day)
+  // are legitimate corpus members on their own, not just as one token; the
+  // extraction regex already splits on the hyphens, so "2026-08-09" yields
+  // {2026, 8, 9} without any special-casing here.
+}
+
+// Execution section's corpus, and ONLY execution's — section-scoped, not a
+// union of every section's Facts. Rationale (schema.ts's digit-rules note):
+// a real equipment hire-rate number echoed into execution_narrative is a
+// fabrication wearing a real number; a whole-Facts corpus would pass it as
+// "contained" purely because it's real somewhere else in the report. Built
+// from:
+//   - every digit substring inside an activity name. This is what makes
+//     ordinals ("2nd floor") and material/grade identifiers ("M25",
+//     "Tower 2") free, with no separate allowlist: quantities.ts's own
+//     ordinal-suffix handling already keeps a token like "2nd" attached to
+//     the activity string rather than stripped as a number, so it arrives
+//     here as ordinary Fact text, not a special case.
+//   - every REPORTED or ZERO quantity value (never 'not_captured' — there is
+//     no value to add).
+//   - project name + log date framing, unambiguously code-provided.
+// A suppressed item's activity name is still legitimate corpus (only its
+// quantity is withheld) — already covered by the activity-string pass below,
+// no separate branch needed.
+export function buildExecutionCorpus(execution: ExecutionOutputFacts, meta: ContainmentMeta): Set<number> {
+  const corpus = new Set<number>()
+
+  for (const token of extractDigitTokens(meta.project_name)) corpus.add(token)
+  for (const token of extractDigitTokens(meta.log_date)) corpus.add(token)
+
+  for (const item of execution.quantities) {
+    for (const token of extractDigitTokens(item.activity)) corpus.add(token)
+    if (item.quantity.status === 'reported' && item.quantity.value !== null) {
+      corpus.add(item.quantity.value)
+    }
+  }
+
+  return corpus
+}
+
+export interface ContainmentResult {
+  ok: boolean
+  violations: number[] // uncontained digit tokens, for the thrown error / log
+}
+
+export function checkContainment(outputText: string, corpus: Set<number>): ContainmentResult {
+  const outputTokens = extractDigitTokens(outputText)
+  const violations = Array.from(outputTokens).filter((token) => !corpus.has(token))
+  return { ok: violations.length === 0, violations }
+}
