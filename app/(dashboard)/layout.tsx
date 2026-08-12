@@ -13,7 +13,7 @@ const NAV_LINKS = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Projects', href: '/projects' },
   { label: 'Daily Logs', href: '/daily-logs' },
-  { label: 'DPRs', href: '/dashboard/dprs' },
+  { label: 'DPRs', href: '/dprs' },
   { label: 'Safety', href: '/safety' },
   { label: 'Invoices', href: '/invoices' },
   { label: 'Hindrances', href: '/hindrances' },
