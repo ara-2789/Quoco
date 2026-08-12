@@ -52,21 +52,44 @@
 -- escalation rows for the same engineer/day/half, double-counting on
 -- DASH-01 and potentially double-firing a PM notification.
 --
--- sent_template / template_unavailable ARE UNREACHABLE COLUMNS TODAY, BY
--- DESIGN — recorded so a future reader doesn't mistake dead code paths for
--- a bug. Per bot-flows.md's 2026-08-12 correction, free-form send is the
--- PRIMARY path for every trigger and the named template is the FALLBACK
--- for a closed 24h session window. But CLAUDE.md §10 Week 2 item 5/6: the
--- Twilio PRODUCTION sender is still BLOCKED on company registration, and
+-- nudge_outcome — ONE nullable column, not three independent booleans.
+-- INTERNAL-REVIEW CHANGE (2026-08-12): the first draft of this migration
+-- stored the send outcome as three separate booleans (sent_free_form,
+-- sent_template, template_unavailable) ALONGSIDE the five-value `status`
+-- lifecycle column — two representations of overlapping facts, free to
+-- disagree (nothing prevented status='nudged' with all three false, or
+-- sent_free_form AND sent_template both true simultaneously). Caught before
+-- this went to external review, not by him — the exact class of bug this
+-- project has been bitten by four times now (see CLAUDE.md's HAND-MIRRORED
+-- RECONCILIATION entry for the pattern, though that entry is about a
+-- different pair of columns). Collapsed to a single nullable
+-- `nudge_outcome`, CHECK-constrained to ('free_form', 'template',
+-- 'unavailable', 'failed'), NULL meaning not attempted. `status` keeps
+-- answering a DIFFERENT question (where the escalation lifecycle is:
+-- awaited/nudged/escalated/submitted/not_submitted) — two columns, one job
+-- each, same principle as schema.ts's CapturedCount in the DPR pipeline
+-- (lib/dpr/schema.ts): a contradictory state is impossible BY CONSTRUCTION,
+-- not by discipline.
+--
+-- 'template' AND 'unavailable' ARE UNREACHABLE VALUES TODAY, BY DESIGN —
+-- recorded so a future reader doesn't mistake a dead code path for a bug.
+-- Per bot-flows.md's 2026-08-12 correction, free-form send is the PRIMARY
+-- path for every trigger and the named template is the FALLBACK for a
+-- closed 24h session window. But CLAUDE.md §10 Week 2 item 5/6: the Twilio
+-- PRODUCTION sender is still BLOCKED on company registration, and
 -- bot-flows.md's own "Sandbox limitation" section states the Twilio
 -- SANDBOX cannot send custom approved templates at all — session messages
--- only. So until the production sender exists, no code path in this
--- system can attempt a template send, which means sent_template and
--- template_unavailable can only ever be written as their default (false) —
--- they exist now so the escalation job handler's schema is stable when
--- that sender ships, not because either can be exercised today. Do not
--- treat `sent_template = false` on every row as evidence the fallback path
--- was tested; it is evidence the fallback path has never been reachable.
+-- only. So until the production sender exists, no code path in this system
+-- can attempt a template send, meaning nudge_outcome can only ever land on
+-- 'free_form', 'failed', or NULL — never 'template' or 'unavailable'. They
+-- exist now so the escalation job handler's schema is stable when that
+-- sender ships, not because either is exercised today. Do not treat their
+-- absence from every row as evidence the fallback path was tested; it is
+-- evidence the fallback path has never been reachable. ('free_form' and
+-- 'failed' ARE reachable today, unlike the booleans-era note this replaces
+-- implied for the whole column — free-form/session sends already work in
+-- the Twilio sandbox, and a send can fail for ordinary infra reasons
+-- regardless of which path it took.)
 --
 -- RLS SCOPING — DELIBERATELY MIRRORS dprs_select (023), FLAGGED FOR REVIEW,
 -- NOT ASSERTED AS SETTLED. The policy below is SELECT-only,
@@ -100,6 +123,15 @@ BEGIN;
 CREATE TABLE public.checkin_escalations (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- NOT trigger-maintained — no trigger exists anywhere in this project for
+  -- any updated_at column (checked: grepped every migration; the house
+  -- pattern is explicit setting at every write site, e.g.
+  -- whatsapp_sessions.updated_at, labelled "SESSION WRITE — ALWAYS" at each
+  -- RPC call site that touches it). This column follows the same
+  -- convention: the escalation sweep job (not yet built) MUST set
+  -- updated_at = now() explicitly on every UPDATE/upsert. See this column's
+  -- own COMMENT below — read that before assuming Postgres refreshes this
+  -- for you on UPDATE. It does not.
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
   tenant_id            UUID NOT NULL REFERENCES public.tenants(id),
   project_id           UUID NOT NULL REFERENCES public.projects(id),
@@ -113,11 +145,11 @@ CREATE TABLE public.checkin_escalations (
   nudge_sent_at        TIMESTAMPTZ,
   escalated_at         TIMESTAMPTZ,
   resolved_at          TIMESTAMPTZ,
-  -- See header note: sent_template / template_unavailable are unreachable
-  -- until the Twilio production sender exists.
-  sent_free_form       BOOLEAN NOT NULL DEFAULT false,
-  sent_template        BOOLEAN NOT NULL DEFAULT false,
-  template_unavailable BOOLEAN NOT NULL DEFAULT false,
+  -- See header note above: 'template' / 'unavailable' are unreachable
+  -- values until the Twilio production sender exists. NULL = not attempted.
+  nudge_outcome        TEXT CHECK (nudge_outcome IN (
+                          'free_form', 'template', 'unavailable', 'failed'
+                        )),
   -- At-least-once write safety for the escalation sweep — see header note.
   UNIQUE (project_id, engineer_id, log_date, half)
 );
@@ -131,21 +163,36 @@ COMMENT ON TABLE public.checkin_escalations IS
   'stay correct under at-least-once job retries. Read by the DASH-01 '
   'exceptions surface (docs/bot-flows.md).';
 
-COMMENT ON COLUMN public.checkin_escalations.sent_template IS
-  'UNREACHABLE until the Twilio production sender exists (CLAUDE.md §10) — '
-  'the sandbox cannot send custom templates at all. Always false today by '
-  'construction, not by observation; do not read an all-false column as a '
-  'tested fallback path.';
+COMMENT ON COLUMN public.checkin_escalations.updated_at IS
+  'Set explicitly by the escalation sweep job on every write — NOT trigger-'
+  'maintained (no updated_at trigger exists anywhere in this project). '
+  'Mirrors whatsapp_sessions.updated_at''s "SESSION WRITE — ALWAYS" '
+  'convention. A row where this lags created_at despite a real status '
+  'change is a bug in that writer, not expected behaviour.';
 
-COMMENT ON COLUMN public.checkin_escalations.template_unavailable IS
-  'UNREACHABLE until the Twilio production sender exists — see '
-  'sent_template''s comment; same reasoning applies.';
+COMMENT ON COLUMN public.checkin_escalations.nudge_outcome IS
+  'Which send path was actually used for the most recent attempt this half.'
+  ' ''template'' and ''unavailable'' are UNREACHABLE until the Twilio '
+  'production sender exists (CLAUDE.md §10) — the sandbox cannot send '
+  'custom templates at all. NULL means no send has been attempted yet; '
+  'distinct from ''failed'', which means an attempt was made and did not '
+  'succeed. Kept separate from `status` deliberately — status is the '
+  'escalation LIFECYCLE, this is the send-path OUTCOME, and collapsing '
+  'them (or splitting outcome across independent booleans, as an earlier '
+  'draft of this migration did) makes contradictory states representable. '
+  'See this migration''s header for the fuller reasoning.';
 
+-- Serves the DASH-01 exceptions surface's actual query shape (project +
+-- date). idx_checkin_escalations_engineer (engineer_id, log_date) was in
+-- the first draft of this migration and is DROPPED here, not shipped: no
+-- query in this codebase or in bot-flows.md's DASH-01/escalation-sweep
+-- spec is keyed by engineer_id first. The only candidate use (a future
+-- per-engineer 7-day pattern view) is speculative — not built, not
+-- specified — and migration 021 exists specifically because this project
+-- shipped a redundant index once already and had to clean it up later. Add
+-- it back with a real query to justify it, not ahead of one.
 CREATE INDEX idx_checkin_escalations_project_date
   ON public.checkin_escalations (project_id, log_date);
-
-CREATE INDEX idx_checkin_escalations_engineer
-  ON public.checkin_escalations (engineer_id, log_date);
 
 -- -----------------------------------------------------------------------------
 -- 2. RLS: SELECT only, project_members-scoped — mirrors dprs_select (023).
