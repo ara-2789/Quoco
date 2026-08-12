@@ -1400,3 +1400,45 @@ inventing a new principle.
 
 **Full origin and proposal discussion**: PR #51 review round 3
 (2026-08-11).
+
+## 25. TEMPLATES and a PRODUCTION SENDER are two separate Meta dependencies —
+only the first is removed by the customer service window (2026-08-12)
+
+Verified against Meta's and Twilio's current documentation (not memory —
+both this session's and a prior session's recollection of this rule were
+checked against source, since the two disagreed): a business-initiated
+WhatsApp message sent inside the 24-hour customer service window (opened
+and reset by any inbound message from the user) requires no pre-approved
+template — Meta's own term for this is a "service" conversation, free of
+charge, no category assignment beyond "service." This means the daily
+check-in nudge rhythm (morning nudge ~9-12h after the prior evening reply,
+evening nudge ~9-12h after the prior morning reply) can run with **zero
+Meta template approvals**, provided every engineer has sent at least one
+inbound message to open the window.
+
+**This does NOT unblock the production Twilio sender**, and the two must
+not be conflated when talking about what's "blocked on Meta." CLAUDE.md §10
+tracks the sender application as its own item (~2 weeks, blocked on company
+registration) — that dependency is unrelated to templates and is untouched
+by this finding. The sender governs WHETHER Quoco can send WhatsApp
+messages from a production number at all (currently only the Twilio Sandbox
+is available); templates govern WHETHER a specific business-initiated
+message needs pre-approval once a number CAN send. Removing the template
+requirement for in-window nudges does nothing to the sender's own
+~2-week/entity-paperwork timeline — the certificate/company-registration
+path stays on the critical path for anything beyond sandbox testing
+regardless of this finding.
+
+**What the finding actually buys**: the ability to build and test the full
+nudge/check-in rhythm against the Sandbox now, without waiting on template
+approval — the template-approval tail is removed from the timeline, not the
+sender-application blocker. The Sandbox carries its own separate
+constraints (72-hour join expiry per engineer, no custom templates at all,
+1 msg/3s rate limit) that don't apply to production but do shape how a
+multi-day sandbox beta actually runs.
+
+**The one case this doesn't cover**: a gap >24h since an engineer's last
+inbound (a skipped day, weekend, sick day) closes the window, and the next
+scheduled nudge would need either a template or the engineer to
+self-initiate. Full analysis in the conversation this decision came from,
+not restated here — see also CLAUDE.md's WhatsApp-flow entries.

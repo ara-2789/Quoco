@@ -1,10 +1,16 @@
+import Link from 'next/link'
+import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
+import { StatusChip } from '@/components/ui/status-chip'
+import { deriveDprArchiveStatus } from '@/lib/dpr/archive-status'
 
 type DprRow = {
   id: string
   log_date: string
   content: string | null
+  generation_status: string
+  delivery_status: string
   projects: { name: string } | null
 }
 
@@ -28,16 +34,38 @@ export default async function DprsPage() {
   const projectIds = (memberRows ?? []).map((m) => m.project_id as string)
 
   let dprs: DprRow[] = []
+  let queryFailed = false
 
   if (projectIds.length > 0) {
-    const { data } = await supabase
+    // No `.not('content', 'is', null)` filter — every row for an eligible
+    // project surfaces, generated or not. See lib/dpr/archive-status.ts's
+    // header for why: filtering out null-content rows made a failed or
+    // still-running generation render identically to a night nothing was
+    // attempted, which is the exact absence-vs-failure conflation this
+    // product exists to catch.
+    //
+    // `content` IS still selected, even though the list never renders the
+    // text — deriveDprArchiveStatus needs to know whether it's null to tell
+    // "generated" apart from every other state, and PostgREST has no way to
+    // project "content IS NOT NULL" as a boolean without a generated column
+    // (a migration, out of scope for this PR — "No migration" per the plan).
+    // The value itself is discarded immediately after the map below; the
+    // detail route is still the only place the text is ever displayed. This
+    // is a real, smaller tradeoff (bytes over the wire) than the one
+    // originally flagged (a needless column with no purpose at all) — worth
+    // stating plainly rather than silently reintroducing the column.
+    const { data, error } = await supabase
       .from('dprs')
-      .select('id, log_date, content, projects(name)')
+      .select('id, log_date, content, generation_status, delivery_status, projects(name)')
       .in('project_id', projectIds)
-      .not('content', 'is', null)
       .order('log_date', { ascending: false })
 
-    dprs = (data ?? []) as unknown as DprRow[]
+    if (error) {
+      queryFailed = true
+      Sentry.captureException(error, { tags: { feature: 'dpr-archive-list' } })
+    } else {
+      dprs = (data ?? []) as unknown as DprRow[]
+    }
   }
 
   return (
@@ -49,7 +77,15 @@ export default async function DprsPage() {
         </p>
       </div>
 
-      {dprs.length === 0 ? (
+      {queryFailed ? (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-12 text-center">
+          <p className="text-red-700 font-medium">Couldn&apos;t load reports.</p>
+          <p className="text-red-600 text-sm mt-2">
+            Something went wrong loading the archive. This has been reported — try
+            refreshing, or check back shortly.
+          </p>
+        </div>
+      ) : dprs.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
           <p className="text-gray-700 font-medium">No DPRs generated yet.</p>
           <p className="text-gray-500 text-sm mt-2">
@@ -63,17 +99,41 @@ export default async function DprsPage() {
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
                 <th className="px-4 py-3 font-medium text-gray-600">Project</th>
                 <th className="px-4 py-3 font-medium text-gray-600">Date</th>
+                <th className="px-4 py-3 font-medium text-gray-600">Status</th>
               </tr>
             </thead>
             <tbody>
-              {dprs.map((dpr) => (
-                <tr key={dpr.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {dpr.projects?.name ?? '—'}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{formatDate(dpr.log_date)}</td>
-                </tr>
-              ))}
+              {dprs.map((dpr) => {
+                const status = deriveDprArchiveStatus(dpr)
+                const clickable = status.state === 'generated'
+                return (
+                  <tr
+                    key={dpr.id}
+                    className={`relative border-b border-gray-100 ${clickable ? 'hover:bg-gray-50' : ''}`}
+                  >
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {dpr.projects?.name ?? '—'}
+                      {/* Single real anchor, absolutely positioned to cover the
+                          whole row — the standard clickable-table-row pattern.
+                          A <Link> cannot wrap multiple <td> siblings without
+                          producing invalid table nesting (a <td> or an <a>
+                          containing other <td>s), so the link lives inside
+                          this one cell instead. */}
+                      {clickable && (
+                        <Link
+                          href={`/dprs/${dpr.id}`}
+                          className="absolute inset-0"
+                          aria-label={`View report for ${dpr.projects?.name ?? 'project'}, ${formatDate(dpr.log_date)}`}
+                        />
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{formatDate(dpr.log_date)}</td>
+                    <td className="px-4 py-3">
+                      <StatusChip variant={status.variant} label={status.label} />
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

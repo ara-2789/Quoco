@@ -1441,13 +1441,33 @@ EVERY job type this queue will ever run, not one table. NOT urgent today —
 `/api/jobs/tick` claims and dispatches nothing real yet (every case in
 `dispatchJob` still throws `'No handler implemented yet'`), so no job has ever
 actually been `'running'` long enough for this to matter in practice. TRIGGER
-CONDITION, so this doesn't need rediscovering later: **real the day Phase 4
+CONDITION, so this doesn't need rediscovering later: **real the day Phase 3
 ships** — the first cron-enqueued `dpr_generate` job is also the first job in
 this system's history whose worker process can plausibly die mid-execution
 (a Claude call, several DB round-trips) while `claimJobs` believes it's still
-in progress. Whoever ships Phase 4 inherits this; it should be closed before
+in progress. Whoever ships Phase 3 inherits this; it should be closed before
 or alongside that ship, not treated as later cleanup once real jobs are
 actually running unattended.
+
+DATED CORRECTION (2026-08-12): the two paragraphs above originally said
+"Phase 4," conflicting with this file's own line naming the `dpr_generate`
+handler "Phase 3" a few paragraphs up, and with `cc0d000`'s own commit
+message ("Phase 3 dpr_generate handler + trigger"). Corrected to Phase 3 to
+match both — the mismatch was an internal inconsistency in this file, not a
+disagreement with the shipped commit.
+
+DATED UPDATE (2026-08-12): the TRIGGER CONDITION above has PARTIALLY fired —
+stated precisely, not flatly "now-live." `dispatchJob`
+(`app/api/jobs/tick/route.ts`) now has a real `case 'dpr_generate'` calling
+`handleDprGenerateJob`, landed in `cc0d000`/PR #55 (2026-08-11) — no longer a
+placeholder throw. That is the code-level condition this entry names. But
+nothing has actually run unattended in production yet: `CRON_SECRET` is
+still unprovisioned in Vercel (§8), so `/api/cron/dpr-generate` 401s every
+real cron invocation, and prod's `dprs`/`jobs` tables were confirmed empty as
+of 2026-08-12 13:44 IST. So: code-level trigger fired, not yet
+production-exercised. The gap this entry tracks is imminent, not yet
+realized — closing it (or accepting the risk explicitly) is still live work,
+not something this update marks done.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
