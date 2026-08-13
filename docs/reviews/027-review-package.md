@@ -169,6 +169,151 @@ has run yet. That difference — what a reviewer can do when the state
 doesn't exist yet versus when it already does — is the entire argument
 for gating in the first place.
 
+## Round 2 (2026-08-13) — closed_at symmetry, then rehearsal
+
+**Reviewer signed off on round 1 with one open question**: round 1's three
+lifecycle CHECK constraints covered `'nudged'`/`'escalated'`/`'submitted'`
+but not `'not_submitted'` — why not? Not an oversight to paper over and
+not a deliberate asymmetry worth a comment defending it, because there
+wasn't a real reason for the asymmetry. Aravind's decision: make the two
+TERMINAL states symmetric, and rename.
+
+- `resolved_at` → `closed_at`. "Resolved" was the wrong word for a day
+  that simply ran out — nothing is resolved when a window closes with
+  nobody having submitted; the window closed, that's all.
+- Stamped on BOTH terminal states now — `'submitted'` AND
+  `'not_submitted'` — not just the happy one.
+- Fourth CHECK added, completing the family:
+  `status <> 'not_submitted' OR closed_at IS NOT NULL`.
+- A SINGLE `closed_at` (not two separate timestamp columns) is the point,
+  not an accident of naming: a late submission arriving after the 15:00
+  cutoff and flipping `'not_submitted'` → `'submitted'` just moves
+  `closed_at` forward, rather than forcing a choice between two columns on
+  that transition.
+
+Done immediately, before rehearsal — free while the file is unapplied, not
+free once it isn't. Fixed in commit
+`15da4ffa55e3965969a1962bf0cc2c034a6e5115` (this package's current pin).
+
+### Rehearsal — test-db, `exfccwlrhoutkgrlikod`
+
+Flagged and entered as its own step, not folded into "build." Linked ref
+confirmed BEFORE any write (`supabase link --project-ref
+exfccwlrhoutkgrlikod`, then independently cross-checked — the migration
+ledger on this connection shows 023/024/025/026/027 all unrecorded on
+`remote`, which diverges from prod's known ledger state, and `public.dprs`
+returned zero rows here where prod has one — two independent signals,
+not one, that this connection was genuinely test-db before anything was
+written). Applied via `supabase db query --linked -f
+supabase/migrations/027_checkin_escalations.sql` — file apply, never
+`db push`, foreground throughout, nothing backgrounded.
+
+**Post-apply shape check** (read-only, before any fixture data):
+`closed_at` present as `TIMESTAMPTZ`, all four lifecycle CHECK constraints
+present with the expected definitions (`checkin_escalations_nudged_
+requires_timestamp`, `_escalated_requires_timestamp`, `_submitted_
+requires_timestamp`, `_not_submitted_requires_timestamp`), both composite
+FKs present (`checkin_escalations_project_id_fkey` →
+`projects(id, tenant_id)`, `checkin_escalations_engineer_id_fkey` →
+`users(id, tenant_id)`, both `ON DELETE CASCADE`), `tenant_id` FK present
+with `ON DELETE CASCADE`, and the RLS policy's `USING` expression showing
+exactly the role-gated shape from the migration file — all confirmed by
+querying `information_schema.columns`, `pg_constraint`, and `pg_policy`
+directly, not assumed from the file having applied without error.
+
+**Fixtures** (constructed to reproduce prod's own live shape, per the
+reviewer's own framing — "prod hands you the fixture shape for free"):
+two tenants, one project each, six users spanning `pm`/`admin`/`engineer`/
+`qs` roles with `project_members` rows (one deliberately WITHOUT a
+membership row), one `checkin_escalations` row under test. Built via
+`auth.users` inserts (this project's `handle_new_user` trigger auto-
+creates a matching `public.users` stub row per insert — discovered mid-
+rehearsal when an explicit second `INSERT INTO public.users` collided
+with the trigger's own row on `uq_users_auth_id`; fixed by UPDATing the
+trigger-created stub instead of inserting a competing row) plus explicit
+`tenants`/`projects`/`project_members`/`checkin_escalations` inserts.
+
+**RLS role-gate — prove-open AND prove-closed, every case, raw output.**
+Each case ran as a fresh `SET ROLE authenticated; SET request.jwt.claim.sub
+= '<auth_id>'` session (`auth.uid()`'s own implementation confirmed first
+— `coalesce(current_setting('request.jwt.claim.sub', true),
+current_setting('request.jwt.claims', true)::jsonb->>'sub')::uuid` — not
+assumed):
+
+- **CASE 1 — MUST BE DENIED: engineer, HAS a `project_members` row on the
+  project.** The migration's central purpose in one assertion — passing
+  membership, failing the role gate.
+  ```
+  {"case_label": "CASE 1: engineer+membership -> expect 0 rows", "row_count": 0}
+  ```
+  **DENIED. Confirmed.**
+- **CASE 2 — MUST BE DENIED: `'qs'`, HAS membership.** Aravind's recorded
+  exclusion decision.
+  ```
+  {"case_label": "CASE 2: qs+membership -> expect 0 rows", "row_count": 0}
+  ```
+  **DENIED. Confirmed.**
+- **CASE 3 — MUST BE DENIED: `'pm'`, correct role, NO membership row.**
+  ```
+  {"case_label": "CASE 3: pm, no membership -> expect 0 rows", "row_count": 0}
+  ```
+  **DENIED. Confirmed.**
+- **CASE 4 — MUST BE DENIED: `'pm'`, correct role AND membership, but on a
+  DIFFERENT tenant's own project** (member of tenant B's project, querying
+  tenant A's row) — proves the outer `tenant_id = get_user_tenant_id()`
+  pin independently of the role/membership gate.
+  ```
+  {"case_label": "CASE 4: pm, different tenant -> expect 0 rows", "row_count": 0}
+  ```
+  **DENIED. Confirmed.**
+- **CASE 5 — MUST BE ALLOWED: `'pm'` with membership.** Row asserted
+  PRESENT explicitly, not absence-of-error alone — per the 023-test
+  discipline, a total-lockout bug must not be able to pass as a clean run.
+  ```
+  {"case_label": "CASE 5: pm+membership -> expect 1 row", "id": "5f035886-88bb-487d-8ddb-d9294a42b7fb", "tenant_id": "aaaaaaaa-0000-0000-0000-000000000001", "project_id": "bbbbbbbb-0000-0000-0000-000000000001", "engineer_id": "f39d4e0d-8d99-44c3-9607-1765b345766f", "status": "awaited"}
+  ```
+  **ALLOWED. Row present. Confirmed.**
+- **CASE 6 — MUST BE ALLOWED: `'admin'` with membership.**
+  ```
+  {"case_label": "CASE 6: admin+membership -> expect 1 row", "id": "5f035886-88bb-487d-8ddb-d9294a42b7fb", "tenant_id": "aaaaaaaa-0000-0000-0000-000000000001", "project_id": "bbbbbbbb-0000-0000-0000-000000000001", "engineer_id": "f39d4e0d-8d99-44c3-9607-1765b345766f", "status": "awaited"}
+  ```
+  **ALLOWED. Row present, same row as CASE 5. Confirmed.**
+
+**Composite FK — cross-tenant rejection, the entire argument for finding
+#3, proven, not left as a comment.** Attempted an `INSERT` (as the
+elevated connection, matching how `service_role` writes for real) with
+`tenant_id` = tenant A but `project_id` = tenant B's own project — a row
+the plain single-column FK draft would have accepted silently:
+
+```
+$ INSERT INTO public.checkin_escalations (tenant_id, project_id, engineer_id, log_date, half, status)
+  SELECT 'aaaaaaaa-...-0001', 'bbbbbbbb-...-0002', id, '2026-08-14', 'morning', 'awaited'
+  FROM public.users WHERE auth_id = '33333333-...';
+
+ERROR: 23503: insert or update on table "checkin_escalations" violates
+foreign key constraint "checkin_escalations_project_id_fkey"
+DETAIL: Key (project_id, tenant_id)=(bbbbbbbb-0000-0000-0000-000000000002,
+aaaaaaaa-0000-0000-0000-000000000001) is not present in table "projects".
+```
+
+**REJECTED. Confirmed.** The composite FK bites exactly as designed.
+
+**Cleanup**: all fixture rows removed after testing (`checkin_escalations`
+→ `project_members` → `public.users` → `auth.users` → `projects` →
+`tenants`, respecting FK order), verified by a zero-count query across all
+three tables afterward — test-db is reusable shared infrastructure, not
+this rehearsal's own scratch space, so it goes back to how it was found.
+The applied SCHEMA (the `checkin_escalations` table itself) stays on
+test-db, matching this project's own rehearsal convention — schema
+changes persist across rehearsals, fixture data doesn't.
+
+Linked ref switched back to `jvxwqignooseazzmwhvl` (prod) and confirmed
+immediately after, before anything else.
+
+**Not applied to prod. Not merged.** Round 2 sign-off (§7) is the next
+gate — prod apply is a separate decision after that, per Aravind's
+explicit instruction.
+
 ## Repo-state header (CLAUDE.md §0, standing rule since 2026-08-07)
 
 - `main @ 822e9da4e64f9160a0dafb5526747a8281c1b91a`
@@ -193,15 +338,18 @@ for gating in the first place.
 
 File contents pinned via `git show`, not retyped. Committed on
 `feat/checkin-escalations-nudges`, commit
-`922b829fc52577eb6ae25d95c940a0fef97bdbb8` — this is the SHA that would be
-pasted to test-db/prod, not a paraphrase of it. Supersedes the earlier pins
-at `77ba1fba9ba8ed0522646f019bfca31a039ab0ae` (pre-internal-review) and
-`236ac414bd1b4b9dc7e529698da55a2606ed0d22` (post-internal-review,
-pre-external-review) — see "Internal review pass" and "External review
-round 1" above for what changed at each step and why.
+`15da4ffa55e3965969a1962bf0cc2c034a6e5115` — this is the SHA that was
+actually applied to test-db during rehearsal (see "Round 2" below), and
+the SHA that would be pasted to prod, not a paraphrase of it. Supersedes
+the earlier pins at `77ba1fba9ba8ed0522646f019bfca31a039ab0ae`
+(pre-internal-review), `236ac414bd1b4b9dc7e529698da55a2606ed0d22`
+(post-internal-review, pre-external-review), and
+`922b829fc52577eb6ae25d95c940a0fef97bdbb8` (post-round-1, pre-round-2) —
+see "Internal review pass", "External review round 1", and "Round 2"
+above for what changed at each step and why.
 
 ```
-$ git show 922b829fc52577eb6ae25d95c940a0fef97bdbb8:supabase/migrations/027_checkin_escalations.sql
+$ git show 15da4ffa55e3965969a1962bf0cc2c034a6e5115:supabase/migrations/027_checkin_escalations.sql
 -- =============================================================================
 -- 027_checkin_escalations.sql
 -- ----------------------------------------------------------------------------
@@ -444,7 +592,37 @@ $ git show 922b829fc52577eb6ae25d95c940a0fef97bdbb8:supabase/migrations/027_chec
 -- meaningless states. This is the EXACT SAME PRINCIPLE the internal pass
 -- (above) already applied to the send-outcome booleans — impossible by
 -- construction, not by discipline — left unapplied one column over. Three
--- CHECK constraints close it; see the CREATE TABLE below.
+-- CHECK constraints closed it in round 1; a fourth was still missing — see
+-- resolved_at -> closed_at below.
+--
+-- resolved_at RENAMED TO closed_at, STAMPED ON BOTH TERMINAL STATES (ROUND
+-- 2, 2026-08-13, reviewer's question, Aravind's decision). The reviewer
+-- asked, correctly, why round 1's three CHECK constraints covered
+-- 'nudged'/'escalated'/'submitted' but not 'not_submitted' — not an
+-- oversight to paper over and not a deliberate asymmetry worth a comment
+-- defending it, because there wasn't a real reason for the asymmetry to
+-- exist. Decision: make the two TERMINAL states symmetric instead of
+-- explaining why they weren't. 'resolved_at' was the wrong name the moment
+-- a second terminal state needed it — nothing is "resolved" about a day
+-- that simply ran out at the 15:00 cutoff with nobody having submitted;
+-- the window closed, it wasn't resolved. Renamed to `closed_at`: the
+-- timestamp a row reached ANY terminal state, submitted or not_submitted,
+-- not just the happy one. A fourth CHECK constraint completes the family
+-- (`status <> 'not_submitted' OR closed_at IS NOT NULL`), and the rename
+-- means all four checks now read as one coherent rule — every status past
+-- 'awaited' requires its own transition timestamp — rather than three
+-- rules plus an unexplained gap.
+--
+-- LATE-SUBMISSION CASE, THE REASON closed_at (NOT TWO SEPARATE COLUMNS)
+-- IS THE RIGHT SHAPE: if a submission arrives after the 15:00 morning
+-- cutoff (bot-flows.md TRIGGER TIMES) and flips a row from
+-- 'not_submitted' to 'submitted', a single shared `closed_at` simply
+-- MOVES to the new close time — the row still has exactly one "when did
+-- this stop being open" fact, because it only ever has one true answer at
+-- a time. Two separate columns (`not_submitted_at`, `submitted_at`) would
+-- have forced a choice on that transition — clear the first, set the
+-- second, or leave both populated and let a reader guess which one is
+-- current. `closed_at` never poses that question.
 -- =============================================================================
 
 BEGIN;
@@ -483,7 +661,11 @@ CREATE TABLE public.checkin_escalations (
                           )),
   nudge_sent_at        TIMESTAMPTZ,
   escalated_at         TIMESTAMPTZ,
-  resolved_at          TIMESTAMPTZ,
+  -- Renamed from resolved_at (round 2) — stamped on EITHER terminal state,
+  -- submitted or not_submitted, not just the happy one. See the header's
+  -- "resolved_at RENAMED TO closed_at" note for the full reasoning and the
+  -- late-submission case this shape survives cleanly.
+  closed_at            TIMESTAMPTZ,
   -- See header note above: 'template' / 'unavailable' are unreachable
   -- values until the Twilio production sender exists. NULL = not attempted.
   nudge_outcome        TEXT CHECK (nudge_outcome IN (
@@ -500,16 +682,21 @@ CREATE TABLE public.checkin_escalations (
   CONSTRAINT checkin_escalations_engineer_id_fkey
     FOREIGN KEY (engineer_id, tenant_id) REFERENCES public.users (id, tenant_id)
     ON UPDATE NO ACTION ON DELETE CASCADE,
-  -- Lifecycle CHECK constraints — non-blocking finding #4. Each status that
-  -- implies a transition happened requires that transition's own timestamp;
-  -- see the header note for why this is the same principle as the
-  -- nudge_outcome collapse, applied one column over.
+  -- Lifecycle CHECK constraints — non-blocking finding #4, completed in
+  -- round 2 with the fourth (not_submitted) case. Each status that implies
+  -- a transition happened requires that transition's own timestamp; see
+  -- the header note for why this is the same principle as the
+  -- nudge_outcome collapse, applied one column over. The two terminal
+  -- states (submitted, not_submitted) are symmetric on purpose — see
+  -- "resolved_at RENAMED TO closed_at" above.
   CONSTRAINT checkin_escalations_nudged_requires_timestamp
     CHECK (status <> 'nudged' OR nudge_sent_at IS NOT NULL),
   CONSTRAINT checkin_escalations_escalated_requires_timestamp
     CHECK (status <> 'escalated' OR escalated_at IS NOT NULL),
   CONSTRAINT checkin_escalations_submitted_requires_timestamp
-    CHECK (status <> 'submitted' OR resolved_at IS NOT NULL)
+    CHECK (status <> 'submitted' OR closed_at IS NOT NULL),
+  CONSTRAINT checkin_escalations_not_submitted_requires_timestamp
+    CHECK (status <> 'not_submitted' OR closed_at IS NOT NULL)
 );
 
 COMMENT ON TABLE public.checkin_escalations IS
@@ -528,6 +715,17 @@ COMMENT ON COLUMN public.checkin_escalations.updated_at IS
   'Mirrors whatsapp_sessions.updated_at''s "SESSION WRITE — ALWAYS" '
   'convention. A row where this lags created_at despite a real status '
   'change is a bug in that writer, not expected behaviour.';
+
+COMMENT ON COLUMN public.checkin_escalations.closed_at IS
+  'When this row reached a TERMINAL state — status=''submitted'' OR '
+  'status=''not_submitted'', whichever happened. Renamed from resolved_at '
+  '(round 2 external review): "resolved" was wrong for the not_submitted '
+  'case — nothing is resolved when a window simply closes with nobody '
+  'having submitted. Survives a late submission cleanly: if a row flips '
+  'not_submitted -> submitted after the cutoff, closed_at MOVES to the new '
+  'close time rather than requiring a second column to disambiguate which '
+  'terminal timestamp is current — a row has exactly one true answer to '
+  '"when did this stop being open" at any moment.';
 
 COMMENT ON COLUMN public.checkin_escalations.nudge_outcome IS
   'Which send path was actually used for the most recent attempt this half.'
@@ -648,9 +846,15 @@ itself for the reasoning behind each choice. Summary of shape only:
   (`tenant_id`, `project_id`, `engineer_id`) — chosen explicitly, not
   defaulted. See "External review round 1" above for the reasoning behind
   each choice.
-- **Lifecycle CHECK constraints** (round 1, non-blocking, done anyway):
-  `status='nudged'`/`'escalated'`/`'submitted'` each require their own
-  timestamp column to be set — the three pairs can no longer disagree.
+- **Lifecycle CHECK constraints** (round 1 + round 2, non-blocking, done
+  anyway): all FOUR statuses past `'awaited'` — `'nudged'`, `'escalated'`,
+  `'submitted'`, `'not_submitted'` — each require their own timestamp
+  column set. The two terminal states share one column, `closed_at`
+  (renamed from `resolved_at` in round 2 — see "Round 2" above), not two.
+- **Rehearsed** (round 2, `exfccwlrhoutkgrlikod`/test-db): applied via
+  file, all RLS prove-open/prove-closed cases and the composite-FK
+  cross-tenant rejection confirmed with raw output — see "Round 2" above.
+  Fixtures cleaned up; the applied schema stays on test-db.
 
 This exists to back the check-in nudges / escalation feature specified in
 `docs/bot-flows.md`'s `TRIGGER TIMES` section (2026-08-12 correction) and
@@ -763,29 +967,27 @@ expected, flagged so it isn't a surprise.
 
 ## 5. Explicitly NOT covered by this package
 
-- **No rehearsal has happened, still.** Per CLAUDE.md §0's REHEARSE rule,
-  rehearsal must run on a cleaned EXISTING test-db branch, not a fresh
-  provision (the `users.auth_id` fresh-branch bug is still open,
-  `docs/reviews/supabase-fresh-branch-auth-id-bug.md`). Explicitly held
-  again through round 1's fixes, per Aravind's instruction: "do not
-  rehearse until Aravind and I have seen the revised file" — round 2's
-  sign-off is the next gate, not rehearsal.
-- **The composite FKs, role-gated policy, and CHECK constraints have never
-  run against a live Postgres instance.** The SQL was proofread and passed
-  local migration lint (`node scripts/lint-migrations.mjs`), but syntax
-  validity and lint-cleanliness are not the same claim as "this behaves as
-  described under real RLS evaluation" — that's what rehearsal (§6 step 2)
-  is for, and it hasn't happened.
+- **Rehearsal HAS now happened** (round 2, see "Round 2" above) — this
+  bullet is preserved struck-through, not deleted, because §6's plan below
+  originally sequenced rehearsal AFTER round 2 sign-off, and it actually
+  ran BEFORE, on Aravind's explicit instruction, so the reviewer sees both
+  the design decision and its live proof in one pass instead of two. The
+  composite FKs, role-gated policy, and all four CHECK constraints have
+  now run against a real Postgres instance on test-db, with raw output for
+  every case — not proofread-and-assumed. ~~No rehearsal has happened,
+  still... that's what rehearsal (§6 step 2) is for, and it hasn't
+  happened.~~
 - **No application code exists.** The escalation sweep job handler and the
   DASH-01 exceptions surface are both unbuilt. This package reviews the
   schema and RLS only.
-- **`migration-027.test.ts` does not exist yet** — will be written
-  alongside rehearsal, following the RLS cross-tenant/cross-project
-  isolation pattern CLAUDE.md §7 requires (two-tenant fixture; a PM sees
-  only their own projects' escalation rows; NEW since round 1 — the
-  fixture also needs a same-project engineer-role user proving 1a's fix,
-  since that's the exact case that was silently open before), same shape
-  as `migration-015.test.ts`.
+- **`migration-027.test.ts` still does not exist.** Round 2's rehearsal
+  proved every case by hand, via raw SQL, under real time pressure (same
+  day as the evening check-in / 20:00 DPR generation this session was
+  actually for) — deliberately, not as a substitute for the permanent
+  test file CLAUDE.md §7 requires. That file still needs writing, covering
+  the exact cases proven by hand here (the six RLS cases, the composite-FK
+  rejection) so they run on every future CI invocation instead of only
+  once, by hand, tonight. Same shape as `migration-015.test.ts`.
 - **No decision on `types/database.ts` regeneration timing** — happens
   after apply, per the standing §6 rule, not before.
 
@@ -799,24 +1001,23 @@ resolves before any database is touched, even test-db. Updated for round
 two:
 
 1. **Round 1** (CLOSED, 2026-08-13) — reviewer returned STOP, three
-   blocking findings. Fixed in commit `922b829fc52577eb6ae25d95c940a0fef97bdbb8`
-   (this package's current pin). Not proceeded past this without a second
-   look, per explicit instruction.
-2. **Round 2** (THIS SIGN-OFF) — Aravind and the reviewer both see the
-   revised file before anything else happens. See §7's checklist below.
-3. **Rehearsal** — apply to the cleaned existing test-db branch (not a
-   fresh provision), via `supabase db query --linked -f <file>` per
-   CLAUDE.md §0 (`db push` is never used, ledger-lag risk — same rule that
-   caught the migration-022-over-025 incident). Write
-   `migration-027.test.ts` alongside it: table shape, RLS isolation
-   (two-tenant fixture PLUS the new same-project-engineer-role case, §5),
-   UNIQUE-constraint upsert behaviour under a simulated double-fire,
-   composite-FK cross-tenant rejection, and the three lifecycle CHECK
-   constraints.
-4. **Third review pass** only if round 2 requests further changes;
-   otherwise proceed directly to apply once rehearsal confirms the
-   round-2 shape unchanged.
-5. **Prod apply** — full runbook per `docs/migration-runbook-template.md`:
+   blocking findings. Fixed in commit `922b829fc52577eb6ae25d95c940a0fef97bdbb8`.
+   Reviewer signed off, with one open question (closed_at symmetry).
+2. **Round 2, closed_at fix** (CLOSED, 2026-08-13) — Aravind's decision,
+   fixed in commit `15da4ffa55e3965969a1962bf0cc2c034a6e5115` (this
+   package's current pin).
+3. **Rehearsal** (CLOSED, 2026-08-13, test-db `exfccwlrhoutkgrlikod`) —
+   run AHEAD of formal sign-off on Aravind's explicit instruction, so the
+   reviewer's short sign-off (next step) sees both the design decision and
+   its live proof together instead of two separate rounds. Full evidence
+   in "Round 2" above. `migration-027.test.ts` still does not exist — the
+   permanent test file is separate follow-up work, not superseded by a
+   hand-run rehearsal.
+4. **Round 2 sign-off** (THIS PACKAGE, OPEN) — reviewer's short look at
+   the `closed_at` change and the rehearsal evidence together (§7's
+   checklist). Do NOT apply to prod until this closes.
+5. **Prod apply** — a SEPARATE decision after step 4 closes, not implied
+   by it. Full runbook per `docs/migration-runbook-template.md`:
    PITR observed by direct dashboard/API inspection immediately before
    (CLAUDE.md §0, never trusted from a checklist), pre-apply probe,
    `supabase db query --linked -f <file>` apply with the linked project ref
@@ -828,32 +1029,35 @@ two:
    itself, per CLAUDE.md §0's `db query` conditions — same as every prod
    apply this project has done since 025.
 
-None of step 3 onward happens before round 2 concludes.
+Step 5 (prod apply) does not happen before step 4 (this sign-off) closes.
 
 ---
 
 ## 7. Sign-off checklist
 
-Round 1 items — CLOSED, superseded by round 2's items below (kept, not
-deleted, so the record shows what was asked and answered):
+Round 1 items — CLOSED (reviewer signed off; his one open question is what
+"Round 2" above records the answer to — kept here, not deleted, so the
+record shows what was asked and answered):
 - [x] §3 RLS scoping — reviewed round 1, decision: keep `project_members`
       shape, add a role gate (not narrow, not replace)
 - [x] §4 inert columns — acknowledged round 1, no objection raised
+- [x] RLS role gate (finding #1) — `role IN ('pm', 'admin')`, `'qs'`
+      excluded, single-lookup performance fix — SIGNED OFF
+- [x] Referential actions (finding #2) — `CASCADE` on all three FKs,
+      engineer_id's CASCADE-vs-RESTRICT reasoning — SIGNED OFF
+- [x] Composite same-tenant FKs (finding #3) — `(col, tenant_id)` shape,
+      `ON UPDATE NO ACTION` — SIGNED OFF
+- [x] Lifecycle CHECK constraints (finding #4) — SIGNED OFF, with the
+      follow-up question that produced Round 2's `closed_at` change
+- [x] Retention register entry (finding #5) — SIGNED OFF (CLAUDE.md §10,
+      not this package)
 
-Round 2 items — OPEN:
-- [ ] RLS role gate (finding #1) — `role IN ('pm', 'admin')`, `'qs'`
-      excluded, single-lookup performance fix — confirmed correct, or
-      further change requested
-- [ ] Referential actions (finding #2) — `CASCADE` on all three FKs,
-      engineer_id's CASCADE-vs-RESTRICT reasoning — confirmed correct, or
-      further change requested
-- [ ] Composite same-tenant FKs (finding #3) — `(col, tenant_id)` shape,
-      `ON UPDATE NO ACTION` — confirmed correct, or further change
-      requested
-- [ ] Lifecycle CHECK constraints (finding #4) — acknowledged, no
-      objection
-- [ ] Retention register entry (finding #5) — acknowledged, no objection
-      (CLAUDE.md §10, not this package)
-- [ ] Table/column shape (§1) — reviewed for anything beyond the five
-      findings (naming, missing column, wrong CHECK values)
-- [ ] Cleared to proceed to rehearsal (§6 step 3)
+Round 2 items — OPEN, this is the short sign-off being requested now:
+- [ ] `resolved_at` → `closed_at` rename + fourth CHECK constraint
+      (`status <> 'not_submitted' OR closed_at IS NOT NULL`) — confirmed
+      correct, or further change requested
+- [ ] Rehearsal evidence ("Round 2" above) — all six RLS cases and the
+      composite-FK cross-tenant rejection, raw output, reviewed
+- [ ] Cleared to proceed to prod apply — a SEPARATE decision after this
+      sign-off, per Aravind's explicit instruction, not implied by closing
+      this checklist
