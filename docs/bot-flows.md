@@ -22,13 +22,76 @@
 
 ## TRIGGER TIMES (fixed for Phase 1 — all IST)
 
-- 7:30 AM  — morning trigger (quoco_morning_checkin)
-- 9:00 AM  — morning nudge if no response (quoco_morning_nudge)
-- 6:30 PM  — evening trigger (quoco_evening_checkin)
-- 7:30 PM  — evening nudge + PM notification if no response
+DATED CORRECTION (2026-08-12): the schedule below previously showed all four
+scheduled sends — morning trigger, morning nudge, evening trigger, evening
+nudge — as unconditionally template-gated. That was never the actual
+decision; recorded now, not silently changed:
+
+- FREE-FORM SEND IS THE PRIMARY PATH; the named template is the FALLBACK,
+  used only when the engineer's 24-hour WhatsApp session window is closed
+  (no inbound from them in the last 24h). An open window sends the same
+  content as an ordinary free-form session message instead — cheaper
+  (templates are billed per message; in-window free-form is not) and
+  identical in content to the engineer. Applies to all four triggers below,
+  not just the Q2–Q6 follow-ups the Sandbox limitation note (bottom of this
+  file) already covered.
+- Whichever path is used, everything downstream (session creation,
+  pending_flows, BOT-21/BOT-26 ordering) is unchanged — this only affects
+  HOW the initiating message is sent, never the state machine after it.
+
+- 7:30 AM  — morning trigger. Template quoco_morning_checkin is the
+  closed-window fallback.
+- 9:00 AM  — morning nudge if no response. Template quoco_morning_nudge is
+  the closed-window fallback.
+- 10:00–10:30 AM — PM notified of a missing morning submission, on the
+  DASH-01 dashboard exceptions surface — NOT a WhatsApp push. See "Morning
+  cutoff" below.
+- 3:00 PM (15:00) — MORNING CUTOFF. See "Morning cutoff" below.
+- 6:30 PM  — evening trigger. Template quoco_evening_checkin is the
+  closed-window fallback. Fires REGARDLESS of whether morning was
+  submitted — see "Evening trigger no longer waits on morning" below; only
+  is_holiday suppresses it.
+- 7:30 PM  — evening nudge + PM notification if no response. Template
+  quoco_evening_nudge is the closed-window fallback.
 - 8:00 PM  — DPR generation job queued
 - 9:00 PM  — owner delivery job runs
 - Every 60s — jobs table polled by /api/jobs/tick
+
+### Morning cutoff (decided earlier, recorded 2026-08-12)
+Frame as a GAP IN THE SPEC, not a new rule: design-principles.md Rule 7.2
+already required "nudge → escalate to PM at cutoff" and calls escalation
+never skippable — but before this correction the schedule above only ever
+escalated in the evening (the 7:30 PM line). Morning had a nudge (9:00 AM)
+with no cutoff and no escalation step at all.
+
+- 10:00–10:30 AM: PM notified of a missing morning submission. This is
+  Rule 7.2's escalation step for morning, happening on the DASH-01
+  dashboard exceptions surface (see PM DASHBOARD section below), not a
+  WhatsApp push. quoco_manager_missed (WHATSAPP TEMPLATES #5) is DEFERRED
+  for this purpose, not dropped — build the push when DASH-01's exceptions
+  surface exists.
+- 3:00 PM (15:00): MORNING CUTOFF. An engineer's morning state moves from
+  "awaited" to "not submitted"; no further morning nudges are sent for
+  that engineer/day; morning accountability firms up at this point. Does
+  NOT change DPR content — generation is still 8:00 PM. Rationale (the
+  part that matters most): it frees the queue before the evening cycle
+  starts at 6:30 PM — left open, morning and evening nudges overlap and an
+  engineer is chased for two things at once.
+
+### Evening trigger no longer waits on morning (decided earlier, recorded 2026-08-12)
+The evening trigger fires regardless of whether morning was submitted; only
+is_holiday suppresses it. The 15:00 morning cutoff above resolves the
+ambiguity BOT-20 was protecting against — by evening trigger time, morning
+status for the day is already final either way.
+
+COUPLED CHANGE, same decision: BOT-22's existing "a question whose morning
+input is missing is not asked" rule now also applies to evening Q2/Q3 when
+there is no morning plan — see EVENING CHECK-IN below. Per Rule 3.5, never
+ask "was the plan met?" of someone who never gave a plan.
+
+DEFERRED, recorded as open, NOT designed: whether the evening question SET
+should narrow further (beyond skipping Q2/Q3) on a day with no morning
+submission. Do not build against an assumed answer here.
 
 ---
 
@@ -90,13 +153,20 @@ Fast-Follow accountability when the escalation engine ships.
 
 ## EVENING CHECK-IN (6 questions, one at a time)
 
-Trigger template includes morning-plan summary truncated to 150 chars in {{3}}.
+Trigger template (closed-window fallback only, per TRIGGER TIMES above)
+includes morning-plan summary truncated to 150 chars in {{3}} — a template
+variable limit. The free-form primary path is not length-constrained and
+sends the untruncated plan.
 
 Q1: Work completed today + quantity/area. Format: Activity — quantity done.
     Photo optional. → evening_output + evening_output_quantities.
     If NO morning submission: omit the morning-plan echo (BOT-22).
 Q2: Plan met? Yes/No → evening_schedule_met.
     Yes → skip Q3, go to Q4. No → ask Q3.
+    If NO morning submission: skip Q2 AND Q3 entirely, go straight to Q4 —
+    same BOT-22 pattern as Q1's morning-plan echo above (decided 2026-08-12,
+    couples with "Evening trigger no longer waits on morning" under TRIGGER
+    TIMES). Never ask "was the plan met?" of someone who never gave a plan.
 Q3: (conditional, only if Q2=No) Reason plan not met →
     evening_schedule_miss_reason.
 Q4: Workers on site + productivity (two sub-steps):
@@ -297,6 +367,12 @@ seconds apart (claim race). DPR work is not "done" until these pass.
 ## PM DASHBOARD — SPINE
 
 - DASH-01 Home: welcome + project list + Create Project.
+  DATED NOTE (2026-08-12): gains an EXCEPTIONS section — tightly scoped,
+  section only — to surface the 10:00–10:30 AM missing-morning PM
+  notification from TRIGGER TIMES above. Must include design-principles.md
+  Rule 4.1's required "if everything is fine, say so in one line" for the
+  empty/all-clear state. NOT STARTED; gated behind the checkin_escalations
+  migration (§0 external-review gate — new table, RLS from day one).
 - DASH-02 Project creation: name, contract value, start/end dates, owner name,
   owner WhatsApp, owner email. Creates the owner users row + owner_user_id link.
 - DASH-03 Daily Logs: morning+evening cards per engineer per day, missing
@@ -315,6 +391,13 @@ DASH-07 hindrance tracker, DASH-10 accountability view + resolve action.
 nothing and approval takes days. Keep every template Utility-category and
 non-promotional. Keep one spare variant of each critical template
 pre-approved (a Meta pause on the morning trigger otherwise halts check-ins).
+
+DATED NOTE (2026-08-12): templates #1–4 below (quoco_morning_checkin,
+quoco_evening_checkin, quoco_morning_nudge, quoco_evening_nudge) are the
+CLOSED-WINDOW FALLBACK for their trigger, not the primary send — see
+TRIGGER TIMES above. Still submit and pre-approve all four; the fallback
+path is the reason a Meta pause on any one of them halts check-ins (an
+engineer with a closed 24h window has no other way to receive it).
 
 Spine:
 1.  quoco_morning_checkin    — {{1}} name, {{2}} project
