@@ -265,6 +265,20 @@
   apply rather than accepting review as a retroactive habit. Record this
   where the next person deciding whether a migration is "probably fine,
   skip the package this once" will read it.
+  THE FULL CYCLE'S OWN COST, RECORDED SEPARATELY (2026-08-13, reviewer's
+  closing line, migration 027's round 2 sign-off): stop, revise, verify,
+  proceed — the complete pre-apply cycle this migration went through, from
+  round 1's STOP verdict through the closed_at question through rehearsal
+  — cost three days and zero archaeology. Zero archaeology is the point:
+  nothing in this cycle required anyone to later reconstruct what a table
+  was supposed to do, why a policy was shaped the way it was, or what a
+  prod row's presence did or didn't prove — every question the reviewer
+  raised was answered, verified, and recorded in the same review package
+  before the next step ran. That is the comparison for the next person
+  deciding whether the gate is ceremony: three days of visible, front-
+  loaded cost against the alternative this file's own history already
+  demonstrates — a live defect on an already-readable table, found later,
+  by someone doing archaeology to understand what shipped and why.
 - A MANUALLY-TRIGGERED FLOW FEEDING A SCHEDULED CONSUMER CHECKS THE
   CONSUMER'S SCHEDULE FIRST, NOT JUST THE PRODUCER'S READINESS (standing
   rule since 2026-08-12). Before manually starting/seeding anything whose
