@@ -114,7 +114,7 @@ Standard policy for every tenant-scoped table:
 
 ---
 
-## WHATSAPP BOT (8 documented — 4 live, 3 Fast-Follow, 1 never created)
+## WHATSAPP BOT (9 documented — 6 live, 3 Fast-Follow, 0 never created)
 [DATED CORRECTION 2026-07-27: this header read "5 tables — active". Counted
 directly, 8 ### subsections sit under it and they are NOT all live, so the old
 label was wrong on both the number and the "active". Breakdown, per each
@@ -122,6 +122,15 @@ subsection's own status line: LIVE = whatsapp_sessions, processed_messages,
 daily_logs, daily_log_edits. FAST-FOLLOW (table exists, flow unbuilt) =
 safety_incidents, invoices, hindrances. NEVER CREATED = dprs. Re-count this
 label whenever a subsection is added or removed.]
+[DATED CORRECTION 2026-08-13, superseding the count above (not the note's
+prose, which is preserved for provenance): two subsections were added since
+2026-07-27 pushed the count to 8 — dprs (migration 023, applied 2026-08-07,
+moving it OUT of "never created" and INTO "live") and checkin_escalations
+(migration 027, applied 2026-08-13). Re-counted directly, not assumed: 9
+### subsections now sit under this header. LIVE (6) = whatsapp_sessions,
+processed_messages, daily_logs, daily_log_edits, dprs, checkin_escalations.
+FAST-FOLLOW (3, unchanged) = safety_incidents, invoices, hindrances. NEVER
+CREATED (0) — dprs was the sole entry in this bucket; nothing remains in it.]
 
 ### whatsapp_sessions
 - id, created_at, tenant_id (BETA)
@@ -407,6 +416,83 @@ label whenever a subsection is added or removed.]
 - NOTE: generation_status and delivery_status are ORTHOGONAL lifecycles.
   One tracks the compute job, one tracks the owner-send state. Do NOT
   collapse into one column or couple their transitions.
+
+### checkin_escalations — migration 027 (LIVE on prod, applied 2026-08-13 ~12:06 IST)
+Backs the check-in nudges / escalation feature (bot-flows.md TRIGGER TIMES
+"Morning cutoff" + design-principles.md Rule 7.2): one row per (project,
+engineer, log_date, half) tracking that half's nudge/escalation lifecycle.
+Went through this project's first FULL pre-apply external review cycle —
+round 1 (STOP, three blocking findings) then round 2 (a follow-up fix +
+rehearsal) — before touching any database; see
+docs/reviews/027-review-package.md for the complete record, not restated
+here.
+
+- id UUID PK DEFAULT gen_random_uuid(), created_at TIMESTAMPTZ NOT NULL
+  DEFAULT now()
+- updated_at TIMESTAMPTZ NOT NULL DEFAULT now() — NOT trigger-maintained (no
+  updated_at trigger exists anywhere in this project); set explicitly by the
+  writer on every write, same convention as whatsapp_sessions.updated_at
+- tenant_id UUID NOT NULL — REFERENCES tenants(id) ON DELETE CASCADE
+- project_id UUID NOT NULL, engineer_id UUID NOT NULL — deliberately NO
+  inline single-column REFERENCES; both are COMPOSITE same-tenant FKs
+  instead (below), not plain FKs
+- log_date DATE NOT NULL
+- half TEXT NOT NULL CHECK(morning/evening)
+- status TEXT NOT NULL DEFAULT 'awaited'
+  CHECK(awaited/nudged/escalated/submitted/not_submitted)
+- nudge_sent_at, escalated_at, closed_at TIMESTAMPTZ — all nullable.
+  closed_at (renamed from resolved_at in round 2) is shared by BOTH terminal
+  states (submitted AND not_submitted) on purpose — "resolved" was wrong for
+  a window that simply closed with nobody submitting, and a single shared
+  column lets a late submission after the 15:00 cutoff just move closed_at
+  forward instead of forcing a choice between two columns.
+- nudge_outcome TEXT CHECK(free_form/template/unavailable/failed) — nullable,
+  NULL = not attempted. 'template' and 'unavailable' are UNREACHABLE until the
+  Twilio PRODUCTION sender exists (CLAUDE.md §10) — the sandbox cannot send
+  custom templates at all, so no code path can attempt one today. Do NOT read
+  their absence on every row as evidence the template fallback was tested; it
+  is evidence the fallback has never been reachable. ('free_form' and 'failed'
+  ARE reachable today — free-form/session sends already work in the sandbox,
+  and a send can fail for ordinary infra reasons regardless of path.)
+- UNIQUE(project_id, engineer_id, log_date, half) — at-least-once write safety
+  for the escalation sweep job (not yet built), which upserts on this key so a
+  retried sweep invocation can never double-write
+- Composite same-tenant FKs (017's pattern, not plain single-column FKs —
+  the parent UNIQUE(id, tenant_id) indexes 017 already created on projects
+  and users made this nearly free):
+  * checkin_escalations_project_id_fkey: (project_id, tenant_id) ->
+    projects(id, tenant_id), ON UPDATE NO ACTION ON DELETE CASCADE
+  * checkin_escalations_engineer_id_fkey: (engineer_id, tenant_id) ->
+    users(id, tenant_id), ON UPDATE NO ACTION ON DELETE CASCADE
+- Lifecycle CHECK constraints (four — one per status past 'awaited', so a
+  status can never exist without its own transition timestamp):
+  checkin_escalations_nudged_requires_timestamp (needs nudge_sent_at),
+  _escalated_requires_timestamp (needs escalated_at),
+  _submitted_requires_timestamp and _not_submitted_requires_timestamp (both
+  need closed_at — the two terminal states are deliberately symmetric)
+- Indexes: idx_checkin_escalations_project_date (project_id, log_date) —
+  serves the DASH-01 exceptions surface's actual query shape. No per-engineer
+  index — dropped from the first draft; no query needs one yet, and 021
+  exists precisely because this project shipped a redundant index once
+  already
+- RLS: SELECT only, role-GATED — `tenant_id = get_user_tenant_id()` AND
+  EXISTS a project_members row for (project_id, this user) AND the caller's
+  own users.role IN ('pm', 'admin'). 'qs' is deliberately EXCLUDED (Aravind's
+  decision — a quantity surveyor deals with measurement and valuation, not
+  attendance), recorded as a decision, not inherited as a side effect of the
+  project_members-scoped shape this policy started from (dprs_select, 023).
+  Unlike dprs (a deliverable eventually shown to people ON the project, owner
+  included), checkin_escalations is INTERNAL MANAGEMENT DATA about the
+  contractor's own staff — project membership alone answers "are you attached
+  to this project," not "are you management." Role and id are resolved in ONE
+  users lookup, not two separate subqueries. No authenticated/anon write path;
+  only service_role (the escalation sweep job) writes.
+- NOT closed out by this table's existence: the escalation sweep job handler
+  and the DASH-01 exceptions surface are both unbuilt — schema only, same
+  "schema before handler" sequencing as dprs before dpr_generate existed.
+- RETENTION: classified prunable hygiene (CLAUDE.md §10's DATA RETENTION
+  POSTURE register, per 021's taxonomy) — DASH-01 cares about today, not
+  history. NOT a compliance record the way daily_logs/daily_log_edits are.
 
 ### safety_incidents (FAST-FOLLOW flow — table exists, flow ships later)
 - id, created_at, tenant_id, project_id, reported_by (BETA)
