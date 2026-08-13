@@ -968,9 +968,10 @@ Migration 021 came out of this audit but removes INDEX OVERHEAD ONLY — it prun
 nothing. Full audit + growth model: docs/reviews/021-review-package.md.
 
 DATED ADDITION (2026-08-13, migration 027 external review, non-blocking
-finding #5) — `checkin_escalations` (unapplied, docs/reviews/027-review-
-package.md) joins this register with its own line rather than the
-unbounded-growth list unrecorded. Grain is one row per (project, engineer,
+finding #5) — `checkin_escalations` (~~unapplied~~ APPLIED TO PROD
+2026-08-13, see the dated entry near the end of this section;
+docs/reviews/027-review-package.md) joins this register with its own line
+rather than the unbounded-growth list unrecorded. Grain is one row per (project, engineer,
 log_date, half) — roughly 2x `daily_logs`' own growth rate (two halves per
 engineer-day instead of one row). Per 021's taxonomy above, this is
 CLASSIFIED PRUNABLE HYGIENE, not a compliance record: DASH-01 (its only
@@ -1753,6 +1754,65 @@ present in the 022 RPC itself, not only the TS mirror — wipes the stale
 `log_date: 2026-08-13` BEFORE anything is answered, then proceed with a
 real morning + evening check-in ahead of that day's 20:00 cron. Standing
 rule this incident produced: see §0.
+
+MIGRATION 027 (`checkin_escalations`) APPLIED TO PRODUCTION (2026-08-13,
+~12:06 IST). First migration in this project's history to complete a full
+PRE-APPLY external review cycle — round 1 (STOP, three blocking findings),
+round 2 (the `closed_at` symmetry fix + full test-db rehearsal), sign-off —
+before a single byte touched any database. Every prior externally-reviewed
+migration (015 onward) was reviewed after it had already run somewhere;
+027 is the first where "reviewed" and "never yet applied" were true at the
+same time. Full record: `docs/reviews/027-review-package.md`; CLAUDE.md §0
+carries the standing observation this apply confirms, not just proposes.
+
+Applied via `supabase db query --linked -f
+supabase/migrations/027_checkin_escalations.sql` (never `db push`),
+linked ref (`jvxwqignooseazzmwhvl`) confirmed immediately before, PITR
+confirmed by direct observation (not a logged claim) —
+`pitr_enabled: true`, `walg_enabled: true`, restore window 2026-08-06
+16:31:32 UTC → 2026-08-13 05:38:53 UTC. Table confirmed absent pre-apply
+(`to_regclass('public.checkin_escalations') IS NULL`); rollback artifact
+(a clean `DROP TABLE`, confirmed nothing depends on the table first — no
+application code references it anywhere in `app/`/`lib/`) written to a
+scratch file BEFORE the apply ran, not composed after the fact.
+
+Post-apply pair, both fingerprints read from the catalog on prod, not
+assumed from the file:
+  * RLS policy (`checkin_escalations_select`), `pg_policy` readback:
+    `polcmd='r'`, `polroles={authenticated}`, `pg_get_expr(polqual,...)`
+    shows BOTH the `project_members` membership join AND
+    `u.role = ANY (ARRAY['pm','admin'])` present in the LIVE definition —
+    byte-identical in structure to what was rehearsed on test-db.
+  * Composite FKs, `pg_constraint` readback (016/017 probe shape): all
+    three FKs — `checkin_escalations_project_id_fkey`,
+    `_engineer_id_fkey`, `_tenant_id_fkey` — show `confupdtype='a'` (NO
+    ACTION) and `confdeltype='c'` (CASCADE), proving the chosen delete
+    behaviour is actually CARRIED at the catalog level, not merely
+    declared in the SQL.
+
+Ledger: 22 → 23 rows, `('027', 'checkin_escalations')` observed present
+directly (manual `INSERT` — CLI `migration repair` still 28P01-blocked for
+this project). `types/database.ts` regenerated immediately after; diff was
+non-empty as expected (unlike 025, this migration adds a table) and
+additive-only — `checkin_escalations`' Row/Insert/Update shapes and both
+composite FK relationships, nothing else touched; `tsc --noEmit` clean.
+
+NOT closed out by this apply: the escalation sweep job handler and the
+DASH-01 exceptions surface are both still unbuilt — this table is schema
+only until those exist, same "schema before handler" sequencing as
+migration 023's `dprs` table. `docs/schema.md`'s own `checkin_escalations`
+entry is not yet written — noted here as a gap, not done in this pass.
+
+THE REVIEWER'S OWN CLOSING FRAME, worth keeping verbatim rather than
+paraphrased: the gate's promise was never BETTER findings — the same
+three blocking issues (role-blind RLS, referential actions left to
+default, cross-tenant reference integrity never asked) would eventually
+have been found either way, gate or no gate. Its promise was CHEAPER
+ones. Found before apply, they cost an edit to an unapplied file. Found
+after, they would have been live defects on a table already readable by
+whichever accounts held pm/admin sessions — the exact comparison recorded
+earlier in §0, now closed out with a real apply behind it rather than a
+prediction.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
