@@ -240,7 +240,37 @@
 -- meaningless states. This is the EXACT SAME PRINCIPLE the internal pass
 -- (above) already applied to the send-outcome booleans — impossible by
 -- construction, not by discipline — left unapplied one column over. Three
--- CHECK constraints close it; see the CREATE TABLE below.
+-- CHECK constraints closed it in round 1; a fourth was still missing — see
+-- resolved_at -> closed_at below.
+--
+-- resolved_at RENAMED TO closed_at, STAMPED ON BOTH TERMINAL STATES (ROUND
+-- 2, 2026-08-13, reviewer's question, Aravind's decision). The reviewer
+-- asked, correctly, why round 1's three CHECK constraints covered
+-- 'nudged'/'escalated'/'submitted' but not 'not_submitted' — not an
+-- oversight to paper over and not a deliberate asymmetry worth a comment
+-- defending it, because there wasn't a real reason for the asymmetry to
+-- exist. Decision: make the two TERMINAL states symmetric instead of
+-- explaining why they weren't. 'resolved_at' was the wrong name the moment
+-- a second terminal state needed it — nothing is "resolved" about a day
+-- that simply ran out at the 15:00 cutoff with nobody having submitted;
+-- the window closed, it wasn't resolved. Renamed to `closed_at`: the
+-- timestamp a row reached ANY terminal state, submitted or not_submitted,
+-- not just the happy one. A fourth CHECK constraint completes the family
+-- (`status <> 'not_submitted' OR closed_at IS NOT NULL`), and the rename
+-- means all four checks now read as one coherent rule — every status past
+-- 'awaited' requires its own transition timestamp — rather than three
+-- rules plus an unexplained gap.
+--
+-- LATE-SUBMISSION CASE, THE REASON closed_at (NOT TWO SEPARATE COLUMNS)
+-- IS THE RIGHT SHAPE: if a submission arrives after the 15:00 morning
+-- cutoff (bot-flows.md TRIGGER TIMES) and flips a row from
+-- 'not_submitted' to 'submitted', a single shared `closed_at` simply
+-- MOVES to the new close time — the row still has exactly one "when did
+-- this stop being open" fact, because it only ever has one true answer at
+-- a time. Two separate columns (`not_submitted_at`, `submitted_at`) would
+-- have forced a choice on that transition — clear the first, set the
+-- second, or leave both populated and let a reader guess which one is
+-- current. `closed_at` never poses that question.
 -- =============================================================================
 
 BEGIN;
@@ -279,7 +309,11 @@ CREATE TABLE public.checkin_escalations (
                           )),
   nudge_sent_at        TIMESTAMPTZ,
   escalated_at         TIMESTAMPTZ,
-  resolved_at          TIMESTAMPTZ,
+  -- Renamed from resolved_at (round 2) — stamped on EITHER terminal state,
+  -- submitted or not_submitted, not just the happy one. See the header's
+  -- "resolved_at RENAMED TO closed_at" note for the full reasoning and the
+  -- late-submission case this shape survives cleanly.
+  closed_at            TIMESTAMPTZ,
   -- See header note above: 'template' / 'unavailable' are unreachable
   -- values until the Twilio production sender exists. NULL = not attempted.
   nudge_outcome        TEXT CHECK (nudge_outcome IN (
@@ -296,16 +330,21 @@ CREATE TABLE public.checkin_escalations (
   CONSTRAINT checkin_escalations_engineer_id_fkey
     FOREIGN KEY (engineer_id, tenant_id) REFERENCES public.users (id, tenant_id)
     ON UPDATE NO ACTION ON DELETE CASCADE,
-  -- Lifecycle CHECK constraints — non-blocking finding #4. Each status that
-  -- implies a transition happened requires that transition's own timestamp;
-  -- see the header note for why this is the same principle as the
-  -- nudge_outcome collapse, applied one column over.
+  -- Lifecycle CHECK constraints — non-blocking finding #4, completed in
+  -- round 2 with the fourth (not_submitted) case. Each status that implies
+  -- a transition happened requires that transition's own timestamp; see
+  -- the header note for why this is the same principle as the
+  -- nudge_outcome collapse, applied one column over. The two terminal
+  -- states (submitted, not_submitted) are symmetric on purpose — see
+  -- "resolved_at RENAMED TO closed_at" above.
   CONSTRAINT checkin_escalations_nudged_requires_timestamp
     CHECK (status <> 'nudged' OR nudge_sent_at IS NOT NULL),
   CONSTRAINT checkin_escalations_escalated_requires_timestamp
     CHECK (status <> 'escalated' OR escalated_at IS NOT NULL),
   CONSTRAINT checkin_escalations_submitted_requires_timestamp
-    CHECK (status <> 'submitted' OR resolved_at IS NOT NULL)
+    CHECK (status <> 'submitted' OR closed_at IS NOT NULL),
+  CONSTRAINT checkin_escalations_not_submitted_requires_timestamp
+    CHECK (status <> 'not_submitted' OR closed_at IS NOT NULL)
 );
 
 COMMENT ON TABLE public.checkin_escalations IS
@@ -324,6 +363,17 @@ COMMENT ON COLUMN public.checkin_escalations.updated_at IS
   'Mirrors whatsapp_sessions.updated_at''s "SESSION WRITE — ALWAYS" '
   'convention. A row where this lags created_at despite a real status '
   'change is a bug in that writer, not expected behaviour.';
+
+COMMENT ON COLUMN public.checkin_escalations.closed_at IS
+  'When this row reached a TERMINAL state — status=''submitted'' OR '
+  'status=''not_submitted'', whichever happened. Renamed from resolved_at '
+  '(round 2 external review): "resolved" was wrong for the not_submitted '
+  'case — nothing is resolved when a window simply closes with nobody '
+  'having submitted. Survives a late submission cleanly: if a row flips '
+  'not_submitted -> submitted after the cutoff, closed_at MOVES to the new '
+  'close time rather than requiring a second column to disambiguate which '
+  'terminal timestamp is current — a row has exactly one true answer to '
+  '"when did this stop being open" at any moment.';
 
 COMMENT ON COLUMN public.checkin_escalations.nudge_outcome IS
   'Which send path was actually used for the most recent attempt this half.'
