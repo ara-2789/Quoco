@@ -98,10 +98,17 @@ jobs:
           # resolve to the single allowed test-db project ref
           # (exfccwlrhoutkgrlikod) — this can never reach prod, even if a
           # secret here were misconfigured. .env.test itself is gitignored
-          # and never present in a CI checkout; vitest.config.ts's
-          # loadDotenv() no-ops when the file is absent and leaves these
-          # already-set process.env values untouched, so CI-native secret
-          # injection is the only source here, not a synthesized file.
+          # and never present in a CI checkout. CORRECTED (2026-08-13): this
+          # comment previously said loadDotenv() "no-ops" when the file is
+          # absent — true for VALUES (these already-set process.env vars are
+          # left untouched, so CI-native secret injection is the only real
+          # source here, not a synthesized file) but not the whole story:
+          # dotenv still logs its own rotating "// tip: ..." banner even when
+          # the target file doesn't exist (checked against dotenv's own
+          # source, lib/main.js — the log call has no file-found guard, only
+          # a DOTENV_CONFIG_QUIET one). DOTENV_CONFIG_QUIET below silences it
+          # here the same way .env.test's own copy of this var silences it
+          # locally — two separate settings because CI never reads that file.
           #
           # SUPABASE_TEST_PROJECT_REF and NEXT_PUBLIC_APP_URL are not
           # actually sensitive (the ref is already public throughout this
@@ -114,3 +121,4 @@ jobs:
           SUPABASE_TEST_PROJECT_REF: ${{ secrets.SUPABASE_TEST_PROJECT_REF }}
           TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
           NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          DOTENV_CONFIG_QUIET: 'true'
