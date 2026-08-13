@@ -196,6 +196,76 @@ export type Database = {
           },
         ]
       }
+      checkin_escalations: {
+        Row: {
+          closed_at: string | null
+          created_at: string
+          engineer_id: string
+          escalated_at: string | null
+          half: string
+          id: string
+          log_date: string
+          nudge_outcome: string | null
+          nudge_sent_at: string | null
+          project_id: string
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          closed_at?: string | null
+          created_at?: string
+          engineer_id: string
+          escalated_at?: string | null
+          half: string
+          id?: string
+          log_date: string
+          nudge_outcome?: string | null
+          nudge_sent_at?: string | null
+          project_id: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          closed_at?: string | null
+          created_at?: string
+          engineer_id?: string
+          escalated_at?: string | null
+          half?: string
+          id?: string
+          log_date?: string
+          nudge_outcome?: string | null
+          nudge_sent_at?: string | null
+          project_id?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkin_escalations_engineer_id_fkey"
+            columns: ["engineer_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "checkin_escalations_project_id_fkey"
+            columns: ["project_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "checkin_escalations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_log_edits: {
         Row: {
           column_name: string
