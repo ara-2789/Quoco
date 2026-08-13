@@ -243,6 +243,47 @@
   docs/reviews/024-025-review-package.md (written 2026-08-11) — see that
   file for the retroactive-not-gating framing, since both are already live on
   prod.
+  THE GATE PAID FOR ITSELF ON ITS FIRST GENUINELY PRE-STATE OUTING
+  (2026-08-13, Aravind's observation, migration 027's external review).
+  Every review before 027 (015, 016, 017, 019, 020, 021, 022, 023, the
+  024+025 catch-up) reviewed a migration that had ALREADY RUN somewhere —
+  test-db at minimum, prod in several cases — so the reviewer's role was
+  finding damage already done, or confirming damage hadn't happened yet on
+  a database that could still be rolled back. 027 was the first review
+  where the SQL had run NOWHERE — not test-db, not prod, not even applied
+  to a throwaway branch — when the reviewer read it. His verdict (STOP,
+  three blocking findings: a role-blind RLS policy, referential actions
+  left to default, cross-tenant reference integrity never asked) cost
+  NOTHING to issue and nothing to act on beyond editing a file still sitting
+  in `supabase/migrations/`, unapplied. The identical three findings,
+  caught retroactively instead — the shape 015 through 025 all shared —
+  would have been LIVE DEFECTS on a table already readable by whichever
+  accounts happened to hold pm/admin sessions, not lines in a migration
+  nobody had run yet. Same reviewer, same findings, same fixes either way —
+  the only variable that changed was WHEN in the pipeline the review
+  landed, and that variable is the entire argument for gating BEFORE
+  apply rather than accepting review as a retroactive habit. Record this
+  where the next person deciding whether a migration is "probably fine,
+  skip the package this once" will read it.
+- A MANUALLY-TRIGGERED FLOW FEEDING A SCHEDULED CONSUMER CHECKS THE
+  CONSUMER'S SCHEDULE FIRST, NOT JUST THE PRODUCER'S READINESS (standing
+  rule since 2026-08-12). Before manually starting/seeding anything whose
+  OUTPUT a cron or scheduled job will later read (a flow, a backfill, a
+  test write), check whether that period's consumer window has already run
+  — not only whether the trigger itself is ready to fire. Origin: the
+  dpr_generate_timing E2E smoke (§10, "E2E SMOKE PAUSED" entry) — a test
+  engineer's morning flow was started directly against prod to seed real
+  check-in data for the timing measurement, and it worked (the RPC call
+  succeeded, `log_date` came back populated) — but that day's 20:00 IST
+  `dpr-generate` cron had already fired ~15 minutes earlier and had
+  already written `skipped_no_data` for the same project. Completing the
+  check-in under that date would have been permanently invisible to every
+  future automated run (the consuming route scans only its own
+  invocation-time date, no backfill path exists) AND would have made the
+  existing `skipped_no_data` row retroactively false. Caught by reading
+  the RPC's own returned `log_date` before proceeding, not by anticipating
+  the failure mode in advance — this rule exists so the next author checks
+  for it up front instead.
 
 ---
 
@@ -520,10 +561,42 @@ Vercel project's Environment Variables (Production AND Preview) via the
 dashboard or an authenticated `vercel env add CRON_SECRET` — Vercel
 automatically attaches it as the `Authorization` header on every
 cron-triggered request once it's set there, no other configuration
-needed. Until step 3 is done, BOTH routes will 401 every real cron
+needed. ~~Until step 3 is done, BOTH routes will 401 every real cron
 invocation in production, not just unauthorized requests — this is a
 deliberate fail-closed default, not a bug, but it means these routes
-will not actually run until the secret is provisioned.
+will not actually run until the secret is provisioned.~~
+
+RESOLVED (observed 2026-08-12, ~22:15 IST, not asserted from a dashboard
+check — §0's observation rule). Step 3 has been done: `CRON_SECRET` is
+provisioned in Vercel Production and a deploy has happened since PR #55
+merged (2026-08-11). Evidence: `public.dprs` — confirmed EMPTY at 13:44 IST
+today (see §10's `DATED UPDATE` under the JOBS TABLE HAS NO CLAIMED-AT
+entry) — had exactly one new row by 22:15 IST, for `log_date = 2026-08-12`,
+with `delivery_status = 'skipped_no_data'`. That value has exactly ONE
+writer in this codebase (grepped, confirmed, not assumed):
+`runDprGenerateTrigger` in `app/api/cron/dpr-generate/route.ts` (line ~70),
+the 8:00 PM cron route's own DPR-17 zero-data check — it is written
+directly by the TRIGGER route, before any job is enqueued, never by
+`handleDprGenerateJob` (the job handler) or `scripts/generate-one-dpr.ts`
+(neither writes it — grepped, zero hits in either file). Reaching that
+write path requires `isCronRequestAuthorized` to have passed first (route.ts
+line 106) — the exact check this CRON_SECRET section describes — so this
+row could not exist unless the secret check succeeded. Distinguished from
+stale/leftover test data deliberately, not assumed: the row's `project_id`
+matches a project used in earlier manual smoke-testing, which could look
+like a false signal on its face, but `log_date = 2026-08-12` (today, not an
+old test date) plus the single-writer trace above rules out any other
+origin — a leftover test row could not carry today's date with this exact
+value written by this exact code path.
+
+**INFERENCE TRAP, recorded for the next reader**: on the zero-data path, an
+ABSENT `dpr_generate` job in `public.jobs` is the SUCCESS signal, not a
+failure signal — the whole point of the DPR-17 check running before
+enqueueing (see the route's own header comment) is that nothing gets queued
+for a project with no data that day. Checking `jobs` alone and seeing zero
+rows is not evidence the cron never ran; check `dprs` for a
+`skipped_no_data` row (or a real `generated_at`) first. This mistake was
+made once already this session — recorded here so it isn't made again.
 
 ~~KNOWN VERCEL CONFIG GAP (2026-07-21, non-urgent, track + fix separately): the
 Preview-scoped NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (and related
@@ -880,6 +953,23 @@ records), never a storage one.
 Migration 021 came out of this audit but removes INDEX OVERHEAD ONLY — it prunes
 nothing. Full audit + growth model: docs/reviews/021-review-package.md.
 
+DATED ADDITION (2026-08-13, migration 027 external review, non-blocking
+finding #5) — `checkin_escalations` (unapplied, docs/reviews/027-review-
+package.md) joins this register with its own line rather than the
+unbounded-growth list unrecorded. Grain is one row per (project, engineer,
+log_date, half) — roughly 2x `daily_logs`' own growth rate (two halves per
+engineer-day instead of one row). Per 021's taxonomy above, this is
+CLASSIFIED PRUNABLE HYGIENE, not a compliance record: DASH-01 (its only
+planned reader) cares about TODAY's exceptions, not history; a future
+7-day/30-day pattern view — if ever built — is a new, separate design
+question, not a reason to keep every row indefinitely by default. Contrast
+deliberately with daily_logs/daily_log_edits just above: those are the
+business record behind every DPR ever sent and retention there is a
+compliance question; this table is operational tracking state for a
+notification pipeline and has no such claim on permanence. No prune
+mechanism is built — this is a classification, not an implementation, same
+as this whole register describes a posture nothing yet enforces.
+
 PARSER DEBT — RULE 3.5's LOW-CONFIDENCE FLAG DOES NOT EXIST (opened 2026-07-28,
 tracked, NOT fixed). Cross-cutting: affects EVERY future consumer of parsed
 check-in data, not one flow. Rule 3.5 (docs/design-principles.md:31 — note:
@@ -939,6 +1029,142 @@ Same class of finding as PARSER DEBT above (a downstream consumer inherits a
 silent gap unless warned here first) — this entry exists so the next author
 gets the warning, not the surprise. Full finding + citations:
 docs/reviews/022-review-package.md §10.
+
+DATED FINDING (2026-08-13, live E2E smoke, real handset) — A DISTINCT FAILURE
+ON THE SAME PATH, TWO CHARACTERS WIDE. Not the count-vs-rate confusion above —
+this is an UNRECOGNISED equipment name reaching a stored `type`, confirmed by
+tracing parseChunk (equipment.ts) against a real prod row, not inferred.
+Engineer typed "Job 15oo" for Q3 (meant "JCB 1500" — two typos: "Job" for
+"JCB", letter-o's for zeros). Traced end to end: `splitDigitBoundaries` yields
+tokens `["job", "15", "oo"]`; `canonicalEquipment("job")` returns `null`
+(`EQUIPMENT_ALIASES` has `jcb: 'jcb'`, no entry for `"job"` — checked the
+literal map, not assumed); `"job"` isn't in `RATE_STOPWORDS` either, so it
+survives as `firstNameWord`; `"15"` sets `cost`, so `hasNumber` is true and
+the `keyword === null && !hasNumber` gate — the ONLY thing standing between an
+unrecognised word and a stored type — does not fire, because a number
+anywhere in the chunk is enough to pass it regardless of whether the word next
+to it means anything. Stored on prod: `daily_logs.morning_equipment.items[0]`
+= `{type: "job", daily_hire_cost: 15, count: null, owned_or_hired: null, raw:
+"Job 15oo"}`. `isEquipmentAnswered` returned true (`items.length > 0`), so no
+reask fired — the bot advanced normally, same as a clean answer.
+
+SIGNIFICANCE, stated plainly, not as a curiosity: `daily_hire_cost` feeds
+idle-cost arithmetic, one of the few RUPEE figures that reaches an owner
+(design-principles.md Rule 5.4 — "rupees over percentages"). A two-character
+typo produced a confidently-wrong money value, silently, with no reask and no
+low-confidence flag anywhere on the path. Every numeric safeguard this project
+has built so far — containment (lib/dpr/containment.ts), the weak-anchor
+rules, `numbers_discarded` — lives on the productivity/manpower path
+(productivity.ts, evening.ts). The equipment path has none of it. Left in
+place deliberately for tonight's DPR — see the live-E2E-test framing below —
+so the actual downstream effect can be observed in a real generated report
+before anything is decided.
+
+NOT FIXED TODAY, ON PURPOSE — this is a live end-to-end smoke test and the
+wrong value flowing into tonight's DPR is the most useful part of it. Two
+questions named for follow-up, deliberately NOT answered here:
+  a. Should an unrecognised equipment name be accepted as a stored `type` at
+     all, or reasked once? `"job"` matched nothing in `EQUIPMENT_ALIASES` and
+     still became a stored type — is "a number was present somewhere in the
+     chunk" the right bar for confidence, or should an unrecognised keyword
+     alongside a number still count as garbled?
+  b. Should an implausible hire rate (₹15/day for plant machinery) be
+     flagged? Note the tension with this project's own standing posture
+     BEFORE trying to resolve it: this codebase has repeatedly refused to
+     guess (see the NULL-not-defaulted-to-0 fixes throughout productivity.ts
+     and evening.ts) — a plausibility range is itself a form of guessing.
+     Not resolved here.
+
+DATED REFRAME (2026-08-13, same day, Aravind's question) — FUZZY MATCHING
+(item (a) above) IS THE SMALLER HALF OF THIS FINDING; THE ROOT CAUSE IS
+STRUCTURAL, NOT A MISSED RULE. Aravind's question: under this project's
+own never-guess posture, why was `15` recorded from an ambiguous "15oo"
+at all? Answer, confirmed by reading every parser's own output TYPE, not
+inferred: BECAUSE NOTHING ON THIS PATH CAN EXPRESS UNCERTAINTY.
+`EquipmentItem` is `{type, count, owned_or_hired, daily_hire_cost, raw}` —
+no confidence field, no discard flag, no equivalent of
+`numbers_discarded`. Faced with something ambiguous, the parser has
+exactly two options — store a value or store nothing — and "15" looked
+like a value. It did not violate a rule it was following; the rule was
+never applied to this layer at all.
+
+Checked across EVERY parser in `lib/whatsapp/flows/parsers/`, not just
+this one (five modules, not four — corrected below):
+  * `productivity.ts` (evening Q4 productivity/idle) — FULLY WIRED:
+    `numbers_discarded: boolean` on its own output type, consumed by the
+    caller (`evening.ts`) to downgrade `evening_productive_manpower.
+    confidence`, which IS persisted. Built ONLY because the 2026-08-10
+    inversion incident forced it (this file's own SEVERE BUG note).
+  * `quantities.ts` (evening Q1 quantities enrichment) — HALF-WIRED:
+    `numbers_discarded: boolean` exists on `QuantityItem`, found the SAME
+    day (2026-08-10) as productivity's bug, by the same root cause ("M25"
+    dropping its digit the identical way) — and it DOES persist verbatim
+    to `daily_logs` (the whole `QuantitiesParse` is stored as-is). But
+    nothing downstream reads it: no renderer, no DPR consumer, nothing
+    "reasons about it yet" (the file's own comment). A signal that exists
+    and is even saved, but dies unread — the same class of gap CLAUDE.md's
+    own PARSER DEBT entry above already tracks for Rule 3.5's low-
+    confidence flag.
+  * `equipment.ts` (morning Q3) — NO SIGNAL AT ALL. Confirmed by reading
+    `EquipmentItem`/`EquipmentParse` directly. Caught TODAY.
+  * `equipment-hours.ts` (evening Q5) — NO PER-VALUE SIGNAL EITHER.
+    `EquipmentHoursItem` has no confidence/discard field. It has coarse
+    ARITHMETIC GUARDS (`actual_hours > available_hours`,
+    `available_hours > 24`) that REJECT an entire chunk outright — binary
+    accept/reject, not a graded uncertainty signal, and no help against a
+    typo that still produces an in-range number. The caller (`evening.ts`)
+    does compute an outer `confidence` for `evening_equipment_utilisation`,
+    but off "was the reask budget exhausted," never off any per-token
+    ambiguity the parser itself detected — a different, coarser signal
+    than productivity's.
+  * `labour.ts` (morning Q2 workers-planned AND evening Q4a headcount,
+    shared) — NO SIGNAL AT ALL. Not yet caught by any incident.
+
+So: THREE of five parsers (`labour.ts`, `equipment.ts`, `equipment-hours.
+ts`) have no way to express uncertainty whatsoever; one (`quantities.ts`)
+has a signal that reaches storage and dies there unread; one
+(`productivity.ts`) is the only fully closed loop, built reactively after
+a real report was confidently wrong. This discipline has been applied
+REACTIVELY, one parser at a time, ONLY after each was caught — never
+designed in up front. Today's equipment.ts finding is the FIRST of the
+three zero-signal parsers to be caught by a live incident, not the
+"second of four" as first framed — `labour.ts` and `equipment-hours.ts`
+remain equally exposed and uncaught.
+
+SECOND FAILURE, UNDERNEATH THE FIRST, CONFIRMED SYSTEMIC — the evidence is
+destroyed before any number-handling could run, in every one of these
+five files, not just this one. Each parser independently defines its own
+copy of `splitDigitBoundaries` (grepped: five separate function bodies,
+not a shared import from `lexicon.ts` — `quantities.ts`'s is a
+decimal-aware variant, the other four are identical) as its FIRST
+tokenisation step. `splitDigitBoundaries("15oo")` produces `["15", "oo"]`
+before any digit-run is ever inspected as a whole — the parser sees a
+clean "15" indistinguishable from a deliberately-typed "15 oo". A more
+careful parseChunk could not have caught this even if `numbers_discarded`
+existed on `EquipmentItem` today, because the questionable evidence (the
+original contiguous "15oo") is already gone by the time any such check
+would run. Malformed-numeric-token detection MUST happen BEFORE this
+digit-boundary split, in whichever parser it's added to — not inside
+`parseChunk`, where every file currently puts its logic.
+
+PLAN PRIORITY, STATED IN ORDER SO ITEM 3 DOES NOT CROWD OUT 1 AND 2 (item
+3 — fuzzy equipment-name matching with an echoed confirmation, per
+design-principles.md Rule 3.4 — is real and worth building, but it is not
+what produced tonight's wrong rupee figure):
+  1. Give these parsers a way to express uncertainty at all — the same
+     shape problem `lib/dpr/schema.ts`'s `CapturedCount`
+     (`status: 'reported'|'zero'|'not_captured'`) already solved for
+     zero-versus-absent, one layer further downstream. This is the parser
+     layer's own version of that same problem, one layer earlier in the
+     pipeline.
+  2. Detect malformed numeric tokens BEFORE `splitDigitBoundaries` runs,
+     project-wide (all five files), since tokenisation is what destroys
+     the evidence a later check would need.
+  3. Fuzzy equipment-name matching with echo-back (Rule 3.4) — the item
+     Aravind originally asked about; worth doing, but downstream of 1 and
+     2, not a substitute for either.
+Not built here — analysis only, same live-E2E-test discipline as the
+entry above.
 
 CANDIDATE CI CHECK — NO createServiceClient() WHERE AN INJECTED CLIENT COULD
 BE ACCEPTED (opened 2026-08-07, tracked, NOT built). Surfaced while building
@@ -1460,14 +1686,59 @@ DATED UPDATE (2026-08-12): the TRIGGER CONDITION above has PARTIALLY fired —
 stated precisely, not flatly "now-live." `dispatchJob`
 (`app/api/jobs/tick/route.ts`) now has a real `case 'dpr_generate'` calling
 `handleDprGenerateJob`, landed in `cc0d000`/PR #55 (2026-08-11) — no longer a
-placeholder throw. That is the code-level condition this entry names. But
+placeholder throw. That is the code-level condition this entry names. ~~But
 nothing has actually run unattended in production yet: `CRON_SECRET` is
 still unprovisioned in Vercel (§8), so `/api/cron/dpr-generate` 401s every
 real cron invocation, and prod's `dprs`/`jobs` tables were confirmed empty as
 of 2026-08-12 13:44 IST. So: code-level trigger fired, not yet
 production-exercised. The gap this entry tracks is imminent, not yet
 realized — closing it (or accepting the risk explicitly) is still live work,
-not something this update marks done.
+not something this update marks done.~~
+
+DATED UPDATE (2026-08-12, ~22:15 IST): SUPERSEDED — the 13:44 IST empty
+reading above was correct AT THE TIME, not stale when written; it is the
+"before" half of the evidence, not a wrong claim. By 22:15 IST the 8:00 PM
+cron had fired for real: `public.dprs` gained one row for today
+(`log_date = 2026-08-12`, `delivery_status = 'skipped_no_data'`), which
+`app/api/cron/dpr-generate/route.ts`'s `runDprGenerateTrigger` is the sole
+writer of, and which requires `CRON_SECRET` authorization to have passed to
+be written at all. Full evidence and the "absent job = success on the
+zero-data path, not failure" inference trap are recorded under §8's
+CRON_SECRET entry — not restated here. So: the system ran unattended in
+production for the first time tonight, on a project with no site data for
+the day, and behaved correctly — refused to generate a report rather than
+enqueueing work against nothing. This closes the "not yet
+production-exercised" half of this entry. Still NOT closed by this: an
+actual end-to-end `dpr_generate` job has still never run (tonight's project
+had zero `daily_logs` rows, so the zero-data branch fired before any job
+would have been enqueued) — the `dpr_generate_timing` measurement this
+section's JOBS TABLE gap and migration 026's timeout both need is still
+outstanding, waiting on a project with real check-in data present at 8 PM.
+
+DATED UPDATE (2026-08-12, pre-midnight) — E2E SMOKE PAUSED, IN PROGRESS.
+Attempting to close the gap above: engineer 3534756b reactivated on prod
+(`status='active'`) and `apply_morning_flow_turn(p_start_flow: true)` called
+directly against prod to seed a real morning check-in for the
+`dpr_generate_timing` measurement. Caught before any harm, not after:
+the call returned `log_date: 2026-08-12` — TODAY, whose 20:00 IST
+`dpr-generate` cron had already fired and already written
+`skipped_no_data` for this exact project ~15 minutes earlier (see the
+entry immediately above). `runDprGenerateTrigger` computes "today" fresh
+at its own invocation and scans only that one day — no backfill path
+exists anywhere in the repo — so completing the check-in under `08-12`
+would have been permanently invisible to any future automated run, AND
+would have made the existing `skipped_no_data` row retroactively false (a
+record claiming no data existed for a date that, after the fact, had
+some). PAUSED before any question was answered: a live Q1 prompt is
+sitting against the `08-12`-dated session, engineer instructed NOT to
+answer it. RESTART PLAN: wait for the IST calendar day to roll over past
+`2026-08-12`, re-issue `apply_morning_flow_turn(p_start_flow: true)` for
+the same engineer/project (BOT-21's previous-day force-reset — confirmed
+present in the 022 RPC itself, not only the TS mirror — wipes the stale
+`08-12` stub automatically), confirm the return shows
+`log_date: 2026-08-13` BEFORE anything is answered, then proceed with a
+real morning + evening check-in ahead of that day's 20:00 cron. Standing
+rule this incident produced: see §0.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
