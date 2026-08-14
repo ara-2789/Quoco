@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import { enqueueJob } from '@/lib/queue/jobs'
@@ -6,28 +7,33 @@ import { isCronRequestAuthorized } from '@/lib/cron/auth'
 import { istDateString } from '@/lib/daily-logs/date'
 
 // 8:00 PM IST trigger (bot-flows.md TRIGGER TIMES) — enqueues one
-// dpr_generate job per eligible project for today's log_date. Does the
-// actual Claude call and write inside the job handler
-// (lib/dpr/dispatch.ts), never here — NFR-16, ALL Claude API calls run
-// through the jobs table, never synchronously in a request handler.
+// dpr_generate job per ELIGIBLE ENGINEER on each active project, per
+// engineer, not one per project (docs/dpr-engineer-report-spec.md,
+// implemented 2026-08-14 per plan revision 8). Does the actual Claude call
+// and write inside the job handler (lib/dpr/dispatch.ts), never here —
+// NFR-16, ALL Claude API calls run through the jobs table, never
+// synchronously in a request handler.
 //
-// ELIGIBILITY (2026-08-12, Aravind's decision): status='active' only.
-// owner_user_id is deliberately NOT a condition here — the DPR is also
-// DASH-04's archive artifact, and a project with a PM but no owner still
-// wants one generated and archived. Owner presence decides who it's
-// DELIVERED to (Phase 5/6's problem), never whether it's MADE. Coupling
-// generation to owner presence would silently produce no report at all
-// for such a project, with nothing indicating why.
-//
-// DPR-17 (zero-data day) is checked per project BEFORE enqueueing, not
-// left to the job handler — a project with no daily_logs rows for today
-// (including one with no engineers assigned at all, which is
-// structurally the same state) gets delivery_status='skipped_no_data'
-// directly, generator never runs on nothing.
+// ELIGIBILITY (rewritten from the old project-level DPR-17 skip, review
+// round 2 S3/round 3 Q8): the eligible set for each active project is the
+// UNION of two queries —
+//   SET 1 (roster): project_members JOIN users, role='engineer',
+//     status='active' — same shape lib/dpr/accountability.ts's
+//     assembleAccountability already uses, and PR #59's
+//     lib/checkin-escalations/roster.ts mirrors for the same reason.
+//   SET 2 (real data): daily_logs.engineer_id, DISTINCT, for this
+//     project/log_date — an engineer who submitted real data and was then
+//     deactivated or moved off the project before 20:00 still gets a
+//     report (Rule 7's own real-data-wins principle, round-2 S3 finding).
+// Every engineer in the union gets a job, UNCONDITIONALLY — there is no
+// more project-level "skip" state. An engineer with zero daily_logs rows
+// still gets a full report reading "not received" throughout (the
+// silent-engineer fix this reformat exists to build).
 
 export interface DprGenerateTriggerResult {
   project_id: string
-  action: 'skipped_no_data' | 'enqueued' | 'already_queued'
+  engineers_enqueued: number
+  engineers_already_queued: number
 }
 
 /**
@@ -50,53 +56,80 @@ export async function runDprGenerateTrigger(
   const results: DprGenerateTriggerResult[] = []
 
   for (const project of projects ?? []) {
+    // SET 1 — active roster.
+    const { data: members, error: membersError } = await client
+      .from('project_members')
+      .select('users!inner(id, role, status)')
+      .eq('project_id', project.id)
+      .eq('users.role', 'engineer')
+      .eq('users.status', 'active')
+    if (membersError) throw membersError
+
+    const rosterIds = (members ?? [])
+      .map((m) => {
+        const users = (m as { users: unknown }).users
+        const row = Array.isArray(users) ? users[0] : users
+        return (row as { id?: string } | null)?.id
+      })
+      .filter((id): id is string => typeof id === 'string')
+
+    // SET 2 — real data, regardless of current roster membership (S3).
     const { data: logs, error: logsError } = await client
       .from('daily_logs')
-      .select('id')
+      .select('engineer_id')
       .eq('project_id', project.id)
       .eq('log_date', logDate)
-      .limit(1)
     if (logsError) throw logsError
 
-    if (!logs || logs.length === 0) {
-      // Zero-data day (DPR-17). Also structurally covers "no engineer
-      // assigned at all" — that project could never have a daily_logs row
-      // for today either, so no separate roster check is needed.
-      const { error: skipError } = await client.from('dprs').upsert(
-        {
-          project_id: project.id,
-          tenant_id: project.tenant_id,
-          log_date: logDate,
-          delivery_status: 'skipped_no_data',
-          generation_status: 'idle',
-        },
-        { onConflict: 'project_id,log_date' },
-      )
-      if (skipError) throw skipError
-      results.push({ project_id: project.id, action: 'skipped_no_data' })
+    const dataEngineerIds = Array.from(new Set((logs ?? []).map((l) => l.engineer_id as string)))
+
+    const eligibleIds = new Set<string>([...rosterIds, ...dataEngineerIds])
+
+    // Q8 (round 3): zero-eligible-engineers on an active project is an
+    // accepted gap (S4 — no dprs row is written, since engineer_id
+    // NOT NULL makes a project-level marker incoherent), but detection is
+    // IN SCOPE now, not deferred to a future incident.
+    if (eligibleIds.size === 0) {
+      Sentry.captureMessage('dpr-generate: active project resolved to zero eligible engineers', {
+        level: 'warning',
+        tags: { feature: 'dpr-generate' },
+        extra: { project_id: project.id, log_date: logDate },
+      })
+      results.push({ project_id: project.id, engineers_enqueued: 0, engineers_already_queued: 0 })
       continue
     }
 
-    // Dedup — Vercel Cron delivery is best-effort and can invoke the same
-    // scheduled run more than once (Vercel's own documented behaviour); an
-    // already-pending/running dpr_generate job for this exact (project_id,
-    // log_date) must not get a second one queued behind it.
-    const { data: existingJobs, error: existingJobsError } = await client
-      .from('jobs')
-      .select('id')
-      .eq('type', 'dpr_generate')
-      .in('status', ['pending', 'running'])
-      .contains('payload', { project_id: project.id, log_date: logDate })
-      .limit(1)
-    if (existingJobsError) throw existingJobsError
+    let enqueued = 0
+    let alreadyQueued = 0
 
-    if (existingJobs && existingJobs.length > 0) {
-      results.push({ project_id: project.id, action: 'already_queued' })
-      continue
+    for (const engineer_id of eligibleIds) {
+      // B2 fix (round 2, the dedup containment bug): the payload match
+      // MUST include engineer_id. `.contains` is JSONB CONTAINMENT (@>),
+      // not equality — without engineer_id in the match, engineer 1's
+      // pending job (payload ⊇ {project_id, log_date, engineer_id: E1})
+      // would still contain {project_id, log_date} as a subset, silently
+      // swallowing engineers 2..N as "already_queued" and never enqueuing
+      // them — an engineer who owed a check-in getting no report, the
+      // exact failure class this whole reformat exists to close.
+      const { data: existingJobs, error: existingJobsError } = await client
+        .from('jobs')
+        .select('id')
+        .eq('type', 'dpr_generate')
+        .in('status', ['pending', 'running'])
+        .contains('payload', { project_id: project.id, engineer_id, log_date: logDate })
+        .limit(1)
+      if (existingJobsError) throw existingJobsError
+
+      if (existingJobs && existingJobs.length > 0) {
+        alreadyQueued++
+        continue
+      }
+
+      await enqueueJob('dpr_generate', { project_id: project.id, engineer_id, log_date: logDate }, client)
+      enqueued++
     }
 
-    await enqueueJob('dpr_generate', { project_id: project.id, log_date: logDate }, client)
-    results.push({ project_id: project.id, action: 'enqueued' })
+    results.push({ project_id: project.id, engineers_enqueued: enqueued, engineers_already_queued: alreadyQueued })
   }
 
   return results

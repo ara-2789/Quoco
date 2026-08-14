@@ -66,3 +66,48 @@ export async function fetchNarrativeContext(
     })),
   }
 }
+
+// -----------------------------------------------------------------------
+// PER-ENGINEER (docs/dpr-engineer-report-spec.md) — a second, parallel
+// fetch for a different report, added alongside fetchNarrativeContext
+// above, not a replacement. Single-row by construction (keyed on
+// engineer_id, not just project_id/log_date) — no multi-engineer branch to
+// mirror at all, since a per-engineer report never has one.
+//
+// WHY THIS IS STILL NEEDED, even though the per-engineer Judgment schema
+// is digit-allowed (unlike the old no-digit fields this module was built
+// for): the verdict sentence still needs raw text as PROMPT INPUT to write
+// something coherent about WHY, e.g. the spec's own sample verdict "3
+// workers were idle waiting for material" — "waiting for material" is
+// nowhere in Facts, only in evening_productive_manpower.idle_reason. The
+// Facts/Judgment boundary this module respects is about what the model may
+// OUTPUT (never fabricate a number), never what it may READ.
+// -----------------------------------------------------------------------
+
+export async function fetchEngineerNarrativeContext(
+  client: SupabaseClient,
+  project_id: string,
+  engineer_id: string,
+  log_date: string,
+): Promise<NarrativeContext | null> {
+  const { data: row, error } = await client
+    .from('daily_logs')
+    .select('evening_schedule_miss_reason, evening_productive_manpower, evening_equipment_utilisation')
+    .eq('project_id', project_id)
+    .eq('engineer_id', engineer_id)
+    .eq('log_date', log_date)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!row) return null
+
+  const typed = row as unknown as NarrativeContextRow
+  return {
+    schedule_miss_reason: typed.evening_schedule_miss_reason,
+    manpower_idle_reason: typed.evening_productive_manpower?.idle_reason ?? null,
+    equipment_idle_reasons: (typed.evening_equipment_utilisation?.items ?? []).map((item) => ({
+      morning_item_index: item.morning_item_index,
+      idle_reason: item.idle_reason,
+    })),
+  }
+}

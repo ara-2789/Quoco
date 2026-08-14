@@ -545,6 +545,138 @@ export const NO_DIGIT_JUDGMENT_FIELDS = [
 // can't be hardcoded into this static export.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// PER-ENGINEER REPORT (docs/dpr-engineer-report-spec.md) — a second, parallel
+// design for a different report, added alongside everything above, not a
+// replacement for it. DprFacts/DprJudgment/DPR_JUDGMENT_SCHEMA above are
+// UNCHANGED and stay live for the deferred project-level report and its own
+// tests (lib/dpr/eval/cases/case-complete-two-engineer-day.ts,
+// dpr-validate.test.ts, dpr-generate-schema.test.ts) — same "leave the old
+// path alone, add a new one beside it" principle assemble.ts's retained
+// multi-row mergeDprFacts/assembleDprFacts already applies.
+// ---------------------------------------------------------------------------
+
+// Two-way status, matching CapturedNumber not CapturedCount — no meaningful
+// 'zero' state for free text (a blank plan and a missing plan are the same
+// fact), same precedent CapturedNumber already set. Rule 2b: a 'reported'
+// CapturedText renders EXACTLY as stored, in quotes, never paraphrased —
+// by code as much as by the model. No formatter for this type may trim,
+// re-case, or reorder.
+export type CapturedTextStatus = 'reported' | 'not_captured'
+export interface CapturedText {
+  status: CapturedTextStatus
+  value: string | null // null iff status !== 'reported'
+}
+
+// Spec Rule 7. 'not_applicable' covers BOTH directions: joined after that
+// half's send time (spec's original case) and left the project before a
+// LATER half's send time while real data exists earlier the same day
+// (round-3 NIT, reviewer's own finding) — same status value, different
+// reason string, no new vocabulary either way.
+export type CheckInStatus = 'complete' | 'partial' | 'not_received' | 'not_applicable'
+
+export interface CheckInHalfStatus {
+  status: CheckInStatus
+  // Present only when status === 'not_applicable' — plain-language reason,
+  // spec's exact copy: "joined this project today" / "left this project
+  // during the day".
+  reason?: string
+}
+
+// §1 Work. planned = morning_plan verbatim (CapturedText); actual is a
+// COMPOSITE of evening_output (verbatim CapturedText) + the matched
+// evening_output_quantities entry (CapturedNumber + unit) — spec's sample:
+// `done: "excavation done" — 850 sq m`. unit is '' when no quantity item
+// matched (structured number entirely absent), not a separate not_captured
+// marker — same "empty string composes to nothing" convention the old
+// render.ts already uses for execution items.
+export interface EngineerWorkFacts {
+  planned: CapturedText
+  done_text: CapturedText
+  done_quantity: CapturedNumber
+  unit: string
+}
+
+// §2 Schedule — no planned side at all (spec's binding table). Boolean,
+// not a status wrapper: null means not_captured, same as the project-level
+// ScheduleFacts.schedule_met already does.
+export interface EngineerScheduleFacts {
+  met: boolean | null
+}
+
+// §3 Manpower. planned = morning_manpower_planned.planned_total
+// (CapturedCount — a real, small integer that CAN legitimately be a
+// reported zero, matching CapturedCount's existing zero/not_captured
+// split). actual is a composite: on_site (evening_workers_on_site) +
+// working (evening_productive_manpower.productive_count) — spec's sample:
+// `on site: 18, working: 15`.
+export interface EngineerManpowerFacts {
+  planned: CapturedCount
+  on_site: CapturedCount
+  working: CapturedCount
+}
+
+// §4 Equipment. planned needs NO NEW TYPE — per the spec's binding table
+// and the round-1 resolution, it's a render-layer composition of `type`
+// (already-humanized string) + `daily_hire_cost` (CapturedNumber), both
+// already the right shape. actual = actual_hours alone (spec: "used: 6
+// hours") — asymmetric with planned by design (no planned-hours field
+// exists upstream; see the spec's own "Known data gap" section).
+// available_hours/idle_cost are carried for NEEDS ATTENTION's idle-cost
+// line (existing computeIdleCost, lib/dpr/idle-cost.ts, unchanged), never
+// for the Equipment pair line itself.
+export interface EngineerEquipmentItemFacts {
+  type: string
+  daily_hire_cost: CapturedNumber
+  actual_hours: CapturedNumber
+  available_hours: CapturedNumber
+  idle_cost: CapturedNumber
+}
+
+export interface EngineerEquipmentFacts {
+  items: EngineerEquipmentItemFacts[]
+}
+
+// One engineer, one project-day. Never an array of rows — the whole point
+// of this report is "straight from that engineer's check-ins, no
+// aggregation" (spec Scope). No SuppressionNote anywhere in this shape:
+// suppression exists only for the multi-engineer collision problem the
+// per-engineer report doesn't have.
+export interface EngineerDprFacts {
+  morning_status: CheckInHalfStatus
+  evening_status: CheckInHalfStatus
+  work: EngineerWorkFacts
+  schedule: EngineerScheduleFacts
+  manpower: EngineerManpowerFacts
+  equipment: EngineerEquipmentFacts
+}
+
+// The model's ENTIRE output (spec Rule 2) — one field. Digits allowed
+// (unlike the old DprJudgment's no-digit notes) because this sentence is a
+// whole-day verdict citing real quantities ("850 of 1000 sq m done"), but
+// containment-checked against the rendered BODY's own digits (see
+// containment.ts's buildBodyCorpus, added alongside buildExecutionCorpus —
+// S1/S9), not Facts, and not the old section-scoped execution-only corpus.
+export interface EngineerDprJudgment {
+  verdict: string
+}
+
+export const ENGINEER_DPR_JUDGMENT_SCHEMA = {
+  type: 'object',
+  properties: {
+    verdict: {
+      type: 'string',
+      // ~60-70 words headroom, same maxLength convention the old schema's
+      // note fields already use — generous for one sentence, not runaway.
+      maxLength: 400,
+      description:
+        'One sentence summarising today for this engineer, from the Facts given. Digits are allowed only when they trace to a number that appears in this report\'s own rendered body — never a number invented or borrowed from elsewhere. Never attribute anything to a named person other than describing what was done.',
+    },
+  },
+  required: ['verdict'],
+  additionalProperties: false,
+} as const
+
 export const DPR_JUDGMENT_SCHEMA = {
   type: 'object',
   properties: {

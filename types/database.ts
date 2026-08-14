@@ -455,12 +455,27 @@ export type Database = {
           },
         ]
       }
+      // MANUAL PRE-MIGRATION EDIT (2026-08-14, per-engineer DPR reformat) —
+      // deliberate, dated exception to CLAUDE.md §6's "generate DB types,
+      // do not hand-write them" rule, not a silent violation of it.
+      // Migration 028 (docs/reviews/028_dprs_engineer_id_option_a.sql) has
+      // NOT been applied anywhere (implementation and apply are separate
+      // events by explicit instruction) — `supabase gen types` cannot
+      // reflect a column that does not exist in any real database yet.
+      // engineer_id below is added by hand to match exactly what 028 will
+      // add, so the new per-engineer code compiles against the shape it
+      // will actually have post-apply. MUST BE REPLACED by a real
+      // regeneration (`npx supabase gen types typescript --linked --schema
+      // public`, diffed against this hand-edit) the moment 028 actually
+      // applies to any database — do not treat this hand-edit as
+      // equivalent to a real regeneration once that's possible.
       dprs: {
         Row: {
           content: string | null
           created_at: string
           delivered_owner_at: string | null
           delivery_status: string
+          engineer_id: string
           generated_at: string | null
           generation_status: string
           generator_job_id: string | null
@@ -476,6 +491,7 @@ export type Database = {
           created_at?: string
           delivered_owner_at?: string | null
           delivery_status?: string
+          engineer_id: string
           generated_at?: string | null
           generation_status?: string
           generator_job_id?: string | null
@@ -491,6 +507,7 @@ export type Database = {
           created_at?: string
           delivered_owner_at?: string | null
           delivery_status?: string
+          engineer_id?: string
           generated_at?: string | null
           generation_status?: string
           generator_job_id?: string | null
@@ -515,6 +532,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tenants"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dprs_engineer_id_tenant_id_fkey"
+            columns: ["engineer_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
           },
         ]
       }

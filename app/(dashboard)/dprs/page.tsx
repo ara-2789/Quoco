@@ -11,6 +11,7 @@ type DprRow = {
   content: string | null
   generation_status: string
   delivery_status: string
+  engineer_id: string
   projects: { name: string } | null
 }
 
@@ -35,6 +36,7 @@ export default async function DprsPage() {
 
   let dprs: DprRow[] = []
   let queryFailed = false
+  let engineerNameById = new Map<string, string | null>()
 
   if (projectIds.length > 0) {
     // No `.not('content', 'is', null)` filter — every row for an eligible
@@ -56,7 +58,7 @@ export default async function DprsPage() {
     // stating plainly rather than silently reintroducing the column.
     const { data, error } = await supabase
       .from('dprs')
-      .select('id, log_date, content, generation_status, delivery_status, projects(name)')
+      .select('id, log_date, content, generation_status, delivery_status, engineer_id, projects(name)')
       .in('project_id', projectIds)
       .order('log_date', { ascending: false })
 
@@ -65,6 +67,18 @@ export default async function DprsPage() {
       Sentry.captureException(error, { tags: { feature: 'dpr-archive-list' } })
     } else {
       dprs = (data ?? []) as unknown as DprRow[]
+
+      // Engineer names, fetched separately rather than via an embedded
+      // join on the composite (engineer_id, tenant_id) FK — PostgREST's
+      // support for embedding through a composite foreign key is not
+      // something this codebase has verified, so this avoids depending on
+      // it unverified (CLAUDE.md §0: verify by observation, don't assume).
+      const engineerIds = Array.from(new Set(dprs.map((d) => d.engineer_id)))
+      if (engineerIds.length > 0) {
+        const { data: engineers } = await supabase.from('users').select('id, full_name').in('id', engineerIds)
+        const nameById = new Map((engineers ?? []).map((e) => [e.id as string, e.full_name as string | null]))
+        engineerNameById = nameById
+      }
     }
   }
 
@@ -98,6 +112,7 @@ export default async function DprsPage() {
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
                 <th className="px-4 py-3 font-medium text-gray-600">Project</th>
+                <th className="px-4 py-3 font-medium text-gray-600">Engineer</th>
                 <th className="px-4 py-3 font-medium text-gray-600">Date</th>
                 <th className="px-4 py-3 font-medium text-gray-600">Status</th>
               </tr>
@@ -123,10 +138,11 @@ export default async function DprsPage() {
                         <Link
                           href={`/dprs/${dpr.id}`}
                           className="absolute inset-0"
-                          aria-label={`View report for ${dpr.projects?.name ?? 'project'}, ${formatDate(dpr.log_date)}`}
+                          aria-label={`View report for ${dpr.projects?.name ?? 'project'}, ${engineerNameById.get(dpr.engineer_id) ?? 'engineer'}, ${formatDate(dpr.log_date)}`}
                         />
                       )}
                     </td>
+                    <td className="px-4 py-3 text-gray-600">{engineerNameById.get(dpr.engineer_id) ?? '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{formatDate(dpr.log_date)}</td>
                     <td className="px-4 py-3">
                       <StatusChip variant={status.variant} label={status.label} />

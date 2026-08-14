@@ -51,7 +51,7 @@ export async function runJobsTick(client: SupabaseClient) {
         // inside the handler, and not inside lib/queue/jobs.ts.
         if (!willRetry && job.type === 'dpr_generate') {
           const payload = job.payload as unknown as DprGenerateJobPayload
-          await markDprGenerationFailed(client, payload.project_id, payload.log_date)
+          await markDprGenerationFailed(client, payload.project_id, payload.engineer_id, payload.log_date)
         }
         return { id: job.id, status: 'failed', willRetry, error: message }
       }

@@ -3,36 +3,70 @@ import * as Sentry from '@sentry/nextjs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Json } from '@/types/database'
-import { assembleDprFacts } from './assemble'
-import { assembleAccountability } from './accountability'
-import { fetchNarrativeContext } from './narrative-context'
-import { generateDprJudgment, DprValidationError } from './generate'
-import { renderDpr } from './render'
+import { assembleEngineerDprFacts } from './assemble'
+import { fetchEngineerNarrativeContext } from './narrative-context'
+import { generateEngineerVerdict } from './generate'
+import { renderEngineerBody, renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from './render'
+import type { CheckInStatus } from './schema'
+import { istParts } from '@/lib/daily-logs/status'
+import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
 
-// The dpr_generate job handler (Phase 3, 2026-08-12) — wires the sequence
-// scripts/generate-one-dpr.ts already proved by hand (assembleDprFacts ->
-// fetchNarrativeContext -> assembleAccountability -> generateDprJudgment ->
-// renderDpr -> upsert dprs) into a real job handler, called from
-// app/api/jobs/tick/route.ts's dispatchJob.
+// The dpr_generate job handler — per-engineer report
+// (docs/dpr-engineer-report-spec.md). Rewired in place (2026-08-14, plan
+// revision 8 implementation) from the OLD project-level handler this same
+// function name and job type used to be: there is only one 'dpr_generate'
+// job type live in this system, and it now does per-engineer work.
+//
+// The OLD project-level pipeline this function used to call
+// (assembleDprFacts, generateDprJudgment, renderDpr, assembleAccountability
+// — all in their own files) is NOT deleted and NOT modified — it stays
+// fully intact, exported, and tested (including the golden case,
+// lib/dpr/eval/cases/case-complete-two-engineer-day.ts, which calls
+// generateDprJudgment directly, never through this file) for the deferred
+// project-level report (docs/dpr-engineer-report-spec.md's "Deferred
+// decisions" section). This file simply no longer imports or calls it —
+// same "leave the old path alone, wire a new one" principle already
+// applied throughout this reformat.
 
 export interface DprGenerateJobPayload {
   project_id: string
+  engineer_id: string
   log_date: string
 }
 
+// PRE-028 PAYLOAD SHAPE GUARD (Aravind's round-4 item 2) — fails loudly,
+// not silently. Guards specifically against B3's producer-side failure
+// mode (docs/reviews/028-dpr-engineer-report-review-package.md §10): if
+// the migration/deploy sequencing ever slips and the 20:00 cron enqueues
+// an OLD-shape payload (no engineer_id) against the NEW deployed
+// dispatch.ts, that job must fail visibly — a thrown, Sentry-captured
+// error — rather than being silently coerced (e.g. treated as
+// engineer_id=undefined and let the upsert throw a much less legible
+// Postgres NOT NULL violation three calls deeper).
+function assertPostMigrationPayload(payload: DprGenerateJobPayload): void {
+  if (!payload.engineer_id || typeof payload.engineer_id !== 'string') {
+    throw new Error(
+      `dpr_generate payload missing engineer_id — pre-028 payload shape. project_id=${payload.project_id}, log_date=${payload.log_date}. ` +
+        'This job was enqueued by code that predates migration 028 (the engineer_id column/key widening) — ' +
+        'the 20:00 cron trigger and this dispatch handler must be on the same deployed version.',
+    )
+  }
+}
+
 // generation_status / delivery_status are ORTHOGONAL lifecycles (023's own
-// table comment, docs/schema.md) — this file is careful never to couple
-// their transitions. generation_status only ever reflects THIS handler's
-// own compute-job progress ('running' while it's actively executing,
-// 'idle' once it's done, whichever way it ends). delivery_status is
-// touched ONLY by markDprGenerationFailed, below, and ONLY once retries
-// are truly exhausted — never by this function on an intermediate,
-// still-retryable failure.
+// table comment, docs/schema.md) — unchanged principle from the old
+// handler. generation_status only ever reflects THIS handler's own
+// compute-job progress; delivery_status is touched ONLY by
+// markDprGenerationFailed, below, reserved for failures that prevent a
+// report from existing at all (S10) — never for a containment-only
+// verdict fallback, which now always produces a deliverable report.
 export async function handleDprGenerateJob(
   payload: DprGenerateJobPayload,
   jobId: string,
   deps: { supabaseClient?: SupabaseClient; anthropicClient?: Anthropic } = {},
 ): Promise<void> {
+  assertPostMigrationPayload(payload)
+
   const client = deps.supabaseClient ?? createServiceClient()
   const anthropic = deps.anthropicClient ?? new Anthropic()
 
@@ -43,32 +77,28 @@ export async function handleDprGenerateJob(
     .single()
   if (projectError) throw projectError
 
-  // Claim the row BEFORE the Claude call — generation_claimed_at
-  // (migration 026, not yet shipped — see CLAUDE.md §10) will be added
-  // here once that migration ships with a real, measured stale-sweep
-  // interval; omitted for now rather than guessed at.
+  const { data: engineerUser, error: engineerError } = await client
+    .from('users')
+    .select('full_name')
+    .eq('id', payload.engineer_id)
+    .single()
+  if (engineerError) throw engineerError
+
+  // Claim the row BEFORE the Claude call — B2 key widening: onConflict now
+  // includes engineer_id, matching the migration's own widened UNIQUE key.
   const { error: claimError } = await client.from('dprs').upsert(
     {
       project_id: payload.project_id,
+      engineer_id: payload.engineer_id,
       tenant_id: project.tenant_id,
       log_date: payload.log_date,
       generation_status: 'running',
       generator_job_id: jobId,
     },
-    { onConflict: 'project_id,log_date' },
+    { onConflict: 'project_id,engineer_id,log_date' },
   )
   if (claimError) throw claimError
 
-  // END-TO-END TIMING INSTRUMENTATION (2026-08-12) — the cheapest thing
-  // that works, per the same reasoning as the validation-failure Sentry
-  // signal below: a structured log line, not a new table, aggregable from
-  // Vercel's log export. This is the measurement migration 026's stale-
-  // sweep interval is waiting on: the model-call-only latency figures
-  // measured earlier this project (6-11s) were the WRONG base for that
-  // constant — they never included assembleDprFacts, fetchNarrativeContext,
-  // assembleAccountability, render, or the write. This timing covers the
-  // whole handler, per real project-day, so that constant can finally be
-  // derived from the right number instead of an estimate.
   const timings: Record<string, number> = {}
   async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
     const start = Date.now()
@@ -81,30 +111,66 @@ export async function handleDprGenerateJob(
 
   const totalStart = Date.now()
   try {
-    const facts = await timed('assembleDprFacts', () => assembleDprFacts(client, payload.project_id, payload.log_date))
-    const narrative = await timed('fetchNarrativeContext', () =>
-      fetchNarrativeContext(client, payload.project_id, payload.log_date),
+    const { facts, completeness } = await timed('assembleEngineerDprFacts', () =>
+      assembleEngineerDprFacts(client, payload.project_id, payload.engineer_id, payload.log_date),
     )
-    const accountability = await timed('assembleAccountability', () =>
-      assembleAccountability(client, payload.project_id, payload.log_date),
+    const narrative = await timed('fetchEngineerNarrativeContext', () =>
+      fetchEngineerNarrativeContext(client, payload.project_id, payload.engineer_id, payload.log_date),
     )
-    const result = await timed('generateDprJudgment', () =>
-      generateDprJudgment(anthropic, facts, narrative, { project_name: project.name, log_date: payload.log_date }),
+
+    const { morning, evening } = await timed('resolveCheckInStatus', () =>
+      resolveCheckInStatus(client, payload, completeness),
     )
-    const { structured, content } = renderDpr(facts, result.judgment, accountability)
+
+    // Rule 2 / holiday / not_applicable: skip the Claude call entirely for
+    // any day where nothing exists to synthesize about — a fully-known,
+    // fully-determined code state, same reasoning schema.ts already
+    // applies to any not_captured section of the old design.
+    const bothHalvesFullyDetermined = morning.status !== 'complete' && morning.status !== 'partial' && evening.status !== 'complete' && evening.status !== 'partial'
+
+    const body = renderEngineerBody(facts)
+
+    let verdict: string
+    let verdictStatus: 'model' | 'placeholder' | 'code_templated'
+    if (bothHalvesFullyDetermined) {
+      verdict = codeTemplatedVerdict(morning, evening)
+      verdictStatus = 'code_templated'
+    } else {
+      const result = await timed('generateEngineerVerdict', () =>
+        generateEngineerVerdict(anthropic, facts, narrative, body, { project_name: project.name, log_date: payload.log_date }),
+      )
+      if (result.verdict_status === 'placeholder') {
+        Sentry.captureException(new Error('DPR verdict containment failed twice, falling back to placeholder'), {
+          tags: { feature: 'dpr-generate', failure_class: 'dpr_validation' },
+          extra: { project_id: payload.project_id, engineer_id: payload.engineer_id, log_date: payload.log_date },
+        })
+        verdict = CONTAINMENT_FAILURE_PLACEHOLDER
+        verdictStatus = 'placeholder'
+      } else {
+        verdict = result.verdict
+        verdictStatus = 'model'
+      }
+    }
+
+    const rendered = renderEngineerReport(facts, verdict, verdictStatus, morning, evening, {
+      project_name: project.name,
+      engineer_name: (engineerUser.full_name as string | null) ?? 'Unnamed engineer',
+      formatted_date: formatDate(payload.log_date),
+    })
 
     await timed('dprsUpsert', async () => {
       const { error } = await client.from('dprs').upsert(
         {
           project_id: payload.project_id,
+          engineer_id: payload.engineer_id,
           tenant_id: project.tenant_id,
           log_date: payload.log_date,
-          structured: structured as unknown as Json,
-          content,
+          structured: rendered.structured as unknown as Json,
+          content: rendered.content,
           generated_at: new Date().toISOString(),
           generation_status: 'idle',
         },
-        { onConflict: 'project_id,log_date' },
+        { onConflict: 'project_id,engineer_id,log_date' },
       )
       if (error) throw error
     })
@@ -113,59 +179,141 @@ export async function handleDprGenerateJob(
       JSON.stringify({
         event: 'dpr_generate_timing',
         project_id: payload.project_id,
+        engineer_id: payload.engineer_id,
         log_date: payload.log_date,
         steps_ms: timings,
         total_ms: Date.now() - totalStart,
       }),
     )
   } catch (err) {
-    // Revert BEFORE rethrow — the row must never stick at 'running' on a
-    // failure the outer failJob (route.ts) is about to record and
-    // possibly retry. This is a NORMAL, TIMELY failure path; it is not
-    // the process-died-mid-call case migration 026's stale sweep exists
-    // for (that case, by definition, never reaches this catch at all).
+    // B2 fix (site 2): scoped by engineer_id — an unscoped revert here
+    // would touch every engineer's row for this project-day, not just the
+    // one that actually failed.
     await client
       .from('dprs')
       .update({ generation_status: 'idle' })
       .eq('project_id', payload.project_id)
+      .eq('engineer_id', payload.engineer_id)
       .eq('log_date', payload.log_date)
 
-    if (err instanceof DprValidationError) {
-      // COUNTABLE, ON EVERY OCCURRENCE — not only once retries exhaust.
-      // A containment/no-digit violation is stochastic; a fresh retry may
-      // well pass, and a successful retry must not make this invisible —
-      // if the rate rises, that's a signal the prompt or corpus rules
-      // need work, and it has to be counted even when attempt 2 succeeds.
-      // Separate from, and in addition to, the exhaustion-triggered
-      // NFR-17 alert below (markDprGenerationFailed), which only fires
-      // once retries truly run out.
-      Sentry.captureException(err, {
-        tags: { feature: 'dpr-generate', failure_class: 'dpr_validation' },
-        extra: { project_id: payload.project_id, log_date: payload.log_date, violations: err.violations },
-      })
-    }
     throw err
   }
 }
 
+// Holiday / fully-not_applicable / fully-empty days — code-templated, no
+// model call (Rule 2's "code already knows the whole answer" pattern,
+// applied to the verdict the same way schema.ts's DataStatus sections
+// already apply it). Deliberately not exhaustive prose — one honest
+// sentence per state.
+function codeTemplatedVerdict(morning: CheckInStatusResult['morning'], evening: CheckInStatusResult['evening']): string {
+  if (morning.reason?.includes('holiday') || evening.reason?.includes('holiday')) {
+    return 'Site closed today.'
+  }
+  if (morning.status === 'not_applicable' && evening.status === 'not_applicable') {
+    return `${morning.reason ?? evening.reason ?? 'Added to this project after today\'s check-in window'} — first report covers the next check-in.`
+  }
+  return 'No check-in received today, so we do not know what was done.'
+}
+
+function formatDate(logDate: string): string {
+  // e.g. "Thu 13 Aug" — code-side, never fed through containment (S1).
+  const d = new Date(`${logDate}T00:00:00Z`)
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' })
+}
+
+export interface CheckInStatusResult {
+  morning: { status: CheckInStatus; reason?: string }
+  evening: { status: CheckInStatus; reason?: string }
+}
+
+function checkpointMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + m
+}
+
+// Overlays holiday / not_applicable (both directions — joined late, left
+// early) onto the raw complete/partial/not_received completeness already
+// computed from Facts (assembleEngineerDprFacts). This is the ONE place
+// project_members timing (spec Rule 7) and holiday status get read —
+// deliberately kept out of assemble.ts, which has no reason to know about
+// roster membership at all.
+async function resolveCheckInStatus(
+  client: SupabaseClient,
+  payload: DprGenerateJobPayload,
+  completeness: { morning: CheckInStatus; evening: CheckInStatus },
+): Promise<CheckInStatusResult> {
+  const { data: log } = await client
+    .from('daily_logs')
+    .select('is_holiday, holiday_reason')
+    .eq('project_id', payload.project_id)
+    .eq('engineer_id', payload.engineer_id)
+    .eq('log_date', payload.log_date)
+    .maybeSingle()
+
+  if (log?.is_holiday) {
+    const reason = (log.holiday_reason as string | null)?.trim()
+    const text = reason ? `Site closed — ${reason} (holiday)` : 'Site closed (holiday)'
+    return { morning: { status: 'not_applicable', reason: text }, evening: { status: 'not_applicable', reason: text } }
+  }
+
+  const { data: membership } = await client
+    .from('project_members')
+    .select('created_at')
+    .eq('project_id', payload.project_id)
+    .eq('user_id', payload.engineer_id)
+    .maybeSingle()
+
+  const { data: engineer } = await client.from('users').select('status').eq('id', payload.engineer_id).single()
+  const stillActiveMember = membership !== null && engineer?.status === 'active'
+
+  const overlayHalf = (half: CheckInStatus, checkpointHHMM: string): { status: CheckInStatus; reason?: string } => {
+    if (half === 'complete' || half === 'partial') return { status: half }
+
+    // Joined-late: membership began after this half's send time, on this
+    // log_date. spec Rule 7 — send-time threshold, IST-explicit.
+    if (membership?.created_at) {
+      const created = istParts(new Date(membership.created_at as string))
+      if (created.date === payload.log_date && created.minutes > checkpointMinutes(checkpointHHMM)) {
+        return { status: 'not_applicable', reason: 'joined this project today' }
+      }
+    }
+
+    // Left-early (round-3 NIT): real data exists somewhere today (the
+    // union check that got this engineer a job at all) but this engineer
+    // is no longer an active member — an un-owed half reads not_applicable,
+    // never not_received.
+    const hasRealDataToday = completeness.morning !== 'not_received' || completeness.evening !== 'not_received'
+    if (!stillActiveMember && hasRealDataToday) {
+      return { status: 'not_applicable', reason: 'left this project during the day' }
+    }
+
+    return { status: half }
+  }
+
+  return {
+    morning: overlayHalf(completeness.morning, CHECKIN_CHECKPOINTS.morningSend),
+    evening: overlayHalf(completeness.evening, CHECKIN_CHECKPOINTS.eveningSend),
+  }
+}
+
 // Called from app/api/jobs/tick/route.ts ONLY after failJob reports
-// willRetry: false for a dpr_generate job — i.e., only once retries are
-// truly exhausted (NFR-17). generation_status's CHECK constraint (idle/
-// pending/running/stale) has no 'failed' value; a permanent failure can
-// only be expressed through delivery_status, and only here, in exactly
-// this one place — kept out of handleDprGenerateJob itself, which cannot
-// know at throw-time whether ITS failure is the final attempt (that's
-// decided by failJob, one layer up, after this function has already
-// thrown). Keeping lib/queue/jobs.ts itself job-type-agnostic.
+// willRetry: false for a dpr_generate job — reserved for failures that
+// prevent a report from existing at all (an assembler throw, an
+// unrecoverable DB error) — NEVER for a containment-only verdict fallback,
+// which S10 (round 3) established always produces a deliverable report
+// and never reaches this function. B2 fix (site 3): scoped by
+// engineer_id, same reasoning as the error-path revert above.
 export async function markDprGenerationFailed(
   client: SupabaseClient,
   project_id: string,
+  engineer_id: string,
   log_date: string,
 ): Promise<void> {
   const { error } = await client
     .from('dprs')
     .update({ delivery_status: 'failed', generation_status: 'idle' })
     .eq('project_id', project_id)
+    .eq('engineer_id', engineer_id)
     .eq('log_date', log_date)
   if (error) throw error
 }
