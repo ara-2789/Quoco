@@ -1,5 +1,10 @@
 # Review package — DPR engineer-report reformat (migration 028 + pipeline rewrite)
 
+**Revision 10. Round 4's two required fixes — B1 (blocking) and S1 (should-fix), plus the
+NIT — not a new design round.** Round 4 came back "two fixes, then approved; neither
+reopens design." This revision adds §18: both fixes, the new/updated tests, and raw
+suite output. See §18 for the diff against `e9afdc4`.
+
 **Revision 9. Round 4 submission — implementation + test-db rehearsal, not a new design
 round.** Design converged at round 3 (revision 8) and was not reopened. This revision adds
 §17: the full implementation against plan revision 8 (code diffs against `4528f286`), the
@@ -15,11 +20,11 @@ corrections (S8, S9, S10), two NITs (both accepted). Four of round 2's own "look
 at" questions answered by the reviewer (§16) — no advisory lock needed, zero-roster
 detection is now in scope, N1/026 confirmed handled correctly and the request withdrawn.
 
-Status: **implementation complete on this branch (commit `d3d2ba3` + test-fix commit
-`fbadbe1`), migration 028 rehearsed on test-db only. Nothing applied to prod. Nothing
-merged to main.** PR #59 merged (was the hard prerequisite, §7 — now satisfied). Prod
-apply, `checkin_escalations` test-engineer deactivation, and the full apply-gate runbook
-remain a separate, deliberate session — not part of this round.
+Status: **implementation complete on this branch (`d3d2ba3`, `fbadbe1`, `e9afdc4`, and this
+round's fix commit `db05b3d`), migration 028 rehearsed on test-db only. Nothing applied to
+prod. Nothing merged to main.** PR #59 merged (was the hard prerequisite, §7 — now
+satisfied). Prod apply, `checkin_escalations` test-engineer deactivation, and the full
+apply-gate runbook remain a separate, deliberate session — not part of this round.
 
 ---
 
@@ -725,6 +730,147 @@ untouched `migration-017`/`migration-020` test files, not this round's).
 `CLAUDE.md` §7) — its retained dependency on the old nine-field `DprJudgment` shape is
 confirmed by `tsc --noEmit` passing clean against both the old and new types coexisting,
 not by an eval run this round.
+
+---
+
+## 18. ROUND 4's TWO REQUIRED FIXES — B1, S1, and the NIT
+
+Diff against `e9afdc4` (round 4's submitted commit): `db05b3d`, 3 files,
+`lib/dpr/dispatch.ts`, `lib/dpr/generate.ts`, `test/dpr-generate-job.test.ts`.
+
+### 18.1 B1 (BLOCKING) — the model-call gate now fires on the EVENING half, not "both halves"
+
+**The bug, exactly as the reviewer stated it:** `dispatch.ts`'s gate was
+`bothHalvesFullyDetermined` — call the model unless BOTH morning and evening are outside
+{complete, partial}. A morning-only day (morning complete, evening not_received) doesn't
+satisfy that condition, so it went to the model — paying for a Claude call and a
+containment check to synthesize a verdict the spec's own morning-only sample already fixes
+as deterministic text: `"No evening check-in, so we do not know what was done today."`
+Package §6's cost model, unchanged across four rounds, prices per engineer WITH real
+evening data — it never priced this call, because this call should never have happened.
+**This is the only day shape prod has produced so far** (the evening flow cannot yet be
+triggered), so this was the untested branch that fires every night, not an edge case.
+
+**The trap named and avoided, not just noted:** widening `bothHalvesFullyDetermined`'s
+false branch to route morning-only days to `codeTemplatedVerdict` unmodified would have
+been worse — its only fallback line, `"No check-in received today, so we do not know what
+was done."`, is FALSE on a day the morning WAS received. The fix is not "route more days to
+the existing template," it's "gate on the right half AND add the missing template branch."
+
+**Fix, both parts:**
+1. `eveningNeedsModel = evening.status === 'complete' || evening.status === 'partial'`
+   replaces `bothHalvesFullyDetermined` as the gate. The model is now needed exactly when
+   evening has something real to summarize — evening is the half that ever describes what
+   was DONE; morning is a plan, never an account of work performed.
+2. `codeTemplatedVerdict` (only ever called when `!eveningNeedsModel`, so every branch can
+   assume evening has nothing real) gains a new branch, checked after holiday and the
+   both-not_applicable case: `morning.status === 'complete' || morning.status === 'partial'`
+   returns the spec's exact sentence, verbatim. The old fallback (`"No check-in received
+   today..."`) now only fires when morning ALSO has nothing real — genuinely true in that
+   case, never reached otherwise.
+
+**Test, named exactly as required:** `dpr-generate-job.test.ts` — *"B1 — morning-only day
+... is fully code-templated: ZERO Anthropic calls, verdict is the spec's exact sentence,
+verdict_status: code_templated"*. Zero-calls is proved by construction, not a counter:
+the mock client (`mockAnthropicClientThatMustNotBeCalled`) throws if `messages.create` is
+ever invoked, so the test would fail outright rather than silently pass if the gate
+regressed. Asserts `structured.verdict` equals the spec sentence exactly (byte-for-byte,
+not `.toContain`) and `verdict_status: 'code_templated'`.
+
+**Side effect, handled, not overlooked:** the two existing S10 tests
+("containment failure on both attempts", "containment fails once, succeeds on retry") both
+used a `morning_plan`-only fixture with NO evening data — under the OLD gate this hit the
+model (morning was 'partial', not fully-determined); under the CORRECTED gate it would no
+longer reach the model at all (evening stays not_received). Both fixtures updated to
+include real evening data (`evening_submitted_at` + `evening_schedule_met: true`), so they
+continue to exercise the model/containment path they were written to test, under the
+corrected gate rather than the old one.
+
+### 18.2 S1 (SHOULD-FIX) — model-output parse failures now degrade to the placeholder, never escape to job-retry
+
+**The bug:** inside `generateEngineerVerdict`'s S10 retry loop, the text-block lookup and
+`JSON.parse(textBlock.text)` were unguarded. A missing text block, or malformed/truncated
+JSON, threw straight out of the function — past the loop, past `dispatch.ts`'s success
+path, into its `catch` block: revert the claim, rethrow, hit the external job-retry path,
+and on exhausted retries, `markDprGenerationFailed` — losing a report whose BODY (fully
+code-owned, already correct and ready) had nothing wrong with it. `max_tokens: 512` makes
+this reachable for real: a `stop_reason: 'max_tokens'` truncation mid-JSON yields exactly
+this failure shape, not a hypothetical.
+
+**The principle, stated once and applied structurally:** model-OUTPUT problems (can't
+parse what came back) always degrade to the placeholder, same as a containment violation.
+Only transport/API failures (the `client.messages.create` call itself throwing — network,
+auth, rate limit) are allowed to escape to the job-retry path, because only those actually
+indicate retrying the WHOLE job might help.
+
+**Fix:** the text-block extraction + `JSON.parse` + a new explicit check that the parsed
+`verdict` field is actually a string are now wrapped in a `try/catch` INSIDE the loop. A
+catch does `continue` — falls through to attempt 2, then the placeholder on the second
+failure — the identical control flow a containment failure already took. Nothing outside
+the loop changed; `client.messages.create` itself is still unguarded and still escapes
+normally on a real transport failure.
+
+**Test, named exactly as required:** `dpr-generate-job.test.ts` — *"S1 — malformed model
+response (unparseable JSON) on both attempts degrades to the placeholder exactly like a
+containment failure; report ships, job succeeds"*. Mock client
+(`mockAnthropicClientMalformed`) returns `stop_reason: 'max_tokens'` and unparseable text
+(`'{not valid json'`) on every call. Asserts: `generation_status: 'idle'` (job did not
+throw), `delivery_status: 'pending'` (`markDprGenerationFailed` never fired — the exact
+outcome S1 exists to guarantee), `content` contains the placeholder text, `structured.
+verdict_status: 'placeholder'`.
+
+### 18.3 NIT — holiday detection is now structural, not a string match
+
+Folded into the same `dispatch.ts` change (same functions, same review pass) rather than a
+separate commit. `codeTemplatedVerdict` used to branch on `reason?.includes('holiday')` —
+coupled to the exact plain-language copy `resolveCheckInStatus` happens to write into
+`reason` today, which the spec expects to be edited over time (any future copy change would
+silently break this check with neither function aware the other depended on it). Added a
+`NotApplicableKind = 'holiday' | 'joined_late' | 'left_early'` discriminator, set at each of
+the three `not_applicable`-producing sites in `resolveCheckInStatus` (holiday, joined-late,
+left-early); `codeTemplatedVerdict` now branches on `kind === 'holiday'`. `reason` keeps
+carrying the plain-language text for rendering — `kind` is purely internal routing.
+
+**The other NIT (dedup `.in('status', ['pending','running'])`) — left as-is, per
+instruction.** Pre-existing semantics, not touched.
+
+### 18.4 Test output, raw
+
+Targeted run (the six files exercising this change directly):
+
+```
+Test Files  6 passed (6)
+     Tests  114 passed (114)
+```
+
+`dpr-generate-job.test.ts` itself: 8/8 (was 6/6 at round 4 — the two new named tests, B1
+and S1, plus the six carried forward, two of them with updated fixtures per §18.1).
+
+Full suite:
+
+```
+Test Files  1 failed | 45 passed (46)
+     Tests  1 failed | 572 passed | 1 todo (574)
+  Duration  433.09s
+```
+
+**The one failure is a timeout, not a regression, confirmed by re-running that file alone
+immediately after:** `test/migration-024.test.ts` — evening-flow RPC tests, no relation to
+`dispatch.ts`/`generate.ts`, untouched by this change. `T-024-14` hit the harness's 30s
+ceiling during the full concurrent run; re-run in isolation:
+
+```
+Test Files  1 passed (1)
+     Tests  31 passed (31)
+  Duration  70.86s
+   (T-024-14 itself: 2624ms — a clean, fast pass)
+```
+
+Same signature this project has already documented for this exact class of flake (§17's
+own T-023-05 timeout during the PR #59 worktree verification, and CLAUDE.md's own note on
+test-db contention during long concurrent runs) — a hard timeout with an immediate,
+fast, clean pass on retry, not a logic regression. `tsc --noEmit`: clean. `npm run lint`:
+0 errors (same 2 pre-existing warnings in untouched files, unrelated to this round).
 
 ---
 
