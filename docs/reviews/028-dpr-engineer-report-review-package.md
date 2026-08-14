@@ -1099,6 +1099,15 @@ The WhatsApp webhook path (`app/api/whatsapp/`, `lib/whatsapp/`) was independent
 for any reference to `dprs` or the DPR generator files — zero matches, confirming it was
 never in scope regardless of the deploy state.
 
+**Honesty upgrade (reviewer, 2026-08-14): "nothing wrote" is not "nothing was
+user-visible."** During the exposure window, the new `app/(dashboard)/dprs/{page.tsx,
+[id]/page.tsx}` — live, since they deployed with everything else — select `engineer_id`
+from `dprs`, a column that did not exist on prod's schema; anyone loading either dashboard
+page during that window would have gotten a query error, not a quiet no-op. No evidence
+anyone did — no application error was reported, and this is a single-operator beta with no
+other PM logged in at that hour — but absence of a report is not proof absence of the
+error; stated as an open unknown, not resolved by inference.
+
 **Rollback:** done via the Vercel dashboard (Aravind, not Claude Code — no redeploy or
 rollback command was issued by this session). Production is now serving `0b138fc` (PR
 #59's merge — pre-DPR-reformat code, pre-DPR-reformat expectations, matching the
@@ -1333,6 +1342,92 @@ comment, package section) that Aravind can then point the reviewer at in his own
 **not** to treat the act of posting as the notification itself, and not to assume a lack of
 reviewer reply on GitHub means anything about whether they've been informed, since they
 were never going to reply there in the first place.
+
+---
+
+## 23. DIVERGENCE FROM THE REVIEWER'S GO CONDITION — `3534756b` stays RENAMED, not deactivated
+
+**The reviewer's GO-for-apply came with a condition — "test engineer `3534756b`
+deactivated before the apply" — reasoning that an active test engineer generates a report
+nightly under the roster-union trigger. That reasoning was built on the ORIGINAL gate,
+before §19.2's change: `3534756b` was renamed to "Vikram Rao," not deactivated, precisely
+because it is Aravind's own WhatsApp sandbox account (`+919176865600`), not a disposable
+test fixture. The reviewer's condition, as literally written, was not re-evaluated against
+that change before being issued.**
+
+**Verified before acting, per instruction — raw output, both live, prod:**
+
+```sql
+SELECT pm.project_id, u.id, u.full_name, u.role, u.status
+FROM project_members pm JOIN users u ON u.id = pm.user_id
+WHERE pm.project_id = 'acef67fe-e775-439d-82b8-5b8526868d6d'
+  AND u.role = 'engineer' AND u.status = 'active';
+```
+→ exactly one row: `{id: 3534756b-2a32-4b91-954b-0bab15c2dba1, full_name: "Vikram Rao",
+role: engineer, status: active}`.
+
+```sql
+SELECT id, full_name, role, status, tenant_id FROM users
+WHERE role = 'engineer' AND status = 'active' ORDER BY id;
+```
+→ exactly the same one row, system-wide — **no other active engineer exists anywhere in
+prod**, on any project, any tenant.
+
+**Confirmed, not contradicted: deactivating `3534756b` would empty the only roster there
+is.** Under the roster-union trigger (§1 of the plan), zero active engineers means zero
+reports generated, the Q8 zero-roster Sentry warning fires every night indefinitely
+(correct behavior for a genuinely empty roster, but this roster isn't genuinely empty —
+it would be MADE empty by the deactivation itself), and Aravind loses his only WhatsApp
+test path at the exact moment the new pipeline needs it most.
+
+**The condition's actual purpose was fully served by the rename, not left unaddressed:**
+the concern was a smoke-test label ("TEST — Evening Q5 Smoke...") appearing as an engineer
+name in an owner-facing report. That string no longer exists anywhere on this row —
+`full_name` is "Vikram Rao." Deactivation would have solved a problem that no longer
+exists, at the cost of a problem (zero roster) the original condition never intended to
+create.
+
+**Decision: keep the rename, do NOT deactivate.** Recorded here, dated, with the roster
+evidence above, specifically so this reaches the applied-runbook record and the reviewer
+sees it stated rather than discovering a condition that wasn't literally followed. Per
+§22's own correction: this section is the durable written record; delivering it to the
+reviewer is Aravind's own message, not a PR comment from this session.
+
+---
+
+## 24. §10 RECODIFIED — the invariant is "one hour of margin before the next producer
+event," not "by 19:00 IST"
+
+**DATED, before the apply, struck-not-deleted per convention. Reviewer's framing,
+adopted as stated.** The 19:00 IST clause (§10, "Abort threshold: deploy confirmed live by
+19:00 IST") was the DAYTIME-APPLY SPECIAL CASE of a more general invariant, not the
+invariant itself — conflating the two nearly caused a second sequencing error tonight,
+when the literal clock reading ("it's past 20:00") would have blocked an apply that is
+actually SAFER than a daytime one, because tonight's producer event (the 20:00 IST cron)
+has already fired and the next one is ~23.5 hours away.
+
+~~**Abort threshold: deploy confirmed live by 19:00 IST** — a full hour of margin before
+the 20:00 cron, not a just-in-time confirm. Not met ⇒ treat that day's apply as failed:
+either get the deploy live by other means before 20:00, or this is an emergency decision
+with Aravind before 20:00, not a silent hope the deploy finishes in time.~~
+
+**Corrected invariant:** deploy must be confirmed live **at least ONE HOUR before the next
+`dpr_generate`-producing event** — the next firing of the 20:00 IST cron, whatever that
+next firing actually is, not a fixed wall-clock time. "By 19:00 IST" is simply what this
+invariant equals when the apply happens during the day, before that day's cron has fired.
+When the apply happens AFTER that day's cron has already fired (as tonight), the invariant
+is satisfied by confirming live any time up to one hour before TOMORROW's 20:00 IST —
+i.e., by 19:00 IST tomorrow, not tonight. **Applying tonight, right after the cron has
+already fired, maximizes the margin against this invariant rather than minimizing it** —
+next producer event is ~23.5 hours out, not the ~1 hour or less a daytime apply typically
+has to work with.
+
+**Not met ⇒ same consequence as before, restated against the corrected invariant:** if the
+deploy does not confirm live within one hour of the NEXT `dpr_generate`-producing event
+(concretely: by 19:00 IST tomorrow, for tonight's apply), treat the apply as failed for
+that producer event — either get the deploy live by other means before that event fires,
+or it is an emergency decision with Aravind before it fires, not a silent hope the deploy
+finishes in time.
 
 ---
 
