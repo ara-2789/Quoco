@@ -6,7 +6,7 @@ import { istDateString, isValidCalendarDate } from '@/lib/daily-logs/date'
 // Pure unit tests for the DASH-03 per-half status logic. Covers all five rows of
 // the plan table plus the Asia/Kolkata conversion regression guard.
 
-const cutoffs = DEFAULT_CUTOFFS // morning 10:30, evening 19:30 IST
+const cutoffs = DEFAULT_CUTOFFS // morning 15:00, evening 19:30 IST (lib/daily-logs/cutoffs.ts)
 const blank: LogHalfInput = {
   morning_submitted_at: null,
   evening_submitted_at: null,
@@ -58,7 +58,7 @@ describe('deriveHalfStatus', () => {
   })
 
   it('row 4 — today, before cutoff, missing → muted "awaiting", not a gap', () => {
-    // 09:00 IST 2026-07-18 = 03:30 UTC — before the 10:30 morning cutoff.
+    // 09:00 IST 2026-07-18 = 03:30 UTC — before the 15:00 morning cutoff.
     const now = new Date('2026-07-18T03:30:00Z')
     const s = deriveHalfStatus(blank, false, 'morning', '2026-07-18', now, cutoffs)
     expect(s.state).toBe('awaiting')
@@ -67,8 +67,10 @@ describe('deriveHalfStatus', () => {
   })
 
   it('row 5 — today, after cutoff, missing → amber/risk gap', () => {
-    // 12:00 IST 2026-07-18 = 06:30 UTC — after the 10:30 morning cutoff.
-    const now = new Date('2026-07-18T06:30:00Z')
+    // 16:00 IST 2026-07-18 = 10:30 UTC — after the 15:00 morning cutoff.
+    // (Was 12:00 IST against the old 10:30 cutoff; recalibrated 2026-08-13
+    // when the cutoff moved to 15:00 — see cutoffs.ts's dated correction.)
+    const now = new Date('2026-07-18T10:30:00Z')
     const s = deriveHalfStatus(blank, false, 'morning', '2026-07-18', now, cutoffs)
     expect(s.state).toBe('missing')
     expect(s.variant).toBe('risk')
@@ -89,12 +91,15 @@ describe('deriveHalfStatus', () => {
   })
 
   // --- Timezone regression guard (Asia/Kolkata conversion) ---
-  // 05:30 UTC on 2026-07-18 = 11:00 IST — AFTER the 10:30 morning cutoff.
-  // A bare-UTC comparison would read 05:30 < 10:30 and wrongly classify this as
-  // "awaiting". Correct IST conversion yields 11:00 > 10:30 → gap. If someone
-  // drops the timezone conversion, this test fails loudly.
+  // 10:00 UTC on 2026-07-18 = 15:30 IST — AFTER the 15:00 morning cutoff.
+  // (Recalibrated 2026-08-13 for the 10:30 -> 15:00 cutoff move — the guard's
+  // shape is preserved: pick a UTC instant whose bare hour:minute reads BELOW
+  // the cutoff, so a comparison that skipped the timezone conversion would
+  // wrongly read 10:00 < 15:00 and call it "awaiting". Correct IST conversion
+  // yields 15:30 > 15:00 → gap. If someone drops the timezone conversion,
+  // this test fails loudly.)
   it('regression — UTC instant is converted to IST before the cutoff compare', () => {
-    const now = new Date('2026-07-18T05:30:00Z') // 11:00 IST
+    const now = new Date('2026-07-18T10:00:00Z') // 15:30 IST
     const s = deriveHalfStatus(blank, false, 'morning', '2026-07-18', now, cutoffs)
     expect(s.state).toBe('missing')
     expect(s.variant).toBe('risk')
@@ -128,10 +133,13 @@ describe('deriveHalfStatus', () => {
   })
 
   it('N3 — evening cutoff does not fire early using the morning time', () => {
-    // 11:00 IST = 05:30 UTC: past MORNING 10:30 but far before EVENING 19:30.
-    // The evening half must still be "awaiting", proving each half reads its own
-    // cutoff (guards against a copy-paste that used cutoffs.morning for both).
-    const now = new Date('2026-07-18T05:30:00Z')
+    // 17:00 IST = 11:30 UTC: past MORNING 15:00 but far before EVENING 19:30.
+    // (Was 11:00 IST against the old 10:30 morning cutoff; recalibrated
+    // 2026-08-13 so this still exercises "past morning's cutoff" — see
+    // cutoffs.ts's dated correction.) The evening half must still be
+    // "awaiting", proving each half reads its own cutoff (guards against a
+    // copy-paste that used cutoffs.morning for both).
+    const now = new Date('2026-07-18T11:30:00Z')
     const s = deriveHalfStatus(blank, false, 'evening', '2026-07-18', now, cutoffs)
     expect(s.state).toBe('awaiting')
   })

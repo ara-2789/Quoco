@@ -40,7 +40,11 @@ export type LogHalfInput = {
 // IST (Asia/Kolkata) calendar-day + minutes-of-day for a UTC instant.
 // Vercel's now() is UTC — comparing it bare against IST cutoffs would misclassify
 // engineers around the cutoff hour. This is the explicit conversion.
-function istParts(now: Date): { date: string; minutes: number } {
+// Exported (2026-08-13) so lib/checkin-escalations reuses the same IST
+// conversion rather than re-deriving it a third time in this codebase
+// (lib/daily-logs/date.ts's istDateString is the second — date-only, no
+// minutes-of-day). Purely additive: no existing caller's behaviour changes.
+export function istParts(now: Date): { date: string; minutes: number } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
     year: 'numeric',
