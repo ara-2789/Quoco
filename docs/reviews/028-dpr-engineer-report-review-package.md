@@ -1310,6 +1310,32 @@ Neither option is applied, chosen, or written into the migration file in this pa
 
 ---
 
+## 22. PROCESS CORRECTION (2026-08-14) — PR #61 is NOT the review channel; posting there is not delivery to the reviewer
+
+**Error, stated plainly:** Claude Code posted the item-3 heads-up (§21) as a comment on
+PR #61, then posted a second note (the two-question message re-approval-conditions ask)
+to the same thread immediately after — in the SAME session where listing PR #61's comments
+had already shown the fact this second post then ignored: every comment on that thread is
+from `ara-2789` (Aravind) or `vercel[bot]`. **Zero from the reviewer, ever, on this PR.**
+Posting to PR #61 does not reach them — it was treated as delivery when it is not.
+
+**Corrected understanding, recorded so this does not recur:** review reaches the reviewer
+only when **Aravind messages them directly**, through whatever channel that relationship
+actually uses (not this repo, not GitHub). **PR comments — including every "round"
+write-up and heads-up note in this package's history — are the WRITTEN RECORD those
+messages point AT, not the delivery mechanism itself.** Aravind pastes/relays the
+reviewer's actual responses back into this session; Claude Code does not have, and should
+not act as if it has, a channel to the reviewer.
+
+**Standing correction for this package and any future one like it:** when asked to "send
+the reviewer a note," the correct action is to draft/post the durable written record (PR
+comment, package section) that Aravind can then point the reviewer at in his own message —
+**not** to treat the act of posting as the notification itself, and not to assume a lack of
+reviewer reply on GitHub means anything about whether they've been informed, since they
+were never going to reply there in the first place.
+
+---
+
 ## Attachments
 
 - `028_dprs_engineer_id_option_a.sql` — DECIDED, full text, this round's revision
