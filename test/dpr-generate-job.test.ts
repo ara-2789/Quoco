@@ -31,6 +31,36 @@ function mockAnthropicClient(verdicts: string[]): Anthropic {
   } as unknown as Anthropic
 }
 
+// B1 (round 4) — proves a code-templated day makes ZERO model calls, not
+// by asserting a call counter, but by making a call fail the test outright
+// if it ever happens at all.
+function mockAnthropicClientThatMustNotBeCalled(): Anthropic {
+  return {
+    messages: {
+      create: async () => {
+        throw new Error('Anthropic client called when it must not be — this day should be fully code-templated')
+      },
+    },
+  } as unknown as Anthropic
+}
+
+// S1 (round 4) — a MODEL-OUTPUT problem, not a transport failure: valid
+// HTTP response, valid usage/stop_reason, but the text block is not
+// parseable JSON (the truncation shape max_tokens: 512 makes reachable).
+// Returns the same malformed text on every call, so both S10 attempts fail
+// the same way.
+function mockAnthropicClientMalformed(): Anthropic {
+  return {
+    messages: {
+      create: async () => ({
+        content: [{ type: 'text', text: '{not valid json' }],
+        usage: { input_tokens: 50, output_tokens: 20 },
+        stop_reason: 'max_tokens',
+      }),
+    },
+  } as unknown as Anthropic
+}
+
 async function makeProject(nameSuffix: string): Promise<string> {
   const db = testClient()
   const { data, error } = await db
@@ -131,12 +161,17 @@ describe('handleDprGenerateJob', () => {
     const engineerId = testEngineerId()
     try {
       await addToProject(projectId, engineerId)
+      // Evening must be complete/partial (B1's corrected gate) for the
+      // model path to be reached at all — a morning-only day is now fully
+      // code-templated and never calls the model (see the B1 test below).
       await db.from('daily_logs').insert({
         project_id: projectId,
         tenant_id: TEST_TENANT_ID,
         engineer_id: engineerId,
         log_date: LOG_DATE,
         morning_plan: 'Excavation',
+        evening_submitted_at: '2026-05-02T14:00:00Z',
+        evening_schedule_met: true,
       })
 
       // "999" traces to nothing in Facts or the rendered body — fails
@@ -175,7 +210,17 @@ describe('handleDprGenerateJob', () => {
     const engineerId = testEngineerId()
     try {
       await addToProject(projectId, engineerId)
-      await db.from('daily_logs').insert({ project_id: projectId, tenant_id: TEST_TENANT_ID, engineer_id: engineerId, log_date: LOG_DATE, morning_plan: 'Excavation' })
+      // Evening must be complete/partial (B1's corrected gate) — same note
+      // as the sibling test above.
+      await db.from('daily_logs').insert({
+        project_id: projectId,
+        tenant_id: TEST_TENANT_ID,
+        engineer_id: engineerId,
+        log_date: LOG_DATE,
+        morning_plan: 'Excavation',
+        evening_submitted_at: '2026-05-02T14:00:00Z',
+        evening_schedule_met: true,
+      })
 
       await handleDprGenerateJob(
         { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
@@ -225,6 +270,95 @@ describe('handleDprGenerateJob', () => {
       expect(dpr?.generation_status).toBe('idle')
       expect(dpr?.content).toContain('Morning check-in: not received')
       expect(dpr?.content).toContain('Evening check-in: not received')
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('B1 — morning-only day (morning real, evening not received) is fully code-templated: ZERO Anthropic calls, verdict is the spec\'s exact sentence, verdict_status: code_templated', async () => {
+    const db = testClient()
+    const projectId = await makeProject('morning-only')
+    const engineerId = testEngineerId()
+    try {
+      await addToProject(projectId, engineerId)
+      // Morning real, evening genuinely absent — the ONLY day shape prod
+      // has generated so far, since the evening flow cannot yet be
+      // triggered. mockAnthropicClientThatMustNotBeCalled() makes this
+      // test fail outright if the model is ever invoked — that failure IS
+      // the proof of zero calls, not a counted assertion.
+      await db.from('daily_logs').insert({
+        project_id: projectId,
+        tenant_id: TEST_TENANT_ID,
+        engineer_id: engineerId,
+        log_date: LOG_DATE,
+        morning_submitted_at: '2026-05-02T04:00:00Z',
+        morning_plan: 'Excavation of footing',
+      })
+
+      await handleDprGenerateJob(
+        { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
+        FAKE_JOB_ID,
+        { supabaseClient: db, anthropicClient: mockAnthropicClientThatMustNotBeCalled() },
+      )
+
+      const { data: dpr } = await db
+        .from('dprs')
+        .select('generation_status, delivery_status, content, structured')
+        .eq('project_id', projectId)
+        .eq('engineer_id', engineerId)
+        .eq('log_date', LOG_DATE)
+        .single()
+
+      expect(dpr?.generation_status).toBe('idle')
+      expect(dpr?.delivery_status).toBe('pending')
+      // Byte-for-byte match to docs/dpr-engineer-report-spec.md's own
+      // morning-only sample line, not a paraphrase.
+      expect(dpr?.content).toContain('No evening check-in, so we do not know what was done today.')
+      const structured = dpr?.structured as { verdict?: string; verdict_status?: string } | null
+      expect(structured?.verdict).toBe('No evening check-in, so we do not know what was done today.')
+      expect(structured?.verdict_status).toBe('code_templated')
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('S1 — malformed model response (unparseable JSON) on both attempts degrades to the placeholder exactly like a containment failure; report ships, job succeeds', async () => {
+    const db = testClient()
+    const projectId = await makeProject('malformed-response')
+    const engineerId = testEngineerId()
+    try {
+      await addToProject(projectId, engineerId)
+      // Evening complete/partial — reaches the model path at all (B1's
+      // corrected gate).
+      await db.from('daily_logs').insert({
+        project_id: projectId,
+        tenant_id: TEST_TENANT_ID,
+        engineer_id: engineerId,
+        log_date: LOG_DATE,
+        morning_plan: 'Excavation',
+        evening_submitted_at: '2026-05-02T14:00:00Z',
+        evening_schedule_met: true,
+      })
+
+      await handleDprGenerateJob(
+        { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
+        FAKE_JOB_ID,
+        { supabaseClient: db, anthropicClient: mockAnthropicClientMalformed() },
+      )
+
+      const { data: dpr } = await db
+        .from('dprs')
+        .select('generation_status, delivery_status, content, structured')
+        .eq('project_id', projectId)
+        .eq('engineer_id', engineerId)
+        .eq('log_date', LOG_DATE)
+        .single()
+
+      expect(dpr?.generation_status).toBe('idle') // succeeded — the job did not throw
+      expect(dpr?.delivery_status).toBe('pending') // markDprGenerationFailed never fired — S1's whole point
+      expect(dpr?.content).toContain('Summary unavailable for this report.')
+      const structured = dpr?.structured as { verdict_status?: string } | null
+      expect(structured?.verdict_status).toBe('placeholder')
     } finally {
       await cleanupProject(projectId)
     }

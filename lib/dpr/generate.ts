@@ -437,11 +437,33 @@ export async function generateEngineerVerdict(
     totalInputTokens += response.usage.input_tokens
     totalOutputTokens += response.usage.output_tokens
 
-    const textBlock = response.content.find((b) => b.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') {
-      throw new Error(`No text block in response. stop_reason: ${response.stop_reason}`)
+    // S1 (round-4): a missing text block or malformed/truncated JSON is a
+    // MODEL-OUTPUT problem, same class as a containment failure — not a
+    // transport/API failure. max_tokens: 512 makes truncation (stop_reason:
+    // 'max_tokens') a real way to reach this: a cut-off response yields
+    // unparseable JSON. Caught HERE, per-attempt, so it falls through to
+    // the retry / placeholder the exact same way a containment failure
+    // does — never escapes this loop to the caller's catch block, which
+    // would revert the claim, throw past a report whose BODY (code-owned,
+    // already correct) is fully ready, and risk markDprGenerationFailed
+    // for a problem that has nothing to do with whether a report can
+    // exist. Only the client.messages.create call above is allowed to
+    // throw past this loop — a genuine transport/API failure, correctly
+    // routed to the external job-retry path.
+    let judgment: { verdict: string } | undefined
+    try {
+      const textBlock = response.content.find((b) => b.type === 'text')
+      if (!textBlock || textBlock.type !== 'text') {
+        throw new Error(`No text block in response. stop_reason: ${response.stop_reason}`)
+      }
+      const parsed = JSON.parse(textBlock.text) as { verdict?: unknown }
+      if (typeof parsed.verdict !== 'string') {
+        throw new Error(`Parsed response has no string 'verdict' field: ${textBlock.text}`)
+      }
+      judgment = { verdict: parsed.verdict }
+    } catch {
+      continue // same as a containment failure: attempt 2, then the placeholder
     }
-    const judgment = JSON.parse(textBlock.text) as { verdict: string }
 
     const result = checkContainment(judgment.verdict, corpus)
     if (result.ok) {

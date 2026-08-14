@@ -122,17 +122,27 @@ export async function handleDprGenerateJob(
       resolveCheckInStatus(client, payload, completeness),
     )
 
-    // Rule 2 / holiday / not_applicable: skip the Claude call entirely for
-    // any day where nothing exists to synthesize about — a fully-known,
-    // fully-determined code state, same reasoning schema.ts already
-    // applies to any not_captured section of the old design.
-    const bothHalvesFullyDetermined = morning.status !== 'complete' && morning.status !== 'partial' && evening.status !== 'complete' && evening.status !== 'partial'
+    // GATE, corrected (round-4 B1): the verdict sentence summarises what was
+    // DONE — that only ever comes from the EVENING half (the morning half
+    // is a plan, never an account of work performed). So the model is
+    // needed exactly when EVENING has something real to summarize
+    // (complete/partial), regardless of morning's own status. A
+    // morning-only day (morning complete, evening not_received — the ONLY
+    // shape this system has generated in production so far, since the
+    // evening flow cannot yet be triggered) is fully code-templated: the
+    // spec fixes its verdict as deterministic text (see
+    // codeTemplatedVerdict's third branch below), so calling the model to
+    // synthesize an already-decided sentence would be a real, nightly,
+    // unpriced cost for zero benefit. The OLD gate ("both halves fully
+    // determined") was wrong in the other direction too: it routed this
+    // exact morning-only shape to the model.
+    const eveningNeedsModel = evening.status === 'complete' || evening.status === 'partial'
 
     const body = renderEngineerBody(facts)
 
     let verdict: string
     let verdictStatus: 'model' | 'placeholder' | 'code_templated'
-    if (bothHalvesFullyDetermined) {
+    if (!eveningNeedsModel) {
       verdict = codeTemplatedVerdict(morning, evening)
       verdictStatus = 'code_templated'
     } else {
@@ -200,17 +210,34 @@ export async function handleDprGenerateJob(
   }
 }
 
-// Holiday / fully-not_applicable / fully-empty days — code-templated, no
-// model call (Rule 2's "code already knows the whole answer" pattern,
-// applied to the verdict the same way schema.ts's DataStatus sections
-// already apply it). Deliberately not exhaustive prose — one honest
-// sentence per state.
+// Holiday / fully-not_applicable / morning-only / fully-empty days —
+// code-templated, no model call (Rule 2's "code already knows the whole
+// answer" pattern, applied to the verdict the same way schema.ts's
+// DataStatus sections already apply it). Deliberately not exhaustive prose
+// — one honest sentence per state. ONLY ever called when evening is NOT
+// complete/partial (the caller's eveningNeedsModel gate) — so every branch
+// here can assume evening has nothing real to report; only morning's
+// status distinguishes the remaining cases.
 function codeTemplatedVerdict(morning: CheckInStatusResult['morning'], evening: CheckInStatusResult['evening']): string {
-  if (morning.reason?.includes('holiday') || evening.reason?.includes('holiday')) {
+  // Structural check (round-4 NIT) — kind, not a substring match on reason
+  // text. The old `.reason?.includes('holiday')` coupled this branch to the
+  // exact copy resolveCheckInStatus happens to write into `reason` today;
+  // any future edit to that plain-language copy (the spec mandates it will
+  // be edited) would silently break this check without either function
+  // knowing the other depends on it.
+  if (morning.kind === 'holiday' || evening.kind === 'holiday') {
     return 'Site closed today.'
   }
   if (morning.status === 'not_applicable' && evening.status === 'not_applicable') {
     return `${morning.reason ?? evening.reason ?? 'Added to this project after today\'s check-in window'} — first report covers the next check-in.`
+  }
+  // B1 — morning-real / evening-missing: the spec's own sample fixes this
+  // verdict as deterministic text (docs/dpr-engineer-report-spec.md's
+  // morning-only sample), not something to ask the model to synthesize.
+  // This is the day shape prod actually produces every night until the
+  // evening flow can be triggered — the untested branch that fires first.
+  if (morning.status === 'complete' || morning.status === 'partial') {
+    return 'No evening check-in, so we do not know what was done today.'
   }
   return 'No check-in received today, so we do not know what was done.'
 }
@@ -221,9 +248,15 @@ function formatDate(logDate: string): string {
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' })
 }
 
+// Structural discriminator for WHY a half is not_applicable — round-4 NIT.
+// Exists so codeTemplatedVerdict (and any future reader) branches on a
+// stable code, not on substring-matching the plain-language `reason` text,
+// which the spec explicitly expects to be edited over time.
+type NotApplicableKind = 'holiday' | 'joined_late' | 'left_early'
+
 export interface CheckInStatusResult {
-  morning: { status: CheckInStatus; reason?: string }
-  evening: { status: CheckInStatus; reason?: string }
+  morning: { status: CheckInStatus; reason?: string; kind?: NotApplicableKind }
+  evening: { status: CheckInStatus; reason?: string; kind?: NotApplicableKind }
 }
 
 function checkpointMinutes(hhmm: string): number {
@@ -253,7 +286,10 @@ async function resolveCheckInStatus(
   if (log?.is_holiday) {
     const reason = (log.holiday_reason as string | null)?.trim()
     const text = reason ? `Site closed — ${reason} (holiday)` : 'Site closed (holiday)'
-    return { morning: { status: 'not_applicable', reason: text }, evening: { status: 'not_applicable', reason: text } }
+    return {
+      morning: { status: 'not_applicable', reason: text, kind: 'holiday' },
+      evening: { status: 'not_applicable', reason: text, kind: 'holiday' },
+    }
   }
 
   const { data: membership } = await client
@@ -266,7 +302,7 @@ async function resolveCheckInStatus(
   const { data: engineer } = await client.from('users').select('status').eq('id', payload.engineer_id).single()
   const stillActiveMember = membership !== null && engineer?.status === 'active'
 
-  const overlayHalf = (half: CheckInStatus, checkpointHHMM: string): { status: CheckInStatus; reason?: string } => {
+  const overlayHalf = (half: CheckInStatus, checkpointHHMM: string): { status: CheckInStatus; reason?: string; kind?: NotApplicableKind } => {
     if (half === 'complete' || half === 'partial') return { status: half }
 
     // Joined-late: membership began after this half's send time, on this
@@ -274,7 +310,7 @@ async function resolveCheckInStatus(
     if (membership?.created_at) {
       const created = istParts(new Date(membership.created_at as string))
       if (created.date === payload.log_date && created.minutes > checkpointMinutes(checkpointHHMM)) {
-        return { status: 'not_applicable', reason: 'joined this project today' }
+        return { status: 'not_applicable', reason: 'joined this project today', kind: 'joined_late' }
       }
     }
 
@@ -284,7 +320,7 @@ async function resolveCheckInStatus(
     // never not_received.
     const hasRealDataToday = completeness.morning !== 'not_received' || completeness.evening !== 'not_received'
     if (!stillActiveMember && hasRealDataToday) {
-      return { status: 'not_applicable', reason: 'left this project during the day' }
+      return { status: 'not_applicable', reason: 'left this project during the day', kind: 'left_early' }
     }
 
     return { status: half }
