@@ -1,10 +1,26 @@
 -- 028_dprs_engineer_id_option_b.sql -- OPTION B (partial unique index, no DELETE)
--- DRAFT for external review -- NOT applied, NOT committed. Alternative to
--- 028_dprs_engineer_id_option_a.sql (Option A, DELETE-based). See the review
--- package's §2 for the full trade-off writeup; this file is Option B's
--- exact text, not a paraphrase.
+-- REJECTED (review round 2, 2026-08-14) -- KEPT FOR THE RECORD, NOT A LIVE
+-- CHOICE. Every dprs writer is a supabase-js .upsert() with
+-- { onConflict: 'project_id,log_date' } (dispatch.ts:50, dispatch.ts:97,
+-- route.ts:65). Postgres only infers a PARTIAL unique index (the one this
+-- file creates at Step 4) as an ON CONFLICT arbiter when the conflict
+-- clause itself carries a matching WHERE predicate -- PostgREST/supabase-js
+-- has no way to express that predicate through .upsert()'s onConflict
+-- option. Every one of those three upserts would throw 42P10
+-- ("there is no unique or exclusion constraint matching the ON CONFLICT
+-- specification") the first night this schema went live. This is not a
+-- cost trade-off against Option A, as the prior draft of this file and the
+-- review package both framed it -- it is mechanically broken as written.
+-- Neither this file nor the package's original trade-off section knew this
+-- when first drafted; recorded here explicitly rather than silently
+-- switching to Option A without saying why.
 --
--- No PITR step required for this option -- nothing destructive here.
+-- DRAFT for external review -- NOT applied, NOT committed, NOT to be
+-- applied. Alternative to 028_dprs_engineer_id_option_a.sql (Option A,
+-- DECIDED). See the review package's §2 for the full correction.
+--
+-- No PITR step would have been required for this option -- nothing
+-- destructive here, which was real but not sufficient to make it viable.
 
 BEGIN;
 

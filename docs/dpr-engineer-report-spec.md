@@ -146,6 +146,33 @@ class them as owing it. Take both constants from `CHECKIN_CHECKPOINTS` in
 `lib/daily-logs/cutoffs.ts` — never hardcode, and note the morning cutoff there was stale
 at 10:30 until PR #59.
 
+**CONDITIONAL ON THE TRIGGER CRONS SHIPPING — not presently mechanical (added
+2026-08-14, review finding).** "Send time" describes a proactive push that does not exist
+yet: no cron or trigger sends the morning or evening prompt today (CLAUDE.md §10 — the
+evening flow specifically, and by the same absence the morning flow, has no code path
+that starts it in production; an engineer self-initiates by messaging in). Under this
+pull model, a membership beginning at 11:00 does **not** mean the engineer could not have
+checked in before the actual close boundary (15:00 morning / 20:00 evening) — they could
+have messaged in themselves. The rule above is still correct on Rule 5.3 grounds (never
+let an explained absence read as unexplained) and should ship as written, but it is
+recording an intent for when the send crons exist, not describing today's actual
+mechanism. Whoever builds those crons should re-examine whether `not_applicable`'s
+threshold should move from send-time to close-time once the push model is real.
+
+**Two mechanics, pinned so they aren't rediscovered as bugs:**
+- The `project_members.created_at` vs. `CHECKIN_CHECKPOINTS.morningSend`/`.eveningSend`
+  comparison **must convert to IST before comparing**, the same conversion every other
+  cutoff/send-time comparison in this codebase already does (`lib/daily-logs/status.ts`'s
+  `istParts`). `created_at` is stored as `TIMESTAMPTZ` (UTC internally); comparing its raw
+  UTC clock value against an IST wall-clock string is wrong for every join between 02:00
+  and 07:30 UTC (07:30–13:00 IST) — it would misclassify a chunk of ordinary daytime joins.
+- A membership that is removed and later re-added gets a **fresh `created_at`** on the new
+  `project_members` row — there is no history table, so an engineer's earlier, prior
+  membership window is not recoverable. **Policy: use the current row's `created_at`.** A
+  returning engineer's earlier window is treated as if it never happened for this purpose
+  — a known, named limitation, not a silent gap, and not fixable without new
+  infrastructure this work does not build.
+
 A `not applicable` half does not count toward MISSING and does not lower completeness. It
 renders in plain language with its reason:
 

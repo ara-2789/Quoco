@@ -1,33 +1,94 @@
--- 028_dprs_engineer_id_option_a.sql -- OPTION A (DELETE)
--- DRAFT for external review — NOT applied, NOT committed to supabase/migrations/.
+-- 028_dprs_engineer_id_option_a.sql -- OPTION A (DELETE) -- DECIDED
+-- DRAFT for external review -- NOT applied, NOT committed to supabase/migrations/.
 -- Adds engineer_id to dprs for the per-engineer report reformat
 -- (docs/dpr-engineer-report-spec.md). See the accompanying review package for
 -- full context, the §0 gate evaluation, and the runbook this file's DELETE
--- step depends on.
+-- step depends on. Option A is DECIDED (review round 2, 2026-08-14) -- Option
+-- B is mechanically broken, not merely costlier; see the package's revision-7
+-- correction for why, and why this decision does not wait on any of the
+-- other revisions in that round.
 --
 -- PITR MUST BE OBSERVED, LIVE, BEFORE THIS FILE RUNS -- not a checklist
 -- entry, an actual dashboard/API check (CLAUDE.md §0's standing rule).
 -- Restore window pinned in the review package's runbook section, not here.
 --
--- PRE-APPLY STATE, CONFIRMED BY DIRECT QUERY (not assumed):
---   dprs currently has exactly TWO rows, both project acef67fe-e775-439d-
---   82b8-5b8526868d6d:
---     35a2f41c-64ec-41f5-a763-4afe05940ca5  log_date 2026-08-12
---       delivery_status='skipped_no_data', content IS NULL,
---       delivered_owner_at IS NULL, ZERO underlying daily_logs rows.
---     af7760e8-2457-4c11-bc35-52929a0bbf54  log_date 2026-08-13
---       ONE underlying daily_logs row, engineer_id
---       3534756b-2a32-4b91-954b-0bab15c2dba1.
---   No multi-engineer project-day exists in prod today -- confirmed by
---   GROUP BY (project_id, log_date) HAVING count(DISTINCT engineer_id) > 1,
---   zero rows returned.
+-- SEQUENCING (review round 2, B3): this file must be applied WELL OUTSIDE the
+-- 20:00 IST cron window, with the corresponding Vercel deploy following
+-- IMMEDIATELY after, same day -- see the review package's B3 section for the
+-- full runbook. The gap between this apply and the deploy landing is live
+-- breakage for the three existing dprs upserts (dispatch.ts:50,97;
+-- route.ts:65), which still target the OLD onConflict key until the deploy
+-- ships.
+--
+-- PRE-APPLY STATE -- RAW QUERY OUTPUT, PINNED VERBATIM (2026-08-14, review
+-- round 2, S7). `SELECT id, project_id, log_date, delivery_status,
+-- generation_status, content IS NULL AS content_is_null, delivered_owner_at
+-- FROM dprs ORDER BY created_at;`:
+--   [{"id":"35a2f41c-64ec-41f5-a763-4afe05940ca5","project_id":"acef67fe-e775-439d-82b8-5b8526868d6d",
+--     "log_date":"2026-08-12","delivery_status":"skipped_no_data","generation_status":"idle",
+--     "content_is_null":true,"delivered_owner_at":null},
+--    {"id":"af7760e8-2457-4c11-bc35-52929a0bbf54","project_id":"acef67fe-e775-439d-82b8-5b8526868d6d",
+--     "log_date":"2026-08-13","delivery_status":"pending","generation_status":"idle",
+--     "content_is_null":false,"delivered_owner_at":null}]
+-- af7760e8's one underlying daily_logs row: engineer_id
+-- 3534756b-2a32-4b91-954b-0bab15c2dba1 (confirmed by direct query, PROCEED
+-- if unchanged at apply time, STOP and re-derive the backfill value if not).
+--
+-- MULTI-ENGINEER CHECK -- RAW OUTPUT, PINNED, WHOLE-TABLE NOT JUST THESE TWO
+-- DATES (2026-08-14, S7). `SELECT project_id, log_date, count(DISTINCT
+-- engineer_id) FROM daily_logs GROUP BY project_id, log_date HAVING
+-- count(DISTINCT engineer_id) > 1;` -> zero rows, entire daily_logs table.
+--
+-- REAL CONSTRAINT NAME -- CONFIRMED FROM THE CATALOG, NOT ASSUMED (2026-08-14,
+-- S7). `SELECT conname, contype, pg_get_constraintdef(oid) FROM pg_constraint
+-- WHERE conrelid = 'public.dprs'::regclass;` includes:
+--   dprs_project_id_log_date_key | u | UNIQUE (project_id, log_date)
+--   dprs_project_id_fkey         | f | FOREIGN KEY (project_id) REFERENCES projects(id)
+--   dprs_tenant_id_fkey          | f | FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+-- The dropped-constraint name below was an assumption in the prior draft;
+-- confirmed correct by this probe, not blindly trusted.
+--
+-- NOTE, NOT FIXED HERE: dprs_project_id_fkey / dprs_tenant_id_fkey (023) are
+-- PLAIN single-column FKs, not the composite same-tenant pattern this file's
+-- own engineer_id FK below uses. 023's review package signed these off
+-- without applying or discussing the 017 composite-FK pattern -- a latent,
+-- pre-existing gap this migration does not compound (engineer_id below IS
+-- composite) but also does not fix. Flagged so it is not later mistaken for
+-- this migration's own oversight.
 
 BEGIN;
 
 -- Step 1: add the column nullable first -- cannot add NOT NULL directly
 -- while af7760e8 has no value yet; backfilled in step 2, enforced NOT NULL
 -- in step 4 once every remaining row has one.
-ALTER TABLE public.dprs ADD COLUMN engineer_id UUID REFERENCES public.users(id);
+--
+-- COMPOSITE SAME-TENANT FK (review round 2, B1) -- REQUIRED, not optional,
+-- and not the 019 plain-FK exception either. 017's precedent (docs/schema.md
+-- ~L460-468) added composite (col, tenant_id) -> parent(id, tenant_id) FKs
+-- specifically because the referencing column is CLIENT- or CALLER-WRITABLE
+-- and could smuggle a cross-tenant id past a single-column FK; 027's
+-- checkin_escalations (three days before this file was written) applies the
+-- identical pattern to its own engineer_id. 019's daily_log_edits is the
+-- ONE precedented exception, and it does NOT apply here: that table's
+-- tenant_id/project_id are copied inside a SECURITY DEFINER RPC from an
+-- already-verified row, never from caller input -- there is no app-layer
+-- INSERT path at all. dprs.engineer_id has no equivalent guarantee: it
+-- travels from the roster query (app/api/cron/dpr-generate/route.ts) into a
+-- JSON job payload, through the jobs queue, and is read back out by
+-- handleDprGenerateJob (lib/dpr/dispatch.ts) -- all in application code, no
+-- DB-enforced copy-from-verified-row step anywhere in that path. A bug
+-- anywhere in that chain could pair a mismatched engineer_id with the wrong
+-- project_id/tenant_id; the composite FK is the DB-level backstop, exactly
+-- what 017's pattern exists for. Parent index: users_id_tenant_id_key,
+-- UNIQUE(id, tenant_id), added by migration 017.
+--
+-- ON DELETE RESTRICT, not CASCADE (unlike checkin_escalations' CASCADE):
+-- dprs is an archival, owner-facing document, not operational tracking
+-- state -- deleting a user should never silently cascade-delete a historical
+-- report referencing them. In practice this is inert: users are never
+-- hard-deleted (CLAUDE.md §10a), only status='deactivated'. RESTRICT states
+-- that intent explicitly rather than leaving it implicit.
+ALTER TABLE public.dprs ADD COLUMN engineer_id UUID;
 
 -- Step 2: backfill the one real row. Safe ONLY because today's data has at
 -- most one engineer per (project_id, log_date) -- confirmed above by direct
@@ -60,11 +121,15 @@ DELETE FROM public.dprs WHERE id = '35a2f41c-64ec-41f5-a763-4afe05940ca5';
 -- Step 4: now safe -- every remaining row has a value.
 ALTER TABLE public.dprs ALTER COLUMN engineer_id SET NOT NULL;
 
--- Step 5: widen the unique key. Constraint name below assumes Postgres's
--- default auto-generated name for the inline UNIQUE(project_id, log_date)
--- in migration 023 -- CONFIRM THE REAL NAME via
--- information_schema.table_constraints before running this, do not trust
--- the assumed name blindly.
+-- Step 5: the composite FK (B1) -- added after backfill/NOT NULL so it
+-- validates against real data, not an empty/nullable column.
+ALTER TABLE public.dprs
+  ADD CONSTRAINT dprs_engineer_id_tenant_id_fkey
+  FOREIGN KEY (engineer_id, tenant_id) REFERENCES public.users (id, tenant_id)
+  ON UPDATE NO ACTION ON DELETE RESTRICT;
+
+-- Step 6: widen the unique key. Constraint name confirmed against the live
+-- catalog above (S7), not assumed.
 ALTER TABLE public.dprs DROP CONSTRAINT dprs_project_id_log_date_key;
 ALTER TABLE public.dprs ADD CONSTRAINT dprs_project_id_engineer_id_log_date_key
   UNIQUE (project_id, engineer_id, log_date);
