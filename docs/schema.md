@@ -335,7 +335,58 @@ CREATED (0) — dprs was the sole entry in this bucket; nothing remains in it.]
   record behind every DPR ever sent. Retention here is a compliance question,
   never a storage one (CLAUDE.md §10).
 
-### dprs — migration 023 (LIVE on prod, applied 2026-08-07 20:44 IST)
+### dprs — migration 023 (LIVE on prod, applied 2026-08-07 20:44 IST); engineer_id added by migration 028 (LIVE on prod, applied 2026-08-14 ~15:20 UTC / ~20:50 IST)
+> DATED UPDATE (2026-08-14, ~15:20 UTC): MIGRATION 028 APPLIED TO PROD —
+> `engineer_id` added for the per-engineer DPR reformat
+> (docs/dpr-engineer-report-spec.md). Applied via
+> `docs/reviews/028_dprs_engineer_id_option_a.sql` (`supabase db query
+> --linked -f`, foreground, by file — never `db push`, never backgrounded),
+> after a full pre-apply external review cycle (round 1 STOP, rounds 2-4
+> corrections, round 5 GO with conditions) — full record:
+> `docs/reviews/028-dpr-engineer-report-review-package.md`. Column list below
+> updated to match; the old `UNIQUE(project_id, log_date)` is GONE.
+>
+> **New column:** `engineer_id UUID NOT NULL` — composite same-tenant FK
+> `dprs_engineer_id_tenant_id_fkey (engineer_id, tenant_id) REFERENCES
+> users(id, tenant_id) ON UPDATE NO ACTION ON DELETE RESTRICT` (017's
+> pattern, not a plain single-column FK — see 028's own migration-file
+> comment for why this table's prior plain FKs, `dprs_project_id_fkey` /
+> `dprs_tenant_id_fkey` from 023, are a separate, pre-existing, NOT
+> compounded gap).
+>
+> **Constraint change:** `UNIQUE(project_id, log_date)` REPLACED by
+> `UNIQUE(project_id, engineer_id, log_date)` — one report per ENGINEER per
+> project-day now, not one per project-day. This is the schema-level
+> expression of the reformat's whole point (docs/dpr-engineer-report-spec.md).
+>
+> **Backfill/cleanup, as part of the same transaction:** the one real
+> pre-028 row (`af7760e8`, 2026-08-13) backfilled to its one contributing
+> engineer (`3534756b-2a32-4b91-954b-0bab15c2dba1`); TWO project-level
+> DPR-17 zero-data skip markers deleted (`35a2f41c` 2026-08-12, `3c14243f`
+> 2026-08-14 — the second one written by the OLD pipeline's cron during a
+> same-day merge/deploy sequencing incident, fully separate from this
+> migration and already resolved before the apply — see the review
+> package's §20/§21 for that record). Both markers independently confirmed
+> zero-data (content IS NULL, delivered_owner_at IS NULL, zero underlying
+> daily_logs rows) before deletion. Post-apply, `dprs` has exactly one row.
+>
+> Post-apply catalog readback confirmed, raw, matching every pinned
+> fingerprint exactly: `dprs_project_id_engineer_id_log_date_key` present
+> (`UNIQUE (project_id, engineer_id, log_date)`), old 2-column constraint
+> gone; `dprs_engineer_id_tenant_id_fkey` with `confupdtype='a'`,
+> `confdeltype='r'`; `engineer_id` column `is_nullable: NO`. PITR observed
+> live immediately before the apply (`pitr_enabled: true`, `walg_enabled:
+> true`, window 2026-08-07 16:32:11 UTC → 2026-08-14 15:18:27 UTC). Ledger
+> row (`028`, `dprs_engineer_id`) written by manual INSERT immediately
+> after — applying by file does not write one; this is the same
+> compensating control this project has used since 022, and the specific
+> gap the test-db ledger-vs-schema divergence (found during 028's own
+> rehearsal) proved is still needed. `types/database.ts` regenerated for
+> real against prod immediately after and diffed against the dated
+> pre-apply hand-edit it replaces: only the hand-edit's own dated comment
+> block and one FK relationship's array position differ — zero semantic
+> diff, `tsc --noEmit` clean.
+>
 > DATED UPDATE (2026-08-07, 20:44 IST): APPLIED TO PROD. The "WRITTEN +
 > REHEARSED ON TEST-DB... NOT YET APPLIED TO PROD" box directly below is now
 > HISTORICAL — it correctly described the pre-apply state and is preserved
@@ -402,6 +453,10 @@ CREATED (0) — dprs was the sole entry in this bucket; nothing remains in it.]
 
 - id, created_at, tenant_id UUID NOT NULL (BETA)
 - project_id UUID NOT NULL REFERENCES projects(id) (BETA)
+- engineer_id UUID NOT NULL (migration 028, 2026-08-14) — composite
+  same-tenant FK `dprs_engineer_id_tenant_id_fkey (engineer_id, tenant_id)
+  REFERENCES users(id, tenant_id) ON UPDATE NO ACTION ON DELETE RESTRICT`
+  (017's pattern). One row per ENGINEER per project-day now.
 - log_date DATE NOT NULL (BETA)
 - structured JSONB (BETA) — all 6 Spine DPR sections
 - content TEXT (BETA) — human-readable, rendered from JSON
@@ -412,12 +467,24 @@ CREATED (0) — dprs was the sole entry in this bucket; nothing remains in it.]
   CHECK(pending/delivered/paused/skipped_no_data/failed) (BETA)
 - generation_status TEXT DEFAULT 'idle' CHECK(idle/pending/running/stale) (BETA)
 - generator_job_id UUID (BETA)
-- UNIQUE(project_id, log_date)
+- UNIQUE(project_id, engineer_id, log_date) — migration 028, 2026-08-14;
+  REPLACES the prior UNIQUE(project_id, log_date)
 - NOTE: generation_status and delivery_status are ORTHOGONAL lifecycles.
   One tracks the compute job, one tracks the owner-send state. Do NOT
   collapse into one column or couple their transitions.
 
 ### checkin_escalations — migration 027 (LIVE on prod, applied 2026-08-13 ~12:06 IST)
+> STALENESS CORRECTION (2026-08-14, checked while closing out 028's own
+> schema.md entry): the 028 review package (§14, round 2) carried a note
+> that this entry "has been open since Tuesday (2026-08-11)" and named it
+> as a gap 028 must not stack a second one on top of. That note was accurate
+> when written but went stale without anyone flagging it — this entry was
+> already written and committed the same day 027 applied
+> (`fd0d0e9`, 2026-08-13 12:52 IST, ~46 minutes after the apply), a full day
+> before the 028 package's note was drafted. Corrected here rather than
+> silently — the package's N2 item is CLOSED, and was closed before it was
+> ever flagged as open.
+
 Backs the check-in nudges / escalation feature (bot-flows.md TRIGGER TIMES
 "Morning cutoff" + design-principles.md Rule 7.2): one row per (project,
 engineer, log_date, half) tracking that half's nudge/escalation lifecycle.

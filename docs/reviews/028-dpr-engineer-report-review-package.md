@@ -1,5 +1,17 @@
 # Review package — DPR engineer-report reformat (migration 028 + pipeline rewrite)
 
+**Revision 13 (2026-08-14, ~15:20 UTC). MIGRATION 028 APPLIED TO PROD. GO issued by the
+external reviewer (round 5) with two conditions, both handled: the `3534756b` divergence
+(§23 — kept renamed, not deactivated, roster evidence attached) and the widened two-id
+DELETE (§21.6 Option 1, preserving the pinned-id property the reviewer's original sign-off
+depended on). Applied via the exact SQL pasted verbatim in this session (§26 item 1),
+catalog readback confirmed exactly (§25.3), ledger row written, real `types/database.ts`
+regenerated and diffed clean against the dated hand-edit, `docs/schema.md` closed out for
+both `dprs` (028) and the already-closed `checkin_escalations` (027, stale N2 note
+corrected). Aravind promoted `77119de` back to production — confirmed via an exact etag
+fingerprint match plus independent cache-age corroboration (§25.1), high confidence, not
+absolute. `main` IS NO LONGER ARMED (§25.2). Full assembled record for the reviewer: §26.**
+
 **Revision 12 (2026-08-14, ~13:20 UTC). INCIDENT — §19's framing of "merge PR #61" as a
 REVERSIBLE, pre-apply step was WRONG, not just mis-ordered — merging to `main` auto-deploys
 production, so it deployed the new pipeline against the old (un-migrated) schema for real,
@@ -34,15 +46,16 @@ corrections (S8, S9, S10), two NITs (both accepted). Four of round 2's own "look
 at" questions answered by the reviewer (§16) — no advisory lock needed, zero-roster
 detection is now in scope, N1/026 confirmed handled correctly and the request withdrawn.
 
-Status: **PR #61 is MERGED to main (merge commit `08ed8ab5b500852843f496bed3fb174c2e059913`).
-That merge deployed the new pipeline to production against the OLD schema for
-approximately 22-34 minutes (§20) — a real incident, not a close call. Production has
-since been rolled back via the Vercel dashboard to `0b138fc` (pre-DPR-reformat code),
-confirmed independently in §20. Migration 028 itself (the `DELETE` + schema change) has
-NOT been applied to prod — still true, but for a different reason than §19 assumed:
-applying it now, with `main`'s HEAD still at the new code, would immediately re-arm the
-same mismatch the next time anyone pushes to `main` for any reason. §20 states what
-actually needs to happen next.**
+Status: **MIGRATION 028 IS APPLIED TO PROD (§25.3) AND PRODUCTION IS SERVING THE NEW
+PIPELINE (§25.1, `77119de`, high confidence). `main` IS NO LONGER ARMED (§25.2) — pushes
+are safe again.** History for continuity: PR #61 merged (`08ed8ab`) before the migration
+applied, which deployed the new pipeline onto the OLD schema for ~22-34 minutes (§20, a
+real incident, not a close call); rolled back to `0b138fc` same session; a second zero-data
+marker written during that window's aftermath forced the DELETE to widen from one pinned id
+to two (§21); the reviewer's GO (round 5) came with two conditions, both resolved (§23,
+§26). This branch (`docs/dpr-merge-deploy-incident`) is being merged to `main` now that
+main is safe to receive pushes again — see this session's closing report for the merge
+commit.
 
 ---
 
@@ -1428,6 +1441,125 @@ deploy does not confirm live within one hour of the NEXT `dpr_generate`-producin
 that producer event — either get the deploy live by other means before that event fires,
 or it is an emergency decision with Aravind before it fires, not a silent hope the deploy
 finishes in time.
+
+---
+
+## 25. MIGRATION 028 APPLIED (2026-08-14, ~15:20 UTC / ~20:50 IST) — deploy confirmed, MAIN NO LONGER ARMED
+
+### 25.1 Deploy confirmation — a stronger signal than the etag, and its actual confidence level
+
+**Not just "the etag changed" (the earlier, weaker check) — the etag matches an EXACT,
+previously-captured, uniquely-identified fingerprint of `77119de`'s own build:**
+
+```
+now (post-promotion):  etag: "163964646ccf9a3e2e6fac4fe6395704"   age: 9066   x-vercel-cache: HIT
+known 77119de fingerprint (captured 13:03:32Z, pre-rollback): 163964646ccf9a3e2e6fac4fe6395704  ← EXACT MATCH
+known 0b138fc fingerprint (captured 13:15:09Z, post-rollback): f5ce721047d7971d97a6b0dfb6704ae4  ← does NOT match
+```
+
+`age: 9066` is independent, arithmetic corroboration, not just a second coincidental
+signal: 9066 seconds before the 15:34:39Z request is ~13:03Z — the exact minute `77119de`'s
+build was first observed live, before the rollback. `x-vercel-cache: HIT` confirms this is
+the actual cached prerendered artifact from that original build being re-served, not a
+fresh render that happens to hash the same. Re-checked the GitHub Deployments API too — no
+new record appeared for the promotion, same limitation already documented for the rollback
+(a dashboard-side alias change doesn't create a GitHub Deployment event); consistent with,
+not contradicted by, everything above.
+
+**Confidence: high, not absolute.** An exact match to a uniquely-fingerprinted prior
+observation, corroborated by independent cache-age arithmetic, is materially stronger than
+"a change was observed" — but this environment still has no direct Vercel dashboard/API
+access, so this remains inference from HTTP response fingerprints, not a first-party
+"current alias = `77119de`" confirmation. Stated at that strength, not overstated.
+
+### 25.2 MAIN IS NO LONGER ARMED
+
+The standing condition from §20 ("any push to `main` re-deploys the mismatched code") is
+**LIFTED**, as of migration 028's apply (§25.3) and Aravind's promotion of `77119de` back
+to production (§25.1). `main`'s HEAD now matches the live schema — a future push to `main`
+deploys code that expects `engineer_id`, against a database that has it. **Pushes to
+`main` are safe again.**
+
+### 25.3 Post-apply record, raw
+
+**Applied:** `docs/reviews/028_dprs_engineer_id_option_a.sql`, exactly as pasted verbatim
+in this session's transcript, `supabase db query --linked -f`, ref `jvxwqignooseazzmwhvl`
+printed immediately before, foreground, never `db push`, never backgrounded. Pre-check
+(FK tenant match), Step 1.5, and Step 1.5b all re-probed live immediately pre-`BEGIN` —
+raw output in this session's transcript, all passed. Empty result, no error — transaction
+committed.
+
+**Catalog readback**, raw:
+```
+UNIQUE:  dprs_project_id_engineer_id_log_date_key — UNIQUE (project_id, engineer_id, log_date)
+         (old dprs_project_id_log_date_key gone — not listed)
+FK:      dprs_engineer_id_tenant_id_fkey — confupdtype: a, confdeltype: r
+COLUMN:  engineer_id | uuid | is_nullable: NO
+TABLE:   exactly one row — af7760e8, engineer_id 3534756b-2a32-4b91-954b-0bab15c2dba1
+```
+
+**Ledger row** — written by manual `INSERT` (applying by file does not write one; this
+project's own compensating control since 022, and precisely the gap 028's own test-db
+rehearsal proved was still needed):
+```sql
+INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('028', 'dprs_engineer_id');
+```
+Confirmed present, re-read: `{"version":"028","name":"dprs_engineer_id"}`, immediately
+above `027`.
+
+**`types/database.ts`** — real `npx supabase gen types typescript --linked --schema
+public`, run against prod, diffed against the dated pre-apply hand-edit it replaces.
+**The diff:**
+```diff
+-      // MANUAL PRE-MIGRATION EDIT (2026-08-14, per-engineer DPR reformat) — ... (13-line dated comment, removed — expected, generated files carry no hand-written comments)
+...
++          { foreignKeyName: "dprs_engineer_id_tenant_id_fkey", columns: ["engineer_id", "tenant_id"], isOneToOne: false, referencedRelation: "users", referencedColumns: ["id", "tenant_id"] },
+... (same relationship entry, moved earlier in the array — the generator orders Relationships differently than the hand-edit did)
+```
+**Zero semantic difference** — every column type, every `Row`/`Insert`/`Update` shape for
+`engineer_id` is byte-identical between the hand-edit and the real regeneration; the only
+diffs are the now-obsolete dated comment (correctly gone) and one array-position reorder
+of a single relationship entry (cosmetic, not structural). The hand-edit was accurate.
+`tsc --noEmit`: clean against the real file.
+
+**`docs/schema.md`** — `dprs` entry updated in place: `engineer_id UUID NOT NULL` +
+composite FK added to the column list, `UNIQUE(project_id, log_date)` →
+`UNIQUE(project_id, engineer_id, log_date)`, full apply record boxed at the top matching
+this section. **`checkin_escalations` (027) — found ALREADY CLOSED, not reopened or
+redone:** commit `fd0d0e9` (2026-08-13 12:52 IST, ~46 minutes after 027's own apply)
+already wrote that entry, a full day before this package's own N2 note (round 2, §14)
+called it open. Corrected in `schema.md` itself, dated, rather than silently — the N2 item
+was closed before it was ever flagged as open; nothing needed doing there, only saying so.
+
+---
+
+## 26. APPLIED RUNBOOK RECORD — assembled for the reviewer
+
+Everything the reviewer asked to see in one place, each pointing at its own detailed
+section rather than re-derived here:
+
+1. **The SQL as applied** — §18 of this session's transcript has the full 260-line file
+   pasted verbatim (the reviewer asked for this specifically, not a description of it);
+   byte-identical to `docs/reviews/028_dprs_engineer_id_option_a.sql` at commit `fb5de1d`
+   on this branch.
+2. **Both pre-`BEGIN` probes, raw** — Step 1.5 (jobs queue, zero rows) and Step 1.5b
+   (`dprs` shape, exactly the three known rows) both re-probed live immediately before
+   `BEGIN`, not reused from the readiness pass an hour earlier. Full raw output in this
+   session's transcript.
+3. **Catalog readback** — §25.3 above.
+4. **Deploy confirmation** — §25.1 above, with its stated confidence level.
+5. **The ledger row** — §25.3 above.
+6. **§23 — the `3534756b` divergence** — kept RENAMED ("Vikram Rao"), not deactivated,
+   from the reviewer's literal GO condition. Roster evidence re-stated: exactly one active
+   engineer exists anywhere in prod (`3534756b`), on any project, any tenant — confirmed
+   live, twice, both before deciding and again immediately before this apply's own
+   pre-checks. Deactivating it would have emptied the only roster there is; the rename
+   already served the condition's actual purpose (no smoke-test label in an owner-facing
+   report).
+
+**Not part of this record, deliberately:** the deploy step itself (Aravind's own dashboard
+promotion, §25.1) and anything past it — this section assembles what happened UP TO AND
+INCLUDING the schema apply and its immediate verification, per the reviewer's own ask.
 
 ---
 
