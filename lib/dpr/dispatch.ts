@@ -77,6 +77,11 @@ export async function handleDprGenerateJob(
     .single()
   if (projectError) throw projectError
 
+  // profile-lookup-guard:allow-id-eq — payload.engineer_id is a resolved
+  // users.id (sourced from daily_logs.engineer_id / project_members.user_id
+  // via the roster/union trigger), never an auth uid, so the pre-007
+  // lookup bug cannot occur here or at this file's other users lookup
+  // below (resolveCheckInStatus), which is the same call shape.
   const { data: engineerUser, error: engineerError } = await client
     .from('users')
     .select('full_name')

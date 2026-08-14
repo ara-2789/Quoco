@@ -52,6 +52,9 @@ export default async function DprDetailPage({ params }: { params: Promise<{ id: 
   // dprs/page.tsx: no verified PostgREST support for embedding through a
   // composite FK). content already carries "Site engineer: <name>" in its
   // own header line (render.ts), so this is a secondary display only.
+  // profile-lookup-guard:allow-id-eq — dpr.engineer_id is a resolved
+  // users.id (dprs.engineer_id, a composite FK to users.id), never an auth
+  // uid, so the pre-007 lookup bug cannot occur here.
   const { data: engineer } = await supabase.from('users').select('full_name').eq('id', dpr.engineer_id).maybeSingle()
 
   return (
