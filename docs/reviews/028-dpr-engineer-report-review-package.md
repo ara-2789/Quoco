@@ -1147,6 +1147,169 @@ this session's closing report for the exact branch state.
 
 ---
 
+## 21. FINDING (2026-08-14, ~14:35 UTC / 20:05 IST) — a SECOND zero-data marker row; the migration's pinned pre-apply state is stale, and it recurs nightly
+
+**Not a new incident — a consequence of tonight's rollback-verification run (§20) that
+changes what tomorrow's apply must account for.** The 20:00 IST cron fired tonight on the
+rolled-back OLD code (confirmed, §20's own closing check) and, finding no `daily_logs` for
+the one active project, wrote a second `skipped_no_data` marker row — structurally
+identical to `35a2f41c`, the row the migration's `DELETE` was written and reviewed against.
+
+### 21.1 Full current state, prod `dprs`, all rows, all columns — re-probed live
+
+```json
+[
+  {
+    "id": "35a2f41c-64ec-41f5-a763-4afe05940ca5",
+    "log_date": "2026-08-12",
+    "content": null,
+    "structured": null,
+    "generation_status": "idle",
+    "delivery_status": "skipped_no_data",
+    "generator_job_id": null,
+    "generated_at": null,
+    "delivered_owner_at": null,
+    "last_regenerated_at": null,
+    "created_at": "2026-08-12 14:30:07.100071+00",
+    "project_id": "acef67fe-e775-439d-82b8-5b8526868d6d",
+    "tenant_id": "adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0"
+  },
+  {
+    "id": "af7760e8-2457-4c11-bc35-52929a0bbf54",
+    "log_date": "2026-08-13",
+    "content": "EXECUTION OUTPUT\n... (real, generated content — the one genuine row) ...",
+    "structured": { "...": "real judgment object, unchanged from prior probes" },
+    "generation_status": "idle",
+    "delivery_status": "pending",
+    "generator_job_id": "a4e27471-f267-4b2e-997b-5322cae863db",
+    "generated_at": "2026-08-13 14:31:00.158+00",
+    "delivered_owner_at": null,
+    "last_regenerated_at": null,
+    "created_at": "2026-08-13 14:30:50.289648+00",
+    "project_id": "acef67fe-e775-439d-82b8-5b8526868d6d",
+    "tenant_id": "adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0"
+  },
+  {
+    "id": "3c14243f-9395-4c8d-923b-fd3ea1925b96",
+    "log_date": "2026-08-14",
+    "content": null,
+    "structured": null,
+    "generation_status": "idle",
+    "delivery_status": "skipped_no_data",
+    "generator_job_id": null,
+    "generated_at": null,
+    "delivered_owner_at": null,
+    "last_regenerated_at": null,
+    "created_at": "2026-08-14 14:30:04.344349+00",
+    "project_id": "acef67fe-e775-439d-82b8-5b8526868d6d",
+    "tenant_id": "adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0"
+  }
+]
+```
+
+(`af7760e8`'s full `content`/`structured` unchanged from the values already pinned
+elsewhere in this package — abbreviated here since only its continued presence and shape
+matter for this finding, not a re-paste.)
+
+**Three rows now, not two.** Two of the three (`35a2f41c`, `3c14243f`) are zero-data
+markers. One (`af7760e8`) is real.
+
+### 21.2 `3c14243f` confirmed zero-data — same three independent fields used for `35a2f41c`
+
+```sql
+SELECT
+  (SELECT content FROM dprs WHERE id = '3c14243f-9395-4c8d-923b-fd3ea1925b96') IS NULL AS content_is_null,
+  (SELECT delivered_owner_at FROM dprs WHERE id = '3c14243f-9395-4c8d-923b-fd3ea1925b96') IS NULL AS delivered_owner_at_is_null,
+  (SELECT count(*) FROM daily_logs
+     WHERE project_id = 'acef67fe-e775-439d-82b8-5b8526868d6d' AND log_date = '2026-08-14') AS underlying_daily_logs_count;
+```
+→ `content_is_null: true`, `delivered_owner_at_is_null: true`, `underlying_daily_logs_count: 0`.
+Same verdict as `35a2f41c` on every field originally used to justify that row's deletion —
+not a weaker or assumed match, the identical check re-run against the new row.
+
+### 21.3 Consequence 1 — the migration's pinned pre-apply state is stale
+
+`028_dprs_engineer_id_option_a.sql`'s header pins prod's pre-apply state as TWO rows: one
+real (`af7760e8`), one worthless marker (`35a2f41c`), with the `DELETE` targeting the
+latter by id. Prod now has **three** rows. **Option A's `ALTER COLUMN engineer_id SET NOT
+NULL` will fail outright against `3c14243f`** unless the `DELETE` step is widened to cover
+it too — the backfill `UPDATE` has no correct value to write for a zero-data marker (same
+reasoning §3 already established for `35a2f41c`: no engineer contributed anything, so
+there is no engineer to backfill to), so `3c14243f` cannot be migrated forward as-is, only
+deleted or excluded.
+
+### 21.4 Consequence 2 — this recurs nightly, unless the migration applies or a check-in is submitted
+
+Every day the migration is not applied AND no engineer checks in, the still-live OLD code
+writes one more marker at 20:00 IST. **The pinned pre-apply state does not go stale once —
+it goes stale on a nightly cadence, and the `DELETE` target set grows by one row per day of
+delay.** This is a direct, mechanical consequence of tonight's own finding, not a
+hypothetical projected forward: it already happened once between the migration being
+written and tonight.
+
+### 21.5 Consequence 3 — a premise the external reviewer accepted ON THE RECORD has changed
+
+The `DELETE` against `35a2f41c` was accepted **un-rehearsed against a real target row**
+partly on the strength of it being, in the reviewer's own framing, a single-row operation
+against a verbatim-pinned id (`docs/reviews/028-dpr-engineer-report-review-package.md`
+§3/§15, `35a2f41c` pinned by id throughout). **It is now a multi-row operation against a
+set that changes daily.** Whether the reviewer would accept a two-row (or growing,
+predicate-matched) delete on the same reasoning is not something this session gets to
+decide on their behalf — the premise they signed off on has materially changed, and per
+standing practice, that goes back to them explicitly rather than being silently widened
+under the same accepted rationale. A short heads-up note is being sent (this session,
+outside this package) flagging this specifically — not a new review round, a notice that
+one of their accepted premises no longer holds as stated.
+
+### 21.6 Two options for the apply session — NOT decided here, migration SQL NOT edited
+
+Per direct instruction: the shape of the fix is deferred to the apply session, since a
+predicate-based delete is a materially different risk profile from a pinned-id delete, and
+that difference deserves its own deliberate decision, not one made in passing during a
+read-only verification pass.
+
+**Option 1 — explicit id list, re-pinned immediately pre-apply.**
+```sql
+DELETE FROM public.dprs WHERE id IN (
+  '35a2f41c-64ec-41f5-a763-4afe05940ca5',
+  '3c14243f-9395-4c8d-923b-fd3ea1925b96'
+  -- + any further marker rows written between now and the apply session,
+  -- each independently re-verified on the same 3 fields (§21.2) immediately
+  -- before BEGIN, not carried forward from this write-up.
+);
+```
+Matches the exact shape the reviewer already reviewed and accepted — same auditability,
+same "verbatim-pinned id" character. Cost: does not solve the recurrence (§21.4) itself —
+the id list must be re-derived and re-verified at apply time, every time the apply slips
+another day, by re-running §21.2's three-field check against whatever new marker rows
+exist by then.
+
+**Option 2 — predicate-based delete of zero-data markers.**
+```sql
+DELETE FROM public.dprs d
+WHERE d.content IS NULL
+  AND d.delivered_owner_at IS NULL
+  AND d.delivery_status = 'skipped_no_data'
+  AND NOT EXISTS (
+    SELECT 1 FROM daily_logs dl
+    WHERE dl.project_id = d.project_id AND dl.log_date = d.log_date
+  );
+```
+Self-adjusting — captures every zero-data marker at apply time regardless of how many
+accumulate, without manual re-pinning. Cost, stated plainly, not minimized: this is a
+**materially different risk profile**, exactly as flagged for the reviewer. A predicate
+delete is not individually auditable the way a pinned id list is — its correctness rests
+on the predicate itself being a complete and exact characterization of "worthless
+zero-data marker, nothing else," which is a claim nobody has reviewed yet (the reviewer
+reviewed one row by id, not this general characterization). A subtle predicate error — a
+wrong join key, a timezone edge on `log_date`, a status string that later gains a new
+legitimate meaning — could delete more than intended, silently, in a way a pinned list
+structurally cannot.
+
+Neither option is applied, chosen, or written into the migration file in this pass.
+
+---
+
 ## Attachments
 
 - `028_dprs_engineer_id_option_a.sql` — DECIDED, full text, this round's revision
