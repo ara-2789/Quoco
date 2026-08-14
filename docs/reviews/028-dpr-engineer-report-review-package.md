@@ -330,15 +330,38 @@ own correction convention (matches the plan document's S8 pass).**
 5. Vercel deploy of the corresponding app code follows **immediately** after — same
    session, no gap left open deliberately.
 6. Confirm the deploy is live (a real request against the new code path, not just
-   "deploy succeeded" in Vercel's UI).
+   "deploy succeeded" in Vercel's UI) **by 19:00 IST** (see the restored deadline clause
+   below — round 4 correction, not a re-opening).
 
 **No schema-version marker needed in the cron route.** Considered (round 2's own
 look-hardest-at item 7) — Step 1.5's probe makes the failure mode a marker would guard
 against structurally impossible; a marker on top would be a redundant guard against a
 state the probe already rules out. Settles that question.
 
-Folded into `028_dprs_engineer_id_option_a.sql`'s own header this round, not left only
-here.
+**RESTORED, round 4: the same-day deadline clause, dropped in error when round-3's
+B3-amend struck round 2's steps wholesale.** Round 3 correctly replaced the *wrong*
+window (the round-2 version guarded only "near the 20:00 cron," missing that `tick` runs
+every minute), but the strike-through took the deadline clause down with it — Step 1.5
+and the deadline guard two **different** consumers, not one, and both are required:
+
+- **Step 1.5 (queue probe)** guards the **consumer side** — a `dpr_generate` job already
+  queued, executing via `tick` inside the apply→deploy gap, hitting the dropped
+  `onConflict` target.
+- **The deadline** guards the **producer side** — if the *deploy itself* stalls past
+  20:00 IST, the 20:00 cron fires on the OLD deployed code against the NEW schema: a
+  zero-data project's skip-marker upsert (`route.ts:65`, still old-shape) hits `42P10`
+  directly; a data-bearing project enqueues an **old-shape payload with no
+  `engineer_id`**, which `tick` later retries against the **NEW** `dispatch.ts` once the
+  deploy eventually lands — exactly the payload shape the implementation's new assertion
+  (item 2, this round) must reject loudly rather than silently coerce.
+
+**Abort threshold: deploy confirmed live by 19:00 IST** — a full hour of margin before
+the 20:00 cron, not a just-in-time confirm. Not met ⇒ treat that day's apply as failed:
+either get the deploy live by other means before 20:00, or this is an emergency decision
+with Aravind before 20:00, not a silent hope the deploy finishes in time.
+
+Both guards, both documents — folded into `028_dprs_engineer_id_option_a.sql`'s own
+header this round, not left only here.
 
 ---
 

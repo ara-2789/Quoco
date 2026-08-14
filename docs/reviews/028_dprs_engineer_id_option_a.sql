@@ -49,6 +49,28 @@
 -- route.ts:65), which still target the OLD onConflict key until the deploy
 -- ships.
 --
+-- SAME-DAY DEADLINE (restored round 4 -- round 3's B3-amend struck this
+-- wholesale along with the window it was replacing, but it guards a
+-- DIFFERENT consumer than Step 1.5 and both are required together:
+--   * Step 1.5 (above) guards the CONSUMER side -- jobs already queued,
+--     executing via tick inside the apply->deploy gap.
+--   * This deadline guards the PRODUCER side -- if the deploy stalls past
+--     20:00 IST, the nightly cron itself runs on the OLD deployed code
+--     against the NEW schema: a zero-data project hits the dropped
+--     onConflict target directly (42P10 on route.ts:65's still-old-shape
+--     upsert); a data-bearing project enqueues an old-shape payload with
+--     no engineer_id, which tick then retries against the NEW dispatch
+--     code once the deploy eventually lands -- a payload
+--     handleDprGenerateJob must reject loudly (see the "pre-028 payload
+--     shape" assertion in the implementation, not silently coerce).
+-- ABORT THRESHOLD: deploy confirmed live by 19:00 IST -- a full hour of
+-- margin before the 20:00 cron, not a just-in-time confirm. If the deploy
+-- is not confirmed live by 19:00 IST, treat it as a failed apply for that
+-- day: do not let the 20:00 cron fire against a half-migrated state:
+-- either get the deploy live before 20:00 by other means, or, failing
+-- that, this needs an emergency decision with Aravind before 20:00, not a
+-- silent hope the deploy finishes in time.
+--
 -- PRE-APPLY STATE -- RAW QUERY OUTPUT, PINNED VERBATIM (2026-08-14, review
 -- round 2, S7). `SELECT id, project_id, log_date, delivery_status,
 -- generation_status, content IS NULL AS content_is_null, delivered_owner_at
