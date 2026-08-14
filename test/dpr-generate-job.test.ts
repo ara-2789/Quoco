@@ -83,7 +83,22 @@ describe('handleDprGenerateJob', () => {
     const engineerId = testEngineerId()
     try {
       await addToProject(projectId, engineerId)
-      await db.from('daily_logs').insert({ project_id: projectId, tenant_id: TEST_TENANT_ID, engineer_id: engineerId, log_date: LOG_DATE })
+      // Real data on BOTH halves — a blank row (no fields set) resolves
+      // both halves to not_received, which is a genuinely different,
+      // correct code path (the code-templated skip-the-model verdict,
+      // Rule 2) that this test is not the one exercising. Caught by this
+      // test itself on first run: the mock was never called because the
+      // real logic correctly skipped it.
+      await db.from('daily_logs').insert({
+        project_id: projectId,
+        tenant_id: TEST_TENANT_ID,
+        engineer_id: engineerId,
+        log_date: LOG_DATE,
+        morning_submitted_at: '2026-05-02T04:00:00Z',
+        morning_plan: 'Excavation of footing',
+        evening_submitted_at: '2026-05-02T14:00:00Z',
+        evening_schedule_met: true,
+      })
 
       await handleDprGenerateJob(
         { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },

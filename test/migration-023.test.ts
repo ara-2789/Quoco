@@ -30,7 +30,14 @@ import {
 //   T-023-04  authenticated cannot INSERT, UPDATE, or DELETE via PostgREST —
 //             023's REVOKE, not an RLS WITH CHECK. All three fail at the
 //             grant layer (42501) before RLS is even consulted.
-//   T-023-05  UNIQUE(project_id, log_date) rejects a duplicate — 23505.
+//   T-023-05  UNIQUE(project_id, engineer_id, log_date) rejects a duplicate
+//             (same engineer twice) — 23505 — AND a second engineer on the
+//             same project_id + log_date is now ALLOWED, the intentional
+//             behaviour change migration 028 (per-engineer DPR reformat)
+//             exists to make possible. Updated 2026-08-14 — the constraint
+//             was 2-column (project_id, log_date) when this file was
+//             written; 028 widened it to 3-column and the old assertion no
+//             longer describes the live schema.
 //   T-023-06  CHECK rejects a bad delivery_status and a bad generation_status
 //             — 23514, both columns.
 //   T-023-07  it.todo — TRUNCATE/REFERENCES/TRIGGER tracked gap (see below).
@@ -89,10 +96,11 @@ async function seedDpr(
   projectId: string,
   logDate: string,
   content: string,
+  engineerId: string,
 ): Promise<void> {
   const db = testClient()
   const { error } = await db.from('dprs').upsert(
-    { id, tenant_id: tenantId, project_id: projectId, log_date: logDate, content },
+    { id, tenant_id: tenantId, project_id: projectId, log_date: logDate, content, engineer_id: engineerId },
     { onConflict: 'id' },
   )
   if (error) throw new Error(`seedDpr(${id}) failed: ${error.message}`)
@@ -121,9 +129,9 @@ beforeAll(async () => {
     { onConflict: 'id' },
   )
 
-  await seedDpr(DPR_A1_ID, TEST_TENANT_A_ID, TEST_PROJECT_A_ID, LOG_DATE, 'dpr content — project A1')
-  await seedDpr(DPR_A2_ID, TEST_TENANT_A_ID, PROJECT_A2_ID, LOG_DATE, 'dpr content — project A2')
-  await seedDpr(DPR_B1_ID, TEST_TENANT_B_ID, TEST_PROJECT_B_ID, LOG_DATE, 'dpr content — project B1')
+  await seedDpr(DPR_A1_ID, TEST_TENANT_A_ID, TEST_PROJECT_A_ID, LOG_DATE, 'dpr content — project A1', fx.profileAId)
+  await seedDpr(DPR_A2_ID, TEST_TENANT_A_ID, PROJECT_A2_ID, LOG_DATE, 'dpr content — project A2', fx.profileAId)
+  await seedDpr(DPR_B1_ID, TEST_TENANT_B_ID, TEST_PROJECT_B_ID, LOG_DATE, 'dpr content — project B1', fx.profileBId)
 
   jwtA = await jwtClient(TEST_007_USER_A_EMAIL, TEST_007_PASSWORD)
 })
@@ -207,20 +215,45 @@ describe('migration 023 — public.dprs', () => {
     expect(await readContent(DPR_A1_ID)).toBe('dpr content — project A1')
   })
 
-  it('T-023-05: UNIQUE(project_id, log_date) rejects a duplicate', async () => {
+  it('T-023-05: UNIQUE(project_id, engineer_id, log_date) rejects a same-engineer duplicate, but now ALLOWS a second engineer on the same project_id + log_date (migration 028)', async () => {
     const db = testClient()
     const firstId = '00000000-0000-4000-a000-0000000230c1'
     const dupeId = '00000000-0000-4000-a000-0000000230c2'
+    const secondEngineerId = '00000000-0000-4000-a000-0000000230c3'
     try {
       const first = await db
         .from('dprs')
-        .insert({ id: firstId, tenant_id: TEST_TENANT_A_ID, project_id: TEST_PROJECT_A_ID, log_date: UNIQUE_TEST_LOG_DATE })
+        .insert({ id: firstId, tenant_id: TEST_TENANT_A_ID, project_id: TEST_PROJECT_A_ID, log_date: UNIQUE_TEST_LOG_DATE, engineer_id: fx.profileAId })
       expect(first.error).toBeNull()
 
+      // Same (project_id, engineer_id, log_date) — still rejected.
       const dupe = await db
         .from('dprs')
-        .insert({ id: dupeId, tenant_id: TEST_TENANT_A_ID, project_id: TEST_PROJECT_A_ID, log_date: UNIQUE_TEST_LOG_DATE })
+        .insert({ id: dupeId, tenant_id: TEST_TENANT_A_ID, project_id: TEST_PROJECT_A_ID, log_date: UNIQUE_TEST_LOG_DATE, engineer_id: fx.profileAId })
       expect(dupe.error?.code).toBe('23505')
+
+      // Same (project_id, log_date), DIFFERENT engineer_id — now allowed.
+      // This is the exact behaviour 028 exists to enable (one report per
+      // engineer per project-day, not one per project-day). A composite FK
+      // (engineer_id, tenant_id) -> users(id, tenant_id) requires a real
+      // same-tenant user id, so this reuses fx.profileBId's OWN tenant's
+      // counterpart is wrong — profileBId is tenant B. Use TEST_007_USER_A's
+      // own profile is already taken by `first`; seed a second tenant-A user
+      // row directly for this purpose instead of borrowing across tenants.
+      const secondUser = await db
+        .from('users')
+        .insert({ id: secondEngineerId, tenant_id: TEST_TENANT_A_ID, full_name: 'ZZ 023 second engineer', role: 'engineer', status: 'active' })
+        .select('id')
+        .single()
+      expect(secondUser.error).toBeNull()
+
+      const secondEngineerDpr = await db
+        .from('dprs')
+        .insert({ id: '00000000-0000-4000-a000-0000000230c4', tenant_id: TEST_TENANT_A_ID, project_id: TEST_PROJECT_A_ID, log_date: UNIQUE_TEST_LOG_DATE, engineer_id: secondEngineerId })
+      expect(secondEngineerDpr.error).toBeNull()
+
+      await db.from('dprs').delete().eq('id', '00000000-0000-4000-a000-0000000230c4')
+      await db.from('users').delete().eq('id', secondEngineerId)
     } finally {
       await db.from('dprs').delete().in('id', [firstId, dupeId])
     }
@@ -232,6 +265,7 @@ describe('migration 023 — public.dprs', () => {
       tenant_id: TEST_TENANT_A_ID,
       project_id: TEST_PROJECT_A_ID,
       log_date: CHECK_TEST_LOG_DATE,
+      engineer_id: fx.profileAId,
       delivery_status: 'bogus',
     })
     expect(badDelivery.error?.code).toBe('23514')
@@ -240,6 +274,7 @@ describe('migration 023 — public.dprs', () => {
       tenant_id: TEST_TENANT_A_ID,
       project_id: TEST_PROJECT_A_ID,
       log_date: CHECK_TEST_LOG_DATE,
+      engineer_id: fx.profileAId,
       generation_status: 'bogus',
     })
     expect(badGeneration.error?.code).toBe('23514')

@@ -73,8 +73,13 @@ beforeAll(async () => {
 afterEach(async () => {
   // runDprGenerateTrigger scans ALL active projects, so every test also
   // touches the shared TEST_PROJECT_ID fixture as a side effect if its
-  // roster engineer has no data — clean up any dprs rows it produced.
+  // roster engineer has no data — clean up any dprs rows AND any
+  // dpr_generate jobs it produced (found the hard way: two leftover
+  // pending jobs against TEST_PROJECT_ID surfaced during the 028
+  // test-db rehearsal — this file's own dprs cleanup existed, the jobs
+  // cleanup did not).
   await testClient().from('dprs').delete().eq('project_id', TEST_PROJECT_ID).eq('log_date', LOG_DATE)
+  await testClient().from('jobs').delete().eq('type', 'dpr_generate').contains('payload', { project_id: TEST_PROJECT_ID, log_date: LOG_DATE })
 })
 
 afterAll(async () => {

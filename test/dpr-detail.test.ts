@@ -74,10 +74,17 @@ const HONEST_GAP_CONTENT = [
 let fx: TwoTenantFixtures
 let jwtA: SupabaseClient
 
-async function seedDpr(id: string, tenantId: string, projectId: string, logDate: string, content: string | null): Promise<void> {
+async function seedDpr(
+  id: string,
+  tenantId: string,
+  projectId: string,
+  logDate: string,
+  content: string | null,
+  engineerId: string,
+): Promise<void> {
   const db = testClient()
   const { error } = await db.from('dprs').upsert(
-    { id, tenant_id: tenantId, project_id: projectId, log_date: logDate, content },
+    { id, tenant_id: tenantId, project_id: projectId, log_date: logDate, content, engineer_id: engineerId },
     { onConflict: 'id' },
   )
   if (error) throw new Error(`seedDpr(${id}) failed: ${error.message}`)
@@ -97,11 +104,11 @@ beforeAll(async () => {
     { onConflict: 'id' },
   )
 
-  await seedDpr(DPR_A1_ID, TEST_TENANT_A_ID, TEST_PROJECT_A_ID, LOG_DATE_A1, 'dpr content — project A1')
-  await seedDpr(DPR_A2_ID, TEST_TENANT_A_ID, PROJECT_A2_ID, LOG_DATE_A2, 'dpr content — project A2')
-  await seedDpr(DPR_B1_ID, TEST_TENANT_B_ID, TEST_PROJECT_B_ID, LOG_DATE_B1, 'dpr content — project B1')
-  await seedDpr(DPR_NULL_ID, TEST_TENANT_A_ID, TEST_PROJECT_A_ID, LOG_DATE_NULL, null)
-  await seedDpr(DPR_GAP_ID, TEST_TENANT_A_ID, TEST_PROJECT_A_ID, LOG_DATE_GAP, HONEST_GAP_CONTENT)
+  await seedDpr(DPR_A1_ID, TEST_TENANT_A_ID, TEST_PROJECT_A_ID, LOG_DATE_A1, 'dpr content — project A1', fx.profileAId)
+  await seedDpr(DPR_A2_ID, TEST_TENANT_A_ID, PROJECT_A2_ID, LOG_DATE_A2, 'dpr content — project A2', fx.profileAId)
+  await seedDpr(DPR_B1_ID, TEST_TENANT_B_ID, TEST_PROJECT_B_ID, LOG_DATE_B1, 'dpr content — project B1', fx.profileBId)
+  await seedDpr(DPR_NULL_ID, TEST_TENANT_A_ID, TEST_PROJECT_A_ID, LOG_DATE_NULL, null, fx.profileAId)
+  await seedDpr(DPR_GAP_ID, TEST_TENANT_A_ID, TEST_PROJECT_A_ID, LOG_DATE_GAP, HONEST_GAP_CONTENT, fx.profileAId)
 
   jwtA = await jwtClient(TEST_007_USER_A_EMAIL, TEST_007_PASSWORD)
 })
