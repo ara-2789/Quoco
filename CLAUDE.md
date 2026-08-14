@@ -1814,6 +1814,36 @@ whichever accounts held pm/admin sessions — the exact comparison recorded
 earlier in §0, now closed out with a real apply behind it rather than a
 prediction.
 
+TRIPWIRE — `3534756b` (renamed "Vikram Rao") IS NOT A REAL ENGINEER, AND NOTHING IN THE
+SCHEMA SAYS SO (opened 2026-08-15, migration 028's applied-runbook close-out; reviewer
+accepted this as the migration's closing divergence, not an open blocker). Migration 028's
+apply gate asked for `3534756b` (Aravind's own WhatsApp sandbox account,
+`+919176865600`) to be DEACTIVATED before apply. It was RENAMED instead ("Vikram Rao") —
+correct at the time (docs/reviews/028-dpr-engineer-report-review-package.md §23): the
+gate's actual purpose was stopping a smoke-test label from appearing as an engineer name in
+an owner-facing report, and the rename fully serves that purpose while a deactivation would
+have emptied the only roster in prod and removed Aravind's only WhatsApp test path.
+  WHAT THE RENAME DOES NOT FIX, stated precisely, not implied: it makes `3534756b`
+  INDISTINGUISHABLE from a real engineer, rather than removing it from the pool. Nothing in
+  `users` marks this row as a test fixture — no flag, no dedicated test tenant, no
+  structural signal at all. This is the correct trade EXACTLY as long as Aravind is the
+  only consumer of every report this row appears in. It becomes the wrong state the moment
+  he is not — a second person (a real PM, a real owner) reading a report that quietly
+  includes "Vikram Rao"'s data would have no way to know that name is a sandbox account, not
+  a person on the payroll.
+  This narrows, not closes, the pre-existing finding that nothing in this schema separates
+  test users from real ones (the general shape of problem this project has hit before with
+  test/prod separation — see the ENV VAR CONCATENATION and general test-hygiene entries
+  elsewhere in this file for the same class of gap in other surfaces).
+  CLOSING CONDITION, named explicitly so it has a trigger, not a memory dependency:
+  BEFORE `dprs.delivered_owner_at` is ever stamped for a REAL owner (not Aravind), OR
+  BEFORE any non-Aravind PM/owner gets access to this tenant — whichever comes first —
+  `3534756b` must be deactivated or moved to a dedicated test tenant. **The delivery PR
+  (DPR-24, owner-facing send) is the natural closer and should re-check this condition on
+  the record when it lands** — noted there too (see that PR's own description when it's
+  opened) so this trigger has an owner, not just a note in a file nobody re-reads. Full
+  record: `docs/reviews/028-dpr-engineer-report-review-package.md` §27.
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.

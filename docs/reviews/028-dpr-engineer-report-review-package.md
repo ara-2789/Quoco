@@ -1563,6 +1563,37 @@ INCLUDING the schema apply and its immediate verification, per the reviewer's ow
 
 ---
 
+## 27. TRIPWIRE (2026-08-15) — `3534756b` divergence accepted, CLOSED with a named condition, not an open item
+
+**The reviewer accepted §23's divergence and closed 028 on it.** Recorded here, dated, in
+both this package and `CLAUDE.md`'s own capture style (`CLAUDE.md`, §10, same date) —
+per instruction, so the record exists in both the review-package layer and the
+project's own standing-instruction layer, not just one.
+
+**Substance, stated exactly, not softened:** the rename (`3534756b` → "Vikram Rao") solved
+the label-leak problem — a smoke-test string appearing as an engineer name in an
+owner-facing report — by making the row **indistinguishable** from a real engineer, not by
+removing it from the pool. That is the correct trade **while Aravind is the only consumer
+of these reports.** It becomes the wrong state **the moment he is not** — a real PM or
+owner reading a report that includes "Vikram Rao"'s data has no signal that name is a
+sandbox account. The underlying finding this migration surfaced — nothing in this schema
+separates test users from real ones — is **narrowed by the rename, not closed by it.**
+
+**Closing condition, named explicitly, not left to memory:** BEFORE `dprs.
+delivered_owner_at` is ever stamped for a real (non-Aravind) owner, OR BEFORE any
+non-Aravind PM/owner gets access to this tenant — whichever comes first — `3534756b` must
+be deactivated or moved to a dedicated test tenant. **The delivery PR (DPR-24, owner-facing
+send) is the natural closer** and should re-check this condition on its own record when it
+lands, per `CLAUDE.md`'s matching entry — giving the trigger an owner (that PR's own
+description/checklist) rather than relying on someone re-reading this package at the right
+moment.
+
+**Status: CLOSED for migration 028's own purposes** (the reviewer's condition, correctly
+handled, is not reopened) **— but the tripwire above stays open** until its own named
+condition fires. Not the same thing; recorded as two separate facts on purpose.
+
+---
+
 ## Attachments
 
 - `028_dprs_engineer_id_option_a.sql` — DECIDED, full text, this round's revision
