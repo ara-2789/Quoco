@@ -872,6 +872,26 @@ test-db contention during long concurrent runs) — a hard timeout with an immed
 fast, clean pass on retry, not a logic regression. `tsc --noEmit`: clean. `npm run lint`:
 0 errors (same 2 pre-existing warnings in untouched files, unrelated to this round).
 
+### 18.5 CI-only catch, pre-merge: the profile-lookup guard (`cbc5ece`)
+
+Not part of the reviewed diff (`e9afdc4` → `d042d7e`) — found by GitHub's CI at merge time,
+not by any local run in this package, because the guard is a `pretest` hook
+(`npm run check:profile-lookups`) that only fires via `npm test`, never via the
+`npx vitest run` invocations used throughout this package's own local runs. `Test (real
+test-db)` failed on `d042d7e`: `scripts/check-profile-lookups.mjs` correctly flagged
+`app/(dashboard)/dprs/[id]/page.tsx` and `lib/dpr/dispatch.ts` for
+`from('users').eq('id', ...)` — the guard's whole-file heuristic for the pre-007
+lookup bug (matching an auth uid against the post-007-decoupled `users.id`).
+
+**Both are genuine false positives, checked, not assumed:** the `id` at both sites is
+`dpr.engineer_id` / `payload.engineer_id` — a resolved `users.id` sourced from
+`dprs.engineer_id` (a composite FK to `users.id`) / `daily_logs.engineer_id`, never an
+`auth.uid()`. Opted in via the project's existing per-file `profile-lookup-guard:
+allow-id-eq` tag — the same convention `lib/whatsapp/reactivation.ts` already uses — not by
+weakening the guard. Re-ran the full local suite after (46/46 files, 573 passed, 1 todo,
+no timeout this time) and confirmed CI green on the pushed commit (`cbc5ece`) before
+merging.
+
 ---
 
 ## Attachments
