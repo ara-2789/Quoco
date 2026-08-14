@@ -1,8 +1,30 @@
 # Review package — DPR engineer-report reformat (migration 028 + pipeline rewrite)
 
-**Revision 11. PR #61 merged; the REVERSIBLE portion of the apply gate run and completed
-(§19). The migration itself (DELETE + schema change) is explicitly NOT part of this
-revision — reserved for its own, separate, deliberate apply session.**
+**Revision 13 (2026-08-14, ~15:20 UTC). MIGRATION 028 APPLIED TO PROD. GO issued by the
+external reviewer (round 5) with two conditions, both handled: the `3534756b` divergence
+(§23 — kept renamed, not deactivated, roster evidence attached) and the widened two-id
+DELETE (§21.6 Option 1, preserving the pinned-id property the reviewer's original sign-off
+depended on). Applied via the exact SQL pasted verbatim in this session (§26 item 1),
+catalog readback confirmed exactly (§25.3), ledger row written, real `types/database.ts`
+regenerated and diffed clean against the dated hand-edit, `docs/schema.md` closed out for
+both `dprs` (028) and the already-closed `checkin_escalations` (027, stale N2 note
+corrected). Aravind promoted `77119de` back to production — confirmed via an exact etag
+fingerprint match plus independent cache-age corroboration (§25.1), high confidence, not
+absolute. `main` IS NO LONGER ARMED (§25.2). Full assembled record for the reviewer: §26.**
+
+**Revision 12 (2026-08-14, ~13:20 UTC). INCIDENT — §19's framing of "merge PR #61" as a
+REVERSIBLE, pre-apply step was WRONG, not just mis-ordered — merging to `main` auto-deploys
+production, so it deployed the new pipeline against the old (un-migrated) schema for real,
+for real minutes. Caught, verified, rolled back the same session. Full record, dated: §20.
+§19's original text is struck through, not deleted, and corrected in place per this
+project's own provenance discipline — do not read §19 as accurate standing guidance;
+read §20 first.**
+
+**Revision 11. PR #61 merged; the ~~REVERSIBLE~~ portion of the apply gate run and
+completed (§19). The migration itself (DELETE + schema change) is explicitly NOT part of
+this revision — reserved for its own, separate, deliberate apply session.** — **INCORRECT
+AS WRITTEN, see the revision-12 note above and §20. "Merge PR #61" was never reversible in
+the sense this line implied; it triggered a real production deploy.**
 
 **Revision 10. Round 4's two required fixes — B1 (blocking) and S1 (should-fix), plus the
 NIT — not a new design round.** Round 4 came back "two fixes, then approved; neither
@@ -24,12 +46,16 @@ corrections (S8, S9, S10), two NITs (both accepted). Four of round 2's own "look
 at" questions answered by the reviewer (§16) — no advisory lock needed, zero-roster
 detection is now in scope, N1/026 confirmed handled correctly and the request withdrawn.
 
-Status: **PR #61 MERGED to main (merge commit `08ed8ab5b500852843f496bed3fb174c2e059913`,
-CI green both on the PR and re-confirmed on `main` itself post-merge). The reversible
-portion of the apply gate is done (§19): the test-engineer row is renamed (not
-deactivated — gate change, §19.1), PITR observed live, the pre-apply queue probe
-rehearsed. Migration 028 itself (the `DELETE` + schema change) has NOT been applied to
-prod — that remains its own, separate, deliberate session, per §19's closing statement.**
+Status: **MIGRATION 028 IS APPLIED TO PROD (§25.3) AND PRODUCTION IS SERVING THE NEW
+PIPELINE (§25.1, `77119de`, high confidence). `main` IS NO LONGER ARMED (§25.2) — pushes
+are safe again.** History for continuity: PR #61 merged (`08ed8ab`) before the migration
+applied, which deployed the new pipeline onto the OLD schema for ~22-34 minutes (§20, a
+real incident, not a close call); rolled back to `0b138fc` same session; a second zero-data
+marker written during that window's aftermath forced the DELETE to widen from one pinned id
+to two (§21); the reviewer's GO (round 5) came with two conditions, both resolved (§23,
+§26). This branch (`docs/dpr-merge-deploy-incident`) is being merged to `main` now that
+main is safe to receive pushes again — see this session's closing report for the merge
+commit.
 
 ---
 
@@ -352,8 +378,18 @@ own correction convention (matches the plan document's S8 pass).**
    so: Aravind does not run it, and Claude Code does not run it, for the duration of the
    apply.
 4. Migration applied (the `BEGIN...COMMIT` block).
-5. Vercel deploy of the corresponding app code follows **immediately** after — same
-   session, no gap left open deliberately.
+5. ~~Vercel deploy of the corresponding app code follows **immediately** after — same
+   session, no gap left open deliberately.~~ **DATED CORRECTION (2026-08-14, §20 —
+   real incident, not a hypothetical): this step's own wording ("Vercel deploy... follows
+   immediately after") was read, in practice, as a separate, schedulable action from
+   "merge the branch to `main`" — and merging PR #61 ahead of the migration deployed the
+   new pipeline onto the old schema for ~22-34 minutes before being caught and rolled
+   back. THE MERGE IS THE DEPLOY — this project's Vercel integration auto-deploys
+   production on every push to `main`, confirmed via the GitHub Deployments API (§20).
+   Corrected: "merging this branch to `main`" IS step 5, not a precursor to it. The
+   branch stays unmerged, no matter how reviewed or how ready, until step 4 is done and
+   its post-apply catalog readback is confirmed. No exceptions for "it's just docs" —
+   any push to `main` re-deploys, regardless of what changed.**
 6. Confirm the deploy is live (a real request against the new code path, not just
    "deploy succeeded" in Vercel's UI) **by 19:00 IST** (see the restored deadline clause
    below — round 4 correction, not a re-opening).
@@ -899,12 +935,26 @@ merging.
 
 ---
 
-## 19. THE REVERSIBLE PORTION OF THE APPLY GATE — run and completed, migration itself NOT run
+## 19. ~~THE REVERSIBLE PORTION OF THE APPLY GATE~~ — CORRECTED BELOW, SEE §20 FIRST
 
-Explicit scope, stated once so nothing below is misread: **this section covers only
+**DATED CORRECTION (2026-08-14, ~13:20 UTC, revision 12): the premise of this section's
+title and opening paragraph is wrong, not just its ordering.** "Merge PR #61" was treated
+below as a non-destructive, reversible, pre-apply step, grouped with PITR observation and
+a read-only queue probe. It is not the same kind of action as those two: **merging to
+`main` triggers an automatic Vercel production deploy**, confirmed only AFTER the merge
+(§20) — so §19.1 below, in real time, deployed the new per-engineer pipeline (which
+assumes `dprs.engineer_id` exists) directly onto the OLD, un-migrated schema. This was
+caught, verified, and rolled back the same session (§20) — but the section below still
+reads, uncorrected, as if merging were as safe as the read-only steps beside it. It
+wasn't. Kept below verbatim, not rewritten, per this project's own provenance discipline —
+read §20 for what actually happened and the corrected runbook ordering.
+
+~~Explicit scope, stated once so nothing below is misread: **this section covers only
 non-destructive, reversible pre-apply steps.** The migration's `DELETE` and schema change
 were NOT run in this pass, under any circumstances, per direct instruction. What follows
-is preparation for that future, separate session — not a partial apply.
+is preparation for that future, separate session — not a partial apply.~~ **This
+"explicit scope" claim was itself the error — merging IS a form of "running" something,
+namely the new application code, against prod. Struck, not deleted.**
 
 ### 19.1 PR #61 merged
 
@@ -1006,6 +1056,510 @@ reusable — the window will have moved), the actual `BEGIN`-wrapped migration (
 → backfill `UPDATE` → the `35a2f41c` `DELETE` → `SET NOT NULL` → composite FK → widened
 `UNIQUE`), the immediate post-migration Vercel deploy, and the 19:00 IST live-confirmation
 deadline (§10) — none of it started, attempted, or rehearsed further in this pass.
+**SUPERSEDED — see §20: "the immediate post-migration Vercel deploy" is not a separate,
+schedulable action distinct from "merge to main." They are the same event.**
+
+---
+
+## 20. INCIDENT (2026-08-14) — merging PR #61 deployed new code onto the old schema; rolled back same session
+
+**Sequencing error, stated plainly:** PR #61 was merged to `main` (§19.1) BEFORE migration
+028 was applied. Merging to `main` auto-deploys production (confirmed by GitHub's
+Deployments API — every commit to `main` throughout this project's history has a
+corresponding `environment: "Production"` deployment record created by `vercel[bot]`, not
+a one-off). §19 treated the merge as a safe, reversible, pre-apply step because nothing
+about the ACT of merging touches the database — true, but irrelevant: the merge triggers a
+build+deploy of code that immediately started EXPECTING `dprs.engineer_id`, `onConflict:
+'project_id,engineer_id,log_date'`, and the composite-FK-backed `UNIQUE` constraint 028
+would create — none of which existed on prod. New code ran against the old schema for
+real, for a real window of wall-clock time, not hypothetically.
+
+**The window, bounded by what was actually observed, not assumed:**
+- New code first live: `08ed8ab`'s Vercel Production deployment created `2026-08-14
+  12:41:05Z` (GitHub Deployments API, `state: success`, `vercel[bot]`) — `77119de`
+  (a docs-only follow-up push) deployed again at `12:52:26Z`, also new code, so exposure
+  did not start later than `08ed8ab`'s deploy.
+- Last confirmed still-new-code observation: a `curl -I` against the production domain at
+  `13:03:32Z` returned `etag: "163964646ccf9a3e2e6fac4fe6395704"` for `/login`.
+- First confirmed post-rollback observation: the same request at `13:15:09Z` returned a
+  DIFFERENT `etag: "f5ce721047d7971d97a6b0dfb6704ae4"` — independent, read-only evidence a
+  different build was now being served, verified without Vercel dashboard/API access
+  (none exists in this environment), consistent with, not just asserted from, Aravind's
+  report that the dashboard rollback had been done.
+- **Exposure window: `12:41:05Z` → sometime between `13:03:32Z` and `13:15:09Z` —
+  approximately 22–34 minutes.** Matches Aravind's own "~35 minutes" estimate; this is the
+  more precisely bounded version, from timestamps actually captured, not a re-assertion of
+  the same number.
+
+**No data was affected, checked, not assumed.** Every write site to `dprs` was inventoried
+by reading the code (§9's B2 table, still accurate): the only writers are
+`lib/dpr/dispatch.ts` (reachable ONLY via `handleDprGenerateJob`, called ONLY from
+`app/api/jobs/tick/route.ts`, which only acts on a `dpr_generate` job if one exists to
+claim) and `scripts/generate-one-dpr.ts` (manual, not run). The only thing that ENQUEUES a
+`dpr_generate` job is the 20:00 IST cron (`app/api/cron/dpr-generate/route.ts`,
+`30 14 * * *` = 14:30 UTC), which had not fired during the exposure window (window closed
+by ~13:15 UTC, cron fires at 14:30 UTC). The `jobs` table was probed live, prod, twice
+during the exposure window and once more after the rollback — zero non-succeeded
+`dpr_generate` rows every time:
+
+```sql
+SELECT id, status, attempt_count, next_retry_at, payload, created_at
+FROM jobs WHERE type = 'dpr_generate' AND status != 'succeeded';
+```
+→ zero rows at `13:05:11Z`, zero rows at `13:15:27Z` (both prod, read-only).
+
+The WhatsApp webhook path (`app/api/whatsapp/`, `lib/whatsapp/`) was independently grepped
+for any reference to `dprs` or the DPR generator files — zero matches, confirming it was
+never in scope regardless of the deploy state.
+
+**Honesty upgrade (reviewer, 2026-08-14): "nothing wrote" is not "nothing was
+user-visible."** During the exposure window, the new `app/(dashboard)/dprs/{page.tsx,
+[id]/page.tsx}` — live, since they deployed with everything else — select `engineer_id`
+from `dprs`, a column that did not exist on prod's schema; anyone loading either dashboard
+page during that window would have gotten a query error, not a quiet no-op. No evidence
+anyone did — no application error was reported, and this is a single-operator beta with no
+other PM logged in at that hour — but absence of a report is not proof absence of the
+error; stated as an open unknown, not resolved by inference.
+
+**Rollback:** done via the Vercel dashboard (Aravind, not Claude Code — no redeploy or
+rollback command was issued by this session). Production is now serving `0b138fc` (PR
+#59's merge — pre-DPR-reformat code, pre-DPR-reformat expectations, matching the
+still-un-migrated schema exactly). Verified independently, read-only, this session:
+- GitHub's Deployments API does **not** show a new deployment record for the rollback —
+  the most recent entry remains `77119de` (`12:52:26Z`). **This is a real gap in this
+  verification method, stated honestly rather than glossed over:** a Vercel-dashboard
+  "instant rollback" re-points the production alias without a new git push, so it does not
+  create a new GitHub Deployment event. The API answers "what was built and pushed," not
+  "what is aliased right now" — the wrong signal for this specific question, not a
+  contradiction of Aravind's report.
+- The etag change above (§ this section, "the window") is the actual independent
+  confirmation available from this environment: different content is being served now
+  than was being served during the exposure window.
+- `information_schema.columns` re-confirms `engineer_id` still absent from prod's `dprs`
+  table — consistent with "rolled back to code that never expected it," and with "nothing
+  was applied," both at once.
+
+**The runbook lesson, fixed in the gate itself, not just noted here:** "merge the PR" is
+NOT a reversible, schedulable-whenever pre-apply step — it is functionally identical to
+"deploy," because this project's Vercel integration auto-deploys production on every push
+to `main`. §10's B3-amend hard sequence already correctly sequenced "apply migration" before
+"deploy" in the abstract — the error was treating "merge to main" as a DIFFERENT, earlier,
+separable action from "the deploy" in §10's own step 5. It is not a different action. It IS
+step 5. **§10's hard sequence is corrected in place below** (struck lines, not deleted):
+
+> ~~5. Vercel deploy of the corresponding app code follows immediately after — same
+> session, no gap left open deliberately.~~
+> **5, corrected: "the deploy" = merging this branch's code to `main`. This step MUST NOT
+> happen — no merge, no push to `main`, for any reason, including documentation-only
+> changes — until step 4 (the migration itself) has been applied and its post-apply
+> catalog readback confirmed. There is no such thing as a "safe" pre-apply merge to `main`
+> in this project's current CI/CD configuration. If code needs to land before the apply for
+> review purposes, it stays on a branch, unmerged, until the migration is live.**
+
+**MAIN IS ARMED — standing condition until migration 028 applies:** `main`'s HEAD
+(`77119de`) already contains the new pipeline. Any future push to `main` — code, docs,
+anything — re-deploys that same mismatched code against the still-old schema, re-creating
+this exact incident. This condition persists independent of tonight's rollback; the
+rollback fixed what's LIVE, not what's on `main`. Holds until migration 028 is applied and
+confirmed live via the corrected §10 sequence.
+
+**This section (§20) and its correction to §19 are on a BRANCH
+(`docs/dpr-merge-deploy-incident`), NOT merged to `main`, per direct instruction** — see
+this session's closing report for the exact branch state.
+
+---
+
+## 21. FINDING (2026-08-14, ~14:35 UTC / 20:05 IST) — a SECOND zero-data marker row; the migration's pinned pre-apply state is stale, and it recurs nightly
+
+**Not a new incident — a consequence of tonight's rollback-verification run (§20) that
+changes what tomorrow's apply must account for.** The 20:00 IST cron fired tonight on the
+rolled-back OLD code (confirmed, §20's own closing check) and, finding no `daily_logs` for
+the one active project, wrote a second `skipped_no_data` marker row — structurally
+identical to `35a2f41c`, the row the migration's `DELETE` was written and reviewed against.
+
+### 21.1 Full current state, prod `dprs`, all rows, all columns — re-probed live
+
+```json
+[
+  {
+    "id": "35a2f41c-64ec-41f5-a763-4afe05940ca5",
+    "log_date": "2026-08-12",
+    "content": null,
+    "structured": null,
+    "generation_status": "idle",
+    "delivery_status": "skipped_no_data",
+    "generator_job_id": null,
+    "generated_at": null,
+    "delivered_owner_at": null,
+    "last_regenerated_at": null,
+    "created_at": "2026-08-12 14:30:07.100071+00",
+    "project_id": "acef67fe-e775-439d-82b8-5b8526868d6d",
+    "tenant_id": "adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0"
+  },
+  {
+    "id": "af7760e8-2457-4c11-bc35-52929a0bbf54",
+    "log_date": "2026-08-13",
+    "content": "EXECUTION OUTPUT\n... (real, generated content — the one genuine row) ...",
+    "structured": { "...": "real judgment object, unchanged from prior probes" },
+    "generation_status": "idle",
+    "delivery_status": "pending",
+    "generator_job_id": "a4e27471-f267-4b2e-997b-5322cae863db",
+    "generated_at": "2026-08-13 14:31:00.158+00",
+    "delivered_owner_at": null,
+    "last_regenerated_at": null,
+    "created_at": "2026-08-13 14:30:50.289648+00",
+    "project_id": "acef67fe-e775-439d-82b8-5b8526868d6d",
+    "tenant_id": "adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0"
+  },
+  {
+    "id": "3c14243f-9395-4c8d-923b-fd3ea1925b96",
+    "log_date": "2026-08-14",
+    "content": null,
+    "structured": null,
+    "generation_status": "idle",
+    "delivery_status": "skipped_no_data",
+    "generator_job_id": null,
+    "generated_at": null,
+    "delivered_owner_at": null,
+    "last_regenerated_at": null,
+    "created_at": "2026-08-14 14:30:04.344349+00",
+    "project_id": "acef67fe-e775-439d-82b8-5b8526868d6d",
+    "tenant_id": "adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0"
+  }
+]
+```
+
+(`af7760e8`'s full `content`/`structured` unchanged from the values already pinned
+elsewhere in this package — abbreviated here since only its continued presence and shape
+matter for this finding, not a re-paste.)
+
+**Three rows now, not two.** Two of the three (`35a2f41c`, `3c14243f`) are zero-data
+markers. One (`af7760e8`) is real.
+
+### 21.2 `3c14243f` confirmed zero-data — same three independent fields used for `35a2f41c`
+
+```sql
+SELECT
+  (SELECT content FROM dprs WHERE id = '3c14243f-9395-4c8d-923b-fd3ea1925b96') IS NULL AS content_is_null,
+  (SELECT delivered_owner_at FROM dprs WHERE id = '3c14243f-9395-4c8d-923b-fd3ea1925b96') IS NULL AS delivered_owner_at_is_null,
+  (SELECT count(*) FROM daily_logs
+     WHERE project_id = 'acef67fe-e775-439d-82b8-5b8526868d6d' AND log_date = '2026-08-14') AS underlying_daily_logs_count;
+```
+→ `content_is_null: true`, `delivered_owner_at_is_null: true`, `underlying_daily_logs_count: 0`.
+Same verdict as `35a2f41c` on every field originally used to justify that row's deletion —
+not a weaker or assumed match, the identical check re-run against the new row.
+
+### 21.3 Consequence 1 — the migration's pinned pre-apply state is stale
+
+`028_dprs_engineer_id_option_a.sql`'s header pins prod's pre-apply state as TWO rows: one
+real (`af7760e8`), one worthless marker (`35a2f41c`), with the `DELETE` targeting the
+latter by id. Prod now has **three** rows. **Option A's `ALTER COLUMN engineer_id SET NOT
+NULL` will fail outright against `3c14243f`** unless the `DELETE` step is widened to cover
+it too — the backfill `UPDATE` has no correct value to write for a zero-data marker (same
+reasoning §3 already established for `35a2f41c`: no engineer contributed anything, so
+there is no engineer to backfill to), so `3c14243f` cannot be migrated forward as-is, only
+deleted or excluded.
+
+### 21.4 Consequence 2 — this recurs nightly, unless the migration applies or a check-in is submitted
+
+Every day the migration is not applied AND no engineer checks in, the still-live OLD code
+writes one more marker at 20:00 IST. **The pinned pre-apply state does not go stale once —
+it goes stale on a nightly cadence, and the `DELETE` target set grows by one row per day of
+delay.** This is a direct, mechanical consequence of tonight's own finding, not a
+hypothetical projected forward: it already happened once between the migration being
+written and tonight.
+
+### 21.5 Consequence 3 — a premise the external reviewer accepted ON THE RECORD has changed
+
+The `DELETE` against `35a2f41c` was accepted **un-rehearsed against a real target row**
+partly on the strength of it being, in the reviewer's own framing, a single-row operation
+against a verbatim-pinned id (`docs/reviews/028-dpr-engineer-report-review-package.md`
+§3/§15, `35a2f41c` pinned by id throughout). **It is now a multi-row operation against a
+set that changes daily.** Whether the reviewer would accept a two-row (or growing,
+predicate-matched) delete on the same reasoning is not something this session gets to
+decide on their behalf — the premise they signed off on has materially changed, and per
+standing practice, that goes back to them explicitly rather than being silently widened
+under the same accepted rationale. A short heads-up note is being sent (this session,
+outside this package) flagging this specifically — not a new review round, a notice that
+one of their accepted premises no longer holds as stated.
+
+### 21.6 Two options for the apply session — NOT decided here, migration SQL NOT edited
+
+Per direct instruction: the shape of the fix is deferred to the apply session, since a
+predicate-based delete is a materially different risk profile from a pinned-id delete, and
+that difference deserves its own deliberate decision, not one made in passing during a
+read-only verification pass.
+
+**Option 1 — explicit id list, re-pinned immediately pre-apply.**
+```sql
+DELETE FROM public.dprs WHERE id IN (
+  '35a2f41c-64ec-41f5-a763-4afe05940ca5',
+  '3c14243f-9395-4c8d-923b-fd3ea1925b96'
+  -- + any further marker rows written between now and the apply session,
+  -- each independently re-verified on the same 3 fields (§21.2) immediately
+  -- before BEGIN, not carried forward from this write-up.
+);
+```
+Matches the exact shape the reviewer already reviewed and accepted — same auditability,
+same "verbatim-pinned id" character. Cost: does not solve the recurrence (§21.4) itself —
+the id list must be re-derived and re-verified at apply time, every time the apply slips
+another day, by re-running §21.2's three-field check against whatever new marker rows
+exist by then.
+
+**Option 2 — predicate-based delete of zero-data markers.**
+```sql
+DELETE FROM public.dprs d
+WHERE d.content IS NULL
+  AND d.delivered_owner_at IS NULL
+  AND d.delivery_status = 'skipped_no_data'
+  AND NOT EXISTS (
+    SELECT 1 FROM daily_logs dl
+    WHERE dl.project_id = d.project_id AND dl.log_date = d.log_date
+  );
+```
+Self-adjusting — captures every zero-data marker at apply time regardless of how many
+accumulate, without manual re-pinning. Cost, stated plainly, not minimized: this is a
+**materially different risk profile**, exactly as flagged for the reviewer. A predicate
+delete is not individually auditable the way a pinned id list is — its correctness rests
+on the predicate itself being a complete and exact characterization of "worthless
+zero-data marker, nothing else," which is a claim nobody has reviewed yet (the reviewer
+reviewed one row by id, not this general characterization). A subtle predicate error — a
+wrong join key, a timezone edge on `log_date`, a status string that later gains a new
+legitimate meaning — could delete more than intended, silently, in a way a pinned list
+structurally cannot.
+
+Neither option is applied, chosen, or written into the migration file in this pass.
+
+---
+
+## 22. PROCESS CORRECTION (2026-08-14) — PR #61 is NOT the review channel; posting there is not delivery to the reviewer
+
+**Error, stated plainly:** Claude Code posted the item-3 heads-up (§21) as a comment on
+PR #61, then posted a second note (the two-question message re-approval-conditions ask)
+to the same thread immediately after — in the SAME session where listing PR #61's comments
+had already shown the fact this second post then ignored: every comment on that thread is
+from `ara-2789` (Aravind) or `vercel[bot]`. **Zero from the reviewer, ever, on this PR.**
+Posting to PR #61 does not reach them — it was treated as delivery when it is not.
+
+**Corrected understanding, recorded so this does not recur:** review reaches the reviewer
+only when **Aravind messages them directly**, through whatever channel that relationship
+actually uses (not this repo, not GitHub). **PR comments — including every "round"
+write-up and heads-up note in this package's history — are the WRITTEN RECORD those
+messages point AT, not the delivery mechanism itself.** Aravind pastes/relays the
+reviewer's actual responses back into this session; Claude Code does not have, and should
+not act as if it has, a channel to the reviewer.
+
+**Standing correction for this package and any future one like it:** when asked to "send
+the reviewer a note," the correct action is to draft/post the durable written record (PR
+comment, package section) that Aravind can then point the reviewer at in his own message —
+**not** to treat the act of posting as the notification itself, and not to assume a lack of
+reviewer reply on GitHub means anything about whether they've been informed, since they
+were never going to reply there in the first place.
+
+---
+
+## 23. DIVERGENCE FROM THE REVIEWER'S GO CONDITION — `3534756b` stays RENAMED, not deactivated
+
+**The reviewer's GO-for-apply came with a condition — "test engineer `3534756b`
+deactivated before the apply" — reasoning that an active test engineer generates a report
+nightly under the roster-union trigger. That reasoning was built on the ORIGINAL gate,
+before §19.2's change: `3534756b` was renamed to "Vikram Rao," not deactivated, precisely
+because it is Aravind's own WhatsApp sandbox account (`+919176865600`), not a disposable
+test fixture. The reviewer's condition, as literally written, was not re-evaluated against
+that change before being issued.**
+
+**Verified before acting, per instruction — raw output, both live, prod:**
+
+```sql
+SELECT pm.project_id, u.id, u.full_name, u.role, u.status
+FROM project_members pm JOIN users u ON u.id = pm.user_id
+WHERE pm.project_id = 'acef67fe-e775-439d-82b8-5b8526868d6d'
+  AND u.role = 'engineer' AND u.status = 'active';
+```
+→ exactly one row: `{id: 3534756b-2a32-4b91-954b-0bab15c2dba1, full_name: "Vikram Rao",
+role: engineer, status: active}`.
+
+```sql
+SELECT id, full_name, role, status, tenant_id FROM users
+WHERE role = 'engineer' AND status = 'active' ORDER BY id;
+```
+→ exactly the same one row, system-wide — **no other active engineer exists anywhere in
+prod**, on any project, any tenant.
+
+**Confirmed, not contradicted: deactivating `3534756b` would empty the only roster there
+is.** Under the roster-union trigger (§1 of the plan), zero active engineers means zero
+reports generated, the Q8 zero-roster Sentry warning fires every night indefinitely
+(correct behavior for a genuinely empty roster, but this roster isn't genuinely empty —
+it would be MADE empty by the deactivation itself), and Aravind loses his only WhatsApp
+test path at the exact moment the new pipeline needs it most.
+
+**The condition's actual purpose was fully served by the rename, not left unaddressed:**
+the concern was a smoke-test label ("TEST — Evening Q5 Smoke...") appearing as an engineer
+name in an owner-facing report. That string no longer exists anywhere on this row —
+`full_name` is "Vikram Rao." Deactivation would have solved a problem that no longer
+exists, at the cost of a problem (zero roster) the original condition never intended to
+create.
+
+**Decision: keep the rename, do NOT deactivate.** Recorded here, dated, with the roster
+evidence above, specifically so this reaches the applied-runbook record and the reviewer
+sees it stated rather than discovering a condition that wasn't literally followed. Per
+§22's own correction: this section is the durable written record; delivering it to the
+reviewer is Aravind's own message, not a PR comment from this session.
+
+---
+
+## 24. §10 RECODIFIED — the invariant is "one hour of margin before the next producer
+event," not "by 19:00 IST"
+
+**DATED, before the apply, struck-not-deleted per convention. Reviewer's framing,
+adopted as stated.** The 19:00 IST clause (§10, "Abort threshold: deploy confirmed live by
+19:00 IST") was the DAYTIME-APPLY SPECIAL CASE of a more general invariant, not the
+invariant itself — conflating the two nearly caused a second sequencing error tonight,
+when the literal clock reading ("it's past 20:00") would have blocked an apply that is
+actually SAFER than a daytime one, because tonight's producer event (the 20:00 IST cron)
+has already fired and the next one is ~23.5 hours away.
+
+~~**Abort threshold: deploy confirmed live by 19:00 IST** — a full hour of margin before
+the 20:00 cron, not a just-in-time confirm. Not met ⇒ treat that day's apply as failed:
+either get the deploy live by other means before 20:00, or this is an emergency decision
+with Aravind before 20:00, not a silent hope the deploy finishes in time.~~
+
+**Corrected invariant:** deploy must be confirmed live **at least ONE HOUR before the next
+`dpr_generate`-producing event** — the next firing of the 20:00 IST cron, whatever that
+next firing actually is, not a fixed wall-clock time. "By 19:00 IST" is simply what this
+invariant equals when the apply happens during the day, before that day's cron has fired.
+When the apply happens AFTER that day's cron has already fired (as tonight), the invariant
+is satisfied by confirming live any time up to one hour before TOMORROW's 20:00 IST —
+i.e., by 19:00 IST tomorrow, not tonight. **Applying tonight, right after the cron has
+already fired, maximizes the margin against this invariant rather than minimizing it** —
+next producer event is ~23.5 hours out, not the ~1 hour or less a daytime apply typically
+has to work with.
+
+**Not met ⇒ same consequence as before, restated against the corrected invariant:** if the
+deploy does not confirm live within one hour of the NEXT `dpr_generate`-producing event
+(concretely: by 19:00 IST tomorrow, for tonight's apply), treat the apply as failed for
+that producer event — either get the deploy live by other means before that event fires,
+or it is an emergency decision with Aravind before it fires, not a silent hope the deploy
+finishes in time.
+
+---
+
+## 25. MIGRATION 028 APPLIED (2026-08-14, ~15:20 UTC / ~20:50 IST) — deploy confirmed, MAIN NO LONGER ARMED
+
+### 25.1 Deploy confirmation — a stronger signal than the etag, and its actual confidence level
+
+**Not just "the etag changed" (the earlier, weaker check) — the etag matches an EXACT,
+previously-captured, uniquely-identified fingerprint of `77119de`'s own build:**
+
+```
+now (post-promotion):  etag: "163964646ccf9a3e2e6fac4fe6395704"   age: 9066   x-vercel-cache: HIT
+known 77119de fingerprint (captured 13:03:32Z, pre-rollback): 163964646ccf9a3e2e6fac4fe6395704  ← EXACT MATCH
+known 0b138fc fingerprint (captured 13:15:09Z, post-rollback): f5ce721047d7971d97a6b0dfb6704ae4  ← does NOT match
+```
+
+`age: 9066` is independent, arithmetic corroboration, not just a second coincidental
+signal: 9066 seconds before the 15:34:39Z request is ~13:03Z — the exact minute `77119de`'s
+build was first observed live, before the rollback. `x-vercel-cache: HIT` confirms this is
+the actual cached prerendered artifact from that original build being re-served, not a
+fresh render that happens to hash the same. Re-checked the GitHub Deployments API too — no
+new record appeared for the promotion, same limitation already documented for the rollback
+(a dashboard-side alias change doesn't create a GitHub Deployment event); consistent with,
+not contradicted by, everything above.
+
+**Confidence: high, not absolute.** An exact match to a uniquely-fingerprinted prior
+observation, corroborated by independent cache-age arithmetic, is materially stronger than
+"a change was observed" — but this environment still has no direct Vercel dashboard/API
+access, so this remains inference from HTTP response fingerprints, not a first-party
+"current alias = `77119de`" confirmation. Stated at that strength, not overstated.
+
+### 25.2 MAIN IS NO LONGER ARMED
+
+The standing condition from §20 ("any push to `main` re-deploys the mismatched code") is
+**LIFTED**, as of migration 028's apply (§25.3) and Aravind's promotion of `77119de` back
+to production (§25.1). `main`'s HEAD now matches the live schema — a future push to `main`
+deploys code that expects `engineer_id`, against a database that has it. **Pushes to
+`main` are safe again.**
+
+### 25.3 Post-apply record, raw
+
+**Applied:** `docs/reviews/028_dprs_engineer_id_option_a.sql`, exactly as pasted verbatim
+in this session's transcript, `supabase db query --linked -f`, ref `jvxwqignooseazzmwhvl`
+printed immediately before, foreground, never `db push`, never backgrounded. Pre-check
+(FK tenant match), Step 1.5, and Step 1.5b all re-probed live immediately pre-`BEGIN` —
+raw output in this session's transcript, all passed. Empty result, no error — transaction
+committed.
+
+**Catalog readback**, raw:
+```
+UNIQUE:  dprs_project_id_engineer_id_log_date_key — UNIQUE (project_id, engineer_id, log_date)
+         (old dprs_project_id_log_date_key gone — not listed)
+FK:      dprs_engineer_id_tenant_id_fkey — confupdtype: a, confdeltype: r
+COLUMN:  engineer_id | uuid | is_nullable: NO
+TABLE:   exactly one row — af7760e8, engineer_id 3534756b-2a32-4b91-954b-0bab15c2dba1
+```
+
+**Ledger row** — written by manual `INSERT` (applying by file does not write one; this
+project's own compensating control since 022, and precisely the gap 028's own test-db
+rehearsal proved was still needed):
+```sql
+INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('028', 'dprs_engineer_id');
+```
+Confirmed present, re-read: `{"version":"028","name":"dprs_engineer_id"}`, immediately
+above `027`.
+
+**`types/database.ts`** — real `npx supabase gen types typescript --linked --schema
+public`, run against prod, diffed against the dated pre-apply hand-edit it replaces.
+**The diff:**
+```diff
+-      // MANUAL PRE-MIGRATION EDIT (2026-08-14, per-engineer DPR reformat) — ... (13-line dated comment, removed — expected, generated files carry no hand-written comments)
+...
++          { foreignKeyName: "dprs_engineer_id_tenant_id_fkey", columns: ["engineer_id", "tenant_id"], isOneToOne: false, referencedRelation: "users", referencedColumns: ["id", "tenant_id"] },
+... (same relationship entry, moved earlier in the array — the generator orders Relationships differently than the hand-edit did)
+```
+**Zero semantic difference** — every column type, every `Row`/`Insert`/`Update` shape for
+`engineer_id` is byte-identical between the hand-edit and the real regeneration; the only
+diffs are the now-obsolete dated comment (correctly gone) and one array-position reorder
+of a single relationship entry (cosmetic, not structural). The hand-edit was accurate.
+`tsc --noEmit`: clean against the real file.
+
+**`docs/schema.md`** — `dprs` entry updated in place: `engineer_id UUID NOT NULL` +
+composite FK added to the column list, `UNIQUE(project_id, log_date)` →
+`UNIQUE(project_id, engineer_id, log_date)`, full apply record boxed at the top matching
+this section. **`checkin_escalations` (027) — found ALREADY CLOSED, not reopened or
+redone:** commit `fd0d0e9` (2026-08-13 12:52 IST, ~46 minutes after 027's own apply)
+already wrote that entry, a full day before this package's own N2 note (round 2, §14)
+called it open. Corrected in `schema.md` itself, dated, rather than silently — the N2 item
+was closed before it was ever flagged as open; nothing needed doing there, only saying so.
+
+---
+
+## 26. APPLIED RUNBOOK RECORD — assembled for the reviewer
+
+Everything the reviewer asked to see in one place, each pointing at its own detailed
+section rather than re-derived here:
+
+1. **The SQL as applied** — §18 of this session's transcript has the full 260-line file
+   pasted verbatim (the reviewer asked for this specifically, not a description of it);
+   byte-identical to `docs/reviews/028_dprs_engineer_id_option_a.sql` at commit `fb5de1d`
+   on this branch.
+2. **Both pre-`BEGIN` probes, raw** — Step 1.5 (jobs queue, zero rows) and Step 1.5b
+   (`dprs` shape, exactly the three known rows) both re-probed live immediately before
+   `BEGIN`, not reused from the readiness pass an hour earlier. Full raw output in this
+   session's transcript.
+3. **Catalog readback** — §25.3 above.
+4. **Deploy confirmation** — §25.1 above, with its stated confidence level.
+5. **The ledger row** — §25.3 above.
+6. **§23 — the `3534756b` divergence** — kept RENAMED ("Vikram Rao"), not deactivated,
+   from the reviewer's literal GO condition. Roster evidence re-stated: exactly one active
+   engineer exists anywhere in prod (`3534756b`), on any project, any tenant — confirmed
+   live, twice, both before deciding and again immediately before this apply's own
+   pre-checks. Deactivating it would have emptied the only roster there is; the rename
+   already served the condition's actual purpose (no smoke-test label in an owner-facing
+   report).
+
+**Not part of this record, deliberately:** the deploy step itself (Aravind's own dashboard
+promotion, §25.1) and anything past it — this section assembles what happened UP TO AND
+INCLUDING the schema apply and its immediate verification, per the reviewer's own ask.
 
 ---
 

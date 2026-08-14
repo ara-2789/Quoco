@@ -29,6 +29,22 @@
 -- Any row found: STOP, resolve it (let it complete via tick, or intervene
 -- manually) before re-probing.
 --
+-- STEP 1.5b (added 2026-08-14, after the pinned-state-went-stale finding,
+-- review package S21/S23) -- FINAL PRE-BEGIN TABLE-SHAPE PROBE, immediately
+-- before BEGIN, same breath as the jobs probe above:
+--   SELECT id, delivery_status FROM dprs ORDER BY created_at;
+-- MUST return EXACTLY the three known rows below (two markers, one real),
+-- in this order, nothing more, nothing less:
+--   35a2f41c... | skipped_no_data
+--   af7760e8... | pending
+--   3c14243f... | skipped_no_data
+-- A fourth row (a new marker written by a cron that fired since this file
+-- was last edited) means the DELETE list below is ALREADY stale again --
+-- STOP, do not proceed, re-derive the DELETE list and re-pin this header
+-- before trying again. This is the mechanical reason the pin goes stale on
+-- a nightly cadence (S21.4): the probe exists specifically to catch that
+-- recurrence at the last possible moment, not to be reasoned past.
+--
 -- The probe is only valid if the 20:00 cron is the sole producer of
 -- dpr_generate jobs. IT IS NOT: scripts/generate-one-dpr.ts also writes
 -- directly to dprs (its own onConflict:'project_id,log_date' upsert,
@@ -63,27 +79,56 @@
 --     code once the deploy eventually lands -- a payload
 --     handleDprGenerateJob must reject loudly (see the "pre-028 payload
 --     shape" assertion in the implementation, not silently coerce).
--- ABORT THRESHOLD: deploy confirmed live by 19:00 IST -- a full hour of
--- margin before the 20:00 cron, not a just-in-time confirm. If the deploy
--- is not confirmed live by 19:00 IST, treat it as a failed apply for that
--- day: do not let the 20:00 cron fire against a half-migrated state:
--- either get the deploy live before 20:00 by other means, or, failing
--- that, this needs an emergency decision with Aravind before 20:00, not a
--- silent hope the deploy finishes in time.
+-- ABORT THRESHOLD -- RECODIFIED 2026-08-14, review package §24: the
+-- invariant is "deploy confirmed live at least ONE HOUR before the NEXT
+-- dpr_generate-producing event," not the literal clock time "19:00 IST."
+-- 19:00 IST is what that invariant equals for a DAYTIME apply, before that
+-- day's cron has fired -- it is not the invariant itself. For an apply run
+-- AFTER that day's cron has already fired (as tonight, 2026-08-14), the
+-- next producer event is tomorrow's 20:00 IST cron, so the threshold is
+-- confirmed-live by tomorrow 19:00 IST, not tonight. See §24 for the full
+-- reasoning (this recodification exists because a literal "it's past
+-- 20:00 IST" reading would have blocked an apply that is actually SAFER
+-- than a daytime one). If the deploy is not confirmed live within one hour
+-- of the next producer event, treat it as a failed apply for that event:
+-- either get the deploy live by other means before it fires, or, failing
+-- that, this needs an emergency decision with Aravind before it fires, not
+-- a silent hope the deploy finishes in time.
 --
--- PRE-APPLY STATE -- RAW QUERY OUTPUT, PINNED VERBATIM (2026-08-14, review
--- round 2, S7). `SELECT id, project_id, log_date, delivery_status,
--- generation_status, content IS NULL AS content_is_null, delivered_owner_at
--- FROM dprs ORDER BY created_at;`:
+-- PRE-APPLY STATE -- RAW QUERY OUTPUT, PINNED VERBATIM, RE-PINNED 2026-08-14
+-- (~14:55 UTC, review package S21/S23 -- SUPERSEDES the original round-2/S7
+-- two-row pin below, which went stale when a second zero-data marker
+-- (3c14243f) was written by the still-rolled-back OLD code's 20:00 IST cron
+-- on 2026-08-14. This is not a hypothetical staleness risk -- it already
+-- happened once. If this file is reused on a LATER date without re-running
+-- this exact pin, assume it is stale again; re-probe before trusting it.)
+-- `SELECT id, project_id, log_date, delivery_status, generation_status,
+-- content IS NULL AS content_is_null, delivered_owner_at FROM dprs ORDER BY
+-- created_at;`:
 --   [{"id":"35a2f41c-64ec-41f5-a763-4afe05940ca5","project_id":"acef67fe-e775-439d-82b8-5b8526868d6d",
 --     "log_date":"2026-08-12","delivery_status":"skipped_no_data","generation_status":"idle",
 --     "content_is_null":true,"delivered_owner_at":null},
 --    {"id":"af7760e8-2457-4c11-bc35-52929a0bbf54","project_id":"acef67fe-e775-439d-82b8-5b8526868d6d",
 --     "log_date":"2026-08-13","delivery_status":"pending","generation_status":"idle",
---     "content_is_null":false,"delivered_owner_at":null}]
+--     "content_is_null":false,"delivered_owner_at":null},
+--    {"id":"3c14243f-9395-4c8d-923b-fd3ea1925b96","project_id":"acef67fe-e775-439d-82b8-5b8526868d6d",
+--     "log_date":"2026-08-14","delivery_status":"skipped_no_data","generation_status":"idle",
+--     "content_is_null":true,"delivered_owner_at":null}]
 -- af7760e8's one underlying daily_logs row: engineer_id
 -- 3534756b-2a32-4b91-954b-0bab15c2dba1 (confirmed by direct query, PROCEED
 -- if unchanged at apply time, STOP and re-derive the backfill value if not).
+--
+-- BOTH ZERO-DATA MARKERS -- THREE-FIELD PROOF, PINNED, RE-PROBED LIVE
+-- 2026-08-14 (~14:55 UTC, S21.2/S23): `SELECT d.id, d.content IS NULL AS
+-- content_is_null, d.delivered_owner_at IS NULL AS delivered_owner_at_is_null,
+-- (SELECT count(*) FROM daily_logs dl WHERE dl.project_id = d.project_id AND
+-- dl.log_date = d.log_date) AS underlying_daily_logs_count FROM dprs d WHERE
+-- d.id IN ('35a2f41c-64ec-41f5-a763-4afe05940ca5',
+-- '3c14243f-9395-4c8d-923b-fd3ea1925b96');`:
+--   35a2f41c: content_is_null=true, delivered_owner_at_is_null=true, underlying_daily_logs_count=0
+--   3c14243f: content_is_null=true, delivered_owner_at_is_null=true, underlying_daily_logs_count=0
+-- Same verdict, same three fields, both rows -- neither assumed from the
+-- other's proof.
 --
 -- MULTI-ENGINEER CHECK -- RAW OUTPUT, PINNED, WHOLE-TABLE NOT JUST THESE TWO
 -- DATES (2026-08-14, S7). `SELECT project_id, log_date, count(DISTINCT
@@ -156,20 +201,41 @@ SET engineer_id = (
 )
 WHERE d.engineer_id IS NULL;
 
--- Step 3: delete the one project-level DPR-17 skip marker that has no
--- engineer behind it at all (zero daily_logs rows for that project-day).
+-- Step 3: delete the project-level DPR-17 skip markers that have no
+-- engineer behind them at all (zero daily_logs rows for that project-day).
 -- The new design skips per ROSTER ENGINEER, never per project (see the
--- review package's §1) -- this row's concept has no equivalent under the
+-- review package's §1) -- these rows' concept has no equivalent under the
 -- new schema, and there is no engineer_id a backfill could honestly assign
--- to it. content IS NULL and delivered_owner_at IS NULL for this row --
--- nothing was ever shown to anyone.
+-- to either. content IS NULL and delivered_owner_at IS NULL for both rows --
+-- nothing was ever shown to anyone. TWO ids now, not one (S21/S23): a
+-- second marker (3c14243f) was written by the still-un-migrated OLD code's
+-- 20:00 IST cron on 2026-08-14, after 35a2f41c but before this apply --
+-- proof this recurs nightly, not a one-time correction. Kept as an
+-- EXTENSIONAL id list, deliberately NOT a predicate (S21.6's Option 1, not
+-- Option 2) -- preserves the exact "verbatim-pinned id" property the
+-- external reviewer's original sign-off was reasoned about, at the cost of
+-- needing Step 1.5b's fresh table-shape probe to catch a THIRD marker
+-- before this list goes stale again.
 --
 -- DESTRUCTIVE. THIS IS WHY §0 CONDITION (d) TRIPS FOR THIS MIGRATION --
 -- see the review package, do not run this statement without the PITR
 -- observation above having already happened, live, this session.
-DELETE FROM public.dprs WHERE id = '35a2f41c-64ec-41f5-a763-4afe05940ca5';
+DELETE FROM public.dprs WHERE id IN (
+  '35a2f41c-64ec-41f5-a763-4afe05940ca5',
+  '3c14243f-9395-4c8d-923b-fd3ea1925b96'
+);
 
 -- Step 4: now safe -- every remaining row has a value.
+--
+-- BACKSTOP, deliberate (2026-08-14, S21/S23): any row whose engineer_id is
+-- still NULL at this exact line aborts the whole transaction (NOT NULL
+-- violation, 23502) -- this is not a bug to work around, it is the
+-- mechanism that catches a STALE PIN. If Step 1.5b's probe above was
+-- somehow skipped or raced, and a THIRD zero-data marker exists that this
+-- file's DELETE list does not know about, this statement is what stops the
+-- apply from completing silently on an incomplete backfill -- the
+-- transaction rolls back in full (this file is one BEGIN...COMMIT block),
+-- not a partial, half-migrated state.
 ALTER TABLE public.dprs ALTER COLUMN engineer_id SET NOT NULL;
 
 -- Step 5: the composite FK (B1) -- added after backfill/NOT NULL so it
