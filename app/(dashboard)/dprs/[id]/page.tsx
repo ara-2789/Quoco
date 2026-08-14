@@ -6,6 +6,7 @@ type DprDetail = {
   id: string
   log_date: string
   content: string | null
+  engineer_id: string
   projects: { name: string } | null
 }
 
@@ -33,7 +34,7 @@ function formatDate(date: string) {
 export async function getDprDetail(client: SupabaseClient, id: string): Promise<DprDetail | null> {
   const { data, error } = await client
     .from('dprs')
-    .select('id, log_date, content, projects(name)')
+    .select('id, log_date, content, engineer_id, projects(name)')
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
@@ -47,11 +48,22 @@ export default async function DprDetailPage({ params }: { params: Promise<{ id: 
 
   if (!dpr) notFound()
 
+  // Engineer name — fetched separately, not embedded (same reasoning as
+  // dprs/page.tsx: no verified PostgREST support for embedding through a
+  // composite FK). content already carries "Site engineer: <name>" in its
+  // own header line (render.ts), so this is a secondary display only.
+  // profile-lookup-guard:allow-id-eq — dpr.engineer_id is a resolved
+  // users.id (dprs.engineer_id, a composite FK to users.id), never an auth
+  // uid, so the pre-007 lookup bug cannot occur here.
+  const { data: engineer } = await supabase.from('users').select('full_name').eq('id', dpr.engineer_id).maybeSingle()
+
   return (
     <div className="p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">{dpr.projects?.name ?? '—'}</h1>
-        <p className="text-gray-500 text-sm mt-1">{formatDate(dpr.log_date)}</p>
+        <p className="text-gray-500 text-sm mt-1">
+          {engineer?.full_name ?? 'Unnamed engineer'} — {formatDate(dpr.log_date)}
+        </p>
       </div>
 
       {dpr.content === null ? (

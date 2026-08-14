@@ -4,9 +4,12 @@ import type {
   AccountabilityEntry,
   CapturedCount,
   CapturedNumber,
+  CapturedText,
   ExecutionQuantityFact,
   EquipmentItemFacts,
   SuppressionNote,
+  EngineerDprFacts,
+  CheckInStatus,
 } from './schema'
 import { TOMORROWS_PLAN_DATA_STATUS_FORCED } from './schema'
 import { isManpowerNoteDiscarded, isEquipmentItemNoteDiscarded } from './discarded-fields'
@@ -560,4 +563,194 @@ function renderContent(s: RenderedDpr['structured']): string {
   }
 
   return lines.join('\n')
+}
+
+// ===========================================================================
+// PER-ENGINEER REPORT (docs/dpr-engineer-report-spec.md) — a second,
+// parallel renderer for a different report, added alongside everything
+// above, not a replacement. renderDpr/renderContent above are UNCHANGED and
+// stay live for the deferred project-level report.
+// ===========================================================================
+
+// Rule 2b: verbatim, quoted, never paraphrased — the ONLY transformation
+// applied is wrapping in quotes. `not reported` (Rule 3's plain-language
+// vocabulary — "not captured" retired) for not_captured.
+function fmtText(c: CapturedText): string {
+  return c.status === 'reported' && c.value !== null ? `"${c.value}"` : 'not reported'
+}
+
+function fmtCaptured(c: CapturedCount | CapturedNumber): string {
+  return c.status === 'reported' || c.status === 'zero' ? String(c.value) : 'not reported'
+}
+
+const CHECK_IN_LABEL: Record<CheckInStatus, string> = {
+  complete: 'complete',
+  partial: 'partial',
+  not_received: 'not received',
+  not_applicable: 'not applicable',
+}
+
+export interface RenderedCheckInStatus {
+  status: CheckInStatus
+  reason?: string // spec Rule 7's exact copy, e.g. "joined this project today"
+}
+
+function fmtCheckInLine(label: 'Morning' | 'Evening', s: RenderedCheckInStatus): string {
+  const base = `${label} check-in: ${CHECK_IN_LABEL[s.status]}`
+  return s.status === 'not_applicable' && s.reason ? `${base} — ${s.reason}` : base
+}
+
+export interface EngineerReportMeta {
+  project_name: string
+  engineer_name: string
+  // Pre-formatted, code-side — e.g. "Thu 13 Aug". Never derived from a
+  // digit inside the containment corpus (matches the old design's
+  // ContainmentMeta exclusion of log_date — S1/2026-08-11 decision,
+  // extended here to the same header line).
+  formatted_date: string
+}
+
+// The BODY ONLY — four pair lines + MISSING + NEEDS ATTENTION + NOT ASKED
+// YET. Deliberately excludes the header and check-in status lines (S1: the
+// containment corpus is built from exactly this string, and a header date
+// like "Thu 13 Aug" must never enter it — same reasoning the 2026-08-11
+// ContainmentMeta decision already established for the old design, applied
+// here to a different corpus). Pure — no model involvement anywhere in
+// this function (Rule 2: everything except the verdict is code-owned).
+export function renderEngineerBody(facts: EngineerDprFacts): string {
+  const lines: string[] = []
+
+  // §1 Work
+  const doneParts: string[] = [fmtText(facts.work.done_text)]
+  if (facts.work.done_quantity.status === 'reported') {
+    doneParts.push(`${facts.work.done_quantity.value}${facts.work.unit ? ` ${facts.work.unit}` : ''}`)
+  }
+  const done = facts.work.done_text.status === 'reported' || facts.work.done_quantity.status === 'reported' ? doneParts.join(' — ') : 'not reported'
+  lines.push(`Work — planned: ${fmtText(facts.work.planned)} | done: ${done}`)
+
+  // §3 Manpower
+  const manpowerActual =
+    facts.manpower.on_site.status === 'not_captured' && facts.manpower.working.status === 'not_captured'
+      ? 'not reported'
+      : `${fmtCaptured(facts.manpower.on_site)}, working: ${fmtCaptured(facts.manpower.working)}`
+  lines.push(`Manpower — planned: ${fmtCaptured(facts.manpower.planned)} | on site: ${manpowerActual}`)
+
+  // §4 Equipment — one line per item; an empty list still gets one line,
+  // rather than a header with nothing under it, to keep the body's fixed
+  // four-category shape regardless of what was reported.
+  if (facts.equipment.items.length === 0) {
+    lines.push('Equipment — planned: not reported | used: not reported')
+  }
+  for (const item of facts.equipment.items) {
+    const plannedParts: string[] = [item.type]
+    if (item.daily_hire_cost.status === 'reported' && item.daily_hire_cost.value !== null) {
+      plannedParts.push(`₹${item.daily_hire_cost.value}/day`)
+    }
+    const used = item.actual_hours.status === 'reported' ? `${item.actual_hours.value} hours` : 'not reported'
+    lines.push(`Equipment — planned: ${plannedParts.join(', ')} | used: ${used}`)
+  }
+
+  // §2 Schedule — no planned side (spec binding table); single value line.
+  const scheduleValue = facts.schedule.met === null ? 'not reported' : facts.schedule.met ? 'met' : 'not met'
+  lines.push(`Schedule — ${scheduleValue}`)
+
+  // MISSING — what we failed to collect (Rule 5, "our problem"). Driven by
+  // check-in status: a not_received half is the primary case; a partial
+  // evening additionally names which specific facts came back empty.
+  const missing: string[] = []
+  if (facts.morning_status.status === 'not_received') missing.push('Morning check-in not received.')
+  if (facts.evening_status.status === 'not_received') missing.push('Evening check-in not received.')
+  if (facts.evening_status.status === 'partial') {
+    if (facts.work.done_text.status === 'not_captured' && facts.work.done_quantity.status === 'not_captured') missing.push('Work done: not reported.')
+    if (facts.manpower.on_site.status === 'not_captured') missing.push('Manpower on site: not reported.')
+    if (facts.schedule.met === null) missing.push('Schedule: not reported.')
+  }
+
+  // NEEDS ATTENTION — what went wrong on site (Rule 5, "the customer's
+  // problem"). Code-composed sentences splicing in raw engineer text
+  // verbatim (Rule 2b — not a paraphrase, a direct substring), never a
+  // model field. Idle manpower/equipment only — a schedule miss has no
+  // separate reason field in this design (verdict-only Judgment; a model
+  // wishing to explain a miss does so in the one sentence it's given).
+  const needsAttention: string[] = []
+  if (facts.manpower.working.status !== 'not_captured' && facts.manpower.on_site.status !== 'not_captured') {
+    const idle = (facts.manpower.on_site.value ?? 0) - (facts.manpower.working.value ?? 0)
+    if (idle > 0) needsAttention.push(`${idle} workers idle.`)
+  }
+  for (const item of facts.equipment.items) {
+    if (item.available_hours.status === 'reported' && item.actual_hours.status === 'reported') {
+      const idleHours = (item.available_hours.value ?? 0) - (item.actual_hours.value ?? 0)
+      if (idleHours > 0) needsAttention.push(`${item.type} idle for ${idleHours} hours.`)
+    }
+  }
+  if (facts.schedule.met === false) needsAttention.push('Schedule not met.')
+
+  if (missing.length > 0) {
+    lines.push('')
+    lines.push('MISSING')
+    lines.push(...missing)
+  }
+  if (needsAttention.length > 0) {
+    lines.push('')
+    lines.push('NEEDS ATTENTION')
+    lines.push(...needsAttention)
+  }
+
+  // NOT ASKED YET — pre-Q6, unconditional, same reasoning as the old
+  // design's TOMORROWS_PLAN_DATA_STATUS_FORCED constant: nothing captures
+  // tomorrow's plan yet, so there's nothing this section could ever say
+  // other than this one line, until Q6 ships.
+  lines.push('')
+  lines.push('NOT ASKED YET')
+  lines.push("Tomorrow's plan.")
+
+  return lines.join('\n')
+}
+
+export interface RenderedEngineerReport {
+  content: string
+  structured: {
+    facts: EngineerDprFacts
+    verdict: string
+    verdict_status: 'model' | 'placeholder' | 'code_templated'
+    morning_status: RenderedCheckInStatus
+    evening_status: RenderedCheckInStatus
+  }
+}
+
+export const CONTAINMENT_FAILURE_PLACEHOLDER = 'Summary unavailable for this report.'
+
+// Composes the final report. `verdict` is whatever the caller already
+// decided (the model's sentence, the containment-failure placeholder, or a
+// code-templated line for holiday/fully-not_applicable/fully-empty days —
+// dispatch.ts's job to choose which, never this function's). This function
+// does not call the model and does not decide containment — it only lays
+// out already-decided pieces, matching Rule 2's "the model's entire output
+// is the verdict sentence" as literally as possible: nothing here can turn
+// into model output by accident.
+export function renderEngineerReport(
+  facts: EngineerDprFacts,
+  verdict: string,
+  verdictStatus: RenderedEngineerReport['structured']['verdict_status'],
+  morningStatus: RenderedCheckInStatus,
+  eveningStatus: RenderedCheckInStatus,
+  meta: EngineerReportMeta,
+): RenderedEngineerReport {
+  const body = renderEngineerBody(facts)
+
+  const lines: string[] = []
+  lines.push(`DAILY PROGRESS — ${meta.project_name} — ${meta.formatted_date}`)
+  lines.push(`Site engineer: ${meta.engineer_name}`)
+  lines.push('')
+  lines.push(fmtCheckInLine('Morning', morningStatus))
+  lines.push(fmtCheckInLine('Evening', eveningStatus))
+  lines.push('')
+  lines.push(verdict)
+  lines.push('')
+  lines.push(body)
+
+  return {
+    content: lines.join('\n'),
+    structured: { facts, verdict, verdict_status: verdictStatus, morning_status: morningStatus, evening_status: eveningStatus },
+  }
 }

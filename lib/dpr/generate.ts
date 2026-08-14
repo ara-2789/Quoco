@@ -1,9 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { DPR_JUDGMENT_SCHEMA } from './schema'
-import type { DprFacts, DprJudgment } from './schema'
+import { DPR_JUDGMENT_SCHEMA, ENGINEER_DPR_JUDGMENT_SCHEMA } from './schema'
+import type { DprFacts, DprJudgment, EngineerDprFacts } from './schema'
 import type { NarrativeContext } from './narrative-context'
 import { validateJudgment, type ValidationViolation } from './validate'
 import { isManpowerNoteDiscarded, isScheduleNoteDiscarded, isEquipmentItemNoteDiscarded } from './discarded-fields'
+import { extractDigitTokens, checkContainment } from './containment'
+import type { NarrativeContext as EngineerNarrativeContext } from './narrative-context'
 
 // The Anthropic client wrapper — the primary deliverable of this slice
 // (2026-08-11 DPR generator slice), per Aravind's framing: "the Facts/
@@ -344,4 +346,149 @@ export async function callDprModel(client: Anthropic, promptText: string, facts:
   const usage = { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens }
   const cost_usd = (usage.input_tokens / 1_000_000) * INPUT_COST_PER_MTOK + (usage.output_tokens / 1_000_000) * OUTPUT_COST_PER_MTOK
   return { judgment, usage, latency_ms, cost_usd }
+}
+
+// ===========================================================================
+// PER-ENGINEER REPORT (docs/dpr-engineer-report-spec.md) — a second,
+// parallel generator for a different report, added alongside everything
+// above, not a replacement. generateDprJudgment/callDprModel above are
+// UNCHANGED and stay live for the deferred project-level report.
+// ===========================================================================
+
+function fmtFactNumber(c: { status: string; value: number | null }): string {
+  return c.status === 'reported' || c.status === 'zero' ? String(c.value) : 'not reported'
+}
+
+function fmtFactText(c: { status: string; value: string | null }): string {
+  return c.status === 'reported' && c.value !== null ? c.value : 'not reported'
+}
+
+// The model's input for the per-engineer report — Facts (the boundary on
+// what it may OUTPUT: every digit must trace to one of these) plus raw
+// narrative text (READ-only prompt input, never digit-bearing itself in
+// any way the model is permitted to restate as a NEW number — the
+// containment check on the response is what actually enforces that
+// boundary, not this function). Raw text is what lets the verdict say
+// something like the spec's own sample, "3 workers were idle waiting for
+// material" — "waiting for material" exists nowhere in Facts.
+function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrativeContext | null, meta: { project_name: string; log_date: string }): string {
+  const lines: string[] = []
+  lines.push(`Project: ${meta.project_name}, ${meta.log_date}`)
+  lines.push('')
+  lines.push(`Work — planned: ${fmtFactText(facts.work.planned)}`)
+  lines.push(`Work — done: ${fmtFactText(facts.work.done_text)}${facts.work.done_quantity.status === 'reported' ? `, ${facts.work.done_quantity.value} ${facts.work.unit}` : ''}`)
+  lines.push(`Schedule met: ${facts.schedule.met === null ? 'not reported' : facts.schedule.met}`)
+  lines.push(`Manpower — planned: ${fmtFactNumber(facts.manpower.planned)}, on site: ${fmtFactNumber(facts.manpower.on_site)}, working: ${fmtFactNumber(facts.manpower.working)}`)
+  for (const item of facts.equipment.items) {
+    lines.push(`Equipment ${item.type} — available ${fmtFactNumber(item.available_hours)}h, actual ${fmtFactNumber(item.actual_hours)}h`)
+  }
+  if (narrative?.schedule_miss_reason) lines.push(`\nRaw schedule-miss reason (context only, never a source of a new digit): ${narrative.schedule_miss_reason}`)
+  if (narrative?.manpower_idle_reason) lines.push(`Raw manpower idle reason (context only): ${narrative.manpower_idle_reason}`)
+  for (const eq of narrative?.equipment_idle_reasons ?? []) {
+    if (eq.idle_reason) lines.push(`Raw equipment idle reason, item ${eq.morning_item_index ?? 'unmatched'} (context only): ${eq.idle_reason}`)
+  }
+  return lines.join('\n')
+}
+
+const ENGINEER_SYSTEM_PROMPT =
+  'You write ONE sentence summarising a construction site engineer\'s day, from Facts already computed elsewhere. ' +
+  'Every digit you write must be traceable to a number shown in the Facts you were given — never invent, round, or recompute a figure. ' +
+  'Never attribute anything to a named person, crew, or contractor — describe only what was done, where, and how much. ' +
+  'If the Facts are mostly empty, say so plainly in one short sentence rather than padding.'
+
+export interface EngineerVerdictResult {
+  verdict: string
+  verdict_status: 'model' | 'placeholder'
+  usage: { input_tokens: number; output_tokens: number } // summed across attempts
+  latency_ms: number // summed across attempts
+  cost_usd: number // summed across attempts
+  attempts: number
+}
+
+// S10: at most ONE immediate in-process retry on containment failure, then
+// the placeholder — never throws, never involves markDprGenerationFailed,
+// never touches the external job-retry path at all. renderedBody is the
+// ALREADY-RENDERED report body (renderEngineerBody, render.ts) — the
+// containment corpus is built from it directly (S1/S9), not from Facts.
+export async function generateEngineerVerdict(
+  client: Anthropic,
+  facts: EngineerDprFacts,
+  narrative: EngineerNarrativeContext | null,
+  renderedBody: string,
+  meta: { project_name: string; log_date: string },
+): Promise<EngineerVerdictResult> {
+  const corpus = extractDigitTokens(renderedBody)
+  const promptText = formatEngineerFacts(facts, narrative, meta)
+
+  let totalInputTokens = 0
+  let totalOutputTokens = 0
+  let totalLatencyMs = 0
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const start = Date.now()
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 512,
+      system: ENGINEER_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: promptText }],
+      output_config: { format: { type: 'json_schema', schema: ENGINEER_DPR_JUDGMENT_SCHEMA } },
+    })
+    totalLatencyMs += Date.now() - start
+    totalInputTokens += response.usage.input_tokens
+    totalOutputTokens += response.usage.output_tokens
+
+    // S1 (round-4): a missing text block or malformed/truncated JSON is a
+    // MODEL-OUTPUT problem, same class as a containment failure — not a
+    // transport/API failure. max_tokens: 512 makes truncation (stop_reason:
+    // 'max_tokens') a real way to reach this: a cut-off response yields
+    // unparseable JSON. Caught HERE, per-attempt, so it falls through to
+    // the retry / placeholder the exact same way a containment failure
+    // does — never escapes this loop to the caller's catch block, which
+    // would revert the claim, throw past a report whose BODY (code-owned,
+    // already correct) is fully ready, and risk markDprGenerationFailed
+    // for a problem that has nothing to do with whether a report can
+    // exist. Only the client.messages.create call above is allowed to
+    // throw past this loop — a genuine transport/API failure, correctly
+    // routed to the external job-retry path.
+    let judgment: { verdict: string } | undefined
+    try {
+      const textBlock = response.content.find((b) => b.type === 'text')
+      if (!textBlock || textBlock.type !== 'text') {
+        throw new Error(`No text block in response. stop_reason: ${response.stop_reason}`)
+      }
+      const parsed = JSON.parse(textBlock.text) as { verdict?: unknown }
+      if (typeof parsed.verdict !== 'string') {
+        throw new Error(`Parsed response has no string 'verdict' field: ${textBlock.text}`)
+      }
+      judgment = { verdict: parsed.verdict }
+    } catch {
+      continue // same as a containment failure: attempt 2, then the placeholder
+    }
+
+    const result = checkContainment(judgment.verdict, corpus)
+    if (result.ok) {
+      const cost_usd = (totalInputTokens / 1_000_000) * INPUT_COST_PER_MTOK + (totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_MTOK
+      return {
+        verdict: judgment.verdict,
+        verdict_status: 'model',
+        usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
+        latency_ms: totalLatencyMs,
+        cost_usd,
+        attempts: attempt,
+      }
+    }
+    // Falls through to attempt 2 (the ONE immediate in-process retry) on
+    // the first failure; falls through to the placeholder below on the
+    // second.
+  }
+
+  const cost_usd = (totalInputTokens / 1_000_000) * INPUT_COST_PER_MTOK + (totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_MTOK
+  return {
+    verdict: '', // caller (dispatch.ts) substitutes CONTAINMENT_FAILURE_PLACEHOLDER (render.ts) — kept out of generate.ts so the placeholder's copy lives in one place, the renderer
+    verdict_status: 'placeholder',
+    usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
+    latency_ms: totalLatencyMs,
+    cost_usd,
+    attempts: 2,
+  }
 }

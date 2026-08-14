@@ -54,6 +54,17 @@ export function deriveDprArchiveStatus(row: DprArchiveRowInput): DprArchiveStatu
   if (row.delivery_status === 'failed') {
     return { state: 'failed', variant: 'blocked', label: 'Generation failed' }
   }
+  // DATED NOTE (2026-08-14, per-engineer report reformat, round-3 N3): no
+  // NEW row can carry this status any longer — the project-level DPR-17
+  // skip marker this value was for (app/api/cron/dpr-generate/route.ts's
+  // old project-loop) is superseded by the roster/union trigger, which
+  // never writes 'skipped_no_data' (S4: a zero-eligible-engineer project
+  // now writes no row at all, detected via Sentry instead — see the cron
+  // route). The one row that ever had this value (35a2f41c) is deleted by
+  // migration 028 (Option A). Kept, not deleted: cheap, pure, and the
+  // deferred project-level report may reintroduce a project-level skip
+  // concept later, same "leave retained-but-unused logic in place" pattern
+  // as the kept multi-row lib/dpr/assemble.ts functions.
   if (row.delivery_status === 'skipped_no_data') {
     return { state: 'no_data', variant: 'info', label: 'No site data submitted' }
   }

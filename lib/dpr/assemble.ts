@@ -7,6 +7,10 @@ import type {
   DprFacts,
   EquipmentItemFacts,
   ExecutionQuantityFact,
+  CapturedText,
+  CheckInHalfStatus,
+  CheckInStatus,
+  EngineerDprFacts,
 } from './schema'
 
 // The fact assembler — the deterministic half of DPR generation. No Claude
@@ -448,4 +452,323 @@ export async function assembleDprFacts(
   })
 
   return mergeDprFacts(correctedRows, opts)
+}
+
+// -----------------------------------------------------------------------
+// PER-ENGINEER ASSEMBLER (docs/dpr-engineer-report-spec.md) — a second,
+// parallel assembler for a different report, added alongside everything
+// above, not a replacement. mergeDprFacts/assembleDprFacts above are
+// UNCHANGED and stay live for the deferred project-level report. This one
+// takes ONE daily_logs row (or null — an engineer with no submission at
+// all still gets a report, per the roster/union design), never an array —
+// there is no multi-engineer suppression apparatus here because there is
+// nothing to suppress: one report, one engineer, no collision possible.
+// -----------------------------------------------------------------------
+
+export interface CorrectedEngineerLogRow {
+  engineer_id: string
+  morning_plan: string | null // correctable (scalar)
+  morning_manpower_planned: { planned_total: number | null; by_trade: Array<{ trade: string; planned_count: number }>; raw_text: string | null } | null
+  morning_equipment: { items: Array<{ type: string; daily_hire_cost: number | null }>; none: boolean } | null
+  evening_output: string | null // correctable (scalar)
+  evening_output_quantities: { items: Array<{ activity: string; quantity: number | null; unit: string }> } | null
+  evening_schedule_met: boolean | null // correctable (scalar)
+  evening_workers_on_site: number | null // correctable (scalar)
+  evening_productive_manpower: { productive_count: number | null; idle_count: number | null; confidence: 'high' | 'low' } | null
+  evening_equipment_utilisation: {
+    items: Array<{ morning_item_index: number | null; type: string; available_hours: number | null; actual_hours: number | null }>
+    confidence: 'high' | 'low'
+  } | null
+}
+
+const notCapturedText: CapturedText = { status: 'not_captured', value: null }
+
+// Rule 2b: verbatim, never trimmed/re-cased/reordered — this is the ONLY
+// transformation CapturedText is allowed: pass the stored value through
+// unchanged. Empty-string/whitespace-only is treated as not_captured (an
+// engineer who submitted nothing meaningful for a free-text field), not as
+// a reported empty string — matches wrapNumber/wrapCount's own "null means
+// absent" convention one level up.
+function wrapText(value: string | null): CapturedText {
+  if (value === null || value.trim() === '') return notCapturedText
+  return { status: 'reported', value }
+}
+
+// Same convention as parseCorrectedBoolean/parseCorrectedInteger above —
+// SQL NULL clears the field, a non-string new_value is a type-integrity
+// violation and throws rather than propagating a value of the wrong
+// runtime type.
+export function parseCorrectedText(column: string, rawValue: string | null, editValue: unknown): string | null {
+  if (editValue === undefined) return rawValue
+  if (editValue === null) return null
+  if (typeof editValue === 'string') return editValue
+  throw new Error(`daily_log_edits.new_value for text column "${column}" was not a string: ${JSON.stringify(editValue)}`)
+}
+
+// Pure. row === null means no daily_logs row exists at all for this
+// engineer/day (a genuinely silent engineer, per the roster-driven
+// trigger's own design — every roster/union engineer gets a report,
+// submitted or not). checkInStatus is computed by the caller
+// (deriveCheckInStatus below), not here — it needs project_members
+// membership data this function has no reason to fetch.
+export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, checkInStatus: { morning: CheckInHalfStatus; evening: CheckInHalfStatus }): EngineerDprFacts {
+  if (!row) {
+    return {
+      morning_status: checkInStatus.morning,
+      evening_status: checkInStatus.evening,
+      work: { planned: notCapturedText, done_text: notCapturedText, done_quantity: notCapturedNumber, unit: '' },
+      schedule: { met: null },
+      manpower: { planned: notCapturedCount, on_site: notCapturedCount, working: notCapturedCount },
+      equipment: { items: [] },
+    }
+  }
+
+  // §1 Work — planned verbatim (morning_plan). actual is a composite:
+  // evening_output verbatim + the FIRST evening_output_quantities item
+  // (single-engineer day, so there's no cross-engineer activity-name
+  // matching to do — that problem is §12's, the deferred project report's,
+  // not this one's). Spec's own binding table names both evening_output
+  // and evening_output_quantities as Work's actual source; no rule for
+  // matching a SPECIFIC quantity item to the plan beyond "the one
+  // engineer's one quantity" for now — a real multi-activity-day nuance
+  // named, not solved, here (see the plan document's own open question on
+  // this pairing for a future multi-activity day).
+  const firstQuantity = row.evening_output_quantities?.items[0] ?? null
+  const work: EngineerDprFacts['work'] = {
+    planned: wrapText(row.morning_plan),
+    done_text: wrapText(row.evening_output),
+    done_quantity: firstQuantity ? wrapNumber(firstQuantity.quantity) : notCapturedNumber,
+    unit: firstQuantity?.unit ?? '',
+  }
+
+  // §2 Schedule — no planned side (spec binding table).
+  const schedule: EngineerDprFacts['schedule'] = { met: row.evening_schedule_met }
+
+  // §3 Manpower — planned = morning_manpower_planned.planned_total;
+  // actual = on_site (evening_workers_on_site) + working (productive_count).
+  const pm = row.evening_productive_manpower
+  const manpower: EngineerDprFacts['manpower'] = {
+    planned: wrapCount(row.morning_manpower_planned?.planned_total ?? null),
+    on_site: wrapCount(row.evening_workers_on_site),
+    working: wrapCount(pm?.productive_count ?? null, pm?.confidence),
+  }
+
+  // §4 Equipment — THE FIX (docs/dpr-engineer-report-spec.md's "Known
+  // upstream defect this does NOT fix" section, and the whole reason this
+  // reformat exists): morning_equipment is walked ON ITS OWN here, not
+  // merely as a side lookup keyed by an evening item's morning_item_index
+  // (the old assemble.ts §4's exact bug, lines 217-240). Every morning
+  // item becomes a Facts item — actual_hours/available_hours/idle_cost
+  // are 'not_captured' unless a matching evening item exists (matched by
+  // position, morning_item_index, same join-key convention the old
+  // multi-row assembler already uses — schema.md's EQUIPMENT JOIN KEY
+  // note). Render bad structured data honestly (spec): a garbled morning
+  // item ("job", ₹15/day) still becomes a real Facts item, not silently
+  // dropped for looking wrong.
+  const eveningByIndex = new Map<number, { available_hours: number | null; actual_hours: number | null }>()
+  for (const item of row.evening_equipment_utilisation?.items ?? []) {
+    if (item.morning_item_index !== null) {
+      eveningByIndex.set(item.morning_item_index, { available_hours: item.available_hours, actual_hours: item.actual_hours })
+    }
+  }
+  const equipmentConfidence = row.evening_equipment_utilisation?.confidence
+  const items: EngineerDprFacts['equipment']['items'] = (row.morning_equipment?.items ?? []).map((morningItem, index) => {
+    const eveningMatch = eveningByIndex.get(index)
+    const available_hours = eveningMatch ? wrapNumber(eveningMatch.available_hours, equipmentConfidence) : notCapturedNumber
+    const actual_hours = eveningMatch ? wrapNumber(eveningMatch.actual_hours, equipmentConfidence) : notCapturedNumber
+    const daily_hire_cost = morningItem.daily_hire_cost === null ? notCapturedNumber : { status: 'reported' as const, value: morningItem.daily_hire_cost }
+    const idle_cost = withInheritedLowConfidence(computeIdleCost(available_hours, actual_hours, daily_hire_cost), available_hours, actual_hours)
+    return {
+      type: equipmentLabel(morningItem.type),
+      daily_hire_cost,
+      actual_hours,
+      available_hours,
+      idle_cost,
+    }
+  })
+
+  return {
+    morning_status: checkInStatus.morning,
+    evening_status: checkInStatus.evening,
+    work,
+    schedule,
+    manpower,
+    equipment: { items },
+  }
+}
+
+// -----------------------------------------------------------------------
+// Check-in status (spec Rule 7) — a THIRD-PARTY concern relative to Facts:
+// needs project_members membership timing (created_at, active status) that
+// has nothing to do with what daily_logs says. Kept in this file rather
+// than a new module since it's small and reads the same row shape.
+//
+// SCOPE, STATED PLAINLY: "every question actually asked got an answer" is
+// only fully recoverable for the two documented structural skips (evening
+// Q3 on schedule_met=true, evening Q5/BOT-22 on empty morning_equipment —
+// both derivable from Facts already in `row`). A genuinely abandoned
+// mid-flow turn is NOT recoverable from daily_logs alone (would need a
+// whatsapp_sessions.current_step read this function does not do) — falls
+// through to the conservative default (partial, never complete) rather
+// than guessing. Named, not silently assumed away.
+// -----------------------------------------------------------------------
+
+// Shape read straight off daily_logs for completeness purposes — a
+// deliberately narrow subset, not the full CorrectedEngineerLogRow (no
+// corrections applied here; completeness reads submission facts, not
+// corrected content).
+export interface HalfCompletenessRow {
+  morning_submitted_at: string | null
+  evening_submitted_at: string | null
+  morning_plan: string | null
+  morning_manpower_planned: unknown
+  morning_equipment: { items: unknown[] } | null
+  evening_schedule_met: boolean | null
+  evening_schedule_miss_reason: string | null
+  evening_workers_on_site: number | null
+  evening_productive_manpower: unknown
+  evening_output: string | null
+  evening_output_quantities: unknown
+  evening_equipment_utilisation: { items: unknown[] } | null
+}
+
+// complete/partial/not_received only — NOT not_applicable, which the
+// caller (dispatch.ts / the cron route) overlays afterward once it has the
+// send-time/left-early comparison in scope (CHECKIN_CHECKPOINTS,
+// project_members.created_at, IST conversion — none of which this
+// function has any business reading). "Every question actually asked"
+// covers the two documented structural skips only (evening Q3 on
+// schedule_met=true, evening Q5/BOT-22 on empty morning_equipment) —
+// anything else defaults to the conservative reading, per this file's own
+// header note above.
+export function deriveHalfCompleteness(half: 'morning' | 'evening', row: HalfCompletenessRow): CheckInStatus {
+  if (half === 'morning') {
+    if (row.morning_submitted_at) return 'complete'
+    const anyField = row.morning_plan !== null || row.morning_manpower_planned !== null || row.morning_equipment !== null
+    return anyField ? 'partial' : 'not_received'
+  }
+
+  if (row.evening_submitted_at) return 'complete'
+
+  // Evening Q3 (schedule-miss reason) is skipped when schedule_met===true
+  // — its own absence never counts against completeness. Evening Q5
+  // (equipment hours) is skipped when morning_equipment has zero items —
+  // same treatment.
+  const q3Skipped = row.evening_schedule_met === true
+  const q5Skipped = row.morning_equipment !== null && row.morning_equipment.items.length === 0
+
+  const fieldsAskedAndAnswered = [
+    row.evening_schedule_met !== null,
+    q3Skipped || row.evening_schedule_miss_reason !== null,
+    row.evening_workers_on_site !== null,
+    row.evening_productive_manpower !== null,
+    row.evening_output !== null || row.evening_output_quantities !== null,
+    q5Skipped || row.evening_equipment_utilisation !== null,
+  ]
+  const anyAnswered = fieldsAskedAndAnswered.some(Boolean)
+  const allAnswered = fieldsAskedAndAnswered.every(Boolean)
+
+  if (allAnswered) return 'complete' // every field present but evening_submitted_at somehow null — defensive, not the expected path
+  return anyAnswered ? 'partial' : 'not_received'
+}
+
+// -----------------------------------------------------------------------
+// Thin IO wrapper. Fetches ONE daily_logs row (project_id, engineer_id,
+// log_date), applies corrections for the columns 019 made correctable that
+// this file now reads (morning_plan, evening_output,
+// evening_schedule_met, evening_workers_on_site — a superset of the old
+// assembler's two, since morning_plan/evening_output are first-class
+// inputs here per the spec's binding table). checkInStatus is computed
+// from the SAME fetched row (pre-correction submission facts — a
+// correction changes CONTENT, never whether a question was originally
+// answered) and returned alongside the Facts so the caller can overlay
+// not_applicable without a second query.
+// -----------------------------------------------------------------------
+
+export interface AssembleEngineerResult {
+  facts: EngineerDprFacts
+  completeness: { morning: CheckInStatus; evening: CheckInStatus }
+}
+
+// No isHireRateTrusted option, unlike the old assembler — deliberate, not
+// an oversight. The spec's own instruction ("render bad structured data
+// honestly... showing it is how the defect becomes visible") means
+// daily_hire_cost is always shown as-is here, garbled or not.
+export async function assembleEngineerDprFacts(
+  client: SupabaseClient,
+  project_id: string,
+  engineer_id: string,
+  log_date: string,
+): Promise<AssembleEngineerResult> {
+  const { data: logs, error: logsError } = await client
+    .from('daily_logs')
+    .select('*')
+    .eq('project_id', project_id)
+    .eq('engineer_id', engineer_id)
+    .eq('log_date', log_date)
+    .maybeSingle()
+
+  if (logsError) throw logsError
+
+  if (!logs) {
+    // No row at all — a genuinely silent engineer. Both halves default to
+    // not_received here; the caller overlays not_applicable if the
+    // send-time rule applies.
+    return {
+      facts: mergeEngineerDprFacts(null, { morning: { status: 'not_received' }, evening: { status: 'not_received' } }),
+      completeness: { morning: 'not_received', evening: 'not_received' },
+    }
+  }
+
+  const { data: edits, error: editsError } = await client
+    .from('daily_log_edits')
+    .select('column_name, new_value, created_at')
+    .eq('daily_logs_id', logs.id)
+    .order('created_at', { ascending: true })
+
+  if (editsError) throw editsError
+
+  const latestEditByColumn = new Map<string, unknown>()
+  for (const edit of edits ?? []) {
+    latestEditByColumn.set(edit.column_name as string, edit.new_value)
+  }
+
+  const completenessRow: HalfCompletenessRow = {
+    morning_submitted_at: logs.morning_submitted_at as string | null,
+    evening_submitted_at: logs.evening_submitted_at as string | null,
+    morning_plan: logs.morning_plan as string | null,
+    morning_manpower_planned: logs.morning_manpower_planned,
+    morning_equipment: logs.morning_equipment as { items: unknown[] } | null,
+    evening_schedule_met: logs.evening_schedule_met as boolean | null,
+    evening_schedule_miss_reason: logs.evening_schedule_miss_reason as string | null,
+    evening_workers_on_site: logs.evening_workers_on_site as number | null,
+    evening_productive_manpower: logs.evening_productive_manpower,
+    evening_output: logs.evening_output as string | null,
+    evening_output_quantities: logs.evening_output_quantities,
+    evening_equipment_utilisation: logs.evening_equipment_utilisation as { items: unknown[] } | null,
+  }
+  const completeness = {
+    morning: deriveHalfCompleteness('morning', completenessRow),
+    evening: deriveHalfCompleteness('evening', completenessRow),
+  }
+
+  const correctedRow: CorrectedEngineerLogRow = {
+    engineer_id: logs.engineer_id as string,
+    morning_plan: parseCorrectedText('morning_plan', logs.morning_plan as string | null, latestEditByColumn.get('morning_plan')),
+    morning_manpower_planned: logs.morning_manpower_planned as CorrectedEngineerLogRow['morning_manpower_planned'],
+    morning_equipment: logs.morning_equipment as CorrectedEngineerLogRow['morning_equipment'],
+    evening_output: parseCorrectedText('evening_output', logs.evening_output as string | null, latestEditByColumn.get('evening_output')),
+    evening_output_quantities: logs.evening_output_quantities as CorrectedEngineerLogRow['evening_output_quantities'],
+    evening_schedule_met: parseCorrectedBoolean('evening_schedule_met', logs.evening_schedule_met as boolean | null, latestEditByColumn.get('evening_schedule_met')),
+    evening_workers_on_site: parseCorrectedInteger('evening_workers_on_site', logs.evening_workers_on_site as number | null, latestEditByColumn.get('evening_workers_on_site')),
+    evening_productive_manpower: logs.evening_productive_manpower as CorrectedEngineerLogRow['evening_productive_manpower'],
+    evening_equipment_utilisation: logs.evening_equipment_utilisation as CorrectedEngineerLogRow['evening_equipment_utilisation'],
+  }
+
+  const facts = mergeEngineerDprFacts(correctedRow, {
+    morning: { status: completeness.morning },
+    evening: { status: completeness.evening },
+  })
+
+  return { facts, completeness }
 }
