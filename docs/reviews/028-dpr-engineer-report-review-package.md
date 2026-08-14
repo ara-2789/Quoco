@@ -1,5 +1,9 @@
 # Review package — DPR engineer-report reformat (migration 028 + pipeline rewrite)
 
+**Revision 11. PR #61 merged; the REVERSIBLE portion of the apply gate run and completed
+(§19). The migration itself (DELETE + schema change) is explicitly NOT part of this
+revision — reserved for its own, separate, deliberate apply session.**
+
 **Revision 10. Round 4's two required fixes — B1 (blocking) and S1 (should-fix), plus the
 NIT — not a new design round.** Round 4 came back "two fixes, then approved; neither
 reopens design." This revision adds §18: both fixes, the new/updated tests, and raw
@@ -20,11 +24,12 @@ corrections (S8, S9, S10), two NITs (both accepted). Four of round 2's own "look
 at" questions answered by the reviewer (§16) — no advisory lock needed, zero-roster
 detection is now in scope, N1/026 confirmed handled correctly and the request withdrawn.
 
-Status: **implementation complete on this branch (`d3d2ba3`, `fbadbe1`, `e9afdc4`, and this
-round's fix commit `db05b3d`), migration 028 rehearsed on test-db only. Nothing applied to
-prod. Nothing merged to main.** PR #59 merged (was the hard prerequisite, §7 — now
-satisfied). Prod apply, `checkin_escalations` test-engineer deactivation, and the full
-apply-gate runbook remain a separate, deliberate session — not part of this round.
+Status: **PR #61 MERGED to main (merge commit `08ed8ab5b500852843f496bed3fb174c2e059913`,
+CI green both on the PR and re-confirmed on `main` itself post-merge). The reversible
+portion of the apply gate is done (§19): the test-engineer row is renamed (not
+deactivated — gate change, §19.1), PITR observed live, the pre-apply queue probe
+rehearsed. Migration 028 itself (the `DELETE` + schema change) has NOT been applied to
+prod — that remains its own, separate, deliberate session, per §19's closing statement.**
 
 ---
 
@@ -891,6 +896,116 @@ allow-id-eq` tag — the same convention `lib/whatsapp/reactivation.ts` already 
 weakening the guard. Re-ran the full local suite after (46/46 files, 573 passed, 1 todo,
 no timeout this time) and confirmed CI green on the pushed commit (`cbc5ece`) before
 merging.
+
+---
+
+## 19. THE REVERSIBLE PORTION OF THE APPLY GATE — run and completed, migration itself NOT run
+
+Explicit scope, stated once so nothing below is misread: **this section covers only
+non-destructive, reversible pre-apply steps.** The migration's `DELETE` and schema change
+were NOT run in this pass, under any circumstances, per direct instruction. What follows
+is preparation for that future, separate session — not a partial apply.
+
+### 19.1 PR #61 merged
+
+Merge commit: `08ed8ab5b500852843f496bed3fb174c2e059913` (`main`, was `0b138fc`).
+CI green on the PR itself (`Test (real test-db)`, `Typecheck`, `Lint`, `Migration Lint`,
+`Vercel` all passed on head `2f61238`) and independently re-confirmed by watching the
+fresh CI run GitHub triggered on `main` for the merge commit itself post-merge — not
+inferred from the PR's own green checks alone.
+
+**One genuine pre-merge catch, not part of any prior round's reviewed diff:** the first
+push attempt (`d042d7e`, round 4's fix-and-resubmit commit) failed `Test (real test-db)`
+— CI's `pretest` guard (`scripts/check-profile-lookups.mjs`), which only runs via
+`npm test`, not the `npx vitest run` invocations this whole package's local runs used
+throughout. Found, fixed, documented in §18.5, re-confirmed green (`cbc5ece`, then
+`2f61238` after a docs-only reorder commit) before merging. Full detail there, not
+repeated here.
+
+### 19.2 Engineer `3534756b` — RENAMED, not deactivated (gate change, decided this session)
+
+**Reason for the gate change, recorded per instruction:** `3534756b` is the WhatsApp user
+behind `+919176865600` — Aravind's own sandbox account, not a disposable test fixture.
+Deactivating it (the precondition as originally written) would make the bot go silent on
+that number (BOT-08's gated_noop path) at exactly the moment the new pipeline goes live —
+removing the only test path available the moment it would be most useful. The
+precondition's actual goal was narrower than "deactivate": stop a smoke-test label from
+appearing as an engineer name in an owner-facing report. A rename achieves that fully,
+is fully reversible, and does not cost the sandbox account its ability to receive
+messages.
+
+**Statement run** (prod, `jvxwqignooseazzmwhvl`, via `supabase db query --linked -f
+<file>`, foreground, by file):
+
+```sql
+UPDATE public.users SET full_name = 'Vikram Rao' WHERE id = '3534756b-2a32-4b91-954b-0bab15c2dba1';
+```
+
+**Row before:**
+
+```
+full_name: "TEST — Evening Q5 Smoke 2026-08-10 (scenario 1: labelled reply)"
+whatsapp_number: +919176865600
+role: engineer   status: active   tenant_id: adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0
+```
+
+**Row after** (re-read, not assumed from the UPDATE's own empty result set):
+
+```
+full_name: "Vikram Rao"
+whatsapp_number: +919176865600   (unchanged)
+role: engineer   status: active   tenant_id: adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0   (all unchanged)
+```
+
+**Open item, stated plainly, not solved by this rename:** test-vs-real user separation
+remains unaddressed. `3534756b` is still a real production `users` row with no structural
+marker distinguishing "this account is also used for manual smoke-testing" from an
+ordinary engineer — a rename fixes what a report DISPLAYS, not what the row IS. The
+underlying question (should this project have a genuine test/sandbox flag, separate from
+`status`, so smoke-testing an account doesn't require overloading a real one) is open,
+not decided or scoped here.
+
+### 19.3 PITR — observed live, read-only
+
+`supabase --experimental backups list --project-ref jvxwqignooseazzmwhvl`, raw:
+
+```
+pitr_enabled: true
+walg_enabled: true
+earliest_physical_backup: 2026-08-07 16:32:11 UTC
+latest_physical_backup:   2026-08-14 10:28:16 UTC
+```
+
+**Recovery timestamp pinned for the apply session:** as of this observation
+(2026-08-14, ~10:28 UTC / ~16:00 IST), PITR covers back to **2026-08-07 16:32:11 UTC**.
+This window moves forward continuously (physical backup retention, not a fixed point) —
+the apply session must re-observe this live at apply time (§0's standing rule), not reuse
+this timestamp as a substitute for that.
+
+### 19.4 Queue probe — rehearsed, read-only, result does NOT carry forward
+
+```sql
+SELECT id, status, attempt_count, next_retry_at, payload, created_at
+FROM jobs
+WHERE type = 'dpr_generate' AND status != 'succeeded';
+```
+
+Result, prod: **zero rows.**
+
+**Explicitly NOT proof for the apply session, per instruction:** this was a rehearsal of
+the probe mechanism itself — confirming the query runs and returns the expected shape —
+not evidence the queue will be empty at apply time. Step 1.5 (B3-amend, §10) requires this
+exact probe **re-run live, immediately pre-`BEGIN`**, in the apply session itself.
+Tonight's zero-rows result is recorded here for continuity only.
+
+### 19.5 What remains for the apply session
+
+Everything else in §10's hard sequence and §13's PITR-before-delete step: the live
+re-probe of the queue (19.4, not reusable), a live re-observation of PITR (19.3, not
+reusable — the window will have moved), the actual `BEGIN`-wrapped migration (`ADD COLUMN`
+→ backfill `UPDATE` → the `35a2f41c` `DELETE` → `SET NOT NULL` → composite FK → widened
+`UNIQUE`), the immediate post-migration Vercel deploy, and the 19:00 IST live-confirmation
+deadline (§10) — none of it started, attempted, or rehearsed further in this pass.
 
 ---
 
