@@ -1,8 +1,18 @@
 # Review package — DPR engineer-report reformat (migration 028 + pipeline rewrite)
 
-**Revision 11. PR #61 merged; the REVERSIBLE portion of the apply gate run and completed
-(§19). The migration itself (DELETE + schema change) is explicitly NOT part of this
-revision — reserved for its own, separate, deliberate apply session.**
+**Revision 12 (2026-08-14, ~13:20 UTC). INCIDENT — §19's framing of "merge PR #61" as a
+REVERSIBLE, pre-apply step was WRONG, not just mis-ordered — merging to `main` auto-deploys
+production, so it deployed the new pipeline against the old (un-migrated) schema for real,
+for real minutes. Caught, verified, rolled back the same session. Full record, dated: §20.
+§19's original text is struck through, not deleted, and corrected in place per this
+project's own provenance discipline — do not read §19 as accurate standing guidance;
+read §20 first.**
+
+**Revision 11. PR #61 merged; the ~~REVERSIBLE~~ portion of the apply gate run and
+completed (§19). The migration itself (DELETE + schema change) is explicitly NOT part of
+this revision — reserved for its own, separate, deliberate apply session.** — **INCORRECT
+AS WRITTEN, see the revision-12 note above and §20. "Merge PR #61" was never reversible in
+the sense this line implied; it triggered a real production deploy.**
 
 **Revision 10. Round 4's two required fixes — B1 (blocking) and S1 (should-fix), plus the
 NIT — not a new design round.** Round 4 came back "two fixes, then approved; neither
@@ -24,12 +34,15 @@ corrections (S8, S9, S10), two NITs (both accepted). Four of round 2's own "look
 at" questions answered by the reviewer (§16) — no advisory lock needed, zero-roster
 detection is now in scope, N1/026 confirmed handled correctly and the request withdrawn.
 
-Status: **PR #61 MERGED to main (merge commit `08ed8ab5b500852843f496bed3fb174c2e059913`,
-CI green both on the PR and re-confirmed on `main` itself post-merge). The reversible
-portion of the apply gate is done (§19): the test-engineer row is renamed (not
-deactivated — gate change, §19.1), PITR observed live, the pre-apply queue probe
-rehearsed. Migration 028 itself (the `DELETE` + schema change) has NOT been applied to
-prod — that remains its own, separate, deliberate session, per §19's closing statement.**
+Status: **PR #61 is MERGED to main (merge commit `08ed8ab5b500852843f496bed3fb174c2e059913`).
+That merge deployed the new pipeline to production against the OLD schema for
+approximately 22-34 minutes (§20) — a real incident, not a close call. Production has
+since been rolled back via the Vercel dashboard to `0b138fc` (pre-DPR-reformat code),
+confirmed independently in §20. Migration 028 itself (the `DELETE` + schema change) has
+NOT been applied to prod — still true, but for a different reason than §19 assumed:
+applying it now, with `main`'s HEAD still at the new code, would immediately re-arm the
+same mismatch the next time anyone pushes to `main` for any reason. §20 states what
+actually needs to happen next.**
 
 ---
 
@@ -352,8 +365,18 @@ own correction convention (matches the plan document's S8 pass).**
    so: Aravind does not run it, and Claude Code does not run it, for the duration of the
    apply.
 4. Migration applied (the `BEGIN...COMMIT` block).
-5. Vercel deploy of the corresponding app code follows **immediately** after — same
-   session, no gap left open deliberately.
+5. ~~Vercel deploy of the corresponding app code follows **immediately** after — same
+   session, no gap left open deliberately.~~ **DATED CORRECTION (2026-08-14, §20 —
+   real incident, not a hypothetical): this step's own wording ("Vercel deploy... follows
+   immediately after") was read, in practice, as a separate, schedulable action from
+   "merge the branch to `main`" — and merging PR #61 ahead of the migration deployed the
+   new pipeline onto the old schema for ~22-34 minutes before being caught and rolled
+   back. THE MERGE IS THE DEPLOY — this project's Vercel integration auto-deploys
+   production on every push to `main`, confirmed via the GitHub Deployments API (§20).
+   Corrected: "merging this branch to `main`" IS step 5, not a precursor to it. The
+   branch stays unmerged, no matter how reviewed or how ready, until step 4 is done and
+   its post-apply catalog readback is confirmed. No exceptions for "it's just docs" —
+   any push to `main` re-deploys, regardless of what changed.**
 6. Confirm the deploy is live (a real request against the new code path, not just
    "deploy succeeded" in Vercel's UI) **by 19:00 IST** (see the restored deadline clause
    below — round 4 correction, not a re-opening).
@@ -899,12 +922,26 @@ merging.
 
 ---
 
-## 19. THE REVERSIBLE PORTION OF THE APPLY GATE — run and completed, migration itself NOT run
+## 19. ~~THE REVERSIBLE PORTION OF THE APPLY GATE~~ — CORRECTED BELOW, SEE §20 FIRST
 
-Explicit scope, stated once so nothing below is misread: **this section covers only
+**DATED CORRECTION (2026-08-14, ~13:20 UTC, revision 12): the premise of this section's
+title and opening paragraph is wrong, not just its ordering.** "Merge PR #61" was treated
+below as a non-destructive, reversible, pre-apply step, grouped with PITR observation and
+a read-only queue probe. It is not the same kind of action as those two: **merging to
+`main` triggers an automatic Vercel production deploy**, confirmed only AFTER the merge
+(§20) — so §19.1 below, in real time, deployed the new per-engineer pipeline (which
+assumes `dprs.engineer_id` exists) directly onto the OLD, un-migrated schema. This was
+caught, verified, and rolled back the same session (§20) — but the section below still
+reads, uncorrected, as if merging were as safe as the read-only steps beside it. It
+wasn't. Kept below verbatim, not rewritten, per this project's own provenance discipline —
+read §20 for what actually happened and the corrected runbook ordering.
+
+~~Explicit scope, stated once so nothing below is misread: **this section covers only
 non-destructive, reversible pre-apply steps.** The migration's `DELETE` and schema change
 were NOT run in this pass, under any circumstances, per direct instruction. What follows
-is preparation for that future, separate session — not a partial apply.
+is preparation for that future, separate session — not a partial apply.~~ **This
+"explicit scope" claim was itself the error — merging IS a form of "running" something,
+namely the new application code, against prod. Struck, not deleted.**
 
 ### 19.1 PR #61 merged
 
@@ -1006,6 +1043,107 @@ reusable — the window will have moved), the actual `BEGIN`-wrapped migration (
 → backfill `UPDATE` → the `35a2f41c` `DELETE` → `SET NOT NULL` → composite FK → widened
 `UNIQUE`), the immediate post-migration Vercel deploy, and the 19:00 IST live-confirmation
 deadline (§10) — none of it started, attempted, or rehearsed further in this pass.
+**SUPERSEDED — see §20: "the immediate post-migration Vercel deploy" is not a separate,
+schedulable action distinct from "merge to main." They are the same event.**
+
+---
+
+## 20. INCIDENT (2026-08-14) — merging PR #61 deployed new code onto the old schema; rolled back same session
+
+**Sequencing error, stated plainly:** PR #61 was merged to `main` (§19.1) BEFORE migration
+028 was applied. Merging to `main` auto-deploys production (confirmed by GitHub's
+Deployments API — every commit to `main` throughout this project's history has a
+corresponding `environment: "Production"` deployment record created by `vercel[bot]`, not
+a one-off). §19 treated the merge as a safe, reversible, pre-apply step because nothing
+about the ACT of merging touches the database — true, but irrelevant: the merge triggers a
+build+deploy of code that immediately started EXPECTING `dprs.engineer_id`, `onConflict:
+'project_id,engineer_id,log_date'`, and the composite-FK-backed `UNIQUE` constraint 028
+would create — none of which existed on prod. New code ran against the old schema for
+real, for a real window of wall-clock time, not hypothetically.
+
+**The window, bounded by what was actually observed, not assumed:**
+- New code first live: `08ed8ab`'s Vercel Production deployment created `2026-08-14
+  12:41:05Z` (GitHub Deployments API, `state: success`, `vercel[bot]`) — `77119de`
+  (a docs-only follow-up push) deployed again at `12:52:26Z`, also new code, so exposure
+  did not start later than `08ed8ab`'s deploy.
+- Last confirmed still-new-code observation: a `curl -I` against the production domain at
+  `13:03:32Z` returned `etag: "163964646ccf9a3e2e6fac4fe6395704"` for `/login`.
+- First confirmed post-rollback observation: the same request at `13:15:09Z` returned a
+  DIFFERENT `etag: "f5ce721047d7971d97a6b0dfb6704ae4"` — independent, read-only evidence a
+  different build was now being served, verified without Vercel dashboard/API access
+  (none exists in this environment), consistent with, not just asserted from, Aravind's
+  report that the dashboard rollback had been done.
+- **Exposure window: `12:41:05Z` → sometime between `13:03:32Z` and `13:15:09Z` —
+  approximately 22–34 minutes.** Matches Aravind's own "~35 minutes" estimate; this is the
+  more precisely bounded version, from timestamps actually captured, not a re-assertion of
+  the same number.
+
+**No data was affected, checked, not assumed.** Every write site to `dprs` was inventoried
+by reading the code (§9's B2 table, still accurate): the only writers are
+`lib/dpr/dispatch.ts` (reachable ONLY via `handleDprGenerateJob`, called ONLY from
+`app/api/jobs/tick/route.ts`, which only acts on a `dpr_generate` job if one exists to
+claim) and `scripts/generate-one-dpr.ts` (manual, not run). The only thing that ENQUEUES a
+`dpr_generate` job is the 20:00 IST cron (`app/api/cron/dpr-generate/route.ts`,
+`30 14 * * *` = 14:30 UTC), which had not fired during the exposure window (window closed
+by ~13:15 UTC, cron fires at 14:30 UTC). The `jobs` table was probed live, prod, twice
+during the exposure window and once more after the rollback — zero non-succeeded
+`dpr_generate` rows every time:
+
+```sql
+SELECT id, status, attempt_count, next_retry_at, payload, created_at
+FROM jobs WHERE type = 'dpr_generate' AND status != 'succeeded';
+```
+→ zero rows at `13:05:11Z`, zero rows at `13:15:27Z` (both prod, read-only).
+
+The WhatsApp webhook path (`app/api/whatsapp/`, `lib/whatsapp/`) was independently grepped
+for any reference to `dprs` or the DPR generator files — zero matches, confirming it was
+never in scope regardless of the deploy state.
+
+**Rollback:** done via the Vercel dashboard (Aravind, not Claude Code — no redeploy or
+rollback command was issued by this session). Production is now serving `0b138fc` (PR
+#59's merge — pre-DPR-reformat code, pre-DPR-reformat expectations, matching the
+still-un-migrated schema exactly). Verified independently, read-only, this session:
+- GitHub's Deployments API does **not** show a new deployment record for the rollback —
+  the most recent entry remains `77119de` (`12:52:26Z`). **This is a real gap in this
+  verification method, stated honestly rather than glossed over:** a Vercel-dashboard
+  "instant rollback" re-points the production alias without a new git push, so it does not
+  create a new GitHub Deployment event. The API answers "what was built and pushed," not
+  "what is aliased right now" — the wrong signal for this specific question, not a
+  contradiction of Aravind's report.
+- The etag change above (§ this section, "the window") is the actual independent
+  confirmation available from this environment: different content is being served now
+  than was being served during the exposure window.
+- `information_schema.columns` re-confirms `engineer_id` still absent from prod's `dprs`
+  table — consistent with "rolled back to code that never expected it," and with "nothing
+  was applied," both at once.
+
+**The runbook lesson, fixed in the gate itself, not just noted here:** "merge the PR" is
+NOT a reversible, schedulable-whenever pre-apply step — it is functionally identical to
+"deploy," because this project's Vercel integration auto-deploys production on every push
+to `main`. §10's B3-amend hard sequence already correctly sequenced "apply migration" before
+"deploy" in the abstract — the error was treating "merge to main" as a DIFFERENT, earlier,
+separable action from "the deploy" in §10's own step 5. It is not a different action. It IS
+step 5. **§10's hard sequence is corrected in place below** (struck lines, not deleted):
+
+> ~~5. Vercel deploy of the corresponding app code follows immediately after — same
+> session, no gap left open deliberately.~~
+> **5, corrected: "the deploy" = merging this branch's code to `main`. This step MUST NOT
+> happen — no merge, no push to `main`, for any reason, including documentation-only
+> changes — until step 4 (the migration itself) has been applied and its post-apply
+> catalog readback confirmed. There is no such thing as a "safe" pre-apply merge to `main`
+> in this project's current CI/CD configuration. If code needs to land before the apply for
+> review purposes, it stays on a branch, unmerged, until the migration is live.**
+
+**MAIN IS ARMED — standing condition until migration 028 applies:** `main`'s HEAD
+(`77119de`) already contains the new pipeline. Any future push to `main` — code, docs,
+anything — re-deploys that same mismatched code against the still-old schema, re-creating
+this exact incident. This condition persists independent of tonight's rollback; the
+rollback fixed what's LIVE, not what's on `main`. Holds until migration 028 is applied and
+confirmed live via the corrected §10 sequence.
+
+**This section (§20) and its correction to §19 are on a BRANCH
+(`docs/dpr-merge-deploy-incident`), NOT merged to `main`, per direct instruction** — see
+this session's closing report for the exact branch state.
 
 ---
 
