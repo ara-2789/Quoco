@@ -12,11 +12,40 @@
 -- entry, an actual dashboard/API check (CLAUDE.md §0's standing rule).
 -- Restore window pinned in the review package's runbook section, not here.
 --
--- SEQUENCING (review round 2, B3): this file must be applied WELL OUTSIDE the
--- 20:00 IST cron window, with the corresponding Vercel deploy following
--- IMMEDIATELY after, same day -- see the review package's B3 section for the
--- full runbook. The gap between this apply and the deploy landing is live
--- breakage for the three existing dprs upserts (dispatch.ts:50,97;
+-- SEQUENCING (review round 2, B3; AMENDED round 3, B3-amend): the danger
+-- window is NOT "avoid the 20:00 IST cron" -- /api/jobs/tick runs every
+-- MINUTE (* * * * *, vercel.json), so ANY dpr_generate job sitting
+-- pending/running/retry-scheduled at apply time gets claimed and executed
+-- via tick within 60 seconds, hitting the dropped constraint through
+-- dispatch's upserts regardless of time of day. The real safe zone is "the
+-- dpr_generate queue is proven empty," not a clock window.
+--
+-- STEP 1.5 (mandatory, immediately pre-apply, before BEGIN below): probe the
+-- jobs table and require ZERO rows before proceeding --
+--   SELECT id, status, attempt_count, next_retry_at FROM jobs
+--     WHERE type = 'dpr_generate' AND status != 'succeeded';
+-- PROCEED only on zero rows, pasted raw in the applied runbook record, not
+-- reused from an earlier reading -- re-probe live, immediately before BEGIN.
+-- Any row found: STOP, resolve it (let it complete via tick, or intervene
+-- manually) before re-probing.
+--
+-- The probe is only valid if the 20:00 cron is the sole producer of
+-- dpr_generate jobs. IT IS NOT: scripts/generate-one-dpr.ts also writes
+-- directly to dprs (its own onConflict:'project_id,log_date' upsert,
+-- confirmed in the round-2 B2 inventory). THE MANUAL SCRIPT MUST NOT RUN
+-- between Step 1.5's probe and the deploy landing -- solo operator, so:
+-- Aravind does not run it, and Claude Code does not run it, for the
+-- duration of this apply.
+--
+-- NO SCHEMA-VERSION MARKER NEEDED in the cron route -- Step 1.5's probe
+-- makes the failure mode it would guard against structurally impossible;
+-- adding one on top would be a redundant guard against a state Step 1.5
+-- already rules out.
+--
+-- Vercel deploy of the corresponding app code follows IMMEDIATELY after
+-- this file's COMMIT, same session -- see the review package's B3 section
+-- for the full runbook. The gap between this apply and the deploy landing
+-- is live breakage for the three existing dprs upserts (dispatch.ts:50,97;
 -- route.ts:65), which still target the OLD onConflict key until the deploy
 -- ships.
 --

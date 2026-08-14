@@ -180,6 +180,25 @@ renders in plain language with its reason:
 Morning check-in: not applicable — joined this project today
 ```
 
+**Symmetric case, added 2026-08-14 (review round 3, reviewer's own finding): an engineer
+who submitted real data earlier in the day and then left the project (deactivated, or
+removed from `project_members`) before a later half's send time is `not_applicable` for
+that later half too — not `not_received`.** Detected from the same eligible-set union
+already required elsewhere in this design (active roster ∪ engineers with a `daily_logs`
+row for `log_date`, per Rule 7's own real-data-wins principle): an engineer present in the
+union by virtue of real data, but absent from the active-roster half of it, has left. No
+new field or timestamp needed — this falls out of the union check already being done.
+Reuses the existing status value and mechanism, a different reason string only:
+
+```
+Evening check-in: not applicable — left this project during the day
+```
+
+Rendering a departed engineer's un-owed half as `not received` would be Rule-5.3 shading
+— language aimed at someone no longer there to have owed it. `not applicable` already
+exists for exactly this shape (a half genuinely not owed); this is its mirror case
+(membership ending early), not a new concept.
+
 A day where both halves are not-applicable skips the model call entirely, exactly as a
 holiday day does. A half-and-half day still calls the model, because one side has real
 data.

@@ -1,25 +1,28 @@
 # Review package — DPR engineer-report reformat (migration 028 + pipeline rewrite)
 
-**Revision 7.** Round 2 of external review. **Option A is DECIDED** — round 2 found
-Option B mechanically broken, not merely costlier (see §2). Three BLOCKING findings
-(B1–B3) folded in, all required before implementation starts. Seven SHOULD-FIX items
-(S1–S7), two NITS (N1–N2, one of which surfaces a real conflict with a standing
-instruction — see N1), and a process fix to this package's own repo-state header.
+**Revision 8.** Round 3 of external review. **Convergence — nothing reopens the design.**
+Round 3 findings: one BLOCKING amendment (B3-amend — the sequencing guard targeted the
+wrong window), three SHOULD-FIX text corrections (S8, S9, S10), two NITs (both accepted).
+Four of round 2's own "look hardest at" questions answered by the reviewer (§16) — no
+advisory lock needed, zero-roster detection is now in scope, N1/026 confirmed handled
+correctly and the request withdrawn.
 
 Status: PLAN ONLY. Nothing implemented, nothing applied, nothing merged. PR #59 still
 open, unmerged, still a hard prerequisite (§7).
 
 ---
 
-## Repo-state header (PROCESS fix — was prose, now pinned)
+## Repo-state header (pinned, per convention)
 
-- `main @ e9f18ecdbb7bb4079035fb90ee37c551bc15bb0a` (this branch's parent commit).
+- `main @ e9f18ecdbb7bb4079035fb90ee37c551bc15bb0a` (unchanged — this branch's parent
+  commit; this and every round-2/round-3 revision are commits on top of it, not new base
+  points).
+- Round 2 landed as commit `b766a64` on `review/dpr-engineer-report-plan`. This revision's
+  diff is against that commit, per the reviewer's own round-3 instruction.
 - `supabase migration list --linked`, raw: local and remote in sync through `027`;
-  `026` present locally (`{"local":"026","remote":"","time":"026"}`), not applied
-  remotely — pre-existing, unrelated to this work, left untouched (see N1 for why this
-  file is not being edited despite a round-2 request to do so).
-- Last runbook executed: none yet for this change — this is the first apply-track
-  document for migration 028.
+  `026` present locally, not applied remotely — pre-existing, unrelated to this work, left
+  untouched (N1, confirmed correct handling by the reviewer this round, request withdrawn).
+- Last runbook executed: none yet for this change — this is still pre-apply.
 
 ---
 
@@ -135,12 +138,22 @@ before 20:00 drops out of a roster-only query; their real `daily_logs` rows pers
 unrendered, and the owner's document silently omits reported work. Rule 7's own principle
 — real data always wins — applies here too. **Corrected eligible set for the nightly
 trigger: `active project_members` ∪ `engineers with a daily_logs row for log_date`**, not
-`active project_members` alone. The roster query (§7 of the prior revision) supplies the
-first set; a second query (`daily_logs WHERE project_id = X AND log_date = Y`, distinct
-`engineer_id`s not already in the roster set) supplies the second. An engineer in the
-union-only set (real data, no longer on the active roster) still gets a report — the
-report's own "site engineer" header uses whatever name is on file, and no `not_applicable`
-logic applies to them since real data exists for at least one half by construction.
+`active project_members` alone. The roster query supplies the first set; a second query
+(`daily_logs WHERE project_id = X AND log_date = Y`, distinct `engineer_id`s not already
+in the roster set) supplies the second. An engineer in the union-only set (real data, no
+longer on the active roster) still gets a report — the report's own "site engineer"
+header uses whatever name is on file.
+
+**NIT, accepted this round: a union-only engineer's un-owed LATER half renders
+`not_applicable`, not `not_received`.** Reviewer's own proposed fix, taken as offered — an
+engineer who submits morning data and then leaves (deactivated, or removed from
+`project_members`) before evening currently renders `Evening check-in: not received`,
+which is Rule 5.3 shading (blame-flavored language aimed at someone no longer there to
+have owed it). `not_applicable` already exists for the mirror case (membership starting
+late); this reuses the identical mechanism for membership ending early, no new status
+value or vocabulary needed — detected from the same union check already required above
+(present in the real-data set, absent from the active-roster set ⇒ left). Folded into
+`docs/dpr-engineer-report-spec.md` Rule 7 directly this round, not just noted here.
 
 **Test engineer `3534756b` under a roster-driven trigger — addressed, not left
 unaddressed.** Confirmed still `status: 'active'` in prod (re-queried this round). Under
@@ -281,34 +294,51 @@ one project-day meant one row) — each needs its own fix, not one shared patch:
 
 ---
 
-## 10. BLOCKING — B3: migration/deploy sequencing, stated as a hard sequence
+## 10. BLOCKING — B3-AMEND: the round-2 runbook guarded the wrong window
 
-**Unaddressed in round 1 — the migration and the Vercel deploy are not atomic, and the
-gap between them is live breakage.** The instant the widened `UNIQUE` constraint lands,
-the *deployed* code's three upserts (still targeting `onConflict:'project_id,log_date'`,
-a constraint that no longer exists) start failing with `42P10` — the same class of error
-Option B would have caused permanently, now caused temporarily by ordinary migration/
-deploy lag, whichever order they land in.
+**Round-2's §10 (below, struck) assumed the danger window was "near the 20:00 IST cron."
+Wrong: `/api/jobs/tick` runs `* * * * *` — every minute (`vercel.json`), not once a day.**
+Any `dpr_generate` job sitting `pending`, `running`, or retry-scheduled (`status='failed'`,
+`next_retry_at` due) at the moment the migration applies gets claimed and executed by
+`tick` within 60 seconds, hitting the dropped `onConflict` target through `dispatch.ts`'s
+upserts — regardless of time of day. The real safe zone is "the `dpr_generate` queue is
+proven empty," not a clock window at all.
 
-**Applying CLAUDE.md's own schedule-window rule (adopted 2026-08-12, "a manually-
-triggered flow feeding a scheduled consumer checks the consumer's schedule first, not
-just the producer's readiness") to a migration, not just a flow trigger — the principle
-is identical: check what the 20:00 IST cron will do before creating a window it could
-run inside.**
+~~**Hard sequence:** 1. PITR observed live. 2. Migration applied well outside the 20:00
+IST window. 3. Deploy follows immediately. 4. Confirm live before 20:00. 5. If 3/4 can't
+complete same-day, don't apply.~~ **Superseded — struck, not deleted, per this project's
+own correction convention (matches the plan document's S8 pass).**
 
-**Hard sequence, to go in the applied runbook when this migration is actually run:**
+**Corrected hard sequence:**
 1. PITR observed live (§4).
-2. Migration applied **well outside the 20:00 IST window** — mid-morning or early
-   afternoon IST is the safe zone, giving hours of margin on both sides, not a
-   just-before-cutoff apply.
-3. Vercel deploy of the corresponding app code follows **immediately** after — same
+2. **NEW — Step 1.5, mandatory, immediately pre-apply:** probe the `jobs` table —
+   ```sql
+   SELECT id, status, attempt_count, next_retry_at FROM jobs
+     WHERE type = 'dpr_generate' AND status != 'succeeded';
+   ```
+   **PROCEED only on zero rows, re-probed live at apply time** (not reused from an
+   earlier reading — matches this project's own "verify by observation" discipline for
+   everything else in this runbook). Any row found: STOP, resolve it (let it complete via
+   `tick`, or intervene manually), re-probe.
+3. **The probe is only valid if the 20:00 cron is the sole producer — it is not.**
+   `scripts/generate-one-dpr.ts` also writes directly to `dprs` with its own
+   `onConflict:'project_id,log_date'` upsert (found in B2's own inventory). **The manual
+   script must not run between Step 1.5's probe and the deploy landing.** Solo operator,
+   so: Aravind does not run it, and Claude Code does not run it, for the duration of the
+   apply.
+4. Migration applied (the `BEGIN...COMMIT` block).
+5. Vercel deploy of the corresponding app code follows **immediately** after — same
    session, no gap left open deliberately.
-4. Confirm the deploy is live (a real request against the new code path, not just
-   "deploy succeeded" in Vercel's UI) **before** 20:00 IST that day.
-5. If step 3 or 4 cannot complete same-day before 20:00, the migration does not apply
-   that day — this is not a soft preference, it's the same discipline the 08-12 rule
-   exists to enforce: never create a window a scheduled consumer can run inside
-   half-migrated.
+6. Confirm the deploy is live (a real request against the new code path, not just
+   "deploy succeeded" in Vercel's UI).
+
+**No schema-version marker needed in the cron route.** Considered (round 2's own
+look-hardest-at item 7) — Step 1.5's probe makes the failure mode a marker would guard
+against structurally impossible; a marker on top would be a redundant guard against a
+state the probe already rules out. Settles that question.
+
+Folded into `028_dprs_engineer_id_option_a.sql`'s own header this round, not left only
+here.
 
 ---
 
@@ -324,42 +354,59 @@ rather than re-deriving the same reasoning under a new name.** Implementation-wi
 still means `extractDigitTokens` runs over the concatenation of those specific rendered
 sections, not the whole `content` string.
 
-## 12. SHOULD-FIX — S2: the degraded path on containment failure, retry-exhaustion case
+## 12. SHOULD-FIX — S10 (was S2): reconciled to ONE retry semantic, not two conflicting ones
 
-Round 1 specified the *single-attempt* containment-failure behavior (neutral placeholder
-verdict, body still ships) but not what happens once retries are **exhausted** — today,
-`DprValidationError` → retries → `markDprGenerationFailed` sets `delivery_status='failed'`
-→ no report. That was correct when the model wrote the whole body; it is wrong now that
-the body is code-owned truth, rendered before the model call (per the render-before-
-generate reorder). **Corrected: exhausting retries on the verdict sentence must NOT
-trigger `markDprGenerationFailed` or `delivery_status='failed'` — the report already has
-a complete, valid body and should deliver with the neutral-placeholder verdict, same as
-the single-attempt case, not be killed.** `markDprGenerationFailed`'s semantics do NOT
-carry over unchanged to this path: that function should be reserved for failures that
-prevent a report from existing at all (an assembler throw, an unrecoverable DB error), not
-for a verdict-sentence containment exhaustion, which now has a real, deliverable fallback.
-This needs its own branch in the retry-exhaustion handling, distinct from the generic
-`willRetry: false` → `markDprGenerationFailed` path `app/api/jobs/tick/route.ts:52-54`
-currently applies uniformly to every `dpr_generate` failure.
+**Round-2 correction, superseded this round by S10 — recorded so the contradiction and
+its resolution are both visible, not just the final state.** Round 2's version of this
+section described retry-EXHAUSTION semantics (external job retries via `tick`, ending in
+`markDprGenerationFailed` if all attempts fail) as a *separate* path from the plan
+document's §5 (single-attempt containment failure → immediate placeholder, report always
+ships). **The two were never reconcilable as written: if §5 holds — containment never
+throws past its own handling — §12's retry-exhaustion branch is unreachable, dead
+document text describing a code path that can't exist.**
+
+**Resolved in favor of §5's shape, reconciled exactly, not split the difference:**
+containment failure gets **at most one immediate, in-process re-call** (same job
+execution, no new job enqueued — `generate.ts`'s own comment already notes violations are
+stochastic and often pass on retry) — if that second attempt also fails containment, the
+neutral placeholder ships and the report still succeeds. **`markDprGenerationFailed` and
+`delivery_status='failed'` are never invoked for a containment failure, first attempt or
+second** — that function stays reserved for failures that prevent a report from existing
+at all (an assembler throw, an unrecoverable DB error), never for the verdict sentence,
+which always has a deliverable fallback now.
+
+**Consequence for `app/api/jobs/tick/route.ts`: no containment-specific branch needed at
+all.** Its existing `willRetry`/`markDprGenerationFailed` logic is untouched — containment
+failures never reach it, since they resolve entirely inside `generateDprJudgment`/
+`dispatch.ts` before the job either succeeds or throws for an unrelated reason. The only
+change at that call site is threading `payload.engineer_id` through the existing
+`markDprGenerationFailed` call — already required by B2, not a new requirement.
+
+Full corrected design, with the test list: `docs/reviews/028-dpr-engineer-report-plan.md`
+§5, which is now the sole source of truth for this behavior — not restated fully here to
+avoid a third copy drifting from the other two.
 
 ## 13. SHOULD-FIX — S3, S4: covered in §5 (real-data-wins) and below (zero-roster)
 
 **S4 — zero-roster project-day.** Under a roster-driven trigger, a project with no
 active engineers writes **no `dprs` row at all** for that night — reintroducing the
 absence-vs-failure conflation `archive-status.ts` exists to prevent, now at the project
-level instead of the report level. **Decision: accept as a recorded, dated regression,
-not silently fixed with a project-level marker row.** A project-level marker doesn't fit
-coherently under Option A's own `engineer_id NOT NULL` invariant (there is no engineer to
-attach it to) — reintroducing one would mean either violating that invariant for exactly
-this case or building a second, parallel marker mechanism outside `dprs` entirely. Given
-the constraint, and given zero-roster projects are themselves an edge state (a project
-with no engineers assigned is not yet doing real work), **recorded here, dated
-2026-08-14, as an accepted gap** — if it becomes a real operational problem, the right
-fix is a separate, lightweight signal (a Sentry/monitoring line on the cron trigger route
-for "zero eligible engineers on an active project," not a `dprs` row), not a schema
-change to re-admit nullable `engineer_id`.
+level instead of the report level. Accepted as a gap (no `dprs`-schema fix — see the
+original reasoning below, unchanged), **but round 3 (Q8) changes what "accepted" means:
+the detection signal is now IN SCOPE for this implementation, not deferred to a future
+incident.** `runDprGenerateTrigger`, when an active project resolves `SET 1 ∪ SET 2`
+(§5) to empty, must emit a Sentry/log event at that point — built as part of this work,
+not added later after someone notices reports silently stopped for a project.
 
-## 14. SHOULD-FIX — S5, S6, S7: done this round
+Original reasoning for why the gap itself (no `dprs` row) stays accepted, not schema-
+fixed: a project-level marker doesn't fit coherently under Option A's own `engineer_id
+NOT NULL` invariant (there is no engineer to attach it to) — reintroducing one would mean
+either violating that invariant for exactly this case or building a second, parallel
+marker mechanism outside `dprs` entirely. Zero-roster projects are themselves an edge
+state (a project with no engineers assigned is not yet doing real work) — the detection
+line (Q8, above) is the right-sized fix; a schema change is not.
+
+## 14. SHOULD-FIX — S5, S6, S7 (round 2) and S8, S9 (round 3): done
 
 - **S5** — `docs/dpr-engineer-report-spec.md` updated directly (not just this package):
   the send-time conditional-on-crons framing, the IST-explicit comparison, and the
@@ -369,6 +416,20 @@ change to re-admit nullable `engineer_id`.
 - **S7** — raw catalog/probe output pinned verbatim in
   `028_dprs_engineer_id_option_a.sql`'s own header comment (constraint name, pre-apply
   state, multi-engineer check) rather than summarized here or there.
+- **S8 (round 3)** — the plan document's §1 contradicted itself: the revision-7 union
+  correction sat above an unmodified roster-only query block and a bullet stating the
+  exact claim S3 refuted ("a deactivated engineer never appears on the roster and gets no
+  report generated"). Fixed with a dated strike-through pass, not a silent rewrite — the
+  struck text and its correction are both visible in the plan document now.
+- **S9 (round 3)** — `lib/dpr/containment.ts`'s own 2026-08-11 header comment (Reading A)
+  now records the dated partial supersession directly, where the original decision lives,
+  not only in this package: prong (i) (corpus from code-owned Facts) is unchanged; prong
+  (ii) (never raw free text) is superseded for the new verdict corpus specifically, since
+  the rendered body now quotes engineer free text verbatim (spec Rule 2b) and that
+  strengthens traceability rather than weakening it — the quoted source sits directly
+  adjacent to any digit the verdict might cite, unlike the old design's raw prompt input,
+  which the reader never saw. `buildExecutionCorpus` itself is unchanged, still governed
+  by the original, unsuperseded reasoning.
 
 ---
 
@@ -400,11 +461,26 @@ still open, since Tuesday** (2026-08-11) — a pre-existing documentation gap, n
 something to stack a second one on top of. Both tracked; 028's own entry is a new,
 separate close-out item, not a substitute for closing 027's.
 
+**N3 (round 3), accepted — `lib/dpr/archive-status.ts` added to the files-touched list.**
+Was absent from §1's list despite the redesign retiring `skipped_no_data` as a writable
+status for any new row (its one writer, `route.ts:65`, is superseded per B2/S4). Genuinely
+unchanged, not modified — `deriveDprArchiveStatus`'s priority-4 branch becomes dead code
+(no new row can ever carry that status, and the one historical row that had it is deleted
+by Option A), kept rather than removed since the deferred project-level report may
+reintroduce a project-level skip concept later, same pattern as the retained multi-row
+`mergeDprFacts`. Dated comment at the branch, not deletion, when implementation happens.
+
+**N4 (round 3), accepted — mid-day-leaver `not_applicable` reuse.** Covered in §5 above;
+listed here too since it was raised as a NIT. Folded into the spec directly.
+
 ---
 
 ## 16. What to look hardest at
 
-Carried forward from round 1, extended:
+Round-2 items 1–5 stand unchanged (still live risk surface). Items 6–9 were the round-2
+list's own extension — **all four now answered by the reviewer, resolutions recorded, not
+re-opened:**
+
 1. The roster-driven trigger (now roster ∪ daily_logs, per S3) — can any engineer who
    owes a check-in fail to get a report?
 2. `engineer_id NOT NULL` + the composite FK + the widened UNIQUE — any path where either
@@ -413,29 +489,40 @@ Carried forward from round 1, extended:
 4. Containment on the specified corpus region (S1) — any way a verdict digit escapes it?
 5. The retained multi-row assembler — still coherent as a caller-facing API once nothing
    calls it?
-6. **B2's three fixed sites** (dedup containment, error-revert, `markDprGenerationFailed`)
-   — is the `engineer_id`-scoping fix in each actually sufficient, or does the concurrent-
-   per-engineer-jobs shape need a stronger guard (e.g. a per-engineer advisory lock)?
-7. **B3's sequencing** — is "well outside the 20:00 window, deploy immediately after"
-   actually enforceable given Vercel deploy latency is not fully within this team's
-   control, or does it need a harder gate (e.g. the cron route itself checking a
-   migration-version marker and refusing to run against a stale schema)?
-8. **S4's accepted zero-roster gap** — is "accept it, dated" actually the right call, or
-   does DASH-04's own disease argument (absence-vs-failure conflation) mean this needs a
-   real fix even though `engineer_id NOT NULL` makes the obvious fix awkward?
-9. **N1's conflict** — should 026 actually be touched here, overriding the standing
-   "untouched" instruction, or does the substance recorded in N1 suffice without editing
-   the file?
+6. ~~B2's three fixed sites — does the concurrent-per-engineer-jobs shape need a stronger
+   guard (e.g. an advisory lock)?~~ **ANSWERED (Q6): no.** `engineer_id` scoping in every
+   B2-fixed site means concurrent per-engineer jobs write disjoint rows — `tick`'s own
+   concurrency crosses jobs, never rows, so there's no contention to guard against.
+7. ~~B3's sequencing — enforceable, or does it need a harder gate?~~ **ANSWERED (Q7 →
+   B3-amend, §10):** the round-2 sequence guarded the wrong window entirely — fixed with
+   the Step 1.5 jobs-queue probe, which is itself the harder gate this question was
+   asking for (structurally makes the failure mode impossible, no marker needed).
+8. ~~S4's accepted zero-roster gap — right call, or does it need a real fix?~~
+   **ANSWERED (Q8): accept the gap, but build detection now.** Not a full fix, not a pure
+   defer either — the Sentry/log line (§13) is the actual resolution, in scope for this
+   implementation.
+9. ~~N1's conflict — should 026 be touched, overriding the standing instruction?~~
+   **ANSWERED (Q9): no.** Reviewer withdrew the request and owned it as an unverified
+   assertion about the file's contents. Standing instruction holds; handling was correct.
+
+**New from round 3, carried into round 4's own look-hardest-at scope implicitly (not
+re-listed as a separate numbered item since round 3 raised no new open questions of its
+own) — the B3-amend Step 1.5 probe, the S10-reconciled single-retry semantic, and the
+S9 containment.ts supersession are the three places round 3 changed actual designed
+behavior, not just document text, and are where round 4 should look first if anything
+is going to reopen.**
 
 ---
 
 ## Attachments
 
-- `028_dprs_engineer_id_option_a.sql` — DECIDED, full text, this round's revision (B1
-  composite FK, S7 pinned probes), same directory.
-- `028_dprs_engineer_id_option_b.sql` — REJECTED, kept for the record, header rewritten
-  to state the mechanical reason.
-- `028-dpr-engineer-report-plan.md` — the design plan, now committed (S6), not just
-  referenced.
-- `docs/dpr-engineer-report-spec.md` — updated this round for S5, committed on this
-  branch.
+- `028_dprs_engineer_id_option_a.sql` — DECIDED, full text, this round's revision
+  (B3-amend Step 1.5 probe added), same directory.
+- `028_dprs_engineer_id_option_b.sql` — REJECTED, kept for the record, unchanged this
+  round.
+- `028-dpr-engineer-report-plan.md` — the design plan, this round's revision (S8
+  strike-through pass, S10 reconciliation, Q6/Q8 fold-in).
+- `docs/dpr-engineer-report-spec.md` — this round's revision (mid-day-leaver
+  `not_applicable` addition, NIT/N4).
+- `lib/dpr/containment.ts` — **new this round** — the actual application file, header
+  comment only (S9's dated partial supersession), no logic touched.

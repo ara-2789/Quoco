@@ -13,6 +13,28 @@ import type { ExecutionOutputFacts } from './schema'
 // The corpus and the section it's built for must MATCH — see
 // buildExecutionCorpus below for why it's scoped to execution Facts alone,
 // not a union of every section's Facts.
+//
+// DATED PARTIAL SUPERSESSION (2026-08-14, per-engineer report reformat,
+// review round 3): Reading A has two prongs — (i) corpus built from
+// code-owned Fact values, (ii) never the whole prompt or an engineer's raw
+// free text. Prong (i) still holds unchanged. Prong (ii) is now PARTIALLY
+// SUPERSEDED for the new per-engineer verdict-sentence corpus (built from
+// the rendered body, not execution Facts alone — see
+// docs/dpr-engineer-report-spec.md Rule 2b): the new body's pair lines
+// quote engineer free text VERBATIM (`morning_plan`, `evening_output`), so
+// digits inside that quoted text now enter the corpus the verdict is
+// checked against — exactly what prong (ii) was written to forbid.
+// DELIBERATE, not an oversight: the traceability guarantee this file
+// existed to make ("a digit in the model's output must be findable
+// somewhere real") gets STRONGER under the new design, not weaker — the
+// quoted source sits directly adjacent, on the same rendered page, to the
+// digit the verdict might cite, rather than being raw prompt input the
+// reader never sees at all (the failure mode prong (ii) was guarding
+// against under the old design, where raw free text was model-input-only).
+// Reading A's prong (i) is the one that still does the real work; prong
+// (ii) is retired for this corpus specifically, not for
+// buildExecutionCorpus below, which is unchanged and still excludes raw
+// free text per the original decision.
 
 // Every digit-bearing token in a string, normalized to a comparable number so
 // "4,730" (thousands separator) and "4730", or "37.50" and "37.5", compare

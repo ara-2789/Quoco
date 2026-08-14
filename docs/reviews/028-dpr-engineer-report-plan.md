@@ -1,4 +1,38 @@
-# DPR reformat — per-engineer report, plan only (revision 7)
+# DPR reformat — per-engineer report, plan only (revision 8)
+
+**Revision 8 note — round 3 of external review. Verdict: convergence, nothing reopens the
+design. Round 4 is diffs against this commit; if clean, GO for implementation.** Changes
+this round, all text/comment-level, no code logic written:
+- **B3-amend (blocking):** the sequencing guard in §17/round-2 targeted the wrong window —
+  `/api/jobs/tick` runs every minute, not just at 20:00, so any pending/running/retry-
+  scheduled `dpr_generate` job is a danger at ANY time, not just near the cron. New
+  mandatory pre-apply step: probe `jobs` for zero non-succeeded `dpr_generate` rows,
+  re-probed live at apply time, not reused from an earlier reading. Folded into
+  `028_dprs_engineer_id_option_a.sql`'s own header, with the added constraint that
+  `scripts/generate-one-dpr.ts` (a second writer, found in B2) must not run during the
+  apply/deploy gap.
+- **Q6/Q8/Q9 — reviewer's answers to round 2's own look-hardest-at questions, folded into
+  §1:** no advisory lock needed (engineer_id scoping already makes concurrent jobs write
+  disjoint rows); the zero-roster gap (S4) stays accepted but now requires a Sentry/log
+  detection line, in scope for this implementation, not deferred; N1/026 confirmed correct
+  as handled, reviewer withdrew that request.
+- **S8:** §1 below had a self-contradiction — the revision-7 union correction sat above an
+  unmodified roster-only query block and bullet for a full revision. Struck through, not
+  silently rewritten, per this project's own correction convention.
+- **S9:** `lib/dpr/containment.ts`'s own 2026-08-11 header comment now records the dated
+  partial supersession of its "never raw free text" prong — the new verdict corpus quotes
+  engineer free text verbatim by design (Rule 2b), which strengthens traceability rather
+  than weakening it. Recorded where the original decision lives, not just in this plan.
+- **S10:** §5 below is now the sole source of truth for containment-failure semantics — at
+  most one immediate in-process retry, then a placeholder, report always ships,
+  `markDprGenerationFailed` never involved. The package's own conflicting retry-exhaustion
+  framing is being rewritten to match, not the reverse.
+- **NIT (archive-status.ts):** added to the files-changed list — genuinely unchanged, dead
+  branch noted, not deleted.
+- **NIT (mid-day leaver):** the reviewer's own proposed fix — an engineer who leaves the
+  project mid-day renders their un-owed later half as `not_applicable` ("left this project
+  during the day"), not `not_received` — accepted, folded into the spec's Rule 7 and §1's
+  corrected union logic below.
 
 **Revision 7 note — round 2 of external review came back. Verdict: STOP, revise, THEN
 implement — Option A is decided and does not wait on the rest.** Full detail lives in
@@ -117,21 +151,51 @@ Revision 2 moved DPR-17's skip from "project has no `daily_logs` rows" to "engin
 `daily_logs` row" — backwards, since an engineer who submitted nothing is the report's most
 important thing to say, not a reason to say nothing.
 
-**Corrected design:** `runDprGenerateTrigger` enumerates the **roster**, not `daily_logs`.
-Reuse the exact query shape `lib/dpr/accountability.ts`'s `assembleAccountability` already
-uses (and PR #59's `lib/checkin-escalations/roster.ts` mirrors for the same reason):
+**S8 STRIKE-THROUGH PASS (2026-08-14, review round 3): the block below described a
+roster-ONLY design and was left live and unmodified for a full revision after the
+revision-7 union correction was written above it — an implementer reading only the
+bullets, not the top-of-file note, would build the wrong behaviour. Struck, not silently
+rewritten, per this project's own correction convention.**
+
+~~**Corrected design:** `runDprGenerateTrigger` enumerates the **roster**, not
+`daily_logs`. Reuse the exact query shape `lib/dpr/accountability.ts`'s
+`assembleAccountability` already uses (and PR #59's `lib/checkin-escalations/roster.ts`
+mirrors for the same reason):~~
+
+~~```~~
+~~project_members JOIN users!inner(id, full_name, role, status)~~
+~~  WHERE project_members.project_id = :project_id~~
+~~    AND users.role = 'engineer'~~
+~~    AND users.status = 'active'~~
+~~```~~
+
+~~For every `(project, roster engineer)` pair on an active project, enqueue one
+`dpr_generate` job — **unconditionally**, whether or not that engineer has a `daily_logs`
+row for today.~~
+
+~~- **`status='active'` exclusion**: same filter as `accountability.ts` — a deactivated
+  engineer never appears on the roster and gets no report generated for them at all
+  (matches ENG-registration semantics; there's no "was on the roster, now isn't" state to
+  report on).~~ **← THE EXACT CLAIM S3 REFUTED.** A deactivated engineer with a real
+  `daily_logs` row DOES get a report under the corrected union design — see below.
+
+**CORRECTED (2026-08-14), replaces both struck blocks above:** `runDprGenerateTrigger`
+enumerates the **union** of two sets, not the roster alone:
 
 ```
-project_members JOIN users!inner(id, full_name, role, status)
+SET 1 (roster): project_members JOIN users!inner(id, full_name, role, status)
   WHERE project_members.project_id = :project_id
     AND users.role = 'engineer'
     AND users.status = 'active'
+
+SET 2 (real data): daily_logs.engineer_id, DISTINCT,
+  WHERE project_id = :project_id AND log_date = :log_date
+  (engineer_ids not already in SET 1)
 ```
 
-For every `(project, roster engineer)` pair on an active project, enqueue one
-`dpr_generate` job — **unconditionally**, whether or not that engineer has a `daily_logs`
-row for today. No more project-level DPR-17 skip; skip becomes per-engineer, per the
-existing `daily_logs` presence check, and even a "skip" still writes a full report:
+For every engineer in `SET 1 ∪ SET 2`, enqueue one `dpr_generate` job — **unconditionally**,
+whether or not that engineer has a `daily_logs` row for today. No more project-level
+DPR-17 skip; skip becomes per-engineer, and even a "skip" still writes a full report:
 
 - **Holiday exclusion**: mirror `accountability.ts`'s own logic exactly, don't reinvent it
   — an engineer whose **own** `daily_logs.is_holiday = true` gets a report saying so (site
@@ -143,21 +207,34 @@ existing `daily_logs` presence check, and even a "skip" still writes a full repo
   received," reusing `statusFor`'s existing three-way logic (`submitted`/`missing`/
   `unconfirmed`) rather than the two-way "row exists or doesn't" this plan's revision 2
   assumed.
-- **`status='active'` exclusion**: same filter as `accountability.ts` — a deactivated
-  engineer never appears on the roster and gets no report generated for them at all
-  (matches ENG-registration semantics; there's no "was on the roster, now isn't" state to
-  report on).
-- **No `daily_logs` row, not a holiday**: report reads `Morning check-in: not received /
-  Evening check-in: not received`, every body line `planned: <if morning ever ran before>
-  / not reported`, `not reported` on the actual side — actually: with zero `daily_logs`
-  row, EVERY field (both planned and actual) is `not_captured`, so the correct rendering is
-  `not reported` on **both** sides of every pair line, and the verdict sentence has no
-  Facts to cite (see §5's containment-failure design — this is exactly the "empty corpus"
-  case that design has to handle cleanly, not as an error).
+- **In SET 1, not SET 2 (ordinary active engineer)**: standard treatment — real data
+  renders, missing halves are `not_received` (or `not_applicable` per Rule 7's send-time
+  rule if they joined that day).
+- **In SET 2, not SET 1 (left the project, real data exists)**: a MISSING half for this
+  engineer is `not_applicable` — `"left this project during the day"` — never
+  `not_received`, per the spec's 2026-08-14 symmetric-case addition to Rule 7 (NIT2).
+  Naming a departed engineer's un-owed half as a failure to report is Rule-5.3 shading.
+- **In neither set**: not generated at all — no report, no job. This is the correct
+  absence: not currently active, no real data either.
+- **No `daily_logs` row anywhere, not a holiday, in SET 1**: report reads `Morning
+  check-in: not received / Evening check-in: not received`, `not reported` on **both**
+  sides of every pair line (every field is `not_captured`), and the verdict sentence has
+  no Facts to cite — a fully-empty-corpus case, handled the same way a holiday day is
+  (code-templated verdict line, no Claude call — see §5).
+
+**Q6 (round 2's own look-hardest-at item), answered by the reviewer: no advisory lock
+needed.** With `engineer_id` scoping applied to every B2-fixed call site, concurrent
+per-engineer jobs write to disjoint rows — `tick`'s own concurrency crosses different
+JOBS, never the same ROW, so there's no contention to lock against.
+
+**Q8, answered: the zero-roster gap (S4) is accepted, but detection is now IN SCOPE for
+this implementation, not deferred.** The trigger route (`runDprGenerateTrigger`), when an
+active project resolves to `SET 1 ∪ SET 2` being empty, must emit a Sentry/log event —
+built now, not left for a future incident to surface it.
 
 This also changes the migration's engineer_id sourcing model (§3) and the cron route's
 control flow more substantially than revision 2 stated: the loop is now
-`for each active project → for each roster engineer → enqueue`, not
+`for each active project → for each (SET 1 ∪ SET 2) engineer → enqueue`, not
 `for each active project with daily_logs today → for each contributing engineer →
 enqueue`.
 
@@ -312,27 +389,42 @@ simplification, not a workaround.
 
 ## 5. FIXED — containment-failure behaviour, stated exactly, with a test
 
-**Decision: on containment failure, render a code-generated neutral line in the verdict's
-position — never omit the line entirely, and never block the report.**
+**S10 RECONCILIATION (2026-08-14, review round 3): this section is now the SOLE source of
+truth for containment-failure semantics — the round-2 package's §12 described a SEPARATE,
+conflicting retry-exhaustion path (`markDprGenerationFailed` after external job retries)
+that is unreachable if this section holds, since this section says containment never
+throws. Package §12 is being rewritten to match this section exactly, not the other way
+round — see the review package's own S10 entry.**
 
-Reasoning for neutral-line over omit-entirely: a blank gap exactly where a summary sentence
-is expected reads as a rendering bug to a PM/owner, not as a deliberate state; a plain,
-honest placeholder ("Summary unavailable for this report.") is legible on its own and
-doesn't need the reader to infer why nothing is there.
+**Decision: on containment failure, retry the Claude call ONCE, immediately, in-process —
+if the retry also fails containment, render a code-generated neutral line in the verdict's
+position. Never omit the line, never throw, never block the report, and never involve the
+external job-retry/`markDprGenerationFailed` path at all.**
+
+Reasoning for one immediate re-call before falling back: `generate.ts`'s own existing
+comment already notes containment violations are stochastic and often pass on a fresh
+attempt — one extra call, same job execution, costs one more Claude round-trip only on the
+rare violating case, and resolves most of them without ever reaching the placeholder.
+Reasoning for neutral-line over omit-entirely on the (rarer still) second failure: a blank
+gap exactly where a summary sentence is expected reads as a rendering bug to a PM/owner,
+not as a deliberate state; a plain, honest placeholder ("Summary unavailable for this
+report.") is legible on its own and doesn't need the reader to infer why nothing is there.
 
 **Exact behaviour:**
 - Body (step 2 above) is already fully rendered and doesn't depend on the model call at
-  all — **it always ships**, containment failure or not. This is a real improvement over
-  today's design, where `generateDprJudgment` throwing `DprValidationError` blocks the
-  *entire* report (`dispatch.ts`'s catch reverts `generation_status`, nothing gets
-  written) — under the old nine-field schema this was already all-or-nothing (any one
-  field's violation killed the whole thing), so "no partial fallback" isn't a regression
-  from something that existed before; it's the same as before, now consciously kept
-  narrow (verdict-only) rather than global.
-- On failure: `dprs.content`/`structured` **still gets written**, `generation_status`
+  all — **it always ships**, containment failure or not, retried or not. Real improvement
+  over today's design, where `generateDprJudgment` throwing `DprValidationError` blocks
+  the *entire* report — under the old nine-field schema this was already all-or-nothing,
+  so this isn't a regression from something that existed before; it's the same posture,
+  now consciously narrowed to verdict-only.
+- The retry (if needed) happens entirely INSIDE `generateDprJudgment`/the dispatch call —
+  no new job is enqueued, no job status changes, nothing external observes an intermediate
+  failure state.
+- On second failure: `dprs.content`/`structured` **still gets written**, `generation_status`
   **stays `'idle'`** (this run succeeded — it produced a real report, just without a
   narrative sentence), the verdict slot holds the neutral placeholder, never the tainted
-  model text.
+  model text. **`markDprGenerationFailed` is NEVER called for this — it stays reserved for
+  assembler/DB failures that prevent a report from existing at all, per S10.**
 - **"Must not silently omit that anything was dropped"**, satisfied two ways: (a) Sentry
   capture, same `feature: 'dpr-generate', failure_class: 'dpr_validation'` tag pattern
   already used for the today's-still-succeeds-on-retry case; (b) a machine-readable marker
@@ -340,12 +432,20 @@ doesn't need the reader to infer why nothing is there.
   *could* surface this distinctly later, even though wiring that into the UI isn't part of
   this pass — the marker exists so the information isn't lost, whether or not it's
   displayed yet.
+- **`app/api/jobs/tick/route.ts` needs NO containment-specific branch at all.** Its
+  existing `willRetry`/`markDprGenerationFailed` logic is untouched — containment failures
+  never reach it, because they never throw past the in-process retry. The only change at
+  that call site is threading `payload.engineer_id` through the existing
+  `markDprGenerationFailed` call, already required by B2.
 - **New test, named explicitly (goes in §8's list, not left implicit):** feed
-  `generateDprJudgment`'s response path a verdict sentence containing an uncontained digit;
-  assert (1) the body still renders in full and correctly, (2) the verdict is the neutral
-  placeholder text, not the model's tainted sentence, (3) `dprs.content`/`structured` is
-  still written, (4) `generation_status` is `'idle'`, not left at `'running'` or reverted
-  in a way that looks like failure, (5) Sentry is called with the right tags.
+  `generateDprJudgment`'s response path a verdict sentence containing an uncontained digit
+  on BOTH attempts (mock the model call to fail containment twice); assert (1) exactly two
+  Claude calls were made, not one and not more, (2) the body still renders in full and
+  correctly, (3) the verdict is the neutral placeholder text, not either tainted attempt,
+  (4) `dprs.content`/`structured` is still written, (5) `generation_status` is `'idle'`,
+  (6) `markDprGenerationFailed` is never invoked, (7) Sentry is called with the right tags.
+  A second test: containment fails once, passes on the immediate retry — assert the
+  real (retried) verdict ships, not the placeholder.
 
 ---
 
@@ -413,6 +513,18 @@ current one.
   one-field `DprJudgment`), `assemble.ts` (new single-row assembler, old multi-row path
   kept), `generate.ts` (one-field schema), `render.ts` (new renderer, body-first),
   `narrative-context.ts` (single-row simplification), both `dprs` page files.
+- **`lib/dpr/archive-status.ts` (round-3 nit, previously absent from this list) — genuinely
+  unchanged, kept, not modified.** `deriveDprArchiveStatus`'s `delivery_status ===
+  'skipped_no_data'` branch (priority 4) becomes unreachable from any row the new
+  per-engineer pipeline writes — that status has no writer left once the roster/union
+  trigger replaces the old project-level DPR-17 skip (route.ts:65's superseded purpose,
+  per B2). Not deleted: `35a2f41c`, the one row that ever had this status, is deleted by
+  the migration itself (Option A), so there's no live row this branch even needs to serve
+  going forward — but the branch is cheap, pure, and the deferred project-level report may
+  reintroduce a project-level skip concept later, matching this plan's own pattern of
+  leaving retained-but-currently-dead logic in place (§2's multi-row `mergeDprFacts`,
+  `accountability.ts`). Left as dead code with a dated comment at the branch itself when
+  implementation happens, not removed.
 
 ## 12. CORRECTION to §2 — condition (d) trips, once the migration is fully specified
 
