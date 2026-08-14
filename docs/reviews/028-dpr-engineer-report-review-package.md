@@ -1,14 +1,25 @@
 # Review package — DPR engineer-report reformat (migration 028 + pipeline rewrite)
 
-**Revision 8.** Round 3 of external review. **Convergence — nothing reopens the design.**
-Round 3 findings: one BLOCKING amendment (B3-amend — the sequencing guard targeted the
-wrong window), three SHOULD-FIX text corrections (S8, S9, S10), two NITs (both accepted).
-Four of round 2's own "look hardest at" questions answered by the reviewer (§16) — no
-advisory lock needed, zero-roster detection is now in scope, N1/026 confirmed handled
-correctly and the request withdrawn.
+**Revision 9. Round 4 submission — implementation + test-db rehearsal, not a new design
+round.** Design converged at round 3 (revision 8) and was not reopened. This revision adds
+§17: the full implementation against plan revision 8 (code diffs against `4528f286`), the
+migration-028 (Option A) test-db rehearsal with its post-apply catalog fingerprint, the
+full green test suite with raw output, the B2 inventory checked off site by site, and a
+test-db-vs-prod migration ledger comparison requested as a precondition for this round —
+including an explicit statement that the two ledgers diverge, what diverges, and what that
+divergence does and does not mean for what the rehearsal proves.
 
-Status: PLAN ONLY. Nothing implemented, nothing applied, nothing merged. PR #59 still
-open, unmerged, still a hard prerequisite (§7).
+**Revision 8 (round 3) summary, unchanged, kept for continuity:** one BLOCKING amendment
+(B3-amend — the sequencing guard targeted the wrong window), three SHOULD-FIX text
+corrections (S8, S9, S10), two NITs (both accepted). Four of round 2's own "look hardest
+at" questions answered by the reviewer (§16) — no advisory lock needed, zero-roster
+detection is now in scope, N1/026 confirmed handled correctly and the request withdrawn.
+
+Status: **implementation complete on this branch (commit `d3d2ba3` + test-fix commit
+`fbadbe1`), migration 028 rehearsed on test-db only. Nothing applied to prod. Nothing
+merged to main.** PR #59 merged (was the hard prerequisite, §7 — now satisfied). Prod
+apply, `checkin_escalations` test-engineer deactivation, and the full apply-gate runbook
+remain a separate, deliberate session — not part of this round.
 
 ---
 
@@ -250,22 +261,26 @@ explicitly.
 read, conflict target, and payload-match site, with line pins — round 1's list of six is
 extended, not replaced:**
 
-| Site | What it does today | Consequence of the widened key |
-|---|---|---|
-| `app/api/cron/dpr-generate/route.ts:65` | `dprs.upsert(..., {onConflict:'project_id,log_date'})` — DPR-17 project-level skip marker | **Superseded by S3/S4** — the skip decision moves to per-engineer/roster-union; this call site's purpose changes, not just its key |
-| `app/api/cron/dpr-generate/route.ts:89` | `.contains('payload', {project_id, log_date})` — cron dedup | **BROKEN, confirmed, fixed below** |
-| `app/api/cron/dpr-generate/route.ts:98` | `enqueueJob('dpr_generate', {project_id, log_date}, ...)` | Payload gains `engineer_id` |
-| `lib/dpr/dispatch.ts:31-34` | `DprGenerateJobPayload` type | Gains `engineer_id: string` |
-| `lib/dpr/dispatch.ts:50-59` | claim upsert, `onConflict:'project_id,log_date'` | Key widens to `project_id,engineer_id,log_date` |
-| `lib/dpr/dispatch.ts:84-90` | `assembleDprFacts`/`fetchNarrativeContext`/`assembleAccountability` calls, keyed `(project_id, log_date)` | Threaded `engineer_id`; `assembleAccountability` call dropped entirely (no ACCOUNTABILITY section in the new format, per the earlier revision) |
-| `lib/dpr/dispatch.ts:97-108` | final success upsert, `onConflict:'project_id,log_date'` | Key widens |
-| `lib/dpr/dispatch.ts:127-131` | error-path revert, `.eq('project_id',...).eq('log_date',...)` | **BROKEN, confirmed, fixed below** |
-| `lib/dpr/dispatch.ts:144` | Sentry `extra` context `{project_id, log_date}` | Add `engineer_id` — debuggability, not correctness |
-| `lib/dpr/dispatch.ts:160-171` (`markDprGenerationFailed`) | `.eq('project_id',...).eq('log_date',...)` | **BROKEN, confirmed, fixed below** |
-| `app/api/jobs/tick/route.ts:54` | calls `markDprGenerationFailed(client, payload.project_id, payload.log_date)` | Add `payload.engineer_id` |
-| `app/(dashboard)/dprs/page.tsx` | reads `.in('project_id', projectIds)` | Not broken by the key widening (still valid to list all rows); needs `engineer_id`/name added for display (already in scope from the earlier revision) |
-| `app/(dashboard)/dprs/[id]/page.tsx` | reads `.eq('id', id)` | **Confirmed unaffected** — keyed by row UUID, not the composite key, at all |
-| `scripts/generate-one-dpr.ts:67` | manual debug script, own `{onConflict:'project_id,log_date'}` upsert | **Missed in round 1.** Needs an `engineer_id` CLI arg and the same key widening, or explicit retirement if superseded by real per-engineer tooling |
+**Round 4 — every row checked off against the actual implementation (commit `d3d2ba3`),
+not just the plan. ✅ = implemented and covered by a passing test; site names below match
+the NEW file/line, since several sites moved during the rewrite.**
+
+| Site | What it does today | Consequence of the widened key | Round 4 status |
+|---|---|---|---|
+| `app/api/cron/dpr-generate/route.ts` (was :65) | project-level DPR-17 skip marker | **Superseded by S3/S4** | ✅ Replaced — `runDprGenerateTrigger` now enumerates the roster∪real-data union; zero-eligible case emits a Sentry warning instead of a skip-marker row (Q8/S4). Covered: `dpr-generate-trigger.test.ts` Q8 test. |
+| `app/api/cron/dpr-generate/route.ts` (was :89) | `.contains('payload', {project_id, log_date})` — cron dedup | **BROKEN, confirmed, fixed below** | ✅ Fixed — `.contains('payload', {project_id, engineer_id, log_date})`. Covered: `dpr-generate-trigger.test.ts` "DEDUP does not cross-collapse engineers" — the direct proof of the B2 bug, fixed. |
+| `app/api/cron/dpr-generate/route.ts` (was :98) | `enqueueJob('dpr_generate', {project_id, log_date}, ...)` | Payload gains `engineer_id` | ✅ Done — every enqueue call carries `engineer_id`. Covered: `dpr-generate-trigger.test.ts` "B2 — N roster engineers... N enqueued jobs." |
+| `lib/dpr/dispatch.ts` `DprGenerateJobPayload` | type | Gains `engineer_id: string` | ✅ Done, plus `assertPostMigrationPayload()` throws on a pre-028 payload shape (item 2, this round). Covered: `dpr-generate-job.test.ts` "B2/item-2." |
+| `lib/dpr/dispatch.ts` claim upsert | `onConflict:'project_id,log_date'` | Key widens to `project_id,engineer_id,log_date` | ✅ Done — `onConflict:'project_id,engineer_id,log_date'`, matching the migration's widened constraint (confirmed live on test-db, §17). |
+| `lib/dpr/dispatch.ts` assembler/narrative-context calls | keyed `(project_id, log_date)` | Threaded `engineer_id`; `assembleAccountability` dropped | ✅ Done — calls `assembleEngineerDprFacts`/`fetchEngineerNarrativeContext`, both single-row, both take `engineer_id`. No `assembleAccountability` call anywhere in the new `dispatch.ts`. |
+| `lib/dpr/dispatch.ts` final success upsert | `onConflict:'project_id,log_date'` | Key widens | ✅ Done — same widened key as the claim upsert. |
+| `lib/dpr/dispatch.ts` error-path revert | `.eq('project_id',...).eq('log_date',...)` | **BROKEN, confirmed, fixed below** | ✅ Fixed — `.eq('engineer_id', payload.engineer_id)` added. No dedicated cross-engineer test for this exact path (S10 made this path unreachable for containment failures — see §12 — so its only remaining trigger is an assembler/DB throw, not exercised by a dedicated test this round; flagged, not hidden). |
+| `lib/dpr/dispatch.ts` Sentry `extra` context | `{project_id, log_date}` | Add `engineer_id` | ✅ Done. |
+| `lib/dpr/dispatch.ts` `markDprGenerationFailed` | `.eq('project_id',...).eq('log_date',...)` | **BROKEN, confirmed, fixed below** | ✅ Fixed — now takes `(client, projectId, engineerId, logDate)`, scoped by all three. Covered: `dpr-generate-job.test.ts` "B2 fix — scoped by engineer_id." |
+| `app/api/jobs/tick/route.ts` | calls `markDprGenerationFailed(client, payload.project_id, payload.log_date)` | Add `payload.engineer_id` | ✅ Done — one-line change, `payload.engineer_id` threaded through. |
+| `app/(dashboard)/dprs/page.tsx` | reads `.in('project_id', projectIds)` | Needs `engineer_id`/name added for display | ✅ Done — Engineer column added; names fetched via a **separate** `users` query, not an embedded composite-FK join (PostgREST composite-FK-embed support was unverified in this codebase — deliberately not assumed). |
+| `app/(dashboard)/dprs/[id]/page.tsx` | reads `.eq('id', id)` | **Confirmed unaffected** | ✅ Confirmed unaffected, as predicted; engineer name added to the header subtitle via the same separate-query pattern. Covered: `dpr-detail.test.ts`, all 5 green (T-DETAIL-01..05). |
+| `scripts/generate-one-dpr.ts` | manual debug script, own `{onConflict:'project_id,log_date'}` upsert | **Missed in round 1.** Needs an `engineer_id` CLI arg | ✅ Fixed — rewritten for `<project_id> <engineer_id> <log_date>` args and the widened upsert key. No automated test (it's a manual operator script, consistent with how it was treated pre-028); not exercised as part of the apply-gate embargo either (B3-amend Step 3) until that gate's own session. |
 
 **Three confirmed-broken sites, all from the same root cause (the code was written when
 one project-day meant one row) — each needs its own fix, not one shared patch:**
@@ -537,6 +552,182 @@ is going to reopen.**
 
 ---
 
+## 17. ROUND 4 — implementation, test-db rehearsal, and the ledger comparison
+
+### 17.1 Implementation
+
+Full implementation against plan revision 8, on `review/dpr-engineer-report-plan`:
+- `d3d2ba3` — the per-engineer pipeline itself (all files in §1's list, plus the retained
+  old project-level pipeline left fully intact and unmodified — `discarded-fields.ts`,
+  the old `DprFacts`/`DprJudgment`/`mergeDprFacts`/`assembleDprFacts`/`renderDpr` — kept
+  specifically because `lib/dpr/eval/cases/case-complete-two-engineer-day.ts` still
+  depends on the old nine-field shape; not retired, per §6 of the plan document).
+- `fbadbe1` — test-fix commit, this round: `test/migration-023.test.ts` and
+  `test/dpr-detail.test.ts` both predated 028 and seeded `dprs` rows without
+  `engineer_id`; found by running the suite against the rehearsed schema (§17.2), not by
+  static review. Fixed the `seedDpr` helpers, and rewrote `T-023-05` to assert the new
+  3-column `UNIQUE(project_id, engineer_id, log_date)` constraint plus a new case proving
+  two engineers can now share `(project_id, log_date)` — the exact behaviour 028 exists
+  to enable — rather than passively patching the old assertion to keep it compiling,
+  which would have concealed the change instead of proving it.
+
+`git diff --stat 4528f28..HEAD`: 30 files, +2479/-332. **Attribution, not just a stat
+dump — several of those files are PR #59 merge content, not this round's own work**
+(`c6b4380` merged `main`, which included PR #59, into this branch): `lib/checkin-
+escalations/*`, `lib/daily-logs/{cutoffs,status}.ts`, and
+`test/unit/{checkin-escalations-*,daily-logs-status}.test.ts` are PR #59's, already
+externally reviewed and merged separately — listed for completeness of the diff range,
+not as new surface for this round's review. **This round's own new/changed files:**
+`app/(dashboard)/dprs/{page.tsx,[id]/page.tsx}`, `app/api/cron/dpr-generate/route.ts`,
+`app/api/jobs/tick/route.ts`, `lib/dpr/{archive-status,assemble,dispatch,generate,
+narrative-context,render,schema}.ts`, `scripts/generate-one-dpr.ts`,
+`test/{dpr-detail,dpr-generate-job,dpr-generate-trigger,migration-023}.test.ts`,
+`types/database.ts`, and this package + `028_dprs_engineer_id_option_a.sql`.
+
+`lib/dpr/containment.ts` is **not** in the diffstat above (0 logic lines changed — S9's
+header-comment-only addition was already committed at round 3, `4528f286` itself).
+
+### 17.2 Migration 028 (Option A) — test-db rehearsal
+
+Applied `docs/reviews/028_dprs_engineer_id_option_a.sql` via
+`supabase db query --linked -f <file>`, foreground, by file — never `db push`, never
+backgrounded, per the standing rule this exact incident class produced. Linked ref
+printed and confirmed immediately before (`exfccwlrhoutkgrlikod`, test-db — confirmed
+distinct from prod's `jvxwqignooseazzmwhvl` by comparing against `SUPABASE_TEST_URL`
+before touching anything, not assumed from an earlier session). Succeeded.
+
+**Post-apply catalog readback, re-probed live (not restated from an earlier run in this
+session):**
+
+```
+column:  engineer_id | uuid | is_nullable: NO
+
+FK:      dprs_engineer_id_tenant_id_fkey
+         confupdtype: a   confdeltype: r
+         FOREIGN KEY (engineer_id, tenant_id) REFERENCES users(id, tenant_id) ON DELETE RESTRICT
+
+UNIQUE:  dprs_project_id_engineer_id_log_date_key
+         UNIQUE (project_id, engineer_id, log_date)   -- old 2-column constraint gone
+```
+
+Exact match to the fingerprint this round required (`confupdtype='a'`, `confdeltype='r'`).
+
+**What this rehearsal does NOT cover, stated explicitly:** test-db has no
+`35a2f41c`-equivalent row (that row is a prod-only artifact — a `skipped_no_data` marker
+from the old project-level pipeline, confirmed absent from test-db's `dprs` table by the
+nature of the two databases never sharing data). So **neither the migration's `UPDATE`
+backfill branch nor its `DELETE` branch were exercised by this rehearsal** — only the
+`ADD COLUMN` / `SET NOT NULL` / composite-FK / `UNIQUE` widening DDL ran against real
+rows. This rehearsal also does not cover PITR observation or the §0(d) destructive-
+operation gate — both are prod-apply-gate concerns (§4, §10), out of scope for a
+test-db-only pass and reserved for the apply gate's own session.
+
+### 17.3 Migration ledger comparison — test-db vs. prod (this round's explicit precondition)
+
+**Raw, re-probed live just now, both databases, read-only, no writes to either.**
+
+**`supabase migration list --linked` (CLI wrapper), test-db (`exfccwlrhoutkgrlikod`):**
+```
+001✓ 002✓ 003✓ 004✓ 005✓ 006✓ 007✓ 011✓ 012✓ 013✓ 014✓ 015✓ 016✓ 017✓ 018✓ 019✓ 020✓ 021✓ 022✓
+023: local="023" remote=""
+024: local="024" remote=""
+025: local="025" remote=""
+026: local="026" remote=""   (expected — 026 is parked everywhere, N1)
+027: local="027" remote=""
+```
+
+**`supabase migration list --linked` (CLI wrapper), prod (`jvxwqignooseazzmwhvl`):**
+```
+001✓ 002✓ 003✓ 004✓ 005✓ 006✓ 007✓ 011✓ 012✓ 013✓ 014✓ 015✓ 016✓ 017✓ 018✓ 019✓ 020✓ 021✓ 022✓
+023: local="023" remote="023"
+024: local="024" remote="024"
+025: local="025" remote="025"
+026: local="026" remote=""   (expected — 026 is parked everywhere, N1)
+027: local="027" remote="027"
+```
+
+**Raw `select version, name from supabase_migrations.schema_migrations order by version`,
+test-db:** rows for `001`–`022` only. **No rows at all for `023`, `024`, `025`, or `027`**
+— not inaccurate entries, genuinely absent rows.
+
+**Same query, prod:** rows for `001`–`022`, plus `023 (dpr_reports)`, `024
+(evening_flow_q4_q5)`, `025 (evening_productivity_reconciliation)`, `027
+(checkin_escalations)`. No `026` row (expected, matches N1).
+
+**They do not match. Named divergence: migrations `023`, `024`, `025`, and `027` are
+present in prod's ledger and absent from test-db's ledger, in both the CLI wrapper view
+and the underlying `schema_migrations` catalog table directly.** `026` is absent from
+both, which is the one expected, already-understood entry (N1) — not part of this
+divergence.
+
+**What this does and does not mean, checked, not assumed:** a ledger gap and a schema gap
+are different claims, and this round re-probed the schema directly rather than inferring
+one from the other. Live, read-only, against test-db:
+
+```
+023: to_regclass('public.dprs') is not null                                    -> true
+024: apply_evening_flow_turn prosrc contains 'equipment_hours' (Q5)            -> true
+025: apply_evening_flow_turn prosrc contains the productive-count guard        -> true
+025: prosrc_md5 = 9bd64d28c9cbf0056c7fd63a83c12d3b (prod's own confirmed hash) -> true
+027: to_regclass('public.checkin_escalations') is not null                     -> true
+```
+
+Every schema object 023/024/025/027 introduce is present and correct on test-db —
+025's function body matches prod's own confirmed post-apply hash byte-for-byte — despite
+none of those four versions having a row in test-db's ledger table. **This is a
+ledger-bookkeeping gap, not a schema divergence.** It's also not new: it's the same,
+already-documented pattern as `CLAUDE.md`'s own note that `supabase migration list
+--linked` showed `023`–`027` as `remote: ""` on test-db earlier this session, before
+today's `028` work touched anything, and matches the broader pattern (prod's ledger rows
+for `022`/`027` were themselves added by manual `INSERT`, per `CLAUDE.md`, because the
+CLI's own tracking lagged even on prod — that manual catch-up has evidently never been
+done for test-db, on any of 023/024/025/027, not just the ones the recent `db push`
+incident touched). This round did not determine why the manual-insert step was skipped on
+test-db specifically for these four versions, and does not assert a cause — only that the
+schema and the ledger disagree, and the schema is what's real.
+
+**What this means for how much the 028 rehearsal (§17.2) proves:** the rehearsal ran
+`028`'s DDL against a test-db schema confirmed — by direct, live, re-probed catalog
+inspection, not by trusting the ledger — to be at prod-identical schema state for every
+object `028` could interact with (the `dprs` table shape from 023, the composite-FK
+precedent pattern 028 follows from 017/027). The DDL-correctness proof in §17.2 stands on
+that basis. **What it does not prove, and never claimed to: anything about the ledger's
+own bookkeeping.** A future `supabase migration list --linked` run against test-db will
+still report `023`/`024`/`025`/`027` as unapplied, which could mislead someone who trusts
+the CLI wrapper over the catalog — a real, standing gap, but one that predates this round,
+is orthogonal to `028`'s own correctness, and is not fixed here per instruction (report,
+don't repair, when a divergence is found mid-rehearsal).
+
+**Per instruction: no re-rehearsal, no ledger repair, no other change to test-db in this
+pass.** This section is a report of what was found, not an action taken on it.
+
+### 17.4 Full test suite — raw output
+
+```
+Test Files  46 passed (46)
+     Tests  571 passed | 1 todo (572)
+  Duration  319.63s
+```
+
+All 46 files green, including every file named in the plan's §8 test list:
+`migration-023` (7|1 skipped, rewritten this round), `dpr-detail` (5, fixed this round),
+`dpr-generate-job` (6 — payload-shape assertion, S10 both-retry-fails, S10 retry-
+succeeds, silent-engineer, `markDprGenerationFailed` engineer-scoping), `dpr-generate-
+trigger` (6 — S3 real-data-wins, Q8 zero-eligible Sentry detection, B2 N-engineers-N-jobs,
+DEDUP, the B2 cross-collapse proof, non-active-project exclusion), plus
+`unit/{dpr-render,dpr-generate-schema,dpr-validate,dpr-containment,assemble-dpr-facts,
+dpr-archive-status,idle-cost,accountability}` (all previously green, unaffected by this
+round). `tsc --noEmit`: clean. `npm run lint`: 0 errors (2 pre-existing warnings in
+untouched `migration-017`/`migration-020` test files, not this round's).
+
+`lib/dpr/eval/cases/case-complete-two-engineer-day.ts` is not part of the vitest suite
+(the golden-set eval harness makes real, billed Claude API calls and runs separately, per
+`CLAUDE.md` §7) — its retained dependency on the old nine-field `DprJudgment` shape is
+confirmed by `tsc --noEmit` passing clean against both the old and new types coexisting,
+not by an eval run this round.
+
+---
+
 ## Attachments
 
 - `028_dprs_engineer_id_option_a.sql` — DECIDED, full text, this round's revision
@@ -547,5 +738,9 @@ is going to reopen.**
   strike-through pass, S10 reconciliation, Q6/Q8 fold-in).
 - `docs/dpr-engineer-report-spec.md` — this round's revision (mid-day-leaver
   `not_applicable` addition, NIT/N4).
-- `lib/dpr/containment.ts` — **new this round** — the actual application file, header
-  comment only (S9's dated partial supersession), no logic touched.
+- `lib/dpr/containment.ts` — header comment only (S9's dated partial supersession, round
+  3), no logic touched — 0 lines changed since `4528f286`, not new this round.
+- **Round 4, new:** the full implementation (commit `d3d2ba3`) + test-fix commit
+  (`fbadbe1`) on this branch — `git diff 4528f28..HEAD` for the code, §17.1 for
+  attribution against PR #59 merge noise. §17.2 for the test-db rehearsal, §17.3 for the
+  ledger comparison, §17.4 for the full raw test-suite output.
