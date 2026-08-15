@@ -59,6 +59,28 @@ whatever `dprs_select`'s RLS already enforces at the row level.
    parallel path.
 5. **A comment field per edit** — see 2c: no home for this exists in the schema today.
 
+**Who actually receives the 19:45 message — not resolved, named precisely rather than
+assumed:** `pm_notified` (2e) presupposes a single PM WhatsApp identity to notify, and none
+of the three assumptions behind that hold without checking:
+- **`users.whatsapp_number` is nullable.** A PM registered through the (existing, §26-
+  adjacent) web onboarding flow may never have supplied one at all — engineers are the
+  WhatsApp-first role in this product; PMs are described as web-first throughout this
+  session's own record. A PM with `whatsapp_number IS NULL` cannot receive a WhatsApp
+  notification by definition, and nothing here names what happens in that case (email
+  fallback? rely on them checking the dashboard unprompted? — not decided).
+- **A project can have several PMs**, via multiple `project_members` rows with
+  `role='pm'`. "The PM" is not a well-defined singular recipient — this plan needs to
+  decide whether ALL PMs on the project get notified, or one designated one (project
+  creator? first added?), and name the criterion, not assume it away.
+- **The dependency on §26 (AUTH DECISIONS, tonight's Part 1) is real and worth stating
+  explicitly:** §26 sends every login-after-the-first as an OTP over WhatsApp — meaning a
+  PM with no `whatsapp_number` cannot complete that OTP flow AT ALL, not just miss the DPR
+  notification. **A PM who never registered a WhatsApp number is, under §26's own design,
+  unable to log in to click the dashboard link this section's notification would have sent
+  them anyway** — the two gaps compound rather than one working around the other. Not
+  solved here; named so whoever scopes §26's own workstream inherits this as a known
+  connection, not a surprise found independently later.
+
 ## 2c. PM edits DATA, never report text — checked against the real correctable-column set, not assumed sufficient
 
 **Confirmed by reading `daily_log_edits`'s CHECK constraint and `correct_daily_log`'s own
@@ -92,6 +114,35 @@ CLAUDE.md's build-status history, pre-dating tonight) gets closed as PART of thi
 workstream, or §4b's example needs to be rewritten to only demonstrate what's actually
 buildable (`work.planned`, `work.done_text`, `schedule.met`, `manpower.on_site`) until it
 is. **Not resolved here — named for the next decision.**
+
+**Correction accepted: "widen the whitelist" understated what closing this gap actually
+is.** It is not adding entries to a list — it is a **design extension** to a mechanism that
+was scalar-only BY DESIGN (019's own comment: "enforces scalar-only-v1 at the DB"). Three
+separate things, not one:
+1. **Both gates, not one.** `daily_log_edits.column_name`'s CHECK and `correct_daily_log`'s
+   CASE whitelist are DELIBERATELY double-gated so a future edit that widens one but not
+   the other fails closed (019's own review-item-8 comment, quoted in full in that
+   migration: "the redundancy IS the safety; do not simplify it away"). Any widening
+   touches both, in the same migration, or the safety property it exists for is broken.
+2. **JSONB-path semantics don't exist yet and have to be designed, not assumed.** The
+   current mechanism corrects a whole SCALAR column value in one shot
+   (`old_value`/`new_value` as the column's own type). Correcting `manpower.working`
+   means correcting ONE KEY inside `evening_productive_manpower`'s JSONB, leaving its
+   siblings (`idle_count`, `confidence`) untouched — a genuinely different operation
+   (a JSONB path + merge, not a column replace) that `correct_daily_log`'s current CASE
+   structure has no shape for at all. This is real design work, not a whitelist entry.
+3. **It re-touches a debt this project already has an open, named finding for.**
+   CLAUDE.md's "EQUIPMENT `daily_hire_cost` — A COUNT IN A MONEY FIELD" entry documents a
+   parser bug where equipment answers can silently store a count where a rupee rate was
+   expected — currently invisible because nothing downstream lets a human correct it, only
+   observe it. **The moment a PM can edit equipment facts, that entry's own finding
+   becomes directly actionable — and directly risky the same way:** a PM "correcting" a
+   miscaptured count into what they believe is the real rate is now writing a NEW
+   authoritative money value through a UI, with no existing validation that the mechanism
+   this gap already flagged as fragile becomes safer just because a human is now the one
+   typing the number. Named here so equipment-field correctability isn't scoped in without
+   also reopening that entry's own unresolved question (should an implausible rate be
+   flagged — not answered here, same as CLAUDE.md left it).
 
 **Separately, no comment field exists anywhere in the correction mechanism.**
 `daily_log_edits` has `old_value` / `new_value` / `edited_by` / `source` — no `comment` or
@@ -131,7 +182,9 @@ rubber-stamped. I agree with it, for three independent reasons, not one:**
    audit entry). Versioning `dprs` the same way is consistent with, not a new pattern
    alongside, what's already built.
 
-**Concrete shape, sketched (not final SQL, not written to a migration file):**
+**Concrete shape, revised — the first draft repeated 028's own B1 finding (plain FKs, no
+`tenant_id`, no RLS on a table carrying full report bodies) instead of applying it. Fixed
+below, not sketched twice:**
 
 ```
 dprs (existing table, minimal additions):
@@ -142,29 +195,86 @@ dprs (existing table, minimal additions):
 
 dpr_versions (NEW, append-only):
   id                    UUID PK DEFAULT gen_random_uuid()
-  dpr_id                UUID NOT NULL REFERENCES dprs(id) ON DELETE CASCADE
+  tenant_id             UUID NOT NULL                                -- Convention 5 (below), NOT omitted this time
+  dpr_id                UUID NOT NULL
   version               INT NOT NULL
   generated_by          TEXT NOT NULL CHECK (generated_by IN ('system','pm'))
-  generated_by_user     UUID NULL REFERENCES users(id)
+  generated_by_user     UUID NULL                                    -- composite FK, see below
   content               TEXT NOT NULL
   structured            JSONB NOT NULL
   generated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
   delivered_to_owner_at TIMESTAMPTZ NULL   -- set on EXACTLY the one version actually sent at 20:30
   UNIQUE (dpr_id, version)
+
+  -- Composite same-tenant FKs (017's pattern, 027's precedent, 028's own B1 fix applied
+  -- from the start this time rather than found by a second reviewer pass):
+  CONSTRAINT dpr_versions_dpr_id_fkey
+    FOREIGN KEY (dpr_id, tenant_id) REFERENCES dprs (id, tenant_id)
+    ON UPDATE NO ACTION ON DELETE CASCADE   -- versions have no meaning without their parent
+  CONSTRAINT dpr_versions_generated_by_user_fkey
+    FOREIGN KEY (generated_by_user, tenant_id) REFERENCES users (id, tenant_id)
+    ON UPDATE NO ACTION ON DELETE RESTRICT  -- archival, matches dprs' own RESTRICT reasoning
 ```
 
-`dprs.current_version` + `dprs.content`/`dprs.structured` stay a denormalized "latest"
-projection (fast reads for the dashboard list/detail pages, unchanged query shape) while
+**RLS, named rather than left implicit:** audience-scoped, matching `dprs_select`'s own
+existing shape (023) — `tenant_id = get_user_tenant_id() AND EXISTS` a `project_members`
+row for this PM on the version's project. Not tenant-wide. Owners are NOT given dashboard
+access to version history at all in this design — they only ever see the one version
+actually delivered, via the WhatsApp send itself, never the dashboard — so no
+owner-readable policy is proposed here; if that's wrong, it's a decision to make in the
+review package, not an oversight in this sketch.
+
+**`dprs.current_version` + `dprs.content`/`dprs.structured` stay a denormalized "latest"
+projection** (fast reads for the dashboard list/detail pages, unchanged query shape) while
 `dpr_versions` is the source of truth for history. "Which version was delivered to the
-owner" is answered by whichever `dpr_versions` row has `delivered_to_owner_at` set — set
-once, at 20:30, by the owner-send job, pointed at whatever `dprs.current_version` was at
-that exact moment.
+owner" is answered by whichever `dpr_versions` row has `delivered_to_owner_at` set.
+
+**The version write is TRANSACTIONAL — stated explicitly, not left implied.** `dprs.
+content` + `dprs.current_version` + the new `dpr_versions` row must land atomically: a
+regeneration that updates `dprs` but fails to insert the history row (or the reverse)
+leaves the two permanently inconsistent, and nothing downstream would ever detect it.
+**`supabase-js` cannot express a multi-statement transaction from application code** — this
+requires a new `SECURITY DEFINER` RPC (e.g. `write_dpr_version(p_dpr_id, p_content, p_structured, p_generated_by, ...)`) that does the `UPDATE dprs` and `INSERT INTO dpr_versions` inside one function body, same shape as `correct_daily_log`'s own single-transaction guarantee. **This is
+its own, separate trip of §0(a)/(b)** (creates a new SECURITY DEFINER function with real
+write authority over report content) — named here explicitly rather than left to be
+discovered when the migration is actually drafted, matching the same correction #69's own
+plan applies to its own workstream.
+
+**The 20:30 owner-send has the identical transactional requirement, not a separate one:**
+it must READ `dprs.content` (or the version it actually intends to send) and STAMP
+`delivered_to_owner_at` on THAT SAME version, in one statement or one locked transaction —
+a read-then-later-write done as two separate round trips risks stamping the wrong version
+if a PM regenerates in the gap between them (a real race, not a hypothetical one, given the
+whole point of the 19:45-20:30 window is that a regeneration can land at any point inside
+it). This likely means the owner-send job also goes through a small RPC, or at minimum a
+single `UPDATE ... WHERE ... RETURNING` on `dpr_versions` keyed by `dpr_id` and the
+CURRENT `dprs.current_version` read in the same statement — not sketched to final SQL here,
+named as a requirement the review package must satisfy.
+
+**The history table reverses a dated decision — recorded as a supersession, not silently
+overridden.** `023_dpr_reports.sql`'s own `COMMENT ON TABLE public.dprs` (023:146-151),
+read directly: *"UPSERT target for regeneration (silent replace, never a new version row
+per bot-flows.md)."* `bot-flows.md`'s own "Late data before 9 PM owner send" section
+(currently: *"Regenerate via UPSERT. Silent replace. last_regenerated_at updated."*) is the
+design decision that comment points at. **This plan reverses it — a new version row is
+exactly what regeneration now produces.** A dated supersession note is being added to
+`bot-flows.md` at that section in this same pass (documentation only, matching this
+project's own "record the decision, don't silently rewrite" discipline — see the commit
+this plan ships with). **The migration itself must update `023`'s `COMMENT ON TABLE`
+text** when it ships — and while touching it, fix the SEPARATE, already-stale claim in the
+same comment: "One row per (project_id, log_date)" has been wrong since migration 028
+widened the key to `(project_id, engineer_id, log_date)`, and nobody updated this comment
+when that happened. Two corrections to the same comment, one migration, named together so
+the second doesn't get missed while fixing the first.
 
 **This touches the schema — it goes through the same review path 028 went through**, per
-direct instruction. Not written as a migration file in this pass. `daily_log_edits`'s new
-`comment` column (2c) rides in the same migration, since both are part of the same
-delivery-versioning feature and both need the same review pass regardless of being split
-or combined.
+direct instruction, and now more clearly than the first draft stated: two SECURITY DEFINER
+functions (version-write, and likely the owner-send race guard), composite FKs and RLS on
+a new table carrying full report content, and a reversed table-comment decision are all in
+scope for that one review package. Not written as a migration file in this pass.
+`daily_log_edits`'s new `comment` column (2c) rides in the same migration, since both are
+part of the same delivery-versioning feature and both need the same review pass regardless
+of being split or combined.
 
 ## 2e. `delivery_status` cannot express the two-stage state — proposed states
 
@@ -188,6 +298,14 @@ additive (existing values kept, meanings tightened where the two-stage flow requ
   pipeline (its only writer was the old project-level trigger; Q8's zero-roster case
   writes no row at all instead) — same "leave retained-but-unused logic in place" pattern
   `archive-status.ts` already uses for this exact status value. Not removed.
+- **`skipped_no_template`** *(NEW, added this revision — see THE ENTANGLEMENT below)* —
+  neither the PM nor the owner ever messages the bot, so both of this table's own sends
+  have no free-form fallback, ever, structurally, not as a transient state. Without this
+  value, a send blocked on template approval leaves `delivery_status` at `'pending'`
+  forever with nothing anywhere explaining why — the same silent-failure shape #69's own
+  `skipped_no_template` outcome (its 3c) exists to prevent, recurring here one layer up if
+  this table doesn't account for it too. Mirrors #69's vocabulary deliberately, not a
+  independently-invented parallel name for the same thing.
 
 ## 2f. PM escalation persistence — confirmed sufficient, no schema change needed
 
@@ -204,14 +322,70 @@ sufficient as designed.**
 
 ---
 
+## THE ENTANGLEMENT with #69 — stated here, and identically in #69's own plan
+
+**PMs and owners never message the bot.** Every send this plan proposes — the 19:45
+PM-notify and the 20:30 owner-send — is addressed to a recipient class that has no
+symmetric inbound path in this product's design. Nothing has a PM or an owner texting the
+bot first. **Their WhatsApp windows are therefore always closed, structurally, not as a
+state that might change with better luck or more time.**
+
+**Consequence, stated plainly, not softened:** under #69's skip-and-record (kept and
+strengthened in that plan's own review-round revision), **both of this plan's sends are
+`skipped_no_template` on every single attempt, with no exception, until Meta approves the
+relevant templates.** This is not this plan's edge case to handle gracefully — for
+PM-notify and owner-send, it is THE ONLY CASE that can occur before template approval
+lands. `delivery_status`'s new `skipped_no_template` value (2e, added this revision) exists
+specifically so this doesn't read as `'pending'`-forever with no explanation.
+
+**Consequence for #69's own design, which this plan is responsible for answering, not
+deferring back:** #69 named `eveningClose`/`ownerSend` as a "fifth send... structurally
+different... same transport concern, different content" without specifying what that
+content actually is. It can no longer stay unspecified, because 2d above found a real
+problem with it: `dpr-engineer-report-spec.md` §8 ("WhatsApp is the delivery surface")
+already commits the OWNER to receiving the full, formatted report body inline via
+WhatsApp — and a variable-length, multi-line report cannot be a WhatsApp template body at
+all (fixed structure, per-parameter character limits, no support for "however many lines
+this report needs today"). **Two ways this resolves, both real design decisions, neither
+made here:**
+1. **§8 gets revised** — the owner-send becomes a template with a link (matching what this
+   plan already proposed for the PM-notify), and the owner reads the actual report on a
+   dashboard surface built for owners (none exists today — owners have no web login,
+   per CLAUDE.md's own role table, so this implies its own new surface, not just a URL).
+2. **§8 stands, and the owner-send stays free-form-only** — which, given owners never
+   message the bot, is un-sendable by construction, not merely expensive, until something
+   changes that premise (an owner is asked to message the bot at least once? seems
+   operationally unrealistic to require of every owner on every project).
+
+**This plan does not pick between them — naming the fork is this plan's job; picking a
+branch is a decision for whoever owns §8 next, since it reopens a document this session
+did not set out to revise.**
+
+---
+
 ## Summary of what this plan requires before it can ship
 
-1. Decide §4b's example vs. widening `correct_daily_log`'s column set (2c) — these are not
-   independent; the example can't ship as written without the widening, or needs rewriting.
-2. A migration (2d + 2c's `comment` column) — full external-review path, same as 028.
-3. `delivery_status`'s CHECK widened by one value (2e) — folds into the same migration.
-4. The dashboard edit surface (2b) — new Client Component, role-gated, built against
+1. Decide §4b's example vs. the JSONB-correction design extension (2c) — these are not
+   independent; the example can't ship as written without it, or needs rewriting. The
+   design extension is three things (both gates, JSONB-path semantics, the equipment
+   money-field debt it reopens), not a whitelist edit.
+2. A migration (2d + 2c's `comment` column + `dpr_versions`' composite FKs/RLS) — full
+   external-review path, same as 028, now carrying at least one new SECURITY DEFINER
+   function (transactional version-write) as its own named (a)/(b) trip.
+3. `bot-flows.md`'s "Late data before 9 PM owner send" section needs its own dated
+   supersession note (this revision adds it) — the migration updates `023`'s
+   `COMMENT ON TABLE dprs` to match, fixing both the reversed decision and the
+   already-stale key description in the same pass.
+4. `delivery_status`'s CHECK widened by TWO values now (`pm_notified`, `skipped_no_template`)
+   — folds into the same migration.
+5. The dashboard edit surface (2b) — new Client Component, role-gated, built against
    `structured`, not `content`.
-5. A "regenerate" action wired to the existing `dpr_generate` job machinery, now versioned.
+6. A "regenerate" action wired to the existing `dpr_generate` job machinery, now versioned
+   and transactional (its own RPC, not a plain `supabase-js` write).
+7. Resolve the entanglement with #69 above — both plans block on the same open question
+   (§8's content-shape decision for the owner-send), and neither plan can finish it alone.
+8. Decide who receives `pm_notified` (2b) — all PMs vs. one, and the fallback when
+   `whatsapp_number IS NULL`, which under §26 also blocks that PM's own login.
 
-None of this is built in this pass. Branch/PR for this document only — no code.
+None of this is built in this pass. Branch/PR for this document only — no code, except the
+dated `bot-flows.md` supersession note (documentation, matching item 3 above).
