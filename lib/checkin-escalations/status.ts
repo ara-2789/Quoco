@@ -18,11 +18,12 @@
 // and starts filling the intermediate 'nudged' stage.
 //
 // DECISION 3 (2026-08-13): evening has NO escalation stage. Thirty minutes
-// separate the evening nudge (19:30) from DPR generation (20:00) — Rule 7.2's
-// terminal behaviour is already the DPR itself flagging an unresolved gap in
-// the owner's report, so there is nothing for a dashboard escalation to add
-// in that window. Evening's only transitions here are awaited -> not_submitted
-// (at/after 20:00) and (at any time) -> submitted.
+// separate the evening nudge from DPR generation/evening close (19:15 / 19:45,
+// FROZEN FOR MVP 2026-08-15 — cutoffs.ts) — Rule 7.2's terminal behaviour is
+// already the DPR itself flagging an unresolved gap in the owner's report, so
+// there is nothing for a dashboard escalation to add in that window.
+// Evening's only transitions here are awaited -> not_submitted (at/after
+// eveningClose) and (at any time) -> submitted.
 //
 // Checkpoint times are imported from lib/daily-logs/cutoffs.ts's
 // CHECKIN_CHECKPOINTS — the single source shared with the DASH-03 board's
@@ -49,10 +50,10 @@ function minutesOf(hhmm: string): number {
   return h * 60 + m
 }
 
-const MORNING_NUDGE = minutesOf(CHECKIN_CHECKPOINTS.morningNudge) // 09:00 — boundary only, this slice writes no status here
-const MORNING_ESCALATE = minutesOf(CHECKIN_CHECKPOINTS.morningEscalate) // 10:00
+const MORNING_NUDGE = minutesOf(CHECKIN_CHECKPOINTS.morningNudge) // 10:00 — boundary only, this slice writes no status here
+const MORNING_ESCALATE = minutesOf(CHECKIN_CHECKPOINTS.morningEscalate) // 10:30
 const MORNING_CUTOFF = minutesOf(CHECKIN_CHECKPOINTS.morningCutoff) // 15:00
-const EVENING_CLOSE = minutesOf(CHECKIN_CHECKPOINTS.eveningClose) // 20:00
+const EVENING_CLOSE = minutesOf(CHECKIN_CHECKPOINTS.eveningClose) // 19:45 — also DPR generation, see cutoffs.ts
 
 // MORNING_NUDGE has no branch of its own below (this slice writes no status
 // at that checkpoint) but is kept as a live guard, not a comment: if a future
@@ -77,7 +78,7 @@ export function determineTargetStatus(input: StatusDecisionInput): CheckinStatus
   const { minutes } = istParts(input.now)
 
   if (input.half === 'morning') {
-    // MORNING_NUDGE (09:00) is a real checkpoint in the schedule but this
+    // MORNING_NUDGE (10:00) is a real checkpoint in the schedule but this
     // slice writes no status there — 'nudged' belongs to the sender slice.
     // Before MORNING_ESCALATE, there is nothing for this slice to advance to.
     if (minutes < MORNING_ESCALATE) return 'awaited'

@@ -6,9 +6,11 @@ import { enqueueJob } from '@/lib/queue/jobs'
 import { isCronRequestAuthorized } from '@/lib/cron/auth'
 import { istDateString } from '@/lib/daily-logs/date'
 
-// 8:00 PM IST trigger (bot-flows.md TRIGGER TIMES) — enqueues one
-// dpr_generate job per ELIGIBLE ENGINEER on each active project, per
-// engineer, not one per project (docs/dpr-engineer-report-spec.md,
+// CHECKIN_CHECKPOINTS.eveningClose IST trigger (lib/daily-logs/cutoffs.ts —
+// FROZEN FOR MVP 2026-08-15, currently 19:45; this is also the DPR
+// generation moment, not a separate checkpoint — see that file's own header
+// note) — enqueues one dpr_generate job per ELIGIBLE ENGINEER on each active
+// project, per engineer, not one per project (docs/dpr-engineer-report-spec.md,
 // implemented 2026-08-14 per plan revision 8). Does the actual Claude call
 // and write inside the job handler (lib/dpr/dispatch.ts), never here —
 // NFR-16, ALL Claude API calls run through the jobs table, never
@@ -23,7 +25,7 @@ import { istDateString } from '@/lib/daily-logs/date'
 //     lib/checkin-escalations/roster.ts mirrors for the same reason.
 //   SET 2 (real data): daily_logs.engineer_id, DISTINCT, for this
 //     project/log_date — an engineer who submitted real data and was then
-//     deactivated or moved off the project before 20:00 still gets a
+//     deactivated or moved off the project before eveningClose still gets a
 //     report (Rule 7's own real-data-wins principle, round-2 S3 finding).
 // Every engineer in the union gets a job, UNCONDITIONALLY — there is no
 // more project-level "skip" state. An engineer with zero daily_logs rows
