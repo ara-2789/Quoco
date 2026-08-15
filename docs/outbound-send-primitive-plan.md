@@ -17,6 +17,17 @@ below, renumbered ahead of 3a since it reshapes 3a-3f); B1-B4; the roster/ledger
 (S); the corrected §0(a) reading; and the cross-plan entanglement with #67. Diff is against
 commit `1c1b678`.**
 
+**REVISION 3 (2026-08-15, same day) — #67 decided the owner receives the DPR by email, not
+WhatsApp. `ownerSend` (20:30) is removed from this primitive's scope entirely — it was
+never cleanly in scope (previously bundled with `eveningClose` as one ambiguous "fifth
+send"), and is now explicitly named out, a different sender, owned by #67. This narrows,
+not reopens: the four engineer checkpoints + `eveningClose`'s PM-notify remain exactly as
+revision 2 designed them — still template-gated, still entangled with Meta approval, still
+requiring the full review package. Changes: §0's owner-send blocker marked resolved; 3a's
+"fifth send" framing split cleanly (PM-notify in scope, owner-send out); THE ENTANGLEMENT
+with #67 rewritten to one open dependency instead of two; Summary updated. Diff against
+`4f2c118`.**
+
 ---
 
 ## 0. THE META PRICING FACT — verified as far as tooling allows, and what it changes
@@ -72,25 +83,30 @@ shape rather than assumed away:
   template has a fixed number of named variable slots, approved in advance; it cannot
   express "list of N items, N varying by day." This is not a preference to weigh, it's a
   hard technical blocker for that one step, template or no.
-- **The owner-send is a harder blocker than "loses dynamic content."** `docs/
-  dpr-engineer-report-spec.md` §8 ("WhatsApp is the delivery surface") already commits to
-  the OWNER receiving the actual formatted report inline via WhatsApp — its own reasoning
-  ("the inline `|` form rather than aligned columns, which collapse on mobile") only makes
-  sense if real report content is what's being sent, not a link. A variable-length,
-  multi-line report body cannot be a template body at all (fixed structure, per-parameter
-  character limits) — under a naive "always-template, no exceptions" reading, the
-  owner-send becomes impossible to build, not merely more expensive. This is a real
-  finding beyond what was asked, surfaced because the entanglement section (below) can't be
-  written honestly without it.
+- **The owner-send blocker below is RESOLVED, not live — recorded for the record, not as an
+  open constraint.** `docs/dpr-engineer-report-spec.md` §8 ("WhatsApp is the delivery
+  surface") committed the OWNER to receiving the actual formatted report inline via
+  WhatsApp — its own reasoning ("the inline `|` form rather than aligned columns, which
+  collapse on mobile") only made sense if real report content was what got sent, not a
+  link. A variable-length, multi-line report body cannot be a template body at all (fixed
+  structure, per-parameter character limits) — under a naive "always-template, no
+  exceptions" reading, the owner-send would have been impossible to build, not merely more
+  expensive. **DECIDED (2026-08-15, #67's own revision, same day): the owner receives the
+  DPR by email, not WhatsApp.** This removes the owner-send from this primitive's scope
+  entirely — it is not a WhatsApp send of any shape, template or free-form, and does not
+  factor into the always-template weighing below. Kept in this section as the finding that
+  originally surfaced the need for that decision, not as a live blocker this plan still
+  carries.
 
 **Recommendation: neither the original hybrid (as designed, still exposed to B1/B4) nor
 unscoped always-template. A narrower, correctly-scoped position beats both on stated
 grounds:**
 
-**Always-template for the four/five OUTBOUND-INITIATED trigger sends specifically**
-(`morningSend`, `morningNudge`, `eveningSend`, `eveningNudge`, and — pending §8's own
-content-shape question, see the entanglement section — `eveningClose`'s PM-notify).
-**Free-form stays, and is safe, for every IN-FLOW reply** (Q2 through Q6, `already_complete`,
+**Always-template for the five OUTBOUND-INITIATED trigger sends in scope**
+(`morningSend`, `morningNudge`, `eveningSend`, `eveningNudge`, and `eveningClose`'s
+PM-notify — **`ownerSend` is explicitly NOT one of these**, per #67's email decision above;
+it never enters this primitive at all). **Free-form stays, and is safe, for every IN-FLOW
+reply** (Q2 through Q6, `already_complete`,
 `reask`) because those are always sent in direct response to a message the engineer just
 sent — the window is open by construction, no reachability check ever needed, no race to
 have. **This scoped version achieves the reviewer's own stated payoff in full, not
@@ -98,29 +114,39 @@ partially:** B1 and the 63016 async-failure class only ever existed for outbound
 sends in the first place (an in-flow reply was never exposed to the reachability race,
 since it's triggered by the inbound that just re-opened the window) — so scoping
 always-template to trigger sends deletes B1 and 63016-for-trigger-sends completely, at zero
-cost to Q5 (an in-flow step, never a trigger send) and without needing to solve the
-owner-send's content-shape problem as a precondition.
+cost to Q5 (an in-flow step, never a trigger send). The owner-send's content-shape problem
+no longer needs solving as a precondition either — it's out of this primitive's scope
+entirely (#67's email decision), which simplifies this reasoning rather than complicating
+it further.
 
 **Why this beats unscoped always-template on stated grounds, not by default:** (1) Q5's
 data-driven prompt is a hard technical blocker unscoped always-template cannot clear
-without redesigning that question entirely; (2) the owner-send's existing committed design
-(§8, full inline content) is a prior decision this workstream shouldn't silently overrule
-by adopting a policy that makes it unbuildable; (3) the reviewer's own promised benefit —
+without redesigning that question entirely; (2) the reviewer's own promised benefit —
 deleting B1, deleting 63016 — is achieved in full by the scoped version, so paying the
 wider cost buys nothing additional on the one metric the argument for always-template was
-actually made on.
+actually made on. (The owner-send's committed §8 design was a second reason in the prior
+revision — moot now that the owner-send isn't a WhatsApp send at all.)
 
 **This changes B1, B3, and 3b below — each is revised in place, not left describing the
 unscoped design.**
 
 ---
 
-## 3a. The primitive — one function, and the six events collapse to one shape
+## 3a. The primitive — one function, and five WhatsApp events collapse to one shape;
+`ownerSend` is not a sixth
 
-**The six scheduled events are not six senders.** Of the six checkpoints in the frozen
-schedule (`morningSend`, `morningNudge`, `morningEscalate`, `eveningSend`, `eveningNudge`,
-`eveningClose`/`ownerSend`), **`morningEscalate` sends nothing** (dashboard-only, confirmed
-in `bot-flows.md`: "NOT a WhatsApp push"). That leaves five real sends, and four of them —
+**REVISED (this revision) — `eveningClose`/`ownerSend` were bundled together in the prior
+revision as a single "structurally different" fifth send; #67's own revision (2026-08-15,
+same day) decided the owner receives the DPR by email, not WhatsApp, which splits that
+bundle in two. Restated cleanly below, not as a bundle.**
+
+**The scheduled events are not one-sender-per-checkpoint.** Of the checkpoints in the
+frozen schedule (`morningSend`, `morningNudge`, `morningEscalate`, `eveningSend`,
+`eveningNudge`, `eveningClose`, `ownerSend`), **`morningEscalate` sends nothing**
+(dashboard-only, confirmed in `bot-flows.md`: "NOT a WhatsApp push") and **`ownerSend` is
+not a WhatsApp send at all** (email, per #67's decision — a different sender entirely,
+outside this primitive's scope, built and owned by #67's own workstream, not sketched
+here). **That leaves five real sends inside this primitive's scope**, and four of them —
 `morningSend`, `morningNudge`, `eveningSend`, `eveningNudge` — are, mechanically, the exact
 same call: `applyMorningFlowTurn` / `applyEveningFlowTurn` with `startFlow: true, message:
 ''`, exactly the shape `test-trigger.ts`'s env-gated sentinel already uses today. The RPC's
@@ -135,15 +161,20 @@ state without the caller needing to know which of "send" or "nudge" it's doing:
 - `current_flow IS NULL`, already submitted → once refuse-when-submitted ships (Part 1,
   not yet built), `'already_complete'` and nothing is sent — correct: no message needed.
 
-**This is Part 1 §10's "six events, one mechanism" made concrete.** The check-in
-sender doesn't need four code paths for four checkpoints; it needs one call, invoked
-against whichever roster the checkpoint targets (send: every active engineer; nudge: every
-active engineer not yet submitted — `checkin_escalations`' own `status != 'submitted'`
-set). `eveningClose`/`ownerSend` are a fifth, structurally different send (a DPR
-notification/delivery, addressed to a PM or owner, carrying a link or report content, never
-touching `whatsapp_sessions`) — different content, same underlying transport concern
-(window state, idempotency, failure handling). **The primitive should be the generic
-transport layer both callers share, not duplicated per caller.**
+**This is Part 1 §10's "six events, one mechanism" made concrete, narrowed to the events
+this primitive actually owns.** The check-in sender doesn't need four code paths for four
+checkpoints; it needs one call, invoked against whichever roster the checkpoint targets
+(send: every active engineer; nudge: every active engineer not yet submitted —
+`checkin_escalations`' own `status != 'submitted'` set). **`eveningClose`'s PM-notify is
+the actual fifth send in this primitive's scope** — a DPR notification, addressed to a PM,
+carrying a link, never touching `whatsapp_sessions` — different content from the four
+engineer sends, same underlying transport concern (idempotency, template gating, failure
+handling), which is why it belongs in this same primitive rather than a separate one.
+**`ownerSend` (20:30) is explicitly OUT of scope for this primitive** — not a fifth or
+sixth WhatsApp send, not something `sendTriggerMessage` needs to handle, not part of the
+template-approval dependency below. **The primitive should be the generic WhatsApp
+transport layer its actual callers share** (engineer check-ins + PM-notify), not a
+catch-all for every nightly send regardless of channel.
 
 **Shape, sketched:**
 
@@ -615,35 +646,37 @@ strengthened, not merely maintained, by round 1's own correction.
 
 ---
 
-## THE ENTANGLEMENT with #67 — stated here, and identically in #67's own plan
+## THE ENTANGLEMENT with #67 — REWRITTEN this revision; PM-notify only, owner-send resolved
 
-**PMs and owners never message the bot.** Every reachability/window discussion in this
-plan (§0, 3b) is about ENGINEERS, whose flows are the only thing that ever generates an
-inbound message. A PM or an owner has no symmetric path — nothing in this product's design
-has them texting the bot first. **Their WhatsApp windows are therefore always closed, with
-no exception, structurally, not as a transient state that might change.**
+**Previous revision's conclusion — "both of #67's sends are `skipped_no_template` on every
+attempt" — no longer holds for both.** #67's own same-day revision (2026-08-15) decided
+the owner receives the DPR by email, not WhatsApp, which resolves this plan's own
+"fifth send" content-shape question for `ownerSend` — not by this plan specifying a
+template contract, but by `ownerSend` leaving WhatsApp, and this primitive's scope,
+entirely. Restated stage by stage, since the two are no longer symmetric:
 
-**Consequence for #67's two-stage delivery (`eveningClose` PM-notify, `ownerSend`):**
-under skip-and-record (3c), which this revision keeps and strengthens, **both of #67's
-sends are `skipped_no_template` on every single attempt until Meta approves the relevant
-templates** — there is no free-form fallback available to either send, ever, because
-neither recipient class can have an open window by construction. This is not a corner case
-of the template gap; for PM-notify and owner-send specifically, IT IS THE ONLY CASE.
-**#67's `delivery_status` state machine (its own proposed `pm_notified` value) needs a
-skip outcome of its own, mirroring this primitive's `skipped_no_template`, or
-`delivery_status` sits at `'pending'` forever with nothing anywhere explaining why** — the
-exact silent-failure shape 3c was written to prevent, reappearing one layer up if #67 does
-not also account for it.
+**PM-notify (`eveningClose`) — UNCHANGED, still fully entangled.** The PM never messages
+the bot, so their WhatsApp window is always closed, so PM-notify is unconditionally a
+template send, and is `skipped_no_template` on every attempt until Meta approves the
+relevant template — exactly the prior revision's finding, now describing one send instead
+of two. **#67's `delivery_status` state machine (its own `pm_notified` value, and the
+`skipped_no_template` value #67 added) already accounts for this** — confirmed by reading
+#67's current revision, not assumed: `skipped_no_template` is explicitly scoped there to
+`pm_notify` only, matching this primitive's own vocabulary exactly, deliberately mirrored
+rather than independently reinvented on either side.
 
-**Consequence for this plan's own "fifth send":** 3a named `eveningClose`/`ownerSend` as
-"structurally different — same transport concern, different content" without specifying
-what that content actually is. It can't stay unspecified: §0 above found that the
-owner-send's content (per `dpr-engineer-report-spec.md` §8, full inline report text) may be
-fundamentally incompatible with a template's fixed-slot structure, which is a #67 content
-question this plan cannot resolve unilaterally. **#69 needs #67 to specify the actual
-content contract for both sends (a template with a link and which variables, or a
-redesign of §8 to not require inline content) before "structurally different" can become a
-real implementation, not a placeholder description.**
+**Owner-send (`ownerSend`) — RESOLVED, no longer entangled with this primitive at all.**
+It is not a WhatsApp send, is not part of `sendTriggerMessage`'s roster, does not depend
+on Meta template approval, and cannot be `skipped_no_template` — an email send has its own
+success/failure shape (#67's own new email-provider dependency, its §2g), unrelated to
+this primitive's template-gating problem. **This plan's own 3a already reflects the
+narrowed scope** (`ownerSend` explicitly named out of scope, this revision) — restated
+here so the entanglement itself doesn't read as unresolved when it isn't, for this stage.
+
+**Net: one open, shared dependency remains (PM-notify ↔ Meta template approval), not
+two.** The owner-send is no longer a joint problem between these two plans — it's #67's
+alone, and a different kind of problem (email deliverability, not WhatsApp template
+approval).
 
 ---
 
@@ -655,10 +688,13 @@ real implementation, not a placeholder description.**
 2. Decide the terminal-failure-count threshold for `messaging_blocked = true` (3e).
 3. Decide B3's cross-flow interference fix (one of three named options, or another).
 4. Build the status-callback route (B4) as part of this workstream, not a later addition.
-5. Resolve the entanglement with #67 above — both plans block on the same open question.
-6. Full external-review package (3g) before any migration or code ships — now trips on
-   FOUR grounds, not three.
+5. **Narrowed this revision:** resolve the entanglement with #67 for PM-notify only — the
+   owner-send half is resolved (#67's email decision) and no longer a shared open question.
+6. Full external-review package (3g) before any migration or code ships — still trips on
+   FOUR grounds; unaffected by the owner-send leaving this primitive's scope.
 7. This is the actual precondition for the product functioning — nothing else in this
-   session's three parts tonight can run in production until this exists.
+   session's three parts tonight can run in production until this exists. **Scope is now
+   five WhatsApp sends (four engineer checkpoints + PM-notify), not the DPR delivery
+   pipeline as a whole — `ownerSend`/email is #67's own precondition to build, separately.**
 
 Nothing built in this pass. Branch/PR for this document only — no code.
