@@ -7,10 +7,6 @@
     {
       "path": "/api/cron/dpr-generate",
       "schedule": "15 14 * * *"
-    },
-    {
-      "path": "/api/cron/owner-deliver",
-      "schedule": "0 15 * * *"
     }
   ]
 }

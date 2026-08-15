@@ -120,6 +120,20 @@ never do is grow through repetition, restatement, or prose that adds no fact.
 NEEDS ATTENTION carries every exception, not a selected few. A clean day still says so in
 one line (Rule 4.1) — because on a clean day there genuinely is nothing more to say.
 
+**IMPLEMENTATION GAP, named so the spec stops promising what the types cannot express yet
+(found during Part 2 planning, 2026-08-15) — a scoped, buildable dependency, not a design
+flaw, and NOT built here.** Multi-row expansion works TODAY for Equipment:
+`EngineerEquipmentFacts.items` (`lib/dpr/schema.ts`) already holds a list, so "several
+pieces of plant with different hours" is real, current behaviour, not aspiration. It does
+**not** work yet for Work: `EngineerWorkFacts` holds a single `planned`/`done` pair, not a
+list — "three activities reported with separate quantities" is not renderable until that
+type (and `assembleEngineerDprFacts`, `formatEngineerFacts`, `renderEngineerBody`) changes
+to carry an array. This is genuinely buildable, not a mismatch with what's actually
+captured: the underlying raw data (`evening_output_quantities`) already stores a list of
+activities today — the gap is only in the per-engineer Facts layer built on top of it,
+added when this reformat collapsed multiple activities down to one pair for simplicity.
+Whoever picks this up starts from real stored data, not from nothing.
+
 ### 4b. The PM EDITS section — appears only when something was edited
 
 Between generation (sent to the PM) and the owner send thirty minutes later, the PM may
@@ -174,6 +188,21 @@ header, MISSING does not repeat it.
 
 ### 7. Check-in status vocabulary
 
+**PROVENANCE NOTE (2026-08-15, Aravind's own account, recorded per this project's
+standing correction discipline — applies to everyone's mistakes, not only Claude Code's):
+three blocks below (the trigger-crons conditionality caveat, the "two mechanics, pinned"
+block, and the round-3 reviewer-approved "left this project during the day" symmetric
+case) were briefly ABSENT from this file, between an earlier read of it this session and
+this one. Root cause: this file was being edited as a local copy and written back over the
+repo file directly; each such write replaced whatever had been added since the previous
+one, with no merge — not a deliberate content decision, no replacement reasoning existed
+because none was made. Caught by comparing against git history rather than assumed lost or
+assumed intentional. Restored verbatim from commit `4528f28` below, with only the
+already-in-flight hardcode-removal edit (Rule 7's own point below) applied uniformly across
+the restored text, same as everywhere else in this file — nothing else about their content
+or reasoning changed. Spec edits from here on are communicated as instructions, not further
+direct writes to this file.**
+
 `complete` / `partial` / `not received` / `not applicable`.
 
 **complete** — every question that was actually asked got an answer.
@@ -200,12 +229,60 @@ the times behind it have already changed twice (the morning cutoff was stale at 
 PR #59; the morning send and nudge moved on 2026-08-15). Any literal written here goes
 stale the next time they move.
 
+**CONDITIONAL ON THE TRIGGER CRONS SHIPPING — not presently mechanical (added
+2026-08-14, review finding).** "Send time" describes a proactive push that does not exist
+yet: no cron or trigger sends the morning or evening prompt today (CLAUDE.md §10 — the
+evening flow specifically, and by the same absence the morning flow, has no code path
+that starts it in production; an engineer self-initiates by messaging in). Under this
+pull model, a membership beginning after the morning send does **not** mean the engineer
+could not have checked in before the actual close boundary (`morningCutoff` /
+`eveningClose`) — they could have messaged in themselves. The rule above is still correct
+on Rule 5.3 grounds (never let an explained absence read as unexplained) and should ship
+as written, but it is recording an intent for when the send crons exist, not describing
+today's actual mechanism. Whoever builds those crons should re-examine whether
+`not_applicable`'s threshold should move from send-time to close-time once the push model
+is real.
+
+**Two mechanics, pinned so they aren't rediscovered as bugs:**
+- The `project_members.created_at` vs. `CHECKIN_CHECKPOINTS.morningSend`/`.eveningSend`
+  comparison **must convert to IST before comparing**, the same conversion every other
+  cutoff/send-time comparison in this codebase already does (`lib/daily-logs/status.ts`'s
+  `istParts`). `created_at` is stored as `TIMESTAMPTZ` (UTC internally); comparing its raw
+  UTC clock value against an IST wall-clock string is wrong for every join in the UTC band
+  that straddles the morning send checkpoint — it would misclassify a chunk of ordinary
+  daytime joins.
+- A membership that is removed and later re-added gets a **fresh `created_at`** on the new
+  `project_members` row — there is no history table, so an engineer's earlier, prior
+  membership window is not recoverable. **Policy: use the current row's `created_at`.** A
+  returning engineer's earlier window is treated as if it never happened for this purpose
+  — a known, named limitation, not a silent gap, and not fixable without new
+  infrastructure this work does not build.
+
 A `not applicable` half does not count toward MISSING and does not lower completeness. It
 renders in plain language with its reason:
 
 ```
 Morning check-in: not applicable — joined this project today
 ```
+
+**Symmetric case, added 2026-08-14 (review round 3, reviewer's own finding): an engineer
+who submitted real data earlier in the day and then left the project (deactivated, or
+removed from `project_members`) before a later half's send time is `not_applicable` for
+that later half too — not `not_received`.** Detected from the same eligible-set union
+already required elsewhere in this design (active roster ∪ engineers with a `daily_logs`
+row for `log_date`, per Rule 7's own real-data-wins principle): an engineer present in the
+union by virtue of real data, but absent from the active-roster half of it, has left. No
+new field or timestamp needed — this falls out of the union check already being done.
+Reuses the existing status value and mechanism, a different reason string only:
+
+```
+Evening check-in: not applicable — left this project during the day
+```
+
+Rendering a departed engineer's un-owed half as `not received` would be Rule-5.3 shading
+— language aimed at someone no longer there to have owed it. `not applicable` already
+exists for exactly this shape (a half genuinely not owed); this is its mirror case
+(membership ending early), not a new concept.
 
 A day where both halves are not-applicable skips the model call entirely, exactly as a
 holiday day does. A half-and-half day still calls the model, because one side has real

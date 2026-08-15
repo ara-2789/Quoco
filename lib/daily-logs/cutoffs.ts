@@ -29,11 +29,15 @@
 // Rule 7.2 closes a missing evening AT REPORT TIME, not on its own separate
 // clock. There is no distinct "dprGenerate" checkpoint; `eveningClose` IS it.
 // `ownerSend` is new — the automatic, unconditional 20:30 owner send
-// (docs/dpr-engineer-report-spec.md's two-stage delivery design). vercel.json's
-// `dpr-generate` cron schedule and its new owner-send cron are the literal
-// clock encodings of `eveningClose`/`ownerSend` respectively — kept in sync by
-// hand (cron syntax can't import a TS constant); if this object changes again,
-// vercel.json must change with it in the same commit.
+// (docs/dpr-engineer-report-spec.md's two-stage delivery design, Part 2 plan).
+// vercel.json's `dpr-generate` cron schedule is the literal clock encoding of
+// `eveningClose` and is already updated to match. The `ownerSend` cron entry
+// is NOT yet in vercel.json — deliberately deferred to the PR that ships the
+// owner-deliver route (Part 3 plan), since a cron pointing at a route that
+// doesn't exist yet would 404 nightly the moment this deploys. Add it there,
+// not here. Once both exist, kept in sync by hand (cron syntax can't import a
+// TS constant) — if this object changes again, vercel.json must change with
+// it in the same commit.
 
 export const CHECKIN_CHECKPOINTS = {
   /** IST "HH:MM" — morning check-in trigger send (not yet automated; no cron exists). */
