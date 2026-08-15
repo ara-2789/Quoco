@@ -2044,6 +2044,12 @@ DELIBERATELY LEFT ALONE:
      note. The restart note is §10, not §11 — a stale/wrong cross-reference, not fixed in
      this pass (recorded per direct instruction).
 
+SCOPE CORRECTION (2026-08-15, Aravind's own instruction): merging PR #66 deployed the
+`dpr-generate` reschedule same-night (accepted — not reverted). **"Commit but do not
+deploy" means do not merge, not just "don't add the missing-route cron entry" — merging to
+`main` deploys, full stop, same fact this file's own merge/deploy incident already
+established for a different PR.**
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
