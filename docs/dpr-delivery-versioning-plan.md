@@ -6,17 +6,61 @@ PR #66; Part 3: outbound send primitive, separate plan doc). Read alongside
 `docs/dpr-engineer-report-spec.md` (Aravind's same-day edits, §4/§4b) and
 `lib/daily-logs/cutoffs.ts` (`eveningClose` 19:45, `ownerSend` 20:30, FROZEN FOR MVP).
 
+**REVISION 3 (2026-08-15, same day, review round 2) — decision handed down, not proposed
+here: the owner receives the DPR by EMAIL for MVP, not WhatsApp.** This resolves THE
+ENTANGLEMENT section's own fork (below, rewritten this revision) via a path neither of its
+two named options anticipated — not "§8 revised to a WhatsApp link" and not "§8 stands,
+unsendable" — the report leaves WhatsApp for the owner-send entirely. Changes: the DECISION
+block immediately below; 2e's `delivered`/`skipped_no_template` semantics narrowed to the
+stage they actually apply to; two new dependencies named (2g email provider/deliverability,
+2h a second renderer); an option recorded, not decided (2i, a companion WhatsApp ping); a
+roadmap note (mobile/PWA, explicitly not scope); THE ENTANGLEMENT and the Summary both
+rewritten to match. Stage 1 (PM-notify) is untouched by this revision — still WhatsApp,
+still template-gated, still entangled with #69 exactly as before.
+
+---
+
+## DECISION (2026-08-15): the owner receives the DPR by email, not WhatsApp
+
+**Reasoning, recorded as given, not re-derived:** owners never message the bot, so their
+WhatsApp window is always closed, so every WhatsApp send to them is necessarily a template
+— and a template body cannot carry a variable-length report (fixed slots, per-parameter
+character limits, no "however many lines this report needs today"). `dpr-engineer-report-
+spec.md` §8's inline-full-report commitment is incompatible with that, which is exactly
+the fork THE ENTANGLEMENT (below) left unresolved last revision. Email has no length
+limit, needs no Meta template approval, carries no per-message template cost, and takes
+owner web-authentication off the critical path entirely (no dashboard login needed to read
+a nightly email) — §26's AUTH DECISIONS workstream stops being a dependency of the owner
+receiving their report at all, though it remains one for the PM's dashboard link (2b).
+
+**What this changes, precisely — stage 1 and stage 2 are no longer symmetric:**
+- **Stage 1 (19:45, PM-notify) is UNCHANGED — still WhatsApp, still template-gated,** still
+  entangled with #69's Meta-approval dependency exactly as the prior revision described.
+- **Stage 2 (20:30, owner-send) is NO LONGER A WHATSAPP SEND AT ALL.** It does not wait on
+  Meta template approval, is not part of #69's outbound-send primitive, and needs a
+  different sender built for a different transport. 2a's "automatic and unconditional"
+  framing is unchanged in substance — the owner still receives the report exactly as
+  generated at 20:30 with no PM gate — only the channel changes.
+- This is a **material change** to the previous revision's THE ENTANGLEMENT conclusion
+  ("both stages skip until Meta approves") — that conclusion no longer holds for stage 2,
+  rewritten below.
+
+**Not decided here, and not part of this revision:** which email provider, or whether/how
+`dpr-engineer-report-spec.md` §8 itself gets edited to say "email" instead of "WhatsApp" —
+named as an open follow-up in the Summary, not resolved in this pass.
+
 ---
 
 ## 2a. LOAD-BEARING — the 20:30 owner send is automatic and unconditional
 
 Restated because it constrains everything below, not because it needs justifying further:
 **if the PM does nothing between 19:45 and 20:30, the owner receives the report exactly as
-generated.** The PM's window is an opportunity, never a gate. Any design in this plan where
-the owner-send code path checks "has the PM finished editing" or waits on a PM action is
-wrong by construction — the 20:30 cron fires and sends whatever `dprs` currently holds as
-its delivered content, full stop. This shapes 2d/2e directly: versioning exists so an edit
-made in-window is captured, not so the send can be gated on one existing.
+generated — by email now (DECISION, above), not WhatsApp.** The PM's window is an
+opportunity, never a gate. Any design in this plan where the owner-send code path checks
+"has the PM finished editing" or waits on a PM action is wrong by construction — the 20:30
+cron fires and sends whatever `dprs` currently holds as its delivered content, full stop.
+This shapes 2d/2e directly: versioning exists so an edit made in-window is captured, not so
+the send can be gated on one existing.
 
 ## 2b. The 19:45 PM message and the edit surface — no mobile app, the dashboard already exists
 
@@ -286,26 +330,38 @@ additive (existing values kept, meanings tightened where the two-stage flow requ
   since PM-notify fires atomically with generation at `eveningClose`).
 - **`pm_notified`** *(NEW)* — the PM has been sent the 19:45 notification+link; this is the
   state for the entire 19:45→20:30 window, edited or not.
-- `delivered` — re-scoped, not renamed: now specifically means "delivered to the **owner**"
-  (the terminal success state), set at or after `ownerSend` (20:30).
-- `failed` — unchanged, NFR-17 dead-letter. Deliberately NOT split into
-  `pm_notify_failed`/`owner_send_failed` sub-states — which stage failed is Sentry/log
-  context (`extra: {stage: 'pm_notify' | 'owner_send'}`), not a new CHECK value; keeps the
-  state machine small and matches this project's existing preference (`generation_status`/
-  `delivery_status` are already kept orthogonal and minimal rather than cross-producted).
+- `delivered` — re-scoped, not renamed: now specifically means "delivered to the **owner**
+  by email" (the terminal success state; channel per the DECISION above), set at or after
+  `ownerSend` (20:30). No longer implies WhatsApp, and no longer implies anything about
+  template approval — an email delivery has its own success/failure shape (2g), unrelated
+  to Meta's.
+- `failed` — unchanged, NFR-17 dead-letter, still covers BOTH stages. Deliberately NOT
+  split into `pm_notify_failed`/`owner_send_failed` sub-states — which stage failed is
+  Sentry/log context (`extra: {stage: 'pm_notify' | 'owner_send'}`), not a new CHECK value;
+  keeps the state machine small and matches this project's existing preference
+  (`generation_status`/`delivery_status` are already kept orthogonal and minimal rather
+  than cross-producted). **The two stages now fail for genuinely different reasons** —
+  `pm_notify` fails the way a WhatsApp template send fails (3e-style, #69); `owner_send`
+  fails the way an email send fails (bounce, provider rejection, spam-folder silent
+  non-failure that never even reaches this state — see 2g's deliverability risk) — the
+  `stage` context tag is what keeps those distinguishable without a new CHECK value.
 - `paused` — unchanged, out of scope for this plan (whatever its existing semantics are).
 - `skipped_no_data` — kept for the record, likely DEAD going forward under the per-engineer
   pipeline (its only writer was the old project-level trigger; Q8's zero-roster case
   writes no row at all instead) — same "leave retained-but-unused logic in place" pattern
   `archive-status.ts` already uses for this exact status value. Not removed.
-- **`skipped_no_template`** *(NEW, added this revision — see THE ENTANGLEMENT below)* —
-  neither the PM nor the owner ever messages the bot, so both of this table's own sends
-  have no free-form fallback, ever, structurally, not as a transient state. Without this
-  value, a send blocked on template approval leaves `delivery_status` at `'pending'`
-  forever with nothing anywhere explaining why — the same silent-failure shape #69's own
-  `skipped_no_template` outcome (its 3c) exists to prevent, recurring here one layer up if
-  this table doesn't account for it too. Mirrors #69's vocabulary deliberately, not a
-  independently-invented parallel name for the same thing.
+- **`skipped_no_template`** *(NEW, added last revision — SCOPE NARROWED this revision, see
+  THE ENTANGLEMENT below)* — **applies to stage 1 (`pm_notify`) only, now that stage 2 is
+  email.** Still real and still necessary: the PM is never reachable free-form (never
+  messages the bot), so `pm_notify` has no fallback and is `skipped_no_template` on every
+  attempt until Meta approves the relevant template — exactly the prior revision's finding,
+  just no longer describing the owner-send too. Without this value, a PM-notify blocked on
+  template approval would leave `delivery_status` at `'pending'` forever with nothing
+  anywhere explaining why — the same silent-failure shape #69's own `skipped_no_template`
+  outcome (its 3c) exists to prevent. Mirrors #69's vocabulary deliberately, not an
+  independently-invented parallel name for the same thing. **Never applies to `owner_send`
+  — an email send either succeeds (`delivered`), fails (`failed`), or hasn't run yet
+  (`pending`); there is no template-approval axis for it to be skipped on.**
 
 ## 2f. PM escalation persistence — confirmed sufficient, no schema change needed
 
@@ -320,46 +376,150 @@ until submit or cutoff," already built, already correct for the frozen 10:30-app
 15:00-closes schedule (§1a). **No schema change needed. Not stopping here — confirmed
 sufficient as designed.**
 
+## 2g. NEW DEPENDENCY — transactional email does not exist in this codebase
+
+**Named as its own item, with its own risk stated, per direct instruction — not folded
+quietly into "pick a provider later."**
+
+**What exists today, checked, not assumed:** Supabase Auth sends magic-link emails
+(`login/page.tsx`, `auth/callback/route.ts` — see CLAUDE.md §8's own Auth Site URL
+history). **This is not the same capability.** Supabase Auth's email sending is Supabase's
+own managed auth-template delivery, scoped to auth flows (magic links, password resets) —
+it is not a general-purpose transactional email API this codebase can call to send an
+arbitrary nightly report with real content to an arbitrary owner address. Grepped `lib/`,
+`app/` for any existing email-sending capability beyond Auth's own: none. `RESEND_API_KEY`
+is already listed in CLAUDE.md §8's environment variable table ("Email: Resend — DPR
+delivery to owner") — **named in the stack doc, never actually wired.** This decision is
+what finally makes that line load-bearing.
+
+**The dependency, stated precisely:**
+1. **A transactional email provider** (Resend, per the stack doc's own existing naming —
+   not re-litigated here, just noted as already the project's stated intent, not a new
+   choice this decision introduces) needs an account, an API key, and a real integration
+   point in `lib/dpr/` or similar — not sketched here, out of scope for a plan document.
+2. **A verified sending domain** — SPF, DKIM, and DMARC records on whatever domain the
+   report is sent FROM. This is not optional infrastructure to defer: an unverified sending
+   domain is the single most common reason transactional email lands in spam or is
+   rejected outright by receiving mail servers (Gmail, Outlook, and most corporate mail
+   gateways all check these records before accepting mail from an unfamiliar sender).
+3. **Deliverability is the risk, not sending — stated as the actual failure mode, not a
+   generic caveat.** A misconfigured or unverified domain does not produce a visible error
+   this project's own §0 discipline would catch on an apply-day dashboard check — it
+   produces a `202 Accepted` from the provider's API (the send technically "succeeded") and
+   then silent, invisible delivery into a spam folder the owner never opens. **This is the
+   email equivalent of #69's own B4 finding** (a WhatsApp send accepted synchronously and
+   failed asynchronously, invisibly, unless a status-callback route is built to catch it) —
+   the same shape of risk, one layer over, on a different transport. The product would
+   appear to be working (every night, `delivery_status = 'delivered'`, a real send logged)
+   while silently not reaching the paying customer at all. **Whatever provider is chosen
+   needs its own equivalent of #69's status-callback route** (most providers — Resend
+   included — offer webhook delivery-status events: `delivered`, `bounced`, `complained`)
+   before `delivered` can be trusted as meaning what it says, not merely "the provider
+   accepted the request." Not built here — named as the same-shaped dependency #69 already
+   had to solve for WhatsApp, now recurring for email.
+
+**Not choosing a provider or building anything here** — recording the dependency and what
+verifying the domain involves, per direct instruction.
+
+## 2h. Email needs its own rendered form — a second renderer, not a change to the existing one
+
+**The report is currently plain text, shaped for a WhatsApp message body** (`render.ts`'s
+existing output — inline `|` pair lines specifically because "aligned columns... collapse
+on mobile" inside a WhatsApp bubble, per spec §8's own stated reasoning). **Email has none
+of WhatsApp's constraints and some of its own:**
+- **Plain text** — the cheapest option, reuses the existing rendered `content` string
+  as-is (an email client renders a plain-text body fine); loses nothing functionally, gains
+  nothing visually either.
+- **HTML** — a real second render target: headers, bold section labels, maybe a simple
+  table instead of the `|`-pair-line mobile workaround `render.ts` exists specifically to
+  avoid — email has no "collapses on mobile" constraint the way a WhatsApp bubble does, so
+  HTML email could use the aligned-table layout the WhatsApp render deliberately rejected.
+- **PDF attachment** — the most report-like presentation, but the most new surface area
+  (a PDF-generation dependency this codebase does not have either, on top of the email
+  dependency itself).
+
+**Which of these three is not decided here — the point being recorded is the PATTERN, not
+the choice:** per `dpr-engineer-report-spec.md` §8's own established precedent, this
+codebase already builds multiple renderers off the same `DprFacts`/`structured` data (the
+WhatsApp-shaped `render.ts` is itself evidence of exactly this pattern — Facts assembled
+once, rendered per-surface). **A second, email-shaped renderer reading the same
+`dprs.structured` this plan's versioning (2d) already stores is the established pattern
+applied again, not a change to the existing WhatsApp renderer** — `render.ts` is untouched
+by this decision; a new `render-email.ts` (or equivalent) is additive.
+
+## 2i. Option, recorded not decided: a companion WhatsApp ping alongside the email
+
+**Recorded per direct instruction — not chosen, not built.** A short WhatsApp template to
+the owner — e.g. "Today's report for [site] has been sent to your email" — sent alongside
+the email at 20:30, keeping a WhatsApp presence for the product (owners already expect a
+WhatsApp touchpoint, per this project's whole design) while the actual document ships
+where it can carry unlimited content. **Cost/dependency shape, named so the option is
+evaluable later without re-deriving it:** this WOULD be a real WhatsApp send (one cheap,
+fixed-content template — no data-driven slots, no Q5-style variable-list problem) and
+WOULD therefore re-enter #69's template-approval dependency and its `skipped_no_template`
+vocabulary for this one narrow case, even though the report content itself no longer does.
+Not a blocker either way — the email send is fully independent of whether this option is
+ever built — just a real dependency to weigh if it is.
+
 ---
 
-## THE ENTANGLEMENT with #69 — stated here, and identically in #69's own plan
+## ROADMAP NOTE (not scope, not scheduled) — mobile app, PWA as the checkpoint
 
-**PMs and owners never message the bot.** Every send this plan proposes — the 19:45
-PM-notify and the 20:30 owner-send — is addressed to a recipient class that has no
-symmetric inbound path in this product's design. Nothing has a PM or an owner texting the
-bot first. **Their WhatsApp windows are therefore always closed, structurally, not as a
-state that might change with better luck or more time.**
+**Recorded in the roadmap notes, explicitly NOT as scope for this or any current
+workstream, per direct instruction.** This decision's own reasoning — owners read a
+document, not a chat window — nudges toward mobile app as a near-future direction, more
+so for owners than any other role in this product (engineers are WhatsApp-first by design;
+owners, reading a nightly report, are plausibly app-readers first). **Not scheduled, not
+scoped, nothing here commits to building it.**
 
-**Consequence, stated plainly, not softened:** under #69's skip-and-record (kept and
-strengthened in that plan's own review-round revision), **both of this plan's sends are
-`skipped_no_template` on every single attempt, with no exception, until Meta approves the
-relevant templates.** This is not this plan's edge case to handle gracefully — for
-PM-notify and owner-send, it is THE ONLY CASE that can occur before template approval
-lands. `delivery_status`'s new `skipped_no_template` value (2e, added this revision) exists
-specifically so this doesn't read as `'pending'`-forever with no explanation.
+The note worth keeping for whenever this is revisited: a **Progressive Web App (PWA)** is
+the natural checkpoint before native app investment is justified, not a detour before it —
+home-screen install, push notifications (supported on iOS since 16.4, closing what used to
+be the platform gap that made PWA a second-class option), and app-like reading, all
+buildable from the existing Next.js codebase with no app-store submission and no second
+platform/codebase to maintain. Native (App Store/Play Store) is the step to take only once
+a PWA's own limits are actually felt in practice, not a starting assumption.
 
-**Consequence for #69's own design, which this plan is responsible for answering, not
-deferring back:** #69 named `eveningClose`/`ownerSend` as a "fifth send... structurally
-different... same transport concern, different content" without specifying what that
-content actually is. It can no longer stay unspecified, because 2d above found a real
-problem with it: `dpr-engineer-report-spec.md` §8 ("WhatsApp is the delivery surface")
-already commits the OWNER to receiving the full, formatted report body inline via
-WhatsApp — and a variable-length, multi-line report cannot be a WhatsApp template body at
-all (fixed structure, per-parameter character limits, no support for "however many lines
-this report needs today"). **Two ways this resolves, both real design decisions, neither
-made here:**
-1. **§8 gets revised** — the owner-send becomes a template with a link (matching what this
-   plan already proposed for the PM-notify), and the owner reads the actual report on a
-   dashboard surface built for owners (none exists today — owners have no web login,
-   per CLAUDE.md's own role table, so this implies its own new surface, not just a URL).
-2. **§8 stands, and the owner-send stays free-form-only** — which, given owners never
-   message the bot, is un-sendable by construction, not merely expensive, until something
-   changes that premise (an owner is asked to message the bot at least once? seems
-   operationally unrealistic to require of every owner on every project).
+---
 
-**This plan does not pick between them — naming the fork is this plan's job; picking a
-branch is a decision for whoever owns §8 next, since it reopens a document this session
-did not set out to revise.**
+## THE ENTANGLEMENT with #69 — REWRITTEN this revision; no longer symmetric between stages
+
+**Previous revision's conclusion — "both of this plan's sends are `skipped_no_template`
+on every attempt until Meta approves" — no longer holds.** The DECISION above (owner
+receives the DPR by email) breaks the symmetry that conclusion depended on. Restated
+precisely, stage by stage, not as a blanket claim:
+
+**Stage 1 (19:45, PM-notify) — UNCHANGED, still fully entangled with #69.** The PM never
+messages the bot, so their WhatsApp window is always closed, so `pm_notify` is
+unconditionally a template send, and is `skipped_no_template` on every attempt until Meta
+approves the relevant template — exactly as the prior revision found. `delivery_status`'s
+`skipped_no_template` value (2e, narrowed this revision to stage 1 only) exists
+specifically so this doesn't read as `'pending'`-forever with no explanation. This part of
+the entanglement is real, unresolved, and identical to what #69's own plan already
+describes for its trigger sends generally.
+
+**Stage 2 (20:30, owner-send) — NO LONGER ENTANGLED WITH #69 AT ALL.** It is not a
+WhatsApp send, does not go through #69's primitive, does not wait on Meta template
+approval, and cannot be `skipped_no_template` (2e) — it has its own, unrelated
+dependency and risk (2g's email-provider/deliverability chain), not #69's. **This
+resolves the fork the prior revision left open** — #69 had named `eveningClose`/
+`ownerSend` as a single "fifth send... structurally different... same transport concern"
+and asked this plan to specify its content contract, framing the resolution as a binary
+choice between revising spec §8 to a WhatsApp-template-with-link, or leaving the
+owner-send un-sendable. **Neither.** The report leaves WhatsApp for the owner entirely —
+a third path, not one of the two named. `dpr-engineer-report-spec.md` §8 ("WhatsApp is
+the delivery surface") is now stale for the owner-send specifically and needs its own
+edit (channel: email, not WhatsApp) — **not made in this pass**, named as a required
+follow-up in the Summary below, same as it was left open (differently) last revision.
+
+**What this means for #69's own scope, stated so that plan's revision doesn't have to
+re-derive it:** `ownerSend` (20:30) drops out of #69's outbound-send primitive entirely —
+it is not one of the WhatsApp trigger sends that primitive's roster/template/idempotency
+machinery needs to cover. `eveningClose` (19:45, PM-notify) remains the one non-engineer
+WhatsApp send in scope for that primitive, carrying the same template-gated, `skipped_
+no_template`-capable shape as the four engineer-facing checkpoints. #69's own plan should
+reflect `eveningClose` as its actual "fifth send," not `eveningClose`/`ownerSend` bundled
+together as it was described previously.
 
 ---
 
@@ -373,19 +533,35 @@ did not set out to revise.**
    external-review path, same as 028, now carrying at least one new SECURITY DEFINER
    function (transactional version-write) as its own named (a)/(b) trip.
 3. `bot-flows.md`'s "Late data before 9 PM owner send" section needs its own dated
-   supersession note (this revision adds it) — the migration updates `023`'s
+   supersession note (added tonight, prior revision) — the migration updates `023`'s
    `COMMENT ON TABLE dprs` to match, fixing both the reversed decision and the
    already-stale key description in the same pass.
-4. `delivery_status`'s CHECK widened by TWO values now (`pm_notified`, `skipped_no_template`)
-   — folds into the same migration.
+4. `delivery_status`'s CHECK widened by TWO values now (`pm_notified`, `skipped_no_template`
+   — the latter now scoped to stage 1/`pm_notify` only, per this revision's DECISION).
 5. The dashboard edit surface (2b) — new Client Component, role-gated, built against
    `structured`, not `content`.
 6. A "regenerate" action wired to the existing `dpr_generate` job machinery, now versioned
    and transactional (its own RPC, not a plain `supabase-js` write).
-7. Resolve the entanglement with #69 above — both plans block on the same open question
-   (§8's content-shape decision for the owner-send), and neither plan can finish it alone.
+7. **Stage 1 only now:** resolve the entanglement with #69 (PM-notify remains
+   template-gated, still blocked on Meta approval). **Stage 2's entanglement is resolved
+   by this revision's DECISION** — the owner-send no longer depends on #69 or Meta at all.
 8. Decide who receives `pm_notified` (2b) — all PMs vs. one, and the fallback when
    `whatsapp_number IS NULL`, which under §26 also blocks that PM's own login.
+9. **NEW (this revision) — the email dependency (2g):** pick a transactional email
+   provider (Resend, per CLAUDE.md §8's own stated-but-unwired intent), verify a sending
+   domain (SPF/DKIM/DMARC), and build a delivery-status webhook so `delivered` means
+   confirmed delivery, not merely "the provider accepted the API call" — the same shape of
+   risk as #69's own B4, one layer over.
+10. **NEW (this revision) — email rendering (2h):** a second renderer off the same
+    `dprs.structured`, additive to `render.ts`, not a change to it. Plain text / HTML / PDF
+    not decided here.
+11. **NEW (this revision) — `dpr-engineer-report-spec.md` §8 needs its own edit** (channel:
+    email for the owner-send, not WhatsApp) — named as a required follow-up, not made in
+    this pass; this plan document does not edit the spec.
+12. **Recorded, not decided:** 2i's companion WhatsApp ping alongside the email — an
+    option for later, own dependency shape named, not chosen.
+13. **Recorded in the roadmap, not scope:** mobile app / PWA as the checkpoint before
+    native, per the ROADMAP NOTE above — not scheduled, nothing here commits to it.
 
 None of this is built in this pass. Branch/PR for this document only — no code, except the
 dated `bot-flows.md` supersession note (documentation, matching item 3 above).
