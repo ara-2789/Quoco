@@ -1844,6 +1844,112 @@ have emptied the only roster in prod and removed Aravind's only WhatsApp test pa
   opened) so this trigger has an owner, not just a note in a file nobody re-reads. Full
   record: `docs/reviews/028-dpr-engineer-report-review-package.md` §27.
 
+NO PRODUCTION MECHANISM STARTS A MORNING CHECK-IN — SAME CLASS AS THE ALREADY-KNOWN
+EVENING GAP, RECORDED TOGETHER FOR THE FIRST TIME (opened 2026-08-15, diagnosed
+read-only against a real silent failure — Aravind sent "yes" to the sandbox number at
+~11:55 IST, got no reply). **The evening half of this finding was discovered and reported
+earlier in this project's life (diagnosing why "hi" returned "already sent morning
+check-in" instead of opening the evening flow) but was never written down here — it lived
+only in conversation and is being recorded now, retroactively, alongside the morning half,
+because writing one without the other would understate what's actually true: NEITHER flow
+has a production starter.**
+
+Traced end to end, not assumed, for today's specific failure: `route.ts` ->
+`dispatchInboundTurn` -> `readCurrentFlow` sees no active flow -> defaults to morning ->
+`applyMorningFlowTurn({..., startFlow: false})` -> outcome `'idle'` ->
+`buildMorningReply('idle', ...)` returns `MORNING_IDLE_REPLY = ''` (morning.ts:81,
+104-105, its own comment: "idle produces no outbound message") -> `route.ts:310`:
+`reply === '' ? twimlEmpty() : twimlMessage(reply)` -> Twilio sends nothing. The message
+DID reach the system (`whatsapp_sessions.updated_at` moved to today, ~11:58 IST, matching
+the ~11:55 IST send) — it was received, processed, and correctly did nothing, because "yes"
+is not a recognized flow-starter and no flow was active.
+
+THE MECHANISM CHECK, whole-codebase, not scoped to today's one message: grepped every call
+site passing `startFlow: true` (morning) or its evening equivalent — **exactly one exists
+in the entire codebase**, `lib/whatsapp/flows/test-trigger.ts`'s `isTestStartTrigger`,
+wired into `route.ts` alone. It requires BOTH `ENABLE_TEST_FLOW_TRIGGER === 'true'` AND the
+message body being the exact literal sentinel `__quoco_start_morning__` — a token nobody
+would type in ordinary use, and Aravind did not. `vercel.json` has exactly two crons
+(`/api/jobs/tick` every minute, `/api/cron/dpr-generate` at 20:00 IST) — neither one ever
+calls either flow's RPC with `startFlow: true`. No other route, webhook branch, or job
+handler does either.
+
+**THE CONSEQUENCE, stated as plainly as the finding itself: every downstream component this
+project has built is complete and currently unreachable.** The parsers, the session state
+machine, BOT-07/BOT-21/BOT-27, the per-engineer DPR assembler and its containment-checked
+generator (migration 028, shipped and applied this week), the escalation queue schema
+(migration 027) — none of it can ever run in production today, because nothing can ask an
+engineer the first question. **The outbound-trigger workstream is not a feature on the
+roadmap; it is the precondition for the product functioning at all.** Recording this
+plainly rather than letting it stay implicit in two separate, smaller-sounding gap notes.
+
+CONFIRMED (2026-08-15, Aravind checked the Vercel dashboard directly): `ENABLE_TEST_FLOW_
+TRIGGER` does NOT exist in production's environment variable list at all — not "set to
+false," genuinely absent. **The finding above is therefore CONFIRMED, not suspected: there
+is no mechanism, of any kind, to start a check-in on production today.** DECISION,
+recorded: NOT setting the variable. The code's own comment (`test-trigger.ts`) states it
+"MUST NOT be set in production Vercel," and a marginally richer test/smoke-check
+capability is not worth overriding that deliberate posture — the fix is the real
+outbound-trigger workstream, not a debug backdoor left open.
+
+OPEN QUESTION — SHARPER NOW, STILL UNRESOLVED, INVESTIGATED READ-ONLY 2026-08-15: the
+2026-08-13 morning check-in DID demonstrably happen — `daily_logs` row `34f8bbb5...`,
+`morning_submitted_at 2026-08-13 04:30:57.055608+00` (10:00:57 IST), real content
+(`morning_plan: "Excavation of 1000 sq m earth"`, `morning_equipment` containing the
+already-documented "Job 15oo" typo, etc. — matches this file's own EQUIPMENT
+`daily_hire_cost` incident entry verbatim, confirming this is genuine historical data, not
+fabricated). With the env var confirmed absent today and exactly one `startFlow: true`
+call site in the entire codebase, this should not have been possible. Investigated, not
+guessed at:
+  * `git log --follow` on `test-trigger.ts`: ONE commit ever, `61d8b39` (2026-07-07) — the
+    file has never been modified since creation. `git show` on that commit confirms the
+    gate's shape was IDENTICAL from day one (env var + exact-token check, both required)
+    — the gate was never looser at any point in this repo's history.
+  * No audit/event table exists for "how a flow was started" — `whatsapp_sessions` carries
+    only current state (no history columns), `processed_messages` stores only
+    `message_sid` + timestamps (no body, no phone number). Neither directly names a
+    mechanism.
+  * `processed_messages` DOES show something load-bearing: five real Twilio-delivered SIDs
+    in the window `2026-08-13 04:17:43 → 04:30:56 UTC`, the last one 1 second before
+    `morning_submitted_at`. A morning flow start + 4 real answers (Q1-Q4) is exactly 5
+    messages. A DIRECT out-of-band RPC call (bypassing the webhook to set
+    `p_start_flow=true`) would write NOTHING to `processed_messages` at all — that table
+    is only ever written by the webhook's own idempotency check, never by the RPC — so a
+    bypass-plus-4-real-answers scenario would predict 4 rows, not 5. Five were found.
+  * `dispatchMorningFlow`'s pure mirror (`morning.ts`, AUTHORITY NOTE: mirrors the RPC,
+    tested against it directly) confirms outcome `'start'` is reachable from EXACTLY ONE
+    branch: `startFlow === true && session.current_flow === null`. No other path — no
+    next-day reset, no other outcome — ever produces `'start'`.
+  * Grepped `scripts/` for any utility that calls `apply_morning_flow_turn` at all: none
+    exists. No dev/seed script in this repo is capable of starting a flow, direct-RPC or
+    otherwise.
+  **Net read of the evidence, stated at its actual strength, not overclaimed:** everything
+  found is CONSISTENT WITH, and the message-count argument specifically FAVORS, "the
+  test-trigger fired via a real WhatsApp message, meaning `ENABLE_TEST_FLOW_TRIGGER` was
+  `'true'` on Vercel production on 2026-08-13 and has since been removed" — over "a direct
+  RPC bypass," which the message count argues against but cannot fully exclude (e.g. a
+  bypass call could have been followed by coincidental real traffic). **Two things remain
+  genuinely unconfirmable from here and are NOT settled:** the literal body of the first
+  SID (`SM24c6712f...`, 04:17:43 UTC) was never read — only its existence and timing are
+  known; and Vercel does not expose historical env-var values through what's accessible
+  today, only current state, so the variable's value ON 2026-08-13 specifically cannot be
+  directly verified, only inferred from this evidence. **Recorded as the leading,
+  evidence-supported candidate — not as a settled answer.**
+
+BOT-07 SILENCE IS A RULE 3.5 DEAD-END (opened 2026-08-15, same diagnosis). A real inbound
+message — one that consumed a Twilio SID and updated `whatsapp_sessions.updated_at` — 
+produces ZERO user-visible feedback when no flow is active (`MORNING_IDLE_REPLY = ''`,
+mirrored in evening.ts). An engineer who messages the bot outside a flow cannot tell
+whether the system is alive, whether their message arrived, or whether they should try
+again — indistinguishable, from the outside, from the number being dead or blocked.
+`design-principles.md`'s "never dead-end" instruction is explicit and general; this is a
+concrete, confirmed violation of it, not a hypothetical one.
+  PROPOSED FIX, named but NOT implemented here — it belongs with the outbound-trigger work
+  above, not as an isolated patch, because it touches the same flow-dispatch path that
+  work will already be changing: replace `MORNING_IDLE_REPLY`/its evening equivalent with
+  one line that says something true and useful — e.g. confirming receipt and pointing at
+  what actually starts a check-in, once something does. Do not build this now.
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
