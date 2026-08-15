@@ -1935,6 +1935,10 @@ guessed at:
   today, only current state, so the variable's value ON 2026-08-13 specifically cannot be
   directly verified, only inferred from this evidence. **Recorded as the leading,
   evidence-supported candidate — not as a settled answer.**
+  **THE CONSEQUENCE, one line, stated plainly:** if the variable was set then and is
+  confirmed absent now, the only successful production conversation this system has ever
+  had happened under a configuration that no longer exists — and nobody currently knows
+  when it changed, or why.
 
 BOT-07 SILENCE IS A RULE 3.5 DEAD-END (opened 2026-08-15, same diagnosis). A real inbound
 message — one that consumed a Twilio SID and updated `whatsapp_sessions.updated_at` — 
@@ -1949,6 +1953,76 @@ concrete, confirmed violation of it, not a hypothetical one.
   work will already be changing: replace `MORNING_IDLE_REPLY`/its evening equivalent with
   one line that says something true and useful — e.g. confirming receipt and pointing at
   what actually starts a check-in, once something does. Do not build this now.
+
+PROCESS BREACH (2026-08-15) — PR #64 MERGED WITH A RED CHECK AGAINST AN EXPLICIT HOLD,
+THE CHECK LEFT UNEXPLAINED. Stated factually, not as self-criticism: `Test (real test-db)`
+failed on PR #64's first CI run (`test/migration-024.test.ts`, `ensureMorningEngineer
+insert failed: no row returned`) under a hold instruction not to merge until that failure
+was classified. A later push to the same branch re-ran CI and came back green; the PR was
+merged on that green result WITHOUT classifying the original red one — a network timeout
+on the merge command's own HTTP response was reported in its place, which is a different
+thing from the failing check and does not explain it. Content impact: none — the PR was
+docs-only, so nothing on `main` broke. Process impact: this was the fourth test-db CI
+incident in four days and the first with a NEW signature (an insert returning no row, not
+a query timeout) — passing a red check without explaining it is exactly the failure mode
+that lets a real regression through disguised as "the familiar flake." Recorded per
+instruction so the precedent doesn't stand uncorrected.
+
+TEST-DB INCIDENT #4, CLASSIFIED (2026-08-15) — DOES NOT REPRODUCE IN ISOLATION;
+MECHANICAL CANDIDATES NARROWED, ROOT CAUSE NOT PROVEN. `test/migration-024.test.ts` run
+alone, twice, back to back, against test-db: 31/31 passed both times, no failure of any
+kind. Does not reproduce on demand — recorded plainly, per instruction, rather than
+defaulting to "contention" because the signature is different from the prior three
+incidents (all of which were 30s query timeouts; this one is a successful-looking insert
+whose client-side response carried zero rows and no error).
+  `ensureMorningEngineer` (test/helpers/db.ts): SELECT-by-`whatsapp_number` first: if
+  found, return its id (no insert attempted); otherwise INSERT the fixture row with
+  `.select('id').single()`. On failure it throws
+  ``ensureMorningEngineer insert failed: ${error?.message ?? 'no row returned'}`` — the
+  CI failure's exact text means `error` was falsy AND the insert's own RETURNING carried
+  zero rows: the insert request itself did not error, it returned successfully with
+  nothing in it.
+  CANDIDATES CHECKED AGAINST THE LIVE CATALOG, not assumed:
+  * Unique-conflict-silently-no-opping — CHECKED, DOES NOT FIT. `users_whatsapp_number_key`
+    is a real UNIQUE constraint (`pg_constraint` readback). A genuine race — two inserts
+    for the same fixture number — would throw a real 23505 unique-violation with a real
+    `error.message`, populating the FIRST half of the `??` fallback, not the second. The
+    literal failure text proves this candidate wrong, not just unlikely.
+  * A suppressing trigger — CHECKED, DOES NOT FIT. Zero non-internal triggers exist on
+    `public.users` (`pg_trigger` readback) — nothing could `RETURN NULL` a row out from
+    under the insert.
+  * An RLS/RETURNING visibility gap — the mechanically correct shape for "insert succeeds,
+    RETURNING comes back empty, no error": Postgres RLS filters what a statement's own
+    RETURNING clause can see by the acting role's SELECT policy, not just its INSERT
+    policy — a role that can write but not read the row it just wrote gets exactly this
+    symptom. `public.users` has `relrowsecurity=true`. This helper uses `testClient()`
+    (the SERVICE ROLE key), which carries `BYPASSRLS` and should never hit this — and
+    since nearly every other insert across the rest of this suite (including this same
+    file's own 31 tests, all of which use the identical service-role client) works
+    correctly, a wrong/non-service key in CI is inconsistent with the rest of the suite
+    passing. Not ruled out with certainty, but not a clean fit either.
+  * A leftover row from a prior run — CHECKED LIVE: zero rows currently exist for the
+    fixture `whatsapp_number` on test-db. This does not rule the candidate out; it's
+    consistent with a specific reconstruction worth naming precisely because it's
+    falsifiable, not because it's proven: `ensureMorningFixtures`'s cleanup
+    (`removeMorningFixtures`) only deletes the fixture user when the module-level
+    `engineerId` was successfully set — if the ORIGINAL failing insert actually wrote the
+    row server-side while the CLIENT received a truncated/empty response and threw before
+    assigning `engineerId`, the row would have been silently ORPHANED (uncleaned) after
+    that CI run, sitting in test-db until a LATER run's own `ensureMorningEngineer`
+    SELECT found and adopted it as "existing," then correctly cleaned it up in that later
+    run's own `afterAll` — which would explain both today's clean re-runs AND the current
+    absence of any leftover row, without requiring a race.
+  **Classification: UNRESOLVED, not "contention."** The evidence rules out a real unique
+  violation and a suppressing trigger with reasonable confidence (both checked against the
+  live catalog, not assumed); it's consistent with, but does not prove, a transient
+  response-truncation on the original INSERT — a CI-runner/network-level symptom this
+  project has no tracing access to confirm. This is genuinely a different failure class
+  from the prior three timeout incidents and should not be filed under the same label.
+
+`main`'s own CI (the merge commit's independent run, not the PR's pre-merge check):
+GREEN — `039c30c728eb02c30098a34c2cc6a22f1706085d`, all checks `success`. Confirmed
+directly, not assumed from the PR having merged.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
