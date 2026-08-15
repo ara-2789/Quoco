@@ -11,17 +11,17 @@ function istAsUtc(dateIso: string, hh: number, mm: number): Date {
 }
 
 describe('determineTargetStatus — morning', () => {
-  it('before 10:00 IST, not submitted -> awaited (09:00 nudge checkpoint writes nothing in this slice)', () => {
-    const now = istAsUtc('2026-08-14', 9, 0)
+  it('before 10:30 IST, not submitted -> awaited (10:00 nudge checkpoint writes nothing in this slice)', () => {
+    const now = istAsUtc('2026-08-14', 10, 0)
     expect(determineTargetStatus({ half: 'morning', now, submittedAt: null })).toBe('awaited')
   })
 
-  it('at 10:00 IST, not submitted -> escalated', () => {
-    const now = istAsUtc('2026-08-14', 10, 0)
+  it('at 10:30 IST, not submitted -> escalated', () => {
+    const now = istAsUtc('2026-08-14', 10, 30)
     expect(determineTargetStatus({ half: 'morning', now, submittedAt: null })).toBe('escalated')
   })
 
-  it('between 10:00 and 15:00 IST, not submitted -> escalated', () => {
+  it('between 10:30 and 15:00 IST, not submitted -> escalated', () => {
     const now = istAsUtc('2026-08-14', 12, 30)
     expect(determineTargetStatus({ half: 'morning', now, submittedAt: null })).toBe('escalated')
   })
@@ -47,18 +47,18 @@ describe('determineTargetStatus — morning', () => {
 })
 
 describe('determineTargetStatus — evening (Decision 3: no escalation stage)', () => {
-  it('before 20:00 IST, not submitted -> awaited', () => {
+  it('before 19:45 IST, not submitted -> awaited', () => {
     const now = istAsUtc('2026-08-14', 19, 30)
     expect(determineTargetStatus({ half: 'evening', now, submittedAt: null })).toBe('awaited')
   })
 
-  it('at/after 20:00 IST, not submitted -> not_submitted (never escalated)', () => {
-    const now = istAsUtc('2026-08-14', 20, 0)
+  it('at/after 19:45 IST, not submitted -> not_submitted (never escalated) — also the DPR-generate/evening-close moment, see cutoffs.ts', () => {
+    const now = istAsUtc('2026-08-14', 19, 45)
     expect(determineTargetStatus({ half: 'evening', now, submittedAt: null })).toBe('not_submitted')
   })
 
   it('never returns escalated, at any clock time', () => {
-    for (const [hh, mm] of [[18, 30], [19, 30], [20, 0], [23, 0]]) {
+    for (const [hh, mm] of [[18, 30], [19, 30], [19, 45], [23, 0]]) {
       const now = istAsUtc('2026-08-14', hh, mm)
       expect(determineTargetStatus({ half: 'evening', now, submittedAt: null })).not.toBe('escalated')
     }

@@ -6,7 +6,7 @@ import { istDateString, isValidCalendarDate } from '@/lib/daily-logs/date'
 // Pure unit tests for the DASH-03 per-half status logic. Covers all five rows of
 // the plan table plus the Asia/Kolkata conversion regression guard.
 
-const cutoffs = DEFAULT_CUTOFFS // morning 15:00, evening 19:30 IST (lib/daily-logs/cutoffs.ts)
+const cutoffs = DEFAULT_CUTOFFS // morning 15:00, evening 19:15 IST (lib/daily-logs/cutoffs.ts — FROZEN FOR MVP 2026-08-15)
 const blank: LogHalfInput = {
   morning_submitted_at: null,
   evening_submitted_at: null,
@@ -116,16 +116,19 @@ describe('deriveHalfStatus', () => {
 
   // --- Evening cutoff boundary (the whole-day tests above are morning-only;
   // the evening path was green only by symmetry — exercise it explicitly, N3). ---
-  it('N3 — evening, today, BEFORE 19:30 cutoff, missing → awaiting', () => {
-    // 19:00 IST 2026-07-18 = 13:30 UTC — before the 19:30 evening cutoff.
+  it('N3 — evening, today, BEFORE 19:15 cutoff, missing → awaiting', () => {
+    // 19:00 IST 2026-07-18 = 13:30 UTC — before the 19:15 evening cutoff.
+    // (Was "before 19:30"; recalibrated 2026-08-15 when eveningNudge moved to
+    // 19:15 in the MVP schedule freeze — cutoffs.ts.)
     const now = new Date('2026-07-18T13:30:00Z')
     const s = deriveHalfStatus(blank, false, 'evening', '2026-07-18', now, cutoffs)
     expect(s.state).toBe('awaiting')
     expect(s.label).toBe('Awaiting evening')
   })
 
-  it('N3 — evening, today, AFTER 19:30 cutoff, missing → gap', () => {
-    // 20:00 IST 2026-07-18 = 14:30 UTC — after the 19:30 evening cutoff.
+  it('N3 — evening, today, AFTER 19:15 cutoff, missing → gap', () => {
+    // 20:00 IST 2026-07-18 = 14:30 UTC — after the 19:15 evening cutoff.
+    // (Was "after 19:30"; recalibrated 2026-08-15, same move as above.)
     const now = new Date('2026-07-18T14:30:00Z')
     const s = deriveHalfStatus(blank, false, 'evening', '2026-07-18', now, cutoffs)
     expect(s.state).toBe('missing')
@@ -133,12 +136,14 @@ describe('deriveHalfStatus', () => {
   })
 
   it('N3 — evening cutoff does not fire early using the morning time', () => {
-    // 17:00 IST = 11:30 UTC: past MORNING 15:00 but far before EVENING 19:30.
+    // 17:00 IST = 11:30 UTC: past MORNING 15:00 but far before EVENING 19:15.
     // (Was 11:00 IST against the old 10:30 morning cutoff; recalibrated
     // 2026-08-13 so this still exercises "past morning's cutoff" — see
-    // cutoffs.ts's dated correction.) The evening half must still be
-    // "awaiting", proving each half reads its own cutoff (guards against a
-    // copy-paste that used cutoffs.morning for both).
+    // cutoffs.ts's dated correction. Evening boundary itself further
+    // recalibrated 19:30 -> 19:15 on 2026-08-15, MVP schedule freeze.) The
+    // evening half must still be "awaiting", proving each half reads its
+    // own cutoff (guards against a copy-paste that used cutoffs.morning for
+    // both).
     const now = new Date('2026-07-18T11:30:00Z')
     const s = deriveHalfStatus(blank, false, 'evening', '2026-07-18', now, cutoffs)
     expect(s.state).toBe('awaiting')

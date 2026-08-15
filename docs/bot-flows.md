@@ -22,6 +22,32 @@
 
 ## TRIGGER TIMES (fixed for Phase 1 — all IST)
 
+DATED CORRECTION (2026-08-15, MVP SCHEDULE FREEZE, Aravind's decision, final for MVP): the
+list below is superseded by `CHECKIN_CHECKPOINTS` in `lib/daily-logs/cutoffs.ts`, the
+single source of truth from this date — this doc is a reference copy of that constant, not
+the authority; if they ever disagree, `cutoffs.ts` wins and this needs updating, not the
+reverse. Current values, restated here for readability only:
+
+- 08:30 — morning trigger (was 7:30 AM)
+- 10:00 — morning nudge (was 9:00 AM)
+- 10:30 — PM escalation appears on the DASH-01 dashboard, PERSISTENT until submit or the
+  morning cutoff (was the 10:00–10:30 AM range below; now a fixed point, not a range)
+- 15:00 — MORNING CUTOFF (unchanged)
+- 18:30 — evening trigger (unchanged)
+- 19:15 — evening nudge (was 7:30 PM)
+- 19:45 — DPR generated, evening closes, PM notified — ONE MOMENT, not three
+  (was 8:00 PM DPR generation as a separate step from evening close; Rule 7.2 now closes a
+  missing evening AT REPORT TIME, not on its own independent clock)
+- 20:30 — owner send, AUTOMATIC AND UNCONDITIONAL (was 9:00 PM "owner delivery job runs").
+  If the PM does nothing between 19:45 and 20:30, the owner receives the report exactly as
+  generated — the window is an opportunity for the PM to edit, never a gate the send waits
+  on.
+- Every 60s — jobs table polled by /api/jobs/tick (unchanged)
+
+The bullet list immediately below this box is the PRE-2026-08-15 schedule, kept for the
+record of what it was before the freeze, not current — per this project's own provenance
+discipline (correct in place, don't silently rewrite). Don't build against it.
+
 DATED CORRECTION (2026-08-12): the schedule below previously showed all four
 scheduled sends — morning trigger, morning nudge, evening trigger, evening
 nudge — as unconditionally template-gated. That was never the actual

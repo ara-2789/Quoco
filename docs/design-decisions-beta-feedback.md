@@ -397,7 +397,64 @@ LOW-CONFIDENCE FLAG DOES NOT EXIST"** because it is cross-cutting — it affects
 every future consumer of parsed check-in data, not just evening. **Read the full
 entry there**; it is not restated here, so this section cannot drift from it.
 
-## 10. RESTART SEMANTICS — start triggers restart completed flows (2026-08-05)
+## 10. RESTART SEMANTICS — DECIDED 2026-08-15: refuse-when-submitted
+
+**Aravind's decision, DECIDED, not open.** Of the three candidates below (kept, not
+deleted, as the record of what was actually weighed), **refuse-when-submitted** is chosen:
+
+- **Flow in progress (`current_flow IS NOT NULL`) when a start arrives → re-ask the
+  current question.** ALREADY BUILT, in both RPCs, today: `apply_morning_flow_turn`
+  (022_evening_flow_apply_turn.sql:157-173) and `apply_evening_flow_turn`
+  (025_evening_productivity_reconciliation.sql:229-243) both return outcome `'reask'` from
+  their `IF p_start_flow THEN ... ELSE v_outcome := 'reask'` branch when `current_flow` is
+  not null. Nothing to build here.
+- **No flow, not yet submitted → start.** Already the behaviour of the `current_flow IS
+  NULL` branch inside `IF p_start_flow THEN` — unchanged.
+- **No flow, already submitted → refuse.** NOT YET BUILT. The `IF p_start_flow THEN IF
+  current_flow IS NULL THEN` branch in both RPCs currently starts unconditionally — it does
+  not check `morning_submitted`/`evening_submitted` before doing so. This is the actual gap
+  §10 originally flagged, and the piece this decision requires a future migration to add: a
+  check mirroring the one `already_complete` already makes in the non-start path, refusing
+  (outcome `already_complete`, not a fresh `start`) rather than restarting when the day's
+  submission marker is already true.
+
+**Guards at BOTH layers, not one:** the sweep (`lib/checkin-escalations/sweep.ts`) must not
+enqueue a nudge for an already-submitted engineer in the first place, AND the RPC refuses
+independently if a start arrives anyway — covers the race where submission lands at, say,
+08:58 while a nudge for that engineer is already queued for 09:00/10:00. Two independent
+checks, not one relied on to always run first.
+
+**Consequence for the build, stated as the load-bearing fact it is:** THE SEND AND THE
+NUDGE ARE THE SAME OPERATION, differing only in clock time — both are "call
+`p_start_flow=true` against this engineer's session." The identical primitive that fires
+the 08:30 send and the 10:00 nudge is also what would carry the PM notification content and
+the automatic owner send, once those are wired to real triggers rather than the env-gated
+test token. **Six scheduled events (send, nudge, escalate-surface, cutoff-close,
+send-again, nudge-again on the evening side, DPR-generate/PM-notify, owner-send), one
+underlying mechanism** — this is the shape the outbound-trigger primitive (see the
+separate, dated finding on no-production-starter) needs to be designed around, not six
+separate senders.
+
+**The refusal copy changes at the same time.** `MORNING_ALREADY_COMPLETE_REPLY` ("You've
+already sent today's morning check-in. ✅ Nothing more needed.") and its evening
+equivalent are the reply text a refused restart would now surface where today it would
+have silently restarted the flow instead — "Nothing more needed." is a Rule 3.5 dead-end
+in the same family as the BOT-07 idle-silence finding (both say "the system received your
+message and has nothing useful to tell you about it"). Named here as copy that needs
+revisiting alongside the actual refuse-when-submitted implementation; not rewritten in
+this pass — the RPC-level change hasn't shipped yet for this copy to attach to.
+
+**Not implemented in this pass.** This section records the DECISION. The RPC-level change
+(adding the submitted-check to the start branch in both migrations) is schema/live-function
+logic — it goes through a new migration and the same external-review path 028 went
+through, not a same-night doc-and-code edit.
+
+---
+
+*Original entry, 2026-08-05, kept below for the record of how the decision was reached —
+not restated as still-open.*
+
+### 10. RESTART SEMANTICS — start triggers restart completed flows (2026-08-05)
 
 **DECIDE-BEFORE-CRON-PR.** Surfaced during migration 022's third reviewer round
 (the CONTEXT DISCIPLINE fix — `apply_morning_flow_turn`'s start branch stopped
@@ -1442,3 +1499,42 @@ inbound (a skipped day, weekend, sick day) closes the window, and the next
 scheduled nudge would need either a template or the engineer to
 self-initiate. Full analysis in the conversation this decision came from,
 not restated here — see also CLAUDE.md's WhatsApp-flow entries.
+
+## 26. AUTH DECISIONS — recorded as a SEPARATE workstream, NOT planned or built here (2026-08-15)
+
+**Recorded only. No plan, no scoping, no code from this entry.** Aravind's decisions,
+captured so they exist on the record before the workstream itself starts:
+
+- **First user creation → magic link (unchanged, existing behaviour). Every login after
+  the first → OTP delivered over WhatsApp**, not magic link, not password.
+- **Session expiry: 7 days, SLIDING** — inactivity-based (each real request resets the
+  7-day window forward), not a fixed ceiling from login time.
+- **Trips CLAUDE.md §0 condition (c)** ("touches auth or identity") on its own terms,
+  unambiguously — **this workstream goes to external review from the PLAN stage**, not
+  just before apply. Named explicitly so nobody has to re-derive it from the gate's general
+  wording when this work actually starts.
+- **WhatsApp OTP needs its own Meta template category: Authentication.** Distinct approval
+  track from the Utility-category check-in templates already in flight — purely functional
+  wording required, a mandatory validity-period line, and the variable slot MUST be the
+  bare numeric code (no surrounding sentence fragment in that slot). Priced at
+  **~₹0.115 per delivered message in India, roughly half the equivalent SMS OTP cost.**
+- **⚠ Authentication-category templates are billed on EVERY delivery, including inside an
+  already-open 24-hour session window — unlike every other template category.** The
+  "in-window sends are free" reasoning this project's check-in design leans on (§25 above)
+  does NOT carry over to OTP sends. Every login OTP is a real, metered cost, full stop.
+- **⚠ WhatsApp-only auth is a single point of lockout.** This codebase already has a named
+  `messaging_blocked` state precisely because WhatsApp delivery fails for some users
+  (opt-outs, carrier issues, number changes) — under WhatsApp-only OTP, a user in that
+  state could not receive a login code to fix their own account. **Recorded as an
+  accepted, dated MVP risk, not a blocker and not silently ignored** — SMS fallback is
+  named as the eventual closer, not built now.
+- **Shares the Meta template-approval dependency already on the critical path** for the
+  check-in flows (§25's own finding: the certificate/company-registration timeline, not
+  the template review itself, is the long pole) — Authentication-category approval is a
+  SEPARATE submission from the Utility-category check-in templates, so this cannot go live
+  ahead of its own approval landing, independent of whatever happens with the check-in
+  templates' timeline.
+
+**Why recorded here and not scoped further:** per direct instruction, this is capture
+only. The workstream's own plan — when it starts — inherits condition (c)'s external-review
+requirement from its first draft, not as a gate discovered partway through.
