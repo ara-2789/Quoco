@@ -2031,6 +2031,19 @@ whose client-side response carried zero rows and no error).
 GREEN — `039c30c728eb02c30098a34c2cc6a22f1706085d`, all checks `success`. Confirmed
 directly, not assumed from the PR having merged.
 
+RECORDED, NOT FIXED (2026-08-15, MVP schedule freeze pass) — TWO SMALL FINDINGS, BOTH
+DELIBERATELY LEFT ALONE:
+  1. `whatsapp_sessions.expires_at` is written by every RPC generation
+     (`p_now + INTERVAL '30 minutes'` — 012, 013, 014, 018, 022, 024, 025, all identical)
+     and read by NOTHING repo-wide (grepped `lib/`, `app/` for any consumer — zero). No
+     cleanup job exists that would act on it either. Sessions do not actually expire after
+     30 minutes — the only real reset is BOT-07's next-IST-day wipe
+     (`quoco_same_ist_day`). This column is a schema that lies about what it does. Two
+     options, neither chosen here: read it for real, or drop it.
+  2. `lib/whatsapp/dispatch.ts:8-14` cites "design-decisions §11" for the restart-start
+     note. The restart note is §10, not §11 — a stale/wrong cross-reference, not fixed in
+     this pass (recorded per direct instruction).
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.

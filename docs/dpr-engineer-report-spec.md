@@ -104,10 +104,60 @@ not met, not reported.
 
 `"not reported"` replaces `"not captured"` — plainer, and more accurate: nobody reported it.
 
-### 4. Length does not grow with the day
+### 4. Completeness beats brevity — REVISED 2026-08-15
 
-The body is four lines whatever happened. Detail moves to NEEDS ATTENTION, which lists
-exceptions only. A clean day says so in one line (Rule 4.1).
+**Superseded:** the original rule read *"the body is four lines whatever happened."* That
+was wrong in one direction: it optimised for terseness at the cost of information.
+
+**The rule now: the report must give a clear idea of the project on that day. It is never
+padded and never truncated.** Length follows what the day actually contained.
+
+Concretely: the four pair lines are the *spine*, not a cap. Where a dimension genuinely
+holds more — three activities reported with separate quantities, several pieces of plant
+with different hours — it expands into as many rows as there are real things. What it must
+never do is grow through repetition, restatement, or prose that adds no fact.
+
+NEEDS ATTENTION carries every exception, not a selected few. A clean day still says so in
+one line (Rule 4.1) — because on a clean day there genuinely is nothing more to say.
+
+### 4b. The PM EDITS section — appears only when something was edited
+
+Between generation (sent to the PM) and the owner send thirty minutes later, the PM may
+correct values and add comments, then regenerate. That regenerated version is what the
+owner receives.
+
+**The section exists only if there was an edit.** On a day nobody intervened it is absent,
+so its presence is itself the signal that a human changed something — no separate "this
+report was edited" banner is needed.
+
+It enumerates each change and carries the PM's comment on that specific change:
+
+```
+PM EDITS — Ravi Kumar, 20:14
+
+Manpower — was: 18 on site, 15 working | now: 22 on site, 19 working
+  "Two extra masons joined after lunch. Engineer submitted before they arrived."
+
+Work done — was: 780 sq m | now: 850 sq m
+  "Re-measured on site. 850 is the certified figure."
+```
+
+Rules for it:
+
+- **Every changed dimension is named**, with its before and after value. Announcing that an
+  edit happened without saying where is weaker than the guarantee the pair lines already
+  make on their own.
+- **Attributed by name and time.** This is the first human-authored prose in a document
+  that is otherwise code-owned Facts plus one model sentence; an owner must be able to tell
+  at a glance which words a person wrote.
+- **The body still shows the corrected values** — the pair lines are not annotated inline.
+  The record of what changed lives in one place.
+- The PM edits the underlying **data**, never the report text. Every number is a
+  code-owned Fact; editing the document directly would break traceability.
+
+**Open:** whether a PM may add a comment with no accompanying edit (e.g. "heavy rain
+expected tomorrow"). The current rule — section only on edit — has no place to put one.
+Not yet decided.
 
 ### 5. MISSING and NEEDS ATTENTION are different things
 
@@ -137,41 +187,18 @@ exists) must not count against completeness.
 `not applicable` is evaluated **per half, independently**. Real data always wins: if a half
 has any answer, it is never not-applicable regardless of timing. It applies when the
 engineer's `project_members` membership began **after that half's SEND time** on
-`log_date` — 07:30 for morning, 18:30 for evening.
+`log_date`.
 
 **The threshold is the send time, not the cutoff.** The question being asked is "was this
-person on the roster when the question went out." An engineer who joins at 11:00 never
-received the morning question; testing against the 15:00 morning cutoff would wrongly
-class them as owing it. Take both constants from `CHECKIN_CHECKPOINTS` in
-`lib/daily-logs/cutoffs.ts` — never hardcode, and note the morning cutoff there was stale
-at 10:30 until PR #59.
+person on the roster when the question went out." An engineer who joins after the morning
+send never received the morning question; testing against the morning cutoff instead would
+wrongly class them as owing it.
 
-**CONDITIONAL ON THE TRIGGER CRONS SHIPPING — not presently mechanical (added
-2026-08-14, review finding).** "Send time" describes a proactive push that does not exist
-yet: no cron or trigger sends the morning or evening prompt today (CLAUDE.md §10 — the
-evening flow specifically, and by the same absence the morning flow, has no code path
-that starts it in production; an engineer self-initiates by messaging in). Under this
-pull model, a membership beginning at 11:00 does **not** mean the engineer could not have
-checked in before the actual close boundary (15:00 morning / 20:00 evening) — they could
-have messaged in themselves. The rule above is still correct on Rule 5.3 grounds (never
-let an explained absence read as unexplained) and should ship as written, but it is
-recording an intent for when the send crons exist, not describing today's actual
-mechanism. Whoever builds those crons should re-examine whether `not_applicable`'s
-threshold should move from send-time to close-time once the push model is real.
-
-**Two mechanics, pinned so they aren't rediscovered as bugs:**
-- The `project_members.created_at` vs. `CHECKIN_CHECKPOINTS.morningSend`/`.eveningSend`
-  comparison **must convert to IST before comparing**, the same conversion every other
-  cutoff/send-time comparison in this codebase already does (`lib/daily-logs/status.ts`'s
-  `istParts`). `created_at` is stored as `TIMESTAMPTZ` (UTC internally); comparing its raw
-  UTC clock value against an IST wall-clock string is wrong for every join between 02:00
-  and 07:30 UTC (07:30–13:00 IST) — it would misclassify a chunk of ordinary daytime joins.
-- A membership that is removed and later re-added gets a **fresh `created_at`** on the new
-  `project_members` row — there is no history table, so an engineer's earlier, prior
-  membership window is not recoverable. **Policy: use the current row's `created_at`.** A
-  returning engineer's earlier window is treated as if it never happened for this purpose
-  — a known, named limitation, not a silent gap, and not fixable without new
-  infrastructure this work does not build.
+**Take every checkpoint from `CHECKIN_CHECKPOINTS` in `lib/daily-logs/cutoffs.ts`. Never
+hardcode a time in this spec or anywhere else** — that constant is the single source, and
+the times behind it have already changed twice (the morning cutoff was stale at 10:30 until
+PR #59; the morning send and nudge moved on 2026-08-15). Any literal written here goes
+stale the next time they move.
 
 A `not applicable` half does not count toward MISSING and does not lower completeness. It
 renders in plain language with its reason:
@@ -179,25 +206,6 @@ renders in plain language with its reason:
 ```
 Morning check-in: not applicable — joined this project today
 ```
-
-**Symmetric case, added 2026-08-14 (review round 3, reviewer's own finding): an engineer
-who submitted real data earlier in the day and then left the project (deactivated, or
-removed from `project_members`) before a later half's send time is `not_applicable` for
-that later half too — not `not_received`.** Detected from the same eligible-set union
-already required elsewhere in this design (active roster ∪ engineers with a `daily_logs`
-row for `log_date`, per Rule 7's own real-data-wins principle): an engineer present in the
-union by virtue of real data, but absent from the active-roster half of it, has left. No
-new field or timestamp needed — this falls out of the union check already being done.
-Reuses the existing status value and mechanism, a different reason string only:
-
-```
-Evening check-in: not applicable — left this project during the day
-```
-
-Rendering a departed engineer's un-owed half as `not received` would be Rule-5.3 shading
-— language aimed at someone no longer there to have owed it. `not applicable` already
-exists for exactly this shape (a half genuinely not owed); this is its mirror case
-(membership ending early), not a new concept.
 
 A day where both halves are not-applicable skips the model call entirely, exactly as a
 holiday day does. A half-and-half day still calls the model, because one side has real

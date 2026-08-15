@@ -19,22 +19,39 @@
 // own header comment warned against; corrected here, before the
 // checkin_escalations sweep (the "future cutoff cron" this file anticipated)
 // is built against it.
+//
+// FROZEN FOR MVP (2026-08-15, Aravind's decision, final). The full schedule
+// below — not individually revisited per-checkpoint from here on; treat this
+// object as the single point of change if it ever does move again. Two
+// checkpoints that were previously independent are now the SAME MOMENT:
+// `eveningClose` is both "an unsubmitted evening half closes as
+// not_submitted" AND "DPR generation runs, evening closes, PM is notified" —
+// Rule 7.2 closes a missing evening AT REPORT TIME, not on its own separate
+// clock. There is no distinct "dprGenerate" checkpoint; `eveningClose` IS it.
+// `ownerSend` is new — the automatic, unconditional 20:30 owner send
+// (docs/dpr-engineer-report-spec.md's two-stage delivery design). vercel.json's
+// `dpr-generate` cron schedule and its new owner-send cron are the literal
+// clock encodings of `eveningClose`/`ownerSend` respectively — kept in sync by
+// hand (cron syntax can't import a TS constant); if this object changes again,
+// vercel.json must change with it in the same commit.
 
 export const CHECKIN_CHECKPOINTS = {
   /** IST "HH:MM" — morning check-in trigger send (not yet automated; no cron exists). */
-  morningSend: '07:30',
+  morningSend: '08:30',
   /** IST "HH:MM" — morning nudge, if still unsubmitted. */
-  morningNudge: '09:00',
-  /** IST "HH:MM" — PM escalation surfaces on the DASH-01 dashboard (never a WhatsApp send). */
-  morningEscalate: '10:00',
+  morningNudge: '10:00',
+  /** IST "HH:MM" — PM escalation surfaces on the DASH-01 dashboard (never a WhatsApp send); persistent until submit or morningCutoff. */
+  morningEscalate: '10:30',
   /** IST "HH:MM" — morning cutoff: closes an unsubmitted half as not_submitted, no further nudging. */
   morningCutoff: '15:00',
   /** IST "HH:MM" — evening check-in trigger send (not yet automated; no cron exists). */
   eveningSend: '18:30',
   /** IST "HH:MM" — evening nudge, if still unsubmitted. Also DASH-03's evening "past cutoff" boundary. */
-  eveningNudge: '19:30',
-  /** IST "HH:MM" — evening close: closes an unsubmitted half as not_submitted, ahead of 20:00 DPR generation. */
-  eveningClose: '20:00',
+  eveningNudge: '19:15',
+  /** IST "HH:MM" — evening close AND DPR generation AND PM notification, all one moment (see FROZEN FOR MVP note above) — closes an unsubmitted evening half as not_submitted at the same instant the report is generated and the PM is told to look at it. */
+  eveningClose: '19:45',
+  /** IST "HH:MM" — automatic, unconditional owner send. Never gated on a PM action — the PM's edit window (eveningClose -> ownerSend) is an opportunity, never a gate. */
+  ownerSend: '20:30',
 } as const
 
 export type CutoffConfig = {
@@ -48,11 +65,12 @@ export type CutoffConfig = {
 // (morningCutoff) rather than an earlier, separate customer-TBD guess — the
 // board and the sweep agree on when a morning half becomes a genuine gap.
 // evening equals the nudge checkpoint, NOT eveningClose: DASH-03 has shown a
-// missing evening half as a gap at 19:30 since it was built, and that predates
-// (and is conceptually distinct from) the sweep's own 20:00 close boundary
-// added here — the board flags risk when the nudge fires; the sweep waits a
-// further 30 minutes before finalizing the row, per Rule 7.2's escalation
-// path. Not collapsed into one value; kept as the two constants they are.
+// missing evening half as a gap at the nudge checkpoint since it was built,
+// and that predates (and is conceptually distinct from) the sweep's own close
+// boundary added here — the board flags risk when the nudge fires (19:15);
+// the sweep waits a further 30 minutes before finalizing the row, at the same
+// moment DPR generation runs (19:45), per Rule 7.2's escalation path. Not
+// collapsed into one value; kept as the two constants they are.
 export const DEFAULT_CUTOFFS: CutoffConfig = {
   morning: CHECKIN_CHECKPOINTS.morningCutoff,
   evening: CHECKIN_CHECKPOINTS.eveningNudge,

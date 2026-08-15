@@ -37,8 +37,8 @@ export interface DprGenerateJobPayload {
 // PRE-028 PAYLOAD SHAPE GUARD (Aravind's round-4 item 2) — fails loudly,
 // not silently. Guards specifically against B3's producer-side failure
 // mode (docs/reviews/028-dpr-engineer-report-review-package.md §10): if
-// the migration/deploy sequencing ever slips and the 20:00 cron enqueues
-// an OLD-shape payload (no engineer_id) against the NEW deployed
+// the migration/deploy sequencing ever slips and the dpr-generate cron
+// enqueues an OLD-shape payload (no engineer_id) against the NEW deployed
 // dispatch.ts, that job must fail visibly — a thrown, Sentry-captured
 // error — rather than being silently coerced (e.g. treated as
 // engineer_id=undefined and let the upsert throw a much less legible
@@ -48,7 +48,7 @@ function assertPostMigrationPayload(payload: DprGenerateJobPayload): void {
     throw new Error(
       `dpr_generate payload missing engineer_id — pre-028 payload shape. project_id=${payload.project_id}, log_date=${payload.log_date}. ` +
         'This job was enqueued by code that predates migration 028 (the engineer_id column/key widening) — ' +
-        'the 20:00 cron trigger and this dispatch handler must be on the same deployed version.',
+        'the dpr-generate cron trigger and this dispatch handler must be on the same deployed version.',
     )
   }
 }
