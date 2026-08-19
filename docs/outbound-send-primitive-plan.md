@@ -77,9 +77,21 @@ header cited as corroboration; B-c's monotonic-ranks rationale.
 
 | Label | Round of origin | Status this round | What changed |
 |---|---|---|---|
-| C1 (A4's two sites, unnamed) | Round 4 (external review) | **Fixed.** Named by file:line, not just section: `docs/outbound-send-primitive-plan.md:501` (§3c's Sentry-alert day-key) and `docs/outbound-send-primitive-plan.md:527` (§3d's `event_key` date) — line numbers as of this revision's own commit, both re-checkable directly. |
+| C1 (A4's two sites, unnamed) | Round 4 (external review) | **Fixed.** Named by file:line, not just section: `docs/outbound-send-primitive-plan.md:513` (§3c's Sentry-alert day-key) and `docs/outbound-send-primitive-plan.md:539` (§3d's `event_key` date) — line numbers as of this revision's own commit, both re-checkable directly. |
 | C2 (unreachability derivation underspecified) | Round 4 (external review) | **Specified.** All four required parts, in a new subsection under B2 (round 1), §3e: threshold (3 consecutive), window (7-day bound), clearing signal (a successful send in the same ledger — deliberately NOT an inbound reply, to keep this separate from `messaging_blocked`'s own clearing signal), and read sites (enumerated, one shared helper, not reimplemented per site). |
 | C3 (does escalation advance for an unreachable engineer) | Round 4 (external review, product question) | **Decided: YES, with the alert text changed.** Adopted the reviewer's own inclination — escalation stays time-based and non-skippable (7.2), but the PM-facing text reads "engineer unreachable since `<time>`," not "has not responded," because the two states call for different PM actions. Justified against both named design principles, not just adopted by default. |
+
+**REVISION 6 (2026-08-19, round 5 external review — "two smaller checks, then both go to
+the reviewer") — diff against `3e38dfc`. Per direct instruction, this is intended to be the
+last plan revision before the review package.**
+
+**Accepted without further work this round (per direct instruction):** C2's full
+specification and shared-helper design; C3 adopted as-is.
+
+| Label | Round of origin | Status this round | What changed |
+|---|---|---|---|
+| R4 (C1's summary citation missing a filename) | Round 5 (external review) | **Fixed.** The revision-header row (above) always carried both full `file:line` citations — the defect was in the Summary section's own restatement, which abbreviated the second to bare `:527`. Both now independently carry the full filename there too. |
+| R5 (low-volume recipient sanity check on C2's threshold/window) | Round 5 (external review) | **Checked, answered: engineers only.** Re-verified both C2 read sites (DASH-03, escalation alert-text) are engineer-scoped, not called for PM-notify despite sharing the same ledger table. Checked one edge deeper: the threshold/window combination doesn't silently break for ANY checkpoint in this primitive's scope, including PM-notify's lower volume, because every checkpoint fires at least once daily — the aging-out failure mode only bites a recipient class with fewer than 3 opportunities across 7 days, and none exists here. |
 
 ---
 
@@ -728,6 +740,25 @@ B2 (round 1) just finished fixing for `messaging_blocked` — reintroducing it h
 DIFFERENT status this same section just designed, would undo the lesson in the same
 document that names it.
 
+**R5 (round 5 external review) — low-volume-recipient sanity check on threshold+window,
+answered: engineers only, and checked one edge deeper than that.** Both read sites above
+(DASH-03, escalation alert-text) are specifically engineer check-in surfaces — re-checked
+against their own definitions, not assumed: DASH-03 is the daily-logs PM triage board
+(engineer status per day), and the escalation alert-text is `checkin_escalations`'
+own PM-facing copy for engineer nudge/escalate. **Nothing in this plan calls
+`computeUnreachable` for a PM**, even though `eveningClose`'s PM-notify writes to the SAME
+underlying outbound-send ledger table (3a) — the derived read is simply never invoked
+against a PM recipient anywhere this plan specifies. One edge checked further, not just
+asserted: even if a future PM-facing surface ever DID call this helper, the threshold/
+window combination would not silently break for PM-notify's own lower volume (1 send/day
+vs. an engineer's ~4/day across the four checkpoints) — 3 CONSECUTIVE failures needs only 3
+of the 7 daily opportunities a 7-day window provides for ANY checkpoint that fires at least
+once per day, so the aging-out failure mode (the earliest failure expiring before a third
+arrives) only bites a recipient class with FEWER than 3 send-opportunities across 7 days.
+No checkpoint in this primitive's scope — engineer or PM — fires less often than daily, so
+that edge does not exist for anything currently in scope, named as-checked rather than
+assumed safe.
+
 ### C3 — does escalation advance for an unreachable engineer? DECIDED: yes, with the alert text changed
 
 **Product question, both answers defensible, decided rather than left open, per direct
@@ -1065,8 +1096,12 @@ approval).
     `unreachable` read is true, so the alert keeps carrying a real action (4.2) even though
     that action is no longer "wait for a reply."
 11. **NAMED this revision (C1):** A4's two IST/UTC fixes are cited by exact file:line in
-    the revision header, above, not just by section — `docs/outbound-send-primitive-
-    plan.md:501` and `:527` as of this revision's own commit.
+    the revision header, above, not just by section —
+    `docs/outbound-send-primitive-plan.md:513` and
+    `docs/outbound-send-primitive-plan.md:539` as of this revision's own commit. **R4
+    FIXED (round 5 external review): this line previously abbreviated the
+    second citation to bare `:527`, no filename — the exact defect flagged.** Both now
+    carry the full filename independently, not implied from the first.
 
 Nothing built in this pass. Branch/PR for this document only — the one exception is the
 dated, doc-only BOT-21 supersession note in `bot-flows.md` (B3 condition 3, above), same
