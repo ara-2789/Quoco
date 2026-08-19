@@ -69,6 +69,31 @@ link is `projects.owner_user_id` (`016_corrections.sql:88-89`), a plain FK. This
 A1 provisioning steps and B2's precedent-check both now reflect the correct mechanism; the
 prior round's inaccurate framing is not restated.
 
+**REVISION 6 (2026-08-19, round 5 external review — "three residuals, then both go to the
+reviewer") — diff against `5482173`. Per direct instruction, this is intended to be the
+last plan revision before the review package — the next artifact after clearance should be
+a migration, not another plan diff.**
+
+**Accepted without further work this round (per direct instruction):** Part A's
+`owner_user_id`/`project_members` correction being flagged as my own error rather than
+silently fixed; the uniqueness reasoning; the `whatsapp_number` precedent check; format
+validation named as weak against the real risk; `skipped_unverified` confirmed as a gated
+schema change.
+
+| Label | Round of origin | Status this round | What changed |
+|---|---|---|---|
+| R1 (Sentry is beta-only) | Round 5 (external review) | **Fixed.** §2g item 5 now states explicitly that Sentry-surfacing is correct only while operator and developer are the same person, and names a customer-facing operator surface as a required dependency before those roles separate — not designed here. |
+| R2 (name N) | Round 5 (external review) | **Fixed.** N = 3, measured in consecutive nights (days of owner silence), not an abstract count — reasoned against the expected first-night skip every seeded owner has. |
+| R3 (what fires the confirmation send) | Round 5 (external review) | **Fixed.** New §2j subsection: operator-triggered (option i), chosen for consistency with Part A's manual-beta decision over a DB-trigger-to-email-service design (option ii, rejected with reasons). Runbook location stated: A1's own three numbered steps, no separate doc. |
+
+**Self-found and fixed while addressing R3, not asked for:** the `## ROADMAP NOTE` section
+header was accidentally deleted during round 4's §2j rewrite (confirmed via `git show
+6c8a3cd` — already missing at that pin, so this session's own round-4 edit caused it, not
+an earlier round). The section's content survived; only the heading introducing it and the
+Summary's own back-reference to it were left dangling. Restored in place, flagged inline
+where it was restored, per this document's own provenance discipline — not silently
+patched.
+
 ---
 
 ## DECISION (2026-08-15): the owner receives the DPR by email, not WhatsApp
@@ -522,11 +547,29 @@ what finally makes that line load-bearing.
    `skipped_unverified` every night, indefinitely, and — unlike item 4 — this one doesn't
    even reach the "provider accepted it" stage, so there's no `delivered`/`bounced`/
    `complained` webhook event to ever fire in the first place. **Surfaced via a Sentry
-   alert after N consecutive `skipped_unverified` nights for the same recipient** (full
-   reasoning in 2j, B4) — chosen over relying on a PM noticing a dashboard cell, since no
-   owner has ever used this product (2j, A4) and provisioning is operator-driven for beta
-   (2j, A1-A3), making an alert to that same operator the realistic path to anyone noticing
-   at all.
+   alert after 3 consecutive `skipped_unverified` nights for the same recipient — N NAMED
+   (round 5 external review, R2), not left abstract.** Measured in DAYS the owner has
+   silently received nothing, not as a generic retry count, per direct instruction: the
+   natural cadence here is exactly one skip opportunity per night (one `ownerSend` run),
+   so "3 consecutive skips" and "3 consecutive nights of silence" are the same number by
+   construction. **Why 3, stated as a reason, not picked arbitrarily:** the FIRST night
+   after seeding is EXPECTED to be `skipped_unverified` for every single owner — the
+   recipient hasn't had time to open their inbox and click yet — so a 1-night threshold
+   would fire routinely on every normal seeding, not just real problems, and be ignored the
+   way any alert that fires on the expected case gets ignored. 3 consecutive nights is long
+   enough to rule out "just seeded, hasn't checked email yet" as the explanation, and short
+   enough that a real problem (bad address, provider outage) surfaces within the same week
+   it started, not after a month of silent non-delivery.
+   **R1 (round 5 external review) — this surfacing is BETA-SCOPED, stated explicitly, not
+   left to be discovered as a defect later.** A Sentry alert reaching the operator is
+   correct ONLY because, for beta, the operator (who seeds owner rows, 2j/A1) and the
+   developer (who reads Sentry) are the same person. It stops being correct the moment
+   those roles separate — the party who needs to know a specific customer's owner has gone
+   silent is whoever holds that customer relationship, and that party does not read Sentry.
+   **A customer-facing operator surface (a dashboard view, a scheduled digest, something a
+   non-engineer can act on) is REQUIRED before operator and developer roles separate** —
+   named as a dependency this plan does not design or schedule, per direct instruction, not
+   a defect in the beta-scoped choice above.
 
 **Not choosing a provider or building anything here** — recording the dependency and what
 verifying the domain involves, per direct instruction.
@@ -750,18 +793,73 @@ every other `delivery_status` value already on this column.
 ### B4 — the mirror of §2g's fourth item: silent non-delivery when the owner never confirms
 
 **Same class of failure as wrong-recipient (§2g item 4), named as its mirror, not a
-separate finding — full detail lives in §2g's own item 5, not restated twice here.** If an
-owner never clicks the confirmation link, `skipped_unverified` is written EVERY NIGHT,
-indefinitely — invisible to every monitoring signal that isn't specifically watching for
-it. Surfaced via a Sentry alert after N consecutive `skipped_unverified` nights for the
-same recipient, chosen over a PM-dashboard-only surface because A4 (above) establishes no
-owner has ever used this product and provisioning is operator-driven (A1-A3) — an alert
-reaching that same operator is the realistic path to anyone noticing.
+separate finding — full detail, including N=3 (R2) and the beta-only scoping of this
+surfacing (R1), lives in §2g's own item 5, not restated twice here.** If an owner never
+clicks the confirmation link, `skipped_unverified` is written EVERY NIGHT, indefinitely —
+invisible to every monitoring signal that isn't specifically watching for it. Surfaced via
+a Sentry alert after 3 consecutive `skipped_unverified` nights, chosen over a
+PM-dashboard-only surface because A4 (above) establishes no owner has ever used this
+product and provisioning is operator-driven (A1-A3) — an alert reaching that same operator
+is the realistic path to anyone noticing, **for beta only**: §2g item 5 names the
+customer-facing surface this needs the moment operator and developer are different people.
 
 **Not decided here, named as required follow-ups (same discipline as 2g/2h's own
-dependencies):** the exact confirmation-email copy/flow, whether a PM (or operator) can
-re-trigger verification after editing the address, and the exact N for the alert
-threshold.
+dependencies):** the exact confirmation-email copy/flow, and whether a PM (or operator) can
+re-trigger verification after editing the address. **R3 (round 5 external review) answers
+what fires the confirmation send in the first place** — new subsection below, not left
+open any longer.
+
+### R3 — what fires the confirmation email for a seeded address
+
+**Gap, found by round 5 external review: 2j/A1 says the operator inserts the `users` row
+and sets `notification_email`, and B3/2j says `notification_email_verified_at` is set only
+by the recipient clicking through — but nothing said what SENDS the confirmation email for
+a row created out-of-band.** Two shapes weighed, one chosen:
+
+**(i) Operator-triggered — CHOSEN.** After A1's steps 1-2 (the `users` INSERT and the
+`projects.owner_user_id` UPDATE), the operator explicitly fires the confirmation send as
+its own, third step — already named in A1 as "trigger the confirmation send... a small
+operator script." This revision makes explicit what was implicit: firing that script IS
+the mechanism, not a placeholder for one. **Cost, named honestly rather than glossed over:**
+this is a manual step whose omission is invisible at the moment it's skipped — the address
+sits unverified, the nightly send quietly writes `skipped_unverified`, and the only signal
+is §2g item 5's alert, 3 nights later (R2). Accepted anyway, for one reason: **consistency
+with Part A's own decision.** Beta provisioning is deliberately manual end-to-end (A1-A3) —
+introducing automation for JUST this one step, while every other step in the same sequence
+stays a manual operator action, would be an inconsistent, partial fix that still requires
+the operator to correctly execute two of three steps by hand.
+
+**(ii) Automatic on INSERT/UPDATE of `notification_email` — REJECTED, reasoned, not just
+dismissed.** This would need something to observe the column change and react — concretely,
+a Postgres trigger that reaches an external email service (Resend, 2g) directly from the
+database. **Stated explicitly because it's a materially different, and materially riskier,
+gating question than (i):** this codebase has never made an outbound HTTP call from inside
+Postgres (it would need `pg_net` or equivalent, a dependency this project doesn't use
+anywhere today), and CLAUDE.md's own OUT-OF-BAND DB OBJECTS registry already tracks the
+cost of DB-side mechanisms that live outside the normal migration-reviewed path — adding a
+trigger that calls out to a third-party API is a new category of risk this project has
+specifically been careful about, not a smaller version of (i)'s manual-step risk. Rejected
+primarily because it contradicts Part A's own decision to keep beta manual, not because
+it's unbuildable.
+
+**Where the runbook lives: A1 itself, no separate document.** A1's own three numbered steps
+(§2j, above) ARE the runbook — insert the `users` row, set `owner_user_id`, fire the
+confirmation script, in that order. Not duplicated into a second procedure doc that could
+drift from A1's own text. **One mitigation named, not built here:** the (not-yet-built)
+confirmation-send script's own header comment should restate all three steps, not just its
+own, so running the script in isolation still reminds the operator of the two DB steps that
+precede it — cheap insurance against exactly the omission risk (i) accepts.
+
+---
+
+## ROADMAP NOTE (not scope, not scheduled) — mobile app, PWA as the checkpoint
+
+**BUG FOUND AND FIXED (round 5, self-caught while addressing R3, not asked for): this
+section header was accidentally deleted during round 4's §2j rewrite — the content below
+survived, the heading introducing it did not, and the Summary's own "per the ROADMAP NOTE
+above" reference (item 13) has been pointing at a header that didn't exist since 6c8a3cd.
+Restored here, not silently — flagged the same way this document flags every other
+self-found defect.**
 
 **Recorded in the roadmap notes, explicitly NOT as scope for this or any current
 workstream, per direct instruction.** This decision's own reasoning — owners read a
