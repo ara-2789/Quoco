@@ -63,7 +63,7 @@ that read as if B2 was closed. It was not. Fixed here by never letting one label
 things again: **B2 (round 1)** and **B2 (round 2)** are now permanently distinct labels,
 and the round-1 finding is fixed in substance below (§3e), not merely relabeled.
 
-**REVISION 5 (2026-08-19, round 4 external review — both plans "moved substantially,
+**REVISION 5 (2026-08-19, round 4 design review — both plans "moved substantially,
 neither ready to send back" — resubmit as a diff against this pin) — diff against
 `46f823f`. Still nothing implemented; still one round short of the review package.**
 
@@ -77,11 +77,11 @@ header cited as corroboration; B-c's monotonic-ranks rationale.
 
 | Label | Round of origin | Status this round | What changed |
 |---|---|---|---|
-| C1 (A4's two sites, unnamed) | Round 4 (external review) | **Fixed.** Named by file:line, not just section: `docs/outbound-send-primitive-plan.md:513` (§3c's Sentry-alert day-key) and `docs/outbound-send-primitive-plan.md:539` (§3d's `event_key` date) — line numbers as of this revision's own commit, both re-checkable directly. |
-| C2 (unreachability derivation underspecified) | Round 4 (external review) | **Specified.** All four required parts, in a new subsection under B2 (round 1), §3e: threshold (3 consecutive), window (7-day bound), clearing signal (a successful send in the same ledger — deliberately NOT an inbound reply, to keep this separate from `messaging_blocked`'s own clearing signal), and read sites (enumerated, one shared helper, not reimplemented per site). |
-| C3 (does escalation advance for an unreachable engineer) | Round 4 (external review, product question) | **Decided: YES, with the alert text changed.** Adopted the reviewer's own inclination — escalation stays time-based and non-skippable (7.2), but the PM-facing text reads "engineer unreachable since `<time>`," not "has not responded," because the two states call for different PM actions. Justified against both named design principles, not just adopted by default. |
+| C1 (A4's two sites, unnamed) | Round 4 (design review) | **Fixed.** Named by file:line, not just section: `docs/outbound-send-primitive-plan.md:539` (§3c's Sentry-alert day-key) and `docs/outbound-send-primitive-plan.md:565` (§3d's `event_key` date) — line numbers as of this revision's own commit, both re-checkable directly. |
+| C2 (unreachability derivation underspecified) | Round 4 (design review) | **Specified.** All four required parts, in a new subsection under B2 (round 1), §3e: threshold (3 consecutive), window (7-day bound), clearing signal (a successful send in the same ledger — deliberately NOT an inbound reply, to keep this separate from `messaging_blocked`'s own clearing signal), and read sites (enumerated, one shared helper, not reimplemented per site). |
+| C3 (does escalation advance for an unreachable engineer) | Round 4 (design review, product question) | **Decided: YES, with the alert text changed.** Adopted the reviewer's own inclination — escalation stays time-based and non-skippable (7.2), but the PM-facing text reads "engineer unreachable since `<time>`," not "has not responded," because the two states call for different PM actions. Justified against both named design principles, not just adopted by default. |
 
-**REVISION 6 (2026-08-19, round 5 external review — "two smaller checks, then both go to
+**REVISION 6 (2026-08-19, round 5 design review — "two smaller checks, then both go to
 the reviewer") — diff against `3e38dfc`. Per direct instruction, this is intended to be the
 last plan revision before the review package.**
 
@@ -90,8 +90,34 @@ specification and shared-helper design; C3 adopted as-is.
 
 | Label | Round of origin | Status this round | What changed |
 |---|---|---|---|
-| R4 (C1's summary citation missing a filename) | Round 5 (external review) | **Fixed.** The revision-header row (above) always carried both full `file:line` citations — the defect was in the Summary section's own restatement, which abbreviated the second to bare `:527`. Both now independently carry the full filename there too. |
-| R5 (low-volume recipient sanity check on C2's threshold/window) | Round 5 (external review) | **Checked, answered: engineers only.** Re-verified both C2 read sites (DASH-03, escalation alert-text) are engineer-scoped, not called for PM-notify despite sharing the same ledger table. Checked one edge deeper: the threshold/window combination doesn't silently break for ANY checkpoint in this primitive's scope, including PM-notify's lower volume, because every checkpoint fires at least once daily — the aging-out failure mode only bites a recipient class with fewer than 3 opportunities across 7 days, and none exists here. |
+| R4 (C1's summary citation missing a filename) | Round 5 (design review) | **Fixed.** The revision-header row (above) always carried both full `file:line` citations — the defect was in the Summary section's own restatement, which abbreviated the second to bare `:527`. Both now independently carry the full filename there too. |
+| R5 (low-volume recipient sanity check on C2's threshold/window) | Round 5 (design review) | **Checked, answered: engineers only.** Re-verified both C2 read sites (DASH-03, escalation alert-text) are engineer-scoped, not called for PM-notify despite sharing the same ledger table. Checked one edge deeper: the threshold/window combination doesn't silently break for ANY checkpoint in this primitive's scope, including PM-notify's lower volume, because every checkpoint fires at least once daily — the aging-out failure mode only bites a recipient class with fewer than 3 opportunities across 7 days, and none exists here. |
+
+**GRADUATED (2026-08-19, external review verdict): both plans graduate to review-package
+stage. No further plan revisions — this document is now frozen as the design record the
+package cites, not itself edited further:**
+
+- **P1 (process, accepted):** citations become `file:line @ <sha>` going forward — this
+  document's own self-citations (C1's two IST/UTC sites) already had to be re-chased twice
+  this arc as edits shifted line numbers; pinning to a SHA stops that from recurring.
+- **P3 (labelling fix, my error to correct — findings untouched):** revisions 5 and 6 above
+  attributed their findings to "round 4/5 external review." Those rounds came through the
+  design-review chat channel, not the external reviewer's own channel — he conducted rounds
+  3 and 4 on this arc, no more. **Every "Round 4 (external review)" / "Round 5 (external
+  review)" label in this document's revision headers is corrected to "(design review)"
+  above** — labelling only, matching §22 of the 028 package's own correction of this exact
+  conflation; no finding's substance changed.
+- **C2 sharpening (skip-row transparency)** lands in migration 031's own table comment
+  (`outbound_sends`) and its review package, not as a further edit to this frozen document
+  — the design (§3e/C2 above) already specifies the derivation correctly at the conceptual
+  level; the sharpening is about how `computeUnreachable()` must treat the two skip
+  outcomes differently, a detail that belongs where the ledger's own shape is defined.
+- **Migration 031 (`outbound_sends`) is the artifact this document graduates into** —
+  `supabase/migrations/031_outbound_send_ledger.sql`, review package at
+  `docs/reviews/031-outbound-send-ledger-review-package.md`. BLOCKED — not applied, not
+  rehearsed, per the same trigger-cron dependency this document's own S section already
+  names, and additionally gated on B3's cross-flow RPC fix (§3b) shipping first, since this
+  primitive's roster logic assumes that fix exists.
 
 ---
 
@@ -677,7 +703,7 @@ remaining exactly what CLAUDE.md already names it as: a separate, pre-launch, no
 piece of work that this primitive does not fix and was never positioned to fix correctly by
 overloading this column.
 
-### C2 — the unreachability derivation, fully specified (round 4 external review)
+### C2 — the unreachability derivation, fully specified (round 4 design review)
 
 **Round 4 correctly called out that "derived from the send ledger" was a direction, not a
 spec — not implementable as written. All four required parts, decided, not left open:**
@@ -740,7 +766,7 @@ B2 (round 1) just finished fixing for `messaging_blocked` — reintroducing it h
 DIFFERENT status this same section just designed, would undo the lesson in the same
 document that names it.
 
-**R5 (round 5 external review) — low-volume-recipient sanity check on threshold+window,
+**R5 (round 5 design review) — low-volume-recipient sanity check on threshold+window,
 answered: engineers only, and checked one edge deeper than that.** Both read sites above
 (DASH-03, escalation alert-text) are specifically engineer check-in surfaces — re-checked
 against their own definitions, not assumed: DASH-03 is the daily-logs PM triage board
@@ -1097,9 +1123,9 @@ approval).
     that action is no longer "wait for a reply."
 11. **NAMED this revision (C1):** A4's two IST/UTC fixes are cited by exact file:line in
     the revision header, above, not just by section —
-    `docs/outbound-send-primitive-plan.md:513` and
-    `docs/outbound-send-primitive-plan.md:539` as of this revision's own commit. **R4
-    FIXED (round 5 external review): this line previously abbreviated the
+    `docs/outbound-send-primitive-plan.md:539` and
+    `docs/outbound-send-primitive-plan.md:565` as of this revision's own commit. **R4
+    FIXED (round 5 design review): this line previously abbreviated the
     second citation to bare `:527`, no filename — the exact defect flagged.** Both now
     carry the full filename independently, not implied from the first.
 
