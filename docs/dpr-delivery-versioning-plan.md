@@ -42,6 +42,33 @@ not a delivery failure. It is a delivery SUCCESS with the worst possible outcome
 error-handling path in this plan (or in 2g's existing three-item deliverability list) was
 ever going to catch it — because nothing about it looks like an error.
 
+**REVISION 5 (2026-08-19, round 4 external review — both plans "moved substantially,
+neither ready to send back" — resubmit as a diff against this pin) — diff against
+`6c8a3cd`. Still nothing implemented; still one round short of the review package.**
+
+**Confirmed good, no further work this round (per direct instruction, not re-litigated):**
+A1/A3/A4's not-applicable rulings (grep evidence stood).
+
+**Revision header, this round:**
+
+| Label | Round of origin | Status this round | What changed |
+|---|---|---|---|
+| A (beta provisioning is manual) | Round 4 (Aravind's decision — not open for re-litigation) | **Implemented in the plan.** New §2j subsection: exact operator steps (A1 — `users` INSERT + `projects.owner_user_id` UPDATE, corrected this round to the real association mechanism, not `project_members`), double opt-in still applies to seeded addresses (A2), member-management UI named and deferred post-beta with the onboarding-never-joins-a-tenant gap named alongside it (A3), and a stated-assumption risk-section line: no owner has ever used this product (A4). |
+| B1 (constraints not stated) | Round 4 (external review) | **Fixed.** Global uniqueness: no. Per-tenant uniqueness: no. Format validation: both DB `CHECK` and app layer, named as a weak defense against the actual risk. All three reasoned, not asserted. |
+| B2 (`whatsapp_number` precedent unverified) | Round 4 (external review) | **Fixed.** Verified against `001_core_schema.sql:44` — `TEXT UNIQUE`, no format `CHECK`, app-layer-only normalisation. Two deliberate divergences named and justified (uniqueness, format checking) rather than blindly matched. |
+| B3 (`skipped_unverified` — what kind of thing) | Round 4 (external review) | **Fixed.** A `TEXT` value in `delivery_status`'s existing `CHECK` constraint — a real schema change (`DROP`/`ADD CONSTRAINT`), not an enum, not derived at read time; named explicitly for the gating assessment. |
+| B4 (silent non-delivery, mirror of §2g item 4) | Round 4 (external review) | **Fixed.** Added to §2g as item 5. Surfacing mechanism picked, not left at "it's logged": a Sentry alert after N consecutive `skipped_unverified` nights, reasoned against A4's own "no owner has ever used this product" finding. |
+
+**Correction of the prior round's own mistake, found while answering B2, not asked for —
+flagged rather than silently fixed:** the prior §2j stated the natural home for an
+owner-management surface was `app/(dashboard)/projects/[id]/page.tsx`, "which already
+reads `project_members` for that project," implying owner association runs through
+`project_members`. **That's wrong.** `023_dpr_reports.sql`'s own header states, three
+independent ways, that owners are NOT associated via `project_members` at all — the real
+link is `projects.owner_user_id` (`016_corrections.sql:88-89`), a plain FK. This round's
+A1 provisioning steps and B2's precedent-check both now reflect the correct mechanism; the
+prior round's inaccurate framing is not restated.
+
 ---
 
 ## DECISION (2026-08-15): the owner receives the DPR by email, not WhatsApp
@@ -489,6 +516,17 @@ what finally makes that line load-bearing.
    system's point of view, everything DID work. The only defense against this failure mode
    is upstream of delivery entirely — 2j's confirmed-delivery check (double opt-in) — not
    anything this section's own provider/webhook machinery can ever detect after the fact.
+5. **ADDED (round 4 external review, B4) — silent non-delivery from a never-confirmed
+   address. The mirror of item 4, same invisibility, different cause.** If an owner never
+   clicks the confirmation link 2j's double opt-in requires, `delivery_status` writes
+   `skipped_unverified` every night, indefinitely, and — unlike item 4 — this one doesn't
+   even reach the "provider accepted it" stage, so there's no `delivered`/`bounced`/
+   `complained` webhook event to ever fire in the first place. **Surfaced via a Sentry
+   alert after N consecutive `skipped_unverified` nights for the same recipient** (full
+   reasoning in 2j, B4) — chosen over relying on a PM noticing a dashboard cell, since no
+   owner has ever used this product (2j, A4) and provisioning is operator-driven for beta
+   (2j, A1-A3), making an alert to that same operator the realistic path to anyone noticing
+   at all.
 
 **Not choosing a provider or building anything here** — recording the dependency and what
 verifying the domain involves, per direct instruction.
@@ -545,61 +583,185 @@ depends on does not exist anywhere in the schema today. **Confirmed directly aga
 this same session (read-only check): zero `role='owner'` rows exist in `public.users` at
 all, on any tenant.** This isn't a gap in an existing owner's record — there is no owner
 in this system yet, for any project, and no path to create one that would also capture an
-email address.
+email address. **This last point turned out to be the most important finding in the prior
+round, and round 3 review correctly named the gap it left: the address's schema location
+was solved, the ROW it lives on was not. Both are answered below — the row via a DECIDED
+beta-only provisioning path (A1-A4), the address's own constraints via B1-B4.**
 
 **1. Schema home.** A new column on `users`: `notification_email TEXT NULL` (nullable —
-only owner-role rows would populate it; a format-checked `CHECK` constraint, e.g. a basic
-`~ '^[^@]+@[^@]+\.[^@]+$'` shape, not a full RFC-5322 validator). **Not a separate
-recipients table** — rejected, not just undecided: today's requirement is exactly one
-delivery address per owner-role row, a 1:1 relationship `users` already models for every
-other contact channel this product has (`whatsapp_number` is the direct precedent — a
-nullable, non-auth contact column living directly on the row it belongs to, not a side
-table). A separate table would earn its keep the day this product needs to send one
-report to MULTIPLE recipients (a second owner, an accountant) — not decided or needed here,
-named as the reason a future redesign might revisit this, not a flaw in today's choice. Not
-globally unique — a real person could plausibly appear as the owner-email on more than one
-tenant, and nothing about this design requires ruling that out. **This is a schema change
-and therefore gated** — same review-package path as migration 028's own additions, per this
-project's standing practice; not written as a migration in this pass.
+only owner-role rows would populate it). **Not a separate recipients table** — rejected,
+not just undecided: today's requirement is exactly one delivery address per owner-role row,
+a 1:1 relationship `users` already models for every other contact channel this product has.
+A separate table would earn its keep the day this product needs to send one report to
+MULTIPLE recipients (a second owner, an accountant) — not decided or needed here, named as
+the reason a future redesign might revisit this, not a flaw in today's choice. **This is a
+schema change and therefore gated** — same review-package path as migration 028's own
+additions, per this project's standing practice; not written as a migration in this pass.
+Constraints, precedent-checked and justified — B1/B2 below, not asserted casually as before.
 
-**2. Who enters it — answered honestly, not assumed.** There is no invite path today, for
-ANY role, checked by grep across `app/`: no member-management, invite, or owner-creation
-surface exists anywhere in the codebase. Onboarding (`app/(onboarding)/onboarding/page.tsx`)
-creates a TENANT — it never joins a project or creates a second user. Every `users`/
-`project_members` row in prod today (the one real PM, the one real engineer) was created
-directly against the database, not through any app UI. **This plan's owner-email capture
-therefore depends on work that does not exist yet: a PM-facing "add/edit owner" surface**
-(the natural home is `app/(dashboard)/projects/[id]/page.tsx`, the existing project detail
-page, which already reads `project_members` for that project — but building the write side
-is new work, not a form that already exists and merely needs a new field). Stated plainly
-so this isn't discovered as a surprise later: **this decision's own critical path now
-includes building a UI surface this product has never had, for any role** — the same gap
-that already exists for engineer registration (ENG-01/02/05/06, tracked elsewhere), now
-made load-bearing for owner delivery specifically, and sharper for owners than engineers:
-an engineer can be the first to reach the system by messaging the bot; an owner, who never
-messages the bot by design, has no equivalent bootstrap path at all. Without this surface,
-there is no way for `notification_email` to ever be populated, regardless of what the
-column looks like.
+### B1 — constraints, stated with reasons, not left to the CHECK's own type
+
+- **Global uniqueness: NO.** The same address is allowed on two different `users` rows. One
+  person may legitimately own two projects — under different tenants (two separate `users`
+  rows are required regardless, since `users.tenant_id` is a single FK with no cross-tenant
+  identity) or, per B2's finding below, even within the same tenant. "Unique" is the default
+  instinct for anything shaped like an identifier, and it would be wrong here — stated
+  explicitly so a future migration author doesn't add it by reflex.
+- **Per-tenant uniqueness: also NO, same reasoning one level down.** A single tenant
+  ("Rajamani Constructions Pvt Ltd," prod's own real tenant) can run multiple projects: one
+  real person could be the named owner-role row for several of that tenant's projects, each
+  with its own `users` row (since `projects.owner_user_id` — B2, below — is a plain
+  one-project-to-one-user-row FK, not a many-to-many). Constraining `notification_email` to
+  be unique within a tenant would block that legitimate case for no correctness benefit —
+  nothing downstream needs "one address, one row" to hold at either scope.
+- **Format validation: BOTH layers, deliberately, unlike `whatsapp_number`'s precedent
+  (B2 finds it has neither).** A DB-level `CHECK` (a basic
+  `notification_email ~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'` shape, not a
+  full RFC-5322 validator) catches obviously malformed data even if every application
+  code path is somehow bypassed — cheap insurance, matching this project's general "TEXT +
+  CHECK, not trusted to the app alone" posture for status/money columns. Application-layer
+  validation too, for immediate UX feedback in whatever form eventually captures this (2j's
+  provisioning path, A1, or a future UI). **Named honestly: neither layer is the real
+  safety mechanism here.** A regex confirms an address is SHAPED like an email; it cannot
+  confirm it's the RIGHT email — a syntactically valid but wrong address sails through both
+  checks untouched. The actual defense against the failure mode this finding exists to
+  prevent is B3's confirmed-delivery check, below, not format validation at either layer.
+
+### B2 — the `whatsapp_number` precedent, checked, and where this deliberately diverges
+
+**Verified against the actual column, not asserted:** `users.whatsapp_number` —
+`supabase/migrations/001_core_schema.sql:44` — `TEXT UNIQUE`, nullable (no `NOT NULL`), no
+`CHECK` constraint of any kind. Format handling (E.164 normalisation) happens entirely at
+the application layer (`lib/whatsapp/normalise.ts`), never enforced by the database.
+
+**Two deliberate divergences from this precedent, both justified, not accidental:**
+1. **`whatsapp_number` is globally `UNIQUE`; `notification_email` is not (B1, above).**
+   Different roles for the two columns, not an inconsistency: `whatsapp_number` is an
+   INBOUND IDENTITY key — the webhook resolves exactly one `users` row per inbound number,
+   and two rows sharing a number would make that resolution ambiguous, breaking the whole
+   inbound flow. `notification_email` is OUTBOUND-ONLY — nothing in this system ever looks
+   up "which user does this email belong to" the way the webhook looks up a phone number.
+   Uniqueness exists to protect a lookup that doesn't exist here.
+2. **`whatsapp_number` has no format `CHECK`; `notification_email` gets one (B1, above).**
+   Also deliberate, not an inconsistency: E.164 phone format needs country-code-aware
+   normalisation logic a simple `CHECK` regex can't express correctly (that's precisely why
+   `normalise.ts` exists as application code), so a DB-level format check was never a good
+   fit for that column. Email format is comfortably expressible in a simple `CHECK` regex —
+   cheap to add, no reason not to, even though it's acknowledged above as a weak defense
+   against the real risk.
+
+**2. Who enters it, and the row it goes on.** There is no invite path today, for ANY role,
+checked by grep across `app/`: no member-management, invite, or owner-creation surface
+exists anywhere in the codebase. Onboarding (`app/(onboarding)/onboarding/page.tsx`)
+creates a TENANT — it never joins a project or creates a second user. Every `users` row in
+prod today was created directly against the database, not through any app UI. **Checked
+further this round, correcting the prior draft's own inaccuracy: owner association does
+NOT run through `project_members` at all.** `023_dpr_reports.sql`'s own header states this
+explicitly, three independent ways, and it's confirmed by reading `016_corrections.sql:85-
+89`: `projects.owner_user_id UUID REFERENCES public.users(id) ON DELETE RESTRICT` is the
+actual link — a plain FK from `projects` to a single `users` row, not a `project_members`
+row. **One tracked, pre-existing gap this seeding path inherits, not introduced by it:**
+`016`'s own comment (line 32-34) already flags that `owner_user_id` has NO same-tenant
+enforcement at the DB level — nothing stops a project pointing at an owner row in a
+different tenant. The seeding operator (A1, below) is the thing responsible for getting
+this right today; the DB will not catch a mistake.
+
+### A. DECIDED (Aravind, not open for re-litigation in this plan) — beta provisioning is manual, not built as a UI
+
+**For beta, owner rows and their verified `notification_email` are SEEDED MANUALLY, by an
+operator, per project, during onboarding. Member-management/invite UI is explicitly NOT
+built on this critical path.** This resolves item 2's own critical-path problem (a UI that
+doesn't exist) without waiting on building one — at the cost of the manual steps below,
+accepted deliberately for beta's scale.
+
+**A1. The exact operator steps, stated concretely, not left to inference:**
+1. `INSERT INTO public.users` — `id` (generated), `tenant_id` = the target project's
+   tenant (read from `projects.tenant_id` for the project being provisioned — this is the
+   step that has to get the same-tenant match right, since nothing enforces it, per B2's
+   `owner_user_id` gap above), `full_name` = the real owner's name, `role = 'owner'`,
+   `auth_id = NULL` (owners never get a web login, unchanged), `whatsapp_number = NULL`
+   (not needed for this delivery path), `status = 'active'`, `notification_email` = the
+   address the operator was given, **`notification_email_verified_at = NULL`** — never set
+   at this step (A2, below).
+2. `UPDATE public.projects SET owner_user_id = <the new user's id> WHERE id = <project id>`
+   — the actual association, per B2's finding above. Not a `project_members` insert.
+3. **Trigger the confirmation send.** Since no UI exists to fire this automatically, the
+   operator invokes it directly — a small operator script (same pattern this codebase
+   already uses for manual triggers, e.g. `scripts/generate-one-dpr.ts`), taking the new
+   user's id, generating a verification token, and calling the email provider (2g) with the
+   confirmation link. Not sketched to code here; named as the shape it takes.
+
+**A2. Double opt-in STILL APPLIES to a manually seeded address — stated explicitly because
+it would be easy to assume otherwise.** Manual entry by an operator is not verification.
+The operator can mistype an address exactly as easily as a self-service form could, and
+B3/§2g's wrong-recipient failure mode does not care who typed it or through which path.
+**`notification_email_verified_at` is set ONLY by the recipient clicking through the
+confirmation link — never by the seeding step, never by the operator, never by any
+INSERT.** A2's own step 1 above deliberately leaves it `NULL` on creation for exactly this
+reason. Until the real owner clicks, the row exists and the address is stored, but the
+nightly send stays gated exactly as B3 (below) requires for any other unverified address.
+
+**A3. Member-management/invite UI is a POST-BETA workstream — named and deferred, not
+designed here.** One paragraph, per direct instruction: building a real PM-facing surface
+for adding/editing project members (owners, and eventually the same gap for engineers,
+ENG-01/02/05/06) is real, necessary work this plan does not schedule or scope. **The known
+adjacent gap, named so it's on record as seen rather than missed:** onboarding creates a
+tenant but never joins one — there is no path today for a SECOND person to enter an
+EXISTING tenant at all, for any role, which is the more general problem this specific
+owner-invite gap is one instance of. Not designed here.
+
+**A4. Risk-section addition — stated as a fact on the record, not a defect.** No owner has
+ever used this product. Confirmed this session: zero `role='owner'` rows have ever existed
+in prod. Every owner-facing design decision in this document — the email channel itself,
+the confirmation-click UX, the report's rendered form (2h), the manual seeding path above —
+is unvalidated against a real user, because no real user in this role has ever interacted
+with any part of it. This is a stated assumption this plan is built on, named explicitly so
+it can be checked the first time a real owner is seeded, not discovered as a surprise if
+the assumption turns out wrong.
 
 **3. Confirmed-delivery check — required before an address goes live for nightly sends.**
-Double opt-in, not a bare form field: when a PM enters/changes an owner's email, the system
-sends a confirmation email with a verification link (itself dependent on 2g's transactional
-email provider being wired — a real bootstrapping order worth naming: verifying an address
-requires the ability to send email at all, the same provider and domain this whole
-revision already depends on). Clicking it sets a new `notification_email_verified_at
-TIMESTAMPTZ NULL` column. **The nightly `ownerSend` job's own query MUST filter on this
-being non-null** — an unverified address is treated exactly like a missing one: no send,
-and a new `delivery_status` outcome (`skipped_unverified`, mirroring the already-established
-`skipped_no_data`/`skipped_no_template` pattern, 2e) so this reads as a real, recorded state
-rather than `'pending'`-forever with no explanation, same reasoning 2e already applies to
-every other skip. **An unverified address must never receive a report** — stated as a hard
-requirement, not a nice-to-have, per the severity this finding opens with.
+Double opt-in: a confirmation email with a verification link (dependent on 2g's
+transactional email provider being wired — verifying an address requires the ability to
+send email at all, same provider/domain this whole revision depends on). Clicking it sets
+`notification_email_verified_at TIMESTAMPTZ NULL`. **The nightly `ownerSend` job's own
+query MUST filter on this being non-null** — an unverified address is treated exactly like
+a missing one: no send, and a `delivery_status` outcome, `skipped_unverified` — **B3, below,
+for exactly what kind of thing that value is.** **An unverified address must never receive
+a report** — a hard requirement, per the severity this finding opens with, and per A2
+above: this check applies with EQUAL force to a manually-seeded address as to any other.
+
+### B3 — `skipped_unverified`: what kind of thing it is, stated so the reviewer doesn't infer it
+
+**A TEXT value added to `delivery_status`'s existing CHECK constraint — NOT a Postgres
+enum, and NOT computed/derived at read time.** `023`'s own `delivery_status` column is
+`TEXT` with a `CHECK (delivery_status IN (...))` constraint (confirmed against the column
+definition, matching this project's standing convention — CLAUDE.md §6: "Status columns —
+Always TEXT + CHECK constraint. Never ENUM types"). Adding `skipped_unverified` is
+therefore an `ALTER TABLE ... DROP CONSTRAINT ... ADD CONSTRAINT ... CHECK (...)` — cheaper
+than a Postgres `ALTER TYPE ... ADD VALUE` would be, but still a real, named schema change,
+and it needs to be counted as one in whatever gating assessment this revision's migration
+goes through — not left for the reviewer to infer from "it's a status value." **It is
+WRITTEN, not derived:** the `ownerSend` job writes this value explicitly, at send-decision
+time, the moment it finds `notification_email_verified_at IS NULL` — unlike #69's own
+`unreachable` status (a genuinely different design, computed fresh from a ledger on every
+read), this is a stored fact about what a specific job run decided to do, same shape as
+every other `delivery_status` value already on this column.
+
+### B4 — the mirror of §2g's fourth item: silent non-delivery when the owner never confirms
+
+**Same class of failure as wrong-recipient (§2g item 4), named as its mirror, not a
+separate finding — full detail lives in §2g's own item 5, not restated twice here.** If an
+owner never clicks the confirmation link, `skipped_unverified` is written EVERY NIGHT,
+indefinitely — invisible to every monitoring signal that isn't specifically watching for
+it. Surfaced via a Sentry alert after N consecutive `skipped_unverified` nights for the
+same recipient, chosen over a PM-dashboard-only surface because A4 (above) establishes no
+owner has ever used this product and provisioning is operator-driven (A1-A3) — an alert
+reaching that same operator is the realistic path to anyone noticing.
 
 **Not decided here, named as required follow-ups (same discipline as 2g/2h's own
-dependencies):** the exact confirmation-email copy/flow, whether a PM can re-trigger
-verification after editing the address, and whether an owner should get any signal at all
-that they've been added (arguably yes, since the confirmation email itself IS that signal —
-not sketched further here).
+dependencies):** the exact confirmation-email copy/flow, whether a PM (or operator) can
+re-trigger verification after editing the address, and the exact N for the alert
+threshold.
 
 **Recorded in the roadmap notes, explicitly NOT as scope for this or any current
 workstream, per direct instruction.** This decision's own reasoning — owners read a
@@ -705,19 +867,28 @@ together as it was described previously.
     option for later, own dependency shape named, not chosen.
 13. **Recorded in the roadmap, not scope:** mobile app / PWA as the checkpoint before
     native, per the ROADMAP NOTE above — not scheduled, nothing here commits to it.
-14. **NEW (round 3 external review, C-a, BLOCKING) — the owner-email schema chain (2j):**
-    `users.notification_email TEXT NULL` (own migration, gated, additive to item 2's
-    migration or its own) + `notification_email_verified_at` + a double-opt-in confirmation
-    send (sequenced AFTER item 9's provider/domain work, since verifying an address needs
-    the ability to send email at all) + the nightly `ownerSend` query filtering on
-    verified-not-null + `skipped_unverified` (item 4, above). **And, load-bearing, not
-    optional:** a PM-facing "add/edit owner" UI that does not exist yet anywhere in this
-    codebase, for any role — confirmed zero `role='owner'` rows exist in prod today. This
-    plan cannot ship without that surface being built somewhere, even if not in this PR.
-15. **NEW (round 3 external review, C-a item 4) — §2g's deliverability list is now four
-    items, not three:** wrong recipient added as the worst case — a delivery SUCCESS,
-    invisible to bounce/complaint/webhook monitoring, catchable only upstream by item 14's
-    confirmation gate, never after the fact.
+14. **The owner-email schema chain (2j):** `users.notification_email TEXT NULL` (own
+    migration, gated, additive to item 2's migration or its own; constraints reasoned in
+    B1/B2 — not globally or per-tenant unique, format-checked at both DB and app layers) +
+    `notification_email_verified_at` + a double-opt-in confirmation send (sequenced AFTER
+    item 9's provider/domain work) + the nightly `ownerSend` query filtering on
+    verified-not-null + `skipped_unverified` (a real `CHECK`-constraint schema change, B3,
+    not an enum, not derived). **SUPERSEDED this revision, not carried forward as written:**
+    the prior round's "a PM-facing add/edit owner UI... this plan cannot ship without that
+    surface" is replaced by item 16 below — beta does not wait on that UI at all.
+15. **§2g's deliverability list is now five items, not three:** wrong recipient (round 3,
+    a delivery SUCCESS, invisible to bounce/complaint/webhook monitoring, catchable only
+    upstream by item 14's confirmation gate) and, **NEW this revision (B4),** silent
+    non-delivery from a never-confirmed address — surfaced via a Sentry alert after N
+    consecutive `skipped_unverified` nights, not left at "it's logged."
+16. **NEW (round 4, Aravind's decision, not open for re-litigation) — beta provisioning is
+    manual (2j, section A):** an operator directly inserts the owner's `users` row and sets
+    `projects.owner_user_id` (the actual association mechanism — corrected this round from
+    the prior draft's inaccurate `project_members` framing), triggers the confirmation send
+    via a small script, and double opt-in still applies exactly as it would to a
+    self-service address. Member-management/invite UI is POST-BETA, named and deferred
+    (A3), not built on this critical path. A stated-assumption risk line is added: no owner
+    has ever used this product (A4).
 
 None of this is built in this pass. Branch/PR for this document only — no code, except the
 dated `bot-flows.md` supersession note (documentation, matching item 3 above).
