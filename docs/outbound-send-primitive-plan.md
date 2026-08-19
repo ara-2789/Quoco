@@ -63,6 +63,24 @@ that read as if B2 was closed. It was not. Fixed here by never letting one label
 things again: **B2 (round 1)** and **B2 (round 2)** are now permanently distinct labels,
 and the round-1 finding is fixed in substance below (§3e), not merely relabeled.
 
+**REVISION 5 (2026-08-19, round 4 external review — both plans "moved substantially,
+neither ready to send back" — resubmit as a diff against this pin) — diff against
+`46f823f`. Still nothing implemented; still one round short of the review package.**
+
+**Confirmed good, no further work this round (per direct instruction, not re-litigated):**
+A2's `PER_MESSAGE_RATE_INR` left as a named open variable; B-a's substance (option ii,
+derived from the send ledger, `messaging_blocked` left untouched as the consent state it
+already is); B-b's fifth context-write site, found with file:line, with migration 022's own
+header cited as corroboration; B-c's monotonic-ranks rationale.
+
+**Revision header, this round:**
+
+| Label | Round of origin | Status this round | What changed |
+|---|---|---|---|
+| C1 (A4's two sites, unnamed) | Round 4 (external review) | **Fixed.** Named by file:line, not just section: `docs/outbound-send-primitive-plan.md:501` (§3c's Sentry-alert day-key) and `docs/outbound-send-primitive-plan.md:527` (§3d's `event_key` date) — line numbers as of this revision's own commit, both re-checkable directly. |
+| C2 (unreachability derivation underspecified) | Round 4 (external review) | **Specified.** All four required parts, in a new subsection under B2 (round 1), §3e: threshold (3 consecutive), window (7-day bound), clearing signal (a successful send in the same ledger — deliberately NOT an inbound reply, to keep this separate from `messaging_blocked`'s own clearing signal), and read sites (enumerated, one shared helper, not reimplemented per site). |
+| C3 (does escalation advance for an unreachable engineer) | Round 4 (external review, product question) | **Decided: YES, with the alert text changed.** Adopted the reviewer's own inclination — escalation stays time-based and non-skippable (7.2), but the PM-facing text reads "engineer unreachable since `<time>`," not "has not responded," because the two states call for different PM actions. Justified against both named design principles, not just adopted by default. |
+
 ---
 
 ## 0. THE META PRICING FACT — verified as far as tooling allows, and what it changes
@@ -638,22 +656,101 @@ the ledger already contains, with its own write path and its own chance to go st
 same fact are required to agree by construction and nothing else — see CLAUDE.md's own
 "HAND-MIRRORED RECONCILIATION" entry for the general shape of that risk).
 
-**How it's computed, and how it clears — both stated, not left implicit:** `unreachable`
-for a recipient is TRUE when their last N outbound-send ledger rows (N chosen during
-implementation, not here — same open-number treatment as the original N) are ALL terminal
-failures (`'failed'`, never `'sent'`/`'skipped_*'` in between). It clears automatically,
-with no explicit "clear" write anywhere, the moment one send succeeds — because a
-successful send becomes the newest row, and "last N rows all failed" stops being true. No
-column to reset, no code path that has to remember to unset it, no scenario where a
-successful send and a stale `unreachable_since` timestamp can disagree, because there is no
-stored timestamp to disagree with the ledger. **This is a query, wired into DASH-03/PM
-surfaces as a derived read (`SELECT` over the last N ledger rows per recipient), not a
-write this primitive performs on anyone's `users` row.** `messaging_blocked` is left
-exactly as this codebase already defines it — a consent flag, written only by
-`clearMessagingBlock`'s existing clear-half, with its still-open, still-tracked SET-half gap
-(a real WhatsApp STOP) remaining exactly what CLAUDE.md already names it as: a separate,
-pre-launch, not-yet-built piece of work that this primitive does not fix and was never
-positioned to fix correctly by overloading this column.
+**How it's computed, and how it clears — both stated, not left implicit; full specification
+in C2, immediately below, which replaces the open-number/hand-wave version of this
+paragraph from the prior round.** `messaging_blocked` is left exactly as this codebase
+already defines it — a consent flag, written only by `clearMessagingBlock`'s existing
+clear-half, with its still-open, still-tracked SET-half gap (a real WhatsApp STOP)
+remaining exactly what CLAUDE.md already names it as: a separate, pre-launch, not-yet-built
+piece of work that this primitive does not fix and was never positioned to fix correctly by
+overloading this column.
+
+### C2 — the unreachability derivation, fully specified (round 4 external review)
+
+**Round 4 correctly called out that "derived from the send ledger" was a direction, not a
+spec — not implementable as written. All four required parts, decided, not left open:**
+
+**a. THRESHOLD — 3 consecutive terminal failures, not N-of-M.** `unreachable` is TRUE when
+a recipient's most recent 3 outbound-send ledger rows (within the window, part b) are ALL
+`'failed'`, with no `'sent'`/`'skipped_*'` row anywhere among them. Consecutive, not a
+sliding "3 of the last 5" count: consecutive is simpler to compute (no combinatorics over a
+larger row set) and avoids a genuinely reachable recipient with one bad day mixed among
+several good ones being flagged on a technicality. 3, not 1 or 2: a single terminal
+failure could be a one-off (a transient carrier-level rejection that happens to classify as
+terminal); 3 independent trigger-send attempts — on different checkpoints, typically
+different days — all failing is a much stronger signal that something about THIS recipient,
+not one message, is broken.
+
+**b. WINDOW — bounded to the last 7 days.** Only ledger rows from the last 7 days count
+toward the 3. If fewer than 3 rows exist for a recipient in that window, they are NOT
+marked unreachable — insufficient evidence, not a default-to-safe assumption in either
+direction. **Why bounded at all, stated so this isn't read as arbitrary:** an unbounded
+lookback means a recipient who had 3 failures months ago, then went quiet (e.g. left the
+project, came back), would still read as `unreachable` today even though nothing about
+their CURRENT reachability was ever tested — a ledger with no window is exactly the
+"failure from three months ago still counts" bug named by the review question this answers.
+7 days matches this system's own existing rhythm: roughly 4-5 trigger-send opportunities
+per active engineer per day, so a genuinely broken channel produces well over 3 attempts
+inside a 7-day window; a recipient who's been off-roster for that whole window simply
+produces no rows to evaluate, which is the correct "insufficient evidence" outcome, not a
+false positive.
+
+**c. CLEARING — a single successful send in the SAME ledger, deliberately not an inbound
+reply.** The moment a newer ledger row for this recipient shows anything other than
+`'failed'` (a real send succeeded), "last 3 consecutive were failures" stops being true and
+`unreachable` reads FALSE on the next read — no explicit clear-write, ever, for the same
+reason nothing needed to write it TRUE either. **The asymmetry named explicitly, per
+direct instruction: setting and clearing intentionally use the SAME signal type (both read
+the outbound-send ledger), not different ones.** The alternative — clearing on a
+successful INBOUND message from the recipient instead — was considered and rejected,
+specifically because that is the signal `messaging_blocked` already uses to clear itself
+(`reactivation.ts`). Using it here too would re-couple these two now-deliberately-separate
+mechanisms (B2, round 1, above) through a shared clearing rule, even after their write
+paths were split apart for exactly this reason — an inbound-based clear for `unreachable`
+would mean a recipient stays `unreachable` even after a real outbound success, until they
+also happen to reply, conflating "can we send to them" with "have they engaged," which are
+different questions this fix already went to some trouble to keep separate.
+
+**d. READ SITES — enumerated, one shared helper, not reimplemented per site.** Two
+consumers need this value, both named, not left implicit:
+1. **DASH-03/PM dashboard surface** — a derived read for PM visibility, as already stated
+   above.
+2. **Escalation alert-text generation (C3, below)** — the PM-facing copy for an escalated,
+   currently-unreachable engineer reads differently than for one who simply hasn't
+   responded; that branch needs this value too.
+
+Both call the SAME function — a shared helper (e.g. `computeUnreachable(recipientId,
+client): Promise<boolean>` in `lib/whatsapp/` or `lib/checkin-escalations/`, not sketched
+further than its shape here) — never two independent re-derivations of "last 3 consecutive
+failures within 7 days." **Stated as a hard requirement, not a style preference:** a value
+computed in more than one place with more than one definition is the exact class of defect
+B2 (round 1) just finished fixing for `messaging_blocked` — reintroducing it here, for a
+DIFFERENT status this same section just designed, would undo the lesson in the same
+document that names it.
+
+### C3 — does escalation advance for an unreachable engineer? DECIDED: yes, with the alert text changed
+
+**Product question, both answers defensible, decided rather than left open, per direct
+instruction.** Adopted: **escalation continues to advance for an unreachable engineer —
+time-based, never skippable, per design principle 7.2 — but the PM-facing alert text
+changes when the derived `unreachable` read (C2) is true at the moment the alert is
+generated.** Not "engineer has not responded" (implies: wait, they may still answer) but
+**"engineer unreachable since `<time>`"** (implies: the channel itself may be broken —
+consider a different action, a phone call, a site visit, not another WhatsApp nudge).
+
+**Why YES over NO, weighed against both named principles, not defaulted to:** the NO
+position (escalating over a dead channel is noise the PM can't act on, violating 4.2 —
+"every alert carries its action") has real force, but it assumes the alert's only possible
+action is "wait for a WhatsApp reply." **That assumption is exactly what the changed alert
+text removes.** An unreachable engineer is precisely the case where the PM most needs to
+know something is wrong (7.2's own reasoning) — silencing escalation for exactly the
+recipients whose channel has failed would mean the PM finds out LATER, not sooner, for the
+worst cases. Changing the text is what keeps 4.2 satisfied at the same time: the alert
+still carries an action, it's just a different one (call/visit, not wait), read directly
+off C2's own derived value at generation time. **Where this is read:** the same
+`computeUnreachable` helper (C2d) — whatever generates PM-facing escalation copy
+(`checkin_escalations` sweep / dashboard surface) branches its text on that one call, not a
+second, independent unreachability check.
 
 ### B4 — the dominant failure mode was missing entirely, and it's not deleted by always-template
 
@@ -932,9 +1029,13 @@ approval).
    here, deliberately, since that's a schema decision for the review package, not this
    plan. **This revision adds a requirement to it (A3): a JSONB column for Meta's raw
    `pricing` object, logged from day one on the status-callback route.**
-2. Decide N — the terminal-failure-count threshold for the derived `unreachable` read (3e,
-   B2 round 1). `messaging_blocked` is not written by this primitive at all, this revision —
-   fixed from a prior proposal that would have set it for the wrong reason.
+2. **FULLY SPECIFIED this revision (C2):** the derived `unreachable` read (3e, B2 round 1)
+   — 3 consecutive terminal failures, bounded to a 7-day window, clearing on the next
+   successful send in the same ledger (deliberately not an inbound reply — kept separate
+   from `messaging_blocked`'s own clearing signal), computed by one shared helper for both
+   read sites (DASH-03 and escalation alert-text, item 9 below), not reimplemented per
+   site. `messaging_blocked` is not written by this primitive at all, this revision — fixed
+   from a prior proposal that would have set it for the wrong reason.
 3. **DECIDED this revision:** B3's cross-flow interference fix — options 1 (cutoff-close
    sweep) + 3 (force-switch backstop) together, not option 2. Five conditions attached
    (§3b, above), all carried into the review package: the fifth context-write site, the
@@ -958,6 +1059,14 @@ approval).
 9. **RESOLVED this revision (A1):** always-template for the five trigger sends is adopted
    now, unconditionally — not gated on the October date, which appears only in cost
    projections (item 6, above) from this revision forward.
+10. **DECIDED this revision (C3):** escalation continues to advance for an unreachable
+    engineer — never skippable, per 7.2 — but the PM-facing alert text changes to "engineer
+    unreachable since `<time>`" instead of "has not responded" when item 2's derived
+    `unreachable` read is true, so the alert keeps carrying a real action (4.2) even though
+    that action is no longer "wait for a reply."
+11. **NAMED this revision (C1):** A4's two IST/UTC fixes are cited by exact file:line in
+    the revision header, above, not just by section — `docs/outbound-send-primitive-
+    plan.md:501` and `:527` as of this revision's own commit.
 
 Nothing built in this pass. Branch/PR for this document only — the one exception is the
 dated, doc-only BOT-21 supersession note in `bot-flows.md` (B3 condition 3, above), same
