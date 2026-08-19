@@ -18,6 +18,30 @@ roadmap note (mobile/PWA, explicitly not scope); THE ENTANGLEMENT and the Summar
 rewritten to match. Stage 1 (PM-notify) is untouched by this revision — still WhatsApp,
 still template-gated, still entangled with #69 exactly as before.
 
+**REVISION 4 (2026-08-19, round 3 external review — verdict STOP, iterate as a diff against
+this pin, not a rewrite) — diff against `61a7974`. Still nothing implemented; SQL is not
+written here — this document remains plan-only, one round short of the review package.**
+
+**Revision header — every finding, stable label, round of origin, status:**
+
+| Label | Round of origin | Status this round | What changed |
+|---|---|---|---|
+| A1 (October date framing) | Round 3 (external review) | **N/A — checked, not applicable.** This document contains no mention of "October" anywhere and gates no control flow on that date; the finding applies entirely to #69's own plan, which does. Nothing to change here. |
+| A2 (service-reply economics) | Round 3 (external review, NEW finding) | **Added, as a cross-reference.** #69 owns and quantifies this cost (its own §3g condition (e)); flagged here per direct instruction, since stage 1 (PM-notify) shares that template-billing exposure — see the note added to THE ENTANGLEMENT, below. |
+| A3 (log Meta's `pricing` object) | Round 3 (external review, NEW finding) | **N/A.** The status-callback route this applies to is #69's own workstream (2g's own text already draws this line — "whatever provider is chosen needs its own equivalent of #69's status-callback route," for email, not WhatsApp). Not duplicated here. |
+| A4 (IST/UTC day-key nits) | Round 3 (external review, NEW finding) | **N/A — checked, not applicable.** Grepped this document for "UTC" and any unpinned day-key computation: none found. Both sites the review names are in #69. |
+| C-a (owner email has nowhere to live) | Round 3 (external review, NEW finding, BLOCKING) | **Answered this round.** Schema home, entry surface, confirmation gate, and §2g's fourth deliverability failure mode — all four required sub-items, below. |
+| C-b (stale §2d sentence) | Round 3 (external review) | **Fixed.** §2d's RLS paragraph still said owners see their report "via the WhatsApp send itself" — a leftover from before this document's OWN revision 3 (above) moved owner delivery to email. Corrected; rest of the document swept for the same class of staleness (none found beyond this one instance). |
+| C-c (§2e stage-collapse ordering) | Round 3 (external review) | **Fixed.** §2e's `pm_notified`/`delivered` bullets read as a strict linear sequence (`pending → pm_notified → delivered`) that 2a's own "unconditional" owner-send framing doesn't actually guarantee — corrected below. |
+
+**On C-a's severity, reproduced because it sets the frame correctly and shouldn't be
+paraphrased away:** *"A typo'd owner email means the full nightly operations report of a
+construction site delivered to a stranger, silently, every night — irreversible per your
+own (d) reasoning, and worse than a bounced send because it succeeds."* Wrong-recipient is
+not a delivery failure. It is a delivery SUCCESS with the worst possible outcome, and no
+error-handling path in this plan (or in 2g's existing three-item deliverability list) was
+ever going to catch it — because nothing about it looks like an error.
+
 ---
 
 ## DECISION (2026-08-15): the owner receives the DPR by email, not WhatsApp
@@ -264,9 +288,14 @@ dpr_versions (NEW, append-only):
 existing shape (023) — `tenant_id = get_user_tenant_id() AND EXISTS` a `project_members`
 row for this PM on the version's project. Not tenant-wide. Owners are NOT given dashboard
 access to version history at all in this design — they only ever see the one version
-actually delivered, via the WhatsApp send itself, never the dashboard — so no
-owner-readable policy is proposed here; if that's wrong, it's a decision to make in the
-review package, not an oversight in this sketch.
+actually delivered, **via the email send itself (STALE FIXED, round 3 external review,
+C-b: this previously said "via the WhatsApp send itself," a leftover from before this
+document's own revision 3, above, moved owner delivery to email)**, never the dashboard —
+so no owner-readable policy is proposed here; if that's wrong, it's a decision to make in
+the review package, not an oversight in this sketch. Owners also have no web login at all
+(`auth_id NULL`, CLAUDE.md §5) — `get_user_tenant_id()` has nothing to key off for an
+owner even if a policy were proposed, which is a second, independent reason no
+owner-readable RLS policy exists here, not just the channel choice.
 
 **`dprs.current_version` + `dprs.content`/`dprs.structured` stay a denormalized "latest"
 projection** (fast reads for the dashboard list/detail pages, unchanged query shape) while
@@ -326,15 +355,41 @@ Current CHECK (023): `pending / delivered / paused / skipped_no_data / failed`. 
 these distinguish "PM has been notified, owner has not" from either endpoint. **Proposed,
 additive (existing values kept, meanings tightened where the two-stage flow requires it):**
 
+**ORDERING FIXED (round 3 external review, C-c): the two bullets below previously read as a
+strict pipeline — `pending → pm_notified → delivered`, in that order, always. That is not
+what this design actually guarantees, and the sentence describing `pm_notified` stated it
+as if it were.** `delivery_status` is a SINGLE column being written by TWO independent
+sends (2a: the owner-send is unconditional, never gated on PM-notify's outcome), and a
+single-value column cannot hold both stages' outcomes at once — whichever write lands last
+wins, full stop, the same collapse the `failed` bullet below already concedes explicitly
+for the failure case. Stated correctly, not sequentially:
+
 - `pending` — unchanged: no delivery action taken yet (should be near-instantaneous now,
   since PM-notify fires atomically with generation at `eveningClose`).
-- **`pm_notified`** *(NEW)* — the PM has been sent the 19:45 notification+link; this is the
-  state for the entire 19:45→20:30 window, edited or not.
+- **`pm_notified`** *(NEW)* — the PM has been sent the 19:45 notification+link.
+  **CORRECTED: this is ONE of two possible non-terminal states for the 19:45→20:30 window,
+  not "the" state.** The other is `skipped_no_template` (below) — under THE ENTANGLEMENT's
+  own finding (unchanged this revision), PM-notify is `skipped_no_template` on every
+  attempt until Meta approves the template, which is the CURRENT, expected state
+  pre-launch. A reader should not assume `pm_notified` is reliably reached at all today.
 - `delivered` — re-scoped, not renamed: now specifically means "delivered to the **owner**
-  by email" (the terminal success state; channel per the DECISION above), set at or after
-  `ownerSend` (20:30). No longer implies WhatsApp, and no longer implies anything about
-  template approval — an email delivery has its own success/failure shape (2g), unrelated
-  to Meta's.
+  by email" (the terminal success state; channel per the DECISION above), written at
+  `ownerSend` (20:30) **UNCONDITIONALLY AND INDEPENDENTLY of whatever `delivery_status`
+  currently holds** — per 2a, the owner-send does not check, wait for, or depend on
+  `pm_notified` having happened. `delivered` can therefore overwrite `pending`,
+  `pm_notified`, OR `skipped_no_template` with equal validity — there is no "correct"
+  predecessor state it transitions from, because it is not a transition in a shared state
+  machine, it is a second writer landing on the same column. **A late-arriving
+  `pm_notify` retry is the concrete failure mode this creates, named so it's designed
+  around rather than discovered live:** if a retried/delayed PM-notify send lands AFTER
+  20:30 (a real possibility — nothing in this plan bounds how late a retry can run), its
+  write of `pm_notified` would silently regress an already-`delivered` (terminal, correct)
+  status back to a non-terminal one. The owner-send/version-write RPC (2d) should be the
+  ONLY writer trusted to set a value that looks terminal, and any PM-notify write path
+  should guard against overwriting a value it didn't itself produce — a concrete
+  implementation requirement for whoever builds this, not solved to SQL here. No longer
+  implies WhatsApp, and no longer implies anything about template approval — an email
+  delivery has its own success/failure shape (2g), unrelated to Meta's.
 - `failed` — unchanged, NFR-17 dead-letter, still covers BOTH stages. Deliberately NOT
   split into `pm_notify_failed`/`owner_send_failed` sub-states — which stage failed is
   Sentry/log context (`extra: {stage: 'pm_notify' | 'owner_send'}`), not a new CHECK value;
@@ -417,6 +472,23 @@ what finally makes that line load-bearing.
    before `delivered` can be trusted as meaning what it says, not merely "the provider
    accepted the request." Not built here — named as the same-shaped dependency #69 already
    had to solve for WhatsApp, now recurring for email.
+4. **ADDED (round 3 external review, C-a item 4) — wrong recipient. The worst failure mode
+   on this list, and the one none of the other three can ever catch.** Bounced, complained,
+   and silently-spam-foldered (item 3, above) are all real risks — but every one of them is
+   a deliverability PROBLEM, something the provider's status-callback webhook (item 3) can
+   eventually surface. **Wrong recipient is not a deliverability problem — it is a
+   deliverability SUCCESS.** A typo'd or stale `notification_email` (2j) means the full
+   nightly operations report of a construction site is delivered, correctly, on time, with
+   no bounce and no complaint, to a complete stranger — every single night, silently,
+   forever, until someone notices by some means entirely outside this system. **This is
+   invisible to every monitoring signal the other three items in this list rely on**: the
+   provider reports `delivered` (true — it WAS delivered, just to the wrong person), no
+   bounce fires, no complaint fires (the stranger receiving it has no reason to mark spam
+   on a legitimate-looking business report), and `delivery_status` reads `'delivered'` in
+   this project's own state machine, exactly as if everything worked — because, from this
+   system's point of view, everything DID work. The only defense against this failure mode
+   is upstream of delivery entirely — 2j's confirmed-delivery check (double opt-in) — not
+   anything this section's own provider/webhook machinery can ever detect after the fact.
 
 **Not choosing a provider or building anything here** — recording the dependency and what
 verifying the domain involves, per direct instruction.
@@ -463,7 +535,71 @@ ever built — just a real dependency to weigh if it is.
 
 ---
 
-## ROADMAP NOTE (not scope, not scheduled) — mobile app, PWA as the checkpoint
+## 2j. BLOCKING — the owner's email address has nowhere to live (C-a, round 3 external review)
+
+**The plan sends the nightly report to the owner by email but never said where that
+address is stored, who enters it, or how it is verified.** Checked, not assumed: `public.
+users` has NO email column, and owners have `auth_id NULL` (CLAUDE.md §5) — there is no
+`auth.users` row to borrow an email from either. The address this whole revision's DECISION
+depends on does not exist anywhere in the schema today. **Confirmed directly against prod,
+this same session (read-only check): zero `role='owner'` rows exist in `public.users` at
+all, on any tenant.** This isn't a gap in an existing owner's record — there is no owner
+in this system yet, for any project, and no path to create one that would also capture an
+email address.
+
+**1. Schema home.** A new column on `users`: `notification_email TEXT NULL` (nullable —
+only owner-role rows would populate it; a format-checked `CHECK` constraint, e.g. a basic
+`~ '^[^@]+@[^@]+\.[^@]+$'` shape, not a full RFC-5322 validator). **Not a separate
+recipients table** — rejected, not just undecided: today's requirement is exactly one
+delivery address per owner-role row, a 1:1 relationship `users` already models for every
+other contact channel this product has (`whatsapp_number` is the direct precedent — a
+nullable, non-auth contact column living directly on the row it belongs to, not a side
+table). A separate table would earn its keep the day this product needs to send one
+report to MULTIPLE recipients (a second owner, an accountant) — not decided or needed here,
+named as the reason a future redesign might revisit this, not a flaw in today's choice. Not
+globally unique — a real person could plausibly appear as the owner-email on more than one
+tenant, and nothing about this design requires ruling that out. **This is a schema change
+and therefore gated** — same review-package path as migration 028's own additions, per this
+project's standing practice; not written as a migration in this pass.
+
+**2. Who enters it — answered honestly, not assumed.** There is no invite path today, for
+ANY role, checked by grep across `app/`: no member-management, invite, or owner-creation
+surface exists anywhere in the codebase. Onboarding (`app/(onboarding)/onboarding/page.tsx`)
+creates a TENANT — it never joins a project or creates a second user. Every `users`/
+`project_members` row in prod today (the one real PM, the one real engineer) was created
+directly against the database, not through any app UI. **This plan's owner-email capture
+therefore depends on work that does not exist yet: a PM-facing "add/edit owner" surface**
+(the natural home is `app/(dashboard)/projects/[id]/page.tsx`, the existing project detail
+page, which already reads `project_members` for that project — but building the write side
+is new work, not a form that already exists and merely needs a new field). Stated plainly
+so this isn't discovered as a surprise later: **this decision's own critical path now
+includes building a UI surface this product has never had, for any role** — the same gap
+that already exists for engineer registration (ENG-01/02/05/06, tracked elsewhere), now
+made load-bearing for owner delivery specifically, and sharper for owners than engineers:
+an engineer can be the first to reach the system by messaging the bot; an owner, who never
+messages the bot by design, has no equivalent bootstrap path at all. Without this surface,
+there is no way for `notification_email` to ever be populated, regardless of what the
+column looks like.
+
+**3. Confirmed-delivery check — required before an address goes live for nightly sends.**
+Double opt-in, not a bare form field: when a PM enters/changes an owner's email, the system
+sends a confirmation email with a verification link (itself dependent on 2g's transactional
+email provider being wired — a real bootstrapping order worth naming: verifying an address
+requires the ability to send email at all, the same provider and domain this whole
+revision already depends on). Clicking it sets a new `notification_email_verified_at
+TIMESTAMPTZ NULL` column. **The nightly `ownerSend` job's own query MUST filter on this
+being non-null** — an unverified address is treated exactly like a missing one: no send,
+and a new `delivery_status` outcome (`skipped_unverified`, mirroring the already-established
+`skipped_no_data`/`skipped_no_template` pattern, 2e) so this reads as a real, recorded state
+rather than `'pending'`-forever with no explanation, same reasoning 2e already applies to
+every other skip. **An unverified address must never receive a report** — stated as a hard
+requirement, not a nice-to-have, per the severity this finding opens with.
+
+**Not decided here, named as required follow-ups (same discipline as 2g/2h's own
+dependencies):** the exact confirmation-email copy/flow, whether a PM can re-trigger
+verification after editing the address, and whether an owner should get any signal at all
+that they've been added (arguably yes, since the confirmation email itself IS that signal —
+not sketched further here).
 
 **Recorded in the roadmap notes, explicitly NOT as scope for this or any current
 workstream, per direct instruction.** This decision's own reasoning — owners read a
@@ -496,7 +632,13 @@ approves the relevant template — exactly as the prior revision found. `deliver
 `skipped_no_template` value (2e, narrowed this revision to stage 1 only) exists
 specifically so this doesn't read as `'pending'`-forever with no explanation. This part of
 the entanglement is real, unresolved, and identical to what #69's own plan already
-describes for its trigger sends generally.
+describes for its trigger sends generally. **A2 (round 3 external review, NEW finding,
+cross-referenced here per direct instruction — #69 owns the number, not this document):**
+#69's own economics finding (its §3g condition (e)) applies to stage 1's PM-notify
+template send the same as it applies to #69's own four engineer checkpoints — post-October,
+every template send is billed, PM-notify included. This document doesn't own that cost
+model or the `PER_MESSAGE_RATE_INR` variable it depends on; flagged here only so this
+document's own cost picture isn't read as complete without it.
 
 **Stage 2 (20:30, owner-send) — NO LONGER ENTANGLED WITH #69 AT ALL.** It is not a
 WhatsApp send, does not go through #69's primitive, does not wait on Meta template
@@ -536,8 +678,9 @@ together as it was described previously.
    supersession note (added tonight, prior revision) — the migration updates `023`'s
    `COMMENT ON TABLE dprs` to match, fixing both the reversed decision and the
    already-stale key description in the same pass.
-4. `delivery_status`'s CHECK widened by TWO values now (`pm_notified`, `skipped_no_template`
-   — the latter now scoped to stage 1/`pm_notify` only, per this revision's DECISION).
+4. `delivery_status`'s CHECK widened by THREE values now (`pm_notified`,
+   `skipped_no_template` — scoped to stage 1/`pm_notify` only — and **NEW this revision,
+   `skipped_unverified` (2j)** for an owner-send blocked on an unconfirmed email address).
 5. The dashboard edit surface (2b) — new Client Component, role-gated, built against
    `structured`, not `content`.
 6. A "regenerate" action wired to the existing `dpr_generate` job machinery, now versioned
@@ -562,6 +705,19 @@ together as it was described previously.
     option for later, own dependency shape named, not chosen.
 13. **Recorded in the roadmap, not scope:** mobile app / PWA as the checkpoint before
     native, per the ROADMAP NOTE above — not scheduled, nothing here commits to it.
+14. **NEW (round 3 external review, C-a, BLOCKING) — the owner-email schema chain (2j):**
+    `users.notification_email TEXT NULL` (own migration, gated, additive to item 2's
+    migration or its own) + `notification_email_verified_at` + a double-opt-in confirmation
+    send (sequenced AFTER item 9's provider/domain work, since verifying an address needs
+    the ability to send email at all) + the nightly `ownerSend` query filtering on
+    verified-not-null + `skipped_unverified` (item 4, above). **And, load-bearing, not
+    optional:** a PM-facing "add/edit owner" UI that does not exist yet anywhere in this
+    codebase, for any role — confirmed zero `role='owner'` rows exist in prod today. This
+    plan cannot ship without that surface being built somewhere, even if not in this PR.
+15. **NEW (round 3 external review, C-a item 4) — §2g's deliverability list is now four
+    items, not three:** wrong recipient added as the worst case — a delivery SUCCESS,
+    invisible to bounce/complaint/webhook monitoring, catchable only upstream by item 14's
+    confirmation gate, never after the fact.
 
 None of this is built in this pass. Branch/PR for this document only — no code, except the
 dated `bot-flows.md` supersession note (documentation, matching item 3 above).
