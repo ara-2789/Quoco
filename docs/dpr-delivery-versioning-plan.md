@@ -42,7 +42,7 @@ not a delivery failure. It is a delivery SUCCESS with the worst possible outcome
 error-handling path in this plan (or in 2g's existing three-item deliverability list) was
 ever going to catch it — because nothing about it looks like an error.
 
-**REVISION 5 (2026-08-19, round 4 external review — both plans "moved substantially,
+**REVISION 5 (2026-08-19, round 4 design review — both plans "moved substantially,
 neither ready to send back" — resubmit as a diff against this pin) — diff against
 `6c8a3cd`. Still nothing implemented; still one round short of the review package.**
 
@@ -54,10 +54,10 @@ A1/A3/A4's not-applicable rulings (grep evidence stood).
 | Label | Round of origin | Status this round | What changed |
 |---|---|---|---|
 | A (beta provisioning is manual) | Round 4 (Aravind's decision — not open for re-litigation) | **Implemented in the plan.** New §2j subsection: exact operator steps (A1 — `users` INSERT + `projects.owner_user_id` UPDATE, corrected this round to the real association mechanism, not `project_members`), double opt-in still applies to seeded addresses (A2), member-management UI named and deferred post-beta with the onboarding-never-joins-a-tenant gap named alongside it (A3), and a stated-assumption risk-section line: no owner has ever used this product (A4). |
-| B1 (constraints not stated) | Round 4 (external review) | **Fixed.** Global uniqueness: no. Per-tenant uniqueness: no. Format validation: both DB `CHECK` and app layer, named as a weak defense against the actual risk. All three reasoned, not asserted. |
-| B2 (`whatsapp_number` precedent unverified) | Round 4 (external review) | **Fixed.** Verified against `001_core_schema.sql:44` — `TEXT UNIQUE`, no format `CHECK`, app-layer-only normalisation. Two deliberate divergences named and justified (uniqueness, format checking) rather than blindly matched. |
-| B3 (`skipped_unverified` — what kind of thing) | Round 4 (external review) | **Fixed.** A `TEXT` value in `delivery_status`'s existing `CHECK` constraint — a real schema change (`DROP`/`ADD CONSTRAINT`), not an enum, not derived at read time; named explicitly for the gating assessment. |
-| B4 (silent non-delivery, mirror of §2g item 4) | Round 4 (external review) | **Fixed.** Added to §2g as item 5. Surfacing mechanism picked, not left at "it's logged": a Sentry alert after N consecutive `skipped_unverified` nights, reasoned against A4's own "no owner has ever used this product" finding. |
+| B1 (constraints not stated) | Round 4 (design review) | **Fixed.** Global uniqueness: no. Per-tenant uniqueness: no. Format validation: both DB `CHECK` and app layer, named as a weak defense against the actual risk. All three reasoned, not asserted. |
+| B2 (`whatsapp_number` precedent unverified) | Round 4 (design review) | **Fixed.** Verified against `001_core_schema.sql:44` — `TEXT UNIQUE`, no format `CHECK`, app-layer-only normalisation. Two deliberate divergences named and justified (uniqueness, format checking) rather than blindly matched. |
+| B3 (`skipped_unverified` — what kind of thing) | Round 4 (design review) | **Fixed.** A `TEXT` value in `delivery_status`'s existing `CHECK` constraint — a real schema change (`DROP`/`ADD CONSTRAINT`), not an enum, not derived at read time; named explicitly for the gating assessment. |
+| B4 (silent non-delivery, mirror of §2g item 4) | Round 4 (design review) | **Fixed.** Added to §2g as item 5. Surfacing mechanism picked, not left at "it's logged": a Sentry alert after N consecutive `skipped_unverified` nights, reasoned against A4's own "no owner has ever used this product" finding. |
 
 **Correction of the prior round's own mistake, found while answering B2, not asked for —
 flagged rather than silently fixed:** the prior §2j stated the natural home for an
@@ -69,7 +69,7 @@ link is `projects.owner_user_id` (`016_corrections.sql:88-89`), a plain FK. This
 A1 provisioning steps and B2's precedent-check both now reflect the correct mechanism; the
 prior round's inaccurate framing is not restated.
 
-**REVISION 6 (2026-08-19, round 5 external review — "three residuals, then both go to the
+**REVISION 6 (2026-08-19, round 5 design review — "three residuals, then both go to the
 reviewer") — diff against `5482173`. Per direct instruction, this is intended to be the
 last plan revision before the review package — the next artifact after clearance should be
 a migration, not another plan diff.**
@@ -82,9 +82,9 @@ schema change.
 
 | Label | Round of origin | Status this round | What changed |
 |---|---|---|---|
-| R1 (Sentry is beta-only) | Round 5 (external review) | **Fixed.** §2g item 5 now states explicitly that Sentry-surfacing is correct only while operator and developer are the same person, and names a customer-facing operator surface as a required dependency before those roles separate — not designed here. |
-| R2 (name N) | Round 5 (external review) | **Fixed.** N = 3, measured in consecutive nights (days of owner silence), not an abstract count — reasoned against the expected first-night skip every seeded owner has. |
-| R3 (what fires the confirmation send) | Round 5 (external review) | **Fixed.** New §2j subsection: operator-triggered (option i), chosen for consistency with Part A's manual-beta decision over a DB-trigger-to-email-service design (option ii, rejected with reasons). Runbook location stated: A1's own three numbered steps, no separate doc. |
+| R1 (Sentry is beta-only) | Round 5 (design review) | **Fixed.** §2g item 5 now states explicitly that Sentry-surfacing is correct only while operator and developer are the same person, and names a customer-facing operator surface as a required dependency before those roles separate — not designed here. |
+| R2 (name N) | Round 5 (design review) | **Fixed.** N = 3, measured in consecutive nights (days of owner silence), not an abstract count — reasoned against the expected first-night skip every seeded owner has. |
+| R3 (what fires the confirmation send) | Round 5 (design review) | **Fixed.** New §2j subsection: operator-triggered (option i), chosen for consistency with Part A's manual-beta decision over a DB-trigger-to-email-service design (option ii, rejected with reasons). Runbook location stated: A1's own three numbered steps, no separate doc. |
 
 **Self-found and fixed while addressing R3, not asked for:** the `## ROADMAP NOTE` section
 header was accidentally deleted during round 4's §2j rewrite (confirmed via `git show
@@ -93,6 +93,36 @@ an earlier round). The section's content survived; only the heading introducing 
 Summary's own back-reference to it were left dangling. Restored in place, flagged inline
 where it was restored, per this document's own provenance discipline — not silently
 patched.
+
+**GRADUATED (2026-08-19, external review verdict): both plans graduate to review-package
+stage. No further plan revisions — the next artifact is a migration, per direct
+instruction. This pass makes the final closeout edits, then this document is frozen as the
+design record the packages cite, not itself edited further:**
+
+- **P1 (process, accepted):** citations become `file:line @ <sha>` going forward, so a
+  line-number citation can't silently drift under a later edit the way this document's own
+  self-citations already had to be chased down twice this arc.
+- **P2:** §2g item 5's beta-scoping upgraded to a formal tripwire — named closing condition
+  + named closer (the `3534756b` pattern), not a caveat in prose. Done in place, §2g.
+- **P3 (labelling fix, my error to correct — findings untouched):** revisions 5 and 6 above
+  attributed their findings to "round 4/5 external review." Those rounds came through the
+  design-review chat channel, not the external reviewer's own channel — he conducted rounds
+  3 and 4 on this arc, no more. **Every "Round 4 (external review)" / "Round 5 (external
+  review)" label in this document's revision headers is corrected to "(design review)"
+  above** — a labelling-only fix, matching §22 of the 028 package's own correction of this
+  exact conflation; no finding's substance changed.
+- **S2, S3, S4, and the undocumented `role='owner'` CHECK dependency** are answered in
+  place at §2j (new §2j item 1 subsection, B2, S4, and A1's own citation) — not restated
+  here.
+- **Migrations 029 (exercisable: `dpr_versions`, `dprs` additions, `daily_log_edits.
+  comment`) and 030 (blocked: owner-email schema) are the artifacts this document graduates
+  into** — `supabase/migrations/029_dpr_versioning.sql`,
+  `supabase/migrations/030_owner_email_delivery.sql`, full review packages at
+  `docs/reviews/029-dpr-versioning-review-package.md` and
+  `docs/reviews/030-owner-email-review-package.md`. Neither has been applied or rehearsed
+  against any database — writing the files is this pass's artifact; rehearsal is its own,
+  separately-confirmed next step, per CLAUDE.md §0's standing rule against collapsing
+  "build" and "database-touching" into one continuous stretch.
 
 ---
 
@@ -541,14 +571,14 @@ what finally makes that line load-bearing.
    system's point of view, everything DID work. The only defense against this failure mode
    is upstream of delivery entirely — 2j's confirmed-delivery check (double opt-in) — not
    anything this section's own provider/webhook machinery can ever detect after the fact.
-5. **ADDED (round 4 external review, B4) — silent non-delivery from a never-confirmed
+5. **ADDED (round 4 design review, B4) — silent non-delivery from a never-confirmed
    address. The mirror of item 4, same invisibility, different cause.** If an owner never
    clicks the confirmation link 2j's double opt-in requires, `delivery_status` writes
    `skipped_unverified` every night, indefinitely, and — unlike item 4 — this one doesn't
    even reach the "provider accepted it" stage, so there's no `delivered`/`bounced`/
    `complained` webhook event to ever fire in the first place. **Surfaced via a Sentry
    alert after 3 consecutive `skipped_unverified` nights for the same recipient — N NAMED
-   (round 5 external review, R2), not left abstract.** Measured in DAYS the owner has
+   (round 5 design review, R2), not left abstract.** Measured in DAYS the owner has
    silently received nothing, not as a generic retry count, per direct instruction: the
    natural cadence here is exactly one skip opportunity per night (one `ownerSend` run),
    so "3 consecutive skips" and "3 consecutive nights of silence" are the same number by
@@ -560,16 +590,26 @@ what finally makes that line load-bearing.
    enough to rule out "just seeded, hasn't checked email yet" as the explanation, and short
    enough that a real problem (bad address, provider outage) surfaces within the same week
    it started, not after a month of silent non-delivery.
-   **R1 (round 5 external review) — this surfacing is BETA-SCOPED, stated explicitly, not
+   **R1 (round 5 design review) — this surfacing is BETA-SCOPED, stated explicitly, not
    left to be discovered as a defect later.** A Sentry alert reaching the operator is
    correct ONLY because, for beta, the operator (who seeds owner rows, 2j/A1) and the
    developer (who reads Sentry) are the same person. It stops being correct the moment
    those roles separate — the party who needs to know a specific customer's owner has gone
    silent is whoever holds that customer relationship, and that party does not read Sentry.
-   **A customer-facing operator surface (a dashboard view, a scheduled digest, something a
-   non-engineer can act on) is REQUIRED before operator and developer roles separate** —
-   named as a dependency this plan does not design or schedule, per direct instruction, not
-   a defect in the beta-scoped choice above.
+
+   **TRIPWIRE (P2, round 5 design review) — a named closing condition, not a caveat in
+   prose, same shape as CLAUDE.md's own `3534756b` tripwire.** CLOSING CONDITION, named
+   explicitly so it has a trigger, not a memory dependency: **BEFORE any operator other
+   than the developer seeds an owner row (2j/A1), OR BEFORE any customer relationship for
+   a seeded owner is held by someone who does not read this project's Sentry — whichever
+   comes first** — Sentry-only surfacing for silent owner non-delivery must be replaced
+   with a customer-facing operator surface (a dashboard view, a scheduled digest, something
+   a non-engineer can act on). **NAMED CLOSER: whichever PR builds member-management/invite
+   UI (2j/A3's own deferred post-beta workstream) is the natural closer, and MUST re-check
+   this condition on the record when it lands** — noted there too, so this trigger has an
+   owner, not just a note in a file nobody re-reads. Not designed or scheduled here, per
+   direct instruction — the tripwire exists so it isn't discovered as a defect once the
+   condition is already true.
 
 **Not choosing a provider or building anything here** — recording the dependency and what
 verifying the domain involves, per direct instruction.
@@ -693,6 +733,27 @@ the application layer (`lib/whatsapp/normalise.ts`), never enforced by the datab
    cheap to add, no reason not to, even though it's acknowledged above as a weak defense
    against the real risk.
 
+### S4 — a second PII column on a table with an open exposure review
+
+**`notification_email` is a NEW PII column landing on the same table as an already-tracked
+exposure. Recorded against that open item, not silently left to be discovered later —
+column-bounding `users_select` is out of scope for this migration, per direct instruction's
+own framing of "either bound it explicitly, or record the exposure."** `users_select`
+(current definition: `007_auth_surgery.sql:214-216`) is column-agnostic — any authenticated
+tenant member who can see a `users` row sees every column on it, no `SELECT` list
+narrowing. This is already a tracked, open finding: `docs/reviews/017-review-package.md`'s
+own §7 residual notes `users_select` "ships every `users` column (incl. `whatsapp_number`
+PII) to any tenant member," primary tracking **`007 review §11d`**, with a live-surface
+note added in 017's own package that DASH-03 (2026-07-25) actually renders
+`whatsapp_number` to the browser for `messaging_blocked` engineers — not just a latent
+policy shape, a real client-visible surface. **`notification_email` inherits the identical
+exposure the moment this migration ships it: any tenant member with `users_select` access
+sees it, whether or not any dashboard page ever intentionally selects it, for the same
+reason `whatsapp_number` does.** Recorded here, and this migration's own package should add
+a line to `017-review-package.md`'s §7 residual noting the second column — column-bounding
+`users_select` remains the distinct F5 least-privilege workstream that item already
+scopes this to, not reopened or fixed by this migration.
+
 **2. Who enters it, and the row it goes on.** There is no invite path today, for ANY role,
 checked by grep across `app/`: no member-management, invite, or owner-creation surface
 exists anywhere in the codebase. Onboarding (`app/(onboarding)/onboarding/page.tsx`)
@@ -700,14 +761,29 @@ creates a TENANT — it never joins a project or creates a second user. Every `u
 prod today was created directly against the database, not through any app UI. **Checked
 further this round, correcting the prior draft's own inaccuracy: owner association does
 NOT run through `project_members` at all.** `023_dpr_reports.sql`'s own header states this
-explicitly, three independent ways, and it's confirmed by reading `016_corrections.sql:85-
+explicitly, three independent ways, and it's confirmed by reading `016_corrections.sql:88-
 89`: `projects.owner_user_id UUID REFERENCES public.users(id) ON DELETE RESTRICT` is the
 actual link — a plain FK from `projects` to a single `users` row, not a `project_members`
-row. **One tracked, pre-existing gap this seeding path inherits, not introduced by it:**
-`016`'s own comment (line 32-34) already flags that `owner_user_id` has NO same-tenant
-enforcement at the DB level — nothing stops a project pointing at an owner row in a
-different tenant. The seeding operator (A1, below) is the thing responsible for getting
-this right today; the DB will not catch a mistake.
+row, **as ORIGINALLY added by 016.**
+
+**CORRECTED (round 5 external review, S3) — the gap this section previously described as
+open is CLOSED, and has been since one migration after 016, not something this plan's
+migration needs to fix.** `016`'s own comment (lines 32-34) flags that `owner_user_id` had
+NO same-tenant enforcement at the DB level when 016 shipped — true THEN, and easy to read
+as still true now, since nothing revisited that comment. It stopped being true in
+`017_rls_column_bounding.sql:82-91`: `projects_owner_user_id_fkey` was dropped and
+re-added as `FOREIGN KEY (owner_user_id, tenant_id) REFERENCES public.users (id,
+tenant_id) ON UPDATE NO ACTION ON DELETE RESTRICT` — the composite, same-tenant-enforcing
+shape, over a parent `UNIQUE(id, tenant_id)` index 017 also added that migration
+(`users_id_tenant_id_key`, `017:52-58`). **Verified against the live catalog, not just the
+migration file text** (`pg_constraint` on test-db): the constraint is live today, exact
+definition matching 017's text, `confupdtype='a'`, `confdeltype='r'`. A cross-tenant
+`owner_user_id` assignment is rejected by the database at write time, not silently
+accepted and discovered later as a wrong-recipient send. **Pinning this rather than
+shipping redundant SQL, per direct instruction: the argument for not adding S3's suggested
+constraint is that it already exists,** not that it's being deferred or judged unnecessary
+on the merits — the specific FK text S3 asked for is byte-for-byte what 017 already
+shipped.
 
 ### A. DECIDED (Aravind, not open for re-litigation in this plan) — beta provisioning is manual, not built as a UI
 
@@ -719,13 +795,33 @@ accepted deliberately for beta's scale.
 
 **A1. The exact operator steps, stated concretely, not left to inference:**
 1. `INSERT INTO public.users` — `id` (generated), `tenant_id` = the target project's
-   tenant (read from `projects.tenant_id` for the project being provisioned — this is the
-   step that has to get the same-tenant match right, since nothing enforces it, per B2's
-   `owner_user_id` gap above), `full_name` = the real owner's name, `role = 'owner'`,
-   `auth_id = NULL` (owners never get a web login, unchanged), `whatsapp_number = NULL`
-   (not needed for this delivery path), `status = 'active'`, `notification_email` = the
-   address the operator was given, **`notification_email_verified_at = NULL`** — never set
-   at this step (A2, below).
+   tenant (read from `projects.tenant_id` for the project being provisioned), `full_name` =
+   the real owner's name, `role = 'owner'`, `auth_id = NULL` (owners never get a web login,
+   unchanged), `whatsapp_number = NULL` (not needed for this delivery path), `status =
+   'active'`, `notification_email` = the address the operator was given,
+   **`notification_email_verified_at = NULL`** — never set at this step (A2, below).
+   **UNDOCUMENTED DEPENDENCY, stated with the constraint cited (round 5 external review):
+   `role = 'owner'` is legal only because `016_corrections.sql:71-72`'s
+   `users_role_check` CHECK constraint — `CHECK (role IN ('pm', 'qs', 'engineer', 'owner',
+   'subcontractor', 'admin'))` — includes it.** Neither this plan nor #69's said this
+   anywhere before now. Not a live risk (the constraint has been in this shape since
+   migration 016, well before this plan existed), but an operator runbook whose first
+   statement fails on a CHECK violation, because whoever's running it didn't know the
+   constraint existed, is exactly the class of thing this project pins rather than assumes.
+   **CORRECTED (round 5 external review, S3) — the "same-tenant match" risk this step
+   previously flagged does not exist. `projects.owner_user_id` already carries a composite
+   FK, `(owner_user_id, tenant_id) REFERENCES users(id, tenant_id)`
+   (`017_rls_column_bounding.sql:82-91`, `projects_owner_user_id_fkey`), added a migration
+   after 016's own comment (lines 32-34) flagged the gap — 016's comment describes a state
+   017 already closed, one migration later. Verified against the live catalog, not just
+   the migration file text: `pg_constraint` on test-db shows `projects_owner_user_id_fkey`
+   — `FOREIGN KEY (owner_user_id, tenant_id) REFERENCES users(id, tenant_id) ON DELETE
+   RESTRICT`, `confupdtype='a'` (NO ACTION), `confdeltype='r'` (RESTRICT) — live today.**
+   A cross-tenant `owner_user_id` assignment in step 2 below is therefore NOT a silent
+   mistake an operator could make and have it stick — the database rejects it with a real
+   FK violation at the moment `UPDATE public.projects SET owner_user_id = ...` runs, not
+   discovered later as a wrong-recipient send. This migration adds no new SQL for this —
+   it was already correct before this plan was written.
 2. `UPDATE public.projects SET owner_user_id = <the new user's id> WHERE id = <project id>`
    — the actual association, per B2's finding above. Not a `project_members` insert.
 3. **Trigger the confirmation send.** Since no UI exists to fire this automatically, the
@@ -805,13 +901,13 @@ customer-facing surface this needs the moment operator and developer are differe
 
 **Not decided here, named as required follow-ups (same discipline as 2g/2h's own
 dependencies):** the exact confirmation-email copy/flow, and whether a PM (or operator) can
-re-trigger verification after editing the address. **R3 (round 5 external review) answers
+re-trigger verification after editing the address. **R3 (round 5 design review) answers
 what fires the confirmation send in the first place** — new subsection below, not left
 open any longer.
 
 ### R3 — what fires the confirmation email for a seeded address
 
-**Gap, found by round 5 external review: 2j/A1 says the operator inserts the `users` row
+**Gap, found by round 5 design review: 2j/A1 says the operator inserts the `users` row
 and sets `notification_email`, and B3/2j says `notification_email_verified_at` is set only
 by the recipient clicking through — but nothing said what SENDS the confirmation email for
 a row created out-of-band.** Two shapes weighed, one chosen:

@@ -2050,6 +2050,23 @@ deploy" means do not merge, not just "don't add the missing-route cron entry" �
 `main` deploys, full stop, same fact this file's own merge/deploy incident already
 established for a different PR.**
 
+`morning.ts:188` TS/SQL MIRROR DIVERGENCE — TRACKED, NOT FIXED (opened 2026-08-19, found
+during #67/#69's package-stage review, external review). `dispatchMorningFlow`'s `startFlow`
+branch (`lib/whatsapp/flows/morning.ts:188`) does a bare `context: {}` replace on session
+start. The live SQL (`apply_morning_flow_turn`, currently 022's body) does NOT do this —
+migration 022 fixed exactly this spot to `context - 'q2_reask' - 'q3_reask'` (a strip,
+never a bare wipe — "CONTEXT DISCIPLINE, site 1 of 4," 022's own header). The TS mirror's
+own AUTHORITY NOTE (`morning.ts:24-32`) claims to mirror the `wrong_flow` outcome and the
+Q4-completion merge only — it does not claim to mirror the START fix, and the code confirms
+it doesn't. **Correctly flagged-not-fixed in a plan-only pass** (docs/outbound-send-
+primitive-plan.md, B3 condition 1) — recorded here so it isn't lost the moment that
+document graduates to a migration and stops being the place anyone re-reads for open
+findings. Not urgent on its own (the TS mirror is a prediction/test-oracle only —
+`dispatchMorningFlow`'s own AUTHORITY NOTE states production acts on the RPC's real return
+value, never the mirror's), but real: any future RPC change in this same area (B3's
+cross-flow fix, when it ships) should close this divergence in the same pass, not leave a
+third context-writing pattern where two are already meant to agree by construction.
+
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
