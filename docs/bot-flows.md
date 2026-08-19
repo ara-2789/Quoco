@@ -136,6 +136,27 @@ submission. Do not build against an assumed answer here.
   send the trigger question immediately after the current flow completes.
   The trigger is never lost; the active flow is never destroyed.
 
+**DATED SUPERSESSION (2026-08-19, docs/outbound-send-primitive-plan.md #69, B3, round 3
+external review): the bullet above is being narrowed, not reversed.** For the SPECIFIC case
+of a morning session still active when the evening trigger fires — the only cross-flow
+collision this codebase's flow RPCs actually have to handle, since morning and evening are
+the only two flows with clock-driven triggers today — the queueing behavior above is
+**superseded**. Decided instead: a cutoff-close sweep force-resets any session still stuck
+at `'morning'` past `morningCutoff` (15:00), backstopped by a force-switch at `eveningSend`
+itself. Reasoning: by 18:30 (`eveningSend`), the schedule has already treated that morning
+as over for every other purpose (`checkin_escalations` already closes it `not_submitted` at
+15:00) — letting a queued evening flow effectively keep morning "open" until it drains
+would contradict a decision the schedule freeze (2026-08-15) already made elsewhere.
+**Scope of the supersession, stated precisely so this bullet's other uses aren't
+misread as dead:** this applies ONLY to the morning→evening collision. The
+`pending_flows`/`acquire_and_transition_session` queueing mechanism this bullet describes
+is UNCHANGED for every other trigger type — a safety keyword mid-flow, or any future
+same-flow trigger colliding with itself — which still queue exactly as written above.
+**Not yet shipped** — #69 is plan-only as of this note; the RPC change (both
+`apply_morning_flow_turn`/`apply_evening_flow_turn` and/or a new sweep) goes through the
+full external-review gate before it lands, per #69's own B3 condition 2. This note records
+the decision, not a completed migration.
+
 ### Pending flow ordering (BOT-26)
 - pending_flows is an ordered list, stable total order:
   safety=0, scheduled_trigger=1, other=2; FIFO within equal priority.

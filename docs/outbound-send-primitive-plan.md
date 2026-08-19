@@ -28,6 +28,41 @@ requiring the full review package. Changes: §0's owner-send blocker marked reso
 with #67 rewritten to one open dependency instead of two; Summary updated. Diff against
 `4f2c118`.**
 
+**REVISION 4 (2026-08-19, round 3 external review — verdict STOP, iterate as a diff against
+this pin, not a rewrite) — diff against `57cf77a`. Still nothing implemented; SQL is not
+written here — this document remains plan-only, one round short of the review package.**
+
+**Revision header — every finding, stable label, round of origin, status. This table is
+the fix for the process defect below (the B2 collision): it is now the single place that
+says what each label means and where it stands, so a label can never again silently absorb
+a different finding's resolved status.**
+
+| Label | Round of origin | Status this round | What changed |
+|---|---|---|---|
+| §0 (Meta pricing fact) | Round 2 | Carried over, **reframed** | Decision decoupled from the October date (A1) — the fact-check itself is unchanged and still hedged at the same confidence level it always was |
+| A1 (October date framing) | Round 3 (external review) | **Resolved** | Every conditional branch on the date removed from the decision; date now appears only in cost projections |
+| A2 (service-reply economics) | Round 3 (external review, NEW finding) | **Added** | Folded into §3g condition (e) and the Summary, as a named-but-open variable |
+| A3 (log Meta's `pricing` object) | Round 3 (external review, NEW finding) | **Added** | Folded into B4's status-callback route spec as a day-one requirement, not a follow-up |
+| A4 (IST/UTC day-key nits) | Round 3 (external review, NEW finding) | **Resolved** | Both sites named and fixed — §3c's "UTC day" → IST; §3d's `event_key` date now states IST explicitly |
+| B1 | Round 1 | Resolved (round 2), carried over unchanged | Moot under §0's scoped decision; not re-opened this round |
+| **B2 (round 1)** | **Round 1** | **Carried-over-unresolved for two full revisions, NOW fixed this round** | `messaging_blocked` was on track to be repurposed to represent delivery failure. It represents CONSENT, not delivery — see the fix in §3e below. |
+| **B2 (round 2)** | **Round 2** | Resolved (round 2), **unchanged this round — relabeled only**, to stop colliding with B2 (round 1) | The skip-and-record-before-RPC-call ordering fix — substance untouched |
+| B3 | Round 2 | Was a recommendation, undecided, through round 3. **DECIDED this round** | Options 1 (cutoff-close sweep) + 3 (force-switch backstop) adopted together; five conditions attached (§3b below) |
+| B4 | Round 1 | Resolved (round 2), carried over, **gains A3's requirement this round** | Status-callback route spec now also logs Meta's `pricing` object from day one |
+| S (roster/ledger, three items) | Round 2 | Resolved, unchanged | — |
+| 3f "named tension" (retroactive `nudged` revert) | Round 2 (left open) | **Resolved this round** | Ruled: no revert, ever (B-c) |
+
+**The process defect this table exists to prevent, stated plainly, per direct instruction —
+not smoothed over:** revision 2's own header claimed "B1-B4" resolved as a block. That
+claim was true for B1, B3 (as "recommended," not yet decided), and B4 — but **false for
+B2**. The B2 label was reused in revision 2 for a genuinely different finding (the
+skip-and-record ordering fix), and revision 2's header let that new B2 silently inherit
+"resolved" status while the ORIGINAL round-1 B2 — `messaging_blocked` being repurposed to
+mean delivery failure — was never touched. Two revisions (2 and 3) both carried a header
+that read as if B2 was closed. It was not. Fixed here by never letting one label mean two
+things again: **B2 (round 1)** and **B2 (round 2)** are now permanently distinct labels,
+and the round-1 finding is fixed in substance below (§3e), not merely relabeled.
+
 ---
 
 ## 0. THE META PRICING FACT — verified as far as tooling allows, and what it changes
@@ -66,15 +101,33 @@ stated precisely, not glossed over:**
 - **Not resolved to the bar asked for.** Recording the gap rather than pretending the bar
   was met: pin Meta's own documentation once it's visible from an account with WhatsApp
   Manager access (Aravind's own account-level notices are the most likely place this shows
-  up first, ahead of generic public docs) before treating this as fully confirmed. Until
-  then, everything below is written **conditionally** — "if this holds" — not as settled
-  fact.
+  up first, ahead of generic public docs) before treating this as fully confirmed.
+  **REVISION 4 (round 3 external review): this gap no longer conditions anything below.**
+  The prior text read "everything below is written conditionally — 'if this holds' — not
+  as settled fact." That was wrong to apply to the DECISION (only to the raw fact itself,
+  which stays exactly this hedged, unchanged). Per the reviewer's own ruling, quoted
+  verbatim because it's the correct frame and shouldn't be paraphrased: **"The decision is
+  robust to the date being wrong; only its price tag isn't. Adopt scoped always-template
+  now, condition nothing on October."** The date remains unconfirmed to primary-source bar
+  — that fact doesn't change, and the gap above stays open exactly as recorded. What
+  changes is that the decision below no longer waits on it.
 
-### Weighing always-template against the recommendation, on the record, not by default
+### Always-template — ADOPTED NOW, unconditionally; the date is a cost input, never a gate
 
-**If the fact holds, always-template becomes strictly cost-neutral against hybrid after 1
-October 2026** — the reviewer's framing is right that far. But "one send shape" undersells
-what always-template actually costs this specific product, checked against the real flow
+**REVISION 4: this was previously framed as a recommendation weighed against a date that
+might not hold. It is now a decision, adopted immediately, for reasons that hold whether or
+not 1 October 2026 turns out to be the real date, or the real date turns out to be some
+other day, or Meta's governance changes again before then.** The always-template scoping
+below was never actually justified by the pricing arbitrage alone — re-reading the original
+reasoning honestly, its strongest grounds were always mechanism-level, not calendar-level:
+it deletes B1 and the 63016 async-failure class for trigger sends (below), and it clears
+Q5's hard technical blocker (immediately below). Both of those hold today, regardless of
+Meta's pricing calendar. The pricing fact only ever changed WHEN the choice stops being
+free — never WHETHER it's the right choice. Restated precisely: **scoped always-template is
+adopted now, for the five trigger sends in scope, unconditionally. The October date appears
+nowhere in this plan's control flow after this revision — only in the cost projection
+(§3g condition (e), and the new economics finding there).** "One send shape" still
+undersells what always-template costs this specific product, checked against the real flow
 shape rather than assumed away:
 
 - **Q5 is structurally incompatible with a template.** Migration 024's own header:
@@ -98,9 +151,9 @@ shape rather than assumed away:
   originally surfaced the need for that decision, not as a live blocker this plan still
   carries.
 
-**Recommendation: neither the original hybrid (as designed, still exposed to B1/B4) nor
-unscoped always-template. A narrower, correctly-scoped position beats both on stated
-grounds:**
+**DECIDED, not a recommendation as of this revision: neither the original hybrid (as
+designed, still exposed to B1/B4) nor unscoped always-template. A narrower,
+correctly-scoped position beats both on stated grounds, adopted now:**
 
 **Always-template for the five OUTBOUND-INITIATED trigger sends in scope**
 (`morningSend`, `morningNudge`, `eveningSend`, `eveningNudge`, and `eveningClose`'s
@@ -225,7 +278,7 @@ construction (§0). Two call shapes inside one primitive, not one call shape use
 checkpoint sends, and `sendFlowReply` (free-form always, still idempotency-tracked per 3d
 — a retry must not double-send a reply either) for in-flow turns.
 
-### B3 — "one call" holds intra-flow and BREAKS cross-flow; this is a real, undecided design gap
+### B3 — DECIDED this revision (options 1+3): "one call" holds intra-flow and BREAKS cross-flow
 
 **Correction accepted in full: 3a's "four sends, one call" claim, as written, is only true
 within one flow.** All of §10's own worked cases (Part 1, restart semantics) are same-flow
@@ -266,24 +319,88 @@ not deferred to implementation:
    `current_flow` to `'evening'` regardless of what was active, discarding any in-progress
    morning answers. Simplest RPC change of the three.
 
-**Recommendation, not yet decided on the record — leaning toward option 1 combined with
-option 3 as a backstop, not option 2:** by the time `eveningSend` fires (18:30), morning's
-own accountability window closed 3.5 hours earlier (`morningCutoff`, 15:00) — the schedule
-has already treated that morning as over for every purpose EXCEPT the session's own
-`current_flow` value. Option 1 makes the session state consistent with a decision the
-schedule already made; option 3 is a cheap backstop for the case option 1's sweep somehow
-missed a session. Option 2 (BOT-21 queueing) is the most faithful to the ORIGINAL spec but
-reopens a design question — should a same-day morning answer ever be accepted AFTER 15:00
-just because evening queued behind it? — that the schedule freeze (Part 1) implicitly
-already answered "no" by giving morning a hard, non-negotiable cutoff. **Not finalized here
-— this is a recommendation for the reviewer to accept or override, not a decision made
-unilaterally, per the same discipline this plan applies to the always-template
-recommendation (§0).**
+**DECIDED (round 3 external review, B-b): options 1 and 3 together, not option 2.** By the
+time `eveningSend` fires (18:30), morning's own accountability window closed 3.5 hours
+earlier (`morningCutoff`, 15:00) — the schedule has already treated that morning as over
+for every purpose except the session's own `current_flow` value. Option 1 makes the session
+state consistent with a decision the schedule already made; option 3 is a cheap backstop
+for the case option 1's sweep somehow missed a session. Option 2 (BOT-21 queueing) is the
+most faithful to the ORIGINAL spec but reopens a design question the schedule freeze (Part
+1) implicitly already answered "no" to — see condition 3, below, for how this is recorded
+against BOT-21 rather than silently overriding it. **Five conditions attached to this
+decision, all required to appear in this plan — not optional follow-ups:**
 
-**Every one of the three options is an RPC change — the "one mechanism" claim (3a) is
-only true once ONE of these three ships, and all three require touching the SECURITY
+**1. The fifth context-write site — the plan undercounted at four; there are five.**
+Migration 022's own header ("CONTEXT DISCIPLINE — ONE RULE, FOUR SITES") predicted exactly
+this gap: *"the exact trap for whoever adds a FIFTH site (Q5, a future flow, anything
+touching context): copying the nearest existing line of code instead of the rule above."*
+That fifth site exists, added by migration 024 for evening Pass 2, and any RPC change under
+this decision touches session-context-writing code, so all five need to be on the table,
+not four:
+
+| # | Site | Where (current body) | What it writes |
+|---|---|---|---|
+| 1 | Morning START | `022:161-169` | `context - 'q2_reask' - 'q3_reask'` (strip morning's own in-flight counters only) |
+| 2 | Morning Q4 COMPLETE | `022:219-227` | `(context - 'q2_reask' - 'q3_reask') \|\| {morning_submitted: true}` |
+| 3 | Evening START | `025:229-239` (introduced `022:429-431`, extended `024:355-361`) | `context - 'e2_reask' - 'e4_reask' - 'e4_headcount' - 'e5_reask' - 'e6_reask'` |
+| 4 | **Evening Q4b→Q5 transition — the fifth site** | `025:500-503` (introduced `024:542-544`) | `(context - 'e4_headcount') \|\| {e5_reask: 0}` |
+| 5 | Evening COMPLETE | `025:691-698` (introduced `022:509-515`, extended `024:732-739`) | `(context - all evening reask keys) \|\| {evening_submitted: true}` |
+
+Each has a TS "pure mirror" counterpart (`morning.ts`/`evening.ts`) that must stay in
+agreement with it, same discipline as this project's other SQL/TS mirror pairs. **Found
+while enumerating these, not asked for, flagged rather than silently fixed:** site 1's own
+TS mirror (`morning.ts:188`) does a bare `context: {}` replace, not the strip the SQL side
+got in migration 022 — the mirror's own header comment only claims to mirror the
+`wrong_flow` outcome and the Q4-completion merge, not the START fix. This is a pre-existing
+mirror/RPC divergence, not something this decision introduces, but it sits in exactly the
+code this decision is about to touch — named here so it isn't rediscovered separately, not
+fixed in this plan-only pass.
+
+**2. Full external review gate — no shortcut.** Options 1 and 3 both modify
+`apply_evening_flow_turn`'s (and, for option 1's sweep, possibly `apply_morning_flow_turn`'s
+or a new function's) own logic — the SECURITY DEFINER flow RPCs — and touch session state
+directly. This trips CLAUDE.md §0(a) on its own terms, independent of 3g's existing
+"workstream as a whole" argument below: it is not "just an ELSE branch." No PR shipping
+this fix goes without the full package 3g already requires for this workstream.
+
+**3. BOT-21 needs a DATED supersession note, not an in-place edit.** `bot-flows.md`'s own
+BOT-21 spec ("Same-day ACTIVE session at trigger time → add trigger to `pending_flows`,
+send the trigger question immediately after the current flow completes") is option 2,
+almost verbatim — and option 2 is the one NOT chosen. Editing that spec silently would
+erase the record of what it originally said and why it changed. **Done as part of this
+revision** (doc-only, matching this project's own "record the decision, don't silently
+rewrite" discipline, same precedent as #67's own dated note to `bot-flows.md`'s "Late data"
+section): a dated, struck-through note is added at BOT-21 in `bot-flows.md`, scoped
+narrowly to the morning↔evening cross-flow case specifically — BOT-21's queueing behavior
+is NOT being reversed wholesale, only for this one collision type; other trigger types
+(safety-keyword-mid-flow, BOT-26's priority ordering) are unaffected and still queue via
+`pending_flows` as spec'd. See that file for the exact note.
+
+**4. The asymmetry with BOT-07 — stated explicitly, not left for a reader to notice.**
+Morning and evening are NOT being treated identically here, and that's a real design
+choice, not an oversight to smooth over. Under option 1, a morning session stuck active
+past 15:00 gets FORCE-CLOSED same-day, hours before BOT-07's own next-IST-day reset would
+otherwise touch it. Evening gets no equivalent same-day force-close — nothing in this
+decision, or anywhere else in the current design, closes a stuck evening session before
+BOT-07's ordinary next-day wipe. This is intentional, not inconsistent: evening is the LAST
+flow of the day, so a stuck evening session has nothing downstream to protect the way a
+stuck morning session threatens to block evening — but a future reader who assumes morning
+and evening get symmetric treatment because they're "the same kind of thing" would be
+wrong, and this plan should say so rather than let that assumption form quietly.
+
+**5. The 15:00 sweep is a TRIGGER-CRON workstream dependency, not built in this PR.**
+Same boundary the S section (below) already draws for the escalation sweep's own missing
+cron: this decision needs a sweep that runs (or extends the existing escalation sweep) at
+`morningCutoff`, and no cron for that exists in `vercel.json` today, and building one is not
+this workstream's job. Noted here as a dependency and a handoff, not a gap this plan closes
+— whoever builds the TRIGGER-CRON wiring inherits both this sweep and the escalation
+sweep's own pre-existing missing-cron gap together, not as two separate discoveries.
+
+**Every one of the three options was an RPC change — the "one mechanism" claim (3a) is
+only true once the decided pair (1+3) ships, and both require touching the SECURITY
 DEFINER flow functions.** This is the direct evidence behind the corrected §0(a) reading
-(3g, revised below) — not a separate concern from it.
+(3g, revised below) — not a separate concern from it, and condition 2 above restates it as
+a hard requirement rather than evidence for a separate argument.
 
 ## 3b. Template vs. free-form — SUPERSEDED by §0's scoped decision, kept below for the record
 
@@ -363,9 +480,16 @@ Three candidates, one chosen:
   approval has landed is exactly the silent-failure shape this task explicitly rejects**
   ("a build that silently does nothing when templates are missing is worse than one that
   refuses loudly"). Concretely: Sentry-capture (warning level, not error, since this is an
-  expected pre-launch state) on the FIRST skip of each UTC day per template name, not on
-  every skip — loud enough that the gap is visible in monitoring, not so loud it's
-  self-defeating noise once templates are genuinely still pending for weeks.
+  expected pre-launch state) on the FIRST skip of each **IST** day per template name — **NIT
+  FIXED (round 3 external review, A4): this previously said "UTC day."** Every day boundary
+  in this system is IST (Asia/Kolkata), never UTC (CLAUDE.md's own standing rule, and
+  `cutoffs.ts`'s own header: "Consumers MUST convert now() to IST before comparing"). A
+  UTC-keyed "first skip of the day" would flip over at 05:30 IST, not midnight — splitting
+  one IST calendar day's worth of skips into two Sentry-alert windows (or merging the tail
+  of one IST day with the head of the next), either of which defeats the "one alert per
+  real day" intent this line exists for. Not on every skip — loud enough that the gap is
+  visible in monitoring, not so loud it's self-defeating noise once templates are genuinely
+  still pending for weeks.
 
 **The actual closing condition is external, not code:** this state resolves itself the
 moment the Meta template approval lands (already on the critical path per `design-
@@ -382,7 +506,17 @@ only hands back a message SID **after** a send succeeds, so there is no pre-exis
 external key to dedupe against before calling them. **The idempotency key has to be
 ours**, deterministic from the event itself: `(tenant_id, recipient, event_key)` where
 `event_key` is something like `morning_send:2026-08-15` or `evening_nudge:2026-08-15` —
-one per (recipient, checkpoint, day).
+one per (recipient, checkpoint, day). **NIT FIXED (round 3 external review, A4): the date
+in that key was never pinned to a timezone — fixed here.** The date component is the IST
+calendar date (`Asia/Kolkata`), matching this system's one convention for what "day" means
+everywhere else (`log_date`, `cutoffs.ts`'s own checkpoints, `quoco_same_ist_day`) — never
+the server's UTC clock. Stated explicitly because Vercel's `now()` is UTC and a naive
+`toISOString().slice(0,10)` on it would silently key the same intended IST day differently
+depending on whether the cron fires before or after 05:30 IST — the exact class of bug this
+plan already had to catch once, on the same page, for the day-key in §3c's Sentry alert
+window (A4, above). Computing it: derive from IST wall-clock at invocation time, the same
+conversion `cutoffs.ts`'s own header mandates for every consumer, not a fresh derivation
+invented for this key specifically.
 
 **Claim BEFORE the Twilio call, not after — stated explicitly, with both failure modes
 named, not just the choice:**
@@ -412,7 +546,12 @@ already applied to `handleDprGenerateJob`'s claim-before-Claude-call pattern
 applied to an even less reversible side effect (a delivered WhatsApp message vs. a
 regenerable report).
 
-### B2 — the skip-and-record decision must precede the RPC call, not follow it
+### B2 (round 2) — the skip-and-record decision must precede the RPC call, not follow it
+
+**Relabeled this revision, substance unchanged.** This finding is genuinely round 2's own —
+it does not predate this document's revision 2. It is renamed `B2 (round 2)` only to stop
+colliding with the ORIGINAL round-1 `B2` (§3e, above — `messaging_blocked`), which this
+label previously and silently displaced.
 
 **Skip-and-record itself is not reopened** (3c) — this is about WHERE it sits in the
 sequence for trigger sends specifically, and it was sequenced wrong in the first draft.
@@ -445,7 +584,8 @@ correct and self-consistent regardless of whether the Twilio call it triggered s
 can be sent (step 3, template confirmed to exist) — calling it any earlier, before that's
 known, is what created B2's bug in the first place.**
 
-## 3e. Failure handling — retryable vs. terminal, and the `messaging_blocked` gap this closes
+## 3e. Failure handling — retryable vs. terminal, and B2 (round 1): `messaging_blocked` is
+NOT a delivery-failure flag
 
 | Failure | Retryable? | State left | How anyone finds out |
 |---|---|---|---|
@@ -453,19 +593,67 @@ known, is what created B2's bug in the first place.**
 | Twilio 4xx — invalid/unreachable number | No — same number will fail again identically | `'failed'`, `error` populated | Sentry (error level — this is a real, actionable problem, not the expected template-gap state) |
 | Template rejected (wrong category, unapproved variable shape) | No — same template, same rejection, every time | `'failed'` | Sentry — this is a configuration bug, always worth surfacing loudly |
 | **Accepted synchronously, rejected asynchronously (error 63016 and others)** | **See B4 — this is the failure this table originally missed entirely** | — | — |
-| Repeated terminal failure for ONE recipient across multiple sends | — | **`messaging_blocked = true`** | Named status on the row, not silence |
+| Repeated terminal failure for ONE recipient across multiple sends | — | **`unreachable` — DERIVED, no column, no write. See B2 (round 1) below.** | Computed fresh from the send ledger whenever read; never a stored flag to go stale |
 
-**The `messaging_blocked` row is the actual point of cross-referencing Rule 4.4.**
-CLAUDE.md already tracks, as a pre-launch gap, that `messaging_blocked` has a CLEAR half
-(`reactivation.ts`, built) but no SET half anywhere in the codebase — nothing currently
-ever sets it true. **This primitive is what makes that write honest, and closing it is
-in scope for this workstream, not deferred again:** after N consecutive terminal failures
-(a real number to pick during implementation, not here) for one recipient, set
-`messaging_blocked = true` on their `users` row. This is exactly what the flag is FOR —
-"repeated failure for one engineer is a named status, not a mystery" is a direct quote of
-the task's own framing, and it's what turns silent, invisible degradation (an engineer
-nobody's reaching, with nothing anywhere saying so) into a PM-visible fact (the existing
-DASH-03/dashboard surfaces already read `messaging_blocked`).
+### B2 (round 1) — carried over unresolved for two revisions, fixed here
+
+**The finding, exactly as it originally stood, not softened:** this section's own prior
+draft proposed writing `messaging_blocked = true` on the `users` row after N consecutive
+terminal send failures. **That is wrong, and it survived two revisions unaddressed because
+the label that should have tracked it (`B2`) got reassigned to a different finding in
+revision 2** (the process defect corrected in this revision's header table, above).
+
+**Why it's wrong, checked against this codebase's own standing definition, not asserted
+from first principles:** `messaging_blocked` was defined in migration 012 specifically as a
+CONSENT gate — its own migration comment: "the webhook MUST refuse inbound from a number
+that is not an ACTIVE, non-blocked user (BOT-08/ENG-02)." Every place that touches it
+elsewhere in this codebase agrees, independently, on the same meaning: `lib/daily-logs/
+status.ts` states outright that it is "ENGINEER opt-out/consent state, cleared only by the
+engineer messaging in — NOT a PM silencing tool"; `lib/whatsapp/reactivation.ts` states the
+only inbound that clears it is one gated solely by this flag from an otherwise-active
+engineer; and to date, in the entire codebase, `clearMessagingBlock` is the ONLY writer
+that has ever touched this column, and it only ever writes `false` — nothing anywhere has
+ever set it `true` outside test fixtures (CLAUDE.md's own "BOT-27's SET-HALF DOES NOT
+EXIST" entry, confirmed independently here by the same grep). **Had this section's original
+proposal shipped, it would have been the FIRST-EVER writer of `messaging_blocked = true` in
+this codebase — and it would have written it for the wrong reason.** A repeated delivery
+failure (Twilio outage, carrier issue, the number no longer being on WhatsApp) and a
+genuine opt-out (a real WhatsApp STOP) are different facts with different causes and
+different remedies. Overloading the column means an infrastructure outage becomes
+indistinguishable from a mass opt-out, and any future logic that reads `messaging_blocked`
+to decide "should we ever message this person again" — including `reactivation.ts`'s own
+gate, and the DASH-03 dashboard read this section originally cited as the payoff — makes
+the wrong call the moment the two facts diverge.
+
+**Fix chosen: option (ii), a status DERIVED from the send ledger — no new column.** Not
+option (i) (`users.unreachable_since TIMESTAMPTZ`, a stored column set on failure and
+cleared on success). Reasoning: 3d already designs an outbound-sends tracking table with a
+per-message outcome (`sent` / `failed` / `skipped_no_template` / …) for every trigger send
+— that table IS the send ledger this option needs, not a new thing to build. A derived
+status can never drift out of sync with the ledger it's computed from, because it isn't a
+separate fact that has to be kept in agreement with one — it IS the ledger, read a
+different way. A stored `unreachable_since` column, by contrast, is a second copy of a fact
+the ledger already contains, with its own write path and its own chance to go stale
+(exactly the class of bug this project has hit before whenever two representations of the
+same fact are required to agree by construction and nothing else — see CLAUDE.md's own
+"HAND-MIRRORED RECONCILIATION" entry for the general shape of that risk).
+
+**How it's computed, and how it clears — both stated, not left implicit:** `unreachable`
+for a recipient is TRUE when their last N outbound-send ledger rows (N chosen during
+implementation, not here — same open-number treatment as the original N) are ALL terminal
+failures (`'failed'`, never `'sent'`/`'skipped_*'` in between). It clears automatically,
+with no explicit "clear" write anywhere, the moment one send succeeds — because a
+successful send becomes the newest row, and "last N rows all failed" stops being true. No
+column to reset, no code path that has to remember to unset it, no scenario where a
+successful send and a stale `unreachable_since` timestamp can disagree, because there is no
+stored timestamp to disagree with the ledger. **This is a query, wired into DASH-03/PM
+surfaces as a derived read (`SELECT` over the last N ledger rows per recipient), not a
+write this primitive performs on anyone's `users` row.** `messaging_blocked` is left
+exactly as this codebase already defines it — a consent flag, written only by
+`clearMessagingBlock`'s existing clear-half, with its still-open, still-tracked SET-half gap
+(a real WhatsApp STOP) remaining exactly what CLAUDE.md already names it as: a separate,
+pre-launch, not-yet-built piece of work that this primitive does not fix and was never
+positioned to fix correctly by overloading this column.
 
 ### B4 — the dominant failure mode was missing entirely, and it's not deleted by always-template
 
@@ -489,10 +677,11 @@ first drafted.**
 Twilio status-callback handler: none. Without one, this primitive has no way to ever learn
 that an "accepted" send didn't actually arrive. Concretely, without this route: the
 primitive records `'sent'` at Twilio-accept time; 3f stamps `nudge_sent_at` on a message
-that may never have reached the recipient; `messaging_blocked`'s terminal-failure counter
-(above) never increments for this failure class, because from this primitive's own
-perspective nothing failed. **Plan a status-callback route now, as part of this
-workstream, not a later addition:**
+that may never have reached the recipient; the derived `unreachable` read (3e, B2 round 1)
+never reflects this failure class, because from this primitive's own ledger perspective
+nothing failed — an async-only failure never lands a `'failed'` row at all without this
+route. **Plan a status-callback route now, as part of this workstream, not a later
+addition:**
 
 - **New route**, e.g. `app/api/whatsapp/status-callback/route.ts` — Twilio POSTs delivery
   status updates here as a message's real state resolves (`queued` → `sent` → `delivered`
@@ -510,7 +699,8 @@ workstream, not a later addition:**
   `accepted` (Twilio took it, delivery unknown — this is what the OLD design silently
   treated as final), `delivered` (WhatsApp confirms arrival — the only state that should
   ever be read as "this message reached the recipient"), `failed` (terminal, with the
-  Twilio error code preserved for the `messaging_blocked` counter and for Sentry).
+  Twilio error code preserved on the ledger row — the input the derived `unreachable` read
+  (3e, B2 round 1) counts — and for Sentry).
   **`nudge_sent_at` (3f) should be understood as "accepted," not "delivered"** — stamping
   it means the send was handed to Twilio successfully, not that the recipient has it yet;
   this plan does not propose gating `nudge_sent_at` on `delivered` (that would delay a
@@ -522,6 +712,21 @@ workstream, not a later addition:**
   webhook if one is wired" — conditional, because none was planned. With this route built,
   that condition is met: a `'sending'` row past a timeout is resolved by checking whether
   a status-callback for its SID ever arrived, not by guessing or blindly retrying.
+- **NEW (round 3 external review, A3) — log Meta's per-message `pricing` object in full,
+  from the first deployment of this route, as a day-one requirement, not a follow-up.**
+  Twilio's status-callback payload carries Meta's own returned `pricing` object on the
+  relevant status updates (billability category, pricing model, billable flag) — this is
+  the empirical ground truth for whether a given message was actually billed, and at what
+  rate, as opposed to what this plan's own economics figure (§3g condition (e), A2) predicts
+  from a rate card. **Store it raw, unprocessed, on every status-callback row this route
+  writes** (a JSONB column on the status-update/outbound-send record — exact column named
+  in the review package, not sketched to SQL here). Without this, the day the October
+  pricing change actually lands, this project would have no way to confirm it landed, or at
+  what rate, except by watching an invoice arrive — the same "reasoning from a rate card
+  instead of from invoices" gap this finding exists to close. Logging costs nothing extra
+  (the payload already arrives at this route for every status update); not logging it means
+  re-deriving this exact requirement later, after the fact, with no historical record to
+  backfill from.
 
 ## 3f. `nudged` / `nudge_sent_at` — this primitive is the honest writer PR #59 deferred
 
@@ -551,13 +756,26 @@ a stronger delivery guarantee. The two-step shape:
    escalation row otherwise stays wherever the sweep's own clock-driven logic already put
    it (`awaited`/`escalated`) — a failed send attempt does not fabricate a sent-at time.
 
-**Named tension, not resolved here:** because step 3 fires on `accepted` (synchronous),
-not `delivered` (async, B4), a message that's accepted then later fails asynchronously
-will have already stamped `nudge_sent_at` — technically true ("Twilio was asked to send
-this"), but not what a PM reading "nudged" on the dashboard would assume. Whether a later
-`failed` status-callback should retroactively revert `nudged`→ its prior status is a real
-design question for implementation, not decided in this plan — named so it isn't
-rediscovered as a surprise.
+**RESOLVED this revision (B-c): no retroactive revert, ever.** Because step 3 fires on
+`accepted` (synchronous), not `delivered` (async, B4), a message that's accepted then later
+fails asynchronously will have already stamped `nudge_sent_at` — technically true ("Twilio
+was asked to send this"), but not what a PM reading "nudged" on the dashboard would assume.
+This was previously left as an open design question — whether a later `failed`
+status-callback should revert `nudged` back to its prior rank. **Ruled: it should not.** On
+async send failure, `nudged` is NOT reverted; the rank machinery stays advance-only in both
+directions this table touches. **Rationale, stated so the "why" survives independent of the
+rule:** an advance-only rank is monotonic, and a monotonic value is safe to reason about
+from any concurrent reader without needing to know WHEN it was read relative to other
+writers — any reader sees a rank that only ever moves forward. A revert breaks that
+property: it introduces a real race between the async status-callback's revert-write and
+any concurrent reader (the sweep, a dashboard query, a future consumer) that already
+observed `nudged` and acted on it — "was this engineer nudged" would stop having one
+stable answer and start depending on read-timing relative to an async event with no fixed
+latency. The PM-facing imprecision this tension named (a message that "looks nudged" but
+never arrived) is real, but it is B4's problem to solve — via the `accepted`/`delivered`
+distinction B4 already draws, and via the ledger's own `failed` row, both queryable
+independently of `checkin_escalations.status` — not something `nudged`'s own rank should
+be made to carry by rewinding.
 
 ## S. Roster filters and ledger completeness
 
@@ -629,11 +847,39 @@ Quoting `CLAUDE.md` §0 directly, not paraphrased, against this specific primiti
   design) is a real-world, non-DB-rollback-recoverable consequence, not a hypothetical one.
   This is the condition a schema-only reading of "destructive" would miss; §0's own
   "SUBJECT MATTER, NOT DDL SHAPE" framing is exactly why it still counts.
-- **(e) "Moves money."** **Trips, unambiguously.** Every template send is billed
+- **(e) "Moves money."** **Trips, unambiguously — and the amount is larger than this plan
+  had accounted for, per a NEW finding from round 3 external review (A2), stated here
+  because this is the condition it belongs under.** The trigger-send template cost
   (~₹0.115+ per the Authentication-template figure recorded tonight; check-in templates'
-  own Utility-category rate separately) — this primitive is a real, recurring, per-message
-  cost the moment templates go live, which is the task's own framing verbatim ("adds an
-  outbound money-spending capability").
+  own Utility-category rate separately) is real, but it is the SMALLER of two costs this
+  change introduces, not the whole picture. **The same governance change that makes trigger
+  sends billable (§0) also makes every IN-FLOW reply billable** — the free-form replies
+  this plan deliberately keeps free-form and unconditional for Q2 through Q6,
+  `already_complete`, and `reask` (§0/3b) become service messages, and post-October, a
+  service message is billed at the same per-message rate as a template. **Approximately
+  9-15 outbound service messages per engineer per day** (one per parser turn, re-ask, and
+  confirmation across both flows) dwarfs the 4-5 trigger sends this section was originally
+  scoped around — the trigger sends are a rounding error next to this. Per-engineer,
+  per-month, post-October:
+
+  ```
+  (4 templates + ~10 service replies) × PER_MESSAGE_RATE_INR × WORKING_DAYS_PER_MONTH
+  ```
+
+  **`PER_MESSAGE_RATE_INR` is a named, open variable, not a guess.** Per direct instruction,
+  not fabricated here: this must be sourced from Meta's own published rate card for the
+  India market (the same per-market rates §0 already notes are due by 1 September 2026, not
+  yet available at the time of this revision) — the ~₹0.115+ figure above is the
+  Authentication-template rate recorded earlier this session, a different category with its
+  own rate, not a stand-in for the Utility/service rate this formula needs. **This does not
+  change the always-template scoping decision (§0/A1)** — free-form-for-in-flow was chosen
+  for reachability-safety reasons that hold regardless of price, and the same messages
+  would be billable whether sent free-form or as a template once the exemption lapses — but
+  it materially changes the total cost this workstream commits the product to, and belongs
+  in the pricing model the moment `PER_MESSAGE_RATE_INR` is known. **Also flagged in #67's
+  plan** (per direct instruction, as an input to that plan's own cost awareness, even though
+  #67 does not own any of these sends) since #67's stage 1 (PM-notify) shares this
+  primitive's template-billing exposure.
 
 **Net, corrected: (a), (b), (d), (e) all trip; (c) is a judgment call recorded, not
 silently assumed. Per §0's own rule — "if ANY migration in the PR trips a trigger, the
@@ -684,17 +930,35 @@ approval).
 
 1. Decide the exact new table shape for outbound-send tracking (3d) — not sketched to SQL
    here, deliberately, since that's a schema decision for the review package, not this
-   plan.
-2. Decide the terminal-failure-count threshold for `messaging_blocked = true` (3e).
-3. Decide B3's cross-flow interference fix (one of three named options, or another).
-4. Build the status-callback route (B4) as part of this workstream, not a later addition.
+   plan. **This revision adds a requirement to it (A3): a JSONB column for Meta's raw
+   `pricing` object, logged from day one on the status-callback route.**
+2. Decide N — the terminal-failure-count threshold for the derived `unreachable` read (3e,
+   B2 round 1). `messaging_blocked` is not written by this primitive at all, this revision —
+   fixed from a prior proposal that would have set it for the wrong reason.
+3. **DECIDED this revision:** B3's cross-flow interference fix — options 1 (cutoff-close
+   sweep) + 3 (force-switch backstop) together, not option 2. Five conditions attached
+   (§3b, above), all carried into the review package: the fifth context-write site, the
+   full-gate requirement, BOT-21's dated supersession, the stated BOT-07 asymmetry, and the
+   TRIGGER-CRON handoff for the 15:00 sweep itself.
+4. Build the status-callback route (B4) as part of this workstream, not a later addition —
+   **now including A3's pricing-object logging as a day-one requirement, not a follow-up.**
 5. **Narrowed this revision:** resolve the entanglement with #67 for PM-notify only — the
    owner-send half is resolved (#67's email decision) and no longer a shared open question.
 6. Full external-review package (3g) before any migration or code ships — still trips on
-   FOUR grounds; unaffected by the owner-send leaving this primitive's scope.
+   FOUR grounds; unaffected by the owner-send leaving this primitive's scope. **The
+   per-message economics (A2, §3g condition (e)) belong in that package's cost accounting:
+   4 templates + ~10 service replies per engineer per day, not templates alone —
+   `PER_MESSAGE_RATE_INR` remains an open, named variable pending Meta's India rate card.**
 7. This is the actual precondition for the product functioning — nothing else in this
    session's three parts tonight can run in production until this exists. **Scope is now
    five WhatsApp sends (four engineer checkpoints + PM-notify), not the DPR delivery
    pipeline as a whole — `ownerSend`/email is #67's own precondition to build, separately.**
+8. **RESOLVED this revision (B-c):** no retroactive revert of `nudged` on async send
+   failure, ever — advance-only ranks stay advance-only. Rationale in 3f.
+9. **RESOLVED this revision (A1):** always-template for the five trigger sends is adopted
+   now, unconditionally — not gated on the October date, which appears only in cost
+   projections (item 6, above) from this revision forward.
 
-Nothing built in this pass. Branch/PR for this document only — no code.
+Nothing built in this pass. Branch/PR for this document only — the one exception is the
+dated, doc-only BOT-21 supersession note in `bot-flows.md` (B3 condition 3, above), same
+provenance discipline as #67's own prior dated note to that file.
