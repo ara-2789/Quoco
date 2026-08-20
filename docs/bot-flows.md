@@ -425,6 +425,18 @@ DASH-07 hindrance tracker, DASH-10 accountability view + resolve action.
 
 ## WHATSAPP TEMPLATES (12 total — submit ALL on Week 2 Day 1)
 
+DATED NOTE (2026-08-20, template design v2 — Y-round): copy is now ENGLISH-ONLY, no
+bilingual (English+Tamil) template pairs — input accepts any language, output stays
+simple English (`docs/design-principles.md` Rule 3.11, revised same pass). A bilingual
+template set was drafted under an earlier, now-cancelled plan; it is NOT being submitted
+to Meta, per that cancellation. Full copy deck: `claude/whatsapp-templates-en-ta.md`
+(the filename predates the English-only decision; the content is English-only — flagged
+there, not renamed here, to avoid a second divergence between a filename and what's
+inside it). The count below stays 12 — the redesign is net-neutral on count (template 7
+renamed, not added; templates 6/12 change FORMAT not count) — see that file's own flagged
+discrepancy note if a different count (13, or 26 pre-redesign) was expected from an
+earlier conversation not captured in this repo.
+
 11 Spine + 1 Fast-Follow. Submit all 12 to Meta together — pre-warming costs
 nothing and approval takes days. Keep every template Utility-category and
 non-promotional. Keep one spare variant of each critical template
@@ -437,22 +449,43 @@ TRIGGER TIMES above. Still submit and pre-approve all four; the fallback
 path is the reason a Meta pause on any one of them halts check-ins (an
 engineer with a closed 24h window has no other way to receive it).
 
+DATED SUPERSESSION (2026-08-20): template 7 below, `quoco_dpr_owner`, sent a 3-line
+report summary directly to the OWNER over WhatsApp. Per the #67 decision (owner receives
+the DPR by email, not WhatsApp — `docs/dpr-delivery-versioning-plan.md`), that content no
+longer goes by WhatsApp at all. Replaced by `quoco_dpr_owner_email_sent` — a PM-facing
+confirmation that the email send happened, {{1}} project, {{2}} date only, no summary
+variable. Full copy: `claude/whatsapp-templates-en-ta.md` template 7.
+
+DATED NOTE (2026-08-20): templates 6 and 12 now take a CTA URL button for their
+dashboard/details link instead of a body-variable link — drop the old {{3}}/{{5}} link
+variables from both when re-submitting; the button component carries the URL instead.
+Template 6's copy states an 8:30 PM deadline — VERIFIED against `CHECKIN_CHECKPOINTS`
+(`lib/daily-logs/cutoffs.ts`), not assumed: 8:30 PM (`ownerSend`) is correct there
+specifically as the PM's edit-window deadline, NOT as when the report becomes ready
+(that's 7:45 PM, `eveningClose`) — see `claude/whatsapp-templates-en-ta.md` template 6
+for the full check, since conflating the two would have been a wrong-copy re-approval
+cost.
+
 Spine:
-1.  quoco_morning_checkin    — {{1}} name, {{2}} project
-2.  quoco_evening_checkin    — {{1}} name, {{2}} project, {{3}} morning plan ≤150 chars
-3.  quoco_morning_nudge      — {{1}} name, {{2}} project
-4.  quoco_evening_nudge      — {{1}} name, {{2}} project
-5.  quoco_manager_missed     — {{1}} engineer, {{2}} project
-6.  quoco_dpr_ready_pm       — {{1}} project, {{2}} date, {{3}} dashboard link
-7.  quoco_dpr_owner          — {{1}} project, {{2}} date, {{3}} 3-line summary
-8.  quoco_engineer_optin     — {{1}} name, {{2}} company, {{3}} project
-9.  quoco_dpr_silent_day     — {{1}} project, {{2}} PM name
-10. quoco_dpr_delayed        — {{1}} project, {{2}} PM name
-11. quoco_dpr_pause_expired  — {{1}} project, {{2}} date
+1.  quoco_morning_checkin       — {{1}} name, {{2}} project
+2.  quoco_evening_checkin       — {{1}} name, {{2}} project, {{3}} morning plan ≤150 chars
+3.  quoco_morning_nudge         — {{1}} name, {{2}} project
+4.  quoco_evening_nudge         — {{1}} name, {{2}} project
+5.  quoco_manager_missed        — {{1}} engineer, {{2}} project
+6.  quoco_dpr_ready_pm          — {{1}} project, {{2}} date, CTA URL button (was {{3}} link)
+7.  quoco_dpr_owner_email_sent  — {{1}} project, {{2}} date (SUPERSEDES quoco_dpr_owner —
+                                  see the dated supersession note above)
+8.  quoco_engineer_optin        — {{1}} name, {{2}} company, {{3}} project — now carries
+                                  "reply in any language" + "reply STOP" (see
+                                  CLAUDE.md's BOT-27 entry: the STOP promise is not yet
+                                  kept by the code — named pre-launch blocker)
+9.  quoco_dpr_silent_day        — {{1}} project, {{2}} PM name
+10. quoco_dpr_delayed           — {{1}} project, {{2}} PM name
+11. quoco_dpr_pause_expired     — {{1}} project, {{2}} date
 
 Fast-Follow:
-12. quoco_safety_alert_pm    — {{1}} project, {{2}} engineer, {{3}} type/location,
-                               {{4}} injury status, {{5}} dashboard link
+12. quoco_safety_alert_pm       — {{1}} project, {{2}} engineer, {{3}} type/location,
+                                  {{4}} injury status, CTA URL button (was {{5}} link)
 
 ### Sandbox limitation
 The Twilio SANDBOX cannot send custom approved templates — session messages

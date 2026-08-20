@@ -1084,6 +1084,16 @@ detected nowhere.
   Week 2 checklist above) carries real opt-out traffic. BOT-27's clear-half
   was built and tested against a set-half that was assumed to exist and
   doesn't.
+  DATED ADDENDUM (2026-08-20, template design v2, Y5): this gap just moved from a design
+  finding to a WRITTEN, Meta-facing commitment. `quoco_engineer_optin` (template 8,
+  `claude/whatsapp-templates-en-ta.md`) now includes the line "Reply STOP at any time to
+  stop these messages" — a real product promise submitted for approval, not an internal
+  note. The STOP line is being KEPT in the template, deliberately — it is the right
+  promise and it helps approval — which means this entry is no longer merely a
+  correctness gap to close eventually; it is a promise the code does not yet keep, made in
+  writing, to a real audience. Named here explicitly as a PRE-LAUNCH BLOCKER for the
+  production sender going live with that template approved, not just for "opt-out
+  traffic" generally as the paragraph above already said.
 
 TESTING DEBT — WEBHOOK HTTP HARNESS (opened 2026-07-21, tracked, NOT fixed).
 CLAUDE.md §7 requires every webhook change to ship with a T-WH integration test,
