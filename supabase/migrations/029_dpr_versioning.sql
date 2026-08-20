@@ -175,7 +175,79 @@ COMMENT ON TABLE public.dpr_versions IS
   '"latest" projection for fast reads; this table is the source of truth for '
   'history. "Which version was delivered to the owner" is answered by whichever '
   'row has delivered_to_owner_at set. Written ONLY via write_dpr_version() — '
-  'never a direct INSERT from application code.';
+  'never a direct INSERT from application code, EXCEPT this migration''s own '
+  'one-time backfill (section 3b, below) for rows that already carried real '
+  'content before this table existed. STATED DESIGN FACT (B3, external review): '
+  'for a genuinely NEW dprs row (created after this migration), version 1 is '
+  'the initial system-generated report, written directly by the generation '
+  'job''s upsert into dprs — NOT through write_dpr_version() and NOT recorded '
+  'here. This table''s history for such a row begins at version 2, on its '
+  'first regeneration. This is deliberate, not a gap: the alternative (calling '
+  'write_dpr_version() for the very first generation too) is a separate, '
+  'later change to the generation job itself, out of this migration''s scope. '
+  'For a row that ALREADY had content when this migration ran, its version 1 '
+  'IS recorded here (via the section 3b backfill) — those rows do not have '
+  'this gap.';
+
+-- ----------------------------------------------------------------------------
+-- 2b. Backfill: existing content-bearing dprs rows get a real version-1
+-- history row (B3, external review, blocking). Without this, the FIRST call
+-- to write_dpr_version() on such a row jumps straight to version 2 (see the
+-- STATED DESIGN FACT in dpr_versions' own COMMENT above) and the row's
+-- CURRENT, already-delivered content is silently lost from history the
+-- moment it is ever regenerated — append-only failing for precisely the one
+-- row where it matters (real content already delivered to a real owner).
+--
+-- SHAPE, ARGUED NOT DEFAULTED: the review asked for an "extensionally-pinned"
+-- backfill (hardcoded to the known row id, matching 023's DELETE-pinned-to-
+-- 35a2f41c precedent). Deliberately NOT done that way here: 023's DELETE is
+-- destructive and irreversible without PITR, so pinning it to one verified-
+-- worthless id was the safety mechanism. This is an INSERT — purely
+-- additive, cannot lose data even if it matches MORE rows than expected at
+-- apply time, and a hardcoded single-id pin would actively be WORSE if
+-- reality drifted (a second content-bearing row appearing between writing
+-- and applying this migration would be silently skipped by an id-pinned
+-- WHERE clause, defeating the backfill's own purpose). Kept general —
+-- "every content-bearing row with no existing version-1 history row" — and
+-- the "known id" pin moves to a hard, general, always-checked assertion
+-- immediately below instead of into the WHERE clause, plus a pre-apply
+-- probe (Probe F, review package §7) that names the specific expected state
+-- (af7760e8-…, exactly one row, as of 2026-08-2x) for a human to confirm
+-- still holds immediately before running this on prod.
+-- ----------------------------------------------------------------------------
+INSERT INTO public.dpr_versions (
+  tenant_id, dpr_id, version, generated_by, generated_by_user,
+  content, structured, generated_at
+)
+SELECT
+  d.tenant_id, d.id, d.current_version, d.generated_by, d.generated_by_user,
+  d.content, COALESCE(d.structured, '{}'::jsonb), COALESCE(d.generated_at, d.created_at)
+FROM public.dprs d
+WHERE d.content IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM public.dpr_versions v
+    WHERE v.dpr_id = d.id AND v.version = d.current_version
+  );
+
+-- Hard structural assertion, not merely a comment: every content-bearing
+-- dprs row must now have a dpr_versions row at its current_version. This
+-- file is one BEGIN/COMMIT transaction — a failed assertion here rolls back
+-- the entire migration, never ships a partial backfill silently.
+DO $$
+DECLARE
+  v_missing INT;
+BEGIN
+  SELECT count(*) INTO v_missing
+  FROM public.dprs d
+  WHERE d.content IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.dpr_versions v
+      WHERE v.dpr_id = d.id AND v.version = d.current_version
+    );
+  IF v_missing > 0 THEN
+    RAISE EXCEPTION 'dpr_versions backfill: % content-bearing dprs row(s) still have no matching version-1 history row after backfill', v_missing;
+  END IF;
+END $$;
 
 -- ----------------------------------------------------------------------------
 -- 3. write_dpr_version: the transactional version-write RPC.
@@ -216,6 +288,32 @@ BEGIN
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
 
+  -- B1 (external review, blocking): p_generated_by is caller-controlled, and
+  -- this function is GRANTed to `authenticated`, not just `service_role` (the
+  -- 'pm' branch below needs a real dashboard session to reach it). Before this
+  -- guard, ANY authenticated user, any tenant, any role, could call with
+  -- p_generated_by='system' and hit NO check at all below (the auth.uid()
+  -- derivation only runs on the 'pm' branch) -- a cross-tenant arbitrary
+  -- rewrite of owner-facing report content, RLS bypassed by construction
+  -- (SECURITY DEFINER). The legitimate 'system' caller is the nightly job via
+  -- service_role, which carries no JWT -- auth.uid() is NULL for it and
+  -- non-NULL for every real dashboard session. This is convention 4's exact
+  -- shape: a parameter-trusting path must be service_role-only; this function
+  -- previously carried the looser `authenticated` grant across BOTH its
+  -- parameter-trusting ('system') and auth.uid()-deriving ('pm') branches in
+  -- one body. VERIFIED (2026-08-2x, external review round): grepped app/,
+  -- lib/, scripts/ for any caller of write_dpr_version -- NONE exists yet
+  -- (dispatch.ts and generate-one-dpr.ts both still upsert dprs directly; the
+  -- RPC has no application-code caller until a separate wiring PR lands, not
+  -- part of this migration). This guard therefore cannot break any existing
+  -- legitimate caller today -- it is a forward constraint on that not-yet-
+  -- written wiring: it MUST invoke this RPC via service_role (no JWT), never
+  -- a route that forwards a user's session.
+  IF p_generated_by = 'system' AND auth.uid() IS NOT NULL THEN
+    RAISE EXCEPTION 'write_dpr_version: system-authored writes must come from service_role (no JWT) -- got an authenticated caller'
+      USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
   -- Lock the target row before reading current_version — a concurrent
   -- regeneration (two jobs racing, or a PM regenerating while the nightly
   -- job also fires) must not both compute the same "next version" number.
@@ -235,12 +333,26 @@ BEGIN
   -- trusted from caller input (the 020-incident shape this project's own
   -- SECURITY DEFINER discipline exists to avoid). A 'system' write (the
   -- nightly job, service_role) has no auth.uid() session to check against.
+  --
+  -- B2 (external review, blocking): the same-tenant check alone bound WHO
+  -- but never WHAT ROLE -- any same-tenant authenticated user (a qs today,
+  -- anything that gets a login later) passed, rewriting the owner-facing
+  -- report attributed to themselves. Added `u.role = 'pm'`. Argued, not
+  -- defaulted: house precedent for "who may author/correct this class of
+  -- operational content" is 019's correct_daily_log, which rejects even
+  -- admin (`v_editor_role <> 'pm'`, 019_daily_log_edits.sql:178) -- strictly
+  -- pm-only, not (pm, admin). The audience test is the same question here
+  -- (who legitimately authors an owner-facing report), and no requirement for
+  -- admin to author DPR content is stated anywhere in this feature's plan or
+  -- package, so this migration matches 019's precedent exactly rather than
+  -- widening it without a stated reason.
   IF p_generated_by = 'pm' THEN
     IF NOT EXISTS (
       SELECT 1 FROM public.users u
       WHERE u.id = p_generated_by_user
         AND u.auth_id = auth.uid()
         AND u.tenant_id = v_tenant_id
+        AND u.role = 'pm'
     ) THEN
       RAISE EXCEPTION 'write_dpr_version: p_generated_by_user does not match the calling PM''s own tenant-scoped identity'
         USING ERRCODE = 'insufficient_privilege';

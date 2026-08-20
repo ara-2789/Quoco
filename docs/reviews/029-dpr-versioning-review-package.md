@@ -1,10 +1,15 @@
 # Migration 029 review package — DPR versioning (EXERCISABLE half)
 
-**Status: WRITTEN, REHEARSED AND APPLIED ON TEST-DB (2026-08-20, J1-J6). NOT APPLIED
-TO PROD.** Test-db ledger confirmed live (2026-08-20, this update): `supabase_
-migrations.schema_migrations` carries version `029`, 25 total rows. See §9/§10 below for
-the full apply-runbook and rollback-path record; commit `6c2cabf` carries the J1-J6
-narrative. This package accompanies
+**Status: PROD APPLY HELD — external review, round 2, found THREE BLOCKING findings
+(B1, B2, B3), both B1 and B2 real auth holes in `write_dpr_version`. All three are folded
+into the migration file and independently re-verified against test-db (§12, below,
+2026-08-20). Test-db's own live function/backfill has been upgraded to match via the
+same delta. Still NOT applied to prod — that remains its own, separately-authorized step
+(§9/§10), and step 4 of the reviewer's own path-to-go has not been reached.** Test-db
+ledger confirmed live (2026-08-20): `supabase_migrations.schema_migrations` carries
+version `029`, 25 total rows. See §9/§10 below for the original apply-runbook and
+rollback-path record; commit `6c2cabf` carries the J1-J6 narrative; §12 carries the
+B1/B2/B3 fix verification. This package accompanies
 `supabase/migrations/029_dpr_versioning.sql`, pinned at commit
 `e6a06826ad17df6c27f73db5584f97896d5c0ef2` (branch `docs/dpr-delivery-versioning-plan`).
 Design record: `docs/dpr-delivery-versioning-plan.md` §2c/§2d (frozen — no further plan
@@ -472,3 +477,253 @@ discipline** — this is the claim the package needed evidence for, and now has 
 cascaded both version rows automatically, not a separate manual delete). Nothing outside
 this fixture set was touched — every count above is scoped to this rehearsal's own IDs,
 not a table-wide count.
+
+---
+
+## 12. External review round 2 — B1/B2/B3 fixed, re-verified (2026-08-20)
+
+**Findings, one line each, full argument in the migration file's own comments at the
+fix site:**
+- **B1 (blocking, auth hole):** `write_dpr_version` is `GRANT`ed to `authenticated`, but
+  only the `pm` branch checked `auth.uid()`. Any authenticated user, any tenant, any role,
+  could call with `p_generated_by='system'` and hit no check at all — a cross-tenant
+  arbitrary rewrite of owner-facing report content, RLS bypassed by `SECURITY DEFINER`.
+  **Fixed:** `IF p_generated_by = 'system' AND auth.uid() IS NOT NULL THEN RAISE
+  EXCEPTION ... 'insufficient_privilege'`. **Verified before fixing, not assumed:**
+  grepped `app/`, `lib/`, `scripts/` for any caller of `write_dpr_version` — none exists;
+  `dispatch.ts` and `generate-one-dpr.ts` both still `upsert` `dprs` directly. The guard
+  cannot break an existing legitimate caller because none exists yet; it is a forward
+  constraint on the not-yet-written wiring (must call via `service_role`, no JWT).
+- **B2 (blocking, auth hole):** the `pm` branch's same-tenant check never read `u.role` —
+  any same-tenant authenticated user (a `qs` today) could author an owner-facing report
+  attributed to themselves. **Fixed:** added `AND u.role = 'pm'` to the `EXISTS` check.
+  **Argued, not defaulted:** matches `019_daily_log_edits.sql`'s `correct_daily_log`
+  precedent exactly (`v_editor_role <> 'pm'`, rejects even `admin`) — same audience
+  question (who may author/correct this class of operational content), no stated need for
+  `admin` to author DPR content anywhere in this feature's plan, so this migration matches
+  019's precedent rather than widening it without a reason.
+- **B3 (blocking, phantom v1):** the first-ever `write_dpr_version()` call on any row jumps
+  `current_version` straight to 2 — for `af7760e8` (prod's one real content-bearing row,
+  `current_version=1` with real delivered content and no `dpr_versions` row), the first
+  regeneration would overwrite the only copy of that content with no history record.
+  **Fixed:** a backfill `INSERT ... SELECT ... FROM dprs WHERE content IS NOT NULL AND NOT
+  EXISTS (...)`, plus a hard `DO $$ ... RAISE EXCEPTION` assertion that aborts the whole
+  transaction if any content-bearing row is left unbackfilled. **Shape argued, not
+  defaulted:** the review asked for an extensionally-pinned (hardcoded-id) backfill,
+  matching 023's DELETE-pinned-to-`35a2f41c` precedent. Deliberately NOT done that way:
+  023's DELETE is destructive/irreversible without PITR, so pinning to one verified-
+  worthless id was the safety mechanism there. This is a pure INSERT — cannot lose data
+  even if it matches more rows than expected, and a hardcoded single-id pin would be
+  actively WORSE under drift (a second content-bearing row appearing between writing and
+  applying this migration would be silently skipped). Kept general; the "known id" pin
+  moves to a documented pre-apply expectation (af7760e8, exactly one row, checked
+  immediately before the prod apply — see §9's runbook) instead of into the WHERE clause.
+  The `dpr_versions` table's own `COMMENT` was also updated to state the version-2-start
+  design fact explicitly, per the review's request, rather than leaving it as something
+  the next reader has to rediscover.
+
+**S1 (should-fix, folded in with the delta):** the file never `GRANT`s `SELECT` on
+`dpr_versions` — the dashboard read path rests on Supabase's default privileges surviving
+the `REVOKE`s, an inherited dependency, not a stated one. The delta run below includes the
+positive pair the review asked for: a member session's `SELECT` returning rows, and a
+non-member session's `SELECT` returning zero — both exercised for real, not asserted.
+
+**S2 (should-fix):** `daily_log_edits.comment` has zero writers — `correct_daily_log`'s
+signature is untouched by this migration, matching the already-present-but-unpopulated
+shape this plan flagged for `last_regenerated_at`. Fine to ship ahead of its writer.
+**Named closer, not "later":** the edit-surface PR (§2b, the dashboard DPR-edit surface)
+or the JSONB-correction design extension — whichever lands first and widens
+`correct_daily_log`'s own RPC signature — is this column's closer. Tracked here so it has
+an owner, not a floating TODO.
+
+### Step 1 — full corrected file, re-run under G2 methodology (schema-dump-derived scaffold, not hand-built)
+
+Scaffold built from a **structure-only dump of PROD** (not test-db — test-db already has
+the old, unfixed 029 applied, which would make a "does this apply cleanly" test
+meaningless; prod has never had 029 applied, so it is the correct pre-migration baseline).
+`supabase db dump --linked --schema public --dry-run` against `jvxwqignooseazzmwhvl`,
+loaded into a fresh local PostgreSQL 17.11 instance (version-matched to prod/test-db's
+confirmed `17.6`/`17.11`, per G2) with the two named stubs (`auth.users`/`auth.uid()`, and
+the 5 roles) and `pgvector` installed. Confirmed the scaffold genuinely reflects
+pre-029 state before trusting it: `grep -c "dpr_versions\|write_dpr_version\|
+current_version"` on the dump → `0`; `grep -c "engineer_id"` → `39` (028 present, as
+expected — 028 is already live on prod).
+
+Full corrected `029_dpr_versioning.sql` applied against this scaffold, raw output:
+
+```
+BEGIN
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+CREATE TABLE
+ALTER TABLE
+ALTER TABLE
+CREATE INDEX
+ALTER TABLE
+CREATE POLICY
+REVOKE
+REVOKE
+REVOKE
+COMMENT
+INSERT 0 0
+DO
+CREATE FUNCTION
+REVOKE
+GRANT
+ALTER TABLE
+COMMENT
+COMMIT
+```
+
+Zero errors, clean end-to-end. `INSERT 0 0` is correct and expected — the fresh scaffold
+is schema-only, no `dprs` rows exist, so the backfill correctly matches nothing; the `DO`
+assertion immediately after passed (0 missing) for the same reason. This proves: no
+ordering defect reintroduced by the B1/B2/B3 edits, and the file exactly as it will be
+pasted to prod runs clean against a schema matching prod's real current state. Local
+instance torn down immediately after (`pg_ctl stop`, directory removed) — no artifacts
+left on disk.
+
+### Step 2 — §11 DELTA on test-db, raw output for every line
+
+Test-db already carries the OLD (unfixed) 029 — table, RLS, and function all exist from
+the earlier J1-J6 rehearsal. Rather than tear down and replay the whole file (§10's
+rollback path exists for that but is heavier than needed here), applied the DELTA
+directly: `CREATE OR REPLACE FUNCTION write_dpr_version` (idempotent — upgrades the live
+function to the B1/B2-fixed body) and the B3 backfill `INSERT`/`DO` assertion, against a
+freshly seeded, isolated fixture simulating a pre-029-style content-bearing row (test-db
+has no equivalent of prod's `af7760e8`, so this proves the backfill LOGIC works using
+test-db's own known id — the migration's actual `af7760e8`-targeting backfill run is
+necessarily a prod-apply-time event, not something reproducible here).
+
+**Catalog readback confirming both guards are live in the deployed function (not just in
+the file), before running any behavioral test:**
+
+```json
+{ "has_b1_guard": true, "has_b2_guard": true }
+```
+
+**Fixtures:** fresh tenant/project/engineer (`tenants.id =
+3a6c1375-1176-4aca-b124-6d798b494c15`), one content-bearing `dprs` row seeded directly
+(`id = 37eb762b-6434-4426-b590-51d0e8c712e3`, `current_version=1`, real content, no
+`dpr_versions` row — the pre-029 shape). Three real Supabase Auth users created via the
+admin API and signed in for real JWTs (`test/helpers/db.ts`'s own established
+`ensureAuthUser`/`jwtClient`/`claimProfile` pattern, reused verbatim, not reinvented):
+a `pm` who is a `project_members` row on this project, a `qs` in the same tenant (also a
+member), and a second `pm` in the SAME tenant deliberately left OUT of `project_members`
+(the S1 non-member case — same-tenant but not a project member, which exercises the RLS
+policy's `EXISTS` join specifically, a more precise test than a cross-tenant one).
+
+**Backfill run against the seeded row, v1 row read back verbatim:**
+
+```json
+{
+  "content": "DAILY PROGRESS -- B-round pre-existing content, simulating a pre-029 row",
+  "dpr_id": "37eb762b-6434-4426-b590-51d0e8c712e3",
+  "generated_at": "2026-08-20 04:12:27.924425+00",
+  "generated_by": "system",
+  "generated_by_user": null,
+  "id": "ea66a3f1-0875-4112-8c74-86d715969c8c",
+  "structured": { "note": "pre-029 sim" },
+  "version": 1
+}
+```
+
+**Test (a) — B1: authenticated (PM session, a legitimate user in every other respect)
+calls `write_dpr_version` with `p_generated_by='system'` — expect REFUSED, SQLSTATE
+pinned:**
+
+```
+data: null
+error: {"code":"42501","details":null,"hint":null,"message":"write_dpr_version: system-authored writes must come from service_role (no JWT) -- got an authenticated caller"}
+```
+
+**Test (b) — B2: QS session (same tenant, same project, wrong role) calls
+`write_dpr_version` with `p_generated_by='pm'`, `p_generated_by_user=<own id>` — expect
+REFUSED:**
+
+```
+data: null
+error: {"code":"42501","details":null,"hint":null,"message":"write_dpr_version: p_generated_by_user does not match the calling PM's own tenant-scoped identity"}
+```
+
+**Test (c) — proves the fix did NOT break the legitimate path: PM session calls
+`write_dpr_version` with `p_generated_by='pm'`, `p_generated_by_user=<own id>` — expect
+SUCCESS:**
+
+```
+data: "f0e9dcc9-22ba-49f3-8da9-83149abb24bb"
+error: null
+```
+
+**Test (d1) — S1 positive: PM (real project member) `SELECT`s `dpr_versions` for this
+`dpr_id` — expect rows:**
+
+```json
+[
+  {"id":"ea66a3f1-0875-4112-8c74-86d715969c8c","version":1,"generated_by":"system"},
+  {"id":"f0e9dcc9-22ba-49f3-8da9-83149abb24bb","version":2,"generated_by":"pm"}
+]
+```
+count: 2 — both the backfilled v1 and the new v2 from Test (c) are visible.
+
+**Test (d2) — S1 negative: same-tenant `pm` who is NOT a project member `SELECT`s the
+same `dpr_id` — expect ZERO rows:**
+
+```
+data: []
+error: null
+count: 0
+```
+
+RLS's `EXISTS` membership join is doing real work here — this user shares the tenant and
+the role, and is still denied, because the join specifically requires a `project_members`
+row. Confirms S1's "inherited default-privilege dependency" concern was real (nothing
+`GRANT`s `SELECT` explicitly) but the POLICY itself is correctly gating access regardless
+of what's supplying the underlying table privilege.
+
+**Post-state, service-role read, both version rows together:**
+
+```json
+[
+  {"id":"ea66a3f1-0875-4112-8c74-86d715969c8c","version":1,"generated_by":"system","generated_by_user":null,"content":"DAILY PROGRESS -- B-round pre-existing content, simulating a pre-029 row"},
+  {"id":"f0e9dcc9-22ba-49f3-8da9-83149abb24bb","version":2,"generated_by":"pm","generated_by_user":"f278366c-97f7-4f58-b375-d773c4ec7831","content":"REAL EDIT (pm role, legitimate path, post-fix)"}
+]
+```
+
+Version 1 (the backfilled row) is untouched by Test (c)'s write — append-only holds
+across the fix, not just before it.
+
+**Cleanup, confirmed by read-back — all six scoped counts, before/after:**
+
+| item | before | after |
+|---|---|---|
+| `dpr_versions` (this `dpr_id`) | 2 | 0 |
+| `dprs` (this row) | 1 | 0 |
+| `project_members` (this project) | 2 | 0 |
+| `users` (this tenant — pm, qs, nonmember-pm, engineer) | 4 | 0 |
+| `projects` (this project) | 1 | 0 |
+| `tenants` (this tenant) | 1 | 0 |
+
+All three throwaway auth users (`zz-b-round-pm@quoco.test`,
+`zz-b-round-qs@quoco.test`, `zz-b-round-nonmember-pm@quoco.test`) removed via
+`auth.admin.deleteUser`. Nothing outside this fixture set was touched.
+
+**dpr_versions' table COMMENT also updated on test-db** (the B3 design-fact statement,
+verbatim from the migration file) so test-db's live catalog matches the corrected file,
+not just its function body.
+
+### Step 2b — full Vitest suite, re-run after the delta (not skipped)
+
+573 passed, 1 todo, 0 failures, 46 files — same clean result as the earlier post-J6 run.
+Re-run specifically to confirm the B1/B2/B3 delta (a live `CREATE OR REPLACE FUNCTION` on
+test-db, plus new rows written and removed during the exercise above) left no collateral
+effect on the rest of the suite.
+
+### What did NOT happen in this pass
+
+**Step 4 of the reviewer's own path-to-go (PITR reconfirmation, apply-by-file with an
+explicit ledger row, post-apply catalog fingerprinting, prod apply itself) was NOT
+attempted.** Per the reviewer's explicit "NOT AUTHORIZED: No prod. Do not proceed past
+step 3 without reporting" — this section stops at the end of step 3 and reports back
+rather than continuing.
