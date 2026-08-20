@@ -72,6 +72,27 @@
   schema-complete test-db, never on a fresh branch. This rule LAPSES once a fresh
   provision is observed to come up WITH `users.auth_id` present — it is a work-around
   for a live defect, not a permanent preference.
+- TEST-DB IS NOT CONFIDENTLY REBUILDABLE — RECORDED ALONGSIDE THE RULE ABOVE, SAME
+  FAILURE FAMILY (2026-08-20, migration 029's rehearsal round, checked by direct
+  observation, not assumed). Three facts, checked live against test-db
+  (`exfccwlrhoutkgrlikod`), not inferred from the account's general tier:
+    a. `pitr_enabled: false` — `supabase backups list --project-ref
+       exfccwlrhoutkgrlikod` returned it explicitly. No continuous restore window
+       exists for test-db, unlike prod's.
+    b. Branching is not accessible — `supabase branches list` returned a `403`
+       ("account does not have the necessary privileges").
+    c. What test-db actually has: nightly physical backups only (`walg_enabled:
+       true`), most recent observed ~24h old at any given moment — a snapshot, not
+       a point-in-time window.
+  Combined with the rule immediately above (a from-scratch replay is ALREADY
+  documented as coming up missing `users.auth_id`, root cause still unconfirmed),
+  the honest statement is: **test-db today has no reliable recovery path** — not
+  "restore to just before the mistake" (no PITR), not "clean rebuild" (the known
+  fresh-replay defect), only a stale nightly snapshot. Migration 029's own rehearsal
+  survived this only because `dprs`/`daily_log_edits` both happened to be empty at
+  the time — a real mistake against populated test-db tables would have had no clean
+  way back. Recorded as an input to the open test-db reliability workstream, not
+  resolved here — this is a statement of current risk, not a fix.
 - SUPERSEDING PR CARRIES THE REVIEWER-ITEMS LIST FORWARD, ITEM-BY-ITEM (standing rule
   since 2026-07-26; origin: the 019 round-1→round-3 near-miss where eight
   reviewer-required revisions were briefly treated as non-existent because they lived
@@ -523,6 +544,29 @@ Tests are required, not optional
   (evening completes → morning starts → morning completes) and caught a
   second, unnamed instance of the bug a mechanism-targeted test would have
   missed (docs/reviews/022-review-package.md).
+
+EVERY NEW MIGRATION GETS A DISPOSABLE DRY-RUN BEFORE IT ENTERS A REVIEW PACKAGE
+(standing rule since 2026-08-20, migration 029's rehearsal round). Origin:
+029, 030, and 031 were written, packaged, and declared review-ready in the
+same session, by the same process, and none of them had ever been executed
+against a real Postgres. 029 turned out to have a real ordering defect (an
+inline FK referencing a parent unique constraint the file didn't create
+until 15 lines later — Postgres 42830) that a careful read — including a
+correct, thorough §0 security/atomicity read that had no reason to catch
+this class of bug — did not surface, and that only running the file against
+Postgres did. The systemic finding was never the ordering bug itself; it was
+that a review package whose SQL has never been past a parser is a proposal,
+not a package. Before any new migration file enters a review package: run it
+against a disposable Postgres — a local `supabase start` stack, or any
+throwaway local instance (a scaffold of just the tables/functions/roles the
+new file references is sufficient; it does not need to be a full replay of
+every prior migration). This is NOT the test-db rehearsal and does not
+substitute for it (§0's own rehearsal rules, and the REHEARSE ON A CLEANED
+EXISTING BRANCH rule above, are unchanged and still required before any real
+apply) — it is a cheaper, earlier gate that catches parse/ordering/executability
+defects before the external reviewer's attention is spent on whether SQL
+runs at all, rather than on the design it encodes. Touches no real
+environment; no §0 gate implication of its own.
 
 How to verify locally (ask me to run these; show me the command)
 - DB change: run migrations against a Supabase BRANCH first, never prod.

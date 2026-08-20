@@ -106,12 +106,11 @@ CREATE TABLE public.dpr_versions (
       (generated_by = 'system' AND generated_by_user IS NULL) OR
       (generated_by = 'pm' AND generated_by_user IS NOT NULL)
     ),
-  -- Composite same-tenant FKs (017's pattern, 027's precedent — applied from
+  -- Composite same-tenant FK (017's pattern, 027's precedent — applied from
   -- the start here, not found by a second reviewer pass as it was for 028's
-  -- own engineer_id FK).
-  CONSTRAINT dpr_versions_dpr_id_fkey
-    FOREIGN KEY (dpr_id, tenant_id) REFERENCES public.dprs (id, tenant_id)
-    ON UPDATE NO ACTION ON DELETE CASCADE,
+  -- own engineer_id FK). Only generated_by_user's FK is inline here —
+  -- dpr_versions_dpr_id_fkey is declared separately, below, deliberately
+  -- OUT of this CREATE TABLE (see the note there for why).
   CONSTRAINT dpr_versions_generated_by_user_fkey
     FOREIGN KEY (generated_by_user, tenant_id) REFERENCES public.users (id, tenant_id)
     ON UPDATE NO ACTION ON DELETE RESTRICT
@@ -121,10 +120,30 @@ CREATE TABLE public.dpr_versions (
 -- tenants/projects are plain single-column, per the pre-existing, documented
 -- 023 gap — see this file's own header note above and the review package's
 -- §_ for why this migration does not silently fix that separate, unrelated
--- gap). dpr_versions_dpr_id_fkey needs one. Added here, scoped to this
--- table's own need, not a general retrofit of 023's plain FKs.
+-- gap). dpr_versions_dpr_id_fkey (below) needs one. Added here, scoped to
+-- this table's own need, not a general retrofit of 023's plain FKs.
 ALTER TABLE public.dprs
   ADD CONSTRAINT dprs_id_tenant_id_key UNIQUE (id, tenant_id);
+
+-- dpr_versions_dpr_id_fkey — ADDED SEPARATELY, NOT INLINE IN THE CREATE
+-- TABLE ABOVE (F1, rehearsal round 1 finding, fixed here). The inline
+-- version referenced dprs(id, tenant_id) before dprs_id_tenant_id_key (the
+-- parent unique constraint it needs) existed anywhere in this transaction —
+-- Postgres 42830, "no unique constraint matching given keys," caught live
+-- by rehearsal, not by review. FIX SHAPE CHOSEN: declared as its own
+-- ALTER TABLE, after both prerequisite objects (dpr_versions itself, and
+-- dprs_id_tenant_id_key immediately above) exist — deliberately NOT simply
+-- moving the dprs_id_tenant_id_key ALTER earlier instead, which would have
+-- been the smaller diff. This shape is more robust to future reordering
+-- (a later editor moving CREATE TABLE dpr_versions again cannot silently
+-- reintroduce the same 42830, since the FK no longer lives inside it) and
+-- reads more explicitly at the point a reviewer is most likely to be
+-- checking cross-table dependencies — right where the parent constraint
+-- was just created, not buried inside an unrelated table's own definition.
+ALTER TABLE public.dpr_versions
+  ADD CONSTRAINT dpr_versions_dpr_id_fkey
+    FOREIGN KEY (dpr_id, tenant_id) REFERENCES public.dprs (id, tenant_id)
+    ON UPDATE NO ACTION ON DELETE CASCADE;
 
 CREATE INDEX idx_dpr_versions_dpr_id ON public.dpr_versions (dpr_id, version);
 
@@ -285,3 +304,12 @@ COMMENT ON TABLE public.dprs IS
   'them into one column or couple their transitions.';
 
 COMMIT;
+
+-- DRY-RUN VERIFIED (2026-08-20, F1/F3, CLAUDE.md §7's new standing rule):
+-- after the F1 statement-order fix, this file ran cleanly, end to end
+-- (BEGIN through COMMIT, every statement, no error) against a disposable
+-- local Postgres (a minimal scaffold of the tables/functions/roles this
+-- file references — not a full 001-028 replay). This is NOT the test-db
+-- rehearsal and does not substitute for it; the real rehearsal (Phases 0-6)
+-- against test-db is its own, separately-confirmed step, not run again in
+-- this same pass.
