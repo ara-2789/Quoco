@@ -98,3 +98,112 @@ collision risk (this session's), and a documented gap where three earlier incide
 never recorded individually. This document is the record of that gap; closing it (writing
 down what #1–#3 actually were, if anyone still remembers) is a separate, optional action,
 not undertaken here.
+
+---
+
+## K2 — the writer, formally identified and directly re-confirmed (2026-08-20)
+
+J1's finding (narrated only in commit `6c2cabf`'s message, never reported directly) is
+re-derived here from fresh commands, plus one piece of evidence stronger than anything
+available at the time: **a live, currently-running collision, caught in the act.**
+
+**Q1 — is CI pointed at `exfccwlrhoutkgrlikod`?** Yes, confirmed two ways. `ci.yml`'s
+`test` job injects `SUPABASE_TEST_URL`/`SUPABASE_TEST_SERVICE_ROLE_KEY`/
+`SUPABASE_TEST_PROJECT_REF` from GitHub secrets (`ci.yml:118-121`). `test/setup/guard.ts`
+(read in full) is a Vitest `globalSetup` hard allowlist — `ALLOWED_TEST_REF =
+'exfccwlrhoutkgrlikod'`; it throws before any test runs if the resolved ref doesn't match,
+covering both a misconfigured secret and a missing one. Not merely asserted by a comment —
+the guard's actual source was read and it does what the comment claims.
+
+**Q2 — was a run in flight during the observed churn window? Directly re-confirmed, live,
+during this very investigation (2026-08-20):** `gh run list` showed run `32328979193`
+(triggered by this session's own K1 push) with its `Test (real test-db)` job
+**`in_progress`**, started `2026-08-20T03:42:49Z` — squarely inside K1's own fixture
+window (setup ~03:35–03:41, edits at `03:45:12`/`03:45:31`). K1's isolated, freshly-
+generated UUIDs meant this posed no risk to that exercise — but it is a first-hand,
+real-time demonstration of the exact mechanism this workstream describes, not an
+inference from logs after the fact.
+
+**Q3 — does any workflow step apply migrations? No.** Read `ci.yml` in full: four jobs
+(`typecheck`, `lint`, `migration-lint`, `test`), and not one of them runs
+`supabase db push`, `supabase migration`, or any schema-applying command — `migration-lint`
+only lints, the `test` job runs exactly `npm ci` then `npm test`. **This closes the
+question directly: CI does not explain the 023/024/025/027/028 ledger-lag pattern.** That
+remains fully attributable to the manual `supabase db query --linked -f` sessions this
+project's own CLAUDE.md already documents — confirmed by absence, not merely re-asserted.
+
+**Q4 — any other writer?** `.github/workflows/` contains exactly one file (`ci.yml`) — no
+separate deploy/cron workflow exists. `vercel.json` and Vercel's own build process carry
+no `SUPABASE_TEST_*` reference (grepped) — Vercel builds against prod env vars only, per
+this project's own established `.env.local`-points-at-prod fact. `package.json`'s `test`
+script is `vitest run` (single pass, not `--watch`) — no standing local-watch process is
+baked into the repo. Residual risk not fully closed by this check: a developer manually
+running `vitest --watch` locally, or any script (like `generate-one-dpr.ts`,
+J7c) redirected at test-db by hand — neither is discoverable by grep, both are real per
+this session's own history.
+
+## K3 — sharper root-cause candidate: DETERMINISTIC same-row collision, not just interleaving
+
+The surviving row from an earlier live check this session was CI's own fixture —
+`tenants.id = 00000000-0000-4000-a000-00000000d013`, name **"ZZ Test Tenant
+(session-transition suite)"**. That name is not a leftover label — it is `test/helpers/
+db.ts`'s `ensureTestTenant()` writing the SAME literal name, via `upsert(..., {onConflict:
+'id'})`, every single time any suite calls it. Checked, not assumed: `ensureTestTenant()`
+is called by `ensureMorningFixtures()` (the morning-flow suite's own setup) — meaning at
+least **two different test files independently `upsert` the identical row** as part of
+their own `beforeAll`, and `test/productivity-reconciliation-mirror.test.ts` references
+the same literal `TEST_TENANT_ID` constant directly (line 112) as a third.
+
+**This is a sharper mechanism than generic "interleaved writes," and worth naming as its
+own candidate, distinct from the general contention finding above:** an `upsert` with
+`onConflict: 'id'` on a FIXED id means two overlapping suites don't merely observe each
+other's transient state (the read-only-probe symptom this session's own row-churn
+surprise showed) — they **write the identical row**, and whichever `afterAll`/teardown
+runs last deletes or resets state the OTHER suite's own test assertions may still be
+mid-flight on. This is deterministic collision on identity, not probabilistic timing
+overlap — a stronger and more specific claim than "contention."
+
+**Honest limit, not overclaimed:** this session's own J7a check (above) found NO concurrent
+CI run active during incident #4's actual failure window, and found the "-732ms
+session-transition" incident **unverifiable — it does not exist anywhere in this repo's
+committed record.** This sharper mechanism does not retroactively confirm that incident
+happened, or explain it, because there is nothing on record to explain. It IS a stronger
+candidate mechanism than plain interleaving for *any future* incident matching that shape
+(a session-transition or morning-flow suite failing in a way that looks like state was
+pulled out from under it) — recorded here as a named, ready-to-check hypothesis for next
+time, not as a solved case this time.
+
+**Blast radius — checked, not assumed to be limited to one suite.** Grepped every
+`test/*.test.ts` and `test/unit/*.test.ts` file for the `00000000-0000-4000-a000-...`
+literal-UUID pattern this fixture family uses: **the pattern appears in at least 12
+distinct test files**, not just `test/helpers/db.ts`:
+`migration-016`, `migration-017`, `migration-019`, `migration-020`, `migration-023`,
+`dpr-detail`, `dpr-generate-job`, `reactivation-db`, `checkin-escalations-sweep`,
+`productivity-reconciliation-mirror`, plus `db.ts`'s own `TEST_TENANT_A_ID`/
+`TEST_TENANT_B_ID`/`TEST_PROJECT_A_ID`/`TEST_PROJECT_B_ID` (the cross-tenant isolation
+fixtures). **Two distinct risk tiers, not one, worth keeping separate:**
+- **Cross-file collision (the sharper, worse tier):** `TEST_TENANT_ID` specifically is
+  shared verbatim across at least three files (`db.ts`'s own morning-flow fixtures,
+  `productivity-reconciliation-mirror.test.ts`, and whatever suite "session-transition"
+  in its name originally referred to) — any two of these running concurrently
+  (two different Vitest processes, a local run overlapping CI, or two CI runs from
+  different PRs racing the `ci-test-db-suite` concurrency group at its boundary) collide
+  on the identical row.
+- **Self-namespaced-but-still-fixed (the broader, milder tier):** the other ~9 files each
+  define their OWN distinct UUID suffix (e.g. `migration-023.test.ts`'s
+  `...0230a1`/`...0230a2`/`...0230b1`), so they don't collide with EACH OTHER — but each
+  one is still a fixed literal, identical on every invocation, so two overlapping runs of
+  the SAME file (a local run of `migration-023.test.ts` overlapping a CI run of that same
+  file) would collide exactly the way `TEST_TENANT_ID` did. This is the exact shape of
+  this session's own original row-churn incident, just narrowed to single-file scope
+  instead of the shared morning-flow tenant.
+
+**Concrete fix, named, not implemented:** replace fixed literal UUIDs with per-run-derived
+ones (e.g. seeded from `process.env.GITHUB_RUN_ID` in CI, or a random UUID generated once
+per test process locally) across all ~12 files, not just `test/helpers/db.ts`. This is the
+same shape as Option 4 in `ci-test-isolation-options.md` (J7b) — already evaluated there
+as a partial fix (it doesn't address connection/lock-level contention) but now shown to
+have a **larger surface than J7b described**: J7b evaluated it against `test/helpers/
+db.ts` alone; this check shows the same fixed-ID pattern recurring independently in most
+of the suite's other integration test files, so a real fix would be a wider migration
+than J7b's write-up implied. **Not implemented here — write-up only, per instruction.**
