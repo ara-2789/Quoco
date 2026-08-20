@@ -407,12 +407,49 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.write_dpr_version(UUID, TEXT, JSONB, TEXT, UUID) FROM PUBLIC;
+-- FIXED (U3, external review, post-prod-apply security finding, 2026-08-20):
+-- REVOKE ALL ... FROM PUBLIC ALONE IS NOT SUFFICIENT ON THIS PLATFORM. As
+-- applied, this line by itself left `anon` with EXECUTE on this function —
+-- confirmed live via pg_default_acl: Supabase configures a per-role default
+-- ACL for the `public` schema (obj_type 'f', default_for_role 'postgres')
+-- that grants EXECUTE to `anon`, `authenticated`, AND `service_role`
+-- INDIVIDUALLY on every new function created by `postgres` — not through the
+-- `PUBLIC` pseudo-role. `REVOKE ... FROM PUBLIC` only removes a grant made TO
+-- PUBLIC; it does not touch these per-role default-ACL grants, so `anon`
+-- silently kept EXECUTE straight through this statement. THIS IS NOT A NEW
+-- DISCOVERY — migration 020 found and fixed the identical behaviour for
+-- seven pre-existing functions (`020_function_execute_hardening.sql:94`:
+-- `REVOKE EXECUTE ON FUNCTION public.get_user_tenant_id() FROM PUBLIC, anon;`
+-- — naming `anon` explicitly, separately from `PUBLIC`, for exactly this
+-- reason). That lesson was never generalised into a standing rule for
+-- functions created afterward, so the first new SECURITY DEFINER function
+-- since 020 (this one) silently reintroduced the exact class of hole 020
+-- exists to prevent. Now generalised — see CLAUDE.md's Database section
+-- (standing rule, U4, 2026-08-20).
+REVOKE ALL ON FUNCTION public.write_dpr_version(UUID, TEXT, JSONB, TEXT, UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.write_dpr_version(UUID, TEXT, JSONB, TEXT, UUID) TO authenticated, service_role;
 -- authenticated CAN call this (a PM regenerating from the dashboard, once
 -- §2b's edit surface exists) — the function's own auth.uid() check above is
 -- the real boundary, not the grant. service_role calls it for the nightly
--- 'system' generation path (dispatch.ts).
+-- 'system' generation path (dispatch.ts). anon must NEVER be able to reach
+-- this function — it is the one branch (`p_generated_by='system'`) whose
+-- only real boundary IS the grant, since an anon PostgREST call carries no
+-- JWT and so satisfies `auth.uid() IS NULL` exactly like the legitimate
+-- service_role caller does. The B1 guard cannot distinguish an anon caller
+-- from a legitimate one; the grant is the only thing that can.
+--
+-- DIVERGENCE FROM WHAT WAS ACTUALLY APPLIED, RECORDED PER HOUSE CONVENTION:
+-- prod and test-db were both applied with the ORIGINAL two-line REVOKE/GRANT
+-- above (FROM PUBLIC only) — this file's current text is NOT byte-identical
+-- to what ran. The gap was found live post-apply (S5's ACL fingerprint) and
+-- closed on both databases via a direct, out-of-band
+-- `REVOKE EXECUTE ON FUNCTION public.write_dpr_version(uuid,text,jsonb,text,uuid)
+-- FROM anon;` (U1) — verified two ways on both databases: the ACL re-read
+-- and a real anon-key PostgREST call returning 42501. This file is fixed
+-- here so a FUTURE replay (a fresh test-db rebuild, a new environment) does
+-- not recreate the hole; it is not what actually ran on 2026-08-20's apply.
+-- Full incident record: docs/reviews/029-dpr-versioning-review-package.md,
+-- the U1-U5 section.
 
 -- ----------------------------------------------------------------------------
 -- 4. daily_log_edits.comment — the column §4b's worked example needs.

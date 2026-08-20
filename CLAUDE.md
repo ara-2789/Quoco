@@ -547,6 +547,48 @@ Database
       pin lives in the apply-time CHECK, not in the `WHERE` clause itself.
   Both cases are extensional at apply time; only WHERE the pin lives differs,
   and that difference tracks which direction a stale pin fails toward.
+- EVERY NEW FUNCTION IN THE public SCHEMA REQUIRES AN EXPLICIT PER-ROLE
+  REVOKE — `REVOKE ALL ... FROM PUBLIC` IS NOT SUFFICIENT (standing rule
+  since 2026-08-20, migration 029's first prod apply, U1-U4; recurrence of a
+  gap migration 020 already found once). Supabase's own `pg_default_acl`
+  grants EXECUTE on every new `public`-schema function to `anon`,
+  `authenticated`, AND `service_role` INDIVIDUALLY, per-role — not through
+  the `PUBLIC` pseudo-role. `REVOKE ... FROM PUBLIC` only removes a grant
+  made TO PUBLIC; it does nothing to these per-role default grants. State
+  the intended callers explicitly and REVOKE BY NAME from every role that is
+  not one of them — do not rely on a bare `FROM PUBLIC` to be enough.
+  Same principle for new TABLES: state the audience and bound the grants
+  explicitly rather than relying on RLS alone to compensate for an
+  over-broad table-level grant (RLS and the grant are two independent
+  layers — a correct RLS policy does not make an unnecessary anon grant
+  harmless, it just means nothing has exploited it yet).
+    Origin: migration 020 (2026-07-25) found and fixed this EXACT behaviour
+  for seven pre-existing functions, explicitly naming `anon` as a separate
+  revoke target in its own text (`020_function_execute_hardening.sql:94`:
+  `REVOKE EXECUTE ON FUNCTION public.get_user_tenant_id() FROM PUBLIC,
+  anon;`). That fix was never generalised into a standing rule for functions
+  created AFTERWARD — a point fix, not a rule — so the first new SECURITY
+  DEFINER function to ship since 020 (`write_dpr_version`, migration 029)
+  silently reintroduced the identical hole: `anon` held live EXECUTE on a
+  function whose one caller-trusting branch (`p_generated_by='system'`)
+  keys its only guard on `auth.uid() IS NOT NULL` — and an anon PostgREST
+  call carries no JWT, so it satisfies that guard exactly like the
+  legitimate `service_role` caller does. The anon key is public by design
+  (ships in client code), so this was a live, internet-facing exposure on
+  production, caught only by the post-apply ACL fingerprint below, not by
+  anything earlier in the pipeline — the dry-run scaffold has no Supabase
+  default ACLs to reproduce this, the test-db rehearsal never tested an
+  anon caller, and §12-style behavioural evidence authenticated as real
+  users throughout, never as anon. Full incident record:
+  `docs/reviews/029-dpr-versioning-review-package.md`'s U1-U5 section.
+    VERIFICATION, now standing: the post-apply catalog readback for any
+  migration creating a new function or table must fingerprint the ACL of
+  every new object, not just its definition (constraints, policy text,
+  prosrc) — an object can be functionally correct and still carry a grant
+  nobody intended. Prefer proving a revoke worked two ways, not one: read
+  the ACL back (`has_function_privilege`/`has_table_privilege`), AND — for
+  anything reachable via PostgREST — make a real anon-key call and confirm
+  the actual refusal (`42501`), not just its absence from the catalog.
 
 API routes
 - All /api/ routes require authentication.

@@ -349,10 +349,14 @@ exactly one added. **Independently re-verified live, 2026-08-20 (this update):**
 `supabase_migrations.schema_migrations` has a row for version `029`; total row count is
 25, matching the commit's own before/after record exactly.
 
-**Prod: NOT run.** Requires its own explicit go-ahead per CLAUDE.md §0's `db query`
-conditions: linked project ref pasted fresh, hash/probe comparison against an
-independently re-probed reference (test-db's own post-apply state, now established), and
-Aravind's go-ahead in the same exchange as the apply command.
+**Prod: APPLIED (2026-08-20, Aravind's explicit GO, S0-S6).** Linked ref pasted fresh
+(`jvxwqignooseazzmwhvl`), PITR re-checked live (not carried forward), Probes A-F all
+matched their PROCEED conditions (Probe F required a T1/T2 fix mid-sequence — see §7's own
+dated note), apply ran clean, ledger repaired 24 → 25 with the row read back directly. Five
+of six post-apply catalog fingerprints matched immediately; the sixth (the function's ACL)
+surfaced a real, live security finding, remediated the same session — full record: §13,
+below. **The migration itself is correct and stands as applied; §13 is a grant-level fix on
+top of it, not a rollback.**
 
 **After prod apply:** `docs/schema.md`'s `dprs`/new `dpr_versions` entries written only
 after E confirms (§0) — not written speculatively here.
@@ -923,6 +927,199 @@ effect on the rest of the suite.
 
 **Step 4 of the reviewer's own path-to-go (PITR reconfirmation, apply-by-file with an
 explicit ledger row, post-apply catalog fingerprinting, prod apply itself) was NOT
-attempted.** Per the reviewer's explicit "NOT AUTHORIZED: No prod. Do not proceed past
-step 3 without reporting" — this section stops at the end of step 3 and reports back
-rather than continuing.
+attempted in THIS pass.** Per the reviewer's explicit "NOT AUTHORIZED: No prod. Do not
+proceed past step 3 without reporting" — this section stopped at the end of step 3 and
+reported back rather than continuing. **It has since been attempted for real — see §13.**
+
+---
+
+## 13. PROD APPLY — S0-S6, then a live security finding, found and closed (U1-U5, 2026-08-20)
+
+Aravind's explicit GO. Scope: migration 029 only, prod (`jvxwqignooseazzmwhvl`), nothing
+else on any database.
+
+### S0-S1 — target and PITR, confirmed live
+
+Linked ref echoed and confirmed: `jvxwqignooseazzmwhvl`. Timing: 15:30 IST, the 19:45-20:00
+IST `dpr-generate` cron over four hours away, clear. PITR re-checked live, not carried
+forward from an earlier session: `pitr_enabled: true`, `walg_enabled: true`, restore
+window `2026-08-13 16:31:42 UTC → 2026-08-20 09:27:04 UTC`.
+
+### S2 — Probes A-F, first pass: Probe F itself was unrunnable
+
+Probes A-E matched their PROCEED conditions exactly (raw output: no `current_version`/
+`generated_by`/`generated_by_user` columns; no `dprs_id_tenant_id_key`; `dpr_versions`
+absent; no `comment` column on `daily_log_edits`; 023's original COMMENT text verbatim).
+
+**Probe F, as written, could not run against real prod** — it selected `current_version`,
+a column 029 itself adds, confirmed absent by Probe A moments earlier in the SAME
+sequence. A pre-apply probe referencing a post-apply column, impossible by construction —
+authored and only ever exercised against test-db after 029 was already live there. **This
+is the fifth instance of the document-asserts-something-nonexistent class, and the
+sharpest: the other four were stale or dangling references; this one was a verification
+step that could not have passed even in principle.** Session relinked back to test-db
+immediately, apply sequence stopped, reported rather than patched-and-continued.
+
+A corrected, read-only diagnostic (same predicate, `current_version` dropped) found **six
+content-bearing rows, not the one originally pinned** — nightly generation had produced one
+per night since the pin was set 2026-08-13 (absent 08-14; see the separate, unverified note
+below). T1/T2 fixed Probe F (query corrected against Probe A's real pre-apply columns;
+re-pinned to all six real ids, never a bare count) — full fixed text lives in §7 above,
+this is the incident record for why it changed mid-attempt.
+
+### S2, second pass — Probes A-F, all six clean
+
+Re-ran the full sequence from scratch (target re-confirmed, PITR re-confirmed live:
+`2026-08-13 16:31:42 UTC → 2026-08-20 10:23:07 UTC`). Probes A-E: identical results to the
+first pass. **Probe F, corrected: exactly the six pinned ids, same log_dates, all
+`has_structured: true`, nothing drifted between the two passes.**
+
+### S3 — apply by file
+
+`supabase db query --linked -f supabase/migrations/029_dpr_versioning.sql` against prod:
+clean exit, `rows: []`, no error. Per the tool's own documented limitation, NOT treated as
+confirmation on its own — S5 is the real verification.
+
+### S4 — explicit ledger row
+
+`supabase migration repair --status applied 029 --linked`: `{"versions":["029"],"status":
+"applied","repairAll":false,"message":"Migration history repaired"}` — no `28P01`. Ledger
+24 → 25 rows; version `029` read back directly (`name: "dpr_versioning"`), not inferred
+from exit code.
+
+### S5 — post-apply catalog readback
+
+Five of six fingerprints matched immediately, byte-for-byte with the file: both consistency
+CHECKs (`dprs_generated_by_user_consistency_check`, `dpr_versions_generated_by_user_
+consistency_check`), both composite FKs plus `dprs_id_tenant_id_key` and `dpr_versions_
+dpr_id_fkey` (the F1-fixed one — confirmed correct on real prod, not just test-db), the
+`dpr_versions_select` policy definition, and — the one named load-bearing — **the
+function's prosrc hash: `716b11bd5799db56a379eeccd61c9c9d`, length 6515, identical to
+test-db's own independently-tested body, both B1 and B2 guards confirmed present by direct
+string match.** Backfill confirmed landed: exactly the six pinned ids in `dpr_versions`,
+`version=1`, `generated_by='system'`, `has_structured=true` across all six, read back
+directly.
+
+**The sixth fingerprint — the function's ACL — did not match expectations, and was a real
+finding, not noise:**
+
+```
+has_function_privilege('anon', ...) = true
+```
+
+Checked independently (not trusting the array-format `proacl` reading alone) via
+`has_function_privilege`, then checked against every OTHER `SECURITY DEFINER` function on
+prod (`acquire_and_transition_session`, `apply_evening_flow_turn`, `apply_morning_flow_
+turn`, `complete_onboarding`, `correct_daily_log`, `drain_next_pending_flow`, `get_user_
+tenant_id`, `handle_new_user`, `rls_auto_enable`) — **`write_dpr_version` was the only one
+where `anon` could execute.** Root cause confirmed via `pg_default_acl`: Supabase
+configures a per-role default ACL for `public`-schema functions created by `postgres`,
+granting EXECUTE to `anon`, `authenticated`, and `service_role` INDIVIDUALLY — not through
+the `PUBLIC` pseudo-role, so `REVOKE ALL ... FROM PUBLIC` (029's own original text) never
+touched it. **Migration 020 already found and fixed this exact behaviour for seven
+functions** (`020_function_execute_hardening.sql:94`: `REVOKE EXECUTE ON FUNCTION public.
+get_user_tenant_id() FROM PUBLIC, anon;`) — the lesson was never generalised into a
+standing rule, so the first new `SECURITY DEFINER` function since 020 silently
+reintroduced it.
+
+**Why this specifically defeated B1:** an anon PostgREST call carries no JWT, so
+`auth.uid()` is NULL for it — identical to the legitimate `service_role` path. B1's guard
+(`p_generated_by='system' AND auth.uid() IS NOT NULL → reject`) cannot distinguish an
+anonymous public caller from the legitimate nightly job. The anon key is not a secret — it
+ships in client-side code by design. **This was a live, internet-facing exposure on
+production**, on a `SECURITY DEFINER` function with real write authority over owner-facing
+report content.
+
+**Exposure characterisation (U2):**
+1. `dpr_versions` the table: `relacl` shows only `postgres`, `authenticated`,
+   `service_role` — **no `anon` entry at all**. Its own `REVOKE ALL ... FROM anon`
+   (written explicitly in the file, unlike the function's grant) worked correctly. RLS:
+   `relrowsecurity=true`, `relforcerowsecurity=false` (normal — owner bypass, not a gap).
+2. The three new `dprs` columns (`current_version`, `generated_by`, `generated_by_user`):
+   `anon` can `SELECT` them — but this is `dprs`' own PRE-EXISTING table-level grant from
+   migration 023 (`anon=rDxtm`, unchanged by 029, documented at the time), gated by the
+   pre-existing `dprs_select` RLS policy, confirmed `polroles={authenticated}` — anon
+   matches no policy, gets zero rows regardless of the column grant. **No new grant surface
+   from these three columns.**
+3. `write_dpr_version` `RETURNS UUID` — confirmed by direct read of the function's own
+   signature and its final `RETURN v_version_id;` — the bare id of the new `dpr_versions`
+   row, nothing else. Combined with (1) above (anon has zero grant on `dpr_versions`, so
+   couldn't `SELECT` the row back even holding its id) and `dprs_select` being
+   `authenticated`-only (so anon couldn't read the overwritten `dprs.content` either):
+   **this was WRITE-ONLY exposure.** An anon caller could have overwritten a real DPR's
+   `content`/`structured` and inserted a spurious `dpr_versions` history row, but could not
+   have used this specific vector to read any DPR content back, through the RPC's own
+   return value or a subsequent `SELECT` on either affected table.
+
+**U1 — closed, prod first then test-db, verified two ways on each:**
+
+```sql
+REVOKE EXECUTE ON FUNCTION
+  public.write_dpr_version(uuid,text,jsonb,text,uuid)
+  FROM anon;
+```
+
+*Prod:* executed clean. (a) ACL re-read: `anon_can_execute: false`, `authenticated_can_
+execute: true`, `service_role_can_execute: true` — the legitimate paths untouched. (b)
+Real anon-key PostgREST call against prod's live REST endpoint:
+`{"code":"42501","details":null,"hint":null,"message":"permission denied for function
+write_dpr_version"}`, HTTP 401 — the actual internet-facing path an attacker would have
+used, proven closed, not just the catalog entry.
+
+*Test-db:* identical gap confirmed present (same root cause, same original grant text,
+applied there first during the original J1-J6 rehearsal) — same fix, same two-way
+verification: ACL re-read `anon_can_execute: false`; real anon-key call against test-db's
+REST endpoint returned the identical `42501`/401.
+
+**U3 — migration file fixed** (`supabase/migrations/029_dpr_versioning.sql`, the `write_
+dpr_version` GRANT block): `REVOKE ALL ... FROM PUBLIC, anon` now, with the full
+`pg_default_acl` mechanism and the 020 precedent recorded in the file's own comment, so the
+next reader does not have to rediscover it a third time. **Explicit divergence note in the
+file itself:** what was actually applied to prod and test-db on 2026-08-20 was the
+ORIGINAL two-line grant (FROM PUBLIC only) — the file's current text is not byte-identical
+to what ran; the gap was closed live, out-of-band, via U1's direct `REVOKE`, not by
+re-applying this file. This file is fixed so a FUTURE replay doesn't recreate the hole, per
+house convention (record the divergence, don't silently rewrite history).
+
+**U4 — standing rule added**, `CLAUDE.md`'s Database section: every new `public`-schema
+function requires an explicit per-role revoke; `REVOKE ALL ... FROM PUBLIC` is stated as
+insufficient on its own, with 020 named as the origin of the lesson and this incident named
+as the reason it's now a rule instead of a fact two people have to independently
+rediscover. Also states the verification consequence: a post-apply catalog readback for any
+new function or table must fingerprint its ACL, not only its definition, and prefers
+proving a revoke worked two ways (catalog read + a real anon-key call) over one.
+
+**U5 — sent to the reviewer separately from this record**, not buried in it: what the
+exposure was, root cause, the write-only characterisation from U2, exposure window
+(minutes, this verification pass, `dpr_versions` holding only the six verified backfilled
+rows), that test-db carried the identical gap since the original rehearsal, the
+remediation and both verification methods, and — the point he should have plainly — his
+OWN post-apply ACL fingerprint requirement is what caught this; nothing earlier in the
+pipeline would have (the dry-run scaffold has no Supabase default ACLs to reproduce it, the
+rehearsal never tested an anon caller, §12's behavioural evidence authenticated as real
+users throughout). Recommended: add an anon-caller negative to the standard evidence shape
+for any future `SECURITY DEFINER` function's review package, not just this one.
+
+### 08-14 gap — probable explanation, explicitly unverified
+
+Six content-bearing rows span 08-13, 08-15 through 08-19 — 08-14 is absent from an
+otherwise consecutive run. Likely benign: migration 028 was applied that day and deleted
+two pinned zero-data marker rows (`35a2f41c`, `3c14243f`), and a marker row carries no
+content, so it would never appear in a content-bearing query regardless of whether real
+generation happened that day too. **Recorded as the probable explanation, not
+investigated, not confirmed.**
+
+### Delivery gap, concrete evidence for 030's priority
+
+Six DPRs generated on prod since 08-15; **zero delivered** — every one of the six shows
+`delivery_status: 'pending'`. The generation pipeline has been running nightly and
+producing real content; nothing downstream has ever sent one to an owner. This is not a
+hypothetical gap 030 might close — it is six real, already-generated reports sitting
+undelivered on prod right now.
+
+### Final state
+
+Migration 029: applied, ledgered (`029`/`dpr_versioning`, 25 rows), prosrc hash matching
+the tested body, backfill correct across all six pinned ids, all catalog fingerprints
+clean AFTER U1. The migration itself was never wrong — the grant was. **No rollback.**
+Session relinked back to test-db (`exfccwlrhoutkgrlikod`) as the standing default.
