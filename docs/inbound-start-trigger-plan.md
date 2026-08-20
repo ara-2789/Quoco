@@ -1,9 +1,19 @@
 # Inbound-as-start-trigger — TS-only plan (II3)
 
-**Status: PLAN ONLY. Not built. Approved direction: pure-TS, no migration, no RPC change.
-The refuse-when-submitted RPC fix (design-decisions-beta-feedback.md §10, decided
-2026-08-15) is explicitly NOT bundled here — it trips §0(a) and needs the full
-external-review path. Ships separately, on its own timeline.**
+**Status: BUILT (2026-08-20, JJ1 go-ahead) — `lib/whatsapp/inbound-start.ts`,
+`routeInboundMessage`, wired into `app/api/whatsapp/webhook/route.ts` in place of the
+previous direct `dispatchInboundTurn` call. Pure-TS as planned: no migration, no RPC
+change. The one plan ambiguity (which existing reply text fires on "both submitted")
+was resolved by explicit confirmation before implementation: `EVENING_ALREADY_COMPLETE_
+REPLY`, not the morning equivalent — see that branch's own code comment for the
+reasoning. Tests: `test/inbound-start.test.ts` (the full (a) window matrix,
+already-submitted-then-messages-again, flow-active delegation) and
+`test/webhook.test.ts` T-WH-11/T-WH-12 (end-to-end wiring proof). No env flag — decided
+and justified in `inbound-start.ts`'s own header comment. The refuse-when-submitted RPC
+fix (design-decisions-beta-feedback.md §10, decided 2026-08-15) remains NOT bundled here
+— it trips §0(a) and needs the full external-review path. Ships separately, on its own
+timeline; this build's (b) mitigation exists specifically to hold that gap closed until
+it does.**
 
 ## Scope boundary, stated first
 
@@ -101,6 +111,11 @@ gated by the (a)/(b) logic above) rather than a new mechanism. Checked against C
   (The separately-tracked refuse-when-submitted RPC fix, if and when it ships, is its own
   migration and does trip (a) — named explicitly so it isn't conflated with this plan.)
 
-## Not built here
+## Built (2026-08-20)
 
-Per the governing instruction. Build needs its own go-ahead.
+See the status header at the top of this file. What remained genuinely NOT built by this
+pass, deliberately: the refuse-when-submitted RPC fix ((b) above, its own migration and
+review path), and the scheduled outbound-send primitive (#69/031 — this build only makes
+an INBOUND message capable of starting a flow; nothing sends unprompted). The Twilio
+sender swap (HH2/II4) is a separate, still-unauthorized go-ahead, ideally executed
+alongside this build's deploy per that plan's own runbook.

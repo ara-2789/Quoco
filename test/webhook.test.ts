@@ -9,6 +9,7 @@ import {
   cleanupTestSessions,
   cleanupTestDailyLogs,
   seedSession,
+  seedDailyLogSubmission,
   readSession,
   getDailyLog,
   testPhone,
@@ -17,7 +18,8 @@ import {
   TEST_ENGINEER_PHONE,
 } from './helpers/db'
 import { MORNING_QUESTIONS } from '@/lib/whatsapp/flows/morning'
-import { EVENING_QUESTIONS } from '@/lib/whatsapp/flows/evening'
+import { EVENING_QUESTIONS, EVENING_ALREADY_COMPLETE_REPLY } from '@/lib/whatsapp/flows/evening'
+import { REPORT_READY_REPLY } from '@/lib/whatsapp/inbound-start'
 
 // T-WH: the HTTP-level webhook harness named in CLAUDE.md's TESTING DEBT entry
 // and migration 022's review package §10. Exercises handleWebhookPost
@@ -28,11 +30,23 @@ import { EVENING_QUESTIONS } from '@/lib/whatsapp/flows/evening'
 //
 // SCOPE: signature validation, the BOT-08/BOT-27 gate, idempotency (including
 // the RETRY-AFTER-CLEAR edge CLAUDE.md names explicitly), and proving the
-// real HTTP path reaches dispatchInboundTurn and routes correctly. Retry-logic
+// real HTTP path reaches routeInboundMessage and routes correctly. Retry-logic
 // edge cases (wrong_flow, double wrong_flow) are DELIBERATELY NOT re-tested
 // here — they are covered by test/dispatch.test.ts against dispatchInboundTurn
 // directly; duplicating them here would test the same code twice at two
 // layers for no additional confidence.
+//
+// II3 BUILD (inbound-as-start-trigger, docs/inbound-start-trigger-plan.md):
+// T-WH-11/T-WH-12 below prove routeInboundMessage's no-active-session start
+// decision is really wired into this webhook. The FULL window matrix
+// (deterministic, `now`-injected) lives in test/inbound-start.test.ts
+// instead — this file has no `now` injection point on the real webhook path
+// (see todayIST() below), so a webhook-level test can only assert "one of
+// the outcomes valid for whichever window the suite happens to run in," not
+// pin an exact one. T-WH-03 (unregistered number) already proves the
+// unknown-sender path is untouched by this build — nothing in routeInbound-
+// Message runs before registration/gate resolution, so no new test was
+// needed for that; T-WH-03 IS the proof, unmodified.
 //
 // T-WH-01's EXACT CLAIM: TWILIO_AUTH_TOKEN in .env.test is a fixed, obviously
 // fake value (see that file). This proves validateTwilioSignature's HMAC-SHA1
@@ -392,5 +406,46 @@ describe('handleWebhookPost — routes to whichever flow is active (dispatchInbo
     expect(res.status).toBe(200)
     expect(await twimlText(res)).toBe(EVENING_QUESTIONS[2])
     expect((await getDailyLog(todayIST()))?.evening_output).toBe('some work done')
+  })
+})
+
+describe('handleWebhookPost — no active session starts a flow (II3, routeInboundMessage wiring)', () => {
+  it('T-WH-11: registered engineer, no session, nothing submitted today — never silent', async () => {
+    // See the file header: no `now` injection point exists here, so the
+    // exact outcome depends on which IST window the suite runs in. Both
+    // valid outcomes are asserted explicitly; what both share, and what this
+    // test actually proves, is that the reply is never '' any more — the
+    // BOT-07 silence CLAUDE.md's "BOT-07 SILENCE IS A RULE 3.5 DEAD-END"
+    // entry names is closed for this case by this build.
+    const req = buildWebhookRequest({
+      From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+      Body: 'hi',
+      MessageSid: sid('start-no-session'),
+    })
+    const res = await handleWebhookPost(req, { supabaseClient: testClient() })
+    expect(res.status).toBe(200)
+    const reply = await twimlText(res)
+    expect(reply).not.toBeNull()
+    expect(reply === MORNING_QUESTIONS[1] || reply === REPORT_READY_REPLY).toBe(true)
+  })
+
+  it('T-WH-12: registered engineer, no session, both already submitted today — an already-done reply, no restart', async () => {
+    await seedDailyLogSubmission({
+      logDate: todayIST(),
+      morningSubmittedAt: new Date().toISOString(),
+      eveningSubmittedAt: new Date().toISOString(),
+    })
+    const req = buildWebhookRequest({
+      From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+      Body: 'hi',
+      MessageSid: sid('start-both-done'),
+    })
+    const res = await handleWebhookPost(req, { supabaseClient: testClient() })
+    expect(res.status).toBe(200)
+    const reply = await twimlText(res)
+    // Same before/after-eveningClose variance as T-WH-11, same reason.
+    expect(reply === EVENING_ALREADY_COMPLETE_REPLY || reply === REPORT_READY_REPLY).toBe(true)
+    // Neither outcome calls an RPC -- confirm no session row materialised.
+    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
   })
 })
