@@ -589,6 +589,19 @@ Database
   the ACL back (`has_function_privilege`/`has_table_privilege`), AND — for
   anything reachable via PostgREST — make a real anon-key call and confirm
   the actual refusal (`42501`), not just its absence from the catalog.
+    STANDARD EVIDENCE SHAPE, MADE PROACTIVE, NOT ONLY REACTIVE: an anon-key
+  call is not just how you verify a revoke you already suspect is needed —
+  it is now a REQUIRED line in every future `SECURITY DEFINER` function's
+  own review package, run by default alongside the authenticated/pm/qs
+  behavioural tests §12-style packages already run, whether or not anyone
+  suspects a gap. This function's own review package ran exactly that shape
+  of test (authenticated, qs, pm, member/non-member) and never once called
+  as `anon` — that absence is precisely why this sailed through every prior
+  check and was only caught by the POST-APPLY catalog readback, on
+  production, after the fact. Testing anon proactively, pre-apply, moves
+  this same class of finding to where 027's own external-review-round-1
+  findings landed: cheap, pre-apply, in a file nobody had run yet — not a
+  live production exposure discovered after the fact.
 
 API routes
 - All /api/ routes require authentication.
