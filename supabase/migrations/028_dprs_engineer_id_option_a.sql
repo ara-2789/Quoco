@@ -29,29 +29,34 @@
 -- not hand-editing a system table.
 --
 -- THREE-WAY RECONCILIATION (2026-08-20, H2), raw output in the session
--- record, not restated in full here: PROD's ledger already carries a '028'
--- row (`dprs_engineer_id`) -- no repair needed there for this version. TEST-
--- DB's ledger is missing FIVE versions whose schema+files both already
--- exist: 023, 024, 025, 027, AND 028 -- the same defect this header
--- originally described as isolated to 028 turned out to be broader on
--- test-db specifically. `supabase migration repair --status applied` for
--- 023, 024, 025, 027, 028 is required on test-db before any directory-
--- scanning apply runs there. NOT RUN YET -- a real database write requiring
--- its own explicit go-ahead, same as pass 1 correctly deferred, now with
--- the right command and the right scope.
+-- record, not restated in full here: PROD's ledger already carried a '028'
+-- row (`dprs_engineer_id`) -- no repair needed there for this version, and
+-- PROD was never touched by the fix below. TEST-DB's ledger was missing
+-- FIVE versions whose schema+files both already existed: 023, 024, 025,
+-- 027, AND 028 -- the same defect this header originally described as
+-- isolated to 028 turned out to be broader on test-db specifically.
 --
 -- REPAIR'S OWN TRACK RECORD, CHECKED AGAINST CLAUDE.md RATHER THAN ASSUMED
--- (2026-08-20): `supabase migration repair --status applied` DID succeed
--- once, early (CLAUDE.md's own Week-1 note: used to repair 001-005 "before
--- pushing 006"). It has since been documented as 28P01-blocked on at least
--- two later attempts (the 025 and 027 apply records, both of which fell
--- back to a manual ledger INSERT for that reason, not by first choice).
--- Both facts are real, not in conflict with each other -- something changed
--- for this command between "before 006" and "before 025." Whether repair
--- works TODAY is unverified either way and should be confirmed live (a
--- dry attempt, or checking whatever changed the CLI's connectivity) before
--- committing to it as the apply-time mechanism over the manual-INSERT
--- fallback this project has actually used successfully most recently.
+-- (2026-08-20), THEN TESTED LIVE, NOT LEFT AS A GUESS: `supabase migration
+-- repair --status applied` succeeded once, early (CLAUDE.md's own Week-1
+-- note: used to repair 001-005 "before pushing 006"), then was documented
+-- as 28P01-blocked on two later attempts (025, 027), both of which fell
+-- back to a manual ledger INSERT for that reason. Given that history,
+-- `023` alone was tried first, live, on test-db, per an explicit scoped
+-- go-ahead (W1) -- NOT assumed working from the early success, and NOT
+-- assumed broken from the two later failures. IT SUCCEEDED, no 28P01,
+-- `statements` auto-populated correctly by the tool from the real
+-- migration file (verified by reading the row back, not assumed from the
+-- command's own exit status). The remaining four (024, 025, 027, 028) were
+-- then repaired the same way, all four succeeding identically.
+--
+-- DONE (2026-08-20), test-db only, verified before/after
+-- (`SELECT version, name FROM supabase_migrations.schema_migrations`):
+-- 19 rows -> 24 rows, exactly the five expected added, nothing else
+-- changed, zero schema/catalog impact (repair marks applied, never
+-- executes). Re-ran the three-way reconciliation after: zero migrations
+-- remain in files+catalog but not ledger, on test-db. PROD untouched
+-- throughout, per the scoped go-ahead's own explicit boundary.
 --
 -- ORIGINAL HEADER BELOW, PRESERVED AS WRITTEN (struck framing corrected only
 -- where this note above already supersedes it):

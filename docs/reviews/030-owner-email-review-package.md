@@ -89,12 +89,18 @@ verification token has no meaning once its target user row is gone (unlike `dpr_
 
 ---
 
-## 6. S3 — pinned argument, not shipped SQL
+## 6. S3 — CLOSED by migration 017. Raw output, both databases, not a claim.
 
-The composite same-tenant FK on `projects.owner_user_id` this package might otherwise be
-expected to add is **already live**, since `017_rls_column_bounding.sql:82-91`
-(`projects_owner_user_id_fkey`). Verified against the live catalog on test-db, not just the
-migration file text — `pg_constraint`:
+**Status: settled, not open.** Round 4's escalation of this as a cross-tenant delivery risk
+is withdrawn by the escalator himself, on this exact evidence — recorded here so the pin
+carries proof, not two conflicting summaries. The composite same-tenant FK on
+`projects.owner_user_id` this package might otherwise be expected to add in
+`030_owner_email_delivery.sql` **already exists**, shipped by
+`017_rls_column_bounding.sql:82-91` (`projects_owner_user_id_fkey`), which `DROP`s the
+plain FK migration 016 originally added and re-adds it composite, over the
+`UNIQUE(id, tenant_id)` parent index that same migration also creates.
+
+**Raw output, test-db** (`exfccwlrhoutkgrlikod`), captured 2026-08-19:
 ```sql
 SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
 WHERE conrelid = 'public.projects'::regclass AND contype = 'f'
@@ -103,10 +109,38 @@ WHERE conrelid = 'public.projects'::regclass AND contype = 'f'
 ```
 projects_owner_user_id_fkey | FOREIGN KEY (owner_user_id, tenant_id) REFERENCES users(id, tenant_id) ON DELETE RESTRICT
 ```
-Captured this session (2026-08-19), test-db, `exfccwlrhoutkgrlikod`. `confupdtype='a'`
-(NO ACTION), `confdeltype='r'` (RESTRICT) — matching 017's own comment exactly. **Nothing
-shipped for this in `030_owner_email_delivery.sql`; the argument for not shipping it is
-that it already exists, not that it was judged unnecessary.**
+
+**Raw output, PROD** (`jvxwqignooseazzmwhvl`), captured 2026-08-19, the higher-consequence
+database, checked directly rather than inferred from test-db alone:
+```sql
+SELECT conname, contype, confrelid::regclass AS references, pg_get_constraintdef(oid) AS definition
+FROM pg_constraint WHERE conrelid = 'public.projects'::regclass ORDER BY conname;
+```
+```
+projects_created_by_fkey    | f | users   | FOREIGN KEY (created_by) REFERENCES users(id)
+projects_id_tenant_id_key   | u | -       | UNIQUE (id, tenant_id)
+projects_owner_user_id_fkey | f | users   | FOREIGN KEY (owner_user_id, tenant_id) REFERENCES users(id, tenant_id) ON DELETE RESTRICT
+projects_pkey                | p | -       | PRIMARY KEY (id)
+projects_status_check        | c | -       | CHECK (status = ANY (ARRAY['active','completed','on_hold','in_bidding','bids_submitted']))
+projects_tenant_id_fkey      | f | tenants | FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+```
+Parent index, PROD:
+```sql
+SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'users' AND schemaname = 'public';
+```
+```
+users_id_tenant_id_key | CREATE UNIQUE INDEX users_id_tenant_id_key ON public.users USING btree (id, tenant_id)
+```
+(full 5-row result also includes `users_pkey`, `users_whatsapp_number_key`,
+`idx_users_tenant_id`, `uq_users_auth_id` — omitted here as not relevant to this FK's parent)
+
+Both databases: `confupdtype='a'` (NO ACTION), `confdeltype='r'` (RESTRICT), matching
+017's own comment exactly. **Nothing shipped for this in `030_owner_email_delivery.sql`;
+the argument for not shipping it is that it already exists, proven above, not that it was
+judged unnecessary.** `016_corrections.sql:32-34`'s own warning comment — the passage that
+led the external reviewer to request this FK, reasonably, since it reads as an open gap —
+is stale and has been struck-through-and-dated in place, citing this same evidence
+(`016_corrections.sql`, dated correction at that line).
 
 ---
 
