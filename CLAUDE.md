@@ -347,6 +347,19 @@
   reference (both readings pointed at something real) but the SAME root
   cause, a label whose meaning was assumed rather than checked against
   what else uses it.
+- A GREEN CI CHECK CERTIFIES A SHA, NOT A BRANCH (standing rule since
+  2026-08-20, migration 029's PR-split arc, DD3). Before merging, confirm
+  the passing run's `headSha` matches the PR's current HEAD — a pass on an
+  earlier commit certifies nothing about the one actually being merged.
+  Same family as the rest of this arc: verify the artifact, not the label
+  attached to it. Origin: a shared CI concurrency group (`ci-test-db-suite`)
+  cancels a queued run when a newer one for the same branch arrives —
+  rapid pushes to fix small issues one after another produce a run that
+  passes for an OLDER commit while the LATEST commit's own run gets
+  cancelled underneath it. A merge attempted on "checks are green" without
+  checking which SHA they're green FOR would have shipped a commit whose
+  own CI result was never actually observed — caught only because the SHA
+  was checked before merging, not because the color was.
 
 ---
 
