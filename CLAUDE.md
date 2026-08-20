@@ -602,6 +602,23 @@ Database
   this same class of finding to where 027's own external-review-round-1
   findings landed: cheap, pre-apply, in a file nobody had run yet — not a
   live production exposure discovered after the fact.
+- A MIGRATION FILE ENTERS supabase/migrations/ WHEN IT IS BEING APPLIED, NOT
+  WHEN IT IS WRITTEN (standing rule since 2026-08-20, migration 030's BB2
+  relocation). Until an apply is actually happening, a written migration
+  lives in `docs/reviews/`, alongside its review package — not in
+  `supabase/migrations/`, the directory every apply/rehearsal tool scans.
+  Holding an unapplied file off `main` is not sufficient on its own: a file
+  sitting unapplied, on no ledger row, in the scanned directory is a live
+  hazard on ANY branch that has it checked out, whether or not that branch
+  has reached `main` — a stray `supabase db push` on that branch applies it
+  regardless. Origin: migration 028's own file genuinely followed this
+  pattern already (moved into `supabase/migrations/` at apply time, not
+  before) without it ever being written down as a rule — 030 sat in the
+  scanned directory, unapplied, for the length of an entire review-and-hold
+  cycle before this was named and fixed. Move a migration INTO
+  `supabase/migrations/` as part of the same commit/session that applies
+  it, never earlier — matches the CANDIDATE CI CHECK entry's own spirit
+  (catch a class of hazard at write time, not after it's rediscovered).
 
 API routes
 - All /api/ routes require authentication.

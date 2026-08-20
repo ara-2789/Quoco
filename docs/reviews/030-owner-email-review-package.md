@@ -1,7 +1,14 @@
 # Migration 030 review package — owner-email delivery (BLOCKED half)
 
 **Status: WRITTEN, NOT APPLIED, NOT REHEARSED, BLOCKED.** This package accompanies
-`supabase/migrations/030_owner_email_delivery.sql`, pinned at commit
+`docs/reviews/030_owner_email_delivery.sql` — RELOCATED here from
+`supabase/migrations/030_owner_email_delivery.sql` (2026-08-20, BB2): a file sitting
+unapplied, on no ledger, in the scanned migrations directory is a hazard on any branch
+that has it checked out, not just on `main`. It moves back to `supabase/migrations/` when
+it is actually being applied, per the same convention CLAUDE.md's Database section now
+states. The `git show` command below is pinned to the commit where the file WAS at the
+old path — historically accurate, not updated, per this project's own provenance
+discipline (never retyped, never silently moved). Originally pinned at commit
 `e6a06826ad17df6c27f73db5584f97896d5c0ef2` (branch `docs/dpr-delivery-versioning-plan`).
 Design record: `docs/dpr-delivery-versioning-plan.md` §2j (frozen).
 

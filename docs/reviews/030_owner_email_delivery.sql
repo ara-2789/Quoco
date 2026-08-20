@@ -3,6 +3,18 @@
 -- DPR delivery/versioning, BLOCKED HALF (docs/dpr-delivery-versioning-plan.md
 -- §2j, §2e's pm_notified/skipped_no_template/skipped_unverified widening).
 --
+-- RELOCATED (2026-08-20, BB2): moved from supabase/migrations/ to here.
+-- A file sitting unapplied, on no ledger, in the scanned migrations
+-- directory is a live hazard on ANY branch that has it checked out — a
+-- stray `supabase db push` would apply it, PII columns and all. Holding
+-- it off `main` alone does not protect a branch that still has it in the
+-- scanned path. New convention, CLAUDE.md's Database section: a migration
+-- file enters supabase/migrations/ when it is BEING APPLIED, not when it
+-- is written — until then it lives here, alongside its review package.
+-- This is the rule that would have prevented the 028 hazard in the first
+-- place, and matches what actually happened there: 028's file moved into
+-- supabase/migrations/ at apply time, not before.
+--
 -- STATUS: WRITTEN, NOT TO BE APPLIED YET. Per the split-package sequencing
 -- decision (external review, 2026-08-19): this half is BLOCKED on the
 -- trigger-cron workstream (the actual ownerSend cron entry, and #69's own
