@@ -1,10 +1,25 @@
 # PLAN ONLY — two-stage DPR delivery and versioning (2026-08-15)
 
-**Status: PLAN ONLY. No implementation. No migration written. No code touched.** This
-document is Part 2 of tonight's session (Part 1: MVP schedule freeze + restart semantics,
-PR #66; Part 3: outbound send primitive, separate plan doc). Read alongside
-`docs/dpr-engineer-report-spec.md` (Aravind's same-day edits, §4/§4b) and
+**Status: PLAN ONLY, AS ORIGINALLY WRITTEN. No implementation. No migration written. No
+code touched.** This document is Part 2 of tonight's session (Part 1: MVP schedule freeze
++ restart semantics, PR #66; Part 3: outbound send primitive, separate plan doc). Read
+alongside `docs/dpr-engineer-report-spec.md` (Aravind's same-day edits, §4/§4b) and
 `lib/daily-logs/cutoffs.ts` (`eveningClose` 19:45, `ownerSend` 20:30, FROZEN FOR MVP).
+
+**CURRENT STATE, 2026-08-20 — this plan has since graduated past "plan only" for its
+EXERCISABLE half; the sentence above is preserved as the historical starting point, not
+updated in place.** §2c/§2d (versioning) shipped as migration `029_dpr_versioning.sql` —
+**APPLIED TO PRODUCTION AND LEDGERED, 2026-08-20**, full external-review record at
+`docs/reviews/029-dpr-versioning-review-package.md`. §2j/§2e (owner-email delivery,
+`030_owner_email_delivery.sql`) remains **WRITTEN, NOT APPLIED, BLOCKED** on the
+trigger-cron workstream exactly as this plan's own split-package sequencing decision
+(below) always intended — its file lives at `docs/reviews/030_owner_email_delivery.sql`
+(relocated from `supabase/migrations/`, BB2 — a written-but-unapplied migration does not
+belong in the directory every apply tool scans), review package at
+`docs/reviews/030-owner-email-review-package.md`. Wherever this document's own body text
+below still reads as if neither half exists yet, that is the original plan's own voice,
+correctly preserved — treat the two package files as the current source of truth for what
+actually happened to each half.
 
 **REVISION 3 (2026-08-15, same day, review round 2) — decision handed down, not proposed
 here: the owner receives the DPR by EMAIL for MVP, not WhatsApp.** This resolves THE
