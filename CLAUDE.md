@@ -138,6 +138,23 @@
        why a stale reference can't be trusted on its own);
     c. Claude Code never issues the apply command without an explicit
        go-ahead from Aravind in the same exchange.
+    d. A MIGRATION IS NOT DONE WHEN APPLIED AND LEDGERED — IT IS DONE WHEN
+       THE FILE IS ON `main` (added 2026-08-20, migration 029's PR-split
+       arc, CC2/AA4). Applying and ledgering a migration on prod is a
+       DATABASE fact; the repo staying in sync with that fact is a SEPARATE
+       step that does not happen automatically. Origin: migrations 028 and
+       029 were both applied to prod and correctly ledgered while their own
+       files sat unmerged on a feature branch for an extended stretch — the
+       repo on `main` described a database that no longer existed, and 030
+       was simultaneously sitting unapplied inside the scanned
+       `supabase/migrations/` directory on that same unmerged branch (the
+       exact hazard this file's own migration-file-lifecycle rule now
+       guards against). Post-apply checklist gains a final item: confirm
+       the migration's file has actually merged to `main` — or, if not yet,
+       name the open PR that carries it — before considering the apply
+       finished. Verify by reading `main` directly (`git show origin/main:
+       <path>`), not by trusting a merge button's result or a PR's "open"
+       status at a glance.
   Rationale: the SQL Editor rule's real purpose was preventing an apply
   against the wrong database — a pasted project ref plus a hash comparison
   is STRONGER evidence of that than a human glance at a dropdown, which
