@@ -45,29 +45,28 @@ of the primary) is a code change (the outbound-send call site's template name), 
 separately from this log — this file only tracks Meta's own review state per template
 name.
 
-## Open questions — not resolved in this pass, flagged for Aravind
+## Answered-on-attempt — resolved by console action, not research
 
-1. **Pre-verification submission (unresolved, referenced earlier this session as "GG2"
-   but never written down anywhere in this repo or the claude.ai project as visible from
-   here):** can templates be submitted to Meta before Business verification completes, or
-   does submission require a verified WABA first? Not something this repo can answer —
-   needs either Meta's own documentation for the current WABA state, or Aravind's direct
-   knowledge from the Business Manager console. **Blocks starting the actual submission
-   run for all 17 rows above**, not just a detail to fill in later.
-   - Related: per `git show`/repo state at the time HH1/HH2 were written, the CLAUDE.md
-     Week 2 checklist (§10, items 5–6) still literally reads "BLOCKED ~2 weeks on company
-     registration" / "BLOCKED, same dependency" — text that predates both the WABA/
-     production-sender existing (per HH1's own premise) and the Y1–Y5 template redesign
-     (still says "12 WhatsApp templates," not 13+4). **This is stale and should be
-     corrected once the current WABA/verification state is confirmed** — not corrected
-     blind in this pass, since guessing the replacement text risks recording the wrong
-     resolution date.
-2. **WhatsApp Business display-name approval status:** not checkable from this repo —
-   Meta's own Business Manager console is the only source of truth, and a rejected
-   display name caps sends at 250 conversations/24h regardless of template approval
-   state. Needs a direct check in the console (or a `claude-in-chrome` session against
-   it, if Aravind wants that route) before relying on template approval alone as the
-   readiness signal for production sending.
+**Correction (this pass): the two items below were originally logged as "open questions"
+requiring research before submission could start. That framing was wrong.** Both are
+answered by attempting the action in WhatsApp Manager, not by looking anything up first
+— submission is free and non-destructive, and a block returns an error naming the
+reason, which is a more precise answer than any documentation search would give (Meta's
+own docs give a general answer; pre-verification behavior varies by account tier and
+region, so only this account's console has the specific one). Neither blocks writing or
+committing template copy; the action to take is already fully known — only the result is
+outstanding, and it gets filled in the moment Aravind runs it, not before.
 
-Neither open question blocks writing/committing the spare templates or this log — both
-block the actual submission run, which stays unstarted until they're answered.
+| Item | How it's answered | Result (fill in on attempt) |
+|---|---|---|
+| Pre-verification submission | Attempt submitting one template in WhatsApp Manager. Free, non-destructive — a block returns an error naming the reason. | — |
+| Display-name approval status | Read the status field directly in WhatsApp Manager. | — |
+| Messaging tier | Read from WhatsApp Manager at the same time as the two rows above — determines when the recipient cap (250/24h if display name is rejected, or the tier's own cap otherwise) starts mattering, worth capturing at the same moment rather than as a separate check later. | — |
+
+Related staleness, unresolved by this table but recorded so it isn't lost: per `git
+show`/repo state at the time HH1/HH2 were written, CLAUDE.md's Week 2 checklist (§10,
+items 5–6) still literally reads "BLOCKED ~2 weeks on company registration" / "BLOCKED,
+same dependency" — text that predates both the WABA/production-sender existing (per
+HH1's own premise) and the Y1–Y5 template redesign (still says "12 WhatsApp templates,"
+not 13+4). Correct that once the three rows above are filled in — not guessed at here,
+since a wrong replacement date is worse than a stale-but-honest one.
