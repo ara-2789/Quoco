@@ -1,5 +1,15 @@
 # Inbound-as-start-trigger — TS-only plan (II3)
 
+**SUPERSEDED-BY-DESIGN (2026-08-20, PP2 — design-decisions-beta-feedback.md §27), NOT BY
+BUG. Everything below still describes what is actually running in production today and
+remains accurate as a description of it — but the permanent design decided in §27 is
+that check-ins are CRON-triggered, never inbound-triggered. `routeInboundMessage`'s
+no-active-session branch (everything this plan specifies) is SCAFFOLDING: correct and
+intended to keep running exactly as built until the outbound-send primitive (#69/031)
+and its trigger cron exist, at which point this branch is replaced by a short
+acknowledgement — not extended, not kept alongside the cron as a second entry point. Read
+§27 before treating any part of this plan as the long-term design.**
+
 **Status: BUILT (2026-08-20, JJ1 go-ahead) — `lib/whatsapp/inbound-start.ts`,
 `routeInboundMessage`, wired into `app/api/whatsapp/webhook/route.ts` in place of the
 previous direct `dispatchInboundTurn` call. Pure-TS as planned: no migration, no RPC
