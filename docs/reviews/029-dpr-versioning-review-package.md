@@ -17,7 +17,13 @@ revisions per the external reviewer's graduation verdict, 2026-08-19).
 
 ---
 
-## 0. FOR THE REVIEWER — SUBMITTED FOR GO. ONE OPEN QUESTION, YOUR CALL.
+## FOR THE REVIEWER — SUBMITTED FOR GO. ONE OPEN QUESTION, YOUR CALL.
+
+*(Unnumbered deliberately — this package already uses bare `§0` throughout, everywhere
+it appears, to mean CLAUDE.md's own §0 standing rule, not a section of this document.
+Giving this cover note a `§0` of its own would collide with that existing, load-bearing
+convention rather than extend it — this is a preface, not numbered content, so it stays
+unnumbered and is referenced by name, not by number, from elsewhere in this file.)*
 
 **Open question (M2): B3's backfill deviates from your literal instruction.** You asked
 for an extensionally-pinned backfill (hardcoded to the known row id, matching 023's
@@ -42,12 +48,14 @@ both the `INSERT`'s `WHERE` and the assertion's `WHERE`) and can be made before 
   v1 read back untouched after v2 landed.
 - The G2 dry-run: fresh PG17 loaded from a structure-only dump of **prod**, pre-029 state
   confirmed first, corrected file ran clean. **Worth flagging plainly: the FIRST time this
-  version-parity check was ever run (the original §7 rule's own inaugural use, before this
-  migration), it caught a REAL mismatch — the local tool was PG16 while prod/test-db are
-  both PG17.6/17.11.** Not a hypothetical the rule guards against — an actual defect the
-  rule's first real use found, on the very tool you're being asked to trust for this GO.
-  (Recorded standing in CLAUDE.md §7's own G2 entry; repeated here so it's visible in this
-  package too, not only in the file the rule lives in.)
+  version-parity check was ever run (CLAUDE.md §7's own dry-run rule, G2 addendum — its
+  inaugural use, before this migration), it caught a REAL mismatch — the local tool was
+  PG16 while prod/test-db are both PG17.6/17.11.** Not a hypothetical the rule guards
+  against — an actual defect the rule's first real use found, on the very tool you're
+  being asked to trust for this GO. (Recorded standing in CLAUDE.md §7's own G2 entry —
+  a DIFFERENT §7 from this package's own §7 below, which is this migration's pre-apply
+  catalog probes; repeated here so it's visible in this package too, not only in the file
+  the rule lives in.)
 - Full Vitest suite: 573 passed, 1 todo, 0 failures, 46 files — re-run AFTER the delta, not
   before.
 - **M1 — the inert-on-arrival finding and its named closer: see the new subsection at the
@@ -145,7 +153,8 @@ hygiene-with-a-caveat / compliance record):
 - **`dpr_versions` — COMPLIANCE RECORD, same class as `daily_logs`/`daily_log_edits`, not
   hygiene.** Grain: one row per DPR regeneration (system or PM-triggered) — unbounded
   growth, no cap, since a report can be regenerated an unknown number of times within its
-  19:45→20:30 edit window (§2a) and, per this migration, indefinitely after. This is
+  19:45→20:30 edit window (`docs/dpr-delivery-versioning-plan.md` §2a) and, per this
+  migration, indefinitely after. This is
   deliberate: it is the append-only history of every version of a report ever delivered or
   shown to a PM — the same "business record behind every DPR ever sent" reasoning CLAUDE.md
   already applies to `daily_log_edits`. No prune mechanism proposed or needed; retention
@@ -215,12 +224,26 @@ WHERE table_schema='public' AND table_name='daily_log_edits' AND column_name='co
 -- Probe E: 023's current COMMENT ON TABLE text, pre-apply (expect: the stale
 -- "(project_id, log_date)" / "silent replace" text this migration corrects).
 SELECT obj_description('public.dprs'::regclass);
+
+-- Probe F (added external review round 2, B3): the specific known state the
+-- B3 backfill's general WHERE clause is EXPECTED to match on prod today —
+-- named explicitly, not left implicit, since the backfill itself is
+-- deliberately NOT hardcoded to this id (§12, B3). Expect: exactly one row,
+-- id af7760e8-..., log_date 2026-08-13. A different count or a different id
+-- means reality has drifted since this package was written and the backfill
+-- must be re-examined against the ACTUAL state before proceeding, not
+-- assumed to still match this expectation.
+SELECT id, log_date, current_version, content IS NOT NULL AS has_content
+FROM public.dprs WHERE content IS NOT NULL;
 ```
 
 **PROCEED condition:** Probe A/B/D return no rows for the new objects; Probe C returns
-`NULL`; Probe E returns the original 023 text verbatim. **STOP on anything else** — a
+`NULL`; Probe E returns the original 023 text verbatim; **Probe F returns exactly one row,
+id `af7760e8-...`** (B3's documented expectation — see §12). **STOP on anything else** — a
 non-empty result on A/B/D means a prior partial apply or an unexpected schema drift that
-must be understood before this file runs, not overwritten.
+must be understood before this file runs, not overwritten; a Probe F mismatch means the
+backfill's general `WHERE` clause would affect different or additional rows than this
+package accounts for, and needs re-examination before applying, not silent proceeding.
 
 ---
 
@@ -629,7 +652,7 @@ fix site:**
   actively WORSE under drift (a second content-bearing row appearing between writing and
   applying this migration would be silently skipped). Kept general; the "known id" pin
   moves to a documented pre-apply expectation (af7760e8, exactly one row, checked
-  immediately before the prod apply — see §9's runbook) instead of into the WHERE clause.
+  immediately before the prod apply — Probe F, §7) instead of into the WHERE clause.
   The `dpr_versions` table's own `COMMENT` was also updated to state the version-2-start
   design fact explicitly, per the review's request, rather than leaving it as something
   the next reader has to rediscover.
