@@ -4,6 +4,20 @@
 -- (docs/outbound-send-primitive-plan.md §3d) — the send ledger B2 (round 1)
 -- and C2's `unreachable` derivation both read.
 --
+-- RELOCATED (2026-08-20, SS2c): moved from supabase/migrations/ to here.
+-- A file sitting unapplied, on no ledger, in the scanned migrations
+-- directory is a live hazard on ANY branch that has it checked out — a
+-- stray `supabase db push` would apply it. Holding it off `main` alone does
+-- not protect a branch that still has it in the scanned path. Standing
+-- convention, CLAUDE.md's Database section: a migration file enters
+-- supabase/migrations/ when it is BEING APPLIED, not when it is written —
+-- until then it lives here, alongside its review package. Same rule,
+-- applied here the way it was already applied to 030
+-- (docs/reviews/030_owner_email_delivery.sql, BB2) — this file had sat in
+-- the scanned directory for the length of this session's II3/JJ/KK/LL/QQ
+-- rounds without being caught, exactly the hazard the rule exists to close
+-- before anyone works this branch again.
+--
 -- STATUS: WRITTEN, NOT TO BE APPLIED YET. BLOCKED on the trigger-cron
 -- workstream (no cron exists yet to call the sender this table supports —
 -- §S's own finding) and on B3's cross-flow RPC fix landing first (both
