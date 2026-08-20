@@ -6,7 +6,7 @@ import { isNewMessage } from '@/lib/whatsapp/idempotency'
 import { normalisePhoneNumber } from '@/lib/whatsapp/normalise'
 import { createServiceClient } from '@/lib/supabase/service'
 import { applyMorningFlowTurn, buildMorningReply } from '@/lib/whatsapp/flows/morning'
-import { dispatchInboundTurn } from '@/lib/whatsapp/dispatch'
+import { routeInboundMessage } from '@/lib/whatsapp/inbound-start'
 import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
 import { decideInboundGate, clearMessagingBlock } from '@/lib/whatsapp/reactivation'
 
@@ -270,11 +270,12 @@ export async function handleWebhookPost(
 
   // --- Test-only flow start (env-gated sentinel) --------------------------
   // startFlow structurally cannot be true without ENABLE_TEST_FLOW_TRIGGER=
-  // 'true'. Only morning has a starter — dispatch.ts's own header explains why
-  // evening deliberately doesn't yet (design-decisions-beta-feedback.md §11).
-  // Kept as a direct applyMorningFlowTurn call: dispatchInboundTurn is scoped
-  // to ORDINARY replies only (its own header says so), starting a flow is a
-  // separate, explicit directive.
+  // 'true'. Kept as a direct applyMorningFlowTurn call, morning-only, by
+  // design — this sentinel exists to deterministically seed a morning flow
+  // for smoke tests, not to exercise the real start-decision logic (that is
+  // routeInboundMessage's job below, unconditionally, no flag — see
+  // lib/whatsapp/inbound-start.ts's own header for why no flag). Unrelated
+  // to dispatchInboundTurn's own "ordinary replies only" scoping.
   if (startFlow) {
     console.warn(
       `TEST-ONLY flow trigger fired for ${fromNumber} — ENABLE_TEST_FLOW_TRIGGER must NOT be set in production`,
@@ -292,14 +293,18 @@ export async function handleWebhookPost(
     return reply === '' ? twimlEmpty() : twimlMessage(reply)
   }
 
-  // --- Ordinary inbound reply: dispatch to whichever flow is active -------
-  // dispatchInboundTurn (lib/whatsapp/dispatch.ts) REPLACES the previous
-  // hardcoded-to-morning call here: it reads current_flow, tries the matching
-  // RPC, and retries the other flow exactly once on 'wrong_flow'. Migration
-  // 022's review package named this wiring as its §10 deliverable — this is
-  // that wiring. Reply text is single-sourced from morning.ts/evening.ts via
-  // dispatchInboundTurn's own reply builders — never inlined here.
-  const { reply } = await dispatchInboundTurn({
+  // --- Ordinary inbound: route to the active flow, or start one -----------
+  // routeInboundMessage (lib/whatsapp/inbound-start.ts, II3 build) REPLACES
+  // the previous direct dispatchInboundTurn call: when a flow IS active, it
+  // delegates straight through to dispatchInboundTurn unchanged (reads
+  // current_flow, tries the matching RPC, retries the other flow exactly
+  // once on 'wrong_flow' — migration 022's review package §10 deliverable).
+  // When NO flow is active, it now decides whether/what to start instead of
+  // this webhook staying silent — see docs/inbound-start-trigger-plan.md.
+  // Reply text is single-sourced from morning.ts/evening.ts (or
+  // inbound-start.ts's own REPORT_READY_REPLY / EVENING_ALREADY_COMPLETE_
+  // REPLY for the no-RPC-called branches) — never inlined here.
+  const { reply } = await routeInboundMessage({
     phoneNumber: fromNumber,
     tenantId: user.tenant_id,
     userId: user.id,

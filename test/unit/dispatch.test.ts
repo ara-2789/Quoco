@@ -25,4 +25,13 @@ describe('webhook route — no onBeforeRetry reference (static source guard)', (
   it('route.ts contains no reference to onBeforeRetry', () => {
     expect(src).not.toContain('onBeforeRetry')
   })
+
+  // Same guarantee, same mechanism, for inbound-start.ts's own test-only hook
+  // (KK2, II3 build) -- onBeforeStart lets a test move the session to a
+  // different flow between routeInboundMessage's readCurrentFlow check and
+  // its startFlow:true RPC call, deterministically constructing the flow-
+  // race FLOW_RACE_REPLY now guards against (see test/inbound-start.test.ts).
+  it('route.ts contains no reference to onBeforeStart', () => {
+    expect(src).not.toContain('onBeforeStart')
+  })
 })

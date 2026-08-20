@@ -492,6 +492,33 @@ export async function getDailyLog(logDate: string): Promise<DailyLogRow | null> 
   return data ?? null
 }
 
+// Directly seed a daily_logs row's submission markers for the fixture
+// engineer/project (bypassing the RPC) so a test can construct a specific
+// morning/evening submitted-state combination without driving a full flow
+// to completion. Added for test/inbound-start.test.ts (II3 build) — the
+// window/submission-state matrix needs precise, independent control over
+// both markers, which no existing helper provides. Upserts on the same
+// UNIQUE(project_id, engineer_id, log_date) key every RPC write uses.
+export async function seedDailyLogSubmission(params: {
+  logDate: string
+  morningSubmittedAt?: string | null
+  eveningSubmittedAt?: string | null
+}): Promise<void> {
+  const db = testClient()
+  const { error } = await db.from('daily_logs').upsert(
+    {
+      tenant_id: TEST_TENANT_ID,
+      project_id: TEST_PROJECT_ID,
+      engineer_id: testEngineerId(),
+      log_date: params.logDate,
+      morning_submitted_at: params.morningSubmittedAt ?? null,
+      evening_submitted_at: params.eveningSubmittedAt ?? null,
+    },
+    { onConflict: 'project_id,engineer_id,log_date' },
+  )
+  if (error) throw new Error(`seedDailyLogSubmission failed: ${error.message}`)
+}
+
 // Read the current session row for a phone (for resume/step assertions).
 export async function readSession(phone: string): Promise<WhatsAppSession | null> {
   const db = testClient()

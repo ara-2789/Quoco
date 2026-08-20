@@ -2237,6 +2237,22 @@ guessed at:
   had happened under a configuration that no longer exists — and nobody currently knows
   when it changed, or why.
 
+DATED UPDATE (2026-08-20, II3 build, `lib/whatsapp/inbound-start.ts`) — PARTIALLY CLOSED,
+STATED PRECISELY SO IT ISN'T MISREAD AS FULLY CLOSED. This entry's finding was about TWO
+distinct absences: no SCHEDULED mechanism sends the 8:30am/6:30pm prompts (still true,
+unchanged — that is the #69/031 outbound-send primitive, per CLAUDE.md's own STANDING
+ARCHITECTURAL FACT in §3, still unbuilt), and no path exists for a check-in to start AT
+ALL outside the env-gated test sentinel. The second half is now closed for the case where
+the ENGINEER messages in first: `routeInboundMessage` treats any inbound with no active
+session as a real start trigger (window/submission-state logic per
+`docs/inbound-start-trigger-plan.md`), no flag, live in production the moment this
+build's PR merges. **What this does NOT do:** it does not send anything unprompted — an
+engineer who never messages the bot still never hears from it. "The outbound-trigger
+workstream is not a feature on the roadmap; it is the precondition for the product
+functioning at all" (above) remains true for the scheduled-send half; it is no longer
+true for the reply-only half, which now functions for any engineer willing to message
+first.
+
 BOT-07 SILENCE IS A RULE 3.5 DEAD-END (opened 2026-08-15, same diagnosis). A real inbound
 message — one that consumed a Twilio SID and updated `whatsapp_sessions.updated_at` — 
 produces ZERO user-visible feedback when no flow is active (`MORNING_IDLE_REPLY = ''`,
@@ -2250,6 +2266,16 @@ concrete, confirmed violation of it, not a hypothetical one.
   work will already be changing: replace `MORNING_IDLE_REPLY`/its evening equivalent with
   one line that says something true and useful — e.g. confirming receipt and pointing at
   what actually starts a check-in, once something does. Do not build this now.
+  RESOLVED (2026-08-20, II3 build). `routeInboundMessage` (`lib/whatsapp/inbound-start.ts`)
+  replaces the bare `dispatchInboundTurn` call at this exact site (`route.ts`): the
+  no-active-flow, no-active-session case that used to fall through to
+  `MORNING_IDLE_REPLY`/`EVENING_IDLE_REPLY` (`''`) now always gets a real reply — a start
+  prompt, `REPORT_READY_REPLY` (after 19:45 IST), or an already-done reply. `MORNING_IDLE_
+  REPLY`/`EVENING_IDLE_REPLY` themselves are unchanged and still `''` (buildMorningReply/
+  buildEveningReply are pure functions with no session-read of their own) — the fix is
+  that `routeInboundMessage` now decides BEFORE the RPC is ever called whether `idle`
+  would even be the right outcome to ask for, rather than asking for it and rendering its
+  silent reply. Full design: `docs/inbound-start-trigger-plan.md`.
 
 PROCESS BREACH (2026-08-15, corrected 2026-08-15 same day — the first write-up of this
 entry overstated it) — PR #64 WAS RE-RUN TO GREEN AND MERGED WITHOUT EVER CLASSIFYING THE

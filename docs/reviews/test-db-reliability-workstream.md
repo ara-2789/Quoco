@@ -234,3 +234,43 @@ scoping, should be weighted against "this protects code nothing calls yet," not 
 identically to a suite exercising a live production path (like `test/webhook.test.ts` or
 `test/migration-023.test.ts`). Recorded here so the next person scoping CI-isolation work
 doesn't silently assume every suite carries equal production risk.
+
+## Instance 5 — CI-vs-local-agent contention, CONFIRMED by direct timestamp overlap (2026-08-20, KK1, II3 build's local test run)
+
+**Classified, not filed as transient.** Per the standing instruction this workstream
+itself exists to enforce: a clean re-run is not evidence a failure was transient, only
+that it didn't recur — the question is always whether a concurrent test-db actor was
+present, checked against real timestamps, not inferred.
+
+**What happened:** running `npx vitest run test/inbound-start.test.ts` locally (this
+session's II3 build, unrelated feature work) produced `whatsapp_sessions_tenant_id_fkey`
+/ `daily_logs_project_id_fkey` foreign-key violations on the shared `TEST_TENANT_ID`/
+`TEST_PROJECT_ID` fixtures — the identical error shape K3 already documents for the
+fixed-UUID collision risk. First run: 3 of 8 tests failed this way. A second, immediate
+re-run: clean. Per this workstream's own standing rule, "clean on retry" was NOT accepted
+as the classification.
+
+**Checked against `gh run list`, not assumed:** the local failing run started 2026-08-20
+21:07:15 IST (15:37:15 UTC), duration 11.11s, ending ≈15:37:26 UTC. A GitHub Actions CI
+run on `main` (`databaseId 32386091387`, triggered automatically by PR #75's merge at
+15:25:55Z — a `push`-to-`main` trigger, not a PR check) had its own `Test (real test-db)`
+job running **15:32:13Z → 15:38:42Z** — a window that fully contains the local failure.
+**Direct overlap, not inferred.** That SAME CI run's own `Test (real test-db)` job failed
+with the IDENTICAL FK-violation signature, across multiple unrelated files
+(`test/dispatch.test.ts`, `test/session-transition.test.ts`) — two independent processes
+(a GitHub Actions runner and this terminal's local `npx vitest`), neither aware of the
+other, colliding on the same shared test-db fixtures at the same moment.
+
+**Confirmed further by a controlled re-run:** `gh run rerun 32386091387 --failed`, run
+after the local process had finished (no concurrent actor left) — **passed cleanly**,
+all four jobs green. Same code, same test-db, same suite; the only variable that changed
+between the failing attempt and the clean one was whether a second actor was hitting
+test-db at the same time.
+
+**Classification: EXPLAINED. Fifth confirmed instance of the CI-vs-developer/agent
+contention axis** `ci-test-isolation-options.md`'s own CC1 update already named as
+UNCOVERED by the `ci-test-db-suite` GitHub Actions concurrency group — that group
+serializes GitHub Actions runs against each other, but has no visibility into a run
+happening in a developer's or an agent's own terminal, which is exactly what collided
+here. Not a new failure mode; the second CONCRETE, timestamp-pinned confirmation of the
+gap that entry already flagged as a live risk, not a hypothetical one.
