@@ -337,15 +337,32 @@ BEGIN
   -- B2 (external review, blocking): the same-tenant check alone bound WHO
   -- but never WHAT ROLE -- any same-tenant authenticated user (a qs today,
   -- anything that gets a login later) passed, rewriting the owner-facing
-  -- report attributed to themselves. Added `u.role = 'pm'`. Argued, not
-  -- defaulted: house precedent for "who may author/correct this class of
-  -- operational content" is 019's correct_daily_log, which rejects even
-  -- admin (`v_editor_role <> 'pm'`, 019_daily_log_edits.sql:178) -- strictly
-  -- pm-only, not (pm, admin). The audience test is the same question here
-  -- (who legitimately authors an owner-facing report), and no requirement for
-  -- admin to author DPR content is stated anywhere in this feature's plan or
-  -- package, so this migration matches 019's precedent exactly rather than
-  -- widening it without a stated reason.
+  -- report attributed to themselves. Added `u.role = 'pm'`.
+  --
+  -- THE AUDIENCE TEST (027's discipline: every role decided explicitly on
+  -- this question, not by default), argued first -- 019's precedent below is
+  -- corroboration, not the whole case. Who legitimately authors an
+  -- owner-facing report? Per CLAUDE.md §1/§5: DPR generation and delivery is
+  -- explicitly PM-owned Spine work ("PM web dashboard: ... DPR archive";
+  -- pm's own role line: "projects, DPR review, engineer management"). No
+  -- other role has DPR review or authorship in its stated remit -- qs's
+  -- remit is invoice review/BOQ (Phase 2, unrelated content); engineer/owner
+  -- have no web login at all (auth_id NULL) and can never reach this branch
+  -- regardless. admin is the interesting exclusion, argued explicitly rather
+  -- than assumed obvious: admin is the MORE privileged role (tenant
+  -- creation, invites, billing, settings -- CLAUDE.md §5), but privilege
+  -- level is not the test here, JOB FUNCTION is -- admin's remit is tenant
+  -- administration, not site-progress judgment. An admin authoring or
+  -- correcting a DPR would be attributing operational, site-level content
+  -- (what actually happened on site, in the PM's own professional judgment)
+  -- to a role whose job is not to know that. The same reasoning is why
+  -- correct_daily_log (019) draws the identical line for the closest
+  -- existing analogue -- correcting the operational record daily_logs feeds
+  -- into every DPR (`v_editor_role <> 'pm'`, 019_daily_log_edits.sql:178,
+  -- strictly pm-only, rejecting even admin). Corroboration, not the primary
+  -- argument: this migration reaches the same audience answer as 019 because
+  -- both apply the same job-function test to the same class of content, not
+  -- merely because 019 sets a precedent to be copied.
   IF p_generated_by = 'pm' THEN
     IF NOT EXISTS (
       SELECT 1 FROM public.users u

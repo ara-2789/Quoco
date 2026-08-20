@@ -15,6 +15,57 @@ B1/B2/B3 fix verification. This package accompanies
 Design record: `docs/dpr-delivery-versioning-plan.md` §2c/§2d (frozen — no further plan
 revisions per the external reviewer's graduation verdict, 2026-08-19).
 
+---
+
+## 0. FOR THE REVIEWER — SUBMITTED FOR GO. ONE OPEN QUESTION, YOUR CALL.
+
+**Open question (M2): B3's backfill deviates from your literal instruction.** You asked
+for an extensionally-pinned backfill (hardcoded to the known row id, matching 023's
+DELETE-pinned-to-`35a2f41c` precedent). §12 below implements a general `WHERE content IS
+NOT NULL` predicate instead, with a hard `DO $$ ... RAISE EXCEPTION` assertion in its
+place. Reasoning: 023's DELETE needed a literal pin because deletion is destructive and
+irreversible without PITR; this is a pure INSERT, which cannot lose data even if it
+matches more rows than expected, and a hardcoded single-id pin would be actively WORSE
+under drift (a second content-bearing row appearing between writing and applying this
+migration would be silently skipped by an id-pinned `WHERE` clause, defeating the
+backfill's own purpose). The "known id" (`af7760e8`, exactly one row today) moved to a
+documented pre-apply expectation instead of the `WHERE` clause itself. **This is not
+presented as settled — it is your convention, you asked for it literally, and the
+deviation is surfaced here explicitly rather than left to be noticed on read-through. If
+you want the id pinned, it is a one-line change** (add `AND d.id = 'af7760e8-...'` to
+both the `INSERT`'s `WHERE` and the assertion's `WHERE`) and can be made before apply.
+
+**Submission checklist — what this package now carries, in the order requested:**
+- The three fixes (B1, B2, B3), each with §12's raw output: authenticated→system refused
+  `42501`, qs-as-pm refused `42501`, pm-as-pm **succeeded** (proves the fix didn't break
+  the legitimate path), member `SELECT` returned rows, non-member returned zero, backfilled
+  v1 read back untouched after v2 landed.
+- The G2 dry-run: fresh PG17 loaded from a structure-only dump of **prod**, pre-029 state
+  confirmed first, corrected file ran clean. **Worth flagging plainly: the FIRST time this
+  version-parity check was ever run (the original §7 rule's own inaugural use, before this
+  migration), it caught a REAL mismatch — the local tool was PG16 while prod/test-db are
+  both PG17.6/17.11.** Not a hypothetical the rule guards against — an actual defect the
+  rule's first real use found, on the very tool you're being asked to trust for this GO.
+  (Recorded standing in CLAUDE.md §7's own G2 entry; repeated here so it's visible in this
+  package too, not only in the file the rule lives in.)
+- Full Vitest suite: 573 passed, 1 todo, 0 failures, 46 files — re-run AFTER the delta, not
+  before.
+- **M1 — the inert-on-arrival finding and its named closer: see the new subsection at the
+  end of §9, below.**
+- **M2 — this section.**
+- **M3 — the audience argument for B2's `pm`-only gate is now the PRIMARY argument in the
+  migration file's own comment (029_dpr_versioning.sql, the `pm` branch), with 019's
+  precedent as corroboration, not the whole case — see §12's B2 summary below for the
+  short version.**
+- The 9-vs-12 test-fixture file-count discrepancy: recorded, not resolved, in
+  `ci-test-isolation-options.md`.
+
+**Not authorized, not attempted:** no prod. Step 4 (PITR reconfirmation, apply-by-file
+with an explicit ledger row, post-apply catalog fingerprinting, the prod apply itself)
+begins only on your GO.
+
+---
+
 **Sequencing (external review, split-package decision):** this is the EXERCISABLE half.
 `lib/dpr/dispatch.ts` and `scripts/generate-one-dpr.ts` already exist and already write to
 `dprs` for real rows — this migration can apply and be verified end-to-end now, independent
@@ -218,6 +269,58 @@ Aravind's go-ahead in the same exchange as the apply command.
 
 **After prod apply:** `docs/schema.md`'s `dprs`/new `dpr_versions` entries written only
 after E confirms (§0) — not written speculatively here.
+
+### 9a. M1 — VERSIONING IS INERT ON ARRIVAL. Stated plainly, not left implicit.
+
+The same call-site check that made B1's guard safe to add (grepped `app/`, `lib/`,
+`scripts/` — no application code calls `write_dpr_version` anywhere) has a second
+consequence this package did not previously state: **after 029 applies to prod, every
+NEW DPR still goes down the direct-`upsert` path in `dispatch.ts` and `generate-one-dpr.ts`.
+No `dpr_versions` row gets created for it, `current_version` never advances past 1.**
+This migration installs the versioning MECHANISM — it does not make anything call it.
+
+**This is precisely B3's condition, regenerating itself for every future report.** B3's
+backfill repairs the historical gap (the one row that already existed, `af7760e8`); it
+does nothing to stop new rows from landing in the identical unversioned state the moment
+they're first regenerated. Without a writer migration, every DPR created after this
+migration applies is a future B3, waiting for its first regeneration to silently lose its
+only copy — except there will be no backfill left to repair it, because nothing will flag
+it as a gap the way this review did.
+
+**This does not block the apply** — shipping schema ahead of its writer is already the
+accepted shape for S2 (`daily_log_edits.comment`), and the same reasoning holds here:
+`current_version`/`generated_by`/`generated_by_user` all default sanely for a row that
+never goes through the RPC (`current_version=1`, `generated_by='system'`,
+`generated_by_user=NULL` — confirmed in §8's test plan and exercised live in §11's Step
+1), so an un-migrated writer produces a CORRECT, just un-versioned, row — not a broken
+one. But it needs the same treatment S2 got, not a lesser one:
+
+**(b) NAMED CLOSER, not "later":** the closer is **the dispatch.ts / generate-one-dpr.ts
+→ write_dpr_version() wiring PR** — migrating both call sites from their current direct
+`.from('dprs').upsert(...)` to calling the RPC instead. This PR does not exist yet under
+any name in `docs/dpr-delivery-versioning-plan.md` (checked — §2d anticipates the
+OWNER-SEND side needing "its own RPC, or at minimum a single `UPDATE ... WHERE ...
+RETURNING`," but never names the GENERATOR side's own migration off direct-upsert; that
+gap is what this entry closes). Tracked here, by this name, so it has a title to be
+referenced by when it's opened — not a floating TODO. Given `write_dpr_version`'s B1
+guard requires the `'system'` path to carry NO JWT, this PR's own scope must include
+confirming the migrated call goes through `service_role` (matching how the nightly job's
+existing `dprs` writes already work), not a route that could forward a session.
+
+**(c) Consequence for 030, stated as a hard dependency, not left implicit:** 030's
+owner-send design (`docs/dpr-delivery-versioning-plan.md` §2a) stamps
+`delivered_to_owner_at` onto a **`dpr_versions` row** — "whichever `dpr_versions` row has
+`delivered_to_owner_at` set" is how §2d itself defines "which version was delivered."
+**If the generator never creates a `dpr_versions` row (the current, un-migrated state),
+030's delivery path has nothing to stamp — for every DPR created after this migration
+applies, not just the historical ones the backfill already covers.** This is not a
+soft ordering preference; it is a hard dependency between two packages that is currently
+implicit nowhere except this paragraph. **030 must not assume `dpr_versions` rows exist
+for new DPRs until the writer-migration PR named above has shipped and been verified** —
+if 030 lands first, its own review package needs to either (i) block on the writer PR
+landing first, or (ii) design its stamp target to also work against `dprs.current_version`
+directly for the interim un-migrated period, and say so explicitly rather than silently
+assume a `dpr_versions` row will be there.
 
 ## 10. Rollback path — documented, not executed (J4)
 
@@ -497,11 +600,20 @@ fix site:**
 - **B2 (blocking, auth hole):** the `pm` branch's same-tenant check never read `u.role` —
   any same-tenant authenticated user (a `qs` today) could author an owner-facing report
   attributed to themselves. **Fixed:** added `AND u.role = 'pm'` to the `EXISTS` check.
-  **Argued, not defaulted:** matches `019_daily_log_edits.sql`'s `correct_daily_log`
-  precedent exactly (`v_editor_role <> 'pm'`, rejects even `admin`) — same audience
-  question (who may author/correct this class of operational content), no stated need for
-  `admin` to author DPR content anywhere in this feature's plan, so this migration matches
-  019's precedent rather than widening it without a reason.
+  **Argued on the audience test (M3, 027's discipline), not by precedent-matching alone —
+  precedent is corroboration, not the case itself:** who legitimately authors an
+  owner-facing report? Per CLAUDE.md §1/§5, DPR generation/delivery is explicitly PM-owned
+  Spine work; no other role has DPR authorship in its stated remit — `qs` reviews
+  invoices/BOQ (Phase 2, unrelated content), engineer/owner have no web login at all.
+  `admin` is the interesting exclusion, argued rather than assumed obvious: `admin` is the
+  MORE privileged role (tenant creation, billing, settings), but privilege level is not the
+  test — JOB FUNCTION is. `admin`'s remit is tenant administration, not site-progress
+  judgment; authoring a DPR means attributing operational, site-level content to a role
+  whose job is not to know that. `019`'s `correct_daily_log` (`v_editor_role <> 'pm'`,
+  rejecting even `admin`) reaches the identical line by applying the SAME job-function test
+  to the closest existing analogue — cited as corroboration that the test itself is sound
+  house practice, not as the reason this migration copies it. Full argument in the
+  migration file's own comment at the fix site.
 - **B3 (blocking, phantom v1):** the first-ever `write_dpr_version()` call on any row jumps
   `current_version` straight to 2 — for `af7760e8` (prod's one real content-bearing row,
   `current_version=1` with real delivered content and no `dpr_versions` row), the first
