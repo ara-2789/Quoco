@@ -22,20 +22,21 @@ a conversational turn to ask for a preference nobody has committed to yet.
 **A Tamil-language template set was drafted under the now-cancelled bilingual plan.** Per
 Y1, it is not being submitted to Meta. It is not reproduced here.
 
-## COUNT DISCREPANCY, FLAGGED NOT SILENTLY RESOLVED
+## COUNT DISCREPANCY — RESOLVED (AA1, corrected same day)
 
-The instruction driving this file states templates drop from 26 to 13. **This repo's own
-current baseline (`docs/bot-flows.md`, "WHATSAPP TEMPLATES (12 total)") has 12, not 13**,
-and this session has no access to whatever earlier note established 26 (13×2) — it isn't
-committed anywhere findable in this repo (checked: grepped `*.md` project-wide for
-`preferred_language`, `X2`, `X3`, `language workstream` — zero hits). Y5's own changes are
-net-neutral on count: template 7 is RENAMED (`quoco_dpr_owner` →
-`quoco_dpr_owner_email_sent`), not added; templates 6 and 12 change FORMAT (CTA button
-instead of a body-variable link), not count. Applying Y5 to the real 12-template baseline
-therefore lands at **12**, not 13. Rather than invent a plausible-sounding 13th template to
-match a number I can't source, this file is built from the real, checked baseline — flagged
-here so the gap is visible, not papered over. If a 13th template genuinely existed in the
-cancelled plan, it needs to be named by whoever has that note, not guessed at here.
+This section originally flagged a 13-vs-12 mismatch as unresolved: this repo's own
+baseline showed 12 templates, and grepping the repo for whatever established 13 (or 26,
+pre-redesign) found nothing. **Correction: the 13th template is real —
+`quoco_login_otp`, AUTHENTICATION category, `{{1}}` numeric code.** It originates in
+`auth-and-session-decisions.md`, which lives in the claude.ai PROJECT, not this repo —
+not something a repo-wide grep could ever find, regardless of thoroughness, because it
+was never here to find. Flagging "not found in repo" was correct as far as it went;
+concluding it therefore didn't exist was the overreach — the honest report for a
+not-found reference is "not found in repo, may be project-side," not "does not exist."
+Recorded here as the standing lesson, not just fixed in place: this repo holds code and
+`bot-flows.md`; design decisions and session records live in the claude.ai project. Full
+copy for template 13 is below; the count is 13 throughout this file and `bot-flows.md`
+from here on.
 
 ## Simple-English rules applied throughout (Y3)
 
@@ -181,4 +182,25 @@ reason as template 6.
 
 ---
 
-## Total: 12 templates (11 Spine + 1 Fast-Follow) — see the flagged count discrepancy above
+## Authentication template
+
+### 13. `quoco_login_otp`
+**Audience:** whoever authenticates via OTP (per `auth-and-session-decisions.md`, claude.ai
+project — not fully visible to this repo; PM/admin web login is the known candidate, since
+engineer/owner have no web login at all per CLAUDE.md §5). **Variables:** `{{1}}` numeric
+code, bare — no surrounding words, no baked-in formatting, so WhatsApp's tap-to-copy works.
+**AUTHENTICATION category** (Meta's own template class, not Utility) — different rules
+apply, not the Utility rules the other 12 templates follow:
+
+> {{1}} is your Quoco login code. This code expires in 10 minutes.
+
+**Category rules checked against this copy:** purely functional wording, no greeting, no
+branding (present); mandatory validity/expiry line (present — "expires in 10 minutes,"
+figure not sourced from a repo constant since none was found for OTP expiry; VERIFY the
+actual expiry window before submission, do not assume 10 minutes is correct); bare numeric
+`{{1}}` (present); billed on every send including in-window, unlike the Utility templates'
+free-in-window exception — budget for this differently than templates 1–12.
+
+---
+
+## Total: 13 templates (11 Spine + 1 Fast-Follow + 1 Authentication)

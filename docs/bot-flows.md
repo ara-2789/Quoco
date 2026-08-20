@@ -423,7 +423,7 @@ DASH-07 hindrance tracker, DASH-10 accountability view + resolve action.
 
 ---
 
-## WHATSAPP TEMPLATES (12 total — submit ALL on Week 2 Day 1)
+## WHATSAPP TEMPLATES (13 total — submit ALL on Week 2 Day 1)
 
 DATED NOTE (2026-08-20, template design v2 — Y-round): copy is now ENGLISH-ONLY, no
 bilingual (English+Tamil) template pairs — input accepts any language, output stays
@@ -432,15 +432,25 @@ template set was drafted under an earlier, now-cancelled plan; it is NOT being s
 to Meta, per that cancellation. Full copy deck: `claude/whatsapp-templates-en-ta.md`
 (the filename predates the English-only decision; the content is English-only — flagged
 there, not renamed here, to avoid a second divergence between a filename and what's
-inside it). The count below stays 12 — the redesign is net-neutral on count (template 7
-renamed, not added; templates 6/12 change FORMAT not count) — see that file's own flagged
-discrepancy note if a different count (13, or 26 pre-redesign) was expected from an
-earlier conversation not captured in this repo.
+inside it).
 
-11 Spine + 1 Fast-Follow. Submit all 12 to Meta together — pre-warming costs
-nothing and approval takes days. Keep every template Utility-category and
-non-promotional. Keep one spare variant of each critical template
-pre-approved (a Meta pause on the morning trigger otherwise halts check-ins).
+DATED CORRECTION (2026-08-20, AA1, same day as the note above): that note originally
+flagged a 13-vs-12 count discrepancy as unresolved, having grepped this repo for the
+missing 13th template's origin and found nothing. **Correction: the 13th template is
+real, not phantom — `quoco_login_otp`.** It originates in `auth-and-session-decisions.md`,
+which lives in the claude.ai PROJECT, not this repo — a document this repo's own grep
+could never find regardless of how thoroughly run, because it was never here. Recorded as
+a standing boundary, not just fixed in place: design decisions and session records live in
+the claude.ai project; code and this repo (including `bot-flows.md` itself) live in the
+repo. A grep across the repo answers "does it exist in the repo," never "does it exist at
+all" — when a referenced artifact isn't found here, the honest report is "not found in
+repo, may be project-side," not "does not exist." The count is 13, correctly, from here on.
+
+11 Spine + 1 Fast-Follow + 1 Authentication. Submit all 13 to Meta together —
+pre-warming costs nothing and approval takes days. Keep every non-Authentication
+template Utility-category and non-promotional. Keep one spare variant of each
+critical template pre-approved (a Meta pause on the morning trigger otherwise
+halts check-ins).
 
 DATED NOTE (2026-08-12): templates #1–4 below (quoco_morning_checkin,
 quoco_evening_checkin, quoco_morning_nudge, quoco_evening_nudge) are the
@@ -486,6 +496,33 @@ Spine:
 Fast-Follow:
 12. quoco_safety_alert_pm       — {{1}} project, {{2}} engineer, {{3}} type/location,
                                   {{4}} injury status, CTA URL button (was {{5}} link)
+
+Authentication:
+13. quoco_login_otp             — {{1}} numeric code. AUTHENTICATION category (Meta's own
+                                  template class, distinct from Utility) — origin:
+                                  `auth-and-session-decisions.md`, claude.ai project, not
+                                  this repo (AA1). Category-specific rules, not the
+                                  Utility rules above:
+                                    * Purely functional wording — no branding flourish, no
+                                      greeting, nothing beyond stating the code and its
+                                      purpose.
+                                    * A mandatory validity line ("This code expires in N
+                                      minutes") — Meta requires this for Authentication
+                                      category approval; a Utility-style template with no
+                                      expiry statement will not pass review under this
+                                      category.
+                                    * The code itself is a BARE numeric variable — no
+                                      surrounding words inside {{1}}, no formatting
+                                      (dashes, spaces) baked into the variable, so the
+                                      WhatsApp client's own tap-to-copy behavior works.
+                                    * Charged on EVERY delivery, including when the
+                                      recipient's 24-hour session window is already open —
+                                      Authentication-category templates do not get the
+                                      free-in-window exception Utility templates do (see
+                                      the Sandbox limitation note below for that
+                                      exception's own scope). Budget accordingly; this is
+                                      not a "submit and forget" template the way #1-4's
+                                      closed-window fallback is.
 
 ### Sandbox limitation
 The Twilio SANDBOX cannot send custom approved templates — session messages

@@ -36,9 +36,9 @@ Rule 3.9 — Media-first for expenses/invoices. (FAST-FOLLOW) Photo is the prima
 Rule 3.10 — Correction window. (SCOPED FEATURE, not free copy) "Reply CORRECT to fix your last answer" requires a step-back transition in the session state machine. It pairs naturally with Rule 3.4's confirm-by-silence. Scope it deliberately into a Morning Flow pass (candidate: Pass 3 alongside the multi-item follow-up pattern) — do not assume it exists until the state machine supports it.
 Rule 3.11 — Language. Bot output — questions AND confirmations — stays SIMPLE ENGLISH ONLY (revised, see dated correction below). Input accepts any language: English, Tamil, or a mix, with no penalty and no gate. Meet the reply language on the input side; do not demand a preference on the output side. Per-user bot language configurability remains the long-term adoption lever, PHASE 2, gated on `docs/language-observation-plan.md`'s inbound-script telemetry actually showing demand for it, not built ahead of that evidence.
 
-~~Bot questions stay English (template constraint); confirmations MAY echo the engineer's reply language (Tamil/Hindi phrases).~~ DATED CORRECTION (2026-08-20, Y-round template redesign, flagged as a conflict rather than silently resolved per CLAUDE.md §0's "if anything conflicts with a rule in this file or the docs, STOP and flag it" instruction): the struck clause conflicts directly with this same session's explicit instruction that echo-back STAYS ENGLISH — "Tamil in, English interpretation back, is CORRECT — it confirms understanding in the language the record uses and lets him correct a misreading before it reaches the report. Do not 'fix' this." The two cannot both hold: this rule said confirmations MAY echo Tamil/Hindi phrases back; the session instruction says confirmations must NOT do that. Read as the newer, explicit decision superseding the older one (the instruction is unambiguous and self-aware — "do not fix this" reads as settled, not exploratory) rather than an oversight to reconcile silently. If this reading is wrong, this correction itself needs correcting, not the other way around.
+~~Bot questions stay English (template constraint); confirmations MAY echo the engineer's reply language (Tamil/Hindi phrases).~~ DATED CORRECTION (2026-08-20, Y-round template redesign, revised AA2 same day — the first version of this correction gave the right conclusion for an insufficient reason and was itself corrected): the struck clause conflicts with echo-back staying English. The reason is not that a newer instruction overrides an older rule — that is a timestamp, not an argument, and does not survive anyone asking why. **The actual argument: the echo-back confirms what goes into the REPORT, and the report is English.** A Tamil echo-back would confirm an INTERMEDIATE representation — something that still has to be translated again before it reaches the report — and that second translation is exactly where a misreading hides, after the engineer has already approved the (Tamil) echo as correct. Echoing in English means he approves the artifact itself, not a stand-in for it that a later step could still get wrong unreviewed. The obvious objection — that a comprehension check belongs in the language the reader is most confident in — does not apply here, because Rule 3.12's whole design rests on simple English being something he can already read; the echo-back doesn't need a comprehension accommodation the rest of the flow doesn't also need.
 
-Rule 3.12 — Simple-English output rules, tiered by audience. Every engineer-facing string in the flow — not just the 12 submitted templates (`claude/whatsapp-templates-en-ta.md`) — follows these: (1) short sentences, one idea each; (2) the question goes last; (3) the SAME WORD for the same thing, every time — never vary for style, since varying vocabulary is good English prose and bad L2 communication; (4) no idioms, no phrasal verbs where a plain verb exists; (5) concrete over abstract; (6) numbers as digits; (7) cut politeness scaffolding that carries no meaning. Register is TIERED, not flattened uniformly: engineer-facing strings (morning/evening flow questions, templates 1–4/8) take the strictest simplification; PM- and owner-facing strings (templates 5/6/9/10/11/12, dashboard copy, the DPR itself) can carry more structure — do not flatten PM copy to the point of curtness, which reads as unprofessional to the audience actually paying for the product.
+Rule 3.12 — Simple-English output rules, tiered by audience. Every engineer-facing string in the flow — not just the 13 submitted templates (`claude/whatsapp-templates-en-ta.md`) — follows these: (1) short sentences, one idea each; (2) the question goes last; (3) the SAME WORD for the same thing, every time — never vary for style, since varying vocabulary is good English prose and bad L2 communication; (4) no idioms, no phrasal verbs where a plain verb exists; (5) concrete over abstract; (6) numbers as digits; (7) cut politeness scaffolding that carries no meaning. Register is TIERED, not flattened uniformly: engineer-facing strings (morning/evening flow questions, templates 1–4/8) take the strictest simplification; PM- and owner-facing strings (templates 5/6/9/10/11/12, dashboard copy, the DPR itself) can carry more structure — do not flatten PM copy to the point of curtness, which reads as unprofessional to the audience actually paying for the product.
 
 AUDIT AGAINST RULE 3.12 (2026-08-20, Y3 — read directly from `lib/whatsapp/flows/morning.ts`
 and `evening.ts`, the single source both the pure mirror and the webhook render from — a
@@ -113,9 +113,39 @@ Tamil-specific defects:
     work" as a mixed-language robustness check: `quantities.ts`'s `QUANTITY_STOPWORDS`
     spreads `Object.keys(UNIT_ALIASES)`, which includes `no` as the unit abbreviation for
     "nos" — so the word "no" (negation) is silently swallowed as a stopword in Q1's
-    activity extraction, collapsing "no work" to nothing. Low severity (Q1 is never a
-    gate, `raw_text` still preserves "no work" verbatim), but a real, English-side
-    ambiguity worth naming since it was found here, not elsewhere.
+    activity extraction, collapsing "no work" to nothing.
+    **RE-RATED MODERATE, revised up from an initial LOW (AA3, same day) — traced through
+    the live rendering path rather than reasoned about, and the mitigating half of the
+    original rating survives, the dismissive half doesn't.** What still holds: "today
+    rain, no work" is not an edge case — it's the most common no-work reply on an Indian
+    site and monsoon makes it seasonal-frequent; "nos" genuinely means numbers in
+    construction usage ("2 nos slab"), so the collision is real vocabulary overlap, not a
+    theoretical corner case, and cannot be fixed by deleting "no" from the stopword list
+    without checking what real "2 no slab"-style answers that would break; `raw_text` (and
+    the RENDERED report's own `done_text`, confirmed by reading `assemble.ts:539` — it
+    sources from `row.evening_output` verbatim, never the parsed activity string) DOES
+    survive intact, so the free-text half of what a reader sees is never corrupted. What
+    changes the rating: `render.ts:624-628` renders `done_text` and the PARSED
+    `done_quantity`/`unit` on the SAME line — `${done_text} — ${quantity}${unit}`. If "no"
+    sits adjacent to (or shares a chunk with) a real quantity, the swallowed "no" can shift
+    which chunk claims the quantity slot, producing a rendered line where the verbatim
+    text says one thing and the number printed right beside it belongs to a different
+    chunk — the system's own structured view disagreeing with the text next to it, on the
+    same line, in the shipped report. This is exactly the failure §7's containment check
+    cannot catch: containment only verifies a digit is traceable to SOME Fact value
+    (`buildExecutionCorpus`, `containment.ts`), never that the digit's MEANING matches the
+    prose beside it — a real chunk's real quantity, misattributed, passes containment
+    trivially. CONFIRMED UNAFFECTED, checked not assumed: `evening_schedule_met` (the
+    plan-met status) is a fully separate field using `classifyYesNo`'s own vocabulary
+    (`lexicon.ts`), never touching `QUANTITY_STOPWORDS` — the earlier test's own result
+    (`{met:false, ok:true}` for this exact string) already confirmed this path is sound;
+    this bug does not extend to schedule-level status determination, only to Q1's
+    quantity/unit pairing specifically. **Fix approach, not implemented:** distinguishing
+    "no" the negation from "no" the unit needs POSITIONAL CONTEXT, not a wordlist edit — a
+    unit-sense "no" is adjacent to a digit token ("2 no", "no 2"); a negation-sense "no" is
+    not. The fix belongs in `parseChunk`'s own tokenising loop (check adjacency before
+    treating "no" as a unit alias), not in `QUANTITY_STOPWORDS`'s membership set, which has
+    no concept of position.
 (b) NUMERALS — decided, stated, not left an accident: only ASCII digits (`\d`) are
   recognised as numbers anywhere in `labour.ts`/`quantities.ts`/`equipment.ts`. Tamil
   numeral GLYPHS (௫௦) and Tamil (or English — "two", "ten") number WORDS are both
