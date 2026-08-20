@@ -132,9 +132,34 @@ submission. Do not build against an assumed answer here.
 
 ### Trigger-vs-session collision (BOT-21)
 - Previous-day session at trigger time → force-reset, start fresh.
-- Same-day ACTIVE session at trigger time → add trigger to pending_flows,
+- ~~Same-day ACTIVE session at trigger time → add trigger to pending_flows,
   send the trigger question immediately after the current flow completes.
-  The trigger is never lost; the active flow is never destroyed.
+  The trigger is never lost; the active flow is never destroyed.~~
+
+DATED CORRECTION (2026-08-20, HH1/II1 assessment): the struck text describes a
+GUARANTEE THE SYSTEM DOES NOT CURRENTLY PROVIDE. `acquireAndTransition` /
+`drainNextPendingFlow` (`lib/whatsapp/session.ts:78,121`) and their RPCs
+(`acquire_and_transition_session`, `drain_next_pending_flow`) are fully built and
+tested (`test/session-transition.test.ts`, 5/5 passing) but have **ZERO
+production callers** — confirmed by grep across `app/`, `lib/`, `scripts/`
+excluding test files: nothing outside `session.ts`'s own definition and the test
+suite ever calls either function. **What actually runs today**, same-day, ACTIVE
+session at trigger time: `apply_morning_flow_turn`
+(`022_evening_flow_apply_turn.sql:157-173`) and `apply_evening_flow_turn`
+(`025_evening_productivity_reconciliation.sql:229-243`) both take the plain
+`ELSE v_outcome := 'reask'` branch — the trigger is answered by RE-ASKING THE
+CURRENT FLOW'S ACTIVE QUESTION, not queued, not remembered, not sent after the
+active flow completes. The active flow is genuinely never destroyed (that half
+of the struck claim holds), but "the trigger is never lost" does not — a
+collision today simply re-prompts what's already in progress and the
+would-be-triggered flow is not automatically started afterward.
+
+**The pending_flows/BOT-21/BOT-26 machinery is UNWIRED, not deleted, and not
+removed here.** It may be exactly what the outbound-send primitive (#69/031)
+needs once a real trigger cron exists to collide with something — see CLAUDE.md's
+architectural-fact entry on why no trigger cron can exist without that primitive
+first. Until then, this section's own guarantee should be read as aspirational
+design, not current behaviour.
 
 ### Pending flow ordering (BOT-26)
 - pending_flows is an ordered list, stable total order:
