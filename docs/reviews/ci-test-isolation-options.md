@@ -24,13 +24,41 @@ not a re-derived grep that could disagree a third time.
 
 `test/helpers/db.ts` seeds fixtures under fixed, deterministic UUIDs
 (`TEST_TENANT_ID`, `TEST_PROJECT_ID`, `TEST_PHONE_PREFIX = '+19995550'`), shared across
-every branch, every PR, and any manual script pointed at test-db. `.github/workflows/
-ci.yml`'s `test` job carries a project-wide `concurrency: {group: ci-test-db-suite,
-cancel-in-progress: false}` specifically to serialize CI runs against each other — but
-that only protects CI-vs-CI. It does nothing for CI-vs-anything-else (a local rehearsal
-script, `generate-one-dpr.ts` misdirected at test-db, a future second CI workflow). This
-session's own Phase 5 rehearsal collided with a live CI run for exactly this reason —
-confirmed live, not hypothesized (see `test-db-reliability-workstream.md`, J7a).
+every branch, every PR, and any manual script pointed at test-db.
+
+## A MITIGATION ALREADY EXISTS — RE-BASELINED HERE (CC1, 2026-08-20)
+
+This document previously described the problem as if no mitigation existed at all. One
+does — partial, covering exactly one of the two axes a collision can happen on. Quoted
+verbatim, `.github/workflows/ci.yml`'s `test` job:
+
+```yaml
+concurrency:
+  group: ci-test-db-suite
+  cancel-in-progress: false
+```
+
+**What this covers: CI-vs-CI.** Every `test` job invocation, from every branch and every
+PR, queues behind whichever one is already running against the shared `ci-test-db-suite`
+group — two CI runs can never touch test-db's shared fixtures at the same moment.
+
+**What this does NOT cover: CI-vs-developer (or CI-vs-agent).** The concurrency group is
+a GitHub Actions construct — it only serializes *workflow runs*, and has no way to know
+about, let alone gate, a `supabase db query` call, a local `vitest run`, or a script like
+`generate-one-dpr.ts` run directly from a terminal or an agent session. **This is exactly
+the axis migration 029's own rehearsal collided on** — this session's own Phase 5 work
+ran directly against test-db from outside any GitHub Actions run, at the same moment a
+real CI `test` job (for an unrelated PR) was mid-lifecycle, and the concurrency group
+above did nothing to prevent it, because it was never in a position to know the collision
+was happening — confirmed live, not hypothesized (`test-db-reliability-workstream.md`,
+J7a). The group did its one job perfectly (no CI run has ever collided with another CI
+run); it was never designed to do the other one.
+
+**Re-baselined framing for the options below:** not "which option adds isolation," but
+"which option closes the SECOND axis, given the first is already closed." Option 3 below
+is the existing partial mitigation's own natural extension (gate the same axis it already
+covers, but for non-CI writers too); Options 1, 2, and 4 are independent mechanisms
+layered on top of, not replacing, the concurrency group already in place.
 
 Four options, evaluated on what each actually fixes and what it costs.
 
@@ -51,10 +79,22 @@ mechanism to invent; the dry-run pipeline built this session already produces ex
 what this option needs.
 
 **What it fixes:** completely eliminates the shared-writer risk — every CI run gets its
-own throwaway database, nothing to collide with, ever. Also removes CI's dependency on
-the real test-db project being reachable/healthy at all (a separate, if smaller,
-reliability win — test-db itself has no PITR and no accessible branching, per
-CLAUDE.md's own "TEST-DB IS NOT CONFIDENTLY REBUILDABLE" entry).
+own throwaway database, nothing to collide with, ever. **Removes BOTH axes at once, not
+just the one already covered.** The existing `ci-test-db-suite` concurrency group closes
+CI-vs-CI; it has no way to touch CI-vs-developer, because the collision this project
+actually hit lives entirely outside GitHub Actions' own visibility. A per-run database
+sidesteps the whole question instead of extending the existing gate's reach: there is
+nothing shared left to collide with, so a non-CI writer touching test-db directly is no
+longer a coordination problem to solve at all — for the CI side of that interaction, at
+least (a local script can still, separately, collide with test-db's OWN state if run
+directly against test-db rather than a fresh container; that is a different, narrower
+risk than the one this option was scoped to close). This is the strongest practical
+argument for Option 1 over extending Option 3: Option 3 would need every present and
+future non-CI writer to remember to take a lock; Option 1 needs nothing from them at all,
+because there is nothing of CI's to collide with once each run has its own database. Also
+removes CI's dependency on the real test-db project being reachable/healthy at all (a
+separate, if smaller, reliability win — test-db itself has no PITR and no accessible
+branching, per CLAUDE.md's own "TEST-DB IS NOT CONFIDENTLY REBUILDABLE" entry).
 
 **What it costs:**
 - Setup: the GitHub Actions `services:` block plus a schema-load step in the workflow —
