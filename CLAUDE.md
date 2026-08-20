@@ -72,6 +72,27 @@
   schema-complete test-db, never on a fresh branch. This rule LAPSES once a fresh
   provision is observed to come up WITH `users.auth_id` present — it is a work-around
   for a live defect, not a permanent preference.
+- TEST-DB IS NOT CONFIDENTLY REBUILDABLE — RECORDED ALONGSIDE THE RULE ABOVE, SAME
+  FAILURE FAMILY (2026-08-20, migration 029's rehearsal round, checked by direct
+  observation, not assumed). Three facts, checked live against test-db
+  (`exfccwlrhoutkgrlikod`), not inferred from the account's general tier:
+    a. `pitr_enabled: false` — `supabase backups list --project-ref
+       exfccwlrhoutkgrlikod` returned it explicitly. No continuous restore window
+       exists for test-db, unlike prod's.
+    b. Branching is not accessible — `supabase branches list` returned a `403`
+       ("account does not have the necessary privileges").
+    c. What test-db actually has: nightly physical backups only (`walg_enabled:
+       true`), most recent observed ~24h old at any given moment — a snapshot, not
+       a point-in-time window.
+  Combined with the rule immediately above (a from-scratch replay is ALREADY
+  documented as coming up missing `users.auth_id`, root cause still unconfirmed),
+  the honest statement is: **test-db today has no reliable recovery path** — not
+  "restore to just before the mistake" (no PITR), not "clean rebuild" (the known
+  fresh-replay defect), only a stale nightly snapshot. Migration 029's own rehearsal
+  survived this only because `dprs`/`daily_log_edits` both happened to be empty at
+  the time — a real mistake against populated test-db tables would have had no clean
+  way back. Recorded as an input to the open test-db reliability workstream, not
+  resolved here — this is a statement of current risk, not a fix.
 - SUPERSEDING PR CARRIES THE REVIEWER-ITEMS LIST FORWARD, ITEM-BY-ITEM (standing rule
   since 2026-07-26; origin: the 019 round-1→round-3 near-miss where eight
   reviewer-required revisions were briefly treated as non-existent because they lived
@@ -298,6 +319,34 @@
   the RPC's own returned `log_date` before proceeding, not by anticipating
   the failure mode in advance — this rule exists so the next author checks
   for it up front instead.
+- A DOCUMENT SUBMITTED FOR EXTERNAL REVIEW IS AUDITED FOR ASSERTED-BUT-
+  NONEXISTENT ARTIFACTS, NOT JUST FACTUAL CORRECTNESS (standing rule since
+  2026-08-20, migration 029's external review round). Before any package or
+  plan is submitted for external review, audit every internal cross-
+  reference against the actual header list, and confirm every cited
+  artifact — probe, section, script, output — EXISTS rather than assuming
+  it was written. Prefer stable anchors (names, not bare numbers) where the
+  format allows, and check any new numbered label against conventions
+  already in use elsewhere in the project before adding it — a collision
+  reads as correct to a skimming reader exactly like a dangling reference
+  does. Origin: the SAME failure shape occurred three times in one session
+  before being named — (1) 028's file header asserted "DRAFT... NOT
+  applied" while the file was already live on prod; (2) a ROADMAP NOTE
+  section header was deleted from this file, leaving a back-reference
+  elsewhere pointing at nothing; (3) migration 029's own B3 fix comment
+  cited "Probe F, review package §7" before Probe F had ever actually been
+  written into that section — a citation of something that did not yet
+  exist, caught only when a fourth, unrelated defect prompted a full
+  cross-reference audit rather than a spot check. All three read as
+  verified to anyone skimming; none were caught by the normal review of
+  the surrounding prose, because the prose around each was itself correct
+  — only the pointed-to artifact was missing. THE COLLISION SUBCLASS, found
+  in the same 029 audit: adding a package's own "§0" section silently
+  collided with this file's own bare-`§0`-means-CLAUDE.md's-standing-gate
+  convention, used 6+ times in that one package alone — not a dangling
+  reference (both readings pointed at something real) but the SAME root
+  cause, a label whose meaning was assumed rather than checked against
+  what else uses it.
 
 ---
 
@@ -464,6 +513,112 @@ Database
 - Every table: id UUID PK DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ DEFAULT now().
 - Full schema + migration order: docs/schema.md.
+- A ONE-TIME MIGRATION STATEMENT TARGETING SPECIFIC EXISTING ROWS IS PINNED
+  OR GENERAL BASED ON WHETHER IT'S DESTRUCTIVE — ONE RULE, TWO CASES
+  (standing rule since 2026-08-20, migration 029's external review, P3;
+  Aravind's decision after reviewing B3's shape). The two cases:
+    * DESTRUCTIVE statements (DELETE, DROP, any irreversible write) ENUMERATE
+      — extensionally pinned to the specific known id(s), never a general
+      `WHERE`. A stale pin fails toward DATA LOSS if reality has drifted
+      since the migration was written, which is the safer failure direction
+      for something that can't be undone without PITR. Precedent: 023's
+      `35a2f41c` DELETE. Concrete case where the pin itself had to move:
+      028's own DELETE was pinned to one id, then had to be WIDENED when a
+      second marker row (`3c14243f`) appeared before apply — re-pinned
+      immediately pre-apply, not left as the original single-id list (full
+      record: `docs/reviews/028-dpr-engineer-report-review-package.md`
+      §21.6; `028_dprs_engineer_id_option_a.sql:211`). The pin is re-derived
+      at apply time, every time — it is not a write-once artifact.
+    * ADDITIVE IDEMPOTENT statements (INSERT-only backfills, anything that
+      can only add rows, never remove or overwrite) take a GENERAL
+      predicate, an in-transaction structural assertion (a `DO $$ ... RAISE
+      EXCEPTION` block, not a comment), and a pre-apply probe pinning the
+      EXPECTED extension of that predicate. The failure geometry inverts
+      here: a pinned id under drift SILENTLY SKIPS the very row the
+      backfill exists to protect (the opposite failure direction from the
+      destructive case — omission, not overwrite), while a general
+      predicate absorbs the drift and the in-transaction assertion converts
+      any residual surprise into a full-transaction abort instead of a
+      silent gap. Precedent: migration 029's `dpr_versions` backfill
+      (`docs/reviews/029-dpr-versioning-review-package.md` §12, B3).
+      EXTENSIONALITY IS NOT ABANDONED IN THIS CASE, IT MOVES: a human still
+      confirms the expected extension immediately pre-apply, via a named
+      probe with an explicit PROCEED/STOP condition (029's Probe F) — the
+      pin lives in the apply-time CHECK, not in the `WHERE` clause itself.
+  Both cases are extensional at apply time; only WHERE the pin lives differs,
+  and that difference tracks which direction a stale pin fails toward.
+- EVERY NEW FUNCTION IN THE public SCHEMA REQUIRES AN EXPLICIT PER-ROLE
+  REVOKE — `REVOKE ALL ... FROM PUBLIC` IS NOT SUFFICIENT (standing rule
+  since 2026-08-20, migration 029's first prod apply, U1-U4; recurrence of a
+  gap migration 020 already found once). Supabase's own `pg_default_acl`
+  grants EXECUTE on every new `public`-schema function to `anon`,
+  `authenticated`, AND `service_role` INDIVIDUALLY, per-role — not through
+  the `PUBLIC` pseudo-role. `REVOKE ... FROM PUBLIC` only removes a grant
+  made TO PUBLIC; it does nothing to these per-role default grants. State
+  the intended callers explicitly and REVOKE BY NAME from every role that is
+  not one of them — do not rely on a bare `FROM PUBLIC` to be enough.
+  Same principle for new TABLES: state the audience and bound the grants
+  explicitly rather than relying on RLS alone to compensate for an
+  over-broad table-level grant (RLS and the grant are two independent
+  layers — a correct RLS policy does not make an unnecessary anon grant
+  harmless, it just means nothing has exploited it yet).
+    Origin: migration 020 (2026-07-25) found and fixed this EXACT behaviour
+  for seven pre-existing functions, explicitly naming `anon` as a separate
+  revoke target in its own text (`020_function_execute_hardening.sql:94`:
+  `REVOKE EXECUTE ON FUNCTION public.get_user_tenant_id() FROM PUBLIC,
+  anon;`). That fix was never generalised into a standing rule for functions
+  created AFTERWARD — a point fix, not a rule — so the first new SECURITY
+  DEFINER function to ship since 020 (`write_dpr_version`, migration 029)
+  silently reintroduced the identical hole: `anon` held live EXECUTE on a
+  function whose one caller-trusting branch (`p_generated_by='system'`)
+  keys its only guard on `auth.uid() IS NOT NULL` — and an anon PostgREST
+  call carries no JWT, so it satisfies that guard exactly like the
+  legitimate `service_role` caller does. The anon key is public by design
+  (ships in client code), so this was a live, internet-facing exposure on
+  production, caught only by the post-apply ACL fingerprint below, not by
+  anything earlier in the pipeline — the dry-run scaffold has no Supabase
+  default ACLs to reproduce this, the test-db rehearsal never tested an
+  anon caller, and §12-style behavioural evidence authenticated as real
+  users throughout, never as anon. Full incident record:
+  `docs/reviews/029-dpr-versioning-review-package.md`'s U1-U5 section.
+    VERIFICATION, now standing: the post-apply catalog readback for any
+  migration creating a new function or table must fingerprint the ACL of
+  every new object, not just its definition (constraints, policy text,
+  prosrc) — an object can be functionally correct and still carry a grant
+  nobody intended. Prefer proving a revoke worked two ways, not one: read
+  the ACL back (`has_function_privilege`/`has_table_privilege`), AND — for
+  anything reachable via PostgREST — make a real anon-key call and confirm
+  the actual refusal (`42501`), not just its absence from the catalog.
+    STANDARD EVIDENCE SHAPE, MADE PROACTIVE, NOT ONLY REACTIVE: an anon-key
+  call is not just how you verify a revoke you already suspect is needed —
+  it is now a REQUIRED line in every future `SECURITY DEFINER` function's
+  own review package, run by default alongside the authenticated/pm/qs
+  behavioural tests §12-style packages already run, whether or not anyone
+  suspects a gap. This function's own review package ran exactly that shape
+  of test (authenticated, qs, pm, member/non-member) and never once called
+  as `anon` — that absence is precisely why this sailed through every prior
+  check and was only caught by the POST-APPLY catalog readback, on
+  production, after the fact. Testing anon proactively, pre-apply, moves
+  this same class of finding to where 027's own external-review-round-1
+  findings landed: cheap, pre-apply, in a file nobody had run yet — not a
+  live production exposure discovered after the fact.
+- A MIGRATION FILE ENTERS supabase/migrations/ WHEN IT IS BEING APPLIED, NOT
+  WHEN IT IS WRITTEN (standing rule since 2026-08-20, migration 030's BB2
+  relocation). Until an apply is actually happening, a written migration
+  lives in `docs/reviews/`, alongside its review package — not in
+  `supabase/migrations/`, the directory every apply/rehearsal tool scans.
+  Holding an unapplied file off `main` is not sufficient on its own: a file
+  sitting unapplied, on no ledger row, in the scanned directory is a live
+  hazard on ANY branch that has it checked out, whether or not that branch
+  has reached `main` — a stray `supabase db push` on that branch applies it
+  regardless. Origin: migration 028's own file genuinely followed this
+  pattern already (moved into `supabase/migrations/` at apply time, not
+  before) without it ever being written down as a rule — 030 sat in the
+  scanned directory, unapplied, for the length of an entire review-and-hold
+  cycle before this was named and fixed. Move a migration INTO
+  `supabase/migrations/` as part of the same commit/session that applies
+  it, never earlier — matches the CANDIDATE CI CHECK entry's own spirit
+  (catch a class of hazard at write time, not after it's rediscovered).
 
 API routes
 - All /api/ routes require authentication.
@@ -523,6 +678,81 @@ Tests are required, not optional
   (evening completes → morning starts → morning completes) and caught a
   second, unnamed instance of the bug a mechanism-targeted test would have
   missed (docs/reviews/022-review-package.md).
+
+EVERY NEW MIGRATION GETS A DISPOSABLE DRY-RUN BEFORE IT ENTERS A REVIEW PACKAGE
+(standing rule since 2026-08-20, migration 029's rehearsal round; AMENDED
+same day, G1, before the rule finished hardening). Origin: 029, 030, and 031
+were written, packaged, and declared review-ready in the same session, by
+the same process, and none of them had ever been executed against a real
+Postgres. 029 turned out to have a real ordering defect (an inline FK
+referencing a parent unique constraint the file didn't create until 15 lines
+later — Postgres 42830) that a careful read — including a correct, thorough
+§0 security/atomicity read that had no reason to catch this class of bug —
+did not surface, and that only running the file against Postgres did. The
+systemic finding was never the ordering bug itself; it was that a review
+package whose SQL has never been past a parser is a proposal, not a package.
+
+THE SCAFFOLD MUST COME FROM THE REAL SCHEMA, NOT BE HAND-BUILT (G1
+correction — the first version of this rule was circular). A scaffold typed
+by hand from "the tables/columns/functions the new file references" can only
+ever agree with the file being tested, since both come from the same
+person's belief about the schema — it catches intra-file ordering defects
+(real value; that is the class that bit 029) but CANNOT catch a migration
+referencing a column, table, constraint, or function that does not actually
+exist, because a hand-built scaffold will simply include whatever the
+migration expects. Build the scaffold from a real structural dump instead:
+
+    supabase db dump --linked --schema public --dry-run -f /tmp/schema.sql
+
+`--dry-run` prints the exact `pg_dump` invocation (env vars, flags, the sed
+pipeline that strips platform-managed noise) without requiring Docker — copy
+that script and run it directly if a local `pg_dump` is available and no
+Docker is (this project's own environment had no Docker when this rule was
+written; a Homebrew Postgres install provided a matching `pg_dump`). Load the
+result into a disposable local Postgres, then run the candidate migration
+against it. Same cost as the hand-built version, no circularity: this
+upgrades the check from "does this file agree with itself" to "does this
+file agree with the database."
+
+NAMED STUBS — what this check still cannot see, stated so a future reader
+knows the limit rather than assuming full coverage. A structure-only dump of
+`public` does not include Supabase-managed internal schemas. Two things must
+be stubbed by hand, every time, and named as stubs, not silently patched in:
+  - `auth` schema — a bare `auth.users(id uuid primary key)` table and an
+    `auth.uid() RETURNS uuid` function returning `NULL`, since RLS policies
+    and `SECURITY DEFINER` functions in `public` reference both.
+  - Roles — `postgres`, `anon`, `authenticated`, `service_role`, and
+    `supabase_auth_admin` must exist in the local cluster before the dump
+    loads (the dump's own `OWNER TO`/`GRANT`/`REVOKE` statements reference
+    them by name).
+Anything genuinely platform-specific beyond these two — a Postgres
+extension the dump doesn't include `CREATE EXTENSION` for (pgvector did
+not appear in the dump and had to be created by hand before loading, once,
+per fresh instance), an `auth.*` function beyond `uid()` a future migration
+calls, a different internal schema a future migration touches — is NOT
+covered by this check and must be added to the stub list explicitly when it
+comes up, not silently assumed away.
+
+POSTGRES VERSION MUST MATCH THE SERVER (G2 — checked, not presumed; the
+local tool was PG16 on first use, while both prod and test-db run PG17.6,
+confirmed live via `SELECT version()` on both — a version this rule now
+pins so the next installer gets it right without re-deriving it). Install
+the same MAJOR version locally (`brew install postgresql@17` on macOS,
+or equivalent) — a mismatch lets the dry-run pass on syntax the real
+server would reject. Re-check `SELECT version()` against prod/test-db
+whenever this rule is next relied on, since a platform upgrade would move
+the target without updating this line.
+
+This is NOT the test-db rehearsal and does not substitute for it (§0's own
+rehearsal rules, and the REHEARSE ON A CLEANED EXISTING BRANCH rule above,
+are unchanged and still required before any real apply) — it is a cheaper,
+earlier gate that catches parse/ordering/executability/missing-object
+defects before the external reviewer's attention is spent on whether SQL
+runs at all, rather than on the design it encodes. Touches no real
+environment; no §0 gate implication of its own. A rule that overstates its
+own coverage is worse than no rule — this one covers intra-file ordering
+AND schema-agreement (real dump), but not the two named stub gaps above,
+and that limit is part of the rule, not an implementation detail to forget.
 
 How to verify locally (ask me to run these; show me the command)
 - DB change: run migrations against a Supabase BRANCH first, never prod.
@@ -2049,6 +2279,23 @@ SCOPE CORRECTION (2026-08-15, Aravind's own instruction): merging PR #66 deploye
 deploy" means do not merge, not just "don't add the missing-route cron entry" — merging to
 `main` deploys, full stop, same fact this file's own merge/deploy incident already
 established for a different PR.**
+
+`morning.ts:188` TS/SQL MIRROR DIVERGENCE — TRACKED, NOT FIXED (opened 2026-08-19, found
+during #67/#69's package-stage review, external review). `dispatchMorningFlow`'s `startFlow`
+branch (`lib/whatsapp/flows/morning.ts:188`) does a bare `context: {}` replace on session
+start. The live SQL (`apply_morning_flow_turn`, currently 022's body) does NOT do this —
+migration 022 fixed exactly this spot to `context - 'q2_reask' - 'q3_reask'` (a strip,
+never a bare wipe — "CONTEXT DISCIPLINE, site 1 of 4," 022's own header). The TS mirror's
+own AUTHORITY NOTE (`morning.ts:24-32`) claims to mirror the `wrong_flow` outcome and the
+Q4-completion merge only — it does not claim to mirror the START fix, and the code confirms
+it doesn't. **Correctly flagged-not-fixed in a plan-only pass** (docs/outbound-send-
+primitive-plan.md, B3 condition 1) — recorded here so it isn't lost the moment that
+document graduates to a migration and stops being the place anyone re-reads for open
+findings. Not urgent on its own (the TS mirror is a prediction/test-oracle only —
+`dispatchMorningFlow`'s own AUTHORITY NOTE states production acts on the RPC's real return
+value, never the mirror's), but real: any future RPC change in this same area (B3's
+cross-flow fix, when it ships) should close this divergence in the same pass, not leave a
+third context-writing pattern where two are already meant to agree by construction.
 
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
