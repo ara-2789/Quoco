@@ -225,25 +225,32 @@ WHERE table_schema='public' AND table_name='daily_log_edits' AND column_name='co
 -- "(project_id, log_date)" / "silent replace" text this migration corrects).
 SELECT obj_description('public.dprs'::regclass);
 
--- Probe F (added external review round 2, B3): the specific known state the
--- B3 backfill's general WHERE clause is EXPECTED to match on prod today —
--- named explicitly, not left implicit, since the backfill itself is
--- deliberately NOT hardcoded to this id (§12, B3). Expect: exactly one row,
--- id af7760e8-..., log_date 2026-08-13. A different count or a different id
--- means reality has drifted since this package was written and the backfill
--- must be re-examined against the ACTUAL state before proceeding, not
--- assumed to still match this expectation.
-SELECT id, log_date, current_version, content IS NOT NULL AS has_content
+-- Probe F (added external review round 2, B3; P2 added the structured
+-- check): the specific known state the B3 backfill's general WHERE clause
+-- is EXPECTED to match on prod today — named explicitly, not left implicit,
+-- since the backfill itself is deliberately NOT hardcoded to this id (§12,
+-- B3). Expect: exactly one row, id af7760e8-..., log_date 2026-08-13,
+-- structured IS NOT NULL. The structured check exists because the
+-- backfill's own COALESCE(d.structured, '{}') would fabricate an
+-- empty-structured record — recording "empty" where the truth is "absent"
+-- — the one time that branch could fire. Asserting structured IS NOT NULL
+-- here, pre-apply, proves that branch is dead for the row this backfill
+-- actually touches, keeping the backfill purely faithful rather than merely
+-- hoping the COALESCE never fires.
+SELECT id, log_date, current_version, content IS NOT NULL AS has_content,
+       structured IS NOT NULL AS has_structured
 FROM public.dprs WHERE content IS NOT NULL;
 ```
 
 **PROCEED condition:** Probe A/B/D return no rows for the new objects; Probe C returns
 `NULL`; Probe E returns the original 023 text verbatim; **Probe F returns exactly one row,
-id `af7760e8-...`** (B3's documented expectation — see §12). **STOP on anything else** — a
-non-empty result on A/B/D means a prior partial apply or an unexpected schema drift that
-must be understood before this file runs, not overwritten; a Probe F mismatch means the
-backfill's general `WHERE` clause would affect different or additional rows than this
-package accounts for, and needs re-examination before applying, not silent proceeding.
+id `af7760e8-...`, with `has_structured = true`** (B3's documented expectation — see §12).
+**STOP on anything else** — a non-empty result on A/B/D means a prior partial apply or an
+unexpected schema drift that must be understood before this file runs, not overwritten; a
+Probe F row-count or id mismatch means the backfill's general `WHERE` clause would affect
+different or additional rows than this package accounts for; a `has_structured = false`
+means the backfill's `COALESCE` fallback would actually fire for a real row — in either
+case, re-examine before applying, do not proceed on the assumption this still matches.
 
 ---
 

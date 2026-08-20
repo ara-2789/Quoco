@@ -513,6 +513,40 @@ Database
 - Every table: id UUID PK DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ DEFAULT now().
 - Full schema + migration order: docs/schema.md.
+- A ONE-TIME MIGRATION STATEMENT TARGETING SPECIFIC EXISTING ROWS IS PINNED
+  OR GENERAL BASED ON WHETHER IT'S DESTRUCTIVE — ONE RULE, TWO CASES
+  (standing rule since 2026-08-20, migration 029's external review, P3;
+  Aravind's decision after reviewing B3's shape). The two cases:
+    * DESTRUCTIVE statements (DELETE, DROP, any irreversible write) ENUMERATE
+      — extensionally pinned to the specific known id(s), never a general
+      `WHERE`. A stale pin fails toward DATA LOSS if reality has drifted
+      since the migration was written, which is the safer failure direction
+      for something that can't be undone without PITR. Precedent: 023's
+      `35a2f41c` DELETE. Concrete case where the pin itself had to move:
+      028's own DELETE was pinned to one id, then had to be WIDENED when a
+      second marker row (`3c14243f`) appeared before apply — re-pinned
+      immediately pre-apply, not left as the original single-id list (full
+      record: `docs/reviews/028-dpr-engineer-report-review-package.md`
+      §21.6; `028_dprs_engineer_id_option_a.sql:211`). The pin is re-derived
+      at apply time, every time — it is not a write-once artifact.
+    * ADDITIVE IDEMPOTENT statements (INSERT-only backfills, anything that
+      can only add rows, never remove or overwrite) take a GENERAL
+      predicate, an in-transaction structural assertion (a `DO $$ ... RAISE
+      EXCEPTION` block, not a comment), and a pre-apply probe pinning the
+      EXPECTED extension of that predicate. The failure geometry inverts
+      here: a pinned id under drift SILENTLY SKIPS the very row the
+      backfill exists to protect (the opposite failure direction from the
+      destructive case — omission, not overwrite), while a general
+      predicate absorbs the drift and the in-transaction assertion converts
+      any residual surprise into a full-transaction abort instead of a
+      silent gap. Precedent: migration 029's `dpr_versions` backfill
+      (`docs/reviews/029-dpr-versioning-review-package.md` §12, B3).
+      EXTENSIONALITY IS NOT ABANDONED IN THIS CASE, IT MOVES: a human still
+      confirms the expected extension immediately pre-apply, via a named
+      probe with an explicit PROCEED/STOP condition (029's Probe F) — the
+      pin lives in the apply-time CHECK, not in the `WHERE` clause itself.
+  Both cases are extensional at apply time; only WHERE the pin lives differs,
+  and that difference tracks which direction a stale pin fails toward.
 
 API routes
 - All /api/ routes require authentication.

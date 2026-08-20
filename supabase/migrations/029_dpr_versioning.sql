@@ -451,3 +451,13 @@ COMMIT;
 -- expects to find. This is NOT the test-db rehearsal and does not
 -- substitute for it; the real rehearsal (Phases 0-6) against test-db is its
 -- own, separately-confirmed step, not run again in this same pass.
+--
+-- ADDENDUM (2026-08-20, external review round 2, P1): the note above attests
+-- the PRE-FIX byte-state of this file — it did not change when B1, B2, B3,
+-- and the backfill were added, and under apply-by-file the file is the
+-- artifact of record, not the package. Corrected file re-verified 2026-08-20
+-- — fresh PG17 loaded from a prod structure-only dump, pre-029 state
+-- confirmed first, full file clean. Full raw output: review package §12,
+-- Step 1. This is a dated addendum, not a rewrite of the original note, per
+-- house convention (CLAUDE.md §0's provenance discipline) — the original
+-- note stays as the record of what it actually verified, when.
