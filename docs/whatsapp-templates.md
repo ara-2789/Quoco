@@ -81,6 +81,55 @@ draft exists before resubmitting.)*
 > {{1}}, you have not sent today's evening check-in for {{2}} yet.
 > Reply to start now.
 
+## Spare variants (II5) — one alternate wording per engineer-facing send template
+
+**Purpose, stated plainly: these are Meta-submission fallbacks, not a second live
+template set.** If Meta rejects one of templates 1–4 (category miscall, banned-phrase
+match, or any other automated-review reason), resubmitting a near-identical string
+against the same rejection often fails the same way — Meta's own guidance is to vary
+wording, not just resubmit. Submitting a spare alongside the primary means an approved
+fallback exists without waiting through a second review round-trip. **Same audience, same
+variables, same category (Utility) as the template each one shadows — wording only.**
+Only templates 1–4 get a spare: these are the four time-sensitive engineer sends where a
+rejected primary with no approved fallback would silently stop reaching engineers; 5–13
+are PM/owner-facing, lower-frequency, or (13) Authentication-category and out of scope
+for this pass.
+
+**Do not activate a spare without a reason.** These exist to be submitted to Meta now, so
+an approved fallback is on hand if needed later — not to run instead of 1–4 by default.
+
+### 1v2. `quoco_morning_checkin_v2`
+**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 1.
+
+> Good morning {{1}}.
+> Time for today's morning check-in for {{2}}. Reply to start.
+
+### 2v2. `quoco_evening_checkin_v2`
+**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
+(≤150 chars). **Shadows:** template 2.
+
+> Good evening {{1}}. Your morning plan was: {{3}}
+> Time for today's evening check-in for {{2}}. Reply to start.
+
+### 3v2. `quoco_morning_nudge_v2`
+**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 3.
+
+> {{1}}, today's morning check-in for {{2}} is not done yet.
+> Reply now to start.
+
+### 4v2. `quoco_evening_nudge_v2`
+**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 4.
+
+> {{1}}, today's evening check-in for {{2}} is not done yet.
+> Reply now to start.
+
+**Checked against Rule 3.12, same bar as 1–4:** each is two short sentences; no idiom;
+"check-in"/"reply"/"start" reused verbatim from 1–4, not swapped for synonyms, so a swap
+to the spare mid-flow would not introduce new vocabulary an engineer hasn't seen; no
+digits to render; no politeness scaffolding. Differs from its primary in sentence
+structure and word order only, which is the minimum change Meta's own guidance asks for
+without drifting from this project's own consistent-vocabulary rule.
+
 ### 5. `quoco_manager_missed`
 **Audience:** PM. **Variables:** `{{1}}` engineer, `{{2}}` project.
 
@@ -203,4 +252,9 @@ free-in-window exception — budget for this differently than templates 1–12.
 
 ---
 
-## Total: 13 templates (11 Spine + 1 Fast-Follow + 1 Authentication)
+## Total: 13 templates (11 Spine + 1 Fast-Follow + 1 Authentication) + 4 spare variants (II5)
+
+Submission tracking (dates, per-template status, Meta review outcomes) lives in
+`docs/reviews/whatsapp-template-submission-status.md`, not here — this file is the copy
+deck; that one is the durable submission log, updated as each submission event happens
+rather than re-derived from this file's own edit history.
