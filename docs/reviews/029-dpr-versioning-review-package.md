@@ -107,15 +107,19 @@ hygiene-with-a-caveat / compliance record):
 
 **RUN, 2026-08-20 — see §9/§10 for the outcome record.** The plan below is preserved as
 written (this is what was actually executed against test-db, not a retrospectively-edited
-description). **Known gap, flagged rather than papered over:** the raw Phase 0-5 probe/
-exercise output this rehearsal produced is narrated in commit `6c2cabf`'s message and in
-this session's own record, but was not pinned verbatim into this file at the time — this
-falls short of CLAUDE.md's own "never retyped, never summarised" provenance rule for
-reviewer-package artifacts. Recorded here as an open item rather than fabricated after
-the fact; the underlying live-catalog state (ledger row, table/column existence, RLS
-policy) has since been independently re-verified live (2026-08-20, this update) and is
-accurate, but the original raw session transcript is the authoritative source if the
-literal Phase 0-5 output text is needed for the record.
+description).
+
+**GAP CLOSED (2026-08-20, K1): §11 now carries a full, independently re-run Phase 5 —
+`generate-one-dpr.ts` target-confirmed, two `write_dpr_version()` edits with the resulting
+rows pasted verbatim, and the load-bearing UPDATE/DELETE refusal test — with raw output
+pinned at the time it happened, not retyped afterward.** This closes the specific
+provenance gap this note originally flagged (commit `6c2cabf`'s Phase 5 narration had no
+pinned artifact behind it). The ORIGINAL `6c2cabf` rehearsal's own raw output remains
+unpinned and unrecoverable — its fixture rows were already deleted by J6 before the gap
+was noticed, so nothing from that specific run can be retroactively pinned — but §11 is a
+genuine, independent re-exercise of the same RPC against the same live schema, not a
+substitute narrative, and closes the open question of whether the RPC's behavior is
+actually evidenced rather than merely asserted.
 
 1. Confirm current test-db ledger/schema state (`ls supabase/migrations/` vs.
    `supabase_migrations.schema_migrations` — known lag exists, see migration 028's own
@@ -264,3 +268,207 @@ for undoing a prod apply of 029 ages out exactly one week after that apply runs 
 rollback decision cannot be deferred indefinitely once 029 is live on prod. If real
 `dpr_versions` history needs to survive a rollback, that decision has a real, moving
 deadline from the moment of apply, not an open-ended one.
+
+---
+
+## 11. Phase 5 re-run, raw output pinned (K1, 2026-08-20)
+
+**Why this section exists:** commit `6c2cabf` narrated Phase 5 (RPC exercise, version
+increment, UPDATE/DELETE refusal) in its commit message only — no raw output was ever
+pinned into this file, short of CLAUDE.md's own provenance rule. §6's original rows this
+would have exercised were already deleted by J6's cleanup before the gap was noticed, so
+nothing could be re-derived from them. **This section is a full, independent re-run**,
+using fresh isolated fixtures under a new prefix (not the original `REHEARSAL029-` rows,
+which no longer exist), with every command's raw output captured as it happened —
+pinned here **before** cleanup, per direct instruction, so the evidence outlives the rows.
+
+**Isolation:** fresh, randomly-generated UUIDs, provably outside `test/helpers/db.ts`'s
+teardown predicate (fixed-UUID/phone-prefix exact match — see J2's finding in `6c2cabf`).
+Fixtures: `tenants.id = 9181f873-5df4-4a41-8c41-f1caa951f9ef`,
+`projects.id = 5208d043-a030-49dc-ab43-ec1217a9396f`,
+`users.id = edb54a9e-c23e-4414-9fc7-05dfdd28f54a` (engineer, `whatsapp_number
+'+19996669001'`), plus one `daily_logs` row for the same tenant/project/engineer,
+`log_date = CURRENT_DATE`.
+
+**Step 0 — target confirmed before any write:**
+
+```
+=== RESOLVED TARGET (pre-write confirmation) ===
+NEXT_PUBLIC_SUPABASE_URL host: exfccwlrhoutkgrlikod
+Expected test-db ref: exfccwlrhoutkgrlikod
+MATCH — confirmed pointed at test-db, safe to proceed.
+```
+
+**Step 1 — `generate-one-dpr.ts` against test-db, real Claude call, full output:**
+
+```
+Running: npx tsx scripts/generate-one-dpr.ts 5208d043-a030-49dc-ab43-ec1217a9396f edb54a9e-c23e-4414-9fc7-05dfdd28f54a 2026-08-20
+◇ injected env (9) from .env.local // tip: ⌘ suppress logs { quiet: true }
+Assembling Facts for project 5208d043-a030-49dc-ab43-ec1217a9396f (K1 Rehearsal Project (029 Phase 5 re-run)), engineer edb54a9e-c23e-4414-9fc7-05dfdd28f54a, 2026-08-20...
+Calling Claude...
+
+=== USAGE / COST ===
+Input tokens:  1148
+Output tokens: 142
+Latency:       7340ms
+Attempts:      2
+Cost (USD):    $0.005574
+
+=== RENDERED CONTENT ===
+DAILY PROGRESS — K1 Rehearsal Project (029 Phase 5 re-run) — Thu 20 Aug
+Site engineer: K1 Rehearsal Engineer
+
+Morning check-in: complete
+Evening check-in: complete
+
+Excavation of the foundation trench on grid A1-A4 was completed to formation level as planned, with all 12 planned workers on site and working, keeping the schedule on track.
+
+Work — planned: "Excavation of foundation trench, grid A1-A4" | done: "Trench excavated to formation level, ready for PCC pour"
+Manpower — planned: 12 | on site: 12, working: 12
+Equipment — planned: Excavator, ₹3500/day | used: not reported
+Schedule — met
+
+NOT ASKED YET
+Tomorrow's plan.
+
+Written to dprs.
+```
+
+**Note:** the `◇ injected env (9) from .env.local` line is `dotenv`'s own load confirmation
+— it always fires because `generate-one-dpr.ts` unconditionally loads `.env.local` (this
+is exactly the risk `generate-one-dpr-target-safety.md`, J7c, proposes fixing). It did NOT
+overwrite the pre-exported test-db env vars in this shell (`dotenv`'s `config()` does not
+overwrite an already-set `process.env` key) — confirmed by the Facts-assembly line itself
+naming the K1 Rehearsal Project, which exists only on test-db, not prod.
+
+**Post-generation `dprs` row, read back:**
+
+```json
+{
+  "content_len": 628,
+  "current_version": 1,
+  "delivery_status": "pending",
+  "generated_by": "system",
+  "generated_by_user": null,
+  "generation_status": "idle",
+  "id": "fa99fa24-c5e1-4e67-a8c2-eec8c40f190b"
+}
+```
+
+`current_version = 1` — the default, untouched by `write_dpr_version()` yet, matching this
+migration's own §8 test-plan note that `dispatch.ts` does not call the RPC (that wiring is
+separate application-code work, not part of this migration).
+
+**Step 2 — first edit, `write_dpr_version()` call #1 (system path), raw output:**
+
+```json
+{ "new_version_id": "44f0b0f5-de54-415d-acf1-d5c0f041d0ec" }
+```
+
+`dpr_versions` row this call wrote, read back verbatim:
+
+```json
+{
+  "content": "DAILY PROGRESS -- K1 Rehearsal Project -- EDIT 1 (regenerated content, system path)",
+  "dpr_id": "fa99fa24-c5e1-4e67-a8c2-eec8c40f190b",
+  "generated_at": "2026-08-20 03:45:12.811835+00",
+  "generated_by": "system",
+  "generated_by_user": null,
+  "id": "44f0b0f5-de54-415d-acf1-d5c0f041d0ec",
+  "structured": { "note": "K1 rehearsal edit 1" },
+  "version": 2
+}
+```
+
+`dprs` projection after this call, read back verbatim:
+
+```json
+{
+  "content": "DAILY PROGRESS -- K1 Rehearsal Project -- EDIT 1 (regenerated content, system path)",
+  "current_version": 2,
+  "generated_by": "system",
+  "generated_by_user": null,
+  "id": "fa99fa24-c5e1-4e67-a8c2-eec8c40f190b",
+  "last_regenerated_at": "2026-08-20 03:45:12.811835+00"
+}
+```
+
+Version went `1 → 2`; the `dpr_versions` insert and the `dprs` UPDATE both landed in the
+same call, matching the RPC's own single-transaction design.
+
+**Step 3 — second same-day edit, `write_dpr_version()` call #2 (system path), raw output:**
+
+```json
+{ "new_version_id": "61b721fc-aefa-4a53-887f-fc1dd5d6cf22" }
+```
+
+**Both `dpr_versions` rows, read back together, verbatim — the append-only check:**
+
+```json
+[
+  {
+    "content": "DAILY PROGRESS -- K1 Rehearsal Project -- EDIT 1 (regenerated content, system path)",
+    "dpr_id": "fa99fa24-c5e1-4e67-a8c2-eec8c40f190b",
+    "generated_at": "2026-08-20 03:45:12.811835+00",
+    "generated_by": "system",
+    "id": "44f0b0f5-de54-415d-acf1-d5c0f041d0ec",
+    "version": 2
+  },
+  {
+    "content": "DAILY PROGRESS -- K1 Rehearsal Project -- EDIT 2 (second same-day regeneration, system path)",
+    "dpr_id": "fa99fa24-c5e1-4e67-a8c2-eec8c40f190b",
+    "generated_at": "2026-08-20 03:45:31.735638+00",
+    "generated_by": "system",
+    "id": "61b721fc-aefa-4a53-887f-fc1dd5d6cf22",
+    "version": 3
+  }
+]
+```
+
+Version 2's row is byte-identical to Step 2's capture — the second write did not touch it.
+`dprs` projection now reads `current_version: 3`, content matching Edit 2 — the "latest"
+projection tracks the newest write while every prior version stays intact underneath it.
+
+**Step 4 — LOAD-BEARING: direct `UPDATE`/`DELETE` against `dpr_versions` as `authenticated`
+(non-service-role), bypassing the RPC entirely. Both attempts, raw refusal, verbatim:**
+
+```
+=== UPDATE attempt as authenticated (non-service-role) ===
+ERROR:  42501: permission denied for table dpr_versions
+HINT:  Grant the required privileges to the current role with: GRANT UPDATE ON public.dpr_versions TO authenticated;
+
+=== DELETE attempt as authenticated (non-service-role) ===
+ERROR:  42501: permission denied for table dpr_versions
+HINT:  Grant the required privileges to the current role with: GRANT DELETE ON public.dpr_versions TO authenticated;
+```
+
+Confirmed the UPDATE genuinely had no effect, not merely that it errored — re-read the
+targeted row immediately after both refusals:
+
+```json
+{
+  "content": "DAILY PROGRESS -- K1 Rehearsal Project -- EDIT 1 (regenerated content, system path)",
+  "id": "44f0b0f5-de54-415d-acf1-d5c0f041d0ec"
+}
+```
+
+Still the original Edit 1 text, not `TAMPERED` (the attempted UPDATE's payload) — the
+REVOKE statements (`029_dpr_versioning.sql:168-170`) are real, enforced denial, not merely
+declared. **Append-only holds at the database layer, independent of any application-code
+discipline** — this is the claim the package needed evidence for, and now has it.
+
+**Cleanup, run after this section was written and pinned, confirmed by read-back:**
+
+| table | before | after |
+|---|---|---|
+| `dpr_versions` (this `dpr_id`) | 2 | 0 |
+| `dprs` (this row) | 1 | 0 |
+| `daily_logs` (this tenant) | 1 | 0 |
+| `users` (this engineer) | 1 | 0 |
+| `projects` (this project) | 1 | 0 |
+| `tenants` (this tenant) | 1 | 0 |
+
+`dpr_versions` was removed via `dprs`' own `ON DELETE CASCADE` (deleting the `dprs` row
+cascaded both version rows automatically, not a separate manual delete). Nothing outside
+this fixture set was touched — every count above is scoped to this rehearsal's own IDs,
+not a table-wide count.
