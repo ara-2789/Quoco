@@ -3,6 +3,23 @@
 **Status: write-up only, per the governing instruction. No option below has been
 implemented. This document proposes; it does not decide or execute.**
 
+**DISCREPANCY, RECORDED NOT RESOLVED (external review on migration 029, round 2, 2026-08-20):**
+`test-db-reliability-workstream.md`'s K3 section counted **at least 12** test files matching
+the fixed-UUID-fixture pattern (`00000000-0000-4000-a000-...` literals). The external
+reviewer's own grep for `TEST_TENANT_ID|ensureTestTenant` under `test/` returned **9**.
+Most likely explanation, NOT confirmed: pattern scope — K3's count searched for the
+BROADER `00000000-0000-4000-a000-...` UUID-namespace literal (which also catches files
+using their own distinct, self-namespaced fixed UUIDs, e.g. `migration-023.test.ts`'s
+`...0230a1`/`...0230a2` suffixes, not just `TEST_TENANT_ID` itself), while the reviewer's
+narrower pattern only catches files that reference `TEST_TENANT_ID` or `ensureTestTenant`
+by name — a real, meaningful distinction (K3 itself already separated these into two risk
+tiers: cross-file collision on the literal shared `TEST_TENANT_ID`, vs. self-namespaced-
+but-still-fixed files that only collide with a concurrent run of themselves). **Do not
+guess which count is "right"** — they may both be correct answers to two different
+questions. Pin the exact file list (not just a count) when this CI-isolation workstream
+actually opens, so whichever option gets implemented is scoped against a verified list,
+not a re-derived grep that could disagree a third time.
+
 ## The problem this addresses
 
 `test/helpers/db.ts` seeds fixtures under fixed, deterministic UUIDs
