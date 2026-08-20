@@ -72,6 +72,29 @@ both the `INSERT`'s `WHERE` and the assertion's `WHERE`) and can be made before 
 with an explicit ledger row, post-apply catalog fingerprinting, the prod apply itself)
 begins only on your GO.
 
+**DATED UPDATE (2026-08-20, GO granted, P1–P3 landed, first apply attempt): your GO
+stands — this update does not ask for another one, it reports what the first real
+attempt found.** Probes A–E ran clean against real prod. Probe F did not — it could not
+run at all, pre-apply, because it selected `current_version`, a column this migration
+itself adds. **State this plainly, since it touches your own reasoning directly:** you
+accepted the B3 deviation on the grounds that moving the known id into Probe F
+"preserves everything extensionality was actually for: a human confirms the expected
+extension immediately pre-apply, with STOP on mismatch." The PROBE that mechanism
+depended on was itself broken by construction — authored and only ever exercised against
+test-db after 029 was already live there, so a pre-apply column-existence defect stayed
+invisible until run against a genuinely pre-apply target. **What actually happened:** the
+broken probe still forced a stop and a human decision (mine, reported to Aravind, not
+silently resolved) rather than running the (unrunnable) query and proceeding on a false
+pass. A corrected, read-only diagnostic in its place found SIX content-bearing rows, not
+the one originally pinned — nightly generation had produced one per night since the pin
+was set. The general predicate absorbed this exactly as your acceptance of the deviation
+argued it would; nothing was lost or silently skipped. Probe F is now fixed (no
+post-apply column reference, checked against Probe A's own pre-apply output) and
+re-pinned to all six real ids (§7, below) — never a bare count, per your own reasoning
+for why the pin exists at all. **Your reasoning held. The artifact implementing it did
+not. The gap is closed, not papered over — see §7 and §12's own dated notes for the full
+mechanics.**
+
 ---
 
 **Sequencing (external review, split-package decision):** this is the EXERCISABLE half.
@@ -226,31 +249,65 @@ WHERE table_schema='public' AND table_name='daily_log_edits' AND column_name='co
 SELECT obj_description('public.dprs'::regclass);
 
 -- Probe F (added external review round 2, B3; P2 added the structured
--- check): the specific known state the B3 backfill's general WHERE clause
--- is EXPECTED to match on prod today — named explicitly, not left implicit,
--- since the backfill itself is deliberately NOT hardcoded to this id (§12,
--- B3). Expect: exactly one row, id af7760e8-..., log_date 2026-08-13,
--- structured IS NOT NULL. The structured check exists because the
--- backfill's own COALESCE(d.structured, '{}') would fabricate an
--- empty-structured record — recording "empty" where the truth is "absent"
--- — the one time that branch could fire. Asserting structured IS NOT NULL
--- here, pre-apply, proves that branch is dead for the row this backfill
--- actually touches, keeping the backfill purely faithful rather than merely
--- hoping the COALESCE never fires.
-SELECT id, log_date, current_version, content IS NOT NULL AS has_content,
-       structured IS NOT NULL AS has_structured
-FROM public.dprs WHERE content IS NOT NULL;
+-- check; T1/T2 FIXED, first prod apply attempt, 2026-08-20): the specific
+-- known state the B3 backfill's general WHERE clause is EXPECTED to match
+-- on prod today — named explicitly, not left implicit, since the backfill
+-- itself is deliberately NOT hardcoded to any id (§12, B3).
+--
+-- T1 — THIS PROBE WAS DEFECTIVE AND COULD NOT RUN PRE-APPLY, CAUGHT LIVE
+-- AGAINST REAL PROD: the original version selected `current_version`, a
+-- column 029 itself adds — a pre-apply probe referencing a post-apply
+-- column, impossible by construction. It was authored and only ever
+-- exercised against test-db AFTER 029 was already live there, which is
+-- exactly how the defect stayed invisible until run against a genuinely
+-- pre-apply target. Fixed: `current_version` removed from the selection.
+-- Every remaining column below is checked against Probe A's OWN prod
+-- output (not test-db): id, project_id, engineer_id, log_date, content,
+-- structured, generation_status, delivery_status are all present in
+-- Probe A's 14-column pre-apply result. THIS PROBE RUNS AGAINST A PRE-029
+-- SCHEMA, BY DEFINITION — do not add a column here that only exists after
+-- this migration applies; if a future editor needs one, confirm it exists
+-- in a FRESH Probe A run first, not by assumption.
+--
+-- T2 — RE-PINNED AT THE ACTUAL EXTENSION FOUND ON PROD (six rows, not the
+-- one originally pinned when this probe was first written 2026-08-13):
+-- nightly generation has produced one content-bearing row per night since,
+-- absent 08-14 (see the session record's separate, unverified note on
+-- that gap). This is the drift the general-predicate design was accepted
+-- to absorb — not a surprise, the deviation working as designed. The
+-- id LIST is pinned, not a bare count: a count alone would pass silently
+-- on any six rows, and the probe exists so a human confirms WHICH rows,
+-- not how many.
+SELECT id, project_id, engineer_id, log_date, content IS NOT NULL AS has_content,
+       structured IS NOT NULL AS has_structured, generation_status, delivery_status
+FROM public.dprs WHERE content IS NOT NULL
+ORDER BY log_date;
 ```
 
 **PROCEED condition:** Probe A/B/D return no rows for the new objects; Probe C returns
-`NULL`; Probe E returns the original 023 text verbatim; **Probe F returns exactly one row,
-id `af7760e8-...`, with `has_structured = true`** (B3's documented expectation — see §12).
-**STOP on anything else** — a non-empty result on A/B/D means a prior partial apply or an
-unexpected schema drift that must be understood before this file runs, not overwritten; a
-Probe F row-count or id mismatch means the backfill's general `WHERE` clause would affect
-different or additional rows than this package accounts for; a `has_structured = false`
-means the backfill's `COALESCE` fallback would actually fire for a real row — in either
-case, re-examine before applying, do not proceed on the assumption this still matches.
+`NULL`; Probe E returns the original 023 text verbatim; **Probe F returns EXACTLY these six
+rows, no more, no fewer, matched by id:**
+
+| id | log_date |
+|---|---|
+| `af7760e8-2457-4c11-bc35-52929a0bbf54` | 2026-08-13 |
+| `d7435959-12ea-4655-a9d1-ac3396ec6f4b` | 2026-08-15 |
+| `6076b90b-8074-42e5-834b-18090ea85284` | 2026-08-16 |
+| `a53b7ec8-db1a-4bca-8a99-1f5264a7c28d` | 2026-08-17 |
+| `c3c0c922-86f7-4db7-93ee-7b16b7779de6` | 2026-08-18 |
+| `c363c270-251a-4b68-b20b-2816a867a7ad` | 2026-08-19 |
+
+all with `has_structured = true`, all `project_id = acef67fe-...`, all
+`engineer_id = 3534756b-...`. **STOP on anything else** — a non-empty result on A/B/D means
+a prior partial apply or an unexpected schema drift that must be understood before this
+file runs, not overwritten; a Probe F id-set mismatch (a row missing, an extra row, a
+different id, or `has_structured = false` on any of the six) means reality has moved again
+since this pin was set — re-examine and re-pin before applying, do not proceed on the
+assumption this still matches. The backfill's own in-transaction assertion (§12, B3) is
+STRUCTURAL — it checks that every content-bearing row has a matching version-1 history row
+afterward, not a fixed count — so it is correct as written for six rows or any other
+number; Probe F's job is the human-facing extensional confirmation, not the transaction's
+own safety net, and the two are deliberately not the same mechanism.
 
 ---
 

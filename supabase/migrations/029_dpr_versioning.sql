@@ -212,8 +212,17 @@ COMMENT ON TABLE public.dpr_versions IS
 -- the "known id" pin moves to a hard, general, always-checked assertion
 -- immediately below instead of into the WHERE clause, plus a pre-apply
 -- probe (Probe F, review package §7) that names the specific expected state
--- (af7760e8-…, exactly one row, as of 2026-08-2x) for a human to confirm
--- still holds immediately before running this on prod.
+-- for a human to confirm still holds immediately before running this on
+-- prod. THIS PREDICTION CAME TRUE (T2, external review, first prod apply
+-- attempt, 2026-08-20): Probe F was originally pinned to af7760e8 alone,
+-- exactly one row, written 2026-08-13; by the time the apply actually ran,
+-- nightly generation had produced five more (08-15 through 08-19), six
+-- total. The id-pinned-DELETE shape this section explicitly rejected would
+-- have silently missed five of them. Probe F is now re-pinned to all six
+-- ids explicitly — see the review package's own Probe F for the current
+-- list; this comment intentionally does not duplicate a row count here,
+-- since that count is exactly the thing that will drift again before the
+-- next apply attempt of any future migration shaped like this one.
 -- ----------------------------------------------------------------------------
 INSERT INTO public.dpr_versions (
   tenant_id, dpr_id, version, generated_by, generated_by_user,
