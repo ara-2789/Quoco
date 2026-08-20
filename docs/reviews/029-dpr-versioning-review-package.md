@@ -1,6 +1,10 @@
 # Migration 029 review package — DPR versioning (EXERCISABLE half)
 
-**Status: WRITTEN, NOT APPLIED, NOT REHEARSED.** This package accompanies
+**Status: WRITTEN, REHEARSED AND APPLIED ON TEST-DB (2026-08-20, J1-J6). NOT APPLIED
+TO PROD.** Test-db ledger confirmed live (2026-08-20, this update): `supabase_
+migrations.schema_migrations` carries version `029`, 25 total rows. See §9/§10 below for
+the full apply-runbook and rollback-path record; commit `6c2cabf` carries the J1-J6
+narrative. This package accompanies
 `supabase/migrations/029_dpr_versioning.sql`, pinned at commit
 `e6a06826ad17df6c27f73db5584f97896d5c0ef2` (branch `docs/dpr-delivery-versioning-plan`).
 Design record: `docs/dpr-delivery-versioning-plan.md` §2c/§2d (frozen — no further plan
@@ -101,11 +105,17 @@ hygiene-with-a-caveat / compliance record):
 
 ## 6. Rehearsal plan (per §0's test-db rules)
 
-**Not run in this pass — planned, per direct instruction, with raw output to be captured
-at rehearsal time, not fabricated here.** Rehearsal is its own, separately-confirmed
-database-touching step (CLAUDE.md §0: application code and a database-touching rehearsal
-"should never be collapsed into one uninterrupted stretch of execution" — the exact
-incident this rule exists for). Plan:
+**RUN, 2026-08-20 — see §9/§10 for the outcome record.** The plan below is preserved as
+written (this is what was actually executed against test-db, not a retrospectively-edited
+description). **Known gap, flagged rather than papered over:** the raw Phase 0-5 probe/
+exercise output this rehearsal produced is narrated in commit `6c2cabf`'s message and in
+this session's own record, but was not pinned verbatim into this file at the time — this
+falls short of CLAUDE.md's own "never retyped, never summarised" provenance rule for
+reviewer-package artifacts. Recorded here as an open item rather than fabricated after
+the fact; the underlying live-catalog state (ledger row, table/column existence, RLS
+policy) has since been independently re-verified live (2026-08-20, this update) and is
+accurate, but the original raw session transcript is the authoritative source if the
+literal Phase 0-5 output text is needed for the record.
 
 1. Confirm current test-db ledger/schema state (`ls supabase/migrations/` vs.
    `supabase_migrations.schema_migrations` — known lag exists, see migration 028's own
@@ -123,7 +133,7 @@ incident this rule exists for). Plan:
 
 ---
 
-## 7. Pre-apply catalog probes (planned, queries written, output NOT YET captured)
+## 7. Pre-apply catalog probes (queries run 2026-08-20 — see §6's provenance note)
 
 ```sql
 -- Probe A: dprs' current column set, pre-apply (expect: no current_version/
@@ -184,10 +194,13 @@ mark — `supabase migration repair --status applied 029`, the sanctioned mechan
 CLAUDE.md's own W1 correction, NOT a manual `INSERT`; verified live-tested working on
 test-db during this migration's own ledger backfill, 2026-08-20).
 
-**Test-db: A-D run and confirmed (2026-08-20, full rehearsal, this package's own §7/Phase
-0-5 record). E (ledger mark) is CONDITIONAL — pending confirmation the rehearsal's Phase 5
-contention guards held with no external interference; see the session's own J-round record
-for the go/no-go.**
+**Test-db: A-E all run and confirmed (2026-08-20, full rehearsal, commit `6c2cabf`).**
+J3's Phase 5 contention guards held with zero external interference (isolated
+`REHEARSAL029-` fixtures, verified before/after), so E's condition was satisfied and the
+repair ran: `supabase migration repair --status applied 029` — ledger 24 → 25 rows,
+exactly one added. **Independently re-verified live, 2026-08-20 (this update):**
+`supabase_migrations.schema_migrations` has a row for version `029`; total row count is
+25, matching the commit's own before/after record exactly.
 
 **Prod: NOT run.** Requires its own explicit go-ahead per CLAUDE.md §0's `db query`
 conditions: linked project ref pasted fresh, hash/probe comparison against an
