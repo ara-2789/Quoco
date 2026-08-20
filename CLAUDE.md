@@ -319,6 +319,34 @@
   the RPC's own returned `log_date` before proceeding, not by anticipating
   the failure mode in advance — this rule exists so the next author checks
   for it up front instead.
+- A DOCUMENT SUBMITTED FOR EXTERNAL REVIEW IS AUDITED FOR ASSERTED-BUT-
+  NONEXISTENT ARTIFACTS, NOT JUST FACTUAL CORRECTNESS (standing rule since
+  2026-08-20, migration 029's external review round). Before any package or
+  plan is submitted for external review, audit every internal cross-
+  reference against the actual header list, and confirm every cited
+  artifact — probe, section, script, output — EXISTS rather than assuming
+  it was written. Prefer stable anchors (names, not bare numbers) where the
+  format allows, and check any new numbered label against conventions
+  already in use elsewhere in the project before adding it — a collision
+  reads as correct to a skimming reader exactly like a dangling reference
+  does. Origin: the SAME failure shape occurred three times in one session
+  before being named — (1) 028's file header asserted "DRAFT... NOT
+  applied" while the file was already live on prod; (2) a ROADMAP NOTE
+  section header was deleted from this file, leaving a back-reference
+  elsewhere pointing at nothing; (3) migration 029's own B3 fix comment
+  cited "Probe F, review package §7" before Probe F had ever actually been
+  written into that section — a citation of something that did not yet
+  exist, caught only when a fourth, unrelated defect prompted a full
+  cross-reference audit rather than a spot check. All three read as
+  verified to anyone skimming; none were caught by the normal review of
+  the surrounding prose, because the prose around each was itself correct
+  — only the pointed-to artifact was missing. THE COLLISION SUBCLASS, found
+  in the same 029 audit: adding a package's own "§0" section silently
+  collided with this file's own bare-`§0`-means-CLAUDE.md's-standing-gate
+  convention, used 6+ times in that one package alone — not a dangling
+  reference (both readings pointed at something real) but the SAME root
+  cause, a label whose meaning was assumed rather than checked against
+  what else uses it.
 
 ---
 
