@@ -325,6 +325,18 @@ A job that fails the claim exits silently. Stale claims (>5 min) reset to retry.
 5. generation_status='idle' on completion.
 
 ### Late data before 9 PM owner send
+**DATED SUPERSESSION (2026-08-15, docs/dpr-delivery-versioning-plan.md #67, review
+round): the "silent replace, never a new version row" design below is being reversed,
+not amended.** The versioning plan proposes a `dpr_versions` history table — every
+regeneration writes a new row, `dprs.current_version` advances, nothing is silently
+overwritten. This is a real design reversal of the decision recorded here and in
+migration 023's own `COMMENT ON TABLE public.dprs` ("UPSERT target for regeneration —
+silent replace, never a new version row per bot-flows.md"), not a clarification of it —
+023's comment quotes THIS section as its authority, so both must be corrected together
+in whichever migration ships the history table, not just one of the two. **Not yet
+shipped** — #67 is plan-only as of this note; the text immediately below still describes
+what is actually live today, and stays accurate until that migration applies.
+
 Regenerate via UPSERT. Silent replace. last_regenerated_at updated.
 No PM notification unless already paused.
 
@@ -411,12 +423,37 @@ DASH-07 hindrance tracker, DASH-10 accountability view + resolve action.
 
 ---
 
-## WHATSAPP TEMPLATES (12 total — submit ALL on Week 2 Day 1)
+## WHATSAPP TEMPLATES (13 total — submit ALL on Week 2 Day 1)
 
-11 Spine + 1 Fast-Follow. Submit all 12 to Meta together — pre-warming costs
-nothing and approval takes days. Keep every template Utility-category and
-non-promotional. Keep one spare variant of each critical template
-pre-approved (a Meta pause on the morning trigger otherwise halts check-ins).
+DATED NOTE (2026-08-20, template design v2 — Y-round): copy is now ENGLISH-ONLY, no
+bilingual (English+Tamil) template pairs — input accepts any language, output stays
+simple English (`docs/design-principles.md` Rule 3.11, revised same pass). A bilingual
+template set was drafted under an earlier, now-cancelled plan; it is NOT being submitted
+to Meta, per that cancellation. Full copy deck: `docs/whatsapp-templates.md` — RENAMED
+(2026-08-20, BB3) from `claude/whatsapp-templates-en-ta.md`. The old path put a
+repo-tracked file in the `claude/` namespace, which belongs to the claude.ai project
+(`auth-and-session-decisions.md`, the source of template 13, lives there) — having the
+same filename addressable in both places was the dual-copy risk that produced AA1's
+confusion in the first place. This repo's copy is CANONICAL for Meta submission; the
+project holds the design record.
+
+DATED CORRECTION (2026-08-20, AA1, same day as the note above): that note originally
+flagged a 13-vs-12 count discrepancy as unresolved, having grepped this repo for the
+missing 13th template's origin and found nothing. **Correction: the 13th template is
+real, not phantom — `quoco_login_otp`.** It originates in `auth-and-session-decisions.md`,
+which lives in the claude.ai PROJECT, not this repo — a document this repo's own grep
+could never find regardless of how thoroughly run, because it was never here. Recorded as
+a standing boundary, not just fixed in place: design decisions and session records live in
+the claude.ai project; code and this repo (including `bot-flows.md` itself) live in the
+repo. A grep across the repo answers "does it exist in the repo," never "does it exist at
+all" — when a referenced artifact isn't found here, the honest report is "not found in
+repo, may be project-side," not "does not exist." The count is 13, correctly, from here on.
+
+11 Spine + 1 Fast-Follow + 1 Authentication. Submit all 13 to Meta together —
+pre-warming costs nothing and approval takes days. Keep every non-Authentication
+template Utility-category and non-promotional. Keep one spare variant of each
+critical template pre-approved (a Meta pause on the morning trigger otherwise
+halts check-ins).
 
 DATED NOTE (2026-08-12): templates #1–4 below (quoco_morning_checkin,
 quoco_evening_checkin, quoco_morning_nudge, quoco_evening_nudge) are the
@@ -425,22 +462,70 @@ TRIGGER TIMES above. Still submit and pre-approve all four; the fallback
 path is the reason a Meta pause on any one of them halts check-ins (an
 engineer with a closed 24h window has no other way to receive it).
 
+DATED SUPERSESSION (2026-08-20): template 7 below, `quoco_dpr_owner`, sent a 3-line
+report summary directly to the OWNER over WhatsApp. Per the #67 decision (owner receives
+the DPR by email, not WhatsApp — `docs/dpr-delivery-versioning-plan.md`), that content no
+longer goes by WhatsApp at all. Replaced by `quoco_dpr_owner_email_sent` — a PM-facing
+confirmation that the email send happened, {{1}} project, {{2}} date only, no summary
+variable. Full copy: `docs/whatsapp-templates.md` template 7.
+
+DATED NOTE (2026-08-20): templates 6 and 12 now take a CTA URL button for their
+dashboard/details link instead of a body-variable link — drop the old {{3}}/{{5}} link
+variables from both when re-submitting; the button component carries the URL instead.
+Template 6's copy states an 8:30 PM deadline — VERIFIED against `CHECKIN_CHECKPOINTS`
+(`lib/daily-logs/cutoffs.ts`), not assumed: 8:30 PM (`ownerSend`) is correct there
+specifically as the PM's edit-window deadline, NOT as when the report becomes ready
+(that's 7:45 PM, `eveningClose`) — see `docs/whatsapp-templates.md` template 6
+for the full check, since conflating the two would have been a wrong-copy re-approval
+cost.
+
 Spine:
-1.  quoco_morning_checkin    — {{1}} name, {{2}} project
-2.  quoco_evening_checkin    — {{1}} name, {{2}} project, {{3}} morning plan ≤150 chars
-3.  quoco_morning_nudge      — {{1}} name, {{2}} project
-4.  quoco_evening_nudge      — {{1}} name, {{2}} project
-5.  quoco_manager_missed     — {{1}} engineer, {{2}} project
-6.  quoco_dpr_ready_pm       — {{1}} project, {{2}} date, {{3}} dashboard link
-7.  quoco_dpr_owner          — {{1}} project, {{2}} date, {{3}} 3-line summary
-8.  quoco_engineer_optin     — {{1}} name, {{2}} company, {{3}} project
-9.  quoco_dpr_silent_day     — {{1}} project, {{2}} PM name
-10. quoco_dpr_delayed        — {{1}} project, {{2}} PM name
-11. quoco_dpr_pause_expired  — {{1}} project, {{2}} date
+1.  quoco_morning_checkin       — {{1}} name, {{2}} project
+2.  quoco_evening_checkin       — {{1}} name, {{2}} project, {{3}} morning plan ≤150 chars
+3.  quoco_morning_nudge         — {{1}} name, {{2}} project
+4.  quoco_evening_nudge         — {{1}} name, {{2}} project
+5.  quoco_manager_missed        — {{1}} engineer, {{2}} project
+6.  quoco_dpr_ready_pm          — {{1}} project, {{2}} date, CTA URL button (was {{3}} link)
+7.  quoco_dpr_owner_email_sent  — {{1}} project, {{2}} date (SUPERSEDES quoco_dpr_owner —
+                                  see the dated supersession note above)
+8.  quoco_engineer_optin        — {{1}} name, {{2}} company, {{3}} project — now carries
+                                  "reply in any language" + "reply STOP" (see
+                                  CLAUDE.md's BOT-27 entry: the STOP promise is not yet
+                                  kept by the code — named pre-launch blocker)
+9.  quoco_dpr_silent_day        — {{1}} project, {{2}} PM name
+10. quoco_dpr_delayed           — {{1}} project, {{2}} PM name
+11. quoco_dpr_pause_expired     — {{1}} project, {{2}} date
 
 Fast-Follow:
-12. quoco_safety_alert_pm    — {{1}} project, {{2}} engineer, {{3}} type/location,
-                               {{4}} injury status, {{5}} dashboard link
+12. quoco_safety_alert_pm       — {{1}} project, {{2}} engineer, {{3}} type/location,
+                                  {{4}} injury status, CTA URL button (was {{5}} link)
+
+Authentication:
+13. quoco_login_otp             — {{1}} numeric code. AUTHENTICATION category (Meta's own
+                                  template class, distinct from Utility) — origin:
+                                  `auth-and-session-decisions.md`, claude.ai project, not
+                                  this repo (AA1). Category-specific rules, not the
+                                  Utility rules above:
+                                    * Purely functional wording — no branding flourish, no
+                                      greeting, nothing beyond stating the code and its
+                                      purpose.
+                                    * A mandatory validity line ("This code expires in N
+                                      minutes") — Meta requires this for Authentication
+                                      category approval; a Utility-style template with no
+                                      expiry statement will not pass review under this
+                                      category.
+                                    * The code itself is a BARE numeric variable — no
+                                      surrounding words inside {{1}}, no formatting
+                                      (dashes, spaces) baked into the variable, so the
+                                      WhatsApp client's own tap-to-copy behavior works.
+                                    * Charged on EVERY delivery, including when the
+                                      recipient's 24-hour session window is already open —
+                                      Authentication-category templates do not get the
+                                      free-in-window exception Utility templates do (see
+                                      the Sandbox limitation note below for that
+                                      exception's own scope). Budget accordingly; this is
+                                      not a "submit and forget" template the way #1-4's
+                                      closed-window fallback is.
 
 ### Sandbox limitation
 The Twilio SANDBOX cannot send custom approved templates — session messages
