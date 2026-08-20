@@ -2,7 +2,7 @@
 
 **Status: design only. Nothing here has been built.** Replaces the cancelled
 onboarding "choose your language" step and the X2/X3 bilingual-template workstream
-(`claude/whatsapp-templates-en-ta.md`).
+(`docs/whatsapp-templates.md`).
 
 ## Why observation, not a question
 

@@ -1103,7 +1103,7 @@ detected nowhere.
   doesn't.
   DATED ADDENDUM (2026-08-20, template design v2, Y5): this gap just moved from a design
   finding to a WRITTEN, Meta-facing commitment. `quoco_engineer_optin` (template 8,
-  `claude/whatsapp-templates-en-ta.md`) now includes the line "Reply STOP at any time to
+  `docs/whatsapp-templates.md`) now includes the line "Reply STOP at any time to
   stop these messages" — a real product promise submitted for approval, not an internal
   note. The STOP line is being KEPT in the template, deliberately — it is the right
   promise and it helps approval — which means this entry is no longer merely a

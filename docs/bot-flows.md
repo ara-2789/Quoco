@@ -429,10 +429,13 @@ DATED NOTE (2026-08-20, template design v2 — Y-round): copy is now ENGLISH-ONL
 bilingual (English+Tamil) template pairs — input accepts any language, output stays
 simple English (`docs/design-principles.md` Rule 3.11, revised same pass). A bilingual
 template set was drafted under an earlier, now-cancelled plan; it is NOT being submitted
-to Meta, per that cancellation. Full copy deck: `claude/whatsapp-templates-en-ta.md`
-(the filename predates the English-only decision; the content is English-only — flagged
-there, not renamed here, to avoid a second divergence between a filename and what's
-inside it).
+to Meta, per that cancellation. Full copy deck: `docs/whatsapp-templates.md` — RENAMED
+(2026-08-20, BB3) from `claude/whatsapp-templates-en-ta.md`. The old path put a
+repo-tracked file in the `claude/` namespace, which belongs to the claude.ai project
+(`auth-and-session-decisions.md`, the source of template 13, lives there) — having the
+same filename addressable in both places was the dual-copy risk that produced AA1's
+confusion in the first place. This repo's copy is CANONICAL for Meta submission; the
+project holds the design record.
 
 DATED CORRECTION (2026-08-20, AA1, same day as the note above): that note originally
 flagged a 13-vs-12 count discrepancy as unresolved, having grepped this repo for the
@@ -464,7 +467,7 @@ report summary directly to the OWNER over WhatsApp. Per the #67 decision (owner 
 the DPR by email, not WhatsApp — `docs/dpr-delivery-versioning-plan.md`), that content no
 longer goes by WhatsApp at all. Replaced by `quoco_dpr_owner_email_sent` — a PM-facing
 confirmation that the email send happened, {{1}} project, {{2}} date only, no summary
-variable. Full copy: `claude/whatsapp-templates-en-ta.md` template 7.
+variable. Full copy: `docs/whatsapp-templates.md` template 7.
 
 DATED NOTE (2026-08-20): templates 6 and 12 now take a CTA URL button for their
 dashboard/details link instead of a body-variable link — drop the old {{3}}/{{5}} link
@@ -472,7 +475,7 @@ variables from both when re-submitting; the button component carries the URL ins
 Template 6's copy states an 8:30 PM deadline — VERIFIED against `CHECKIN_CHECKPOINTS`
 (`lib/daily-logs/cutoffs.ts`), not assumed: 8:30 PM (`ownerSend`) is correct there
 specifically as the PM's edit-window deadline, NOT as when the report becomes ready
-(that's 7:45 PM, `eveningClose`) — see `claude/whatsapp-templates-en-ta.md` template 6
+(that's 7:45 PM, `eveningClose`) — see `docs/whatsapp-templates.md` template 6
 for the full check, since conflating the two would have been a wrong-copy re-approval
 cost.
 
