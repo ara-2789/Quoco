@@ -179,12 +179,75 @@ must be understood before this file runs, not overwritten.
 
 Per `docs/migration-runbook-template.md`'s canonical skeleton — A (PITR observation) → B
 (pre-apply probe, §7 above) → C (apply, `supabase db query --linked -f`, never `db push`)
-→ D (post-apply probes, mirroring §7's queries against the NEW expected state) → E (manual
-ledger INSERT, `('029', 'dpr_versioning', ARRAY[]::text[])`, then row-count confirm).
-**Not run in this pass.** Requires explicit go-ahead per CLAUDE.md §0's `db query`
-conditions: linked project ref pasted fresh, hash/probe comparison against an
-independently re-probed reference, and Aravind's go-ahead in the same exchange as the
-apply command — none of which this pass includes.
+→ D (post-apply probes, mirroring §7's queries against the NEW expected state) → E (ledger
+mark — `supabase migration repair --status applied 029`, the sanctioned mechanism per
+CLAUDE.md's own W1 correction, NOT a manual `INSERT`; verified live-tested working on
+test-db during this migration's own ledger backfill, 2026-08-20).
 
-**After apply:** `docs/schema.md`'s `dprs`/new `dpr_versions` entries written only after E
-confirms (§0) — not written speculatively here.
+**Test-db: A-D run and confirmed (2026-08-20, full rehearsal, this package's own §7/Phase
+0-5 record). E (ledger mark) is CONDITIONAL — pending confirmation the rehearsal's Phase 5
+contention guards held with no external interference; see the session's own J-round record
+for the go/no-go.**
+
+**Prod: NOT run.** Requires its own explicit go-ahead per CLAUDE.md §0's `db query`
+conditions: linked project ref pasted fresh, hash/probe comparison against an
+independently re-probed reference (test-db's own post-apply state, now established), and
+Aravind's go-ahead in the same exchange as the apply command.
+
+**After prod apply:** `docs/schema.md`'s `dprs`/new `dpr_versions` entries written only
+after E confirms (§0) — not written speculatively here.
+
+## 10. Rollback path — documented, not executed (J4)
+
+**What undoing 029 requires, concretely, in dependency order:**
+
+```sql
+BEGIN;
+DROP FUNCTION public.write_dpr_version(UUID, TEXT, JSONB, TEXT, UUID);
+DROP TABLE public.dpr_versions;  -- takes its own constraints/indexes/policies with it
+ALTER TABLE public.dprs DROP CONSTRAINT dprs_id_tenant_id_key;
+ALTER TABLE public.dprs DROP CONSTRAINT dprs_generated_by_user_consistency_check;
+ALTER TABLE public.dprs DROP CONSTRAINT dprs_generated_by_user_tenant_id_fkey;
+ALTER TABLE public.dprs
+  DROP COLUMN generated_by_user,
+  DROP COLUMN generated_by,
+  DROP COLUMN current_version;
+ALTER TABLE public.daily_log_edits DROP COLUMN comment;
+COMMENT ON TABLE public.dprs IS
+  'One row per (project_id, log_date) — the aggregated, Claude-generated Daily '
+  'Progress Report. UPSERT target for regeneration (silent replace, never a '
+  'new version row per bot-flows.md). generation_status and delivery_status '
+  'are ORTHOGONAL lifecycles (one tracks the compute job, one tracks the '
+  'owner-send state) — do not collapse them into one column or couple their '
+  'transitions. See docs/bot-flows.md DPR GENERATION section.';
+  -- NOTE: reverting this comment to 023's ORIGINAL text is itself dishonest
+  -- the moment engineer_id (028) has been live — the "(project_id, log_date)"
+  -- key description was already stale before 029 touched it. A real rollback
+  -- should leave 028's key description intact and revert ONLY 029's silent-
+  -- replace/version-row language, not blindly restore this exact string.
+COMMIT;
+```
+
+**Order matters and is dependency-driven, not arbitrary:** `dpr_versions` must drop before
+`dprs_id_tenant_id_key` (the FK depending on that unique constraint has to be gone first —
+dropping the table takes the FK with it automatically). Everything else has no ordering
+constraint among itself.
+
+**Is any of this irreversible without PITR? Yes — stated plainly, not glossed over.** The
+DDL reversal above is mechanically clean and would run without error at any point. But
+`DROP TABLE public.dpr_versions` and `DROP COLUMN dprs.generated_by/generated_by_user`
+**permanently destroy whatever real version history has accumulated in them by the time
+this runs** — every PM-triggered regeneration, every system regeneration, the entire
+append-only record this migration exists to create. That data has no DOWN-script recovery
+path: once `dpr_versions` is dropped, its rows are gone. **The only recovery for real
+accumulated history is PITR, within whatever window is live at that moment** — the schema
+reversal above is not a substitute for that, it's what you'd run only once satisfied no
+history worth keeping exists, or after already restoring what you need from PITR first.
+
+**Prod PITR — confirmed available, not presumed (F5): `pitr_enabled: true`, restore window
+`2026-08-13 16:31:32 UTC → 2026-08-20 02:06:50 UTC`.** Stated plainly, per direct
+instruction: **this window is SEVEN-DAY ROLLING, not fixed.** The restore point available
+for undoing a prod apply of 029 ages out exactly one week after that apply runs — a
+rollback decision cannot be deferred indefinitely once 029 is live on prod. If real
+`dpr_versions` history needs to survive a rollback, that decision has a real, moving
+deadline from the moment of apply, not an open-ended one.
