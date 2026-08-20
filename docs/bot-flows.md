@@ -325,6 +325,18 @@ A job that fails the claim exits silently. Stale claims (>5 min) reset to retry.
 5. generation_status='idle' on completion.
 
 ### Late data before 9 PM owner send
+**DATED SUPERSESSION (2026-08-15, docs/dpr-delivery-versioning-plan.md #67, review
+round): the "silent replace, never a new version row" design below is being reversed,
+not amended.** The versioning plan proposes a `dpr_versions` history table — every
+regeneration writes a new row, `dprs.current_version` advances, nothing is silently
+overwritten. This is a real design reversal of the decision recorded here and in
+migration 023's own `COMMENT ON TABLE public.dprs` ("UPSERT target for regeneration —
+silent replace, never a new version row per bot-flows.md"), not a clarification of it —
+023's comment quotes THIS section as its authority, so both must be corrected together
+in whichever migration ships the history table, not just one of the two. **Not yet
+shipped** — #67 is plan-only as of this note; the text immediately below still describes
+what is actually live today, and stays accurate until that migration applies.
+
 Regenerate via UPSERT. Silent replace. last_regenerated_at updated.
 No PM notification unless already paused.
 

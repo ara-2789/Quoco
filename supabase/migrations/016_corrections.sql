@@ -29,10 +29,22 @@
 --     the invitations attach-flow, not a schema correction. Deferred to the
 --     invitations work by decision on 2026-07-12. This migration adds only the
 --     zero-row GUARD.
---   * projects.owner_user_id has NO same-tenant enforcement — the plain FK lets
+--   ~~* projects.owner_user_id has NO same-tenant enforcement — the plain FK lets
 --     a project point at an owner row in ANOTHER tenant. Enforcing that is
 --     composite-FK / trigger territory; recorded for the backlog item-9 audit
---     (systemic tenant-scoping pass), not fixed here.
+--     (systemic tenant-scoping pass), not fixed here.~~
+--   DATED CORRECTION (2026-08-20, #67 package-stage review, S3): the gap
+--   above was real when this migration shipped and has been CLOSED since
+--   017_rls_column_bounding.sql:82-91, which DROPs the plain FK this
+--   migration added and re-adds it composite —
+--   FOREIGN KEY (owner_user_id, tenant_id) REFERENCES users(id, tenant_id)
+--   ON DELETE RESTRICT — over the UNIQUE(id, tenant_id) parent index that
+--   same migration also creates. Struck, not deleted, per this project's own
+--   provenance discipline: this comment stood uncorrected for five weeks and
+--   misled an external reviewer into requesting SQL that had already shipped
+--   (docs/reviews/030-owner-email-review-package.md §6 carries the raw
+--   pg_constraint output confirming this live on prod). No backlog item-9
+--   audit action needed for this specific gap — it is not open.
 -- ============================================================================
 
 BEGIN;
