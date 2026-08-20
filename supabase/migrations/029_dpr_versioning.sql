@@ -305,11 +305,20 @@ COMMENT ON TABLE public.dprs IS
 
 COMMIT;
 
--- DRY-RUN VERIFIED (2026-08-20, F1/F3, CLAUDE.md §7's new standing rule):
--- after the F1 statement-order fix, this file ran cleanly, end to end
--- (BEGIN through COMMIT, every statement, no error) against a disposable
--- local Postgres (a minimal scaffold of the tables/functions/roles this
--- file references — not a full 001-028 replay). This is NOT the test-db
--- rehearsal and does not substitute for it; the real rehearsal (Phases 0-6)
--- against test-db is its own, separately-confirmed step, not run again in
--- this same pass.
+-- DRY-RUN VERIFIED, TWICE, UNDER TWO METHODOLOGIES (2026-08-20, F1/F3, then
+-- G1/G2, CLAUDE.md §7's standing rule): after the F1 statement-order fix,
+-- this file ran cleanly, end to end (BEGIN through COMMIT, every statement,
+-- no error), first against a hand-built scaffold on PostgreSQL 16 (retired
+-- as circular by G1 — it could only ever agree with itself), then again
+-- against a REAL structural dump of test-db's actual schema
+-- (`supabase db dump --linked --schema public`, loaded via a local `pg_dump`
+-- since no Docker was available) on PostgreSQL 17 (matching prod/test-db's
+-- own 17.6, confirmed via `SELECT version()` on both — G2). Only the two
+-- named stubs §7 documents (`auth.users`/`auth.uid()`, and the roles the
+-- dump's own GRANT/REVOKE/OWNER TO statements reference) were added by
+-- hand; everything else — including `dprs`, `daily_log_edits`, and every
+-- constraint this file's own `ADD CONSTRAINT`/FK statements depend on — came
+-- from the real database, not from a re-derivation of what this file
+-- expects to find. This is NOT the test-db rehearsal and does not
+-- substitute for it; the real rehearsal (Phases 0-6) against test-db is its
+-- own, separately-confirmed step, not run again in this same pass.

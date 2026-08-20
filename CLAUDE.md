@@ -546,27 +546,79 @@ Tests are required, not optional
   missed (docs/reviews/022-review-package.md).
 
 EVERY NEW MIGRATION GETS A DISPOSABLE DRY-RUN BEFORE IT ENTERS A REVIEW PACKAGE
-(standing rule since 2026-08-20, migration 029's rehearsal round). Origin:
-029, 030, and 031 were written, packaged, and declared review-ready in the
-same session, by the same process, and none of them had ever been executed
-against a real Postgres. 029 turned out to have a real ordering defect (an
-inline FK referencing a parent unique constraint the file didn't create
-until 15 lines later — Postgres 42830) that a careful read — including a
-correct, thorough §0 security/atomicity read that had no reason to catch
-this class of bug — did not surface, and that only running the file against
-Postgres did. The systemic finding was never the ordering bug itself; it was
-that a review package whose SQL has never been past a parser is a proposal,
-not a package. Before any new migration file enters a review package: run it
-against a disposable Postgres — a local `supabase start` stack, or any
-throwaway local instance (a scaffold of just the tables/functions/roles the
-new file references is sufficient; it does not need to be a full replay of
-every prior migration). This is NOT the test-db rehearsal and does not
-substitute for it (§0's own rehearsal rules, and the REHEARSE ON A CLEANED
-EXISTING BRANCH rule above, are unchanged and still required before any real
-apply) — it is a cheaper, earlier gate that catches parse/ordering/executability
+(standing rule since 2026-08-20, migration 029's rehearsal round; AMENDED
+same day, G1, before the rule finished hardening). Origin: 029, 030, and 031
+were written, packaged, and declared review-ready in the same session, by
+the same process, and none of them had ever been executed against a real
+Postgres. 029 turned out to have a real ordering defect (an inline FK
+referencing a parent unique constraint the file didn't create until 15 lines
+later — Postgres 42830) that a careful read — including a correct, thorough
+§0 security/atomicity read that had no reason to catch this class of bug —
+did not surface, and that only running the file against Postgres did. The
+systemic finding was never the ordering bug itself; it was that a review
+package whose SQL has never been past a parser is a proposal, not a package.
+
+THE SCAFFOLD MUST COME FROM THE REAL SCHEMA, NOT BE HAND-BUILT (G1
+correction — the first version of this rule was circular). A scaffold typed
+by hand from "the tables/columns/functions the new file references" can only
+ever agree with the file being tested, since both come from the same
+person's belief about the schema — it catches intra-file ordering defects
+(real value; that is the class that bit 029) but CANNOT catch a migration
+referencing a column, table, constraint, or function that does not actually
+exist, because a hand-built scaffold will simply include whatever the
+migration expects. Build the scaffold from a real structural dump instead:
+
+    supabase db dump --linked --schema public --dry-run -f /tmp/schema.sql
+
+`--dry-run` prints the exact `pg_dump` invocation (env vars, flags, the sed
+pipeline that strips platform-managed noise) without requiring Docker — copy
+that script and run it directly if a local `pg_dump` is available and no
+Docker is (this project's own environment had no Docker when this rule was
+written; a Homebrew Postgres install provided a matching `pg_dump`). Load the
+result into a disposable local Postgres, then run the candidate migration
+against it. Same cost as the hand-built version, no circularity: this
+upgrades the check from "does this file agree with itself" to "does this
+file agree with the database."
+
+NAMED STUBS — what this check still cannot see, stated so a future reader
+knows the limit rather than assuming full coverage. A structure-only dump of
+`public` does not include Supabase-managed internal schemas. Two things must
+be stubbed by hand, every time, and named as stubs, not silently patched in:
+  - `auth` schema — a bare `auth.users(id uuid primary key)` table and an
+    `auth.uid() RETURNS uuid` function returning `NULL`, since RLS policies
+    and `SECURITY DEFINER` functions in `public` reference both.
+  - Roles — `postgres`, `anon`, `authenticated`, `service_role`, and
+    `supabase_auth_admin` must exist in the local cluster before the dump
+    loads (the dump's own `OWNER TO`/`GRANT`/`REVOKE` statements reference
+    them by name).
+Anything genuinely platform-specific beyond these two — a Postgres
+extension the dump doesn't include `CREATE EXTENSION` for (pgvector did
+not appear in the dump and had to be created by hand before loading, once,
+per fresh instance), an `auth.*` function beyond `uid()` a future migration
+calls, a different internal schema a future migration touches — is NOT
+covered by this check and must be added to the stub list explicitly when it
+comes up, not silently assumed away.
+
+POSTGRES VERSION MUST MATCH THE SERVER (G2 — checked, not presumed; the
+local tool was PG16 on first use, while both prod and test-db run PG17.6,
+confirmed live via `SELECT version()` on both — a version this rule now
+pins so the next installer gets it right without re-deriving it). Install
+the same MAJOR version locally (`brew install postgresql@17` on macOS,
+or equivalent) — a mismatch lets the dry-run pass on syntax the real
+server would reject. Re-check `SELECT version()` against prod/test-db
+whenever this rule is next relied on, since a platform upgrade would move
+the target without updating this line.
+
+This is NOT the test-db rehearsal and does not substitute for it (§0's own
+rehearsal rules, and the REHEARSE ON A CLEANED EXISTING BRANCH rule above,
+are unchanged and still required before any real apply) — it is a cheaper,
+earlier gate that catches parse/ordering/executability/missing-object
 defects before the external reviewer's attention is spent on whether SQL
 runs at all, rather than on the design it encodes. Touches no real
-environment; no §0 gate implication of its own.
+environment; no §0 gate implication of its own. A rule that overstates its
+own coverage is worse than no rule — this one covers intra-file ordering
+AND schema-agreement (real dump), but not the two named stub gaps above,
+and that limit is part of the rule, not an implementation detail to forget.
 
 How to verify locally (ask me to run these; show me the command)
 - DB change: run migrations against a Supabase BRANCH first, never prod.
