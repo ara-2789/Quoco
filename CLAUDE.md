@@ -406,7 +406,10 @@ SPINE — build and ship:
 - Morning check-in (6 Q), evening check-in (6 Q)
 - DPR generation (6 sections — see docs/bot-flows.md)
 - PM dashboard: Daily Logs view, DPR Archive
-- Scheduling, cron, jobs queue, RLS, E.164, Sentry, PITR
+- Scheduling, cron, jobs queue, RLS, E.164, Sentry, PITR — **"cron" here
+  presumes an outbound send capability this codebase does not have yet; read
+  the STANDING ARCHITECTURAL FACT under §3's WhatsApp line before sizing this
+  item, not after starting it**
 - Razorpay payment links
 
 FAST-FOLLOW — fully specified, DO NOT build yet:
@@ -435,6 +438,30 @@ their FLOWS and dashboard views are not built in the Spine.
   string is a silent runtime failure. Do not trust a string carried over
   from an earlier session without checking.
 - WhatsApp: Twilio WhatsApp Business API — webhook at /api/whatsapp/webhook
+  STANDING ARCHITECTURAL FACT (2026-08-20, II2, HH1 assessment): NO TWILIO SDK
+  IS IMPORTED ANYWHERE IN THIS CODEBASE — confirmed by grep, zero
+  `require('twilio')`/`from 'twilio'` hits outside comments. Every outbound
+  message this system has ever sent is inline TwiML constructed inside the
+  webhook's own HTTP response (`app/api/whatsapp/webhook/route.ts`'s
+  `twimlMessage`/`twimlEmpty`). **THIS SYSTEM CAN ONLY REPLY. IT CANNOT
+  INITIATE.** No code path anywhere can send a WhatsApp message except as the
+  synchronous response to an inbound one. This changes how two roadmap items
+  must be sized, not just described:
+    * Inbound-as-start-trigger (the shortest path to a real beta, per HH1)
+      works INSIDE this architecture unchanged — a start-trigger reply is
+      still a reply, triggered by an inbound message, answered the same way
+      every other reply already is. No new capability needed.
+    * THE TRIGGER CRON IS NOT "ADD A CRON JOB." A cron can decide WHEN to
+      send something; it cannot MAKE a send happen, because nothing in this
+      codebase can construct an outbound WhatsApp message outside a webhook
+      response. The missing piece is a genuine OUTBOUND SEND CAPABILITY — the
+      #69/031 outbound-send primitive — a Twilio client construction, API
+      credentials wired for real calls, delivery-status handling, the whole
+      surface this codebase has never built. Reading "scheduling, cron, jobs
+      queue" in §2's SPINE list without this fact will mis-size that work by
+      an order of magnitude: the scheduler is the easy 10%; the send
+      primitive underneath it is the other 90%, and does not exist yet in
+      any form.
 - Billing: Razorpay payment links — NOT Stripe (Stripe paused India onboarding)
 - Deployment: Vercel Pro — required for 6 IST cron times + 60s function timeout
 - Email: Resend — DPR delivery to owner

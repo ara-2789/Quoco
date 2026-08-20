@@ -207,3 +207,30 @@ have a **larger surface than J7b described**: J7b evaluated it against `test/hel
 db.ts` alone; this check shows the same fixed-ID pattern recurring independently in most
 of the suite's other integration test files, so a real fix would be a wider migration
 than J7b's write-up implied. **Not implemented here — write-up only, per instruction.**
+
+## K-round-II — second-order finding: the suite carrying the unexplained incident exercises unwired code
+
+`test/session-transition.test.ts` is: (a) the file carrying the fixed-UUID collision risk
+already documented above (`TEST_TENANT_ID`-adjacent fixtures, per K3), and (b) the suite
+whose own "TEST-DB INCIDENT #4"-adjacent history includes an unexplained −732ms timing
+result on this exact file's own row-lock-blocking test (2026-08-20's own PR-merge CI run —
+see the SHA-verified re-run and classification in `029-dpr-versioning-review-package.md`'s
+apply record). **New finding (II1, HH1 assessment, 2026-08-20): the RPCs this file
+exercises — `acquire_and_transition_session`, `drain_next_pending_flow` — have ZERO
+production callers anywhere in this codebase.** Confirmed by grep across `app/`, `lib/`,
+`scripts/`, excluding test files.
+
+**Why this changes the cost/benefit, not just a curiosity:** every prior incident
+attributed partly to this suite (the fixed-UUID collision risk, the unexplained timing
+anomaly) was evaluated as if fixing/isolating it protects a LIVE, production-relevant
+code path. It doesn't, today. The suite is real, well-built, and correctly tests a real
+mechanism (`acquireAndTransition`/`drainNextPendingFlow`) — but that mechanism is
+currently UNWIRED (see `bot-flows.md`'s BOT-21 dated correction, same round). This does
+NOT mean the suite is worthless — the machinery it tests may be exactly what the
+outbound-send primitive needs once a real trigger cron exists (BOT-21's own unwired
+guarantee), so keeping it green is still worth doing — but the URGENCY of chasing this
+specific suite's flakiness, or of prioritizing it in the CI-isolation workstream's own
+scoping, should be weighted against "this protects code nothing calls yet," not treated
+identically to a suite exercising a live production path (like `test/webhook.test.ts` or
+`test/migration-023.test.ts`). Recorded here so the next person scoping CI-isolation work
+doesn't silently assume every suite carries equal production risk.
