@@ -1,27 +1,57 @@
 -- 028_dprs_engineer_id_option_a.sql -- OPTION A (DELETE) -- DECIDED
 --
--- PROCESS GAP, FOUND AND CORRECTED 2026-08-19 (while numbering new migrations
--- for #67/#69's package work) -- STATED PLAINLY, NOT SMOOTHED OVER: this file
--- lived only at docs/reviews/028_dprs_engineer_id_option_a.sql, marked "DRAFT
--- ... NOT applied, NOT committed to supabase/migrations/" -- but the schema
--- change it describes IS live on both prod and test-db today, verified by
--- direct catalog observation (dprs.engineer_id UUID NOT NULL,
--- dprs_engineer_id_tenant_id_fkey composite FK, UNIQUE(project_id,
--- engineer_id, log_date) -- all three confirmed present via pg_constraint /
--- information_schema.columns, byte-for-byte matching this file's own DDL).
--- The file was simply never copied into supabase/migrations/ after applying,
--- and supabase_migrations.schema_migrations' ledger does NOT carry a '028'
--- row either (ledger currently tops out at '022' on test-db -- consistent
--- with this project's own well-documented ledger-lag history, not a new
--- mystery). Copied into place here as a FAITHFUL RECORD of already-true
--- state -- this commit changes no schema, applies nothing, is a pure
--- documentary correction (CLAUDE.md §6: "EVERY numbered file currently
--- present in that directory is LIVE"). THE LEDGER GAP ITSELF IS NOT FIXED
--- BY THIS COMMIT -- a manual `INSERT INTO supabase_migrations.
--- schema_migrations (version, name, statements) VALUES ('028',
--- 'dprs_engineer_id_option_a', ARRAY[]::text[])` is still needed on both
--- databases, and per CLAUDE.md's own standing rule, that is a real database
--- write requiring its own explicit go-ahead, not bundled into this file copy.
+-- PROCESS GAP, FOUND 2026-08-19 (while numbering new migrations for #67/#69's
+-- package work), CORRECTED IN TWO PASSES -- STATED PLAINLY, NOT SMOOTHED
+-- OVER. Pass 1 (2026-08-19): this file lived only at docs/reviews/
+-- 028_dprs_engineer_id_option_a.sql, marked "DRAFT ... NOT applied, NOT
+-- committed to supabase/migrations/" -- but the schema change it describes
+-- IS live on both prod and test-db, verified by direct catalog observation
+-- (dprs.engineer_id UUID NOT NULL, dprs_engineer_id_tenant_id_fkey composite
+-- FK, UNIQUE(project_id, engineer_id, log_date) -- all three confirmed
+-- present via pg_constraint / information_schema.columns, byte-for-byte
+-- matching this file's own DDL). Copied into place as a FAITHFUL RECORD of
+-- already-true state (CLAUDE.md §6: "EVERY numbered file currently present
+-- in that directory is LIVE") -- this changed no schema, applied nothing.
+--
+-- Pass 1's OWN FRAMING WAS WRONG, corrected 2026-08-20 (H1/H2 follow-up):
+-- copying the file INTO the scanned supabase/migrations/ directory while
+-- schema_migrations still lacked a '028' row created a state MORE dangerous
+-- than the one being fixed -- before, the orphaned file sat outside any
+-- tool's scan path and the ledger gap was inert; after, a directory-scanning
+-- apply (`supabase db push` or equivalent) would ATTEMPT TO RE-RUN this
+-- file's ADD COLUMN / SET NOT NULL / constraint creation / DELETE against a
+-- database that already has all of it -- not idempotent, fails at best,
+-- partially executes at worst. Pass 1 also mis-named the fix as "a manual
+-- INSERT INTO schema_migrations" -- WRONG. The sanctioned mechanism is
+-- `supabase migration repair --status applied <version>`, which marks a
+-- version applied WITHOUT executing it -- a standard tool operation this
+-- project has already used (the final step of the 007 prod-apply sequence),
+-- not hand-editing a system table.
+--
+-- THREE-WAY RECONCILIATION (2026-08-20, H2), raw output in the session
+-- record, not restated in full here: PROD's ledger already carries a '028'
+-- row (`dprs_engineer_id`) -- no repair needed there for this version. TEST-
+-- DB's ledger is missing FIVE versions whose schema+files both already
+-- exist: 023, 024, 025, 027, AND 028 -- the same defect this header
+-- originally described as isolated to 028 turned out to be broader on
+-- test-db specifically. `supabase migration repair --status applied` for
+-- 023, 024, 025, 027, 028 is required on test-db before any directory-
+-- scanning apply runs there. NOT RUN YET -- a real database write requiring
+-- its own explicit go-ahead, same as pass 1 correctly deferred, now with
+-- the right command and the right scope.
+--
+-- REPAIR'S OWN TRACK RECORD, CHECKED AGAINST CLAUDE.md RATHER THAN ASSUMED
+-- (2026-08-20): `supabase migration repair --status applied` DID succeed
+-- once, early (CLAUDE.md's own Week-1 note: used to repair 001-005 "before
+-- pushing 006"). It has since been documented as 28P01-blocked on at least
+-- two later attempts (the 025 and 027 apply records, both of which fell
+-- back to a manual ledger INSERT for that reason, not by first choice).
+-- Both facts are real, not in conflict with each other -- something changed
+-- for this command between "before 006" and "before 025." Whether repair
+-- works TODAY is unverified either way and should be confirmed live (a
+-- dry attempt, or checking whatever changed the CLI's connectivity) before
+-- committing to it as the apply-time mechanism over the manual-INSERT
+-- fallback this project has actually used successfully most recently.
 --
 -- ORIGINAL HEADER BELOW, PRESERVED AS WRITTEN (struck framing corrected only
 -- where this note above already supersedes it):
