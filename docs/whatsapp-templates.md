@@ -100,6 +100,26 @@ relationship with — a daily operational process already opted into, not an off
 promotion, or unsolicited re-engagement. Each template's own line below states only what
 departs from this default or is worth flagging.
 
+## Compliance audit (2026-08-21) — Twilio/Meta 6-rule check, fixes applied
+
+Six rules checked against all 18 template bodies (button-component lines excluded — a
+Meta button is a separate component, not body text): (1) no `{{n}}` at the very start or
+end of the body, (2) at least `2x+1` non-variable words for `x` variables, (3) variables
+numbered `1..n` with no gaps, (4) no two variables immediately adjacent, (5) fewer than 10
+emoji, (6) category defensible.
+
+**Result: 12 of 18 failed at least one rule; 6 passed as written (1, 2, 2b, 1v2, 2v2,
+11).** Excluding the two templates already on hold (8, 12 — see the submit/hold list),
+that is **10 of 16 submittable templates needing a copy fix**, all applied below: 3, 4,
+3v2, 4v2, 5, 6, 7, 9, 10, 13 (fixed on the submit list) plus 8 and 12 (fixed too, so both
+are submission-ready the moment their own holds lift). Rule 3 (sequential numbering) and
+rule 5 (emoji) had zero failures across all 18 — not restated per-template below. Full
+per-rule breakdown lives in this session's own audit record; the fixes themselves are
+inline at each template.
+
+**Re-audited after fixes: 18/18 pass all six rules.** Re-run against the corrected bodies
+below, same script, same rules — no template still fails.
+
 ## Sample values (2026-08-21) — concrete, not placeholder
 
 **Meta reviews against samples, not variable descriptions — every template previously
@@ -198,15 +218,27 @@ observed.
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
 **Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
-> {{1}}, you have not sent today's morning check-in for {{2}} yet.
+> Hi {{1}}, you have not sent today's morning check-in for {{2}} yet.
 > Reply to start now.
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** body previously started with
+`{{1}}` directly (rule 1 violation — no variable at the very start of the body). Added
+"Hi" as a real leading word.
+
+*(Prior copy, struck through, not deleted: ~~{{1}}, you have not sent today's morning
+check-in for {{2}} yet. Reply to start now.~~)*
 
 ### 4. `quoco_evening_nudge`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
 **Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
-> {{1}}, you have not sent today's evening check-in for {{2}} yet.
+> Hi {{1}}, you have not sent today's evening check-in for {{2}} yet.
 > Reply to start now.
+
+**AUDIT FIX (2026-08-21):** same rule-1 fix as template 3 (started with `{{1}}`).
+
+*(Prior copy, struck through, not deleted: ~~{{1}}, you have not sent today's evening
+check-in for {{2}} yet. Reply to start now.~~)*
 
 ## Spare variants (II5) — one alternate wording per engineer-facing send template
 
@@ -260,15 +292,26 @@ today's evening check-in for {{2}}. Reply to start.~~)*
 **Audience:** engineer. **Category: Utility** (shadows template 3's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 3.
 **Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
-> {{1}}, today's morning check-in for {{2}} is not done yet.
+> Hi {{1}}, today's morning check-in for {{2}} is not done yet.
 > Reply now to start.
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** body previously started with
+`{{1}}` (rule 1). Added "Hi" as a real leading word.
+
+*(Prior copy, struck through, not deleted: ~~{{1}}, today's morning check-in for {{2}} is
+not done yet. Reply now to start.~~)*
 
 ### 4v2. `quoco_evening_nudge_v2`
 **Audience:** engineer. **Category: Utility** (shadows template 4's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 4.
 **Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
-> {{1}}, today's evening check-in for {{2}} is not done yet.
+> Hi {{1}}, today's evening check-in for {{2}} is not done yet.
 > Reply now to start.
+
+**AUDIT FIX (2026-08-21):** same rule-1 fix as 3v2 (started with `{{1}}`).
+
+*(Prior copy, struck through, not deleted: ~~{{1}}, today's evening check-in for {{2}} is
+not done yet. Reply now to start.~~)*
 
 **Checked against Rule 3.12, same bar as 1–4:** each is two short sentences; no idiom;
 "check-in"/"reply"/"start" reused verbatim from 1–4, not swapped for synonyms, so a swap
@@ -281,17 +324,31 @@ without drifting from this project's own consistent-vocabulary rule.
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` engineer, `{{2}}` project.
 **Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
-> {{1}} has not submitted today's check-in for {{2}}.
+> Reminder: {{1}} has not submitted today's check-in for {{2}}.
 > The window for a nudge has closed. Please follow up directly if needed.
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** body previously started with
+`{{1}}` (rule 1). Prepended "Reminder:".
+
+*(Prior copy, struck through, not deleted: ~~{{1}} has not submitted today's check-in for
+{{2}}. The window for a nudge has closed. Please follow up directly if needed.~~)*
 
 ### 6. `quoco_dpr_ready_pm`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` date. **CTA URL button** (Y5 —
 drop the body-variable link, add a dashboard-link button component).
 **Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "21 Aug 2026".
 
-> Today's Daily Progress Report for {{1}} ({{2}}) is ready to review.
+> Today's Daily Progress Report for {{1}}, project {{2}}, is ready to review.
 > You have until 8:30 PM to make any corrections before it is sent to the owner.
 > [Button: View report]
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** `{{1}} ({{2}})` placed the two
+variables immediately adjacent, separated only by a parenthesis (rule 4). Replaced the
+parenthetical with "project {{2}}," which reads naturally and breaks the adjacency.
+
+*(Prior copy, struck through, not deleted: ~~Today's Daily Progress Report for {{1}}
+({{2}}) is ready to review. You have until 8:30 PM to make any corrections before it is
+sent to the owner.~~)*
 
 **CTA button URL (2026-08-21, item 4) — real, confirmed to exist:** a per-DPR detail
 route now exists — `app/(dashboard)/dprs/[id]/page.tsx`, confirmed live in this repo
@@ -324,7 +381,13 @@ template sent a 3-line summary directly to the owner over WhatsApp; that content
 by email, so this template only confirms the send happened.
 **Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "21 Aug 2026".
 
-> The Daily Progress Report for {{1}} ({{2}}) has been emailed to the owner.
+> The Daily Progress Report for {{1}}, project {{2}}, has been emailed to the owner.
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** same `{{1}} ({{2}})` adjacency
+fix as template 6 (rule 4).
+
+*(Prior copy, struck through, not deleted: ~~The Daily Progress Report for {{1}} ({{2}})
+has been emailed to the owner.~~)*
 
 **Dated supersession, `docs/bot-flows.md`:** see the note added to that file's template
 section — `quoco_dpr_owner` is retired, not deleted from history; the reason is the #67
@@ -345,10 +408,20 @@ land. **Variables:** `{{1}}` name, `{{2}}` company, `{{3}}` project.
 **This is the template carrying the two written commitments (Y4/Y5) — both must be kept by
 the code, not just promised in copy.**
 
-> Hello {{1}}. {{2}} has added you to Quoco for daily check-ins on {{3}}.
+> Hello {{1}}. Your team at {{2}} has added you to Quoco for daily check-ins on {{3}}.
 > Reply YES to start.
 > You can reply in any language — English, Tamil, or a mix.
 > Reply STOP at any time to stop these messages.
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** `{{1}}. {{2}}` placed the two
+variables immediately adjacent, separated only by a period (rule 4). Inserted "Your team
+at" between them — kept `{{2}}` as the company/tenant name it actually is (not
+recast as a person), since the sample value is "Rajamani Constructions Pvt Ltd," not an
+individual's name.
+
+*(Prior copy, struck through, not deleted: ~~Hello {{1}}. {{2}} has added you to Quoco
+for daily check-ins on {{3}}. Reply YES to start. You can reply in any language — English,
+Tamil, or a mix. Reply STOP at any time to stop these messages.~~)*
 
 **Two commitments this template makes, both requiring code, not just copy (Y4/Y5):**
 1. "You can reply in any language" — verified against real parsing behavior, see
@@ -373,8 +446,15 @@ row exists for this project — checked, zero `project_members` rows with `role=
 this name is illustrative, not a verified fixture like the engineer/project/tenant
 names above).
 
-> {{2}}, no check-in data was received for {{1}} today.
+> Note for {{2}}: no check-in data was received for {{1}} today.
 > No report was generated. Please confirm the site status if needed.
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** body previously started with
+`{{2}}` (rule 1 — the start-of-body check applies to any variable, not only `{{1}}`).
+Prepended "Note for" so the body opens with real words.
+
+*(Prior copy, struck through, not deleted: ~~{{2}}, no check-in data was received for
+{{1}} today. No report was generated. Please confirm the site status if needed.~~)*
 
 **8:30 PM checked here too (Y5), same finding as template 6:** this notification fires at
 the same `eveningClose` moment (19:45 / 7:45 PM) per Rule 7.2's "closes AT REPORT TIME" —
@@ -387,8 +467,14 @@ reason as template 6.
 **Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "Suresh Iyer" (illustrative,
 same caveat as template 9).
 
-> {{2}}, today's report for {{1}} is taking longer than usual to generate.
+> Note for {{2}}: today's report for {{1}} is taking longer than usual to generate.
 > We will notify you when it is ready.
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** same rule-1 fix as template 9
+(started with `{{2}}`).
+
+*(Prior copy, struck through, not deleted: ~~{{2}}, today's report for {{1}} is taking
+longer than usual to generate. We will notify you when it is ready.~~)*
 
 ### 11. `quoco_dpr_pause_expired`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` date.
@@ -409,9 +495,22 @@ feature is Fast-Follow and unbuilt):** `{{1}}` = "Speed Mechatronics", `{{2}}` =
 "Vikram Rao", `{{3}}` = "a fall from height near the scaffolding on level 2", `{{4}}` =
 "minor injury, first aid given".
 
-> Safety report for {{1}}: {{2}} reported {{3}}.
-> Injury status: {{4}}.
+> Safety report for site {{1}}: engineer {{2}} reported an incident described as {{3}}.
+> Current injury status is recorded as {{4}}. Please review immediately.
 > [Button: View details]
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** the original body failed three
+ways at once — ended the body on `{{4}}.` (rule 1), carried only 6 non-variable words
+against a 4-variable, 9-word minimum (rule 2), and placed `{{1}}: {{2}}` immediately
+adjacent with only a colon between them (rule 4). Rewritten with "site"/"engineer" before
+each variable, a closing sentence ("Please review immediately.") so the body no longer
+ends on a variable, and enough real words to clear the ratio (19 non-variable words
+against a required minimum of 9). This template is on hold regardless (Fast-Follow,
+unbuilt, no CTA URL — see below) — fixed now so it is submission-ready the moment the
+hold lifts, not reopened as a second pass later.
+
+*(Prior copy, struck through, not deleted: ~~Safety report for {{1}}: {{2}} reported
+{{3}}. Injury status: {{4}}.~~)*
 
 **CTA button URL (2026-08-21, item 4) — NOT KNOWN, cannot be submitted.** Checked
 directly: `find app -iname "*safety*"` returns zero results — no dashboard route exists
@@ -436,7 +535,7 @@ apply, not the Utility rules the other 12 templates follow.
 OTP, since none exists to reuse; Authentication-category samples don't need to
 correspond to a real code, only a realistic format).
 
-> {{1}} is your Quoco login code. This code expires in 10 minutes.
+> Your Quoco login code is {{1}}. This code expires in 10 minutes.
 
 **Category rules checked against this copy:** purely functional wording, no greeting, no
 branding (present); mandatory validity/expiry line (present — "expires in 10 minutes,"
@@ -444,6 +543,20 @@ figure not sourced from a repo constant since none was found for OTP expiry; VER
 actual expiry window before submission, do not assume 10 minutes is correct); bare numeric
 `{{1}}` (present); billed on every send including in-window, unlike the Utility templates'
 free-in-window exception — budget for this differently than templates 1–12.
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** body previously started with
+`{{1}}` (rule 1). Reworded so the code sits mid-sentence instead of leading the body.
+**Caveat, not resolved by this fix:** Meta's Authentication category uses a materially
+different, more constrained template structure in WhatsApp Manager than Utility/Marketing
+— the code is typically delivered inside a largely fixed boilerplate zone with an
+auto-added "Copy code" button and a disclaimer Meta appends itself, not free body text
+subject to the same composition rules this 6-rule audit was built for. Verify this fix is
+even the right unit of change against WhatsApp Manager's actual Authentication template
+editor before submission — it may not accept free-text restructuring the same way, or may
+not need it at all.
+
+*(Prior copy, struck through, not deleted: ~~{{1}} is your Quoco login code. This code
+expires in 10 minutes.~~)*
 
 ---
 

@@ -396,6 +396,31 @@
   caught only by checking against `main` directly — none would have been
   caught by re-reading the claim more carefully, since each read as
   entirely plausible on its own terms. Plausibility is not verification.
+- FOR THIRD-PARTY ACCOUNT STATE, THE PROVIDER CONSOLE IS THE SOURCE OF
+  TRUTH — THE REPO DESCRIBES ONLY WHAT THE APP IS CONFIGURED TO REACH
+  (standing rule since 2026-08-21, same day as the rule above; companion to
+  it, not a restatement). The rule above covers repo/database state; this
+  one covers a different, easily-conflated case — an external provider
+  account (Twilio, Meta, Vercel, Supabase's own dashboard) can hold real,
+  provisioned state that no file or env var in this repo reflects at all,
+  because nothing here was ever asked to reach it. Origin: a same-day
+  Twilio/Meta template-compliance audit concluded "the sandbox is still the
+  only configured sender" from `docs/twilio-sender-swap-runbook.md`'s own
+  "WRITTEN, NOT EXECUTED" status line and the app's env-var wiring — correct
+  about what the APP is wired to reach, wrong about what the ACCOUNT
+  actually holds. The Twilio console showed a registered production WABA
+  sender already live: `+919940875600`, display name "Quoco", status
+  Online, WABA ID present — none of that is derivable from this repo, since
+  no code path here ever queries Twilio's account-level state, only the two
+  env vars the webhook/CTA-display code happens to read (per the runbook's
+  own §1). A repo-only check answers "what is this app wired to talk to,"
+  never "what does the provider account actually contain" — those are
+  different questions and only the provider's own console answers the
+  second one. Consequence for this project specifically: WhatsApp template
+  submission is a WABA-level operation (Twilio Content API / Meta template
+  review), independent of which number the app currently sends live traffic
+  through — so template submission is unblocked by this finding, even
+  though the app-to-sender wiring (the swap runbook) is not.
 
 ---
 

@@ -68,6 +68,30 @@ copy."* Nothing in this pass resolved that question one way or the other; it's o
 submit list because nothing explicitly says "do not submit," not because the question
 was answered.
 
+## No outbound-send code exists — GATE 1 is self-enforcing (2026-08-21)
+
+**Grepped `app/`, `lib/` directly: `TWILIO_ACCOUNT_SID` has zero readers anywhere in this
+repo.** The only two Twilio env vars any code path reads are `TWILIO_AUTH_TOKEN`
+(inbound webhook signature validation, `app/api/whatsapp/webhook/route.ts:122`) and
+`TWILIO_WHATSAPP_NUMBER` (cosmetic CTA display only, `app/(dashboard)/daily-logs/
+page.tsx:69`) — full trace in `docs/twilio-sender-swap-runbook.md` §1. Neither
+constructs or sends an outbound WhatsApp message; this system can only reply inside a
+webhook's own HTTP response (CLAUDE.md §3's STANDING ARCHITECTURAL FACT).
+
+**Consequence for this log: an approved Meta template cannot actually be SENT by
+anything in this codebase today, submission notwithstanding.** No `dpr_generate`
+template-send call, no cron-triggered template initiation, no code path anywhere
+constructs a Twilio outbound API call at all — that capability is the #69/031
+outbound-send primitive, not yet built. This makes `docs/whatsapp-templates.md`'s own
+GATE 1 (no template may be SENT until the flow migration matches submitted copy)
+**currently self-enforcing for every template in this log, not just template 1**: there
+is no send path for ANY of them to reach yet, so nothing here can violate GATE 1 by
+accident before #69/031 ships. Submission (Meta review) is unaffected by this — Meta
+approval is a WABA-account-level operation, independent of whether this app's own code
+can yet call it (see CLAUDE.md §0's provider-console-is-source-of-truth rule, same day).
+Approval now, followed by the outbound-send primitive shipping later, is the intended
+order — not a reason to hold submission back.
+
 ## Spare-activation policy
 
 A `_v2` spare is submitted to Meta **alongside** its primary, not held back until the
@@ -77,6 +101,22 @@ rejected or later disabled. Activating a spare (switching production to send it 
 of the primary) is a code change (the outbound-send call site's template name), tracked
 separately from this log — this file only tracks Meta's own review state per template
 name.
+
+## Production WABA sender — exists in Twilio, not wired to the app (2026-08-21)
+
+**Correction to an earlier same-day reading:** a repo-only check concluded "the sandbox is
+still the only configured sender" — correct about what this app is wired to reach
+(§ above; `TWILIO_WHATSAPP_NUMBER`/`TWILIO_AUTH_TOKEN` are the sandbox's), **wrong about
+what the Twilio account actually holds.** The Twilio console shows a registered production
+WABA sender already provisioned: `+919940875600`, display name "Quoco", status Online, WABA
+ID present. See CLAUDE.md §0's new standing rule (provider console is the source of truth
+for third-party account state) — this correction is its origin case.
+
+**Consequence for this log specifically: template submission is unblocked.** Meta template
+review/approval is a WABA-account-level operation (Twilio Content API), independent of
+which number the app currently sends live traffic through — the sandbox-vs-production
+wiring question (`docs/twilio-sender-swap-runbook.md`, still "WRITTEN, NOT EXECUTED") is a
+separate, later step from submitting these 18 templates for approval now.
 
 ## Answered-on-attempt — resolved by console action, not research
 
