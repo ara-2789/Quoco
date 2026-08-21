@@ -52,8 +52,21 @@ and over-flattening reads as curt, not clear.
 
 ## Spine templates
 
+## Category basis (2026-08-21) — recorded explicitly, was previously only inferable
+
+**Before this pass, only template 13 stated its own category individually** — the other
+16 relied on two blanket statements (the spare-variants section's "(Utility)" for
+1-4/1v2-4v2, and template 13's own aside that "the other 12 templates" follow Utility
+rules). Every template below now carries its own explicit `Category:` line. Default
+reasoning, stated once here rather than repeated 16 times: **Utility** applies to every
+template that is a transactional update tied to an existing account/service the
+recipient (engineer, PM, or owner-notification-to-PM) already has an active
+relationship with — a daily operational process already opted into, not an offer, a
+promotion, or unsolicited re-engagement. Each template's own line below states only what
+departs from this default or is worth flagging.
+
 ### 1. `quoco_morning_checkin`
-**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project.
+**Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
 
 > Good morning {{1}}. This is Quoco for {{2}}.
 > Are you on site today? Reply yes or no.
@@ -74,20 +87,57 @@ check-in.~~ — written fresh against the simple-English rules at the time; supe
 §28(a)'s single-message design.)*
 
 ### 2. `quoco_evening_checkin`
-**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
+**Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
 (≤150 chars).
 
 > Good evening {{1}}. This morning you planned: {{3}}
-> Reply to start today's evening check-in for {{2}}.
+> What *work was completed* today for {{2}}? Add the quantity if you can — e.g. "slab
+> concrete 120 sqm".
+
+**RE-CUT (2026-08-21, §28(h)):** same reasoning as template 1's re-cut — the 18:30 cron
+now sends ONE message carrying evening Q1 directly, no separate handshake. Reuses
+`EVENING_QUESTIONS[1]`'s own vocabulary verbatim ("what *work was completed* today",
+"Add the quantity if you can", the same example) rather than paraphrasing.
+**Only fires when `{{3}}` (a real morning plan) exists.** Per §28(s), the no-morning-plan
+case is a SEPARATE template (drafted, not yet added to this file — pending approval),
+not a fallback string substituted into this one.
+
+*(Prior copy, struck through, not deleted: ~~Good evening {{1}}. This morning you
+planned: {{3}} Reply to start today's evening check-in for {{2}}.~~ — superseded by
+§28(h)'s single-message design.)*
+
+### 2b. `quoco_evening_checkin_no_plan`
+**Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project. **NEW (2026-08-21,
+§28(s)).** No `{{3}}` — this variant exists specifically because there is no morning plan
+to reference.
+
+> Good evening {{1}}. This is Quoco for {{2}}.
+> What *work was completed* today? Add the quantity if you can — e.g. "slab concrete
+> 120 sqm".
+
+**Decided per §28(s):** a Meta template body is fixed at approval and only variable
+values substitute — `bot-flows.md:211`'s "omit the morning-plan echo" has no
+template-side equivalent, and a filler value in `{{3}}` would render as "This morning
+you planned: no morning check-in," which reads as a system message about a person. This
+separate template is the fix: no `{{3}}` slot to fill at all. Fires whenever
+`morning_plan` is null for the day — the pre-existing never-engaged case, and, per
+§28(d), the new attendance="No" case.
+
+**No `_v2` spare, decided.** Lower frequency than template 2 (most days have a plan, so
+a rejection here leaves the majority of evening sends — template 2, with its own
+approved spare — unaffected); real send volume is unknown for a brand-new template. The
+established 1-4 spare policy was scoped to those four specifically, not a general rule;
+not unilaterally extended here. Revisit if/when this template's actual incidence is
+observed.
 
 ### 3. `quoco_morning_nudge`
-**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project.
+**Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
 
 > {{1}}, you have not sent today's morning check-in for {{2}} yet.
 > Reply to start now.
 
 ### 4. `quoco_evening_nudge`
-**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project.
+**Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
 
 > {{1}}, you have not sent today's evening check-in for {{2}} yet.
 > Reply to start now.
@@ -110,7 +160,7 @@ for this pass.
 an approved fallback is on hand if needed later — not to run instead of 1–4 by default.
 
 ### 1v2. `quoco_morning_checkin_v2`
-**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 1.
+**Audience:** engineer. **Category: Utility** (shadows template 1's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 1.
 
 > Good morning {{1}}.
 > Are you on site today for {{2}}? Reply yes or no.
@@ -122,20 +172,27 @@ not restated here to avoid drift between two copies.
 for {{2}}. Reply to start.~~)*
 
 ### 2v2. `quoco_evening_checkin_v2`
-**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
+**Audience:** engineer. **Category: Utility** (shadows template 2's category). **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
 (≤150 chars). **Shadows:** template 2.
 
 > Good evening {{1}}. Your morning plan was: {{3}}
-> Time for today's evening check-in for {{2}}. Reply to start.
+> For {{2}}, what *work was completed* today? Add the quantity if you can — e.g. "slab
+> concrete 120 sqm".
+
+**RE-CUT (2026-08-21, §28(h)):** same reasoning as template 2's own re-cut note above —
+not restated here to avoid drift between two copies.
+
+*(Prior copy, struck through: ~~Good evening {{1}}. Your morning plan was: {{3}} Time for
+today's evening check-in for {{2}}. Reply to start.~~)*
 
 ### 3v2. `quoco_morning_nudge_v2`
-**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 3.
+**Audience:** engineer. **Category: Utility** (shadows template 3's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 3.
 
 > {{1}}, today's morning check-in for {{2}} is not done yet.
 > Reply now to start.
 
 ### 4v2. `quoco_evening_nudge_v2`
-**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 4.
+**Audience:** engineer. **Category: Utility** (shadows template 4's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 4.
 
 > {{1}}, today's evening check-in for {{2}} is not done yet.
 > Reply now to start.
@@ -148,13 +205,13 @@ structure and word order only, which is the minimum change Meta's own guidance a
 without drifting from this project's own consistent-vocabulary rule.
 
 ### 5. `quoco_manager_missed`
-**Audience:** PM. **Variables:** `{{1}}` engineer, `{{2}}` project.
+**Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` engineer, `{{2}}` project.
 
 > {{1}} has not submitted today's check-in for {{2}}.
 > The window for a nudge has closed. Please follow up directly if needed.
 
 ### 6. `quoco_dpr_ready_pm`
-**Audience:** PM. **Variables:** `{{1}}` project, `{{2}}` date. **CTA URL button** (Y5 —
+**Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` date. **CTA URL button** (Y5 —
 drop the body-variable link, add a dashboard-link button component).
 
 > Today's Daily Progress Report for {{1}} ({{2}}) is ready to review.
@@ -172,6 +229,7 @@ minutes — worth checking against whatever was actually submitted before, since
 this costs a full re-approval round if wrong.
 
 ### 7. `quoco_dpr_owner_email_sent`
+**Category: Utility.**
 **Audience:** PM (notification that owner delivery happened — NOT the owner; owner
 delivery is email, per the #67 decision, `docs/dpr-delivery-versioning-plan.md`).
 **Variables:** `{{1}}` project, `{{2}}` date. **Replaces `quoco_dpr_owner`** — the old
@@ -185,7 +243,15 @@ section — `quoco_dpr_owner` is retired, not deleted from history; the reason i
 owner-delivery-by-email decision, not a copy-quality change.
 
 ### 8. `quoco_engineer_optin`
-**Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` company, `{{3}}` project.
+**Audience:** engineer. **Category: Utility, but FLAGGED as a recategorisation risk
+(2026-08-21).** This is an onboarding/welcome message ("has added you to Quoco... Reply
+YES to start") — its own opt-in framing reads similarly to an invitation, which is
+exactly the kind of language Meta's automated review is known to redirect toward
+Marketing even when the underlying relationship (the engineer's account already exists
+before this send) is genuinely transactional. Submit as Utility as drafted, but expect
+this one specifically to be the most likely rejection/recategorisation in the batch —
+not a reason to reword it, just a heads-up on where review friction is most likely to
+land. **Variables:** `{{1}}` name, `{{2}}` company, `{{3}}` project.
 **This is the template carrying the two written commitments (Y4/Y5) — both must be kept by
 the code, not just promised in copy.**
 
@@ -211,7 +277,7 @@ the code, not just promised in copy.**
    existing BOT-27 entry.
 
 ### 9. `quoco_dpr_silent_day`
-**Audience:** PM. **Variables:** `{{1}}` project, `{{2}}` PM name.
+**Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` PM name.
 
 > {{2}}, no check-in data was received for {{1}} today.
 > No report was generated. Please confirm the site status if needed.
@@ -223,13 +289,13 @@ future edit adding a time reference here should use 7:45 PM, not 8:30 PM, for th
 reason as template 6.
 
 ### 10. `quoco_dpr_delayed`
-**Audience:** PM. **Variables:** `{{1}}` project, `{{2}}` PM name.
+**Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` PM name.
 
 > {{2}}, today's report for {{1}} is taking longer than usual to generate.
 > We will notify you when it is ready.
 
 ### 11. `quoco_dpr_pause_expired`
-**Audience:** PM. **Variables:** `{{1}}` project, `{{2}}` date.
+**Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` date.
 
 > Your check-in pause for {{1}} ended on {{2}}.
 > Daily check-ins have resumed.
@@ -239,7 +305,7 @@ reason as template 6.
 ## Fast-Follow template
 
 ### 12. `quoco_safety_alert_pm`
-**Audience:** PM. **Variables:** `{{1}}` project, `{{2}}` engineer, `{{3}}` type/location,
+**Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` engineer, `{{3}}` type/location,
 `{{4}}` injury status. **CTA URL button** (Y5 — drop the body-variable link).
 
 > Safety report for {{1}}: {{2}} reported {{3}}.
