@@ -2,42 +2,37 @@
 
 **Status: v2, replaces the cancelled bilingual (English+Tamil) template plan.**
 
-## HARD GATES (2026-08-21) — read before sending anything, not just before submitting
+## HARD GATES (2026-08-21, GATE 2 corrected same day — see below) — read before
+submitting OR sending anything
 
-**Meta approval is not the gate that matters here. These two conditions block SENDING,
-regardless of submission/approval status.**
+**These two gates are not the same kind of gate. GATE 1 blocks SENDING only; GATE 2
+blocks SUBMISSION itself, before Meta ever sees the template.**
 
-**GATE 1 — no template may be SENT until the flow migration matches the submitted
-copy.** Template 1 (`quoco_morning_checkin`) embeds attendance as Q1 — "Are you on site
-today? Reply yes or no." The BUILT RPC (`apply_morning_flow_turn`, live in migration
-022) has NOT been migrated: its actual step 1 is still the plan question
+**GATE 1 (a SEND gate) — no template may be SENT until the flow migration matches the
+submitted copy.** Template 1 (`quoco_morning_checkin`) embeds attendance as Q1 — "Are
+you on site today? Reply yes or no." The BUILT RPC (`apply_morning_flow_turn`, live in
+migration 022) has NOT been migrated: its actual step 1 is still the plan question
 (`MORNING_QUESTIONS[1]` in `lib/whatsapp/flows/morning.ts`, "What's your *plan of
 action* for today?"). If this template is sent before the flow migration ships, an
 engineer's "yes"/"no" reply would be stored as their `morning_plan` free-text answer —
 wrong data, silently. Cite: `design-decisions-beta-feedback.md` §28(l) (the decided
-flow) against the currently built one. This gate lifts only when the flow migration
-(itself unscoped, tripping CLAUDE.md §0(a) — §28(u)) ships and is verified live, not
-when Meta approves the copy.
+flow) against the currently built one. Submitting for Meta approval is fine — this gate
+lifts only when the flow migration (itself unscoped, tripping CLAUDE.md §0(a) —
+§28(u)) ships and is verified live, not when Meta approves the copy.
 
-**GATE 2 — template 8 (`quoco_engineer_optin`) stays held until `messaging_blocked` is
-actually set `true` somewhere in application code.** The template promises, in writing,
-to an approved Meta artifact: *"Reply STOP at any time to stop these messages."*
-Checked and confirmed (again) this session: `messaging_blocked` is never set `true` by
-any code path in this repo except test fixtures (BOT-27's SET-HALF gap, CLAUDE.md,
-open since 2026-08-10). Sending this template today would make a written promise the
-system cannot currently keep. This gate lifts when the set-half is built and verified,
-not when Meta approves the copy.
+**GATE 2 (a SUBMISSION gate, corrected 2026-08-21 — was drafted as a send-only gate,
+that was wrong) — template 8 (`quoco_engineer_optin`) is NOT SUBMITTED to Meta until
+`messaging_blocked` is set `true` in application code (BOT-27 SET-HALF).**
 
-**Neither gate blocks SUBMISSION to Meta for review** (approval doesn't cause anyone to
-receive a message) — both block the moment either template would actually be SENT to a
-real engineer.
+**Reason:** the template's body promises the engineer they may reply STOP. The send
+path respects `messaging_blocked`, but no application code ever sets it — so a STOP
+reply is currently ignored and the engineer is messaged again at 08:30 the next day.
+Beyond the broken promise, opt-out non-compliance affects the number's quality rating
+under Meta's own rules.
 
-**Flagging a tension with this file's own submit/hold list, not silently resolving it:**
-`docs/reviews/whatsapp-template-submission-status.md`'s pre-existing note on template 8
-literally reads "do not submit/activate" (submission itself, not only sending). GATE 2
-above narrows that to a sending-only gate, per this entry's own framing. Both readings
-are recorded; which one governs template 8's actual submission is a call for Aravind to
-make explicitly, not one this entry makes for him.
+**Why submission and not send:** an approved template sits in the account and any send
+path — cron, onboarding route, a manual test — can reach for it. Leaving it unapproved
+makes the gate self-enforcing rather than dependent on everyone remembering.
 
 ## Design change, stated plainly (Y1/Y2)
 
