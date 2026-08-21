@@ -1585,3 +1585,322 @@ Fast-Follow/Spine sequencing question is downstream of this one.
 this is the design record that says WHEN and WHY it will be, once the cron exists.
 Cross-referenced from `docs/inbound-start-trigger-plan.md`'s own status header and
 CLAUDE.md §3's STANDING ARCHITECTURAL FACT, both updated in the same pass as this entry.
+
+## 28. Seven follow-on decisions to §27 (2026-08-21) — DECIDED, not built
+
+Closes seven open threads from the 2026-08-20/21 session's live-defect investigation
+(tonight's real `daily_logs` row, `303fb071-2afa-4b08-92cf-ab7202730051`). All seven are
+design decisions only — no code, no migration, no branch created by this entry.
+
+### a. Start semantics — resolves the §27-vs-bot-flows.md tension
+
+**DECIDED.** The cron sends exactly ONE message, at 08:30 IST: the invite, and that
+invite already contains the first question (template 1's body, once re-cut — see the
+template section of this session's own record). The session is marked ACTIVE at SEND
+time, `current_step = 1`, by the cron's own call — not by the engineer's reply. The
+engineer's reply is the ANSWER to Q1, not a start signal. §27's own rule holds without
+exception: **the engineer never initiates; the cron always does.** There is no second
+message, and no two-step "invite, then ask" handshake — the tension recorded in §27's own
+addendum (bot-flows.md:50-56 describing "the initiating message" as separate from "the
+state machine after it") is resolved by removing that separation: the initiating message
+*is* the state machine's first question, sent by the cron, not by a reply-triggered RPC
+call.
+
+**Correction to the 7:30-vs-08:30 claim this decision was drafted against, checked
+before writing it in, not assumed:** the two candidate values do not actually conflict on
+the page as claimed. `bot-flows.md:31` — inside the file's own current, authoritative
+`TRIGGER TIMES` box (dated 2026-08-15, MVP SCHEDULE FREEZE) — already reads
+`08:30 — morning trigger (was 7:30 AM)`: 08:30 is already the stated current value, with
+7:30 already marked as the explicitly-superseded prior one. The literal `7:30 AM` bullet
+lives at `bot-flows.md:68`, inside a SEPARATE, older bullet list the document already
+disclaims in its own text (`bot-flows.md:47-49`): *"The bullet list immediately below
+this box is the PRE-2026-08-15 schedule, kept for the record of what it was before the
+freeze, not current... Don't build against it."* There is no live, undisclaimed
+staleness here to strike through — both values are already correctly recorded, one
+current and one explicitly marked historical. No edit made to `bot-flows.md` for this
+sub-item; flagged here instead of performing a redundant or incorrect correction.
+
+### b. Morning Q4 (execution method/sequence) — REMOVED from the flow
+
+**DECIDED.** `morning_execution_plan` stays as a column — **not dropped**, a separate,
+later, independently-gated migration decision, per the scoping already recorded this
+session (the Q4-removal plan: which RPC/migration holds the live write, the in-flight-
+session hazard at deploy time, the three test files needing updates, and 019's two SQL
+sites + `assemble.ts`'s `CORRECTABLE_SCALAR_COLUMNS` needing to move together). That
+scoping is the implementation plan for this decision when it's built; this entry is the
+decision to build it, not the build.
+
+### c. Attendance becomes the new Q1
+
+**DECIDED.** Question order: **Q1 attendance, Q2 plan, Q3 labour, Q4 equipment.** Total
+stays within the six-question ceiling.
+
+**Citation correction, checked before writing it in:** the six-question ceiling is not
+owned by this file's own §6 (§6 here is "Weekly work reviews — capture-gap decisions" —
+real, and it does contain a compulsory-photos decision, see (e) below, but not a
+question-count law). The ceiling is `design-principles.md`'s own Core Thesis corollary
+(`design-principles.md:3`: *"the six-question ceiling is a design law, not a
+preference... Engineer-burden feature requests get rerouted to PM-side or system-side
+capture"*), restated at `design-principles.md:207` as a named anti-pattern
+("Engineer-burden creep past the six-question ceiling"). Four questions (attendance,
+plan, labour, equipment) is within that ceiling regardless of which document owns it;
+correcting the citation, not the conclusion.
+
+### d. Attendance "No" — v1 scope
+
+**DECIDED, narrower than §1's full design.** On "No": write a `daily_logs` row, stamp
+completion, end the flow. **§1's own decision (`design-decisions-beta-feedback.md:12-29`,
+"DECISION: Option A (hierarchy handoff)") is DEFERRED, not built** — offering the same
+questions to the PM's WhatsApp number requires sending a message the PM never asked for
+(no inbound from the PM to reply to), which is exactly the outbound-send primitive
+(#69/031) §27 already names as the head of the build sequence. Recorded explicitly so it
+isn't assumed built: **"No" currently terminates the flow with no hierarchy handoff.**
+
+**OPEN, not decided here:** which column stores the absence reason. `is_holiday`/
+`holiday_reason` exist (schema, confirmed live) but are semantically about site-wide
+holidays, not one engineer's personal absence — using them for this would conflate two
+different facts. No dedicated absence-reason column exists today. Left open, per
+instruction.
+
+### e. Photo attendance — DEFERRED to §6's compulsory-photos work
+
+**DECIDED (deferral, not built).** §5 (`design-decisions-beta-feedback.md:152-159`,
+"GPS / photo attendance — PARKED") already names the reason this can't stand alone:
+*"WhatsApp strips EXIF/GPS from photos sent as images. Native location share + our
+server timestamp is the reliable time+place capture; photos are visual evidence
+only."* §5 itself points at §6's compulsory-photos decision (`design-decisions-beta-
+feedback.md:195-200`, inside §6 "Weekly work reviews — capture-gap decisions") as where
+this merges — confirmed, that decision is real and does live there.
+
+**The trap, named explicitly so a future build doesn't fall into it:** attendance must
+NOT be inferred from photo arrival. A photo is evidence a message was sent with an
+attachment — it is not proof of presence, and treating "photo received" as "present"
+makes "forgot to attach the photo" indistinguishable from "not on site," which is exactly
+backwards from what an attendance feature exists to catch.
+
+### f. Equipment items with no lexicon match — render AS ENTERED
+
+**DECIDED.** An equipment item whose parsed `type` doesn't match a known
+`EQUIPMENT_ALIASES` keyword renders using its RAW entered text, not
+`equipmentLabel(type)`'s humanized fallback. Evidence, verified directly this session,
+not assumed: `type` is display-only downstream — `computeIdleCost`
+(`lib/dpr/idle-cost.ts:15-19`) takes `available_hours`/`actual_hours`/`daily_hire_cost`
+only and never reads `type` at all; nothing in the codebase groups, aggregates, or costs
+by `type` (checked via `grep -rn "GROUP BY"` across the whole repo — the only match is an
+unrelated roster-uniqueness comment). Tonight's own defect (`type: "cement"` rendering as
+"Cement," a fabricated equipment name, when the engineer actually typed "Cement micsur
+1000" meaning a concrete mixer) is exactly the failure this decision closes: raw text is
+always more honest than a confident-looking guess assembled from the first non-numeric
+word in the answer.
+
+### g. Tonight's 19:45 DPR
+
+**DECIDED.** Runs against `daily_logs` row `303fb071-2afa-4b08-92cf-ab7202730051`,
+unmodified, deliberately — real defect evidence, not cleaned up or re-parsed before the
+report generates. Consistent with every instruction this session gave about this row.
+
+**Not built by this entry:** the Q4-removal migration, the attendance Q1 flow change,
+the template re-cut, the equipment raw-text render fix, or the absence-reason column.
+Seven decisions recorded; zero implemented.
+
+### h. (a) extends to the evening trigger (2026-08-21, same-day follow-on)
+
+**DECIDED.** The 18:30 IST evening cron sends exactly ONE message carrying evening Q1
+directly, session marked ACTIVE at send time, `current_step = 1`, by the cron's own
+call. The engineer's reply is the answer to Q1, not a start signal. Identical design to
+(a)'s morning decision, on both triggers — no handshake, no second message, on either
+side. `quoco_evening_checkin`/`quoco_evening_checkin_v2` need the same class of re-cut
+(a) required for the morning templates — drafted, not applied (see the template section
+of this session's own record; `docs/whatsapp-templates.md` not yet edited for this).
+
+### i. BOT-22 `{{3}}` fallback — OPEN, not solved here
+
+Checked, not assumed: no sender code exists anywhere for `quoco_evening_checkin`
+(grepped `app/`, `lib/` — zero hits, confirming the outbound-send primitive genuinely
+doesn't exist yet). `bot-flows.md:211`'s "omit the morning-plan echo (BOT-22)" describes
+the FREE-FORM path only — a hand-assembled message can drop a sentence conditionally; an
+approved Meta template's body structure is fixed, only variable *values* substitute per
+send, so there is no template-side equivalent of "omit." **Nothing in this repo defines
+what literal string fills `{{3}}` when `morning_plan` is null** — genuinely open, not
+answered anywhere. Sharper under (d)'s attendance "No" decision than it was before: a
+terminated flow (attendance = No) is now a SECOND route to a null `morning_plan`,
+alongside the pre-existing "never engaged" case BOT-22 was originally written for.
+
+### j. Process correction (2026-08-21) — the review quote did not match `main`
+
+**Correction, not a rewrite, per this project's own standing discipline.** Template 1's
+body was quoted back in review as ending *"...What work is planned today?"* — a stale
+copy, not what's on `main`. The actual body on `main` at review time was *"Reply to
+start today's morning check-in."* — no embedded question at all. **The decision to
+re-cut template 1/1v2 stands**, but its FIRST stated justification ("the template already
+embeds Q1, just the wrong one") was false. The real justification, recorded correctly in
+(a) above: this is a **behaviour change**, from a two-step handshake (invite, then a
+separate reply-triggered question) to a single message that embeds the question
+directly — not a confirmation or correction of something the template already did.
+
+### k. Two corrections from item (a)/(c), reaffirmed
+
+Both corrections this entry already made — the 7:30-vs-08:30 claim (`bot-flows.md`
+already marks 7:30 superseded at line 31; no live staleness existed to strike through)
+and the six-question-ceiling citation (`design-principles.md`'s own Core Thesis
+corollary, not this file's §6) — are confirmed correct and stand as originally written
+in (a) and (c) above. No further edit needed to either.
+
+### l. FLOW REDESIGN — both flows, superseding the question sets in `bot-flows.md`
+
+**DECIDED.**
+
+**MORNING (08:30 trigger, 4 questions):**
+- Q1 Attendance — "Are you on site today? Reply yes or no." Carried in template 1.
+  "No" writes the row, stamps completion, ends the flow.
+- Q2 Action plan — free text, captured verbatim, NO quantities → `morning_plan`.
+- Q3 Workers by trade → `morning_manpower`.
+- Q4 Equipment — name + hire rate, or "no" → `morning_equipment`.
+
+**EVENING (18:30 trigger, 5 questions, FIRES REGARDLESS OF ATTENDANCE):**
+- Q1 Work completed + quantity → `evening_output`, `evening_output_quantities`. Carried
+  in template 2.
+- Q2 Workers by trade → `evening_manpower`.
+- Q3 Idle hours by trade → `evening_idle_hours` (new column).
+- Q4 Equipment run hours — auto-skips when morning equipment is empty (existing BOT-22
+  behaviour, unchanged).
+- Q5 "Anything that slowed the execution today?" — UNCONDITIONAL, no longer gated on a
+  plan-met "no".
+
+### m. NO PLAN-VS-ACTUAL REPORTING
+
+**DECIDED.** Morning captures qualitative intent; evening captures quantitative result.
+The two are never compared, because morning Q2 has no quantity to compare against.
+
+- Evening "did you meet today's plan?" **DELETED.** It read `classifyYesNo` on the
+  engineer's own reply and compared it to nothing.
+- Old evening Q3 (miss reason) reframed as unconditional hindrance capture and moved
+  last. Rationale: "reason for less work" implies a baseline the system no longer
+  computes.
+- The DPR's headline value metric becomes **EFFICIENCY** (output ÷ (trade count ×
+  standard)), not plan attainment. Naming distinction, stated explicitly because it was
+  conflated during this discussion: **EFFICIENCY = output ÷ (headcount × standard)**;
+  **UTILISATION = hours run ÷ hours available** (equipment). Different metrics,
+  different denominators. (Matches §6's own existing framing —
+  `design-decisions-beta-feedback.md:170`: "Efficiency % = actual output ÷ (headcount ×
+  standard)" — this decision doesn't invent the metric, it promotes it to headline.)
+
+### n. §9 REVERSAL — evening manpower moves from aggregate-only to BY TRADE
+
+**DECIDED, recorded as a reversal with reason, not a new decision.** §9
+(`design-decisions-beta-feedback.md:339-380`, "Evening flow Q4 — v1 scope,
+2026-07-28") deferred trade-level attribution deliberately, for three reasons verified
+against the code at the time and re-verified now, independently, against the live
+lexicon — all three numbers hold: **7 canonical trades, 26 aliases, 21 of them Civil
+(mason 6, helper 8, carpenter 4, bar_bender 3); electrician has 2, plumber 1, neither
+with Tamil** (`lib/whatsapp/flows/parsers/lexicon.ts:12-44`, counted directly from the
+live `TRADE_ALIASES` map, not assumed from §9's own prior count).
+
+**Reversed today because the `productivity_standards` denominator (e.g. 1 mason × 8 hrs
+→ X sqm) requires a by-trade actual count** — the efficiency metric in (m) cannot exist
+without it, so the risk §9 correctly named in 2026-07-28 is now accepted deliberately
+rather than avoided. Idle capture moves from an aggregate headcount to **IDLE HOURS BY
+TRADE**, which makes productive hours computable per trade: `(count × 8) − idle_hours`.
+
+### o. COLUMN RENAMES — remove the planned/actual assumption from the schema
+
+**DECIDED.**
+- `morning_manpower_planned` → `morning_manpower`
+- (new) `evening_manpower`, `evening_idle_hours`
+
+The JSONB keys carry the same assumption and must migrate too: `planned_count` →
+`count`, `planned_total` → `total` (confirmed these are the real live key names — read
+directly off tonight's own `daily_logs` row, `morning_manpower_planned:
+{"planned_total":22,"by_trade":[{"trade":"mason","planned_count":12},...]}`). This is a
+data migration over existing rows, not an `ALTER TABLE` alone.
+
+**Sync hazard, corrected before recording, not transcribed as given:** the drafted claim
+was that `morning_manpower_planned` sits in the same three-way sync system as
+`morning_execution_plan` — **checked directly, this is not accurate.** Grepped
+`supabase/migrations/019_daily_log_corrections.sql` for `morning_manpower_planned`:
+**zero hits.** It is not in 019's CHECK constraint, not in its CASE mapping, and not in
+`assemble.ts`'s `CORRECTABLE_SCALAR_COLUMNS` (also zero hits there) — all three are
+scoped to SCALAR columns; `morning_manpower_planned` is JSONB, and 019's own
+correctable-columns work deliberately excluded JSONB columns from day one (a
+pre-existing, separately-tracked gap, not something this rename interacts with).
+
+**The real sync surface, checked directly:** the RPC write site
+(`supabase/migrations/022_evening_flow_apply_turn.sql:259,263`), `types/database.ts`
+(`:364,395,426`), and four test files (`test/migration-019.test.ts`,
+`test/morning-flow.test.ts`, `test/unit/morning-dispatch.test.ts`,
+`test/helpers/db.ts`) — a real, smaller hazard than `morning_execution_plan`'s (no 019
+CHECK/CASE involvement), not the identical one.
+
+### p. COLUMNS THAT BECOME UNREAD
+
+**DECIDED — do NOT drop in the same migration as the flow change; collected data must
+not be silently lost.** `morning_execution_plan`, `evening_schedule_met`,
+`evening_schedule_miss_reason`, `evening_workers_on_site`, `evening_productive_manpower`.
+
+`evening_schedule_miss_reason` specifically: if hindrance capture reuses it, the name
+will mislead — rename or annotate deliberately, not left implicit.
+
+**ADDENDUM (2026-08-21, same day, gap found while striking `bot-flows.md`'s superseded
+question lists): add `morning_dependencies` and `morning_hindrances` to this list.**
+Both were spec'd as morning Q5/Q6 (`bot-flows.md`'s now-struck-through question list),
+never built (CLAUDE.md's own testing-debt/build-status record confirms Q5/Q6 shipped no
+further than schema + spec), and are not part of §28(l)'s redesigned 4-question flow —
+the same "becomes unread, do not drop" reasoning applies to both.
+
+**OPEN, NOT DECIDED:** whether dependency capture — "what do you need from others
+tomorrow, and who is responsible" — is being formally dropped or only deferred. §28(l)'s
+redesign omitted it without an explicit decision either way; this addendum names the gap,
+it does not close it.
+
+### q. NMR — decided as a TRADE, not a separate axis
+
+**DECIDED, simplification chosen deliberately over more accurate alternatives** (NMR as
+an attribute of each trade line, or as its own bucket excluded from trade counts).
+**Known cost, recorded not hidden:** NMR is properly an ENGAGEMENT category (casual
+daily-wage muster labour), not a trade — an NMR mason and an NMR helper are
+indistinguishable in the data under this simplification. Accepted for simplicity.
+
+**Follow-on, NOT decided:** NMR needs aliases in the trade lexicon including Tamil
+vernacular, and a `productivity_standards` decision — if NMR is largely unskilled
+support, the honest treatment is exclusion from the efficiency denominator rather than
+an invented standard.
+
+### r. VOCABULARY — now load-bearing and blocking
+
+**DECIDED (status, not a new design).** Morning Q3, evening Q2, and evening Q3 all join
+on trade name, as does `productivity_standards`. Current lexicon (verified live, (n)
+above): 7 canonical trades, 26 aliases, 21 Civil; electrician 2, plumber 1, neither
+Tamil; multi-word trades ("pipe fitter", "cable jointer") can never match because
+matching is single-token positional (`canonicalTrade(tokens[i+1])`, per §9's own already-
+verified finding). §6's fixed-list requirement (buttons/numbered options, not free text)
+is now a PREREQUISITE for the efficiency metric, not a Pass-2 nicety.
+
+### s. EVENING TEMPLATE `{{3}}` — DECIDED
+
+Submit a **SEPARATE no-morning-plan variant** of template 2 rather than passing a filler
+string. Reason: a Meta template body is fixed at approval and only variable values
+substitute, so `bot-flows.md:211`'s "omit the morning-plan echo" has no template-side
+equivalent (§28(i) above); and a filler renders as "This morning you planned: no morning
+check-in", which reads as a system message about a person, not about their day. Both
+variants approve in the same batch, on the same clock.
+
+Records that under (l), attendance="No" is now a **second route** to a null
+`morning_plan`, alongside the pre-existing never-engaged case §28(i) already named.
+
+### t. OPEN, NOT DECIDED — attendance "No" is currently irreversible
+
+Stamps completion and ends the morning flow, so an engineer who answers no at 08:30 and
+reaches site at 11:00 has no route back to Q2-Q4 despite the 15:00 cutoff. Evening then
+asks what was completed with no plan captured. **This is the restart-semantics question
+arriving through a side door** — belongs with the outbound send primitive (#69/031),
+not here. Recorded against §28(d), whose "No terminates the flow" was decided on the
+assumption that no work follows — an assumption since contradicted by the half-day and
+late-arrival cases.
+
+### u. NOT BUILT BY THIS ENTRY
+
+Every item above (l)-(t) is a decision. Zero implementation. **The flow migration is
+UNSCOPED** — §28(b)'s earlier Q4-removal scope no longer covers this, because
+attendance-as-Q1 renumbers every step and the reask keys (`q2_reask`, `q3_reask`) are
+keyed by step number. Re-scope before building. **Trips CLAUDE.md §0(a) — external
+review gate required** (creates/modifies a live function's logic).
