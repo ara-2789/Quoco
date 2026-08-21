@@ -56,11 +56,22 @@ and over-flattening reads as curt, not clear.
 **Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project.
 
 > Good morning {{1}}. This is Quoco for {{2}}.
-> Reply to start today's morning check-in.
+> Are you on site today? Reply yes or no.
 
-*(Was: no confirmed prior copy in this repo — bot-flows.md documents variables only.
-Written fresh against the simple-English rules; verify against whatever Meta submission
-draft exists before resubmitting.)*
+**RE-CUT (2026-08-21, §28(a)/(j)):** was a bare "reply to start" invite with no embedded
+question. Per §28(a) (`design-decisions-beta-feedback.md`), the cron now sends ONE
+message that already carries Q1 directly — no separate handshake. Q1 is attendance
+(§28(c)), not the old plan question. §28(j) records this precisely as a BEHAVIOUR
+CHANGE, not a confirmation of prior copy — an earlier review round quoted this
+template's body as ending "...What work is planned today?", which was never actually on
+`main`; corrected in place, not silently. "Reply yes or no" reuses the exact register
+`EVENING_QUESTIONS[2]` already uses ("Reply *yes* or *no*") — consistent vocabulary
+across the flow, not a new phrasing.
+
+*(Prior copy, struck through per this project's own correction discipline, not deleted:
+~~Good morning {{1}}. This is Quoco for {{2}}. Reply to start today's morning
+check-in.~~ — written fresh against the simple-English rules at the time; superseded by
+§28(a)'s single-message design.)*
 
 ### 2. `quoco_evening_checkin`
 **Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
@@ -102,7 +113,13 @@ an approved fallback is on hand if needed later — not to run instead of 1–4 
 **Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 1.
 
 > Good morning {{1}}.
-> Time for today's morning check-in for {{2}}. Reply to start.
+> Are you on site today for {{2}}? Reply yes or no.
+
+**RE-CUT (2026-08-21, §28(a)):** same reasoning as template 1's own re-cut note above —
+not restated here to avoid drift between two copies.
+
+*(Prior copy, struck through: ~~Good morning {{1}}. Time for today's morning check-in
+for {{2}}. Reply to start.~~)*
 
 ### 2v2. `quoco_evening_checkin_v2`
 **Audience:** engineer. **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
