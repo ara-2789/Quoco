@@ -21,6 +21,7 @@ happens, not re-derived from the copy deck's own edit history.
 | 1v2 | `quoco_morning_checkin_v2` | Utility | spare (II5) | — | not submitted | Shadows #1. Hold in reserve; see "Spare-activation policy" below. |
 | 2 | `quoco_evening_checkin` | Utility | primary | — | not submitted | |
 | 2v2 | `quoco_evening_checkin_v2` | Utility | spare (II5) | — | not submitted | Shadows #2. |
+| 2b | `quoco_evening_checkin_no_plan` | Utility | primary (NEW, 2026-08-21, §28(s)) | — | not submitted | No `{{3}}` — the no-morning-plan case. No `_v2` spare, decided (lower frequency, real volume unknown). |
 | 3 | `quoco_morning_nudge` | Utility | primary | — | not submitted | |
 | 3v2 | `quoco_morning_nudge_v2` | Utility | spare (II5) | — | not submitted | Shadows #3. |
 | 4 | `quoco_evening_nudge` | Utility | primary | — | not submitted | |
@@ -34,6 +35,33 @@ happens, not re-derived from the copy deck's own edit history.
 | 11 | `quoco_dpr_pause_expired` | Utility | primary | — | not submitted | |
 | 12 | `quoco_safety_alert_pm` | Utility | primary | — | not submitted | Fast-Follow — do not submit ahead of the Fast-Follow build; submitting a template for a flow that doesn't exist yet risks an unused-template quality-signal issue with Meta. |
 | 13 | `quoco_login_otp` | Authentication | primary | — | not submitted | Different review track from Utility (Authentication category). VERIFY the 10-minute expiry figure against the real OTP config before submitting — copy deck flags this as unsourced from a repo constant. |
+
+## Submit / hold list (2026-08-21) — corrects an assumed count, not just states one
+
+**Checked against this log's own existing Notes column before answering — the expected
+"16 submit, template 12 holds" does not hold as stated.** Two templates are already
+recorded as holds, not one: this log's own row 8 already reads *"do not submit/activate
+live sending on this template until that gap closes"* (the BOT-27 set-half gap) — a
+genuine pre-existing hold, not new. **16 is still the right submit COUNT, but only
+because the batch itself grew by one (the new 2b template) in the same pass this
+question was asked — 18 total, 2 hold, 16 submit — not 17 total with only 1 hold.**
+
+**HOLD (2):**
+- **8 `quoco_engineer_optin`** — pre-launch blocker, already recorded above: the
+  template's own written "Reply STOP" promise is false in production today
+  (`messaging_blocked` is never set `true` by any code path except test fixtures).
+- **12 `quoco_safety_alert_pm`** — Fast-Follow, unbuilt; additionally, its CTA button
+  has no URL to give Meta at all (checked directly this pass — no dashboard route
+  exists for a safety-report detail view).
+
+**SUBMIT (16):** 1, 1v2, 2, 2b, 2v2, 3, 3v2, 4, 4v2, 5, 6, 7, 9, 10, 11, 13.
+
+**Not a hold, but worth carrying into the submission decision — row 7's own existing
+open question:** *"Confirm this template is still needed at all before submitting;
+if the owner-delivery channel is fully email, this WhatsApp template may be dead
+copy."* Nothing in this pass resolved that question one way or the other; it's on the
+submit list because nothing explicitly says "do not submit," not because the question
+was answered.
 
 ## Spare-activation policy
 

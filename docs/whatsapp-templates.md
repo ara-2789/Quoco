@@ -35,8 +35,11 @@ concluding it therefore didn't exist was the overreach — the honest report for
 not-found reference is "not found in repo, may be project-side," not "does not exist."
 Recorded here as the standing lesson, not just fixed in place: this repo holds code and
 `bot-flows.md`; design decisions and session records live in the claude.ai project. Full
-copy for template 13 is below; the count is 13 throughout this file and `bot-flows.md`
-from here on.
+copy for template 13 is below; the count was 13 as of this correction.
+
+**Superseded (2026-08-21): the count is now 14 (see the Total section at the bottom of
+this file) — `quoco_evening_checkin_no_plan` (2b) added per §28(s).** Not rewriting the
+"13" above; the count-history is the point of this section, and it keeps moving.
 
 ## Simple-English rules applied throughout (Y3)
 
@@ -44,9 +47,9 @@ Per `docs/design-principles.md` Rule 3.11 (revised this pass) and the new Rule 3
 sentences, one idea each; the question goes last; the same word for the same thing every
 time; no idioms or phrasal verbs where a plain verb exists; concrete over abstract; numbers
 as digits; cut politeness scaffolding that carries no meaning. **Register is tiered by
-audience** — engineer-facing templates (1–4, 8) take the strictest simplification; PM/owner
-templates (5, 6, 9, 10, 11, 12) carry more structure, since a PM/owner reads more fluently
-and over-flattening reads as curt, not clear.
+audience** — engineer-facing templates (1–4, 8, and 2b added 2026-08-21) take the
+strictest simplification; PM/owner templates (5, 6, 9, 10, 11, 12) carry more structure,
+since a PM/owner reads more fluently and over-flattening reads as curt, not clear.
 
 ---
 
@@ -65,8 +68,30 @@ relationship with — a daily operational process already opted into, not an off
 promotion, or unsolicited re-engagement. Each template's own line below states only what
 departs from this default or is worth flagging.
 
+## Sample values (2026-08-21) — concrete, not placeholder
+
+**Meta reviews against samples, not variable descriptions — every template previously
+gave only an abstract label ("name", "project") with no concrete example.** Every
+template below now carries a `Sample values:` line. Reused directly from this session's
+own real, live-verified fixtures rather than invented, where they fit:
+- Engineer name → **Vikram Rao** (`users.full_name`, id `3534756b-2a32-4b91-954b-
+  0bab15c2dba1` — read directly off prod this session).
+- Project → **Speed Mechatronics** (`projects.name`, id `acef67fe-e775-439d-82b8-
+  5b8526868d6d`).
+- Tenant/company (template 8's `{{2}}`) → **Rajamani Constructions Pvt Ltd**
+  (`tenants.name`, id `adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0`).
+- DPR id (template 6's button URL) → **3f3c3aff-0519-4a71-88cb-4e53f4f0934a**, a real
+  row (`log_date` 2026-08-20, same project) — read directly off prod, not invented.
+- PM name — **no real PM row exists for this project** (checked: zero `project_members`
+  rows with `role='pm'` for Speed Mechatronics). Using an illustrative name, **Suresh
+  Iyer**, clearly labelled as invented, not a verified fixture like the others above.
+- Safety-report specifics (template 12) — no real `safety_incidents` data exists (the
+  feature is Fast-Follow, unbuilt). Illustrative only; this template is held regardless
+  (see the submit/hold list below).
+
 ### 1. `quoco_morning_checkin`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
+**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
 > Good morning {{1}}. This is Quoco for {{2}}.
 > Are you on site today? Reply yes or no.
@@ -89,6 +114,12 @@ check-in.~~ — written fresh against the simple-English rules at the time; supe
 ### 2. `quoco_evening_checkin`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
 (≤150 chars).
+**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics", `{{3}}` =
+"Continue RCC column casting for grid lines C1 to C6 on the third floor, complete
+shuttering for beam B12, coordinate with the ready-mix supplier for t" (the real
+morning plan runs 246 characters; this is the actual 150-character truncation of it —
+shown truncated deliberately, mid-word, so the sample demonstrates the real behaviour
+rather than a short string that never exercises the limit).
 
 > Good evening {{1}}. This morning you planned: {{3}}
 > What *work was completed* today for {{2}}? Add the quantity if you can — e.g. "slab
@@ -107,7 +138,8 @@ planned: {{3}} Reply to start today's evening check-in for {{2}}.~~ — supersed
 §28(h)'s single-message design.)*
 
 ### 2b. `quoco_evening_checkin_no_plan`
-**Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project. **NEW (2026-08-21,
+**Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
+**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics". **NEW (2026-08-21,
 §28(s)).** No `{{3}}` — this variant exists specifically because there is no morning plan
 to reference.
 
@@ -132,12 +164,14 @@ observed.
 
 ### 3. `quoco_morning_nudge`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
+**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
 > {{1}}, you have not sent today's morning check-in for {{2}} yet.
 > Reply to start now.
 
 ### 4. `quoco_evening_nudge`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
+**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
 > {{1}}, you have not sent today's evening check-in for {{2}} yet.
 > Reply to start now.
@@ -161,6 +195,7 @@ an approved fallback is on hand if needed later — not to run instead of 1–4 
 
 ### 1v2. `quoco_morning_checkin_v2`
 **Audience:** engineer. **Category: Utility** (shadows template 1's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 1.
+**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
 > Good morning {{1}}.
 > Are you on site today for {{2}}? Reply yes or no.
@@ -174,6 +209,10 @@ for {{2}}. Reply to start.~~)*
 ### 2v2. `quoco_evening_checkin_v2`
 **Audience:** engineer. **Category: Utility** (shadows template 2's category). **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
 (≤150 chars). **Shadows:** template 2.
+**Sample values:** same as template 2 — `{{1}}` = "Vikram Rao", `{{2}}` = "Speed
+Mechatronics", `{{3}}` = "Continue RCC column casting for grid lines C1 to C6 on the
+third floor, complete shuttering for beam B12, coordinate with the ready-mix supplier
+for t" (the same real 150-char truncation).
 
 > Good evening {{1}}. Your morning plan was: {{3}}
 > For {{2}}, what *work was completed* today? Add the quantity if you can — e.g. "slab
@@ -187,12 +226,14 @@ today's evening check-in for {{2}}. Reply to start.~~)*
 
 ### 3v2. `quoco_morning_nudge_v2`
 **Audience:** engineer. **Category: Utility** (shadows template 3's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 3.
+**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
 > {{1}}, today's morning check-in for {{2}} is not done yet.
 > Reply now to start.
 
 ### 4v2. `quoco_evening_nudge_v2`
 **Audience:** engineer. **Category: Utility** (shadows template 4's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 4.
+**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
 > {{1}}, today's evening check-in for {{2}} is not done yet.
 > Reply now to start.
@@ -206,6 +247,7 @@ without drifting from this project's own consistent-vocabulary rule.
 
 ### 5. `quoco_manager_missed`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` engineer, `{{2}}` project.
+**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
 
 > {{1}} has not submitted today's check-in for {{2}}.
 > The window for a nudge has closed. Please follow up directly if needed.
@@ -213,10 +255,23 @@ without drifting from this project's own consistent-vocabulary rule.
 ### 6. `quoco_dpr_ready_pm`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` date. **CTA URL button** (Y5 —
 drop the body-variable link, add a dashboard-link button component).
+**Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "21 Aug 2026".
 
 > Today's Daily Progress Report for {{1}} ({{2}}) is ready to review.
 > You have until 8:30 PM to make any corrections before it is sent to the owner.
 > [Button: View report]
+
+**CTA button URL (2026-08-21, item 4) — real, confirmed to exist:** a per-DPR detail
+route now exists — `app/(dashboard)/dprs/[id]/page.tsx`, confirmed live in this repo
+(this contradicts an earlier entry elsewhere in this project's history claiming the DPR
+archive was list-only; checked fresh against the current codebase, not assumed from that
+older note). Button URL: **`https://app.quoco.co.in/dprs/{{1}}`** (dynamic suffix, the
+button's own variable numbering, independent of the body's `{{1}}`/`{{2}}`). **Sample
+value for the button's `{{1}}`: `3f3c3aff-0519-4a71-88cb-4e53f4f0934a`** — a real `dprs`
+row (`log_date` 2026-08-20, same project), read directly off prod, not invented. Note:
+this route requires the viewing PM to be logged in (standard dashboard auth, same as
+every other route under `app/(dashboard)/`) — not separately re-verified here beyond
+confirming the route itself exists and is real code, not a stub.
 
 **8:30 PM verified against `CHECKIN_CHECKPOINTS` (Y5), not assumed:** `eveningClose` —
 the moment the DPR is generated and the PM is notified, matching THIS template's own send
@@ -235,6 +290,7 @@ delivery is email, per the #67 decision, `docs/dpr-delivery-versioning-plan.md`)
 **Variables:** `{{1}}` project, `{{2}}` date. **Replaces `quoco_dpr_owner`** — the old
 template sent a 3-line summary directly to the owner over WhatsApp; that content now goes
 by email, so this template only confirms the send happened.
+**Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "21 Aug 2026".
 
 > The Daily Progress Report for {{1}} ({{2}}) has been emailed to the owner.
 
@@ -252,6 +308,8 @@ before this send) is genuinely transactional. Submit as Utility as drafted, but 
 this one specifically to be the most likely rejection/recategorisation in the batch —
 not a reason to reword it, just a heads-up on where review friction is most likely to
 land. **Variables:** `{{1}}` name, `{{2}}` company, `{{3}}` project.
+**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Rajamani Constructions Pvt Ltd"
+(the real tenant name, `tenants.name`), `{{3}}` = "Speed Mechatronics".
 **This is the template carrying the two written commitments (Y4/Y5) — both must be kept by
 the code, not just promised in copy.**
 
@@ -278,6 +336,10 @@ the code, not just promised in copy.**
 
 ### 9. `quoco_dpr_silent_day`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` PM name.
+**Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "Suresh Iyer" (no real PM
+row exists for this project — checked, zero `project_members` rows with `role='pm'` —
+this name is illustrative, not a verified fixture like the engineer/project/tenant
+names above).
 
 > {{2}}, no check-in data was received for {{1}} today.
 > No report was generated. Please confirm the site status if needed.
@@ -290,12 +352,15 @@ reason as template 6.
 
 ### 10. `quoco_dpr_delayed`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` PM name.
+**Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "Suresh Iyer" (illustrative,
+same caveat as template 9).
 
 > {{2}}, today's report for {{1}} is taking longer than usual to generate.
 > We will notify you when it is ready.
 
 ### 11. `quoco_dpr_pause_expired`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` date.
+**Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "21 Aug 2026".
 
 > Your check-in pause for {{1}} ended on {{2}}.
 > Daily check-ins have resumed.
@@ -307,10 +372,22 @@ reason as template 6.
 ### 12. `quoco_safety_alert_pm`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` engineer, `{{3}}` type/location,
 `{{4}}` injury status. **CTA URL button** (Y5 — drop the body-variable link).
+**Sample values (illustrative only — no real `safety_incidents` data exists, the
+feature is Fast-Follow and unbuilt):** `{{1}}` = "Speed Mechatronics", `{{2}}` =
+"Vikram Rao", `{{3}}` = "a fall from height near the scaffolding on level 2", `{{4}}` =
+"minor injury, first aid given".
 
 > Safety report for {{1}}: {{2}} reported {{3}}.
 > Injury status: {{4}}.
 > [Button: View details]
+
+**CTA button URL (2026-08-21, item 4) — NOT KNOWN, cannot be submitted.** Checked
+directly: `find app -iname "*safety*"` returns zero results — no dashboard route exists
+for a safety-report detail view at all (matches this template's own Fast-Follow status;
+`DASH-06` safety log is unbuilt per CLAUDE.md §2). There is no URL to record, real or
+placeholder. **This template holds regardless of the button question** — see the
+submit/hold list below — but naming the button gap explicitly rather than leaving it
+implied by the Fast-Follow label alone.
 
 ---
 
@@ -322,7 +399,10 @@ project — not fully visible to this repo; PM/admin web login is the known cand
 engineer/owner have no web login at all per CLAUDE.md §5). **Variables:** `{{1}}` numeric
 code, bare — no surrounding words, no baked-in formatting, so WhatsApp's tap-to-copy works.
 **AUTHENTICATION category** (Meta's own template class, not Utility) — different rules
-apply, not the Utility rules the other 12 templates follow:
+apply, not the Utility rules the other 12 templates follow.
+**Sample value:** `{{1}}` = "482913" (a plausible 6-digit code — not a real generated
+OTP, since none exists to reuse; Authentication-category samples don't need to
+correspond to a real code, only a realistic format).
 
 > {{1}} is your Quoco login code. This code expires in 10 minutes.
 
@@ -335,7 +415,12 @@ free-in-window exception — budget for this differently than templates 1–12.
 
 ---
 
-## Total: 13 templates (11 Spine + 1 Fast-Follow + 1 Authentication) + 4 spare variants (II5)
+## Total (2026-08-21): 14 templates (12 Spine + 1 Fast-Follow + 1 Authentication) + 4 spare variants = 18
+
+**Changed from the 13+4=17 recorded earlier — the new `quoco_evening_checkin_no_plan`
+(2b, §28(s)) adds one Spine template with no spare.** Of these 18: 2 hold (8, 12 — see
+`docs/reviews/whatsapp-template-submission-status.md`'s submit/hold list), 16 clear to
+submit.
 
 Submission tracking (dates, per-template status, Meta review outcomes) lives in
 `docs/reviews/whatsapp-template-submission-status.md`, not here — this file is the copy
