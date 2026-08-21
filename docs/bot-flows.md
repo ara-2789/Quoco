@@ -177,59 +177,84 @@ design, not current behaviour.
 
 ## MORNING CHECK-IN (6 questions, one at a time)
 
+**SUPERSEDED (2026-08-21, §28(l), `design-decisions-beta-feedback.md`) — struck
+through, not deleted or rewritten, per this project's own correction discipline. The
+question list below is no longer the design; §28(l) is the current one: attendance is
+now Q1, morning is 4 questions not 6, and the old Q4 (execution plan) is removed from
+the flow (column not dropped — separate decision, §28(b)). Read §28(l) for the live
+spec.**
+
 <!-- 2026-07-15 (Pass 2): a cofounder note describing Q3 as "bare activity names"
      referred to the FREE-TEXT plan questions (Q1 plan / Q4 execution), NOT Q3.
      Q3 remains equipment + hire rate per this spec. Terse Tamil/English tolerance
      applies to all four morning questions. -->
 
-Q1: Plan of action today (free text) → morning_plan.
-    'Site closed today' quick reply → is_holiday=true, holiday_reason;
-    suppresses evening trigger + nudges for this engineer (BOT-20).
-Q2: Workers planned by trade. Format: Trade — count.
-    → morning_manpower_planned [{trade, planned_count}].
-Q3: Equipment on site + hire rate. Format: Equipment — owned/hired — Rs rate/day.
-    → morning_equipment [{type, count, owned_or_hired, daily_hire_cost}].
-Q4: Execution method/sequence (free text) → morning_execution_plan.
-Q5: Procurement dependencies. Capture ALL items first, THEN one follow-up:
-    "For each item above, who is responsible? One name for all, or skip
-    with 'not sure'." → morning_dependencies [{item, responsible_party}].
-    Skip the responsibility prompt if no dependencies listed. (BOT-24)
-Q6: Existing site blockers. Same pattern as Q5.
-    → morning_hindrances [{description, responsible_party}].
+~~Q1: Plan of action today (free text) → morning_plan.~~
+    ~~'Site closed today' quick reply → is_holiday=true, holiday_reason;~~
+    ~~suppresses evening trigger + nudges for this engineer (BOT-20).~~
+~~Q2: Workers planned by trade. Format: Trade — count.~~
+    ~~→ morning_manpower_planned [{trade, planned_count}].~~
+~~Q3: Equipment on site + hire rate. Format: Equipment — owned/hired — Rs rate/day.~~
+    ~~→ morning_equipment [{type, count, owned_or_hired, daily_hire_cost}].~~
+~~Q4: Execution method/sequence (free text) → morning_execution_plan.~~
+~~Q5: Procurement dependencies. Capture ALL items first, THEN one follow-up:~~
+    ~~"For each item above, who is responsible? One name for all, or skip~~
+    ~~with 'not sure'." → morning_dependencies [{item, responsible_party}].~~
+    ~~Skip the responsibility prompt if no dependencies listed. (BOT-24)~~
+~~Q6: Existing site blockers. Same pattern as Q5.~~
+    ~~→ morning_hindrances [{description, responsible_party}].~~
 
-NOTE: Q5/Q6 data is STORED but NOT surfaced in the Spine DPR. It feeds
-Fast-Follow accountability when the escalation engine ships.
+~~NOTE: Q5/Q6 data is STORED but NOT surfaced in the Spine DPR. It feeds~~
+~~Fast-Follow accountability when the escalation engine ships.~~
+
+Struck through with the rest — §28(l)'s 4-question morning flow has no Q5/Q6 at all.
+Not resolved here: whether `morning_dependencies`/`morning_hindrances` (the columns Q5/Q6
+wrote) join `morning_execution_plan` on §28(p)'s "becomes unread, do not drop" list —
+§28(p) as dictated names five columns and does not include these two; flagged as a
+likely gap in that list, not decided or added to it here.
 
 ---
 
 ## EVENING CHECK-IN (6 questions, one at a time)
 
+**SUPERSEDED (2026-08-21, §28(l), `design-decisions-beta-feedback.md`) — struck
+through, not deleted or rewritten. The question list below is no longer the design;
+§28(l) is current: 5 questions, fires regardless of attendance, plan-met (old Q2) is
+DELETED entirely (§28(m) — nothing is compared against a plan anymore), old Q3 (miss
+reason) is reframed as unconditional hindrance capture and moved last, and Q6
+(tomorrow's dependencies) does not appear in §28(l) at all. Read §28(l) for the live
+spec.**
+
 Trigger template (closed-window fallback only, per TRIGGER TIMES above)
 includes morning-plan summary truncated to 150 chars in {{3}} — a template
 variable limit. The free-form primary path is not length-constrained and
-sends the untruncated plan.
+sends the untruncated plan. **Not struck through — §28(s) decides the {{3}} handling
+separately (a second no-morning-plan template variant), and this paragraph is a
+mechanism note, not part of the question list itself. It will need its own review once
+the flow migration is scoped, since "omit the morning-plan echo" below no longer maps
+cleanly onto §28(l)'s question order.**
 
-Q1: Work completed today + quantity/area. Format: Activity — quantity done.
-    Photo optional. → evening_output + evening_output_quantities.
-    If NO morning submission: omit the morning-plan echo (BOT-22).
-Q2: Plan met? Yes/No → evening_schedule_met.
-    Yes → skip Q3, go to Q4. No → ask Q3.
-    If NO morning submission: skip Q2 AND Q3 entirely, go straight to Q4 —
-    same BOT-22 pattern as Q1's morning-plan echo above (decided 2026-08-12,
-    couples with "Evening trigger no longer waits on morning" under TRIGGER
-    TIMES). Never ask "was the plan met?" of someone who never gave a plan.
-Q3: (conditional, only if Q2=No) Reason plan not met →
-    evening_schedule_miss_reason.
-Q4: Workers on site + productivity (two sub-steps):
-    Step 1 headcount "How many on site today?"
-    Step 2 productivity "All productive, or any idle? If idle: how many + why?"
-    → evening_workers_on_site + evening_productive_manpower.
-Q5: Equipment hours per machine. Bot echoes the morning equipment list by
-    name and pre-fills a format per machine. AUTO-SKIPPED entirely if the
-    morning equipment list is empty (BOT-22) — store empty utilisation array.
-    Photo optional if idle/broken. → evening_equipment_utilisation.
-Q6: Tomorrow's dependencies + responsibility. Same pattern as morning Q5/Q6.
-    → evening_dependencies [{item, responsible_party, required_by_time}].
+~~Q1: Work completed today + quantity/area. Format: Activity — quantity done.~~
+    ~~Photo optional. → evening_output + evening_output_quantities.~~
+    ~~If NO morning submission: omit the morning-plan echo (BOT-22).~~
+~~Q2: Plan met? Yes/No → evening_schedule_met.~~
+    ~~Yes → skip Q3, go to Q4. No → ask Q3.~~
+    ~~If NO morning submission: skip Q2 AND Q3 entirely, go straight to Q4 —~~
+    ~~same BOT-22 pattern as Q1's morning-plan echo above (decided 2026-08-12,~~
+    ~~couples with "Evening trigger no longer waits on morning" under TRIGGER~~
+    ~~TIMES). Never ask "was the plan met?" of someone who never gave a plan.~~
+~~Q3: (conditional, only if Q2=No) Reason plan not met →~~
+    ~~evening_schedule_miss_reason.~~
+~~Q4: Workers on site + productivity (two sub-steps):~~
+    ~~Step 1 headcount "How many on site today?"~~
+    ~~Step 2 productivity "All productive, or any idle? If idle: how many + why?"~~
+    ~~→ evening_workers_on_site + evening_productive_manpower.~~
+~~Q5: Equipment hours per machine. Bot echoes the morning equipment list by~~
+    ~~name and pre-fills a format per machine. AUTO-SKIPPED entirely if the~~
+    ~~morning equipment list is empty (BOT-22) — store empty utilisation array.~~
+    ~~Photo optional if idle/broken. → evening_equipment_utilisation.~~
+~~Q6: Tomorrow's dependencies + responsibility. Same pattern as morning Q5/Q6.~~
+    ~~→ evening_dependencies [{item, responsible_party, required_by_time}].~~
 
 ---
 

@@ -1745,3 +1745,150 @@ already marks 7:30 superseded at line 31; no live staleness existed to strike th
 and the six-question-ceiling citation (`design-principles.md`'s own Core Thesis
 corollary, not this file's §6) — are confirmed correct and stand as originally written
 in (a) and (c) above. No further edit needed to either.
+
+### l. FLOW REDESIGN — both flows, superseding the question sets in `bot-flows.md`
+
+**DECIDED.**
+
+**MORNING (08:30 trigger, 4 questions):**
+- Q1 Attendance — "Are you on site today? Reply yes or no." Carried in template 1.
+  "No" writes the row, stamps completion, ends the flow.
+- Q2 Action plan — free text, captured verbatim, NO quantities → `morning_plan`.
+- Q3 Workers by trade → `morning_manpower`.
+- Q4 Equipment — name + hire rate, or "no" → `morning_equipment`.
+
+**EVENING (18:30 trigger, 5 questions, FIRES REGARDLESS OF ATTENDANCE):**
+- Q1 Work completed + quantity → `evening_output`, `evening_output_quantities`. Carried
+  in template 2.
+- Q2 Workers by trade → `evening_manpower`.
+- Q3 Idle hours by trade → `evening_idle_hours` (new column).
+- Q4 Equipment run hours — auto-skips when morning equipment is empty (existing BOT-22
+  behaviour, unchanged).
+- Q5 "Anything that slowed the execution today?" — UNCONDITIONAL, no longer gated on a
+  plan-met "no".
+
+### m. NO PLAN-VS-ACTUAL REPORTING
+
+**DECIDED.** Morning captures qualitative intent; evening captures quantitative result.
+The two are never compared, because morning Q2 has no quantity to compare against.
+
+- Evening "did you meet today's plan?" **DELETED.** It read `classifyYesNo` on the
+  engineer's own reply and compared it to nothing.
+- Old evening Q3 (miss reason) reframed as unconditional hindrance capture and moved
+  last. Rationale: "reason for less work" implies a baseline the system no longer
+  computes.
+- The DPR's headline value metric becomes **EFFICIENCY** (output ÷ (trade count ×
+  standard)), not plan attainment. Naming distinction, stated explicitly because it was
+  conflated during this discussion: **EFFICIENCY = output ÷ (headcount × standard)**;
+  **UTILISATION = hours run ÷ hours available** (equipment). Different metrics,
+  different denominators. (Matches §6's own existing framing —
+  `design-decisions-beta-feedback.md:170`: "Efficiency % = actual output ÷ (headcount ×
+  standard)" — this decision doesn't invent the metric, it promotes it to headline.)
+
+### n. §9 REVERSAL — evening manpower moves from aggregate-only to BY TRADE
+
+**DECIDED, recorded as a reversal with reason, not a new decision.** §9
+(`design-decisions-beta-feedback.md:339-380`, "Evening flow Q4 — v1 scope,
+2026-07-28") deferred trade-level attribution deliberately, for three reasons verified
+against the code at the time and re-verified now, independently, against the live
+lexicon — all three numbers hold: **7 canonical trades, 26 aliases, 21 of them Civil
+(mason 6, helper 8, carpenter 4, bar_bender 3); electrician has 2, plumber 1, neither
+with Tamil** (`lib/whatsapp/flows/parsers/lexicon.ts:12-44`, counted directly from the
+live `TRADE_ALIASES` map, not assumed from §9's own prior count).
+
+**Reversed today because the `productivity_standards` denominator (e.g. 1 mason × 8 hrs
+→ X sqm) requires a by-trade actual count** — the efficiency metric in (m) cannot exist
+without it, so the risk §9 correctly named in 2026-07-28 is now accepted deliberately
+rather than avoided. Idle capture moves from an aggregate headcount to **IDLE HOURS BY
+TRADE**, which makes productive hours computable per trade: `(count × 8) − idle_hours`.
+
+### o. COLUMN RENAMES — remove the planned/actual assumption from the schema
+
+**DECIDED.**
+- `morning_manpower_planned` → `morning_manpower`
+- (new) `evening_manpower`, `evening_idle_hours`
+
+The JSONB keys carry the same assumption and must migrate too: `planned_count` →
+`count`, `planned_total` → `total` (confirmed these are the real live key names — read
+directly off tonight's own `daily_logs` row, `morning_manpower_planned:
+{"planned_total":22,"by_trade":[{"trade":"mason","planned_count":12},...]}`). This is a
+data migration over existing rows, not an `ALTER TABLE` alone.
+
+**Sync hazard, corrected before recording, not transcribed as given:** the drafted claim
+was that `morning_manpower_planned` sits in the same three-way sync system as
+`morning_execution_plan` — **checked directly, this is not accurate.** Grepped
+`supabase/migrations/019_daily_log_corrections.sql` for `morning_manpower_planned`:
+**zero hits.** It is not in 019's CHECK constraint, not in its CASE mapping, and not in
+`assemble.ts`'s `CORRECTABLE_SCALAR_COLUMNS` (also zero hits there) — all three are
+scoped to SCALAR columns; `morning_manpower_planned` is JSONB, and 019's own
+correctable-columns work deliberately excluded JSONB columns from day one (a
+pre-existing, separately-tracked gap, not something this rename interacts with).
+
+**The real sync surface, checked directly:** the RPC write site
+(`supabase/migrations/022_evening_flow_apply_turn.sql:259,263`), `types/database.ts`
+(`:364,395,426`), and four test files (`test/migration-019.test.ts`,
+`test/morning-flow.test.ts`, `test/unit/morning-dispatch.test.ts`,
+`test/helpers/db.ts`) — a real, smaller hazard than `morning_execution_plan`'s (no 019
+CHECK/CASE involvement), not the identical one.
+
+### p. COLUMNS THAT BECOME UNREAD
+
+**DECIDED — do NOT drop in the same migration as the flow change; collected data must
+not be silently lost.** `morning_execution_plan`, `evening_schedule_met`,
+`evening_schedule_miss_reason`, `evening_workers_on_site`, `evening_productive_manpower`.
+
+`evening_schedule_miss_reason` specifically: if hindrance capture reuses it, the name
+will mislead — rename or annotate deliberately, not left implicit.
+
+### q. NMR — decided as a TRADE, not a separate axis
+
+**DECIDED, simplification chosen deliberately over more accurate alternatives** (NMR as
+an attribute of each trade line, or as its own bucket excluded from trade counts).
+**Known cost, recorded not hidden:** NMR is properly an ENGAGEMENT category (casual
+daily-wage muster labour), not a trade — an NMR mason and an NMR helper are
+indistinguishable in the data under this simplification. Accepted for simplicity.
+
+**Follow-on, NOT decided:** NMR needs aliases in the trade lexicon including Tamil
+vernacular, and a `productivity_standards` decision — if NMR is largely unskilled
+support, the honest treatment is exclusion from the efficiency denominator rather than
+an invented standard.
+
+### r. VOCABULARY — now load-bearing and blocking
+
+**DECIDED (status, not a new design).** Morning Q3, evening Q2, and evening Q3 all join
+on trade name, as does `productivity_standards`. Current lexicon (verified live, (n)
+above): 7 canonical trades, 26 aliases, 21 Civil; electrician 2, plumber 1, neither
+Tamil; multi-word trades ("pipe fitter", "cable jointer") can never match because
+matching is single-token positional (`canonicalTrade(tokens[i+1])`, per §9's own already-
+verified finding). §6's fixed-list requirement (buttons/numbered options, not free text)
+is now a PREREQUISITE for the efficiency metric, not a Pass-2 nicety.
+
+### s. EVENING TEMPLATE `{{3}}` — DECIDED
+
+Submit a **SEPARATE no-morning-plan variant** of template 2 rather than passing a filler
+string. Reason: a Meta template body is fixed at approval and only variable values
+substitute, so `bot-flows.md:211`'s "omit the morning-plan echo" has no template-side
+equivalent (§28(i) above); and a filler renders as "This morning you planned: no morning
+check-in", which reads as a system message about a person, not about their day. Both
+variants approve in the same batch, on the same clock.
+
+Records that under (l), attendance="No" is now a **second route** to a null
+`morning_plan`, alongside the pre-existing never-engaged case §28(i) already named.
+
+### t. OPEN, NOT DECIDED — attendance "No" is currently irreversible
+
+Stamps completion and ends the morning flow, so an engineer who answers no at 08:30 and
+reaches site at 11:00 has no route back to Q2-Q4 despite the 15:00 cutoff. Evening then
+asks what was completed with no plan captured. **This is the restart-semantics question
+arriving through a side door** — belongs with the outbound send primitive (#69/031),
+not here. Recorded against §28(d), whose "No terminates the flow" was decided on the
+assumption that no work follows — an assumption since contradicted by the half-day and
+late-arrival cases.
+
+### u. NOT BUILT BY THIS ENTRY
+
+Every item above (l)-(t) is a decision. Zero implementation. **The flow migration is
+UNSCOPED** — §28(b)'s earlier Q4-removal scope no longer covers this, because
+attendance-as-Q1 renumbers every step and the reask keys (`q2_reask`, `q3_reask`) are
+keyed by step number. Re-scope before building. **Trips CLAUDE.md §0(a) — external
+review gate required** (creates/modifies a live function's logic).
