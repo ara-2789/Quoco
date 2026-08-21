@@ -1552,11 +1552,11 @@ spirit as the CANDIDATE CI CHECK entry above: recorded so it's available
 when that work starts, not requiring rediscovery from a PR thread.
 CLOSES WHEN: folded into the P3 plan at kickoff.
 
-DASH-04 DPR ARCHIVE SHIPS LIST-ONLY IN MIGRATION 023's PR (2026-08-07). The
+DASH-04 DPR ARCHIVE SHIPS LIST-ONLY IN MIGRATION 023's PR (2026-08-07). ~~The
 page (`app/(dashboard)/dprs/page.tsx`) had a "View" link to a per-DPR detail
 route that has never existed — `app/(dashboard)/dprs/[id]/page.tsx` was never
 built, so bot-flows.md's DASH-04 spec ("list + full view") has only ever
-shipped its list half. The link also predated the 023 repoint entirely (it
+shipped its list half.~~ The link also predated the 023 repoint entirely (it
 was broken in the original stub, confirmed via `git show` against the exact
 commit that touched this file) and was wrong-shaped on top of being a dead
 end: `/dashboard/dprs/${id}` — the `(dashboard)` segment is a Next.js route
@@ -1565,9 +1565,21 @@ omits it, this href was the one outlier. Removed (link + its `<th>`/`<td>`)
 rather than fixed, since a corrected-but-still-dead link would still 404 and
 there's no DPR content to view yet regardless (nothing populates `dprs`
 until the generator ships — see the Claude API / DPR generation Phase 0-1
-work). Whoever builds the detail route needs BOTH facts, not just that a
+work). ~~Whoever builds the detail route needs BOTH facts, not just that a
 link is now gone: the route needs to be built from scratch (nothing to
-resurrect), and the URL must NOT carry the `(dashboard)` prefix when it is.
+resurrect), and the URL must NOT carry the `(dashboard)` prefix when it is.~~
+
+**DATED CORRECTION (2026-08-21, found while auditing template 6's CTA button URL for
+Meta submission readiness):** the struck-through claim is stale. `app/(dashboard)/dprs/
+[id]/page.tsx` **exists** — confirmed directly this session (`find app -iname "*dpr*"`
+and a full read of the file's content, RLS-aware, not a stub). DASH-04's per-DPR detail
+route has been built at some point since 2026-08-07; this entry was never updated to
+reflect it. Whoever relies on this file to check the DPR archive's status should read
+the current codebase, not this entry, for that question — recorded as the standing
+lesson `docs/whatsapp-templates.md`'s own dated note (§ CTA button, template 6) already
+states in the other direction. The URL does NOT carry the `(dashboard)` prefix
+(`https://app.quoco.co.in/dprs/<id>`), consistent with what this entry's own now-struck
+guidance anticipated.
 
 DPRS PAGE SWALLOWS QUERY ERRORS (opened 2026-08-07, tracked, NOT fixed —
 this instruction failed to land the first time it was sent, mid-session,
