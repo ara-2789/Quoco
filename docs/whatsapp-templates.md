@@ -124,26 +124,54 @@ below, same script, same rules — no template still fails.
 
 **Meta reviews against samples, not variable descriptions — every template previously
 gave only an abstract label ("name", "project") with no concrete example.** Every
-template below now carries a `Sample values:` line. Reused directly from this session's
-own real, live-verified fixtures rather than invented, where they fit:
-- Engineer name → **Vikram Rao** (`users.full_name`, id `3534756b-2a32-4b91-954b-
-  0bab15c2dba1` — read directly off prod this session).
-- Project → **Speed Mechatronics** (`projects.name`, id `acef67fe-e775-439d-82b8-
-  5b8526868d6d`).
-- Tenant/company (template 8's `{{2}}`) → **Rajamani Constructions Pvt Ltd**
-  (`tenants.name`, id `adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0`).
-- DPR id (template 6's button URL) → **3f3c3aff-0519-4a71-88cb-4e53f4f0934a**, a real
-  row (`log_date` 2026-08-20, same project) — read directly off prod, not invented.
-- PM name — **no real PM row exists for this project** (checked: zero `project_members`
-  rows with `role='pm'` for Speed Mechatronics). Using an illustrative name, **Suresh
-  Iyer**, clearly labelled as invented, not a verified fixture like the others above.
-- Safety-report specifics (template 12) — no real `safety_incidents` data exists (the
-  feature is Fast-Follow, unbuilt). Illustrative only; this template is held regardless
-  (see the submit/hold list below).
+template below now carries a `Sample values:` line.
+
+**CORRECTED (2026-08-21, same day, Twilio/Meta compliance audit item 2): all real-fixture
+sample values below are replaced with fictional-but-realistic equivalents.** The original
+policy — reuse this session's real, live-verified prod fixtures — is struck through, not
+silently rewritten:
+
+~~Reused directly from this session's own real, live-verified fixtures rather than
+invented, where they fit:~~
+~~- Engineer name → **Vikram Rao** (`users.full_name`, id `3534756b-2a32-4b91-954b-
+  0bab15c2dba1` — read directly off prod this session).~~
+~~- Project → **Speed Mechatronics** (`projects.name`, id `acef67fe-e775-439d-82b8-
+  5b8526868d6d`).~~
+~~- Tenant/company (template 8's `{{2}}`) → **Rajamani Constructions Pvt Ltd**
+  (`tenants.name`, id `adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0`).~~
+~~- DPR id (template 6's button URL) → **3f3c3aff-0519-4a71-88cb-4e53f4f0934a**, a real
+  row (`log_date` 2026-08-20, same project) — read directly off prod, not invented.~~
+
+**Rationale for the reversal:** Twilio documents that a Content API template's sample
+values also serve as **fallback text** — rendered in a live send when the real content
+variable is undefined at send time. A real fixture used as a sample is therefore not
+merely an approval-etiquette question; it is a live cross-tenant data-leak vector with a
+plausible trigger — a real engineer's name or a real tenant's registered company name
+could render, unprompted, inside a message sent to an unrelated recipient on a genuine
+undefined-variable send.
+
+**New policy: one consistent fictional identity set, reused across the whole batch, so
+the samples read coherently to a reviewer** — realistic Indian construction context, not
+descriptive placeholder tokens (a token like `engineer_name` reads as unfinished copy to
+Meta's reviewers, which is its own rejection risk):
+- Engineer name → **Arjun Nair** (fictional).
+- Project → **Emerald Heights** (fictional).
+- Tenant/company (template 8's `{{2}}`) → **Shivalik Infraprojects Pvt Ltd** (fictional).
+- DPR id (template 6's button URL) → **a1b2c3d4-5e6f-4a3b-8c9d-1e2f3a4b5c6d** — a
+  syntactically valid UUID, deliberately not tied to any real `dprs` row, replacing the
+  prior real prod id for the same fallback-text reason above.
+- PM name — **unaffected by this correction.** `project_members` has no `role='pm'` row
+  for this (fictional, post-correction) project either, and the existing sample, **Suresh
+  Iyer**, was already invented and clearly labelled as such — not a real-fixture value
+  this correction needed to touch.
+- Safety-report specifics (template 12) — unaffected; already illustrative-only (no real
+  `safety_incidents` data exists, Fast-Follow, unbuilt), except its `{{1}}`/`{{2}}`
+  (project/engineer) follow the new fictional identity set below for consistency. This
+  template is held regardless (see the submit/hold list below).
 
 ### 1. `quoco_morning_checkin`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
-**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights".
 
 > Good morning {{1}}. This is Quoco for {{2}}.
 > Are you on site today? Reply yes or no.
@@ -166,12 +194,23 @@ check-in.~~ — written fresh against the simple-English rules at the time; supe
 ### 2. `quoco_evening_checkin`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
 (≤150 chars).
-**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics", `{{3}}` =
-"Continue RCC column casting for grid lines C1 to C6 on the third floor, complete
-shuttering for beam B12, coordinate with the ready-mix supplier for t" (the real
-morning plan runs 246 characters; this is the actual 150-character truncation of it —
-shown truncated deliberately, mid-word, so the sample demonstrates the real behaviour
-rather than a short string that never exercises the limit).
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` =
+"Emerald Heights", `{{3}}` =
+"Continue shuttering work for the second floor slab near grid lines D4 to D9, finish
+rebar tying for the retaining wall on the north side, coordinate w" (a fictional plan,
+259 characters full length; this is the actual 150-character truncation of it — shown
+truncated deliberately, mid-word, so the sample demonstrates the real behaviour rather
+than a short string that never exercises the limit).
+
+*(Prior sample values, struck through, not deleted — used the real, live-verified
+prod morning plan rather than a fictional one; corrected per the same-day fallback-text
+leak finding, see the "Sample values" section intro above: ~~`{{1}}` = "Vikram Rao",
+`{{2}}` = "Speed Mechatronics", `{{3}}` = "Continue RCC column casting for grid lines C1
+to C6 on the third floor, complete shuttering for beam B12, coordinate with the
+ready-mix supplier for t" (the real morning plan runs 246 characters; this is the actual
+150-character truncation of it — shown truncated deliberately, mid-word, so the sample
+demonstrates the real behaviour rather than a short string that never exercises the
+limit).~~)*
 
 > Good evening {{1}}. This morning you planned: {{3}}
 > What *work was completed* today for {{2}}? Add the quantity if you can — e.g. "slab
@@ -191,7 +230,7 @@ planned: {{3}} Reply to start today's evening check-in for {{2}}.~~ — supersed
 
 ### 2b. `quoco_evening_checkin_no_plan`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
-**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics". **NEW (2026-08-21,
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights". **NEW (2026-08-21,
 §28(s)).** No `{{3}}` — this variant exists specifically because there is no morning plan
 to reference.
 
@@ -216,7 +255,7 @@ observed.
 
 ### 3. `quoco_morning_nudge`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
-**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights".
 
 > Hi {{1}}, you have not sent today's morning check-in for {{2}} yet.
 > Reply to start now.
@@ -230,7 +269,7 @@ check-in for {{2}} yet. Reply to start now.~~)*
 
 ### 4. `quoco_evening_nudge`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project.
-**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights".
 
 > Hi {{1}}, you have not sent today's evening check-in for {{2}} yet.
 > Reply to start now.
@@ -259,7 +298,7 @@ an approved fallback is on hand if needed later — not to run instead of 1–4 
 
 ### 1v2. `quoco_morning_checkin_v2`
 **Audience:** engineer. **Category: Utility** (shadows template 1's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 1.
-**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights".
 
 > Good morning {{1}}.
 > Are you on site today for {{2}}? Reply yes or no.
@@ -273,10 +312,16 @@ for {{2}}. Reply to start.~~)*
 ### 2v2. `quoco_evening_checkin_v2`
 **Audience:** engineer. **Category: Utility** (shadows template 2's category). **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
 (≤150 chars). **Shadows:** template 2.
-**Sample values:** same as template 2 — `{{1}}` = "Vikram Rao", `{{2}}` = "Speed
-Mechatronics", `{{3}}` = "Continue RCC column casting for grid lines C1 to C6 on the
-third floor, complete shuttering for beam B12, coordinate with the ready-mix supplier
-for t" (the same real 150-char truncation).
+**Sample values (fictional, 2026-08-21 correction):** same as template 2 — `{{1}}` =
+"Arjun Nair", `{{2}}` = "Emerald Heights", `{{3}}` = "Continue shuttering work for the
+second floor slab near grid lines D4 to D9, finish rebar tying for the retaining wall on
+the north side, coordinate w" (the same fictional 150-char truncation).
+
+*(Prior sample values, struck through, not deleted, same correction as template 2's own:
+~~same as template 2 — `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics", `{{3}}` =
+"Continue RCC column casting for grid lines C1 to C6 on the third floor, complete
+shuttering for beam B12, coordinate with the ready-mix supplier for t" (the same real
+150-char truncation).~~)*
 
 > Good evening {{1}}. Your morning plan was: {{3}}
 > For {{2}}, what *work was completed* today? Add the quantity if you can — e.g. "slab
@@ -290,7 +335,7 @@ today's evening check-in for {{2}}. Reply to start.~~)*
 
 ### 3v2. `quoco_morning_nudge_v2`
 **Audience:** engineer. **Category: Utility** (shadows template 3's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 3.
-**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights".
 
 > Hi {{1}}, today's morning check-in for {{2}} is not done yet.
 > Reply now to start.
@@ -303,7 +348,7 @@ not done yet. Reply now to start.~~)*
 
 ### 4v2. `quoco_evening_nudge_v2`
 **Audience:** engineer. **Category: Utility** (shadows template 4's category). **Variables:** `{{1}}` name, `{{2}}` project. **Shadows:** template 4.
-**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights".
 
 > Hi {{1}}, today's evening check-in for {{2}} is not done yet.
 > Reply now to start.
@@ -322,7 +367,7 @@ without drifting from this project's own consistent-vocabulary rule.
 
 ### 5. `quoco_manager_missed`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` engineer, `{{2}}` project.
-**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights".
 
 > Reminder: {{1}} has not submitted today's check-in for {{2}}.
 > The window for a nudge has closed. Please follow up directly if needed.
@@ -336,7 +381,7 @@ without drifting from this project's own consistent-vocabulary rule.
 ### 6. `quoco_dpr_ready_pm`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` date. **CTA URL button** (Y5 —
 drop the body-variable link, add a dashboard-link button component).
-**Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "21 Aug 2026".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Emerald Heights", `{{2}}` = "21 Aug 2026".
 
 > Today's Daily Progress Report for {{1}}, project {{2}}, is ready to review.
 > You have until 8:30 PM to make any corrections before it is sent to the owner.
@@ -354,13 +399,28 @@ sent to the owner.~~)*
 route now exists — `app/(dashboard)/dprs/[id]/page.tsx`, confirmed live in this repo
 (this contradicts an earlier entry elsewhere in this project's history claiming the DPR
 archive was list-only; checked fresh against the current codebase, not assumed from that
-older note). Button URL: **`https://app.quoco.co.in/dprs/{{1}}`** (dynamic suffix, the
-button's own variable numbering, independent of the body's `{{1}}`/`{{2}}`). **Sample
-value for the button's `{{1}}`: `3f3c3aff-0519-4a71-88cb-4e53f4f0934a`** — a real `dprs`
-row (`log_date` 2026-08-20, same project), read directly off prod, not invented. Note:
-this route requires the viewing PM to be logged in (standard dashboard auth, same as
-every other route under `app/(dashboard)/`) — not separately re-verified here beyond
+older note). Button URL: **`https://app.quoco.co.in/dprs/{{3}}`**. **Sample value for the
+button's `{{3}}`: `a1b2c3d4-5e6f-4a3b-8c9d-1e2f3a4b5c6d`** — a fictional, syntactically
+valid UUID, not tied to any real `dprs` row (2026-08-21 correction, same fallback-text
+leak reasoning as the body's own samples above — see the "Sample values" section intro).
+Note: this route requires the viewing PM to be logged in (standard dashboard auth, same
+as every other route under `app/(dashboard)/`) — not separately re-verified here beyond
 confirming the route itself exists and is real code, not a stub.
+
+**AUDIT FIX (2026-08-21, Twilio/Meta compliance audit, button numbering corrected):** the
+button variable was originally documented as its own `{{1}}`, "independent of the body's
+`{{1}}`/`{{2}}`" — wrong. Twilio's Content API `variables` map is flat and shared across
+a template's body and its call-to-action button; the button's variable continues the
+body's own sequence, so it must be `{{3}}`, not a second `{{1}}`. As originally
+documented, `{{1}}` collided with the body's own `{{1}}` (project name) in that shared
+map — confirmed live in a dry run of `scripts/submit-templates.ts`, where the button's
+DPR-id sample overwrote the body's project-name sample under the shared key `"1"`.
+
+*(Prior text, struck through, not deleted: ~~Button URL: **`https://app.quoco.co.in/
+dprs/{{1}}`** (dynamic suffix, the button's own variable numbering, independent of the
+body's `{{1}}`/`{{2}}`). **Sample value for the button's `{{1}}`:
+`3f3c3aff-0519-4a71-88cb-4e53f4f0934a`** — a real `dprs` row (`log_date` 2026-08-20, same
+project), read directly off prod, not invented.~~)*
 
 **8:30 PM verified against `CHECKIN_CHECKPOINTS` (Y5), not assumed:** `eveningClose` —
 the moment the DPR is generated and the PM is notified, matching THIS template's own send
@@ -379,7 +439,7 @@ delivery is email, per the #67 decision, `docs/dpr-delivery-versioning-plan.md`)
 **Variables:** `{{1}}` project, `{{2}}` date. **Replaces `quoco_dpr_owner`** — the old
 template sent a 3-line summary directly to the owner over WhatsApp; that content now goes
 by email, so this template only confirms the send happened.
-**Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "21 Aug 2026".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Emerald Heights", `{{2}}` = "21 Aug 2026".
 
 > The Daily Progress Report for {{1}}, project {{2}}, has been emailed to the owner.
 
@@ -403,8 +463,14 @@ before this send) is genuinely transactional. Submit as Utility as drafted, but 
 this one specifically to be the most likely rejection/recategorisation in the batch —
 not a reason to reword it, just a heads-up on where review friction is most likely to
 land. **Variables:** `{{1}}` name, `{{2}}` company, `{{3}}` project.
-**Sample values:** `{{1}}` = "Vikram Rao", `{{2}}` = "Rajamani Constructions Pvt Ltd"
-(the real tenant name, `tenants.name`), `{{3}}` = "Speed Mechatronics".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` =
+"Shivalik Infraprojects Pvt Ltd", `{{3}}` = "Emerald Heights".
+
+*(Prior sample values, struck through, not deleted, same fallback-text leak correction as
+elsewhere in this file — this template is hard-excluded from submission (GATE 2) but its
+recorded samples are corrected too, for consistency: ~~`{{1}}` = "Vikram Rao", `{{2}}` =
+"Rajamani Constructions Pvt Ltd" (the real tenant name, `tenants.name`), `{{3}}` = "Speed
+Mechatronics".~~)*
 **This is the template carrying the two written commitments (Y4/Y5) — both must be kept by
 the code, not just promised in copy.**
 
@@ -441,10 +507,9 @@ Tamil, or a mix. Reply STOP at any time to stop these messages.~~)*
 
 ### 9. `quoco_dpr_silent_day`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` PM name.
-**Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "Suresh Iyer" (no real PM
-row exists for this project — checked, zero `project_members` rows with `role='pm'` —
-this name is illustrative, not a verified fixture like the engineer/project/tenant
-names above).
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Emerald Heights", `{{2}}` =
+"Suresh Iyer" (`{{2}}` unaffected by this correction — already invented, not a
+real-fixture value; see the "Sample values" section intro above).
 
 > Note for {{2}}: no check-in data was received for {{1}} today.
 > No report was generated. Please confirm the site status if needed.
@@ -464,8 +529,8 @@ reason as template 6.
 
 ### 10. `quoco_dpr_delayed`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` PM name.
-**Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "Suresh Iyer" (illustrative,
-same caveat as template 9).
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Emerald Heights", `{{2}}` =
+"Suresh Iyer" (`{{2}}` unaffected, same caveat as template 9).
 
 > Note for {{2}}: today's report for {{1}} is taking longer than usual to generate.
 > We will notify you when it is ready.
@@ -478,7 +543,7 @@ longer than usual to generate. We will notify you when it is ready.~~)*
 
 ### 11. `quoco_dpr_pause_expired`
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` date.
-**Sample values:** `{{1}}` = "Speed Mechatronics", `{{2}}` = "21 Aug 2026".
+**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Emerald Heights", `{{2}}` = "21 Aug 2026".
 
 > Your check-in pause for {{1}} ended on {{2}}.
 > Daily check-ins have resumed.
@@ -491,9 +556,10 @@ longer than usual to generate. We will notify you when it is ready.~~)*
 **Audience:** PM. **Category: Utility.** **Variables:** `{{1}}` project, `{{2}}` engineer, `{{3}}` type/location,
 `{{4}}` injury status. **CTA URL button** (Y5 — drop the body-variable link).
 **Sample values (illustrative only — no real `safety_incidents` data exists, the
-feature is Fast-Follow and unbuilt):** `{{1}}` = "Speed Mechatronics", `{{2}}` =
-"Vikram Rao", `{{3}}` = "a fall from height near the scaffolding on level 2", `{{4}}` =
-"minor injury, first aid given".
+feature is Fast-Follow and unbuilt; `{{1}}`/`{{2}}` also updated 2026-08-21 for
+consistency with the rest of this file's fictional identity set):** `{{1}}` =
+"Emerald Heights", `{{2}}` = "Arjun Nair", `{{3}}` = "a fall from height near the
+scaffolding on level 2", `{{4}}` = "minor injury, first aid given".
 
 > Safety report for site {{1}}: engineer {{2}} reported an incident described as {{3}}.
 > Current injury status is recorded as {{4}}. Please review immediately.

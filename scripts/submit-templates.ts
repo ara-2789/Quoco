@@ -131,10 +131,23 @@ function parseTemplates(markdown: string): ParsedTemplate[] {
       continue // never deep-parsed -- its metadata is allowed to be incomplete
     }
 
+    // Strip every struck-through (~~...~~) span BEFORE any other extraction runs.
+    // Found the hard way: a naive zone-scan (category/body/samples/button) that
+    // stops only at the next blockquote will happily walk INTO a "prior copy,
+    // struck through" parenthetical sitting in that same zone -- and since
+    // sample-value extraction below takes the LAST match for a given {{n}} key,
+    // an old (real) sample sitting textually after a new (fixed) one in a
+    // struck-through aside would silently win. Caught live: templates 2 and 2v2
+    // both re-emitted their old real sample values this way on the first run
+    // after the 2026-08-21 fictional-samples correction, despite the markdown
+    // itself being correctly edited. Stripping struck-through text up front,
+    // once, closes this for every extraction below, not just samples.
+    const sectionLive = section.replace(/~~[\s\S]*?~~/g, '')
+
     // Category: try "**Category: X" first (covers "Category: Utility.",
     // "Category: Utility, but FLAGGED...", "Category: Utility** (shadows...)"),
     // then "**X category**" (covers template 13's "AUTHENTICATION category").
-    const metaBlockMatch = section.match(/^### .*?\n([\s\S]*?)\n\n>/)
+    const metaBlockMatch = sectionLive.match(/^### .*?\n([\s\S]*?)\n\n>/)
     const metaBlockRaw = metaBlockMatch ? metaBlockMatch[1] : ''
     const metaBlock = metaBlockRaw.replace(/\n/g, ' ')
 
@@ -157,10 +170,9 @@ function parseTemplates(markdown: string): ParsedTemplate[] {
     // confirmed against a real API response by this script.
     category = category.toUpperCase()
 
-    // Body: the first contiguous run of "> " lines in this section. Prior
-    // (struck-through) copy is always inline `~~...~~` text elsewhere in the
-    // section, never a second blockquote, so the first run is always current.
-    const bodyMatch = section.match(/\n((?:^> .*\n?)+)/m)
+    // Body: the first contiguous run of "> " lines in this section (against
+    // sectionLive, so a struck-through prior body can never be mistaken for one).
+    const bodyMatch = sectionLive.match(/\n((?:^> .*\n?)+)/m)
     if (!bodyMatch) {
       ambiguous.push(`${id} (${name}): could not find a blockquote body.`)
       continue
@@ -179,10 +191,10 @@ function parseTemplates(markdown: string): ParsedTemplate[] {
     }
     const body = textLines.join('\n')
 
-    // Sample values: scoped to "**Sample value[s]" .. next blockquote", newlines
-    // collapsed so a value that wraps across source lines reconstructs as one
-    // string (e.g. template 2's 150-char truncated plan).
-    const sampleZoneMatch = section.match(/\*\*Sample values?[\s\S]*?(?=\n>)/)
+    // Sample values: scoped to "**Sample value[s]" .. next blockquote" IN
+    // sectionLive, newlines collapsed so a value that wraps across source lines
+    // reconstructs as one string (e.g. template 2's 150-char truncated plan).
+    const sampleZoneMatch = sectionLive.match(/\*\*Sample values?[\s\S]*?(?=\n>)/)
     const samples: Record<string, string> = {}
     if (sampleZoneMatch) {
       const zone = sampleZoneMatch[0].replace(/\n/g, ' ')
@@ -209,8 +221,9 @@ function parseTemplates(markdown: string): ParsedTemplate[] {
       // Same newline-collapsing treatment as the metadata/sample-value zones
       // above -- the source markdown wraps "**Sample\nvalue for the button's..."
       // across a line break, which a literal-space regex against the raw
-      // (unflattened) section text will never match.
-      const sectionFlat = section.replace(/\n/g, ' ')
+      // (unflattened) text will never match. Built from sectionLive, not
+      // section, for the same struck-through-text reason as everything above.
+      const sectionFlat = sectionLive.replace(/\n/g, ' ')
       const urlMatch = sectionFlat.match(/Button URL:\s*\*\*`([^`]+)`\*\*/)
       if (!urlMatch) {
         ambiguous.push(
