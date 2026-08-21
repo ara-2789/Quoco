@@ -450,7 +450,14 @@ their FLOWS and dashboard views are not built in the Spine.
     * Inbound-as-start-trigger (the shortest path to a real beta, per HH1)
       works INSIDE this architecture unchanged — a start-trigger reply is
       still a reply, triggered by an inbound message, answered the same way
-      every other reply already is. No new capability needed.
+      every other reply already is. No new capability needed. **BUILT
+      2026-08-20 (`lib/whatsapp/inbound-start.ts`), and, per PP2
+      (design-decisions-beta-feedback.md §27, same day): SCAFFOLDING, not
+      the permanent design.** The permanent design is cron-triggered
+      check-ins, inbound message never starts a flow — this build exists
+      only because, until the item below ships, there is no cron capable of
+      starting one at all. Read §27 before sizing any future work in this
+      area as "the inbound path already covers it."
     * THE TRIGGER CRON IS NOT "ADD A CRON JOB." A cron can decide WHEN to
       send something; it cannot MAKE a send happen, because nothing in this
       codebase can construct an outbound WhatsApp message outside a webhook
@@ -461,7 +468,11 @@ their FLOWS and dashboard views are not built in the Spine.
       queue" in §2's SPINE list without this fact will mis-size that work by
       an order of magnitude: the scheduler is the easy 10%; the send
       primitive underneath it is the other 90%, and does not exist yet in
-      any form.
+      any form. **Per PP2, this is now not merely "the precondition" in the
+      abstract — it is the head of the build sequence: the system's
+      CORRECT behaviour (cron-triggered check-ins) cannot exist until this
+      ships, and every other Fast-Follow/Spine sequencing question sits
+      downstream of it.**
 - Billing: Razorpay payment links — NOT Stripe (Stripe paused India onboarding)
 - Deployment: Vercel Pro — required for 6 IST cron times + 60s function timeout
 - Email: Resend — DPR delivery to owner
@@ -2252,6 +2263,14 @@ workstream is not a feature on the roadmap; it is the precondition for the produ
 functioning at all" (above) remains true for the scheduled-send half; it is no longer
 true for the reply-only half, which now functions for any engineer willing to message
 first.
+  FURTHER DATED UPDATE (2026-08-20, PP2, design-decisions-beta-feedback.md §27): the
+  paragraph above is still an accurate description of what runs today, but "closed for
+  the reply-only half" is not the permanent state — PP2 decides check-ins are
+  cron-triggered, never inbound-triggered, and names `routeInboundMessage`'s
+  no-active-session branch (everything the paragraph above describes) as SCAFFOLDING to
+  be replaced by a short acknowledgement once the #69/031 outbound-send primitive and its
+  cron exist. Not reverted here — still live, still correct for today — but do not read
+  this entry as describing the intended final shape.
 
 BOT-07 SILENCE IS A RULE 3.5 DEAD-END (opened 2026-08-15, same diagnosis). A real inbound
 message — one that consumed a Twilio SID and updated `whatsapp_sessions.updated_at` — 
@@ -2393,3 +2412,50 @@ third context-writing pattern where two are already meant to agree by constructi
 Full milestone plan lives in the ARD §12 (milestone-framed, not calendar).
 "Week N" = sequence + estimate, not a deadline. A block is done when its
 EXIT GATE is green on a real handset.
+
+WEBHOOK SIGNATURE VALIDATION IS HOST-PINNED, NOT HEADER-DERIVED — A DOMAIN MOVE BROKE IT
+FOR A DAY, UNDETECTED (2026-08-20, QQ1-QQ3, first real end-to-end sandbox test of the II3
+build). `app/api/whatsapp/webhook/route.ts:138` builds the signature-validation URL as
+`${process.env.NEXT_PUBLIC_APP_URL}/api/whatsapp/webhook` — read directly from the code,
+not assumed: a single, fixed env var, nothing derived from `Host`/`x-forwarded-host`/
+`x-forwarded-proto`. Twilio signs its webhook request over the FULL URL it actually
+posted to, including host. `NEXT_PUBLIC_APP_URL` moved to `https://app.quoco.co.in` on
+2026-08-19; the Twilio sandbox's own "WHEN A MESSAGE COMES IN" field still posted to the
+old `https://quoco-six.vercel.app`. Different host string on each side → different
+expected signature → every real inbound got a 403, confirmed directly via Twilio's
+Request Inspector (status 403 at the real webhook path — not a 404, not a redirect,
+meaning the route was reachable and the signature specifically did not validate).
+**Undetected for a full day because nobody had messaged the bot in that window** — the
+exact kind of gap a synthetic check would have caught same-day instead of on the first
+real test.
+
+**FIXED (2026-08-20): the Twilio sandbox's inbound webhook was repointed at
+`https://app.quoco.co.in/api/whatsapp/webhook`, method POST — a console-only change, no
+code, no deploy.** Verified by database read-back, not by the phone screen (per LL3's own
+discipline): `processed_messages` gained exactly one new row for the test message;
+`whatsapp_sessions` for the test number was UNCHANGED (`current_flow` still null,
+`updated_at` still five days stale) and `daily_logs` still had no row for today — both
+correctly reflecting the after-hours refusal path, which returns before ever calling an
+RPC. The reply the phone showed (`REPORT_READY_REPLY`) is real, not cosmetic.
+
+**ROBUST FIX, TRACKED, NOT BUILT (upgraded from QQ3's monitoring-only framing to an
+actual code item):** replace the single hardcoded `NEXT_PUBLIC_APP_URL` string with a
+PINNED ALLOWLIST of valid hosts that `validateTwilioSignature` tries in turn (construct
+the candidate URL for each allowlisted host, accept the first one whose signature
+matches). Safe specifically because the list is NOT taken from the incoming request's own
+`Host` header — an attacker-controlled header can't add itself to the allowlist — it's a
+small, explicitly-maintained set of known-good production domains. This survives the next
+domain move without becoming a silent, day-long outage: a request signed against any
+allowlisted host validates; a request against a host that's been retired can be caught by
+a startup assertion or a periodic check instead of by nobody noticing until the next real
+message. Not built here — a real code change to `route.ts`'s signature-validation path,
+its own migration-free but review-worthy PR when it ships.
+
+**SEPARATE, NAMED SO IT ISN'T CONFLATED WITH THE ABOVE:** the production WABA sender's own
+INBOUND webhook field is a DIFFERENT Twilio configuration surface from the sandbox's, and
+remains entirely unwired — this is a strong candidate for explaining the WABA sender's own
+observed silence (`docs/twilio-sender-swap-runbook.md`'s own §1 already traces
+`TWILIO_AUTH_TOKEN`'s account-dependency for this reason), tracked there, not
+investigated further until the sender swap itself is authorized. Fixing the sandbox's
+webhook tonight does nothing for the production sender's inbound path — they are
+independently configured in Twilio and must each be pointed at the app separately.

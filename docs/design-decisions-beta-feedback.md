@@ -1538,3 +1538,50 @@ captured so they exist on the record before the workstream itself starts:
 **Why recorded here and not scoped further:** per direct instruction, this is capture
 only. The workstream's own plan — when it starts — inherits condition (c)'s external-review
 requirement from its first draft, not as a gate discovered partway through.
+
+## 27. PP2 — check-ins are CRON-TRIGGERED, not inbound-triggered. `routeInboundMessage`'s start branch is SCAFFOLDING (2026-08-20)
+
+**Aravind's decision, recorded, not built here.** The correct, permanent design: morning
+and evening check-ins are triggered by a **scheduled cron** (morning send, evening send
+at 18:30, per `CHECKIN_CHECKPOINTS`) calling the outbound-send primitive (#69/031) —
+**never by an inbound message.** An inbound message's role is narrower than the II3 build
+(`lib/whatsapp/inbound-start.ts`, `routeInboundMessage`) currently gives it:
+
+- **A flow already active** → continue it (unchanged — `dispatchInboundTurn`'s existing
+  ordinary-reply routing is correct under this design too, ordinary replies were never in
+  question).
+- **No flow active** → the inbound gets a **short acknowledgement** confirming receipt and
+  naming when the next check-in comes — **it does not start a flow.** Starting is the
+  cron's job, exclusively.
+
+**Why this reverses II3's own design, stated plainly rather than left implicit:** II3
+built `routeInboundMessage`'s no-active-session branch to let the ENGINEER'S OWN message
+start morning or evening (per `docs/inbound-start-trigger-plan.md`'s window/submission-
+state table) specifically because, at the time, no scheduled trigger existed at all and
+the engineer-initiated path was the only way to get real data into the system before the
+outbound-send primitive was built. That reasoning does not survive the cron existing.
+Once the cron reliably sends the 8:30am/6:30pm prompt, an inbound-initiated start becomes
+a second, competing way to enter the SAME state machine — exactly the kind of redundant
+entry point CLAUDE.md's own §0 discipline (single source of truth, no parallel
+mechanisms) argues against elsewhere in this project.
+
+**Consequence 1 — `routeInboundMessage` is SCAFFOLDING, not the final shape.** It is
+correct and tested for what exists TODAY (no cron, no outbound-send primitive) and should
+keep running exactly as built until the cron lands. When it does, `routeInboundMessage`'s
+no-active-session branch — the window table, the `daily_logs` submitted-check mitigation,
+the KK2 race guard, `REPORT_READY_REPLY`, all of it — is replaced by the short
+acknowledgement above. This is a planned removal, not a bug fix; recorded here so
+whoever builds the cron doesn't have to rediscover that `routeInboundMessage`'s start
+branch is meant to be retired, not extended.
+
+**Consequence 2 — this moves the outbound-send primitive (#69/031, PR #69) to the head
+of the build sequence, not just "the precondition" in the abstract sense CLAUDE.md's
+STANDING ARCHITECTURAL FACT (§3) already names.** Under this design, it is not merely
+true that "the system can only reply" — it is true that the system's *correct* behaviour
+(cron-triggered check-ins) cannot exist AT ALL until #69/031 ships. Every other
+Fast-Follow/Spine sequencing question is downstream of this one.
+
+**Not built here.** No code changed by this entry. `routeInboundMessage` is unmodified —
+this is the design record that says WHEN and WHY it will be, once the cron exists.
+Cross-referenced from `docs/inbound-start-trigger-plan.md`'s own status header and
+CLAUDE.md §3's STANDING ARCHITECTURAL FACT, both updated in the same pass as this entry.
