@@ -11,9 +11,28 @@
 //                                                      cleanly reversible (a rejected name
 //                                                      is blocked from reuse for 30 days).
 //
-// SOURCE OF TRUTH: docs/whatsapp-templates.md. This script does not retype any copy --
-// it parses that file directly, taking only the CURRENT body (the `>` blockquote) for
-// each template, never struck-through (~~...~~) prior copy.
+// SOURCE OF TRUTH (2026-08-21, standing decision after three markdown-parsing failures):
+// docs/whatsapp-templates.json ONLY. This script no longer parses
+// docs/whatsapp-templates.md's copy in any way -- that parser is deleted, not kept as a
+// fallback. Origin: three real parsing defects surfaced against the markdown parser this
+// same session --
+//   1. a line-wrap in the source markdown ("**Sample\nvalue for the button's...") that a
+//      literal-space regex never matched, which the parser caught and refused to guess on;
+//   2. the CTA button's variable numbering, documented wrong in the markdown itself
+//      ({{1}} instead of {{3}}), which collided with the body's own {{1}} in the flat
+//      variables map;
+//   3. markdown strikethrough (~~...~~) that the parser didn't understand, so a
+//      struck-through "prior sample values" aside sitting in the same scan zone as a
+//      correction could silently win the dict-assignment race -- and DID: templates 2 and
+//      2v2 re-emitted their old REAL sample values after the markdown had already been
+//      correctly edited, with no error, no crash, nothing to notice.
+// The third failure is why this script stopped parsing markdown at all: it did not fail
+// loudly -- it produced a plausible, wrong result, exactly the failure mode a human
+// reviewing script output is least likely to catch. docs/whatsapp-templates.md remains
+// the human-readable record; docs/whatsapp-templates.json is the machine record this
+// script actually reads, generated once by hand against the markdown and kept in sync by
+// hand from here -- see checkDriftAgainstMarkdown() below for the check that catches the
+// two drifting apart.
 //
 // CREDENTIALS: TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN, read from process.env only.
 // Never hardcoded, never logged, never written to disk, never echoed -- including in
@@ -38,16 +57,21 @@
 // and stops the whole batch immediately (process.exit(1)) -- nothing after the failing
 // template is attempted, and the failing template itself is not recorded as submitted.
 //
+// NOT INCLUDED HERE, DELIBERATELY -- a separate, standalone check, not wired into this
+// script's automatic execution path: the 2026-08-21 DB drift guard (does any sample value
+// in the JSON match a real users.full_name / projects.name / tenants.name / dprs.id in
+// prod). That check requires a live Supabase query -- a real network call -- which would
+// break this script's own "dry run makes ZERO network calls" guarantee if it ran
+// unconditionally on every invocation. Run it by hand (see the query in this session's
+// own record) before trusting a freshly-edited JSON file, rather than assuming this
+// script re-verifies it for you.
+//
 // VERIFY BEFORE --submit, NOT ASSUMED HERE (this project's own standing practice --
 // CLAUDE.md's "if a fact you need might have changed since training, say so" rule):
 //   - The exact Twilio Content API v1 request/response shapes below (both the
 //     twilio/text and twilio/call-to-action content types, and the
 //     ApprovalRequests/whatsapp category field's expected casing) against Twilio's
 //     current docs. This script has never been run against the real API.
-//   - Whether Twilio's call-to-action content type truly resolves button-URL
-//     variables from the SAME flat `variables` map as the body, or needs them
-//     numbered/scoped separately -- this only matters for template 6
-//     (quoco_dpr_ready_pm), the one submittable template with a CTA button.
 
 import { config } from 'dotenv'
 config({ path: '.env.local' })
@@ -55,37 +79,40 @@ config({ path: '.env.local' })
 import { readFileSync, writeFileSync } from 'fs'
 import { resolve } from 'path'
 
+const TEMPLATES_JSON_PATH = resolve(__dirname, '../docs/whatsapp-templates.json')
+// Read ONLY for the drift check's header scan below -- never for body/category/
+// samples/button content. See checkDriftAgainstMarkdown().
 const TEMPLATES_MD_PATH = resolve(__dirname, '../docs/whatsapp-templates.md')
 const STATUS_MD_PATH = resolve(__dirname, '../docs/reviews/whatsapp-template-submission-status.md')
 
 const CONTENT_API_BASE = 'https://content.twilio.com/v1/Content'
 
-// Hard-excluded template names. Checked by literal name, inside parseTemplates,
-// before any deep parsing of that template's body/samples/button -- NOT a CLI flag,
-// NOT overridable by any argument this script accepts. If a future template needs
-// excluding, add its name here; do not add a --skip flag as an alternative.
+// Hard-excluded template names. Checked by literal name, before anything else touches
+// a template -- NOT a CLI flag, NOT overridable by any argument this script accepts.
 const HARD_EXCLUDED_NAMES = new Set<string>([
   // GATE 2 (docs/whatsapp-templates.md HARD GATES): not submitted until
   // messaging_blocked is set true in application code (BOT-27 SET-HALF, open
-  // since 2026-08-10). An approved template sits in the account and any send path
-  // can reach it, so gating submission is what makes this self-enforcing.
+  // since 2026-08-10).
   'quoco_engineer_optin',
   // Fast-Follow, unbuilt (CLAUDE.md §2); no dashboard route exists for its CTA
-  // button URL either (checked directly -- `find app -iname "*safety*"` returns
-  // nothing).
+  // button URL either.
   'quoco_safety_alert_pm',
 ])
+
+interface ButtonSpec {
+  label: string
+  url: string
+  sampleVar: string
+  sampleValue: string
+}
 
 interface ParsedTemplate {
   id: string
   name: string
   category: string
   body: string
-  samples: Record<string, string> // "1" -> "Vikram Rao"
-  buttonLabel?: string
-  buttonUrl?: string
-  buttonSampleVar?: string
-  buttonSampleValue?: string
+  samples: Record<string, string>
+  button: ButtonSpec | null
 }
 
 function fail(msg: string): never {
@@ -112,153 +139,90 @@ function isTemplateIdCell(s: string): boolean {
   return /^[0-9]+[a-zA-Z0-9]*$/.test(s)
 }
 
-// Parses docs/whatsapp-templates.md. Returns only templates that are NOT
-// hard-excluded and parsed unambiguously. Any parse ambiguity for a
-// non-excluded template is fatal for the whole run (see the `ambiguous`
-// handling below) -- this script never guesses at copy, category, or samples.
-function parseTemplates(markdown: string): ParsedTemplate[] {
-  const sections = markdown.split(/\n(?=### )/)
-  const templates: ParsedTemplate[] = []
-  const ambiguous: string[] = []
-
-  for (const section of sections) {
-    const headerMatch = section.match(/^### (\S+)\.\s+`([a-zA-Z0-9_]+)`/)
-    if (!headerMatch) continue // not a template section (e.g. "## Spine templates")
-    const [, id, name] = headerMatch
-
-    if (HARD_EXCLUDED_NAMES.has(name)) {
-      console.log(`SKIP (hard-excluded in code): ${id} ${name}`)
-      continue // never deep-parsed -- its metadata is allowed to be incomplete
-    }
-
-    // Strip every struck-through (~~...~~) span BEFORE any other extraction runs.
-    // Found the hard way: a naive zone-scan (category/body/samples/button) that
-    // stops only at the next blockquote will happily walk INTO a "prior copy,
-    // struck through" parenthetical sitting in that same zone -- and since
-    // sample-value extraction below takes the LAST match for a given {{n}} key,
-    // an old (real) sample sitting textually after a new (fixed) one in a
-    // struck-through aside would silently win. Caught live: templates 2 and 2v2
-    // both re-emitted their old real sample values this way on the first run
-    // after the 2026-08-21 fictional-samples correction, despite the markdown
-    // itself being correctly edited. Stripping struck-through text up front,
-    // once, closes this for every extraction below, not just samples.
-    const sectionLive = section.replace(/~~[\s\S]*?~~/g, '')
-
-    // Category: try "**Category: X" first (covers "Category: Utility.",
-    // "Category: Utility, but FLAGGED...", "Category: Utility** (shadows...)"),
-    // then "**X category**" (covers template 13's "AUTHENTICATION category").
-    const metaBlockMatch = sectionLive.match(/^### .*?\n([\s\S]*?)\n\n>/)
-    const metaBlockRaw = metaBlockMatch ? metaBlockMatch[1] : ''
-    const metaBlock = metaBlockRaw.replace(/\n/g, ' ')
-
-    let category: string | null = null
-    const catA = metaBlock.match(/\*\*Category:\s*([A-Za-z]+)/)
-    if (catA) category = catA[1]
-    if (!category) {
-      const catB = metaBlock.match(/\*\*([A-Za-z]+)\s+category\*\*/i)
-      if (catB) category = catB[1]
-    }
-    if (!category) {
-      ambiguous.push(
-        `${id} (${name}): could not extract a Category from the metadata block: ${JSON.stringify(metaBlockRaw.slice(0, 200))}`
-      )
-      continue
-    }
-    // Twilio's ApprovalRequests/whatsapp category field is documented as an
-    // uppercase enum (UTILITY / MARKETING / AUTHENTICATION) -- VERIFY this
-    // against Twilio's current docs before --submit; not independently
-    // confirmed against a real API response by this script.
-    category = category.toUpperCase()
-
-    // Body: the first contiguous run of "> " lines in this section (against
-    // sectionLive, so a struck-through prior body can never be mistaken for one).
-    const bodyMatch = sectionLive.match(/\n((?:^> .*\n?)+)/m)
-    if (!bodyMatch) {
-      ambiguous.push(`${id} (${name}): could not find a blockquote body.`)
-      continue
-    }
-    const bodyLines = bodyMatch[1].split('\n').filter((l) => l.startsWith('> '))
-    let buttonLabel: string | undefined
-    const textLines: string[] = []
-    for (const line of bodyLines) {
-      const stripped = line.replace(/^> /, '')
-      const btnMatch = stripped.match(/^\[Button:\s*(.+)\]$/)
-      if (btnMatch) {
-        buttonLabel = btnMatch[1]
-        continue // a Meta button is a separate component, not body text
-      }
-      textLines.push(stripped)
-    }
-    const body = textLines.join('\n')
-
-    // Sample values: scoped to "**Sample value[s]" .. next blockquote" IN
-    // sectionLive, newlines collapsed so a value that wraps across source lines
-    // reconstructs as one string (e.g. template 2's 150-char truncated plan).
-    const sampleZoneMatch = sectionLive.match(/\*\*Sample values?[\s\S]*?(?=\n>)/)
-    const samples: Record<string, string> = {}
-    if (sampleZoneMatch) {
-      const zone = sampleZoneMatch[0].replace(/\n/g, ' ')
-      const pairRe = /`\{\{(\d+)\}\}`\s*=\s*"((?:[^"\\]|\\.)*)"/g
-      let m: RegExpExecArray | null
-      while ((m = pairRe.exec(zone))) {
-        samples[m[1]] = m[2]
-      }
-    }
-
-    // Every {{n}} referenced in the body must have a sample -- STOP before
-    // submitting anything if not, per spec.
-    const varsInBody = new Set(Array.from(body.matchAll(/\{\{(\d+)\}\}/g)).map((mm) => mm[1]))
-    const missingSamples = Array.from(varsInBody).filter((v) => !(v in samples))
-    if (missingSamples.length > 0) {
-      ambiguous.push(`${id} (${name}): missing sample value(s) for {{${missingSamples.join('}}, {{')}}}}`)
-      continue
-    }
-
-    let buttonUrl: string | undefined
-    let buttonSampleVar: string | undefined
-    let buttonSampleValue: string | undefined
-    if (buttonLabel) {
-      // Same newline-collapsing treatment as the metadata/sample-value zones
-      // above -- the source markdown wraps "**Sample\nvalue for the button's..."
-      // across a line break, which a literal-space regex against the raw
-      // (unflattened) text will never match. Built from sectionLive, not
-      // section, for the same struck-through-text reason as everything above.
-      const sectionFlat = sectionLive.replace(/\n/g, ' ')
-      const urlMatch = sectionFlat.match(/Button URL:\s*\*\*`([^`]+)`\*\*/)
-      if (!urlMatch) {
-        ambiguous.push(
-          `${id} (${name}): has a [Button: ...] line but no machine-extractable ` +
-            `"Button URL: **\`...\`**" line -- refusing to guess a button URL.`
-        )
-        continue
-      }
-      buttonUrl = urlMatch[1]
-      const btnSampleMatch = sectionFlat.match(/Sample value for the button's `\{\{(\d+)\}\}`:\s*`([^`]+)`/)
-      if (!btnSampleMatch) {
-        ambiguous.push(
-          `${id} (${name}): has a CTA button URL but no machine-extractable button-variable ` +
-            `sample value -- refusing to guess.`
-        )
-        continue
-      }
-      buttonSampleVar = btnSampleMatch[1]
-      buttonSampleValue = btnSampleMatch[2]
-    }
-
-    templates.push({ id, name, category, body, samples, buttonLabel, buttonUrl, buttonSampleVar, buttonSampleValue })
+function loadTemplatesFromJson(): ParsedTemplate[] {
+  let raw: string
+  try {
+    raw = readFileSync(TEMPLATES_JSON_PATH, 'utf8')
+  } catch (e) {
+    fail(`Could not read ${TEMPLATES_JSON_PATH}: ${(e as Error).message}`)
   }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (e) {
+    fail(`${TEMPLATES_JSON_PATH} is not valid JSON: ${(e as Error).message}`)
+  }
+  if (!Array.isArray(parsed)) {
+    fail(`${TEMPLATES_JSON_PATH} must be a JSON array of template objects.`)
+  }
+  const templates = parsed as ParsedTemplate[]
 
-  if (ambiguous.length > 0) {
-    console.error('\nParse was ambiguous for the following template(s):\n')
-    ambiguous.forEach((a) => console.error(`  - ${a}`))
-    fail(
-      'Refusing to guess. Propose a structured JSON sidecar (e.g. docs/whatsapp-templates.json, ' +
-        '{id, name, category, body, samples, button} per template) for these specific templates ' +
-        'rather than relying on markdown parsing for them, then re-run.'
-    )
+  // Fail loudly on any malformed entry rather than silently proceeding with an
+  // incomplete object -- same "STOP before submitting anything" discipline the
+  // deleted markdown parser had, just against a much simpler, hand-authored source.
+  for (const t of templates) {
+    if (!t.id || !t.name || !t.category || !t.body || !t.samples) {
+      fail(`Malformed entry in ${TEMPLATES_JSON_PATH}: ${JSON.stringify(t)}`)
+    }
+    if (t.button !== null) {
+      if (!t.button || !t.button.label || !t.button.url || !t.button.sampleVar || !t.button.sampleValue) {
+        fail(`${t.id} (${t.name}): "button" must be null or a complete {label, url, sampleVar, sampleValue} object.`)
+      }
+    }
+    const varsInBody = new Set(Array.from(t.body.matchAll(/\{\{(\d+)\}\}/g)).map((m) => m[1]))
+    const missing = Array.from(varsInBody).filter((v) => !(v in t.samples))
+    if (missing.length > 0) {
+      fail(`${t.id} (${t.name}): missing sample value(s) in the JSON for {{${missing.join('}}, {{')}}}}`)
+    }
   }
 
   return templates
+}
+
+// Drift guard: the JSON must declare exactly the same set of {id, name} pairs the
+// markdown's own "### id. `name`" headers declare -- NOT a re-parse of body, category,
+// samples, or button (that parser is deleted; see the file header). This only
+// enumerates template PRESENCE in the markdown, nothing about its content, so it
+// cannot reproduce any of the three failure classes that killed the content parser.
+function checkDriftAgainstMarkdown(templates: ParsedTemplate[]): void {
+  let md: string
+  try {
+    md = readFileSync(TEMPLATES_MD_PATH, 'utf8')
+  } catch (e) {
+    fail(`Could not read ${TEMPLATES_MD_PATH} for the drift check: ${(e as Error).message}`)
+  }
+  const headerRe = /^### (\S+)\.\s+`([a-zA-Z0-9_]+)`/gm
+  const mdTemplates = new Map<string, string>() // id -> name
+  let m: RegExpExecArray | null
+  while ((m = headerRe.exec(md))) {
+    mdTemplates.set(m[1], m[2])
+  }
+
+  const missingFromJson: string[] = []
+  for (const [id, name] of mdTemplates) {
+    if (!templates.some((t) => t.id === id)) missingFromJson.push(`${id} (${name})`)
+  }
+  const missingFromMd: string[] = []
+  const nameMismatches: string[] = []
+  for (const t of templates) {
+    const mdName = mdTemplates.get(t.id)
+    if (!mdName) {
+      missingFromMd.push(`${t.id} (${t.name})`)
+    } else if (mdName !== t.name) {
+      nameMismatches.push(`${t.id}: JSON says "${t.name}", markdown says "${mdName}"`)
+    }
+  }
+
+  if (missingFromJson.length > 0 || missingFromMd.length > 0 || nameMismatches.length > 0) {
+    console.error('\nDrift detected between docs/whatsapp-templates.json and docs/whatsapp-templates.md:\n')
+    missingFromJson.forEach((s) => console.error(`  - present in markdown, missing from JSON: ${s}`))
+    missingFromMd.forEach((s) => console.error(`  - present in JSON, missing from markdown: ${s}`))
+    nameMismatches.forEach((s) => console.error(`  - name mismatch: ${s}`))
+    fail(
+      'The JSON sidecar and the markdown have drifted apart. Update docs/whatsapp-templates.json ' +
+        'by hand to match the markdown (this script never re-derives it automatically), then re-run.'
+    )
+  }
 }
 
 function loadAlreadySubmitted(statusMd: string): Set<string> {
@@ -309,16 +273,14 @@ function markSubmitted(statusMd: string, id: string, hxSid: string, approvalStat
 function buildCreatePayload(t: ParsedTemplate): Record<string, unknown> {
   const variables: Record<string, string> = { ...t.samples }
   const types: Record<string, unknown> = {}
-  if (t.buttonUrl) {
+  if (t.button) {
     types['twilio/call-to-action'] = {
       body: t.body,
-      actions: [{ type: 'URL', title: t.buttonLabel, url: t.buttonUrl }],
+      actions: [{ type: 'URL', title: t.button.label, url: t.button.url }],
     }
-    if (t.buttonSampleVar && t.buttonSampleValue) {
-      // Kept in the SAME flat `variables` map as the body's own -- unverified
-      // against a real Twilio response, see the file-header VERIFY note.
-      variables[t.buttonSampleVar] = t.buttonSampleValue
-    }
+    // Kept in the SAME flat `variables` map as the body's own -- unverified
+    // against a real Twilio response, see the file-header VERIFY note.
+    variables[t.button.sampleVar] = t.button.sampleValue
   } else {
     types['twilio/text'] = { body: t.body }
   }
@@ -342,8 +304,16 @@ async function main() {
   const { accountSid, authToken } = readCredentials()
   const authHeader = `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`
 
-  const templatesMd = readFileSync(TEMPLATES_MD_PATH, 'utf8')
-  const eligible = parseTemplates(templatesMd) // already excludes HARD_EXCLUDED_NAMES
+  const allTemplates = loadTemplatesFromJson()
+  checkDriftAgainstMarkdown(allTemplates)
+
+  const eligible = allTemplates.filter((t) => {
+    if (HARD_EXCLUDED_NAMES.has(t.name)) {
+      console.log(`SKIP (hard-excluded in code): ${t.id} ${t.name}`)
+      return false
+    }
+    return true
+  })
 
   let statusMd = readFileSync(STATUS_MD_PATH, 'utf8')
   const alreadySubmitted = loadAlreadySubmitted(statusMd)
