@@ -1840,6 +1840,18 @@ not be silently lost.** `morning_execution_plan`, `evening_schedule_met`,
 `evening_schedule_miss_reason` specifically: if hindrance capture reuses it, the name
 will mislead — rename or annotate deliberately, not left implicit.
 
+**ADDENDUM (2026-08-21, same day, gap found while striking `bot-flows.md`'s superseded
+question lists): add `morning_dependencies` and `morning_hindrances` to this list.**
+Both were spec'd as morning Q5/Q6 (`bot-flows.md`'s now-struck-through question list),
+never built (CLAUDE.md's own testing-debt/build-status record confirms Q5/Q6 shipped no
+further than schema + spec), and are not part of §28(l)'s redesigned 4-question flow —
+the same "becomes unread, do not drop" reasoning applies to both.
+
+**OPEN, NOT DECIDED:** whether dependency capture — "what do you need from others
+tomorrow, and who is responsible" — is being formally dropped or only deferred. §28(l)'s
+redesign omitted it without an explicit decision either way; this addendum names the gap,
+it does not close it.
+
 ### q. NMR — decided as a TRADE, not a separate axis
 
 **DECIDED, simplification chosen deliberately over more accurate alternatives** (NMR as
