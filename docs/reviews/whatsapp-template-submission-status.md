@@ -29,14 +29,14 @@ happens, not re-derived from the copy deck's own edit history.
 | 5 | `quoco_manager_missed` | Utility | primary | — | not submitted | |
 | 6 | `quoco_dpr_ready_pm` | Utility | primary | — | not submitted | Has a CTA URL button (Y5) — verify button component renders correctly in Meta's preview before submitting, not assumed from the markdown. |
 | 7 | `quoco_dpr_owner_email_sent` | Utility | primary | — | not submitted | Renamed from `quoco_dpr_owner` — owner receives DPR by email, not WhatsApp (#67 revision 3). Confirm this template is still needed at all before submitting; if the owner-delivery channel is fully email, this WhatsApp template may be dead copy. **Flagged, not resolved here.** |
-| 8 | `quoco_engineer_optin` | Utility | primary | — | not submitted | Carries the written "reply STOP" promise (Y5). CLAUDE.md's BOT-27 entry names the missing set-half (`messaging_blocked` is never set true) a pre-launch blocker tied specifically to this template — do not submit/activate live sending on this template until that gap closes, since the promise it makes would be false in production today. |
+| 8 | `quoco_engineer_optin` | Utility | primary | — | **NOT SUBMITTED — hard gate (2026-08-21, confirmed)** | Carries the written "reply STOP" promise (Y5). The send path respects `messaging_blocked`, but no application code ever sets it `true` (BOT-27 SET-HALF, CLAUDE.md, open since 2026-08-10) — a STOP reply is currently ignored and the engineer is messaged again at 08:30 the next day. Beyond the broken promise, opt-out non-compliance affects the number's quality rating under Meta's own rules. **This is a SUBMISSION gate, not a send gate**: an approved template sits in the account and any send path (cron, onboarding route, a manual test) can reach for it, so leaving it unapproved is what makes the gate self-enforcing rather than dependent on everyone remembering. See `docs/whatsapp-templates.md`'s own HARD GATES section (GATE 2), same wording. |
 | 9 | `quoco_dpr_silent_day` | Utility | primary | — | not submitted | |
 | 10 | `quoco_dpr_delayed` | Utility | primary | — | not submitted | |
 | 11 | `quoco_dpr_pause_expired` | Utility | primary | — | not submitted | |
 | 12 | `quoco_safety_alert_pm` | Utility | primary | — | not submitted | Fast-Follow — do not submit ahead of the Fast-Follow build; submitting a template for a flow that doesn't exist yet risks an unused-template quality-signal issue with Meta. |
 | 13 | `quoco_login_otp` | Authentication | primary | — | not submitted | Different review track from Utility (Authentication category). VERIFY the 10-minute expiry figure against the real OTP config before submitting — copy deck flags this as unsourced from a repo constant. |
 
-## Submit / hold list (2026-08-21) — corrects an assumed count, not just states one
+## Submit / hold list (2026-08-21, GATE 2 confirmed as a submission gate same day)
 
 **Checked against this log's own existing Notes column before answering — the expected
 "16 submit, template 12 holds" does not hold as stated.** Two templates are already
@@ -47,9 +47,14 @@ because the batch itself grew by one (the new 2b template) in the same pass this
 question was asked — 18 total, 2 hold, 16 submit — not 17 total with only 1 hold.**
 
 **HOLD (2):**
-- **8 `quoco_engineer_optin`** — pre-launch blocker, already recorded above: the
-  template's own written "Reply STOP" promise is false in production today
-  (`messaging_blocked` is never set `true` by any code path except test fixtures).
+- **8 `quoco_engineer_optin`** — **NOT SUBMITTED** (confirmed 2026-08-21 as a
+  submission gate, not merely a send gate — an approved template sits in the account
+  and any send path can reach for it, so gating submission is what makes this
+  self-enforcing). The template's body promises "reply STOP"; the send path respects
+  `messaging_blocked`, but no application code ever sets it `true`, so a STOP reply is
+  currently ignored and the engineer is messaged again the next day — beyond the
+  broken promise, this affects the number's quality rating under Meta's own rules.
+  Lifts when the BOT-27 SET-HALF is built and verified.
 - **12 `quoco_safety_alert_pm`** — Fast-Follow, unbuilt; additionally, its CTA button
   has no URL to give Meta at all (checked directly this pass — no dashboard route
   exists for a safety-report detail view).

@@ -377,6 +377,25 @@
   checking which SHA they're green FOR would have shipped a commit whose
   own CI result was never actually observed — caught only because the SHA
   was checked before merging, not because the color was.
+- SESSION NOTES AND HANDOVER DOCUMENTS DESCRIBE THE PAST; THE REPO DESCRIBES
+  THE PRESENT (standing rule since 2026-08-21). Any claim about CURRENT
+  state — a PR's open/merged status, a file's actual contents, whether
+  something is built — is verified against `main` (or the live database,
+  for data claims) before being acted on, never trusted from a chat
+  message, a prior session's summary, or an earlier round's own notes,
+  no matter how recently or confidently those were written. A written
+  record is a snapshot from whenever it was made; only the repo and the
+  database are live. Evidence, not a hypothetical: four stale claims were
+  read as current in a single session on 2026-08-21 — PR #59 believed
+  open when it had been merged since 08-14; template 1's body quoted from
+  a stale copy of the templates doc rather than `main`'s own; DASH-04's
+  DPR detail route believed never built when `app/(dashboard)/dprs/[id]/
+  page.tsx` already existed; a three-way sync hazard asserted for
+  `morning_manpower_planned` that does not apply, because it's a JSONB
+  column and the sync system in question is scalar-only. All four were
+  caught only by checking against `main` directly — none would have been
+  caught by re-reading the claim more carefully, since each read as
+  entirely plausible on its own terms. Plausibility is not verification.
 
 ---
 
