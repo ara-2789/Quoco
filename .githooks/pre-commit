@@ -1,5 +1,12 @@
 #!/bin/sh
 branch=$(git symbolic-ref --short HEAD)
-[ "$branch" = "main" ] || exit 0
-echo "Refusing to commit directly to main — branch first (CLAUDE.md §0)." >&2
-exit 1
+if [ "$branch" = "main" ]; then
+  echo "Refusing to commit directly to main — branch first (CLAUDE.md §0)." >&2
+  exit 1
+fi
+
+# File-size lint (CLAUDE.md §0, "FILE SIZE LIMITS", standing rule since
+# 2026-08-22). Same script as CI's "File Size Lint" job — one source of
+# truth for the thresholds. Fast local gate: catches CLAUDE.md growing past
+# its hard limit before a commit lands, not just at PR time.
+node "$(git rev-parse --show-toplevel)/scripts/check-file-sizes.mjs"

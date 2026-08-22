@@ -421,6 +421,27 @@
   review), independent of which number the app currently sends live traffic
   through — so template submission is unblocked by this finding, even
   though the app-to-sender wiring (the swap runbook) is not.
+- FILE SIZE LIMITS (standing rule since 2026-08-22). CLAUDE.md has a
+  150,000-character limit. Past it, the TAIL is silently dropped: the file
+  still loads, no error is raised, and the most recently added content is
+  the first to go. On 2026-08-22 the file reached 167,825 chars and the
+  last ~20,000 (11 incident blocks, CLAUDE.md L2259-2517) had been silently
+  out of context for an unknown period. Two open findings existed only
+  there — rescued into `docs/reviews/2026-08-13-flow-start-mystery.md` and
+  `docs/plans/flow-migration-rescoping-plan.md` before this rule was
+  written; full audit: `docs/reviews/claude-md-rule-inventory-2026-08-22.md`.
+  THRESHOLDS: at 120,000 chars, plan a split. At 140,000, split before
+  adding anything further. Standing rules live in §0-§9 and are read every
+  time; narrative and incident records belong in `docs/reviews/` or
+  `docs/build-status.md`, referenced by a one-line pointer, not carried
+  inline. The same applies to any markdown file routinely read into
+  context: keep it under 120,000 chars or split it. SELF-ENFORCING, not
+  honor-system: `scripts/check-file-sizes.mjs` (via `npm run
+  lint:filesize`) prints the real character count for CLAUDE.md and every
+  `docs/**/*.md` file on every commit (`.githooks/pre-commit`) and every PR
+  (`.github/workflows/ci.yml`'s "File Size Lint" job) — warns at 120,000,
+  hard-fails only CLAUDE.md past 140,000. A rule nobody checks is how this
+  file reached 167,825 chars in the first place.
 
 ---
 

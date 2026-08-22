@@ -11,6 +11,21 @@ name: CI
 # protection — same non-blocking-first rollout as stage 1: land it, prove
 # it with its own red/green acceptance criterion (docs/reviews/p2-ci-gates.md),
 # THEN a separate branch-protection update adds it to the required list.
+#
+# file-size-lint (2026-08-22, CLAUDE.md §0's "FILE SIZE LIMITS" standing
+# rule) follows the SAME non-blocking-first rollout, for a concrete reason,
+# not just consistency: CLAUDE.md is already over this job's own 140,000-char
+# hard-fail threshold on the day this job was added (169,325 chars — see
+# docs/reviews/claude-md-rule-inventory-2026-08-22.md), so this job reports
+# FAIL from its first run, on every PR, until CLAUDE.md is actually split.
+# Adding it to required checks now would block ALL merges to main, including
+# the split itself, until the split happens — the exact kind of deadlock a
+# hard gate should never create. It stays non-required until CLAUDE.md is
+# back under 140,000 chars, at which point a separate branch-protection
+# update can add it (matching the same two-step precedent stage 1 already
+# used to promote migration-lint... except migration-lint WAS added as
+# required once proven green; this one is added as required once the
+# pre-existing violation it's watching for is actually cleared).
 
 on:
   pull_request:
@@ -62,6 +77,18 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run lint:migrations
+
+  file-size-lint:
+    name: File Size Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint:filesize
 
   test:
     name: Test (real test-db)
