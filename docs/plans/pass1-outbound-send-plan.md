@@ -406,6 +406,25 @@ whatever was actually recorded as real data, not discarding it. This is a real,
 substantive widening of what "B3's fix" has to do, not a cosmetic rename — item 4 in
 §7's review-package list is updated to reflect it.
 
+### (e) Roster filter change — site-holiday exclusion (2026-08-22, §30(d))
+
+**The evening trigger's roster (item E) must ALSO exclude any engineer whose
+`daily_logs` row for that date has `attendance = 'site_holiday'`, not only those with
+`messaging_blocked=true`.** Per §30(b)/(d) (`design-decisions-beta-feedback.md`), a
+site-holiday engineer's evening trigger must never fire — the site was closed, there
+is nothing to ask. §5's failure-mode table above (the `messaging_blocked` roster-filter
+row) is amended by this addition, not superseded: both exclusions apply to the same
+roster query, checked before any claim/send attempt, for the same reason (an
+engineer who should never be sent this trigger at all is filtered out upstream of the
+ledger, not sent-then-skipped). **The same exclusion applies to the nudge and
+PM-escalation rosters once Pass 2 builds them** — named here so it isn't
+independently rediscovered when those rosters are built.
+
+**Sequencing note:** this exclusion depends on `daily_logs.attendance` existing (§30(c),
+part of the morning flow migration, §30(a)) — the roster filter change and the morning
+migration are not independent; the filter cannot be written correctly before the
+column it reads exists.
+
 ---
 
 ## Two hard preconditions for enabling Pass 1's cron entries (`vercel.json` item E)
@@ -423,3 +442,12 @@ may merge before both are done. The two `vercel.json` entries (item E) may not b
 added until both are confirmed true by direct observation** — not by a checklist
 line, per this project's own standing "rollback mechanisms are verified by
 observation" discipline extended to this gate.
+
+**CORRECTED, 2026-08-22 (§30(i)):** the two conditions above are not
+independently-satisfiable — they are ORDERED. B3's sweep must know which morning
+question each `current_step` value means to correctly preserve partial answers, and
+the morning flow migration (§30(a)/(b)) changes that exact mapping. **Corrected
+order: morning flow migration ships first, then B3's sweep is written once against
+its final shape, then Pass 1's two `vercel.json` cron entries may be added.** Full
+reasoning in `design-decisions-beta-feedback.md` §29's own corresponding correction
+and §30(i).

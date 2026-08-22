@@ -2131,3 +2131,159 @@ stand on their own:
 Neither is scheduled. The Pass 1 CODE may merge before both are done. The two
 `vercel.json` cron entries may not be added until both are confirmed true by direct
 observation.
+
+**CORRECTED, 2026-08-22 (§30(i)) — these are NOT parallel/independent preconditions.**
+The numbered list above presented GATE 1 and B3 as two separate conditions with no
+stated relationship between them — that framing is corrected here, not silently, since
+no single sentence above asserted independence to strike through; the numbered-list
+shape itself is what implied it. B3's 15:00 sweep must know which morning question
+each `current_step` value means, in order to correctly preserve partial answers when it
+stamps a stuck session as submitted. The morning flow migration CHANGES that mapping
+(step 2 shifts from "workers" to "plan", step 3 from "equipment" to "workers," per the
+re-scoping plan's own line-number table). Writing B3 before the migration ships means
+writing it against a mapping the migration then invalidates — B3 would need
+rewriting, not just re-verifying. **Corrected order: the morning flow migration ships
+FIRST, THEN B3's sweep is written (once, against the mapping it will actually run
+against), THEN the two `vercel.json` cron entries may be added** — not two
+independently-satisfiable gates, a sequence. See §30(i) for the full reasoning.
+
+## 30. Flow migration re-scope — nine decisions (2026-08-22) — DECIDED, not built
+
+Recorded alongside `docs/plans/flow-migration-rescoping-plan.md`, which these
+decisions amend (a dated note added there, not a silent rewrite — see that file).
+Plan and documentation only — no code, no migration file.
+
+### a. SPLIT INTO TWO MIGRATIONS — morning ships first, alone
+
+Morning and evening ship as separate migrations, not one bundled change. Morning is a
+mechanical renumber, fully verifiable against the re-scoping plan's own line-number
+table (its §b). Evening is a restructuring — two questions deleted, two rebuilt as
+by-trade pairs, one moved, one added, two new columns, every reask key reshuffled, and
+its own test surface not yet audited (the re-scoping plan's own §f names this
+explicitly). Bundled, a bug found in the evening half blocks the morning half from
+shipping, even though morning is the simpler, already-fully-scoped change.
+
+**MORNING SHIPS FIRST, and shipping it ALONE lifts GATE 1.** Evening's own Q1 (work +
+quantity) is already correct today — template 2 already matches the live RPC's
+evening Q1, unchanged by the evening restructuring — so GATE 1 (template-vs-RPC
+agreement) only ever depended on the MORNING side. Only template 1's migration is a
+precondition for GATE 1; evening's restructuring is a separate, later piece of work.
+
+**Accepted cost of deferring evening, stated plainly:** until evening's migration
+ships, engineers keep being asked *"Did you meet today's plan?"* — a question §28(m)
+already decided to delete (no plan-vs-actual reporting) — because the live RPC still
+asks it. Tolerable at the current beta scale (3 engineers); not tolerable once real
+engineers beyond the beta cohort are on the system, since it's a live, dated
+inconsistency between the documented decision and what the product actually does.
+
+### b. ATTENDANCE FLOW — final shape
+
+**Q1:** *"Are you on site today? Reply yes or no."* (template 1, unchanged from
+already-submitted copy).
+- **YES → normal route:** Q2 action plan / Q3 workers by trade / Q4 equipment (the
+  4-question flow the re-scoping plan already scoped).
+- **NO → follow-up Q2:** *"Is it a site holiday? Reply yes or no."*
+  - **YES → SITE HOLIDAY.** Cancels every remaining trigger for that engineer that
+    day — evening trigger, morning nudge, evening nudge, PM escalation. Flow ends,
+    stamped submitted. **No PM handoff** — there is nothing to report on a day the
+    site itself is closed.
+  - **NO → ENGINEER ABSENT.** Flow ends, stamped submitted. **Evening trigger STILL
+    FIRES** — half-day and late-arrival cases are real (the site may still be
+    working with someone else present, or this engineer may arrive later). **PM
+    handoff applies** — see (e).
+
+Morning is therefore 4 questions on the YES path, 2 questions on either NO path (Q1 +
+the holiday follow-up).
+
+### c. STORAGE
+
+New column `daily_logs.attendance`, `TEXT CHECK (attendance IN ('present', 'absent',
+'site_holiday'))`. `is_holiday` (existing column) is set `true` alongside
+`'site_holiday'` so existing readers of `is_holiday` keep working unchanged;
+`attendance` is the authoritative field going forward. **Two independent booleans
+would permit impossible states** (present AND holiday simultaneously) — a single
+three-value column makes that state unrepresentable, not just unlikely.
+`holiday_reason` has no source in this flow (the follow-up is bare yes/no, no free
+text) — it stays `null`, not backfilled or guessed at.
+
+### d. ROSTER FILTER CHANGE TO PASS 1 — amends the already-merged plan
+
+The evening trigger's roster (per `docs/plans/pass1-outbound-send-plan.md`) currently
+filters only on `messaging_blocked`. It must ALSO exclude any engineer whose
+`daily_logs` row for that date has `attendance = 'site_holiday'` — a site-holiday
+engineer's evening trigger must never fire, per (b) above. The same exclusion applies
+to the nudge and PM-escalation rosters once Pass 2 builds them. **This changes an
+already-merged plan (PR #87) — folded in as a dated amendment to
+`docs/plans/pass1-outbound-send-plan.md` in this same commit, rather than left to be
+discovered at build time.**
+
+### e. PM HANDOFF ON THE ABSENT PATH — §1's handoff, narrowed
+
+§1 (`design-decisions-beta-feedback.md`'s own absence-handling entry) predates this
+three-way branch and treats every "no" answer alike. **It applies ONLY to
+`'absent'`** — the site may still be working with nobody reporting, so the morning
+plan, manpower, and equipment for that engineer's scope still need capturing by
+someone. **It does NOT apply to `'site_holiday'`** — nothing was worked, nothing to
+hand off.
+
+**Delivery: dashboard first, WhatsApp later.** The PM fills the missing morning
+fields directly in the web UI — he is already a web user, and this is a form of four
+fields rather than four conversational turns relayed through someone else. This
+builds on migration 019's correction RPC (`correct_daily_log`), which has existed
+with **zero frontend callers** since 2026-08. §1's original design (the same
+questions sent to the PM via a template + `pending_flows`) remains the better
+long-term answer for a PM who isn't at a desk — recorded as deferred, not dropped.
+
+**Convergence worth naming, found while recording this:** this is the SAME edit UI
+§28(f) already assumed exists when it decided an unmatched equipment name renders as
+entered ("the PM can correct it") — an assumption that is currently false, for the
+identical reason: `correct_daily_log` has no frontend caller today. **One UI serves
+both cases** — build it as a general daily-log edit surface, not an absent-day-specific
+form, so it closes both this gap and §28(f)'s pre-existing one at once.
+
+**Known gap, not solved here:** nothing can currently NOTIFY the PM that a handoff is
+needed. PM escalation (the send that would carry this) is a Pass 2 item, not Pass 1.
+Until it exists, an absent day surfaces only if the PM happens to check the dashboard
+— no push, no reminder.
+
+### f. DPR ON A SITE-HOLIDAY DAY
+
+Still generates. Renders as **SITE CLOSED**, not "evening check-in not received."
+Cancelling this engineer's remaining triggers (per (b)) stops the SYSTEM asking the
+engineer anything further that day — it must not also stop the OWNER being told why
+the day was quiet. This is an `assemble.ts` change, separate from both the morning and
+evening flow migrations — recorded here as its own work item, not bundled into either
+migration's scope.
+
+### g. SITE CLOSURE IS RECORDED PER ENGINEER, NOT PER PROJECT
+
+`daily_logs` is one row per engineer per project per day — one engineer can report
+`'site_holiday'` while another engineer on the SAME project, SAME day, reports real
+work. Nothing propagates between engineers; each evening trigger is suppressed (or
+not) independently, per (d). **Accepted for v1.** **OPEN, not decided:** "was the site
+as a whole closed today" has no project-level answer under this design — this will
+matter once the DPR aggregates multiple engineers on one project and needs to state a
+single site-status fact, not one per engineer.
+
+### h. MISPARSE COST, ACCEPTED KNOWINGLY
+
+A wrongly-parsed "yes" to the holiday follow-up cancels the day's entire capture for
+that engineer, with no route to reopen it — this is the SAME irreversibility §28(t)
+already named for attendance="No" generally, now sharpened to the specific
+holiday-follow-up case. **Partly mitigated, not solved:** per (f), the DPR still
+states the closure claim explicitly, so a PM/owner reading it sees an assertion
+("site closed") they can question, rather than silence they might not notice at all.
+Restart semantics for this class of misparse stay deferred to the outbound-send
+primitive (#69/031), same as every other irreversibility this project has already
+named and deferred, not newly introduced here.
+
+### i. CORRECTION TO §29 — B3 AND GATE 1 ARE NOT PARALLEL PRECONDITIONS
+
+Full correction recorded in place, above, in §29 itself (dated, not a silent
+rewrite) — not repeated verbatim here. Summary: §29 listed GATE 1 and B3 as two
+independent gates on enabling Pass 1's cron entries. They are ordered, not parallel —
+B3's sweep must know which morning question each `current_step` value means in order
+to correctly preserve partial answers, and (a)/(b) above (the morning flow migration)
+change that exact mapping. **Corrected order: morning flow migration ships first, THEN
+B3's sweep is written once against its final shape, THEN Pass 1's two `vercel.json`
+cron entries may be added.**
