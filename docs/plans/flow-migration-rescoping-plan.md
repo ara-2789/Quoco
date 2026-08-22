@@ -401,3 +401,134 @@ established package shape:
     branch with the same rigor as the YES-path table in (b), including its own
     dispatch-branch/reask-key analysis, which this document does not yet provide
     (recorded as a gap here, same as evening's test-surface gap in item 9).
+
+---
+
+## Amendments (2026-08-22) — two findings rescued from CLAUDE.md before its split
+
+Origin: a pre-split audit found `CLAUDE.md`'s "RECORDED, NOT FIXED (2026-08-15,
+MVP schedule freeze pass)" entry (two small findings, deliberately left alone)
+falls past CLAUDE.md's ~150,000-character read window and is not duplicated
+anywhere else in the repo — see the tail-audit at
+`/tmp/claude-md-tail-audit.md`, block 74. CLAUDE.md itself is unedited by this
+rescue. Both items below were re-verified live against the current repo, not
+carried forward on trust.
+
+### j. `whatsapp_sessions.expires_at` — verified dead column, relevant to (c) and (h)
+
+**Verification, run fresh, not inherited from the original 2026-08-15 finding:**
+
+```
+$ grep -rn "expires_at" lib/ app/
+lib/whatsapp/session.ts:31:  expires_at: string
+```
+
+One hit, and it is a TypeScript interface field declaration
+(`lib/whatsapp/session.ts:31`), not a read of the column's value — nothing in
+`lib/` or `app/` ever branches, filters, or compares on `expires_at`.
+
+```
+$ grep -rln "expires_at" app/api/cron/ app/api/jobs/
+(no output)
+$ find app/api/cron app/api/jobs -type f
+app/api/cron/dpr-generate/route.ts
+app/api/jobs/tick/route.ts
+```
+
+Both of this project's only two scheduled/queue routes were checked directly;
+neither references `expires_at`. The finding stands, re-confirmed: the column
+is written by every session-generating RPC (`p_now + INTERVAL '30 minutes'`)
+and read by nothing, anywhere, ever. Sessions do NOT actually expire 30
+minutes after `expires_at` would suggest — the only real reset is BOT-07's
+next-IST-day wipe (`quoco_same_ist_day`, compared lazily against
+`updated_at` on the next inbound message, not on any background timer).
+
+**Why this matters here, specifically — re-reading (c) and (h) above with this
+in mind.** Section (c)'s "in-flight sessions at deploy" analysis leans on an
+assumption that during the 19:45→08:30 IST quiet window, "no session should be
+mid-flow... **once B3's cutoff-close sweep exists**" — and separately flags,
+as a residual risk to guard against with a defensive sweep, "a session that
+somehow is still open (e.g., BOT-07's TTL/resume behaviour keeping something
+open past a naive expectation)." That parenthetical was more right than it
+knew: there is no TTL/resume behaviour of that kind to keep anything open
+past a naive expectation, because there is no TTL enforcement at all. A
+session started at, say, 09:00 IST and abandoned mid-flow does not
+self-close at 09:30 IST, at 15:00 IST, at 19:45 IST, or at any other clock
+time — it sits at whatever `current_flow`/`current_step` it was last left at
+until either (a) the same engineer messages again and the RPC's lazy
+same-day check fires, or (b) B3's sweep (§29(d)'s widened version — reset
+AND stamp partial answers as submitted, per `docs/plans/
+pass1-outbound-send-plan.md` §(d)) actually runs.
+
+That is not a marginal edge case — it is the **normal, by-design condition**
+this system is in for most of every day once real usage exists: stale
+morning sessions persisting all day, with nothing but B3's 15:00 (`morningCutoff`,
+`lib/daily-logs/cutoffs.ts:50`) sweep and the next-day wipe standing between
+"abandoned" and "silently misinterpreted by a renumbered flow." Section (c)'s
+recommended option 3 (deploy during the quiet window, "belt-and-suspenders"
+with a defensive migration-time sweep) is still the right call, but its
+safety margin should be read as resting entirely on B3's sweep actually having
+run before deploy and on the calendar-day wipe having already fired for
+anything older — not on any implicit TTL, because none exists. Section (h)'s
+sequencing recommendation ("this flow migration ships before B3's sweep is
+written") is unaffected by this finding, but the STAKES of getting that
+sequencing right are higher than (h) states on its own: without a TTL as a
+backstop, B3's sweep is not one of two independent safety nets at deploy
+time, it is the ONLY thing (short of the lazy day-boundary wipe) that ever
+closes a stale session at all.
+
+**Options, unchanged and unchosen — carried forward, not decided here:**
+1. Read `expires_at` for real (wire an actual TTL check somewhere in the
+   session-read path).
+2. Drop the column (stop writing a value nothing will ever honor).
+
+Neither is chosen in this pass. This document's own scope is the flow
+migration and its interaction with B3 (item h) — a decision on `expires_at`
+belongs with whoever owns B3's sweep or a future schema-cleanup pass, not
+here.
+
+### k. `lib/whatsapp/dispatch.ts`'s stale cross-reference — already fixed, CLAUDE.md's entry is stale
+
+CLAUDE.md's paired finding #2 ("`lib/whatsapp/dispatch.ts:8-14` cites
+'design-decisions §11' for the restart-start note. The restart note is §10...
+not fixed in this pass") is **no longer accurate** — verified against the file
+as it exists on `main` today, not assumed from the CLAUDE.md text:
+
+```
+$ sed -n '8,19p' lib/whatsapp/dispatch.ts
+// Webhook-wiring deliverable named in migration 022's review package (§10).
+// Implements the retry contract from that migration's own header ("call the
+// OTHER rpc exactly once. Bounded by construction: one retry, never a
+// loop") for ORDINARY inbound replies only -- starting a flow is a separate,
+// explicit directive and is deliberately NOT handled here. Two starters
+// exist above this module, neither inside it: the env-gated test-start
+// sentinel (route.ts, morning-only, deterministic smoke seeding) and, as of
+// the II3 build, lib/whatsapp/inbound-start.ts's routeInboundMessage (both
+// flows, real production traffic, no flag -- see that file's own header).
+// design-decisions-beta-feedback.md §10 (corrected cross-reference — was
+// mis-cited as §11) is the restart-semantics record this build's (b)
+// submitted-check mitigates around, not fixes.
+```
+
+The cross-reference already reads "§10 (corrected cross-reference — was
+mis-cited as §11)". PR #76 (`feat/inbound-start-trigger`, merged
+2026-08-20T16:28:00Z) fixed it as a side effect of touching that header — its
+own PR body states this explicitly under "Also in this PR": *"Fixes
+`dispatch.ts`'s stale cross-reference (was §11, is §10 — a previously-recorded-
+but-unfixed CLAUDE.md finding, closed as a side effect of touching that
+header)."* CLAUDE.md's own entry was never updated to reflect this, and is
+now itself an instance of the exact failure pattern CLAUDE.md elsewhere warns
+about (§0, "session notes and handover documents describe the past; the repo
+describes the present").
+
+**Doubly-checked against the "doubly stale" concern:** `design-decisions-
+beta-feedback.md` §10 ("RESTART SEMANTICS — DECIDED 2026-08-15:
+refuse-when-submitted", line 400) is still the correct target — §29 and §30
+(both added 2026-08-22, outbound-send primitive and this flow migration,
+respectively) cover unrelated topics and do not supersede §10 as the
+restart-semantics record. No further fix is needed in `dispatch.ts`; the
+cross-reference is correct as it stands.
+
+**No code change made here** — `dispatch.ts` requires no edit; this section
+exists only to record, with fresh verification, that the underlying finding
+is resolved and CLAUDE.md's copy of it is what's out of date.
