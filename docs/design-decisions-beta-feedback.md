@@ -1932,3 +1932,101 @@ mid-word cut ("...coordinate w") is illegible to the reader and, per this same f
 was exactly what the fictional SAMPLE had until this pass caught it — the real send path
 should not repeat it. Not built here — zero implementation, same as every other item in
 this section.
+
+### w. PP2 vs §7 SCOPE LINE (2026-08-21) — resolves a live conflict between two DECIDED
+sections
+
+§27 (PP2) states inbound at idle gets an acknowledgement only and does not start a flow;
+starting is the cron's job exclusively. §7 states an unrecognised inbound at idle opens
+the ad-hoc selection menu. Same trigger, opposite outcomes.
+
+**RESOLVED:** the cron starts SCHEDULED flows (morning 08:30, evening 18:30) — PP2's
+principle holds, the engineer never has to remember to start a check-in. Inbound at idle
+opens the AD-HOC MENU. Ad-hoc events cannot be scheduled by nature: a hindrance is
+reported when it happens, an invoice when it arrives. PP2's "acknowledgement only" branch
+was written before the ad-hoc menu existed and is superseded by this.
+
+**Live evidence:** on 2026-08-21 at ~19:50 IST a real inbound at idle returned "Today's
+report is ready. Send your update tomorrow morning." Under §7 that should have opened the
+menu.
+
+**GATE:** this must be settled in the outbound send primitive's design (#69/031), which
+currently assumes PP2 as written.
+
+### x. AD-HOC MENU IS THE ENGINEER'S FRONT DOOR (2026-08-21) — not an error handler for
+unrecognised input
+
+It is what he sees whenever he opens the thread outside a check-in, so it is designed as
+a home screen. Standard fixed list, kept short. Initial set: hindrance, dependency,
+invoice, delivery note, site cash.
+
+**Delivery mechanism:** a WhatsApp interactive list sent as a FREE-FORM session reply —
+his inbound opens the 24-hour window. No template, no Meta approval needed. Record that
+interactive lists cannot be sent business-initiated, so the menu can only ever appear in
+response to an inbound.
+
+### y. PRODUCT POSITIONING (2026-08-21)
+
+The engineer's WhatsApp thread is the system of record for site events that today live in
+phone calls to the PM. Hindrances, dependencies, site cash, invoices and delivery notes
+are work the engineer ALREADY does; routing it through Quoco is substitution, not
+additional burden. The organisational value is that site truth stops being filtered
+through whoever the owner happens to ask, and produces a timestamped, attributed trail
+usable in extension-of-time and variation claims.
+
+Engineer remains WhatsApp-ONLY, permanently. No engineer app, ever — this is the wedge:
+competitors ship an engineer app that goes unopened and their data dries up.
+
+### z. WEEKLY ENGINEER FEEDBACK (2026-08-21) — new, decided
+
+The engineer currently gives data and receives nothing, which is where this class of
+product dies. Send him his own numbers weekly over WhatsApp: efficiency by trade and idle
+hours, computed from the data he already submits. Turns extraction into feedback.
+Requires `productivity_standards` (does not exist) and the outbound send primitive.
+
+### aa. CONSEQUENCES OF (y), EACH REQUIRING RE-PRIORITISATION (2026-08-21) — record, do
+not schedule
+
+1. **INBOUND MEDIA HANDLING is now load-bearing, not a §6 photo-attendance nicety.**
+   Invoices, delivery notes and cash receipts are all photographs. Needs Twilio media
+   download, a storage bucket, and a retention policy.
+2. **SITE CASH NEEDS A CONFIRMATION ECHO, not accept-and-advance.** Evidence: on
+   2026-08-21 "Cement micsur 1000" was stored as equipment type "cement" with
+   `daily_hire_cost` 1000 and rendered in a real DPR as "Cement, ₹1000/day". The same
+   parser class applied to petty cash fabricates expenditure. Anything carrying a rupee
+   figure must read back what was understood before storing.
+3. **DATA RETENTION becomes a statutory obligation, not an open item.** Once the thread
+   holds invoices and delivery notes it is a financial record with retention periods
+   behind it. Update the standing open item accordingly.
+
+### bb. OWNER DELIVERY (2026-08-21)
+
+WhatsApp notification carrying a deep link into the app; the app holds anything the owner
+PULLS (invoices, delays, spend), WhatsApp carries what is PUSHED. Record the gap: NO
+owner-facing WhatsApp template exists in the submitted batch — templates 6, 7, 9 and 10
+all go to the PM, and 7 tells the PM the owner was EMAILED. Owner delivery today is
+email-only. A new owner template is required and templates take days to approve.
+
+Keep all links in `https://app.quoco.co.in/...` form (as template 6's button already is)
+so Universal Links / App Links open the app when installed and the web page when not —
+no custom scheme, no template re-cut.
+
+### cc. MOBILE APP — DIRECTION SET, NOT SCHEDULED (2026-08-21)
+
+Three personas, two clients, one data model: engineer on WhatsApp only; PM and owner in
+the app with different permissions over the same records (PM exception-first and
+editable, owner read-only and summarised). Sequencing: owner first (the buying decision),
+PM second (mobile for site visits, web dashboard stays primary).
+
+**BLOCKED ON DATA, NOT ON CLIENT WORK.** Of the mockup's five screens only two have any
+backing data today (portfolio list, DPR). Invoices have no schema at all; hindrance
+capture was only decided today and is unbuilt; contract value, spend-to-date, site photos
+and PM contact do not exist anywhere.
+
+Also record: the mockup's report screen mirrors `renderEngineerReport` and is already
+superseded by §28(m) — its plan-vs-actual pairs, "Schedule: not met" and aggregate
+productive/idle manpower were all removed today.
+
+Owner phone-number sign-in depends on `quoco_login_otp`, which FAILED submission on
+2026-08-21 (Authentication category requires the `whatsapp/authentication` content type,
+not `twilio/text`).
