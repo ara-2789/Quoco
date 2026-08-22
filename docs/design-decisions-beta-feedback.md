@@ -2030,3 +2030,104 @@ productive/idle manpower were all removed today.
 Owner phone-number sign-in depends on `quoco_login_otp`, which FAILED submission on
 2026-08-21 (Authentication category requires the `whatsapp/authentication` content type,
 not `twilio/text`).
+
+## 29. Pass 1 outbound send primitive — five decisions (2026-08-22) — DECIDED, not built
+
+Recorded alongside `docs/plans/pass1-outbound-send-plan.md`, which these decisions were
+folded into as amendments. Plan and documentation only — no code, no migration file in
+`supabase/migrations/`, no cron entries.
+
+### a. NO STOP KEYWORD — BOT-27's SET-half is OUT of Pass 1's scope
+
+Engineer opt-out is a PM decision, using the existing `status='deactivated'`.
+`messaging_blocked` remains engineer CONSENT state and is never PM-clearable — this does
+not reopen or contradict PR #69's own already-reasoned B2 (round 1) finding
+(`outbound-send-primitive-plan.md`, "`messaging_blocked` is NOT a delivery-failure flag";
+it stays a consent flag written only by `clearMessagingBlock`, which only ever writes
+`false`) — it goes further: no code path is ever added to write `messaging_blocked=true`
+from an inbound STOP keyword either. The scoping plan's own item A (STOP detection,
+"ships first") is retracted by this decision, not merely deferred.
+
+**Accepted cost, recorded plainly, not minimised:** with no in-product opt-out route, an
+engineer who wants the messages to stop has exactly one option — WhatsApp's own Block —
+which is invisible to this system (no signal, no row, no way to ever know it happened),
+counts against the sending number's own quality rating under Meta's rules, and cannot be
+undone by anyone on either side once it happens (unlike `messaging_blocked`, which
+`clearMessagingBlock` can always reverse). This is a real, accepted trade, not an
+oversight — see (b) for what replaces it, and its own dependency on the still-unbuilt
+ad-hoc menu.
+
+### b. OPT-OUT BECOMES AN AD-HOC MENU ITEM
+
+A free-text-comment opt-out request, routed to the PM as a request rather than acted on
+as a silent removal. Rationale: cannot be triggered accidentally (unlike a bare keyword
+match, which a garbled or unrelated message could theoretically collide with); captures
+WHY the engineer wants out, which distinguishes "I've left this project" (a roster
+problem, PM should reassign) from "too many messages" (a product/frequency problem, PM
+should reconsider cadence) — two situations with OPPOSITE correct PM responses that a
+bare STOP keyword can never tell apart.
+
+**Recorded as a dependency of §28(x):** until the ad-hoc menu is actually built, there is
+**NO opt-out path of any kind** in this product — not the keyword (a, retracted), not the
+menu item (this decision, unbuilt). Acceptable at beta scale, where the PM/founder can
+plausibly notice and handle an unhappy engineer directly; this carries a real compliance
+obligation once real engineers beyond the beta cohort are on the system, and that
+obligation is not discharged by this decision, only named by it.
+
+### c. TEMPLATE 8 COPY MUST CHANGE — and this decision is what LIFTS GATE 2
+
+`quoco_engineer_optin`'s current body promises "Reply STOP at any time to stop these
+messages" — no longer accurate, per (a). The copy must be rewritten to describe the
+PM-managed route (b) instead, once the menu exists to describe. **This template is
+unsubmitted and held under GATE 2 (`docs/whatsapp-templates.md`), so this correction is
+free to make now, before it is ever seen by Meta or an engineer — no resubmission,
+no re-approval cost, no 30-day name lock at risk.**
+
+**This decision is what LIFTS GATE 2.** GATE 2 existed for exactly one reason — the
+template's body carried a promise (`messaging_blocked` set by a STOP reply) that no code
+ever kept. Once the promise itself is rewritten to match what (a)/(b) actually build,
+there is nothing left for GATE 2 to guard against. GATE 2 lifts when this rewrite lands,
+not before.
+
+**Do not resubmit yet — flagged for approval, not actioned here.** This entry records the
+decision and its consequence for GATE 2; it does not edit `docs/whatsapp-templates.md` or
+resubmit anything. Per direct instruction: "Do not touch templates."
+
+### d. MORNING CUTOFF SUBMITS AS-IS
+
+At `morningCutoff` (15:00 IST), any session still at `current_flow='morning'` is closed
+AND stamped submitted with whatever was actually answered — not merely reset to idle.
+
+**This is broader than B3's originally decided fix** (`outbound-send-primitive-plan.md`
+§"B3", options 1+3: cutoff-close the stale session so the evening trigger routes
+correctly — a session-STATE fix only, silent on what happens to any partial answers
+sitting in it). This decision adds the missing half: the partial morning data is REAL
+data, submitted by the engineer, and is kept as the record — not discarded just because
+the flow never reached its normal completion step. Same principle already applied
+elsewhere in this project (an engineer's real answer always wins over a clean-but-empty
+default). Widens what "B3's fix" has to build — recorded in
+`docs/plans/pass1-outbound-send-plan.md`'s own Amendments (d) and review-package item 4.
+
+### e. NO PARTIAL/COMPLETE DISTINCTION IN THE DPR
+
+The DPR renders whatever was recorded and marks the rest missing — exactly the existing
+behaviour, unchanged. Evidenced directly: the 2026-08-21 generated DPR already rendered
+"not reported" for every evening field on a day evening was never submitted, with no
+special-cased "partial day" framing anywhere in the output. No new state, no new column,
+no new branching in the report generator. Same principle as §28(f): show what was said,
+mark what was not — a morning session closed early by (d) is just one more case of a
+field with nothing to report, handled by machinery that already exists.
+
+### Two hard preconditions for enabling Pass 1's cron entries — recorded here too
+
+Same two conditions as `docs/plans/pass1-outbound-send-plan.md`'s own closing section,
+stated once each place rather than only cross-referenced, since both documents need to
+stand on their own:
+
+1. **GATE 1** — the flow migration (§28(l), attendance-as-Q1) shipped and verified live.
+2. **B3's cross-flow fix, widened by (d) above** — built and verified: closes stale
+   morning sessions AND stamps their partial answers as submitted.
+
+Neither is scheduled. The Pass 1 CODE may merge before both are done. The two
+`vercel.json` cron entries may not be added until both are confirmed true by direct
+observation.
