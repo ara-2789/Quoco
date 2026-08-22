@@ -7,6 +7,7 @@
     "dev": "next dev",
     "check:profile-lookups": "node scripts/check-profile-lookups.mjs",
     "lint:migrations": "node scripts/lint-migrations.mjs",
+    "lint:filesize": "node scripts/check-file-sizes.mjs",
     "prebuild": "npm run check:profile-lookups",
     "build": "next build",
     "start": "next start",
