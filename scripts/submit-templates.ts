@@ -31,8 +31,9 @@
 // reviewing script output is least likely to catch. docs/whatsapp-templates.md remains
 // the human-readable record; docs/whatsapp-templates.json is the machine record this
 // script actually reads, generated once by hand against the markdown and kept in sync by
-// hand from here -- see checkDriftAgainstMarkdown() below for the check that catches the
-// two drifting apart.
+// hand from here -- see checkDriftAgainstMarkdown() (template presence) and
+// checkBodyDriftAgainstMarkdown() (2026-08-22, body wording, whitespace-normalised) for
+// the checks that catch the two drifting apart.
 //
 // CREDENTIALS: TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN, read from process.env only.
 // Never hardcoded, never logged, never written to disk, never echoed -- including in
@@ -225,6 +226,88 @@ function checkDriftAgainstMarkdown(templates: ParsedTemplate[]): void {
   }
 }
 
+// Extracts a template's CURRENT body from its markdown section -- struck-through
+// (~~...~~) text stripped first, [Button: ...] lines excluded -- for the content-drift
+// comparison below ONLY. This is never used to build a submission payload; the JSON
+// remains the sole source for that. Returns null if no blockquote body can be found,
+// which the caller treats as a hard failure, not a skip.
+function extractCurrentMarkdownBody(section: string): string | null {
+  const sectionLive = section.replace(/~~[\s\S]*?~~/g, '')
+  const bodyMatch = sectionLive.match(/\n((?:^> .*\n?)+)/m)
+  if (!bodyMatch) return null
+  const bodyLines = bodyMatch[1].split('\n').filter((l) => l.startsWith('> '))
+  const textLines: string[] = []
+  for (const line of bodyLines) {
+    const stripped = line.replace(/^> /, '')
+    if (/^\[Button:\s*.+\]$/.test(stripped)) continue // button line, not body text
+    textLines.push(stripped)
+  }
+  return textLines.join('\n')
+}
+
+function normalizeBody(body: string): string {
+  return body.replace(/\s+/g, ' ').trim()
+}
+
+// Content-drift guard (2026-08-22): the header-presence check above catches a
+// template appearing or vanishing, but a JSON body that has silently diverged in
+// WORDING from the markdown's own current body goes completely undetected by it --
+// the strike-through bug's shape one level up. The JSON is what actually gets
+// submitted to Meta; the markdown is what a human reads and corrects. A silent
+// divergence between them means a human-approved fix made in the markdown would
+// never reach Meta, with nothing surfacing that fact.
+//
+// Compares on WHITESPACE-NORMALISED text specifically so the markdown file's own
+// word-wrap line breaks (see the 2026-08-21 "slab\nconcrete" artifact, corrected by
+// hand in the JSON) can never produce a false mismatch here -- normalisation erases
+// layout only, never wording, variable numbering, or punctuation, so a real content
+// difference still fails loudly.
+function checkBodyDriftAgainstMarkdown(templates: ParsedTemplate[]): void {
+  let md: string
+  try {
+    md = readFileSync(TEMPLATES_MD_PATH, 'utf8')
+  } catch (e) {
+    fail(`Could not read ${TEMPLATES_MD_PATH} for the content-drift check: ${(e as Error).message}`)
+  }
+  const sections = md.split(/\n(?=### )/)
+
+  let anyMismatch = false
+  for (const t of templates) {
+    const section = sections.find((s) => {
+      const h = s.match(/^### (\S+)\.\s+`([a-zA-Z0-9_]+)`/)
+      return h != null && h[1] === t.id
+    })
+    if (!section) {
+      // Should already have been caught by checkDriftAgainstMarkdown() -- fail
+      // loudly here too rather than silently skipping, in case that check is
+      // ever bypassed or called out of order.
+      console.log(`FAIL  ${t.id} ${t.name} -- no matching markdown section found`)
+      anyMismatch = true
+      continue
+    }
+    const mdBody = extractCurrentMarkdownBody(section)
+    if (mdBody === null) {
+      console.log(`FAIL  ${t.id} ${t.name} -- could not extract a current body from the markdown section`)
+      anyMismatch = true
+      continue
+    }
+    if (normalizeBody(mdBody) !== normalizeBody(t.body)) {
+      console.log(`FAIL  ${t.id} ${t.name} -- JSON body does not match markdown's current body (normalised)`)
+      anyMismatch = true
+    } else {
+      console.log(`PASS  ${t.id} ${t.name}`)
+    }
+  }
+
+  if (anyMismatch) {
+    fail(
+      "Content drift detected: one or more templates in docs/whatsapp-templates.json no longer " +
+        "match docs/whatsapp-templates.md's current body. Update the JSON by hand to match the " +
+        'markdown, then re-run.'
+    )
+  }
+}
+
 function loadAlreadySubmitted(statusMd: string): Set<string> {
   const submitted = new Set<string>()
   for (const line of statusMd.split('\n')) {
@@ -306,6 +389,7 @@ async function main() {
 
   const allTemplates = loadTemplatesFromJson()
   checkDriftAgainstMarkdown(allTemplates)
+  checkBodyDriftAgainstMarkdown(allTemplates)
 
   const eligible = allTemplates.filter((t) => {
     if (HARD_EXCLUDED_NAMES.has(t.name)) {
