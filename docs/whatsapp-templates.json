@@ -1,0 +1,164 @@
+[
+  {
+    "id": "1",
+    "name": "quoco_morning_checkin",
+    "category": "UTILITY",
+    "body": "Good morning {{1}}. This is Quoco for {{2}}.\nAre you on site today? Reply yes or no.",
+    "samples": { "1": "Arjun Nair", "2": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "2",
+    "name": "quoco_evening_checkin",
+    "category": "UTILITY",
+    "body": "Good evening {{1}}. This morning you planned: {{3}}\nWhat *work was completed* today for {{2}}? Add the quantity if you can — e.g. \"slab concrete 120 sqm\".",
+    "samples": {
+      "1": "Arjun Nair",
+      "2": "Emerald Heights",
+      "3": "Continue shuttering work for the second floor slab near grid lines D4 to D9, finish rebar tying for the retaining wall on the north side..."
+    },
+    "button": null
+  },
+  {
+    "id": "2b",
+    "name": "quoco_evening_checkin_no_plan",
+    "category": "UTILITY",
+    "body": "Good evening {{1}}. This is Quoco for {{2}}.\nWhat *work was completed* today? Add the quantity if you can — e.g. \"slab concrete 120 sqm\".",
+    "samples": { "1": "Arjun Nair", "2": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "3",
+    "name": "quoco_morning_nudge",
+    "category": "UTILITY",
+    "body": "Hi {{1}}, you have not sent today's morning check-in for {{2}} yet.\nReply to start now.",
+    "samples": { "1": "Arjun Nair", "2": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "4",
+    "name": "quoco_evening_nudge",
+    "category": "UTILITY",
+    "body": "Hi {{1}}, you have not sent today's evening check-in for {{2}} yet.\nReply to start now.",
+    "samples": { "1": "Arjun Nair", "2": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "1v2",
+    "name": "quoco_morning_checkin_v2",
+    "category": "UTILITY",
+    "body": "Good morning {{1}}.\nAre you on site today for {{2}}? Reply yes or no.",
+    "samples": { "1": "Arjun Nair", "2": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "2v2",
+    "name": "quoco_evening_checkin_v2",
+    "category": "UTILITY",
+    "body": "Good evening {{1}}. Your morning plan was: {{3}}\nFor {{2}}, what *work was completed* today? Add the quantity if you can — e.g. \"slab concrete 120 sqm\".",
+    "samples": {
+      "1": "Arjun Nair",
+      "2": "Emerald Heights",
+      "3": "Continue shuttering work for the second floor slab near grid lines D4 to D9, finish rebar tying for the retaining wall on the north side..."
+    },
+    "button": null
+  },
+  {
+    "id": "3v2",
+    "name": "quoco_morning_nudge_v2",
+    "category": "UTILITY",
+    "body": "Hi {{1}}, today's morning check-in for {{2}} is not done yet.\nReply now to start.",
+    "samples": { "1": "Arjun Nair", "2": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "4v2",
+    "name": "quoco_evening_nudge_v2",
+    "category": "UTILITY",
+    "body": "Hi {{1}}, today's evening check-in for {{2}} is not done yet.\nReply now to start.",
+    "samples": { "1": "Arjun Nair", "2": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "5",
+    "name": "quoco_manager_missed",
+    "category": "UTILITY",
+    "body": "Reminder: {{1}} has not submitted today's check-in for {{2}}.\nThe window for a nudge has closed. Please follow up directly if needed.",
+    "samples": { "1": "Arjun Nair", "2": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "6",
+    "name": "quoco_dpr_ready_pm",
+    "category": "UTILITY",
+    "body": "Today's Daily Progress Report for {{1}}, dated {{2}}, is ready to review.\nYou have until 8:30 PM to make any corrections before it is sent to the owner.",
+    "samples": { "1": "Emerald Heights", "2": "21 Aug 2026" },
+    "button": {
+      "label": "View report",
+      "url": "https://app.quoco.co.in/dprs/{{3}}",
+      "sampleVar": "3",
+      "sampleValue": "a1b2c3d4-5e6f-4a3b-8c9d-1e2f3a4b5c6d"
+    }
+  },
+  {
+    "id": "7",
+    "name": "quoco_dpr_owner_email_sent",
+    "category": "UTILITY",
+    "body": "The Daily Progress Report for {{1}}, dated {{2}}, has been emailed to the owner.",
+    "samples": { "1": "Emerald Heights", "2": "21 Aug 2026" },
+    "button": null
+  },
+  {
+    "id": "8",
+    "name": "quoco_engineer_optin",
+    "category": "UTILITY",
+    "body": "Hello {{1}}. Your team at {{2}} has added you to Quoco for daily check-ins on {{3}}.\nReply YES to start.\nYou can reply in any language — English, Tamil, or a mix.\nReply STOP at any time to stop these messages.",
+    "samples": { "1": "Arjun Nair", "2": "Shivalik Infraprojects Pvt Ltd", "3": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "9",
+    "name": "quoco_dpr_silent_day",
+    "category": "UTILITY",
+    "body": "Note for {{2}}: no check-in data was received for {{1}} today.\nNo report was generated. Please confirm the site status if needed.",
+    "samples": { "1": "Emerald Heights", "2": "Suresh Iyer" },
+    "button": null
+  },
+  {
+    "id": "10",
+    "name": "quoco_dpr_delayed",
+    "category": "UTILITY",
+    "body": "Note for {{2}}: today's report for {{1}} is taking longer than usual to generate.\nWe will notify you when it is ready.",
+    "samples": { "1": "Emerald Heights", "2": "Suresh Iyer" },
+    "button": null
+  },
+  {
+    "id": "11",
+    "name": "quoco_dpr_pause_expired",
+    "category": "UTILITY",
+    "body": "Your check-in pause for {{1}} ended on {{2}}.\nDaily check-ins have resumed.",
+    "samples": { "1": "Emerald Heights", "2": "21 Aug 2026" },
+    "button": null
+  },
+  {
+    "id": "12",
+    "name": "quoco_safety_alert_pm",
+    "category": "UTILITY",
+    "body": "Safety report for site {{1}}: engineer {{2}} reported an incident described as {{3}}.\nCurrent injury status is recorded as {{4}}. Please review immediately.",
+    "samples": {
+      "1": "Emerald Heights",
+      "2": "Arjun Nair",
+      "3": "a fall from height near the scaffolding on level 2",
+      "4": "minor injury, first aid given"
+    },
+    "button": null
+  },
+  {
+    "id": "13",
+    "name": "quoco_login_otp",
+    "category": "AUTHENTICATION",
+    "body": "Your Quoco login code is {{1}}. This code expires in 10 minutes.",
+    "samples": { "1": "482913" },
+    "button": null
+  }
+]

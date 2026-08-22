@@ -1904,3 +1904,31 @@ UNSCOPED** — §28(b)'s earlier Q4-removal scope no longer covers this, because
 attendance-as-Q1 renumbers every step and the reask keys (`q2_reask`, `q3_reask`) are
 keyed by step number. Re-scope before building. **Trips CLAUDE.md §0(a) — external
 review gate required** (creates/modifies a live function's logic).
+
+### v. RECORDED, NOT BUILT (2026-08-22) — the 150-char morning-plan truncation must break
+on a word boundary with an ellipsis, not mid-word
+
+Found reading the WhatsApp template-submission dry-run payloads: the `{{3}}` sample value
+for templates 2/2v2 (a 259-character fictional morning plan, truncated for the template's
+own `≤150 chars` limit) originally cut mid-word ("...coordinate w") — fixed in the sample
+itself (`docs/whatsapp-templates.md`/`.json`, 2026-08-22) by truncating at the last word
+boundary before 150 chars and appending an ellipsis (139 chars total).
+
+**Checked whether any real send-path code does this truncation today: it does not exist.**
+Grepped `lib/`, `app/`, `scripts/` for any Twilio Content API template-send construction
+(`ContentSid`, `ContentVariables`, an `HX...` template SID, any `require('twilio')`/
+`from 'twilio'` import outside the sandbox's inline-TwiML reply) — zero hits, consistent
+with CLAUDE.md §3's STANDING ARCHITECTURAL FACT: no outbound-send capability exists in
+this codebase at all, only synchronous webhook replies. `morning_plan` itself is read only
+by the DPR assembler/containment path (`lib/dpr/assemble.ts`, `lib/dpr/containment.ts`) and
+written by the morning flow (`lib/whatsapp/flows/morning.ts:203`) — nothing today reads it
+to populate an outbound template variable, because nothing today sends outbound templates.
+
+**Recorded for whoever builds #69/031 (the outbound-send primitive):** when the evening
+check-in cron send is built and it populates template 2/2v2's `{{3}}` from
+`daily_logs.morning_plan`, the 150-char truncation MUST break on the last word boundary
+before the limit and append an ellipsis — never a bare slice/substring cut mid-word. A
+mid-word cut ("...coordinate w") is illegible to the reader and, per this same finding,
+was exactly what the fictional SAMPLE had until this pass caught it — the real send path
+should not repeat it. Not built here — zero implementation, same as every other item in
+this section.
