@@ -15,7 +15,7 @@
     "samples": {
       "1": "Arjun Nair",
       "2": "Emerald Heights",
-      "3": "Continue shuttering work for the second floor slab near grid lines D4 to D9, finish rebar tying for the retaining wall on the north side, coordinate w"
+      "3": "Continue shuttering work for the second floor slab near grid lines D4 to D9, finish rebar tying for the retaining wall on the north side..."
     },
     "button": null
   },
@@ -59,7 +59,7 @@
     "samples": {
       "1": "Arjun Nair",
       "2": "Emerald Heights",
-      "3": "Continue shuttering work for the second floor slab near grid lines D4 to D9, finish rebar tying for the retaining wall on the north side, coordinate w"
+      "3": "Continue shuttering work for the second floor slab near grid lines D4 to D9, finish rebar tying for the retaining wall on the north side..."
     },
     "button": null
   },
@@ -91,7 +91,7 @@
     "id": "6",
     "name": "quoco_dpr_ready_pm",
     "category": "UTILITY",
-    "body": "Today's Daily Progress Report for {{1}}, project {{2}}, is ready to review.\nYou have until 8:30 PM to make any corrections before it is sent to the owner.",
+    "body": "Today's Daily Progress Report for {{1}}, dated {{2}}, is ready to review.\nYou have until 8:30 PM to make any corrections before it is sent to the owner.",
     "samples": { "1": "Emerald Heights", "2": "21 Aug 2026" },
     "button": {
       "label": "View report",
@@ -104,7 +104,7 @@
     "id": "7",
     "name": "quoco_dpr_owner_email_sent",
     "category": "UTILITY",
-    "body": "The Daily Progress Report for {{1}}, project {{2}}, has been emailed to the owner.",
+    "body": "The Daily Progress Report for {{1}}, dated {{2}}, has been emailed to the owner.",
     "samples": { "1": "Emerald Heights", "2": "21 Aug 2026" },
     "button": null
   },

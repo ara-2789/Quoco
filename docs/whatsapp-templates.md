@@ -194,13 +194,20 @@ check-in.~~ — written fresh against the simple-English rules at the time; supe
 ### 2. `quoco_evening_checkin`
 **Audience:** engineer. **Category: Utility.** **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
 (≤150 chars).
-**Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Arjun Nair", `{{2}}` =
-"Emerald Heights", `{{3}}` =
+**Sample values (fictional, 2026-08-21 correction; word-boundary truncation, 2026-08-22):**
+`{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights", `{{3}}` =
 "Continue shuttering work for the second floor slab near grid lines D4 to D9, finish
-rebar tying for the retaining wall on the north side, coordinate w" (a fictional plan,
-259 characters full length; this is the actual 150-character truncation of it — shown
-truncated deliberately, mid-word, so the sample demonstrates the real behaviour rather
-than a short string that never exercises the limit).
+rebar tying for the retaining wall on the north side..." (a fictional plan, 259 characters
+full length; truncated to 139 characters at the last word boundary before 150, with an
+ellipsis, rather than mid-word).
+
+*(Prior sample value for `{{3}}`, struck through, not deleted — truncated mid-word
+("...coordinate w"), found reading the dry-run payloads 2026-08-22: ~~"Continue
+shuttering work for the second floor slab near grid lines D4 to D9, finish rebar tying
+for the retaining wall on the north side, coordinate w" (a fictional plan, 259 characters
+full length; this is the actual 150-character truncation of it — shown truncated
+deliberately, mid-word, so the sample demonstrates the real behaviour rather than a short
+string that never exercises the limit).~~)*
 
 *(Prior sample values, struck through, not deleted — used the real, live-verified
 prod morning plan rather than a fictional one; corrected per the same-day fallback-text
@@ -312,10 +319,16 @@ for {{2}}. Reply to start.~~)*
 ### 2v2. `quoco_evening_checkin_v2`
 **Audience:** engineer. **Category: Utility** (shadows template 2's category). **Variables:** `{{1}}` name, `{{2}}` project, `{{3}}` morning plan
 (≤150 chars). **Shadows:** template 2.
-**Sample values (fictional, 2026-08-21 correction):** same as template 2 — `{{1}}` =
-"Arjun Nair", `{{2}}` = "Emerald Heights", `{{3}}` = "Continue shuttering work for the
-second floor slab near grid lines D4 to D9, finish rebar tying for the retaining wall on
-the north side, coordinate w" (the same fictional 150-char truncation).
+**Sample values (fictional, 2026-08-21 correction; word-boundary truncation, 2026-08-22):**
+same as template 2 — `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights", `{{3}}` =
+"Continue shuttering work for the second floor slab near grid lines D4 to D9, finish
+rebar tying for the retaining wall on the north side..." (the same fictional truncation,
+139 characters, word-boundary + ellipsis).
+
+*(Prior sample value for `{{3}}`, struck through, not deleted — truncated mid-word, same
+correction as template 2's own: ~~"Continue shuttering work for the second floor slab near
+grid lines D4 to D9, finish rebar tying for the retaining wall on the north side,
+coordinate w" (the same fictional 150-char truncation).~~)*
 
 *(Prior sample values, struck through, not deleted, same correction as template 2's own:
 ~~same as template 2 — `{{1}}` = "Vikram Rao", `{{2}}` = "Speed Mechatronics", `{{3}}` =
@@ -383,7 +396,7 @@ without drifting from this project's own consistent-vocabulary rule.
 drop the body-variable link, add a dashboard-link button component).
 **Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Emerald Heights", `{{2}}` = "21 Aug 2026".
 
-> Today's Daily Progress Report for {{1}}, project {{2}}, is ready to review.
+> Today's Daily Progress Report for {{1}}, dated {{2}}, is ready to review.
 > You have until 8:30 PM to make any corrections before it is sent to the owner.
 > [Button: View report]
 
@@ -394,6 +407,16 @@ parenthetical with "project {{2}}," which reads naturally and breaks the adjacen
 *(Prior copy, struck through, not deleted: ~~Today's Daily Progress Report for {{1}}
 ({{2}}) is ready to review. You have until 8:30 PM to make any corrections before it is
 sent to the owner.~~)*
+
+**SEMANTIC FIX (2026-08-22, found reading the dry-run payloads):** the audit fix above was
+itself wrong — `{{1}}` is the PROJECT and `{{2}}` is the DATE, so "project {{2}}" mislabels
+the date as a second project, rendering as "for Emerald Heights, project 21 Aug 2026" —
+nonsense. Corrected to "dated {{2}}," which still breaks the `{{1}} ({{2}})` adjacency the
+original fix was for, without mislabeling either variable.
+
+*(Prior (rule-4) copy, struck through, not deleted: ~~Today's Daily Progress Report for
+{{1}}, project {{2}}, is ready to review. You have until 8:30 PM to make any corrections
+before it is sent to the owner.~~)*
 
 **CTA button URL (2026-08-21, item 4) — real, confirmed to exist:** a per-DPR detail
 route now exists — `app/(dashboard)/dprs/[id]/page.tsx`, confirmed live in this repo
@@ -441,13 +464,20 @@ template sent a 3-line summary directly to the owner over WhatsApp; that content
 by email, so this template only confirms the send happened.
 **Sample values (fictional, 2026-08-21 correction):** `{{1}}` = "Emerald Heights", `{{2}}` = "21 Aug 2026".
 
-> The Daily Progress Report for {{1}}, project {{2}}, has been emailed to the owner.
+> The Daily Progress Report for {{1}}, dated {{2}}, has been emailed to the owner.
 
 **AUDIT FIX (2026-08-21, Twilio/Meta compliance audit):** same `{{1}} ({{2}})` adjacency
 fix as template 6 (rule 4).
 
 *(Prior copy, struck through, not deleted: ~~The Daily Progress Report for {{1}} ({{2}})
 has been emailed to the owner.~~)*
+
+**SEMANTIC FIX (2026-08-22, found reading the dry-run payloads):** same error as template
+6's own — "project {{2}}" mislabelled the date as a second project. Corrected to
+"dated {{2}}," same reasoning as template 6.
+
+*(Prior (rule-4) copy, struck through, not deleted: ~~The Daily Progress Report for {{1}},
+project {{2}}, has been emailed to the owner.~~)*
 
 **Dated supersession, `docs/bot-flows.md`:** see the note added to that file's template
 section — `quoco_dpr_owner` is retired, not deleted from history; the reason is the #67
