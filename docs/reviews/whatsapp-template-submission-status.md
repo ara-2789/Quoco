@@ -85,6 +85,10 @@ review is asynchronous; re-check later for the actual approve/reject verdicts.
 No rejection to analyze against the six-rule compliance audit or otherwise. This check is
 re-runnable at any time; re-run again once Meta's review actually resolves.
 
+**RE-CHECKED AGAIN, 2026-08-22 (same read-only query, re-run):** still unchanged — all 15
+still `status: "pending"`, `rejection_reason` empty for every one. Zero approved, zero
+rejected. Meta's review has not resolved for any of the 15 as of this check.
+
 **Not a hold, but worth carrying into the submission decision — row 7's own existing
 open question:** *"Confirm this template is still needed at all before submitting;
 if the owner-delivery channel is fully email, this WhatsApp template may be dead
