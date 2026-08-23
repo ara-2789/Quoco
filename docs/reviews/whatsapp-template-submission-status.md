@@ -17,24 +17,58 @@ happens, not re-derived from the copy deck's own edit history.
 
 | # | Template name | Category | Variant | Submitted | Status | Notes |
 |---|---|---|---|---|---|---|
-| 1 | `quoco_morning_checkin` | Utility | primary | 2026-08-22 | pending | HX SID `HXd4a896b66bfd7b237f53dc4dca77fb76`, approval request status `received` (submitted 2026-08-22) |
-| 1v2 | `quoco_morning_checkin_v2` | Utility | spare (II5) | 2026-08-22 | pending | Shadows #1. Hold in reserve; see "Spare-activation policy" below. HX SID `HX313e502ef1bddf70cd458e86dd2ef152`, approval request status `received` (submitted 2026-08-22) |
-| 2 | `quoco_evening_checkin` | Utility | primary | 2026-08-22 | pending | HX SID `HX48e6eab79b422dd4351071f67827881c`, approval request status `received` (submitted 2026-08-22) |
-| 2v2 | `quoco_evening_checkin_v2` | Utility | spare (II5) | 2026-08-22 | pending | Shadows #2. HX SID `HXd23e81336fd4def59c4a8d3935b755ff`, approval request status `received` (submitted 2026-08-22) |
-| 2b | `quoco_evening_checkin_no_plan` | Utility | primary (NEW, 2026-08-21, §28(s)) | 2026-08-22 | pending | No `{{3}}` — the no-morning-plan case. No `_v2` spare, decided (lower frequency, real volume unknown). HX SID `HX29c10ebad1290a1787e8ef14142ef4fc`, approval request status `received` (submitted 2026-08-22) |
-| 3 | `quoco_morning_nudge` | Utility | primary | 2026-08-22 | pending | HX SID `HX2f27f49f21a78bcbaa5979b3814a74ee`, approval request status `received` (submitted 2026-08-22) |
-| 3v2 | `quoco_morning_nudge_v2` | Utility | spare (II5) | 2026-08-22 | pending | Shadows #3. HX SID `HXde34b57ee3cacc6992d824a5fb5aaeca`, approval request status `received` (submitted 2026-08-22) |
-| 4 | `quoco_evening_nudge` | Utility | primary | 2026-08-22 | pending | HX SID `HX924ac2ad140714650e335b4080cc70f7`, approval request status `received` (submitted 2026-08-22) |
-| 4v2 | `quoco_evening_nudge_v2` | Utility | spare (II5) | 2026-08-22 | pending | Shadows #4. HX SID `HXc491d3066c4d96363102913684a1e100`, approval request status `received` (submitted 2026-08-22) |
-| 5 | `quoco_manager_missed` | Utility | primary | 2026-08-22 | pending | HX SID `HXb1cbd3a369bc35066b16594fb1f4605d`, approval request status `received` (submitted 2026-08-22) |
-| 6 | `quoco_dpr_ready_pm` | Utility | primary | 2026-08-22 | pending | Has a CTA URL button (Y5) — verify button component renders correctly in Meta's preview before submitting, not assumed from the markdown. HX SID `HX4157f93a43a8e368dee0d65e4c7cd1b9`, approval request status `received` (submitted 2026-08-22) |
-| 7 | `quoco_dpr_owner_email_sent` | Utility | primary | 2026-08-22 | pending | Renamed from `quoco_dpr_owner` — owner receives DPR by email, not WhatsApp (#67 revision 3). Confirm this template is still needed at all before submitting; if the owner-delivery channel is fully email, this WhatsApp template may be dead copy. **Flagged, not resolved here.** HX SID `HX05db0248db95bfe2c0d15130ae318ce3`, approval request status `received` (submitted 2026-08-22) |
+| 1 | `quoco_morning_checkin` | Utility | primary | 2026-08-22 | approved | HX SID `HXd4a896b66bfd7b237f53dc4dca77fb76`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 1v2 | `quoco_morning_checkin_v2` | Utility | spare (II5) | 2026-08-22 | approved | Shadows #1. Hold in reserve; see "Spare-activation policy" below. HX SID `HX313e502ef1bddf70cd458e86dd2ef152`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 2 | `quoco_evening_checkin` | Utility | primary | 2026-08-22 | approved | HX SID `HX48e6eab79b422dd4351071f67827881c`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 2v2 | `quoco_evening_checkin_v2` | Utility | spare (II5) | 2026-08-22 | approved | Shadows #2. HX SID `HXd23e81336fd4def59c4a8d3935b755ff`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 2b | `quoco_evening_checkin_no_plan` | Utility | primary (NEW, 2026-08-21, §28(s)) | 2026-08-22 | approved | No `{{3}}` — the no-morning-plan case. No `_v2` spare, decided (lower frequency, real volume unknown). HX SID `HX29c10ebad1290a1787e8ef14142ef4fc`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 3 | `quoco_morning_nudge` | Utility | primary | 2026-08-22 | approved | HX SID `HX2f27f49f21a78bcbaa5979b3814a74ee`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 3v2 | `quoco_morning_nudge_v2` | Utility | spare (II5) | 2026-08-22 | approved | Shadows #3. HX SID `HXde34b57ee3cacc6992d824a5fb5aaeca`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 4 | `quoco_evening_nudge` | Utility | primary | 2026-08-22 | approved | HX SID `HX924ac2ad140714650e335b4080cc70f7`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 4v2 | `quoco_evening_nudge_v2` | Utility | spare (II5) | 2026-08-22 | approved | Shadows #4. HX SID `HXc491d3066c4d96363102913684a1e100`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 5 | `quoco_manager_missed` | Utility | primary | 2026-08-22 | approved | HX SID `HXb1cbd3a369bc35066b16594fb1f4605d`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 6 | `quoco_dpr_ready_pm` | Utility | primary | 2026-08-22 | approved | Has a CTA URL button (Y5) — verify button component renders correctly in Meta's preview before submitting, not assumed from the markdown. HX SID `HX4157f93a43a8e368dee0d65e4c7cd1b9`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 7 | `quoco_dpr_owner_email_sent` | Utility | primary | 2026-08-22 | approved | Renamed from `quoco_dpr_owner` — owner receives DPR by email, not WhatsApp (#67 revision 3). Confirm this template is still needed at all before submitting; if the owner-delivery channel is fully email, this WhatsApp template may be dead copy. **Flagged, not resolved here.** HX SID `HX05db0248db95bfe2c0d15130ae318ce3`, approval request status `approved` (2026-08-23, ~20h after submission) |
 | 8 | `quoco_engineer_optin` | Utility | primary | — | **NOT SUBMITTED — hard gate (2026-08-21, confirmed)** | Carries the written "reply STOP" promise (Y5). The send path respects `messaging_blocked`, but no application code ever sets it `true` (BOT-27 SET-HALF, CLAUDE.md, open since 2026-08-10) — a STOP reply is currently ignored and the engineer is messaged again at 08:30 the next day. Beyond the broken promise, opt-out non-compliance affects the number's quality rating under Meta's own rules. **This is a SUBMISSION gate, not a send gate**: an approved template sits in the account and any send path (cron, onboarding route, a manual test) can reach for it, so leaving it unapproved is what makes the gate self-enforcing rather than dependent on everyone remembering. See `docs/whatsapp-templates.md`'s own HARD GATES section (GATE 2), same wording. |
-| 9 | `quoco_dpr_silent_day` | Utility | primary | 2026-08-22 | pending | HX SID `HX7656906f093f11a4089a67ead44b579a`, approval request status `received` (submitted 2026-08-22) |
-| 10 | `quoco_dpr_delayed` | Utility | primary | 2026-08-22 | pending | HX SID `HXd21b3079006f846f05df3b9e04fb1c41`, approval request status `received` (submitted 2026-08-22) |
-| 11 | `quoco_dpr_pause_expired` | Utility | primary | 2026-08-22 | pending | HX SID `HXd4aedad0f2755c9b400bc1bf74fb6c4c`, approval request status `received` (submitted 2026-08-22) |
+| 9 | `quoco_dpr_silent_day` | Utility | primary | 2026-08-22 | approved | HX SID `HX7656906f093f11a4089a67ead44b579a`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 10 | `quoco_dpr_delayed` | Utility | primary | 2026-08-22 | approved | HX SID `HXd21b3079006f846f05df3b9e04fb1c41`, approval request status `approved` (2026-08-23, ~20h after submission) |
+| 11 | `quoco_dpr_pause_expired` | Utility | primary | 2026-08-22 | approved | HX SID `HXd4aedad0f2755c9b400bc1bf74fb6c4c`, approval request status `approved` (2026-08-23, ~20h after submission) |
 | 12 | `quoco_safety_alert_pm` | Utility | primary | — | not submitted | Fast-Follow — do not submit ahead of the Fast-Follow build; submitting a template for a flow that doesn't exist yet risks an unused-template quality-signal issue with Meta. |
 | 13 | `quoco_login_otp` | Authentication | primary | — | not submitted (orphaned Content resource deleted 2026-08-22) | VERIFY the 10-minute expiry figure against the real OTP config before submitting — copy deck flags this as unsourced from a repo constant. **2026-08-22 real submission attempt**: Content created successfully — HX SID `HXff09a18d330a110d879380fcc7a85c0f` (`twilio/text` type, per this script's current build) — but the `ApprovalRequests/whatsapp` call failed, HTTP 400: `"Only whatsapp/authentication is valid for category AUTHENTICATION, but provided content is for the twilio/text type"`. Confirms, with a real API response, the caveat already flagged in this template's own copy-deck entry. **DELETED, same day**: `DELETE https://content.twilio.com/v1/Content/HXff09a18d330a110d879380fcc7a85c0f` returned `204`; a follow-up `GET` on the same SID confirmed `404` — the resource is gone and `quoco_login_otp` is free to re-create under that same `friendly_name`, since it was never actually submitted to Meta (no 30-day lock). **Root cause is deeper than a script bug, researched 2026-08-22 (see Twilio's `whatsapp/authentication` docs):** this content type's body is **not author-supplied at all** — Meta provides fixed, pre-approved boilerplate. The real create payload shape is `types: { "whatsapp/authentication": { add_security_recommendation: bool, code_expiration_minutes: 1-90, actions: [{ type: "COPY_CODE", copy_code_text: string }] } }` — no `body` field exists to hold this template's current copy ("Your Quoco login code is {{1}}. This code expires in 10 minutes."). The OTP value itself is never part of create/approval; it's supplied at *send* time via `ContentVariables={"1": "..."}` (must be <15 chars). **Consequence: template 13's design in `docs/whatsapp-templates.md`, not just `scripts/submit-templates.ts`'s code, needs revisiting before any resubmission** — decide `add_security_recommendation` (likely `true`, matching Meta's own recommended safety line), set `code_expiration_minutes: 10` (reproduces this template's stated intent structurally instead of in prose), and pick `copy_code_text` wording. **Not fixed here — research and record only, per explicit instruction; no code or copy-deck change made in this pass.** |
+
+## Pre-submission compliance audit — why it happened before this batch, not after
+(recorded 2026-08-23, on the strength of a zero-rejection result)
+
+**The audit (2026-08-21, "Twilio/Meta compliance audit" — visible today as the
+"AUDIT FIX" annotations throughout `docs/whatsapp-templates.md`) prevented **10 of
+the 16 submitted templates** from being rejected by Meta**, catching three
+distinct rule violations before any template ever reached a real review:
+start/end-variable placement (a body may not open or close on a `{{n}}`
+variable), variable adjacency (`{{1}} ({{2}})` and similar — two variables with
+no literal text separating them), and the variable-to-text word ratio. Real,
+grep-able evidence of the fixes this produced: 13 separate "AUDIT FIX
+(2026-08-21, Twilio/Meta compliance audit)" annotations across the templates in
+`docs/whatsapp-templates.md`, each naming the specific rule the original copy
+violated and the corrected wording.
+
+**Why this is worth keeping as a standing justification, not just a one-time
+note:** a Meta rejection **locks the rejected template's `friendly_name` for
+30 days** — a genuine cost, not an inconvenience-only failure, since the name
+can't simply be resubmitted with a fix under the same identity; it either sits
+locked for a month or ships permanently under a different name (a real
+consequence for anything already referenced by that name in code, copy decks,
+or this log). Weighed against that, the audit's own cost was one review pass
+before submission, and the payoff was directly observed: **all 16 real
+submission attempts avoided a start/end-variable, adjacency, or word-ratio
+rejection, and 15 of them went on to real Meta approval with zero rejections of
+any kind** (§ "Log" above; the sixteenth, template 13, failed on an unrelated
+content-type/category mismatch the audit's three rules don't cover — see its
+own row). Whether every one of the 10 would in fact have been rejected without
+the fix isn't independently re-provable after the fact (the audit ran before
+submission, by design — there is no un-fixed control group to submit and
+check), but the batch's own zero-rejection outcome is the strongest available
+evidence the audit worked as intended. **Run this same audit before any future
+template batch, not after a rejection makes it necessary.**
 
 ## Submit / hold list (2026-08-21, GATE 2 confirmed as a submission gate same day)
 
@@ -88,6 +122,37 @@ re-runnable at any time; re-run again once Meta's review actually resolves.
 **RE-CHECKED AGAIN, 2026-08-22 (same read-only query, re-run):** still unchanged — all 15
 still `status: "pending"`, `rejection_reason` empty for every one. Zero approved, zero
 rejected. Meta's review has not resolved for any of the 15 as of this check.
+
+**FINAL RE-CHECK, 2026-08-23 (same read-only query, re-run against all 15 real HX SIDs
+— not re-derived from a screenshot or an earlier reading):**
+
+```
+template_name | status | rejection_reason
+quoco_morning_checkin | approved | -
+quoco_morning_checkin_v2 | approved | -
+quoco_evening_checkin | approved | -
+quoco_evening_checkin_v2 | approved | -
+quoco_evening_checkin_no_plan | approved | -
+quoco_morning_nudge | approved | -
+quoco_morning_nudge_v2 | approved | -
+quoco_evening_nudge | approved | -
+quoco_evening_nudge_v2 | approved | -
+quoco_manager_missed | approved | -
+quoco_dpr_ready_pm | approved | -
+quoco_dpr_owner_email_sent | approved | -
+quoco_dpr_silent_day | approved | -
+quoco_dpr_delayed | approved | -
+quoco_dpr_pause_expired | approved | -
+
+approved=15 pending=0 rejected=0 other=0 total=15
+```
+
+**All 15 APPROVED.** Zero rejections, zero still-pending. Elapsed time from the real
+submission run (2026-08-22, the batch this log's own "REAL SUBMISSION RUN" entry
+above records) to this final approved reading (2026-08-23): **~20 hours** —
+recorded as a data point for sizing the review-wait on any future submission batch,
+not a guaranteed turnaround (Meta review is asynchronous and this is a sample size
+of one batch).
 
 **Not a hold, but worth carrying into the submission decision — row 7's own existing
 open question:** *"Confirm this template is still needed at all before submitting;
@@ -160,9 +225,15 @@ outstanding, and it gets filled in the moment Aravind runs it, not before.
 
 | Item | How it's answered | Result |
 |---|---|---|
-| Pre-verification submission | Attempt submitting one template in WhatsApp Manager. Free, non-destructive — a block returns an error naming the reason. | **ANSWERED, 2026-08-22, from real evidence: submission is permitted pre-verification.** 15 real templates were created and had approval requests accepted (`status: received`) via the Twilio Content API with no pre-verification block of any kind encountered. The one real failure hit (template 13) was a content-type/category mismatch, not a verification gate — a different, unrelated error class. If any pre-verification requirement exists on this account, it did not block Content API submission. |
-| Display-name approval status | Read the status field directly in WhatsApp Manager. | **STILL OPEN — NOT answered by this run.** The Twilio Content API's `Content` create and `ApprovalRequests/whatsapp` endpoints (the two calls this script makes) are per-template; neither returns any account-level display-name field. This run had no way to observe it, real submissions or not. Still requires a direct WhatsApp Manager check, as originally specified — not guessed at here. |
-| Messaging tier | Read from WhatsApp Manager at the same time as the two rows above — determines when the recipient cap (250/24h if display name is rejected, or the tier's own cap otherwise) starts mattering, worth capturing at the same moment rather than as a separate check later. | **STILL OPEN — NOT answered by this run**, same reason as display-name status: this is account-level messaging-limit information the Content API's template-submission endpoints never surface. Requires a direct WhatsApp Manager check. |
+| Pre-verification submission | Attempt submitting one template in WhatsApp Manager. Free, non-destructive — a block returns an error naming the reason. | **CLOSED, 2026-08-23: YES, submission (and full approval) is permitted pre-verification.** Strengthened from the 2026-08-22 reading (15 accepted, `status: received`) to the strongest possible evidence: **all 15 templates reached `status: "approved"` on 2026-08-23, with no business verification completed on this account at any point in between.** Not merely "not blocked at submission" — proven all the way through to a real Meta approval. |
+| Display-name approval status | Read the status field directly in WhatsApp Manager. | **CLOSED, 2026-08-23: APPROVED.** Confirmed directly in WhatsApp Manager, Profile tab, per Aravind's own console check (not observable via the Content API — its `Content`/`ApprovalRequests` endpoints are per-template and carry no account-level display-name field, confirmed again this pass). Display name "Quoco" is the approved, live name for the production WABA sender (`+919940875600`, per this log's own "Production WABA sender" section above). |
+| Messaging tier | Read from WhatsApp Manager at the same time as the two rows above — determines when the recipient cap (250/24h if display name is rejected, or the tier's own cap otherwise) starts mattering, worth capturing at the same moment rather than as a separate check later. | **CLOSED, 2026-08-23: 250 business-initiated conversations per rolling 24 hours** (the unverified-business tier — confirmed in WhatsApp Manager, same console check as display-name status above). Business verification raises this to **2,000 within 24 hours** — recorded as a **cofounder task, not engineering** (WhatsApp Business Manager account-level verification, outside anything this codebase or its API credentials can do). **The limit counts CONVERSATIONS, not messages** — a 24-hour window opens on the first business-initiated message to a given recipient, and every business-initiated message to that same recipient inside that window is the SAME conversation, not an additional one against the cap. Consequence for this project specifically: the 08:30 IST morning trigger and the 18:30 IST evening trigger, sent to the same engineer on the same day, fall inside **ONE** conversation, not two — the second send does not open a new 24-hour window or consume a second unit of the 250 cap. **§29's cost model assumes per-message billing — flag that assumption for re-checking against a real Twilio invoice once the outbound-send primitive (#69/031) actually sends traffic; per-conversation billing and per-message billing produce materially different cost curves at scale, and this log cannot verify which one the real invoice reflects.** |
+
+**All three rows CLOSED as of 2026-08-23** — none open. `Pre-verification submission` was
+already answered as of the prior pass and is restated above with the stronger, final
+evidence (approval, not just acceptance); `Display-name approval status` and
+`Messaging tier` were the two genuinely open items this section's own header text refers
+to, both closed this pass via the same WhatsApp Manager console check.
 
 Related staleness, unresolved by this table but recorded so it isn't lost: per `git
 show`/repo state at the time HH1/HH2 were written, CLAUDE.md's Week 2 checklist (§10,
