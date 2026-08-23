@@ -130,14 +130,15 @@ by simply continuing the YES path's 1→2→3→4 sequence. This package propose
   alive (more capture), `site_holiday` would silently cancel both (less).
   See row F4 in the SQL table and its TS mirror row below for the corrected
   branch target.
-- **Completion copy for the two NO-path endings — PROPOSED, drafted below**
+- **Completion copy for the two NO-path endings — DECIDED, 2026-08-23**
   (§2.1) — §30(b) gives the two follow-up QUESTIONS their copy but not the
-  completion messages. Drafted here rather than left undecided, since a
-  spec that leaves reply copy open invites it to be silently defaulted to
-  the generic `MORNING_COMPLETE_REPLY` string at build time without anyone
-  deciding that's right.
+  completion messages. Drafted here rather than left undecided (one round of
+  revision on the absent-path string — see §2.1), since a spec that leaves
+  reply copy open invites it to be silently defaulted to the generic
+  `MORNING_COMPLETE_REPLY` string at build time without anyone deciding
+  that's right.
 
-### 2.1 Completion copy — PROPOSED, needs Aravind's approval
+### 2.1 Completion copy — DECIDED by Aravind, 2026-08-23
 
 Matching `MORNING_COMPLETE_REPLY`'s existing register (✅ prefix, short,
 warm, plain sentence) — and, per instruction, **not promising PM
@@ -145,13 +146,27 @@ notification on the absent path**: nothing can notify a PM until Pass 2's
 escalation send exists (§30(e)) — a promise here would be the same defect as
 template 8's "Reply STOP" (a written commitment the code cannot yet keep).
 
-**`MORNING_SITE_HOLIDAY_REPLY`** (site holiday — acknowledges the closure,
-confirms nothing further will be asked today):
+**`MORNING_SITE_HOLIDAY_REPLY`** — **APPROVED as drafted.** Site holiday:
+acknowledges the closure, confirms nothing further will be asked today:
 > ✅ Got it — site holiday recorded. No further check-ins needed today.
 
-**`MORNING_ABSENT_REPLY`** (absent — acknowledges and confirms the check-in
-is recorded; does NOT mention the PM or imply anyone has been notified):
-> ✅ Got it, thanks for letting us know. Today's check-in is recorded.
+**`MORNING_ABSENT_REPLY`** — **REVISED and APPROVED, 2026-08-23.** First
+draft ("Today's check-in is recorded.") read as closure, which is wrong on
+this path: §30(b) keeps the evening trigger alive for `absent` (half-day and
+late-arrival cases are real — the engineer, or someone else, may still be
+working, and this engineer may arrive later), so telling him he's done and
+then messaging him again at 18:30 contradicts the reply he was just given.
+The contrast with the holiday string is what sharpens this: one explicitly
+says nothing more is coming, the other, as first drafted, implied the same
+thing without meaning to.
+> ✅ Got it, thanks for letting us know. We'll still check in this evening.
+
+**Reason the revision matters, recorded alongside the string, not just the
+string itself:** the reply must set the correct expectation because the
+evening trigger genuinely still fires for `absent` (§30(b)) — and stating
+this explicitly is also useful as a SIGNAL, not just an accurate promise: an
+engineer who reaches site later in the day still has an evening capture
+coming, and this line is what tells him that.
 
 Both PROPOSED, not yet approved — carried into §2's table (rows J1/J2) as
 the completion reply for those two branches, pending sign-off.
@@ -172,8 +187,8 @@ the completion reply for those two branches, pending sign-off.
 | G | 187-192 (moves here) | 2 | `q2_reask`-tracked labour parse | **2** | **Free text → `morning_plan`, advance to 3.** (old step 1's logic, moved) | Write `morning_plan`. |
 | H | 193-205 | 2 | `q2_reask`-tracked labour parse → advance to 3 | **3** | **Parsed labour (old step-2 logic, moved), reask key renamed `q2_reask`→`q3_reask`** | Write `morning_manpower` (renamed column, JSONB keys `planned_count`→`count`, `planned_total`→`total` — see plan §d; data-migration `UPDATE` over existing rows required, not covered by this table). |
 | I | 206-217 | 3 | `q3_reask`-tracked equipment parse → advance to 4 | **4** | **Parsed equipment (old step-3 logic, moved), reask key renamed `q3_reask`→`q4_reask`** | Write `morning_equipment` (column unchanged). |
-| J1 | (new, replaces 219-230's role) | — | — | **5 → 0 (complete)** | **NEW: holiday follow-up, `ok && met` (YES = site holiday).** | Write `attendance = 'site_holiday'`, `is_holiday = true`, `morning_submitted_at = p_now`. Merge `context.morning_submitted := true` (strip all reask keys) — same merge discipline as the existing Q4 completion (022's CONTEXT DISCIPLINE site 2). Reply: `MORNING_SITE_HOLIDAY_REPLY` (§2.1, PROPOSED). |
-| J2 | (new) | — | — | **5 → 0 (complete)** | **NEW: `ok && !met` (NO = absent).** | Write `attendance = 'absent'`, `morning_submitted_at = p_now`. Same context merge as J1. (`is_holiday` stays `false`, its default.) Reply: `MORNING_ABSENT_REPLY` (§2.1, PROPOSED). |
+| J1 | (new, replaces 219-230's role) | — | — | **5 → 0 (complete)** | **NEW: holiday follow-up, `ok && met` (YES = site holiday).** | Write `attendance = 'site_holiday'`, `is_holiday = true`, `morning_submitted_at = p_now`. Merge `context.morning_submitted := true` (strip all reask keys) — same merge discipline as the existing Q4 completion (022's CONTEXT DISCIPLINE site 2). Reply: `MORNING_SITE_HOLIDAY_REPLY` (§2.1, DECIDED). |
+| J2 | (new) | — | — | **5 → 0 (complete)** | **NEW: `ok && !met` (NO = absent).** | Write `attendance = 'absent'`, `morning_submitted_at = p_now`. Same context merge as J1. (`is_holiday` stays `false`, its default.) Reply: `MORNING_ABSENT_REPLY` (§2.1, DECIDED). |
 | J3 | (new) | — | — | **5 (unchanged)** | **NEW: `!ok`, `q5_reask` budget available → `reask`.** | None. Increment `q5_reask`. |
 | J4 | (new) | — | — | **5 → 0 (complete)** | **NEW: `!ok`, budget exhausted → accept as `absent` (pessimistic default), same as J2.** | Same as J2. |
 | K | 219-230 (role removed) | 4 | Free text → `morning_execution_plan`, complete | **4 → 0 (complete, moves to I above)** | Equipment (I) now completes the flow directly — this branch's ORIGINAL role (free-text execution plan) is retired. | `morning_execution_plan` is **no longer written** by this RPC (becomes unread, per plan §d / §28(p) — column stays, historical rows stay readable, just no new writes). |
