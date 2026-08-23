@@ -20,20 +20,24 @@ does not yet provide"). Anywhere this package introduces a design not already
 decided in §30 itself, it is marked **PROPOSED, NOT YET IN §30** so it is not
 mistaken for an already-settled decision.
 
-**STOP — BLOCKING FINDING, found 2026-08-23 during the dry-run evidence
-widening pass (§10 below has the full record).** `030_morning_flow_
-attendance.sql`'s `CREATE OR REPLACE FUNCTION apply_morning_flow_turn(...)`
-appends two new trailing parameters (`p_yesno_met`, `p_yesno_ok`). This does
-**NOT** replace the existing function — Postgres treats an appended
-parameter list as a different function identity, so the migration leaves
-**two live, separately-callable overloads**: the stale pre-030 12-arg body
-(022's logic — step 1 is still free-text `morning_plan`, no attendance
-awareness) stays live and `service_role`-executable, and any caller that
-omits the two new named args (e.g. `test/migration-020.test.ts`'s
-`APPLY_ARGS`) now gets `function apply_morning_flow_turn(...) is not
-unique` instead of the ACL result it's testing for. This migration is not
-dry-run-clean until this is resolved — see §10 for the pinned evidence and
-the proposed fix.
+**RESOLVED — a real finding, caught pre-apply, fixed the same day (§10 below
+has the full record, kept as-found, not deleted).** The first draft of
+`030_morning_flow_attendance.sql` appended two new trailing parameters
+(`p_yesno_met`, `p_yesno_ok`) to `apply_morning_flow_turn` via `CREATE OR
+REPLACE FUNCTION`. That does **NOT** replace the existing function —
+Postgres treats an appended parameter list as a different function
+identity — so that draft left **two live, separately-callable overloads**:
+the stale pre-030 12-arg body stayed live and `service_role`-executable,
+and any caller omitting the two new named args (e.g.
+`test/migration-020.test.ts`'s `APPLY_ARGS`) got `function
+apply_morning_flow_turn(...) is not unique` instead of the ACL result it's
+testing for. **Fixed 2026-08-23 (Aravind's decision):** the RPC's signature
+is now byte-identical to the pre-migration one — zero new parameters — and
+the Q1/holiday-follow-up yes/no classification happens INSIDE the function
+(`quoco_classify_yes_no`, new this migration) instead. Re-verified live:
+exactly one `apply_morning_flow_turn` exists post-migration, the pre- and
+post-migration signatures are byte-identical, and the previously-ambiguous
+partial call now resolves cleanly again. Full before/after evidence: §10.
 
 ---
 
@@ -445,18 +449,20 @@ described.
 
 1. **DONE — §9 below.** Full before/after body diff for
    `apply_morning_flow_turn` (old vs. new SQL), keyed to §2's table rows.
-2. **DONE — §8 below, full transcript at `/tmp/dry-run-evidence.txt` (359
-   lines, regenerated 2026-08-23 — widened from the original 268-line
-   capture).** Disposable dry-run scaffold output (real `pg_dump`-based
+2. **DONE — §8 below, full transcript at `/tmp/dry-run-evidence.txt` (369
+   lines, regenerated 2026-08-23 twice same day — first widened from the
+   original 268-line capture, then regenerated again against the §10.1
+   rework).** Disposable dry-run scaffold output (real `pg_dump`-based
    schema) proving the new SQL parses and executes against a structurally
    accurate Postgres — covers the YES path, both NO-path completions, both
    exhausted-reask defaults, the JSONB transform (including the
    untouched-NULL-row case), the `attendance` CHECK constraint, every grant
-   probe, **and, added in this widening pass: the renamed `q3_reask`/
-   `q4_reask` keys exercised with the session context printed after each
-   reask (proving the rename landed on the correct step, not just that the
-   code parses), and the post-migration function-signature comparison that
-   surfaced §10's blocking finding.**
+   probe, the renamed `q3_reask`/`q4_reask` keys exercised with the session
+   context printed after each reask (proving the rename landed on the
+   correct step, not just that the code parses), **and, from the §10.1
+   rework: the pre/post-migration signature diff (byte-identical, `t`) and
+   the `pg_proc` overload count (exactly 1, both before and after) as
+   first-class checks.**
 3. **PENDING — needs a real apply.** Test-db rehearsal transcript exercising
    every renumbered step in sequence via the real webhook/RPC against
    test-db, not a local scaffold. The dry-run (2 above) proves the SQL is
@@ -750,14 +756,16 @@ Exit code: `0`.
 
 ## 8. Dry-run scaffold evidence
 
-Full literal transcript: **`/tmp/dry-run-evidence.txt`** (359 lines,
-regenerated 2026-08-23 — widened from the original 268-line capture, items
-9-10 below are new) — every query and its raw result, in execution order,
-per this project's ARTIFACT PROVENANCE convention (query text visible above
-its result). Captured against a disposable local PG17 instance (real
-`pg_dump` schema from the linked project, `auth`/roles stubbed per
-CLAUDE.md §7's standing rule), never test-db or prod. Torn down after
-capture — nothing persists.
+Full literal transcript: **`/tmp/dry-run-evidence.txt`** (369 lines,
+regenerated 2026-08-23 twice same day — first widened to add items 9-10
+below, then regenerated again against the §10.1 rework, which is why item 4
+below describes an identical-signature check rather than the overload it
+originally found — see §10/§10.1 for that history) — every query and its
+raw result, in execution order, per this project's ARTIFACT PROVENANCE
+convention (query text visible above its result). Captured against a
+disposable local PG17 instance (real `pg_dump` schema from the linked
+project, `auth`/roles stubbed per CLAUDE.md §7's standing rule), never
+test-db or prod. Torn down after capture — nothing persists.
 
 What it contains, in order:
 1. **Pre-migration state** — confirms the OLD column
@@ -770,29 +778,29 @@ What it contains, in order:
    (no morning submission at all, `morning_manpower_planned` genuinely
    `NULL`) is confirmed still `NULL` afterward — the transform's `WHERE
    morning_manpower IS NOT NULL` predicate correctly left it alone.
-4. **NEW (2026-08-23) — the post-migration function signature, and the
-   blocking finding it surfaced.** `pg_get_function_identity_arguments`
-   against `public.apply_morning_flow_turn` no longer returns one row: a
-   direct `pg_proc` catalog query is used instead of a `::regproc` cast
-   specifically *because* the cast now fails (`function ... is not unique`,
-   caught live). Two full function bodies are shown, side by side by `oid`
-   — the old 12-arg (pre-030) signature and the new 14-arg signature — proof
-   `CREATE OR REPLACE` did not replace, it overloaded. The old body's
-   `EXECUTE` grants are then re-probed post-migration (still `service_role`
-   only — 030 never touched this signature's ACL, so nothing here is
-   newly-exposed, but the stale body itself is still live and callable) and
-   a real named-argument call using only the original 6 required parameters
-   is run and shown failing with `function ... is not unique` — the exact
-   failure a caller like `test/migration-020.test.ts`'s `APPLY_ARGS` would
-   now hit. Full narrative: §10 below.
+4. **Post-migration function signature — identity check (rewritten
+   2026-08-23 to match the §10.1 rework; this item originally caught the
+   overload finding §10 documents — see that section for the full incident).**
+   `pg_proc` is queried both before and after migration 030 runs, counting
+   how many functions are named `apply_morning_flow_turn` (1, both times —
+   captured as `pre_migration_overload_count`/`post_migration_overload_count`)
+   and capturing each side's `pg_get_function_identity_arguments` into a
+   psql variable so the two can be diffed directly in-database
+   (`signatures_are_byte_identical` → `t`). The exact partial named-argument
+   call that broke under the FIRST draft (only the original 6 required
+   parameters — the shape `test/migration-020.test.ts`'s `APPLY_ARGS` uses)
+   is re-run and shown resolving cleanly (`outcome: "start"`), not failing
+   with `function ... is not unique`. A grant probe on the (now-only) OID
+   immediately follows, confirming `CREATE OR REPLACE` carried the ACL
+   through automatically. Full incident + fix narrative: §10/§10.1 below.
 5. **The `attendance` CHECK constraint** rejecting an invalid value
    (`'bogus'`) with the real Postgres error text.
 6. **Every grant probe**: `anon` denied `EXECUTE` on
    `apply_morning_flow_turn`, `service_role` allowed, `authenticated`
    column-bound correctly (`morning_manpower`/`morning_plan` grantable,
-   `attendance` not — the §6c fix, verified live). These probes name the
-   full new-signature argument list explicitly, so they resolve
-   unambiguously to the new overload despite item 4's finding.
+   `attendance` not — the §6c fix, verified live). Repeated here via the
+   explicit 12-arg signature string (not `::regproc`), as a second,
+   independent check on top of item 4's `::regproc`-based probe.
 7. **The YES path**, start through Q4 completion, with the resulting
    `daily_logs` row printed in full.
 8. **Both NO-path completions** (`site_holiday`, `absent`), including the
@@ -820,13 +828,33 @@ What it contains, in order:
 
 ## 9. Before/after body diff — `apply_morning_flow_turn`
 
+**SUPERSEDED LINE NUMBERS, NOT SUPERSEDED CONTENT — read this note before the
+table.** This diff and its row index were generated against `030_morning_
+flow_attendance.sql`'s FIRST DRAFT (the one with `p_yesno_met`/`p_yesno_ok`
+appended — see §10). That draft was reworked 2026-08-23 per §10.1: the
+signature reverted to the original 12 parameters, a new helper function
+(`quoco_classify_yes_no`) was inserted before `apply_morning_flow_turn`, and
+the Q1/step-5 branches now call it instead of reading precomputed
+parameters. Every line NUMBER below the row-index table is therefore off by
+the length of the inserted helper (STEP 4a — see the current file directly:
+`supabase/migrations/030_morning_flow_attendance.sql`'s own `STEP 4a`/`STEP
+4b` headers). The BRANCH STRUCTURE and semantics the diff documents (which
+row does what, in what order, writing which column) are UNCHANGED by the
+§10.1 rework — only the mechanism for obtaining `v_yesno`'s `met`/`ok`
+changed (an internal function call now, a parameter read before), which is
+not itself a row in this table. Not regenerated line-by-line here (out of
+this pass's requested scope, §10.1 already carries the substantive
+before/after for what changed); do not treat the line numbers below as
+current without checking the live file first.
+
 Old body: `supabase/migrations/022_evening_flow_apply_turn.sql:100-306`
 (git `HEAD`, unedited — CLAUDE.md §6 forbids editing a live migration file).
-New body: `supabase/migrations/030_morning_flow_attendance.sql:151-440`.
+New body (AS OF THE FIRST DRAFT — see note above): `supabase/migrations/
+030_morning_flow_attendance.sql:151-440`.
 
 **Row index — jump to a row's new-file location before reading the diff,**
 so branches are checked against §2's table rather than re-derived from the
-diff alone:
+diff alone (LINE NUMBERS ARE STALE — see note above):
 
 | Row | §2 meaning | New file line(s) (decide) | New file line(s) (write) |
 |---|---|---|---|
@@ -1174,8 +1202,17 @@ diff alone:
 
 ---
 
-## 10. BLOCKING FINDING — `CREATE OR REPLACE` with appended parameters
-did not replace `apply_morning_flow_turn`; it overloaded it (found 2026-08-23)
+## 10. FINDING (RESOLVED) — `CREATE OR REPLACE` with appended parameters
+did not replace `apply_morning_flow_turn`; it overloaded it
+(found 2026-08-23, fixed same day)
+
+**Status: RESOLVED, 2026-08-23 — see §10.1 below for the fix, the
+verification that it worked, and why the finding is kept in full rather
+than deleted now that it's fixed.** Everything below this line, up to
+§10.1, is the finding AS FOUND — unedited, because it is the most valuable
+thing this evidence pass produced and a "we caught this, then fixed it and
+moved on" summary would erase exactly the detail a future author needs to
+avoid the same mistake with some OTHER function's signature.
 
 **Found while completing item 2 of this pass's requested widening** (print
 the post-migration function signature, state whether it changed). The
@@ -1259,10 +1296,12 @@ attendance branch at all) was never removed.
    (migration 027) already established as the cheapest place to catch a
    defect like this.
 
-**Recommended fix — proposed, NOT applied.** Per this pass's scope (record
-findings, regenerate evidence; migration-file changes are a separate
-decision), `030_morning_flow_attendance.sql` itself was left untouched. The
-shape of the fix, for whoever makes that call:
+**Recommended fix, AS ORIGINALLY WRITTEN (superseded — kept for the record,
+see §10.1 for what was actually decided and why it's a different, better
+fix, not this one).** Per this pass's original scope (record findings,
+regenerate evidence; migration-file changes flagged as a separate decision),
+`030_morning_flow_attendance.sql` itself was initially left untouched, with
+this proposed shape offered for whoever made the call:
 ```sql
 DROP FUNCTION IF EXISTS public.apply_morning_flow_turn(
   text, uuid, uuid, uuid, text, boolean, jsonb, boolean, jsonb, boolean, timestamptz, integer
@@ -1277,7 +1316,150 @@ anon, authenticated; GRANT ... TO service_role;`), so nothing here depends
 on `CREATE OR REPLACE` preserving an ACL implicitly. Dropping the old
 signature first would leave exactly one `apply_morning_flow_turn` in the
 catalog, matching what this migration's own header already believes is
-true. **Not applied here — flagging for Aravind's decision, not deciding it
-unilaterally**, since it changes what ships in an unapplied migration file.
+true. **Aravind's actual decision (§10.1) does not use this fix** — it goes
+one step further and removes the SIGNATURE CHANGE itself, so there is no
+old overload to drop in the first place. This DROP FUNCTION shape remains a
+correct, safe fix for the general case (a genuine signature change that
+must ship); it just wasn't the right call for THIS specific change, where
+the parameters could be avoided entirely.
+
+---
+
+## 10.1 THE FIX ACTUALLY APPLIED — Option 1, byte-identical signature,
+classification moved inside the RPC (Aravind's decision, 2026-08-23)
+
+**Decision.** Not the DROP FUNCTION fix proposed above. Instead: keep
+`apply_morning_flow_turn`'s signature **byte-identical** to the live
+pre-migration one — remove `p_yesno_met`/`p_yesno_ok` entirely — and
+classify the Q1/holiday-follow-up yes/no answer **inside** the function via
+a new helper, `quoco_classify_yes_no(text)`, which ports `classifyYesNo`'s
+exact word lists (`lib/whatsapp/flows/parsers/lexicon.ts`) into PL/pgSQL.
+
+**Rationale, in Aravind's own words, recorded verbatim because it's the
+part worth remembering:** *"CREATE OR REPLACE then genuinely replaces, so
+no second overload is created, no grants are re-declared by hand (avoiding
+migration 020's mechanism), and no call site changes. The precomputed-parse
+pattern exists to avoid race conditions on unlocked reads — a yes/no
+classification has no read to race against, so the reason for that pattern
+does not apply here."* That last sentence is the part that generalises
+beyond this one fix: the precomputed-parse pattern (`p_manpower`/
+`p_manpower_ok`, `p_equipment`/`p_equipment_ok` — still precomputed in TS,
+UNCHANGED by this fix) exists for a specific reason — avoiding a stale read
+racing the locked transaction — and that reason genuinely doesn't apply to
+classifying the CURRENT turn's own message text. Applying the pattern to
+yes/no in the first draft was over-generalising a pattern past the
+condition that justifies it.
+
+**What changed, concretely:**
+- `030_morning_flow_attendance.sql`: `apply_morning_flow_turn`'s signature
+  reverted to the original 12 parameters (no `p_yesno_met`/`p_yesno_ok`).
+  New helper `quoco_classify_yes_no(text) RETURNS jsonb` added (STEP 4a,
+  plain SQL logic, not `SECURITY DEFINER` — same precedent as
+  `quoco_same_ist_day`, no explicit grant needed). Called inline at step 1
+  and step 5. STEP 5's grant re-assertion reverted to the original 12-arg
+  signature string.
+- `lib/whatsapp/flows/morning.ts`: the `classifyYesNo`/`p_yesno_met`/
+  `p_yesno_ok` block removed from `applyMorningFlowTurn`'s RPC call (the
+  import and the two internal `dispatchMorningFlow` call sites, lines 328
+  and 381, are UNCHANGED — the pure TS mirror always classified locally for
+  its own purposes, independent of what the RPC call needed).
+- `test/helpers/db.ts`: the equivalent block removed from its
+  `applyMorningFlowTurn` test wrapper. The comment documenting the RPC's
+  parameter list updated to match (12 params, not 14).
+- `tsc --noEmit`: clean. `node scripts/lint-migrations.mjs`: clean (the new
+  helper needs no grant declarations; `apply_morning_flow_turn` still has
+  both, matching the no-orphan-security-definer rule).
+
+**Verification — re-run live against a fresh disposable scaffold, not
+assumed from the fix's own logic:**
+```
+--- apply_morning_flow_turn: how many functions carry this name, pre-migration (expect 1) ---
+ pre_migration_overload_count
+------------------------------
+                            1
+
+--- apply_morning_flow_turn: how many functions carry this name, post-migration (expect exactly 1) ---
+ post_migration_overload_count
+-------------------------------
+                             1
+
+--- SIGNATURE DIFF: pre-migration vs post-migration, byte-for-byte (expect t) ---
+ signatures_are_byte_identical
+-------------------------------
+ t
+
+--- consequence check: the exact partial named-argument call that broke under the first draft now resolves unambiguously again ---
+ partial_call_outcome
+----------------------
+ start
+```
+The partial call is the SAME six-key shape as `test/migration-020.test.ts`'s
+`APPLY_ARGS` that broke under the first draft (§10 above, point 2) — it now
+returns a real outcome instead of `function ... is not unique`. Full
+transcript: `/tmp/dry-run-evidence.txt`, regenerated 2026-08-23 (369 lines).
+
+**Mirror-agreement RED/GREEN re-run — the earlier proof (§7) no longer
+applies, since it exercised the abandoned two-parameter shape.** Re-run as a
+standalone script (same pattern as §7: not a committed test, exercises the
+identical `MORNING_MIRROR_CASES` fixture against the reworked SQL and the
+unchanged TS mirror) against the disposable scaffold:
+
+GREEN (unmodified, reworked migration):
+```
+[PASS] Q1 yes -> attendance=present, advances to step 2
+[PASS] Q1 no -> advances to step 5 (holiday follow-up), no write
+[PASS] Q1 unclassifiable -> reask, step unchanged
+[PASS] Q1 unclassifiable, budget exhausted -> DEFAULTS TO YES (DECIDED 2026-08-23)
+[PASS] Holiday follow-up yes -> attendance=site_holiday, completes
+[PASS] Holiday follow-up no -> attendance=absent, completes
+[PASS] Holiday follow-up unclassifiable, budget exhausted -> DEFAULTS TO absent (unchanged direction)
+[PASS] Q2 (plan, free text) -> advances to step 3
+[PASS] Q3 (parsed labour) -> advances to step 4
+[PASS] Q4 (parsed equipment) -> completes directly (not step 5)
+
+RESULT: PASS (all cases agree)
+```
+Exit code `0`.
+
+Same deliberate one-line divergence as §7 (the `ELSE` branch that routes a
+genuine "yes"/exhausted-default to step 2 — Aravind's own correction round
+touched this exact branch, so it's still this migration's real risk, not a
+synthetic one), reintroduced (`v_session.current_step := 2;` →
+`v_session.current_step := 5;`), fresh scaffold, RED:
+```
+[FAIL] Q1 yes -> attendance=present, advances to step 2
+   expected: outcome=advance nextStep=2 attendance=present
+   SQL:      outcome=advance nextStep=5 attendance=present <-- MISMATCH
+   TS:       outcome=advance nextStep=2 attendance=present
+[PASS] Q1 no -> advances to step 5 (holiday follow-up), no write
+[PASS] Q1 unclassifiable -> reask, step unchanged
+[FAIL] Q1 unclassifiable, budget exhausted -> DEFAULTS TO YES (DECIDED 2026-08-23)
+   expected: outcome=advance nextStep=2 attendance=present
+   SQL:      outcome=advance nextStep=5 attendance=present <-- MISMATCH
+   TS:       outcome=advance nextStep=2 attendance=present
+[PASS] Holiday follow-up yes -> attendance=site_holiday, completes
+[PASS] Holiday follow-up no -> attendance=absent, completes
+[PASS] Holiday follow-up unclassifiable, budget exhausted -> DEFAULTS TO absent (unchanged direction)
+[PASS] Q2 (plan, free text) -> advances to step 3
+[PASS] Q3 (parsed labour) -> advances to step 4
+[PASS] Q4 (parsed equipment) -> completes directly (not step 5)
+
+RESULT: FAIL (at least one case mismatched)
+```
+Exit code `1`. Exactly the two cases exercising the buggy `ELSE` branch
+failed — same isolation property as §7. Reverted (`git diff`-equivalent
+confirmed by rebuilding a fresh scaffold from the reverted file and
+re-running — GREEN again, identical to the run above), re-verified against
+a fresh scaffold, not just the same live one the bug was injected into.
+
+**Why the finding above (§10) is kept in full, not replaced by this
+section.** The mistake itself — believing appended trailing DEFAULT
+parameters don't change a function's identity — is a general Postgres fact,
+not specific to this migration or this fix. The NEXT migration that needs
+to add a parameter to an existing `SECURITY DEFINER` function can make the
+identical mistake regardless of how THIS one was resolved. §10's mechanism,
+evidence, and blast-radius analysis are what make that mistake
+recognisable next time; §10.1 only records which of the (at least two) valid
+fixes got chosen here and why.
 
 ---

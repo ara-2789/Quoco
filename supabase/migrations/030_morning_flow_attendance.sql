@@ -26,6 +26,10 @@
 --      morning_manpower_planned. `attendance` is DELIBERATELY NOT added to that
 --      grant -- PM correction of attendance is explicitly out of this
 --      migration's scope (review package §4, "The PM edit UI").
+--   6. A new helper, quoco_classify_yes_no(text), does the Q1/holiday-follow-up
+--      yes/no classification INSIDE this migration's own function -- see
+--      "REWORKED 2026-08-23" below for why this replaced an earlier draft that
+--      passed pre-classified flags in from TypeScript.
 --
 -- WHY THE RENAME STOPS AT THE WRITE BOUNDARY, NOT THE SHARED PARSER. The
 -- review package's step-mapping table (row H) specs the STORED JSONB shape
@@ -40,13 +44,56 @@
 -- point it writes `morning_manpower`, and nowhere else. Flagged in this
 -- migration's own review report as a gap the step-mapping table didn't examine.
 --
--- WHY p_yesno_met/p_yesno_ok ARE APPENDED, NOT INSERTED. `CREATE OR REPLACE
--- FUNCTION` only allows adding NEW trailing DEFAULT-valued parameters -- not
+-- REWORKED 2026-08-23 (Aravind's decision; full incident + rationale in
+-- docs/reviews/morning-flow-migration-review-package.md §10, status RESOLVED,
+-- not deleted -- it is the most valuable thing the evidence pass found).
+--
+-- WHAT THE FIRST DRAFT DID, AND WHY IT WAS WRONG. The first draft of this
+-- migration appended two new trailing parameters to apply_morning_flow_turn --
+-- p_yesno_met, p_yesno_ok -- reasoning (WRONGLY) that `CREATE OR REPLACE
+-- FUNCTION` "only allows adding NEW trailing DEFAULT-valued parameters -- not
 -- inserting them mid-list -- without Postgres treating it as a different
--- function (and DROP+CREATE is the one thing this project's own migration-020
--- incident forbids for this exact function). Both new parameters therefore sit
--- after p_test_sleep_ms, not near the other classify-and-pass-in params
--- (p_manpower/p_equipment) they're conceptually closest to.
+-- function." That premise is false: a function's identity in Postgres is its
+-- name PLUS its full parameter TYPE LIST. Appending parameters -- even
+-- trailing ones with DEFAULT values -- changes that type list, so `CREATE OR
+-- REPLACE` does not replace anything; it creates a SECOND, DISTINCT, live
+-- overload. Confirmed directly against a real Postgres 17 instance (dry-run
+-- evidence, review package §10): after the first draft's migration ran, TWO
+-- `apply_morning_flow_turn` functions existed simultaneously -- the stale
+-- pre-migration 12-arg body (022's logic, no attendance awareness at all)
+-- stayed live and `service_role`-executable, and any caller passing a PARTIAL
+-- named-argument set (e.g. this project's own `test/migration-020.test.ts`
+-- APPLY_ARGS, six keys) became genuinely AMBIGUOUS between the two overloads
+-- ("function ... is not unique") instead of resolving to either one.
+--
+-- WHY THIS APPROACH FIXES IT AT THE ROOT, NOT WITH A WORKAROUND. Aravind's
+-- decision (2026-08-23): keep apply_morning_flow_turn's signature
+-- BYTE-IDENTICAL to the live pre-migration one -- zero new parameters -- and
+-- classify the Q1/holiday-follow-up yes/no answer INSIDE this function
+-- instead. With the argument type list genuinely unchanged, `CREATE OR
+-- REPLACE` genuinely replaces (one function, one OID, before and after --
+-- verified live, see the dry-run evidence), which also means the function's
+-- EXECUTE grants carry over automatically -- STEP 5 below still re-asserts
+-- them explicitly (belt-and-braces, and required by this repo's own
+-- migration-lint no-orphan-security-definer rule, scripts/lint-migrations.mjs),
+-- but it is no longer covering for a signature change, only reasserting an
+-- unchanged one. No TS call site needs to change shape either -- every caller
+-- already passes exactly the original 12 named arguments.
+--
+-- WHY THE PRECOMPUTED-PARSE PATTERN DOESN'T APPLY HERE. p_manpower/
+-- p_manpower_ok and p_equipment/p_equipment_ok stay precomputed-in-TS-then-
+-- passed-in, and that pattern is NOT being generalised to yes/no. That
+-- pattern exists specifically to avoid a race: labour/equipment parsing in
+-- migration 018 was originally going to re-read prior answers from inside the
+-- locked transaction, and parsing outside the lock, then trusting a stale read,
+-- was the race it was built to avoid. A yes/no classification of THIS turn's
+-- own p_message has no prior read to race against -- classifying it inside the
+-- already-locked function is exactly as safe as classifying it outside, so the
+-- reason the precomputed pattern exists does not apply to Q1/holiday's
+-- classification. quoco_classify_yes_no (new, this migration) ports
+-- `classifyYesNo`'s exact word lists (lib/whatsapp/flows/parsers/lexicon.ts)
+-- into PL/pgSQL -- see that function's own header for the port notes and the
+-- one behavioural subtlety worth recording.
 --
 -- WHY THE RETURN VALUE GAINS `attendance`. Three distinct completions now
 -- produce the identical (outcome='advance', current_step=0) pair: the YES
@@ -59,7 +106,11 @@
 -- `equipment_echo` field for the identical reason (a caller needing more
 -- than outcome+step to render the right reply). `attendance` is NULL on
 -- every turn except the two that resolve it (step 1's YES/default-YES write,
--- step 5's completion), so it costs nothing on the common path.
+-- step 5's completion), so it costs nothing on the common path. Note this is
+-- a RETURN VALUE change, not a PARAMETER change -- it does not affect the
+-- function's identity/signature and was never part of the overload problem
+-- above; `RETURNS jsonb` is unchanged, only the JSONB VALUE now carries one
+-- more key.
 --
 -- REVIEW PACKAGE GATE (CLAUDE.md §0's external-review trigger): this migration
 -- modifies a live function's logic (a) and renames a column with an in-place
@@ -146,7 +197,86 @@ GRANT  UPDATE (
 ) ON public.daily_logs TO authenticated;
 
 -- =============================================================================
--- STEP 4 -- apply_morning_flow_turn (CREATE OR REPLACE -- never DROP+CREATE)
+-- STEP 4a -- quoco_classify_yes_no (new helper). Plain SQL logic, no table
+-- access, not SECURITY DEFINER -- same shape/precedent as quoco_same_ist_day
+-- (012_whatsapp_session_transition.sql), which also carries no explicit
+-- REVOKE/GRANT for the same reason (nothing to protect; migration-lint's
+-- no-orphan-security-definer rule only fires on SECURITY DEFINER functions).
+--
+-- Ports lib/whatsapp/flows/parsers/lexicon.ts's `classifyYesNo` word-for-word
+-- (YES_WORDS/NO_WORDS/NONE_WORDS as of 2026-08-23) into PL/pgSQL so Q1
+-- attendance and the holiday follow-up can classify their own answer INSIDE
+-- apply_morning_flow_turn, without a precomputed flag crossing the RPC
+-- boundary (see this file's header, REWORKED 2026-08-23, for why).
+--
+-- PORT NOTE, the one behavioural subtlety worth recording: classifyYesNo's TS
+-- negative check is `NO_WORDS.has(t) || isNoneSentinel(t)` per token `t`, where
+-- `isNoneSentinel` is itself a general whole-string/token-wise function. Fed a
+-- SINGLE already-split token (never containing internal whitespace/commas/./!,
+-- since the outer split already consumed those), isNoneSentinel(t) collapses to
+-- exactly `NONE_WORDS.has(t)` -- its own token-wise fallback loop and digit
+-- guard become no-ops on a single-element list. This function relies on that
+-- reduction and checks NONE_WORDS membership directly per token, rather than
+-- porting isNoneSentinel's own (more general, string-wide) logic -- porting
+-- the general form would be over-scope: it is never invoked here on anything
+-- but a single pre-split token, so the two are behaviourally identical for
+-- every call this function makes. If isNoneSentinel is ever generalised on
+-- the TS side to do more than this reduction implies, this function's
+-- NONE_WORDS check must be revisited against the new behaviour, not assumed
+-- to still match.
+-- =============================================================================
+CREATE OR REPLACE FUNCTION quoco_classify_yes_no(p_text TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_cleaned    TEXT;
+  v_tokens     TEXT[];
+  v_yes_words  CONSTANT TEXT[] := ARRAY[
+    'yes','y','yeah','yep','yup','ok','okay','done','completed','complete',
+    'finished','achieved','met','full','fully','aama','ama','aam'
+  ];
+  v_no_words   CONSTANT TEXT[] := ARRAY[
+    'no','n','nope','not','notdone','incomplete','pending','partly','partial',
+    'partially','mostly','half','some','delayed','missed','short'
+  ];
+  v_none_words CONSTANT TEXT[] := ARRAY[
+    'no','none','nothing','nil','na','zero','0','-','illa','ille','illai',
+    'illae','kidaiyathu','kedaiyathu'
+  ];
+BEGIN
+  v_cleaned := lower(btrim(COALESCE(p_text, '')));
+  IF v_cleaned = '' THEN
+    RETURN jsonb_build_object('met', false, 'ok', false);
+  END IF;
+
+  v_tokens := array_remove(regexp_split_to_array(v_cleaned, '[\s,.!]+'), '');
+
+  -- Negatives (including NONE_WORDS sentinels) win outright -- see PORT NOTE
+  -- above for why a direct NONE_WORDS membership check is the correct port
+  -- of isNoneSentinel(t) for a single already-split token.
+  IF EXISTS (
+    SELECT 1 FROM unnest(v_tokens) AS t WHERE t = ANY(v_no_words) OR t = ANY(v_none_words)
+  ) THEN
+    RETURN jsonb_build_object('met', false, 'ok', true);
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM unnest(v_tokens) AS t WHERE t = ANY(v_yes_words)
+  ) THEN
+    RETURN jsonb_build_object('met', true, 'ok', true);
+  END IF;
+
+  RETURN jsonb_build_object('met', false, 'ok', false);
+END;
+$$;
+
+-- =============================================================================
+-- STEP 4b -- apply_morning_flow_turn (CREATE OR REPLACE -- never DROP+CREATE).
+-- Signature is BYTE-IDENTICAL to the live pre-migration (022) one -- see this
+-- file's header, REWORKED 2026-08-23, for why that identity is load-bearing.
 -- =============================================================================
 CREATE OR REPLACE FUNCTION apply_morning_flow_turn(
   p_phone_number  TEXT,
@@ -160,9 +290,7 @@ CREATE OR REPLACE FUNCTION apply_morning_flow_turn(
   p_equipment     JSONB    DEFAULT NULL,  -- Q4 parse (equipment); stored verbatim when step 4 advances
   p_equipment_ok  BOOLEAN  DEFAULT NULL,  -- Q4 parse acceptable? (explicit none, or >=1 item)
   p_now           TIMESTAMPTZ DEFAULT now(),
-  p_test_sleep_ms INTEGER     DEFAULT NULL,  -- TEST-ONLY: pause after lock to force an interleave. NULL/no-op in prod.
-  p_yesno_met     BOOLEAN  DEFAULT NULL,  -- classifyYesNo(p_message).met -- shared by Q1 attendance (step 1) and the holiday follow-up (step 5). APPENDED (see file header on why).
-  p_yesno_ok      BOOLEAN  DEFAULT NULL   -- classifyYesNo(p_message).ok
+  p_test_sleep_ms INTEGER     DEFAULT NULL  -- TEST-ONLY: pause after lock to force an interleave. NULL/no-op in prod.
 )
 RETURNS jsonb   -- { outcome, current_flow, current_step, log_date, attendance }
 LANGUAGE plpgsql
@@ -177,6 +305,7 @@ DECLARE
   v_col        TEXT := NULL;      -- which daily_logs write this turn performs (NULL = no write)
   v_reask      INTEGER;           -- current per-step reask counter (parsed steps)
   v_attendance TEXT := NULL;      -- resolved attendance value this turn writes, if any -- also echoed in the return value (see file header)
+  v_yesno      JSONB;             -- quoco_classify_yes_no(p_message)'s {met, ok} -- computed inline at steps 1 and 5 only
 BEGIN
   -- log_date in IST, same Asia/Kolkata discipline as quoco_same_ist_day.
   v_log_date := (p_now AT TIME ZONE 'Asia/Kolkata')::date;
@@ -235,19 +364,22 @@ BEGIN
       v_outcome := 'reask';
 
     ELSIF v_session.current_step = 1 THEN
-      -- Q1 Attendance (classifyYesNo, computed in TS, passed in as
-      -- p_yesno_met/p_yesno_ok). One reask on an unclassifiable answer.
-      -- Exhausted-reask default is YES -- DECIDED 2026-08-23 (review package
-      -- §2): default-YES-when-actually-absent leaves three questions
-      -- unanswered, visible and B3-recoverable; default-NO-when-actually-
-      -- present silently drops all three from an engineer who was on site
-      -- and answering. The opposite of evening Q2's own default direction,
-      -- because on THIS question NO is the shorter path, not the longer one.
+      -- Q1 Attendance. Classified INSIDE this function via
+      -- quoco_classify_yes_no (REWORKED 2026-08-23 -- see file header; the
+      -- p_yesno_met/p_yesno_ok parameters from the first draft are gone).
+      -- One reask on an unclassifiable answer. Exhausted-reask default is
+      -- YES -- DECIDED 2026-08-23 (review package §2): default-YES-when-
+      -- actually-absent leaves three questions unanswered, visible and
+      -- B3-recoverable; default-NO-when-actually-present silently drops all
+      -- three from an engineer who was on site and answering. The opposite
+      -- of evening Q2's own default direction, because on THIS question NO
+      -- is the shorter path, not the longer one.
+      v_yesno := quoco_classify_yes_no(p_message);
       v_reask := COALESCE((v_session.context->>'q1_reask')::int, 0);
-      IF NOT COALESCE(p_yesno_ok, false) AND v_reask < 1 THEN
+      IF NOT COALESCE((v_yesno->>'ok')::boolean, false) AND v_reask < 1 THEN
         v_session.context := v_session.context || jsonb_build_object('q1_reask', v_reask + 1);
         v_outcome := 'reask';   -- step unchanged (1)
-      ELSIF COALESCE(p_yesno_ok, false) AND NOT p_yesno_met THEN
+      ELSIF COALESCE((v_yesno->>'ok')::boolean, false) AND NOT (v_yesno->>'met')::boolean THEN
         -- Genuinely parsed NO -> holiday follow-up (step 5). No daily_logs
         -- write yet -- attendance isn't known until the follow-up resolves.
         v_session.current_step := 5;
@@ -308,17 +440,19 @@ BEGIN
       END IF;
 
     ELSIF v_session.current_step = 5 THEN
-      -- Holiday follow-up (classifyYesNo again -- same p_yesno_met/p_yesno_ok
-      -- params, this question's own reask key q5_reask). Exhausted-reask
+      -- Holiday follow-up. Classified INSIDE this function via
+      -- quoco_classify_yes_no (REWORKED 2026-08-23 -- see file header), same
+      -- helper as Q1, this question's own reask key q5_reask. Exhausted-reask
       -- default stays `absent` (unchanged from the exhausted-attendance
       -- default reasoning above -- `absent` keeps the evening trigger and PM
       -- handoff alive, `site_holiday` would silently cancel both).
+      v_yesno := quoco_classify_yes_no(p_message);
       v_reask := COALESCE((v_session.context->>'q5_reask')::int, 0);
-      IF NOT COALESCE(p_yesno_ok, false) AND v_reask < 1 THEN
+      IF NOT COALESCE((v_yesno->>'ok')::boolean, false) AND v_reask < 1 THEN
         v_session.context := v_session.context || jsonb_build_object('q5_reask', v_reask + 1);
         v_outcome := 'reask';   -- step unchanged (5)
       ELSE
-        IF COALESCE(p_yesno_ok, false) AND p_yesno_met THEN
+        IF COALESCE((v_yesno->>'ok')::boolean, false) AND (v_yesno->>'met')::boolean THEN
           v_attendance := 'site_holiday';
         ELSE
           -- NO, or the exhausted-reask default.
@@ -443,11 +577,14 @@ $fn$;
 -- STEP 5 -- re-assert the grant (migration-lint's no-orphan-security-definer
 -- rule, and 022's own precedent: "CREATE OR REPLACE preserves an existing ACL,
 -- so this is belt-and-braces rather than a fix -- but asserting it costs
--- nothing"). Full signature, including the two appended parameters.
+-- nothing"). Signature is the ORIGINAL 12-arg one -- unchanged by this
+-- migration (see file header, REWORKED 2026-08-23) -- so this re-assertion is
+-- no longer covering for a signature change, only reasserting an ACL that
+-- `CREATE OR REPLACE` already carried over on its own.
 -- =============================================================================
 REVOKE EXECUTE ON FUNCTION public.apply_morning_flow_turn(
-  text, uuid, uuid, uuid, text, boolean, jsonb, boolean, jsonb, boolean, timestamptz, integer, boolean, boolean
+  text, uuid, uuid, uuid, text, boolean, jsonb, boolean, jsonb, boolean, timestamptz, integer
 ) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.apply_morning_flow_turn(
-  text, uuid, uuid, uuid, text, boolean, jsonb, boolean, jsonb, boolean, timestamptz, integer, boolean, boolean
+  text, uuid, uuid, uuid, text, boolean, jsonb, boolean, jsonb, boolean, timestamptz, integer
 ) TO service_role;

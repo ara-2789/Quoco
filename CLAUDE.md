@@ -451,6 +451,46 @@
   section number was already fragile on its own. Always cite the filename
   with the section, e.g. `design-decisions-beta-feedback.md §10`, never
   just "§10". Full reasoning: docs/build-status.md's 2026-08-23 entry.
+- `CREATE OR REPLACE FUNCTION` ONLY PRESERVES GRANTS WHEN THE ARGUMENT
+  SIGNATURE IS UNCHANGED — QUALIFIER TO THE EXISTING "NEVER DROP+CREATE,
+  ALWAYS CREATE OR REPLACE" CONVENTION (standing rule since 2026-08-23,
+  migration 030's first draft). That convention (per-migration headers,
+  e.g. `022_evening_flow_apply_turn.sql`'s own text, "never DROP+CREATE --
+  migration 020's own incident is why") exists to stop a function's
+  EXECUTE grants from silently reverting to Postgres defaults on every
+  apply. It is NOT unconditional: a function's identity in Postgres is its
+  name PLUS its full parameter TYPE LIST. Appending a parameter to a
+  `CREATE OR REPLACE FUNCTION` statement — even a trailing one with a
+  `DEFAULT` value — changes that type list, so Postgres does NOT replace
+  the existing function; it silently creates a SECOND, DISTINCT, live
+  overload under the same name. The OLD function body is never removed,
+  keeps whatever grants it already had, and stays fully callable. Any
+  caller passing a partial named-argument set that both overloads' defaults
+  can satisfy becomes genuinely AMBIGUOUS ("function ... is not unique")
+  instead of resolving to either one. THIS IS A DIFFERENT FAILURE IN THE
+  SAME FAMILY AS MIGRATION 020, not the same one re-occurring: 020 was an
+  explicit DROP+CREATE reverting to default PUBLIC grants; this is
+  `CREATE OR REPLACE` itself failing to replace, with no DROP in sight.
+  CONSEQUENCE: any migration that changes a `SECURITY DEFINER` function's
+  ARGUMENT LIST (adding, removing, or reordering parameters — not just
+  editing the body) needs an EXPLICIT plan for the old signature before it
+  ships, not a bare `CREATE OR REPLACE`: either (a) avoid the signature
+  change entirely, if the new behaviour can be obtained inside the function
+  body instead (migration 030's eventual fix — classify inside the RPC
+  rather than pass a precomputed flag in, once the reason a precomputed
+  pattern existed elsewhere was checked and found not to apply here), or
+  (b) an explicit `DROP FUNCTION IF EXISTS <old exact signature>` ahead of
+  the `CREATE OR REPLACE`, paired with the function's own explicit
+  grant-reassertion (already required by `scripts/lint-migrations.mjs`'s
+  no-orphan-security-definer rule) so the DROP never leaves a window with
+  default grants. Evidence: migration 030's first draft appended
+  `p_yesno_met`/`p_yesno_ok` to `apply_morning_flow_turn`, confirmed live
+  against a real Postgres 17 instance to leave two simultaneously-callable
+  functions (`pg_proc` returned two rows for one name) — caught by the
+  project's own pre-apply dry-run discipline (§7's disposable-dry-run rule)
+  before this ever touched test-db or prod. Full incident + the fix
+  actually chosen: `docs/reviews/morning-flow-migration-review-package.md`
+  §10 (the finding, kept in full) and §10.1 (the fix and its verification).
 
 ---
 

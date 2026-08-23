@@ -455,14 +455,16 @@ export async function applyMorningFlowTurn(params: {
   // Parse every possible answer shape unconditionally (pure + cheap) and hand
   // the results to the RPC, which selects the one that matches the active
   // step under its lock. This keeps parsing in TypeScript while the RPC
-  // stays the single authoritative decision+write. classifyYesNo serves BOTH
-  // Q1 (attendance) and the holiday follow-up -- the same classification of
-  // the same text, interpreted differently depending on which step is active,
-  // exactly like manpower/equipment are both parsed every turn regardless of
-  // which one the active step actually needs.
+  // stays the single authoritative decision+write. Q1 (attendance) and the
+  // holiday follow-up are the two exceptions: their yes/no classification
+  // happens INSIDE apply_morning_flow_turn now (quoco_classify_yes_no,
+  // 030_morning_flow_attendance.sql), not precomputed here and passed in --
+  // REWORKED 2026-08-23 (review package §10). The precomputed-parse pattern
+  // still applies to Q3/Q4 (a stale-read race it exists to avoid); it never
+  // applied to yes/no, which has no prior read to race against, so nothing
+  // is lost by classifying it on the RPC side instead.
   const manpower = parseLabourCount(params.message)
   const equipment = parseEquipment(params.message)
-  const yesno = classifyYesNo(params.message)
 
   const { data, error } = await supabase.rpc('apply_morning_flow_turn', {
     p_phone_number: params.phoneNumber,
@@ -480,8 +482,6 @@ export async function applyMorningFlowTurn(params: {
     p_manpower_ok: isLabourAnswered(manpower),
     p_equipment: equipment as unknown as Json,
     p_equipment_ok: isEquipmentAnswered(equipment),
-    p_yesno_met: yesno.met,
-    p_yesno_ok: yesno.ok,
     ...(params.now !== undefined ? { p_now: params.now } : {}),
     ...(params.testSleepMs !== undefined ? { p_test_sleep_ms: params.testSleepMs } : {}),
   })

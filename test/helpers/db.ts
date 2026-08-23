@@ -270,8 +270,12 @@ export interface MorningTurnRow {
 // Wrapper over the single transactional morning-flow RPC. Parameter names match
 // apply_morning_flow_turn's SQL signature EXACTLY (p_phone_number, p_tenant_id,
 // p_user_id, p_project_id, p_message, p_start_flow, p_manpower, p_manpower_ok,
-// p_equipment, p_equipment_ok, p_now, p_test_sleep_ms, p_yesno_met, p_yesno_ok) —
-// NOT the acquire_and_transition_session names. Engineer/project default to the
+// p_equipment, p_equipment_ok, p_now, p_test_sleep_ms) — BYTE-IDENTICAL to the
+// pre-030 signature (REWORKED 2026-08-23, review package §10: Q1/holiday
+// yes-no classification now happens INSIDE the RPC via quoco_classify_yes_no,
+// not as precomputed p_yesno_met/p_yesno_ok parameters — the first draft's
+// appended params created a duplicate, orphaned function overload). NOT the
+// acquire_and_transition_session names. Engineer/project default to the
 // morning fixtures but can be overridden.
 export async function applyMorningFlowTurn(params: {
   phone: string
@@ -286,11 +290,10 @@ export async function applyMorningFlowTurn(params: {
   const db = testClient()
   // Mirror the production wrapper: parse every shape unconditionally and
   // pass it (+ *_ok flags) so the RPC selects by active step. See the cast
-  // note in lib/whatsapp/flows/morning.ts. classifyYesNo serves BOTH Q1
-  // (attendance) and the holiday follow-up (030_morning_flow_attendance.sql).
+  // note in lib/whatsapp/flows/morning.ts. Q1/holiday yes-no classification
+  // is NOT computed here — it happens inside apply_morning_flow_turn itself.
   const manpower = parseLabourCount(params.message)
   const equipment = parseEquipment(params.message)
-  const yesno = classifyYesNo(params.message)
   const { data, error } = await db.rpc('apply_morning_flow_turn', {
     p_phone_number: params.phone,
     p_tenant_id: params.tenantId ?? TEST_TENANT_ID,
@@ -302,8 +305,6 @@ export async function applyMorningFlowTurn(params: {
     p_manpower_ok: isLabourAnswered(manpower),
     p_equipment: equipment,
     p_equipment_ok: isEquipmentAnswered(equipment),
-    p_yesno_met: yesno.met,
-    p_yesno_ok: yesno.ok,
     ...(params.now !== undefined ? { p_now: params.now } : {}),
     ...(params.testSleepMs !== undefined ? { p_test_sleep_ms: params.testSleepMs } : {}),
   })
