@@ -401,28 +401,699 @@ because none exists.
 
 ---
 
-## 5. Evidence artifacts — PENDING
+## 5. Evidence artifacts — status (updated 2026-08-23)
 
-The five pieces of empirical evidence this package cannot produce because no
-migration file or code exists yet. Listed so the package's eventual shape is
-visible now and the gap is explicit, not silently absent.
+Two of the five remain PENDING — both genuinely require an apply, which this
+pass does not do. The other three are attached below (§§7–9), not merely
+described.
 
-1. **PENDING** — Full before/after body diff for `apply_morning_flow_turn`
-   (old vs. new SQL), keyed line-by-line to §2's table above.
-2. **PENDING** — Disposable dry-run scaffold output (real `pg_dump`-based
-   schema, per CLAUDE.md §7's standing rule) proving the new SQL parses and
-   executes against a structurally accurate Postgres before any real database
-   sees it.
-3. **PENDING** — Test-db rehearsal transcript exercising every renumbered
-   step in sequence: the YES path (1→2→3→4→complete) AND both NO sub-paths
-   (1→5→complete as `site_holiday`, 1→5→complete as `absent`), as real
-   multi-turn RPC calls, not unit tests of the RPC in isolation.
-4. **PENDING** — TS/SQL pure-mirror agreement test, extending
-   `test/productivity-reconciliation-mirror.test.ts`'s own pattern to
-   morning's renumbered flow, proving `dispatchMorningFlow` and
-   `apply_morning_flow_turn` agree on every branch in §2's table — including
-   the two new ones — not just individually correct.
-5. **PENDING** — GATE 1's live observation itself (§3 above): the
-   `daily_logs` query output and the `MORNING_QUESTIONS[1]`-vs-template-1
-   string diff, captured post-apply with the migration's SHA and an empty
-   `git status --porcelain`, per this project's ARTIFACT PROVENANCE rule.
+1. **DONE — §9 below.** Full before/after body diff for
+   `apply_morning_flow_turn` (old vs. new SQL), keyed to §2's table rows.
+2. **DONE — §8 below, full transcript at `/tmp/dry-run-evidence.txt`.**
+   Disposable dry-run scaffold output (real `pg_dump`-based schema) proving
+   the new SQL parses and executes against a structurally accurate Postgres
+   — covers the YES path, both NO-path completions, both exhausted-reask
+   defaults, the JSONB transform (including the untouched-NULL-row case),
+   the `attendance` CHECK constraint, and every grant probe.
+3. **PENDING — needs a real apply.** Test-db rehearsal transcript exercising
+   every renumbered step in sequence via the real webhook/RPC against
+   test-db, not a local scaffold. The dry-run (2 above) proves the SQL is
+   *executable and structurally correct*; it does not stand in for a real
+   test-db rehearsal, which this pass does not perform.
+4. **DONE — test built and proven capable of catching drift; §7 below.**
+   `test/unit/morning-flow-mirror.test.ts` + the shared fixture table
+   `test/helpers/morning-mirror-cases.ts` extend
+   `test/productivity-reconciliation-mirror.test.ts`'s pattern to morning's
+   renumbered flow. Not yet run for real against test-db (needs the apply,
+   same as 3 above) — but capability is proven, not asserted: §7 shows the
+   identical fixture logic actually catching a deliberately-introduced
+   SQL/TS divergence (RED) and passing once reverted (GREEN), against the
+   dry-run scaffold.
+5. **PENDING — needs a real apply.** GATE 1's live observation itself (§3
+   above): the `daily_logs` query output and the
+   `MORNING_QUESTIONS[1]`-vs-template-1 string diff, captured post-apply
+   with the migration's SHA and an empty `git status --porcelain`, per this
+   project's ARTIFACT PROVENANCE rule. Cannot be produced without a real
+   webhook-driven turn against a database carrying this migration.
+
+---
+
+## 6. New gaps found during implementation — spec widened (2026-08-23)
+
+§2's step-mapping table was satisfiable exactly as written — no row required
+adjusting. But building the migration surfaced three things the table did
+not examine at all, because they sit outside what a per-branch table can
+show: a cross-cutting return-value problem, a shared-code blast-radius
+decision, and a grant statement in an unrelated, older migration file. Each
+was resolved during the build, not left for review to discover. All three
+are now also documented in `030_morning_flow_attendance.sql`'s own header
+and in `lib/whatsapp/flows/morning.ts`'s comments — this section is the
+consolidated version for the reviewer, not a duplicate invention.
+
+### 6a. The attendance return field
+
+**The problem.** Three distinct completions now produce the identical
+`(outcome: 'advance', current_step: 0)` pair: the YES path's Q4 (equipment)
+completion, the NO path's `site_holiday` completion, and the NO path's
+`absent` completion. §2's table names which reply belongs to which branch
+(`MORNING_COMPLETE_REPLY`, `MORNING_SITE_HOLIDAY_REPLY`,
+`MORNING_ABSENT_REPLY`) but never specifies how the caller is supposed to
+tell the three apart — `buildMorningReply`'s pre-migration signature took
+only `(outcome, currentStep)`, which is not enough information.
+
+**The precedent followed, not invented.** `apply_evening_flow_turn` already
+solves the identical class of problem for step 6's data-driven prompt:
+
+```
+supabase/migrations/024_evening_flow_q4_q5.sql:284
+RETURNS jsonb   -- { outcome, current_flow, current_step, log_date, equipment_echo }
+
+supabase/migrations/024_evening_flow_q4_q5.sql:851
+    'equipment_echo', v_equipment_echo
+```
+
+`buildEveningReply` (`lib/whatsapp/flows/evening.ts:195,202,205`) takes
+`equipmentEcho` as an extra parameter for exactly this reason — the RPC's
+`(outcome, currentStep)` pair alone can't tell it what to render. Morning's
+fix mirrors this shape precisely, with `attendance` in place of
+`equipment_echo`.
+
+**Every changed signature and call site:**
+
+| File:line | Change |
+|---|---|
+| `supabase/migrations/030_morning_flow_attendance.sql` (RETURN block, near EOF) | `RETURN jsonb_build_object(...)` gains `'attendance', v_attendance` |
+| `lib/whatsapp/flows/morning.ts:142` | `buildMorningReply(outcome, currentStep, attendance?)` — new optional third parameter |
+| `lib/whatsapp/flows/morning.ts:423-431` | `MorningTurnResult` gains `attendance: 'present' \| 'absent' \| 'site_holiday' \| null` |
+| `lib/whatsapp/flows/morning.ts:498,506` | `applyMorningFlowTurn`'s RPC-result cast and return object both carry `attendance` through from the RPC's JSONB response |
+| `lib/whatsapp/flows/morning.ts:408-412` | `dispatchMorningFlow` (the pure mirror) computes `attendanceForReply` from its own `dailyLogWrite` and passes it to `buildMorningReply`, so the mirror and the RPC use the same disambiguation mechanism |
+| `lib/whatsapp/dispatch.ts:54-60` | `Attempt`'s `'morning'` variant gains `attendance` (evening's variant already carries the analogous `equipmentEcho`) |
+| `lib/whatsapp/dispatch.ts:163` | `buildMorningReply(a.outcome, a.currentStep, a.attendance)` |
+| `lib/whatsapp/inbound-start.ts:194` | `buildMorningReply(result.outcome, result.currentStep, result.attendance)` |
+| `app/api/whatsapp/webhook/route.ts:292` | `buildMorningReply(result.outcome, result.currentStep, result.attendance)` |
+
+`attendance` is optional on `buildMorningReply` and falls back to
+`MORNING_COMPLETE_REPLY` when omitted — an un-updated caller fails toward
+the ORIGINAL reply, not a broken one. Every real call site in this codebase
+has been updated regardless; the fallback is a safety margin, not a
+sanctioned way to skip passing it.
+
+### 6b. The parser scope decision
+
+**The problem.** §2 row H specs `morning_manpower`'s stored JSONB shape as
+`{total, by_trade:[{trade,count}], raw_text}` — renamed from
+`{planned_total, by_trade:[{trade,planned_count}], raw_text}`. The obvious
+place to make that rename is the parser that produces the shape,
+`parseLabourCount`/`LabourParse` (`lib/whatsapp/flows/parsers/labour.ts`).
+That parser is **shared** — evening's Q4a headcount reuses it verbatim
+(`lib/whatsapp/flows/evening.ts:476`, `const parse = parseLabourCount(text)`,
+then `evening.ts:486` reads `parse.planned_total` directly into
+`EVENING_Q4_HEADCOUNT_KEY`). Renaming the parser's own field names would
+have forced edits into `evening.ts` — squarely out of scope, since §4 above
+(and §30(a)) place evening's restructuring in a separate, later migration.
+
+**The decision.** `parseLabourCount`/`LabourParse` are **unchanged** —
+still `{planned_total, by_trade:[{trade,planned_count}], raw_text}`,
+exactly as evening depends on. The `total`/`count` reshape happens only at
+the two points that actually write `morning_manpower`:
+
+- SQL: `supabase/migrations/030_morning_flow_attendance.sql`'s `v_col =
+  'manpower'` branch (`jsonb_build_object('total', p_manpower->'planned_total',
+  ...)`), around line 381 of the migration file.
+- TS mirror: `lib/whatsapp/flows/morning.ts`'s `reshapeLabourForStorage()`
+  helper, called only from the step-3 branch of `dispatchMorningFlow`.
+
+Neither `labour.ts` nor `evening.ts` was touched. Comments recording this
+decision were added at three points a future reader might otherwise be
+confused by the asymmetry: `labour.ts` is never mentioned, but
+`lib/whatsapp/flows/parsers/lexicon.ts:11-13` and `lib/dpr/assemble.ts:548`
+both now note explicitly that the parser's own field names survive the
+rename.
+
+### 6c. Migration 017's stale grant
+
+**Why this one gets its own entry, not folded into the table.** This was
+genuinely invisible to §2's step-mapping table — the table describes
+`apply_morning_flow_turn`'s decision logic and daily_logs *writes*; it has
+no row for a *grant* statement sitting in an entirely different, much
+older migration file. Nothing about implementing §2's rows would have
+surfaced this on its own; it was found only by tracing every existing
+reference to `morning_manpower_planned` across the repo, including
+migration files, which is not something a row-by-row implementation of §2
+would do by default.
+
+**The exposure, if missed.** `017_rls_column_bounding.sql` grants
+`authenticated` (PM/admin/qs) column-bound `UPDATE` on `daily_logs`,
+naming every correctable column explicitly:
+
+```sql
+-- 017_rls_column_bounding.sql, original (still live, never edited):
+REVOKE UPDATE ON public.daily_logs FROM authenticated;
+GRANT  UPDATE (
+  is_holiday, holiday_reason, weather,
+  morning_plan, morning_manpower_planned, morning_equipment,
+  morning_execution_plan, morning_dependencies, morning_hindrances,
+  evening_output, evening_output_quantities, evening_productive_manpower,
+  evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site,
+  evening_equipment_utilisation, evening_dependencies
+) ON public.daily_logs TO authenticated;
+```
+
+Renaming the column without touching this grant would have left
+`authenticated` holding an `UPDATE` grant that names a column
+(`morning_manpower_planned`) which no longer exists on the table after this
+migration runs — at best inert (Postgres does not retroactively validate a
+previously-granted column name once it's gone, so this would not itself
+error), at worst a silent, permanent loss of PM write access to the
+(renamed) column, discovered only when someone tried to correct it and
+found `authenticated` could no longer touch `morning_manpower` at all.
+
+**The fix — re-declared in the new migration** (`030_morning_flow_attendance.sql`, STEP 3):
+
+```sql
+-- 030_morning_flow_attendance.sql:
+REVOKE UPDATE ON public.daily_logs FROM authenticated;
+GRANT  UPDATE (
+  is_holiday, holiday_reason, weather,
+  morning_plan, morning_manpower, morning_equipment,
+  morning_execution_plan, morning_dependencies, morning_hindrances,
+  evening_output, evening_output_quantities, evening_productive_manpower,
+  evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site,
+  evening_equipment_utilisation, evening_dependencies
+) ON public.daily_logs TO authenticated;
+```
+
+Only `morning_manpower_planned` → `morning_manpower` changed in that list.
+**`attendance` is deliberately NOT added** — PM correction of attendance
+depends on the PM edit UI, which §4 above already names as out of this
+migration's scope (`correct_daily_log` has zero frontend callers; nothing
+surfaces an `absent` day to a PM yet). Adding `attendance` to this grant
+now would grant a capability with no UI to exercise it and no decision on
+record that it should exist yet — the column-bound grant intentionally
+tracks what §4 already decided is and isn't in scope, not what's merely
+possible to grant.
+
+Verified directly against the dry-run scaffold, not asserted: §8 below
+shows `has_column_privilege('authenticated','daily_logs','morning_manpower',
+'UPDATE')` returning `true` and the same probe for `attendance` returning
+`false`, post-migration.
+
+---
+
+## 7. Mirror-agreement test — proof it can fail
+
+A green test that has never gone red is not evidence. SQL/TS drift is this
+migration's central risk — the exact shape of bug Aravind's own
+2026-08-23 correction round caught (the exhausted-reask default direction,
+first drafted backwards) — so the test built to catch that class of bug
+needed to be shown catching it, not just shown passing.
+
+**What was built.** `test/helpers/morning-mirror-cases.ts` — one shared
+fixture table, ten cases, one per distinct branch in §2's step-mapping
+table (not exhaustive edge cases; the two dedicated suites,
+`test/morning-flow.test.ts` and `test/unit/morning-dispatch.test.ts`,
+already exhaust those separately on each side). `test/unit/
+morning-flow-mirror.test.ts` runs every case through BOTH
+`apply_morning_flow_turn` (SQL, via test-db) and `dispatchMorningFlow` (the
+TS mirror), each checked against the case's own `expected` value — exactly
+`test/productivity-reconciliation-mirror.test.ts`'s established pattern,
+extended to morning. **Not yet runnable against test-db** (migration 030
+isn't applied there) — the proof below uses the identical fixture table and
+comparison logic, run against the disposable dry-run scaffold instead (a
+standalone script, not committed — the committed test file is the
+permanent artifact; the script existed only to prove the fixture table
+actually discriminates a real bug from a real fix).
+
+**The one-line divergence introduced.** In
+`030_morning_flow_attendance.sql`'s Q1 branch, the line that routes a
+genuine "yes" (or the exhausted-reask default) to step 2:
+
+```diff
+       ELSE
+         -- YES, or the exhausted-reask default (DECIDED: YES, not NO).
+-        v_session.current_step := 2;
++        v_session.current_step := 5;
+```
+
+Chosen deliberately: this is the SAME branch Aravind's own correction round
+touched (the exhausted-reask default direction), so the demonstration
+exercises this migration's actual, real risk — not a synthetic one. The TS
+mirror (`morning.ts`) was left untouched, so this is a genuine SQL-only
+divergence from the TS copy of the same decision.
+
+**RED — the divergence, caught:**
+
+```
+[FAIL] Q1 yes -> attendance=present, advances to step 2
+   expected: outcome=advance nextStep=2 attendance=present
+   SQL:      outcome=advance nextStep=5 attendance=present <-- MISMATCH
+   TS:       outcome=advance nextStep=2 attendance=present 
+[PASS] Q1 no -> advances to step 5 (holiday follow-up), no write
+   expected: outcome=advance nextStep=5 attendance=null
+   SQL:      outcome=advance nextStep=5 attendance=null 
+   TS:       outcome=advance nextStep=5 attendance=null 
+[PASS] Q1 unclassifiable -> reask, step unchanged
+   expected: outcome=reask nextStep=1 attendance=null
+   SQL:      outcome=reask nextStep=1 attendance=null 
+   TS:       outcome=reask nextStep=1 attendance=null 
+[FAIL] Q1 unclassifiable, budget exhausted -> DEFAULTS TO YES (DECIDED 2026-08-23)
+   expected: outcome=advance nextStep=2 attendance=present
+   SQL:      outcome=advance nextStep=5 attendance=present <-- MISMATCH
+   TS:       outcome=advance nextStep=2 attendance=present 
+[PASS] Holiday follow-up yes -> attendance=site_holiday, completes
+[PASS] Holiday follow-up no -> attendance=absent, completes
+[PASS] Holiday follow-up unclassifiable, budget exhausted -> DEFAULTS TO absent (unchanged direction)
+[PASS] Q2 (plan, free text) -> advances to step 3
+[PASS] Q3 (parsed labour) -> advances to step 4
+[PASS] Q4 (parsed equipment) -> completes directly (not step 5)
+
+RESULT: FAIL (at least one case mismatched)
+```
+Exit code: `1`.
+
+Exactly the two cases that exercise the buggy `ELSE` branch failed (`Q1
+yes`, `Q1 unclassifiable, budget exhausted` — both routes reach the same
+line); every other case, untouched by the divergence, still passed — the
+table isolates the actual defect rather than failing wholesale.
+
+**Reverted** (`v_session.current_step := 2;` restored — `git diff` against
+the committed migration file confirmed empty before re-testing, i.e. back to
+exactly the committed state, not a different fix).
+
+**GREEN — after revert:**
+
+```
+[PASS] Q1 yes -> attendance=present, advances to step 2
+   expected: outcome=advance nextStep=2 attendance=present
+   SQL:      outcome=advance nextStep=2 attendance=present 
+   TS:       outcome=advance nextStep=2 attendance=present 
+[PASS] Q1 no -> advances to step 5 (holiday follow-up), no write
+[PASS] Q1 unclassifiable -> reask, step unchanged
+[PASS] Q1 unclassifiable, budget exhausted -> DEFAULTS TO YES (DECIDED 2026-08-23)
+   expected: outcome=advance nextStep=2 attendance=present
+   SQL:      outcome=advance nextStep=2 attendance=present 
+   TS:       outcome=advance nextStep=2 attendance=present 
+[PASS] Holiday follow-up yes -> attendance=site_holiday, completes
+[PASS] Holiday follow-up no -> attendance=absent, completes
+[PASS] Holiday follow-up unclassifiable, budget exhausted -> DEFAULTS TO absent (unchanged direction)
+[PASS] Q2 (plan, free text) -> advances to step 3
+[PASS] Q3 (parsed labour) -> advances to step 4
+[PASS] Q4 (parsed equipment) -> completes directly (not step 5)
+
+RESULT: PASS (all cases agree)
+```
+Exit code: `0`.
+
+---
+
+## 8. Dry-run scaffold evidence
+
+Full literal transcript: **`/tmp/dry-run-evidence.txt`** (268 lines) — every
+query and its raw result, in execution order, per this project's ARTIFACT
+PROVENANCE convention (query text visible above its result). Captured
+against a disposable local PG17 instance (real `pg_dump` schema from the
+linked project, `auth`/roles stubbed per CLAUDE.md §7's standing rule),
+never test-db or prod. Torn down after capture — nothing persists.
+
+What it contains, in order:
+1. **Pre-migration state** — confirms the OLD column
+   (`morning_manpower_planned`) and the OLD 12-parameter RPC signature,
+   before 030 runs.
+2. **Migration 030 applied** to the scaffold.
+3. **The JSONB transform, including the untouched-NULL row** —
+   `morning_manpower` for the three seeded historical rows shows
+   `total`/`count` (not `planned_total`/`planned_count`); the fourth row
+   (no morning submission at all, `morning_manpower_planned` genuinely
+   `NULL`) is confirmed still `NULL` afterward — the transform's `WHERE
+   morning_manpower IS NOT NULL` predicate correctly left it alone.
+4. **The `attendance` CHECK constraint** rejecting an invalid value
+   (`'bogus'`) with the real Postgres error text.
+5. **Every grant probe**: `anon` denied `EXECUTE` on
+   `apply_morning_flow_turn`, `service_role` allowed, `authenticated`
+   column-bound correctly (`morning_manpower`/`morning_plan` grantable,
+   `attendance` not — the §6c fix, verified live).
+6. **The YES path**, start through Q4 completion, with the resulting
+   `daily_logs` row printed in full.
+7. **Both NO-path completions** (`site_holiday`, `absent`), including the
+   confirmation that no row is written between Q1's "no" and the holiday
+   follow-up resolving.
+8. **Both exhausted-reask defaults** — Q1's (now YES) and the holiday
+   follow-up's (still `absent`) — each shown reaching the reask state first
+   (`q1_reask`/`q5_reask` incremented, visible in the session `context`),
+   then resolving on the second unclassifiable answer.
+
+---
+
+## 9. Before/after body diff — `apply_morning_flow_turn`
+
+Old body: `supabase/migrations/022_evening_flow_apply_turn.sql:100-306`
+(git `HEAD`, unedited — CLAUDE.md §6 forbids editing a live migration file).
+New body: `supabase/migrations/030_morning_flow_attendance.sql:151-440`.
+
+**Row index — jump to a row's new-file location before reading the diff,**
+so branches are checked against §2's table rather than re-derived from the
+diff alone:
+
+| Row | §2 meaning | New file line(s) (decide) | New file line(s) (write) |
+|---|---|---|---|
+| A | start | 211-224 | — (no write on start) |
+| B | start, already active → reask | 221-222 | — |
+| C | idle check → already_complete | 225,227 | — |
+| D | idle check → idle | 225,228-229 | — |
+| E | empty text → reask (any step) | 233-235 | — |
+| F1-F4 | Q1 attendance (yes / no / reask / exhausted-default) | 237-263 | 349-359 (`v_col='attendance'`) |
+| G | Q2 plan (free text) | 265-270 | 373-380 (`v_col='plan'`) |
+| H | Q3 workers by trade (parsed labour) | 272-285 | 381-404 (`v_col='manpower'`) |
+| I | Q4 equipment (parsed, completes) | 287-308 | 406-415 (`v_col='equipment'`) |
+| J1-J4 | Holiday follow-up (site_holiday / absent / reask / exhausted-default) | 310-333 | 360-372 (`v_col='attendance_complete'`) |
+| K | retired — old step-4 free-text execution-plan role | — (no target branch; see diff) | — (`morning_execution_plan` no longer written) |
+| L | else catch-all → reask | 335-336 | — |
+| M | different flow active → wrong_flow | 339-343 | — |
+
+**Full unified diff:**
+
+```diff
+
+--- /tmp/old-body.sql	2026-08-23 09:25:06
++++ /tmp/new-body.sql	2026-08-23 09:25:06
+@@ -5,25 +5,28 @@
+   p_project_id    UUID,        -- engineer's single active project (project_members)
+   p_message       TEXT,        -- raw inbound; trimmed inside; ''/NULL tolerated
+   p_start_flow    BOOLEAN,     -- TRUE only from the env-gated test trigger
+-  p_manpower      JSONB    DEFAULT NULL,  -- Q2 parse (labour); stored verbatim when step 2 advances
+-  p_manpower_ok   BOOLEAN  DEFAULT NULL,  -- Q2 parse acceptable? (a number was found)
+-  p_equipment     JSONB    DEFAULT NULL,  -- Q3 parse (equipment); stored verbatim when step 3 advances
+-  p_equipment_ok  BOOLEAN  DEFAULT NULL,  -- Q3 parse acceptable? (explicit none, or >=1 item)
++  p_manpower      JSONB    DEFAULT NULL,  -- Q3 parse (labour); reshaped+stored when step 3 advances
++  p_manpower_ok   BOOLEAN  DEFAULT NULL,  -- Q3 parse acceptable? (a number was found)
++  p_equipment     JSONB    DEFAULT NULL,  -- Q4 parse (equipment); stored verbatim when step 4 advances
++  p_equipment_ok  BOOLEAN  DEFAULT NULL,  -- Q4 parse acceptable? (explicit none, or >=1 item)
+   p_now           TIMESTAMPTZ DEFAULT now(),
+-  p_test_sleep_ms INTEGER     DEFAULT NULL  -- TEST-ONLY: pause after lock to force an interleave. NULL/no-op in prod.
++  p_test_sleep_ms INTEGER     DEFAULT NULL,  -- TEST-ONLY: pause after lock to force an interleave. NULL/no-op in prod.
++  p_yesno_met     BOOLEAN  DEFAULT NULL,  -- classifyYesNo(p_message).met -- shared by Q1 attendance (step 1) and the holiday follow-up (step 5). APPENDED (see file header on why).
++  p_yesno_ok      BOOLEAN  DEFAULT NULL   -- classifyYesNo(p_message).ok
+ )
+-RETURNS jsonb   -- { outcome, current_flow, current_step, log_date }
++RETURNS jsonb   -- { outcome, current_flow, current_step, log_date, attendance }
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path = public
+ AS $fn$
+ DECLARE
+-  v_session  whatsapp_sessions;
+-  v_text     TEXT;
+-  v_log_date DATE;
+-  v_outcome  TEXT;
+-  v_col      TEXT := NULL;      -- which daily_logs column this turn writes (NULL = no write)
+-  v_reask    INTEGER;           -- current per-step reask counter (parsed steps)
++  v_session    whatsapp_sessions;
++  v_text       TEXT;
++  v_log_date   DATE;
++  v_outcome    TEXT;
++  v_col        TEXT := NULL;      -- which daily_logs write this turn performs (NULL = no write)
++  v_reask      INTEGER;           -- current per-step reask counter (parsed steps)
++  v_attendance TEXT := NULL;      -- resolved attendance value this turn writes, if any -- also echoed in the return value (see file header)
+ BEGIN
+   -- log_date in IST, same Asia/Kolkata discipline as quoco_same_ist_day.
+   v_log_date := (p_now AT TIME ZONE 'Asia/Kolkata')::date;
+@@ -43,7 +46,7 @@
+   END IF;
+ 
+   -- (2) BOT-07 next-day reset. A previous-IST-day session (mid-flow OR completed)
+-  -- is wiped to idle: context := '{}' also drops any q2_reask/q3_reask counters.
++  -- is wiped to idle: context := '{}' also drops every parsed-step reask counter.
+   IF NOT quoco_same_ist_day(p_now, v_session.updated_at) THEN
+     v_session.current_flow  := NULL;
+     v_session.current_step  := 0;
+@@ -59,15 +62,11 @@
+     IF v_session.current_flow IS NULL THEN
+       v_session.current_flow := 'morning';
+       v_session.current_step := 1;
+-      -- CONTEXT DISCIPLINE, site 1 of 4 (see file header) -- 022's THIRD
+-      -- change, added after the reviewer's second pass. 018 wiped context to
+-      -- '{}' here; harmless then (morning was the only flow), but this is the
+-      -- FIRST write of a restart, and a restart on an already-completed day
+-      -- would otherwise destroy evening_submitted before Q4 ever runs -- the
+-      -- exact gap T-022-13 (reverse-order) caught and a completion-only fix
+-      -- could not. Strip only morning's own counters; see RESTART SEMANTICS
+-      -- in the file header for the behaviour change this implies.
+-      v_session.context      := v_session.context - 'q2_reask' - 'q3_reask';
++      -- CONTEXT DISCIPLINE (022's site 1, extended by this migration): strip
++      -- EVERY parsed-step reask key morning now has -- q1/q3/q4/q5, not just
++      -- the original two -- so a stray counter from before a same-day restart
++      -- never leaks into a fresh start.
++      v_session.context      := v_session.context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask';
+       v_outcome := 'start';
+     ELSE
+       v_outcome := 'reask';
+@@ -86,68 +85,143 @@
+       v_outcome := 'reask';
+ 
+     ELSIF v_session.current_step = 1 THEN
+-      -- Q1 (free text) -> morning_plan, advance to Q2.
+-      v_session.current_step := 2;
+-      v_outcome := 'advance';
+-      v_col     := 'plan';
+-
+-    ELSIF v_session.current_step = 2 THEN
+-      -- Q2 (parsed labour). Accept on a number; else reask once then accept raw.
+-      v_reask := COALESCE((v_session.context->>'q2_reask')::int, 0);
+-      IF COALESCE(p_manpower_ok, false) OR v_reask >= 1 THEN
+-        v_session.current_step := 3;
+-        v_session.context := v_session.context || jsonb_build_object('q2_reask', 0);
++      -- Q1 Attendance (classifyYesNo, computed in TS, passed in as
++      -- p_yesno_met/p_yesno_ok). One reask on an unclassifiable answer.
++      -- Exhausted-reask default is YES -- DECIDED 2026-08-23 (review package
++      -- §2): default-YES-when-actually-absent leaves three questions
++      -- unanswered, visible and B3-recoverable; default-NO-when-actually-
++      -- present silently drops all three from an engineer who was on site
++      -- and answering. The opposite of evening Q2's own default direction,
++      -- because on THIS question NO is the shorter path, not the longer one.
++      v_reask := COALESCE((v_session.context->>'q1_reask')::int, 0);
++      IF NOT COALESCE(p_yesno_ok, false) AND v_reask < 1 THEN
++        v_session.context := v_session.context || jsonb_build_object('q1_reask', v_reask + 1);
++        v_outcome := 'reask';   -- step unchanged (1)
++      ELSIF COALESCE(p_yesno_ok, false) AND NOT p_yesno_met THEN
++        -- Genuinely parsed NO -> holiday follow-up (step 5). No daily_logs
++        -- write yet -- attendance isn't known until the follow-up resolves.
++        v_session.current_step := 5;
++        v_session.context := v_session.context || jsonb_build_object('q1_reask', 0);
+         v_outcome := 'advance';
+-        v_col     := 'manpower';
+       ELSE
+-        v_session.context := v_session.context || jsonb_build_object('q2_reask', v_reask + 1);
+-        v_outcome := 'reask';   -- step unchanged (2)
++        -- YES, or the exhausted-reask default (DECIDED: YES, not NO).
++        v_session.current_step := 2;
++        v_session.context := v_session.context || jsonb_build_object('q1_reask', 0);
++        v_attendance := 'present';
++        v_col        := 'attendance';
++        v_outcome    := 'advance';
+       END IF;
+ 
++    ELSIF v_session.current_step = 2 THEN
++      -- Q2 (free text) -> morning_plan, advance to Q3. (Old step 1's logic,
++      -- moved here verbatim -- free text needs no reask handling.)
++      v_session.current_step := 3;
++      v_outcome := 'advance';
++      v_col     := 'plan';
++
+     ELSIF v_session.current_step = 3 THEN
+-      -- Q3 (parsed equipment). Accept on none/known item; else reask once.
++      -- Q3 (parsed labour, workers by trade). Accept on a number; else reask
++      -- once then accept raw. Reask key renamed q2_reask -> q3_reask (now
++      -- attached to the step this logic actually lives at).
+       v_reask := COALESCE((v_session.context->>'q3_reask')::int, 0);
+-      IF COALESCE(p_equipment_ok, false) OR v_reask >= 1 THEN
++      IF COALESCE(p_manpower_ok, false) OR v_reask >= 1 THEN
+         v_session.current_step := 4;
+         v_session.context := v_session.context || jsonb_build_object('q3_reask', 0);
+         v_outcome := 'advance';
+-        v_col     := 'equipment';
++        v_col     := 'manpower';
+       ELSE
+         v_session.context := v_session.context || jsonb_build_object('q3_reask', v_reask + 1);
+         v_outcome := 'reask';   -- step unchanged (3)
+       END IF;
+ 
+     ELSIF v_session.current_step = 4 THEN
+-      -- Q4 (free text) -> execution plan + submitted_at, COMPLETE.
+-      -- CONTEXT DISCIPLINE, site 2 of 4 (see file header) -- reviewer B2.
+-      -- 018's bare replace was safe only while morning was the only flow;
+-      -- this merges instead, mirroring evening's own completion exactly.
+-      v_session.current_flow := NULL;
+-      v_session.current_step := 0;
+-      v_session.context      := (v_session.context - 'q2_reask' - 'q3_reask')
+-                                || jsonb_build_object('morning_submitted', true);
+-      v_outcome := 'advance';
+-      v_col     := 'execution';
++      -- Q4 (parsed equipment). Accept on none/known item; else reask once.
++      -- Equipment is now the LAST question -- completes the flow directly
++      -- (old step 4's free-text execution-plan role is retired; that column
++      -- stops being written, per §28(p)/review package row K -- it stays in
++      -- the table with its historical data, not dropped). Reask key renamed
++      -- q3_reask -> q4_reask.
++      v_reask := COALESCE((v_session.context->>'q4_reask')::int, 0);
++      IF COALESCE(p_equipment_ok, false) OR v_reask >= 1 THEN
++        -- CONTEXT DISCIPLINE (022's site 2, extended): merge, never replace
++        -- -- a bare replace would wipe evening_submitted if evening ran
++        -- earlier the same day (T-022-13's own reverse-order regression).
++        v_session.current_flow := NULL;
++        v_session.current_step := 0;
++        v_session.context      := (v_session.context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask')
++                                    || jsonb_build_object('morning_submitted', true);
++        v_outcome := 'advance';
++        v_col     := 'equipment';
++      ELSE
++        v_session.context := v_session.context || jsonb_build_object('q4_reask', v_reask + 1);
++        v_outcome := 'reask';   -- step unchanged (4)
++      END IF;
+ 
++    ELSIF v_session.current_step = 5 THEN
++      -- Holiday follow-up (classifyYesNo again -- same p_yesno_met/p_yesno_ok
++      -- params, this question's own reask key q5_reask). Exhausted-reask
++      -- default stays `absent` (unchanged from the exhausted-attendance
++      -- default reasoning above -- `absent` keeps the evening trigger and PM
++      -- handoff alive, `site_holiday` would silently cancel both).
++      v_reask := COALESCE((v_session.context->>'q5_reask')::int, 0);
++      IF NOT COALESCE(p_yesno_ok, false) AND v_reask < 1 THEN
++        v_session.context := v_session.context || jsonb_build_object('q5_reask', v_reask + 1);
++        v_outcome := 'reask';   -- step unchanged (5)
++      ELSE
++        IF COALESCE(p_yesno_ok, false) AND p_yesno_met THEN
++          v_attendance := 'site_holiday';
++        ELSE
++          -- NO, or the exhausted-reask default.
++          v_attendance := 'absent';
++        END IF;
++        v_session.current_flow := NULL;
++        v_session.current_step := 0;
++        v_session.context      := (v_session.context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask')
++                                    || jsonb_build_object('morning_submitted', true);
++        v_col     := 'attendance_complete';
++        v_outcome := 'advance';
++      END IF;
++
+     ELSE
+       v_outcome := 'reask';
+     END IF;
+ 
+   ELSE
+     -- A DIFFERENT flow is active (evening). Report it as its OWN outcome so the
+-    -- webhook can retry against the correct RPC. Returning 'idle' here would make
+-    -- a mis-routed turn indistinguishable from a genuine no-flow inbound, and the
+-    -- engineer's answer would be silently swallowed (the SID is already consumed).
+-    -- The wrong_flow ELSE-branch change -- see WHY 'wrong_flow' EXISTS in the
+-    -- file header (a separate kind of change from CONTEXT DISCIPLINE, above).
++    -- webhook can retry against the correct RPC (unchanged from 022 -- see
++    -- that migration's own header for WHY 'wrong_flow' exists).
+     v_outcome := 'wrong_flow';
+   END IF;
+ 
+-  -- (4a) DAILY_LOGS WRITE (per-question, in THIS transaction). Only when a column
+-  -- was resolved above. UNIQUE(project_id, engineer_id, log_date) backs the upsert.
+-  IF v_col = 'plan' THEN
+-    -- Q1: first answer of the day materialises the row.
++  -- (4a) DAILY_LOGS WRITE (per-question, in THIS transaction). Only when a
++  -- write was resolved above. UNIQUE(project_id, engineer_id, log_date)
++  -- backs every upsert.
++  IF v_col = 'attendance' THEN
++    -- Step 1 YES (or exhausted-reask default): 'present'. Materialises the
++    -- row (replaces old step-1's row-materialising role) -- flow continues,
++    -- no submission stamp yet.
+     INSERT INTO daily_logs AS d
++      (tenant_id, project_id, engineer_id, log_date, attendance)
++    VALUES
++      (p_tenant_id, p_project_id, p_user_id, v_log_date, v_attendance)
++    ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
++      SET attendance = EXCLUDED.attendance;
++
++  ELSIF v_col = 'attendance_complete' THEN
++    -- Step 5 resolves the NO branch: 'site_holiday' or 'absent', completes
++    -- the flow. is_holiday mirrors 'site_holiday' per §30(c) so existing
++    -- readers of is_holiday keep working unchanged.
++    INSERT INTO daily_logs AS d
++      (tenant_id, project_id, engineer_id, log_date, attendance, is_holiday, morning_submitted_at)
++    VALUES
++      (p_tenant_id, p_project_id, p_user_id, v_log_date, v_attendance, (v_attendance = 'site_holiday'), p_now)
++    ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
++      SET attendance           = EXCLUDED.attendance,
++          is_holiday           = EXCLUDED.is_holiday,
++          morning_submitted_at = EXCLUDED.morning_submitted_at;
++
++  ELSIF v_col = 'plan' THEN
++    INSERT INTO daily_logs AS d
+       (tenant_id, project_id, engineer_id, log_date, morning_plan)
+     VALUES
+       (p_tenant_id, p_project_id, p_user_id, v_log_date, v_text)
+@@ -155,32 +229,40 @@
+       SET morning_plan = EXCLUDED.morning_plan;
+ 
+   ELSIF v_col = 'manpower' THEN
+-    -- Q2: store the labour parse verbatim (raw text embedded inside p_manpower).
++    -- morning_manpower stores the RESHAPED parse (total/count) -- NOT
++    -- parseLabourCount's own planned_total/planned_count field names. See
++    -- this file's header for why the rename stops here and doesn't touch
++    -- the shared parser (evening's Q4a headcount depends on it unchanged).
+     INSERT INTO daily_logs AS d
+-      (tenant_id, project_id, engineer_id, log_date, morning_manpower_planned)
++      (tenant_id, project_id, engineer_id, log_date, morning_manpower)
+     VALUES
+-      (p_tenant_id, p_project_id, p_user_id, v_log_date, p_manpower)
++      (p_tenant_id, p_project_id, p_user_id, v_log_date,
++       jsonb_build_object(
++         'total', p_manpower->'planned_total',
++         'by_trade', (
++           SELECT COALESCE(
++                    jsonb_agg(
++                      jsonb_build_object('trade', t->>'trade', 'count', (t->>'planned_count')::int)
++                    ),
++                    '[]'::jsonb
++                  )
++           FROM jsonb_array_elements(COALESCE(p_manpower->'by_trade', '[]'::jsonb)) AS t
++         ),
++         'raw_text', p_manpower->'raw_text'
++       ))
+     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+-      SET morning_manpower_planned = EXCLUDED.morning_manpower_planned;
++      SET morning_manpower = EXCLUDED.morning_manpower;
+ 
+   ELSIF v_col = 'equipment' THEN
+-    -- Q3: store the equipment parse verbatim (none -> {items:[],none:true,...}).
++    -- Q4: store the equipment parse verbatim (none -> {items:[],none:true,...})
++    -- AND stamp submission -- equipment now completes the flow.
+     INSERT INTO daily_logs AS d
+-      (tenant_id, project_id, engineer_id, log_date, morning_equipment)
++      (tenant_id, project_id, engineer_id, log_date, morning_equipment, morning_submitted_at)
+     VALUES
+-      (p_tenant_id, p_project_id, p_user_id, v_log_date, p_equipment)
++      (p_tenant_id, p_project_id, p_user_id, v_log_date, p_equipment, p_now)
+     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+-      SET morning_equipment = EXCLUDED.morning_equipment;
+-
+-  ELSIF v_col = 'execution' THEN
+-    -- Q4: update the same row + stamp submission.
+-    INSERT INTO daily_logs AS d
+-      (tenant_id, project_id, engineer_id, log_date, morning_execution_plan, morning_submitted_at)
+-    VALUES
+-      (p_tenant_id, p_project_id, p_user_id, v_log_date, v_text, p_now)
+-    ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+-      SET morning_execution_plan = EXCLUDED.morning_execution_plan,
+-          morning_submitted_at   = EXCLUDED.morning_submitted_at;
++      SET morning_equipment    = EXCLUDED.morning_equipment,
++          morning_submitted_at = EXCLUDED.morning_submitted_at;
+   END IF;
+ 
+   -- (4b) SESSION WRITE -- ALWAYS. Refreshes TTL + updated_at and persists the
+@@ -201,7 +283,8 @@
+     'outcome',      v_outcome,
+     'current_flow', v_session.current_flow,
+     'current_step', v_session.current_step,
+-    'log_date',     v_log_date
++    'log_date',     v_log_date,
++    'attendance',   v_attendance
+   );
+ END;
+ $fn$;
+```
