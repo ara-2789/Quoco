@@ -529,6 +529,13 @@
   ("Call EnterWorktree first"), forcing a second worktree detour to write
   this rule down — the mechanism the rule describes fired on the rule
   being written.
+  THE MECHANISM FIRES ON EVERY WRITE THROUGH THIS HARNESS, NOT ONLY ON LONG
+  BACKGROUND-AGENT RUNS — this rule's own text is itself a third instance,
+  not just the second: adding this one line required its own worktree
+  detour and its own consolidation, same as the paragraph above it did.
+  Consolidation is part of every write cycle this harness performs, not a
+  cleanup step reserved for the end of a long session — check `git worktree
+  list` after any commit, not only after ones that felt long-running.
 
 ---
 
