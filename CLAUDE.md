@@ -491,6 +491,44 @@
   before this ever touched test-db or prod. Full incident + the fix
   actually chosen: `docs/reviews/morning-flow-migration-review-package.md`
   §10 (the finding, kept in full) and §10.1 (the fix and its verification).
+- A BACKGROUND AGENT SESSION WRITES ON ITS OWN WORKTREE BRANCH, NOT THE
+  BRANCH IT WAS ASKED TO WORK ON — VERIFY AND CONSOLIDATE AFTER EVERY SUCH
+  SESSION (standing rule since 2026-08-23). This project's own tooling
+  isolates a background agent session into `.claude/worktrees/<id>/`, on a
+  freshly-created branch, before it makes any commit — a safety mechanism,
+  not a bug, so a session's file edits can never land directly on whatever
+  branch happened to be checked out in the shared working copy. The
+  consequence that matters: work committed inside that worktree is
+  INVISIBLE to the branch the session was asked to work on until someone
+  explicitly merges or fast-forwards it across, and `.claude/worktrees/` is
+  DISPOSABLE — it can be removed without warning, taking any
+  not-yet-consolidated commits with it. A session that reports "committed
+  and pushed" without naming which branch the commit actually landed on can
+  be describing a commit that is about to become unreachable.
+  CONSEQUENCE: after any background-agent session that involved commits,
+  run `git worktree list` before trusting that the target branch was
+  updated — do not infer it from the session's own summary. If work landed
+  in a worktree, consolidate it onto the intended branch (fast-forward if
+  the worktree branch is a clean descendant, as here; otherwise merge or
+  cherry-pick, matching the actual history relationship) and remove the
+  worktree and its branch once every commit is confirmed reachable from its
+  real destination — do not leave the worktree branch as a second,
+  quietly-authoritative copy.
+  Evidence: on 2026-08-23, three commits fixing migration 030's function-
+  overload bug — the fix itself, its dry-run evidence, and the yes/no
+  corpus test that closed the follow-on duplicate-logic hazard — were made
+  inside `.claude/worktrees/morning-flow-evidence-regen`, on branch
+  `worktree-morning-flow-evidence-regen`, while
+  `feat/morning-flow-attendance-migration` — the actual feature branch —
+  still pointed at the commit BEFORE any of that work, still carrying the
+  broken two-parameter version of the migration. Caught only because the
+  branches were compared explicitly (`git log --oneline` against both
+  names), not because anything surfaced the mismatch on its own. THIS VERY
+  ENTRY is a second, live instance from the same session: the harness
+  itself refused this edit against the shared checkout mid-consolidation
+  ("Call EnterWorktree first"), forcing a second worktree detour to write
+  this rule down — the mechanism the rule describes fired on the rule
+  being written.
 
 ---
 
