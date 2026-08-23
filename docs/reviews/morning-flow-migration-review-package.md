@@ -1463,3 +1463,119 @@ recognisable next time; §10.1 only records which of the (at least two) valid
 fixes got chosen here and why.
 
 ---
+
+## 10.2 FINDING — §10.1's fix trades an overload hazard for a duplicate-logic
+hazard; the yes/no corpus test is what contains the new one (found and
+contained 2026-08-23)
+
+**The trade, stated explicitly, not left implicit.** §10.1's fix removed the
+overload risk by moving Q1/holiday-follow-up yes/no classification INSIDE
+`apply_morning_flow_turn`, via a new function, `quoco_classify_yes_no`, that
+ports `classifyYesNo`'s (`lib/whatsapp/flows/parsers/lexicon.ts`) word lists
+into PL/pgSQL. That means TWO independently-maintained implementations of
+the identical classification now exist in this product simultaneously and
+must agree FOREVER, not just at the moment `quoco_classify_yes_no` was
+written:
+- `classifyYesNo` (TypeScript) — still used directly by evening Q2, via a
+  precomputed parse passed into `apply_evening_flow_turn` as
+  `p_parse['2']`/`p_parse_ok['2']` (`test/helpers/db.ts:351,364,371`,
+  `lib/whatsapp/flows/evening.ts:745,752,759`) — UNCHANGED by this migration,
+  and still calls the TS lexicon directly, not the new SQL helper.
+- `quoco_classify_yes_no` (PL/pgSQL, new) — used only by
+  `apply_morning_flow_turn`'s Q1 and holiday-follow-up branches.
+
+**Why this is the SAME class of defect the migration itself closes, one
+layer down.** `morning.ts:188`'s TS/SQL MIRROR DIVERGENCE (opened
+2026-08-19, closed by THIS migration per §2's TypeScript-mirror table, row
+A) was exactly this shape: two hand-maintained copies of one decision,
+free to drift silently because nothing forced them to agree. §10.1's fix,
+by design, recreates that same shape at the vocabulary level instead of the
+control-flow level — a word added to (or removed from) one lexicon and not
+the other produces a WRONG `attendance` value, not an error, not a crash,
+nothing that surfaces on its own. `test/unit/morning-flow-mirror.test.ts`
+(§7) only catches divergence on inputs it happens to exercise — the ten
+cases in `test/helpers/morning-mirror-cases.ts` all use `"yes"`/`"no"`,
+never a vernacular form — so it would NOT have caught a lexicon drift on,
+say, `"aama"` or `"illa"`.
+
+**Containment: a shared corpus, checked against both implementations.**
+`test/helpers/yesno-corpus.ts` (new) — 60 cases, one per word in
+`YES_WORDS`/`NO_WORDS`/`NONE_WORDS` as of 2026-08-23, plus compound answers
+(`"yes fully done"`, `"no, half only"` — `classifyYesNo`'s own documented
+token-wise/negative-wins behaviour), case/whitespace normalisation, and
+unclassifiable inputs. `test/unit/yesno-mirror.test.ts` (new) runs every
+case through BOTH `classifyYesNo` (direct call, no DB) and
+`quoco_classify_yes_no` (via `db.rpc`, test-db), each asserted against the
+SAME `expected` value — identical structure to §7's own mirror test, and to
+this project's established `test/productivity-reconciliation-mirror.test.ts`
+pattern. Not yet runnable against test-db (migration 030 isn't applied
+there) — same status as §7's committed test.
+
+**TRANSLITERATED TAMIL COVERAGE — named as a finding in its own right, not
+buried inside the corpus.** The lexicon recognises exactly SIX vernacular
+words: `aama`/`ama`/`aam` (yes) and `illa`/`ille`/`illai`/`illae`/
+`kidaiyathu`/`kedaiyathu` (no) — all six ported to `quoco_classify_yes_no`
+and all six covered in the corpus. `lexicon.ts`'s own header states this is
+a "Chennai-region beta: answers are terse, transliterated Tamil common" —
+against that stated user base, a six-word yes/no vocabulary is thin. This
+is a PRE-EXISTING gap in `classifyYesNo` itself, not something this
+migration introduced or is in scope to fix — flagged here because building
+the corpus is what made the gap visible in one place, and CLAUDE.md's own
+"document submitted for review is audited for asserted-but-nonexistent
+artifacts" standing rule cuts both ways: an omission a reviewer would
+reasonably expect to see named should be named, not left for them to
+discover.
+
+**Proof the corpus test can fail** — same "a green test that has never gone
+red is not evidence" standard §7 already applies to the decision-logic
+mirror. `'surely'` was added to `YES_WORDS` (`lexicon.ts`, TS side only,
+simulating a real future mistake: new vocabulary added where a human
+naturally adds it, forgotten on the SQL side) plus one matching corpus
+case; `quoco_classify_yes_no` was left untouched. Full transcript:
+`/tmp/yesno-corpus-proof.txt`.
+
+RED (one case, `surely`, isolated — the other 59 unaffected):
+```
+[FAIL] "surely"
+   expected: met=true ok=true
+   SQL:      met=false ok=false <-- MISMATCH
+   TS:       met=true ok=true
+```
+`RESULT: FAIL (at least one case mismatched)`, exit code `1`.
+
+Reverted (`'surely'` removed from `YES_WORDS` — `git status` confirms
+`lexicon.ts` returns to exactly its committed state; the corpus's temporary
+case removed too). GREEN, all 60 cases:
+```
+RESULT: PASS (all 60 cases agree)
+```
+Exit code `0`.
+
+**Why this trade was still the right call, not a reason to revisit §10.1.**
+An overload hazard is invisible until someone calls the RPC with the wrong
+partial argument set — as §10 showed, that can be a committed test file
+nobody thinks to re-examine. A duplicate-logic hazard is visible,
+enumerable, and finite: the vocabulary either lexicon can recognise is a
+closed, small, human-readable list, and the corpus test makes "did both
+sides stay in sync" a single command instead of a thing someone has to
+remember to check. Finite and testable beats invisible and untestable, even
+though "testable" here means a NEW test must exist and stay maintained —
+§10.1's fix is not free, and this section is where that cost is paid down
+into something contained rather than left as an unstated assumption.
+
+**This duplication is TEMPORARY BY DESIGN, not a permanent fixture.**
+`design-decisions-beta-feedback.md` §31 (DECIDED IN PRINCIPLE, NOT
+SCHEDULED) proposes a stable-signature (JSONB payload) refactor for both
+`apply_morning_flow_turn` and `apply_evening_flow_turn`. Under that shape,
+Q1/holiday-follow-up classification could move BACK to a single TypeScript
+implementation, passed into the RPC as a precomputed field inside
+`p_input` — exactly the pattern `p_manpower`/`p_equipment` already use, and
+the pattern evening's Q2 already uses for this identical classification.
+§10.1's SQL-side duplication exists only because §31 is not yet scheduled;
+once it ships, `quoco_classify_yes_no` and the corpus test that guards it
+both become removable, and classification returns to living in exactly one
+place. Recorded here so that connection isn't lost: §31 is not just a
+general maintainability improvement, it is specifically the fix that
+retires §10.2's own hazard.
+
+---
