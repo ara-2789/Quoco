@@ -442,6 +442,15 @@
   (`.github/workflows/ci.yml`'s "File Size Lint" job) — warns at 120,000,
   hard-fails only CLAUDE.md past 140,000. A rule nobody checks is how this
   file reached 167,825 chars in the first place.
+- CITE FILE + SECTION, NEVER A BARE "§N" (standing rule since 2026-08-23).
+  Since the CLAUDE.md §10 split, two live documents each have their own §9,
+  §10, etc. (`design-decisions-beta-feedback.md` and `docs/build-status.md`)
+  — a bare "§10" no longer names one place. `lib/whatsapp/dispatch.ts` had
+  already mis-cited "design-decisions §11" for §10 before this ambiguity
+  even existed (docs/build-status.md's `morning.ts:188` entry), so a bare
+  section number was already fragile on its own. Always cite the filename
+  with the section, e.g. `design-decisions-beta-feedback.md §10`, never
+  just "§10". Full reasoning: docs/build-status.md's 2026-08-23 entry.
 
 ---
 
