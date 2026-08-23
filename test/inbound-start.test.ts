@@ -152,7 +152,7 @@ describe('routeInboundMessage — flow already active: delegates unchanged', () 
     await seedSession({
       phone,
       currentFlow: 'morning',
-      currentStep: 1,
+      currentStep: 2, // Q2 plan (030_morning_flow_attendance.sql renumbering — step 1 is now attendance)
       context: {},
       updatedAt: MID_DAY_NOT_SUBMITTED,
     })
@@ -160,7 +160,7 @@ describe('routeInboundMessage — flow already active: delegates unchanged', () 
       baseParams(phone, MID_DAY_NOT_SUBMITTED, 'Pour slab on level 3'),
     )
     expect(resolvedFlow).toBe('morning')
-    expect(reply).toBe(MORNING_QUESTIONS[2])
+    expect(reply).toBe(MORNING_QUESTIONS[3])
     expect((await getDailyLog(LOG_DATE))?.morning_plan).toBe('Pour slab on level 3')
   })
 

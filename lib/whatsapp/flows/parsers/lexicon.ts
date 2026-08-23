@@ -8,7 +8,9 @@
 
 // ---------------------------------------------------------------------------
 // Trades (Q2). Maps a lowercased token -> canonical English trade name. The
-// canonical name is what lands in morning_manpower_planned.by_trade[].trade.
+// canonical name is what lands in morning_manpower.by_trade[].trade (renamed
+// from morning_manpower_planned by 030_morning_flow_attendance.sql — the
+// parser's own field names are unchanged, only the RPC's write-time reshape).
 const TRADE_ALIASES: Readonly<Record<string, string>> = {
   // mason
   mason: 'mason',

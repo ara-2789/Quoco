@@ -343,7 +343,7 @@ describe('handleWebhookPost — ordinary-path idempotency', () => {
     await seedSession({
       phone: TEST_ENGINEER_PHONE,
       currentFlow: 'morning',
-      currentStep: 1,
+      currentStep: 2, // Q2 plan (030_morning_flow_attendance.sql renumbering — step 1 is now attendance)
       context: {},
       updatedAt: new Date().toISOString(),
     })
@@ -355,9 +355,9 @@ describe('handleWebhookPost — ordinary-path idempotency', () => {
 
     const res1 = await handleWebhookPost(buildWebhookRequest(params), { supabaseClient: testClient() })
     expect(res1.status).toBe(200)
-    expect(await twimlText(res1)).toBe(MORNING_QUESTIONS[2])
+    expect(await twimlText(res1)).toBe(MORNING_QUESTIONS[3])
     expect((await getDailyLog(todayIST()))?.morning_plan).toBe('Pour slab on level 3')
-    expect((await readSession(TEST_ENGINEER_PHONE))?.current_step).toBe(2)
+    expect((await readSession(TEST_ENGINEER_PHONE))?.current_step).toBe(3)
 
     // Genuine Twilio retry: identical SID and body, second delivery.
     const res2 = await handleWebhookPost(buildWebhookRequest(params), { supabaseClient: testClient() })
@@ -365,7 +365,7 @@ describe('handleWebhookPost — ordinary-path idempotency', () => {
     expect(await res2.json()).toEqual({ status: 'duplicate_ignored' })
     // Unchanged by the duplicate — not re-applied, not advanced a second time.
     expect((await getDailyLog(todayIST()))?.morning_plan).toBe('Pour slab on level 3')
-    expect((await readSession(TEST_ENGINEER_PHONE))?.current_step).toBe(2)
+    expect((await readSession(TEST_ENGINEER_PHONE))?.current_step).toBe(3)
   })
 })
 
@@ -374,7 +374,7 @@ describe('handleWebhookPost — routes to whichever flow is active (dispatchInbo
     await seedSession({
       phone: TEST_ENGINEER_PHONE,
       currentFlow: 'morning',
-      currentStep: 1,
+      currentStep: 2, // Q2 plan (030_morning_flow_attendance.sql renumbering — step 1 is now attendance)
       context: {},
       updatedAt: new Date().toISOString(),
     })
@@ -385,7 +385,7 @@ describe('handleWebhookPost — routes to whichever flow is active (dispatchInbo
     })
     const res = await handleWebhookPost(req, { supabaseClient: testClient() })
     expect(res.status).toBe(200)
-    expect(await twimlText(res)).toBe(MORNING_QUESTIONS[2])
+    expect(await twimlText(res)).toBe(MORNING_QUESTIONS[3])
     expect((await getDailyLog(todayIST()))?.morning_plan).toBe('Pour slab on level 3')
   })
 

@@ -73,7 +73,7 @@ describe('dispatchInboundTurn', () => {
     await seedSession({
       phone,
       currentFlow: 'morning',
-      currentStep: 1,
+      currentStep: 2, // Q2 plan (030_morning_flow_attendance.sql renumbering — step 1 is now attendance)
       context: {},
       updatedAt: P_NOW,
     })
@@ -87,7 +87,7 @@ describe('dispatchInboundTurn', () => {
       supabaseClient: testClient(),
     })
     expect(resolvedFlow).toBe('morning')
-    expect(reply).toBe(MORNING_QUESTIONS[2])
+    expect(reply).toBe(MORNING_QUESTIONS[3])
     expect((await getDailyLog(LOG_DATE))?.morning_plan).toBe('Pour slab on level 3')
   })
 
@@ -150,7 +150,7 @@ describe('dispatchInboundTurn', () => {
     await seedSession({
       phone,
       currentFlow: 'morning',
-      currentStep: 1,
+      currentStep: 2, // Q2 plan (030_morning_flow_attendance.sql renumbering — step 1 is now attendance)
       context: {},
       updatedAt: P_NOW,
     })
@@ -165,13 +165,13 @@ describe('dispatchInboundTurn', () => {
       firstFlow: 'evening', // deliberately mismatched — session is really morning
     })
     expect(resolvedFlow).toBe('morning')
-    expect(reply).toBe(MORNING_QUESTIONS[2])
+    expect(reply).toBe(MORNING_QUESTIONS[3])
     const log = await getDailyLog(LOG_DATE)
     expect(log?.evening_output).toBeNull()
     expect(log?.morning_plan).toBe('Pour slab on level 3')
     const session = await readSession(phone)
     expect(session?.current_flow).toBe('morning')
-    expect(session?.current_step).toBe(2)
+    expect(session?.current_step).toBe(3)
   })
 
   it('double wrong_flow — the flow moves TWICE; onBeforeRetry is what this edge actually needs, firstFlow alone cannot construct it', async () => {

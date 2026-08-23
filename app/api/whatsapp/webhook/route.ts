@@ -289,7 +289,7 @@ export async function handleWebhookPost(
       startFlow: true,
       supabaseClient: supabase,
     })
-    const reply = buildMorningReply(result.outcome, result.currentStep)
+    const reply = buildMorningReply(result.outcome, result.currentStep, result.attendance)
     return reply === '' ? twimlEmpty() : twimlMessage(reply)
   }
 

@@ -190,7 +190,10 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
     if (result.outcome === 'reask') {
       return { reply: FLOW_RACE_REPLY, resolvedFlow: null }
     }
-    return { reply: buildMorningReply(result.outcome, result.currentStep), resolvedFlow: 'morning' }
+    return {
+      reply: buildMorningReply(result.outcome, result.currentStep, result.attendance),
+      resolvedFlow: 'morning',
+    }
   }
 
   // Morning submitted, evening not -- start evening (accepted early-

@@ -197,7 +197,7 @@ describe('migration 019 — correct_daily_log RPC', () => {
   })
 
   it('T-019-05: disallowed columns (JSONB col + identity col) are rejected', async () => {
-    const jsonbCol = await correct(jwtA, ROW_MEMBER, 'morning_manpower_planned', [{ role: 'mason', count: 3 }])
+    const jsonbCol = await correct(jwtA, ROW_MEMBER, 'morning_manpower', [{ role: 'mason', count: 3 }])
     expect(jsonbCol.error?.code).toBe('42501')
     const idCol = await correct(jwtA, ROW_MEMBER, 'engineer_id', fx.profileBId)
     expect(idCol.error?.code).toBe('42501')

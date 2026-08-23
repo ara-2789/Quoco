@@ -85,8 +85,9 @@ export const EVENING_PARSE_REASK_CAP = 1
 
 // Context keys holding the per-step reask counters and Q4's intermediate
 // headcount value. Prefixed 'e' + step number so evening's counters can never
-// collide with morning's q2_reask/q3_reask inside the SAME context object —
-// both flows can run on one calendar day and the context is shared.
+// collide with morning's q1_reask/q3_reask/q4_reask/q5_reask (renamed by
+// 030_morning_flow_attendance.sql) inside the SAME context object — both
+// flows can run on one calendar day and the context is shared.
 export const EVENING_Q2_REASK_KEY = 'e2_reask'
 export const EVENING_Q4_REASK_KEY = 'e4_reask'
 export const EVENING_Q4_HEADCOUNT_KEY = 'e4_headcount'
