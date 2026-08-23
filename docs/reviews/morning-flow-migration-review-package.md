@@ -93,23 +93,68 @@ by simply continuing the YES path's 1→2→3→4 sequence. This package propose
   proven on real messy input via evening's own Q2. Whoever writes the code may
   wrap it in a thin semantic alias (`classifyAttendance`/`classifyHolidayAnswer`)
   for readability; not required.
-- **Default-on-exhausted-reask direction**: pessimistic, matching
-  `lexicon.ts`'s own stated principle for `classifyYesNo` ("the pessimistic
-  reading is the one that asks Q3 and captures the reason" — i.e., ambiguity
-  resolves toward MORE downstream capture, not less). Applied here: an
-  unparseable attendance answer defaults to **NO** (routes to the holiday
-  follow-up, asking more rather than silently assuming presence); an
-  unparseable holiday-follow-up answer defaults to **`absent`**, not
-  `site_holiday` — `absent` keeps the evening trigger and PM handoff alive,
-  `site_holiday` would silently cancel them. This is a genuinely new
-  direction judgement, not derivable from §30(b)'s text alone — flagged
-  explicitly for reviewer sign-off, not asserted as decided.
-- **Reply copy for the two NO-path completions is UNDECIDED** — §30(b) gives
-  the two follow-up QUESTIONS their copy but not the completion messages
-  (does a `site_holiday` completion say something different from an `absent`
-  one, or from the YES-path's `MORNING_COMPLETE_REPLY`?). Not resolved here;
-  flagged so it isn't silently defaulted to the generic completion string
-  without a decision.
+- **Default-on-exhausted-reask direction — DECIDED by Aravind, 2026-08-23**
+  (this package's first draft proposed the wrong application of the right
+  principle; corrected here, not silently). **The rule, stated explicitly so
+  the next reader applies it rather than re-deriving it: default to
+  whichever branch preserves MORE downstream capture, not less.** That
+  principle is unchanged from the first draft. What was wrong was applying
+  it to attendance (step 1) the same way evening's Q2 applies it — on
+  evening Q2, "no" OPENS an extra question (Q3, the miss-reason), so
+  defaulting to "no" captures more. **Morning Q1 is the reverse: NO is the
+  SHORTER path** (one follow-up question, then the flow ends), and YES is
+  the LONGER one (continues to plan/workers/equipment). Defaulting an
+  unparseable attendance answer to NO therefore captures LESS, the opposite
+  of the rule's intent — carried over from evening's shape without checking
+  it still pointed the same direction.
+  **Decided: attendance's exhausted-reask default is YES, not NO.**
+  Asymmetry of consequence, which is the actual justification, not just the
+  restated principle:
+    - Default to YES when the engineer is actually absent → three questions
+      (plan/workers/equipment) go unanswered, the session sits at whatever
+      step it stalls at, and B3's 15:00 sweep closes it as a partial
+      submission. **Visible and recoverable** — a PM looking at that day's
+      log sees three blank fields, not a false "present" with real data
+      behind it.
+    - Default to NO when the engineer is actually present and willing →
+      `attendance = 'absent'` is written, the flow ends immediately, and
+      plan/manpower/equipment are **never captured at all** from someone who
+      was on site and answering. **Silent, and indistinguishable from a
+      real absence** — nothing downstream can tell the difference between
+      "genuinely absent" and "answered ambiguously, defaulted wrong."
+  With `MORNING_PARSE_REASK_CAP = 1`, this default fires after only two
+  unparseable attempts — not a rare tail case.
+  **The holiday follow-up's own default stays `absent`** (unchanged from the
+  first draft) — already correct under the SAME rule, correctly applied
+  there the first time: `absent` keeps the evening trigger and PM handoff
+  alive (more capture), `site_holiday` would silently cancel both (less).
+  See row F4 in the SQL table and its TS mirror row below for the corrected
+  branch target.
+- **Completion copy for the two NO-path endings — PROPOSED, drafted below**
+  (§2.1) — §30(b) gives the two follow-up QUESTIONS their copy but not the
+  completion messages. Drafted here rather than left undecided, since a
+  spec that leaves reply copy open invites it to be silently defaulted to
+  the generic `MORNING_COMPLETE_REPLY` string at build time without anyone
+  deciding that's right.
+
+### 2.1 Completion copy — PROPOSED, needs Aravind's approval
+
+Matching `MORNING_COMPLETE_REPLY`'s existing register (✅ prefix, short,
+warm, plain sentence) — and, per instruction, **not promising PM
+notification on the absent path**: nothing can notify a PM until Pass 2's
+escalation send exists (§30(e)) — a promise here would be the same defect as
+template 8's "Reply STOP" (a written commitment the code cannot yet keep).
+
+**`MORNING_SITE_HOLIDAY_REPLY`** (site holiday — acknowledges the closure,
+confirms nothing further will be asked today):
+> ✅ Got it — site holiday recorded. No further check-ins needed today.
+
+**`MORNING_ABSENT_REPLY`** (absent — acknowledges and confirms the check-in
+is recorded; does NOT mention the PM or imply anyone has been notified):
+> ✅ Got it, thanks for letting us know. Today's check-in is recorded.
+
+Both PROPOSED, not yet approved — carried into §2's table (rows J1/J2) as
+the completion reply for those two branches, pending sign-off.
 
 ### SQL — `apply_morning_flow_turn` (`022_evening_flow_apply_turn.sql:100-306`)
 
@@ -123,12 +168,12 @@ by simply continuing the YES path's 1→2→3→4 sequence. This package propose
 | F1 | 187-192 (becomes new logic) | 1 | Free text → `morning_plan`, advance to 2 | **1** | **NEW: parse attendance via `classifyYesNo`. `ok && met` (YES) → advance to 2.** | Write `attendance = 'present'`, materialises the row (replaces old step-1's row-materialising role — same UPSERT shape, new column). `morning_plan` is NOT written here anymore. |
 | F2 | (new) | — | — | **1 → 5** | **NEW: `ok && !met` (NO) → advance to 5 (holiday follow-up).** | No `daily_logs` write yet — attendance isn't known until the follow-up resolves. Reset `q1_reask := 0`. |
 | F3 | (new) | — | — | **1 (unchanged)** | **NEW: `!ok`, `q1_reask` budget available → `reask`.** | None. Increment `q1_reask`. |
-| F4 | (new) | — | — | **1 → 5** | **NEW: `!ok`, budget exhausted → accept as NO (pessimistic default), same as F2.** | Same as F2. Reset `q1_reask := 0`. |
+| F4 | (new) | — | — | **1 → 2** | **NEW: `!ok`, budget exhausted → default to YES (DECIDED 2026-08-23, corrected from this package's first draft — see the note above), same as F1.** | Write `attendance = 'present'`, same as F1. Reset `q1_reask := 0`. |
 | G | 187-192 (moves here) | 2 | `q2_reask`-tracked labour parse | **2** | **Free text → `morning_plan`, advance to 3.** (old step 1's logic, moved) | Write `morning_plan`. |
 | H | 193-205 | 2 | `q2_reask`-tracked labour parse → advance to 3 | **3** | **Parsed labour (old step-2 logic, moved), reask key renamed `q2_reask`→`q3_reask`** | Write `morning_manpower` (renamed column, JSONB keys `planned_count`→`count`, `planned_total`→`total` — see plan §d; data-migration `UPDATE` over existing rows required, not covered by this table). |
 | I | 206-217 | 3 | `q3_reask`-tracked equipment parse → advance to 4 | **4** | **Parsed equipment (old step-3 logic, moved), reask key renamed `q3_reask`→`q4_reask`** | Write `morning_equipment` (column unchanged). |
-| J1 | (new, replaces 219-230's role) | — | — | **5 → 0 (complete)** | **NEW: holiday follow-up, `ok && met` (YES = site holiday).** | Write `attendance = 'site_holiday'`, `is_holiday = true`, `morning_submitted_at = p_now`. Merge `context.morning_submitted := true` (strip all reask keys) — same merge discipline as the existing Q4 completion (022's CONTEXT DISCIPLINE site 2). |
-| J2 | (new) | — | — | **5 → 0 (complete)** | **NEW: `ok && !met` (NO = absent).** | Write `attendance = 'absent'`, `morning_submitted_at = p_now`. Same context merge as J1. (`is_holiday` stays `false`, its default.) |
+| J1 | (new, replaces 219-230's role) | — | — | **5 → 0 (complete)** | **NEW: holiday follow-up, `ok && met` (YES = site holiday).** | Write `attendance = 'site_holiday'`, `is_holiday = true`, `morning_submitted_at = p_now`. Merge `context.morning_submitted := true` (strip all reask keys) — same merge discipline as the existing Q4 completion (022's CONTEXT DISCIPLINE site 2). Reply: `MORNING_SITE_HOLIDAY_REPLY` (§2.1, PROPOSED). |
+| J2 | (new) | — | — | **5 → 0 (complete)** | **NEW: `ok && !met` (NO = absent).** | Write `attendance = 'absent'`, `morning_submitted_at = p_now`. Same context merge as J1. (`is_holiday` stays `false`, its default.) Reply: `MORNING_ABSENT_REPLY` (§2.1, PROPOSED). |
 | J3 | (new) | — | — | **5 (unchanged)** | **NEW: `!ok`, `q5_reask` budget available → `reask`.** | None. Increment `q5_reask`. |
 | J4 | (new) | — | — | **5 → 0 (complete)** | **NEW: `!ok`, budget exhausted → accept as `absent` (pessimistic default), same as J2.** | Same as J2. |
 | K | 219-230 (role removed) | 4 | Free text → `morning_execution_plan`, complete | **4 → 0 (complete, moves to I above)** | Equipment (I) now completes the flow directly — this branch's ORIGINAL role (free-text execution plan) is retired. | `morning_execution_plan` is **no longer written** by this RPC (becomes unread, per plan §d / §28(p) — column stays, historical rows stay readable, just no new writes). |
@@ -161,7 +206,7 @@ agreement, not independently).
 | C | `morning.ts:195` (`submitted ? 'already_complete' : 'idle'`) | Reads `context['morning_submitted']` | Unchanged mechanically; depends on J1/J2 setting the flag (below) | — |
 | D | same line as C | — | Unchanged | — |
 | E | `morning.ts:196-198` (`text === ''` → `reask`) | Unchanged | Unchanged — applies at new steps 1 and 5 too | — |
-| F1-F4 | `morning.ts:199-203` (`current_step === 1` branch, currently free-text → `morning_plan`) | Replaced entirely | New `classifyYesNo`-driven branch, structurally mirroring evening's own step-2 handling (`evening.ts:447-462`) — reask via a new `q1_reask` context key, `MORNING_PARSE_REASK_CAP`, advance to 2 (YES) or 5 (NO / exhausted-reask default) | `MorningDailyLogWrite` type gains `attendance?: 'present' \| 'absent' \| 'site_holiday'` and `is_holiday?: boolean`. |
+| F1-F4 | `morning.ts:199-203` (`current_step === 1` branch, currently free-text → `morning_plan`) | Replaced entirely | New `classifyYesNo`-driven branch, structurally mirroring evening's own step-2 handling (`evening.ts:447-462`) — reask via a new `q1_reask` context key, `MORNING_PARSE_REASK_CAP`, advance to **2 on YES, and on the exhausted-reask default (DECIDED 2026-08-23 — see §2's note)**; advance to 5 only on a genuinely parsed NO | `MorningDailyLogWrite` type gains `attendance?: 'present' \| 'absent' \| 'site_holiday'` and `is_holiday?: boolean`. |
 | G | `morning.ts:204-210` (`current_step === 2`, parsed labour) | Moves to step 3's handling | Step 2's handling becomes free-text `morning_plan`, mirroring OLD step-1 logic (`morning.ts:199-203`'s current shape) | — |
 | H | `morning.ts:211-217` (`current_step === 3`, parsed equipment) | Moves to step 4's handling | Step 3's handling becomes parsed labour (old step-2 logic, moved); `REASK_KEY[3]` renamed from tracking step 2 to being the ACTUAL key at step 3 — see rename note below | `decideParsedStep(3, ...)` call site unchanged in shape, `REASK_KEY` map's `2:` entry becomes `3: 'q3_reask'`. |
 | I | (new — equipment becomes the completion branch) | — | Step 4's handling becomes parsed equipment (old step-3 logic, moved) AND completes the flow (context merge, `current_step: 0`, `morning_submitted: true`) — absorbs old step-4's completion mechanics, not its content | `REASK_KEY`'s `3:` entry becomes `4: 'q4_reask'`. `dailyLogWrite` becomes `{ morning_equipment: parse, morning_submitted_at: now }`. |
@@ -273,6 +318,28 @@ it's actually "mid-plan" under the new flow. §30(i) itself is a correction to
 §29, which had originally listed GATE 1 and B3 as two independent,
 parallelizable preconditions on Pass 1's cron entries — they are ordered, not
 parallel, and this migration is the thing B3 is ordered behind.
+
+**Step 5 is a new parked state B3 must specifically know about — spec'd here
+so it's in the shape B3 is built from, not discovered later.** §2's proposed
+step 5 (the holiday follow-up) is reachable only from step 1's NO answer
+(row F2), and — unlike steps 2/3/4 — a session parked there corresponds to a
+`daily_logs` row that may not even exist yet: per row F1/F2, `attendance`
+(and the row itself, if this is the first answer of the day) is only written
+on a YES at step 1; a NO advances to step 5 with **no `daily_logs` write at
+all**. So a session B3 finds stuck at `current_step=5` has answered Q1 = NO
+(that much is known — the engineer replied, and it parsed as NO) but has
+never resolved holiday-vs-absent, and possibly has no row for that
+engineer/date yet.
+**PROPOSED, same "more capture" rule as the exhausted-reask defaults above,
+not yet decided:** B3's sweep should treat a stuck step-5 session the same
+way the exhausted-reask default at that step already does — stamp
+`attendance = 'absent'` (INSERT the row if none exists yet), not
+`site_holiday` and not left fully unresolved. Reasoning: the engineer is
+KNOWN to have replied and to have said NO to being on site — that is real
+signal, not silence — and `absent` is the branch that keeps the evening
+trigger and PM handoff alive, the same asymmetry-of-consequence argument
+made for the exhausted-reask default in §2. Whoever writes B3's sweep should
+confirm this against §2's rule explicitly, not re-derive it from scratch.
 
 **Dated statement of what this migration does NOT cover (2026-08-23):**
 - **Evening's restructuring** — a separate migration, per §30(a) (morning and
