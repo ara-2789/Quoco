@@ -20,6 +20,21 @@ does not yet provide"). Anywhere this package introduces a design not already
 decided in §30 itself, it is marked **PROPOSED, NOT YET IN §30** so it is not
 mistaken for an already-settled decision.
 
+**STOP — BLOCKING FINDING, found 2026-08-23 during the dry-run evidence
+widening pass (§10 below has the full record).** `030_morning_flow_
+attendance.sql`'s `CREATE OR REPLACE FUNCTION apply_morning_flow_turn(...)`
+appends two new trailing parameters (`p_yesno_met`, `p_yesno_ok`). This does
+**NOT** replace the existing function — Postgres treats an appended
+parameter list as a different function identity, so the migration leaves
+**two live, separately-callable overloads**: the stale pre-030 12-arg body
+(022's logic — step 1 is still free-text `morning_plan`, no attendance
+awareness) stays live and `service_role`-executable, and any caller that
+omits the two new named args (e.g. `test/migration-020.test.ts`'s
+`APPLY_ARGS`) now gets `function apply_morning_flow_turn(...) is not
+unique` instead of the ACL result it's testing for. This migration is not
+dry-run-clean until this is resolved — see §10 for the pinned evidence and
+the proposed fix.
+
 ---
 
 ## 1. Repo-state header
@@ -378,6 +393,27 @@ confirm this against §2's rule explicitly, not re-derive it from scratch.
   test surface before that half of the migration is written"). Carried
   forward here as still open, unaffected by this migration since evening ships
   separately (§30(a) above).
+- **Recorded, not fixed — the exhausted-reask attendance default carries no
+  confidence marker (2026-08-23).** F4's default (§2's table; `030_
+  morning_flow_attendance.sql:237-263`) writes `attendance = 'present'` for
+  an engineer who never actually stated he was on site — an unclassifiable
+  answer, reasked once, still unclassifiable, guessed as YES per the
+  asymmetry-of-consequence argument above. That write is stored **identically**
+  to a genuine, cleanly-parsed "yes" — nothing on the row, or anywhere
+  downstream, distinguishes a confident answer from a default guess. Same
+  shape as the 2026-08-21 equipment defect ("Cement, ₹1000/day" stored as a
+  confident parse with no hedge). This is **not new scope for this
+  migration** — it is this project's own standing, already-tracked PARSER
+  DEBT: Rule 3.5 (`docs/design-principles.md:31`) promises "accept whatever
+  comes and flag it low-confidence for PM review," and `docs/build-status.md`'s
+  PARSER DEBT entry (opened 2026-07-28) already records that the flag half of
+  that promise was never built — `LabourParse`/`EquipmentParse` carry no
+  `confidence` field, and the only place a `confidence` field exists anywhere
+  in the schema today is `evening_productive_manpower` (migration 024,
+  `docs/schema.md:237-238`). `attendance` (this migration's own new column)
+  is a second, un-flagged instance of the identical gap, not a new one this
+  migration introduces or is asked to close. Named here so the reviewer sees
+  it recorded rather than rediscovering it.
 
 **Finding (j), carried forward from the re-scoping plan
 (`docs/plans/flow-migration-rescoping-plan.md` §j) — relevant to B3
@@ -401,7 +437,7 @@ because none exists.
 
 ---
 
-## 5. Evidence artifacts — status (updated 2026-08-23)
+## 5. Evidence artifacts — status (updated 2026-08-23, widened same day)
 
 Two of the five remain PENDING — both genuinely require an apply, which this
 pass does not do. The other three are attached below (§§7–9), not merely
@@ -409,12 +445,18 @@ described.
 
 1. **DONE — §9 below.** Full before/after body diff for
    `apply_morning_flow_turn` (old vs. new SQL), keyed to §2's table rows.
-2. **DONE — §8 below, full transcript at `/tmp/dry-run-evidence.txt`.**
-   Disposable dry-run scaffold output (real `pg_dump`-based schema) proving
-   the new SQL parses and executes against a structurally accurate Postgres
-   — covers the YES path, both NO-path completions, both exhausted-reask
-   defaults, the JSONB transform (including the untouched-NULL-row case),
-   the `attendance` CHECK constraint, and every grant probe.
+2. **DONE — §8 below, full transcript at `/tmp/dry-run-evidence.txt` (359
+   lines, regenerated 2026-08-23 — widened from the original 268-line
+   capture).** Disposable dry-run scaffold output (real `pg_dump`-based
+   schema) proving the new SQL parses and executes against a structurally
+   accurate Postgres — covers the YES path, both NO-path completions, both
+   exhausted-reask defaults, the JSONB transform (including the
+   untouched-NULL-row case), the `attendance` CHECK constraint, every grant
+   probe, **and, added in this widening pass: the renamed `q3_reask`/
+   `q4_reask` keys exercised with the session context printed after each
+   reask (proving the rename landed on the correct step, not just that the
+   code parses), and the post-migration function-signature comparison that
+   surfaced §10's blocking finding.**
 3. **PENDING — needs a real apply.** Test-db rehearsal transcript exercising
    every renumbered step in sequence via the real webhook/RPC against
    test-db, not a local scaffold. The dry-run (2 above) proves the SQL is
@@ -708,12 +750,14 @@ Exit code: `0`.
 
 ## 8. Dry-run scaffold evidence
 
-Full literal transcript: **`/tmp/dry-run-evidence.txt`** (268 lines) — every
-query and its raw result, in execution order, per this project's ARTIFACT
-PROVENANCE convention (query text visible above its result). Captured
-against a disposable local PG17 instance (real `pg_dump` schema from the
-linked project, `auth`/roles stubbed per CLAUDE.md §7's standing rule),
-never test-db or prod. Torn down after capture — nothing persists.
+Full literal transcript: **`/tmp/dry-run-evidence.txt`** (359 lines,
+regenerated 2026-08-23 — widened from the original 268-line capture, items
+9-10 below are new) — every query and its raw result, in execution order,
+per this project's ARTIFACT PROVENANCE convention (query text visible above
+its result). Captured against a disposable local PG17 instance (real
+`pg_dump` schema from the linked project, `auth`/roles stubbed per
+CLAUDE.md §7's standing rule), never test-db or prod. Torn down after
+capture — nothing persists.
 
 What it contains, in order:
 1. **Pre-migration state** — confirms the OLD column
@@ -726,21 +770,51 @@ What it contains, in order:
    (no morning submission at all, `morning_manpower_planned` genuinely
    `NULL`) is confirmed still `NULL` afterward — the transform's `WHERE
    morning_manpower IS NOT NULL` predicate correctly left it alone.
-4. **The `attendance` CHECK constraint** rejecting an invalid value
+4. **NEW (2026-08-23) — the post-migration function signature, and the
+   blocking finding it surfaced.** `pg_get_function_identity_arguments`
+   against `public.apply_morning_flow_turn` no longer returns one row: a
+   direct `pg_proc` catalog query is used instead of a `::regproc` cast
+   specifically *because* the cast now fails (`function ... is not unique`,
+   caught live). Two full function bodies are shown, side by side by `oid`
+   — the old 12-arg (pre-030) signature and the new 14-arg signature — proof
+   `CREATE OR REPLACE` did not replace, it overloaded. The old body's
+   `EXECUTE` grants are then re-probed post-migration (still `service_role`
+   only — 030 never touched this signature's ACL, so nothing here is
+   newly-exposed, but the stale body itself is still live and callable) and
+   a real named-argument call using only the original 6 required parameters
+   is run and shown failing with `function ... is not unique` — the exact
+   failure a caller like `test/migration-020.test.ts`'s `APPLY_ARGS` would
+   now hit. Full narrative: §10 below.
+5. **The `attendance` CHECK constraint** rejecting an invalid value
    (`'bogus'`) with the real Postgres error text.
-5. **Every grant probe**: `anon` denied `EXECUTE` on
+6. **Every grant probe**: `anon` denied `EXECUTE` on
    `apply_morning_flow_turn`, `service_role` allowed, `authenticated`
    column-bound correctly (`morning_manpower`/`morning_plan` grantable,
-   `attendance` not — the §6c fix, verified live).
-6. **The YES path**, start through Q4 completion, with the resulting
+   `attendance` not — the §6c fix, verified live). These probes name the
+   full new-signature argument list explicitly, so they resolve
+   unambiguously to the new overload despite item 4's finding.
+7. **The YES path**, start through Q4 completion, with the resulting
    `daily_logs` row printed in full.
-7. **Both NO-path completions** (`site_holiday`, `absent`), including the
+8. **Both NO-path completions** (`site_holiday`, `absent`), including the
    confirmation that no row is written between Q1's "no" and the holiday
    follow-up resolving.
-8. **Both exhausted-reask defaults** — Q1's (now YES) and the holiday
+9. **Both exhausted-reask defaults** — Q1's (now YES) and the holiday
    follow-up's (still `absent`) — each shown reaching the reask state first
    (`q1_reask`/`q5_reask` incremented, visible in the session `context`),
    then resolving on the second unclassifiable answer.
+10. **NEW (2026-08-23) — the renamed `q3_reask`/`q4_reask` keys, each
+    exercised at the step they actually now belong to.** A single session
+    runs Q1→Q2 normally, then hits one unparseable answer at Q3 (workers) —
+    the session `context` is printed immediately after, showing `{"q1_reask":
+    0, "q3_reask": 1}` and `current_step` still `3` (the reask genuinely
+    lands on Q3, not silently on the wrong step). The same session then
+    answers past the Q3 budget (advances to step 4, context resets to
+    `q3_reask: 0`), hits one unparseable answer at Q4 (equipment) — context
+    printed again, showing `{"q1_reask": 0, "q3_reask": 0, "q4_reask": 1}`
+    (both renamed keys visible together, `q3_reask` provably untouched by
+    Q4's reask), then completes on the second attempt. Closes the gap the
+    original capture left: it exercised the two *new* keys (`q1_reask`,
+    `q5_reask`) but never the two *renamed* ones.
 
 ---
 
@@ -1097,3 +1171,113 @@ diff alone:
  END;
  $fn$;
 ```
+
+---
+
+## 10. BLOCKING FINDING — `CREATE OR REPLACE` with appended parameters
+did not replace `apply_morning_flow_turn`; it overloaded it (found 2026-08-23)
+
+**Found while completing item 2 of this pass's requested widening** (print
+the post-migration function signature, state whether it changed). The
+honest answer to "did it change" turned out to be more than a yes/no —
+pinned evidence below.
+
+**The mechanism.** `030_morning_flow_attendance.sql`'s STEP 4 is `CREATE OR
+REPLACE FUNCTION apply_morning_flow_turn(...)` with `p_yesno_met` and
+`p_yesno_ok` appended after `p_test_sleep_ms` (the file's own header
+explains why they're appended rather than inserted mid-list — see that
+header, "WHY p_yesno_met/p_yesno_ok ARE APPENDED"). That header's
+justification is: *"`CREATE OR REPLACE FUNCTION` only allows adding NEW
+trailing DEFAULT-valued parameters -- not inserting them mid-list -- without
+Postgres treating it as a different function."* **That premise is false.**
+A function's identity in Postgres is its name **plus its full parameter
+type list** — appending parameters, even trailing ones with `DEFAULT`
+values, changes that type list, which makes `CREATE OR REPLACE` create a
+**new, additional, separately-callable function** rather than replacing the
+old one. Confirmed directly against a real Postgres 17 instance, not
+inferred from documentation:
+
+```
+--- apply_morning_flow_turn: EVERY function named this, post-migration ---
+  oid  |                                                            args
+-------+-----------------------------------------------------------------
+ 20707 | p_phone_number text, ..., p_test_sleep_ms integer
+ 21513 | p_phone_number text, ..., p_test_sleep_ms integer, p_yesno_met boolean, p_yesno_ok boolean
+(2 rows)
+```
+
+Both rows are real, live, independently-callable functions after 030 runs.
+The OLD body (022's logic — step 1 is still free-text → `morning_plan`, no
+attendance branch at all) was never removed.
+
+**Why this is not inert.**
+1. **The stale body is still `service_role`-executable.** 030's own STEP 5
+   `REVOKE`/`GRANT` block names the NEW 14-arg signature explicitly — it
+   never touches the OLD 12-arg signature's grants, so whatever that
+   signature was grantable to before this migration remains grantable to it
+   after. Probed live, post-migration:
+   ```
+    anon_can_execute_OLD_body | authenticated_can_execute_OLD_body | service_role_can_execute_OLD_body
+   ---------------------------+-------------------------------------+------------------------------------
+    f                         | f                                   | t
+   ```
+   Not a newly-opened public hole (`anon`/`authenticated` are still denied,
+   matching this project's own migration-020 hardening) — but `service_role`
+   can still invoke a function that writes `morning_plan` at step 1 as if
+   this migration never shipped, against the **current**, post-030 database
+   and its renumbered step space. A service-role caller that reaches this
+   overload by accident (see point 2) gets 022-era behavior silently.
+2. **A partial named-argument call is now genuinely ambiguous**, not merely
+   stale-routed. Any caller passing fewer than all 14 named parameters, where
+   the omitted set is satisfied by *both* overloads' defaults, no longer
+   resolves — Postgres reports "not unique" instead of picking either body:
+   ```sql
+   SELECT apply_morning_flow_turn(
+     p_phone_number => '+19995559999', p_tenant_id => '<uuid>',
+     p_user_id => '<uuid>', p_project_id => '<uuid>',
+     p_message => 'hello old caller', p_start_flow => true
+   );
+   -- ERROR:  function apply_morning_flow_turn(...) is not unique
+   -- HINT:  Could not choose a best candidate function.
+   ```
+   `test/migration-020.test.ts`'s `APPLY_ARGS` (`p_phone_number`,
+   `p_tenant_id`, `p_user_id`, `p_project_id`, `p_message`, `p_start_flow` —
+   six keys, no `p_yesno_met`/`p_yesno_ok`) is **exactly this shape**. Those
+   tests assert `error?.code === '42501'` (ACL denial) for `anon`/
+   `authenticated` — after this migration, against a real database, that
+   call instead fails ambiguity resolution before ACL is ever checked. The
+   test would no longer be testing what it claims to test, and would need
+   its own investigation to know whether it still fails for the *right*
+   reason.
+3. **Every real production/test-helper caller is unaffected** —
+   `lib/whatsapp/flows/morning.ts:483-484` and `test/helpers/db.ts:305-306`
+   both always pass `p_yesno_met`/`p_yesno_ok` by name alongside the full
+   original parameter set, so they resolve unambiguously to the new 14-arg
+   overload. This is a landmine for any *partial* or future caller, not a
+   currently-firing production bug — which is exactly the "caught in a file
+   nobody has run yet" shape this project's own external-review-gate entry
+   (migration 027) already established as the cheapest place to catch a
+   defect like this.
+
+**Recommended fix — proposed, NOT applied.** Per this pass's scope (record
+findings, regenerate evidence; migration-file changes are a separate
+decision), `030_morning_flow_attendance.sql` itself was left untouched. The
+shape of the fix, for whoever makes that call:
+```sql
+DROP FUNCTION IF EXISTS public.apply_morning_flow_turn(
+  text, uuid, uuid, uuid, text, boolean, jsonb, boolean, jsonb, boolean, timestamptz, integer
+);
+```
+placed immediately before STEP 4's `CREATE OR REPLACE`. This is **not** the
+DROP+CREATE this project's migration-020 incident forbade for this exact
+function — that prohibition was about DROP+CREATE silently reverting to
+default (public) grants; STEP 5 of 030 already re-declares this function's
+full grant set explicitly and unconditionally (`REVOKE ... FROM PUBLIC,
+anon, authenticated; GRANT ... TO service_role;`), so nothing here depends
+on `CREATE OR REPLACE` preserving an ACL implicitly. Dropping the old
+signature first would leave exactly one `apply_morning_flow_turn` in the
+catalog, matching what this migration's own header already believes is
+true. **Not applied here — flagging for Aravind's decision, not deciding it
+unilaterally**, since it changes what ships in an unapplied migration file.
+
+---
