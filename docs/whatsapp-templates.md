@@ -10,15 +10,42 @@ blocks SUBMISSION itself, before Meta ever sees the template.**
 
 **GATE 1 (a SEND gate) — no template may be SENT until the flow migration matches the
 submitted copy.** Template 1 (`quoco_morning_checkin`) embeds attendance as Q1 — "Are
-you on site today? Reply yes or no." The BUILT RPC (`apply_morning_flow_turn`, live in
-migration 022) has NOT been migrated: its actual step 1 is still the plan question
-(`MORNING_QUESTIONS[1]` in `lib/whatsapp/flows/morning.ts`, "What's your *plan of
-action* for today?"). If this template is sent before the flow migration ships, an
-engineer's "yes"/"no" reply would be stored as their `morning_plan` free-text answer —
-wrong data, silently. Cite: `design-decisions-beta-feedback.md` §28(l) (the decided
-flow) against the currently built one. Submitting for Meta approval is fine — this gate
-lifts only when the flow migration (itself unscoped, tripping CLAUDE.md §0(a) —
-§28(u)) ships and is verified live, not when Meta approves the copy.
+you on site today? Reply yes or no." **SHARPENED, 2026-08-23 — this gate's own premise
+changed underneath it and the entry needs to say so plainly, not just cite a design
+doc:**
+
+- **Template 1 is now APPROVED** — confirmed live via the Twilio Content API on
+  2026-08-23 (`docs/reviews/whatsapp-template-submission-status.md`'s "Log" table,
+  row 1). Meta has no further say over whether this template can be sent; approval is
+  permanent (barring a future Meta policy action), and no further submission-side event
+  changes that.
+- **Template 1 is SENDABLE the moment outbound-send code exists.** No code in this
+  repo can construct an outbound WhatsApp message today (CLAUDE.md §3's STANDING
+  ARCHITECTURAL FACT — the #69/031 outbound-send primitive is unbuilt), so nothing can
+  send it yet regardless of approval. The instant that primitive ships, template 1
+  becomes something any send path — cron, a manual test, an onboarding route — can
+  actually dispatch. Approval removed the Meta-side obstacle; it did not remove this
+  one.
+- **The BUILT RPC still asks the plan question at step 1, unchanged as of 2026-08-23.**
+  `apply_morning_flow_turn` (live in migration 022; the attendance-first rework,
+  migration `030_morning_flow_attendance.sql`, is written, fixed, and reviewed —
+  `docs/reviews/morning-flow-migration-review-package.md` §10/§10.1/§10.2 — but **NOT
+  YET APPLIED to test-db or prod**, per that package's own §5 evidence-status list).
+  Its actual step 1 is still the plan question (`MORNING_QUESTIONS[1]` in
+  `lib/whatsapp/flows/morning.ts`, "What's your *plan of action* for today?"). If
+  template 1 is sent before migration 030 is applied, an engineer's "yes"/"no" reply to
+  the APPROVED template's attendance question would be stored as their `morning_plan`
+  free-text answer — wrong data, silently, exactly as this gate has always warned.
+- **The gate is now the ONLY thing standing between an approved template and a wrong
+  write.** Before 2026-08-23, an unapproved template meant GATE 1 had two independent
+  reasons to hold: Meta hadn't approved the copy, AND the RPC didn't match it. Approval
+  removed the first reason. The second — migration 030 unapplied — is now the SOLE
+  remaining barrier, and unlike Meta's review, nothing external enforces it; it holds
+  only as long as this document (and whoever ships the outbound-send primitive) reads
+  it and checks. Cite: `design-decisions-beta-feedback.md` §28(l) (the decided flow)
+  against the currently built one. This gate lifts only when migration 030 ships to
+  prod and is verified live (the review package's own §3 GATE 1 verification plan),
+  not when Meta approves the copy — approval already happened and did not lift it.
 
 **GATE 2 (a SUBMISSION gate, corrected 2026-08-21 — was drafted as a send-only gate,
 that was wrong) — template 8 (`quoco_engineer_optin`) is NOT SUBMITTED to Meta until
