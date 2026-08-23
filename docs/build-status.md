@@ -1468,3 +1468,74 @@ observed silence (`docs/twilio-sender-swap-runbook.md`'s own §1 already traces
 investigated further until the sender swap itself is authorized. Fixing the sandbox's
 webhook tonight does nothing for the production sender's inbound path — they are
 independently configured in Twilio and must each be pointed at the app separately.
+
+
+### [2026-08-23] DECIDED — design-decisions-beta-feedback.md is NOT split at this time
+
+Considered splitting this file at the same §1-27-settled / §28-onward-live boundary
+this file itself already treats as the natural line, mirroring CLAUDE.md's own §10
+move (above) — and stood down. Aravind's correction, not a fresh finding: the premise
+motivating the CLAUDE.md §10 move does not carry over. **The 150,000-char truncation
+risk (silent tail-drop past the limit) is specific to CLAUDE.md, because CLAUDE.md is
+auto-loaded into every session. This file is read on demand.** It crosses the
+120,000-char WARN line (139,273 chars as of 2026-08-23), not a 140,000 hard-fail —
+that threshold does not apply to this file at all. A warn is a nudge, not a
+truncation risk.
+
+Given there is no truncation risk to mitigate today, splitting would only add cost:
+a permanent two-hop redirect in front of whichever half moves. And the half that
+would move under the §10-mirrored plan is the WRONG half to redirect — the opposite
+of the §10 case, where nothing of consequence pointed at the content that moved.
+Section-count and citation inventory carried forward here so this analysis is not
+re-derived:
+
+- **Section inventory (30 sections + title, byte counts via `wc -c`-equivalent):**
+  title 456B; §1 1,164B; §2 549B; §3 5,954B; §4 254B; §5 380B; §6 2,563B; §7 2,928B;
+  §8 5,180B; §9 3,725B; §10 6,354B; §11 3,005B; §12 10,411B; §13 5,600B; §14 2,042B;
+  §15 1,596B; §16 2,488B; §17 2,158B; §18 2,636B; §19 2,486B; §20 3,084B; §21 2,649B;
+  §22 6,706B; §23 1,571B; §24 11,033B; §25 2,577B; §26 2,902B; §27 3,311B; §28 27,455B;
+  §29 7,463B; §30 8,593B. §1-27 sum: 95,306B (+ 456B title = 95,762B). §28-30 sum:
+  43,511B. Total: 139,273B — matches `wc -c` exactly.
+- **Text-wise, §1-27 is frozen**: every commit since §28 was first appended
+  (`3d2f422`, 2026-08-21) touched only line ranges ≥1585 — confirmed via
+  `git show --format= | grep '^@@'` on all 7 commits since. Nothing in §1-27 has been
+  edited in place since.
+- **Relevance-wise, §1-27 is the MORE-cited half, not the less.** Repo-wide grep for
+  section-numbered citations of this file (excluding its own internal §28-30
+  self-references) found 58 hits: **41 point into §1-27** — §10 alone draws 15, the
+  single most-cited section in the project, cited live from `lib/whatsapp/dispatch.ts`
+  and `lib/whatsapp/inbound-start.ts` (application code, not just docs); §9 draws 5;
+  §3.1/§3.2 draw 5; §6/§12/§13/§11/§19/§1 draw 2 each; §5/§3/§22/§18 draw 1 each — vs
+  **17 pointing into §28-30**. §28 also actively amends/reverses earlier sections in
+  its own text ("DECIDED, narrower than §1's full design," "§9 REVERSAL," "resolves a
+  live conflict [with] §7") — §1-27 is textually frozen but still very much
+  load-bearing.
+
+**Net: relocating §1-27 would put a two-hop redirect in front of the most-consulted
+content in the project, to solve a truncation risk that does not exist for this
+file.** Not split.
+
+**WHEN IT DOES NEED SPLITTING** (revisit at 150,000 chars — used here only as a
+round trigger point, not because the CLAUDE.md hard-fail threshold itself applies):
+the cheaper move is the REVERSE of §10's — freeze this file as-is, under its current
+name, and open a new file for §31 onward, rather than relocating the heavily-cited
+§1-27 out from under its existing citations. Zero citations change, no redirect
+needed for anything that already exists — new sections simply accrue in the new file
+from the split point forward. Cost: decisions live in two files split by date instead
+of one, handled by grepping across docs/ rather than reading one file top to bottom.
+
+**HAZARD RECORDED, SAME ENTRY — bare "§N" citations are now ambiguous project-wide.**
+"§10" means two different things depending on which file: RESTART SEMANTICS in
+`design-decisions-beta-feedback.md`, or CURRENT BUILD STATUS in this file
+(`docs/build-status.md`), which only exists as a numbered §10 because of the
+2026-08-23 CLAUDE.md split recorded above. Code comments and docs already cite this
+project's design/build history by bare section number in a majority of cases. Not a
+new failure shape, either — this file's own `morning.ts:188` TS/SQL mirror
+divergence entry (2026-08-19, above) already records `lib/whatsapp/dispatch.ts`
+mis-citing "design-decisions §11" for what should have been §10, before this
+second-file ambiguity even existed: a bare section number was already fragile on its
+own, and now two live documents each have their own §9, §10, etc. **Standing
+guidance: cite the FILENAME plus section, never a bare "§N"** — e.g.
+`design-decisions-beta-feedback.md §10`, never just "§10". Promoted to a one-line
+standing rule in CLAUDE.md §0 (see that section) since this is a citation convention
+to follow every session, not a one-off historical note.
