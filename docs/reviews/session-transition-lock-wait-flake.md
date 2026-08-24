@@ -1,19 +1,44 @@
-# `test/session-transition.test.ts` Test B — "flake" label likely wrong, tracked not fixed
+# `test/session-transition.test.ts` Test B — ordering-precondition bug, RESOLVED
 
-**Status: OPEN — THIRD OCCURRENCE HIT, 2026-08-24, AND THE "FLAKE" FRAMING
-ITSELF IS NOW SUSPECT (see "2026-08-24 investigation" below).** Per this
-document's own standing instruction ("a third occurrence stops the merge
-instead" of a re-run), PR #102 was NOT re-run and NOT merged when this
-fired — held for Aravind, not resolved unilaterally. Two of the three
-recorded failures (Failures 2 and 3) produced a BYTE-IDENTICAL elapsed value
-(`-317`), two days and two unrelated PRs apart. This has been treated as
-randomness for two days on the strength of a single negative number — a race
-produces scatter, a repeated constant does not, and the "flake" label was
-probably the wrong one from the start. Still: **do not fix from this
-document alone** — this is a tracking record, written so the real fix starts
-from the actual timing code instead of a rediscovery, not a diagnosis run to
-a conclusion. Filed per direct instruction, 2026-08-22, after the second
-same-day occurrence and an explicit "do not re-run a third time" decision.
+**Status: RESOLVED, 2026-08-24.** The defect was in the TEST, not the row
+lock: the setup fired caller 1, slept 100ms client-side, then fired caller
+2, RELYING on that gap to guarantee caller 1 reached Postgres first —
+nothing enforced it. Under latency skew, caller 2 could win the race,
+acquire the lock, and commit almost instantly, producing a negative
+`lock2 - lock1` that looked like a broken lock but was actually a setup
+that never exercised its own intended interleave. Fixed by asserting on
+acquisition ORDER explicitly and retrying the setup (not the assertion) on
+inversion, bounded and loud if it never resolves — see "THE FIX,
+2026-08-24" below for the mechanism, the code, and both pieces of
+verification evidence (a forced-inversion proof that the retry/failure path
+actually fires, and 30 clean runs against real test-db with zero inversions
+and zero negatives).
+
+**CORRECTION to this document's own prior reasoning, recorded rather than
+silently dropped.** The "flake" LABEL was still wrong — the assertion was
+correct, the setup's precondition was not guaranteed, and that is a real
+bug regardless of what caused any individual failure's timing. But the
+specific READING that followed from it — "two of three failures landed on
+a BYTE-IDENTICAL `-317`, therefore something deterministic is producing
+that exact number" — was overweighted, for a reason this document didn't
+originally have the evidence to check: **if the mechanism IS lock-order
+inversion under latency skew, a negative value measures the same
+quantity every time it occurs** (how far caller 2's actual arrival at
+Postgres preceded caller 1's, given broadly similar CI-runner network/
+connection-pool conditions run to run) — so negative values should cluster
+just as narrowly as this document's own POSITIVE-case evidence already
+shows the equivalent positive quantity does: the 2026-08-24 investigation's
+30-run capture landed entirely within **960–1108ms**, a ~150ms band, under
+normal conditions. A quantity that naturally clusters that tightly landing
+on the same ROUNDED figure twice, out of three total samples (`-33`,
+`-317`, `-317`), is unremarkable under that clustering — not the
+low-probability coincidence it was originally treated as. (This is a
+different comparison than the FORCED-inversion values captured while
+verifying the fix below, `-160`/`-181`/`-155` — those came from a
+deliberately reversed dispatch order, a large, artificial skew, not a
+genuine near-miss race, so they characterise a different scenario and are
+not used as the reference band here.) Recorded so the next reader does not
+re-derive the same overweighted reading from the same two numbers.
 
 ## The three recorded failures
 
@@ -193,6 +218,102 @@ environment, across 30 attempts.
   job, or the diagnostic script run directly inside a GitHub Actions
   runner) so the actual environment that produces `-317` can be observed
   directly, rather than guessed at from a differently-networked sandbox.
+
+## THE FIX, 2026-08-24 — asserted on ordering, retried the setup, RESOLVED
+
+**Diagnosis, restated precisely.** The assertion (`lock2 - lock1 >= 750`)
+was always correct — it is genuinely what needs to be true for the row
+lock to have serialized the two callers as designed. The bug was in the
+SETUP: firing caller 1, sleeping 100ms client-side, then firing caller 2
+RELIES on that gap to guarantee caller 1 reaches Postgres first. Nothing
+enforces it. Under latency skew (a cold connection, connection-pool state
+after dozens of preceding CI test files, or simple network jitter), caller
+2 can reach Postgres first, acquire the lock, and — since it holds it for
+0ms — commit almost instantly, before caller 1 has even arrived. That
+produces a genuinely negative `lock2 - lock1`, and it is a defect in the
+test's setup regardless of what specifically causes the skew.
+
+**Why this fix, not a-priori prevention.** A true, unconditional guarantee
+that caller 1 always acquires first — e.g. an advisory lock caller 2's
+dispatcher polls before firing, or splitting caller 1 into an
+acquire-then-hold step the test can observe directly — would require NEW
+database surface: a row lock held inside an uncommitted transaction is
+invisible to any other connection by ordinary MVCC visibility rules, so
+signaling "I hold it" across connections needs something like a
+`pg_advisory_lock` (visible cross-session without a commit) or an
+NOWAIT probe function, either of which is a new migration exposing new
+lock-state surface. That trips this project's own external-review gate
+(CLAUDE.md §0, condition (a) — creates a live function's logic) for what
+is fundamentally a test-only concern, and PostgREST's one-call-per-
+transaction model makes "acquire, then separately signal, then release"
+a multi-round-trip protocol this architecture doesn't support without a
+raw kept-alive connection bypassing PostgREST entirely — a real
+architecture change, not a test fix. Detecting the ACTUAL acquisition
+order from the two DB-side timestamps the test already captures costs
+nothing new, needs no new database surface, and keeps the magnitude proof
+exactly as it was.
+
+**The fix itself — `test/session-transition.test.ts`'s Test B:**
+1. Compare `lock1`/`lock2` directly. If `lock2 < lock1`, the ordering
+   precondition was violated this attempt — caller 2 won the race, so no
+   genuine 800ms-hold interleave was exercised. Log it and retry with a
+   FRESH row (`cleanupTestSessions()` between attempts — the shared
+   `whatsapp_sessions` cleanup helper this suite already uses everywhere
+   else), rather than silently reinterpreting `min`/`max` as if the
+   intended scenario had occurred (a naive swap would let a run that never
+   exercised real blocking pass anyway, for the wrong reason).
+2. Bounded at 3 attempts. If ordering is achieved, the ORIGINAL assertions
+   run completely unchanged — `lock2 - lock1 >= 750`, the `wallElapsed`
+   sanity check, and the final `current_flow`/`pending_flows` state checks.
+   No retry masks a real magnitude failure: retries only ever re-run the
+   SETUP, never re-attempt a failed assertion.
+3. If all 3 attempts hit the ordering precondition and never reach the real
+   assertion, the test fails LOUD and DISTINCT — a message naming exactly
+   what happened (`"ordering precondition never satisfied after 3
+   attempts... NOT evidence the row lock itself is broken"`), not the
+   generic `"-N to be >= 750"` this document's own three failures show. A
+   future occurrence of this specific message is now immediately
+   recognizable as a setup-precondition miss, never mistaken for a locking
+   regression again.
+
+**Verification, two pieces, both required — neither substitutes for the
+other:**
+
+1. **The retry/loud-failure path genuinely fires — proven, not assumed.**
+   Dispatch order was temporarily, deliberately reversed (caller 2 fired
+   FIRST, caller 1 100ms later) to force a deterministic inversion on every
+   attempt, then reverted immediately after capture:
+   ```
+   [session-transition Test B] ordering precondition missed on attempt 1/3 (lock1=1787583221803, lock2=1787583221643, diff=-160) -- retrying with a fresh row
+   [session-transition Test B] ordering precondition missed on attempt 2/3 (lock1=1787583223113, lock2=1787583222932, diff=-181) -- retrying with a fresh row
+   [session-transition Test B] ordering precondition missed on attempt 3/3 (lock1=1787583224424, lock2=1787583224269, diff=-155) -- retrying with a fresh row
+
+    × acquire_and_transition_session / drain_next_pending_flow > B: caller 2 blocks on the row lock until caller 1 commits
+      → Test B: ordering precondition never satisfied after 3 attempts -- caller 2 kept acquiring the row lock before caller 1 despite the 100ms head start every time (last attempt: lock1=1787583224424, lock2=1787583224269, diff=-155). This means the test setup could not construct the intended interleave in 3 tries -- it is NOT evidence the row lock itself is broken (the magnitude assertion, which IS that evidence, never ran). See docs/reviews/session-transition-lock-wait-flake.md.
+   ```
+   All three retry attempts logged correctly, and the final error is the
+   distinct, self-diagnosing message, not the old generic assertion —
+   confirmed byte-for-byte against what the code actually produces, not
+   read from the source.
+
+2. **30 runs against real test-db, normal (unforced) conditions — zero
+   negatives, zero inversions, every result printed:** 30/30 passed on the
+   FIRST attempt each time (no retry ever fired — the log line above never
+   appeared once across all 30 runs), test duration ~1.3–1.6s per run,
+   consistent with the timing this document's own earlier captures show.
+   Confirms the fix does not change behaviour under normal conditions — it
+   only activates the (now-proven-working) retry path when the precondition
+   is actually violated, which normal conditions never trigger locally.
+
+**What remains genuinely open, stated plainly rather than left implicit:**
+the underlying environmental trigger for WHY caller 2 occasionally wins the
+race specifically in CI (network path, connection-pool state after ~50
+preceding files, or something else) was never confirmed — the 2026-08-24
+investigation ruled out three specific code-level causes but could not
+reproduce the inversion locally to observe the real trigger directly. That
+question is now MOOT for this test's own correctness (it self-corrects
+either way), but is left here, not silently dropped, in case the same
+class of skew ever matters to a different test in the future.
 
 ## Why "negative" is a specific, meaningful signal — not generic flakiness
 
@@ -383,41 +504,35 @@ since this is a write RPC and both calls must hit the primary. Whatever is
 producing the inversion, it is not clock skew between two different
 database servers.
 
-## What's needed for a real fix (not attempted here)
+## What's needed for a real fix — SUPERSEDED, 2026-08-24, see "THE FIX" above
 
-1. **UPDATED, 2026-08-24 investigation.** The client-side "request sent at"
+Kept below as the historical record of what this document asked for while
+the bug was still open — not deleted, since the reasoning trail is part of
+what makes this incident useful to a future reader. The actual fix landed
+took a DIFFERENT shape than items 1/2 anticipated (assert-and-retry on the
+TEST side, not a CI-side capture or a DB-side prevention mechanism) — see
+"THE FIX, 2026-08-24" above for what was actually built and why.
+
+1. ~~UPDATED, 2026-08-24 investigation. The client-side "request sent at"
    capture this item originally proposed WAS built and run (30 iterations,
-   see above) — it did not catch an inversion in the act locally, and the
-   identical-value observation across Failures 2/3 argues the inversion
-   hypothesis alone (pure network jitter reordering the two requests) does
-   not fully explain what's been observed either — jitter should scatter,
-   not repeat exactly. **What's actually needed now: the same raw-value
-   capture run FROM INSIDE a GitHub Actions runner** (temporarily
-   instrument the test itself, or run the standalone probe as an extra CI
-   step), since this session's local reproduction — a different network
-   path, no competing connection-pool load from ~50 preceding test files —
-   never reproduced the negative value at all across 30 attempts. The
-   fix cannot be designed correctly until the actual mechanism is observed
-   somewhere it actually occurs.
-2. If lock-order-inversion is confirmed as A cause (not necessarily the
-   only one, given the repeated-constant puzzle above), the fix is almost
-   certainly changing how caller-1-goes-first is guaranteed — e.g. having
-   caller 1 acquire its lock and confirm (round-trip) before caller 2 is
-   even dispatched, rather than a bare client-side `sleep(100)` — not
-   touching the SQL/locking logic itself, which this hypothesis does not
-   implicate.
+   see above)... What's actually needed now: the same raw-value capture
+   run FROM INSIDE a GitHub Actions runner...~~ Not pursued — the fix
+   sidesteps needing to observe the CI-specific trigger at all, since it
+   makes the test correct regardless of what causes the skew.
+2. ~~If lock-order-inversion is confirmed as A cause..., the fix is almost
+   certainly changing how caller-1-goes-first is guaranteed...~~ Considered
+   and explicitly rejected in favor of detect-and-retry — see "Why this
+   fix, not a-priori prevention" above (new production SQL surface would
+   trip the external-review gate for a test-only concern).
 3. Whatever the fix, it should preserve the DB-side, network-noise-immune
-   character of the magnitude proof (`lock2 - lock1 >= 750`) — only the
-   ordering guarantee is suspect, not the measurement.
-4. **New, from the 2026-08-24 investigation:** if the CI-runner-side
-   capture (item 1) ALSO fails to explain the exact-repeat, broaden the
-   search beyond timing entirely — a deterministic value repeating exactly
-   is more consistent with a computation or data-handling bug (something
-   that always produces the same number given the same inputs) than with
-   any physical timing mechanism, however jitter-prone. This session's
-   investigation ruled out the three most obvious deterministic-bug
-   candidates (stale context, wrong timestamp source, stale row) but did
-   not exhaustively search for others.
+   character of the magnitude proof (`lock2 - lock1 >= 750`) — DONE: the
+   magnitude assertion is byte-for-byte unchanged from before this fix.
+4. ~~If the CI-runner-side capture ALSO fails to explain the exact-repeat,
+   broaden the search beyond timing entirely...~~ Superseded by the
+   CORRECTION above (the exact-repeat was overweighted evidence to begin
+   with) — no further search needed on that specific question.
 
-Not fixed here, per instruction — this document exists so the fix starts
-from this analysis, not a re-investigation.
+This document's own earlier line — "not fixed here, per instruction, this
+document exists so the fix starts from this analysis, not a
+re-investigation" — held: the fix above started from exactly the analysis
+in this document, not a rediscovery.
