@@ -36,10 +36,20 @@
 --      `attendance` entry (017 never had one).
 --   6. Drop the attendance column (its CHECK constraint drops with it,
 --      implicitly — PostgreSQL always drops a column's own constraints
---      when the column itself is dropped).
+--      when the column itself is dropped), plus attendance_defaulted and
+--      attendance_raw (added to 030 in external review round 2, Item 4).
 -- is_holiday is NOT touched anywhere in this file — it predates 030
 -- entirely (already present pre-030) and 030 never altered its structure,
 -- only wrote to it via application logic that this rollback also removes.
+--
+-- WRAPPED IN A TRANSACTION, external review round 2, B1 (review package
+-- §11.2) — this file had the identical statement-level-autocommit hazard as
+-- 030 itself: a half-applied rollback under a mid-script failure would have
+-- left the schema in a state matching NEITHER the pre-030 nor the post-030
+-- shape. Same BEGIN-immediately-after-header / COMMIT-immediately-after-
+-- last-statement placement as 030's own fix and 029's precedent.
+
+BEGIN;
 
 -- =============================================================================
 -- STEP 1 -- restore apply_morning_flow_turn's ORIGINAL 022 body
@@ -343,8 +353,15 @@ GRANT  UPDATE (
 
 -- =============================================================================
 -- STEP 6 -- drop the attendance column (its CHECK constraint,
--- daily_logs_attendance_check, drops implicitly with it). is_holiday is
--- NOT touched -- it predates 030 and is not part of this rollback.
+-- daily_logs_attendance_check, drops implicitly with it), plus
+-- attendance_defaulted/attendance_raw (added to 030 external review round 2,
+-- Item 4 -- review package §11.4; never existed pre-030, so dropping them is
+-- part of the same reversal, not a separate concern). is_holiday is NOT
+-- touched -- it predates 030 and is not part of this rollback.
 -- =============================================================================
 ALTER TABLE daily_logs
-  DROP COLUMN attendance;
+  DROP COLUMN attendance,
+  DROP COLUMN attendance_defaulted,
+  DROP COLUMN attendance_raw;
+
+COMMIT;

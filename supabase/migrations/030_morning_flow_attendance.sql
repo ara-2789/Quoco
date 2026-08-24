@@ -8,6 +8,14 @@
 -- ships FIRST, alone (design-decisions-beta-feedback.md §30(a)) -- evening's own
 -- restructuring is a separate, later migration.
 --
+-- ADDENDUM (2026-08-24, external review round 2 -- review package §11): the
+-- line above is now STALE if read as "never touched a database" -- this file
+-- has been rehearsed against test-db multiple times since authoring (review
+-- package §10.3), each time rolled back afterward. It remains true in the
+-- narrower, still-load-bearing sense that matters for an apply decision: NOT
+-- CURRENTLY APPLIED to test-db or prod as of this addendum. Not silently
+-- rewritten -- see §11 for the full current-status record.
+--
 -- WHAT CHANGES, IN ONE LINE EACH:
 --   1. daily_logs gains `attendance TEXT CHECK (IN present/absent/site_holiday)`.
 --   2. daily_logs.morning_manpower_planned is RENAMED to morning_manpower, and
@@ -119,12 +127,41 @@
 -- the build the review package's own §5 evidence artifacts (dry-run, test-db
 -- rehearsal, mirror-agreement test, GATE 1 observation) still need to be run
 -- against before that review happens. NOT APPLIED to test-db or prod.
+--
+-- ADDENDUM (2026-08-24, external review round 2): both sentences above are
+-- now STALE. This file WAS submitted for external review; round 1 returned
+-- STOP with five findings, all addressed in review package §11 (this is
+-- that fix). Still NOT APPLIED to test-db or prod as of this addendum --
+-- that half remains true -- but "not submitted...yet" no longer is. Not
+-- silently rewritten; see §11 for the full record.
+
+-- ADDED external review round 2, B1 (most serious finding, review package
+-- §11.2): under statement-level autocommit, every ALTER/rename/UPDATE/grant
+-- swap below was already committed by the time a later DO block's assertion
+-- could raise -- leaving a half-renamed schema, a half-swapped grant, and
+-- the OLD RPC live, with no way back short of a restore. STEP 2's own
+-- assertion comment already promised to "abort the whole transaction" --
+-- false as written without this. Matches 029's own precedent
+-- (029_dpr_versioning.sql:16/481) -- BEGIN immediately after the header,
+-- COMMIT immediately after the last statement, nothing outside the pair.
+BEGIN;
 
 -- =============================================================================
--- STEP 1 -- daily_logs.attendance (new column)
+-- STEP 1 -- daily_logs.attendance (new column), plus the capture-the-default
+-- pair added external review round 2, Item 4 (review package §11.4): a
+-- defaulted 'present' (exhausted-reask guess, no real answer) was being
+-- stored BYTE-IDENTICAL to a genuinely stated one -- unlike the equipment
+-- defect (which kept raw_text, so it stayed recoverable), this discarded the
+-- engineer's actual words entirely. attendance_defaulted marks which write
+-- sites resolved a real classification; attendance_raw holds the literal
+-- inbound text either way. Both written at BOTH resolution sites below
+-- (STEP 4b's Q1 write and its step-5 holiday-follow-up write) -- see those
+-- sites for the exact defaulted-vs-real test.
 -- =============================================================================
 ALTER TABLE daily_logs
-  ADD COLUMN attendance TEXT CHECK (attendance IN ('present', 'absent', 'site_holiday'));
+  ADD COLUMN attendance TEXT CHECK (attendance IN ('present', 'absent', 'site_holiday')),
+  ADD COLUMN attendance_defaulted BOOLEAN,
+  ADD COLUMN attendance_raw TEXT;
 
 -- =============================================================================
 -- STEP 2 -- morning_manpower_planned -> morning_manpower (rename + data transform)
@@ -204,10 +241,12 @@ GRANT  UPDATE (
 -- no-orphan-security-definer rule only fires on SECURITY DEFINER functions).
 --
 -- Ports lib/whatsapp/flows/parsers/lexicon.ts's `classifyYesNo` word-for-word
--- (YES_WORDS/NO_WORDS/NONE_WORDS as of 2026-08-23) into PL/pgSQL so Q1
--- attendance and the holiday follow-up can classify their own answer INSIDE
--- apply_morning_flow_turn, without a precomputed flag crossing the RPC
--- boundary (see this file's header, REWORKED 2026-08-23, for why).
+-- (YES_WORDS/NO_WORDS/NONE_WORDS as of 2026-08-24, RE-TUNED for attendance
+-- semantics this same round -- see lexicon.ts's own RE-TUNED note, and
+-- review package §11.5 for the full decision + accepted-cost record) into
+-- PL/pgSQL so Q1 attendance and the holiday follow-up can classify their own
+-- answer INSIDE apply_morning_flow_turn, without a precomputed flag crossing
+-- the RPC boundary (see this file's header, REWORKED 2026-08-23, for why).
 --
 -- PORT NOTE, the one behavioural subtlety worth recording: classifyYesNo's TS
 -- negative check is `NO_WORDS.has(t) || isNoneSentinel(t)` per token `t`, where
@@ -236,11 +275,16 @@ DECLARE
   v_tokens     TEXT[];
   v_yes_words  CONSTANT TEXT[] := ARRAY[
     'yes','y','yeah','yep','yup','ok','okay','done','completed','complete',
-    'finished','achieved','met','full','fully','aama','ama','aam'
+    'finished','achieved','met','full','fully','aama','ama','aam',
+    -- attendance present-side forms, added 2026-08-24 (lexicon.ts's own
+    -- RE-TUNED note has the full rationale -- keep this array word-for-word
+    -- in sync with YES_WORDS there, same discipline as the original port)
+    'half','half-day','late','coming','come','reaching','reached','way'
   ];
   v_no_words   CONSTANT TEXT[] := ARRAY[
     'no','n','nope','not','notdone','incomplete','pending','partly','partial',
-    'partially','mostly','half','some','delayed','missed','short'
+    'partially','mostly','some','delayed','missed','short'
+    -- 'half' moved to v_yes_words above 2026-08-24 -- see that array's comment
   ];
   v_none_words CONSTANT TEXT[] := ARRAY[
     'no','none','nothing','nil','na','zero','0','-','illa','ille','illai',
@@ -306,6 +350,10 @@ DECLARE
   v_reask      INTEGER;           -- current per-step reask counter (parsed steps)
   v_attendance TEXT := NULL;      -- resolved attendance value this turn writes, if any -- also echoed in the return value (see file header)
   v_yesno      JSONB;             -- quoco_classify_yes_no(p_message)'s {met, ok} -- computed inline at steps 1 and 5 only
+  v_attendance_defaulted BOOLEAN := NULL;  -- CAPTURE THE DEFAULT (round 2, Item 4): true only when this
+                                            -- resolution used the exhausted-reask default, not a real
+                                            -- classification -- set at both attendance write sites below
+  v_attendance_raw        TEXT    := NULL;  -- the engineer's literal words on the resolving turn, either way
 BEGIN
   -- log_date in IST, same Asia/Kolkata discipline as quoco_same_ist_day.
   v_log_date := (p_now AT TIME ZONE 'Asia/Kolkata')::date;
@@ -391,6 +439,14 @@ BEGIN
         v_session.context := v_session.context || jsonb_build_object('q1_reask', 0);
         v_attendance := 'present';
         v_col        := 'attendance';
+        -- CAPTURE THE DEFAULT (round 2, Item 4): this ELSE branch is reached
+        -- two ways -- a real YES (v_yesno.ok=true, met=true) or the
+        -- exhausted-reask default (v_yesno.ok=false, reask budget spent).
+        -- NOT ok is exactly "this resolution is a default, not a real
+        -- answer" -- the same test already distinguishing the two branches
+        -- above, reused here rather than re-derived.
+        v_attendance_defaulted := NOT COALESCE((v_yesno->>'ok')::boolean, false);
+        v_attendance_raw       := v_text;
         v_outcome    := 'advance';
       END IF;
 
@@ -463,6 +519,11 @@ BEGIN
         v_session.context      := (v_session.context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask')
                                     || jsonb_build_object('morning_submitted', true);
         v_col     := 'attendance_complete';
+        -- CAPTURE THE DEFAULT (round 2, Item 4): same test as Q1's own site
+        -- above -- NOT ok means this resolution used the exhausted-reask
+        -- default (`absent`), not a real yes/no answer to the follow-up.
+        v_attendance_defaulted := NOT COALESCE((v_yesno->>'ok')::boolean, false);
+        v_attendance_raw       := v_text;
         v_outcome := 'advance';
       END IF;
 
@@ -483,24 +544,31 @@ BEGIN
   IF v_col = 'attendance' THEN
     -- Step 1 YES (or exhausted-reask default): 'present'. Materialises the
     -- row (replaces old step-1's row-materialising role) -- flow continues,
-    -- no submission stamp yet.
+    -- no submission stamp yet. attendance_defaulted/attendance_raw (round 2,
+    -- Item 4) capture whether this was a real answer or a guess, and the
+    -- engineer's literal words either way -- see this file's header.
     INSERT INTO daily_logs AS d
-      (tenant_id, project_id, engineer_id, log_date, attendance)
+      (tenant_id, project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw)
     VALUES
-      (p_tenant_id, p_project_id, p_user_id, v_log_date, v_attendance)
+      (p_tenant_id, p_project_id, p_user_id, v_log_date, v_attendance, v_attendance_defaulted, v_attendance_raw)
     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
-      SET attendance = EXCLUDED.attendance;
+      SET attendance           = EXCLUDED.attendance,
+          attendance_defaulted = EXCLUDED.attendance_defaulted,
+          attendance_raw       = EXCLUDED.attendance_raw;
 
   ELSIF v_col = 'attendance_complete' THEN
     -- Step 5 resolves the NO branch: 'site_holiday' or 'absent', completes
     -- the flow. is_holiday mirrors 'site_holiday' per §30(c) so existing
-    -- readers of is_holiday keep working unchanged.
+    -- readers of is_holiday keep working unchanged. attendance_defaulted/
+    -- attendance_raw (round 2, Item 4) same as the Q1 site above.
     INSERT INTO daily_logs AS d
-      (tenant_id, project_id, engineer_id, log_date, attendance, is_holiday, morning_submitted_at)
+      (tenant_id, project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_submitted_at)
     VALUES
-      (p_tenant_id, p_project_id, p_user_id, v_log_date, v_attendance, (v_attendance = 'site_holiday'), p_now)
+      (p_tenant_id, p_project_id, p_user_id, v_log_date, v_attendance, v_attendance_defaulted, v_attendance_raw, (v_attendance = 'site_holiday'), p_now)
     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
       SET attendance           = EXCLUDED.attendance,
+          attendance_defaulted = EXCLUDED.attendance_defaulted,
+          attendance_raw       = EXCLUDED.attendance_raw,
           is_holiday           = EXCLUDED.is_holiday,
           morning_submitted_at = EXCLUDED.morning_submitted_at;
 
@@ -588,3 +656,5 @@ REVOKE EXECUTE ON FUNCTION public.apply_morning_flow_turn(
 GRANT EXECUTE ON FUNCTION public.apply_morning_flow_turn(
   text, uuid, uuid, uuid, text, boolean, jsonb, boolean, jsonb, boolean, timestamptz, integer
 ) TO service_role;
+
+COMMIT;

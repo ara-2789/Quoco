@@ -480,6 +480,8 @@ export interface DailyLogRow {
   engineer_id: string
   log_date: string
   attendance: 'present' | 'absent' | 'site_holiday' | null
+  attendance_defaulted: boolean | null
+  attendance_raw: string | null
   is_holiday: boolean | null
   morning_plan: string | null
   morning_manpower: unknown | null
@@ -513,7 +515,7 @@ export async function getDailyLog(logDate: string): Promise<DailyLogRow | null> 
   const { data, error } = await db
     .from('daily_logs')
     .select(
-      'project_id, engineer_id, log_date, attendance, is_holiday, morning_plan, morning_manpower, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site, evening_productive_manpower, evening_equipment_utilisation, evening_submitted_at',
+      'project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_plan, morning_manpower, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site, evening_productive_manpower, evening_equipment_utilisation, evening_submitted_at',
     )
     .eq('project_id', TEST_PROJECT_ID)
     .eq('engineer_id', testEngineerId())

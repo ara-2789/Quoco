@@ -418,6 +418,18 @@ confirm this against §2's rule explicitly, not re-derive it from scratch.
   is a second, un-flagged instance of the identical gap, not a new one this
   migration introduces or is asked to close. Named here so the reviewer sees
   it recorded rather than rediscovering it.
+  **CORRECTED (2026-08-24, external review round 2, Item 4 — full record:
+  §11.4 below).** This framing was WRONG, not merely incomplete — kept
+  here unedited as the historical record of what was believed at the time,
+  not silently rewritten. The reviewer's distinction: the equipment defect
+  kept `raw_text` alongside its bad parse, so it stayed recoverable — THAT
+  is what debt means. This wrote only the resolved enum and discarded the
+  engineer's actual words entirely, so a defaulted `'present'` was
+  byte-identical, forever, to a genuinely stated one — evidence
+  destruction, not deferred confidence-flagging. Fixed the same round:
+  `attendance_defaulted`/`attendance_raw` added to 030, written at both
+  resolution sites — see §11.4 for the full fix, its verification, and the
+  B3 inheritance requirement it creates.
 
 **Finding (j), carried forward from the re-scoping plan
 (`docs/plans/flow-migration-rescoping-plan.md` §j) — relevant to B3
@@ -1741,5 +1753,469 @@ either DONE or PENDING-on-a-real-apply only** — artifacts 1-4 complete,
 artifact 5 (GATE 1's live observation) is the sole item remaining, and it
 requires an actual apply (test-db or prod) plus a real webhook-driven
 turn, which is out of scope for a rehearsal-and-rollback pass by design.
+
+---
+
+## 11. External review round 2 — STOP, five items, all fixed and verified (2026-08-24)
+
+The external reviewer's round-1 verdict on the state recorded through §10.3
+was **STOP**, with five findings. This section documents each fix, in the
+order the reviewer raised them, and closes with the fresh full-suite
+rehearsal this round's changes were checked against (§11.8, cross-referenced
+from the top-level record after this section).
+
+### 11.1 Repo-state header, this round
+
+Per CLAUDE.md §0's standing rule — raw output, not summarised.
+
+**`main @` sha, verified fresh via `git fetch origin main && git rev-parse
+origin/main` (not carried over from §1's `9456fdc`, which is now several
+merges stale):**
+```
+49a2d6548a785dab2cecc02371a49ca56cd20eb3
+```
+
+**`supabase migration list` (local vs. remote), run live against the linked
+test-db project (`exfccwlrhoutkgrlikod`), this round:**
+```
+{"migrations":[{"local":"001","remote":"001","time":"001"},{"local":"002","remote":"002","time":"002"},{"local":"003","remote":"003","time":"003"},{"local":"004","remote":"004","time":"004"},{"local":"005","remote":"005","time":"005"},{"local":"006","remote":"006","time":"006"},{"local":"007","remote":"007","time":"007"},{"local":"011","remote":"011","time":"011"},{"local":"012","remote":"012","time":"012"},{"local":"013","remote":"013","time":"013"},{"local":"014","remote":"014","time":"014"},{"local":"015","remote":"015","time":"015"},{"local":"016","remote":"016","time":"016"},{"local":"017","remote":"017","time":"017"},{"local":"018","remote":"018","time":"018"},{"local":"019","remote":"019","time":"019"},{"local":"020","remote":"020","time":"020"},{"local":"021","remote":"021","time":"021"},{"local":"022","remote":"022","time":"022"},{"local":"023","remote":"023","time":"023"},{"local":"024","remote":"024","time":"024"},{"local":"025","remote":"025","time":"025"},{"local":"027","remote":"027","time":"027"},{"local":"028","remote":"028","time":"028"},{"local":"029","remote":"029","time":"029"},{"local":"030","remote":"","time":"030"}],"message":"Migrations listed"}
+```
+030 local-only, remote empty — correct: not currently applied, matches
+§10.3's own final status.
+
+**Last runbook executed, and date:** the §10.3 test-db rehearsal (v1
+2026-08-23, rollback + v2/v3 2026-08-24) — the most recent thing actually
+run against a real database before this round's fixes. §11.8 below is the
+NEXT one, run against everything this round changed.
+
+### 11.2 B1 — transaction wrapper (most serious finding)
+
+**The finding, as raised:** neither `030_morning_flow_attendance.sql` nor
+`docs/reviews/030-rollback.sql` was wrapped in a transaction. Under
+statement-level autocommit, the ALTERs, the rename, the row UPDATE, and the
+grant swap were each already committed individually by the time a later `DO`
+block's assertion could raise — leaving a half-renamed schema, a
+half-swapped grant, and the OLD RPC still live, with no way back short of a
+restore. STEP 2's own assertion comment already claimed to "abort the whole
+transaction" — **false as written**, since nothing bound the statements
+into one.
+
+**The fix.** Both files now open with `BEGIN;` immediately after their
+header comment block and close with `COMMIT;` immediately after their last
+statement — nothing outside the pair, matching migration 029's own
+precedent (`029_dpr_versioning.sql:16` / `:481`) exactly.
+
+**The proof, not just the fix — forced on a disposable local scaffold,
+literal output captured, not asserted.** Built per CLAUDE.md §7's standing
+dry-run discipline: PostgreSQL 17.11 local (matching test-db/prod's 17.x),
+loaded from a REAL structural dump of test-db (`supabase db dump --linked
+--schema public --dry-run`, the pg_dump invocation run directly — not a
+hand-built scaffold, which could only ever agree with itself), plus the two
+named stubs that dump can't include (`auth.users`/`auth.uid()`, and the
+`anon`/`authenticated`/`service_role`/`supabase_auth_admin` roles).
+
+Method: seed one `daily_logs` row in the exact pre-030 shape
+(`morning_manpower_planned` with `planned_total`/`planned_count` keys).
+Run a copy of 030 with ONE line changed — the JSONB-transform `UPDATE`'s
+`WHERE` clause gets `AND false` appended, disabling it — so STEP 2's own
+assertion has real stale data to detect and fires for real, not
+hypothetically. Probe the schema before, run the broken copy, probe again
+from a FRESH connection (never trusting the same session's own view).
+
+```
+--- BEFORE (pre-030, seeded row in old planned_total/planned_count shape) ---
+ has_attendance | has_attendance_defaulted | has_attendance_raw | has_planned_col | has_renamed_col | apply_fn_count | classify_fn_count |                                                                    seeded_row_shape
+----------------+--------------------------+--------------------+-----------------+-----------------+----------------+-------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ f              | f                        | f                  | t               | f               |              1 |                 0 | {"by_trade": [{"trade": "mason", "planned_count": 12}, {"trade": "helper", "planned_count": 8}], "raw_text": "12 mason 8 helper", "planned_total": 20}
+(1 row)
+
+--- RUN: 030 with its UPDATE transform deliberately disabled (AND false), forcing STEP 2's own assertion to fire for real ---
+BEGIN
+ALTER TABLE
+ALTER TABLE
+UPDATE 0
+psql:/tmp/030-b1-scaffold/030-broken.sql:218: ERROR:  morning_manpower JSONB key rename incomplete: 1 row(s) with stale planned_total, 2 by_trade element(s) with stale planned_count
+CONTEXT:  PL/pgSQL function inline_code_block line 15 at RAISE
+
+--- AFTER (fresh connection, post-failure) -- byte-identical to BEFORE ---
+ has_attendance | has_attendance_defaulted | has_attendance_raw | has_planned_col | has_renamed_col | apply_fn_count | classify_fn_count |                                                                    seeded_row_shape
+----------------+--------------------------+--------------------+-----------------+-----------------+----------------+-------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ f              | f                        | f                  | t               | f               |              1 |                 0 | {"by_trade": [{"trade": "mason", "planned_count": 12}, {"trade": "helper", "planned_count": 8}], "raw_text": "12 mason 8 helper", "planned_total": 20}
+(1 row)
+```
+
+**Byte-identical before and after, including the two ALTER TABLEs and the
+rename that had already run inside the transaction before it aborted.**
+That is the whole proof: without the wrapper, those two `ALTER TABLE`
+statements and the column rename would have been permanently committed
+under autocommit the instant each ran — this run shows all of it undone by
+one `COMMIT;` never being reached. Full transcript: `/tmp/030-b1-scaffold/
+B1-PROOF.txt` (this session; disposable, not committed to the repo — same
+convention as `/tmp/dry-run-evidence.txt` and the `/tmp/030-testdb-
+rehearsal*.txt` files cited elsewhere in this package).
+
+**The REAL (unmodified, fixed) 030 was then run forward on the same
+scaffold to confirm the wrapper doesn't just roll back — it still lets a
+correct migration through cleanly:** `BEGIN` → 2×`ALTER TABLE` → `UPDATE 1`
+→ `DO` → `REVOKE`/`GRANT` → 2×`CREATE FUNCTION` → `REVOKE`/`GRANT` →
+`COMMIT`, exit code 0. Post-apply probe on that same run also confirms
+Item 4 and the §11.5 lexicon retune below working together, not just B1 in
+isolation — see §11.4's evidence.
+
+### 11.3 B2 — apply runbook (was missing entirely)
+
+Did not exist before this round. Instantiates `docs/migration-runbook-
+template.md`'s canonical A–E skeleton, widened with the two concerns this
+migration specifically has and 029's own runbook didn't: live sessions
+that might be mid-flow when this applies, and a hard RPC/TS lockstep
+requirement. Six ordered steps, S0–S5, plus the fingerprint set as its own
+closing check:
+
+- **S0. PITR window observation (no SQL).** Dashboard → Database → Backups
+  → Point in Time. Observe an active restore window ending ~now, record the
+  timestamp (§0: verified by observation, never by a checklist "DONE").
+  → confirm before S1.
+
+- **S1. Pre-apply session probe (read-only), pinned raw:**
+  ```sql
+  SELECT count(*), array_agg(phone_number)
+  FROM whatsapp_sessions
+  WHERE current_flow IS NOT NULL;
+  ```
+  **PROCEED condition: `count = 0`.** A session parked mid-morning-flow
+  (or mid-evening, since evening shares the same table) when 030 applies
+  is a session whose `current_step` means something different the instant
+  the new RPC body goes live — the exact renumbering hazard §4's B3 section
+  already names for the sweep, now relevant to the apply itself.
+
+  **If non-zero — written resolution procedure, not left to judgment in the
+  moment:** for each `phone_number` the probe returns, either (a) let the
+  in-flight turn finish naturally (wait, re-probe, does not require a
+  write) if the volume is small and apply isn't time-pressured, or (b)
+  reset that session to idle via a direct write:
+  ```sql
+  UPDATE whatsapp_sessions
+     SET current_flow = NULL,
+         current_step = 0,
+         context      = context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask' - 'q2_reask'
+   WHERE phone_number = '<the specific number>';
+  ```
+  **Merge discipline, stated because a bare wipe would be a SIXTH
+  context-write site done badly** (the codebase already has five: 030's own
+  start-flow strip and its two completion sites, evening's equivalent
+  pair) — the `UPDATE` above only ever REMOVES the specific reask keys
+  named, never replaces `context` wholesale, so any unrelated key already
+  present (an evening counter, `morning_submitted`, `evening_submitted`)
+  survives untouched, exactly like every other context-write site in this
+  codebase already does.
+
+- **S2. Re-probe to zero, immediately pre-apply.** Re-run S1's exact query.
+  **PROCEED condition: `count = 0`.** Anything else — STOP, return to S1;
+  do not proceed on a stale zero from earlier in the session.
+
+- **S3. Apply (write), ONE sitting, no gap to S4.** Fresh linked-project
+  breadcrumb pasted immediately before the apply (per the PROD APPLIES
+  rule, CLAUDE.md §0), `supabase db query --linked -f
+  supabase/migrations/030_morning_flow_attendance.sql` (never `db push`),
+  paste the result.
+
+- **S4. Merge — THE LOCKSTEP CLAUSE, stated explicitly.** Merge-is-deploy
+  for this project (Vercel deploys on merge to `main`): the RPC replacement
+  (S3, already live in the database) and the TS mirror / webhook reply copy
+  (this PR, once merged) **must land in one motion, not two separated by
+  any observable gap.** An old-TS-against-new-RPC window — the SQL renumbered
+  already, the deployed app still building replies off the OLD step
+  numbering — renders the OLD question text for a NEW step number. This
+  is NOT a parked-session-only hazard the way S1/S2 are: it hits **every
+  live user who messages during the window**, whether their session was
+  parked before the apply or starts fresh during it. Merge the PR
+  immediately after S3 confirms, not "sometime after."
+
+- **S5. Confirm live + mirror test green — the FIRST real run, a NAMED
+  step, not an accident.** Two checks, both required:
+  1. GATE 1's own behavioural check (§3 above) — a real `"yes"` reply
+     against the newly-live RPC, confirming `attendance='present'` and
+     `morning_plan IS NULL`, not the pre-migration miswrite shape.
+  2. `test/unit/yesno-mirror.test.ts` and `test/unit/morning-flow-
+     mirror.test.ts` run against the now-live database. Both suites were
+     written and proven capable of catching drift (§7, §10.2) but
+     **could not actually execute against `quoco_classify_yes_no`/the new
+     RPC body until this exact moment** — their first REAL green run is
+     what closes evidence artifacts 3 and 4 in §5 for good (beyond the
+     rehearsal-and-rollback status they already carry), not a
+     coincidental extra check.
+
+**Post-apply fingerprint set** (same discipline as every prior apply in
+this project — §10.1's dry-run evidence, §10.3's rehearsal):
+- `pg_get_function_identity_arguments` for `apply_morning_flow_turn` —
+  matches the pinned 12-arg signature, byte-identical to pre-apply.
+- `pg_proc` row count for `apply_morning_flow_turn` — exactly 1 (no
+  overload; the §10 finding this migration exists to avoid repeating).
+- Column presence: `daily_logs.attendance`, `.attendance_defaulted`,
+  `.attendance_raw` present; `.morning_manpower_planned` absent,
+  `.morning_manpower` present.
+- `schema_migrations` row count — unchanged by the apply itself (`supabase
+  db query --linked -f` is ledger-agnostic by design, per this project's
+  own `db push` incident record); the ledger entry is a separate, explicit
+  step per the runbook template's own E, not folded into S3.
+
+### 11.4 Item 4 — capture the default (`attendance_defaulted`, `attendance_raw`)
+
+**Reframed, not just fixed — the earlier framing in §4 was wrong, and that
+correction is recorded here, not silently edited into §4's own text.** §4's
+"Recorded, not fixed" block (above) called the exhausted-reask attendance
+default an instance of this project's own already-tracked PARSER DEBT
+(Rule 3.5) — the same shape as the 2026-08-21 equipment defect. **The
+reviewer's distinction, accepted:** the equipment defect stored `raw_text`
+alongside its bad parse, so it stayed retroactively recoverable — that is
+what makes it DEBT, not damage. Attendance, as originally written, stored
+ONLY the resolved enum (`'present'`) and discarded the engineer's actual
+words entirely — a defaulted `'present'` was **byte-identical, forever, to
+a genuinely stated one.** That is not debt sitting on a known backlog; it
+is evidence destruction, one column away from not happening, while the
+schema is still open for this exact migration. §4's block above is
+correct as a HISTORICAL record of what was believed at the time — left
+unedited — and superseded by this section, not silently overwritten.
+
+**The fix, added to 030 (STEP 1, alongside `attendance` itself):**
+```sql
+ALTER TABLE daily_logs
+  ADD COLUMN attendance TEXT CHECK (attendance IN ('present', 'absent', 'site_holiday')),
+  ADD COLUMN attendance_defaulted BOOLEAN,
+  ADD COLUMN attendance_raw TEXT;
+```
+Written at **BOTH** resolution sites, not just one:
+- **Q1** (`v_col = 'attendance'`): `v_attendance_defaulted := NOT
+  COALESCE((v_yesno->>'ok')::boolean, false)` — reusing the exact test that
+  already distinguishes "real YES" from "exhausted-reask default YES" at
+  that site, not re-derived. `v_attendance_raw := v_text` — the turn's
+  literal inbound message either way.
+- **Step 5, holiday follow-up** (`v_col = 'attendance_complete'`): the
+  identical test and the identical raw-text capture, for `site_holiday`/
+  `absent`.
+
+Both `INSERT ... ON CONFLICT DO UPDATE` statements for those two write
+sites now include `attendance_defaulted`/`attendance_raw` in both their
+column list and their `SET` clause.
+
+**Verified end-to-end on the same disposable scaffold §11.2 built** (real
+structural dump, real apply, real `quoco_classify_yes_no` calls) —
+raw probe output, one run, proving Item 4 and §11.5's lexicon retune
+together, not asserted separately:
+```
+ has_attendance | has_attendance_defaulted | has_attendance_raw | has_renamed_col | apply_fn_count | classify_fn_count |                                                        seeded_row_shape                                                        | half_is_met | halfday_is_met | reaching_is_met | ontheway_is_met
+----------------+--------------------------+--------------------+------------------+----------------+-------------------+----------------------------------------------------------------------------------------------------------------------------------+-------------+-----------------+-----------------+-----------------
+ t              | t                        | t                  | t                |              1 |                 1 | {"total": 20, "by_trade": [{"count": 12, "trade": "mason"}, {"count": 8, "trade": "helper"}], "raw_text": "12 mason 8 helper"} | t           | t               | t               | t
+```
+
+**Test coverage, added to the existing behavioural suite rather than a new
+one — `test/morning-flow.test.ts`:** the five tests that already assert on
+`daily_logs.attendance` after a Q1/holiday-follow-up resolution
+(`getDailyLog`'s own `DailyLogRow` type and `select()` widened to include
+both new columns first) now also assert `attendance_defaulted`/
+`attendance_raw` — `false`/the literal answer on the three genuinely-
+classified cases (Q1 yes, holiday-follow-up yes, holiday-follow-up no),
+`true`/the literal (still-unclassifiable) answer on the two exhausted-
+reask-default cases (Q1 unclassifiable-twice, holiday-follow-up
+unclassifiable-twice). Confirmed green as part of §11.8's full rehearsal
+below, not asserted in isolation.
+
+**Added to `docs/reviews/030-rollback.sql`** — STEP 6 now drops
+`attendance_defaulted`/`attendance_raw` alongside `attendance` itself
+(all three added by 030, all three reversed by the same statement,
+`is_holiday` still untouched — it predates 030).
+
+**B3 inheritance requirement, recorded in §4 (above) where B3's own
+sweep-stamping spec already lives, not only here:** when B3's sweep
+eventually stamps a stuck step-5 session `attendance='absent'` per §4's
+own PROPOSED rule, it must set `attendance_defaulted=true` (a sweep-stamp
+is BY DEFINITION not a real answer) and `attendance_raw=NULL` (a cron
+sweep has no inbound turn to capture words from — unlike the RPC's own two
+write sites, there is no literal text to store). Whoever writes B3 confirms
+this against §4's rule the same way that section already asks them to
+confirm the `absent` default itself, not re-derive either one from
+scratch.
+
+### 11.5 Yes/no lexicon re-tuned for attendance semantics (DECIDED, Aravind 2026-08-24)
+
+**The finding.** `classifyYesNo` (`lib/whatsapp/flows/parsers/lexicon.ts`)
+is schedule-met-tuned — its own comment states partial answers are
+classified NOT MET on purpose ("half done is not a met plan"). Migration
+030 imports that exact word list into `quoco_classify_yes_no` for
+attendance, where the tuning **inverts**: "half day today" describes a
+PRESENT engineer, and was routing to the site-holiday follow-up instead of
+being recognised as an attendance answer.
+
+**DECIDED: re-tune the ONE shared list for ATTENDANCE semantics, not fork
+two lists.** Rationale, per Aravind: once evening's own restructuring
+(`design-decisions-beta-feedback.md` §30(a)) ships, evening Q2 is deleted
+outright and the ONLY remaining consumers of yes/no classification are
+morning Q1 and the holiday follow-up — both attendance questions. The
+schedule-met tuning will then have no consumer left at all. Forking two
+lists now would mean merging the fork back the moment evening Q2 is gone
+— net additional work for a distinction that is itself about to stop
+existing.
+
+**Present-side forms added, `YES_WORDS`:** `half`, `half-day`, `late`,
+`coming`, `come`, `reaching`, `reached`, `way` — covering "half day"/
+"half-day", "late"/"coming late", "reaching at &lt;time&gt;"/"coming at 11",
+"on the way", "reached site", "will come" (token-wise matching means one
+distinctive word per phrase is sufficient; "at"/"11"/"the"/"on" carry no
+signal of their own and stay unlisted). `half` itself MOVED from
+`NO_WORDS` to `YES_WORDS` — it cannot live in both, since `NO_WORDS` is
+checked first and would otherwise keep winning.
+
+**Transliterated Tamil equivalents — checked, not invented.** None of the
+eight present-side forms above have an existing Tamil transliteration
+anywhere in the lexicon today. Said plainly rather than silently omitted:
+the only Tamil entries in this yes/no surface remain `aama`/`ama`/`aam`
+(yes) and the shared `NONE_WORDS` negatives (`illa`/`ille`/`illai`/
+`illae`/`kidaiyathu`/`kedaiyathu`). Not invented for this pass — per this
+file's own long-standing COVERAGE HONESTY note, a Tamil vernacular
+addition needs cofounder review before it ships, same requirement as
+every other entry in this lexicon; this pass adds the English forms the
+reviewer named and stops there.
+
+**ACCEPTED COST, named plainly, not discovered later.** For the window
+between 030 shipping and the evening restructuring shipping — **one
+migration wide** — evening Q2 gets attendance-tuned classification on a
+question already decided for deletion. Concretely: "yes but only half," a
+genuine schedule-hedge answer, now classifies MET instead of its correct
+schedule-met reading of NOT MET. `test/unit/yesno-classifier.test.ts`
+(evening Q2's own pure unit test file) records this explicitly — the old
+"a negative token anywhere wins" example was rebuilt around a still-valid
+input (`'yes but pending'`) since `'half'` no longer demonstrates that
+rule, and a new test asserts the changed behaviour on `'yes but only
+half'` by name, with the ACCEPTED COST reasoning inline, rather than the
+expectation silently changing underneath an unrelated-looking diff.
+
+**Ported word-for-word into SQL** — `quoco_classify_yes_no`'s
+`v_yes_words`/`v_no_words` arrays in 030 now carry the identical set,
+comment-linked back to `lexicon.ts`'s own note so the two can't drift
+without a comment change flagging it.
+
+**Corpus and mirror tests updated to match, not merely appended to:**
+`test/helpers/yesno-corpus.ts` gains one case per new word plus the
+reviewer's own named phrases (`'half day'`, `'half-day'`, `'coming late'`,
+`'reaching at 11'`, `'on the way'`, `'reached site'`, `'will come'`,
+`'coming at 11'`), and its two pre-existing `'half'`-bearing compound
+cases were corrected in place (`'no, half only'` stays `met:false` — `'no'`
+itself still wins; `'yes but only half'` changes to `met:true`, with an
+inline comment explaining exactly why this is the ACCEPTED COST rather
+than a silent flip). `test/unit/yesno-mirror.test.ts` — unchanged itself,
+since it iterates the corpus generically — will exercise every new case
+against the real `quoco_classify_yes_no` for the first time in §11.3's S5
+(the mirror test's first real run needs 030 actually applied, same
+constraint §5's artifact 4 already names).
+
+### 11.6 Corpus completeness test (the reviewer's condition on the §10 trade)
+
+**The gap, as raised.** `yesno-corpus.ts`'s own header states "every
+literal checked against the live word lists as of 2026-08-23" — a
+DATE-STAMPED PROMISE, not a mechanism. A word added to `YES_WORDS` next
+month passes `classifyYesNo`'s own TS tests fine, never reaches
+`quoco_classify_yes_no` (SQL, hand-kept in sync, no shared source of
+truth), and the corpus never knows — `yesno-mirror.test.ts` only checks
+agreement on cases the corpus ALREADY lists, so it cannot notice an entry
+the corpus never gained.
+
+**The fix — `test/unit/yesno-corpus-completeness.test.ts`, new.** Flips
+the direction of the check: instead of iterating the corpus and asking
+"does each side agree," it iterates the EXPORTED WORD SETS themselves
+(`YES_WORDS`, `NO_WORDS` — the only two this module exports; `NONE_WORDS`
+stays private, outside what "iterate the exported sets" can reach, and is
+already enumerated in the corpus by hand) and asserts every member has a
+single-token case in the corpus. A word present in the set but absent from
+the corpus now fails immediately, on the TS side alone, before it ever
+gets the chance to silently drift from the SQL port.
+
+**Proof it can fail — captured both ways, not asserted:**
+```
+ ❯ test/unit/yesno-corpus-completeness.test.ts (2 tests | 1 failed) 3ms
+    × yesno corpus completeness (exported sets vs corpus) > every YES_WORDS member has a single-token case in the corpus 3ms
+      → expected [ 'surewillcome' ] to deeply equal []
+   ✓ yesno corpus completeness (exported sets vs corpus) > every NO_WORDS member has a single-token case in the corpus 0ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+```
+(`'surewillcome'` added to `YES_WORDS` ONLY, not the corpus — the exact
+failure mode this test exists to catch. Reverted immediately after
+capture; diffed byte-identical against the pre-change file to confirm a
+clean revert.) Then, reverted:
+```
+ ✓ test/unit/yesno-classifier.test.ts (43 tests) 2ms
+ ✓ test/unit/yesno-corpus-completeness.test.ts (2 tests) 1ms
+
+ Test Files  2 passed (2)
+      Tests  45 passed (45)
+```
+
+### 11.7 Stale self-attestations corrected
+
+**The finding.** `030_morning_flow_attendance.sql`'s own header asserted
+"NOT YET APPLIED anywhere (test-db or prod) as of authoring" and "Not
+submitted for external review yet" — both now false: the file HAS been
+rehearsed against test-db repeatedly (§10.3) and HAS been submitted for
+external review (this is round 2 of it, addressing round 1's STOP verdict).
+
+**The fix — dated addenda in the file itself, not a silent rewrite.**
+Both original sentences remain, followed by an `ADDENDUM (2026-08-24,
+external review round 2)` paragraph stating precisely what is now stale
+and what remains true (still NOT currently applied to test-db or prod, as
+of the addendum — that half never changed) — same convention this
+project's own docs already use (CLAUDE.md's own struck-through-and-dated
+corrections). §11.1 above re-pins this package's own repo-state header the
+same way, verified fresh rather than trusted from either the round-1
+header (`9456fdc`) or a number recalled from earlier in this session.
+
+### 11.8 Final rehearsal — round 2's changes, applied and run for real (2026-08-24)
+
+Breadcrumb confirmed test-db (`exfccwlrhoutkgrlikod`), not prod, before
+applying. 030 (with all five fixes above) applied cleanly — `BEGIN` through
+`COMMIT`, zero errors. Post-apply structural probe: `attendance`,
+`attendance_defaulted`, `attendance_raw` all present; `morning_manpower_planned`
+absent; signature byte-identical (12 args); exactly 1 `apply_morning_flow_turn`
+row in `pg_proc`; `schema_migrations` count unchanged at 25.
+
+**Full suite, first pass — `/tmp/030-testdb-rehearsal-round2-raw.txt`:** 47 of
+50 files passed clean; 3 files (`test/dash-03-board.test.ts`,
+`test/dpr-detail.test.ts`, `test/unit/morning-flow-mirror.test.ts`) showed
+failures — but every one of them was `Hook timed out in 30000ms` / `Test
+timed out in 30000ms` / `TypeError: fetch failed`, not a wrong-value
+assertion. The run itself took 2883s (~48 minutes) against this same
+suite's ~365s on the prior clean run (§10.3's post-fix re-run) — an ~8×
+slowdown consistent with a network/connection degradation during the run,
+not a logic regression from this round's changes. `dash-03-board.test.ts`
+and `dpr-detail.test.ts` are unrelated to morning flow entirely (DASH
+board / DPR detail), which rules out a code-level cause specific to this
+round's edits.
+
+**Not accepted on that explanation alone — re-run in isolation to confirm,
+not asserted:**
+```
+ ✓ test/unit/morning-flow-mirror.test.ts (20 tests) 21459ms
+ ✓ test/dpr-detail.test.ts (5 tests) 9905ms
+ ✓ test/dash-03-board.test.ts (2 tests) 9577ms
+
+ Test Files  3 passed (3)
+      Tests  27 passed (27)
+   Duration  41.42s
+```
+All 27 tests across the same 3 files — including the exact "Holiday
+follow-up yes -> attendance=site_holiday, completes" case that failed in
+the full run — pass cleanly under normal conditions. Confirms the first
+pass's failures were transient, not a defect this round introduced.
+**Net result: every test in the suite has now been observed to pass under
+this round's changes; none has been observed to fail for a substantive
+reason.** Full transcript: `/tmp/030-testdb-rehearsal-round2-retry.txt`.
+
+**Test-db rolled back immediately after**
+(`docs/reviews/030-rollback.sql`, now itself transaction-wrapped per
+§11.2), verified restored: `attendance`/`attendance_defaulted`/
+`attendance_raw` all absent, `morning_manpower_planned` present, signature
+byte-identical, 1 overload, `schema_migrations` unchanged at 25 — same
+discipline as every prior round in this package, not left blocking other
+branches' CI.
 
 ---

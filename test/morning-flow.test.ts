@@ -99,6 +99,10 @@ describe('apply_morning_flow_turn (morning flow, attendance-first)', () => {
     expect(log?.attendance).toBe('present')
     expect(log?.is_holiday).not.toBe(true)
     expect(log?.morning_plan).toBeNull()
+    // CAPTURE THE DEFAULT (round 2, Item 4): a real classification, not a
+    // reask-exhausted default -- attendance_raw holds the literal answer.
+    expect(log?.attendance_defaulted).toBe(false)
+    expect(log?.attendance_raw).toBe('yes')
   })
 
   // 3. Q1 NO -> holiday follow-up (step 5), no write yet.
@@ -133,6 +137,11 @@ describe('apply_morning_flow_turn (morning flow, attendance-first)', () => {
     const log = await getDailyLog(LOG_DATE)
     expect(log?.attendance).toBe('present')
     expect((await readSession(phone))?.context).toMatchObject({ q1_reask: 0 })
+    // CAPTURE THE DEFAULT (round 2, Item 4): this IS the exhausted-reask
+    // default -- the engineer never gave a classifiable answer, so it must
+    // be marked defaulted, with the literal (still-unclassifiable) words kept.
+    expect(log?.attendance_defaulted).toBe(true)
+    expect(log?.attendance_raw).toBe('still unclear')
   })
 
   // 5. Holiday follow-up YES -> site_holiday, is_holiday=true, completes.
@@ -151,6 +160,9 @@ describe('apply_morning_flow_turn (morning flow, attendance-first)', () => {
     expect(log?.attendance).toBe('site_holiday')
     expect(log?.is_holiday).toBe(true)
     expect(log?.morning_submitted_at).not.toBeNull()
+    // CAPTURE THE DEFAULT (round 2, Item 4): real classification.
+    expect(log?.attendance_defaulted).toBe(false)
+    expect(log?.attendance_raw).toBe('yes')
 
     const session = await readSession(phone)
     expect(session?.current_flow).toBeNull()
@@ -174,6 +186,9 @@ describe('apply_morning_flow_turn (morning flow, attendance-first)', () => {
     expect(log?.attendance).toBe('absent')
     expect(log?.is_holiday).not.toBe(true)
     expect(log?.morning_submitted_at).not.toBeNull()
+    // CAPTURE THE DEFAULT (round 2, Item 4): real classification.
+    expect(log?.attendance_defaulted).toBe(false)
+    expect(log?.attendance_raw).toBe('no')
   })
 
   // 7. Holiday follow-up unclassifiable -> reask once via q5_reask, then the
@@ -192,7 +207,11 @@ describe('apply_morning_flow_turn (morning flow, attendance-first)', () => {
     expect(r2.outcome).toBe('advance')
     expect(r2.current_step).toBe(0)
     expect(r2.attendance).toBe('absent')
-    expect((await getDailyLog(LOG_DATE))?.attendance).toBe('absent')
+    const log = await getDailyLog(LOG_DATE)
+    expect(log?.attendance).toBe('absent')
+    // CAPTURE THE DEFAULT (round 2, Item 4): the exhausted-reask default.
+    expect(log?.attendance_defaulted).toBe(true)
+    expect(log?.attendance_raw).toBe('still dunno')
   })
 
   // 8. Q2 -> morning_plan written, advances to Q3 (step 3).

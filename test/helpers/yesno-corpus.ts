@@ -25,9 +25,16 @@
 // happened to test by hand.
 //
 // Every literal below is checked against the live word lists as of
-// 2026-08-23 (lib/whatsapp/flows/parsers/lexicon.ts's YES_WORDS/NO_WORDS/
+// 2026-08-24 (lib/whatsapp/flows/parsers/lexicon.ts's YES_WORDS/NO_WORDS/
 // NONE_WORDS) -- this file does not invent vocabulary, it enumerates what
 // already exists on the TS side and asserts the SQL side agrees.
+//
+// RE-TUNED FOR ATTENDANCE, 2026-08-24 (external review round 2, review
+// package §11.5): 'half' moved from NO_WORDS to YES_WORDS, and
+// half-day/late/coming/come/reaching/reached/way were added -- see
+// lexicon.ts's own RE-TUNED note for the full decision + the accepted-cost
+// tradeoff this makes on evening Q2 during the window before evening Q2 is
+// deleted. Cases below were updated to match, not just appended to.
 //
 // TRANSLITERATED TAMIL FORMS: the lexicon recognises exactly six -- 'aama'/
 // 'ama'/'aam' (yes, YES_WORDS) and 'illa'/'ille'/'illai'/'illae'/
@@ -40,7 +47,10 @@
 // script)". Six words covering only "yes"/"no" is a real coverage gap
 // against that stated user base, not a design choice this corpus should
 // paper over by omission -- flagged in the review package alongside this
-// file, not silently accepted here.
+// file, not silently accepted here. CHECKED AGAIN as part of the 2026-08-24
+// retune: none of the eight new attendance present-side forms have an
+// existing Tamil transliteration in the lexicon today -- not invented here,
+// same cofounder-review requirement as everything else vernacular.
 
 export interface YesNoCorpusCase {
   input: string
@@ -68,6 +78,26 @@ export const YESNO_CORPUS: readonly YesNoCorpusCase[] = [
   { input: 'aama', expected: { met: true, ok: true } },
   { input: 'ama', expected: { met: true, ok: true } },
   { input: 'aam', expected: { met: true, ok: true } },
+  // -- attendance present-side forms, added 2026-08-24 (see RE-TUNED note
+  //    above) -- 'half' moved here FROM NO_WORDS, the rest are new --
+  { input: 'half', expected: { met: true, ok: true } },
+  { input: 'half-day', expected: { met: true, ok: true } },
+  { input: 'late', expected: { met: true, ok: true } },
+  { input: 'coming', expected: { met: true, ok: true } },
+  { input: 'come', expected: { met: true, ok: true } },
+  { input: 'reaching', expected: { met: true, ok: true } },
+  { input: 'reached', expected: { met: true, ok: true } },
+  { input: 'way', expected: { met: true, ok: true } },
+  // -- present-side PHRASES from the reviewer's own list, single-token
+  //    matches proven against the realistic multi-word answer --
+  { input: 'half day', expected: { met: true, ok: true } },
+  { input: 'half day today', expected: { met: true, ok: true } },
+  { input: 'coming late', expected: { met: true, ok: true } },
+  { input: 'reaching at 11', expected: { met: true, ok: true } },
+  { input: 'on the way', expected: { met: true, ok: true } },
+  { input: 'reached site', expected: { met: true, ok: true } },
+  { input: 'will come', expected: { met: true, ok: true } },
+  { input: 'coming at 11', expected: { met: true, ok: true } },
 
   // --- NO_WORDS, one entry per word ---
   { input: 'no', expected: { met: false, ok: true } },
@@ -81,7 +111,6 @@ export const YESNO_CORPUS: readonly YesNoCorpusCase[] = [
   { input: 'partial', expected: { met: false, ok: true } },
   { input: 'partially', expected: { met: false, ok: true } },
   { input: 'mostly', expected: { met: false, ok: true } },
-  { input: 'half', expected: { met: false, ok: true } },
   { input: 'some', expected: { met: false, ok: true } },
   { input: 'delayed', expected: { met: false, ok: true } },
   { input: 'missed', expected: { met: false, ok: true } },
@@ -107,8 +136,16 @@ export const YESNO_CORPUS: readonly YesNoCorpusCase[] = [
   // classifyYesNo doc comment): token-wise, a negative token anywhere wins
   // over an affirmative one. ---
   { input: 'yes fully done', expected: { met: true, ok: true } },
+  // "no, half only" -- still met:false: 'no' itself is NO_WORDS and
+  // negatives win outright regardless of 'half' now being YES_WORDS.
   { input: 'no, half only', expected: { met: false, ok: true } },
-  { input: 'yes but only half', expected: { met: false, ok: true } },
+  // "yes but only half" -- CHANGED 2026-08-24 (was met:false pre-retune,
+  // when 'half' was itself a negative winning over 'yes'; this case used to
+  // be this corpus's own demonstration of "a negative token anywhere wins").
+  // With 'half' now YES_WORDS, no token in this input is negative, so it
+  // resolves affirmatively -- exactly the accepted-cost tradeoff the
+  // RE-TUNED note above names for evening Q2's schedule-met semantics.
+  { input: 'yes but only half', expected: { met: true, ok: true } },
   { input: 'aama seri', expected: { met: true, ok: true } },
   // A digit token anywhere still resolves via NONE_WORDS membership of that
   // SAME token, not a whole-string digit guard -- see quoco_classify_yes_no's
