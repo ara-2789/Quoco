@@ -1,18 +1,35 @@
-# `test/session-transition.test.ts` Test B — ordering-precondition bug, RESOLVED
+# `test/session-transition.test.ts` Test B — ordering-precondition bug, FIX 2 PUSHED, AWAITING CI
 
-**Status: RESOLVED, 2026-08-24.** The defect was in the TEST, not the row
-lock: the setup fired caller 1, slept 100ms client-side, then fired caller
-2, RELYING on that gap to guarantee caller 1 reached Postgres first —
-nothing enforced it. Under latency skew, caller 2 could win the race,
-acquire the lock, and commit almost instantly, producing a negative
-`lock2 - lock1` that looked like a broken lock but was actually a setup
-that never exercised its own intended interleave. Fixed by asserting on
-acquisition ORDER explicitly and retrying the setup (not the assertion) on
-inversion, bounded and loud if it never resolves — see "THE FIX,
-2026-08-24" below for the mechanism, the code, and both pieces of
-verification evidence (a forced-inversion proof that the retry/failure path
-actually fires, and 30 clean runs against real test-db with zero inversions
-and zero negatives).
+**Status: NOT YET RESOLVED — Fix 1 (below) was insufficient; Fix 2 (below,
+"THE REAL FIX") is pushed and awaiting its own CI result, per the standing
+rule this same incident produced
+(`docs/reviews/sandbox-cannot-test-concurrency.md`, CLAUDE.md §0): local
+runs cannot verify concurrency behavior in this sandbox, so nothing below
+is called RESOLVED until CI itself confirms it.**
+
+**Fix 1's own history, corrected in place, not deleted.** Fix 1 (asserted
+on ordering, retried the setup on inversion) was believed RESOLVED on the
+strength of a forced-inversion proof (the retry/failure code paths do
+fire) plus "30 clean runs against real test-db, zero inversions, zero
+negatives." **That 30-run local capture is RETRACTED as evidence — see
+`docs/reviews/sandbox-cannot-test-concurrency.md` for the full finding.**
+This sandbox cannot sustain two genuinely concurrent RPC calls against
+test-db: caller 2 cannot be dispatched until caller 1's own RPC call has
+already fully returned, so a local run of Test B can never produce a
+negative value regardless of whether the row lock does anything at all —
+the 30/30 result proved the sandbox's own serialization, not the fix.
+**Fix 1 was then pushed, merged (PR #103), and subsequently failed for
+real** — PR #102's own CI hit Fix 1's retry loop 3 times in the SAME run,
+all 3 hitting the ordering precondition, never once reaching the real
+assertion (see "Fix 1 fails for real" below). That 3/3 pattern is what
+first suggested a PROCESS-LEVEL bias rather than per-attempt jitter — now
+understood precisely: not a bias in the row-lock mechanism, but this
+sandbox-vs-CI difference in whether concurrent RPC calls can even occur —
+except this 3/3 failure happened in CI itself, meaning CI's own
+environment, on this occasion, also failed to achieve the ordering
+Fix 1's retry loop was trying to construct. Fix 2 (the real ordering
+guarantee, no longer dependent on client-side timing at all) is the
+response to that.
 
 **CORRECTION to this document's own prior reasoning, recorded rather than
 silently dropped.** The "flake" LABEL was still wrong — the assertion was
@@ -219,7 +236,7 @@ environment, across 30 attempts.
   runner) so the actual environment that produces `-317` can be observed
   directly, rather than guessed at from a differently-networked sandbox.
 
-## THE FIX, 2026-08-24 — asserted on ordering, retried the setup, RESOLVED
+## FIX 1, 2026-08-24 — asserted on ordering, retried the setup — INSUFFICIENT, see below
 
 **Diagnosis, restated precisely.** The assertion (`lock2 - lock1 >= 750`)
 was always correct — it is genuinely what needs to be true for the row
@@ -314,6 +331,103 @@ reproduce the inversion locally to observe the real trigger directly. That
 question is now MOOT for this test's own correctness (it self-corrects
 either way), but is left here, not silently dropped, in case the same
 class of skew ever matters to a different test in the future.
+
+## FIX 1 FAILS FOR REAL, same day (2026-08-24) — the 30-run local capture retracted
+
+PR #103 (Fix 1) merged. PR #102's own CI (docs-only, zero application
+code — the credential-rule PR this whole investigation started from) then
+hit Fix 1's retry loop directly:
+```
+[session-transition Test B] ordering precondition missed on attempt 1/3 (lock1=1787585242109, lock2=..., diff=...) -- retrying with a fresh row
+[session-transition Test B] ordering precondition missed on attempt 2/3 (...) -- retrying with a fresh row
+[session-transition Test B] ordering precondition missed on attempt 3/3 (lock1=1787585242416, lock2=1787585242109, diff=-307) -- retrying with a fresh row
+
+FAIL test/session-transition.test.ts > ... > B: caller 2 blocks on the row lock until caller 1 commits
+Error: Test B: ordering precondition never satisfied after 3 attempts -- caller 2 kept acquiring the row lock before caller 1 despite the 100ms head start every time (last attempt: lock1=1787585242416, lock2=1787585242109, diff=-307). ...
+```
+Run [32743668591](https://github.com/ara-2789/Quoco/actions/runs/32743668591) —
+**3 out of 3 attempts, in the SAME run, all hit the ordering precondition.**
+The loud, distinct failure message DID fire correctly (proving Fix 1's
+diagnostic mechanism itself worked as designed) — but the retry never
+found a correctly-ordered attempt, meaning the real magnitude assertion
+never ran even once in that CI job.
+
+**Root-causing this led directly to `docs/reviews/sandbox-cannot-test-
+concurrency.md` (full record there).** While building a genuine ordering
+guarantee (Fix 2, below) to replace the retry, three diagnostic
+experiments established that THIS SANDBOX cannot sustain two genuinely
+concurrent RPC calls against test-db at all — a second RPC call never
+resolves until the first one's entire round-trip completes, PROVEN via a
+third call to an already-working RPC against a completely different,
+non-contended row (zero possible data conflict), which still waited for
+caller 1 to finish. **This retracts Fix 1's own "30/30 clean, zero
+negatives" local verification as evidence**: under this same
+serialization, that 30-run capture could never have produced a negative
+value regardless of whether the row lock does anything — it proved the
+sandbox's own behavior, not the fix's. It does not retract the 3
+independent REAL CI failures (Failures 1-3, above) — those happened in
+CI, where genuine concurrency is possible, and remain the actual evidence
+this incident is built on.
+
+## THE REAL FIX (Fix 2), 2026-08-24 — a genuine ordering guarantee, no retry needed
+
+**Mechanism: don't dispatch caller 2 until caller 1's row lock is directly
+OBSERVED held, via a new database-side probe — not a sleep, not a
+client-side retry.** `032_session_transition_lock_probe_nowait.sql` adds
+`quoco_test_row_is_locked(p_phone_number TEXT) RETURNS BOOLEAN` —
+`SELECT ... FOR UPDATE NOWAIT` on the target row from a SEPARATE
+connection, catching `lock_not_available` (SQLSTATE `55P03`) to report
+`true`. Postgres's lock manager surfaces this synchronously, independent
+of MVCC snapshot visibility, so it detects an uncommitted transaction's
+row lock correctly (proven directly — see below) even though the OTHER
+transaction hasn't committed yet. Read-only, `service_role`-only (REVOKE
+FROM PUBLIC/anon/authenticated, same discipline as every other function
+in this project), no write path, no production call site — it exists only
+for this test to call.
+
+Test B's setup: (a) WARM the shared cached client with a throwaway
+round-trip through the same RPC shape, before the timed section, so
+connection-setup cost isn't measured as part of the operation; (b) SEED
+the target row idle beforehand (required — a row lock inside an
+uncommitted INSERT is invisible cross-connection until commit, so the
+probe needs an already-existing, committed row to detect contention
+against); (c) fire caller 1; (d) poll `quoco_test_row_is_locked` (bounded
+at 3000ms, ~800ms of genuine slack) until it confirms caller 1 holds the
+lock; (e) only then dispatch caller 2. Once ordering is directly observed
+rather than assumed, `lock2 >= lock1` becomes a mathematical consequence
+of Postgres's own lock semantics — caller 2 cannot acquire until caller 1
+releases — not a timing bet. The retry loop from Fix 1 is kept as a LOUD
+BACKSTOP only (an inversion at this point would mean a bug in the
+guarantee mechanism itself, worth surfacing immediately, not retrying).
+
+**Migration numbering:** takes 032, not 030 (already claimed by
+`030_morning_flow_attendance.sql` on the unmerged `feat/morning-flow-
+attendance-migration` branch) or 031 (already informally reserved by
+CLAUDE.md §3's own text for the "#69/031 outbound-send primitive").
+
+**Verification — stated precisely by WHICH mechanism was checked HOW,
+per the new standing rule (`docs/reviews/sandbox-cannot-test-concurrency.md`,
+CLAUDE.md §0) that this exact incident produced:**
+- **The SQL mechanism itself: verified directly, not locally-inferred.**
+  Two independent `supabase db query --linked -f` invocations — one
+  backgrounded, holding a row lock across `pg_sleep(10)`, the other
+  probing while it ran — showed `quoco_test_row_is_locked` correctly
+  report `{"locked": true}` during the hold and `false` before/after.
+  This IS solid evidence; it does not depend on the sandbox's RPC
+  serialization at all (raw `supabase db query` sessions are genuinely
+  concurrent, unlike JS-client RPC calls here).
+- **The JS-level poll-then-dispatch mechanism (does Test B, as a whole,
+  correctly wait for the observed lock before firing caller 2, under
+  genuine concurrent execution): NOT verified locally — cannot be, per
+  the standing rule above.** A local run of the actual test timed out
+  (`caller 1's row lock was never observed within 3000ms`) — consistent
+  with, not contradicting, the sandbox-serialization finding: the probe
+  could never get a concurrent connection to observe the lock while
+  caller 1 held it, in THIS environment. **CI is the only environment
+  that can confirm this half of the fix.** Pushed to PR #102 for exactly
+  that reason; the CI result is reported in this document once known,
+  whichever way it goes — see the status line at the top of this
+  document for the current state.
 
 ## Why "negative" is a specific, meaningful signal — not generic flakiness
 
