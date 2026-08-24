@@ -1563,17 +1563,37 @@ already applies to destructive-statement pinning). `.env.test`'s variable
 NAMES (values never repeated here — see CLAUDE.md's widened §0 rule for
 why): `SUPABASE_TEST_URL`, `SUPABASE_TEST_SERVICE_ROLE_KEY`,
 `SUPABASE_TEST_ANON_KEY`, `SUPABASE_TEST_PROJECT_REF`,
-`DOTENV_CONFIG_QUIET`, `TWILIO_AUTH_TOKEN`, `NEXT_PUBLIC_APP_URL`. Of
+`DOTENV_CONFIG_QUIET`, ~~`TWILIO_AUTH_TOKEN`~~, `NEXT_PUBLIC_APP_URL`. ~~Of
 these, `SUPABASE_TEST_SERVICE_ROLE_KEY`, `SUPABASE_TEST_ANON_KEY`, and
 `TWILIO_AUTH_TOKEN` are real credentials; the rotation scope below is
 widened to include the Twilio auth token alongside the Supabase keys, not
-just the three originally named.
+just the three originally named.~~
 
-**Risk accepted and deferred (Aravind, 2026-08-23): test-db holds
+**CORRECTED (2026-08-24, Aravind): `TWILIO_AUTH_TOKEN` in `.env.test` is a
+DUMMY value, not the live Twilio account token** — already independently
+noted elsewhere in this same file (this file's T-WH-01 entry: "`.env.test
+TWILIO_AUTH_TOKEN` is a fixed, obviously-fake value"), which the paragraph
+above should have checked before including it in the genuinely-exposed
+set. The second exposure (the `grep -n` against `.env.test`) printed a
+FAKE value for this variable — the live Twilio token was never exposed by
+either incident. **The genuinely exposed credentials, from both
+incidents, remain the test-db Supabase keys only:
+`SUPABASE_TEST_SERVICE_ROLE_KEY` and `SUPABASE_TEST_ANON_KEY`.**
+`TWILIO_AUTH_TOKEN` is removed from the rotation scope below. FAILURE
+CLASS, same one this file already tracks elsewhere (the 2026-08-21
+"plausibility is not verification" entry): the variable's NAME was read
+as evidence it held a live credential, without checking whether the VALUE
+behind it was real — a plausible-looking claim acted on before
+verification, not a new mistake shape.
+
+~~**Risk accepted and deferred (Aravind, 2026-08-23): test-db holds
 disposable schema and no customer data.** The Twilio token addition to
 scope does not change this acceptance — it is also test/sandbox-scoped,
 per this project's Twilio sandbox setup (§7's bot-flow testing rule) — but
-it does widen what "done" means for the deferred rotation below.
+it does widen what "done" means for the deferred rotation below.~~
+
+**Risk accepted and deferred (Aravind, 2026-08-23): test-db holds
+disposable schema and no customer data.**
 
 **DEFERRED ACTION, NOT OPTIONAL — legacy `anon`/`service_role` keys CANNOT
 be rotated in place.** Checked directly in the Supabase dashboard (JWT Keys
@@ -1592,12 +1612,14 @@ whichever client-construction shape the new key type requires), `.env.local`,
 `.env.test`, the GitHub Actions repo secrets `SUPABASE_TEST_URL`/
 `SUPABASE_TEST_SERVICE_ROLE_KEY`/`SUPABASE_TEST_ANON_KEY`/
 `SUPABASE_TEST_PROJECT_REF` read by `.github/workflows/ci.yml`'s "Test
-(real test-db)" job, then the disable step itself in Settings → API Keys —
-**plus, per the widened scope above, the test/sandbox `TWILIO_AUTH_TOKEN`**
+(real test-db)" job, then the disable step itself in Settings → API Keys.
+~~Plus, per the widened scope above, the test/sandbox `TWILIO_AUTH_TOKEN`
 (rotated in the Twilio console, updated in `.env.test` and its GitHub
 Actions secret alongside the Supabase keys, same pass — not a separate
-follow-up). `.env.test.example` already holds only placeholders,
-unaffected.
+follow-up).~~ **CORRECTED (2026-08-24): `TWILIO_AUTH_TOKEN` removed from
+this scope — see the correction above; it was never a live credential, so
+there is nothing to rotate.** `.env.test.example` already holds only
+placeholders, unaffected.
 
 **Standing rule this incident produced, since it does not wait on the
 rotation above — WIDENED same day, see CLAUDE.md's §0 entry for the second
