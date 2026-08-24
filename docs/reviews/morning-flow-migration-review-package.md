@@ -1679,4 +1679,18 @@ and a rollback proven to restore cleanly. The next real apply to test-db
 closing the same loop rather than leaving test-db locked to one branch
 again.
 
+**Post-fix re-run, same day (2026-08-24), full transcript
+`/tmp/030-testdb-rehearsal-v2.txt`.** The 16 stale-helper failures and the
+one genuine `{}`-context assumption v1 found were fixed (commit `573ee20`
+— stale local turn-sequence helpers in `test/migration-017/022/024.test.ts`
+consolidated onto the shared, correctly-updated `completeMorningWithEquipment`/
+`completeMorningNoEquipment`; the `{}`-context assertion updated to
+`{q1_reask: 0}`, a genuine consequence of Q1 becoming reask-tracked, not a
+stale assumption). 030 re-applied to test-db, the full suite re-run: **48
+of 49 files, 679 of 681 tests passed** — the sole remaining failure is the
+"restart strip" test (§ above, investigated, deliberately not touched
+pending a decision on how to handle it). Test-db rolled back again
+immediately after, confirmed restored (`morning_manpower_planned` present,
+`attendance` absent) — not left blocking other branches' CI a second time.
+
 ---
