@@ -1578,3 +1578,50 @@ rotation above:** `CLAUDE.md`'s §0 now names `supabase projects api-keys`
 (and any command whose entire output is live credentials, not incidentally
 alongside them) as never safe to run — see that entry for the mechanism and
 the recommended SQL-probe alternative for project-identity breadcrumbs.
+
+---
+
+**A REHEARSAL ON THE SHARED TEST-DB BLOCKS CI FOR EVERY OTHER BRANCH, NOT
+JUST THE ONE BEING REHEARSED — recorded as a known cost, no fix proposed
+(2026-08-23, migration 030's test-db rehearsal).**
+
+Migration 030 was applied to test-db (`exfccwlrhoutkgrlikod`) for a real
+rehearsal, and — deliberately, per an earlier decision — left applied
+rather than immediately torn down. The next unrelated event to touch CI
+(a docs-only PR against `main`, containing none of 030's changes) came
+back with its `Test (real test-db)` check failing: not from anything in
+that PR's own diff, but because `main`'s code has none of 030's changes
+while test-db, still carrying 030, was running the new RPC shape `main`'s
+tests don't expect. Confirmed directly, not assumed: re-running the full
+suite against `main`'s own unmodified code while test-db still carried
+030 failed far more broadly than the set of tests actually written
+against 030's assumptions — files with no connection to migration 030 at
+all failed too, because `main` is missing the entire changeset, not just
+one team's follow-up fixes.
+
+**Why the existing concurrency guard doesn't cover this.**
+`.github/workflows/ci.yml`'s `Test (real test-db)` job already runs under
+a project-wide (not branch-scoped) concurrency group,
+`ci-test-db-suite` — deliberately, per that job's own comment, because the
+test fixtures (`TEST_TENANT_ID`, `TEST_PROJECT_ID`, `TEST_ENGINEER_PHONE`)
+are fixed, deterministic rows shared project-wide, and two different PRs'
+jobs running at the same literal moment would corrupt each other's
+fixture writes. **That guard serialises ACCESS to test-db — it says
+nothing about whether test-db's SCHEMA/RPC STATE matches what the branch
+currently running expects.** Two runs from different branches, run one
+after another as the concurrency group intends, still fail identically if
+test-db's actual applied migrations don't match either branch's code —
+serialised access doesn't imply compatible state.
+
+**This is not a one-off; it will recur on every future migration
+rehearsal that leaves its migration applied on test-db for any length of
+time**, for as long as this project has exactly one shared test-db and no
+per-branch database isolation (`CLAUDE.md` §0's TEST-DB IS NOT
+CONFIDENTLY REBUILDABLE entry already records `supabase branches list`
+returning a `403` — Supabase branching is not available on this
+account's tier). Recorded here as an accepted, known cost of the
+shared-test-db model this project currently runs on — **not resolved in
+this pass, and no fix proposed**: the resolution used this time (write a
+verified rollback, apply it, confirm restoration by observation before
+relying on it) is a real, repeatable pattern for THIS incident, not a
+structural fix for the underlying one-shared-database constraint.
