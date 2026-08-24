@@ -2171,51 +2171,108 @@ header (`9456fdc`) or a number recalled from earlier in this session.
 
 ### 11.8 Final rehearsal — round 2's changes, applied and run for real (2026-08-24)
 
-Breadcrumb confirmed test-db (`exfccwlrhoutkgrlikod`), not prod, before
-applying. 030 (with all five fixes above) applied cleanly — `BEGIN` through
-`COMMIT`, zero errors. Post-apply structural probe: `attendance`,
+**First pass — three failures, investigated as findings, not dismissed as
+flakes.** Breadcrumb confirmed test-db (`exfccwlrhoutkgrlikod`), not prod,
+before applying. 030 (with all five fixes above) applied cleanly — `BEGIN`
+through `COMMIT`, zero errors. Post-apply structural probe: `attendance`,
 `attendance_defaulted`, `attendance_raw` all present; `morning_manpower_planned`
 absent; signature byte-identical (12 args); exactly 1 `apply_morning_flow_turn`
 row in `pg_proc`; `schema_migrations` count unchanged at 25.
 
-**Full suite, first pass — `/tmp/030-testdb-rehearsal-round2-raw.txt`:** 47 of
-50 files passed clean; 3 files (`test/dash-03-board.test.ts`,
-`test/dpr-detail.test.ts`, `test/unit/morning-flow-mirror.test.ts`) showed
-failures — but every one of them was `Hook timed out in 30000ms` / `Test
-timed out in 30000ms` / `TypeError: fetch failed`, not a wrong-value
-assertion. The run itself took 2883s (~48 minutes) against this same
-suite's ~365s on the prior clean run (§10.3's post-fix re-run) — an ~8×
-slowdown consistent with a network/connection degradation during the run,
-not a logic regression from this round's changes. `dash-03-board.test.ts`
-and `dpr-detail.test.ts` are unrelated to morning flow entirely (DASH
-board / DPR detail), which rules out a code-level cause specific to this
-round's edits.
+Full suite run — `/tmp/030-testdb-rehearsal-round2-raw.txt` — took **2883s
+(~48 minutes)** against this same suite's ~365-373s on every other run in
+this package (§10.3's post-fix re-run, and §11.8's own final pass below):
+an **8× slowdown**, named as a finding, not attributed to "network" without
+evidence. Three of 50 files showed failures. Named precisely, file/test/
+literal output, not summarised:
 
-**Not accepted on that explanation alone — re-run in isolation to confirm,
-not asserted:**
-```
- ✓ test/unit/morning-flow-mirror.test.ts (20 tests) 21459ms
- ✓ test/dpr-detail.test.ts (5 tests) 9905ms
- ✓ test/dash-03-board.test.ts (2 tests) 9577ms
+1. **`test/dash-03-board.test.ts` > `DASH-03 board — scopes by resolved
+   users.id, not auth uid (B2)`.** File-level failure: `Error: Hook timed
+   out in 30000ms. If this is a long-running hook, pass a timeout value as
+   the last argument or configure it globally with "hookTimeout".` — at
+   the file's own `afterAll` hook (`test/dash-03-board.test.ts:88`, the
+   `daily_logs` cleanup call). File duration: **310167ms** (~5.2 min)
+   against a file that otherwise runs in single-digit seconds.
+2. **`test/dpr-detail.test.ts`** (whole-file failure, no single named
+   `it()`). Identical error shape: `Error: Hook timed out in 30000ms` at
+   the file's own `afterAll` (`test/dpr-detail.test.ts:116`, a `dprs`
+   cleanup delete). File duration: **313452ms** (~5.2 min).
+3. **`test/unit/morning-flow-mirror.test.ts` > `Holiday follow-up yes ->
+   attendance=site_holiday, completes`.** Two sub-tests under this one
+   case both failed: **`SQL (apply_morning_flow_turn) matches the expected
+   outcome`** — `Error: Test timed out in 30000ms` at the test body itself
+   (`test/unit/morning-flow-mirror.test.ts:73`, the `seedSession` call),
+   with a SECOND, cascading `Error: Hook timed out in 30000ms` from the
+   same test's own `afterEach` (line 45, `cleanupTestSessions`); and
+   **`TS mirror (dispatchMorningFlow) matches the SAME expected
+   outcome`** — `Error: cleanupTestSessions failed: TypeError: fetch
+   failed`, its own `afterEach` failing outright on a network-level fetch
+   error, not a timeout. File duration: **1896997ms (~31.6 minutes)**
+   against this same file's **12077ms** on §10.3's clean run — a ~157×
+   slowdown isolated to this one file. `vitest`'s own summary counts this
+   as exactly 2 failed tests (matching `Tests 2 failed`) across 3 failed
+   files (`Test Files 3 failed`) — the numbers above reconcile the
+   apparent 5-vs-2 discrepancy between individual `FAIL` blocks and the
+   summary line.
 
- Test Files  3 passed (3)
-      Tests  27 passed (27)
-   Duration  41.42s
+**Root-caused, not left as an assumption — two hypotheses checked, both
+ruled out:**
+- **Concurrent CI holding the `ci-test-db-suite` concurrency group.**
+  `gh run list --workflow=ci.yml` shows no workflow run anywhere near this
+  window — the nearest CI activity (PR #100's own checks) completed at
+  `2026-08-24T07:46:52Z`, and the next visible run after this rehearsal
+  is this session's own later work; the rehearsal's window
+  (`2026-08-24T09:27:23Z`–`10:15:26Z` UTC, per the `Start at 14:57:23`
+  IST timestamp and the 2883s duration) has zero GitHub Actions activity
+  in it. Ruled out.
+- **A long-running query or lock on test-db during that window.**
+  `pg_stat_activity`, checked live, shows no currently-blocked or
+  idle-in-transaction session (only Supabase platform-internal
+  connections — PostgREST `LISTEN`, health checks). More decisively:
+  `pg_stat_statements` — confirmed **not reset since 2026-07-05**, so it
+  covers the entire rehearsal window — shows a **maximum execution time
+  of ~813ms** across every query touching `whatsapp_sessions`,
+  `daily_logs`, `dprs`, `apply_morning_flow_turn`, or
+  `apply_evening_flow_turn`, for the whole period since that reset. No
+  single database-side statement anywhere near multi-minute scale exists
+  in the record. Ruled out.
+- **Conclusion:** the 8× slowdown and its three failures were a
+  client/network-layer stall (consistent with the literal `TypeError:
+  fetch failed` and Vitest's own client-side timeout errors, both of
+  which fire independent of what the database actually did), not a
+  database lock, not a concurrent CI run, and — since `dash-03-board` and
+  `dpr-detail` are entirely unrelated to morning flow — not a logic
+  defect in this round's own changes either.
+
+**An isolated re-run of the 3 failing files (27/27 passed, `/tmp/
+030-testdb-rehearsal-round2-retry.txt`) was run first but is NOT treated
+as equivalent evidence to a full-suite pass** — it confirms those specific
+tests CAN pass, not that the delta going to the reviewer is certified
+green as a whole. Superseded by the single-pass full run below, which is
+the evidence this package actually stands on.
+
+**Final, authoritative pass — the FULL suite, in ONE run, green —
+`/tmp/030-testdb-rehearsal-round2-singlepass.txt`.** 030 re-applied
+(breadcrumb confirmed test-db again; clean `BEGIN`…`COMMIT`; post-apply
+structural probe identical to the first pass above). Full suite:
 ```
-All 27 tests across the same 3 files — including the exact "Holiday
-follow-up yes -> attendance=site_holiday, completes" case that failed in
-the full run — pass cleanly under normal conditions. Confirms the first
-pass's failures were transient, not a defect this round introduced.
-**Net result: every test in the suite has now been observed to pass under
-this round's changes; none has been observed to fail for a substantive
-reason.** Full transcript: `/tmp/030-testdb-rehearsal-round2-retry.txt`.
+ Test Files  50 passed (50)
+      Tests  705 passed | 1 todo (706)
+   Start at  19:43:03
+   Duration  373.13s
+```
+**373s — back in line with every other clean run in this package (§10.3's
+~365s, this same §11.8's own first attempt at ~48 min being the sole
+outlier), not the anomalous run.** 50/50 files, 705/706 tests, the same 1
+pre-existing `.todo` this package has recorded throughout, zero failures.
+This is the pass this package's evidence rests on — not the isolated
+retry above, which is preliminary context, not the certification.
 
 **Test-db rolled back immediately after**
-(`docs/reviews/030-rollback.sql`, now itself transaction-wrapped per
-§11.2), verified restored: `attendance`/`attendance_defaulted`/
-`attendance_raw` all absent, `morning_manpower_planned` present, signature
-byte-identical, 1 overload, `schema_migrations` unchanged at 25 — same
-discipline as every prior round in this package, not left blocking other
-branches' CI.
+(`docs/reviews/030-rollback.sql`, transaction-wrapped per §11.2), verified
+restored: `attendance`/`attendance_defaulted`/`attendance_raw` all absent,
+`morning_manpower_planned` present, signature byte-identical, 1 overload,
+`schema_migrations` unchanged at 25 — same discipline as every prior round
+in this package, not left blocking other branches' CI.
 
 ---
