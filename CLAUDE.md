@@ -451,33 +451,55 @@
   section number was already fragile on its own. Always cite the filename
   with the section, e.g. `design-decisions-beta-feedback.md §10`, never
   just "§10". Full reasoning: docs/build-status.md's 2026-08-23 entry.
-- NEVER RUN `supabase projects api-keys`, OR ANY COMMAND THAT PRINTS LIVE
-  CREDENTIALS TO STDOUT (standing rule since 2026-08-23, does not wait on
-  the incident it names). `supabase projects api-keys` (with or without
-  `--reveal`) prints a project's anon, service_role, and secret API keys
-  as its entire output — there is no safe way to run it and capture the
-  result, only a redacted call (still prints legacy `anon`/`service_role`
-  JWTs in full — legacy keys have no masked form at all) or a fully
-  unmasked one. For a project-identity breadcrumb — confirming which
-  database a session is about to act against, the actual need this
-  incident arose from — use a SQL probe instead: `supabase db query
-  --linked -f <file>` running something like `SELECT current_database(),
-  now();`, plus the linked project ref itself (`cat supabase/.temp/
-  project-ref` — the ref is a public path component of the project's URL,
-  not a secret). A SQL query's RESULT is safe to print by construction; a
-  command whose job is enumerating credentials is not, no matter how it's
-  called. **This applies with far more force to production
-  (`jvxwqignooseazzmwhvl`) than to test-db** — the same command, the same
-  keystroke, an entirely different consequence: a prod `service_role` key
-  in a transcript is a live, RLS-bypassing credential over real tenant
-  data, not a disposable test-db key. Evidence: the 2026-08-23 test-db
-  incident (`docs/build-status.md`'s same-dated entry) — `supabase
-  projects api-keys --project-ref exfccwlrhoutkgrlikod` printed test-db's
-  anon/service_role/secret keys into a session transcript while
-  establishing exactly this kind of breadcrumb, in a session that had
-  already switched to the safe SQL-probe pattern for every OTHER
-  breadcrumb that same session — this one slipped through specifically
-  because it wasn't yet a named, checkable rule.
+- NEVER EMIT A CREDENTIAL VALUE INTO THE TRANSCRIPT, BY ANY MEANS — THE
+  HAZARD IS A CATEGORY, NOT ONE COMMAND (standing rule since 2026-08-23;
+  WIDENED same day, within the hour, after the narrower version failed).
+  The original version of this rule named one command,
+  `supabase projects api-keys`. It was obeyed — and the hazard recurred
+  anyway, by a different route, before the session that wrote the rule had
+  even ended: see EVIDENCE below. The rule now covers every route a
+  credential can reach a transcript, not the one route that happened to be
+  named first:
+    * a CLI command whose job is enumerating credentials (`supabase
+      projects api-keys`, with or without `--reveal`, and anything shaped
+      like it);
+    * `cat`, `grep`, `sed`, `head`, or any other command that prints the
+      contents — or a matched line's contents — of `.env*` or any other
+      file holding real values (a NAME-only match, e.g. `grep -o
+      '^[A-Z_]*='`, is fine; a match that includes `=<value>` is not);
+    * an error message, stack trace, or debug log that happens to include a
+      credential;
+    * a diff, patch, or file read that shows a secret's actual value.
+  To confirm a credential value EXISTS without printing it: test for
+  presence, don't print — e.g. `[ -n "$VAR" ] && echo set` (bash), or a
+  bare `grep -o '^VARNAME='` against an env file (matches the key, not the
+  value after `=`). To identify WHICH project/database a session is about
+  to act against — the actual need both incidents below arose from — use a
+  SQL probe (`supabase db query --linked -f <file>` running something like
+  `SELECT current_database(), now();`) plus the linked project ref itself
+  (`cat supabase/.temp/project-ref` — a public path component of the
+  project's URL, not a secret). A SQL query's RESULT is safe to print by
+  construction; a command or file-read whose output is, or contains,
+  credential material is not — no matter how it's invoked. **This applies
+  with far more force to production (`jvxwqignooseazzmwhvl`) than to
+  test-db** — the same keystroke, an entirely different consequence: a
+  prod `service_role` key in a transcript is a live, RLS-bypassing
+  credential over real tenant data, not a disposable test-db key.
+  EVIDENCE, BOTH INSTANCES, SAME SESSION, LESS THAN AN HOUR APART
+  (`docs/build-status.md`'s 2026-08-23 entry): (1) `supabase projects
+  api-keys --project-ref exfccwlrhoutkgrlikod` printed test-db's anon,
+  service_role, and secret keys into the transcript while establishing a
+  project-identity breadcrumb, in a session that had already switched to
+  the safe SQL-probe pattern for every OTHER breadcrumb that same session.
+  (2) Immediately after recording that incident and writing THIS rule's
+  first (narrower) version, a `grep -n` against `.env.test` — checking
+  which variables needed updating once key rotation happens — printed the
+  full contents of every matched line, values included, a second time.
+  Neither incident repeated the other's exact command; both are the same
+  underlying mistake — treating "don't run command X" as the fix for
+  "don't print credentials," when X was only ever one instance of the
+  actual class. A rule naming one instance of a class gets obeyed while the
+  class recurs.
 
 ---
 

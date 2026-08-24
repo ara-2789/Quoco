@@ -1542,16 +1542,38 @@ to follow every session, not a one-off historical note.
 
 ---
 
-**INCIDENT — test-db (`exfccwlrhoutkgrlikod`) anon/service_role/secret keys
-printed to a session transcript (2026-08-23).**
+**INCIDENT — test-db (`exfccwlrhoutkgrlikod`) credentials printed to a
+session transcript, twice, same session (2026-08-23).**
 
 `supabase projects api-keys`, run to obtain a project breadcrumb during
 migration 030's test-db rehearsal, printed the anon, service_role, and
 secret API keys for test-db in full. **Contained: local transcript only,
 not a public repo or shared log.**
 
+**WIDENED (2026-08-23, same day): the exposure's scope is recorded as
+`.env.test`'s FULL contents, not only the three Supabase API keys
+originally caught.** Within the hour of the first exposure being recorded
+and CLAUDE.md's first (narrower) rule being written, a second command
+inspecting `.env.test` printed matched lines — values included — a second
+time. Rather than trust a reconstruction of exactly which lines that
+second command matched, the exposure is recorded conservatively as
+covering the file's full contents — the safer failure direction for a
+credential-scope estimate is wide, not narrow (same logic this project
+already applies to destructive-statement pinning). `.env.test`'s variable
+NAMES (values never repeated here — see CLAUDE.md's widened §0 rule for
+why): `SUPABASE_TEST_URL`, `SUPABASE_TEST_SERVICE_ROLE_KEY`,
+`SUPABASE_TEST_ANON_KEY`, `SUPABASE_TEST_PROJECT_REF`,
+`DOTENV_CONFIG_QUIET`, `TWILIO_AUTH_TOKEN`, `NEXT_PUBLIC_APP_URL`. Of
+these, `SUPABASE_TEST_SERVICE_ROLE_KEY`, `SUPABASE_TEST_ANON_KEY`, and
+`TWILIO_AUTH_TOKEN` are real credentials; the rotation scope below is
+widened to include the Twilio auth token alongside the Supabase keys, not
+just the three originally named.
+
 **Risk accepted and deferred (Aravind, 2026-08-23): test-db holds
-disposable schema and no customer data.**
+disposable schema and no customer data.** The Twilio token addition to
+scope does not change this acceptance — it is also test/sandbox-scoped,
+per this project's Twilio sandbox setup (§7's bot-flow testing rule) — but
+it does widen what "done" means for the deferred rotation below.
 
 **DEFERRED ACTION, NOT OPTIONAL — legacy `anon`/`service_role` keys CANNOT
 be rotated in place.** Checked directly in the Supabase dashboard (JWT Keys
@@ -1570,14 +1592,21 @@ whichever client-construction shape the new key type requires), `.env.local`,
 `.env.test`, the GitHub Actions repo secrets `SUPABASE_TEST_URL`/
 `SUPABASE_TEST_SERVICE_ROLE_KEY`/`SUPABASE_TEST_ANON_KEY`/
 `SUPABASE_TEST_PROJECT_REF` read by `.github/workflows/ci.yml`'s "Test
-(real test-db)" job, then the disable step itself in Settings → API Keys.
-`.env.test.example` already holds only placeholders, unaffected.
+(real test-db)" job, then the disable step itself in Settings → API Keys —
+**plus, per the widened scope above, the test/sandbox `TWILIO_AUTH_TOKEN`**
+(rotated in the Twilio console, updated in `.env.test` and its GitHub
+Actions secret alongside the Supabase keys, same pass — not a separate
+follow-up). `.env.test.example` already holds only placeholders,
+unaffected.
 
 **Standing rule this incident produced, since it does not wait on the
-rotation above:** `CLAUDE.md`'s §0 now names `supabase projects api-keys`
-(and any command whose entire output is live credentials, not incidentally
-alongside them) as never safe to run — see that entry for the mechanism and
-the recommended SQL-probe alternative for project-identity breadcrumbs.
+rotation above — WIDENED same day, see CLAUDE.md's §0 entry for the second
+exposure that forced the widening:** `CLAUDE.md`'s §0 now bans emitting
+ANY credential value into the transcript by any means — not just running
+`supabase projects api-keys`, the one command the original, narrower
+version of this rule named. See that entry for the full mechanism and the
+recommended SQL-probe / name-only-grep alternatives for project-identity
+breadcrumbs.
 
 ---
 
