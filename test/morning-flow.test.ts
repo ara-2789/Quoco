@@ -323,14 +323,22 @@ describe('apply_morning_flow_turn (morning flow, attendance-first)', () => {
   // 15. empty re-ask — whitespace answer re-asks, no write, step unchanged.
   //     Q2 is free text with no reask key at all (moved from the old step 1's
   //     logic, which never needed one either) — context stays untouched.
-  it('reask: whitespace answer re-asks the current question, no write, context untouched', async () => {
+  it('reask: whitespace answer re-asks the current question, no write, context untouched by THIS turn', async () => {
     const phone = testPhone('310')
     await driveTo(phone, 2)
     const r = await applyMorningFlowTurn({ phone, message: '   ', startFlow: false, now: P_NOW })
     expect(r.outcome).toBe('reask')
     expect(r.current_step).toBe(2)
     expect(buildMorningReply(r.outcome, r.current_step, r.attendance)).toBe(MORNING_QUESTIONS[2])
-    expect((await readSession(phone))?.context).toEqual({})
+    // {} was the pre-030 expectation, when step 1 was free-text plan (no
+    // reask tracking at all before step 2). 030 makes Q1 attendance a
+    // reask-tracked step for the first time — advancing past it (driveTo's
+    // own "yes" turn) explicitly zeroes q1_reask into context, the same
+    // pattern q3_reask/q4_reask already use on their own successful
+    // advance. The empty-text turn this test actually exercises doesn't
+    // touch context at all; q1_reask:0 is a leftover from driveTo's setup,
+    // not something this turn wrote.
+    expect((await readSession(phone))?.context).toEqual({ q1_reask: 0 })
   })
 
   // 16. BOT-07 next-day reset wipes reask counters (explicitly requested).

@@ -191,9 +191,9 @@ describe('apply_evening_flow_turn (evening flow, Pass 1) + morning wrong_flow mi
 
   // 8. context-merge, direction B (on COMPLETE) — both markers coexist once
   //    morning AND evening have each completed on the same session/day.
-  //    UPDATED BY 024: completeMorning() submits REAL equipment ('JCB 1500'),
-  //    so evening's Q5 does NOT auto-skip here — setup extended through step
-  //    6 (equipment hours) to reach genuine completion.
+  //    UPDATED BY 024: completeMorningWithEquipment() submits REAL equipment
+  //    ('JCB 1500'), so evening's Q5 does NOT auto-skip here — setup extended
+  //    through step 6 (equipment hours) to reach genuine completion.
   it('T-022-08: context-merge on complete — both markers coexist after morning AND evening complete', async () => {
     const phone = testPhone('408')
     await completeMorningWithEquipment(phone, P_NOW, 'JCB 1500')
@@ -218,23 +218,24 @@ describe('apply_evening_flow_turn (evening flow, Pass 1) + morning wrong_flow mi
   it('T-022-09: wrong_flow — evening RPC during an active morning flow leaves morning untouched and resumable', async () => {
     const phone = testPhone('409')
     await applyMorningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
-    await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now: P_NOW })
+    await applyMorningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW }) // Q1: attendance -> step 2
+    await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now: P_NOW }) // Q2: plan -> step 3
 
     const r = await applyEveningFlowTurn({ phone, message: 'site closing now', startFlow: false, now: P_NOW })
     expect(r.outcome).toBe('wrong_flow')
     expect(r.current_flow).toBe('morning')
-    expect(r.current_step).toBe(2)
+    expect(r.current_step).toBe(3)
 
     const session = await readSession(phone)
     expect(session?.current_flow).toBe('morning')
-    expect(session?.current_step).toBe(2)
+    expect(session?.current_step).toBe(3)
     const log = await getDailyLog(LOG_DATE)
     expect(log?.morning_plan).toBe('Pour slab on level 3')
     expect(log?.evening_output).toBeNull()
 
-    const resume = await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now: P_NOW })
+    const resume = await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now: P_NOW }) // Q3: labour -> step 4
     expect(resume.outcome).toBe('advance')
-    expect(resume.current_step).toBe(3)
+    expect(resume.current_step).toBe(4)
   })
 
   // 10. wrong_flow MIRROR — the direct proof that 022's one-line edit to
@@ -298,11 +299,7 @@ describe('apply_evening_flow_turn (evening flow, Pass 1) + morning wrong_flow mi
     await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW }) // Q5 auto-skips -> complete
     expect((await readSession(phone))?.context).toEqual({ evening_submitted: true })
 
-    await applyMorningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
-    await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now: P_NOW })
-    await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now: P_NOW })
-    await applyMorningFlowTurn({ phone, message: 'JCB 1500', startFlow: false, now: P_NOW })
-    await applyMorningFlowTurn({ phone, message: 'Crew A then Crew B', startFlow: false, now: P_NOW })
+    await completeMorningWithEquipment(phone, P_NOW, 'JCB 1500')
 
     const session = await readSession(phone)
     expect(session?.context).toEqual({ evening_submitted: true, morning_submitted: true })
