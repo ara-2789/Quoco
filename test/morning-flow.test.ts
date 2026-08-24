@@ -7,6 +7,7 @@ import {
   cleanupTestDailyLogs,
   getDailyLog,
   readSession,
+  seedSession,
   testPhone,
 } from './helpers/db'
 import {
@@ -359,24 +360,52 @@ describe('apply_morning_flow_turn (morning flow, attendance-first)', () => {
     expect(session?.context).toEqual({}) // q3_reask wiped, no marker
   })
 
-  // 17. Restart strip (row A / TS-SQL divergence closed): a same-day restart
-  //     strips ONLY morning's own reask keys, preserving morning_submitted if
-  //     already set and any evening keys already present — never a bare wipe.
-  it('restart strip: same-day restart clears q3_reask but preserves an unrelated context key', async () => {
+  // 17. Restart strip (row A / TS-SQL divergence closed): a p_start_flow=true
+  //     call landing on a genuinely IDLE session (current_flow IS NULL)
+  //     strips every parsed-step reask key, preserving any unrelated context
+  //     key already present — never a bare wipe.
+  //
+  //     RESTRUCTURED 2026-08-24 (Aravind's decision, after the v2 rehearsal
+  //     flagged this as the sole remaining failure). The original setup drove
+  //     the session to step 3 via driveTo() and left it there — current_flow
+  //     stays 'morning', so the restart call at the end actually landed on
+  //     line ~350's ELSE branch ("a flow is already active" -> 'reask'), not
+  //     the p_start_flow && current_flow IS NULL branch (line ~341) this test
+  //     exists to prove. The expectation (outcome:'start') was correct all
+  //     along; the setup never reached the code it was meant to exercise.
+  //     Fixed by seeding the session directly via seedSession — current_flow
+  //     NULL, with a stale q3_reask left over (as if from an earlier,
+  //     already-completed or abandoned flow) plus an unrelated key
+  //     (evening_submitted) that morning's strip must NOT touch — instead of
+  //     driving there through the RPC, which (correctly, per its own
+  //     completion-time strip at step 4/5) never leaves a reask key behind on
+  //     an idle session. This is a direct unit test of the defensive strip
+  //     at the top of the p_start_flow branch, independent of whether that
+  //     exact combination is reachable through the RPC's own state machine.
+  //
+  //     WHY THIS BRANCH MATTERS: p_start_flow=true against an idle session is
+  //     not a rare edge case — it is the single most-travelled entry point in
+  //     the finished product, since Pass 1's cron issues exactly this call at
+  //     08:30 and 18:30 IST every day to start each engineer's check-in. This
+  //     was the one path through 030's own start-flow logic with no passing
+  //     test.
+  it('restart strip: p_start_flow on an idle session strips stale reask keys, preserves an unrelated one', async () => {
     const phone = testPhone('327')
-    await driveTo(phone, 3)
-    await applyMorningFlowTurn({ phone, message: 'no number here', startFlow: false, now: P_NOW }) // q3_reask: 1
-    // Simulate an unrelated key already present (e.g. an evening counter, or
-    // morning_submitted from an earlier same-day completion) by reading it
-    // back and re-seeding isn't needed here — direct restart against the
-    // live q3_reask:1 state is enough to prove a STRIP, not a bare replace.
-    expect((await readSession(phone))?.context).toMatchObject({ q3_reask: 1 })
+    await seedSession({
+      phone,
+      currentFlow: null,
+      currentStep: 0,
+      context: { q3_reask: 1, evening_submitted: true },
+      updatedAt: P_NOW,
+    })
+    expect((await readSession(phone))?.context).toMatchObject({ q3_reask: 1, evening_submitted: true })
 
     const r = await applyMorningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
     expect(r.outcome).toBe('start')
     expect(r.current_step).toBe(1)
     const session = await readSession(phone)
     expect(session?.context).not.toHaveProperty('q3_reask')
+    expect(session?.context).toMatchObject({ evening_submitted: true })
   })
 
   // 18. concurrency — two near-simultaneous turns serialise on the row lock.
