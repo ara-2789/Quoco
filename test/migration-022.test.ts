@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
 import {
   applyEveningFlowTurn,
   applyMorningFlowTurn,
+  completeMorningWithEquipment,
   ensureMorningFixtures,
   removeMorningFixtures,
   cleanupTestSessions,
@@ -45,17 +46,6 @@ import {
 const P_NOW = '2026-04-10T19:00:00+05:30' // 19:00 IST, 10 Apr — evening check-in time
 const P_LATER_SAME_DAY = '2026-04-10T19:30:00+05:30' // same IST day
 const LOG_DATE = '2026-04-10'
-
-// Drive a full morning flow to completion (Q1 -> Q2 -> Q3 -> Q4), so
-// context-merge tests can start from a genuine post-morning state rather than
-// an empty session.
-async function completeMorning(phone: string, now: string): Promise<void> {
-  await applyMorningFlowTurn({ phone, message: '', startFlow: true, now })
-  await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: 'JCB 1500', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: 'Crew A then Crew B', startFlow: false, now })
-}
 
 beforeAll(async () => {
   await ensureMorningFixtures()
@@ -190,7 +180,7 @@ describe('apply_evening_flow_turn (evening flow, Pass 1) + morning wrong_flow mi
   //    evening's own start; only evening's own counter is cleared.
   it('T-022-07: context-merge on start — morning_submitted survives evening starting', async () => {
     const phone = testPhone('407')
-    await completeMorning(phone, P_NOW)
+    await completeMorningWithEquipment(phone, P_NOW, 'JCB 1500')
     expect((await readSession(phone))?.context).toEqual({ morning_submitted: true })
 
     const r = await applyEveningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
@@ -206,7 +196,7 @@ describe('apply_evening_flow_turn (evening flow, Pass 1) + morning wrong_flow mi
   //    6 (equipment hours) to reach genuine completion.
   it('T-022-08: context-merge on complete — both markers coexist after morning AND evening complete', async () => {
     const phone = testPhone('408')
-    await completeMorning(phone, P_NOW)
+    await completeMorningWithEquipment(phone, P_NOW, 'JCB 1500')
     await applyEveningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
     await applyEveningFlowTurn({ phone, message: 'some work done', startFlow: false, now: P_NOW })
     await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW }) // -> step 4

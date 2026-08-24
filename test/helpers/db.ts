@@ -381,25 +381,38 @@ export async function applyEveningFlowTurn(params: {
   return data as EveningTurnRow
 }
 
-// Drives a full morning check-in to completion with an explicit "no
-// equipment" answer at Q4. Moved here from test/migration-024.test.ts
-// (2026-08-12, the productivity-reconciliation mirror test) so a second
-// test file needing the identical setup imports one shared definition
-// instead of a second hand-copy — the same class of divergence risk this
-// project has been burned by for production code, avoided here for test
-// setup before it had the chance to recur.
+// Drives a full morning check-in to completion, with the Q4 equipment reply
+// as a parameter — the value doesn't matter to most callers, but a few
+// (test/migration-022.test.ts's context-merge tests, test/migration-024.test.ts's
+// productivity/equipment-hours suite) specifically need morning_equipment to
+// come back non-null with a REAL parsed item, which drives evening's own Q5
+// auto-skip decision downstream. Originally three separate hand-copies of
+// this exact sequence existed (test/helpers/db.ts, test/migration-022.test.ts's
+// local `completeMorning`, test/migration-024.test.ts's local
+// `completeMorningWithEquipment`) — consolidated here, 2026-08-24, after
+// migration 030's test-db rehearsal caught the other two copies still
+// driving the OLD pre-030 turn order (free-text plan first, no attendance
+// question) and failing as a result. One definition now; the two local
+// copies are gone.
 //
 // RENUMBERED by 030_morning_flow_attendance.sql: Q1 attendance ("yes") now
 // precedes plan, and equipment (Q4) completes the flow directly — there is
 // no longer a fifth "execution plan" turn after equipment; the OLD final
 // "Crew A then Crew B" turn is gone because morning_execution_plan is no
 // longer written.
-export async function completeMorningNoEquipment(phone: string, now: string): Promise<void> {
+export async function completeMorningWithEquipment(phone: string, now: string, equipmentReply: string): Promise<void> {
   await applyMorningFlowTurn({ phone, message: '', startFlow: true, now })
   await applyMorningFlowTurn({ phone, message: 'yes', startFlow: false, now }) // Q1: attendance
   await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now })
   await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: 'no', startFlow: false, now }) // Q4: explicit none, completes
+  await applyMorningFlowTurn({ phone, message: equipmentReply, startFlow: false, now }) // Q4: completes
+}
+
+// Thin wrapper over completeMorningWithEquipment for the (more common) case
+// where the equipment reply's content doesn't matter, only that the flow
+// completes with an explicit "none" answer.
+export async function completeMorningNoEquipment(phone: string, now: string): Promise<void> {
+  return completeMorningWithEquipment(phone, now, 'no') // Q4: explicit none, completes
 }
 
 // Drives evening to the start of Q4 (step 4) via the Q2=Yes edge (shortest
