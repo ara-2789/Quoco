@@ -1,11 +1,90 @@
-# `test/session-transition.test.ts` Test B — ordering-precondition bug, FIX 2 PUSHED, AWAITING CI
+# `test/session-transition.test.ts` Test B — ordering-precondition bug, FIX 2 RE-PUSHED (032 now applied to test-db), AWAITING CI
 
-**Status: NOT YET RESOLVED — Fix 1 (below) was insufficient; Fix 2 (below,
-"THE REAL FIX") is pushed and awaiting its own CI result, per the standing
-rule this same incident produced
-(`docs/reviews/sandbox-cannot-test-concurrency.md`, CLAUDE.md §0): local
-runs cannot verify concurrency behavior in this sandbox, so nothing below
-is called RESOLVED until CI itself confirms it.**
+**Status: NOT YET RESOLVED. Three CI runs so far, three DIFFERENT failure
+causes, and the ordering mechanism itself has still never actually been
+exercised by CI. In order:**
+
+1. **PR #102, original CI (Failure 3, 2026-08-24T14:31:13Z).** The real
+   bug: the ordering precondition wasn't guaranteed, `lock2 < lock1`. Not
+   Fix 1, not Fix 2 — the thing both fixes exist to address.
+2. **PR #102, post-Fix-1 CI (run `32743668591`).** Fix 1's retry loop hit
+   the ordering precondition 3/3 times in the same run — a process-level
+   bias, never once reaching the real assertion. See "FIX 1 FAILS FOR
+   REAL" below.
+3. **PR #104, post-Fix-2 CI (run `32750655063`).** Failed for a THIRD,
+   unrelated reason: `Could not find the function
+   public.quoco_test_row_is_locked(p_phone_number) in the schema cache`.
+   Migration 032 (which creates that function) had been applied to
+   test-db for my own manual verification, then deliberately **rolled
+   back** afterward, per this project's "leave test-db clean" discipline
+   for every prior migration rehearsal in this session. CI's `Test (real
+   test-db)` job runs `npm test` directly against the persistent shared
+   test-db — it does not apply pending migration files from a PR. So the
+   function genuinely did not exist when CI's test run executed. This run
+   proves nothing about the ordering mechanism either way — it never got
+   the chance to run.
+
+**None of the three runs above has ever actually exercised Fix 2's real
+mechanism (poll-then-dispatch via `quoco_test_row_is_locked`) under
+genuine CI concurrency.** Run 1 predates it. Run 2 tested Fix 1, a
+different mechanism. Run 3 couldn't reach it at all.
+
+**Client-side alternatives to the function were assessed and ruled out
+(2026-08-24) before deciding to keep it.** A marker write inside caller
+1's own lock-holding transaction is invisible to a polling `SELECT` until
+commit — by which point the lock is already released, proving "finished,"
+not "holds." A marker write as a separate autocommit step immediately
+before opening the lock transaction closes that gap only partially — a
+poller can see the marker before the lock is actually acquired, proving
+"about to," not "holds." `pg_notify`/`LISTEN` has the identical
+same-transaction-visibility problem (notifications queue and only deliver
+on commit). The only live-state signals that would actually work —
+`pg_locks`, `pg_try_advisory_lock` — are catalog/builtin objects
+PostgREST doesn't expose outside a wrapper function, so reaching either
+one requires a new function regardless. **No no-migration alternative can
+prove "currently holds the lock"; the function is unavoidable.**
+
+**Decision: migration 032 applied to test-db and LEFT applied
+permanently**, rather than the apply-verify-rollback cycle used for every
+prior rehearsal in this session. Rationale and full record: this file's
+own numbering-note header in `032_session_transition_lock_probe_nowait.sql`
+plus `docs/build-status.md`'s 2026-08-24 entry. Confirmed locally
+(585/587 tests green) that leaving it applied breaks nothing else; the
+one local failure is the ALREADY-DOCUMENTED sandbox RPC-serialization
+timeout (`docs/reviews/sandbox-cannot-test-concurrency.md`), not a new
+problem — see "Verification" under "THE REAL FIX (Fix 2)" below, which
+predicted exactly this local outcome before it happened.
+
+Re-pushed for a fourth CI run — the first one that can actually exercise
+the mechanism. Per standing instruction, nothing below is called RESOLVED
+until CI confirms it, and this document is not touched again on a failure
+without first reporting the raw result.
+
+---
+
+**Fix 1's own history, corrected in place, not deleted.** Fix 1 (asserted
+on ordering, retried the setup on inversion) was believed RESOLVED on the
+strength of a forced-inversion proof (the retry/failure code paths do
+fire) plus "30 clean runs against real test-db, zero inversions, zero
+negatives." **That 30-run local capture is RETRACTED as evidence — see
+`docs/reviews/sandbox-cannot-test-concurrency.md` for the full finding.**
+This sandbox cannot sustain two genuinely concurrent RPC calls against
+test-db: caller 2 cannot be dispatched until caller 1's own RPC call has
+already fully returned, so a local run of Test B can never produce a
+negative value regardless of whether the row lock does anything at all —
+the 30/30 result proved the sandbox's own serialization, not the fix.
+**Fix 1 was then pushed, merged (PR #103), and subsequently failed for
+real** — PR #102's own CI hit Fix 1's retry loop 3 times in the SAME run,
+all 3 hitting the ordering precondition, never once reaching the real
+assertion (see "Fix 1 fails for real" below). That 3/3 pattern is what
+first suggested a PROCESS-LEVEL bias rather than per-attempt jitter — now
+understood precisely: not a bias in the row-lock mechanism, but this
+sandbox-vs-CI difference in whether concurrent RPC calls can even occur —
+except this 3/3 failure happened in CI itself, meaning CI's own
+environment, on this occasion, also failed to achieve the ordering
+Fix 1's retry loop was trying to construct. Fix 2 (the real ordering
+guarantee, no longer dependent on client-side timing at all) is the
+response to that.
 
 **Fix 1's own history, corrected in place, not deleted.** Fix 1 (asserted
 on ordering, retried the setup on inversion) was believed RESOLVED on the
