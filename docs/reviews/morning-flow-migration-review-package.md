@@ -1671,13 +1671,16 @@ predates 030.
   branch's CI already depends on.
 
 **Status: migration 030 is NOT currently applied anywhere** (test-db or
-prod) as of 2026-08-24 — back to PENDING for artifact 3, same as before
-the rehearsal, but now backed by a rehearsal that already ran clean once
-and a rollback proven to restore cleanly. The next real apply to test-db
-(for the final rehearsal before an actual merge) can reuse
-`docs/reviews/030-rollback.sql` as its own teardown step afterward,
-closing the same loop rather than leaving test-db locked to one branch
-again.
+prod) as of 2026-08-24. Artifact 3 (§5 above) is marked **COMPLETE**, not
+pending — a database's applied/not-applied state and the artifact's
+evidence status are two different things: the rehearsal already ran
+clean, twice, with the second round closing the sole outstanding failure
+(see the final re-run below); rolling test-db back afterward each time
+doesn't reopen that evidence, it's what keeps a rehearsal from
+permanently locking the one shared test-db to a single branch's schema.
+The next real apply to test-db (for the final pre-merge rehearsal, or the
+actual merge itself) can reuse `docs/reviews/030-rollback.sql` as its own
+teardown step afterward, closing the same loop again.
 
 **Post-fix re-run, same day (2026-08-24), full transcript
 `/tmp/030-testdb-rehearsal-v2.txt`.** The 16 stale-helper failures and the
@@ -1692,5 +1695,51 @@ of 49 files, 679 of 681 tests passed** — the sole remaining failure is the
 pending a decision on how to handle it). Test-db rolled back again
 immediately after, confirmed restored (`morning_manpower_planned` present,
 `attendance` absent) — not left blocking other branches' CI a second time.
+
+**RESTART-STRIP TEST — DECIDED and fixed, same day (2026-08-24, Aravind's
+decision).** The failing test's expectation was correct all along
+(`outcome:'start'`); the SETUP was wrong. It drove the session to step 3
+via `driveTo()` and left it there — `current_flow` stays `'morning'`, so
+the restart call at the end landed on the "flow already active" branch
+(`ELSE -> 'reask'`, migration 030's own file, ~line 350), never the
+`p_start_flow && current_flow IS NULL` branch (~line 341) this test exists
+to prove. Confirmed no production code path leaves a stale reask key on a
+genuinely idle session — every place `current_flow` goes `NULL`
+(completion at step 4/5, or BOT-07's next-IST-day reset) already strips
+those keys itself, in the same statement. So the fix restructures the
+SETUP to seed the session directly (`seedSession`, bypassing the RPC):
+`current_flow: null`, a stale `q3_reask: 1`, plus an unrelated
+`evening_submitted: true` key the strip must not touch — a direct unit
+test of the defensive strip at the top of the `p_start_flow` branch,
+independent of whether that exact combination is reachable through the
+RPC's own state machine on its own. Test renamed to describe what it now
+actually exercises; a comment records why the branch matters: `p_start_flow=
+true` against an idle session is Pass 1's cron entry point (08:30/18:30
+IST daily) — the single most-travelled path through 030's start-flow
+logic, and the one path that had no passing test until this fix. Commit
+`dcc646e`.
+
+**FINAL RE-RUN, same day (2026-08-24), full transcript
+`/tmp/030-testdb-rehearsal-v3.txt`.** With the restart-strip fix in place:
+breadcrumb confirmed test-db (`exfccwlrhoutkgrlikod`), not prod, before
+applying; 030 applied for real (clean, zero errors); post-apply structural
+probe confirmed (`attendance` present, `morning_manpower_planned` absent,
+signature byte-identical, 1 overload, `schema_migrations` count unchanged
+at 25); full suite run — **49 of 49 files, 680 of 681 tests passed, 1
+pre-existing `.todo` (not a failure), 0 failures** — the restart-strip
+test passes. This is the FIRST fully clean run of the complete suite
+against test-db with 030 applied; no known failures remain. **Test-db
+rolled back immediately after** (`docs/reviews/030-rollback.sql`),
+verified restored to the identical pre-030 state confirmed at the start
+of this rehearsal round (`attendance` absent, `morning_manpower_planned`
+present, 1 overload, byte-identical signature, migration count unchanged
+at 25) — left in the state every other branch's CI depends on, same
+discipline as every prior round in this section.
+
+Status update: with this run, **all five evidence artifacts in §5 are now
+either DONE or PENDING-on-a-real-apply only** — artifacts 1-4 complete,
+artifact 5 (GATE 1's live observation) is the sole item remaining, and it
+requires an actual apply (test-db or prod) plus a real webhook-driven
+turn, which is out of scope for a rehearsal-and-rollback pass by design.
 
 ---
