@@ -451,15 +451,51 @@
   section number was already fragile on its own. Always cite the filename
   with the section, e.g. `design-decisions-beta-feedback.md §10`, never
   just "§10". Full reasoning: docs/build-status.md's 2026-08-23 entry.
-- NEVER EMIT A CREDENTIAL VALUE INTO THE TRANSCRIPT, BY ANY MEANS — THE
-  HAZARD IS A CATEGORY, NOT ONE COMMAND (standing rule since 2026-08-23;
-  WIDENED same day, within the hour, after the narrower version failed).
-  The original version of this rule named one command,
-  `supabase projects api-keys`. It was obeyed — and the hazard recurred
-  anyway, by a different route, before the session that wrote the rule had
-  even ended: see EVIDENCE below. The rule now covers every route a
-  credential can reach a transcript, not the one route that happened to be
-  named first:
+- NEVER PIPE UNFAMILIAR COMMAND OUTPUT THROUGH `head`/`cat`/`tail`/`less`
+  INTO THE TRANSCRIPT — REDIRECT TO A FILE, THEN READ SELECTIVELY FOR THE
+  SPECIFIC THING NEEDED (standing rule since 2026-08-23; REPLACED, not
+  widened again, 2026-08-24, after the widened version ALSO failed within
+  hours). Two enumerations have now been tried on this rule and both
+  failed the same way: v1 named one command (`supabase projects
+  api-keys`) — obeyed, and the hazard recurred via `grep -n` on
+  `.env.test`, a command not on the list. v2 widened to a category (CLI
+  key-listing commands, `cat`/`grep`/`sed`/`head` on `.env*` files, error
+  messages, diffs) — ALSO obeyed, and the hazard recurred a THIRD time via
+  a route not on THAT list either: `supabase db dump --linked --dry-run`
+  (a legitimate, previously-used command for this project's own dry-run
+  scaffold discipline, §7) prints its generated `pg_dump` script to
+  stdout, and that script embeds a live `PGPASSWORD` — piping it through
+  `head -30` to see the invocation printed the password into the
+  transcript. See EVIDENCE below for all three, dated precisely.
+
+  THE ACTUAL MISTAKE, NAMED ONCE PROPERLY THIS TIME: in all three
+  instances, the mistake was never "ran a command already known to be
+  dangerous" — every one of the three commands was doing something
+  legitimate and non-obviously risky at the time it was run. The mistake
+  was piping output whose CONTENTS WERE NOT KNOWN IN ADVANCE straight
+  through `head`/`cat`/`tail`/`less` (or an unfiltered file Read) into the
+  transcript, to "see what's there." That is the actual failure
+  condition, and it holds regardless of which command produces the
+  surprise next — a list of dangerous commands can always be one item
+  short; a rule about NOT INSPECTING UNKNOWN OUTPUT WHOLESALE has no next
+  item to miss.
+
+  THE PROCEDURE, LED WITH, NOT A LIST: before running `| head`, `| cat`,
+  `| tail`, `| less`, or reading a file straight into view, ask — do I
+  already know every line of this output is safe? If the answer is
+  anything but a confident yes (a CLI's own generated script, a config
+  dump, `env`, any tool's dry-run/debug output not already known to be
+  credential-free) — redirect it to a file (`> /tmp/...`) FIRST, then
+  extract ONLY the specific thing actually needed: a targeted `grep`
+  (name-only where relevant, e.g. `grep -o '^[A-Z_]*='`), a narrow line
+  range, a single field. Never dump the whole thing into the transcript
+  "to look." Delete the file once the file itself is no longer needed if
+  it turned out to hold a real credential.
+
+  THE ORIGINAL PROHIBITIONS STILL HOLD, kept here as recognizable examples
+  of the failure pattern above — useful for spotting a likely offender on
+  sight, but supporting detail now, not the mechanism that prevents the
+  next one:
     * a CLI command whose job is enumerating credentials (`supabase
       projects api-keys`, with or without `--reveal`, and anything shaped
       like it);
@@ -469,37 +505,61 @@
       '^[A-Z_]*='`, is fine; a match that includes `=<value>` is not);
     * an error message, stack trace, or debug log that happens to include a
       credential;
-    * a diff, patch, or file read that shows a secret's actual value.
+    * a diff, patch, or file read that shows a secret's actual value;
+    * a CLI's own generated script or dry-run output that embeds
+      connection credentials to do its job (added 2026-08-24, instance 3
+      below — `supabase db dump --dry-run`'s script is the concrete case,
+      but the shape generalises: any command whose PURPOSE is unrelated to
+      credentials can still embed one in its output incidentally).
   To confirm a credential value EXISTS without printing it: test for
   presence, don't print — e.g. `[ -n "$VAR" ] && echo set` (bash), or a
   bare `grep -o '^VARNAME='` against an env file (matches the key, not the
   value after `=`). To identify WHICH project/database a session is about
-  to act against — the actual need both incidents below arose from — use a
-  SQL probe (`supabase db query --linked -f <file>` running something like
-  `SELECT current_database(), now();`) plus the linked project ref itself
-  (`cat supabase/.temp/project-ref` — a public path component of the
-  project's URL, not a secret). A SQL query's RESULT is safe to print by
-  construction; a command or file-read whose output is, or contains,
-  credential material is not — no matter how it's invoked. **This applies
-  with far more force to production (`jvxwqignooseazzmwhvl`) than to
-  test-db** — the same keystroke, an entirely different consequence: a
-  prod `service_role` key in a transcript is a live, RLS-bypassing
-  credential over real tenant data, not a disposable test-db key.
-  EVIDENCE, BOTH INSTANCES, SAME SESSION, LESS THAN AN HOUR APART
-  (`docs/build-status.md`'s 2026-08-23 entry): (1) `supabase projects
-  api-keys --project-ref exfccwlrhoutkgrlikod` printed test-db's anon,
-  service_role, and secret keys into the transcript while establishing a
-  project-identity breadcrumb, in a session that had already switched to
-  the safe SQL-probe pattern for every OTHER breadcrumb that same session.
-  (2) Immediately after recording that incident and writing THIS rule's
-  first (narrower) version, a `grep -n` against `.env.test` — checking
+  to act against — the actual need all three incidents below arose from —
+  use a SQL probe (`supabase db query --linked -f <file>` running
+  something like `SELECT current_database(), now();`) plus the linked
+  project ref itself (`cat supabase/.temp/project-ref` — a public path
+  component of the project's URL, not a secret). A SQL query's RESULT is
+  safe to print by construction; a command or file-read whose output is,
+  or contains, credential material is not — no matter how it's invoked,
+  and no matter whether that command is on any list. **This applies with
+  far more force to production (`jvxwqignooseazzmwhvl`) than to test-db**
+  — the same keystroke, an entirely different consequence: a prod
+  `service_role` key or `PGPASSWORD` in a transcript is a live,
+  RLS-bypassing credential over real tenant data, not a disposable
+  test-db key.
+  EVIDENCE, ALL THREE, DATED PRECISELY — the enumeration approach has now
+  failed twice in a row, evidence enough that a third enumeration is not
+  the fix (`docs/build-status.md`'s 2026-08-23 and 2026-08-24 entries):
+  (1) **2026-08-23.** `supabase projects api-keys --project-ref
+  exfccwlrhoutkgrlikod` printed test-db's anon, service_role, and secret
+  keys into the transcript while establishing a project-identity
+  breadcrumb, in a session that had already switched to the safe
+  SQL-probe pattern for every OTHER breadcrumb that same session.
+  (2) **2026-08-23, same session, within the hour of (1).** Immediately
+  after recording that incident and writing this rule's first (v1,
+  command-specific) version, a `grep -n` against `.env.test` — checking
   which variables needed updating once key rotation happens — printed the
   full contents of every matched line, values included, a second time.
-  Neither incident repeated the other's exact command; both are the same
-  underlying mistake — treating "don't run command X" as the fix for
-  "don't print credentials," when X was only ever one instance of the
-  actual class. A rule naming one instance of a class gets obeyed while the
-  class recurs.
+  (3) **2026-08-24**, after this rule had already been WIDENED to v2 (the
+  category version, written in direct response to (1) and (2)) and that
+  version was the one in effect. `supabase db dump --linked --schema
+  public --dry-run`, run to build a disposable local-scaffold proof for
+  migration 030's transaction-wrapper fix (per §7's own dry-run
+  discipline), piped through `head -30` to inspect the generated
+  `pg_dump` invocation — the script's own `export PGPASSWORD=...` line
+  printed a live test-db connection password into the transcript.
+  Contained: the file was deleted immediately, the dump was regenerated
+  with direct redirection to a file and never printed again. Full record:
+  `docs/build-status.md`'s 2026-08-24 entry.
+  Neither of the first two incidents repeated the other's exact command,
+  and the third repeated neither — three distinct commands, two rule
+  versions, both obeyed exactly as written, the underlying hazard
+  recurring anyway each time, because each version named instances of the
+  class instead of the class's actual shape. This version doesn't
+  enumerate; it names the shape — unfamiliar output, piped raw into
+  view — so the next surprising command is already covered, not waiting
+  to become instance four.
 
 ---
 

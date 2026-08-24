@@ -1543,7 +1543,8 @@ to follow every session, not a one-off historical note.
 ---
 
 **INCIDENT — test-db (`exfccwlrhoutkgrlikod`) credentials printed to a
-session transcript, twice, same session (2026-08-23).**
+session transcript, THREE times across two dates (2026-08-23 ×2,
+2026-08-24 ×1 — see INCIDENT 3 below).**
 
 `supabase projects api-keys`, run to obtain a project breadcrumb during
 migration 030's test-db rehearsal, printed the anon, service_role, and
@@ -1619,16 +1620,50 @@ Actions secret alongside the Supabase keys, same pass — not a separate
 follow-up).~~ **CORRECTED (2026-08-24): `TWILIO_AUTH_TOKEN` removed from
 this scope — see the correction above; it was never a live credential, so
 there is nothing to rotate.** `.env.test.example` already holds only
-placeholders, unaffected.
+placeholders, unaffected. **WIDENED again (2026-08-24, see the third
+incident below): add the `cli_login_postgres` connection password
+(`PGPASSWORD`) Supabase's own CLI generates for `supabase db dump`
+sessions against test-db to this scope.** This is a platform-generated,
+short-lived connection credential, not a stored project key — there is no
+dashboard "rotate" action for it the way there is for the anon/
+service_role keys; it is included here as a flag that any future
+`supabase db dump`/`--dry-run` invocation generates a NEW one each time,
+so the specific value printed on 2026-08-24 needs no action beyond the
+containment already done (below), but the CLASS of credential this
+represents is now correctly in scope for whoever eventually audits
+test-db's full credential surface, not just the three originally named.
 
-**Standing rule this incident produced, since it does not wait on the
-rotation above — WIDENED same day, see CLAUDE.md's §0 entry for the second
-exposure that forced the widening:** `CLAUDE.md`'s §0 now bans emitting
-ANY credential value into the transcript by any means — not just running
-`supabase projects api-keys`, the one command the original, narrower
-version of this rule named. See that entry for the full mechanism and the
-recommended SQL-probe / name-only-grep alternatives for project-identity
-breadcrumbs.
+**INCIDENT 3 — a THIRD exposure, same underlying failure class, one day
+later (2026-08-24).** `supabase db dump --linked --schema public
+--dry-run`, run while building a disposable local-scaffold proof for
+migration 030's transaction-wrapper fix (external review round 2, B1;
+`docs/reviews/morning-flow-migration-review-package.md` §11.2), prints its
+generated `pg_dump` invocation script to stdout — that script embeds a
+live `PGPASSWORD` for test-db's `cli_login_postgres` connection role.
+Piping the output through `head -30` to inspect the invocation (a
+previously-unremarkable way to peek at a command's output) printed the
+password into the session transcript. **This happened AFTER the rule had
+already been WIDENED once (following incidents 1 and 2, same day prior)
+— the widened category version was in effect, obeyed, and the hazard
+recurred anyway via a route neither version named:** `supabase db dump`
+was not itself a banned command, and `head` was not itself a banned
+command; the specific combination — piping a CLI's own generated,
+not-yet-inspected script through a raw-print tool — was the actual gap.
+**Contained: file deleted immediately** (`rm` on the file that held the
+printed script), **the dump regenerated with direct file redirection and
+never printed again** (the same `supabase db dump` command re-run,
+output written straight to a file, then only grepped/read for the
+specific non-sensitive lines actually needed — the shebang line, the line
+count — never the full script). **Standing rule REPLACED, not widened a
+third time** (CLAUDE.md's §0, this same date): naming individual commands
+failed once, naming a category of commands failed a second time within
+the same category's own effective window — two enumerations, two
+recurrences. The rule is now stated as a procedure (never pipe unfamiliar
+output through `head`/`cat`/`tail`/`less` into the transcript; redirect
+to a file first, read selectively) rather than a third list, on the
+reasoning that a procedure has no "next item" for a future surprising
+command to fall outside of. See that entry for the full three-incident
+record and the procedure itself.
 
 ---
 
