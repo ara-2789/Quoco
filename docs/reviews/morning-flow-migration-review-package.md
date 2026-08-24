@@ -463,11 +463,19 @@ described.
    rework: the pre/post-migration signature diff (byte-identical, `t`) and
    the `pg_proc` overload count (exactly 1, both before and after) as
    first-class checks.**
-3. **PENDING — needs a real apply.** Test-db rehearsal transcript exercising
-   every renumbered step in sequence via the real webhook/RPC against
-   test-db, not a local scaffold. The dry-run (2 above) proves the SQL is
-   *executable and structurally correct*; it does not stand in for a real
-   test-db rehearsal, which this pass does not perform.
+3. **DONE, THEN ROLLED BACK — §10.3 below.** Test-db rehearsal ran for real
+   (2026-08-23, `/tmp/030-testdb-rehearsal.txt`) — every catalog and
+   behavioral check the local dry-run covered, re-run against a real
+   `apply_morning_flow_turn` on test-db, all passing. The rehearsal itself
+   surfaced two real findings (18 stale-assumption test failures across
+   three OTHER migrations' test files, and one apparent test-authoring
+   contradiction, neither of them defects in 030's own SQL) and one
+   unanticipated operational cost: leaving 030 applied on the ONE shared
+   test-db broke CI for every unrelated branch/PR, not just this one.
+   Rolled back 2026-08-24 (`docs/reviews/030-rollback.sql`), verified
+   byte-identical restoration by direct observation — see §10.3. Migration
+   030 itself is not weakened by this: the rehearsal already proved every
+   check it needed to prove before the rollback undid it.
 4. **DONE — test built and proven capable of catching drift; §7 below.**
    `test/unit/morning-flow-mirror.test.ts` + the shared fixture table
    `test/helpers/morning-mirror-cases.ts` extend
@@ -1577,5 +1585,98 @@ both become removable, and classification returns to living in exactly one
 place. Recorded here so that connection isn't lost: §31 is not just a
 general maintainability improvement, it is specifically the fix that
 retires §10.2's own hazard.
+
+---
+
+## 10.3 TEST-DB REHEARSAL — DONE, then rolled back (2026-08-23 / 2026-08-24)
+
+**The rehearsal (2026-08-23), full transcript `/tmp/030-testdb-rehearsal.txt`.**
+Migration 030 applied for real to test-db (`exfccwlrhoutkgrlikod`). Every
+check the local dry-run scaffold covered was re-run for real: signature
+diff pre/post (byte-identical), `pg_proc` overload count (exactly 1,
+before and after), the JSONB transform including the untouched NULL row,
+the CHECK constraint rejecting an invalid value, every grant probe, the
+YES path, both NO-path completions, both exhausted-reask defaults, and
+both renamed reask keys — all passed against the real RPC, not a scaffold.
+`test/unit/morning-flow-mirror.test.ts` and `test/unit/yesno-mirror.test.ts`
+both passed in the same run.
+
+**What the rehearsal found, beyond what it was checking for.** The FULL
+test suite then surfaced 18 failures across `test/migration-017/022/
+024.test.ts` — traced to hardcoded turn sequences in those files (a local,
+never-updated helper, or an inline sequence) still assuming morning's
+PRE-030 step order, not a defect in 030's own logic. A further two
+failures inside `test/morning-flow.test.ts` itself (the file written FOR
+030) were flagged for separate investigation rather than dismissed — see
+below. None of this blocked 030; it's exactly the class of finding a real
+rehearsal exists to surface, distinct from the SQL-correctness checks
+above.
+
+**The unanticipated cost: a rehearsal on the ONLY shared test-db blocks CI
+for every OTHER branch, not just this one.** Discovered when PR #98 (an
+unrelated docs-only change against `main`) came back with `Test (real
+test-db)` failing — not from anything in that PR's diff, but because
+`main`'s code has none of 030's changes while test-db, left applied from
+this rehearsal, was running 030's new RPC. Confirmed directly: re-running
+the suite against `main`'s own unmodified code, pointed at test-db still
+carrying 030, failed far more broadly than the 18 already catalogued —
+`test/dispatch.test.ts` and `test/inbound-start.test.ts`, and ALL of
+`migration-022.test.ts` rather than 4 cases, because `main` is missing not
+just the follow-up fixes but migration 030's entire changeset. Recorded as
+a known, recurring cost of the shared-test-db model in
+`docs/build-status.md`'s 2026-08-24 entry, not proposed as something to
+fix in this pass.
+
+**Rolled back 2026-08-24 (Aravind's decision).** `docs/reviews/
+030-rollback.sql` — NOT a numbered migration (this project's
+`supabase/migrations/` holds forward migrations only; a rollback here
+would confuse migration-lint and the ledger). Reverses 030 in mirrored
+order: restores `apply_morning_flow_turn`'s ORIGINAL 022 body (`CREATE OR
+REPLACE`, byte-identical 12-arg signature — 030 never changed it, review
+package §10.1), drops `quoco_classify_yes_no`, reverses the
+`morning_manpower` JSONB key transform (general predicate + in-transaction
+structural assertion, same discipline as 030's own forward transform),
+renames the column back to `morning_manpower_planned`, restores migration
+017's original column-bound grant, drops the `attendance` column (its
+CHECK constraint drops with it). `is_holiday` untouched throughout — it
+predates 030.
+
+**Verified by direct observation, not merely written — full transcript
+`/tmp/030-rollback-verification.txt`:**
+- Dry-run first, on a disposable local scaffold (030 applied forward, then
+  this rollback applied on top): zero errors, and the resulting
+  `morning_manpower_planned` byte-identical to the original pre-030 seed.
+- Then for real on test-db: a row was seeded in the EXACT post-030 shape
+  the local scaffold had just proven 030's forward transform produces from
+  a known pre-030 original, the rollback applied, and the result compared
+  — **byte-identical** to that known original (`{"planned_total": 20,
+  "by_trade": [{"trade": "mason", "planned_count": 12}, {"trade": "helper",
+  "planned_count": 8}], "raw_text": "12 mason 8 helper"}`), NULL row still
+  NULL. (`/tmp/030-testdb-rehearsal.txt` itself never captured the raw
+  pre-030 JSONB as a literal — only a narrative description plus the
+  post-transform result — flagged rather than silently treated as
+  sufficient; the byte-identical proof above is grounded in the seed
+  script's own known literals instead, cross-checked against the local
+  scaffold's identical baseline.)
+- Structural: signature back to the exact 12-arg original, `pg_proc` count
+  exactly 1, `attendance` column absent, `morning_manpower_planned`
+  present, `schema_migrations` count unchanged at 25 throughout (neither
+  030's apply nor this rollback ever touched the ledger — both were
+  applied via `supabase db query --linked -f`, which is ledger-agnostic by
+  design).
+- **The full test suite, on `main`'s own unmodified code, against the
+  now-reverted test-db: 47 files, 586 tests, 0 failures.** This is the
+  check that actually closes the loop — proof the rollback didn't just
+  look structurally right, it restored the exact state every other
+  branch's CI already depends on.
+
+**Status: migration 030 is NOT currently applied anywhere** (test-db or
+prod) as of 2026-08-24 — back to PENDING for artifact 3, same as before
+the rehearsal, but now backed by a rehearsal that already ran clean once
+and a rollback proven to restore cleanly. The next real apply to test-db
+(for the final rehearsal before an actual merge) can reuse
+`docs/reviews/030-rollback.sql` as its own teardown step afterward,
+closing the same loop rather than leaving test-db locked to one branch
+again.
 
 ---
