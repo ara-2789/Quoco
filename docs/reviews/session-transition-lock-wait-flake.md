@@ -1,16 +1,20 @@
 # `test/session-transition.test.ts` Test B — lock-wait flake, tracked not fixed
 
-**Status: OPEN. Do not fix from this document alone** — this is a tracking
-record, written so tomorrow's fix starts from the actual timing code instead
-of a rediscovery, not a diagnosis run to a conclusion. Filed per direct
-instruction, 2026-08-22, after the second same-day occurrence and an explicit
-"do not re-run a third time" decision.
+**Status: OPEN — THIRD OCCURRENCE HIT, 2026-08-24 (see Failure 3 below).**
+Per this document's own standing instruction ("a third occurrence stops the
+merge instead" of a re-run), PR #102 was NOT re-run and NOT merged when this
+fired — held for Aravind, not resolved unilaterally. Still: **do not fix
+from this document alone** — this is a tracking record, written so the real
+fix starts from the actual timing code instead of a rediscovery, not a
+diagnosis run to a conclusion. Filed per direct instruction, 2026-08-22,
+after the second same-day occurrence and an explicit "do not re-run a third
+time" decision.
 
-## The two recorded failures
+## The three recorded failures
 
-Both are the SAME assertion, in the SAME test, with a NEGATIVE elapsed value
-both times — not a marginal near-750 miss, which is what ordinary CI slowness
-or scheduling noise would produce.
+All three are the SAME assertion, in the SAME test, with a NEGATIVE elapsed
+value every time — not a marginal near-750 miss, which is what ordinary CI
+slowness or scheduling noise would produce.
 
 ### Failure 1 — 2026-08-22T04:05:50Z ("this morning")
 
@@ -47,6 +51,40 @@ or scheduling noise would produce.
    ❯ test/session-transition.test.ts:97:27
      97|     expect(lock2 - lock1).toBeGreaterThanOrEqual(750)
   ```
+
+### Failure 3 — 2026-08-24T14:31:13Z
+
+- Run: [32738215162](https://github.com/ara-2789/Quoco/actions/runs/32738215162), job `97466105058` (attempt 1, failed)
+- Trigger: `pull_request` — PR #102 (`docs/credential-rule-procedural-2026-08-24`,
+  **docs-only** — CLAUDE.md's §0 credential rule + a `docs/build-status.md`
+  incident record, zero application code touched), SHA
+  `032c975d28418b33bc5afe2750eef98a0a680d22`
+- **NOT re-run, per this document's own standing instruction** ("a third
+  occurrence stops the merge instead"). PR #102 left open, unmerged, held
+  for Aravind rather than resolved unilaterally.
+- Literal output:
+  ```
+  FAIL  test/session-transition.test.ts > acquire_and_transition_session / drain_next_pending_flow > B: caller 2 blocks on the row lock until caller 1 commits
+  AssertionError: expected -317 to be greater than or equal to 750
+   ❯ test/session-transition.test.ts:97:27
+     97|     expect(lock2 - lock1).toBeGreaterThanOrEqual(750)
+  ```
+- **NEW OBSERVATION, not present in Failures 1/2's own write-up: the
+  elapsed value is `-317`, BYTE-IDENTICAL to Failure 2's `-317`.** Two
+  independent CI runs, two days apart, on two unrelated PRs, producing the
+  EXACT SAME negative number is a much stronger signal than "two negative
+  values" was on its own — genuinely random scheduling jitter across two
+  separate runs landing on the identical millisecond figure is a low-
+  probability coincidence. This is offered as a lead for whoever picks up
+  the real fix (see "What's needed for a real fix" below), not chased down
+  here: candidates worth checking include a fixed, non-random overhead in
+  the CI runner's own request-dispatch path (e.g. a consistent connection-
+  reuse or DNS-cache timing rather than true jitter), or GitHub Actions
+  runners drawing from a smaller, more homogeneous machine pool than
+  presumed — either of which would make "random" scheduling noise land on
+  the same figure more often than pure randomness would predict. Not
+  confirmed; flagged so the next investigation checks it rather than
+  assuming pure randomness the way Failures 1/2 did.
 
 ## Why "negative" is a specific, meaningful signal — not generic flakiness
 
