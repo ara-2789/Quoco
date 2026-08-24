@@ -451,6 +451,33 @@
   section number was already fragile on its own. Always cite the filename
   with the section, e.g. `design-decisions-beta-feedback.md §10`, never
   just "§10". Full reasoning: docs/build-status.md's 2026-08-23 entry.
+- NEVER RUN `supabase projects api-keys`, OR ANY COMMAND THAT PRINTS LIVE
+  CREDENTIALS TO STDOUT (standing rule since 2026-08-23, does not wait on
+  the incident it names). `supabase projects api-keys` (with or without
+  `--reveal`) prints a project's anon, service_role, and secret API keys
+  as its entire output — there is no safe way to run it and capture the
+  result, only a redacted call (still prints legacy `anon`/`service_role`
+  JWTs in full — legacy keys have no masked form at all) or a fully
+  unmasked one. For a project-identity breadcrumb — confirming which
+  database a session is about to act against, the actual need this
+  incident arose from — use a SQL probe instead: `supabase db query
+  --linked -f <file>` running something like `SELECT current_database(),
+  now();`, plus the linked project ref itself (`cat supabase/.temp/
+  project-ref` — the ref is a public path component of the project's URL,
+  not a secret). A SQL query's RESULT is safe to print by construction; a
+  command whose job is enumerating credentials is not, no matter how it's
+  called. **This applies with far more force to production
+  (`jvxwqignooseazzmwhvl`) than to test-db** — the same command, the same
+  keystroke, an entirely different consequence: a prod `service_role` key
+  in a transcript is a live, RLS-bypassing credential over real tenant
+  data, not a disposable test-db key. Evidence: the 2026-08-23 test-db
+  incident (`docs/build-status.md`'s same-dated entry) — `supabase
+  projects api-keys --project-ref exfccwlrhoutkgrlikod` printed test-db's
+  anon/service_role/secret keys into a session transcript while
+  establishing exactly this kind of breadcrumb, in a session that had
+  already switched to the safe SQL-probe pattern for every OTHER
+  breadcrumb that same session — this one slipped through specifically
+  because it wasn't yet a named, checkable rule.
 
 ---
 

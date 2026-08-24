@@ -1539,3 +1539,42 @@ guidance: cite the FILENAME plus section, never a bare "§N"** — e.g.
 `design-decisions-beta-feedback.md §10`, never just "§10". Promoted to a one-line
 standing rule in CLAUDE.md §0 (see that section) since this is a citation convention
 to follow every session, not a one-off historical note.
+
+---
+
+**INCIDENT — test-db (`exfccwlrhoutkgrlikod`) anon/service_role/secret keys
+printed to a session transcript (2026-08-23).**
+
+`supabase projects api-keys`, run to obtain a project breadcrumb during
+migration 030's test-db rehearsal, printed the anon, service_role, and
+secret API keys for test-db in full. **Contained: local transcript only,
+not a public repo or shared log.**
+
+**Risk accepted and deferred (Aravind, 2026-08-23): test-db holds
+disposable schema and no customer data.**
+
+**DEFERRED ACTION, NOT OPTIONAL — legacy `anon`/`service_role` keys CANNOT
+be rotated in place.** Checked directly in the Supabase dashboard (JWT Keys
+→ Legacy JWT Secret): this project's legacy JWT secret has already migrated
+to the newer ECC JWT Signing Keys system, and Supabase's own documented
+path from here is migrating to publishable (`sb_publishable_...`) and
+secret (`sb_secret_...`) keys, then explicitly disabling the legacy keys —
+not rotating them as a like-for-like swap. Legacy keys are deprecated by
+Supabase end-2026 regardless, so this is scheduled work brought forward by
+this incident, not new work invented because of it.
+
+**Deferred until after migration 030 ships.** Scope when done: `test/
+helpers/db.ts`'s `testClient()` (currently a plain `createClient(url,
+serviceRoleKey)` call assuming a JWT-shaped key — needs checking against
+whichever client-construction shape the new key type requires), `.env.local`,
+`.env.test`, the GitHub Actions repo secrets `SUPABASE_TEST_URL`/
+`SUPABASE_TEST_SERVICE_ROLE_KEY`/`SUPABASE_TEST_ANON_KEY`/
+`SUPABASE_TEST_PROJECT_REF` read by `.github/workflows/ci.yml`'s "Test
+(real test-db)" job, then the disable step itself in Settings → API Keys.
+`.env.test.example` already holds only placeholders, unaffected.
+
+**Standing rule this incident produced, since it does not wait on the
+rotation above:** `CLAUDE.md`'s §0 now names `supabase projects api-keys`
+(and any command whose entire output is live credentials, not incidentally
+alongside them) as never safe to run — see that entry for the mechanism and
+the recommended SQL-probe alternative for project-identity breadcrumbs.
