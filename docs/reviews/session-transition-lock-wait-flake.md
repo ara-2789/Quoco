@@ -1,8 +1,15 @@
-# `test/session-transition.test.ts` Test B — ordering-precondition bug, FIX 2 RE-PUSHED (032 now applied to test-db), AWAITING CI
+# `test/session-transition.test.ts` Test B — ordering-precondition bug, RESOLVED (CI-confirmed, 2026-08-24)
 
-**Status: NOT YET RESOLVED. Three CI runs so far, three DIFFERENT failure
-causes, and the ordering mechanism itself has still never actually been
-exercised by CI. In order:**
+**Status: RESOLVED.** PR #104, run `32753275279`, headSha `ba51f172affa82c4f834883f05c3a6ef596dee8f`
+— confirmed matching PR #104's actual HEAD at read time, not just the
+run's own self-reported branch — `Test (real test-db)` **passed in
+6m33s**, all other checks green too (Typecheck, Lint, Migration Lint,
+File Size Lint, Vercel). This is the first CI run that ever actually
+exercised Fix 2's real mechanism (poll-then-dispatch via
+`quoco_test_row_is_locked`, migration 032, now permanently applied to
+test-db) under genuine concurrency. Four CI runs total across this
+incident, four different outcomes — the first three below never reached
+this point:
 
 1. **PR #102, original CI (Failure 3, 2026-08-24T14:31:13Z).** The real
    bug: the ordering precondition wasn't guaranteed, `lock2 < lock1`. Not
@@ -11,8 +18,8 @@ exercised by CI. In order:**
    the ordering precondition 3/3 times in the same run — a process-level
    bias, never once reaching the real assertion. See "FIX 1 FAILS FOR
    REAL" below.
-3. **PR #104, post-Fix-2 CI (run `32750655063`).** Failed for a THIRD,
-   unrelated reason: `Could not find the function
+3. **PR #104, post-Fix-2 CI, first attempt (run `32750655063`).** Failed
+   for a THIRD, unrelated reason: `Could not find the function
    public.quoco_test_row_is_locked(p_phone_number) in the schema cache`.
    Migration 032 (which creates that function) had been applied to
    test-db for my own manual verification, then deliberately **rolled
@@ -21,13 +28,21 @@ exercised by CI. In order:**
    test-db)` job runs `npm test` directly against the persistent shared
    test-db — it does not apply pending migration files from a PR. So the
    function genuinely did not exist when CI's test run executed. This run
-   proves nothing about the ordering mechanism either way — it never got
+   proved nothing about the ordering mechanism either way — it never got
    the chance to run.
+4. **PR #104, post-Fix-2 CI, second attempt (run `32753275279`, this
+   commit, `ba51f17`).** Migration 032 applied to test-db and left there
+   (rationale: `docs/build-status.md`'s 2026-08-24 entry; client-side
+   alternatives assessed and ruled out below). `Test (real test-db)`
+   PASSED in 6m33s — the first genuine confirmation that Fix 2's
+   poll-then-dispatch mechanism holds under real CI concurrency, the
+   thing local runs in this sandbox can never prove
+   (`docs/reviews/sandbox-cannot-test-concurrency.md`).
 
-**None of the three runs above has ever actually exercised Fix 2's real
-mechanism (poll-then-dispatch via `quoco_test_row_is_locked`) under
-genuine CI concurrency.** Run 1 predates it. Run 2 tested Fix 1, a
-different mechanism. Run 3 couldn't reach it at all.
+**Runs 1–3 never actually exercised Fix 2's real mechanism under genuine
+CI concurrency.** Run 1 predates it. Run 2 tested Fix 1, a different
+mechanism. Run 3 couldn't reach it at all. Run 4 is the first, and only,
+confirmation.
 
 **Client-side alternatives to the function were assessed and ruled out
 (2026-08-24) before deciding to keep it.** A marker write inside caller
@@ -55,10 +70,11 @@ timeout (`docs/reviews/sandbox-cannot-test-concurrency.md`), not a new
 problem — see "Verification" under "THE REAL FIX (Fix 2)" below, which
 predicted exactly this local outcome before it happened.
 
-Re-pushed for a fourth CI run — the first one that can actually exercise
-the mechanism. Per standing instruction, nothing below is called RESOLVED
-until CI confirms it, and this document is not touched again on a failure
-without first reporting the raw result.
+Re-pushed for a fourth CI run — the first one that could actually
+exercise the mechanism, and it passed (run `32753275279`, headSha
+`ba51f17`, `Test (real test-db)` green in 6m33s — see the status line at
+the top of this document). Per standing instruction, this was not called
+RESOLVED until CI itself confirmed it.
 
 ---
 
@@ -497,16 +513,15 @@ CLAUDE.md §0) that this exact incident produced:**
   concurrent, unlike JS-client RPC calls here).
 - **The JS-level poll-then-dispatch mechanism (does Test B, as a whole,
   correctly wait for the observed lock before firing caller 2, under
-  genuine concurrent execution): NOT verified locally — cannot be, per
-  the standing rule above.** A local run of the actual test timed out
-  (`caller 1's row lock was never observed within 3000ms`) — consistent
-  with, not contradicting, the sandbox-serialization finding: the probe
-  could never get a concurrent connection to observe the lock while
-  caller 1 held it, in THIS environment. **CI is the only environment
-  that can confirm this half of the fix.** Pushed to PR #102 for exactly
-  that reason; the CI result is reported in this document once known,
-  whichever way it goes — see the status line at the top of this
-  document for the current state.
+  genuine concurrent execution): CONFIRMED by CI, not locally — could
+  never be, per the standing rule above.** A local run of the actual test
+  timed out (`caller 1's row lock was never observed within 3000ms`) —
+  consistent with, not contradicting, the sandbox-serialization finding:
+  the probe could never get a concurrent connection to observe the lock
+  while caller 1 held it, in THIS environment. **CI was the only
+  environment that could confirm this half of the fix, and it did** — PR
+  #104, run `32753275279`, headSha `ba51f17`, `Test (real test-db)` green
+  in 6m33s (2026-08-24). See the status line at the top of this document.
 
 ## Why "negative" is a specific, meaningful signal — not generic flakiness
 
