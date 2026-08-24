@@ -1,14 +1,19 @@
-# `test/session-transition.test.ts` Test B — lock-wait flake, tracked not fixed
+# `test/session-transition.test.ts` Test B — "flake" label likely wrong, tracked not fixed
 
-**Status: OPEN — THIRD OCCURRENCE HIT, 2026-08-24 (see Failure 3 below).**
-Per this document's own standing instruction ("a third occurrence stops the
-merge instead" of a re-run), PR #102 was NOT re-run and NOT merged when this
-fired — held for Aravind, not resolved unilaterally. Still: **do not fix
-from this document alone** — this is a tracking record, written so the real
-fix starts from the actual timing code instead of a rediscovery, not a
-diagnosis run to a conclusion. Filed per direct instruction, 2026-08-22,
-after the second same-day occurrence and an explicit "do not re-run a third
-time" decision.
+**Status: OPEN — THIRD OCCURRENCE HIT, 2026-08-24, AND THE "FLAKE" FRAMING
+ITSELF IS NOW SUSPECT (see "2026-08-24 investigation" below).** Per this
+document's own standing instruction ("a third occurrence stops the merge
+instead" of a re-run), PR #102 was NOT re-run and NOT merged when this
+fired — held for Aravind, not resolved unilaterally. Two of the three
+recorded failures (Failures 2 and 3) produced a BYTE-IDENTICAL elapsed value
+(`-317`), two days and two unrelated PRs apart. This has been treated as
+randomness for two days on the strength of a single negative number — a race
+produces scatter, a repeated constant does not, and the "flake" label was
+probably the wrong one from the start. Still: **do not fix from this
+document alone** — this is a tracking record, written so the real fix starts
+from the actual timing code instead of a rediscovery, not a diagnosis run to
+a conclusion. Filed per direct instruction, 2026-08-22, after the second
+same-day occurrence and an explicit "do not re-run a third time" decision.
 
 ## The three recorded failures
 
@@ -85,6 +90,109 @@ slowness or scheduling noise would produce.
   the same figure more often than pure randomness would predict. Not
   confirmed; flagged so the next investigation checks it rather than
   assuming pure randomness the way Failures 1/2 did.
+
+## 2026-08-24 investigation — findings reported, nothing fixed, nothing re-run
+
+Per direct instruction: capture raw inputs (not the difference), test the
+lock-order-inversion hypothesis directly against three specific leads, report
+before changing anything. Done in that order; nothing in this section altered
+the test, the migration, or any committed code.
+
+### Method
+
+A standalone script (`lock-flake-probe.ts`, not committed — disposable,
+deleted after use) replicated Test B's exact RPC call shape
+(`acquire_and_transition_session`, same params, same `testPhone('102')`
+slot) against real test-db, printing RAW values instead of the subtraction:
+both `_test_lock_acquired_at` timestamps verbatim, a client-side "dispatched
+at" timestamp per caller (`Date.now()` immediately before each RPC call),
+and the wall-clock bracket — for every iteration, pass or fail. Row deleted
+before each iteration (mirroring the suite's own `afterEach`).
+
+**30 iterations, run from this session's sandbox against test-db:**
+**30/30 passed. Zero negative values.** Every `lock2 - lock1` was positive
+and tightly clustered: **960ms–1108ms**, a ~150ms spread consistent with
+ordinary scheduling variance around the 800ms hold + ~100–200ms round-trip
+overhead. The negative value was NOT reproduced locally, in this
+environment, across 30 attempts.
+
+### The three specific leads, tested directly — all three ruled out
+
+1. **Does context merge (`||`) let a PRIOR run's `_test_lock_acquired_at`
+   survive into a later read?** Tested directly: primed a row with a real
+   `_test_lock_acquired_at` (first cycle), then ran a SECOND cycle on the
+   SAME row WITHOUT deleting it first — the exact "stale row" condition this
+   lead asks about. Result: **both callers' `_test_lock_acquired_at` still
+   reflected their OWN fresh `clock_timestamp()` read, not the prior run's
+   value** (`diff: 965`, a normal positive result). Ruled out. Reading the
+   SQL confirms why: each caller's `v_session` is a LOCAL variable inside
+   its OWN function invocation — the `||` merge always writes that CALLER's
+   own `v_lock_at` as the right-hand (winning) operand, so a stale key can
+   only ever be overwritten, never survive, regardless of what the row
+   looked like beforehand.
+   **Side finding, not the cause but worth recording:** a non-deleted row
+   DOES change the DECISION branch taken (`pending_flows` accumulates
+   across cycles, `current_flow`'s "already active, same flow" no-op path
+   fires) — this is the function's own documented, correct behaviour for a
+   same-day resume, not a bug, and it does not touch
+   `_test_lock_acquired_at`.
+2. **Is either timestamp ever sourced from `p_now` (client-supplied) rather
+   than `clock_timestamp()`?** Checked directly against the full function
+   body (`013_session_transition_test_lock_probe.sql`) — there is exactly
+   ONE assignment to `v_lock_at` in the entire function
+   (`v_lock_at := clock_timestamp();`), no other code path touches it.
+   Test B's own two calls never pass a `now` option either
+   (`test/helpers/db.ts`'s `acquireAndTransition` only includes `p_now` in
+   the RPC payload `if (params.now !== undefined)` — Test B supplies
+   neither call with `now`), so `p_now` falls back to Postgres's own
+   `now()` default regardless — and `now()`/`transaction_timestamp()` is
+   never assigned to `v_lock_at` anywhere. Ruled out by code inspection,
+   corroborated empirically: across all 32 sampled calls (30 clean + 2
+   stale-row), both callers' timestamps were always distinct and consistent
+   with real elapsed time, never frozen or shared.
+3. **Is the row from a previous test left behind, so one caller reads a
+   stale row?** Tested directly (same experiment as lead 1). A pre-existing
+   row changes flow-decision branching (see above) but does NOT corrupt
+   `_test_lock_acquired_at` for either caller. Ruled out as the source of
+   the negative-value symptom specifically, though confirmed real as a
+   (harmless, by-design) side effect of skipping cleanup.
+
+### What this does NOT rule out, and the honest gap in this reproduction
+
+- **`vitest.config.ts` sets `fileParallelism: false`** — confirmed CI runs
+  test files strictly sequentially (`npm test` = plain `vitest run`, no
+  override in `.github/workflows/ci.yml`). This rules out a DIFFERENT test
+  file's own `cleanupTestSessions()` racing Test B's in-flight calls — that
+  is structurally impossible under this config, not merely unobserved.
+- **Both the SQL migration and the test file have exactly ONE commit each,
+  from 2026-07-07** (`git log`) — unchanged since long before any of the
+  three failures. Rules out "something changed between occurrences."
+- **The gap this investigation did NOT close:** the local reproduction was
+  ISOLATED — this one RPC pair, one Node process, no other database traffic
+  competing for the connection pool. CI's three failures all occurred
+  during a ~50-file suite run; even with file-level parallelism off, the
+  Postgres connection pooler (Supavisor) is shared and stateful across the
+  WHOLE run, and dozens of short-lived connections opening/closing in the
+  files that ran before this one were never replicated here. This
+  reproduction cannot rule out a pooler-level effect (connection reuse,
+  a lingering prepared-statement plan, TCP-level state) specific to running
+  under that load — only that the mechanism, IN ISOLATION, behaves
+  correctly.
+- **The identical-value observation itself remains unexplained.** Genuine
+  network/scheduling jitter, even under a plausible "fixed CI-runner
+  connection-setup overhead" story, should still show millisecond-level
+  variance run to run — two SEPARATE, ephemeral GitHub Actions runner VMs,
+  two days apart, landing on the exact same `-317` is difficult to square
+  with any of the timing-noise explanations this document has offered so
+  far (including its own prior "lock-order inversion under jitter"
+  hypothesis, tested above only for whether it's STRUCTURALLY possible, not
+  for why it would repeat exactly). No code-level mechanism found in this
+  pass explains a deterministic, repeatable value. **The most useful next
+  step is not further local reproduction — it is instrumenting a REAL CI
+  run** (the same raw-value capture used here, added temporarily to a CI
+  job, or the diagnostic script run directly inside a GitHub Actions
+  runner) so the actual environment that produces `-317` can be observed
+  directly, rather than guessed at from a differently-networked sandbox.
 
 ## Why "negative" is a specific, meaningful signal — not generic flakiness
 
@@ -277,18 +385,39 @@ database servers.
 
 ## What's needed for a real fix (not attempted here)
 
-1. Confirm or refute the lock-order-inversion hypothesis directly — e.g. by
-   having the test also capture a client-side "request sent at" timestamp per
-   caller and compare it against which `_test_lock_acquired_at` came back
-   first, across enough repeated runs to catch the inversion in the act.
-2. If confirmed, the fix is almost certainly changing how caller-1-goes-first
-   is guaranteed — e.g. having caller 1 acquire its lock and confirm
-   (round-trip) before caller 2 is even dispatched, rather than a bare
-   client-side `sleep(100)` — not touching the SQL/locking logic itself,
-   which this hypothesis does not implicate.
+1. **UPDATED, 2026-08-24 investigation.** The client-side "request sent at"
+   capture this item originally proposed WAS built and run (30 iterations,
+   see above) — it did not catch an inversion in the act locally, and the
+   identical-value observation across Failures 2/3 argues the inversion
+   hypothesis alone (pure network jitter reordering the two requests) does
+   not fully explain what's been observed either — jitter should scatter,
+   not repeat exactly. **What's actually needed now: the same raw-value
+   capture run FROM INSIDE a GitHub Actions runner** (temporarily
+   instrument the test itself, or run the standalone probe as an extra CI
+   step), since this session's local reproduction — a different network
+   path, no competing connection-pool load from ~50 preceding test files —
+   never reproduced the negative value at all across 30 attempts. The
+   fix cannot be designed correctly until the actual mechanism is observed
+   somewhere it actually occurs.
+2. If lock-order-inversion is confirmed as A cause (not necessarily the
+   only one, given the repeated-constant puzzle above), the fix is almost
+   certainly changing how caller-1-goes-first is guaranteed — e.g. having
+   caller 1 acquire its lock and confirm (round-trip) before caller 2 is
+   even dispatched, rather than a bare client-side `sleep(100)` — not
+   touching the SQL/locking logic itself, which this hypothesis does not
+   implicate.
 3. Whatever the fix, it should preserve the DB-side, network-noise-immune
    character of the magnitude proof (`lock2 - lock1 >= 750`) — only the
    ordering guarantee is suspect, not the measurement.
+4. **New, from the 2026-08-24 investigation:** if the CI-runner-side
+   capture (item 1) ALSO fails to explain the exact-repeat, broaden the
+   search beyond timing entirely — a deterministic value repeating exactly
+   is more consistent with a computation or data-handling bug (something
+   that always produces the same number given the same inputs) than with
+   any physical timing mechanism, however jitter-prone. This session's
+   investigation ruled out the three most obvious deterministic-bug
+   candidates (stale context, wrong timestamp source, stale row) but did
+   not exhaustively search for others.
 
 Not fixed here, per instruction — this document exists so the fix starts
 from this analysis, not a re-investigation.
