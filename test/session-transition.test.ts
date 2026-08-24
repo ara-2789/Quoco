@@ -61,51 +61,134 @@ describe('acquire_and_transition_session / drain_next_pending_flow', () => {
   // across an 800ms injected sleep; Caller 2 must BLOCK on the acquire until
   // Caller 1 commits. Proof is DB-side: each call records clock_timestamp() at
   // its own lock-acquisition point (migration 013), so Caller 2's lock time
-  // must be >= Caller 1's lock time + the sleep. This is immune to JS/network
-  // timing noise (a JS promise-resolution measurement would not be).
+  // must be >= Caller 1's lock time + the sleep. The MAGNITUDE proof is immune
+  // to JS/network timing noise (a JS promise-resolution measurement would not
+  // be) — but see ORDERING GUARANTEE below for what it is NOT immune to, and
+  // why the setup below no longer assumes it.
   //
   // Caller 2 passes p_test_sleep_ms=0 (not omitted): 0 is non-NULL, so the
   // function still records Caller 2's DB-side lock timestamp, but sleeps 0ms —
   // i.e. genuinely "no pause", exactly as the spec intends.
+  //
+  // ORDERING GUARANTEE (fixed 2026-08-24, docs/reviews/session-transition-
+  // lock-wait-flake.md — full incident + investigation there, not repeated
+  // here). The original setup fired caller 1, slept 100ms client-side, then
+  // fired caller 2, RELYING on that gap to guarantee caller 1 reaches
+  // Postgres first — nothing enforced it. Under latency skew (a cold
+  // connection, pool state after dozens of preceding CI test files), caller
+  // 2 could reach Postgres first, acquire the lock, and commit almost
+  // instantly (0ms hold) BEFORE caller 1 even arrived — producing a negative
+  // `lock2 - lock1` that looked like a broken lock but was actually a test
+  // setup that never exercised its own intended interleave.
+  //
+  // FIX CHOSEN: assert on ORDERING explicitly (not a-priori guarantee it via
+  // new production SQL). A true, unconditional guarantee — e.g. an advisory
+  // lock caller 2's dispatcher polls before firing, or splitting caller 1
+  // into acquire-then-hold — would require NEW database surface (a new
+  // migration exposing lock state cross-session, since a row lock inside an
+  // uncommitted transaction is invisible to any other connection by MVCC
+  // design). That trips this project's own external-review gate (CLAUDE.md
+  // §0) for a test-only concern, and PostgREST's one-call-per-transaction
+  // model makes "hold the lock, then separately signal, then release" a
+  // multi-round-trip protocol this architecture doesn't support without a
+  // raw kept-alive connection — a real architecture change, not a test fix.
+  // Detecting the ACTUAL acquisition order from the two DB-side timestamps
+  // this test already captures costs nothing new, keeps the magnitude proof
+  // exactly as before, and turns a silent, ambiguous failure into an
+  // explicit one. A bare "detect and fail" would still redden CI on a rare,
+  // genuine (non-regression) network moment — retrying the SETUP (not the
+  // assertion) when ordering is violated, bounded and loud if it never
+  // resolves, is what actually closes the gap.
   // ---------------------------------------------------------------------------
   it('B: caller 2 blocks on the row lock until caller 1 commits', async () => {
     const phone = testPhone('102')
+    const MAX_ATTEMPTS = 3
+    let lastInversion: { lock1: number; lock2: number } | null = null
 
-    // Coarse wall-clock bracket around the whole concurrent operation. This is
-    // a SANITY CHECK ONLY, not the proof: it guards against a bug in the
-    // DB-side timestamp mechanism itself silently making the real assertion
-    // vacuous. The authoritative proof is the lockAcquiredAt comparison below.
-    const wallStart = performance.now()
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (attempt > 1) {
+        // Fresh row for the retry -- a partially-written row from the
+        // inverted attempt must not leak into this one (see the CONTEXT
+        // DISCIPLINE / merge-not-replace note elsewhere in this codebase;
+        // a fresh row sidesteps the question entirely rather than relying
+        // on it here).
+        await cleanupTestSessions()
+      }
 
-    // Fire caller 1 (holds the lock 800ms), then caller 2 a beat later so
-    // caller 1 is guaranteed to reach the acquire first.
-    const p1 = acquireAndTransition({ phone, requestedFlow: 'evening', testSleepMs: 800 })
-    await sleep(100)
-    const p2 = acquireAndTransition({ phone, requestedFlow: 'safety', testSleepMs: 0 })
+      // Coarse wall-clock bracket around the whole concurrent operation. This
+      // is a SANITY CHECK ONLY, not the proof: it guards against a bug in the
+      // DB-side timestamp mechanism itself silently making the real assertion
+      // vacuous. The authoritative proof is the lockAcquiredAt comparison below.
+      const wallStart = performance.now()
 
-    const [c1, c2] = await Promise.all([p1, p2])
+      // Fire caller 1 (holds the lock 800ms), then caller 2 a beat later.
+      // The 100ms gap makes caller 1 reaching Postgres first LIKELY, not
+      // guaranteed -- see ORDERING GUARANTEE above for why an unconditional
+      // guarantee isn't attempted here.
+      const p1 = acquireAndTransition({ phone, requestedFlow: 'evening', testSleepMs: 800 })
+      await sleep(100)
+      const p2 = acquireAndTransition({ phone, requestedFlow: 'safety', testSleepMs: 0 })
 
-    const wallElapsed = performance.now() - wallStart
+      const [c1, c2] = await Promise.all([p1, p2])
 
-    const lock1 = lockAcquiredAt(c1)
-    const lock2 = lockAcquiredAt(c2)
+      const wallElapsed = performance.now() - wallStart
 
-    // PRIMARY PROOF (DB-side): caller 2 could not take the lock until caller 1's
-    // txn (lock + 800ms sleep + write) committed. Allow a small margin under
-    // 800ms for scheduling, but this is far above the ~0ms a non-blocked race
-    // would show.
-    expect(lock2 - lock1).toBeGreaterThanOrEqual(750)
+      const lock1 = lockAcquiredAt(c1)
+      const lock2 = lockAcquiredAt(c2)
 
-    // SECONDARY, COARSE SANITY CHECK ONLY — NOT the proof. If the DB-side
-    // mechanism above were broken, the two calls could still not have completed
-    // faster than the injected 800ms serialised hold. ~700ms leaves slack for
-    // client/network overhead while staying well above a would-be race.
-    expect(wallElapsed).toBeGreaterThanOrEqual(700)
+      if (lock2 < lock1) {
+        // ORDERING PRECONDITION VIOLATED, not a lock defect: caller 2
+        // reached Postgres and acquired the lock before caller 1 did. This
+        // run never exercised the intended interleave (caller 2's 0ms hold
+        // means it committed almost instantly, before caller 1 had even
+        // arrived) -- retry with a fresh row rather than silently
+        // reinterpreting min/max as if the scenario under test had occurred.
+        lastInversion = { lock1, lock2 }
+        console.log(
+          `[session-transition Test B] ordering precondition missed on attempt ${attempt}/${MAX_ATTEMPTS} ` +
+            `(lock1=${lock1}, lock2=${lock2}, diff=${lock2 - lock1}) -- retrying with a fresh row`,
+        )
+        continue
+      }
 
-    // Final committed state: evening still active, safety queued behind it.
-    expect(c2.current_flow).toBe('evening')
-    expect(c2.pending_flows).toHaveLength(1)
-    expect(c2.pending_flows[0].type).toBe('safety')
+      // Ordering confirmed (caller 1 genuinely acquired first) -- this run
+      // actually exercised the intended interleave. Assert the real
+      // invariant, unchanged from before this fix.
+
+      // PRIMARY PROOF (DB-side): caller 2 could not take the lock until
+      // caller 1's txn (lock + 800ms sleep + write) committed. Allow a
+      // small margin under 800ms for scheduling, but this is far above the
+      // ~0ms a non-blocked race would show.
+      expect(lock2 - lock1).toBeGreaterThanOrEqual(750)
+
+      // SECONDARY, COARSE SANITY CHECK ONLY — NOT the proof. If the DB-side
+      // mechanism above were broken, the two calls could still not have
+      // completed faster than the injected 800ms serialised hold. ~700ms
+      // leaves slack for client/network overhead while staying well above a
+      // would-be race.
+      expect(wallElapsed).toBeGreaterThanOrEqual(700)
+
+      // Final committed state: evening still active, safety queued behind it.
+      expect(c2.current_flow).toBe('evening')
+      expect(c2.pending_flows).toHaveLength(1)
+      expect(c2.pending_flows[0].type).toBe('safety')
+      return
+    }
+
+    // Every attempt hit the ordering precondition, never the real assertion.
+    // Loud and distinct on purpose -- this message, not a generic "-N to be
+    // >= 750", is what should show up in CI so it is never again mistaken
+    // for a locking regression. See docs/reviews/session-transition-lock-
+    // wait-flake.md for the full incident history this replaces.
+    throw new Error(
+      `Test B: ordering precondition never satisfied after ${MAX_ATTEMPTS} attempts -- ` +
+        `caller 2 kept acquiring the row lock before caller 1 despite the 100ms head start ` +
+        `every time (last attempt: lock1=${lastInversion?.lock1}, lock2=${lastInversion?.lock2}, ` +
+        `diff=${(lastInversion?.lock2 ?? 0) - (lastInversion?.lock1 ?? 0)}). This means the test ` +
+        `setup could not construct the intended interleave in ${MAX_ATTEMPTS} tries -- it is NOT ` +
+        `evidence the row lock itself is broken (the magnitude assertion, which IS that evidence, ` +
+        `never ran). See docs/reviews/session-transition-lock-wait-flake.md.`,
+    )
   })
 
   // ---------------------------------------------------------------------------
