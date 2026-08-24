@@ -1,15 +1,21 @@
-# `test/session-transition.test.ts` Test B — ordering-precondition bug, RESOLVED (CI-confirmed, 2026-08-24)
+# `test/session-transition.test.ts` Test B — ordering-precondition bug, RESOLVED (PROVISIONAL), 2026-08-24
 
-**Status: RESOLVED.** PR #104, run `32753275279`, headSha `ba51f172affa82c4f834883f05c3a6ef596dee8f`
-— confirmed matching PR #104's actual HEAD at read time, not just the
-run's own self-reported branch — `Test (real test-db)` **passed in
-6m33s**, all other checks green too (Typecheck, Lint, Migration Lint,
-File Size Lint, Vercel). This is the first CI run that ever actually
-exercised Fix 2's real mechanism (poll-then-dispatch via
-`quoco_test_row_is_locked`, migration 032, now permanently applied to
-test-db) under genuine concurrency. Four CI runs total across this
+**Status: RESOLVED (PROVISIONAL).** Not upgraded to a plain RESOLVED yet
+— see "Why provisional, and what closes it" below before treating this
+as fully closed. PR #104, run `32753275279`, headSha
+`ba51f172affa82c4f834883f05c3a6ef596dee8f` — confirmed matching PR #104's
+actual HEAD at read time, not just the run's own self-reported branch —
+`Test (real test-db)` **passed in 6m33s**, all other checks green too
+(Typecheck, Lint, Migration Lint, File Size Lint, Vercel). This is the
+first CI run that ever actually exercised Fix 2's real mechanism
+(poll-then-dispatch via `quoco_test_row_is_locked`, migration 032, now
+permanently applied to test-db) under genuine concurrency. A second run,
+`32754398812` (headSha `00270cd`, the commit that updated this document's
+own status to RESOLVED before this provisional softening), also passed
+`Test (real test-db)` — **10m3s** — and that is the commit PR #104
+actually merged to `main` as `a6b79b1`. Five CI runs total across this
 incident, four different outcomes — the first three below never reached
-this point:
+the mechanism at all; the last two both did, and both passed:
 
 1. **PR #102, original CI (Failure 3, 2026-08-24T14:31:13Z).** The real
    bug: the ordering precondition wasn't guaranteed, `lock2 < lock1`. Not
@@ -30,19 +36,54 @@ this point:
    function genuinely did not exist when CI's test run executed. This run
    proved nothing about the ordering mechanism either way — it never got
    the chance to run.
-4. **PR #104, post-Fix-2 CI, second attempt (run `32753275279`, this
-   commit, `ba51f17`).** Migration 032 applied to test-db and left there
+4. **PR #104, post-Fix-2 CI, second attempt (run `32753275279`, commit
+   `ba51f17`).** Migration 032 applied to test-db and left there
    (rationale: `docs/build-status.md`'s 2026-08-24 entry; client-side
    alternatives assessed and ruled out below). `Test (real test-db)`
    PASSED in 6m33s — the first genuine confirmation that Fix 2's
    poll-then-dispatch mechanism holds under real CI concurrency, the
    thing local runs in this sandbox can never prove
    (`docs/reviews/sandbox-cannot-test-concurrency.md`).
+5. **PR #104, post-Fix-2 CI, third attempt (run `32754398812`, commit
+   `00270cd`).** The doc commit that first marked this RESOLVED
+   (non-provisional). `Test (real test-db)` PASSED again, 10m3s. This is
+   the exact commit merged to `main` as `a6b79b1`.
 
 **Runs 1–3 never actually exercised Fix 2's real mechanism under genuine
 CI concurrency.** Run 1 predates it. Run 2 tested Fix 1, a different
-mechanism. Run 3 couldn't reach it at all. Run 4 is the first, and only,
-confirmation.
+mechanism. Run 3 couldn't reach it at all. Runs 4 and 5 both did, and
+both passed — but both are on the SAME PR (#104), two commits apart, not
+independent evidence from separate PRs. See below for why that
+distinction matters to this document's status.
+
+## Why provisional, and what closes it
+
+Two consecutive passes (runs 4 and 5) is real evidence, and the nature of
+the evidence matters: this isn't "re-ran the same thing and got lucky
+twice" — run 5 is a structurally different commit (the SHA moved between
+runs), and the fix itself is a deterministic guarantee, not a
+probabilistic one, once the mechanism is confirmed to work at all — a
+directly-observed lock is not a timing bet that could pass most of the
+time and fail occasionally. That is meaningfully stronger evidence than
+an equivalent pair of green re-runs would be for a timing-sensitive fix.
+
+But two runs, both on one PR's branch, is still a sample of one
+*context* — one Actions runner pool, one narrow time window, one set of
+whatever CI-runner conditions (network path, connection-pool state after
+~50 preceding files, per the "what remains genuinely open" note below)
+happened to hold both times. The three prior failures on this exact test
+each had a different, unrelated cause — that history is a specific
+reason not to over-read a short streak here, even a streak that passed
+for the reasons just given.
+
+**This closes to a plain RESOLVED when:** two to three more independent
+CI runs pass `Test (real test-db)` with this mechanism live, on
+genuinely separate PRs (not just separate commits on the same branch) —
+ordinary future PRs that happen to touch `test/session-transition.test.ts`
+or run the full suite qualify; no special test is needed to accumulate
+this. Record each run's ID and headSha here as they land:
+- *(none yet — runs 4 and 5 above are both PR #104; the first
+  separate-PR confirmation goes here)*
 
 **Client-side alternatives to the function were assessed and ruled out
 (2026-08-24) before deciding to keep it.** A marker write inside caller
