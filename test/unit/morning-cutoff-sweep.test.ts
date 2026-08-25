@@ -22,6 +22,10 @@ import { sweepStaleMorningSessions } from '@/lib/daily-logs/morning-cutoff-sweep
 
 const TENANT_ID = '00000000-0000-4000-a000-0000000cf001'
 const PROJECT_ID = '00000000-0000-4000-a000-0000000cf002'
+// A second project, for the project-membership-count tests below only --
+// an engineer needs two real project_members rows to exercise the
+// multiple_project_memberships skip path.
+const PROJECT_ID_2 = '00000000-0000-4000-a000-0000000cf003'
 const LOG_DATE = '2026-09-10' // a date no other suite writes, per db.ts's own convention
 
 // Engineer's last real turn: 09:00 IST on LOG_DATE = 2026-09-10T03:30:00Z.
@@ -118,6 +122,8 @@ async function runSweep(now: string) {
     swept_phone_numbers: string[]
     reason?: string
     missing_daily_logs_rows: { phone_number: string; current_step: number; reason: string }[]
+    skipped_count: number
+    skipped_sessions: { phone_number: string; current_step: number; project_membership_count: number; reason: string }[]
   }
 }
 
@@ -126,6 +132,7 @@ beforeAll(async () => {
 
   await db.from('tenants').upsert({ id: TENANT_ID, name: 'ZZ Morning-Cutoff-Sweep Suite', slug: 'zz-morning-cutoff-sweep' }, { onConflict: 'id' })
   await db.from('projects').upsert({ id: PROJECT_ID, tenant_id: TENANT_ID, name: 'ZZ Morning-Cutoff-Sweep Project' }, { onConflict: 'id' })
+  await db.from('projects').upsert({ id: PROJECT_ID_2, tenant_id: TENANT_ID, name: 'ZZ Morning-Cutoff-Sweep Project 2' }, { onConflict: 'id' })
 
   for (const key of Object.keys(PHONE) as (keyof typeof PHONE)[]) {
     engineerIds[key] = await ensureEngineer(PHONE[key], `ZZ ${key} Engineer`)
@@ -165,7 +172,13 @@ afterAll(async () => {
   await db.from('daily_logs').delete().eq('project_id', PROJECT_ID)
   await db.from('whatsapp_sessions').delete().like('phone_number', '+199955504%')
   await db.from('project_members').delete().eq('project_id', PROJECT_ID)
+  // PROJECT_ID_2's own project_members rows are cleaned by the individual
+  // membership-count tests below (self-contained, same pattern as the
+  // wrapper/missing-row-guard tests above) -- only the project row itself
+  // is torn down here.
+  await db.from('project_members').delete().eq('project_id', PROJECT_ID_2)
   await db.from('projects').delete().eq('id', PROJECT_ID)
+  await db.from('projects').delete().eq('id', PROJECT_ID_2)
   for (const key of Object.keys(engineerIds) as (keyof typeof PHONE)[]) {
     if (engineerIds[key]) await db.from('users').delete().eq('id', engineerIds[key])
   }
@@ -365,5 +378,110 @@ describe('sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff swee
 
     const log = await getLog(engineerIds.evening)
     expect(log).toBeNull()
+  })
+
+  describe('project-membership count — do not guess a project', () => {
+    // Sharpest test at step 5 specifically: it's an INSERT, so a wrong
+    // guess would fabricate an absence record against a project the
+    // engineer may have nothing to do with -- the exact hazard this fix
+    // exists to prevent.
+
+    it('multi-project engineer is SKIPPED and counted, nothing written, session untouched', async () => {
+      const phone = '+19995550411'
+      const db = testClient()
+      const { data: user, error: userErr } = await db
+        .from('users')
+        .insert({ tenant_id: TENANT_ID, full_name: 'ZZ multiProject Engineer', role: 'engineer', status: 'active', messaging_blocked: false, whatsapp_number: phone, auth_id: null })
+        .select('id')
+        .single<{ id: string }>()
+      if (userErr || !user) throw new Error(`multi-project-test engineer insert failed: ${userErr?.message}`)
+      await db.from('project_members').upsert({ tenant_id: TENANT_ID, project_id: PROJECT_ID, user_id: user.id, role: 'engineer' }, { onConflict: 'project_id,user_id' })
+      await db.from('project_members').upsert({ tenant_id: TENANT_ID, project_id: PROJECT_ID_2, user_id: user.id, role: 'engineer' }, { onConflict: 'project_id,user_id' })
+      await seedMorningSession(phone, user.id, 5, SESSION_UPDATED_AT)
+
+      const result = await runSweep(AFTER_CUTOFF)
+
+      expect(result.swept_phone_numbers).not.toContain(phone)
+      expect(result.skipped_sessions).toContainEqual({
+        phone_number: phone,
+        current_step: 5,
+        project_membership_count: 2,
+        reason: 'multiple_project_memberships',
+      })
+
+      // Nothing fabricated in EITHER project, and the session is left
+      // completely alone -- not even a partial reset.
+      const logA = await getLog(user.id)
+      expect(logA).toBeNull()
+      const { data: logB } = await db.from('daily_logs').select('*').eq('project_id', PROJECT_ID_2).eq('engineer_id', user.id).eq('log_date', LOG_DATE).maybeSingle()
+      expect(logB).toBeNull()
+
+      const session = await getSession(phone)
+      expect(session?.current_flow).toBe('morning')
+      expect(session?.current_step).toBe(5)
+
+      await db.from('project_members').delete().eq('user_id', user.id)
+      await db.from('users').delete().eq('id', user.id)
+    })
+
+    it('zero-membership engineer is SKIPPED and counted, nothing written, session untouched', async () => {
+      const phone = '+19995550412'
+      const db = testClient()
+      const { data: user, error: userErr } = await db
+        .from('users')
+        .insert({ tenant_id: TENANT_ID, full_name: 'ZZ zeroMembership Engineer', role: 'engineer', status: 'active', messaging_blocked: false, whatsapp_number: phone, auth_id: null })
+        .select('id')
+        .single<{ id: string }>()
+      if (userErr || !user) throw new Error(`zero-membership-test engineer insert failed: ${userErr?.message}`)
+      // Deliberately NO project_members row at all.
+      await seedMorningSession(phone, user.id, 5, SESSION_UPDATED_AT)
+
+      const result = await runSweep(AFTER_CUTOFF)
+
+      expect(result.swept_phone_numbers).not.toContain(phone)
+      expect(result.skipped_sessions).toContainEqual({
+        phone_number: phone,
+        current_step: 5,
+        project_membership_count: 0,
+        reason: 'zero_project_memberships',
+      })
+
+      const log = await getLog(user.id)
+      expect(log).toBeNull()
+
+      const session = await getSession(phone)
+      expect(session?.current_flow).toBe('morning')
+      expect(session?.current_step).toBe(5)
+
+      await db.from('users').delete().eq('id', user.id)
+    })
+
+    it('single-project engineer sweeps normally -- the count check does not regress the normal case', async () => {
+      const phone = '+19995550413'
+      const db = testClient()
+      const { data: user, error: userErr } = await db
+        .from('users')
+        .insert({ tenant_id: TENANT_ID, full_name: 'ZZ singleProject Engineer', role: 'engineer', status: 'active', messaging_blocked: false, whatsapp_number: phone, auth_id: null })
+        .select('id')
+        .single<{ id: string }>()
+      if (userErr || !user) throw new Error(`single-project-test engineer insert failed: ${userErr?.message}`)
+      await db.from('project_members').upsert({ tenant_id: TENANT_ID, project_id: PROJECT_ID, user_id: user.id, role: 'engineer' }, { onConflict: 'project_id,user_id' })
+      await seedMorningSession(phone, user.id, 5, SESSION_UPDATED_AT)
+
+      const result = await runSweep(AFTER_CUTOFF)
+
+      expect(result.swept_phone_numbers).toContain(phone)
+      expect(result.skipped_sessions.some((s) => s.phone_number === phone)).toBe(false)
+
+      const log = await getLog(user.id)
+      expect(log?.attendance).toBe('absent')
+      expect(log?.attendance_defaulted).toBe(true)
+
+      const session = await getSession(phone)
+      expect(session?.current_flow).toBeNull()
+
+      await db.from('project_members').delete().eq('user_id', user.id)
+      await db.from('users').delete().eq('id', user.id)
+    })
   })
 })

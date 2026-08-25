@@ -101,6 +101,22 @@
 -- raised, so one bad row never fails the whole sweep for every other
 -- engineer this tick.
 --
+-- PROJECT MEMBERSHIP -- COUNTED, NOT GUESSED (2026-08-25, requested review
+-- finding, supersedes an earlier LIMIT-1-no-ORDER-BY version of this
+-- lookup). daily_logs is keyed on (project_id, engineer_id, log_date) --
+-- picking an arbitrary project for a multi-project engineer would fabricate
+-- data against a project the engineer may have nothing to do with (step
+-- 5's INSERT especially), on a path nobody watches. Do not guess: a
+-- session whose engineer has exactly one project_members row is processed
+-- normally; zero or more than one SKIPS that session UNCONDITIONALLY --
+-- no daily_logs write, no session reset, nothing -- counted and surfaced
+-- in skipped_count/skipped_sessions instead. Left fully parked (current_
+-- flow/current_step untouched) so the next tick re-evaluates it fresh the
+-- moment membership becomes unambiguous, rather than resetting a session
+-- nothing was actually written for. A session parked an extra tick (or
+-- day) is recoverable; a fabricated absence record against the wrong
+-- project is not.
+--
 -- WHERE THIS RUNS. Inside the existing jobs/tick cron (already polled every
 -- 60s, NFR-16) -- app/api/jobs/tick/route.ts's runJobsTick, alongside job
 -- claiming, NOT a new job type (this is time-triggered, not queued) and NOT
@@ -121,20 +137,28 @@ SECURITY DEFINER
 SET search_path = public
 AS $fn$
 DECLARE
-  v_ist_minutes   INTEGER;
-  v_row           whatsapp_sessions%ROWTYPE;
-  v_log_date      DATE;
-  v_project_id    UUID;
-  v_swept_count   INTEGER := 0;
-  v_swept_phones  TEXT[]  := '{}';
-  v_rows_affected INTEGER;
-  v_missing_rows  JSONB   := '[]'::jsonb;
+  v_ist_minutes     INTEGER;
+  v_row             whatsapp_sessions%ROWTYPE;
+  v_log_date        DATE;
+  v_project_id      UUID;
+  v_project_count   INTEGER;
+  v_swept_count     INTEGER := 0;
+  v_swept_phones    TEXT[]  := '{}';
+  v_rows_affected   INTEGER;
+  v_missing_rows    JSONB   := '[]'::jsonb;
+  v_skipped_count   INTEGER := 0;
+  v_skipped_sessions JSONB  := '[]'::jsonb;
 BEGIN
   -- CUTOFF GATE -- see file header.
   v_ist_minutes := EXTRACT(HOUR FROM (p_now AT TIME ZONE 'Asia/Kolkata'))::int * 60
                  + EXTRACT(MINUTE FROM (p_now AT TIME ZONE 'Asia/Kolkata'))::int;
   IF v_ist_minutes < 900 THEN  -- 15:00 IST = 15*60
-    RETURN jsonb_build_object('swept_count', 0, 'swept_phone_numbers', '[]'::jsonb, 'reason', 'before_cutoff');
+    RETURN jsonb_build_object(
+      'swept_count', 0, 'swept_phone_numbers', '[]'::jsonb,
+      'missing_daily_logs_rows', '[]'::jsonb,
+      'skipped_count', 0, 'skipped_sessions', '[]'::jsonb,
+      'reason', 'before_cutoff'
+    );
   END IF;
 
   FOR v_row IN
@@ -142,81 +166,104 @@ BEGIN
   LOOP
     v_log_date := (v_row.updated_at AT TIME ZONE 'Asia/Kolkata')::date;
 
-    -- The engineer's project. Every real turn that could have advanced this
-    -- session past step 1 required a p_project_id from the caller; this is
-    -- the same lookup app/api/whatsapp/webhook/route.ts's own gate query
-    -- already does (users -> project_members, "the engineer's single active
-    -- project"). Defensive NULL check below, not expected in practice.
-    SELECT project_id INTO v_project_id
+    -- The engineer's project -- COUNTED, not guessed (2026-08-25, requested
+    -- review finding). daily_logs is keyed on (project_id, engineer_id,
+    -- log_date) -- a LIMIT-1-no-ORDER-BY guess for a multi-project engineer
+    -- would pick an arbitrary project's row, and step 5's INSERT would
+    -- fabricate an absence record against a project the engineer may have
+    -- nothing to do with, on a path nobody watches. The webhook's own
+    -- "single active project" comment (app/api/whatsapp/webhook/route.ts)
+    -- is an assumption, not a constraint -- DO NOT GUESS here. Exactly one
+    -- membership proceeds below; zero or more than one SKIPS this session
+    -- entirely, unconditionally -- no daily_logs write, no session reset,
+    -- nothing. A session left parked one extra tick (or day) is
+    -- recoverable the moment membership becomes unambiguous; a fabricated
+    -- absence against the wrong project is not.
+    -- (array_agg(...))[1], not min(project_id) -- uuid has no min() aggregate
+    -- in Postgres (caught by this file's own dry-run scaffold, not assumed).
+    -- The actual value only matters when v_project_count = 1 below, where
+    -- array_agg's single element is unambiguous.
+    SELECT count(*), (array_agg(project_id))[1] INTO v_project_count, v_project_id
     FROM project_members
-    WHERE user_id = v_row.user_id
-    LIMIT 1;
+    WHERE user_id = v_row.user_id;
 
-    IF v_project_id IS NOT NULL THEN
-      IF v_row.current_step IN (2, 3, 4) THEN
-        -- attendance (+ plan, + manpower, as applicable) already written by
-        -- the RPC's own per-question site when each step was reached. The
-        -- row is guaranteed to exist (attendance is written the moment step
-        -- 1 resolves YES, before current_step ever reaches 2). Stamp
-        -- submission only -- never touch a column the RPC already wrote.
-        UPDATE daily_logs
-           SET morning_submitted_at = p_now
-         WHERE project_id  = v_project_id
-           AND engineer_id = v_row.user_id
-           AND log_date    = v_log_date;
-
-        -- GUARD (2026-08-25, requested review finding): the UPDATE above
-        -- silently affects zero rows if no daily_logs row exists for this
-        -- project/engineer/date -- it SHOULD exist (attendance is written
-        -- the moment step 1 resolves YES, before current_step ever reaches
-        -- 2), but "should" is not "does," and a zero-row UPDATE gives no
-        -- error, no signal -- the session still closes below and nothing is
-        -- stamped, invisibly. Detected and surfaced in the return value,
-        -- not raised -- one bad row must not fail the whole sweep (other
-        -- engineers' sessions still need closing this tick).
-        GET DIAGNOSTICS v_rows_affected = ROW_COUNT;
-        IF v_rows_affected = 0 THEN
-          v_missing_rows := v_missing_rows || jsonb_build_object(
-            'phone_number', v_row.phone_number,
-            'current_step', v_row.current_step,
-            'reason', 'no_daily_logs_row_found'
-          );
-        END IF;
-
-      ELSIF v_row.current_step = 5 THEN
-        -- Holiday follow-up, never resolved. INSERT, not a bare UPDATE --
-        -- see file header for why no row may exist yet. absent, not
-        -- site_holiday; attendance_defaulted=true (sweep-supplied, not a
-        -- real answer); attendance_raw=NULL (no inbound turn to capture
-        -- words from); is_holiday mirrors attendance='site_holiday', so
-        -- false here, exactly matching the RPC's own (v_attendance =
-        -- 'site_holiday') computation at its real write site.
-        INSERT INTO daily_logs AS d
-          (tenant_id, project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_submitted_at)
-        VALUES
-          (v_row.tenant_id, v_project_id, v_row.user_id, v_log_date, 'absent', true, NULL, false, p_now)
-        ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
-          SET attendance           = EXCLUDED.attendance,
-              attendance_defaulted = EXCLUDED.attendance_defaulted,
-              attendance_raw       = EXCLUDED.attendance_raw,
-              is_holiday           = EXCLUDED.is_holiday,
-              morning_submitted_at = EXCLUDED.morning_submitted_at;
-      END IF;
-      -- current_step = 1 falls through here with no daily_logs write at
-      -- all -- see file header's argument.
-
-      v_swept_count  := v_swept_count + 1;
-      v_swept_phones := v_swept_phones || v_row.phone_number;
+    IF v_project_count != 1 THEN
+      v_skipped_count    := v_skipped_count + 1;
+      v_skipped_sessions := v_skipped_sessions || jsonb_build_object(
+        'phone_number', v_row.phone_number,
+        'current_step', v_row.current_step,
+        'project_membership_count', v_project_count,
+        'reason', CASE WHEN v_project_count = 0 THEN 'zero_project_memberships' ELSE 'multiple_project_memberships' END
+      );
+      CONTINUE;  -- next v_row -- no write of any kind for this session.
     END IF;
 
-    -- SESSION RESET -- always, regardless of step or whether a project_id
-    -- was found, so a session never sits stuck forever behind a data
-    -- problem the sweep itself can't fix. Mirrors 030's own completion
-    -- write (4b): current_flow/current_step cleared, every reask key
-    -- stripped. context.morning_submitted is set true only when something
-    -- real was actually captured and stamped (steps 2-5) -- step 1 leaves
-    -- it unset so a same-day retry is a genuine fresh start, not
-    -- "already complete" over nothing that was ever submitted.
+    IF v_row.current_step IN (2, 3, 4) THEN
+      -- attendance (+ plan, + manpower, as applicable) already written by
+      -- the RPC's own per-question site when each step was reached. The
+      -- row is guaranteed to exist (attendance is written the moment step
+      -- 1 resolves YES, before current_step ever reaches 2). Stamp
+      -- submission only -- never touch a column the RPC already wrote.
+      UPDATE daily_logs
+         SET morning_submitted_at = p_now
+       WHERE project_id  = v_project_id
+         AND engineer_id = v_row.user_id
+         AND log_date    = v_log_date;
+
+      -- GUARD (2026-08-25, requested review finding): the UPDATE above
+      -- silently affects zero rows if no daily_logs row exists for this
+      -- project/engineer/date -- it SHOULD exist (attendance is written
+      -- the moment step 1 resolves YES, before current_step ever reaches
+      -- 2), but "should" is not "does," and a zero-row UPDATE gives no
+      -- error, no signal -- the session still closes below and nothing is
+      -- stamped, invisibly. Detected and surfaced in the return value,
+      -- not raised -- one bad row must not fail the whole sweep (other
+      -- engineers' sessions still need closing this tick).
+      GET DIAGNOSTICS v_rows_affected = ROW_COUNT;
+      IF v_rows_affected = 0 THEN
+        v_missing_rows := v_missing_rows || jsonb_build_object(
+          'phone_number', v_row.phone_number,
+          'current_step', v_row.current_step,
+          'reason', 'no_daily_logs_row_found'
+        );
+      END IF;
+
+    ELSIF v_row.current_step = 5 THEN
+      -- Holiday follow-up, never resolved. INSERT, not a bare UPDATE --
+      -- see file header for why no row may exist yet. absent, not
+      -- site_holiday; attendance_defaulted=true (sweep-supplied, not a
+      -- real answer); attendance_raw=NULL (no inbound turn to capture
+      -- words from); is_holiday mirrors attendance='site_holiday', so
+      -- false here, exactly matching the RPC's own (v_attendance =
+      -- 'site_holiday') computation at its real write site.
+      INSERT INTO daily_logs AS d
+        (tenant_id, project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_submitted_at)
+      VALUES
+        (v_row.tenant_id, v_project_id, v_row.user_id, v_log_date, 'absent', true, NULL, false, p_now)
+      ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+        SET attendance           = EXCLUDED.attendance,
+            attendance_defaulted = EXCLUDED.attendance_defaulted,
+            attendance_raw       = EXCLUDED.attendance_raw,
+            is_holiday           = EXCLUDED.is_holiday,
+            morning_submitted_at = EXCLUDED.morning_submitted_at;
+    END IF;
+    -- current_step = 1 falls through here with no daily_logs write at
+    -- all -- see file header's argument.
+
+    v_swept_count  := v_swept_count + 1;
+    v_swept_phones := v_swept_phones || v_row.phone_number;
+
+    -- SESSION RESET -- only reached for a session actually processed above
+    -- (exactly one project membership, resolved). A skipped session (the
+    -- CONTINUE above) never reaches here -- its current_flow/current_step
+    -- stay exactly as they were, so the next tick re-evaluates it fresh
+    -- rather than silently resetting a session nothing was written for.
+    -- Mirrors 030's own completion write (4b): current_flow/current_step
+    -- cleared, every reask key stripped. context.morning_submitted is set
+    -- true only when something real was actually captured and stamped
+    -- (steps 2-5) -- step 1 leaves it unset so a same-day retry is a
+    -- genuine fresh start, not "already complete" over nothing that was
+    -- ever submitted.
     UPDATE whatsapp_sessions
        SET current_flow = NULL,
            current_step = 0,
@@ -232,7 +279,9 @@ BEGIN
   RETURN jsonb_build_object(
     'swept_count', v_swept_count,
     'swept_phone_numbers', to_jsonb(v_swept_phones),
-    'missing_daily_logs_rows', v_missing_rows
+    'missing_daily_logs_rows', v_missing_rows,
+    'skipped_count', v_skipped_count,
+    'skipped_sessions', v_skipped_sessions
   );
 END;
 $fn$;
