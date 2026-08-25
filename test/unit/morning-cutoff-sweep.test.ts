@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { testClient } from '../helpers/db'
+import { testClient, applyMorningFlowTurn } from '../helpers/db'
 import { sweepStaleMorningSessions } from '@/lib/daily-logs/morning-cutoff-sweep'
 
 // B3 -- the 15:00 IST morning cutoff sweep. Integration tests against the
@@ -68,7 +68,13 @@ async function ensureEngineer(whatsapp: string, name: string): Promise<string> {
   return data.id
 }
 
-async function seedMorningSession(phone: string, userId: string, currentStep: number, updatedAt: string): Promise<void> {
+async function seedMorningSession(
+  phone: string,
+  userId: string,
+  currentStep: number,
+  updatedAt: string,
+  context: Record<string, unknown> = {},
+): Promise<void> {
   const db = testClient()
   const { error } = await db.from('whatsapp_sessions').insert({
     phone_number: phone,
@@ -76,7 +82,7 @@ async function seedMorningSession(phone: string, userId: string, currentStep: nu
     user_id: userId,
     current_flow: 'morning',
     current_step: currentStep,
-    context: {},
+    context,
     pending_flows: [],
     updated_at: updatedAt,
     expires_at: updatedAt,
@@ -271,6 +277,119 @@ describe('sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff swee
 
     const secondLog = await getLog(engineerIds.step5)
     expect(secondLog?.morning_submitted_at).toBe(firstStampedAt)
+  })
+
+  it('B1 (external review round 1, BLOCKING) — a session parked YESTERDAY, swept TODAY: stamps the correct historical row, leaves TODAY clean, engineer starts a fresh flow', async () => {
+    const phone = '+19995550410'
+    const yesterday = '2026-09-09'
+    const yesterdayUpdatedAt = '2026-09-09T03:30:00Z' // 09:00 IST, 2026-09-09
+    const db = testClient()
+    const { data: user, error: userErr } = await db
+      .from('users')
+      .insert({ tenant_id: TENANT_ID, full_name: 'ZZ priorDay Engineer', role: 'engineer', status: 'active', messaging_blocked: false, whatsapp_number: phone, auth_id: null })
+      .select('id')
+      .single<{ id: string }>()
+    if (userErr || !user) throw new Error(`B1 test engineer insert failed: ${userErr?.message}`)
+    await db.from('project_members').upsert({ tenant_id: TENANT_ID, project_id: PROJECT_ID, user_id: user.id, role: 'engineer' }, { onConflict: 'project_id,user_id' })
+
+    // Pre-existing daily_logs row for YESTERDAY (attendance already written
+    // at step 1's own real site, same shape as the step2/3/4 fixtures above,
+    // just a different day -- this engineer's last real turn was yesterday).
+    await db.from('daily_logs').insert({
+      tenant_id: TENANT_ID,
+      project_id: PROJECT_ID,
+      engineer_id: user.id,
+      log_date: yesterday,
+      attendance: 'present',
+      attendance_defaulted: false,
+      attendance_raw: 'yes',
+    })
+
+    // Stuck at step 2 (plan unanswered) since YESTERDAY -- the accumulated-
+    // backlog shape B1 names: reached for the first time by TODAY's sweep.
+    await seedMorningSession(phone, user.id, 2, yesterdayUpdatedAt)
+
+    const result = await runSweep(AT_CUTOFF)
+    expect(result.swept_phone_numbers).toContain(phone)
+
+    // The historical row -- YESTERDAY's -- is the one that gets stamped.
+    // Correct log_date attribution was never the bug; confirmed here anyway
+    // as the baseline the rest of this test depends on.
+    const { data: yesterdayLog } = await db
+      .from('daily_logs')
+      .select('*')
+      .eq('project_id', PROJECT_ID)
+      .eq('engineer_id', user.id)
+      .eq('log_date', yesterday)
+      .maybeSingle()
+    expect(yesterdayLog?.morning_submitted_at).not.toBeNull()
+
+    // TODAY's context must stay clean -- this is the flag the bug used to
+    // plant (context.morning_submitted=true, stamped by a sweep whose own
+    // updated_at write makes the session look like it was touched TODAY).
+    const session = await getSession(phone)
+    expect(session?.current_flow).toBeNull()
+    expect(session?.context.morning_submitted).toBeUndefined()
+
+    // The actual proof, not just the flag's absence: the engineer can start
+    // a genuinely fresh flow TODAY, the exact scenario the reviewer named
+    // ("the engineer messages at 16:00"). Before the fix this returned
+    // outcome='already_complete' for a day on which nothing was submitted.
+    const turn = await applyMorningFlowTurn({
+      phone,
+      message: '',
+      startFlow: true,
+      tenantId: TENANT_ID,
+      userId: user.id,
+      projectId: PROJECT_ID,
+      now: AT_CUTOFF,
+    })
+    expect(turn.outcome).toBe('start')
+    expect(turn.current_step).toBe(1)
+
+    await db.from('daily_logs').delete().eq('project_id', PROJECT_ID).eq('engineer_id', user.id)
+    await db.from('whatsapp_sessions').delete().eq('phone_number', phone)
+    await db.from('project_members').delete().eq('user_id', user.id)
+    await db.from('users').delete().eq('id', user.id)
+  })
+
+  it('legacy q2_reask is stripped alongside the four current reask keys, an unrelated key survives', async () => {
+    const phone = '+19995550411'
+    const db = testClient()
+    const { data: user, error: userErr } = await db
+      .from('users')
+      .insert({ tenant_id: TENANT_ID, full_name: 'ZZ q2Reask Engineer', role: 'engineer', status: 'active', messaging_blocked: false, whatsapp_number: phone, auth_id: null })
+      .select('id')
+      .single<{ id: string }>()
+    if (userErr || !user) throw new Error(`q2_reask test engineer insert failed: ${userErr?.message}`)
+    await db.from('project_members').upsert({ tenant_id: TENANT_ID, project_id: PROJECT_ID, user_id: user.id, role: 'engineer' }, { onConflict: 'project_id,user_id' })
+    await db.from('daily_logs').insert({
+      tenant_id: TENANT_ID,
+      project_id: PROJECT_ID,
+      engineer_id: user.id,
+      log_date: LOG_DATE,
+      attendance: 'present',
+      attendance_defaulted: false,
+      attendance_raw: 'yes',
+    })
+
+    // A stray legacy q2_reask counter (no current step ever writes this key)
+    // alongside a genuinely unrelated key -- the strip must remove the
+    // former, never touch the latter (same merge-not-replace discipline
+    // §3 of the review package compares against apply_morning_flow_turn's
+    // own completion write).
+    await seedMorningSession(phone, user.id, 2, SESSION_UPDATED_AT, { q2_reask: 3, evening_submitted: true })
+
+    await runSweep(AT_CUTOFF)
+
+    const session = await getSession(phone)
+    expect(session?.context.q2_reask).toBeUndefined()
+    expect(session?.context.evening_submitted).toBe(true)
+
+    await db.from('daily_logs').delete().eq('project_id', PROJECT_ID).eq('engineer_id', user.id)
+    await db.from('whatsapp_sessions').delete().eq('phone_number', phone)
+    await db.from('project_members').delete().eq('user_id', user.id)
+    await db.from('users').delete().eq('id', user.id)
   })
 
   it('pre-15:00 IST — no-op, nothing touched', async () => {

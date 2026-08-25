@@ -9,8 +9,17 @@
 -- silently clobbered or duplicated. Every other stateful multi-write flow in
 -- this codebase (apply_morning_flow_turn, apply_evening_flow_turn,
 -- acquire_and_transition_session) already solved this exact problem the same
--- way: one SECURITY DEFINER function, one transaction per session, real
--- row-level locking. This does the same.
+-- way: one SECURITY DEFINER function, real row-level locking. This does the
+-- same -- WITH ONE DIFFERENCE, called out because "one transaction per
+-- session" describes THOSE functions, not this one (external review, round
+-- 1, small item): those RPCs are called once per session, so their
+-- transaction boundary and their session boundary coincide. This function
+-- is called ONCE PER TICK and loops over every stale session inside that
+-- single call -- the whole loop is ONE transaction. A failure partway
+-- through rolls back every session processed that tick, not just the one
+-- that failed. Acceptable (the next tick simply retries the lot), but do
+-- not read "row-level locking" above as "per-session isolation" -- it isn't,
+-- for this function.
 --
 -- SOURCES THIS IMPLEMENTS, READ BEFORE WRITING THIS FILE:
 --   docs/reviews/morning-flow-migration-review-package.md §4 (B3 section,
@@ -100,6 +109,31 @@
 -- appends to missing_daily_logs_rows in the return value -- surfaced, not
 -- raised, so one bad row never fails the whole sweep for every other
 -- engineer this tick.
+--
+-- PRIOR-DAY SWEEP MUST NOT LOCK THE ENGINEER OUT OF TODAY (2026-08-25,
+-- external review round 1, B1 -- BLOCKING). The first production run of
+-- this sweep closes the ACCUMULATED BACKLOG by definition, and any sweep
+-- outage recreates the same backlog -- so a session parked on a PRIOR IST
+-- day, only reached by TODAY's sweep, is not a rare edge case, it is the
+-- expected shape of a first run or a recovery run. That session's
+-- daily_logs row is correctly attributed to the day it was actually
+-- answered (LOG_DATE, above, from updated_at, not p_now) -- but the SESSION
+-- write below also sets updated_at := p_now (today) unconditionally, since
+-- the row needs a fresh timestamp regardless of which day it's attributed
+-- to. If context.morning_submitted were also unconditionally set true
+-- here, the two facts combine into a bug: apply_morning_flow_turn's own
+-- BOT-07 next-day reset (migration 030:376, quoco_same_ist_day(p_now,
+-- v_session.updated_at)) sees updated_at = TODAY and therefore does NOT
+-- wipe context on the engineer's next real inbound message -- so a
+-- morning_submitted flag stamped by TODAY's sweep for YESTERDAY's backlog
+-- survives untouched, and step (3)'s idle-branch check
+-- (context->>'morning_submitted') reports outcome='already_complete' for a
+-- day on which the engineer submitted nothing at all. FIX: the flag is
+-- only set true when the swept row's own day (v_log_date, i.e. the IST day
+-- of updated_at BEFORE this write) is quoco_same_ist_day with p_now --
+-- see the session-write CASE below. A prior-day sweep still closes the
+-- session and stamps the correct historical daily_logs row; it just leaves
+-- TODAY's context clean, so a fresh flow can start normally.
 --
 -- PROJECT MEMBERSHIP -- COUNTED, NOT GUESSED (2026-08-25, requested review
 -- finding, supersedes an earlier LIMIT-1-no-ORDER-BY version of this
@@ -259,16 +293,22 @@ BEGIN
     -- stay exactly as they were, so the next tick re-evaluates it fresh
     -- rather than silently resetting a session nothing was written for.
     -- Mirrors 030's own completion write (4b): current_flow/current_step
-    -- cleared, every reask key stripped. context.morning_submitted is set
-    -- true only when something real was actually captured and stamped
-    -- (steps 2-5) -- step 1 leaves it unset so a same-day retry is a
-    -- genuine fresh start, not "already complete" over nothing that was
-    -- ever submitted.
+    -- cleared, every reask key stripped (including legacy q2_reask -- no
+    -- current step uses it, but the runbook's own resolution UPDATE strips
+    -- it too; matching that here rather than leaving one key inconsistent
+    -- between the two). context.morning_submitted is set true only when
+    -- BOTH (a) something real was actually captured and stamped (steps
+    -- 2-5, not step 1) AND (b) the swept row belongs to TODAY, not a
+    -- backlog day (B1 fix, see file header) -- a prior-day sweep still
+    -- closes the session and stamps its own historical daily_logs row, but
+    -- must not plant a same-day-looking "already submitted" flag for a day
+    -- nothing was actually submitted on.
     UPDATE whatsapp_sessions
        SET current_flow = NULL,
            current_step = 0,
-           context      = (context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask')
+           context      = (context - 'q1_reask' - 'q2_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask')
                            || CASE WHEN v_row.current_step != 1
+                                     AND quoco_same_ist_day(p_now, v_row.updated_at)
                                 THEN jsonb_build_object('morning_submitted', true)
                                 ELSE '{}'::jsonb
                               END,

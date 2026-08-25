@@ -6,17 +6,32 @@ inheritance requirement B3 must satisfy). That document is the spec half;
 this one is the evidence half — rehearsal, executed rollback, apply runbook
 — built the same way migration 030's own package was.
 
-**Status: PR open (#111), CI green, NOT merged, NOT applied to prod.**
-Merges only after reviewer GO + the prod apply, per this package's own S4.
+**Status: PR open (#111), round 1 review returned STOP (§13), fixes below,
+NOT merged, NOT applied to prod.** Merges only after reviewer GO + the prod
+apply, per this package's own S4.
 
 ## 0. Repo-state header
 
 - `main @ 15e0ed2` (`origin/main`)
-- This PR's HEAD: `e2e2b39` on `feat/b3-morning-cutoff-sweep-2026-08-25`,
-  PR #111, targeting `main`, CI green (below).
+- **Round history, not a single self-referential hash** — a commit cannot
+  cite its own SHA inside its own content, and hardcoding "this PR's HEAD"
+  as a bare hash is exactly what went stale last round (§13's small item,
+  the reviewer's own finding: this section cited `e2e2b39` while the
+  CI-green submitted SHA was already `b262c3c`, one commit further, because
+  the doc describing a commit is necessarily written before that commit
+  exists). Instead:
+  - **Round 1 submission:** `b262c3c` on `feat/b3-morning-cutoff-sweep-2026-08-25`,
+    PR #111, targeting `main`. CI green, all 7 checks (§10). Reviewer
+    returned STOP: B1, B2 (blocking), three small items, three notes to
+    record (§13, in full).
+  - **Round 2 (this content):** the fixes in §13, committed on top of
+    `b262c3c`. This document does not hardcode that commit's own SHA for
+    the same reason it no longer hardcodes round 1's — see the PR's own
+    commit history, or the delta report accompanying this round's push,
+    for the exact value.
 - `supabase migration list --linked` (test-db, `exfccwlrhoutkgrlikod`),
   captured after this package's own rollback proof and ledger repairs
-  (§8, §9):
+  (§8, §9), and reconfirmed unchanged after round 2's re-apply (§13):
   ```
   local/remote agree through every entry: 001-007, 011-030, 032, 033.
   ```
@@ -27,7 +42,14 @@ Merges only after reviewer GO + the prod apply, per this package's own S4.
 
 ## 1. The function in full
 
-Pinned via `git show e2e2b39:supabase/migrations/033_sweep_stale_morning_sessions.sql`
+**Round 1 snapshot — superseded by §13's fixes (B1, q2_reask, the
+transaction-scope header note).** Kept as-is below rather than silently
+rewritten, per this project's own "artifact provenance is pinned, not
+paraphrased" rule — §13 carries the current, post-fix function in full;
+this section is the historical record of what round 1 actually submitted
+and what the reviewer's STOP was issued against.
+
+Pinned via `git show b262c3c:supabase/migrations/033_sweep_stale_morning_sessions.sql`
 (294 lines; header trimmed here to the load-bearing paragraphs — the file
 itself is the source of record):
 
@@ -622,3 +644,225 @@ line 186 of the pinned file). Second real defect this project's dry-run
 scaffold has caught in two migrations — the first was migration 030's
 own function-overload finding (`docs/reviews/morning-flow-migration-
 review-package.md` §10).
+
+## 13. External review round 1 — STOP, all items fixed and verified (2026-08-25)
+
+Reviewer verdict on §0-§12 (submitted at `b262c3c`, CI green): **STOP**,
+two blocking items (B1, B2), three small items, three notes to record
+against future work. All fixed below; §0/§1 already reflect the outcome
+(round-history header, §1 marked superseded by this section).
+
+### 13.1 B1 — prior-day sweep locks the engineer out of today (BLOCKING, fixed)
+
+**Finding.** A session parked YESTERDAY, swept TODAY at 15:00, correctly
+stamps yesterday's `daily_logs` row (`log_date` derivation was always
+right — LOG_DATE, from the file header, was never in question). But the
+session write set `context.morning_submitted = true` AND
+`updated_at = p_now` unconditionally. The engineer messages at 16:00:
+`apply_morning_flow_turn`'s own BOT-07 next-day reset
+(`quoco_same_ist_day(p_now, v_session.updated_at)`, migration
+030:376) compares `updated_at` against TODAY, sees the SAME day (because
+the sweep itself just stamped it TODAY), does not wipe context, and the
+stale `morning_submitted=true` survives into step (3)'s idle-branch check
+→ `outcome='already_complete'`, for a day the engineer submitted nothing
+on. Not an edge case — the reviewer's own framing, correct: the FIRST
+production run sweeps the accumulated backlog by definition, and every
+sweep outage recreates it.
+
+**Fix.** The flag is now gated on the swept row's own day matching
+`p_now`'s day, not merely on which step it was parked at:
+```sql
+context      = (context - 'q1_reask' - 'q2_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask')
+               || CASE WHEN v_row.current_step != 1
+                         AND quoco_same_ist_day(p_now, v_row.updated_at)
+                    THEN jsonb_build_object('morning_submitted', true)
+                    ELSE '{}'::jsonb
+                  END,
+```
+Reuses `quoco_same_ist_day` (migration 012, the same helper
+`apply_morning_flow_turn`'s own BOT-07 reset calls) rather than
+re-deriving the day comparison by hand — one date-comparison convention,
+not two. A prior-day sweep still closes the session and stamps the
+correct historical `daily_logs` row (unchanged); it now leaves TODAY's
+context clean, so a fresh flow starts normally. `updated_at` is still set
+to `p_now` unconditionally (the row needs a fresh timestamp regardless of
+which day it's attributed to) — the fix is scoped to the flag alone, per
+the reviewer's own framing, not to `updated_at`.
+
+**Test** (`test/unit/morning-cutoff-sweep.test.ts`, new): *"B1 (external
+review round 1, BLOCKING) — a session parked YESTERDAY, swept TODAY:
+stamps the correct historical row, leaves TODAY clean, engineer starts a
+fresh flow"*. Seeds a step-2 session with `updated_at` on a prior IST day
+and a matching prior-day `daily_logs` row, sweeps TODAY, then asserts
+THREE things: (a) the prior day's `daily_logs` row gets
+`morning_submitted_at` stamped (log_date attribution was never broken,
+confirmed as the test's own baseline); (b) `context.morning_submitted` is
+`undefined` after the sweep, not `true`; (c) the actual proof, not just
+the flag's absence — `applyMorningFlowTurn({startFlow: true, ...})`
+called afterward returns `outcome: 'start'`, `current_step: 1`, the exact
+scenario the reviewer named ("the engineer messages at 16:00"). Green
+(§13.5).
+
+### 13.2 B2 — the visibility the skip decision leans on does not exist (BLOCKING, fixed)
+
+**Finding (the reviewer's own, against his own earlier argument).**
+Skip-over-guess for ambiguous project membership was justified on the
+grounds that the failure must be visible rather than silent — but it was
+not. `runJobsTick` returns `morningSweep` in the cron's HTTP response
+body, which nobody reads. No Sentry call existed anywhere in the sweep
+path. A zero-membership engineer parks FOREVER by design (no inbound ever
+arrives to re-trigger anything, BOT-07's own reset never fires for a
+session whose `current_flow` never returns to `NULL`), surfacing into the
+void every sixty seconds.
+
+**Fix.** `lib/daily-logs/morning-cutoff-sweep.ts` gains two exported
+functions:
+- `reportMorningSweepAnomalies(result, now)` — one `Sentry.captureMessage`
+  per entry in `skippedSessions` and `missingDailyLogsRows`, called from
+  `runJobsTick` right after every successful sweep.
+- `reportMorningSweepError(err)` — extracted from `runJobsTick`'s
+  try/catch (the "sweep's own error branch" the reviewer named); calls
+  `Sentry.captureException` and returns the same `{ error: string }`
+  shape the route already carried, so `runJobsTick`'s own behaviour is
+  unchanged, only the capture is new.
+
+**Dedup.** A permanently-parked session gets re-evaluated and re-skipped
+every tick (60s) for as long as the underlying `project_members` data
+stays wrong — without dedup this alerts every minute, forever.
+`Sentry.captureMessage`'s `fingerprint` option groups every event sharing
+the same fingerprint into ONE issue instead of creating a new one per
+call; scoped here to `(feature, reason, phone_number, IST calendar date)`
+— same-day recurrences collapse into one growing issue (no per-minute
+spam), while a session still stuck the NEXT day surfaces as a fresh issue
+instead of silently vanishing into an old, already-triaged one. No new
+DB state — the dedup key is entirely derived from data the RPC already
+returns plus the current IST date (`istDateString`, already used
+elsewhere in this codebase — `app/api/cron/dpr-generate/route.ts`).
+
+**Tests** (`test/unit/morning-cutoff-sweep-sentry.test.ts`, new file, 8
+tests, no database — pure logic over an already-known
+`MorningCutoffSweepResult` / a synthetic `Error`; `@sentry/nextjs`'s ESM
+namespace exports are not `vi.spyOn`-able directly, so the module is
+`vi.mock`'d instead):
+1. empty result → Sentry never called.
+2. a skipped session → one `captureMessage`, exact fingerprint/tags/extra
+   shape asserted.
+3. a missing-row anomaly → its own message + fingerprint shape.
+4. two anomalies in one result → two calls, neither dropped.
+5. the SAME session, reported twice the SAME IST day → identical
+   fingerprint (the dedup property).
+6. the SAME session, reported the NEXT IST day → DIFFERENT fingerprint
+   (stays visible, not muted forever).
+7. a real `Error` → captured as-is, `{error: message}` returned.
+8. a non-`Error` throw (a string) → wrapped in a real `Error` before
+   capture, never dropped.
+All 8 green (§13.5).
+
+### 13.3 Small items — all fixed
+
+- **Legacy `q2_reask` stripped.** Added to the session-reset `context -`
+  chain alongside the four current keys, matching the runbook's own S1
+  resolution `UPDATE` (§11, which already stripped five keys, not four).
+  Test: *"legacy q2_reask is stripped alongside the four current reask
+  keys, an unrelated key survives"* — seeds a stray `q2_reask` plus a
+  genuinely unrelated key, confirms the strip removes only the former.
+  Green (§13.5).
+- **Transaction-scope header note.** The file header's "one SECURITY
+  DEFINER function, one transaction per session" phrasing (describing the
+  RPC family: `apply_morning_flow_turn` et al.) was directly inapplicable
+  to this function, which is called once per TICK and loops over every
+  stale session inside ONE transaction — a mid-loop failure rolls back
+  every session that tick, not just the one that failed. Acceptable (the
+  next tick retries the lot), now stated explicitly in the header (§1's
+  historical pin does not carry this; the current file, §1's own note
+  says, is authoritative).
+- **Package header re-pinned.** §0 no longer hardcodes a self-referential
+  commit SHA — see §0's own explanation of why that class of staleness
+  (cite a commit before it exists) recurs by construction, not by
+  carelessness, and the fix is to stop hardcoding it, not to hardcode it
+  more carefully.
+
+### 13.4 Recorded, per the reviewer's request — not code changes
+
+**The tie-breaker argument, sharpened, in the reviewer's own framing.**
+The earlier build phase argued skip-over-guess on grounds of
+non-determinism (a `LIMIT 1` with no `ORDER BY` could pick a different
+project across runs). The reviewer's sharper version, recorded here as
+the one to cite going forward: **a stable tie-breaker converts
+non-deterministic fabrication into DETERMINISTIC fabrication — the same
+wrong absence against the same wrong project, reliably, every day.
+Consistency is a property of good data and of thoroughly corrupted data
+alike.** A tie-breaker does not make a guess safe; it makes a guess
+*repeatable*, which is a different property and not the one that
+matters here.
+
+**The real closer for the multi-project gap, named so the skip reads as a
+bridge, not an end-state.** The skip-and-surface fix (§0 finding, item
+2 of the original review round; §13.2 above makes it actually visible)
+is a mitigation, not a resolution — it prevents fabrication but does
+not let a multi-project engineer's sessions ever sweep normally. The
+actual closer: **capture `project_id` INTO THE SESSION at flow start**
+(`whatsapp_sessions` gains a column, written once when
+`apply_morning_flow_turn`'s `p_start_flow=true` branch fires — that RPC
+already receives `p_project_id` as a parameter, per its own signature;
+this is a column write, not a new lookup) — not a smarter guess at sweep
+time. Once the session itself carries the project it was actually
+started against, the sweep's own `project_members` COUNT becomes
+unnecessary for any session that has this column populated; the skip
+path remains only for the OLD-shape sessions and the genuinely-ambiguous
+ones. Named here as future work — **not built in this round**: it
+requires a schema migration modifying `apply_morning_flow_turn`'s own
+logic (a NEW column write inside an existing `SECURITY DEFINER`
+function), which trips CLAUDE.md §0's EXTERNAL REVIEW GATE condition (a)
+on its own and deserves its own review cycle, not a rider on this one.
+
+**§34's designated closers — recorded so it is never re-solved in
+`daily_logs`, where it does not belong.** `design-decisions-beta-
+feedback.md` §34 (`checkin_escalations` cannot distinguish "asked, no
+answer" from "never asked," OPEN, 2026-08-25) currently points at
+`whatsapp_sessions`/`daily_logs` shapes (a parked session, or B3's own
+`attendance_defaulted=true` sweep-stamp) as "the evidence [that] already
+exists" for detecting an asked-and-unanswered engineer. That evidence is
+real today only because nothing better exists yet — it is not where the
+eventual fix belongs. The reviewer's designated closers, recorded here as
+the answer for whoever picks up §34: **the migration-027 escalation row
+itself IS the asked-and-unanswered record** (once `checkin_escalations`
+rows are actually being written per Pass 2's own escalation work, an
+`awaited`/`escalated` row already states "asked, no answer" as its native
+shape — no inference from `daily_logs` columns needed), and **the
+#69/031 outbound-send primitive's own send ledger IS the reached-at-all
+record** (a confirmed Twilio accept, or its absence, is the actual
+delivery signal — a `whatsapp_sessions` row existing is a proxy for
+"reached," the send ledger is the real thing). §34's own text should be
+resolved against those two objects when they exist, not by adding more
+inference logic to `daily_logs`.
+
+### 13.5 Re-rehearsal — round 2
+
+Migration 033 (B1 fix + `q2_reask` strip + header note) re-applied to
+test-db (`exfccwlrhoutkgrlikod`) via `supabase db query --linked -f`,
+same signature as round 1 — `CREATE OR REPLACE` therefore preserved
+grants automatically (confirmed, not assumed): `security_definer=true`,
+`anon`/`authenticated` denied, `service_role` granted, byte-identical to
+round 1's own fingerprint (§4). No re-ledger needed (the ledger tracks
+the migration file, not the function body; version 033 was already
+`applied` and stayed so through this body-only re-apply).
+
+`test/unit/morning-cutoff-sweep.test.ts` — **15/15 green** (13 from
+round 1, plus B1's own test and the `q2_reask` test, §13.1/§13.3).
+`test/unit/morning-cutoff-sweep-sentry.test.ts` — **8/8 green** (new
+file, §13.2). `tsc --noEmit` clean.
+
+### 13.6 Rollback proof — still valid, not re-executed this round
+
+§9's executed rollback (`DROP FUNCTION public.sweep_stale_morning_
+sessions(timestamptz)`, confirmed gone, tests fail correctly, re-applied,
+restored, re-ledgered) targeted the function by NAME + SIGNATURE, which
+this round's fixes did not change (body-only edits: the B1 gating
+condition, the `q2_reask` key, two header comments). The rollback
+mechanism is therefore unaffected by this round and was not re-executed
+— re-running an identical mechanical proof against an unchanged signature
+would not exercise anything §9 didn't already prove. It would need
+re-proving only if a future round changed the function's argument list
+(CLAUDE.md §0's `CREATE OR REPLACE` + appended-parameter rule) or its
+name.

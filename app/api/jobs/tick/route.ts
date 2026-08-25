@@ -3,7 +3,12 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { claimJobs, completeJob, failJob, type Job } from '@/lib/queue/jobs'
 import { isCronRequestAuthorized } from '@/lib/cron/auth'
 import { handleDprGenerateJob, markDprGenerationFailed, type DprGenerateJobPayload } from '@/lib/dpr/dispatch'
-import { sweepStaleMorningSessions, type MorningCutoffSweepResult } from '@/lib/daily-logs/morning-cutoff-sweep'
+import {
+  sweepStaleMorningSessions,
+  reportMorningSweepAnomalies,
+  reportMorningSweepError,
+  type MorningCutoffSweepResult,
+} from '@/lib/daily-logs/morning-cutoff-sweep'
 import { createServiceClient } from '@/lib/supabase/service'
 
 // This endpoint is polled by Vercel Cron every 60 seconds (NFR-16).
@@ -42,12 +47,18 @@ export async function runJobsTick(client: SupabaseClient) {
   // sweep_stale_morning_sessions's own header). Isolated in its own
   // try/catch, same reasoning as each job's own isolation below: a sweep
   // failure must not prevent job claiming/processing from running this
-  // tick, but must not be silently swallowed either.
+  // tick, but must not be silently swallowed either -- reportMorningSweepError
+  // (B2, external review round 1) is what keeps it from being swallowed;
+  // "must not fail the tick" is not the same claim as "must not be silent."
   let morningSweep: MorningCutoffSweepResult | { error: string }
   try {
     morningSweep = await sweepStaleMorningSessions(client)
+    // B2 -- the skip/missing-row safety argument is load-bearing on this
+    // actually running, not merely on the values existing in the return
+    // object. See reportMorningSweepAnomalies's own doc comment.
+    reportMorningSweepAnomalies(morningSweep, new Date())
   } catch (err) {
-    morningSweep = { error: err instanceof Error ? err.message : String(err) }
+    morningSweep = reportMorningSweepError(err)
   }
 
   const jobs = await claimJobs(3, client)
