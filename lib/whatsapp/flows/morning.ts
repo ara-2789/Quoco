@@ -89,8 +89,8 @@ const ALL_REASK_KEYS = [REASK_KEY[1], REASK_KEY[3], REASK_KEY[4], REASK_KEY[5]]
 // outcome + current_step [+ attendance, see buildMorningReply]). Keeping it
 // here means the two never diverge on copy.
 export const MORNING_QUESTIONS: Readonly<Record<number, string>> = {
-  1: 'Are you on site today? Reply yes or no.',
-  2: "Good morning! 🌞 What's your *plan of action* for today?",
+  1: 'Good morning. Are you on site today? Reply yes or no.',
+  2: "What's your *plan of action* for today?",
   3: 'How many *workers* today? You can just send a number, or a breakdown like "12 mason 8 helper".',
   4: 'Any *equipment / machinery* on site? Send name + hire rate (e.g. "JCB 1500"), or reply "no" if none.',
   5: 'Is it a site holiday? Reply yes or no.',
