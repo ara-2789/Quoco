@@ -629,6 +629,31 @@ hitting a genuinely missing function).
   step is not theoretical, it was already run once, successfully,
   earlier in this same session.
 
+  **KNOWN FRICTION, hit for real on the 033 prod apply (2026-08-25) —
+  `migration repair` globs the LOCAL `supabase/migrations/` directory to
+  resolve a version to its file name for the ledger row; it does not
+  operate on a bare version number alone.** If the checkout `migration
+  repair` runs from does not have the migration's file present locally —
+  here, the shared main checkout was on a different branch
+  (`feat/morning-flow-attendance-migration`) at apply time, with 033's
+  file living only on the now-merged feature branch's own worktree — the
+  command cannot resolve the name. Workaround used: copy the
+  hash-verified paste file (`/tmp/033-to-paste.sql`, the same file
+  pasted into the SQL Editor for S2, sha256-pinned against the reviewed
+  commit) into `supabase/migrations/033_sweep_stale_morning_sessions.sql`
+  in that checkout **temporarily**, run the repair command, then **delete
+  it again immediately** — leaving it in place is itself a hazard,
+  matching this project's own 026 incident class (`db push` — never used,
+  but any tool that globs `supabase/migrations/` — decides what's pending
+  by diffing that directory against the ledger; an untracked stray file
+  there is exactly the shape that class of incident starts from). Two
+  correct alternatives if this recurs: run the repair from a checkout
+  that already has the file tracked (`main`, post-merge, or the feature
+  branch's own worktree), or use this temporary-copy-then-delete
+  workaround if switching checkouts isn't convenient in the moment —
+  either way, never leave the copied file sitting untracked once the
+  repair command has run.
+
 **After apply:** `docs/schema.md`'s `033` entry, written only after S6
 confirms (§0 of CLAUDE.md — no "applied" line asserted before it's true).
 Record the applied SHA + probe frame in this package's own apply-record
