@@ -67,7 +67,9 @@ Both captures pinned: pre-apply written to `/tmp/030-prod-preapply-fingerprint.t
 before the apply; post-apply run against production directly, same session,
 after Aravind confirmed the SQL Editor apply and the PR #107 merge.
 
-## Ledger state — DISCREPANCY, flagged, not fixed
+## Ledger state — DISCREPANCY found, then REPAIRED (approved, 2026-08-25)
+
+Immediately post-apply:
 
 ```sql
 SELECT version, name, array_length(statements, 1)
@@ -75,19 +77,89 @@ FROM supabase_migrations.schema_migrations WHERE version = '030';
 -- 0 rows
 ```
 
-**No ledger row for `030` exists on production.** The SQL Editor apply ran the
-migration's DDL/DML directly; it does not itself write to
+**No ledger row for `030` existed on production.** The SQL Editor apply ran
+the migration's DDL/DML directly; it does not itself write to
 `supabase_migrations.schema_migrations` (the migration file contains no such
-statement, matching this project's own established pattern — apply and
-ledger are separate steps, same as the discipline used for `030` on test-db
-via `supabase migration repair --status applied 030 --linked`). That repair
-step was run against test-db (`docs/build-status.md`'s 2026-08-24 entry) but
-was **not** run against production as part of this apply. Left unresolved
-here, deliberately — this is a read-only report; the fix (`supabase
-migration repair --status applied 030 --linked` against
-`jvxwqignooseazzmwhvl`) touches production and needs Aravind's explicit
-go-ahead before it runs, consistent with "do not fix production without
-telling me first."
+statement) — apply and ledger are genuinely separate steps in this project's
+own tooling, same as the discipline used for `030` on test-db via `supabase
+migration repair --status applied 030 --linked` (`docs/build-status.md`'s
+2026-08-24 entry). That repair step ran against test-db but was not run
+against production as part of the apply itself.
+
+**Repaired, with explicit go-ahead, same session:**
+
+```
+$ supabase migration repair --status applied 030 --linked   # jvxwqignooseazzmwhvl, breadcrumb confirmed first
+Repaired migration history: [030] => applied
+```
+
+Full post-repair ledger, raw:
+
+```
+001, 002, 003, 004, 005, 006, 007, 011, 012, 013, 014, 015, 016, 017,
+018, 019, 020, 021, 022, 023, 024, 025, 027, 028, 029, 030
+```
+
+`count(*) = 26`. `030`'s row: `name='morning_flow_attendance'`,
+`statement_count=12` — identical to test-db's own repaired row. Metadata
+only, as scoped: no schema or data change, confirmed by re-running the
+Post-apply fingerprint's column/function checks after the repair (unchanged
+from the values recorded above).
+
+### Root cause — corrected, not the precedent originally suspected
+
+The instinct was to cite "the 026 gap" (the permanent `025→027` skip in the
+ledger's version list) as precedent for what happens when ledgering is
+skipped. **Checked against the actual record and refuted, not asserted**:
+migration 026 itself was never applied to any database — per
+`docs/reviews/024-025-review-package.md` §6, it is "unrelated, uncommitted,
+paused pending a real end-to-end latency measurement before it ships." The
+`025→027` gap is an abandoned migration NUMBER, not an applied-but-
+unledgered migration — a different shape entirely, and citing it as this
+incident's precedent would have been a fabricated match. (The real incident
+that happened *during* 026's rehearsal — a stray `db push` briefly reverting
+an unrelated function on test-db — is itself already fully recorded in
+`CLAUDE.md` §0's `db push` rule and is not this incident either.)
+
+**The actual root cause, found by reading the runbook `030` itself
+followed**: `docs/migration-runbook-template.md` — the CANONICAL apply
+skeleton every migration's own runbook instantiates — already has a
+mandatory ledger step, **step E**: "Ledger INSERT (write) + verify... then
+`SELECT count(*)` to confirm the expected row total." `030`'s own runbook
+(`morning-flow-migration-review-package.md` §11.3, S0–S5) explicitly states
+it "Instantiates `docs/migration-runbook-template.md`'s canonical A–E
+skeleton, widened with the two concerns this migration specifically has" —
+but the widened S0–S5 sequence has no step corresponding to E at all. The
+ledger step was silently dropped in the act of widening, not because no
+canonical step existed to widen from. **This is the real, on-point
+precedent**: a review package can instantiate a canonical runbook, add its
+own concerns, and still lose a step the template already covered, with
+nothing catching the omission until the post-apply fingerprint surfaced it.
+
+**Also stale, corrected while here**: the canonical template's own step E
+comment claims "The CLI `migration repair` is 28P01-blocked for this
+project and has never been executed — the manual INSERT is the real
+method." This is no longer true — `migration repair` ran cleanly against
+both test-db and production this session, twice, no auth error. Fixed
+below, not left as a landmine for the next runbook author.
+
+### Runbook fixes, both made mandatory
+
+1. **`docs/migration-runbook-template.md`** — step E's text corrected (the
+   28P01 claim removed; `supabase migration repair --status applied <nnn>
+   --linked` is the working, preferred method — the manual `INSERT` stays
+   documented as a fallback only), and a line added stating explicitly that
+   any runbook instance widening this skeleton MUST carry step E forward
+   under its own numbering — it is not optional scaffolding to drop when
+   restructuring.
+2. **`morning-flow-migration-review-package.md` §11.3** — a new **S6.
+   Ledger repair (write) + verify** step added, after S5 (live + mirror
+   confirm) rather than before S4 (merge/lockstep), deliberately: ledger
+   metadata is not part of the lockstep-timing hazard S4 exists to close,
+   and placing it last means it never competes with "merge immediately, no
+   gap" for urgency. Documented as retroactively added, in the same style
+   `morning-flow-migration-review-package.md` §11.3 already uses for its
+   B2 apply-runbook section ("was missing entirely").
 
 ## JSONB transform — ran cleanly over all pre-existing rows
 
@@ -189,7 +261,9 @@ first digit encountered is `1`, so `daily_hire_cost=1` — a stored Rs 1/day
 mixer, not the Rs 1000/day the engineer meant. This is a live instance of
 the standing PARSER DEBT (`design-decisions-beta-feedback.md` §32(c),
 `design-principles.md:31` Rule 3.5) — recorded here as evidence, not fixed
-in this pass; fixing the parser is out of scope for an apply record.
+in this pass; fixing the parser is out of scope for an apply record. Full
+mechanism, a second live incident, and the precise consequence:
+`docs/reviews/equipment-parser-count-gap.md`.
 
 `type` resolved to `"concrete_mixer"` via the lexicon match on the token
 `mixer` (`lib/whatsapp/flows/parsers/lexicon.ts:63`, `mixer:
@@ -211,9 +285,14 @@ lib/whatsapp/flows/parsers/lexicon.ts:39:  steel: 'bar_bender',
 `total: 18` = 10 (mason) + 6 (helper) + 2 (bar_bender) — the sum is correct
 because the trade resolved, not despite a drop.
 
-## Open item carried forward
+## Open items — status
 
-**Migration 030 is not ledgered on production.** `supabase migration repair
---status applied 030 --linked` (against `jvxwqignooseazzmwhvl`) closes this,
-but was deliberately not run as part of this read-only record — needs
-Aravind's explicit go-ahead first.
+**Ledger gap: CLOSED (2026-08-25).** See "Ledger state" above — repaired
+with explicit go-ahead, both runbooks fixed so the next apply doesn't
+repeat it.
+
+**Equipment parser count gap: OPEN, recorded separately, not fixed.**
+`daily_hire_cost=1` (§b above) is a live instance of a broader defect —
+there is no way to record a machine count at all, and any answer with a
+count before a rate silently stores the count as the rate. Full record,
+evidence, and mechanism: `docs/reviews/equipment-parser-count-gap.md`.
