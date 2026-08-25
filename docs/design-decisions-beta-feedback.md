@@ -2370,3 +2370,73 @@ failure mode, not throughput.
 §0's trigger conditions — this modifies a live function's logic, condition
 (a) — a full review package is required, not optional, whenever this is
 actually scheduled).
+
+## 32. Parse-attempt corpus + self-improving parsing prerequisites (2026-08-23)
+— RECORD ONLY, NOT SCHEDULED
+
+**Numbering note:** §31 is reserved for the stable-signature (JSONB payload)
+RPC refactor recorded the same day, currently on an unmerged branch — this
+entry is deliberately numbered §32, not §31, so the two land in the right
+order once both branches merge, rather than colliding or requiring a
+renumber later.
+
+### a. DECIDED — RETAIN RAW INBOUND TEXT
+
+Today `processed_messages` stores only `message_sid` and timestamps: no
+body, no phone number. Engineer input is discarded the moment it is parsed.
+Some survives incidentally in `raw_text` inside `morning_equipment` /
+`morning_manpower` JSONB, but an unparseable answer that is re-asked and
+then defaulted leaves NO trace — and those are precisely the cases worth
+learning from. The corpus cannot be reconstructed retroactively, so capture
+starts now.
+
+### b. THE UNIT IS THE PARSE ATTEMPT, NOT THE MESSAGE
+
+Record, per inbound: the raw text, the flow and step it arrived at, which
+parser handled it, the parse result, whether it succeeded, and the re-ask
+count at that point. A message log gives a chat history; an attempt log
+gives a labelled training set with failures already marked. Design the
+table around that. Do not design it in this pass — record the shape
+requirement.
+
+### c. PREREQUISITES FOR "SELF-IMPROVING PARSING" — recorded so the sequence
+is not attempted out of order
+
+1. **The corpus (a + b)** — nothing to learn from without it.
+2. **GROUND TRUTH.** Learning needs a label: what the engineer actually
+   meant. The only source is a human correction, which is the PM edit UI
+   (§30(e)) — RPC exists since migration 019, no UI, zero frontend callers.
+3. **A CONFIDENCE FIELD.** Nothing marks which parses were guesses. This is
+   the standing PARSER DEBT (`design-principles.md:31` Rule 3.5 promises
+   low-confidence flagging; no such field exists anywhere). Two live
+   examples: "Cement micsur 1000" stored as equipment type "cement" at
+   ₹1000/day and rendered in a real DPR (2026-08-21); and §30's
+   exhausted-reask default storing `attendance='present'` for an engineer
+   who never said so.
+
+### d. NEAR-TERM APPROACH — DECIDED IN PRINCIPLE, NOT SCHEDULED
+
+Not self-training: a deterministic lexicon first, an LLM fallback (Claude
+API) when it fails, and human confirmation promoting a newly-recognised
+form into the lexicon permanently. Bounded, degrades gracefully, and keeps
+a human between a guess and a stored value — which matters most exactly
+where autonomy is least wanted: rupee figures and attendance.
+
+### e. INPUT LANGUAGE — multilingual, CONFIRMED
+
+Rule 3.12's simple-English constraint governs what Quoco WRITES, not what
+engineers may type. Template 8 states in writing: "You can reply in any
+language — English, Tamil, or a mix." `classifyYesNo` already carries six
+transliterated Tamil forms; the trade lexicon carries more. Expanding
+yes/no coverage is the highest-leverage vernacular work available, because
+attendance is Q1 of every morning check-in for every engineer every day,
+and the shared corpus test added in migration 030 makes both
+implementations testable against one fixture.
+
+### f. RETENTION CLOCK
+
+Retained message bodies are personal data tied to a WhatsApp number.
+§28(aa)(3) already records retention as a statutory obligation once
+invoices and delivery notes land; this decision starts that clock earlier.
+Update that entry to reflect that the obligation now begins with raw-text
+retention, not with media.

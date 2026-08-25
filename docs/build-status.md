@@ -1539,3 +1539,291 @@ guidance: cite the FILENAME plus section, never a bare "§N"** — e.g.
 `design-decisions-beta-feedback.md §10`, never just "§10". Promoted to a one-line
 standing rule in CLAUDE.md §0 (see that section) since this is a citation convention
 to follow every session, not a one-off historical note.
+
+---
+
+**INCIDENT — test-db (`exfccwlrhoutkgrlikod`) credentials printed to a
+session transcript, THREE times across two dates (2026-08-23 ×2,
+2026-08-24 ×1 — see INCIDENT 3 below).**
+
+`supabase projects api-keys`, run to obtain a project breadcrumb during
+migration 030's test-db rehearsal, printed the anon, service_role, and
+secret API keys for test-db in full. **Contained: local transcript only,
+not a public repo or shared log.**
+
+**WIDENED (2026-08-23, same day): the exposure's scope is recorded as
+`.env.test`'s FULL contents, not only the three Supabase API keys
+originally caught.** Within the hour of the first exposure being recorded
+and CLAUDE.md's first (narrower) rule being written, a second command
+inspecting `.env.test` printed matched lines — values included — a second
+time. Rather than trust a reconstruction of exactly which lines that
+second command matched, the exposure is recorded conservatively as
+covering the file's full contents — the safer failure direction for a
+credential-scope estimate is wide, not narrow (same logic this project
+already applies to destructive-statement pinning). `.env.test`'s variable
+NAMES (values never repeated here — see CLAUDE.md's widened §0 rule for
+why): `SUPABASE_TEST_URL`, `SUPABASE_TEST_SERVICE_ROLE_KEY`,
+`SUPABASE_TEST_ANON_KEY`, `SUPABASE_TEST_PROJECT_REF`,
+`DOTENV_CONFIG_QUIET`, ~~`TWILIO_AUTH_TOKEN`~~, `NEXT_PUBLIC_APP_URL`. ~~Of
+these, `SUPABASE_TEST_SERVICE_ROLE_KEY`, `SUPABASE_TEST_ANON_KEY`, and
+`TWILIO_AUTH_TOKEN` are real credentials; the rotation scope below is
+widened to include the Twilio auth token alongside the Supabase keys, not
+just the three originally named.~~
+
+**CORRECTED (2026-08-24, Aravind): `TWILIO_AUTH_TOKEN` in `.env.test` is a
+DUMMY value, not the live Twilio account token** — already independently
+noted elsewhere in this same file (this file's T-WH-01 entry: "`.env.test
+TWILIO_AUTH_TOKEN` is a fixed, obviously-fake value"), which the paragraph
+above should have checked before including it in the genuinely-exposed
+set. The second exposure (the `grep -n` against `.env.test`) printed a
+FAKE value for this variable — the live Twilio token was never exposed by
+either incident. **The genuinely exposed credentials, from both
+incidents, remain the test-db Supabase keys only:
+`SUPABASE_TEST_SERVICE_ROLE_KEY` and `SUPABASE_TEST_ANON_KEY`.**
+`TWILIO_AUTH_TOKEN` is removed from the rotation scope below. FAILURE
+CLASS, same one this file already tracks elsewhere (the 2026-08-21
+"plausibility is not verification" entry): the variable's NAME was read
+as evidence it held a live credential, without checking whether the VALUE
+behind it was real — a plausible-looking claim acted on before
+verification, not a new mistake shape.
+
+~~**Risk accepted and deferred (Aravind, 2026-08-23): test-db holds
+disposable schema and no customer data.** The Twilio token addition to
+scope does not change this acceptance — it is also test/sandbox-scoped,
+per this project's Twilio sandbox setup (§7's bot-flow testing rule) — but
+it does widen what "done" means for the deferred rotation below.~~
+
+**Risk accepted and deferred (Aravind, 2026-08-23): test-db holds
+disposable schema and no customer data.**
+
+**DEFERRED ACTION, NOT OPTIONAL — legacy `anon`/`service_role` keys CANNOT
+be rotated in place.** Checked directly in the Supabase dashboard (JWT Keys
+→ Legacy JWT Secret): this project's legacy JWT secret has already migrated
+to the newer ECC JWT Signing Keys system, and Supabase's own documented
+path from here is migrating to publishable (`sb_publishable_...`) and
+secret (`sb_secret_...`) keys, then explicitly disabling the legacy keys —
+not rotating them as a like-for-like swap. Legacy keys are deprecated by
+Supabase end-2026 regardless, so this is scheduled work brought forward by
+this incident, not new work invented because of it.
+
+**Deferred until after migration 030 ships.** Scope when done: `test/
+helpers/db.ts`'s `testClient()` (currently a plain `createClient(url,
+serviceRoleKey)` call assuming a JWT-shaped key — needs checking against
+whichever client-construction shape the new key type requires), `.env.local`,
+`.env.test`, the GitHub Actions repo secrets `SUPABASE_TEST_URL`/
+`SUPABASE_TEST_SERVICE_ROLE_KEY`/`SUPABASE_TEST_ANON_KEY`/
+`SUPABASE_TEST_PROJECT_REF` read by `.github/workflows/ci.yml`'s "Test
+(real test-db)" job, then the disable step itself in Settings → API Keys.
+~~Plus, per the widened scope above, the test/sandbox `TWILIO_AUTH_TOKEN`
+(rotated in the Twilio console, updated in `.env.test` and its GitHub
+Actions secret alongside the Supabase keys, same pass — not a separate
+follow-up).~~ **CORRECTED (2026-08-24): `TWILIO_AUTH_TOKEN` removed from
+this scope — see the correction above; it was never a live credential, so
+there is nothing to rotate.** `.env.test.example` already holds only
+placeholders, unaffected. **WIDENED again (2026-08-24, see the third
+incident below): add the `cli_login_postgres` connection password
+(`PGPASSWORD`) Supabase's own CLI generates for `supabase db dump`
+sessions against test-db to this scope.** This is a platform-generated,
+short-lived connection credential, not a stored project key — there is no
+dashboard "rotate" action for it the way there is for the anon/
+service_role keys; it is included here as a flag that any future
+`supabase db dump`/`--dry-run` invocation generates a NEW one each time,
+so the specific value printed on 2026-08-24 needs no action beyond the
+containment already done (below), but the CLASS of credential this
+represents is now correctly in scope for whoever eventually audits
+test-db's full credential surface, not just the three originally named.
+
+**INCIDENT 3 — a THIRD exposure, same underlying failure class, one day
+later (2026-08-24).** `supabase db dump --linked --schema public
+--dry-run`, run while building a disposable local-scaffold proof for
+migration 030's transaction-wrapper fix (external review round 2, B1;
+`docs/reviews/morning-flow-migration-review-package.md` §11.2), prints its
+generated `pg_dump` invocation script to stdout — that script embeds a
+live `PGPASSWORD` for test-db's `cli_login_postgres` connection role.
+Piping the output through `head -30` to inspect the invocation (a
+previously-unremarkable way to peek at a command's output) printed the
+password into the session transcript. **This happened AFTER the rule had
+already been WIDENED once (following incidents 1 and 2, same day prior)
+— the widened category version was in effect, obeyed, and the hazard
+recurred anyway via a route neither version named:** `supabase db dump`
+was not itself a banned command, and `head` was not itself a banned
+command; the specific combination — piping a CLI's own generated,
+not-yet-inspected script through a raw-print tool — was the actual gap.
+**Contained: file deleted immediately** (`rm` on the file that held the
+printed script), **the dump regenerated with direct file redirection and
+never printed again** (the same `supabase db dump` command re-run,
+output written straight to a file, then only grepped/read for the
+specific non-sensitive lines actually needed — the shebang line, the line
+count — never the full script). **Standing rule REPLACED, not widened a
+third time** (CLAUDE.md's §0, this same date): naming individual commands
+failed once, naming a category of commands failed a second time within
+the same category's own effective window — two enumerations, two
+recurrences. The rule is now stated as a procedure (never pipe unfamiliar
+output through `head`/`cat`/`tail`/`less` into the transcript; redirect
+to a file first, read selectively) rather than a third list, on the
+reasoning that a procedure has no "next item" for a future surprising
+command to fall outside of. See that entry for the full three-incident
+record and the procedure itself.
+
+---
+
+**A REHEARSAL ON THE SHARED TEST-DB BLOCKS CI FOR EVERY OTHER BRANCH, NOT
+JUST THE ONE BEING REHEARSED — recorded as a known cost, no fix proposed
+(2026-08-23, migration 030's test-db rehearsal).**
+
+Migration 030 was applied to test-db (`exfccwlrhoutkgrlikod`) for a real
+rehearsal, and — deliberately, per an earlier decision — left applied
+rather than immediately torn down. The next unrelated event to touch CI
+(a docs-only PR against `main`, containing none of 030's changes) came
+back with its `Test (real test-db)` check failing: not from anything in
+that PR's own diff, but because `main`'s code has none of 030's changes
+while test-db, still carrying 030, was running the new RPC shape `main`'s
+tests don't expect. Confirmed directly, not assumed: re-running the full
+suite against `main`'s own unmodified code while test-db still carried
+030 failed far more broadly than the set of tests actually written
+against 030's assumptions — files with no connection to migration 030 at
+all failed too, because `main` is missing the entire changeset, not just
+one team's follow-up fixes.
+
+**Why the existing concurrency guard doesn't cover this.**
+`.github/workflows/ci.yml`'s `Test (real test-db)` job already runs under
+a project-wide (not branch-scoped) concurrency group,
+`ci-test-db-suite` — deliberately, per that job's own comment, because the
+test fixtures (`TEST_TENANT_ID`, `TEST_PROJECT_ID`, `TEST_ENGINEER_PHONE`)
+are fixed, deterministic rows shared project-wide, and two different PRs'
+jobs running at the same literal moment would corrupt each other's
+fixture writes. **That guard serialises ACCESS to test-db — it says
+nothing about whether test-db's SCHEMA/RPC STATE matches what the branch
+currently running expects.** Two runs from different branches, run one
+after another as the concurrency group intends, still fail identically if
+test-db's actual applied migrations don't match either branch's code —
+serialised access doesn't imply compatible state.
+
+**This is not a one-off; it will recur on every future migration
+rehearsal that leaves its migration applied on test-db for any length of
+time**, for as long as this project has exactly one shared test-db and no
+per-branch database isolation (`CLAUDE.md` §0's TEST-DB IS NOT
+CONFIDENTLY REBUILDABLE entry already records `supabase branches list`
+returning a `403` — Supabase branching is not available on this
+account's tier). Recorded here as an accepted, known cost of the
+shared-test-db model this project currently runs on — **not resolved in
+this pass, and no fix proposed**: the resolution used this time (write a
+verified rollback, apply it, confirm restoration by observation before
+relying on it) is a real, repeatable pattern for THIS incident, not a
+structural fix for the underlying one-shared-database constraint.
+
+---
+
+**MIGRATION 032 IS THE FIRST MIGRATION THIS PROJECT HAS DELIBERATELY LEFT
+PERMANENTLY APPLIED TO TEST-DB, NOT AS A REHEARSAL — A DIFFERENT CASE FROM
+THE ENTRY ABOVE, RECORDED SEPARATELY (2026-08-24, session-transition Test
+B ordering-guarantee fix, PR #104).**
+
+Full incident: `docs/reviews/session-transition-lock-wait-flake.md`. In
+short: Test B's real ordering guarantee (does caller 2 wait until caller
+1 is OBSERVED holding the row lock, not just "probably has by now") can
+only be proven by querying live Postgres lock state from a second
+connection — `pg_locks`/`pg_try_advisory_lock` would do it, but neither
+is reachable through PostgREST without a wrapper function, and every
+schema-only alternative considered (a marker column written before or
+during the hold, `pg_notify`) only ever proves "about to lock" or
+"already released," never "currently holds" — the specific proposition
+the guarantee needs (full alternatives analysis:
+`session-transition-lock-wait-flake.md`'s "Client-side alternatives"
+section). So `032_session_transition_lock_probe_nowait.sql` — a single
+read-only, `service_role`-only function,
+`quoco_test_row_is_locked(text)` — is not optional scaffolding; it is the
+only mechanism that can express this guarantee at all.
+
+**Why PERMANENT, unlike every prior rehearsal (030 included, entry
+above).** Every migration rehearsed on test-db so far was rehearsed and
+then rolled back BECAUSE the code exercising it doesn't live on `main`
+yet — leaving it applied would silently change behavior for every other
+branch's CI run against schema/RPC shapes `main` doesn't have (exactly
+the cost the entry above documents; migration 030's own rehearsal is the
+worked example). Migration 032 is a different shape: it changes NOTHING
+about any existing function's behavior, is called from exactly one place
+(`test/session-transition.test.ts`, which lives on `main` once this PR
+merges), touches no table other tests read production data through, and
+has no callers outside that one test file. The known cost above — "a
+rehearsal blocks CI for every other branch because state doesn't match
+code" — doesn't apply here, because leaving 032 applied doesn't change
+what any OTHER branch's code expects; it only adds a function that a
+branch either calls (if it has this test file) or never touches at all.
+The actual first CI attempt against this migration (PR #104, run
+`32750655063`) failed with the OPPOSITE problem — "function not found,"
+because the standard rollback discipline was followed even for this
+non-standard case — which is what forced this distinction to be drawn
+explicitly rather than left as an unstated exception.
+
+**Confirmed safe to leave applied, by observation, before deciding to
+leave it:** full local suite run against test-db with 032 applied —
+585/587 tests green. The one failure
+(`test/session-transition.test.ts`'s Test B itself) is the
+ALREADY-DOCUMENTED sandbox RPC-serialization limit
+(`docs/reviews/sandbox-cannot-test-concurrency.md`), not a new problem —
+a local run cannot sustain the concurrent RPC calls the test needs, so
+the probe never observes caller 1's lock within the timeout locally. CI
+is the only environment that can actually validate this test; that
+verification is still open (see the flake doc's status line).
+
+**Consequence for future migrations, stated so this isn't mistaken for a
+precedent that test-only migrations are always safe to leave applied:**
+the deciding factor was never "it's test-only" — it was that 032 has no
+existing caller anywhere to conflict with. A test-only migration that
+CHANGED an existing function's behavior, or that other tests would
+implicitly depend on once present, would still need the
+apply-verify-rollback discipline the entry above describes. Evaluate each
+case on that basis, not on this one as a shortcut.
+
+---
+
+**LOCAL FULL-SUITE VERIFICATION AGAINST TEST-DB HUNG THREE TIMES IN A ROW,
+LIKELY THIS SANDBOX'S NETWORK PATH, NOT THE TESTS — NOT CHASED FURTHER
+(2026-08-25, "clear the board" pre-apply verification pass).**
+
+Attempting a final local `npm test` run against updated `main` (a
+"clear the board before prod apply" step, distinct from — and in
+addition to — the CI runs that already validated this same tree) hung
+three consecutive times in an isolated worktree: once with `node_modules`
+symlinked from the main checkout, once after a clean `npm ci`, and once
+again with live progress monitoring in place. All three stalled at the
+identical point — immediately after vitest's `RUN` banner, before any
+test file reported a result — with near-zero CPU on the `vitest`
+processes sustained for 30+ minutes. Not a slow run: the equivalent
+suite completed in 5-10 minutes in two other worktrees earlier in this
+same session.
+
+**This window included the machine sleeping mid-response** (per direct
+observation, not inferred). Combined with an earlier, unexplained
+anomaly the same session — a ~48-minute gap between two `vitest` process
+start timestamps during an earlier hang, well past anything the suite's
+own runtime accounts for — the pattern points at this sandbox's network
+path to test-db during/around a sleep-wake cycle, not at a defect in the
+tests themselves or in the code under test. Not chased further: three
+hangs is enough to establish the pattern without spending more cycles on
+root-causing infrastructure that CI does not share.
+
+**Standing consequence: CI is the authority for full-suite runs against
+test-db, not local.** This sandbox was already established
+(`docs/reviews/sandbox-cannot-test-concurrency.md`) as unable to produce
+genuine concurrency; this incident adds that it cannot even reliably
+*complete* a full suite run against test-db, for reasons that appear
+environmental (machine sleep, network path) rather than code-related. A
+local green was already the wrong evidence for anything concurrency-shaped;
+after this, a local run's ABSENCE of a green result is not evidence of a
+problem either, for the same class of run — CI is the only environment
+whose result should be trusted either way. This session's actual
+verification of the merged state (PR #104 and PR #105) came from their
+own CI runs, not from this failed local attempt, and that CI evidence
+stands regardless of this local hang.
+
+**Note for the prod apply this verification precedes:** the apply itself
+runs through the SQL Editor (per the PROD APPLIES rule, `CLAUDE.md` §0),
+which does not depend on this local sandbox's network path at all — the
+apply is not at risk from this. But the apply runbook's own pre/post
+probes (`supabase db query --linked -f`) DO run from this same sandbox.
+If a probe hangs during the apply, read that as a network symptom
+consistent with this entry, not as a finding about the database or the
+migration — retry the probe rather than escalating it as a database
+problem on first hang.
