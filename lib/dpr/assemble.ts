@@ -468,7 +468,7 @@ export async function assembleDprFacts(
 export interface CorrectedEngineerLogRow {
   engineer_id: string
   morning_plan: string | null // correctable (scalar)
-  morning_manpower_planned: { planned_total: number | null; by_trade: Array<{ trade: string; planned_count: number }>; raw_text: string | null } | null
+  morning_manpower: { total: number | null; by_trade: Array<{ trade: string; count: number }>; raw_text: string | null } | null
   morning_equipment: { items: Array<{ type: string; daily_hire_cost: number | null }>; none: boolean } | null
   evening_output: string | null // correctable (scalar)
   evening_output_quantities: { items: Array<{ activity: string; quantity: number | null; unit: string }> } | null
@@ -544,11 +544,13 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
   // §2 Schedule — no planned side (spec binding table).
   const schedule: EngineerDprFacts['schedule'] = { met: row.evening_schedule_met }
 
-  // §3 Manpower — planned = morning_manpower_planned.planned_total;
+  // §3 Manpower — planned = morning_manpower.total (renamed from
+  // morning_manpower_planned.planned_total by the morning flow migration,
+  // 030_morning_flow_attendance.sql);
   // actual = on_site (evening_workers_on_site) + working (productive_count).
   const pm = row.evening_productive_manpower
   const manpower: EngineerDprFacts['manpower'] = {
-    planned: wrapCount(row.morning_manpower_planned?.planned_total ?? null),
+    planned: wrapCount(row.morning_manpower?.total ?? null),
     on_site: wrapCount(row.evening_workers_on_site),
     working: wrapCount(pm?.productive_count ?? null, pm?.confidence),
   }
@@ -621,7 +623,7 @@ export interface HalfCompletenessRow {
   morning_submitted_at: string | null
   evening_submitted_at: string | null
   morning_plan: string | null
-  morning_manpower_planned: unknown
+  morning_manpower: unknown
   morning_equipment: { items: unknown[] } | null
   evening_schedule_met: boolean | null
   evening_schedule_miss_reason: string | null
@@ -644,7 +646,7 @@ export interface HalfCompletenessRow {
 export function deriveHalfCompleteness(half: 'morning' | 'evening', row: HalfCompletenessRow): CheckInStatus {
   if (half === 'morning') {
     if (row.morning_submitted_at) return 'complete'
-    const anyField = row.morning_plan !== null || row.morning_manpower_planned !== null || row.morning_equipment !== null
+    const anyField = row.morning_plan !== null || row.morning_manpower !== null || row.morning_equipment !== null
     return anyField ? 'partial' : 'not_received'
   }
 
@@ -737,7 +739,7 @@ export async function assembleEngineerDprFacts(
     morning_submitted_at: logs.morning_submitted_at as string | null,
     evening_submitted_at: logs.evening_submitted_at as string | null,
     morning_plan: logs.morning_plan as string | null,
-    morning_manpower_planned: logs.morning_manpower_planned,
+    morning_manpower: logs.morning_manpower,
     morning_equipment: logs.morning_equipment as { items: unknown[] } | null,
     evening_schedule_met: logs.evening_schedule_met as boolean | null,
     evening_schedule_miss_reason: logs.evening_schedule_miss_reason as string | null,
@@ -755,7 +757,7 @@ export async function assembleEngineerDprFacts(
   const correctedRow: CorrectedEngineerLogRow = {
     engineer_id: logs.engineer_id as string,
     morning_plan: parseCorrectedText('morning_plan', logs.morning_plan as string | null, latestEditByColumn.get('morning_plan')),
-    morning_manpower_planned: logs.morning_manpower_planned as CorrectedEngineerLogRow['morning_manpower_planned'],
+    morning_manpower: logs.morning_manpower as CorrectedEngineerLogRow['morning_manpower'],
     morning_equipment: logs.morning_equipment as CorrectedEngineerLogRow['morning_equipment'],
     evening_output: parseCorrectedText('evening_output', logs.evening_output as string | null, latestEditByColumn.get('evening_output')),
     evening_output_quantities: logs.evening_output_quantities as CorrectedEngineerLogRow['evening_output_quantities'],

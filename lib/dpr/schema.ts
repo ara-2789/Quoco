@@ -604,7 +604,7 @@ export interface EngineerScheduleFacts {
   met: boolean | null
 }
 
-// §3 Manpower. planned = morning_manpower_planned.planned_total
+// §3 Manpower. planned = morning_manpower.total
 // (CapturedCount — a real, small integer that CAN legitimately be a
 // reported zero, matching CapturedCount's existing zero/not_captured
 // split). actual is a composite: on_site (evening_workers_on_site) +

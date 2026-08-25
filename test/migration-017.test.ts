@@ -110,6 +110,7 @@ describe('migration 017 — RLS column-bounding + owner_user_id same-tenant FK',
   it('T-017-01 (canary): service-role morning RPC still writes engineer_id/project_id', async () => {
     const phone = testPhone('401')
     await applyMorningFlowTurn({ phone, message: '', startFlow: true, now: '2026-03-16T09:00:00+05:30' })
+    await applyMorningFlowTurn({ phone, message: 'yes', startFlow: false, now: '2026-03-16T09:00:00+05:30' }) // Q1: attendance -> step 2
     const r = await applyMorningFlowTurn({
       phone,
       message: 'Pour slab on level 3',

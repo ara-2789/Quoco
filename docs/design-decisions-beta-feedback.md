@@ -2290,6 +2290,87 @@ cron entries may be added.**
 
 ---
 
+## 31. Stable-signature refactor for the flow-turn RPCs — recorded 2026-08-23,
+DECIDED IN PRINCIPLE, NOT SCHEDULED
+
+**Origin.** Migration 030's first draft appended two parameters to
+`apply_morning_flow_turn` and, in doing so, created a live duplicate
+function overload (`CREATE OR REPLACE` does not replace across a changed
+argument list — full incident: `docs/reviews/morning-flow-migration-review-
+package.md` §10; the fix actually shipped for 030 itself: §10.1, keeping
+the signature unchanged and moving classification inside the function).
+That fix solves migration 030's own case. This entry records a longer-term
+structural fix for the CLASS of problem, not just this one instance of it —
+decided in principle, deliberately NOT scheduled against any current work.
+
+**The problem, stated generally.** The signature IS the API for
+`apply_morning_flow_turn` and `apply_evening_flow_turn` — every caller
+(production wrapper, test helper, any future one) must match it exactly,
+positionally or by name. Both signatures have only ever grown:
+`apply_morning_flow_turn` — 8 parameters at `014_morning_flow_apply_turn.sql`
+→ 12 at `018_morning_flow_parsers.sql` → (030's first draft, abandoned) 14 →
+12 again (030 as shipped, §10.1). `apply_evening_flow_turn` — grew similarly
+across `022_evening_flow_apply_turn.sql` and `024_evening_flow_q4_q5.sql`.
+Every future migration that needs the RPC to know one more thing about a
+turn (a new question, a new flag, a new piece of context) faces the exact
+choice 030's first draft got wrong: append a parameter (risking the
+orphaned-overload trap CLAUDE.md §0 now names explicitly) or find another
+way. §10.1's fix works because Q1/holiday's yes-no classification HAPPENED
+to have no race to avoid — that will not be true of every future addition
+(e.g. evening's own restructuring, §30(a), already known to add
+parameters), so relying on "there was always another way" is not a plan,
+it's an assumption that has already failed once.
+
+**Proposal.** Refactor both `apply_morning_flow_turn` and
+`apply_evening_flow_turn` to a STABLE SIGNATURE — e.g.
+`(p_phone text, p_now timestamptz, p_input jsonb)` — where every per-turn
+value (message, start-flow flag, every parse result, every classification,
+every future field) lives inside `p_input`'s JSONB shape instead of as a
+named SQL parameter. Adding a new field becomes a JSONB CONTRACT change
+(document the new key, read it with `COALESCE`/`->>`, done) rather than a
+function IDENTITY change — `CREATE OR REPLACE` then always genuinely
+replaces, because the argument type list never moves again.
+
+**The trade, named honestly, not glossed over.** Argument validation moves
+from Postgres into application code. Today, a caller that misspells
+`p_manpower_ok` or passes the wrong type gets a loud, deploy-time/call-time
+Postgres error (unknown parameter, type mismatch). Under a JSONB payload, a
+typo'd key (`p_input->>'manpower_ok'` when the real key is
+`'manpowerOk'`) fails SILENTLY at runtime — `->>'` on a missing key returns
+`NULL`, not an error, and `COALESCE(..., false)` (the pattern this
+project's own RPCs already use throughout) would make a typo indistinguishable
+from a genuinely-absent value. This is a REAL cost, not a formality: it
+trades a class of bug Postgres currently catches for free (at the exact
+moment migration 030's first draft's mistake was caught, per CLAUDE.md §7's
+dry-run rule) for a class of bug that needs its own test coverage to catch
+instead. Whoever schedules this work owns building that coverage — it does
+not come free with the refactor.
+
+**Sequencing, if and when this is scheduled.** Should land BEFORE evening's
+own restructuring (§30(a)) — evening's migration is already known to add
+parameters to `apply_evening_flow_turn` for its new/moved questions, which
+means it would hit the identical wall 030's first draft hit if it ships
+against the current parameter-list shape. Doing the stable-signature
+refactor first means evening's migration is written against the shape that
+won't have this problem, rather than evening also needing its own §10.1-style
+rescue.
+
+**Explicitly NOT a volume or performance argument.** This is a maintainability/
+safety proposal only. At this project's expected scale, a 12-, 14-, or even
+20-parameter function signature is not itself a performance constraint —
+the actual serialising bottleneck in both flow-turn RPCs is the row lock on
+`whatsapp_sessions` per `phone_number` (the `INSERT ... ON CONFLICT ...
+DO UPDATE` acquire step, present since `012_whatsapp_session_transition.sql`),
+which is unchanged by this refactor either way. Do not read "stable
+signature" as a claim that the current signatures are slow; they aren't —
+the argument for this refactor is entirely about the orphaned-overload
+failure mode, not throughput.
+
+**Requires its own migration and its own external review gate** (CLAUDE.md
+§0's trigger conditions — this modifies a live function's logic, condition
+(a) — a full review package is required, not optional, whenever this is
+actually scheduled).
+
 ## 32. Parse-attempt corpus + self-improving parsing prerequisites (2026-08-23)
 — RECORD ONLY, NOT SCHEDULED
 

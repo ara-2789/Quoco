@@ -339,6 +339,7 @@ export type Database = {
       }
       daily_logs: {
         Row: {
+          attendance: string | null
           created_at: string | null
           dpr_approved_by: string | null
           dpr_generated_at: string | null
@@ -361,7 +362,7 @@ export type Database = {
           morning_equipment: Json | null
           morning_execution_plan: string | null
           morning_hindrances: Json | null
-          morning_manpower_planned: Json | null
+          morning_manpower: Json | null
           morning_plan: string | null
           morning_submitted_at: string | null
           morning_submitted_via: string | null
@@ -370,6 +371,7 @@ export type Database = {
           weather: string | null
         }
         Insert: {
+          attendance?: string | null
           created_at?: string | null
           dpr_approved_by?: string | null
           dpr_generated_at?: string | null
@@ -392,7 +394,7 @@ export type Database = {
           morning_equipment?: Json | null
           morning_execution_plan?: string | null
           morning_hindrances?: Json | null
-          morning_manpower_planned?: Json | null
+          morning_manpower?: Json | null
           morning_plan?: string | null
           morning_submitted_at?: string | null
           morning_submitted_via?: string | null
@@ -401,6 +403,7 @@ export type Database = {
           weather?: string | null
         }
         Update: {
+          attendance?: string | null
           created_at?: string | null
           dpr_approved_by?: string | null
           dpr_generated_at?: string | null
@@ -423,7 +426,7 @@ export type Database = {
           morning_equipment?: Json | null
           morning_execution_plan?: string | null
           morning_hindrances?: Json | null
-          morning_manpower_planned?: Json | null
+          morning_manpower?: Json | null
           morning_plan?: string | null
           morning_submitted_at?: string | null
           morning_submitted_via?: string | null

@@ -47,9 +47,17 @@ type Flow = 'morning' | 'evening'
 // Discriminated on `flow` so the reply builder below can narrow to the
 // correct outcome type without a cast. evening carries an extra
 // equipmentEcho — Q5's prompt is data-driven (024_evening_flow_q4_q5.sql),
-// unlike every other step's static text; morning has no equivalent.
+// unlike every other step's static text. morning carries `attendance` (the
+// morning flow migration, 030) for the equivalent reason: three different
+// completions now share (outcome: 'advance', currentStep: 0) and need it to
+// pick the right reply — see buildMorningReply's own doc.
 type Attempt =
-  | { flow: 'morning'; outcome: MorningOutcome; currentStep: number }
+  | {
+      flow: 'morning'
+      outcome: MorningOutcome
+      currentStep: number
+      attendance: 'present' | 'absent' | 'site_holiday' | null
+    }
   | {
       flow: 'evening'
       outcome: EveningOutcome
@@ -124,7 +132,12 @@ async function attempt(
       ...(common.now !== undefined ? { now: common.now } : {}),
       ...(common.supabaseClient !== undefined ? { supabaseClient: common.supabaseClient } : {}),
     })
-    return { flow: 'morning', outcome: result.outcome, currentStep: result.currentStep }
+    return {
+      flow: 'morning',
+      outcome: result.outcome,
+      currentStep: result.currentStep,
+      attendance: result.attendance,
+    }
   }
 
   const result = await applyEveningFlowTurn({
@@ -147,7 +160,7 @@ async function attempt(
 
 function replyFor(a: Attempt): string {
   return a.flow === 'morning'
-    ? buildMorningReply(a.outcome, a.currentStep)
+    ? buildMorningReply(a.outcome, a.currentStep, a.attendance)
     : buildEveningReply(a.outcome, a.currentStep, a.equipmentEcho ?? undefined)
 }
 

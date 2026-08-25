@@ -451,6 +451,91 @@
   section number was already fragile on its own. Always cite the filename
   with the section, e.g. `design-decisions-beta-feedback.md §10`, never
   just "§10". Full reasoning: docs/build-status.md's 2026-08-23 entry.
+- `CREATE OR REPLACE FUNCTION` ONLY PRESERVES GRANTS WHEN THE ARGUMENT
+  SIGNATURE IS UNCHANGED — QUALIFIER TO THE EXISTING "NEVER DROP+CREATE,
+  ALWAYS CREATE OR REPLACE" CONVENTION (standing rule since 2026-08-23,
+  migration 030's first draft). That convention (per-migration headers,
+  e.g. `022_evening_flow_apply_turn.sql`'s own text, "never DROP+CREATE --
+  migration 020's own incident is why") exists to stop a function's
+  EXECUTE grants from silently reverting to Postgres defaults on every
+  apply. It is NOT unconditional: a function's identity in Postgres is its
+  name PLUS its full parameter TYPE LIST. Appending a parameter to a
+  `CREATE OR REPLACE FUNCTION` statement — even a trailing one with a
+  `DEFAULT` value — changes that type list, so Postgres does NOT replace
+  the existing function; it silently creates a SECOND, DISTINCT, live
+  overload under the same name. The OLD function body is never removed,
+  keeps whatever grants it already had, and stays fully callable. Any
+  caller passing a partial named-argument set that both overloads' defaults
+  can satisfy becomes genuinely AMBIGUOUS ("function ... is not unique")
+  instead of resolving to either one. THIS IS A DIFFERENT FAILURE IN THE
+  SAME FAMILY AS MIGRATION 020, not the same one re-occurring: 020 was an
+  explicit DROP+CREATE reverting to default PUBLIC grants; this is
+  `CREATE OR REPLACE` itself failing to replace, with no DROP in sight.
+  CONSEQUENCE: any migration that changes a `SECURITY DEFINER` function's
+  ARGUMENT LIST (adding, removing, or reordering parameters — not just
+  editing the body) needs an EXPLICIT plan for the old signature before it
+  ships, not a bare `CREATE OR REPLACE`: either (a) avoid the signature
+  change entirely, if the new behaviour can be obtained inside the function
+  body instead (migration 030's eventual fix — classify inside the RPC
+  rather than pass a precomputed flag in, once the reason a precomputed
+  pattern existed elsewhere was checked and found not to apply here), or
+  (b) an explicit `DROP FUNCTION IF EXISTS <old exact signature>` ahead of
+  the `CREATE OR REPLACE`, paired with the function's own explicit
+  grant-reassertion (already required by `scripts/lint-migrations.mjs`'s
+  no-orphan-security-definer rule) so the DROP never leaves a window with
+  default grants. Evidence: migration 030's first draft appended
+  `p_yesno_met`/`p_yesno_ok` to `apply_morning_flow_turn`, confirmed live
+  against a real Postgres 17 instance to leave two simultaneously-callable
+  functions (`pg_proc` returned two rows for one name) — caught by the
+  project's own pre-apply dry-run discipline (§7's disposable-dry-run rule)
+  before this ever touched test-db or prod. Full incident + the fix
+  actually chosen: `docs/reviews/morning-flow-migration-review-package.md`
+  §10 (the finding, kept in full) and §10.1 (the fix and its verification).
+- A BACKGROUND AGENT SESSION WRITES ON ITS OWN WORKTREE BRANCH, NOT THE
+  BRANCH IT WAS ASKED TO WORK ON — VERIFY AND CONSOLIDATE AFTER EVERY SUCH
+  SESSION (standing rule since 2026-08-23). This project's own tooling
+  isolates a background agent session into `.claude/worktrees/<id>/`, on a
+  freshly-created branch, before it makes any commit — a safety mechanism,
+  not a bug, so a session's file edits can never land directly on whatever
+  branch happened to be checked out in the shared working copy. The
+  consequence that matters: work committed inside that worktree is
+  INVISIBLE to the branch the session was asked to work on until someone
+  explicitly merges or fast-forwards it across, and `.claude/worktrees/` is
+  DISPOSABLE — it can be removed without warning, taking any
+  not-yet-consolidated commits with it. A session that reports "committed
+  and pushed" without naming which branch the commit actually landed on can
+  be describing a commit that is about to become unreachable.
+  CONSEQUENCE: after any background-agent session that involved commits,
+  run `git worktree list` before trusting that the target branch was
+  updated — do not infer it from the session's own summary. If work landed
+  in a worktree, consolidate it onto the intended branch (fast-forward if
+  the worktree branch is a clean descendant, as here; otherwise merge or
+  cherry-pick, matching the actual history relationship) and remove the
+  worktree and its branch once every commit is confirmed reachable from its
+  real destination — do not leave the worktree branch as a second,
+  quietly-authoritative copy.
+  Evidence: on 2026-08-23, three commits fixing migration 030's function-
+  overload bug — the fix itself, its dry-run evidence, and the yes/no
+  corpus test that closed the follow-on duplicate-logic hazard — were made
+  inside `.claude/worktrees/morning-flow-evidence-regen`, on branch
+  `worktree-morning-flow-evidence-regen`, while
+  `feat/morning-flow-attendance-migration` — the actual feature branch —
+  still pointed at the commit BEFORE any of that work, still carrying the
+  broken two-parameter version of the migration. Caught only because the
+  branches were compared explicitly (`git log --oneline` against both
+  names), not because anything surfaced the mismatch on its own. THIS VERY
+  ENTRY is a second, live instance from the same session: the harness
+  itself refused this edit against the shared checkout mid-consolidation
+  ("Call EnterWorktree first"), forcing a second worktree detour to write
+  this rule down — the mechanism the rule describes fired on the rule
+  being written.
+  THE MECHANISM FIRES ON EVERY WRITE THROUGH THIS HARNESS, NOT ONLY ON LONG
+  BACKGROUND-AGENT RUNS — this rule's own text is itself a third instance,
+  not just the second: adding this one line required its own worktree
+  detour and its own consolidation, same as the paragraph above it did.
+  Consolidation is part of every write cycle this harness performs, not a
+  cleanup step reserved for the end of a long session — check `git worktree
+  list` after any commit, not only after ones that felt long-running.
 - NEVER PIPE UNFAMILIAR COMMAND OUTPUT THROUGH `head`/`cat`/`tail`/`less`
   INTO THE TRANSCRIPT — REDIRECT TO A FILE, THEN READ SELECTIVELY FOR THE
   SPECIFIC THING NEEDED (standing rule since 2026-08-23; REPLACED, not

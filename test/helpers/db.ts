@@ -255,18 +255,27 @@ export async function drainNextPendingFlow(params: {
   return (data as WhatsAppSession | null) ?? null
 }
 
-// Result shape returned by apply_morning_flow_turn (jsonb).
+// Result shape returned by apply_morning_flow_turn (jsonb). `attendance`
+// added by 030_morning_flow_attendance.sql — see lib/whatsapp/flows/
+// morning.ts's buildMorningReply doc for why (disambiguating which of three
+// completions occurred).
 export interface MorningTurnRow {
   outcome: MorningOutcome
   current_flow: SessionFlow | null
   current_step: number
   log_date: string
+  attendance: 'present' | 'absent' | 'site_holiday' | null
 }
 
 // Wrapper over the single transactional morning-flow RPC. Parameter names match
 // apply_morning_flow_turn's SQL signature EXACTLY (p_phone_number, p_tenant_id,
-// p_user_id, p_project_id, p_message, p_start_flow, p_now, p_test_sleep_ms) —
-// NOT the acquire_and_transition_session names. Engineer/project default to the
+// p_user_id, p_project_id, p_message, p_start_flow, p_manpower, p_manpower_ok,
+// p_equipment, p_equipment_ok, p_now, p_test_sleep_ms) — BYTE-IDENTICAL to the
+// pre-030 signature (REWORKED 2026-08-23, review package §10: Q1/holiday
+// yes-no classification now happens INSIDE the RPC via quoco_classify_yes_no,
+// not as precomputed p_yesno_met/p_yesno_ok parameters — the first draft's
+// appended params created a duplicate, orphaned function overload). NOT the
+// acquire_and_transition_session names. Engineer/project default to the
 // morning fixtures but can be overridden.
 export async function applyMorningFlowTurn(params: {
   phone: string
@@ -279,9 +288,10 @@ export async function applyMorningFlowTurn(params: {
   testSleepMs?: number
 }): Promise<MorningTurnRow> {
   const db = testClient()
-  // Mirror the production wrapper: parse both Pass-2 shapes unconditionally and
-  // pass them (+ *_ok flags) so the RPC selects by active step. See the cast
-  // note in lib/whatsapp/flows/morning.ts (params added by migration 018).
+  // Mirror the production wrapper: parse every shape unconditionally and
+  // pass it (+ *_ok flags) so the RPC selects by active step. See the cast
+  // note in lib/whatsapp/flows/morning.ts. Q1/holiday yes-no classification
+  // is NOT computed here — it happens inside apply_morning_flow_turn itself.
   const manpower = parseLabourCount(params.message)
   const equipment = parseEquipment(params.message)
   const { data, error } = await db.rpc('apply_morning_flow_turn', {
@@ -371,19 +381,38 @@ export async function applyEveningFlowTurn(params: {
   return data as EveningTurnRow
 }
 
-// Drives a full morning check-in to completion with an explicit "no
-// equipment" answer at Q3. Moved here from test/migration-024.test.ts
-// (2026-08-12, the productivity-reconciliation mirror test) so a second
-// test file needing the identical setup imports one shared definition
-// instead of a second hand-copy — the same class of divergence risk this
-// project has been burned by for production code, avoided here for test
-// setup before it had the chance to recur.
-export async function completeMorningNoEquipment(phone: string, now: string): Promise<void> {
+// Drives a full morning check-in to completion, with the Q4 equipment reply
+// as a parameter — the value doesn't matter to most callers, but a few
+// (test/migration-022.test.ts's context-merge tests, test/migration-024.test.ts's
+// productivity/equipment-hours suite) specifically need morning_equipment to
+// come back non-null with a REAL parsed item, which drives evening's own Q5
+// auto-skip decision downstream. Originally three separate hand-copies of
+// this exact sequence existed (test/helpers/db.ts, test/migration-022.test.ts's
+// local `completeMorning`, test/migration-024.test.ts's local
+// `completeMorningWithEquipment`) — consolidated here, 2026-08-24, after
+// migration 030's test-db rehearsal caught the other two copies still
+// driving the OLD pre-030 turn order (free-text plan first, no attendance
+// question) and failing as a result. One definition now; the two local
+// copies are gone.
+//
+// RENUMBERED by 030_morning_flow_attendance.sql: Q1 attendance ("yes") now
+// precedes plan, and equipment (Q4) completes the flow directly — there is
+// no longer a fifth "execution plan" turn after equipment; the OLD final
+// "Crew A then Crew B" turn is gone because morning_execution_plan is no
+// longer written.
+export async function completeMorningWithEquipment(phone: string, now: string, equipmentReply: string): Promise<void> {
   await applyMorningFlowTurn({ phone, message: '', startFlow: true, now })
+  await applyMorningFlowTurn({ phone, message: 'yes', startFlow: false, now }) // Q1: attendance
   await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now })
   await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: 'no', startFlow: false, now }) // Q3: explicit none
-  await applyMorningFlowTurn({ phone, message: 'Crew A then Crew B', startFlow: false, now })
+  await applyMorningFlowTurn({ phone, message: equipmentReply, startFlow: false, now }) // Q4: completes
+}
+
+// Thin wrapper over completeMorningWithEquipment for the (more common) case
+// where the equipment reply's content doesn't matter, only that the flow
+// completes with an explicit "none" answer.
+export async function completeMorningNoEquipment(phone: string, now: string): Promise<void> {
+  return completeMorningWithEquipment(phone, now, 'no') // Q4: explicit none, completes
 }
 
 // Drives evening to the start of Q4 (step 4) via the Q2=Yes edge (shortest
@@ -450,8 +479,12 @@ export interface DailyLogRow {
   project_id: string
   engineer_id: string
   log_date: string
+  attendance: 'present' | 'absent' | 'site_holiday' | null
+  attendance_defaulted: boolean | null
+  attendance_raw: string | null
+  is_holiday: boolean | null
   morning_plan: string | null
-  morning_manpower_planned: unknown | null
+  morning_manpower: unknown | null
   morning_equipment: unknown | null
   morning_execution_plan: string | null
   morning_submitted_at: string | null
@@ -482,7 +515,7 @@ export async function getDailyLog(logDate: string): Promise<DailyLogRow | null> 
   const { data, error } = await db
     .from('daily_logs')
     .select(
-      'project_id, engineer_id, log_date, morning_plan, morning_manpower_planned, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site, evening_productive_manpower, evening_equipment_utilisation, evening_submitted_at',
+      'project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_plan, morning_manpower, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site, evening_productive_manpower, evening_equipment_utilisation, evening_submitted_at',
     )
     .eq('project_id', TEST_PROJECT_ID)
     .eq('engineer_id', testEngineerId())

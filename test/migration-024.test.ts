@@ -3,6 +3,7 @@ import {
   applyEveningFlowTurn,
   applyMorningFlowTurn,
   completeMorningNoEquipment,
+  completeMorningWithEquipment,
   reachStep4,
   ensureMorningFixtures,
   removeMorningFixtures,
@@ -134,17 +135,13 @@ import {
 const P_NOW = '2026-04-10T19:00:00+05:30' // 19:00 IST, 10 Apr — evening check-in time
 const LOG_DATE = '2026-04-10'
 
-// completeMorningNoEquipment / reachStep4 moved to test/helpers/db.ts
-// (2026-08-12) so the new productivity-reconciliation mirror test file
-// shares one definition instead of a second hand-copy.
-
-async function completeMorningWithEquipment(phone: string, now: string, equipmentReply: string): Promise<void> {
-  await applyMorningFlowTurn({ phone, message: '', startFlow: true, now })
-  await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: equipmentReply, startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: 'Crew A then Crew B', startFlow: false, now })
-}
+// completeMorningNoEquipment / completeMorningWithEquipment / reachStep4
+// all live in test/helpers/db.ts (completeMorningWithEquipment moved there
+// 2026-08-24, migration 030's test-db rehearsal — this file's own local
+// copy was still driving the pre-030 turn order, unchanged since it was
+// written, and failed once 030 actually renumbered the steps) so every
+// test file needing this setup imports one shared definition instead of a
+// hand-copy.
 
 beforeAll(async () => {
   await ensureMorningFixtures()

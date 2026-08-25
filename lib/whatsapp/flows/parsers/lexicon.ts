@@ -8,7 +8,9 @@
 
 // ---------------------------------------------------------------------------
 // Trades (Q2). Maps a lowercased token -> canonical English trade name. The
-// canonical name is what lands in morning_manpower_planned.by_trade[].trade.
+// canonical name is what lands in morning_manpower.by_trade[].trade (renamed
+// from morning_manpower_planned by 030_morning_flow_attendance.sql — the
+// parser's own field names are unchanged, only the RPC's write-time reshape).
 const TRADE_ALIASES: Readonly<Record<string, string>> = {
   // mason
   mason: 'mason',
@@ -249,7 +251,46 @@ export const QUANTITY_STOPWORDS: ReadonlySet<string> = new Set([
 ])
 
 // ---------------------------------------------------------------------------
-// Yes / no classification (evening Q2 "was the plan met?").
+// Yes / no classification. Originally evening Q2 "was the plan met?" only;
+// morning Q1 (attendance) and the holiday follow-up became consumers when
+// migration 030 ported this exact word-for-word into quoco_classify_yes_no
+// (SQL) so the RPC's signature could stay byte-identical (review package
+// §10.1) rather than pass a precomputed flag in.
+//
+// RE-TUNED FOR ATTENDANCE SEMANTICS (2026-08-24, external review round 2,
+// review package §11.5; Aravind's decision). classifyYesNo was originally
+// tuned for schedule-met: a partial answer like "half" classifies NOT MET on
+// purpose (see the NO_WORDS comment below, kept for the historical record).
+// Imported unchanged into attendance, that tuning INVERTS: "half day today"
+// describes a PRESENT engineer, and was routing to the site-holiday
+// follow-up instead. DECIDED: re-tune the ONE shared list for attendance
+// semantics rather than fork two lists — once evening's own restructuring
+// (§30(a)) ships, evening Q2 is deleted and the only remaining consumers are
+// morning Q1 and the holiday follow-up, both attendance questions; the
+// schedule-met tuning will have no consumer left. Forking now would just
+// mean merging the fork back later.
+//
+// ACCEPTED COST, named plainly: for the window between 030 shipping and the
+// evening restructuring shipping (one migration wide), evening Q2 gets
+// attendance-tuned classification on a question already decided for
+// deletion — "yes but only half" (schedule-met: NOT met, a real hedge) now
+// classifies MET, same as attendance's "half day" correctly does. Evening
+// Q2's own test file (test/unit/yesno-classifier.test.ts) records this
+// explicitly rather than silently changing expectations.
+//
+// PRESENT-SIDE FORMS ADDED: half, half-day, late, coming, come, reaching,
+// reached, way — covering "half day"/"half-day", "late"/"coming late",
+// "reaching at <time>"/"coming at 11", "on the way", "reached site", "will
+// come". Token-wise matching (see classifyYesNo below) means one distinctive
+// word per phrase is enough — "at"/"11"/"the"/"on" carry no signal of their
+// own and are left unlisted. TRANSLITERATED TAMIL: checked against the
+// lexicon as it exists today — NONE of these present-side forms have an
+// existing Tamil transliteration here (the only Tamil entries anywhere in
+// this yes/no set remain 'aama'/'ama'/'aam' and the shared NONE_WORDS
+// negatives). Not invented for this pass — see COVERAGE HONESTY below,
+// unchanged: a Tamil form for "coming"/"reached"/"on the way" etc. needs
+// cofounder review before it's added, same as every other vernacular entry
+// in this file.
 //
 // COVERAGE HONESTY (read before extending): the affirmative list below is
 // English plus the three standard transliterations of ஆமா/ஆம். It is DELIBERATELY
@@ -279,11 +320,25 @@ export const YES_WORDS: ReadonlySet<string> = new Set([
   'aama',
   'ama',
   'aam',
+  // -- attendance present-side forms, added 2026-08-24 (see note above) --
+  'half',
+  'half-day',
+  'late',
+  'coming',
+  'come',
+  'reaching',
+  'reached',
+  'way',
 ])
 
 // Explicit negatives AND partials. Partial answers are classified NOT MET on
 // purpose: "half done" is not a met plan, and routing them to Q3 captures the
-// shortfall in the engineer's own words instead of rounding it up to success.
+// shortfall in the engineer's own words instead of rounding it up to success
+// -- historical rationale for THIS list's original design, kept for the
+// record. 'half' ITSELF moved to YES_WORDS above 2026-08-24 (see the
+// RE-TUNED note above) -- it no longer lives here, and the ACCEPTED COST
+// note above names exactly what that trades away on evening Q2 during the
+// one-migration window before evening Q2 is deleted.
 export const NO_WORDS: ReadonlySet<string> = new Set([
   'no',
   'n',
@@ -296,7 +351,6 @@ export const NO_WORDS: ReadonlySet<string> = new Set([
   'partial',
   'partially',
   'mostly',
-  'half',
   'some',
   'delayed',
   'missed',
