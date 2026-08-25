@@ -35,11 +35,26 @@ branch) before any write step.
   Run. Paste result. → confirm before D.
 - **D. Post-apply probes (read-only).** One probe per changed object, query
   visible, expected value stated. Paste each. → confirm before E.
-- **E. Ledger INSERT (write) + verify.** Manual
-  `INSERT INTO supabase_migrations.schema_migrations (version, name, statements)
-  VALUES ('<nnn>', '<name>', ARRAY[]::text[]);` then `SELECT count(*)` to confirm
-  the expected row total. (The CLI `migration repair` is 28P01-blocked for this
-  project and has never been executed — the manual INSERT is the real method.)
+- **E. Ledger repair (write) + verify.** `supabase migration repair --status
+  applied <nnn> --linked`, breadcrumb confirmed first — CORRECTED
+  2026-08-25: this is the working, preferred method. (An earlier version of
+  this line claimed the CLI command was 28P01-blocked and had never been
+  executed for this project; that was true once but is stale — `migration
+  repair` ran cleanly against both test-db and production during 030's
+  apply, no auth error. The manual `INSERT INTO
+  supabase_migrations.schema_migrations (version, name, statements) VALUES
+  ('<nnn>', '<name>', ARRAY[]::text[]);` stays documented as a fallback
+  only, for whichever future session hits a real block on the CLI path.)
+  Either way, follow with `SELECT count(*)` to confirm the expected row
+  total, and print the full version list.
+
+**Step E is not optional scaffolding.** A reviewer package that widens or
+renumbers this skeleton (e.g. into its own S0–S5-style sequence) MUST carry
+this step forward under its own numbering, explicitly — dropping it while
+restructuring is exactly how migration 030's own apply shipped with no
+ledger row on production for a real stretch, caught only by a post-apply
+fingerprint someone thought to run, not by the runbook itself. Full
+incident: `docs/reviews/030-apply-record.md`'s "Ledger state" section.
 
 ## After apply
 

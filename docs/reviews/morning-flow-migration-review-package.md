@@ -1945,6 +1945,22 @@ closing check:
      rehearsal-and-rollback status they already carry), not a
      coincidental extra check.
 
+- **S6. Ledger repair (write) + verify — ADDED RETROACTIVELY, 2026-08-25,
+  after this exact step's own absence let `030` ship on production with no
+  ledger row for a real stretch.** `docs/migration-runbook-template.md`'s
+  step E already existed when this S0–S5 sequence was written; this file's
+  own text below (the "Post-apply fingerprint set" note, unchanged since
+  original authoring) even NAMES "the runbook template's own E" as the
+  place the ledger entry belongs — but no S-numbered step ever actually
+  instantiated it, so the awareness never became a checkable action.
+  `supabase migration repair --status applied 030 --linked` (breadcrumb
+  confirmed first), then `SELECT count(*)` and the full version list, same
+  as canonical E. Placed here, after S5, not between S3 and S4 — ledger
+  metadata carries none of S4's lockstep-timing urgency, and putting it
+  last means it never competes with "merge immediately, no gap" for
+  priority. Full incident and both runbook fixes:
+  `docs/reviews/030-apply-record.md`'s "Ledger state" section.
+
 **Post-apply fingerprint set** (same discipline as every prior apply in
 this project — §10.1's dry-run evidence, §10.3's rehearsal):
 - `pg_get_function_identity_arguments` for `apply_morning_flow_turn` —
@@ -1956,8 +1972,10 @@ this project — §10.1's dry-run evidence, §10.3's rehearsal):
   `.morning_manpower` present.
 - `schema_migrations` row count — unchanged by the apply itself (`supabase
   db query --linked -f` is ledger-agnostic by design, per this project's
-  own `db push` incident record); the ledger entry is a separate, explicit
-  step per the runbook template's own E, not folded into S3.
+  own `db push` incident record); the ledger entry is now S6, above, not
+  folded into S3 — corrected 2026-08-25 from this note's original claim
+  that the separation alone was sufficient; separation without an actual
+  numbered step is what let S6 go missing in the first place.
 
 ### 11.4 Item 4 — capture the default (`attendance_defaulted`, `attendance_raw`)
 
