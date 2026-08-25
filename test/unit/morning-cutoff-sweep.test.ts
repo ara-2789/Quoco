@@ -113,7 +113,12 @@ async function runSweep(now: string) {
   const db = testClient()
   const { data, error } = await db.rpc('sweep_stale_morning_sessions', { p_now: now })
   if (error) throw new Error(`sweep_stale_morning_sessions failed: ${error.message}`)
-  return data as { swept_count: number; swept_phone_numbers: string[]; reason?: string }
+  return data as {
+    swept_count: number
+    swept_phone_numbers: string[]
+    reason?: string
+    missing_daily_logs_rows: { phone_number: string; current_step: number; reason: string }[]
+  }
 }
 
 beforeAll(async () => {
@@ -275,6 +280,39 @@ describe('sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff swee
     expect(afterResult.swept_phone_numbers).toContain(PHONE.preCutoff)
     const sessionAfter = await getSession(PHONE.preCutoff)
     expect(sessionAfter?.current_flow).toBeNull()
+  })
+
+  it('missing-row guard — a step 2-4 session with no daily_logs row surfaces it, still closes, does not fail the sweep', async () => {
+    // Deliberately no pre-existing daily_logs row for this engineer, unlike
+    // steps 2-4's own fixtures above.
+    const phone = '+19995550409'
+    const db = testClient()
+    const { data: user, error: userErr } = await db
+      .from('users')
+      .insert({ tenant_id: TENANT_ID, full_name: 'ZZ missingRow Engineer', role: 'engineer', status: 'active', messaging_blocked: false, whatsapp_number: phone, auth_id: null })
+      .select('id')
+      .single<{ id: string }>()
+    if (userErr || !user) throw new Error(`missing-row-test engineer insert failed: ${userErr?.message}`)
+    await db.from('project_members').upsert({ tenant_id: TENANT_ID, project_id: PROJECT_ID, user_id: user.id, role: 'engineer' }, { onConflict: 'project_id,user_id' })
+    await seedMorningSession(phone, user.id, 2, SESSION_UPDATED_AT)
+
+    const result = await runSweep(AFTER_CUTOFF)
+
+    // Surfaced, not thrown -- the call itself succeeds.
+    expect(result.swept_phone_numbers).toContain(phone)
+    expect(result.missing_daily_logs_rows).toContainEqual({
+      phone_number: phone,
+      current_step: 2,
+      reason: 'no_daily_logs_row_found',
+    })
+
+    // The session still closes -- one bad row does not leave it stuck.
+    const session = await getSession(phone)
+    expect(session?.current_flow).toBeNull()
+    expect(session?.current_step).toBe(0)
+
+    await db.from('project_members').delete().eq('user_id', user.id)
+    await db.from('users').delete().eq('id', user.id)
   })
 
   it('the TypeScript wrapper (sweepStaleMorningSessions) calls the same RPC and maps its result', async () => {

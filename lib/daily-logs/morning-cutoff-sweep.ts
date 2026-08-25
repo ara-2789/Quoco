@@ -17,10 +17,24 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // before 15:00 IST and is idempotent after it (see its own header) -- this
 // wrapper adds nothing beyond the call and error handling.
 
+export interface MorningCutoffSweepMissingRow {
+  phoneNumber: string
+  currentStep: number
+  reason: string
+}
+
 export interface MorningCutoffSweepResult {
   sweptCount: number
   sweptPhoneNumbers: string[]
   reason?: string
+  /**
+   * Steps 2-4 assume a daily_logs row already exists for that engineer/date
+   * (attendance is written the moment step 1 resolves YES) -- when it
+   * doesn't, the RPC's own UPDATE silently affects zero rows. Surfaced here,
+   * not thrown -- one bad row must not fail the whole tick's sweep. Empty
+   * in the normal case.
+   */
+  missingDailyLogsRows: MorningCutoffSweepMissingRow[]
 }
 
 export async function sweepStaleMorningSessions(
@@ -35,11 +49,21 @@ export async function sweepStaleMorningSessions(
     throw new Error(`sweep_stale_morning_sessions failed: ${error.message}`)
   }
 
-  const result = data as { swept_count: number; swept_phone_numbers: string[]; reason?: string }
+  const result = data as {
+    swept_count: number
+    swept_phone_numbers: string[]
+    reason?: string
+    missing_daily_logs_rows?: { phone_number: string; current_step: number; reason: string }[]
+  }
 
   return {
     sweptCount: result.swept_count,
     sweptPhoneNumbers: result.swept_phone_numbers,
     ...(result.reason !== undefined ? { reason: result.reason } : {}),
+    missingDailyLogsRows: (result.missing_daily_logs_rows ?? []).map((r) => ({
+      phoneNumber: r.phone_number,
+      currentStep: r.current_step,
+      reason: r.reason,
+    })),
   }
 }

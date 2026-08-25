@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { claimJobs, completeJob, failJob, type Job } from '@/lib/queue/jobs'
 import { isCronRequestAuthorized } from '@/lib/cron/auth'
 import { handleDprGenerateJob, markDprGenerationFailed, type DprGenerateJobPayload } from '@/lib/dpr/dispatch'
-import { sweepStaleMorningSessions } from '@/lib/daily-logs/morning-cutoff-sweep'
+import { sweepStaleMorningSessions, type MorningCutoffSweepResult } from '@/lib/daily-logs/morning-cutoff-sweep'
 import { createServiceClient } from '@/lib/supabase/service'
 
 // This endpoint is polled by Vercel Cron every 60 seconds (NFR-16).
@@ -43,7 +43,7 @@ export async function runJobsTick(client: SupabaseClient) {
   // try/catch, same reasoning as each job's own isolation below: a sweep
   // failure must not prevent job claiming/processing from running this
   // tick, but must not be silently swallowed either.
-  let morningSweep: { sweptCount: number; sweptPhoneNumbers: string[]; reason?: string } | { error: string }
+  let morningSweep: MorningCutoffSweepResult | { error: string }
   try {
     morningSweep = await sweepStaleMorningSessions(client)
   } catch (err) {
