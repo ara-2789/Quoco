@@ -42,16 +42,23 @@ Rule 3.12 — Simple-English output rules, tiered by audience. Every engineer-fa
 
 AUDIT AGAINST RULE 3.12 (2026-08-20, Y3 — read directly from `lib/whatsapp/flows/morning.ts`
 and `evening.ts`, the single source both the pure mirror and the webhook render from — a
-rewrite candidate list, not rewrites made in this pass):
-- `MORNING_QUESTIONS[1]` ("What's your *plan of action* for today?") — violates rule 3:
+rewrite candidate list, not rewrites made in this pass).
+
+**INDICES CORRECTED (2026-08-25):** written against the pre-migration-030 numbering
+(plan=Q1, workers=Q2, equipment=Q3). `030_morning_flow_attendance.sql` renumbered the
+flow attendance-first — the critiques below are still substantively valid (the quoted
+text is unchanged where quoted), only the index each one points at was wrong. Corrected
+in place, not struck through, since these are pointer corrections, not a changed
+analysis:
+- `MORNING_QUESTIONS[2]` ("What's your *plan of action* for today?") — violates rule 3:
   `daily_logs.morning_plan` is referred to as "plan" everywhere else (the DB column, this
   audit, template 2's `{{3}}`); "plan of action" is a second word for the same concept.
   Rewrite candidate: "What's your plan for today?"
-- `MORNING_QUESTIONS[2]` (workers) and `MORNING_QUESTIONS[3]` (equipment) — both violate
+- `MORNING_QUESTIONS[3]` (workers) and `MORNING_QUESTIONS[4]` (equipment) — both violate
   rule 2: the question comes FIRST, followed by the instruction/example, not last. Rewrite
-  candidate for Q2: "You can send a number, or a breakdown like '12 mason 8 helper'. How
+  candidate for Q3: "You can send a number, or a breakdown like '12 mason 8 helper'. How
   many workers today?"
-- `MORNING_QUESTIONS[3]` — "equipment / machinery" offers two words for one thing in the
+- `MORNING_QUESTIONS[4]` — "equipment / machinery" offers two words for one thing in the
   same sentence (violates rule 3's spirit even though the DB column is `morning_equipment`
   and neither word is wrong on its own) — pick one. Rewrite candidate: "Any equipment on
   site?"

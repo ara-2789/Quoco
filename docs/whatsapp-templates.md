@@ -31,8 +31,11 @@ doc:**
   migration `030_morning_flow_attendance.sql`, is written, fixed, and reviewed —
   `docs/reviews/morning-flow-migration-review-package.md` §10/§10.1/§10.2 — but **NOT
   YET APPLIED to test-db or prod**, per that package's own §5 evidence-status list).
-  Its actual step 1 is still the plan question (`MORNING_QUESTIONS[1]` in
-  `lib/whatsapp/flows/morning.ts`, "What's your *plan of action* for today?"). If
+  Its actual step 1 is still the plan question (**CORRECTED 2026-08-25, pointer only —
+  this was `MORNING_QUESTIONS[1]` under the pre-030 numbering; the same plan-question text
+  lives at `MORNING_QUESTIONS[2]` now that migration 030 has shipped, per 030's own
+  attendance-first renumbering**, in `lib/whatsapp/flows/morning.ts`, "What's your *plan
+  of action* for today?"). If
   template 1 is sent before migration 030 is applied, an engineer's "yes"/"no" reply to
   the APPROVED template's attendance question would be stored as their `morning_plan`
   free-text answer — wrong data, silently, exactly as this gate has always warned.
