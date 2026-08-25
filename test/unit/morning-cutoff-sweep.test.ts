@@ -4,12 +4,11 @@ import { sweepStaleMorningSessions } from '@/lib/daily-logs/morning-cutoff-sweep
 
 // B3 -- the 15:00 IST morning cutoff sweep. Integration tests against the
 // real sweep_stale_morning_sessions RPC (docs/reviews/morning-flow-
-// migration-review-package.md §4). PENDING APPLY: the migration this tests
-// (docs/reviews/033-sweep-stale-morning-sessions.sql) has NOT been applied
-// to test-db as of this commit -- these tests will fail with "function ...
-// does not exist" until it is. Written now, verified once the migration
-// ships, per the same discipline this project used for migration 030 itself
-// (written and reviewed before ever touching a real database).
+// migration-review-package.md §4; migration itself is
+// supabase/migrations/033_sweep_stale_morning_sessions.sql). Applied to
+// test-db (exfccwlrhoutkgrlikod) and ledgered 2026-08-25 -- all 13 tests in
+// this file passed against that rehearsal, including the project-membership
+// count block below.
 //
 // Dedicated fixtures, distinct from test/helpers/db.ts's TEST_TENANT_ID /
 // TEST_PROJECT_ID -- this suite needs MULTIPLE engineers with independent

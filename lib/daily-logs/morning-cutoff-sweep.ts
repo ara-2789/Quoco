@@ -2,8 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 // B3 -- the 15:00 IST morning cutoff sweep. Thin wrapper around
 // sweep_stale_morning_sessions (supabase/migrations/033_sweep_stale_morning_
-// sessions.sql, currently held in docs/reviews/ pending apply -- see that
-// file's own header for the full spec this implements). ALL decision logic
+// sessions.sql -- see that file's own header for the full spec this
+// implements). ALL decision logic
 // (the cutoff gate, per-step behaviour, the attendance/defaulted/raw
 // markers, the session reset, the project-membership skip) lives in the
 // RPC, same authority split as every other flow-turn RPC in this codebase
