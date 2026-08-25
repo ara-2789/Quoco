@@ -1740,3 +1740,55 @@ CHANGED an existing function's behavior, or that other tests would
 implicitly depend on once present, would still need the
 apply-verify-rollback discipline the entry above describes. Evaluate each
 case on that basis, not on this one as a shortcut.
+
+---
+
+**LOCAL FULL-SUITE VERIFICATION AGAINST TEST-DB HUNG THREE TIMES IN A ROW,
+LIKELY THIS SANDBOX'S NETWORK PATH, NOT THE TESTS — NOT CHASED FURTHER
+(2026-08-25, "clear the board" pre-apply verification pass).**
+
+Attempting a final local `npm test` run against updated `main` (a
+"clear the board before prod apply" step, distinct from — and in
+addition to — the CI runs that already validated this same tree) hung
+three consecutive times in an isolated worktree: once with `node_modules`
+symlinked from the main checkout, once after a clean `npm ci`, and once
+again with live progress monitoring in place. All three stalled at the
+identical point — immediately after vitest's `RUN` banner, before any
+test file reported a result — with near-zero CPU on the `vitest`
+processes sustained for 30+ minutes. Not a slow run: the equivalent
+suite completed in 5-10 minutes in two other worktrees earlier in this
+same session.
+
+**This window included the machine sleeping mid-response** (per direct
+observation, not inferred). Combined with an earlier, unexplained
+anomaly the same session — a ~48-minute gap between two `vitest` process
+start timestamps during an earlier hang, well past anything the suite's
+own runtime accounts for — the pattern points at this sandbox's network
+path to test-db during/around a sleep-wake cycle, not at a defect in the
+tests themselves or in the code under test. Not chased further: three
+hangs is enough to establish the pattern without spending more cycles on
+root-causing infrastructure that CI does not share.
+
+**Standing consequence: CI is the authority for full-suite runs against
+test-db, not local.** This sandbox was already established
+(`docs/reviews/sandbox-cannot-test-concurrency.md`) as unable to produce
+genuine concurrency; this incident adds that it cannot even reliably
+*complete* a full suite run against test-db, for reasons that appear
+environmental (machine sleep, network path) rather than code-related. A
+local green was already the wrong evidence for anything concurrency-shaped;
+after this, a local run's ABSENCE of a green result is not evidence of a
+problem either, for the same class of run — CI is the only environment
+whose result should be trusted either way. This session's actual
+verification of the merged state (PR #104 and PR #105) came from their
+own CI runs, not from this failed local attempt, and that CI evidence
+stands regardless of this local hang.
+
+**Note for the prod apply this verification precedes:** the apply itself
+runs through the SQL Editor (per the PROD APPLIES rule, `CLAUDE.md` §0),
+which does not depend on this local sandbox's network path at all — the
+apply is not at risk from this. But the apply runbook's own pre/post
+probes (`supabase db query --linked -f`) DO run from this same sandbox.
+If a probe hangs during the apply, read that as a network symptom
+consistent with this entry, not as a finding about the database or the
+migration — retry the probe rather than escalating it as a database
+problem on first hang.
