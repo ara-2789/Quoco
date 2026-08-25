@@ -3,6 +3,12 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { claimJobs, completeJob, failJob, type Job } from '@/lib/queue/jobs'
 import { isCronRequestAuthorized } from '@/lib/cron/auth'
 import { handleDprGenerateJob, markDprGenerationFailed, type DprGenerateJobPayload } from '@/lib/dpr/dispatch'
+import {
+  sweepStaleMorningSessions,
+  reportMorningSweepAnomalies,
+  reportMorningSweepError,
+  type MorningCutoffSweepResult,
+} from '@/lib/daily-logs/morning-cutoff-sweep'
 import { createServiceClient } from '@/lib/supabase/service'
 
 // This endpoint is polled by Vercel Cron every 60 seconds (NFR-16).
@@ -34,6 +40,27 @@ async function dispatchJob(job: Job, client: SupabaseClient): Promise<void> {
  * injected client — same shape as handleWebhookPost/runDprGenerateTrigger.
  */
 export async function runJobsTick(client: SupabaseClient) {
+  // B3 -- the 15:00 IST morning cutoff sweep (docs/reviews/morning-flow-
+  // migration-review-package.md §4). Runs every tick, alongside job
+  // claiming below, not as a queued job type -- it's time-triggered, not
+  // queued, and the RPC itself gates on the cutoff and is idempotent (see
+  // sweep_stale_morning_sessions's own header). Isolated in its own
+  // try/catch, same reasoning as each job's own isolation below: a sweep
+  // failure must not prevent job claiming/processing from running this
+  // tick, but must not be silently swallowed either -- reportMorningSweepError
+  // (B2, external review round 1) is what keeps it from being swallowed;
+  // "must not fail the tick" is not the same claim as "must not be silent."
+  let morningSweep: MorningCutoffSweepResult | { error: string }
+  try {
+    morningSweep = await sweepStaleMorningSessions(client)
+    // B2 -- the skip/missing-row safety argument is load-bearing on this
+    // actually running, not merely on the values existing in the return
+    // object. See reportMorningSweepAnomalies's own doc comment.
+    reportMorningSweepAnomalies(morningSweep, new Date())
+  } catch (err) {
+    morningSweep = reportMorningSweepError(err)
+  }
+
   const jobs = await claimJobs(3, client)
 
   const results = await Promise.allSettled(
@@ -61,6 +88,7 @@ export async function runJobsTick(client: SupabaseClient) {
   return {
     claimed: jobs.length,
     results: results.map((r) => (r.status === 'fulfilled' ? r.value : r.reason)),
+    morningSweep,
   }
 }
 
