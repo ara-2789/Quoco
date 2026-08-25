@@ -1711,3 +1711,67 @@ this pass, and no fix proposed**: the resolution used this time (write a
 verified rollback, apply it, confirm restoration by observation before
 relying on it) is a real, repeatable pattern for THIS incident, not a
 structural fix for the underlying one-shared-database constraint.
+
+---
+
+**MIGRATION 032 IS THE FIRST MIGRATION THIS PROJECT HAS DELIBERATELY LEFT
+PERMANENTLY APPLIED TO TEST-DB, NOT AS A REHEARSAL — A DIFFERENT CASE FROM
+THE ENTRY ABOVE, RECORDED SEPARATELY (2026-08-24, session-transition Test
+B ordering-guarantee fix, PR #104).**
+
+Full incident: `docs/reviews/session-transition-lock-wait-flake.md`. In
+short: Test B's real ordering guarantee (does caller 2 wait until caller
+1 is OBSERVED holding the row lock, not just "probably has by now") can
+only be proven by querying live Postgres lock state from a second
+connection — `pg_locks`/`pg_try_advisory_lock` would do it, but neither
+is reachable through PostgREST without a wrapper function, and every
+schema-only alternative considered (a marker column written before or
+during the hold, `pg_notify`) only ever proves "about to lock" or
+"already released," never "currently holds" — the specific proposition
+the guarantee needs (full alternatives analysis:
+`session-transition-lock-wait-flake.md`'s "Client-side alternatives"
+section). So `032_session_transition_lock_probe_nowait.sql` — a single
+read-only, `service_role`-only function,
+`quoco_test_row_is_locked(text)` — is not optional scaffolding; it is the
+only mechanism that can express this guarantee at all.
+
+**Why PERMANENT, unlike every prior rehearsal (030 included, entry
+above).** Every migration rehearsed on test-db so far was rehearsed and
+then rolled back BECAUSE the code exercising it doesn't live on `main`
+yet — leaving it applied would silently change behavior for every other
+branch's CI run against schema/RPC shapes `main` doesn't have (exactly
+the cost the entry above documents; migration 030's own rehearsal is the
+worked example). Migration 032 is a different shape: it changes NOTHING
+about any existing function's behavior, is called from exactly one place
+(`test/session-transition.test.ts`, which lives on `main` once this PR
+merges), touches no table other tests read production data through, and
+has no callers outside that one test file. The known cost above — "a
+rehearsal blocks CI for every other branch because state doesn't match
+code" — doesn't apply here, because leaving 032 applied doesn't change
+what any OTHER branch's code expects; it only adds a function that a
+branch either calls (if it has this test file) or never touches at all.
+The actual first CI attempt against this migration (PR #104, run
+`32750655063`) failed with the OPPOSITE problem — "function not found,"
+because the standard rollback discipline was followed even for this
+non-standard case — which is what forced this distinction to be drawn
+explicitly rather than left as an unstated exception.
+
+**Confirmed safe to leave applied, by observation, before deciding to
+leave it:** full local suite run against test-db with 032 applied —
+585/587 tests green. The one failure
+(`test/session-transition.test.ts`'s Test B itself) is the
+ALREADY-DOCUMENTED sandbox RPC-serialization limit
+(`docs/reviews/sandbox-cannot-test-concurrency.md`), not a new problem —
+a local run cannot sustain the concurrent RPC calls the test needs, so
+the probe never observes caller 1's lock within the timeout locally. CI
+is the only environment that can actually validate this test; that
+verification is still open (see the flake doc's status line).
+
+**Consequence for future migrations, stated so this isn't mistaken for a
+precedent that test-only migrations are always safe to leave applied:**
+the deciding factor was never "it's test-only" — it was that 032 has no
+existing caller anywhere to conflict with. A test-only migration that
+CHANGED an existing function's behavior, or that other tests would
+implicitly depend on once present, would still need the
+apply-verify-rollback discipline the entry above describes. Evaluate each
+case on that basis, not on this one as a shortcut.

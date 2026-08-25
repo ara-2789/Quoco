@@ -560,6 +560,46 @@
   enumerate; it names the shape — unfamiliar output, piped raw into
   view — so the next surprising command is already covered, not waiting
   to become instance four.
+- CONCURRENCY, LOCK, AND RACE VERIFICATION IS CI-ONLY — A LOCAL PASS IS NOT
+  EVIDENCE FOR THESE (standing rule since 2026-08-24, full record:
+  `docs/reviews/sandbox-cannot-test-concurrency.md`). This Claude Code
+  sandbox cannot sustain two genuinely concurrent RPC calls against test-db
+  — proven directly, not inferred: a `SELECT ... FOR UPDATE NOWAIT` probe
+  correctly detected a held row lock via raw dual-session SQL, but the
+  SAME probe, called via the JS client while another RPC call held that
+  lock, never observed it — every attempt reported unlocked, because by
+  the time each probe request reached Postgres, the other call had already
+  finished. The decisive test: a THIRD call to an already-proven-working
+  RPC, targeting a COMPLETELY DIFFERENT, non-contended row (zero possible
+  data-level conflict), STILL didn't resolve until the first call's entire
+  round-trip completed — ruling out row locking, this project's SQL, and
+  the specific function involved as the cause. Plain REST table reads
+  (no RPC) run genuinely concurrently in this same sandbox — the
+  serialization is specific to concurrent RPC/function calls against
+  test-db, not a blanket claim about all concurrent access.
+  CONSEQUENCE: any test whose assertion depends on caller 2 genuinely
+  running WHILE caller 1 holds something (a lock, a queue slot, any
+  contended resource) passes TRIVIALLY in this sandbox regardless of
+  whether the underlying mechanism works — caller 2 physically cannot be
+  dispatched until caller 1's own call has already returned, so "caller 2
+  observed X after caller 1" is guaranteed true either way. A local green
+  run for this CLASS of test proves NOTHING about the behavior under test
+  and must be reported as such — "not verified locally, CI-only" — never
+  as "passed" or "verified." Do not claim local verification for
+  concurrency/lock/race tests going forward; if CI is the only environment
+  that can exercise the real condition, say so plainly rather than
+  reporting a local pass as evidence. Origin: `acquire_and_transition_
+  session` (migrations 012/013) exists specifically to serialize
+  concurrent callers on one phone number — BOT-21's queueing depends on
+  it, and Pass 1's cron (once the #69/031 outbound-send primitive ships,
+  CLAUDE.md §3) will exercise this exact path twice daily, at scale. CI
+  is the only environment that has ever genuinely tested it; a session
+  discovered this only while root-causing `test/session-transition.
+  test.ts` Test B's own lock-wait incident (docs/reviews/session-
+  transition-lock-wait-flake.md) — an earlier "30/30 clean, zero
+  negatives" local capture in that same incident is retracted as evidence
+  on these grounds, though it does not change what CI itself already
+  showed (three independent real failures).
 
 ---
 
