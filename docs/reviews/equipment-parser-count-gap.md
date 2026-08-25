@@ -1,9 +1,18 @@
-# Equipment parser: no machine count is ever recordable — record only, not fixed
+# Equipment parser: no machine count is ever recordable — SUPERSEDED, not open
 
-**Status: OPEN. Recorded here so the defect has one place, not two scattered
-incidents.** Two live production check-ins now demonstrate the same
-mechanism from two different angles. No fix proposed or attempted in this
-pass.
+**Status: SUPERSEDED (2026-08-25) by `design-decisions-beta-feedback.md` §33 — not
+fixed, dissolved.** §33(a) decided that morning Q4 asks for a unit count instead of a
+hire rate, which removes the exact ambiguity this document's mechanism section
+describes (the parser no longer needs to decide whether a number is a count or a
+rate, because it is only ever asked for a count). §33(c) removes idle cost from the
+DPR entirely, closing off the fabricated-rupee consequence this document names.
+**The evidence below is kept, unedited — it is the reason for §33's decision, not a
+closed incident with no further use.**
+
+**Original status, recorded here as history, not current:** *OPEN. Recorded here so
+the defect has one place, not two scattered incidents.* Two live production
+check-ins now demonstrate the same mechanism from two different angles. No fix
+proposed or attempted in this pass.
 
 ## The mechanism, from the code itself
 
@@ -114,8 +123,12 @@ first number found is always claimed as the rate — not vocabulary.**
 Fixing the lexicon (adding "micsur") would not have prevented the
 2026-08-25 incident at all; the type resolved correctly there already.
 
-## Not fixed here
+## Not fixed here — SUPERSEDED, 2026-08-25
 
-No fix is proposed or attempted in this pass, per instruction. This
-document exists so the defect is recorded with its real mechanism and both
-pieces of live evidence in one place, for whoever picks up the fix next.
+No fix was proposed or attempted when this document was written, per
+instruction. It was never fixed in the sense of patching `parseChunk`'s
+numeric-interpretation rule — instead, `design-decisions-beta-feedback.md`
+§33 decided to stop asking for the ambiguous quantity at all (units, not a
+rate), which dissolves the defect this document names rather than closing
+it. This document's mechanism section and both incidents remain the
+evidence trail for that decision.
