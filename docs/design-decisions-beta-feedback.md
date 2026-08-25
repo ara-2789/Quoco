@@ -2574,3 +2574,42 @@ Updated in this same pass: the count gap recorded there is superseded by
 (a), not left open. The evidence in that document is kept, unedited — it
 is the reason for this decision, not a closed incident with no further
 use.
+
+## 34. `checkin_escalations` cannot distinguish "asked, no answer" from "never asked" — OPEN, 2026-08-25
+
+**Record only, not built.** Found while building B3 (the 15:00 IST morning
+cutoff sweep) — carried here rather than fixed inline, since it belongs
+with Pass 2's escalation work, not with B3's own scope.
+
+**The gap.** `determineTargetStatus`
+(`lib/checkin-escalations/status.ts:75-92`) computes an engineer's
+check-in status purely from the project roster plus
+`daily_logs.morning_submitted_at`/`evening_submitted_at` — it never reads
+`whatsapp_sessions` at all. Two genuinely different situations therefore
+collapse to the identical `not_submitted` status, with no `daily_logs` row
+either way:
+- the engineer was reached, a session opened (`whatsapp_sessions.current_
+  flow = 'morning'`), and they never replied to Q1 at all;
+- the engineer was never reached in the first place — no session, nothing.
+
+**Why it matters.** These need OPPOSITE responses. One is an engineer
+ignoring the bot; the other is delivery failing. Once Pass 1 sends
+unprompted (the #69/031 outbound-send primitive, CLAUDE.md §3), that
+distinction becomes the PRIMARY signal that the crons are actually
+reaching people — and the existing cron-didn't-fire check (§29) only
+catches a cron that never ran at all, not one that ran and was never
+received (a bad number, a blocked account, a delivery failure Twilio
+reports but nothing here reads).
+
+**The evidence already exists, it is simply not consulted.** A
+`whatsapp_sessions` row with `current_flow = 'morning'` — or, after B3
+sweeps it, a `daily_logs` row with `attendance_defaulted = true` and no
+`attendance_raw` (the step-5 sweep-stamp shape) or, for a step-1 stuck
+session, an absent `daily_logs` row despite a session having existed —
+already proves the engineer was reached. `determineTargetStatus` simply
+never looks.
+
+**Not decided here:** whether the fix is `determineTargetStatus` reading
+`whatsapp_sessions` directly, a new `checkin_escalations` status value
+distinguishing the two cases, or something else. Belongs with Pass 2's
+escalation work, per this entry's own opening line.
