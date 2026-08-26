@@ -68,7 +68,7 @@ REVOKE ALL ON public.dpr_versions FROM anon;
 only on the `write_dpr_version` function, which is a separate object with
 its own separate ACL.
 
-## Suspected instances — unverified, named as unverified
+## Suspected instances — confirmed on test-db, still unverified on prod
 
 Grep of every table-creating migration (`grep -n "^CREATE TABLE"
 supabase/migrations/*.sql`), then reading each one's own grant block:
@@ -84,13 +84,20 @@ supabase/migrations/*.sql`), then reading each one's own grant block:
   439-440): same shape again. `service_role` never named on the table.
 
 All three have the identical *textual* gap `dpr_versions` has — a
-table-level REVOKE that never names `service_role`. Whether each one's
-`service_role` privileges are actually still at Supabase's full default
-(as directly confirmed for `dpr_versions`) has **not** been checked for
-these three. Recorded as suspected, not confirmed, deliberately — per
-this round's own instruction, no further prod probing happens until this
-finding's own migration is ready to verify and fix all instances
-together, not one at a time.
+table-level REVOKE that never names `service_role`. **Update, same
+session:** the dynamic fingerprint query in POST-APPLY FINGERPRINT below
+was sanity-checked against **test-db** (`exfccwlrhoutkgrlikod`,
+read-only) to confirm the query itself works, and its output confirms
+all three — `delete_priv`/`truncate_priv`/`references_priv`/
+`trigger_priv` all `true` for `service_role` on `daily_log_edits`,
+`dprs`, and `checkin_escalations`, same as `dpr_versions`. This is
+CONFIRMED on test-db now, not merely textual. **Still not separately
+confirmed on prod** — per this round's own instruction, no further PROD
+probing happens until this finding's own migration is ready to verify
+and fix all instances together, not one at a time; test-db and prod are
+schema-identical post-016 (CLAUDE.md §6) but that is a documented
+convention, not a substitute for actually checking prod when the fix
+migration is ready to apply.
 
 **`006_jobs_queue.sql`** (`jobs`) and **`011_processed_messages.sql`**
 (`processed_messages`) are a different, and structurally larger, case:
@@ -180,4 +187,91 @@ four identified here (`dpr_versions` confirmed; `daily_log_edits`,
 `dprs`, `checkin_escalations` suspected) — plus resolve what to do about
 `jobs`/`processed_messages`'s larger, differently-shaped gap, which this
 document deliberately does not attempt to fix or fully scope. Not started
-here. Recorded, not fixed.
+here. Recorded, not fixed. Its own required evidence shape is specified
+below, not left to be improvised at apply time.
+
+## Post-apply fingerprint — the fix's own required evidence shape
+
+Specified now, ahead of the fix, per the reviewer's own instruction: the
+fix's evidence must answer the question this finding actually raised —
+"does ANY table in this schema still leave `service_role` with excess
+privileges" — not merely confirm that the four named instances above got
+patched. A probe hardcoded to a fixed list of table names (the earlier
+SUSPECTED INSTANCES section above uses exactly that shape, deliberately,
+since its job there was narrower — confirming or ruling out four SPECIFIC
+suspects before the fix is even written) would silently miss a fifth
+table nobody happened to name. The post-apply fingerprint must instead
+enumerate every table dynamically:
+
+```sql
+SELECT
+  c.relname AS table_name,
+  has_table_privilege('service_role', 'public.' || c.relname, 'DELETE')     AS delete_priv,
+  has_table_privilege('service_role', 'public.' || c.relname, 'TRUNCATE')   AS truncate_priv,
+  has_table_privilege('service_role', 'public.' || c.relname, 'REFERENCES') AS references_priv,
+  has_table_privilege('service_role', 'public.' || c.relname, 'TRIGGER')    AS trigger_priv
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relkind = 'r'
+ORDER BY c.relname;
+```
+
+`pg_class`/`pg_namespace`, not `information_schema.tables` — the same
+catalog-level source this project's own probes already use elsewhere
+(`pg_constraint`, `pg_indexes` in migration 031's own rehearsal), and
+`relkind = 'r'` scopes to ordinary tables only (excludes views, sequences,
+indexes — none of which `has_table_privilege` questions like DELETE/
+TRUNCATE apply to in the same way). Run against a live database only
+(read-only, safe by construction), never inferred from migration file
+text — this is exactly the dimension `scripts/lint-migrations.mjs`'s new
+`service-role-grant-required` rule (added alongside this document, same
+day) CANNOT verify: that rule confirms `service_role` is NAMED in some
+REVOKE targeting the table, not that the resulting live privilege set is
+actually correct. A `REVOKE SELECT ON t FROM ... service_role` would
+satisfy the textual rule while leaving DELETE/TRUNCATE untouched; only
+this query catches that.
+
+**The fix's evidence is not "these four tables are now clean."** It is
+this query's full output, every row, both BEFORE the fix (establishing
+what the fix actually changed) and AFTER (proving every table intended to
+be restrictive now is — `jobs`/`processed_messages` excluded or included
+deliberately, by name, depending on whatever this document's still-open
+scoping question about their larger gap resolves to, not by omission).
+Any row the fix's author did not expect to see — a table nobody's REVOKE
+touches at all, DELETE still `true` — is exactly the shape of surprise
+this finding exists to prevent happening a second time.
+
+**Sanity-checked, this session, against test-db (`exfccwlrhoutkgrlikod`,
+read-only, not prod) — confirms the query works and confirms the
+mechanism is schema-wide, not confined to the tables named above:**
+every single `public` table returns `delete_priv`/`truncate_priv`/
+`references_priv`/`trigger_priv` all `true` for `service_role` EXCEPT
+`outbound_sends` (all `false` — this round's own fix, holding). That is
+28 of 29 tables, including `daily_log_edits`/`dprs`/`checkin_escalations`
+(the three SUSPECTED instances above — now confirmed on test-db, though
+still not separately confirmed on **prod** specifically, which this
+session deliberately did not re-probe), `jobs`/`processed_messages` (as
+expected, matching their no-REVOKE-at-all shape), and every one of
+`001_core_schema.sql`'s original tables (`tenants`, `users`, `projects`,
+`daily_logs`, `boq_items`, `tenders`, `vendors`, `ra_bills`, and the rest).
+
+**Important, stated precisely so this evidence isn't misread as 28
+confirmed instances of THE SAME finding:** `service_role` holding full
+DML/DDL privileges is not automatically a problem — for most of these 28
+tables (`daily_logs`, `projects`, `users`, and similar ordinary
+operational tables), the backend legitimately needs full CRUD access as
+part of normal application behavior, and nothing in their own design
+claims otherwise. The finding this document exists to track is narrower:
+tables whose OWN STATED DESIGN promises append-only or durable-record
+status while `service_role` can silently violate that promise —
+`dpr_versions` (confirmed), and by the same argument `daily_log_edits`
+("audit trail... source of truth") and `checkin_escalations` ("written
+only by the escalation sweep job... upserting") are plausible members of
+that narrower set, `dprs` less obviously so (no comparable immutability
+claim found in `023_dpr_reports.sql`, worth checking specifically before
+the fix migration decides its own scope). This test-db fingerprint proves
+the MECHANISM is universal; it does NOT by itself prove all 28 tables
+need the same fix — that judgment belongs to whoever scopes the fix
+migration, table by table, against each one's own documented design
+intent, not to a blanket "service_role should never have DELETE
+anywhere" rule this document does not argue for.
