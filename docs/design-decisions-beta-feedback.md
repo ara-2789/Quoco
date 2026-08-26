@@ -2763,3 +2763,62 @@ leaving these strings as-is. If Pass 1 slips, or real engineers arrive
 before Pass 1 ships, this copy must change to something honest BEFORE
 that happens — not be discovered false by an engineer waiting on a
 message that never comes.
+
+## 36. UNIQUE index on `project_members(user_id)` — DECIDED IN PRINCIPLE, NOT SCHEDULED, 2026-08-26
+
+**Citation correction, on read:** this entry was requested citing "§35's
+multi-project gap" as one of the three things it closes. §35 (above) is
+about check-in window timing and does not discuss multi-project anything —
+the actual multi-project discussion is `docs/reviews/033-sweep-review-
+package.md` §13.4 ("the real closer for the multi-project gap"). Corrected
+here rather than propagated into a new permanent record.
+
+**The proposal.** Add `CREATE UNIQUE INDEX ... ON project_members(user_id)`
+— makes "one engineer belongs to exactly one project" (already a DECIDED
+product rule, migration 031's own header, 2026-08-26) a database
+constraint instead of an assumption every consumer has to individually
+trust or defensively guard against.
+
+**What it closes, three places at once, all already paid for by the same
+underlying ambiguity:**
+1. **`sweep_stale_morning_sessions`'s multi-project skip becomes dead
+   code.** Migration 033 counts an engineer's `project_members` rows and
+   skips (does not guess) when the count isn't exactly 1 — correct given
+   today's unenforced schema, per `docs/reviews/033-sweep-review-package.md`
+   §13.4's own "real closer" note: capturing `project_id` into the session
+   at flow start is the actual fix, this index is what makes that capture
+   safe to trust. With the index in place, the count can only ever be 0 or
+   1 — the `!= 1` branch stops being reachable for any row the index
+   allowed to exist, though the skip-and-alert code (B2, external review
+   round 1) stays as defense-in-depth, not deleted.
+2. **Migration 031's `project_id` ambiguity vanishes.** 031's own header
+   (PROJECT SCOPE section, 2026-08-26) already states its correctness
+   depends on this exact rule holding, and already states the schema
+   doesn't enforce it. This index is that dependency's actual closure.
+3. **The multi-project gap named in `033-sweep-review-package.md` §13.4
+   closes** — the session-capture fix proposed there becomes safe to build
+   on top of, rather than being its own separate source of the same
+   ambiguity this index removes at the root.
+
+**Its own migration, its own review — not folded into 031 or anything
+else.** Per CLAUDE.md §0's EXTERNAL REVIEW GATE, a new constraint on an
+existing table with live data trips condition (b) (grants/constraints
+changing what's permitted) on its own terms.
+
+**Must be checked against existing data FIRST — a duplicate today would
+make the index fail to create.** `CREATE UNIQUE INDEX` on a column with
+existing duplicate values simply errors; before this migration is written
+for real, `SELECT user_id, count(*) FROM project_members GROUP BY user_id
+HAVING count(*) > 1` must return zero rows, checked live, not assumed from
+"the product rule says this shouldn't happen." If it returns any rows, per
+this project's own decided rule that's a data-integrity violation to fix
+first (which engineer's second project row is wrong), not a reason to
+weaken the index.
+
+**Recorded plainly, because this project has spent a week learning which
+one it actually was:** "we decided" and "the database enforces it" are
+different things. Migration 033's own skip-and-guard exists because the
+first one was assumed to be the second. This index is the one place in
+this specific chain where that gap can actually close, rather than being
+individually re-guarded against at every consumer that touches
+`project_members`.
