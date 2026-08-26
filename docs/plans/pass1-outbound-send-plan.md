@@ -451,3 +451,17 @@ order: morning flow migration ships first, then B3's sweep is written once again
 its final shape, then Pass 1's two `vercel.json` cron entries may be added.** Full
 reasoning in `design-decisions-beta-feedback.md` §29's own corresponding correction
 and §30(i).
+
+**ADDED, 2026-08-26 (`design-decisions-beta-feedback.md` §35f) — not a
+precondition to enabling the crons, a required VERIFICATION at the moment
+they're enabled.** `routeInboundMessage`'s two check-in-window refusal
+strings (morning after `morningCutoff`, evening before `eveningSend`)
+both promise "will be sent automatically" — a promise that is FALSE until
+these crons exist. When Pass 1's `vercel.json` entries land, confirm by
+direct observation (same discipline as GATE 1/B3 above, not a checklist
+tick) that an engineer refused during either window actually receives
+the automatic message the copy promises, before treating this item as
+closed. If Pass 1 slips, or real engineers arrive before it ships, this
+copy must be rewritten to something honest BEFORE that happens — accepted
+as a known-false string only at current scale (one engineer, days not
+months away), not indefinitely.
