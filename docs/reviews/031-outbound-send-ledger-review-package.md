@@ -401,7 +401,10 @@ table, then re-probed clean:
  false       | false         | false            | false        | true
 ```
 **CORRECTED (2026-08-26, same day, after the exchange that produced
-`docs/reviews/service-role-table-grants-gap.md`) — this was NOT the third
+`docs/reviews/service-role-table-grants-gap.md`, currently on PR #115's
+branch `docs/service-role-table-grants-gap-2026-08-26` @ `773d042` — NOT
+yet on `main` or on this PR's own tree; re-point this citation to the bare
+path once #115 merges) — this was NOT the third
 instance, and NOT the first table-level one.** The line below originally
 read "Third instance... this one (a table)," which is inaccurate on both
 counts. Checked directly against prod, read-only: `dpr_versions`
@@ -422,7 +425,10 @@ operations succeed (compare §8's own T10, which tests `service_role`
 SELECT and nothing else). Full record, the confirmed and suspected
 instances, and the fix's own required scope (its own migration, its own
 external review, not started here):
-`docs/reviews/service-role-table-grants-gap.md`. Standing rules recorded
+`docs/reviews/service-role-table-grants-gap.md` (PR #115's branch
+`docs/service-role-table-grants-gap-2026-08-26` @ `773d042` as of this
+writing — not yet on `main`; re-point to the bare path once #115 merges).
+Standing rules recorded
 at CLAUDE.md §0 (name `service_role` explicitly in every table REVOKE)
 and §7 (a new table's rehearsal must probe `service_role`'s negative
 capabilities, not only its intended ones).
