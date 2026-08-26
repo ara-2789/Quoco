@@ -2613,3 +2613,153 @@ never looks.
 `whatsapp_sessions` directly, a new `checkin_escalations` status value
 distinguishing the two cases, or something else. Belongs with Pass 2's
 escalation work, per this entry's own opening line.
+
+## 35. Check-in window rules — DECIDED and built, 2026-08-26
+
+Supersedes this entry's own earlier OPEN framing (options a/b/c, never
+committed to git) — Aravind decided the same day the gap was found.
+
+### 35a. The 2026-08-26 incident and its mechanism
+
+Investigating a real production incident (~17:40 IST, phone
+`+919176865600`): `"Hi"` correctly started the morning flow and asked
+Q1. Thirteen seconds later, `"No"` — which `quoco_classify_yes_no`
+classifies correctly (`{"ok": true, "met": false}`, confirmed live) —
+produced Q1 again instead of advancing to the holiday follow-up.
+Thirteen seconds rules out a client-side race (`readCurrentFlow`'s
+unlocked-read window is sub-second, not double-digit); the RPC-level
+"flow already active" retry path (`p_start_flow=true` against an active
+session) returns `FLOW_RACE_REPLY`'s distinct text, not Q1's own
+wording, so that path is also inconsistent with what was observed.
+
+**The mechanism.** `sweep_stale_morning_sessions` (migration 033) has no
+minimum-age filter — its cursor (`WHERE current_flow = 'morning' FOR
+UPDATE SKIP LOCKED`) makes no distinction between a session parked for
+six hours and one that started six seconds ago, and it runs every
+60-second tick. `routeInboundMessage` (`lib/whatsapp/inbound-start.ts`)
+had no `morningCutoff` check at all — an inbound with
+`morning_submitted_at` still null started a fresh morning flow at ANY
+hour, 08:30 and 17:40 treated identically. Together: the session started
+at 17:40 was reset by the sweep — `current_flow` back to `NULL`,
+`current_step` back to `0`, `context.morning_submitted` correctly NOT
+set (migration 033's own B1 fix, session was at step 1) — within its
+first tick, before the engineer's own next message arrived. The next
+inbound read a clean idle session and started over. **Not directly
+proven from a log** (session-level state was long since overwritten by
+investigation time, Sentry/Vercel invocation logs were not pulled) — but
+it is the only mechanism consistent with the code and the timestamps.
+`attendance_defaulted=false` on the completed row proves the ENGINEER
+completed the flow after being knocked back to Q1 — the sweep did not
+complete it.
+
+**What let this ship unnoticed.** Both `sweep_stale_morning_sessions`'s
+external reviewer (round 1, migration 033) and Aravind independently
+reasoned carefully about what the sweep does to a session it finds
+PARKED — the skip-over-guess project-membership fix, the missing-row
+guard, the B1 same-day gating fix all came from that scrutiny. Neither
+asked what the sweep does to a session that is still LIVE, mid-turn, on
+the very tick after it started. Recorded here as the actual gap in the
+review process, not just in the code: a correctly-reviewed function can
+still race code nobody thought to check it against.
+
+### 35b. The fix — two window guards, `routeInboundMessage` only
+
+**DECIDED (Aravind, 2026-08-26).**
+- **Morning flow must not start after 15:00 IST (`morningCutoff`).**
+  15:00 is already the grace window — no second grace. Guard added
+  immediately before the `applyMorningFlowTurn` call
+  (`lib/whatsapp/inbound-start.ts`): refuses if `ist.minutes >=
+  cutoffMinutes(CHECKIN_CHECKPOINTS.morningCutoff)`, replying *"The
+  morning check-in window has closed for today. Your evening check-in
+  will be sent automatically."* — no instruction to act, since evening
+  is cron-triggered, not something the engineer sends first.
+- **Evening flow must not start before 18:30 IST (`eveningSend`).** Same
+  shape, mirrored: refuses if `ist.minutes < cutoffMinutes(CHECKIN_
+  CHECKPOINTS.eveningSend)`, replying *"It's not yet time for your
+  evening check-in — it will be sent automatically."*
+- **The sweep is deliberately UNCHANGED.** Confirmed, not assumed:
+  `sweep_stale_morning_sessions`'s cursor already closes ANY
+  `current_flow='morning'` session past the cutoff, live or not, with no
+  minimum-age check — exactly the decided behaviour. `FOR UPDATE SKIP
+  LOCKED` is not a grace period; it only skips a row an RPC call is
+  *actively* holding at that exact instant, not a row that's merely
+  recent, which is precisely what let the sweep catch the 17:40 session
+  between turns. Partial-answer preservation (steps 2-4 stamp-only, step
+  5 INSERTs `absent`/`attendance_defaulted=true`, step 1 leaves no row)
+  is unchanged — a truncated flow, not lost data, is the sweep doing its
+  job correctly now that starting a post-cutoff morning session is
+  refused upstream.
+
+Both guards are **SCAFFOLDING, not the intended end state** — §28(x)'s
+ad-hoc menu is the eventual standing reply for any inbound outside a
+check-in window; these refusals exist only because that menu is decided
+but not yet built. Confirmed TypeScript-only, no migration: neither RPC
+needs to change what it does when called, since the router now decides
+whether to call it at all — same shape as the pre-existing `eveningClose`
+refusal, which was already TS-only.
+
+### 35c. `eveningNudge` (19:15) — CONFIRMED, not changed
+
+DPR generation runs at 19:45 IST (`eveningClose`, `vercel.json`'s
+`dpr-generate` cron confirmed at `15 14 * * *` UTC = 19:45 IST exactly).
+That leaves a flat **30-minute gap** between the nudge and generation.
+Stated honestly: **no document has ever evaluated that 30 minutes
+against the five-question evening flow's actual completion time** — the
+19:15 value was carried forward from "was 7:30 PM, now 19:15"
+(`docs/bot-flows.md`), never independently derived. If an engineer is
+mid-task when the nudge lands, the DPR generates on whatever partial
+data exists at 19:45 regardless. **Accepted as-is, and now stated rather
+than inherited** — this entry is the record of that acceptance, not a
+claim that 30 minutes was verified sufficient.
+
+### 35d. Evening nudge send — Pass 2, not built
+
+Recorded only. Nothing can send an evening nudge until the outbound
+primitive (#69/031, CLAUDE.md §3) exists — same blocker as every other
+not-yet-built send in this codebase.
+
+### 35e. §28(x)'s ad-hoc menu — now higher priority than previously scoped
+
+With both new window guards live and `eveningClose`'s own refusal
+already in place, an engineer messaging outside every check-in window
+(before `morningCutoff` obviously doesn't apply, but the whole stretch
+`morningCutoff`..`eveningSend`, and everything past `eveningClose`) now
+has **no way to initiate anything at all** — three static refusals and
+zero other paths in. §28(x)'s menu (`### x. AD-HOC MENU IS THE
+ENGINEER'S FRONT DOOR`, §28's own text: "It is what he sees whenever he
+opens the thread outside a check-in, so it is designed as a home
+screen") was already decided as the eventual answer to this, but this
+entry's own guards make the gap it fills larger and more immediate than
+when §28(x) was originally scoped — it is now the only path in for a
+real, currently-live window of the day, not a hypothetical one.
+
+### 35f. Both refusal strings promise something that does not yet exist — ACCEPTED, checklist item added
+
+`MORNING_WINDOW_CLOSED_REPLY` ("...Your evening check-in will be sent
+automatically") and `EVENING_WINDOW_NOT_OPEN_REPLY` ("...it will be sent
+automatically") are both false today. No cron exists. No outbound-send
+primitive exists (#69/031, CLAUDE.md §3). Nothing sends anything. An
+engineer refused at 16:00 IST is told to wait for a message that will
+never arrive.
+
+**Same defect class as template 8's "Reply STOP at any time"** — GATE 2
+holds that template out of submission for promising a capability the
+system does not have. Not gated the same way here, on scale: one
+engineer (Aravind), Pass 1 measured in days rather than months, and
+rewriting to an honestly vague string now would only need rewriting
+again the moment the cron lands — churn without benefit at this size.
+**Accepted, not fixed, and now stated rather than left implicit.**
+
+**EXPLICIT PASS 1 CHECKLIST ITEM, added here and in
+`docs/plans/pass1-outbound-send-plan.md`'s own "Two hard preconditions"
+section (§35f, not only here — a note that lives solely in a decisions
+file will not be read at cron-enable time):** when Pass 1's crons are
+enabled, both refusal strings' promise becomes something to VERIFY, not
+assume — confirm by direct observation (this project's own standing
+"rollback mechanisms are verified by observation" discipline, same as
+GATE 1/B3's own two hard preconditions) that an engineer refused during
+either window actually receives the promised automatic message before
+leaving these strings as-is. If Pass 1 slips, or real engineers arrive
+before Pass 1 ships, this copy must change to something honest BEFORE
+that happens — not be discovered false by an engineer waiting on a
+message that never comes.

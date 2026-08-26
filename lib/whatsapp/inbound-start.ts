@@ -54,6 +54,23 @@ function cutoffMinutes(hhmm: string): number {
 // finished.
 export const REPORT_READY_REPLY = "Today's report is ready. Send your update tomorrow morning."
 
+// CHECK-IN WINDOW GUARDS (2026-08-26, design-decisions-beta-feedback.md §35).
+// SCAFFOLDING, not the intended end state -- §28(x)'s ad-hoc menu is the
+// eventual standing reply for any inbound outside a check-in window; these
+// two refusals exist only because that menu is decided but not yet built.
+// When it ships, replace both returns below with the menu, not with a
+// smarter refusal.
+//
+// Same register as REPORT_READY_REPLY: two short sentences, no instruction
+// to act (evening is cron-triggered, not something he sends first), no
+// specific clock time (drifts if CHECKIN_CHECKPOINTS ever changes -- the
+// existing REPORT_READY_REPLY has the same property, "tomorrow morning" not
+// a time either).
+export const MORNING_WINDOW_CLOSED_REPLY =
+  'The morning check-in window has closed for today. Your evening check-in will be sent automatically.'
+export const EVENING_WINDOW_NOT_OPEN_REPLY =
+  "It's not yet time for your evening check-in — it will be sent automatically."
+
 export interface InboundRouteResult {
   reply: string
   /** null on refuse / both-done (no RPC called) as well as dispatchInboundTurn's own double-wrong_flow fallback. */
@@ -186,6 +203,17 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
   await onBeforeStart?.()
 
   if (!morningSubmitted) {
+    // MORNING WINDOW GUARD (design-decisions-beta-feedback.md §35a).
+    // 15:00 IST is already the grace window -- no second grace here. Once
+    // morningCutoff passes, sweep_stale_morning_sessions closes any LIVE
+    // morning session too (migration 033, unchanged by this guard -- see
+    // §35b), so a session started after this point would only ever get
+    // swept mid-flow. Refusing before ever starting one is the actual fix;
+    // SCAFFOLDING per this file's own header note above -- §28(x)'s menu
+    // replaces this reply, not the check itself, once built.
+    if (ist.minutes >= cutoffMinutes(CHECKIN_CHECKPOINTS.morningCutoff)) {
+      return { reply: MORNING_WINDOW_CLOSED_REPLY, resolvedFlow: null }
+    }
     const result = await applyMorningFlowTurn(commonRpcParams)
     if (result.outcome === 'reask') {
       return { reply: FLOW_RACE_REPLY, resolvedFlow: null }
@@ -199,6 +227,12 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
   // Morning submitted, evening not -- start evening (accepted early-
   // volunteer case, plan (a) row 3: Rule 3.5's "never dead-end" outweighs
   // the risk of a slightly-early "workers on site right now" answer).
+  //
+  // EVENING WINDOW GUARD (design-decisions-beta-feedback.md §35a), mirrored
+  // from the morning guard above -- same SCAFFOLDING note applies.
+  if (ist.minutes < cutoffMinutes(CHECKIN_CHECKPOINTS.eveningSend)) {
+    return { reply: EVENING_WINDOW_NOT_OPEN_REPLY, resolvedFlow: null }
+  }
   const result = await applyEveningFlowTurn(commonRpcParams)
   if (result.outcome === 'reask') {
     return { reply: FLOW_RACE_REPLY, resolvedFlow: null }
