@@ -290,6 +290,23 @@ notification pipeline and has no such claim on permanence. No prune
 mechanism is built — this is a classification, not an implementation, same
 as this whole register describes a posture nothing yet enforces.
 
+DATED ADDITION (2026-08-26, migration 031 external review, round 4)
+— `outbound_sends` (WRITTEN, NOT APPLIED — docs/reviews/031-outbound-
+send-ledger-review-package.md) joins this register with its own line,
+same convention as 027's entry above but the OPPOSITE classification.
+Grain is one row per (engineer, checkpoint, IST day) claimed. **CLASSIFIED
+INDEFINITE / COMPLIANCE-CLASS, not prunable hygiene** — this is a durable
+record of every billed WhatsApp send this project has ever made
+(`content_sid`, `to_phone_number` on every row — what was sent, to whom),
+same business-record shape as `daily_logs`/`daily_log_edits` above, not
+`checkin_escalations`' operational-tracking shape just above this entry.
+The table's own `GRANT` deliberately omits `DELETE` for any role,
+including `service_role` — no prune mechanism exists, none is planned; a
+future prune would be a deliberate policy decision (a stated retention
+period, likely tied to India's own financial-record-keeping requirements
+for a billed communication record) requiring its own review, not a
+default outcome of this table simply existing.
+
 PARSER DEBT — RULE 3.5's LOW-CONFIDENCE FLAG DOES NOT EXIST (opened 2026-07-28,
 tracked, NOT fixed). Cross-cutting: affects EVERY future consumer of parsed
 check-in data, not one flow. Rule 3.5 (docs/design-principles.md:31 — note:

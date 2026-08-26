@@ -89,6 +89,70 @@
 -- data -- but it IS a real, named dependency on a rule the database itself
 -- stays silent about. See §36 (`design-decisions-beta-feedback.md`,
 -- 2026-08-26) for the proposal to make this structural instead of assumed.
+--
+-- CALIBRATION NOTE, added 2026-08-26, external review round 4 -- why 033
+-- COUNTS-AND-SKIPS against this exact same unenforced rule while THIS
+-- migration TRUSTS it, so the next reader sees calibration, not drift, and
+-- does not conclude one of the two siblings is simply wrong. The
+-- difference is CONSEQUENCE CLASS, not carelessness in either direction:
+--   033 (the sweep): a wrong guess FABRICATES a `daily_logs` absence
+--   record against a possibly-unrelated project -- a write, with
+--   downstream consumers (DPR generation, PM visibility) that would treat
+--   the fabricated row as real data. Guessing wrong there creates a false
+--   fact that outlives the bug that caused it.
+--   031 (here): `event_key` deliberately excludes `project_id`, and the
+--   UNIQUE constraint is `(tenant_id, recipient_user_id, event_key)` --
+--   `project_id` plays no role in idempotency at all. A duplicate
+--   `project_members` row therefore CANNOT cause a second send or a
+--   second billed row: whichever project_id the roster query happens to
+--   resolve, the SAME claim (same tenant, same engineer, same checkpoint,
+--   same day) is attempted, and the second attempt hits the UNIQUE
+--   constraint and no-ops. The blast radius of a wrong guess here is
+--   `project_id` attribution on ONE row -- which project a real,
+--   correctly-deduplicated send is filed under -- not a fabricated event
+--   that didn't happen, and not a duplicate charge. Different failure
+--   shapes justify different defenses; this is calibration, not the same
+--   finding answered two different ways.
+-- ============================================================================
+--
+-- ============================================================================
+-- COMPOSITE FK / TENANT SCOPING -- BLOCKING finding, fixed (added
+-- 2026-08-26, external review round 4).
+-- ============================================================================
+-- THE GAP, as found. All three FKs were plain `REFERENCES parent(id)` with
+-- no `ON DELETE`/`ON UPDATE` -- violating this project's own standing rule
+-- that referential actions are chosen deliberately, never left to the
+-- implicit default by omission. Worse: `UNIQUE (tenant_id,
+-- recipient_user_id, event_key)` does NOT itself validate that
+-- `recipient_user_id` actually belongs to `tenant_id` -- a service-role bug
+-- (a wrong join, a copy-pasted tenant_id from a different request) could
+-- write a row pairing tenant A with tenant B's engineer, into the exact
+-- table this file's own header calls "the only record that it happened."
+--
+-- THE FIX. `(recipient_user_id, tenant_id) REFERENCES users (id,
+-- tenant_id)` and `(project_id, tenant_id) REFERENCES projects (id,
+-- tenant_id)` -- composite FKs, not single-column ones, so the database
+-- itself rejects a cross-tenant pairing at INSERT time rather than relying
+-- on every future writer getting the join right. **Parent indexes verified
+-- present, not assumed**: `users_id_tenant_id_key` and
+-- `projects_id_tenant_id_key`, both `UNIQUE (id, tenant_id)`, both added in
+-- migration 017 specifically to support composite FKs -- confirmed by
+-- reading that file directly (017:58-61), not recalled. Same pattern
+-- already load-bearing elsewhere in this codebase: `projects.owner_user_id`
+-- and `project_members.user_id`/`.project_id` (017), and
+-- `dpr_versions.generated_by_user` (029) -- this migration was the outlier,
+-- not the composite-FK convention.
+--
+-- ON DELETE RESTRICT on all three FKs (tenant_id included, see the column
+-- definition below), argued from what this file already believes: a
+-- durable billed record (STATUS LIFECYCLE, destructive/irreversible per
+-- the §0 gating assessment below), users are never hard-deleted in this
+-- codebase (§10a's own reasoning, `design-decisions-beta-feedback.md`),
+-- and nothing may silently cascade a send record away -- RESTRICT, not
+-- CASCADE, matching `projects.owner_user_id`'s own precedent (017) over
+-- `project_members`'s CASCADE, since this table is a record of a thing
+-- that happened, not a membership row whose parent's deletion should take
+-- it along.
 -- ============================================================================
 --
 -- ============================================================================
@@ -166,6 +230,24 @@
 -- of INSERT -- there is no window in this design where a row is claimed
 -- before the template or destination is decided. No case exists where either
 -- is legitimately unknown at INSERT time; neither column is made nullable.
+--
+-- COUPLED TO THE ROSTER-EXCLUSION DESIGN, stated explicitly (added
+-- 2026-08-26, external review round 4) -- both NOT NULLs above are not a
+-- context-free guarantee, they are downstream of a specific upstream
+-- design choice. `messaging_blocked`, `attendance='site_holiday'`, and
+-- already-submitted engineers are excluded from the ROSTER QUERY itself
+-- (plan §5) -- BEFORE any claim attempt, not filtered after one. An
+-- engineer this table never claims for never reaches an INSERT at all, so
+-- there is no "claimed but nothing to send" case for content_sid/
+-- to_phone_number to be null FOR. **If a future pass ever records these
+-- skips IN THIS LEDGER instead of upstream in the roster query** (e.g. to
+-- give item F's coverage check visibility into WHY a roster member has no
+-- row, rather than only that they have none), **that change breaks this
+-- NOT NULL pair on that day** -- a skip row would have no template or
+-- destination to record, by definition. Not a hypothetical: this is
+-- exactly the shape PR #69's own now-superseded C2 formula assumed
+-- (`skipped_*` ledger rows) -- see STATUS LIFECYCLE below for the
+-- supersession this migration's actual shape requires.
 -- ============================================================================
 --
 -- ============================================================================
@@ -257,6 +339,36 @@
 -- gap, same reasoning) -- but a later reader must not read "caught by two
 -- independent alerts" as "handled." It is observed, twice. It is not fixed,
 -- either time.
+--
+-- **THE DESIGNED CLOSER, added 2026-08-26, external review round 4 -- so
+-- "observed twice, fixed neither time" reads as a bridge with a
+-- destination, not a dead end.** The status-callback route (plan item D)
+-- logs Twilio's own per-message delivery status, keyed by `MessageSid`.
+-- Once it exists, a stuck `'sending'` row plus Twilio's OWN record for
+-- `to_phone_number` in that time window is EVIDENCE, not a guess -- it can
+-- distinguish "died before the POST" (no Twilio record exists for that
+-- number in that window: case (i), provably safe to retry) from "died
+-- after Twilio's 2xx" (a real Twilio record exists: case (ii), retrying
+-- would double-send). This upgrades alert-only to EVIDENCE-BASED
+-- resolution -- and for the provably-safe case (i) specifically, a genuine
+-- automated retry becomes possible, not just an informed human decision.
+-- **Not Pass 1** -- the status-callback route itself is still item D,
+-- unbuilt; this is the shape of the eventual fix, named so it is designed
+-- toward, not rediscovered from scratch once D ships.
+--
+-- **NAMED VERIFICATION ITEM for the send-primitive build (item B), added
+-- 2026-08-26.** Before implementing the claim/send/activate sequence,
+-- check whether Twilio's Messages POST endpoint accepts an idempotency
+-- key -- against Twilio's CURRENT documentation at build time, not from
+-- memory or from this file's own assumptions written tonight. **If it
+-- does**, that is the structural fix to the entire stuck-claim window this
+-- section argues about: a Twilio-side idempotency key would let a SAFE
+-- retry be attempted even without evidence from the status-callback route,
+-- because Twilio itself would refuse to double-send on a repeated key --
+-- the whole REJECTED/CHOSEN argument above would need revisiting against
+-- that capability. **If it does not**, this file's reasoning stands
+-- unchanged -- the alert-only design, and THE DESIGNED CLOSER above, are
+-- what's actually available.
 -- ============================================================================
 --
 -- STATUS LIFECYCLE (plan §1's full ordering, §5's failure table):
@@ -271,6 +383,29 @@
 -- A row stuck at 'sending' is now IN SCOPE, per STUCK-CLAIM RECONCILIATION
 -- above -- not deferred.
 --
+-- **C2 SUPERSESSION, added 2026-08-26, external review round 4 -- a DATED
+-- SUPERSESSION, not left to be discovered as drift later.** PR #69's own
+-- unreachability derivation (`docs/outbound-send-primitive-plan.md`
+-- §"C2", round 4 design review, that branch's own history) specifies its
+-- threshold as "3 consecutive terminal failures... with no 'sent'/
+-- `'skipped_*'` row anywhere among them" -- written against a ledger design
+-- where a roster-excluded engineer (`messaging_blocked`, site-holiday,
+-- already-submitted) got its OWN row, tagged `skipped_*`. **That is not
+-- this table's shape.** `status` here is exactly `'sending'`/`'sent'`/
+-- `'failed'` (see the CHECK above) -- there is no skip status, because
+-- roster exclusion happens UPSTREAM, in the send primitive's own roster
+-- query (plan §5), before any claim INSERT is ever attempted (see
+-- CONTENT_SID / TO_PHONE_NUMBER's own "COUPLED TO THE ROSTER-EXCLUSION
+-- DESIGN" note above). A roster-excluded engineer produces ZERO rows in
+-- this table, not a `skipped_*` one. Under this shape, C2's own
+-- consecutive-failure logic SIMPLIFIES: "no `'sent'`/`'skipped_*'` row
+-- among the last 3" collapses to "no `'sent'` row among the last 3
+-- `'failed'` rows" -- correct, not broken, since there is nothing left for
+-- the skip clause to exclude. Recorded here, at the point where the
+-- status shape that supersedes C2's assumption is actually decided, so a
+-- future Pass 2 implementer reads the correction before writing C2's
+-- query, not after debugging why it finds skip rows that were never
+-- there.
 -- CLAUDE.md §0 GATING ASSESSMENT, brief (full package treatment belongs in
 -- this migration's own review package at apply time, plan §7 item 1-2, not
 -- reproduced in full here):
@@ -307,11 +442,19 @@ CREATE TABLE outbound_sends (
   -- row moved from 'sending' to its terminal state, for the stuck-claim
   -- reconciliation scan above (`updated_at < now() - INTERVAL '10 minutes'`).
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-  tenant_id          UUID        NOT NULL REFERENCES tenants(id),
+  -- Single-column FK -- tenants is the tenant-scoping root, nothing above
+  -- it to cross-check against. ON DELETE RESTRICT stated explicitly, not
+  -- left as the bare (functionally similar but not identical) default --
+  -- see the COMPOSITE FK / TENANT SCOPING block above for why explicit,
+  -- deliberate referential actions are this table's own review finding.
+  tenant_id          UUID        NOT NULL REFERENCES tenants(id)
+                        ON UPDATE NO ACTION ON DELETE RESTRICT,
   -- See PROJECT SCOPE above -- unambiguous per engineer under the decided
   -- product rule, NOT enforced by this table or by project_members itself.
-  project_id         UUID        NOT NULL REFERENCES projects(id),
-  recipient_user_id  UUID        NOT NULL REFERENCES users(id),
+  -- Composite FK below (not an inline REFERENCES here) is what closes the
+  -- cross-tenant gap this column's own single-column form could not.
+  project_id         UUID        NOT NULL,
+  recipient_user_id  UUID        NOT NULL,
   -- '<checkpoint>:<IST date>' -- see the header block above. The format
   -- check below is deliberately narrow (lowercase checkpoint name, exact
   -- ISO date) -- event_key is the entire idempotency mechanism; a
@@ -339,7 +482,20 @@ CREATE TABLE outbound_sends (
   -- THE idempotency gate. See the header block above for the full reasoning
   -- on why event_key alone is insufficient and this pairing is what makes
   -- the constraint correct.
-  UNIQUE (tenant_id, recipient_user_id, event_key)
+  UNIQUE (tenant_id, recipient_user_id, event_key),
+  -- COMPOSITE, TENANT-SCOPED FKs -- see the header block above (COMPOSITE
+  -- FK / TENANT SCOPING) for the full finding. Parent UNIQUE(id, tenant_id)
+  -- indexes confirmed present since migration 017 (users_id_tenant_id_key,
+  -- projects_id_tenant_id_key), not assumed -- same pattern already used by
+  -- projects.owner_user_id, project_members.user_id/.project_id (017), and
+  -- dpr_versions.generated_by_user (029). ON DELETE RESTRICT on both,
+  -- matching this table's own STATUS LIFECYCLE reasoning: a durable billed
+  -- record, users never hard-deleted (§10a), nothing may cascade a send
+  -- record away.
+  FOREIGN KEY (recipient_user_id, tenant_id) REFERENCES users (id, tenant_id)
+    ON UPDATE NO ACTION ON DELETE RESTRICT,
+  FOREIGN KEY (project_id, tenant_id) REFERENCES projects (id, tenant_id)
+    ON UPDATE NO ACTION ON DELETE RESTRICT
 );
 
 -- Supports item F's roster-vs-sent-count comparison (plan Amendment (b)) --
@@ -363,6 +519,15 @@ CREATE INDEX idx_outbound_sends_stuck ON outbound_sends (updated_at)
 -- alongside the grant-layer suspenders below, matching this project's own
 -- established double-layer discipline (CLAUDE.md §6: "state the audience
 -- and bound the grants explicitly rather than relying on RLS alone").
+--
+-- **"BACKEND-ONLY" IS TRUE TODAY, DATED, added 2026-08-26, external review
+-- round 4.** This audience claim is not permanent by default -- the known
+-- future reader is the PM-facing unreachability surface (C2/DASH-03, plan
+-- Pass 2 scope, STATUS LIFECYCLE above), which would need `authenticated`
+-- read access (through an RPC or a scoped view, not a bare table grant) the
+-- moment it's built. When that surface ships, this zero-policy stance must
+-- be revisited as part of THAT migration's own review -- not silently
+-- outlived by a comment that stops being accurate.
 ALTER TABLE outbound_sends ENABLE ROW LEVEL SECURITY;
 
 -- Grant layer. Supabase's own per-role default ACLs grant new public-schema
@@ -370,10 +535,36 @@ ALTER TABLE outbound_sends ENABLE ROW LEVEL SECURITY;
 -- mechanism migration 020/029 already found and fixed for FUNCTIONS,
 -- CLAUDE.md §6's own standing rule extends it to tables) -- explicit here,
 -- not left to a bare REVOKE ... FROM PUBLIC to be enough.
-REVOKE ALL ON outbound_sends FROM PUBLIC, anon, authenticated;
+--
+-- **service_role IS INCLUDED IN THIS REVOKE, added 2026-08-26, caught by
+-- this migration's own S3 post-apply grant probe on test-db, not by
+-- reading the SQL.** The comment above already states the correct
+-- reasoning (per-role default ACLs, not just a PUBLIC grant) but the first
+-- draft of this statement only listed PUBLIC/anon/authenticated in the
+-- REVOKE, never service_role itself -- so the GRANT two lines below was
+-- ADDITIVE on top of whatever Supabase's own default ACL had already
+-- given service_role, not a replacement of it. Live probe against test-db
+-- confirmed the consequence directly: `has_table_privilege('service_role',
+-- ..., 'DELETE')`, `'TRUNCATE'`, `'REFERENCES'`, and `'TRIGGER'` all
+-- returned `true` before this fix, despite this file's own "No DELETE
+-- granted to anyone" comment two lines below -- a real gap between stated
+-- intent and actual privilege, third instance of this project's own
+-- "default ACLs grant individually, a bare REVOKE FROM PUBLIC (or, this
+-- time, an incomplete REVOKE list) is not enough" finding (020, 029, now
+-- this file), each one caught a different way (020: code review; 029:
+-- post-apply production fingerprint; this one: this migration's own dry-
+-- run/rehearsal probe, before a production apply ever happened).
+REVOKE ALL ON outbound_sends FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE ON outbound_sends TO service_role;
 -- No DELETE granted to anyone -- this table is a durable send record, not a
 -- queue to be pruned; nothing in this plan's scope ever needs to delete a
--- row.
+-- row. RETENTION, stated explicitly (added 2026-08-26, external review
+-- round 4), not left implied by the grant alone: presumed INDEFINITE --
+-- billing-record class (per this project's own three-way retention
+-- taxonomy, docs/build-status.md's DATA RETENTION POSTURE register:
+-- daily_logs/daily_log_edits-shaped compliance record, not
+-- processed_messages-shaped prunable hygiene), a business record of every
+-- billed WhatsApp send this project has ever made. Full entry, dated, in
+-- that same register -- not restated here.
 
 COMMIT;
