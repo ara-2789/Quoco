@@ -400,15 +400,45 @@ table, then re-probed clean:
 -------------+---------------+------------------+---------------+---------------------
  false       | false         | false            | false        | true
 ```
-Third instance of this project's own "default ACLs grant individually, a
+**CORRECTED (2026-08-26, same day, after the exchange that produced
+`docs/reviews/service-role-table-grants-gap.md`) — this was NOT the third
+instance, and NOT the first table-level one.** The line below originally
+read "Third instance... this one (a table)," which is inaccurate on both
+counts. Checked directly against prod, read-only: `dpr_versions`
+(migration 029) already carries the identical gap — `service_role` holds
+live DELETE/TRUNCATE/REFERENCES/TRIGGER on it today, against 6 real rows,
+while that table's own `COMMENT ON TABLE` calls it "Append-only DPR
+generation history." `daily_log_edits` (019), `dprs` (023), and
+`checkin_escalations` (027) carry the textually identical REVOKE shape,
+unverified against a live probe. **This is the first instance of this
+gap CAUGHT on a table, not the first that exists** — `dpr_versions` had
+it first, live since 029 shipped in production, undetected until this
+round. The difference was never carefulness on 031's part versus 029's:
+**031 got a test-db rehearsal that probed `service_role`'s negative
+capabilities (DELETE); 029 did not**, because nothing before this
+round's own rehearsal discipline ever asked a migration's own test suite
+to check what a role should NOT be able to do, only that the intended
+operations succeed (compare §8's own T10, which tests `service_role`
+SELECT and nothing else). Full record, the confirmed and suspected
+instances, and the fix's own required scope (its own migration, its own
+external review, not started here):
+`docs/reviews/service-role-table-grants-gap.md`. Standing rules recorded
+at CLAUDE.md §0 (name `service_role` explicitly in every table REVOKE)
+and §7 (a new table's rehearsal must probe `service_role`'s negative
+capabilities, not only its intended ones).
+
+Original text, kept for the record rather than silently overwritten:
+"Third instance of this project's own 'default ACLs grant individually, a
 bare REVOKE FROM PUBLIC (or, this time, an incomplete REVOKE list) is not
-enough" finding — 020 (functions, caught by code review), 029 (functions,
+enough' finding — 020 (functions, caught by code review), 029 (functions,
 caught by a post-apply PRODUCTION fingerprint — a live exposure), this one
 (a table, caught by this migration's own pre-production dry-run/rehearsal
 probe, before any real apply). Same class, progressively earlier catch
-each time — the standing rule this finding reinforces (proactive anon/
-grant probing as a required line in every future `SECURITY DEFINER`/new-
-object review) is doing its job.
+each time." The "progressively earlier catch each time" framing also
+doesn't hold once `dpr_versions` is counted — 029's own table-level gap
+was never caught at all until this correction; only its function
+(`write_dpr_version`) got the earlier-catch treatment the original text
+describes.
 
 Behavioral proof, both the disposable scaffold (§8, T8-T10) and real
 test-db (§11a, C10-C13): `anon` SELECT → `permission denied for table
