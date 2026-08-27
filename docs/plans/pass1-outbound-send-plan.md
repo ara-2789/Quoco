@@ -516,6 +516,27 @@ part of the morning flow migration, §30(a)) — the roster filter change and th
 migration are not independent; the filter cannot be written correctly before the
 column it reads exists.
 
+### (f) Roster filter — the evening trigger must NOT gate on morning submission (2026-08-27, §37(a))
+
+**The evening trigger's roster (item E) must NOT inherit `routeInboundMessage`'s
+`morningSubmitted` gate.** Per §37(a) (`design-decisions-beta-feedback.md`), confirmed
+against §30(b)/(d) above: an engineer who missed the morning window entirely may have
+been on site all day, and the evening trigger asking what happened does not depend on
+whether he already answered a different, earlier question. The roster's only two
+exclusions remain exactly as (e) above states them — `messaging_blocked=true` and
+`attendance='site_holiday'` — nothing else, and specifically not morning-submission
+state.
+
+**Why this needs saying explicitly, not left implied by (e)'s silence on the topic:**
+`routeInboundMessage` (`lib/whatsapp/inbound-start.ts`), the INBOUND path already built
+and live, nests its own evening-start branch inside `else(morningSubmitted)` — an
+engineer who never touches morning cannot self-start evening via that path, for the rest
+of the day (full trace: `design-decisions-beta-feedback.md` §37(b)). That gate is specific to the inbound code path and was
+never a decided requirement for the roster query this item describes. Named here so the
+same gate is not accidentally carried into the OUTBOUND roster query by a future
+implementer reasoning from `routeInboundMessage`'s existing shape as precedent — it is
+not precedent for this query.
+
 ---
 
 ## Two hard preconditions for enabling Pass 1's cron entries (`vercel.json` item E)
