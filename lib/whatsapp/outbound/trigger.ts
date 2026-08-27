@@ -46,6 +46,8 @@ export interface TriggerParams {
   /** daily_logs.morning_plan for today, or null/undefined -- only used when checkpoint === 'evening_send'; ignored for 'morning_send'. */
   morningPlan?: string | null
   supabaseClient?: SupabaseClient
+  /** Injectable, defaulting to global `fetch` when omitted -- see send.ts's own doc for why this must be injected rather than stubbed globally in a test. */
+  fetchFn?: typeof fetch
 }
 
 export type TriggerOutcome =
@@ -101,11 +103,14 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
   // 2. SEND. Only after the claim is durably committed.
   let sendResult
   try {
-    sendResult = await sendWhatsAppTemplate({
-      to: params.whatsappNumber,
-      contentSid: template.contentSid,
-      contentVariables: template.contentVariables,
-    })
+    sendResult = await sendWhatsAppTemplate(
+      {
+        to: params.whatsappNumber,
+        contentSid: template.contentSid,
+        contentVariables: template.contentVariables,
+      },
+      params.fetchFn,
+    )
   } catch (err) {
     // Network-level failure -- no HTTP response at all, same "retryable but
     // ambiguous" bucket as a Twilio 5xx below: whether Twilio actually

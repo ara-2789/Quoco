@@ -17,21 +17,20 @@ import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID }
 
 // Integration test against REAL test-db (this project's own standing
 // practice -- integration tests hit a real database, not mocks). Only the
-// Twilio HTTP call is mocked; every Supabase/RPC call below is real,
-// against the shared morning-flow fixtures (same tenant/project/engineer
-// every other suite in this repo uses).
+// Twilio HTTP call is mocked, and it is INJECTED via triggerCheckIn's own
+// fetchFn parameter, never via vi.stubGlobal('fetch', ...) -- stubbing
+// GLOBAL fetch also intercepts the Supabase JS client's own internal HTTP
+// calls (it uses fetch too), which silently fed a mocked Twilio response
+// into the real claim INSERT the first time this file was written. See
+// send.ts's own doc on the fetchFn parameter for the full account.
 //
 // outbound_sends HAS NO DELETE GRANT FOR ANY ROLE, INCLUDING service_role --
 // deliberate, per migration 031's own header ("this table is a durable send
 // record, not a queue to be pruned... RETENTION... presumed INDEFINITE").
-// Confirmed the hard way: a first draft of this file tried to delete test
-// rows in afterEach, got "permission denied for table outbound_sends", and
-// because that throw pre-empted the REST of that afterEach (session/
-// daily_logs cleanup never ran), state leaked into every later test in the
-// file. Fix: never attempt to delete outbound_sends rows here. Instead, each
-// run picks a random future date range so its event_keys can never collide
-// with a PRIOR run's permanently-retained rows -- no cleanup needed for this
-// table at all, which is the correct shape given the table's own design.
+// Never attempt to delete outbound_sends rows here. Instead, each run picks
+// a random future date range so its event_keys can never collide with a
+// PRIOR run's permanently-retained rows -- no cleanup needed for this table
+// at all, which is the correct shape given the table's own design.
 const RUN_DAY_OFFSET = Math.floor(Math.random() * 50000)
 function runDate(daysFromBase: number): string {
   const d = new Date(Date.UTC(2031, 0, 1))
@@ -65,12 +64,9 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
   })
 
   // Each cleanup step runs independently -- one table's cleanup failing must
-  // never prevent another table's cleanup from running (see file header:
-  // this is exactly the bug that made the first draft of this file leak
-  // state between tests).
+  // never prevent another table's cleanup from running.
   afterEach(async () => {
     fetchMock.mockReset()
-    vi.unstubAllGlobals()
     await cleanupTestSessions()
     await cleanupTestDailyLogs()
   })
@@ -81,7 +77,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
   })
 
   it('claims, sends, and activates the session on a fresh morning checkpoint; a second call for the same day is a silent no-op', async () => {
-    vi.stubGlobal('fetch', fetchMock)
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMfirst001' }))
 
     const logDate = runDate(0)
@@ -95,6 +90,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       whatsappNumber: TEST_ENGINEER_PHONE,
       logDate,
       supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
     }
 
     const first = await triggerCheckIn(params)
@@ -123,7 +119,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
   })
 
   it('a Twilio 4xx marks the ledger row failed and does NOT activate the session', async () => {
-    vi.stubGlobal('fetch', fetchMock)
     fetchMock.mockResolvedValueOnce(
       jsonResponse(400, { code: 21211, message: "The 'To' number is not a valid phone number." }),
     )
@@ -139,6 +134,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       whatsappNumber: TEST_ENGINEER_PHONE,
       logDate,
       supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
     })
 
     expect(result.outcome).toBe('failed')
@@ -153,7 +149,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
   })
 
   it('a Twilio 5xx leaves the ledger row at "sending" (ambiguous, retryable) and does NOT activate the session', async () => {
-    vi.stubGlobal('fetch', fetchMock)
     fetchMock.mockResolvedValueOnce(jsonResponse(503, { code: 20003, message: 'Service unavailable' }))
 
     const logDate = runDate(2)
@@ -167,6 +162,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       whatsappNumber: TEST_ENGINEER_PHONE,
       logDate,
       supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
     })
 
     expect(result.outcome).toBe('ambiguous')
@@ -199,7 +195,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       if (error) throw new Error(`seed morning_plan failed: ${error.message}`)
     }
 
-    vi.stubGlobal('fetch', fetchMock)
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMplan001' }))
     await triggerCheckIn({
       checkpoint: 'evening_send',
@@ -212,6 +207,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       logDate: logDateWithPlan,
       morningPlan: 'Pour slab on level 3',
       supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
     })
     const rowsWithPlan = await readOutboundSends(`evening_send:${logDateWithPlan}`)
     expect(rowsWithPlan[0]!.content_sid).toBe(EVENING_CHECKIN_SID)
@@ -231,6 +227,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       logDate: logDateNoPlan,
       morningPlan: null, // never engaged that day -- no daily_logs row at all
       supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
     })
     const rowsNoPlan = await readOutboundSends(`evening_send:${logDateNoPlan}`)
     expect(rowsNoPlan[0]!.content_sid).toBe(EVENING_CHECKIN_NO_PLAN_SID)

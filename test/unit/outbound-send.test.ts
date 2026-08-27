@@ -6,10 +6,15 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 describe('sendWhatsAppTemplate', () => {
+  // Injected directly as the second argument, never via vi.stubGlobal --
+  // stubbing GLOBAL fetch would also intercept the Supabase JS client's own
+  // HTTP calls anywhere else in the same process (confirmed the hard way in
+  // test/outbound-trigger.test.ts's own CI round; see send.ts's own doc on
+  // the fetchFn parameter). This file makes no DB calls, but the injection
+  // pattern is exercised here too so both test files stay consistent.
   const fetchMock = vi.fn()
 
   beforeEach(() => {
-    vi.stubGlobal('fetch', fetchMock)
     vi.stubEnv('TWILIO_ACCOUNT_SID', 'ACzztest0000000000000000000000000')
     vi.stubEnv('TWILIO_AUTH_TOKEN', 'zz-test-auth-token')
     vi.stubEnv('TWILIO_WHATSAPP_NUMBER', '+14155238886')
@@ -18,13 +23,12 @@ describe('sendWhatsAppTemplate', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
   })
 
   it('throws if any of the three required env vars is missing -- never proceeds with a partial credential set', async () => {
     vi.stubEnv('TWILIO_ACCOUNT_SID', '')
     await expect(
-      sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: { '1': 'x' } }),
+      sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: { '1': 'x' } }, fetchMock),
     ).rejects.toThrow(/TWILIO_ACCOUNT_SID/)
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -32,11 +36,14 @@ describe('sendWhatsAppTemplate', () => {
   it('posts form-encoded (NOT JSON) to the classic Messages endpoint, with Basic auth and the whatsapp: prefix on From/To', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMabc123' }))
 
-    const result = await sendWhatsAppTemplate({
-      to: '+919876543210',
-      contentSid: 'HXd4a896b66bfd7b237f53dc4dca77fb76',
-      contentVariables: { '1': 'Arjun Nair', '2': 'Emerald Heights' },
-    })
+    const result = await sendWhatsAppTemplate(
+      {
+        to: '+919876543210',
+        contentSid: 'HXd4a896b66bfd7b237f53dc4dca77fb76',
+        contentVariables: { '1': 'Arjun Nair', '2': 'Emerald Heights' },
+      },
+      fetchMock,
+    )
 
     expect(result).toEqual({ ok: true, status: 201, sid: 'SMabc123' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -56,7 +63,7 @@ describe('sendWhatsAppTemplate', () => {
 
   it('does not double-prefix a "to" that already carries "whatsapp:"', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMabc123' }))
-    await sendWhatsAppTemplate({ to: 'whatsapp:+919876543210', contentSid: 'HXabc', contentVariables: {} })
+    await sendWhatsAppTemplate({ to: 'whatsapp:+919876543210', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
     const [, init] = fetchMock.mock.calls[0]!
     const body = new URLSearchParams(init.body as string)
     expect(body.get('To')).toBe('whatsapp:+919876543210')
@@ -64,7 +71,7 @@ describe('sendWhatsAppTemplate', () => {
 
   it('returns ok:false with the Twilio error code/message on a 4xx (non-retryable)', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(400, { code: 21211, message: "The 'To' number is not a valid phone number." }))
-    const result = await sendWhatsAppTemplate({ to: '+91000', contentSid: 'HXabc', contentVariables: {} })
+    const result = await sendWhatsAppTemplate({ to: '+91000', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
     expect(result).toEqual({
       ok: false,
       status: 400,
@@ -75,14 +82,14 @@ describe('sendWhatsAppTemplate', () => {
 
   it('returns ok:false on a 5xx, still reporting the status for the caller to classify as retryable', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(503, { code: 20003, message: 'Service unavailable' }))
-    const result = await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} })
+    const result = await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
     expect(result.ok).toBe(false)
     expect(result.status).toBe(503)
   })
 
   it('returns ok:false, refusing to guess a fake success, when Twilio returns 2xx with no "sid" field', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(201, {}))
-    const result = await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} })
+    const result = await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.errorMessage).toMatch(/no "sid" field/)
@@ -92,7 +99,7 @@ describe('sendWhatsAppTemplate', () => {
   it('a thrown network error (no HTTP response at all) propagates -- the caller decides how to treat it, this function does not swallow it', async () => {
     fetchMock.mockRejectedValueOnce(new Error('fetch failed: ECONNRESET'))
     await expect(
-      sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} }),
+      sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} }, fetchMock),
     ).rejects.toThrow('ECONNRESET')
   })
 
@@ -100,7 +107,7 @@ describe('sendWhatsAppTemplate', () => {
     vi.stubEnv('TWILIO_ACCOUNT_SID', '')
     vi.stubEnv('TWILIO_AUTH_TOKEN', 'zz-super-secret-token-must-not-leak')
     try {
-      await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} })
+      await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
       throw new Error('expected sendWhatsAppTemplate to throw')
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

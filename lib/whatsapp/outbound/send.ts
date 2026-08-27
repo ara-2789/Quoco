@@ -68,8 +68,23 @@ function withWhatsAppPrefix(e164: string): string {
  * send -> activate sequence in trigger.ts) is what makes a retry safe, via
  * outbound_sends' own UNIQUE constraint. This function does exactly one
  * thing: make the HTTP call and report what Twilio said.
+ *
+ * `fetchFn` is injectable, defaulting to global `fetch` -- same DI shape as
+ * every `supabaseClient` parameter elsewhere in this codebase, and for the
+ * identical reason: a test that stubs GLOBAL `fetch` to mock this call would
+ * ALSO intercept the Supabase JS client's own internal HTTP calls (it uses
+ * `fetch` too), silently feeding a mocked Twilio response into a real
+ * database INSERT. Confirmed the hard way in this file's own CI round —
+ * `vi.stubGlobal('fetch', ...)` in the trigger.ts integration test caused
+ * the claim INSERT to receive the mocked Twilio 4xx body and fail with
+ * Twilio's own error text as though it were a Postgres error. Injection
+ * avoids the collision entirely; the test now passes its mock in directly
+ * instead of mutating the global.
  */
-export async function sendWhatsAppTemplate(params: SendTemplateParams): Promise<SendTemplateResult> {
+export async function sendWhatsAppTemplate(
+  params: SendTemplateParams,
+  fetchFn: typeof fetch = fetch,
+): Promise<SendTemplateResult> {
   const { accountSid, authToken, fromNumber } = readCredentials()
   const authHeader = `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`
   const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages`
@@ -81,7 +96,7 @@ export async function sendWhatsAppTemplate(params: SendTemplateParams): Promise<
     ContentVariables: JSON.stringify(params.contentVariables),
   })
 
-  const res = await fetch(url, {
+  const res = await fetchFn(url, {
     method: 'POST',
     headers: {
       Authorization: authHeader,
