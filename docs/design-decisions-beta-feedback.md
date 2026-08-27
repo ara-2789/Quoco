@@ -2822,3 +2822,235 @@ first one was assumed to be the second. This index is the one place in
 this specific chain where that gap can actually close, rather than being
 individually re-guarded against at every consumer that touches
 `project_members`.
+
+## 37. Evening delivery gates on evening data, not morning submission — six decisions (2026-08-27)
+
+Recorded from tonight's evening-trace investigation
+(`docs/reviews/session-transition-lock-wait-flake.md` and this session's own
+trace are unrelated — this entry stands alone, prompted by a live "Hi" to the
+sandbox returning `MORNING_WINDOW_CLOSED_REPLY` three times today at 18:27,
+18:30, and 18:56 IST). Record only — no code, no copy changed.
+
+### a. Evening trigger goes to every engineer every day, except site-holiday
+
+**CONFIRMED against §30(b)/(d), not newly decided — this entry states the
+requirement so it survives to Pass 1's build.** §30(b): on the morning
+`NO → ENGINEER ABSENT` path, "Evening trigger STILL FIRES — half-day and
+late-arrival cases are real." §30(d): the evening trigger's roster excludes
+`messaging_blocked=true` and, since §30(d), `attendance='site_holiday'` —
+**nothing else**. Neither exclusion is, or was ever proposed to be, keyed on
+whether morning was submitted. An engineer who missed the morning window
+entirely may have been on site all day; the evening trigger existing to ask
+what happened does not depend on whether he already answered a different,
+earlier question.
+
+**REQUIREMENT ON PASS 1's ROSTER QUERY, recorded as such:** the evening
+roster (`docs/plans/pass1-outbound-send-plan.md`, item E) must NOT inherit
+`routeInboundMessage`'s `morningSubmitted` gate (see (b) below for what that
+gate actually is and where it lives). The roster's only two exclusions are
+`messaging_blocked=true` and `attendance='site_holiday'`. Folded in as a
+dated amendment to `docs/plans/pass1-outbound-send-plan.md` in this same
+commit — per that file's own standing practice (Amendment (e), same
+reasoning: "a note living only in a decisions file will not be read at
+build time").
+
+### b. The inbound gap — accepted, not fixed
+
+`routeInboundMessage` (`lib/whatsapp/inbound-start.ts`) reads
+`daily_logs.morning_submitted_at`/`evening_submitted_at` for the current IST
+day, then branches:
+
+```
+205   if (!morningSubmitted) {
+214     if (ist.minutes >= cutoffMinutes(CHECKIN_CHECKPOINTS.morningCutoff)) {
+215       return { reply: MORNING_WINDOW_CLOSED_REPLY, resolvedFlow: null }
+216     }
+217     const result = await applyMorningFlowTurn(commonRpcParams)
+        ...
+225   }
+226
+227   // Morning submitted, evening not -- start evening ...
+233   if (ist.minutes < cutoffMinutes(CHECKIN_CHECKPOINTS.eveningSend)) {
+234     return { reply: EVENING_WINDOW_NOT_OPEN_REPLY, resolvedFlow: null }
+235   }
+236   const result = await applyEveningFlowTurn(commonRpcParams)
+```
+
+The evening branch (227-243) is nested inside the `else` of
+`if (!morningSubmitted)` (205). An engineer who never touched morning at all
+gets `MORNING_WINDOW_CLOSED_REPLY` for every message he sends for the rest
+of the day, past `morningCutoff` (15:00 IST) — the evening window guard at
+233 is never even evaluated for him, no matter how far past `eveningSend`
+(18:30 IST) the clock is.
+
+**Observed live, 2026-08-27:** `"Hi"` to the sandbox (`+919176865600`, no
+`daily_logs` row for today, confirmed by direct prod read) returned
+`MORNING_WINDOW_CLOSED_REPLY` at 18:27, 18:30, and 18:56 IST — the last two
+**after** `eveningSend` had already passed.
+
+**This is an unreviewed INTERACTION between two guards each reasoned about
+independently in §35(b)** ("Morning flow must not start after 15:00,"
+"Evening flow must not start before 18:30") — neither guard's own reasoning
+considered the conjunction: an engineer who never touches morning, once past
+both cutoffs. **Not the same defect as §35(f)'s acceptance.** §35(f) is a
+promise temporarily false (no cron exists yet to make it true) — this is a
+promise structurally unfulfillable *through this code path*, on any
+timeline, for this specific engineer shape, because the branch that would
+fulfill it is unreachable regardless of whether the cron exists. **Moot once
+(a)'s cron ships** — the future outbound trigger is a separate code path
+from `routeInboundMessage` and, per (a), was never designed to gate on
+`morningSubmitted` in the first place. The refusal COPY remains wrong in the
+interim (same string, same false promise) — revisit together with §35(f)'s
+own Pass 1 checklist item, not as a second, separate fix.
+
+### c. Owner delivery gates on evening data — DECIDED, supersedes the narrower rule proposed tonight
+
+**Supersedes** the narrower "no `daily_logs` row at all" framing surfaced
+during tonight's trace — that framing was too narrow and is corrected here,
+not carried forward.
+
+**Rationale:** morning is intent, evening is what happened. A DPR without
+evening data has nothing an owner can act on — a morning-only day describes
+a plan, not a result.
+
+**The rule:**
+- The DPR **is still generated** — it remains the internal record and the
+  PM's own view (DASH-04 detail, DPR archive). Generation is unchanged by
+  this entry.
+- It is **NOT sent to the owner** when `evening_submitted_at IS NULL`.
+- Instead the owner receives a short WhatsApp message: no report today,
+  nothing was reported from site (copy in (d) below).
+
+**Record precisely what "gates" means, since three different readings were
+live in tonight's trace and only one is correct:** the gate is
+**`evening_submitted_at IS NULL`** — not "no `daily_logs` row exists" (a row
+can exist from a morning-only day and still gate), and not "partial data"
+(a vaguer, ungoverned standard that would need its own definition of
+partial). **A morning-only day is suppressed under this rule** — attendance
+recorded, plan captured, nothing else, no evening half — exactly the shape
+that would otherwise ship an owner a report describing intent with no
+outcome.
+
+### d. New owner-facing WhatsApp template required — flag prominently, it has lead time
+
+**Owner delivery today is EMAIL-ONLY** (§28(bb)): "NO owner-facing WhatsApp
+template exists in the submitted batch — templates 6, 7, 9 and 10 all go to
+the PM, and 7 tells the PM the owner was EMAILED." (c) introduces the
+**first owner-facing WhatsApp message in the product**, and it needs its own
+Meta-approved template — Twilio/Meta template review takes days, and an
+approved template's body cannot be edited afterward (same constraint §28(bb)
+already named for the still-outstanding owner-notification template).
+**Write it into Pass 2's template batch now**, not discovered at build time.
+
+**Draft copy, for approval, register per Rule 3.12's own tiering** (owner is
+PM/owner tier — templates 5/6/9/10/11/12, "can carry more structure" than
+the strictest engineer tier, but still simple, two short sentences, no
+idiom):
+
+> No site report was received for {{1}} today, {{2}}. There is nothing to
+> share for this date.
+
+`{{1}}` = project name, `{{2}}` = date — same variable shape as templates 6
+and 7. Category: Utility (same default basis as every other operational
+template in the batch, per `whatsapp-templates.md`'s own "Category basis"
+section). Template number and formal audit (the six Twilio/Meta compliance
+rules already applied to templates 1-13) are Pass 2's own template-batch
+work, not decided here — this entry fixes the copy's *content* requirements
+only.
+
+**It must NOT blame the engineer and must NOT promise a report later** —
+checked against the draft above: no subject performs a failure ("was
+received" is passive, names no one), no future tense promising delivery.
+
+**Why silence alone was rejected, recorded:** sending nothing tonight and
+sending nothing under this new rule would look IDENTICAL to the owner —
+"the engineer didn't report" and "the delivery failed" are indistinguishable
+from silence alone, and an owner noticing the gap is exactly the pressure
+that improves compliance. Same reasoning this product already applies
+elsewhere: the DPR itself shows gaps honestly (§30(f)'s site-holiday
+handling, the "not received" text for a silent engineer per the DPR-17
+rewrite in (e) below) rather than hiding them. A silent suppression here
+would be the one place this product's own honesty-about-gaps principle
+quietly stopped applying.
+
+### e. The finding behind (c) — DPR-17's zero-data check, traced
+
+**On 2026-08-27, a DPR was generated for a day with ZERO `daily_logs`
+rows** — `generated_at` 19:45:49 IST, `delivery_status: 'pending'`, matching
+`eveningClose` (19:45) exactly. Invisible today only because owner delivery
+of that report is unbuilt (Pass 1 does not yet send it anywhere) — (c) is
+what makes this finding consequential rather than academic.
+
+**Trace, code as it stands on `main` today — report only, nothing changed:**
+
+`DPR-17`'s zero-data check, in the form its name refers to, **no longer
+exists in this code path.** It was a PROJECT-LEVEL skip in the original
+cron route: zero `daily_logs` rows anywhere on a project for the day →
+write one project-level `dprs` row with `delivery_status='skipped_no_data'`,
+enqueue nothing. That mechanism produced the one row this project ever saw
+carry that value (`35a2f41c`, since deleted by migration 028 Option A) and
+is what CLAUDE.md §8's 2026-08-12 CRON_SECRET-resolution evidence actually
+observed.
+
+**It was superseded on 2026-08-14** (per-engineer report reformat, review
+round 2 S3 / round 3 Q8/N3/S4 — `app/api/cron/dpr-generate/route.ts:19-33`'s
+own header) by an ENGINEER-LEVEL union eligibility check in
+`runDprGenerateTrigger`:
+
+```
+60    for (const project of projects ?? []) {
+        // SET 1 -- active roster.
+62      const { data: members, error: membersError } = await client
+          .from('project_members')
+          ...
+        // SET 2 -- real data, regardless of current roster membership (S3).
+79      const { data: logs, error: logsError } = await client
+          .from('daily_logs')
+          ...
+88      const eligibleIds = new Set<string>([...rosterIds, ...dataEngineerIds])
+
+        // Q8 (round 3): zero-eligible-engineers on an active project is an
+        // accepted gap (S4 -- no dprs row is written, since engineer_id
+        // NOT NULL makes a project-level marker incoherent), but detection is
+        // IN SCOPE now, not deferred to a future incident.
+94      if (eligibleIds.size === 0) {
+          Sentry.captureMessage(...)
+101       continue
+        }
+        ...
+107     for (const engineer_id of eligibleIds) {
+          ...
+130       await enqueueJob('dpr_generate', { project_id: project.id, engineer_id, log_date: logDate }, client)
+        }
+```
+
+**What it actually gates on now: zero ELIGIBLE ENGINEERS on an active
+project** (no active roster member AND no `daily_logs` rows) — not zero
+DATA. Today's project had one active roster member (SET 1 alone), so
+`eligibleIds` was never empty, and a `dpr_generate` job was enqueued for him
+**unconditionally**, per the route's own comment: "Every engineer in the
+union gets a job, UNCONDITIONALLY... An engineer with zero `daily_logs` rows
+still gets a full report reading 'not received' throughout (the
+silent-engineer fix this reformat exists to build)."
+
+**Why it did not fire today: it isn't the check that would have.** The
+project-level zero-data skip this finding's name refers to was deliberately
+removed thirteen days before today's observation (2026-08-14 → 2026-08-27),
+replaced by a check that only
+ever fires when a project has no engineers assigned to it at all — a
+different, much narrower condition than "no data was submitted." Not a bug
+in either version; the newer eligibility check is correct for its own
+purpose (a silent engineer should get a report saying so, per its own
+comment) — it simply means nothing upstream of (c) currently distinguishes
+"nobody reported" from "a full day was reported," which is exactly the gap
+(c) closes on the DELIVERY side, not the generation side.
+
+### f. Scope: (c) and (d) belong with #67, not with generation
+
+(c) and (d) change **delivery** — whether/how a generated DPR reaches the
+owner — not **generation** (unchanged, per (c) above: the DPR is still
+produced and still serves as the PM's own record regardless of this rule).
+They belong with PR #67's two-stage delivery work
+(`docs/dpr-delivery-versioning-plan.md`), not with (e)'s eligibility logic
+and not as a new generation-time gate. Recorded here as scope, not
+implemented — no code in this entry.
