@@ -1,17 +1,5 @@
-import { describe, it, expect, vi, beforeAll, afterEach, afterAll } from 'vitest'
-import {
-  testClient,
-  ensureMorningFixtures,
-  removeMorningFixtures,
-  cleanupTestDailyLogs,
-  cleanupTestSessions,
-  seedDailyLogSubmission,
-  readSession,
-  testEngineerId,
-  TEST_TENANT_ID,
-  TEST_PROJECT_ID,
-  TEST_ENGINEER_PHONE,
-} from './helpers/db'
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest'
+import { testClient, testPhone, readSession, cleanupTestSessions } from './helpers/db'
 import { triggerCheckIn } from '@/lib/whatsapp/outbound/trigger'
 import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID } from '@/lib/whatsapp/outbound/templates'
 
@@ -24,13 +12,101 @@ import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID }
 // into the real claim INSERT the first time this file was written. See
 // send.ts's own doc on the fetchFn parameter for the full account.
 //
-// outbound_sends HAS NO DELETE GRANT FOR ANY ROLE, INCLUDING service_role --
-// deliberate, per migration 031's own header ("this table is a durable send
-// record, not a queue to be pruned... RETENTION... presumed INDEFINITE").
-// Never attempt to delete outbound_sends rows here. Instead, each run picks
-// a random future date range so its event_keys can never collide with a
-// PRIOR run's permanently-retained rows -- no cleanup needed for this table
-// at all, which is the correct shape given the table's own design.
+// DEDICATED FIXTURE, NEVER TORN DOWN -- deliberately NOT the shared
+// ensureMorningFixtures()/TEST_TENANT_ID/TEST_PROJECT_ID used by most of
+// this suite. outbound_sends has NO DELETE grant for any role, including
+// service_role (migration 031's own header: "a durable send record, not a
+// queue to be pruned... RETENTION... presumed INDEFINITE"), and its
+// project_id/tenant_id FKs are RESTRICT. The first two drafts of this file
+// used the SHARED morning-flow fixture and, on every CI run, left
+// undeletable outbound_sends rows referencing it -- which then blocked
+// EVERY OTHER test file's own removeMorningFixtures() teardown with
+// "update or delete on table projects violates foreign key constraint
+// outbound_sends_project_id_tenant_id_fkey", failing the whole suite, not
+// just this file. The five poisoned rows from those runs were deleted by
+// hand (supabase db query --linked, a privileged connection --
+// service_role itself cannot delete them either) before this fix landed.
+// The fix: this file gets its OWN tenant/project/engineer, created once
+// and left in place forever -- matching outbound_sends' own permanence
+// instead of fighting it. Only daily_logs and whatsapp_sessions rows
+// (both fully deletable) are cleaned per-test; the fixture identity itself
+// is idempotent-upsert and never removed.
+const OUTBOUND_TEST_TENANT_ID = '00000000-0000-4000-a000-000000031000'
+const OUTBOUND_TEST_PROJECT_ID = '00000000-0000-4000-a000-000000031001'
+const OUTBOUND_TEST_ENGINEER_PHONE = testPhone('301')
+
+async function ensureOutboundFixtures(): Promise<string> {
+  const db = testClient()
+
+  const { error: tenantErr } = await db
+    .from('tenants')
+    .upsert(
+      { id: OUTBOUND_TEST_TENANT_ID, name: 'ZZ Test Tenant (outbound-send suite)', slug: 'zz-outbound-send' },
+      { onConflict: 'id' },
+    )
+  if (tenantErr) throw new Error(`ensureOutboundFixtures tenant failed: ${tenantErr.message}`)
+
+  const { data: existing, error: selErr } = await db
+    .from('users')
+    .select('id')
+    .eq('whatsapp_number', OUTBOUND_TEST_ENGINEER_PHONE)
+    .maybeSingle<{ id: string }>()
+  if (selErr) throw new Error(`ensureOutboundFixtures select engineer failed: ${selErr.message}`)
+
+  let engineerId: string
+  if (existing) {
+    engineerId = existing.id
+  } else {
+    const { data: ins, error } = await db
+      .from('users')
+      .insert({
+        tenant_id: OUTBOUND_TEST_TENANT_ID,
+        full_name: 'ZZ Test Engineer (outbound-send suite)',
+        role: 'engineer',
+        status: 'active',
+        messaging_blocked: false,
+        whatsapp_number: OUTBOUND_TEST_ENGINEER_PHONE,
+        auth_id: null,
+      })
+      .select('id')
+      .single<{ id: string }>()
+    if (error || !ins) throw new Error(`ensureOutboundFixtures insert engineer failed: ${error?.message ?? 'no row returned'}`)
+    engineerId = ins.id
+  }
+
+  const { error: projErr } = await db
+    .from('projects')
+    .upsert(
+      { id: OUTBOUND_TEST_PROJECT_ID, tenant_id: OUTBOUND_TEST_TENANT_ID, name: 'ZZ Test Project (outbound-send suite)' },
+      { onConflict: 'id' },
+    )
+  if (projErr) throw new Error(`ensureOutboundFixtures project failed: ${projErr.message}`)
+
+  const { error: memberErr } = await db
+    .from('project_members')
+    .upsert(
+      { tenant_id: OUTBOUND_TEST_TENANT_ID, project_id: OUTBOUND_TEST_PROJECT_ID, user_id: engineerId, role: 'engineer' },
+      { onConflict: 'project_id,user_id' },
+    )
+  if (memberErr) throw new Error(`ensureOutboundFixtures member failed: ${memberErr.message}`)
+
+  return engineerId
+}
+
+// daily_logs DOES support DELETE for service_role (only outbound_sends is
+// restricted) -- safe to fully clean between tests, scoped to this file's
+// own dedicated project so it never touches the shared morning-flow suite.
+async function cleanupOutboundDailyLogs(): Promise<void> {
+  const db = testClient()
+  const { error } = await db.from('daily_logs').delete().eq('project_id', OUTBOUND_TEST_PROJECT_ID)
+  if (error) throw new Error(`cleanupOutboundDailyLogs failed: ${error.message}`)
+}
+
+// event_key dates are still randomised per run (rather than reusing a fixed
+// day across every CI run forever) purely to keep outbound_sends' own
+// permanent rows from growing unboundedly recognisable/collidable -- not
+// needed for correctness now that this fixture is dedicated, but cheap
+// hygiene given the table can never be pruned.
 const RUN_DAY_OFFSET = Math.floor(Math.random() * 50000)
 function runDate(daysFromBase: number): string {
   const d = new Date(Date.UTC(2031, 0, 1))
@@ -42,12 +118,12 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-async function readOutboundSends(eventKey: string) {
+async function readOutboundSends(engineerId: string, eventKey: string) {
   const db = testClient()
   const { data, error } = await db
     .from('outbound_sends')
     .select('*')
-    .eq('recipient_user_id', testEngineerId())
+    .eq('recipient_user_id', engineerId)
     .eq('event_key', eventKey)
   if (error) throw new Error(`readOutboundSends failed: ${error.message}`)
   return data ?? []
@@ -55,25 +131,23 @@ async function readOutboundSends(eventKey: string) {
 
 describe('triggerCheckIn (claim -> send -> activate)', () => {
   const fetchMock = vi.fn()
+  let engineerId: string
 
   beforeAll(async () => {
-    await ensureMorningFixtures()
+    engineerId = await ensureOutboundFixtures()
     vi.stubEnv('TWILIO_ACCOUNT_SID', 'ACzztest0000000000000000000000000')
     vi.stubEnv('TWILIO_AUTH_TOKEN', 'zz-test-auth-token')
     vi.stubEnv('TWILIO_WHATSAPP_NUMBER', '+14155238886')
   })
 
-  // Each cleanup step runs independently -- one table's cleanup failing must
-  // never prevent another table's cleanup from running.
+  // No afterAll teardown of the fixture itself -- see file header. Each
+  // cleanup step below runs independently so one failing never blocks
+  // another (the actual bug that made the first two drafts of this file
+  // leak state between tests).
   afterEach(async () => {
     fetchMock.mockReset()
     await cleanupTestSessions()
-    await cleanupTestDailyLogs()
-  })
-
-  afterAll(async () => {
-    vi.unstubAllEnvs()
-    await removeMorningFixtures()
+    await cleanupOutboundDailyLogs()
   })
 
   it('claims, sends, and activates the session on a fresh morning checkpoint; a second call for the same day is a silent no-op', async () => {
@@ -82,12 +156,12 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     const logDate = runDate(0)
     const params = {
       checkpoint: 'morning_send' as const,
-      tenantId: TEST_TENANT_ID,
-      projectId: TEST_PROJECT_ID,
-      engineerId: testEngineerId(),
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
-      whatsappNumber: TEST_ENGINEER_PHONE,
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
       logDate,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
@@ -97,13 +171,13 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(first).toEqual({ outcome: 'sent', twilioSid: 'SMfirst001' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    const rowsAfterFirst = await readOutboundSends(`morning_send:${logDate}`)
+    const rowsAfterFirst = await readOutboundSends(engineerId, `morning_send:${logDate}`)
     expect(rowsAfterFirst).toHaveLength(1)
     expect(rowsAfterFirst[0]!.status).toBe('sent')
     expect(rowsAfterFirst[0]!.twilio_sid).toBe('SMfirst001')
     expect(rowsAfterFirst[0]!.content_sid).toBe(MORNING_CHECKIN_SID)
 
-    const session = await readSession(TEST_ENGINEER_PHONE)
+    const session = await readSession(OUTBOUND_TEST_ENGINEER_PHONE)
     expect(session?.current_flow).toBe('morning')
     expect(session?.current_step).toBe(1)
 
@@ -114,7 +188,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(second).toEqual({ outcome: 'already_claimed' })
     expect(fetchMock).toHaveBeenCalledTimes(1) // still 1 -- no second Twilio call
 
-    const rowsAfterSecond = await readOutboundSends(`morning_send:${logDate}`)
+    const rowsAfterSecond = await readOutboundSends(engineerId, `morning_send:${logDate}`)
     expect(rowsAfterSecond).toHaveLength(1) // no duplicate row
   })
 
@@ -126,25 +200,25 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     const logDate = runDate(1)
     const result = await triggerCheckIn({
       checkpoint: 'morning_send',
-      tenantId: TEST_TENANT_ID,
-      projectId: TEST_PROJECT_ID,
-      engineerId: testEngineerId(),
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
-      whatsappNumber: TEST_ENGINEER_PHONE,
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
       logDate,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     })
 
     expect(result.outcome).toBe('failed')
-    const rows = await readOutboundSends(`morning_send:${logDate}`)
+    const rows = await readOutboundSends(engineerId, `morning_send:${logDate}`)
     expect(rows).toHaveLength(1)
     expect(rows[0]!.status).toBe('failed')
     expect(rows[0]!.error).toBeTruthy()
 
     // No RPC was ever called on this path -- session stays idle.
-    const session = await readSession(TEST_ENGINEER_PHONE)
+    const session = await readSession(OUTBOUND_TEST_ENGINEER_PHONE)
     expect(session?.current_flow ?? null).toBeNull()
   })
 
@@ -154,62 +228,59 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     const logDate = runDate(2)
     const result = await triggerCheckIn({
       checkpoint: 'evening_send',
-      tenantId: TEST_TENANT_ID,
-      projectId: TEST_PROJECT_ID,
-      engineerId: testEngineerId(),
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
-      whatsappNumber: TEST_ENGINEER_PHONE,
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
       logDate,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     })
 
     expect(result.outcome).toBe('ambiguous')
-    const rows = await readOutboundSends(`evening_send:${logDate}`)
+    const rows = await readOutboundSends(engineerId, `evening_send:${logDate}`)
     expect(rows).toHaveLength(1)
     expect(rows[0]!.status).toBe('sending') // untouched -- item F's reconciliation job is out of scope here
 
-    const session = await readSession(TEST_ENGINEER_PHONE)
+    const session = await readSession(OUTBOUND_TEST_ENGINEER_PHONE)
     expect(session?.current_flow ?? null).toBeNull()
   })
 
   it('evening checkpoint selects the primary template ({{3}}=morning plan) when one exists, and the no-plan template when it does not', async () => {
     const logDateWithPlan = runDate(3)
-    await seedDailyLogSubmission({
-      logDate: logDateWithPlan,
-      morningSubmittedAt: new Date().toISOString(),
-    })
-    // seedDailyLogSubmission doesn't set morning_plan directly -- write it via
-    // a direct update on the row it just created, matching this table's own
-    // real column (getDailyLog's DailyLogRow shape confirms morning_plan
-    // exists and is nullable).
     {
       const db = testClient()
-      const { error } = await db
-        .from('daily_logs')
-        .update({ morning_plan: 'Pour slab on level 3' })
-        .eq('project_id', TEST_PROJECT_ID)
-        .eq('engineer_id', testEngineerId())
-        .eq('log_date', logDateWithPlan)
+      const { error } = await db.from('daily_logs').upsert(
+        {
+          tenant_id: OUTBOUND_TEST_TENANT_ID,
+          project_id: OUTBOUND_TEST_PROJECT_ID,
+          engineer_id: engineerId,
+          log_date: logDateWithPlan,
+          morning_submitted_at: new Date().toISOString(),
+          morning_plan: 'Pour slab on level 3',
+        },
+        { onConflict: 'project_id,engineer_id,log_date' },
+      )
       if (error) throw new Error(`seed morning_plan failed: ${error.message}`)
     }
 
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMplan001' }))
     await triggerCheckIn({
       checkpoint: 'evening_send',
-      tenantId: TEST_TENANT_ID,
-      projectId: TEST_PROJECT_ID,
-      engineerId: testEngineerId(),
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
-      whatsappNumber: TEST_ENGINEER_PHONE,
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
       logDate: logDateWithPlan,
       morningPlan: 'Pour slab on level 3',
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     })
-    const rowsWithPlan = await readOutboundSends(`evening_send:${logDateWithPlan}`)
+    const rowsWithPlan = await readOutboundSends(engineerId, `evening_send:${logDateWithPlan}`)
     expect(rowsWithPlan[0]!.content_sid).toBe(EVENING_CHECKIN_SID)
 
     await cleanupTestSessions()
@@ -218,18 +289,18 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMnoplan001' }))
     await triggerCheckIn({
       checkpoint: 'evening_send',
-      tenantId: TEST_TENANT_ID,
-      projectId: TEST_PROJECT_ID,
-      engineerId: testEngineerId(),
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
-      whatsappNumber: TEST_ENGINEER_PHONE,
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
       logDate: logDateNoPlan,
       morningPlan: null, // never engaged that day -- no daily_logs row at all
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     })
-    const rowsNoPlan = await readOutboundSends(`evening_send:${logDateNoPlan}`)
+    const rowsNoPlan = await readOutboundSends(engineerId, `evening_send:${logDateNoPlan}`)
     expect(rowsNoPlan[0]!.content_sid).toBe(EVENING_CHECKIN_NO_PLAN_SID)
   })
 })
