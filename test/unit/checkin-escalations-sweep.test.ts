@@ -11,7 +11,20 @@ import { sweepEngineerHalf } from '@/lib/checkin-escalations/sweep'
 
 const TENANT_ID = '00000000-0000-4000-a000-0000000ce001'
 const PROJECT_ID = '00000000-0000-4000-a000-0000000ce002'
-const ENGINEER_NORMAL_ID_KEY = '+19995550301' // whatsapp_number, unique key for lookup
+// ENGINEER_NORMAL_ID_KEY MOVED from '+19995550301' to '+19995550600'
+// (2026-08-27): a different suite (test/outbound-trigger.test.ts, before
+// its own fixture bug was fixed) raced this file's own beforeAll, created
+// a users row for '...0301' first under ITS tenant, and this file's
+// "select by whatsapp_number, reuse if found" fixture logic silently
+// adopted that row as normalId -- cross-tenant, unnoticed, because this
+// file's own upsert never checks whether the row it found already belongs
+// to a different tenant. Worse: that row is now permanently un-deletable
+// under its wrong tenant (an outbound_sends row references it via a
+// RESTRICT FK, and outbound_sends has no DELETE grant for any role, ever)
+// -- so '...0301' cannot be reclaimed by this file again. '600' checked
+// against every testPhone('NNN') and raw '+19995550NNN' literal already
+// used anywhere under test/ before picking it.
+const ENGINEER_NORMAL_ID_KEY = '+19995550600' // whatsapp_number, unique key for lookup
 const ENGINEER_BLOCKED_KEY = '+19995550302'
 const ENGINEER_HOLIDAY_KEY = '+19995550303'
 const LOG_DATE = '2026-09-01' // a date no other suite writes, per db.ts's own convention
