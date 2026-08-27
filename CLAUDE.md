@@ -685,6 +685,45 @@
   negatives" local capture in that same incident is retracted as evidence
   on these grounds, though it does not change what CI itself already
   showed (three independent real failures).
+- A TABLE-LEVEL REVOKE MUST NAME `service_role` EXPLICITLY, ALONGSIDE
+  `anon` AND `authenticated` — AND A TABLE WHOSE DESIGN CLAIMS TO BE
+  APPEND-ONLY OR A DURABLE RECORD MUST HAVE THAT CLAIM ENFORCED BY GRANTS
+  (standing rule since 2026-08-26; full record:
+  `docs/reviews/service-role-table-grants-gap.md`). Supabase's
+  project-level default ACL grants `service_role` ALL privileges on every
+  new `public`-schema table automatically, the moment it's created —
+  identical mechanism to the one already found and fixed for FUNCTIONS in
+  migration 020 (`020_function_execute_hardening.sql:94`) and again in 029
+  (U1-U5), one object class over. A migration author naturally reasons
+  about `anon`/`authenticated` when writing a table's REVOKE, since those
+  are the two roles PostgREST exposes externally — `service_role` is easy
+  to forget precisely because it never needs a grant to already have one.
+  Because `service_role` bypasses RLS by design, the grant layer is not
+  one of two independent defenses for this role — for `service_role`, on
+  any table, IT IS THE ONLY ONE. CONFIRMED LIVE (2026-08-26, read-only
+  probe against prod, breadcrumb-disciplined): `dpr_versions` (migration
+  029) — `has_table_privilege('service_role', 'public.dpr_versions',
+  'DELETE'/'TRUNCATE'/'REFERENCES'/'TRIGGER')` all return `true`, against
+  6 real rows, while that table's own `COMMENT ON TABLE` calls it
+  "Append-only DPR generation history." `031_outbound_send_ledger.sql`
+  shipped with the identical gap in its first draft (caught and fixed
+  pre-apply this round, by its own test-db rehearsal — see the REHEARSAL
+  REQUIREMENT entry, CLAUDE.md §7). `daily_log_edits` (019), `dprs`
+  (023), and `checkin_escalations` (027) are suspected to carry the same
+  gap — textually identical REVOKE shape, unverified against a live probe
+  — named, not yet checked; do not assume clean until probed. **This is
+  the first instance CAUGHT, not the first that exists** — `dpr_versions`
+  had this gap first, live since 029 shipped, undetected until now. The
+  difference was never carefulness: 031 got a test-db rehearsal that
+  probed `service_role`'s negative capabilities; 029 did not, because
+  nothing before this round's own dry-run/rehearsal discipline ever asked
+  a migration's own suite to test what a role should NOT be able to do,
+  only that the intended operations succeed. FIX, WHEN IT SHIPS: its own
+  migration, trips §0's own external review gate condition (b) — grants
+  on an existing object — same condition 020 and 029's fixes both
+  tripped. Not started by this entry; recorded so it has somewhere
+  durable to live, per `docs/reviews/service-role-table-grants-gap.md`'s
+  own SCOPE OF THE FIX section.
 
 ---
 
@@ -1129,6 +1168,38 @@ environment; no §0 gate implication of its own. A rule that overstates its
 own coverage is worse than no rule — this one covers intra-file ordering
 AND schema-agreement (real dump), but not the two named stub gaps above,
 and that limit is part of the rule, not an implementation detail to forget.
+
+REHEARSAL REQUIREMENT — A NEW TABLE'S TEST-DB REHEARSAL MUST PROBE
+`service_role`'S NEGATIVE CAPABILITIES, NOT ONLY THAT THE INTENDED
+OPERATIONS SUCCEED (added 2026-08-26; full record:
+`docs/reviews/service-role-table-grants-gap.md`, standing rule also
+recorded at CLAUDE.md §0). Round 1's own dry-run suite for migration 031
+tested exactly one thing about `service_role`: that it could SELECT (T10).
+It never tested whether `service_role` could ALSO still DELETE, TRUNCATE,
+REFERENCES, or TRIGGER — and the bug this round found (`dpr_versions`,
+CLAUDE.md §0) lived in exactly that untested space. **The bug was in a
+test never written, not a test that ran and returned wrong** — worth
+stating precisely, because the fix is not "distrust the dry-run scaffold
+more," it's "test the negative space too." And this specific negative
+space cannot be verified by the disposable local scaffold above at
+all — see this rule's own "this is NOT the test-db rehearsal" paragraph
+and the NAMED STUBS list: vanilla Postgres has no analog to Supabase's
+project-level default ACL, so a `service_role DELETE, expect denied` test
+would pass CLEANLY on the local stub regardless of whether the real
+REVOKE statement is complete, a false negative on exactly this class of
+bug. This is real evidence for the scaffold's stated limit, not evidence
+against the scaffold's value elsewhere — the scaffold remains fully
+authoritative for constraint/index mechanics (CHECK, UNIQUE, NOT NULL,
+FK behavior, partial-index usage), none of which depend on Supabase's own
+account-level configuration. **CONSEQUENCE:** any test-db rehearsal for a
+migration that creates a new table (or grants on an existing one) must
+include an explicit `service_role` DELETE (and, where relevant, TRUNCATE)
+denial probe, run against the real database, alongside the existing
+anon-SELECT-denied / authenticated-INSERT-denied pair this project's
+review packages already run by convention. A grant probe that only tests
+the roles a migration author is naturally worried about (`anon`,
+`authenticated`) is exactly the shape that let `dpr_versions`' own gap
+ship undetected.
 
 How to verify locally (ask me to run these; show me the command)
 - DB change: run migrations against a Supabase BRANCH first, never prod.
