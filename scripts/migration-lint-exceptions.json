@@ -9,13 +9,13 @@
     "file": "001_core_schema.sql",
     "object": "rate_catalog",
     "rule": "tenant-id-required",
-    "reason": "Quoco-owned, shared across all tenants by design -- CLAUDE.md \u00a74's own named exception to the multi-tenancy rule."
+    "reason": "Quoco-owned, shared across all tenants by design -- CLAUDE.md §4's own named exception to the multi-tenancy rule."
   },
   {
     "file": "001_core_schema.sql",
     "object": "rate_catalog_history",
     "rule": "tenant-id-required",
-    "reason": "Quoco-owned, shared across all tenants by design -- CLAUDE.md \u00a74's own named exception to the multi-tenancy rule."
+    "reason": "Quoco-owned, shared across all tenants by design -- CLAUDE.md §4's own named exception to the multi-tenancy rule."
   },
   {
     "file": "001_core_schema.sql",
@@ -165,49 +165,49 @@
     "file": "001_core_schema.sql",
     "object": "boq_items.final_rate",
     "rule": "money-column-precision",
-    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md §1/§2, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
   },
   {
     "file": "001_core_schema.sql",
     "object": "boq_items.source_rate",
     "rule": "money-column-precision",
-    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md §1/§2, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
   },
   {
     "file": "001_core_schema.sql",
     "object": "boq_items.adjusted_base_rate",
     "rule": "money-column-precision",
-    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md §1/§2, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
   },
   {
     "file": "001_core_schema.sql",
     "object": "boq_items.suggested_rate",
     "rule": "money-column-precision",
-    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md §1/§2, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
   },
   {
     "file": "001_core_schema.sql",
     "object": "rate_catalog.base_rate",
     "rule": "money-column-precision",
-    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md §1/§2, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
   },
   {
     "file": "001_core_schema.sql",
     "object": "rate_catalog.rate_min",
     "rule": "money-column-precision",
-    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md §1/§2, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
   },
   {
     "file": "001_core_schema.sql",
     "object": "rate_catalog.rate_max",
     "rule": "money-column-precision",
-    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md §1/§2, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
   },
   {
     "file": "001_core_schema.sql",
     "object": "rate_catalog_history.recorded_rate",
     "rule": "money-column-precision",
-    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md \u00a71/\u00a72, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
+    "reason": "Phase-2 (Tender Analyser / BOQ Estimator -- CLAUDE.md §1/§2, explicitly not built in the Spine) rate_catalog/BOQ column, DECIMAL(10,2) not DECIMAL(12,2) as CLAUDE.md's coding rule requires with \"no exceptions.\" Verified directly against the source -- a real mismatch, not a probe artifact."
   },
   {
     "file": "001_core_schema.sql",
@@ -273,13 +273,13 @@
     "file": "011_processed_messages.sql",
     "object": "processed_messages",
     "rule": "tenant-id-required",
-    "reason": "TRACKED GAP, not verified-safe. docs/schema.md's own processed_messages entry: \"NO tenant_id -- a deviation from CLAUDE.md \u00a74's every-table rule... Recorded as an observation, not a blessing; whether it should be tenant-scoped is an open decision, not something this doc settles.\" RLS half: CLAUDE.md's OUT-OF-BAND DB OBJECTS registry (relrowsecurity set out-of-band on prod, no migration source; a rebuild comes up RLS-DISABLED)."
+    "reason": "TRACKED GAP, not verified-safe. docs/schema.md's own processed_messages entry: \"NO tenant_id -- a deviation from CLAUDE.md §4's every-table rule... Recorded as an observation, not a blessing; whether it should be tenant-scoped is an open decision, not something this doc settles.\" RLS half: CLAUDE.md's OUT-OF-BAND DB OBJECTS registry (relrowsecurity set out-of-band on prod, no migration source; a rebuild comes up RLS-DISABLED)."
   },
   {
     "file": "011_processed_messages.sql",
     "object": "processed_messages",
     "rule": "rls-required",
-    "reason": "TRACKED GAP, not verified-safe. docs/schema.md's own processed_messages entry: \"NO tenant_id -- a deviation from CLAUDE.md \u00a74's every-table rule... Recorded as an observation, not a blessing; whether it should be tenant-scoped is an open decision, not something this doc settles.\" RLS half: CLAUDE.md's OUT-OF-BAND DB OBJECTS registry (relrowsecurity set out-of-band on prod, no migration source; a rebuild comes up RLS-DISABLED)."
+    "reason": "TRACKED GAP, not verified-safe. docs/schema.md's own processed_messages entry: \"NO tenant_id -- a deviation from CLAUDE.md §4's every-table rule... Recorded as an observation, not a blessing; whether it should be tenant-scoped is an open decision, not something this doc settles.\" RLS half: CLAUDE.md's OUT-OF-BAND DB OBJECTS registry (relrowsecurity set out-of-band on prod, no migration source; a rebuild comes up RLS-DISABLED)."
   },
   {
     "file": "012_whatsapp_session_transition.sql",
@@ -316,5 +316,173 @@
     "object": "apply_morning_flow_turn",
     "rule": "no-orphan-security-definer",
     "reason": "Hardened by migration 020 (REVOKE EXECUTE ... FROM PUBLIC + GRANT EXECUTE ... TO service_role live in that file, not here) -- see CLAUDE.md's SECURITY INCIDENT entry (docs/reviews/020-review-package.md)."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tenants",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "users",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "projects",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "project_members",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "whatsapp_sessions",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "daily_logs",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "safety_incidents",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "invoices",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "hindrances",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tenders",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tender_documents",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tender_document_chunks",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tender_chat_sessions",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "tender_chat_messages",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "boq_sessions",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "boq_items",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "rate_catalog",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "rate_catalog_history",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "vendors",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "vendor_invoices",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "ra_bills",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "001_core_schema.sql",
+    "object": "ra_bill_payments",
+    "rule": "service-role-grant-required",
+    "reason": "Predates this project's grant-hardening discipline entirely -- 001 is the original core schema, written before migration 020 (the first instance of the default-ACL finding, for functions) ever existed. In scope for the eventual grants-gap fix migration (docs/reviews/service-role-table-grants-gap.md), not fixed here -- this rule exists to stop new instances, not retroactively block the whole schema."
+  },
+  {
+    "file": "006_jobs_queue.sql",
+    "object": "jobs",
+    "rule": "service-role-grant-required",
+    "reason": "No REVOKE/GRANT block on this table AT ALL, for any role -- a larger, differently-shaped gap than the service_role-only pattern this rule targets (anon/authenticated also carry Supabase's full default privilege set, with no RLS to compensate). Named and scoped separately in docs/reviews/service-role-table-grants-gap.md; not fixed here."
+  },
+  {
+    "file": "011_processed_messages.sql",
+    "object": "processed_messages",
+    "rule": "service-role-grant-required",
+    "reason": "No REVOKE/GRANT block on this table AT ALL, for any role -- same larger, differently-shaped gap as 006_jobs_queue.sql's jobs table. Named and scoped separately in docs/reviews/service-role-table-grants-gap.md; not fixed here."
+  },
+  {
+    "file": "019_daily_log_corrections.sql",
+    "object": "daily_log_edits",
+    "rule": "service-role-grant-required",
+    "reason": "SUSPECTED instance of the 2026-08-26 service_role table-grant gap, not yet verified against a live has_table_privilege probe -- textually identical REVOKE shape to the confirmed dpr_versions instance (REVOKE ... FROM authenticated / FROM anon, service_role never named). See docs/reviews/service-role-table-grants-gap.md's SUSPECTED INSTANCES section for the named probe; not fixed here."
+  },
+  {
+    "file": "023_dpr_reports.sql",
+    "object": "dprs",
+    "rule": "service-role-grant-required",
+    "reason": "SUSPECTED instance of the 2026-08-26 service_role table-grant gap, not yet verified against a live has_table_privilege probe -- textually identical REVOKE shape to the confirmed dpr_versions instance (REVOKE ... FROM authenticated / FROM anon, service_role never named). See docs/reviews/service-role-table-grants-gap.md's SUSPECTED INSTANCES section for the named probe; not fixed here."
+  },
+  {
+    "file": "027_checkin_escalations.sql",
+    "object": "checkin_escalations",
+    "rule": "service-role-grant-required",
+    "reason": "SUSPECTED instance of the 2026-08-26 service_role table-grant gap, not yet verified against a live has_table_privilege probe -- textually identical REVOKE shape to the confirmed dpr_versions instance (REVOKE ... FROM authenticated / FROM anon, service_role never named). See docs/reviews/service-role-table-grants-gap.md's SUSPECTED INSTANCES section for the named probe; not fixed here."
+  },
+  {
+    "file": "029_dpr_versioning.sql",
+    "object": "dpr_versions",
+    "rule": "service-role-grant-required",
+    "reason": "CONFIRMED live instance of the 2026-08-26 service_role table-grant gap -- has_table_privilege('service_role', 'public.dpr_versions', 'DELETE'/'TRUNCATE'/'REFERENCES'/'TRIGGER') all true on prod, against 6 real rows, despite this table's own COMMENT ON TABLE calling it \"Append-only DPR generation history.\" Full record and the fix's own required scope: docs/reviews/service-role-table-grants-gap.md. Its own migration, under the §0 external review gate; not fixed here."
   }
 ]
