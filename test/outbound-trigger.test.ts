@@ -20,15 +20,27 @@ import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID }
 // Twilio HTTP call is mocked; every Supabase/RPC call below is real,
 // against the shared morning-flow fixtures (same tenant/project/engineer
 // every other suite in this repo uses).
+//
+// outbound_sends HAS NO DELETE GRANT FOR ANY ROLE, INCLUDING service_role --
+// deliberate, per migration 031's own header ("this table is a durable send
+// record, not a queue to be pruned... RETENTION... presumed INDEFINITE").
+// Confirmed the hard way: a first draft of this file tried to delete test
+// rows in afterEach, got "permission denied for table outbound_sends", and
+// because that throw pre-empted the REST of that afterEach (session/
+// daily_logs cleanup never ran), state leaked into every later test in the
+// file. Fix: never attempt to delete outbound_sends rows here. Instead, each
+// run picks a random future date range so its event_keys can never collide
+// with a PRIOR run's permanently-retained rows -- no cleanup needed for this
+// table at all, which is the correct shape given the table's own design.
+const RUN_DAY_OFFSET = Math.floor(Math.random() * 50000)
+function runDate(daysFromBase: number): string {
+  const d = new Date(Date.UTC(2031, 0, 1))
+  d.setUTCDate(d.getUTCDate() + RUN_DAY_OFFSET + daysFromBase)
+  return d.toISOString().slice(0, 10)
+}
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-}
-
-async function cleanupOutboundSends(): Promise<void> {
-  const db = testClient()
-  const { error } = await db.from('outbound_sends').delete().eq('recipient_user_id', testEngineerId())
-  if (error) throw new Error(`cleanupOutboundSends failed: ${error.message}`)
 }
 
 async function readOutboundSends(eventKey: string) {
@@ -52,10 +64,13 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     vi.stubEnv('TWILIO_WHATSAPP_NUMBER', '+14155238886')
   })
 
+  // Each cleanup step runs independently -- one table's cleanup failing must
+  // never prevent another table's cleanup from running (see file header:
+  // this is exactly the bug that made the first draft of this file leak
+  // state between tests).
   afterEach(async () => {
     fetchMock.mockReset()
     vi.unstubAllGlobals()
-    await cleanupOutboundSends()
     await cleanupTestSessions()
     await cleanupTestDailyLogs()
   })
@@ -69,7 +84,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     vi.stubGlobal('fetch', fetchMock)
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMfirst001' }))
 
-    const logDate = '2026-09-01'
+    const logDate = runDate(0)
     const params = {
       checkpoint: 'morning_send' as const,
       tenantId: TEST_TENANT_ID,
@@ -113,7 +128,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       jsonResponse(400, { code: 21211, message: "The 'To' number is not a valid phone number." }),
     )
 
-    const logDate = '2026-09-02'
+    const logDate = runDate(1)
     const result = await triggerCheckIn({
       checkpoint: 'morning_send',
       tenantId: TEST_TENANT_ID,
@@ -141,7 +156,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     vi.stubGlobal('fetch', fetchMock)
     fetchMock.mockResolvedValueOnce(jsonResponse(503, { code: 20003, message: 'Service unavailable' }))
 
-    const logDate = '2026-09-03'
+    const logDate = runDate(2)
     const result = await triggerCheckIn({
       checkpoint: 'evening_send',
       tenantId: TEST_TENANT_ID,
@@ -164,7 +179,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
   })
 
   it('evening checkpoint selects the primary template ({{3}}=morning plan) when one exists, and the no-plan template when it does not', async () => {
-    const logDateWithPlan = '2026-09-04'
+    const logDateWithPlan = runDate(3)
     await seedDailyLogSubmission({
       logDate: logDateWithPlan,
       morningSubmittedAt: new Date().toISOString(),
@@ -203,7 +218,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
 
     await cleanupTestSessions()
 
-    const logDateNoPlan = '2026-09-05'
+    const logDateNoPlan = runDate(4)
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMnoplan001' }))
     await triggerCheckIn({
       checkpoint: 'evening_send',
