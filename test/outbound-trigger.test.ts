@@ -33,7 +33,16 @@ import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID }
 // is idempotent-upsert and never removed.
 const OUTBOUND_TEST_TENANT_ID = '00000000-0000-4000-a000-000000031000'
 const OUTBOUND_TEST_PROJECT_ID = '00000000-0000-4000-a000-000000031001'
-const OUTBOUND_TEST_ENGINEER_PHONE = testPhone('301')
+// '550' checked against every testPhone('NNN')/+19995550NNN slot already
+// claimed elsewhere in test/ before picking it (grep -rohE
+// "testPhone\('[0-9]+'\)|\+19995550[0-9]{3}") -- the ORIGINAL choice here
+// was '301', which silently collided with test/unit/checkin-escalations-
+// sweep.test.ts's own dedicated fixture (also unaware of the other's
+// choice, since neither file imports the other's constants) and broke
+// that file's roster assertions in CI. Same root cause as the shared-
+// project-fixture bug above, one level down: an ID space that LOOKS free
+// because grepping only your own file finds nothing.
+const OUTBOUND_TEST_ENGINEER_PHONE = testPhone('550')
 
 async function ensureOutboundFixtures(): Promise<string> {
   const db = testClient()
