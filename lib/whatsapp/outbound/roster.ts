@@ -5,8 +5,19 @@
 // is exactly who a trigger needs to reach), reusing extractEngineerRow so
 // the array-vs-object PostgREST ambiguity is handled once, the same
 // defensive way, everywhere it's handled at all.
+//
+// messaging_blocked FILTER, VERIFIED NOT A NULL HAZARD (2026-08-27):
+// `.eq('users.messaging_blocked', false)` would silently exclude a row
+// whose flag is NULL (Postgres: `NULL = false` is NULL, not true, so the
+// row fails the filter) -- checked directly against PRODUCTION before
+// deciding whether this needed a fix: `information_schema.columns` shows
+// `messaging_blocked boolean NOT NULL DEFAULT false` (`is_nullable: 'NO'`),
+// and a live count confirms zero NULL rows among engineers. The column
+// cannot hold NULL; this filter is correct as written. Nothing changed
+// here -- recorded so the next reader doesn't re-flag it without checking.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
 import { extractEngineerRow, type RosterEngineer } from '@/lib/dpr/accountability'
 
 export interface OutboundRosterEngineer extends RosterEngineer {
@@ -14,9 +25,76 @@ export interface OutboundRosterEngineer extends RosterEngineer {
   tenant_id: string
 }
 
+export interface UnreachableEngineer {
+  engineerId: string
+  reason: 'missing_whatsapp_number' | 'missing_tenant_id'
+}
+
+/**
+ * Pure resolver -- testable without a client. An engineer whose join
+ * resolves but is missing `whatsapp_number` or `tenant_id` must NOT enter
+ * the roster: a missing `whatsapp_number` would otherwise burn a real
+ * `outbound_sends` claim row and take a Twilio 4xx, losing that engineer's
+ * whole day for the checkpoint (the identical failure shape the 429 fix
+ * exists to prevent, from a different cause); a missing `tenant_id` would
+ * fail `outbound_sends`' own composite FK and throw mid-roster, taking out
+ * every engineer after this one in the same loop. Both are excluded here
+ * instead -- `fetchActiveEngineers` reports each one via Sentry rather
+ * than silently dropping it (an unreachable engineer is a real finding a
+ * PM needs, per design-principles' own "never a silent mystery" rule --
+ * same discipline as `reportMorningSweepAnomalies`, not a new one).
+ * `extractEngineerRow`'s own throw (a malformed join -- `id` itself
+ * missing) is a different, more severe class and is left to propagate
+ * unchanged; this function only handles a join that resolved correctly
+ * but has null-ish contact/tenant data.
+ */
+export function resolveRosterEngineer(
+  raw: unknown,
+): { engineer: OutboundRosterEngineer } | { unreachable: UnreachableEngineer } {
+  const row = extractEngineerRow(raw)
+  const resolved = Array.isArray(raw) ? raw[0] : raw
+  const typed = resolved as { whatsapp_number?: string | null; tenant_id?: string | null } | null
+
+  const whatsappNumber = typed?.whatsapp_number
+  if (!whatsappNumber) {
+    return { unreachable: { engineerId: row.id, reason: 'missing_whatsapp_number' } }
+  }
+  const tenantId = typed?.tenant_id
+  if (!tenantId) {
+    return { unreachable: { engineerId: row.id, reason: 'missing_tenant_id' } }
+  }
+  return {
+    engineer: {
+      engineer_id: row.id,
+      engineer_name: row.full_name ?? 'Unnamed engineer',
+      whatsapp_number: whatsappNumber,
+      tenant_id: tenantId,
+    },
+  }
+}
+
+/**
+ * DEDUP, same convention as `reportMorningSweepAnomalies`
+ * (lib/daily-logs/morning-cutoff-sweep.ts): fingerprint on
+ * (feature, reason, engineer, IST calendar date) so a still-unreachable
+ * engineer re-evaluated every tick collapses into one growing issue per
+ * day instead of paging on every cron invocation, while a genuinely new
+ * day surfaces as a fresh issue rather than vanishing into an old,
+ * already-triaged one.
+ */
+function reportUnreachableEngineer(u: UnreachableEngineer, projectId: string, logDate: string): void {
+  Sentry.captureMessage('outbound-send: engineer excluded from roster, missing whatsapp_number or tenant_id', {
+    level: 'warning',
+    fingerprint: ['outbound-send', 'unreachable-engineer', u.reason, u.engineerId, logDate],
+    tags: { feature: 'outbound-send', reason: u.reason },
+    extra: { engineer_id: u.engineerId, project_id: projectId, log_date: logDate },
+  })
+}
+
 async function fetchActiveEngineers(
   client: SupabaseClient,
   projectId: string,
+  logDate: string,
 ): Promise<OutboundRosterEngineer[]> {
   // messaging_blocked EXCLUDED here, unlike lib/checkin-escalations/
   // roster.ts's own roster (that module deliberately keeps a blocked
@@ -36,28 +114,31 @@ async function fetchActiveEngineers(
 
   if (error) throw error
 
-  return (members ?? []).map((m) => {
-    const raw = (m as { users: unknown }).users
-    const row = extractEngineerRow(raw)
-    const resolved = Array.isArray(raw) ? raw[0] : raw
-    const typed = resolved as { whatsapp_number?: string | null; tenant_id?: string } | null
-    return {
-      engineer_id: row.id,
-      engineer_name: row.full_name ?? 'Unnamed engineer',
-      whatsapp_number: typed?.whatsapp_number ?? '',
-      tenant_id: typed?.tenant_id ?? '',
+  const roster: OutboundRosterEngineer[] = []
+  for (const m of members ?? []) {
+    const resolved = resolveRosterEngineer((m as { users: unknown }).users)
+    if ('unreachable' in resolved) {
+      reportUnreachableEngineer(resolved.unreachable, projectId, logDate)
+      continue
     }
-  })
+    roster.push(resolved.engineer)
+  }
+  return roster
 }
 
 /**
  * Morning trigger roster. No `daily_logs` join at all -- there is nothing
  * to read yet at 08:30; today's row, if any, is created BY this trigger's
- * own RPC call (startFlow: true), not read beforehand. Only exclusion:
- * `messaging_blocked`.
+ * own RPC call (startFlow: true), not read beforehand. Exclusions:
+ * `messaging_blocked`, and (see `resolveRosterEngineer`) a missing
+ * `whatsapp_number`/`tenant_id`.
  */
-export async function fetchMorningRoster(client: SupabaseClient, projectId: string): Promise<OutboundRosterEngineer[]> {
-  return fetchActiveEngineers(client, projectId)
+export async function fetchMorningRoster(
+  client: SupabaseClient,
+  projectId: string,
+  logDate: string,
+): Promise<OutboundRosterEngineer[]> {
+  return fetchActiveEngineers(client, projectId, logDate)
 }
 
 export interface EveningRosterEngineer extends OutboundRosterEngineer {
@@ -110,7 +191,7 @@ export async function fetchEveningRoster(
   projectId: string,
   logDate: string,
 ): Promise<EveningRosterEngineer[]> {
-  const roster = await fetchActiveEngineers(client, projectId)
+  const roster = await fetchActiveEngineers(client, projectId, logDate)
   if (roster.length === 0) return []
 
   const engineerIds = roster.map((r) => r.engineer_id)

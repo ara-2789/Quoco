@@ -13,6 +13,8 @@
 //         -> UPDATE outbound_sends SET status='sent', twilio_sid=...
 //       -> on non-2xx (4xx, non-retryable): UPDATE status='failed',
 //         error=..., NO RPC call, session untouched
+//       -> on 429: UPDATE error=RATE_LIMITED_MARKER, status LEFT at
+//         'sending' -- genuinely retryable, see the 429 note below.
 //       -> on 5xx / network failure (retryable, ambiguous): ledger row
 //         LEFT at 'sending' -- reconciliation is item F's job (031's own
 //         STUCK-CLAIM RECONCILIATION section), out of scope here.
@@ -21,6 +23,35 @@
 // activation runs BEFORE the terminal ledger UPDATE so a mid-write crash
 // leaves only the LEDGER stale, never the session (§1's own reasoning,
 // restated at each write below).
+//
+// 429 IS RETRYABLE -- DECIDED (Aravind, 2026-08-27), AND WHY IT IS SAFE
+// HERE AND NOWHERE ELSE IN THIS FILE. A 429 is Twilio explicitly
+// REJECTING the request before doing anything with it -- nothing was
+// delivered, so re-claiming and re-attempting cannot double-send. A
+// network timeout or a 5xx carries no such proof: the request may have
+// been received and even accepted before the failure occurred, which is
+// exactly the (i)/(ii) ambiguity migration 031's own header rejects blind
+// re-claim over (STUCK-CLAIM RECONCILIATION section). Those two stay
+// alert-only, ledger left at 'sending', item F's scan (out of scope
+// here) -- this file does not widen re-claiming to them.
+//
+// THE MECHANISM, narrow by construction so it cannot widen by accident.
+// A 429 does NOT retry in-process -- it marks the existing row's `error`
+// column with RATE_LIMITED_MARKER and returns, leaving status='sending'.
+// The NEXT triggerCheckIn call for the SAME event_key (the next cron
+// tick, not built here -- see item E) hits the claim INSERT's UNIQUE
+// violation as always, but instead of unconditionally treating that as
+// "already claimed," attempts an ATOMIC conditional UPDATE: only a row
+// that is STILL `status='sending' AND error=RATE_LIMITED_MARKER` at the
+// moment of that UPDATE is re-taken (a compare-and-swap, so two
+// concurrent callers can never both win the same stuck row -- the second
+// one's UPDATE matches zero rows and falls through to 'already_claimed'
+// exactly like today's behaviour). The condition is on the RECORDED
+// REASON, never on `status` alone and never on row age -- a row stuck at
+// 'sending' for a 5xx or a network exception has `error IS NULL`, not the
+// marker, so it is structurally ineligible for re-claim by this same
+// code path. There is no separate "retry old rows" sweep to widen by
+// mistake; the only door in is this one conditional UPDATE.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
@@ -31,6 +62,12 @@ import { sendWhatsAppTemplate } from './send'
 import { buildMorningTemplate, selectEveningTemplate } from './templates'
 
 export type Checkpoint = 'morning_send' | 'evening_send'
+
+// Recorded in outbound_sends.error (not the status column -- status stays
+// 'sending' throughout, matching every other "left ambiguous" case) to
+// mark a row as safe to re-claim. Never matched against by anything other
+// than the exact string equality check in the re-claim UPDATE below.
+const RATE_LIMITED_MARKER = 'rate_limited_429_retryable'
 
 export interface TriggerParams {
   checkpoint: Checkpoint
@@ -55,6 +92,7 @@ export type TriggerOutcome =
   | { outcome: 'sent'; twilioSid: string }
   | { outcome: 'failed'; errorCode?: string; errorMessage?: string }
   | { outcome: 'ambiguous' }
+  | { outcome: 'rate_limited' }
 
 export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutcome> {
   const supabase = params.supabaseClient ?? createServiceClient()
@@ -87,18 +125,44 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
     .select('id')
     .single()
 
+  let claimId: string
   if (claimError) {
     // Postgres unique violation -- '23505', same convention as
     // lib/whatsapp/idempotency.ts's own message-SID dedup. A prior claim
     // (this tick or an earlier one) already exists for this exact
-    // checkpoint+engineer+day -- silent no-op, not an error, no Twilio
-    // call ever attempted.
-    if (claimError.code === '23505') {
+    // checkpoint+engineer+day.
+    if (claimError.code !== '23505') {
+      throw new Error(`triggerCheckIn: claim INSERT failed for ${eventKey}/${params.engineerId}: ${claimError.message}`)
+    }
+    // RE-CLAIM ATTEMPT -- see the file header's "429 IS RETRYABLE" note
+    // for the full argument. Atomic conditional UPDATE (compare-and-swap):
+    // only succeeds if the existing row is STILL exactly
+    // status='sending' AND error=RATE_LIMITED_MARKER at this instant, so
+    // two concurrent callers can never both win it. Any other state
+    // (already 'sent'/'failed', or stuck at 'sending' for a non-429
+    // reason, or another caller already re-claimed it) matches zero rows
+    // and falls through to 'already_claimed', unchanged from before this
+    // fix.
+    const { data: reclaimed, error: reclaimError } = await supabase
+      .from('outbound_sends')
+      .update({ error: null, updated_at: new Date().toISOString() })
+      .eq('tenant_id', params.tenantId)
+      .eq('recipient_user_id', params.engineerId)
+      .eq('event_key', eventKey)
+      .eq('status', 'sending')
+      .eq('error', RATE_LIMITED_MARKER)
+      .select('id')
+      .maybeSingle()
+    if (reclaimError) {
+      throw new Error(`triggerCheckIn: re-claim UPDATE failed for ${eventKey}/${params.engineerId}: ${reclaimError.message}`)
+    }
+    if (!reclaimed) {
       return { outcome: 'already_claimed' }
     }
-    throw new Error(`triggerCheckIn: claim INSERT failed for ${eventKey}/${params.engineerId}: ${claimError.message}`)
+    claimId = (reclaimed as { id: string }).id
+  } else {
+    claimId = (claimRow as { id: string }).id
   }
-  const claimId = (claimRow as { id: string }).id
 
   // 2. SEND. Only after the claim is durably committed.
   let sendResult
@@ -126,6 +190,27 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
   }
 
   if (!sendResult.ok) {
+    if (sendResult.status === 429) {
+      // RETRYABLE, unlike every other branch here -- see the file header's
+      // "429 IS RETRYABLE" note for the full argument (Twilio explicitly
+      // rejected the request; nothing was delivered, so re-claiming cannot
+      // double-send). Mark the row re-claimable and leave it at 'sending'
+      // -- the NEXT triggerCheckIn call for this exact event_key wins it
+      // via the atomic conditional UPDATE above. No RPC call on this path.
+      const { error: updateError } = await supabase
+        .from('outbound_sends')
+        .update({ error: RATE_LIMITED_MARKER, updated_at: new Date().toISOString() })
+        .eq('id', claimId)
+      if (updateError) {
+        throw new Error(`triggerCheckIn: failed to mark ${claimId} rate-limited: ${updateError.message}`)
+      }
+      Sentry.captureMessage('outbound-send: Twilio 429 rate limit, will retry next tick', {
+        level: 'warning',
+        tags: { feature: 'outbound-send', checkpoint: params.checkpoint },
+        extra: { eventKey, engineerId: params.engineerId, claimId },
+      })
+      return { outcome: 'rate_limited' }
+    }
     if (sendResult.status >= 500) {
       // Retryable but ambiguous, same reasoning as the network-exception
       // branch above -- leave the ledger row at 'sending'.

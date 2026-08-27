@@ -257,6 +257,108 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(session?.current_flow ?? null).toBeNull()
   })
 
+  it('a Twilio 429 is genuinely retryable -- a second attempt for the same day re-claims and sends', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(429, { code: 20429, message: 'Too Many Requests' }))
+
+    const logDate = runDate(5)
+    const params = {
+      checkpoint: 'morning_send' as const,
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
+      engineerName: 'ZZ Test Engineer',
+      projectName: 'ZZ Test Project',
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
+      logDate,
+      supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
+    }
+
+    const first = await triggerCheckIn(params)
+    expect(first).toEqual({ outcome: 'rate_limited' })
+    const rowsAfterFirst = await readOutboundSends(engineerId, `morning_send:${logDate}`)
+    expect(rowsAfterFirst).toHaveLength(1)
+    expect(rowsAfterFirst[0]!.status).toBe('sending') // still 'sending', not 'failed'
+    expect(rowsAfterFirst[0]!.error).toBe('rate_limited_429_retryable')
+
+    // Second attempt, same event_key -- must RE-CLAIM the existing row
+    // (not treat it as already_claimed) and actually send.
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMretried001' }))
+    const second = await triggerCheckIn(params)
+    expect(second).toEqual({ outcome: 'sent', twilioSid: 'SMretried001' })
+    expect(fetchMock).toHaveBeenCalledTimes(2) // both attempts really called Twilio
+
+    const rowsAfterSecond = await readOutboundSends(engineerId, `morning_send:${logDate}`)
+    expect(rowsAfterSecond).toHaveLength(1) // same row, re-used -- not a duplicate
+    expect(rowsAfterSecond[0]!.id).toBe(rowsAfterFirst[0]!.id)
+    expect(rowsAfterSecond[0]!.status).toBe('sent')
+    expect(rowsAfterSecond[0]!.twilio_sid).toBe('SMretried001')
+    expect(rowsAfterSecond[0]!.error).toBeNull() // cleared by the re-claim UPDATE
+
+    const session = await readSession(OUTBOUND_TEST_ENGINEER_PHONE)
+    expect(session?.current_flow).toBe('morning')
+  })
+
+  it('a Twilio 5xx is NOT re-claimable -- a second attempt is still already_claimed, no second Twilio call', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, { code: 20003, message: 'Service unavailable' }))
+
+    const logDate = runDate(6)
+    const params = {
+      checkpoint: 'morning_send' as const,
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
+      engineerName: 'ZZ Test Engineer',
+      projectName: 'ZZ Test Project',
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
+      logDate,
+      supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
+    }
+
+    const first = await triggerCheckIn(params)
+    expect(first).toEqual({ outcome: 'ambiguous' })
+
+    const second = await triggerCheckIn(params)
+    expect(second).toEqual({ outcome: 'already_claimed' })
+    expect(fetchMock).toHaveBeenCalledTimes(1) // second attempt never reached Twilio
+
+    const rows = await readOutboundSends(engineerId, `morning_send:${logDate}`)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.status).toBe('sending') // still stuck -- item F's job, not this file's
+    expect(rows[0]!.error).toBeNull() // no 429 marker was ever written
+  })
+
+  it('a thrown network exception is NOT re-claimable -- a second attempt is still already_claimed', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('fetch failed: ECONNRESET'))
+
+    const logDate = runDate(7)
+    const params = {
+      checkpoint: 'evening_send' as const,
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
+      engineerName: 'ZZ Test Engineer',
+      projectName: 'ZZ Test Project',
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
+      logDate,
+      supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
+    }
+
+    const first = await triggerCheckIn(params)
+    expect(first).toEqual({ outcome: 'ambiguous' })
+
+    const second = await triggerCheckIn(params)
+    expect(second).toEqual({ outcome: 'already_claimed' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const rows = await readOutboundSends(engineerId, `evening_send:${logDate}`)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.status).toBe('sending')
+    expect(rows[0]!.error).toBeNull()
+  })
+
   it('evening checkpoint selects the primary template ({{3}}=morning plan) when one exists, and the no-plan template when it does not', async () => {
     const logDateWithPlan = runDate(3)
     {
