@@ -50,16 +50,32 @@ Migration 031's own review package (`/tmp/031-review-package.md`, §"Sequencing"
    branch doesn't check WHICH flow is active, only THAT one is." DECIDED fix (round 3
    external review): cutoff-close any session still stuck at `'morning'` past
    `morningCutoff` (15:00 IST) via a sweep, plus a force-switch backstop at
-   `eveningSend`. **Neither half is built.**
+   `eveningSend`. ~~**Neither half is built.**~~
 
-**This is not a future concern — it is directly exercised by Pass 1's own scope.**
+**CORRECTED, 2026-08-26 (Pass 1 freshness check, before code was written).** B3
+shipped: migration 033 (`sweep_stale_morning_sessions`), applied to production
+2026-08-25, confirmed live inside the deployed `jobs/tick` cron (`app/api/jobs/tick/
+route.ts`, calling `sweepStaleMorningSessions` unconditionally every tick — verified
+directly against `origin/main`, not assumed). It closes any `current_flow='morning'`
+session past `morningCutoff`, live or parked, with no minimum-age check — see
+`design-decisions-beta-feedback.md` §35b. The force-switch backstop at `eveningSend`
+named above was never separately built and is now moot: with `routeInboundMessage`'s
+own morning-window refusal (§35a/b, also 2026-08-26) preventing a morning session
+from ever starting past `morningCutoff` in the first place, there is no longer a
+"session stuck at `'morning'` past `eveningSend`" case for a force-switch to catch —
+the cutoff-close sweep alone now closes the gap this finding originally named.
+
+~~**This is not a future concern — it is directly exercised by Pass 1's own scope.**
 Pass 1 item E puts a real evening-trigger cron into production at 18:30 IST, 3.5 hours
 after `morningCutoff` (15:00). Any engineer who never finished (or never started)
 their morning flow that day will, at 18:30, have `apply_evening_flow_turn` called
 against a session still parked at `current_flow='morning'` — hitting the exact
 mis-routed `ELSE` branch B3 describes. **Pass 1 cannot safely ship its own evening
 trigger (item E) without B3's fix landing first, or as part of the same change.**
-This is a second hard blocker, alongside GATE 1 (Q3, below), not a nice-to-have.
+This is a second hard blocker, alongside GATE 1 (Q3, below), not a nice-to-have.~~
+**SUPERSEDED, 2026-08-26 — B3 is built and live (above). This is no longer a
+blocker; it is a cleared precondition. See item 3 of tonight's freshness check for
+the fresh evidence.**
 
 ---
 
@@ -157,6 +173,35 @@ build the menu").
    per design-principles' own rule) and it correctly stops the scaffolding from doing
    the ONE thing §28(w) says it must not do anymore — start a flow.
 
+**CORRECTION, 2026-08-26 (Pass 1's own freshness check, reviewing side's own
+error, recorded so it isn't repeated).** Aravind's own kickoff message for
+the freshness check asserted this section "was SILENT" on §28(w) — from
+memory of an earlier report, not from re-reading this file. It is not
+silent; the three numbered items above are an explicit, already-made
+decision, unchanged since 2026-08-22. Corrected on read, not left standing.
+
+**OPEN, 2026-08-26 — recorded, NOT decided, must be answered before the
+`vercel.json` cron entries ship, not at cron-enable time.** Item 1 above
+instructs retiring `routeInboundMessage`'s `startFlow: true` call on an
+idle inbound once Pass 1's cron exists. `design-decisions-beta-feedback.md`
+§35's two window guards (morning refuses at/after `morningCutoff`, evening
+refuses before `eveningSend`, added 2026-08-26 — after this section was
+written, hence the gap) live INSIDE that exact branch, immediately before
+the same `applyMorningFlowTurn`/`applyEveningFlowTurn` calls item 1 says
+must stop firing. Once the cron exists and item 1's retirement happens,
+the guards' own CHECKS become dead code — there is nothing left to guard,
+since `startFlow: true` is never called from this path again. But their
+COPY (*"...will be sent automatically"*) is more useful to a real engineer
+than the generic acknowledgement item 2 above falls back to, once that
+promise is actually true (§35f, once the crons exist). Proposed reading,
+recorded as a proposal, not a decision: **the checks die with the
+retirement item 1 already calls for; the copy survives, repointed as a
+time-aware idle acknowledgement** (an inbound before 15:00 gets one
+acknowledgement shape, 15:00-18:30 another, matching what §35's guards
+already say, without the now-dead `startFlow: true` call behind them).
+Not decided here — answer this before item E ships, not discovered as a
+loose end at cron-enable time.
+
 ---
 
 ## 3. GATE 1 — how Pass 1 avoids it
@@ -187,6 +232,29 @@ Three options, argued:
 - Also recall this doesn't ONLY gate on GATE 1: the B3 cross-flow fix (§0 above) is a
   second, equally hard precondition for the evening half of item E specifically — both
   must be true before `vercel.json` gets its two new entries.
+
+**GATE 1: LIFTED, 2026-08-25.** Recorded 2026-08-26, during Pass 1's own freshness
+check, before any Pass 1 code was written — both prior sentences above described this
+as a still-pending future condition; it is no longer pending. Evidence, fresh, not
+assumed (re-verified live against production the night this was recorded, breadcrumb
+confirmed `jvxwqignooseazzmwhvl` before each read, link restored to test-db after):
+```
+schema_migrations: version 030, name morning_flow_attendance — present
+apply_morning_flow_turn signature: p_phone_number, p_tenant_id, p_user_id, p_project_id,
+  p_message, p_start_flow, p_manpower, p_manpower_ok, p_equipment, p_equipment_ok,
+  p_now, p_test_sleep_ms — byte-identical to 030's 12-arg signature
+apply_morning_flow_turn body mentions 'attendance': true
+daily_logs.attendance column: present
+```
+Plus, from code on `main`: `MORNING_QUESTIONS[1]` = `'Good morning. Are you on site
+today? Reply yes or no.'` — matches template 1's approved copy verbatim. Both halves
+of GATE 1's own condition (030 applied; RPC's actual Q1 agrees with the approved
+template) are satisfied. **This does not by itself mean `vercel.json`'s two cron
+entries should be added tonight** — see the "Two hard preconditions" section below,
+which now separately records that withholding them tonight is deliberate pacing, not
+something the gate itself still requires. Same correction owed to
+`docs/whatsapp-templates.md`'s own GATE 1 section, which reads the same stale way —
+recorded there too, same date.
 
 ---
 
@@ -377,6 +445,29 @@ inside the existing `/api/jobs/tick` cron per Amendment (d) below, not a new
 `vercel.json` entry), alerting (Sentry) when a checkpoint's row count is materially
 below its expected roster size.
 
+**CORRECTED, 2026-08-26 — the spec above undercounted its own failure mode; migration
+031's own design notes carry the full argument, restated here since this is item F's
+original spec.** ~~"count of rows created for that day's `event_key` prefix"~~ is
+wrong: a claim commits `status='sending'` BEFORE the Twilio call, so a process death
+in that window leaves a row that counts toward "created" without ever having sent
+anything — the exact case item F exists to catch, hidden by its own original query
+shape. **Fix (a):** the comparison counts `status = 'sent'` rows, not all rows for the
+`event_key`. **Fix (b):** because the ledger's `UNIQUE(tenant_id, recipient_user_id,
+event_key)` constraint means a stuck `'sending'` row has no natural retry path
+(tomorrow's `event_key` is a different string; nothing re-claims today's), item F is
+widened to ALSO scan for rows stuck at `status='sending'` past a 10-minute threshold
+and alert (Sentry, deduplicated per row) rather than auto-retry — argued in full in
+031's own header, under "STUCK-CLAIM RECONCILIATION": a blind age-based reclaim cannot
+tell "died before the Twilio call" (safe to retry) from "died after Twilio's 2xx,
+before the status update" (retrying would double-send a real, delivered message) —
+both leave an identical ledger signature, and a threshold makes the ambiguous case
+less likely, never impossible. Resolution stays a human decision (checking Twilio's
+own delivery record for that window), not an automated retry — the only way to keep
+"no code path ever double-sends" an absolute guarantee rather than a probabilistic
+one. This was NOT future work deferred past Pass 1 — it was mis-scoped as such in
+this section's original text, caught only because item F and the stuck-row gap turned
+out to be the same failure mode viewed from two sides, both already in this Pass.
+
 ### (c) Fast-reply race — added to §6
 
 Full text folded into §6 above, at the point where it belongs alongside the
@@ -465,3 +556,16 @@ closed. If Pass 1 slips, or real engineers arrive before it ships, this
 copy must be rewritten to something honest BEFORE that happens — accepted
 as a known-false string only at current scale (one engineer, days not
 months away), not indefinitely.
+
+**BOTH PRECONDITIONS CONFIRMED CLEARED, 2026-08-26 (Pass 1's own freshness
+check, before any Pass 1 code was written).** GATE 1: LIFTED (evidence in
+§3 above). B3: shipped and live — migration 033, applied to production
+2026-08-25, confirmed calling `sweepStaleMorningSessions` inside the
+deployed `jobs/tick` cron. **This does NOT mean the two `vercel.json`
+entries are being added tonight.** Withholding them tonight is Aravind's
+own pacing on top of the now-satisfied gate, not something the gate
+itself still requires: nothing has ever sent a real message, and the
+primitive (items B/C/D/F) is being built and reviewed first, before
+anything fires unattended at 08:30. Tonight's scope: migration 031
+(written fresh, held in `docs/reviews/`, not applied), and, once
+reviewed, the send primitive. `vercel.json` stays untouched.

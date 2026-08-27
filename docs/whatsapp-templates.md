@@ -50,6 +50,18 @@ doc:**
   prod and is verified live (the review package's own §3 GATE 1 verification plan),
   not when Meta approves the copy — approval already happened and did not lift it.
 
+**GATE 1: LIFTED, 2026-08-25 — recorded 2026-08-26 (Pass 1's own freshness check,
+before any Pass 1 code was written).** The condition the paragraph above still
+describes as pending has been met. Evidence, fresh, not assumed (re-verified live
+against production the night this was recorded, breadcrumb-confirmed
+`jvxwqignooseazzmwhvl`): `schema_migrations` carries `030` (`morning_flow_
+attendance`); `apply_morning_flow_turn`'s live signature is byte-identical to 030's
+12-arg signature and its body references `attendance`; `daily_logs.attendance`
+exists. And from code on `main`: `MORNING_QUESTIONS[1]` = `'Good morning. Are you
+on site today? Reply yes or no.'` — matches this template's approved copy verbatim.
+Both halves of this gate's own condition are satisfied. Full record:
+`docs/plans/pass1-outbound-send-plan.md`'s own matching correction, same date.
+
 **GATE 2 (a SUBMISSION gate, corrected 2026-08-21 — was drafted as a send-only gate,
 that was wrong) — template 8 (`quoco_engineer_optin`) is NOT SUBMITTED to Meta until
 `messaging_blocked` is set `true` in application code (BOT-27 SET-HALF).**

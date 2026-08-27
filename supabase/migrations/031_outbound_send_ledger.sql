@@ -1,0 +1,570 @@
+-- docs/reviews/031_outbound_send_ledger.sql
+-- Migration 031 -- outbound_sends: the idempotency ledger for Pass 1's outbound
+-- WhatsApp send primitive (docs/plans/pass1-outbound-send-plan.md, item C).
+--
+-- WRITTEN FRESH, 2026-08-26. NOT a resurrection of PR #69's own
+-- 031_outbound_send_ledger.sql -- that file is 108 commits stale as of this
+-- writing (created 2026-08-15, last touched 2026-08-20), and the CURRENT plan
+-- already disclaimed it on 2026-08-22, before it got even staler: "its
+-- accompanying file DIFF... is NOT reused anywhere" (plan, line 6). Only the
+-- plan's PROSE reasoning survived into this file; the SQL below is authored
+-- against `main` as it stands tonight, not diffed from that branch.
+--
+-- HELD HERE, NOT IN supabase/migrations/, per the standing rule: a migration
+-- file enters supabase/migrations/ only when it is being applied, not when it
+-- is written (CLAUDE.md §6). Same discipline already applied to 030 and 033.
+-- STATUS: WRITTEN, NOT APPLIED, NOT REVIEWED. Printed for review before
+-- anything touches a real database. REVISED twice same day (below) -- both
+-- review rounds happened before this ever touched a database.
+--
+-- WHY A MIGRATION, NOT APPLICATION-LAYER STATE. The send primitive's own
+-- ordering (plan §1: claim -> send -> activate) depends on the claim being a
+-- real, durable, uniquely-constrained row a concurrent cron retry cannot
+-- duplicate -- exactly the kind of correctness property that belongs in the
+-- database's own constraint system, not in TypeScript.
+--
+-- ============================================================================
+-- EVENT_KEY -- THE WHOLE MECHANISM, STATED EXPLICITLY.
+-- ============================================================================
+-- Composition: '<checkpoint>:<IST calendar date>', e.g. 'morning_send:2026-08-26'
+-- or 'evening_send:2026-08-26'. <checkpoint> matches a CHECKIN_CHECKPOINTS key
+-- name (lib/daily-logs/cutoffs.ts) that has an associated send -- morning_send,
+-- evening_send today; morning_nudge/evening_nudge once Pass 2 builds them, same
+-- shape. <IST calendar date> is computed via istDateString (lib/daily-logs/
+-- date.ts), the same IST-day helper already used for log_date elsewhere in this
+-- codebase -- never the send attempt's raw UTC timestamp, which could roll to
+-- the wrong calendar day near midnight IST.
+--
+-- WHY THIS IS UNIQUE PER ENGINEER PER CHECKPOINT PER IST DAY. event_key alone
+-- only encodes checkpoint+day -- it does NOT embed the engineer. Uniqueness
+-- comes from the UNIQUE constraint below, which pairs event_key with
+-- recipient_user_id (and tenant_id, for defense-in-depth against a
+-- cross-tenant UUID collision, which should be structurally impossible but
+-- costs nothing to also constrain against). Embedding the engineer a SECOND
+-- time inside event_key itself (e.g. 'morning_send:2026-08-26:<user_id>')
+-- would be redundant with a column that already exists for exactly that
+-- purpose -- one fact, one place to write it, not two that could drift apart.
+-- The result: (tenant_id, recipient_user_id, event_key) together identify
+-- "this engineer's morning trigger for this IST day," and the UNIQUE
+-- constraint IS the idempotency gate -- a cron retry for the same checkpoint
+-- attempts the identical INSERT, hits the constraint, and no-ops before any
+-- Twilio call is made. No application-layer "have I already sent this"
+-- check is needed or trusted; the database enforces it structurally.
+--
+-- SECONDARY USE: the cron-didn't-fire check (plan Amendment (b), item F) reads
+-- event_key WITHOUT pinning to one engineer, to compare "how many rows exist
+-- for this checkpoint+day, across the whole roster" against the expected
+-- roster size -- `SELECT count(*) FROM outbound_sends WHERE event_key =
+-- 'morning_send:2026-08-26' AND status = 'sent'`. Exact match, not a LIKE
+-- prefix -- event_key's two-segment format has nothing after the date for a
+-- wildcard to usefully match. **AND status = 'sent' is REQUIRED, not
+-- optional** -- see STUCK-CLAIM RECONCILIATION below for why a bare row count
+-- is the wrong query for what item F exists to catch.
+-- ============================================================================
+--
+-- ============================================================================
+-- PROJECT SCOPE -- DECIDED PRODUCT RULE, NOT A SCHEMA GUARANTEE.
+-- ============================================================================
+-- DECIDED (Aravind, 2026-08-26): one engineer belongs to exactly ONE project;
+-- a project may have many engineers. Under this rule, project_id below is
+-- unambiguous per recipient_user_id -- there is exactly one correct value,
+-- so it needs no place in the UNIQUE constraint alongside tenant_id/
+-- recipient_user_id/event_key.
+--
+-- **THE SCHEMA DOES NOT ENFORCE THIS RULE.** `project_members` permits
+-- multiple rows per `user_id` today -- nothing in the database prevents an
+-- engineer from being added to a second project. This is the EXACT
+-- ambiguity migration 033's own sweep (`sweep_stale_morning_sessions`) had
+-- to handle defensively: it COUNTS an engineer's `project_members` rows and
+-- SKIPS (does not guess) when the count isn't exactly 1, because guessing
+-- would fabricate data against a project the engineer may have nothing to
+-- do with. This migration does not repeat that defensive count -- it
+-- trusts the decided rule instead, on the reasoning that the SEND
+-- PRIMITIVE'S OWN roster query (plan §5, the `messaging_blocked`/
+-- `site_holiday` exclusion filter) is the correct place to resolve
+-- project_id per engineer before ever reaching this table, not this
+-- migration's own constraint shape. If that trust turns out to be
+-- misplaced for a real engineer, the failure mode is the send primitive's
+-- roster query picking a project_id, not this table silently corrupting
+-- data -- but it IS a real, named dependency on a rule the database itself
+-- stays silent about. See §36 (`design-decisions-beta-feedback.md`,
+-- 2026-08-26) for the proposal to make this structural instead of assumed.
+--
+-- CALIBRATION NOTE, added 2026-08-26, external review round 4 -- why 033
+-- COUNTS-AND-SKIPS against this exact same unenforced rule while THIS
+-- migration TRUSTS it, so the next reader sees calibration, not drift, and
+-- does not conclude one of the two siblings is simply wrong. The
+-- difference is CONSEQUENCE CLASS, not carelessness in either direction:
+--   033 (the sweep): a wrong guess FABRICATES a `daily_logs` absence
+--   record against a possibly-unrelated project -- a write, with
+--   downstream consumers (DPR generation, PM visibility) that would treat
+--   the fabricated row as real data. Guessing wrong there creates a false
+--   fact that outlives the bug that caused it.
+--   031 (here): `event_key` deliberately excludes `project_id`, and the
+--   UNIQUE constraint is `(tenant_id, recipient_user_id, event_key)` --
+--   `project_id` plays no role in idempotency at all. A duplicate
+--   `project_members` row therefore CANNOT cause a second send or a
+--   second billed row: whichever project_id the roster query happens to
+--   resolve, the SAME claim (same tenant, same engineer, same checkpoint,
+--   same day) is attempted, and the second attempt hits the UNIQUE
+--   constraint and no-ops. The blast radius of a wrong guess here is
+--   `project_id` attribution on ONE row -- which project a real,
+--   correctly-deduplicated send is filed under -- not a fabricated event
+--   that didn't happen, and not a duplicate charge. Different failure
+--   shapes justify different defenses; this is calibration, not the same
+--   finding answered two different ways.
+-- ============================================================================
+--
+-- ============================================================================
+-- COMPOSITE FK / TENANT SCOPING -- BLOCKING finding, fixed (added
+-- 2026-08-26, external review round 4).
+-- ============================================================================
+-- THE GAP, as found. All three FKs were plain `REFERENCES parent(id)` with
+-- no `ON DELETE`/`ON UPDATE` -- violating this project's own standing rule
+-- that referential actions are chosen deliberately, never left to the
+-- implicit default by omission. Worse: `UNIQUE (tenant_id,
+-- recipient_user_id, event_key)` does NOT itself validate that
+-- `recipient_user_id` actually belongs to `tenant_id` -- a service-role bug
+-- (a wrong join, a copy-pasted tenant_id from a different request) could
+-- write a row pairing tenant A with tenant B's engineer, into the exact
+-- table this file's own header calls "the only record that it happened."
+--
+-- THE FIX. `(recipient_user_id, tenant_id) REFERENCES users (id,
+-- tenant_id)` and `(project_id, tenant_id) REFERENCES projects (id,
+-- tenant_id)` -- composite FKs, not single-column ones, so the database
+-- itself rejects a cross-tenant pairing at INSERT time rather than relying
+-- on every future writer getting the join right. **Parent indexes verified
+-- present, not assumed**: `users_id_tenant_id_key` and
+-- `projects_id_tenant_id_key`, both `UNIQUE (id, tenant_id)`, both added in
+-- migration 017 specifically to support composite FKs -- confirmed by
+-- reading that file directly (017:58-61), not recalled. Same pattern
+-- already load-bearing elsewhere in this codebase: `projects.owner_user_id`
+-- and `project_members.user_id`/`.project_id` (017), and
+-- `dpr_versions.generated_by_user` (029) -- this migration was the outlier,
+-- not the composite-FK convention.
+--
+-- ON DELETE RESTRICT on all three FKs (tenant_id included, see the column
+-- definition below), argued from what this file already believes: a
+-- durable billed record (STATUS LIFECYCLE, destructive/irreversible per
+-- the §0 gating assessment below), users are never hard-deleted in this
+-- codebase (§10a's own reasoning, `design-decisions-beta-feedback.md`),
+-- and nothing may silently cascade a send record away -- RESTRICT, not
+-- CASCADE, matching `projects.owner_user_id`'s own precedent (017) over
+-- `project_members`'s CASCADE, since this table is a record of a thing
+-- that happened, not a membership row whose parent's deletion should take
+-- it along.
+-- ============================================================================
+--
+-- ============================================================================
+-- CONTENT_SID / TO_PHONE_NUMBER -- self-describing, and why NOT NULL holds.
+-- ============================================================================
+-- Added 2026-08-26, external review round 2: without these, this table's own
+-- header calls it "the only record that it happened" while being unable to
+-- say WHAT was sent or WHERE -- neither claim was true. Both closed:
+--
+-- content_sid (Twilio's HX Content SID for the template body actually sent).
+-- Four `_v2` spare templates exist (docs/whatsapp-templates.md, 1v2/2v2/3v2/
+-- 4v2) precisely so a primary template Meta later disables has a fallback --
+-- meaning two DIFFERENT bodies can legitimately be sent for the identical
+-- event_key shape on different days (today: quoco_morning_checkin; some
+-- later day, if the primary is disabled: quoco_morning_checkin_v2). Without
+-- recording which one actually went out, the ledger cannot answer "what did
+-- this engineer receive" -- exactly the question a billed, undeletable send
+-- record exists to answer.
+--
+-- to_phone_number (the destination as actually sent, not derived after the
+-- fact). §2 above already anticipates engineers changing numbers over time.
+-- Resolving recipient_user_id -> users.whatsapp_number six months from now
+-- returns whatever number is CURRENT then, not the one this specific message
+-- was actually sent to -- silently wrong for any engineer who has since
+-- changed numbers. This is a billed send record; it must describe itself,
+-- not depend on a foreign-key join into state that can drift out from under
+-- it.
+--
+-- (a) THE ACTUAL REASON, NOT CONVENIENCE. Without these two columns,
+-- twilio_sid is the only lookup path back to what was sent -- which makes
+-- TWILIO'S OWN LOG RETENTION the system of record for this project's own
+-- billed sends, not this database. A retention window closing, an account
+-- migration, or simply Twilio's dashboard being the only place the answer
+-- lives are all real failure modes for a record this project is responsible
+-- for keeping. content_sid and to_phone_number make this table
+-- self-sufficient for that question, independent of Twilio's own retention.
+--
+-- (b) STUCK-ROW INVESTIGATION BECOMES SELF-CONTAINED. The Sentry alert in
+-- STUCK-CLAIM RECONCILIATION below can now name the exact phone number and
+-- template to check in Twilio's own delivery log directly from the alert's
+-- own row data -- not require a human to first reconstruct "which number was
+-- this, and which template were we sending that week" from other tables
+-- before they can even start checking Twilio.
+--
+-- NO FORMAT CHECK ON content_sid -- decided 2026-08-26, external review
+-- round 3, argued not merely dropped. event_key gets a format CHECK because
+-- WE construct every character of it -- validating it validates our own
+-- code. content_sid ORIGINATES WITH TWILIO; a format assumption about a
+-- third party's identifier buys nothing we control, and the failure mode of
+-- a false rejection is severe and asymmetric: the claim INSERT happens
+-- BEFORE the Twilio call (STATUS LIFECYCLE below), so a rejected claim is a
+-- hard fail on the WHOLE checkpoint for that engineer, not a soft warning --
+-- caused by an assumption about a format Twilio, not this codebase, owns.
+-- A genuinely malformed content_sid (empty, swapped-argument, wrong type of
+-- ID entirely) is ALREADY caught, safely, one step later: Twilio's own API
+-- rejects it with a 4xx, which this table's existing failure-mode design
+-- (plan §5) already handles correctly -- `status='failed'`, `error`
+-- populated, a loud Sentry alert (configuration-class bug). A DB-level CHECK
+-- does not catch anything real that this downstream path misses; it only
+-- adds an earlier, higher-stakes rejection point that can misfire on a
+-- legitimately-shaped value we simply guessed wrong about. Even a LOOSENED
+-- check (`^HX` plus a length floor) still carries this same category of
+-- risk, just at lower odds -- narrowing a risk is not the same as removing
+-- it, and the stakes (silence for an entire engineer's entire day) do not
+-- justify keeping it at any strictness. to_phone_number keeps its E.164
+-- CHECK below -- that value is OURS, already normalised by this codebase's
+-- own code before it ever reaches this table, same reasoning as event_key.
+--
+-- WHY NOT NULL HOLDS -- confirmed against the send primitive's own ordering
+-- (plan §1), not assumed. Both values are REQUIRED PARAMETERS of the Twilio
+-- Messages API POST call itself (`ContentSid`, `To`) -- the send primitive
+-- cannot construct that call without already having resolved both. The claim
+-- INSERT happens BEFORE the POST (plan §1's own ordering: claim -> send ->
+-- activate), so by construction both values are already known at the moment
+-- of INSERT -- there is no window in this design where a row is claimed
+-- before the template or destination is decided. No case exists where either
+-- is legitimately unknown at INSERT time; neither column is made nullable.
+--
+-- COUPLED TO THE ROSTER-EXCLUSION DESIGN, stated explicitly (added
+-- 2026-08-26, external review round 4) -- both NOT NULLs above are not a
+-- context-free guarantee, they are downstream of a specific upstream
+-- design choice. `messaging_blocked`, `attendance='site_holiday'`, and
+-- already-submitted engineers are excluded from the ROSTER QUERY itself
+-- (plan §5) -- BEFORE any claim attempt, not filtered after one. An
+-- engineer this table never claims for never reaches an INSERT at all, so
+-- there is no "claimed but nothing to send" case for content_sid/
+-- to_phone_number to be null FOR. **If a future pass ever records these
+-- skips IN THIS LEDGER instead of upstream in the roster query** (e.g. to
+-- give item F's coverage check visibility into WHY a roster member has no
+-- row, rather than only that they have none), **that change breaks this
+-- NOT NULL pair on that day** -- a skip row would have no template or
+-- destination to record, by definition. Not a hypothetical: this is
+-- exactly the shape PR #69's own now-superseded C2 formula assumed
+-- (`skipped_*` ledger rows) -- see STATUS LIFECYCLE below for the
+-- supersession this migration's actual shape requires.
+-- ============================================================================
+--
+-- ============================================================================
+-- STUCK-CLAIM RECONCILIATION -- argued, not asserted (added 2026-08-26,
+-- external review round 1 on this file).
+-- ============================================================================
+-- THE GAP. A claim commits `status='sending'` BEFORE the Twilio call (plan
+-- §1's own ordering: claim -> send -> activate). If the process dies in that
+-- window -- or anywhere before the terminal UPDATE -- the row is stuck at
+-- 'sending' FOREVER under the bare UNIQUE constraint: a later claim attempt
+-- for the identical (tenant_id, recipient_user_id, event_key) hits the
+-- constraint and no-ops, safely (no double-send), but that also means NO
+-- retry ever happens for that engineer, that checkpoint, that day. Nothing
+-- resends tomorrow either -- tomorrow's event_key is a different string; the
+-- stuck row simply sits there, permanently unresolved, and the engineer
+-- silently never got a message that day.
+--
+-- WHY THIS WAS WRONGLY SCOPED AS "FUTURE WORK." The original draft of this
+-- file (and the plan's own Amendment (b)) named the stuck-'sending'-row case
+-- as a known gap for later reconciliation, separately from item F (the
+-- cron-didn't-fire check). They are NOT separable: item F's original query
+-- ("count of rows for this event_key") COUNTS a stuck 'sending' row as
+-- coverage -- the exact engineer item F exists to catch (nothing sent, no
+-- signal anywhere) becomes invisible to it, because the ledger DOES have a
+-- row, it just never left 'sending'. Both are in this same Pass. Deferring
+-- one while shipping the other ships a check that reports full coverage on
+-- a day it wasn't true.
+--
+-- FIX (a) -- item F counts `status = 'sent'`, never a bare row count. A
+-- 'sending' or 'failed' row must not read as "delivered" (see the event_key
+-- section above for the corrected query shape).
+--
+-- FIX (b) -- the reconciliation mechanism, two candidates, one chosen:
+--
+--   REJECTED: a claim-age check that blindly permits re-claiming a stuck row
+--   past some threshold (e.g. `INSERT ... ON CONFLICT (...) DO UPDATE SET
+--   status='sending' WHERE outbound_sends.status='sending' AND
+--   outbound_sends.updated_at < now() - INTERVAL '10 minutes'`, then retry
+--   the send). This CANNOT distinguish two cases that leave an IDENTICAL
+--   ledger signature: (i) the process died before the Twilio call was ever
+--   made -- safe to retry, nothing was sent -- versus (ii) the process died
+--   AFTER Twilio returned a 2xx (the message genuinely went out) but BEFORE
+--   the terminal UPDATE committed. Retrying case (ii) sends a REAL, ALREADY-
+--   DELIVERED WhatsApp message a second time. No threshold resolves this --
+--   a longer threshold only makes the ambiguous case less LIKELY, never
+--   makes it impossible, and "usually safe" is not the guarantee this
+--   table's own UNIQUE constraint exists to provide everywhere else in its
+--   design. Rejected on that basis, not on convenience.
+--
+--   CHOSEN: explicit reconciliation, folded into item F's own scan (already
+--   reading this table, already running inside the existing `jobs/tick`
+--   cron per Amendment (d), already on a 60-second cadence). In addition to
+--   the coverage count (fix (a)), item F also selects rows where
+--   `status = 'sending' AND updated_at < now() - INTERVAL '10 minutes'` --
+--   ten minutes because the entire Twilio-POST + RPC-activation + status-
+--   UPDATE sequence is a sub-second operation under normal conditions, so a
+--   row still 'sending' ten minutes later is not a request in flight, it is
+--   a dead one -- and for each, raises a Sentry alert (fingerprinted on the
+--   row's id, same per-item dedup discipline already established for
+--   `reportMorningSweepAnomalies`, lib/daily-logs/morning-cutoff-sweep.ts --
+--   one growing issue per stuck row, not a re-alert every tick), naming
+--   to_phone_number and content_sid directly in the alert (see CONTENT_SID /
+--   TO_PHONE_NUMBER above, (b)) so investigation never requires
+--   reconstruction from other tables. **The alert is the entire mechanism.
+--   Nothing auto-retries.** Resolution requires a human to check Twilio's
+--   own delivery log for that phone number and time window before deciding
+--   whether to manually mark the row resolved or trigger a fresh send --
+--   out of scope to automate in Pass 1. This is the only design that keeps
+--   "no code path in this system ever double-sends" a structural guarantee
+--   rather than a probabilistic one, which is the standard everything else
+--   about this table's own design (the UNIQUE constraint itself) already
+--   holds itself to.
+--
+-- No new status value was added for this (status stays 'sending'/'sent'/
+-- 'failed') -- reconciliation is read-only alerting, not a state machine
+-- transition of its own; adding a fourth status would need its own
+-- exactly-once question answered (does flipping status TO that value need
+-- idempotency too?) for no behavioural benefit over a plain SELECT.
+--
+-- **HONEST LINE, added 2026-08-26, external review round 2 -- name this as
+-- degradation, not resolution.** Alert-only means a stuck row is a Sentry
+-- issue that nobody may actually read at 08:30 -- that engineer silently
+-- receives nothing that day regardless of whether the alert fired. Item F's
+-- coverage check (fix (a)) independently catches the same gap as a count
+-- mismatch, so the failure is caught TWICE, by two different mechanisms --
+-- but both of those mechanisms are ALERTS, not RECOVERIES. Neither one gets
+-- the engineer their message. Correct for Pass 1's actual scale (see
+-- design-decisions-beta-feedback.md §35f's own acceptance of a comparable
+-- gap, same reasoning) -- but a later reader must not read "caught by two
+-- independent alerts" as "handled." It is observed, twice. It is not fixed,
+-- either time.
+--
+-- **THE DESIGNED CLOSER, added 2026-08-26, external review round 4 -- so
+-- "observed twice, fixed neither time" reads as a bridge with a
+-- destination, not a dead end.** The status-callback route (plan item D)
+-- logs Twilio's own per-message delivery status, keyed by `MessageSid`.
+-- Once it exists, a stuck `'sending'` row plus Twilio's OWN record for
+-- `to_phone_number` in that time window is EVIDENCE, not a guess -- it can
+-- distinguish "died before the POST" (no Twilio record exists for that
+-- number in that window: case (i), provably safe to retry) from "died
+-- after Twilio's 2xx" (a real Twilio record exists: case (ii), retrying
+-- would double-send). This upgrades alert-only to EVIDENCE-BASED
+-- resolution -- and for the provably-safe case (i) specifically, a genuine
+-- automated retry becomes possible, not just an informed human decision.
+-- **Not Pass 1** -- the status-callback route itself is still item D,
+-- unbuilt; this is the shape of the eventual fix, named so it is designed
+-- toward, not rediscovered from scratch once D ships.
+--
+-- **NAMED VERIFICATION ITEM for the send-primitive build (item B), added
+-- 2026-08-26.** Before implementing the claim/send/activate sequence,
+-- check whether Twilio's Messages POST endpoint accepts an idempotency
+-- key -- against Twilio's CURRENT documentation at build time, not from
+-- memory or from this file's own assumptions written tonight. **If it
+-- does**, that is the structural fix to the entire stuck-claim window this
+-- section argues about: a Twilio-side idempotency key would let a SAFE
+-- retry be attempted even without evidence from the status-callback route,
+-- because Twilio itself would refuse to double-send on a repeated key --
+-- the whole REJECTED/CHOSEN argument above would need revisiting against
+-- that capability. **If it does not**, this file's reasoning stands
+-- unchanged -- the alert-only design, and THE DESIGNED CLOSER above, are
+-- what's actually available.
+-- ============================================================================
+--
+-- STATUS LIFECYCLE (plan §1's full ordering, §5's failure table):
+--   INSERT (status='sending', committed) -> POST .../Messages
+--     -> on 2xx: apply_{morning,evening}_flow_turn(startFlow: true)
+--        -> UPDATE status='sent', twilio_sid=... (RPC activation runs BEFORE
+--           this update -- see plan §1's "within send -> activate" ordering:
+--           RPC-first leaves only the LEDGER stale on a mid-write crash, never
+--           the session)
+--     -> on non-2xx: UPDATE status='failed', error=..., no RPC call, session
+--        untouched.
+-- A row stuck at 'sending' is now IN SCOPE, per STUCK-CLAIM RECONCILIATION
+-- above -- not deferred.
+--
+-- **C2 SUPERSESSION, added 2026-08-26, external review round 4 -- a DATED
+-- SUPERSESSION, not left to be discovered as drift later.** PR #69's own
+-- unreachability derivation (`docs/outbound-send-primitive-plan.md`
+-- §"C2", round 4 design review, that branch's own history) specifies its
+-- threshold as "3 consecutive terminal failures... with no 'sent'/
+-- `'skipped_*'` row anywhere among them" -- written against a ledger design
+-- where a roster-excluded engineer (`messaging_blocked`, site-holiday,
+-- already-submitted) got its OWN row, tagged `skipped_*`. **That is not
+-- this table's shape.** `status` here is exactly `'sending'`/`'sent'`/
+-- `'failed'` (see the CHECK above) -- there is no skip status, because
+-- roster exclusion happens UPSTREAM, in the send primitive's own roster
+-- query (plan §5), before any claim INSERT is ever attempted (see
+-- CONTENT_SID / TO_PHONE_NUMBER's own "COUPLED TO THE ROSTER-EXCLUSION
+-- DESIGN" note above). A roster-excluded engineer produces ZERO rows in
+-- this table, not a `skipped_*` one. Under this shape, C2's own
+-- consecutive-failure logic SIMPLIFIES: "no `'sent'`/`'skipped_*'` row
+-- among the last 3" collapses to "no `'sent'` row among the last 3
+-- `'failed'` rows" -- correct, not broken, since there is nothing left for
+-- the skip clause to exclude. Recorded here, at the point where the
+-- status shape that supersedes C2's assumption is actually decided, so a
+-- future Pass 2 implementer reads the correction before writing C2's
+-- query, not after debugging why it finds skip rows that were never
+-- there.
+-- CLAUDE.md §0 GATING ASSESSMENT, brief (full package treatment belongs in
+-- this migration's own review package at apply time, plan §7 item 1-2, not
+-- reproduced in full here):
+--   (a) function logic -- N/A, no function created by this file.
+--   (b) grants/RLS on a NEW object -- TRIPS. A new table with wrong RLS from
+--       day one is at least as dangerous as a bad change to an existing one
+--       (CLAUDE.md §0's own text) -- addressed explicitly below, not left to
+--       RLS alone.
+--   (c) auth/identity -- adjacent (WhatsApp reachability, phone-number
+--       identity) but does not itself touch web-auth identity.
+--   (d) destructive/irreversible -- TRIPS. A delivered WhatsApp message
+--       cannot be unsent; this table is the only record that it happened,
+--       and (as of the columns above) the only record of what it said and
+--       where it went.
+--   (e) moves money -- TRIPS. Every row this table can produce corresponds to
+--       a billed template send (Meta's per-message rate).
+-- Net: this migration's own workstream requires the external review gate.
+-- Not solicited by this file -- named so it isn't independently rediscovered
+-- at review time.
+
+BEGIN;
+
+-- B1 discipline (docs/reviews/morning-flow-migration-review-package.md
+-- §11.2, migration 029's own precedent): the whole file lives inside one
+-- transaction so a failure anywhere in it rolls back atomically, rather than
+-- leaving a half-created table with no grants, or grants with no RLS.
+
+CREATE TABLE outbound_sends (
+  id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Manually set by the send primitive on each status transition (this
+  -- codebase's own convention -- daily_logs, whatsapp_sessions -- no DB
+  -- trigger), not defaulted-and-forgotten: the whole point is knowing WHEN a
+  -- row moved from 'sending' to its terminal state, for the stuck-claim
+  -- reconciliation scan above (`updated_at < now() - INTERVAL '10 minutes'`).
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Single-column FK -- tenants is the tenant-scoping root, nothing above
+  -- it to cross-check against. ON DELETE RESTRICT stated explicitly, not
+  -- left as the bare (functionally similar but not identical) default --
+  -- see the COMPOSITE FK / TENANT SCOPING block above for why explicit,
+  -- deliberate referential actions are this table's own review finding.
+  tenant_id          UUID        NOT NULL REFERENCES tenants(id)
+                        ON UPDATE NO ACTION ON DELETE RESTRICT,
+  -- See PROJECT SCOPE above -- unambiguous per engineer under the decided
+  -- product rule, NOT enforced by this table or by project_members itself.
+  -- Composite FK below (not an inline REFERENCES here) is what closes the
+  -- cross-tenant gap this column's own single-column form could not.
+  project_id         UUID        NOT NULL,
+  recipient_user_id  UUID        NOT NULL,
+  -- '<checkpoint>:<IST date>' -- see the header block above. The format
+  -- check below is deliberately narrow (lowercase checkpoint name, exact
+  -- ISO date) -- event_key is the entire idempotency mechanism; a
+  -- malformed key from a TS-side construction bug should fail loudly at
+  -- INSERT time, not silently produce a key that never collides with
+  -- itself on retry.
+  event_key          TEXT        NOT NULL
+                        CHECK (event_key ~ '^[a-z_]+:\d{4}-\d{2}-\d{2}$'),
+  status             TEXT        NOT NULL DEFAULT 'sending'
+                        CHECK (status IN ('sending', 'sent', 'failed')),
+  -- Twilio's Content SID (HX...) for the template body actually sent. See
+  -- CONTENT_SID / TO_PHONE_NUMBER above for why this is NOT NULL and known
+  -- at claim time -- not a post-send annotation. Deliberately NO format
+  -- CHECK -- see "NO FORMAT CHECK ON content_sid" above for the argument
+  -- (Twilio's own identifier, Twilio's own 4xx already catches a bad one).
+  content_sid        TEXT        NOT NULL,
+  -- The destination as actually sent -- see CONTENT_SID / TO_PHONE_NUMBER
+  -- above for why this must not be derived from recipient_user_id after the
+  -- fact. E.164 format, matching this codebase's existing normalisation
+  -- convention.
+  to_phone_number    TEXT        NOT NULL
+                        CHECK (to_phone_number ~ '^\+[1-9]\d{1,14}$'),
+  twilio_sid         TEXT,
+  error              TEXT,
+  -- THE idempotency gate. See the header block above for the full reasoning
+  -- on why event_key alone is insufficient and this pairing is what makes
+  -- the constraint correct.
+  UNIQUE (tenant_id, recipient_user_id, event_key),
+  -- COMPOSITE, TENANT-SCOPED FKs -- see the header block above (COMPOSITE
+  -- FK / TENANT SCOPING) for the full finding. Parent UNIQUE(id, tenant_id)
+  -- indexes confirmed present since migration 017 (users_id_tenant_id_key,
+  -- projects_id_tenant_id_key), not assumed -- same pattern already used by
+  -- projects.owner_user_id, project_members.user_id/.project_id (017), and
+  -- dpr_versions.generated_by_user (029). ON DELETE RESTRICT on both,
+  -- matching this table's own STATUS LIFECYCLE reasoning: a durable billed
+  -- record, users never hard-deleted (§10a), nothing may cascade a send
+  -- record away.
+  FOREIGN KEY (recipient_user_id, tenant_id) REFERENCES users (id, tenant_id)
+    ON UPDATE NO ACTION ON DELETE RESTRICT,
+  FOREIGN KEY (project_id, tenant_id) REFERENCES projects (id, tenant_id)
+    ON UPDATE NO ACTION ON DELETE RESTRICT
+);
+
+-- Supports item F's roster-vs-sent-count comparison (plan Amendment (b)) --
+-- an exact-match lookup on event_key, not a range scan, so a plain btree on
+-- the column already-indexed-by-the-UNIQUE-constraint's leading columns
+-- (tenant_id, recipient_user_id, event_key) does not itself help this query
+-- shape (it leads with tenant_id/recipient_user_id, not event_key) --
+-- a dedicated index is required.
+CREATE INDEX idx_outbound_sends_event_key ON outbound_sends (event_key);
+
+-- Supports STUCK-CLAIM RECONCILIATION's own scan above -- a partial index,
+-- since 'sending' rows are rare and short-lived by design (sub-second under
+-- normal conditions); indexing only that slice keeps the index tiny
+-- regardless of how large outbound_sends grows overall.
+CREATE INDEX idx_outbound_sends_stuck ON outbound_sends (updated_at)
+  WHERE status = 'sending';
+
+-- RLS: enabled, deliberately zero policies -- default-deny for anon and
+-- authenticated (service_role bypasses RLS in this project's Supabase
+-- setup, same as every other backend-only table's real access path). Belt
+-- alongside the grant-layer suspenders below, matching this project's own
+-- established double-layer discipline (CLAUDE.md §6: "state the audience
+-- and bound the grants explicitly rather than relying on RLS alone").
+--
+-- **"BACKEND-ONLY" IS TRUE TODAY, DATED, added 2026-08-26, external review
+-- round 4.** This audience claim is not permanent by default -- the known
+-- future reader is the PM-facing unreachability surface (C2/DASH-03, plan
+-- Pass 2 scope, STATUS LIFECYCLE above), which would need `authenticated`
+-- read access (through an RPC or a scoped view, not a bare table grant) the
+-- moment it's built. When that surface ships, this zero-policy stance must
+-- be revisited as part of THAT migration's own review -- not silently
+-- outlived by a comment that stops being accurate.
+ALTER TABLE outbound_sends ENABLE ROW LEVEL SECURITY;
+
+-- Grant layer. Supabase's own per-role default ACLs grant new public-schema
+-- tables to anon/authenticated/service_role individually (the same
+-- mechanism migration 020/029 already found and fixed for FUNCTIONS,
+-- CLAUDE.md §6's own standing rule extends it to tables) -- explicit here,
+-- not left to a bare REVOKE ... FROM PUBLIC to be enough.
+--
+-- **service_role IS INCLUDED IN THIS REVOKE, added 2026-08-26, caught by
+-- this migration's own S3 post-apply grant probe on test-db, not by
+-- reading the SQL.** The comment above already states the correct
+-- reasoning (per-role default ACLs, not just a PUBLIC grant) but the first
+-- draft of this statement only listed PUBLIC/anon/authenticated in the
+-- REVOKE, never service_role itself -- so the GRANT two lines below was
+-- ADDITIVE on top of whatever Supabase's own default ACL had already
+-- given service_role, not a replacement of it. Live probe against test-db
+-- confirmed the consequence directly: `has_table_privilege('service_role',
+-- ..., 'DELETE')`, `'TRUNCATE'`, `'REFERENCES'`, and `'TRIGGER'` all
+-- returned `true` before this fix, despite this file's own "No DELETE
+-- granted to anyone" comment two lines below -- a real gap between stated
+-- intent and actual privilege, third instance of this project's own
+-- "default ACLs grant individually, a bare REVOKE FROM PUBLIC (or, this
+-- time, an incomplete REVOKE list) is not enough" finding (020, 029, now
+-- this file), each one caught a different way (020: code review; 029:
+-- post-apply production fingerprint; this one: this migration's own dry-
+-- run/rehearsal probe, before a production apply ever happened).
+REVOKE ALL ON outbound_sends FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE ON outbound_sends TO service_role;
+-- No DELETE granted to anyone -- this table is a durable send record, not a
+-- queue to be pruned; nothing in this plan's scope ever needs to delete a
+-- row. RETENTION, stated explicitly (added 2026-08-26, external review
+-- round 4), not left implied by the grant alone: presumed INDEFINITE --
+-- billing-record class (per this project's own three-way retention
+-- taxonomy, docs/build-status.md's DATA RETENTION POSTURE register:
+-- daily_logs/daily_log_edits-shaped compliance record, not
+-- processed_messages-shaped prunable hygiene), a business record of every
+-- billed WhatsApp send this project has ever made. Full entry, dated, in
+-- that same register -- not restated here.
+
+COMMIT;
