@@ -24,6 +24,14 @@ apply record, same shape as `docs/reviews/030-apply-record.md` and
   caller exists in `main` yet (`grep -rn "outbound_sends" lib/ app/` on `main`
   returns nothing), so apply/merge order does not affect correctness. Merge
   follows as its own step below.
+- **Merged** (squash) as `0fd2734` on `origin/main`: `docs: Pass 1 freshness
+  check + migration 031 (outbound_sends ledger) (#114)`, merged
+  2026-08-27T13:32:47Z. **Confirmed byte-identical to what's on `main`
+  post-merge**: `git show origin/main:supabase/migrations/031_outbound_send_ledger.sql
+  | shasum -a 256` → the identical hash
+  (`c8ce0cef737a676ebef639d30cbc9742a9d93a24c6e7572fa0b1a628fa02ef2b`). What
+  was reviewed, what was pasted into the SQL Editor, and what now sits on
+  `main` are the same 570 lines, bytes-for-bytes.
 
 ## APPLY METHOD — divergence from the reviewed runbook, recorded explicitly
 
@@ -150,5 +158,5 @@ items B/D/F) is still unbuilt. When it exists, its own apply runbook is
 where the first real claim/send/activate row against this table gets
 recorded, not here.
 
-**Merge status:** PR #114 merge is the next step after this record, not
-folded into it — see the session's own S4 step.
+**Merge status: CLOSED.** PR #114 merged as `0fd2734` (see SHA provenance
+above), byte-identical to what was pasted and applied.
