@@ -724,6 +724,35 @@
   tripped. Not started by this entry; recorded so it has somewhere
   durable to live, per `docs/reviews/service-role-table-grants-gap.md`'s
   own SCOPE OF THE FIX section.
+- WHEN A DEFECT IS FIXED STRUCTURALLY, GREP THE REPOSITORY FOR THE SAME
+  PATTERN BEFORE CLOSING IT (standing rule since 2026-08-26; full record:
+  docs/reviews/session-transition-lock-wait-flake.md's SCOPE GAP section).
+  A structural fix for one file proves the DESIGN is sound; it proves
+  NOTHING about every other file that happens to share the same shape,
+  and nothing in this project's process previously asked anyone to check.
+  Origin: `test/session-transition.test.ts` Test B's own client-side-
+  sleep ordering bug (fire caller 1, sleep a fixed ms client-side, fire
+  caller 2, trust the gap to guarantee ordering — nothing enforces it)
+  was found, understood, and fixed for real on 2026-08-24 21:53
+  (`14737cd`, poll a separate connection until caller 1's row lock is
+  DIRECTLY OBSERVED held, via `quoco_test_row_is_locked`, before ever
+  dispatching caller 2). The IDENTICAL pattern sat unfixed in
+  `test/morning-flow.test.ts:439` — written 2026-07-07, untouched even
+  when the surrounding lines of that same test were edited on 2026-08-25
+  08:52 (`d305e4c`), **eleven hours after** the fix already existed in a
+  sibling file. It produced a real CI failure on 2026-08-26, on an
+  unrelated docs-only PR, before anyone went looking for it. **This is
+  not a missed test — a missed test implies nobody thought to test the
+  thing. This is a fix that did not generalise:** the defect class was
+  solved once and the solution stayed local to the file it was solved in,
+  because closing a fix has never included a step that asks "does this
+  exact shape exist anywhere else." CONSEQUENCE: the LAST step of fixing
+  any structural defect — a race condition, an ordering assumption, a
+  missing guard, any bug whose ROOT CAUSE is a reusable pattern rather
+  than a one-off mistake — is a repo-wide grep for that pattern's
+  signature (the specific unsafe construct, not just the symptom) BEFORE
+  the fix is considered closed. A fix that stops at "the file I was
+  looking at is now correct" is half a fix.
 
 ---
 

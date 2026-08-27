@@ -1,6 +1,18 @@
 # `test/session-transition.test.ts` Test B — ordering-precondition bug, RESOLVED (PROVISIONAL), 2026-08-24
 
-**Status: RESOLVED (PROVISIONAL).** Not upgraded to a plain RESOLVED yet
+**SCOPE GAP, added 2026-08-26 — the fix below is RESOLVED for THIS FILE
+ONLY.** The identical client-side-sleep ordering pattern this document
+fixed here still exists, unfixed, at `test/morning-flow.test.ts:439`, and
+produced a real CI failure on 2026-08-26 on an unrelated, docs-only PR.
+Full record, timeline, and what it means: see "SCOPE GAP — the fix did
+not generalise" at the end of this document. Not fixed tonight, per
+instruction — recorded so the fix (already scoped: adapt
+`test/session-transition.test.ts:140-174`'s own poll-then-dispatch block,
+`quoco_test_row_is_locked` already exists in production) doesn't get
+lost or rediscovered from scratch.
+
+**Status: RESOLVED (PROVISIONAL) — for `session-transition.test.ts`'s own
+Test B.** Not upgraded to a plain RESOLVED yet
 — see "Why provisional, and what closes it" below before treating this
 as fully closed. PR #104, run `32753275279`, headSha
 `ba51f172affa82c4f834883f05c3a6ef596dee8f` — confirmed matching PR #104's
@@ -785,3 +797,145 @@ This document's own earlier line — "not fixed here, per instruction, this
 document exists so the fix starts from this analysis, not a
 re-investigation" — held: the fix above started from exactly the analysis
 in this document, not a rediscovery.
+
+## SCOPE GAP, 2026-08-26 — the fix did not generalise
+
+**Record only. Not fixed tonight** — the fix itself is scoped and waiting:
+adapt `test/session-transition.test.ts:140-174`'s own poll-then-dispatch
+block into `test/morning-flow.test.ts`'s Test 18.
+`quoco_test_row_is_locked` already exists in production (migration 032),
+so this is copy-and-adapt, not new design.
+
+**The failure.** 2026-08-26, PR #115 (`docs/service-role-table-grants-gap-
+2026-08-26`, a docs-only PR touching only `CLAUDE.md` and one new markdown
+file — no code, no migrations) had its `Test (real test-db)` CI job fail:
+```
+AssertionError: expected null to be 'Plan from caller 2'
+ ❯ test/morning-flow.test.ts:447:31
+```
+Re-run of the same job, same commit, passed clean. That a green retry
+does not answer the underlying question is the entire lesson of THIS
+document's own history — Fix 1's retry-on-inversion hid a real defect for
+one CI run's worth of "looks fine now," and the retry here was not
+treated as closing the question either; the test was actually read.
+
+**The test** (`test/morning-flow.test.ts:430-452`):
+```ts
+  // 18. concurrency — two near-simultaneous turns serialise on the row lock.
+  it('concurrency: two simultaneous turns are serialised by the row lock', async () => {
+    const phone = testPhone('312')
+    await applyMorningFlowTurn({ phone, message: '', startFlow: true, now: P_NOW })
+
+    // Caller 1 holds the lock across an 800ms sleep (answers Q1 attendance);
+    // caller 2 fires a beat later and must block until caller 1 commits (then
+    // answers Q2 plan).
+    const c1 = applyMorningFlowTurn({ phone, message: 'yes', startFlow: false, now: P_NOW, testSleepMs: 800 })
+    await sleep(100)
+    const c2 = applyMorningFlowTurn({ phone, message: 'Plan from caller 2', startFlow: false, now: P_NOW, testSleepMs: 0 })
+    await Promise.all([c1, c2])
+
+    // Serialised: caller 1's Q1 answer landed as attendance=present, then
+    // caller 2 saw step 2 and answered Q2 (plan). No lost update.
+    const log = await getDailyLog(LOG_DATE)
+    expect(log?.attendance).toBe('present')
+    expect(log?.morning_plan).toBe('Plan from caller 2')
+
+    const session = await readSession(phone)
+    expect(session?.current_flow).toBe('morning')
+    expect(session?.current_step).toBe(3)
+  })
+```
+Line 439 (`await sleep(100)`) is exactly **Fix 1, "SUPERSEDED AS THE
+MECHANISM"** above, verbatim: *"the original setup fired caller 1, slept
+100ms client-side, then fired caller 2, relying on that gap to guarantee
+caller 1 reached Postgres first — nothing enforced it."* This file never
+received Fix 2.
+
+**The failure signature matches inversion, mechanistically, not just by
+resemblance.** `log?.attendance` passed (`'present'`); only
+`log?.morning_plan` failed (`null`). Consistent with: caller 2 reached
+Postgres and acquired the row lock before caller 1 (the 100ms gap wasn't
+enough — plausibly under the same kind of CI-runner/shared-test-db load
+this document's own investigation already named as a live variable).
+Caller 2's message, "Plan from caller 2," would then be evaluated against
+the still-idle session expecting an *attendance* answer — not a valid
+one, so no `morning_plan` write. Caller 1's "yes" would land afterward,
+once it got the lock, as the attendance answer against the still-current
+step — explaining why `attendance` succeeded while `morning_plan` didn't.
+Not proven beyond doubt (the CI run's own internal timestamps weren't
+captured, the same class of gap this document's "honest gap" section
+already named for the original incident), but the ONLY mechanism
+consistent with both the pass and the fail in the same run.
+
+**The timeline, because it is the finding:**
+- **2026-07-07** (`61d8b39`) — `await sleep(100)` (the vulnerable line,
+  `morning-flow.test.ts:439` today) written. Original commit for this
+  file; never touched since.
+- **2026-08-24 21:53:56 IST** (`14737cd`) — Fix 2, THE actual structural
+  fix, lands in `session-transition.test.ts`. Solves the identical
+  problem: don't dispatch caller 2 until caller 1's lock is directly
+  observed, not guessed at via a client sleep.
+- **2026-08-25 08:52:48 IST** (`d305e4c`, "morning flow migration —
+  attendance-first," reviewer GO 2026-08-24, PR #107) — this exact test
+  block's surrounding lines (435-438, 440, 443-444, 446-447 — the
+  assertion that later failed is IN this edit) are rewritten. Line 439
+  itself — the vulnerable sleep — is untouched, because nothing about
+  this edit looked at it.
+
+Eleven hours. The fix existed, complete, proven, in a sibling file, the
+night before this file's own most recent touch to the exact same
+pattern — and it was not carried across.
+
+**What this means, named plainly:** this is not a missed test. A missed
+test implies nobody thought to test the thing. This is a fix that did
+not generalise — the defect class was found, understood, and solved once,
+and the solution stayed local to the file it was solved in. Nothing in
+this project's process would have caught that, because no rule says "when
+you fix a pattern, grep the repository for the same pattern before
+closing it." `d305e4c`'s own author had every reason to know the pattern
+was dangerous (it had just cost real investigation time, twice, the day
+before) and no prompt to check whether the file being edited that morning
+carried the same shape.
+
+**Grep for a third instance — none found.** Searched the entire `test/`
+directory for every variant of the pattern (an unawaited promise, a fixed
+sleep, a second concurrent call, joined via `Promise.all` or otherwise):
+```
+grep -rln "Promise.all" test/
+  test/morning-flow.test.ts
+  test/session-transition.test.ts
+
+grep -rn "sleep(" test/
+  test/session-transition.test.ts:160:      await sleep(5)      # inside the FIXED poll loop, not the pattern
+  test/morning-flow.test.ts:439:    await sleep(100)             # the vulnerable line
+
+grep -rn "setTimeout" test/
+  test/session-transition.test.ts:21:const sleep = (ms) => new Promise((r) => setTimeout(r, ms))   # helper def
+  test/morning-flow.test.ts:43:const sleep = (ms) => new Promise((r) => setTimeout(r, ms))         # helper def
+
+grep -rn "testSleepMs" test/
+  (every call site across the whole suite — only the two known pairs use it
+   concurrently; every other call site is a single sequential await)
+
+grep -rn "applyMorningFlowTurn|applyEveningFlowTurn|acquireAndTransition|drainNextPendingFlow" test/*.test.ts test/unit/*.test.ts
+  (~150 call sites across migration-017/022/024, morning-flow.test.ts's own
+   other 20 tests, session-transition.test.ts's own other 3 tests,
+   morning-cutoff-sweep.test.ts, morning-flow-mirror.test.ts — every one of
+   them a single `await`ed call in sequence; zero additional unawaited pairs)
+
+grep -rn "^\s*const \w+ = .*\.rpc\(" test/*.test.ts test/unit/*.test.ts
+  test/migration-020.test.ts:120,122 — both awaited, different auth roles,
+  not a concurrency test
+```
+Exactly two files in the entire suite touch this pattern: the one that was
+fixed, and the one that wasn't. Two occurrences of a copied pattern
+usually means more were meant to exist and got missed by the same blind
+spot that missed this one — worth remembering if a THIRD file is ever
+added that needs the same concurrency shape (an evening-flow equivalent of
+Test 18 does not exist yet; `applyEveningFlowTurn` already supports
+`testSleepMs`, so it's an easy trap to fall into fresh, not just
+inherited).
+
+**Standing rule added**, CLAUDE.md §0, same day: when a defect is fixed
+structurally, grep the repository for the same pattern before closing it.
+This incident is the rule's own citation.
