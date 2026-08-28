@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { testClient, readSession } from './helpers/db'
 import { triggerCheckIn } from '@/lib/whatsapp/outbound/trigger'
 import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID } from '@/lib/whatsapp/outbound/templates'
@@ -38,30 +38,79 @@ import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID }
 //   recipient_user_id, event_key) constraint actually needs fresh per run
 //   to avoid a collision, not the date.
 //
-//   THE SHAPE USED HERE: the tenant and project are the ONLY things fixed
-//   and reused -- created once, idempotent-upsert, never torn down (safe:
-//   nothing about them is per-run, so there is nothing to accrete at that
-//   level). The RECIPIENT is MINTED FRESH by every test (mintOutboundEngineer
-//   below) -- a brand-new `users` row with a randomly generated
-//   whatsapp_number, retried on collision. Per-run uniqueness now lives
-//   where the UNIQUE constraint's own middle column already expects it
-//   (recipient_user_id), so event_key can go back to naming an ordinary,
-//   realistic date (LOG_DATE below) shared by every test in this file.
+//   DRAFT 3 (this file as merged in #120, 2026-08-28 -- ALSO had a real,
+//   discovered problem, caught the same day by a coordination-checkpoint
+//   review, not by anything in CI): the tenant and project were fixed and
+//   reused, correctly, but the RECIPIENT-per-test idea above was read too
+//   literally -- `mintOutboundEngineer()` was called once per `it()`
+//   block, not once per suite. This file has 10 `it()` blocks (one mints
+//   twice, for its two sub-scenarios), so ONE full run minted 11 `users`
+//   rows, not the 1-per-run this section's own ACCRETION paragraph
+//   claimed. Confirmed live: 3 real CI runs left 33 minted rows (11 x 3)
+//   plus the 2 permanently-anchored legacy rows from draft 2's own
+//   fallout, 35 total, 78 outbound_sends rows anchoring them, all
+//   undeletable -- see test/helpers/db.ts's reserved-blocks comment for
+//   the running total. The bug was never in the REASONING (recipient-per-
+//   run uniqueness is still correct) -- it was in where "per-run" landed:
+//   the SUITE runs once per CI invocation; each `it()` does not.
 //
-//   ACCRETION, NAMED AND ACCEPTED, NOT FOUGHT: every test run leaves a new
-//   `users` row (and the `outbound_sends`/`whatsapp_sessions`/`daily_logs`
-//   rows hanging off it) permanently in test-db -- the composite FK from
+//   THE SHAPE USED HERE (current, fixing draft 3's rate): the tenant,
+//   project, AND the recipient engineer are now ALL fixed and reused --
+//   the engineer is minted ONCE, in this describe block's own `beforeAll`,
+//   not inside any individual test. Per-test uniqueness against
+//   outbound_sends' own UNIQUE(tenant_id, recipient_user_id, event_key)
+//   now has to come from somewhere else, since recipient_user_id is no
+//   longer distinct per test -- it comes from event_key's own DATE half
+//   instead: every `it()` block below uses its own reserved LOG_DATE_*
+//   constant (test/helpers/db.ts's reserved-blocks comment documents this
+//   file's whole reserved date range so nothing else collides with it).
+//   This is the uniqueness-axis rule recorded in test/helpers/db.ts,
+//   alongside the reserved phone/prefix blocks: carry per-test uniqueness
+//   on the DATE, never on a minted `users` row, because a minted row is
+//   permanent the moment anything references it and a date string costs
+//   nothing.
+//
+//   SESSION SHARING, THE HAZARD THIS SHAPE INTRODUCES THAT DRAFT 3 DID NOT
+//   HAVE: whatsapp_sessions is keyed by phone_number ALONE (test/helpers/
+//   db.ts's readSession does a bare `.eq('phone_number', phone)`, no
+//   event_key or date dimension at all). Draft 3's fresh-engineer-per-test
+//   design got a clean session row for free, because a brand-new
+//   whatsapp_number had never had a session row created against it. With
+//   ONE shared engineer, every test now shares ONE session row -- and
+//   apply_{morning,evening}_flow_turn's own `startFlow` branch (mirrored
+//   in dispatchMorningFlow/dispatchEveningFlow) only produces outcome
+//   'start' when session.current_flow IS NULL; otherwise it falls into
+//   'reask' and leaves the row's current_flow/current_step untouched. Left
+//   unhandled, the FIRST test in this file to reach a 2xx delivery would
+//   permanently set current_flow to non-null, and every later test
+//   asserting either a genuine 'start' activation or `session === null`
+//   (no activation) would silently stop testing what its name claims --
+//   passing or failing for a reason unrelated to that test's own
+//   triggerCheckIn call. FIX: a `beforeEach` below deletes the shared
+//   engineer's whatsapp_sessions row before every test, reproducing the
+//   same "no row exists yet" starting state draft 3 got for free.
+//   whatsapp_sessions (unlike outbound_sends) DOES carry a DELETE grant --
+//   test/unit/morning-cutoff-sweep.test.ts already deletes rows from this
+//   same table by phone_number, so this is an established pattern in this
+//   suite, not a new capability being introduced here.
+//
+//   ACCRETION, NAMED AND ACCEPTED, NOT FOUGHT -- NOW ACTUALLY 1/RUN: every
+//   CI run leaves exactly ONE new `users` row (and the `outbound_sends`/
+//   `daily_logs` rows hanging off it -- NOT whatsapp_sessions, which the
+//   beforeEach above deletes and recreates every test but never
+//   accumulates) permanently in test-db -- the composite FK from
 //   outbound_sends into users(id, tenant_id) is itself RESTRICT, so a
 //   minted engineer can never be deleted once any row references it,
 //   exactly like the tenant/project could not be under draft 1. This is
-//   accepted as BOUNDED (one extra row per CI run, not an unbounded
-//   cross-table cascade) and INSPECTABLE (every minted row lives under the
-//   one well-known OUTBOUND_TEST_TENANT_ID, trivially queryable as a
-//   group). Cleanup, if it is ever warranted, is an OPERATOR action run by
-//   hand under this project's own breadcrumb discipline -- deliberately
-//   NOT a code path in this file, which is exactly the shape that caused
-//   draft 1's cross-suite breakage in the first place (a test file
-//   reaching for DELETE against a table that was never meant to allow it).
+//   accepted as BOUNDED (one row per CI run, matching what draft 3's own
+//   text claimed but did not actually deliver) and INSPECTABLE (every
+//   minted row lives under the one well-known OUTBOUND_TEST_TENANT_ID,
+//   trivially queryable as a group). Cleanup, if it is ever warranted, is
+//   an OPERATOR action run by hand under this project's own breadcrumb
+//   discipline -- deliberately NOT a code path in this file, which is
+//   exactly the shape that caused draft 1's cross-suite breakage in the
+//   first place (a test file reaching for DELETE against a table that was
+//   never meant to allow it).
 //
 //   NOT test-db-only DELETE grant either: forking outbound_sends' ACL
 //   between test-db and production would corrupt the negative-capability
@@ -72,11 +121,25 @@ import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID }
 const OUTBOUND_TEST_TENANT_ID = '00000000-0000-4000-a000-000000031000'
 const OUTBOUND_TEST_PROJECT_ID = '00000000-0000-4000-a000-000000031001'
 
-// One ordinary, realistic IST date, shared by every test in this file --
-// uniqueness no longer depends on the date (see the header above), so
-// there is no reason for it to vary, and every reason (readability,
-// staying within a plausible calendar range) for it not to.
-const LOG_DATE = '2026-09-01'
+// RESERVED DATE RANGE: one date per it() block, plus one extra for the
+// one block with two sub-scenarios against the same shared engineer.
+// 2026-09-01 through 2026-09-11 are reserved wholesale to this file,
+// documented in test/helpers/db.ts alongside the reserved phone/prefix
+// blocks so nothing else in this suite picks a colliding date against
+// this file's own shared tenant/project/engineer. Ordinary, realistic IST
+// dates -- no reason to look synthetic, since uniqueness is their entire
+// job now (see the header's THE SHAPE USED HERE section).
+const LOG_DATE_FRESH_CLAIM = '2026-09-01'
+const LOG_DATE_4XX = '2026-09-02'
+const LOG_DATE_5XX_AMBIGUOUS = '2026-09-03'
+const LOG_DATE_429_RETRY = '2026-09-04'
+const LOG_DATE_5XX_NOT_RECLAIMABLE = '2026-09-05'
+const LOG_DATE_NETWORK_EXCEPTION = '2026-09-06'
+const LOG_DATE_429_429_2XX = '2026-09-07'
+const LOG_DATE_429_THEN_5XX = '2026-09-08'
+const LOG_DATE_CAS_RACE_LOSER = '2026-09-09'
+const LOG_DATE_TEMPLATE_WITH_PLAN = '2026-09-10'
+const LOG_DATE_TEMPLATE_NO_PLAN = '2026-09-11'
 
 async function ensureOutboundParentFixtures(): Promise<void> {
   const db = testClient()
@@ -112,6 +175,12 @@ interface MintedEngineer {
  * from 0 to 1 -- a disjoint range from every existing fixed testPhone('NNN')
  * slot in this repo, by construction, not by checking a list that could
  * go stale.
+ *
+ * CALLED ONCE, in this file's own `beforeAll` -- not per test. See the
+ * file header's THE SHAPE USED HERE / DRAFT 3 sections for why: this
+ * function used to be called from inside every `it()` block, which
+ * produced 11 permanent `users` rows per CI run instead of 1. Per-test
+ * uniqueness now comes from each test's own reserved LOG_DATE_* constant.
  */
 async function mintOutboundEngineer(): Promise<MintedEngineer> {
   const db = testClient()
@@ -157,22 +226,35 @@ async function readOutboundSends(engineerId: string, eventKey: string) {
 
 describe('triggerCheckIn (claim -> send -> activate)', () => {
   const fetchMock = vi.fn()
+  let engineer: MintedEngineer
 
   beforeAll(async () => {
     await ensureOutboundParentFixtures()
+    engineer = await mintOutboundEngineer()
     vi.stubEnv('TWILIO_ACCOUNT_SID', 'ACzztest0000000000000000000000000')
     vi.stubEnv('TWILIO_AUTH_TOKEN', 'zz-test-auth-token')
     vi.stubEnv('TWILIO_WHATSAPP_NUMBER', '+14155238886')
   })
 
-  // No per-test DB cleanup and no afterAll teardown -- see the file header's
-  // ACCRETION section. Every test mints its OWN engineer, so cross-test
-  // state bleed (the actual bug in this file's first two drafts) is
-  // structurally impossible: no two tests ever share a recipient_user_id,
-  // a whatsapp_sessions row, or a daily_logs row.
+  // Reset the shared engineer's session before every test -- see the file
+  // header's SESSION SHARING section for why this is required now that
+  // the engineer is shared rather than minted fresh per test.
+  beforeEach(async () => {
+    const db = testClient()
+    const { error } = await db.from('whatsapp_sessions').delete().eq('phone_number', engineer.whatsappNumber)
+    if (error) throw new Error(`session reset failed: ${error.message}`)
+  })
+
+  // No outbound_sends/users/daily_logs cleanup and no afterAll teardown --
+  // see the file header's ACCRETION section. The shared engineer's
+  // whatsapp_sessions row IS reset every test (above); outbound_sends
+  // rows are not and never will be (no DELETE grant, RESTRICT FKs) -- each
+  // test's own reserved LOG_DATE_* constant keeps its event_key disjoint
+  // from every other test's, so cross-test state bleed on outbound_sends
+  // (the actual bug in this file's first two drafts) stays structurally
+  // impossible even with one shared recipient_user_id.
   it('claims, sends, and activates the session on a fresh morning checkpoint; a second call for the same day is a silent no-op', async () => {
     fetchMock.mockReset()
-    const engineer = await mintOutboundEngineer()
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMfirst001' }))
 
     const params = {
@@ -183,7 +265,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
       whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE,
+      logDate: LOG_DATE_FRESH_CLAIM,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     }
@@ -192,7 +274,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(first).toEqual({ outcome: 'sent', twilioSid: 'SMfirst001' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    const rowsAfterFirst = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE}`)
+    const rowsAfterFirst = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE_FRESH_CLAIM}`)
     expect(rowsAfterFirst).toHaveLength(1)
     expect(rowsAfterFirst[0]!.status).toBe('sent')
     expect(rowsAfterFirst[0]!.twilio_sid).toBe('SMfirst001')
@@ -209,13 +291,12 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(second).toEqual({ outcome: 'already_claimed' })
     expect(fetchMock).toHaveBeenCalledTimes(1) // still 1 -- no second Twilio call
 
-    const rowsAfterSecond = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE}`)
+    const rowsAfterSecond = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE_FRESH_CLAIM}`)
     expect(rowsAfterSecond).toHaveLength(1) // no duplicate row
   })
 
   it('a Twilio 4xx marks the ledger row failed and does NOT activate the session', async () => {
     fetchMock.mockReset()
-    const engineer = await mintOutboundEngineer()
     fetchMock.mockResolvedValueOnce(
       jsonResponse(400, { code: 21211, message: "The 'To' number is not a valid phone number." }),
     )
@@ -228,13 +309,13 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
       whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE,
+      logDate: LOG_DATE_4XX,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     })
 
     expect(result.outcome).toBe('failed')
-    const rows = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE}`)
+    const rows = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE_4XX}`)
     expect(rows).toHaveLength(1)
     expect(rows[0]!.status).toBe('failed')
     expect(rows[0]!.error).toBeTruthy()
@@ -246,7 +327,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
 
   it('a Twilio 5xx leaves the ledger row at "sending" (ambiguous, retryable) and does NOT activate the session', async () => {
     fetchMock.mockReset()
-    const engineer = await mintOutboundEngineer()
     fetchMock.mockResolvedValueOnce(jsonResponse(503, { code: 20003, message: 'Service unavailable' }))
 
     const result = await triggerCheckIn({
@@ -257,13 +337,13 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
       whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE,
+      logDate: LOG_DATE_5XX_AMBIGUOUS,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     })
 
     expect(result.outcome).toBe('ambiguous')
-    const rows = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE}`)
+    const rows = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE_5XX_AMBIGUOUS}`)
     expect(rows).toHaveLength(1)
     expect(rows[0]!.status).toBe('sending') // untouched -- item F's reconciliation job is out of scope here
 
@@ -273,7 +353,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
 
   it('a Twilio 429 is genuinely retryable -- a second attempt for the same day re-claims and sends', async () => {
     fetchMock.mockReset()
-    const engineer = await mintOutboundEngineer()
     fetchMock.mockResolvedValueOnce(jsonResponse(429, { code: 20429, message: 'Too Many Requests' }))
 
     const params = {
@@ -284,14 +363,14 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
       whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE,
+      logDate: LOG_DATE_429_RETRY,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     }
 
     const first = await triggerCheckIn(params)
     expect(first).toEqual({ outcome: 'rate_limited' })
-    const rowsAfterFirst = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE}`)
+    const rowsAfterFirst = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE_429_RETRY}`)
     expect(rowsAfterFirst).toHaveLength(1)
     expect(rowsAfterFirst[0]!.status).toBe('sending') // still 'sending', not 'failed'
     expect(rowsAfterFirst[0]!.error).toBe('rate_limited_429_retryable')
@@ -303,7 +382,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(second).toEqual({ outcome: 'sent', twilioSid: 'SMretried001' })
     expect(fetchMock).toHaveBeenCalledTimes(2) // both attempts really called Twilio
 
-    const rowsAfterSecond = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE}`)
+    const rowsAfterSecond = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE_429_RETRY}`)
     expect(rowsAfterSecond).toHaveLength(1) // same row, re-used -- not a duplicate
     expect(rowsAfterSecond[0]!.id).toBe(rowsAfterFirst[0]!.id)
     expect(rowsAfterSecond[0]!.status).toBe('sent')
@@ -316,7 +395,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
 
   it('a Twilio 5xx is NOT re-claimable -- a second attempt is still already_claimed, no second Twilio call', async () => {
     fetchMock.mockReset()
-    const engineer = await mintOutboundEngineer()
     fetchMock.mockResolvedValueOnce(jsonResponse(503, { code: 20003, message: 'Service unavailable' }))
 
     const params = {
@@ -327,7 +405,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
       whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE,
+      logDate: LOG_DATE_5XX_NOT_RECLAIMABLE,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     }
@@ -339,7 +417,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(second).toEqual({ outcome: 'already_claimed' })
     expect(fetchMock).toHaveBeenCalledTimes(1) // second attempt never reached Twilio
 
-    const rows = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE}`)
+    const rows = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE_5XX_NOT_RECLAIMABLE}`)
     expect(rows).toHaveLength(1)
     expect(rows[0]!.status).toBe('sending') // still stuck -- item F's job, not this file's
     expect(rows[0]!.error).toBeNull() // no 429 marker was ever written
@@ -347,7 +425,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
 
   it('a thrown network exception is NOT re-claimable -- a second attempt is still already_claimed', async () => {
     fetchMock.mockReset()
-    const engineer = await mintOutboundEngineer()
     fetchMock.mockRejectedValueOnce(new Error('fetch failed: ECONNRESET'))
 
     const params = {
@@ -358,7 +435,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
       whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE,
+      logDate: LOG_DATE_NETWORK_EXCEPTION,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     }
@@ -370,7 +447,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(second).toEqual({ outcome: 'already_claimed' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    const rows = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE}`)
+    const rows = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE_NETWORK_EXCEPTION}`)
     expect(rows).toHaveLength(1)
     expect(rows[0]!.status).toBe('sending')
     expect(rows[0]!.error).toBeNull()
@@ -386,7 +463,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
   // the compare-and-swap race makes no Twilio call at all.
   it('429, 429, then 2xx: exactly one message ultimately delivered, one ledger row throughout, no duplicate row', async () => {
     fetchMock.mockReset()
-    const engineer = await mintOutboundEngineer()
     const params = {
       checkpoint: 'morning_send' as const,
       tenantId: OUTBOUND_TEST_TENANT_ID,
@@ -395,7 +471,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
       whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE,
+      logDate: LOG_DATE_429_429_2XX,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     }
@@ -413,7 +489,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(attempt3).toEqual({ outcome: 'sent', twilioSid: 'SMthird001' }) // re-claimed again, this time delivered
 
     expect(fetchMock).toHaveBeenCalledTimes(3) // three Twilio calls made...
-    const rows = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE}`)
+    const rows = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE_429_429_2XX}`)
     expect(rows).toHaveLength(1) // ...but exactly one ledger row throughout
     expect(rows[0]!.status).toBe('sent') // ...and exactly one message ultimately delivered
     expect(rows[0]!.twilio_sid).toBe('SMthird001')
@@ -425,7 +501,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
 
   it('429 then 5xx: the row stops being re-claimable and stays at "sending" for item F', async () => {
     fetchMock.mockReset()
-    const engineer = await mintOutboundEngineer()
     const params = {
       checkpoint: 'evening_send' as const,
       tenantId: OUTBOUND_TEST_TENANT_ID,
@@ -434,7 +509,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
       whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE,
+      logDate: LOG_DATE_429_THEN_5XX,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     }
@@ -452,7 +527,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     const attempt2 = await triggerCheckIn(params)
     expect(attempt2).toEqual({ outcome: 'ambiguous' })
 
-    const rowsAfter5xx = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE}`)
+    const rowsAfter5xx = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE_429_THEN_5XX}`)
     expect(rowsAfter5xx).toHaveLength(1)
     expect(rowsAfter5xx[0]!.status).toBe('sending')
     expect(rowsAfter5xx[0]!.error).toBeNull() // NOT the marker -- no longer re-claimable
@@ -464,7 +539,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(attempt3).toEqual({ outcome: 'already_claimed' })
     expect(fetchMock).toHaveBeenCalledTimes(2) // the third attempt never called Twilio
 
-    const rowsFinal = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE}`)
+    const rowsFinal = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE_429_THEN_5XX}`)
     expect(rowsFinal).toHaveLength(1)
     expect(rowsFinal[0]!.status).toBe('sending') // stuck for item F, exactly like a plain 5xx row
 
@@ -485,7 +560,6 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     // conditional UPDATE, this exact sequence would still (wrongly) let
     // the loser through.
     fetchMock.mockReset()
-    const engineer = await mintOutboundEngineer()
     const params = {
       checkpoint: 'morning_send' as const,
       tenantId: OUTBOUND_TEST_TENANT_ID,
@@ -494,7 +568,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
       whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE,
+      logDate: LOG_DATE_CAS_RACE_LOSER,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     }
@@ -515,7 +589,7 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
         .from('outbound_sends')
         .update({ error: null })
         .eq('recipient_user_id', engineer.id)
-        .eq('event_key', `morning_send:${LOG_DATE}`)
+        .eq('event_key', `morning_send:${LOG_DATE_CAS_RACE_LOSER}`)
       if (error) throw new Error(`simulate-winner update failed: ${error.message}`)
     }
 
@@ -523,21 +597,28 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(loser).toEqual({ outcome: 'already_claimed' })
     expect(fetchMock).toHaveBeenCalledTimes(1) // only attempt1's call -- the loser never reached Twilio
 
-    const rows = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE}`)
+    const rows = await readOutboundSends(engineer.id, `morning_send:${LOG_DATE_CAS_RACE_LOSER}`)
     expect(rows).toHaveLength(1) // still one row -- the loser never inserted a second one either
   })
 
   it('evening checkpoint selects the primary template ({{3}}=morning plan) when one exists, and the no-plan template when it does not', async () => {
+    // ONE shared engineer for both halves -- two dates suffice, a second
+    // minted engineer is not needed. outbound_sends' own uniqueness comes
+    // from event_key's date half (LOG_DATE_TEMPLATE_WITH_PLAN vs
+    // LOG_DATE_TEMPLATE_NO_PLAN), and daily_logs' own UNIQUE(project_id,
+    // engineer_id, log_date) is satisfied the same way -- the no-plan
+    // half's date has no daily_logs row seeded for it, preserving the
+    // original "no daily_logs row exists for this one at all" guarantee
+    // even though the engineer_id is now the same for both halves.
     fetchMock.mockReset()
-    const engineerWithPlan = await mintOutboundEngineer()
     {
       const db = testClient()
       const { error } = await db.from('daily_logs').upsert(
         {
           tenant_id: OUTBOUND_TEST_TENANT_ID,
           project_id: OUTBOUND_TEST_PROJECT_ID,
-          engineer_id: engineerWithPlan.id,
-          log_date: LOG_DATE,
+          engineer_id: engineer.id,
+          log_date: LOG_DATE_TEMPLATE_WITH_PLAN,
           morning_submitted_at: new Date().toISOString(),
           morning_plan: 'Pour slab on level 3',
         },
@@ -551,37 +632,45 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       checkpoint: 'evening_send',
       tenantId: OUTBOUND_TEST_TENANT_ID,
       projectId: OUTBOUND_TEST_PROJECT_ID,
-      engineerId: engineerWithPlan.id,
+      engineerId: engineer.id,
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
-      whatsappNumber: engineerWithPlan.whatsappNumber,
-      logDate: LOG_DATE,
+      whatsappNumber: engineer.whatsappNumber,
+      logDate: LOG_DATE_TEMPLATE_WITH_PLAN,
       morningPlan: 'Pour slab on level 3',
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     })
-    const rowsWithPlan = await readOutboundSends(engineerWithPlan.id, `evening_send:${LOG_DATE}`)
+    const rowsWithPlan = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE_TEMPLATE_WITH_PLAN}`)
     expect(rowsWithPlan[0]!.content_sid).toBe(EVENING_CHECKIN_SID)
 
-    // A SECOND, freshly minted engineer for the no-plan case -- no daily_logs
-    // row exists for this one at all, so no cross-scenario cleanup is needed
-    // between the two halves of this test either.
-    const engineerNoPlan = await mintOutboundEngineer()
+    // Reset the session between the two halves -- both calls above and
+    // below are genuine 2xx activations, and each should start fresh (see
+    // the file header's SESSION SHARING section) rather than the second
+    // one landing on 'reask' because the first already left current_flow
+    // non-null. The no-plan half's own LOG_DATE has no daily_logs row
+    // seeded for it, so no cross-scenario cleanup is needed there either.
+    {
+      const db = testClient()
+      const { error } = await db.from('whatsapp_sessions').delete().eq('phone_number', engineer.whatsappNumber)
+      if (error) throw new Error(`session reset failed: ${error.message}`)
+    }
+
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMnoplan001' }))
     await triggerCheckIn({
       checkpoint: 'evening_send',
       tenantId: OUTBOUND_TEST_TENANT_ID,
       projectId: OUTBOUND_TEST_PROJECT_ID,
-      engineerId: engineerNoPlan.id,
+      engineerId: engineer.id,
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
-      whatsappNumber: engineerNoPlan.whatsappNumber,
-      logDate: LOG_DATE,
+      whatsappNumber: engineer.whatsappNumber,
+      logDate: LOG_DATE_TEMPLATE_NO_PLAN,
       morningPlan: null, // never engaged that day -- no daily_logs row at all
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     })
-    const rowsNoPlan = await readOutboundSends(engineerNoPlan.id, `evening_send:${LOG_DATE}`)
+    const rowsNoPlan = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE_TEMPLATE_NO_PLAN}`)
     expect(rowsNoPlan[0]!.content_sid).toBe(EVENING_CHECKIN_NO_PLAN_SID)
   })
 })
