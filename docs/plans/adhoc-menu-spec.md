@@ -332,6 +332,131 @@ directly) — but not `dependency`, `site_expense`, `material_received`, `site_d
 whatever internal name the opt-out flow takes. Widening that CHECK constraint is itself a
 migration-worthy fact to carry into whenever this gets built — named here, not designed.
 
+**Also cutting across all seven, verified directly against production
+(`jvxwqignooseazzmwhvl`) rather than assumed — a gap in this section's own original
+writing, closed here:** none of the three tables with an existing live schema —
+`hindrances`, `safety_incidents`, `invoices` — has any foreign key to `daily_logs`, and
+none has a NOT NULL column that could only be satisfied by one. Their only NOT NULL columns
+are `tenant_id`, `project_id`, and the reporter column (`reported_by` on the first two,
+`submitted_by` on invoices). **All three can already be written on a day with zero
+`daily_logs` activity** — exactly the case a hindrance blocking the check-in itself would
+produce. This was never stated above, and should have been: item 1 exists specifically to
+capture the reason a check-in didn't happen, so a design that silently assumed a check-in
+precondition would have been self-defeating before it shipped. No schema or migration
+consequence follows — the no-parent-row case is already supported — this is a
+documentation gap being closed, not a new requirement. The same should hold for items
+3/4/6/7's own new tables once designed: nothing in §c's per-item flow implies a
+`daily_logs` dependency for any of the seven, and none should be introduced when those
+tables are eventually built.
+
+---
+
+## Project resolution — an open problem this spec does not address
+
+**All three tables with a live schema require `project_id` NOT NULL** (confirmed against
+production, same investigation as above) — and, by the same logic, so will whatever new
+tables items 3/4/6/7 eventually get. The ad-hoc menu is reached from an inbound WhatsApp
+message, which the webhook resolves only to a phone number. **Nothing in this spec's
+trigger (§a) or per-item flow (§c) states how a write resolves WHICH project it belongs
+to.** That is an omission, not a decided answer, and it applies to every one of the seven
+items, not just the three with existing tables.
+
+**This is not a new problem for this codebase — it is the identical ambiguity two existing
+pieces of code already navigate, in opposite directions, for reasons that do not
+automatically transfer here.** `project_members` permits multiple rows per `user_id`
+today; "one engineer belongs to exactly one project" is a DECIDED product rule
+(`design-decisions-beta-feedback.md` §36, 2026-08-26) but not a database-enforced one — no
+UNIQUE index exists yet.
+
+- **Migration 033's sweep** (`sweep_stale_morning_sessions`) COUNTS an engineer's
+  `project_members` rows and, when the count isn't exactly 1, SKIPS — writes nothing,
+  increments a counter, alerts via Sentry (`docs/reviews/033-sweep-review-package.md`
+  §13.2/§13.4) — rather than guessing.
+- **Migration 031's outbound-send ledger** TRUSTS the rule outright, with no defensive
+  count, on the argument that a wrong guess there only misattributes `project_id` on one
+  send-ledger row — `event_key`'s own UNIQUE constraint excludes `project_id` entirely, so
+  a wrong guess can't fabricate a duplicate send or a double charge
+  (`docs/reviews/031-outbound-send-ledger-review-package.md` §4, its own calibration note).
+
+**Argued, not assumed, which side of that split this menu falls on:** a hindrance, safety
+incident, or invoice written against the wrong project is not a misattributed metadata
+field on an otherwise-correct row — it is a FABRICATED FACT with real downstream
+consumers. DPR generation and PM visibility are both strictly project-scoped (CLAUDE.md
+§4's own cross-project-scope rule), so a wrong `project_id` here means one PM sees a
+hindrance that never happened on their project while the PM who should see it never does —
+the same failure shape 033's own review escalated over ("a write, with downstream
+consumers... that treat the fabricated row as real data; guessing wrong there creates a
+false fact that outlives the bug that caused it"). This is closer to 033's case than to
+031's: 031's blast radius is attribution on one row with no data fabrication, because
+`event_key` structurally excludes `project_id` from ever causing a duplicate or a false
+event; nothing in this menu's own design gives it an equivalent structural backstop.
+
+**Consequence: the menu should skip-and-surface on ambiguous project resolution, not
+best-guess** — the same behavior 033 already established and tested (`project_members`
+count != 1 → no write, count it, alert), not a new mechanism to invent. What the engineer
+actually sees when this happens, and whether it differs per item, is not designed here —
+only the required BEHAVIOR is being named, per this section's own scope.
+
+**This closes permanently, not just for the menu, once `design-decisions-beta-feedback.md`
+§36's proposed `UNIQUE INDEX ON project_members(user_id)` ships** — DECIDED IN PRINCIPLE,
+NOT SCHEDULED as of 2026-08-26, still true as of this spec (2026-08-28). Until then, every
+one of the seven menu items inherits the same unresolved ambiguity 033 and 031 already each
+had to make their own call about — the menu is simply the FIRST inbound-path writer to hit
+it for these three (and, eventually, four new) tables specifically.
+
+---
+
+## Attribution day — none of the three existing tables has one, and the consequence is undecided
+
+**Verified directly against production, full column list for each (same investigation as
+above) — printed here rather than assumed:**
+
+- `hindrances`: `id, created_at, tenant_id, project_id, reported_by, hindrance_type,
+  area_affected, description, impact_level, photo_url, submitted_via, dpr_included, status,
+  resolved_at, resolved_by`. **No date column besides `created_at`.**
+- `safety_incidents`: `id, created_at, tenant_id, project_id, reported_by, incident_type,
+  location, description, injury_status, photo_url, ocr_confidence, pm_notified_at, status,
+  submitted_via, resolved_at, resolved_by, investigation_notes`. **No date column besides
+  `created_at`.**
+- `invoices`: `id, created_at, tenant_id, project_id, submitted_by, vendor_name, amount,
+  invoice_date, invoice_number, line_items, cost_head, image_url, ocr_confidence,
+  submitted_via, status, reviewed_by, reviewed_at, vendor_id, gstin_extracted`.
+  **Correction to the premise this check started from: invoices is not a clean third
+  instance of "only `created_at` exists."** It also carries `invoice_date` (nullable
+  `date`) — but that column is the date printed on the vendor's own invoice document
+  (OCR-extracted or engineer-entered), not a system-derived attribution day. It can be
+  missing, wrong, or genuinely different from the calendar day the WhatsApp submission
+  should be grouped under for a PM view or DPR — a vendor invoice dated three days ago,
+  submitted today, is not a bug, it's normal. `invoice_date` doesn't solve the same problem
+  `log_date` solves on `daily_logs`; it just means invoices' gap is a validation/trust
+  question about an existing field, not a wholly missing one.
+
+**Two of three — `hindrances` and `safety_incidents` — confirmed: no attribution-day column
+exists at all, only `created_at`.**
+
+**The consequence:** `created_at` is the timestamp of the WRITE, not necessarily the day
+the event belongs to. A hindrance reported at 00:30 IST for the previous working day
+attributes to the wrong day the moment anything groups by `created_at::date` directly —
+the same IST-day problem `log_date` solves on `daily_logs`, and the same one `event_key`
+solves on `outbound_sends` via `istDateString` rather than a raw UTC timestamp
+(`docs/reviews/031-outbound-send-ledger-review-package.md` §3). Any PM view or DPR section
+that eventually groups these seven items' rows by day inherits exactly the problem
+`daily_logs` would have had without `log_date`.
+
+**Needs deciding before anything is built on these tables — options only, no choice made:**
+
+1. A `log_date`-equivalent column on each table (or the new tables items 3/4/6/7 eventually
+   get), computed the same way `daily_logs.log_date` and `outbound_sends.event_key` already
+   are — `istDateString` at write time.
+2. Derive the attribution day from `created_at` at READ time, in whatever view/query
+   eventually consumes these rows, converting to IST on the fly rather than storing it.
+3. Ask the engineer which day the event belongs to, as its own flow question — a real UX
+   cost added to every one of the seven items' flows, weighed against correctness, not a
+   free option.
+
+Do NOT build any of these without the decision this list is deferring — named here so it
+isn't discovered mid-migration the way item 1's active/potential gap (§f) was.
+
 ---
 
 ## e. Safety interrupt — §7's open question, DECIDED
@@ -494,3 +619,13 @@ not yet applied to `design-decisions-beta-feedback.md`:
 - **f (new).** Item 1's own migration: the exact column name, full CHECK value set, and
   default/nullability for the `hindrances` active/potential column — the REQUIREMENT is
   decided (§f above), the column's own design is not.
+- **Project resolution (new, 2026-08-28).** Which project a menu-triggered write belongs
+  to, when `project_members` is ambiguous for the sending engineer — argued toward
+  skip-and-surface, matching migration 033's own mechanism, not toward best-guessing; the
+  exact skip-time UX (what the engineer sees) is not designed. Closes permanently once
+  §36's `project_members(user_id)` UNIQUE index ships — still not scheduled.
+- **Attribution day (new, 2026-08-28).** Whether `hindrances`/`safety_incidents` (and the
+  new tables for items 3/4/6/7) need a `log_date`-equivalent column, a read-time derivation
+  from `created_at`, or an engineer-asked day — three options named, none chosen. Also
+  flags `invoices.invoice_date` as an existing-but-different-semantics field, not a ready
+  answer.
