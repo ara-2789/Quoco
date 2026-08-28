@@ -615,6 +615,52 @@ ship:**
 Not answered here. Item E's own review package must state its answer, not assume item B
 already provided one.
 
+**ANSWERED, 2026-08-28 (Aravind's decision).** RETRY BUDGET — **3 attempts, per engineer,
+per checkpoint, per IST day.** On exhaustion: stop retrying, mark the ledger row
+terminally, and raise a LOUD Sentry alert naming the engineer, phone number, and
+checkpoint so a human can send manually. At this project's current scale (three
+engineers), a manual fallback is realistic — the alert is written to be acted on, not
+filed.
+
+Rationale, as given:
+- **Per engineer, per checkpoint** — never shared across a burst — so one persistently
+  blocked engineer cannot consume another engineer's own retry allowance.
+- **3** is small enough that a genuine daily-cap exhaustion does not produce a retry
+  storm, and large enough that transient per-second throttling clears within the budget.
+- On exhaustion, that engineer receives nothing that day and **nothing recovers it
+  automatically** — the alert IS the recovery path, not a notification about one.
+
+**CONDITIONAL CHECK, RESOLVED (2026-08-28) — the trigger does not fire.** The decision
+above was made conditional on whether Twilio/Meta distinguish "per-second throttling"
+from "daily 250-conversation-tier exhaustion" by error code, which would make retrying
+the daily-cap case pointless (the account is out of allowance until the window rolls, not
+merely slow) and would call for stopping on the FIRST such 429, not the third, with a
+"tier ceiling hit" alert instead of a retry-exhaustion one.
+
+Checked directly against live documentation before deciding, not from memory (same
+discipline as send.ts's own IDEMPOTENCY KEY note): Twilio's own generic throttle is error
+**20429** (HTTP 429, "excessive concurrent REST API requests... safe to retry after
+backing off") — an infrastructure-level concurrency limit, not a WhatsApp messaging-tier
+concept. Meta's separate WhatsApp Cloud API namespace DOES distinguish limit types by
+code (`80007` WABA rate limit, `130429` Cloud API throughput, `131048`/`131056`/`131064`
+recipient- and quality-specific restrictions) — none of these resolve on `twilio.com`'s
+own error reference (`80007` 404s there), confirming they are Meta-side codes, not
+Twilio-catalogued ones. **What could not be confirmed from any reachable page:** whether
+Twilio's CLASSIC Messages API (`api.twilio.com/2010-04-01/.../Messages` — what
+`send.ts` actually calls, not Meta's Cloud API directly) passes a Meta-side code through
+in its own JSON error response's `code` field, translates it to a Twilio-numbered code,
+or collapses every WhatsApp-layer rejection into a generic 429 regardless of underlying
+cause. No page reached stated this mapping.
+
+**Consequence: no code is used to branch retry behaviour, because none could be verified
+as what this integration actually returns.** Branching on an assumed error code this
+integration has never been observed to produce would be exactly the kind of unverified
+API-shape assumption CLAUDE.md's own standing rule warns becomes a silent runtime
+failure. The uniform 3-attempt design above is what ships. **Follow-up, named, not
+solved here:** the first real 429 this account ever receives in production should have
+its `errorCode` value read and recorded — if it turns out to reliably mark the
+daily-cap case, this decision should be revisited with real evidence in hand, not before.
+
 **RIDER, NOT A STANDALONE TASK (2026-08-28) — the schema upgrade path for the marker
 itself.** `RATE_LIMITED_MARKER` currently shares `outbound_sends.error` with real Twilio
 failure text — proven safe today only by this file's own control flow (every writer of
