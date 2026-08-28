@@ -113,4 +113,38 @@ describe('trigger.ts CAS invariant (static source guard)', () => {
     const terminalBlocks = updateBlocks.filter((b) => /status:\s*'(sent|failed)'/.test(b))
     expect(terminalBlocks).toHaveLength(2)
   })
+
+  // READER HALF of the invariant, added 2026-08-28. The WRITER-half tests
+  // above guard against a bad UPDATE putting real error text on a
+  // 'sending' row; they say nothing about the CAS's own WHERE clause. The
+  // re-claim CAS is only safe because it conditions on BOTH
+  // status='sending' AND error=RATE_LIMITED_MARKER together -- dropping
+  // EITHER .eq() (a refactor "simplifying" the chain, or fat-fingering one
+  // condition while editing the other) would let it match rows it must
+  // not: status='sending' alone would re-claim a plain stuck 5xx/network-
+  // exception row (error IS NULL) and retry a send whose delivery is
+  // genuinely unknown -- the exact (i)/(ii) ambiguity migration 031's own
+  // header rejects blind re-claim over; error=RATE_LIMITED_MARKER alone
+  // (no status check) would in principle match a TERMINAL row if one ever
+  // carried that exact text, though the writer-half invariant above
+  // already makes that impossible today. Either loosening reintroduces
+  // exactly the class of bug this whole mechanism exists to rule out
+  // structurally, not probabilistically.
+  it('the re-claim CAS conditions on BOTH status=\'sending\' AND error=RATE_LIMITED_MARKER together, not either alone', () => {
+    const reclaimMarker = ".update({ error: null,"
+    const reclaimStart = source.indexOf(reclaimMarker)
+    expect(reclaimStart).toBeGreaterThan(-1) // fails loudly if the re-claim call's own shape changes
+
+    const selectMarker = ".select('id')"
+    const selectStart = source.indexOf(selectMarker, reclaimStart)
+    expect(selectStart).toBeGreaterThan(-1)
+
+    // Everything between the re-claim UPDATE's own SET body and its own
+    // .select('id') is that ONE statement's WHERE-clause chain -- not a
+    // regex guess at where it might end.
+    const whereClause = source.slice(reclaimStart, selectStart)
+
+    expect(whereClause).toContain(".eq('status', 'sending')")
+    expect(whereClause).toContain(".eq('error', RATE_LIMITED_MARKER)")
+  })
 })

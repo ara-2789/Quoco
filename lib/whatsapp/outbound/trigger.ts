@@ -84,6 +84,12 @@ export type Checkpoint = 'morning_send' | 'evening_send'
 // looking addition that says nothing about re-claim semantics) violates
 // it. Keep that test passing rather than re-deriving this reasoning from
 // scratch if it ever fails.
+//
+// UPGRADE PATH, RECORDED AS A RIDER, NOT A TASK (docs/plans/pass1-
+// outbound-send-plan.md's own Amendment (g) rider): a dedicated column
+// (or a distinct status value) would let the schema say what the test
+// above currently enforces instead. Not its own migration -- rides
+// whichever migration next touches outbound_sends for its own reason.
 const RATE_LIMITED_MARKER = 'rate_limited_429_retryable'
 
 export interface TriggerParams {

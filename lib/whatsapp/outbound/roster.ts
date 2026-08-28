@@ -25,6 +25,59 @@ export interface OutboundRosterEngineer extends RosterEngineer {
   tenant_id: string
 }
 
+// ROSTER CARDINALITY CIRCUIT BREAKER. Every row this function returns
+// becomes a billed Twilio message once the (not-yet-built) item E caller
+// loops over it. roster.length === 0 was, until this, the ONLY cardinality
+// check anywhere in this file -- it catches an empty roster, never an
+// EXPLODED one. A join regression (a dropped .eq(), an accidental fan-out
+// through project_members) does not announce itself any other way -- it
+// just bills every row.
+//
+// CEILING LIVES AS A HARDCODED CONSTANT -- argued, not picked silently:
+//   - Env var: rejected. A safety ceiling that can be silently raised by a
+//     misconfigured or forgotten environment variable is exactly the
+//     "config surface that can be silently wrong" this project's own
+//     ENABLE_TEST_FLOW_TRIGGER precedent already warns against
+//     (lib/whatsapp/inbound-start.ts's own header, "a flag is a config
+//     surface that can be silently wrong, exactly as that entry
+//     demonstrates"). Changing a billing circuit breaker should cost a
+//     deliberate code change + review, not a one-line env edit nobody
+//     notices.
+//   - Per-tenant: rejected as premature machinery for a single/few-tenant
+//     beta (CLAUDE.md's own "don't build for hypothetical future scale"
+//     rule) -- would need a new column or config table to serve a
+//     cardinality this project does not have yet.
+//   - Hardcoded constant: matches this codebase's own established pattern
+//     for exactly this kind of safety threshold -- MAX_ATTEMPTS in
+//     lib/queue/jobs.ts, CHECKIN_CHECKPOINTS in lib/daily-logs/cutoffs.ts,
+//     MORNING_PLAN_MAX_CHARS in templates.ts -- all changed via code +
+//     review, never a runtime knob.
+//
+// 50 is deliberately generous: today's honest roster is single digits.
+const ROSTER_CARDINALITY_CEILING = 50
+
+/**
+ * Pure -- testable without a client or 51 real fixture rows. Throws (and
+ * alerts) if `count` exceeds `ceiling`; the real call site below always
+ * passes the hardcoded ROSTER_CARDINALITY_CEILING, but the ceiling is a
+ * parameter here so a test can exercise the boundary with a small number
+ * instead of constructing an oversized roster for real.
+ */
+export function checkRosterCardinality(count: number, ceiling: number, projectId: string, logDate: string): void {
+  if (count <= ceiling) return
+  Sentry.captureMessage('outbound-send: roster exceeded cardinality ceiling, checkpoint aborted', {
+    level: 'error',
+    fingerprint: ['outbound-send', 'roster_cardinality_exceeded', projectId, logDate],
+    tags: { feature: 'outbound-send' },
+    extra: { project_id: projectId, log_date: logDate, roster_size: count, ceiling },
+  })
+  throw new Error(
+    `fetchActiveEngineers: roster for project ${projectId} on ${logDate} returned ${count} engineers, ` +
+      `exceeding the ${ceiling}-engineer circuit breaker -- aborting the whole checkpoint rather than risk ` +
+      `a join-regression cross-product billing every row. Investigate before retrying.`,
+  )
+}
+
 export interface UnreachableEngineer {
   engineerId: string
   reason: 'missing_whatsapp_number' | 'missing_tenant_id'
@@ -113,6 +166,12 @@ async function fetchActiveEngineers(
     .eq('users.messaging_blocked', false)
 
   if (error) throw error
+
+  // Checked on the RAW join result, before any per-row exclusion --
+  // exclusions could only ever shrink this count, so checking here catches
+  // a cross-product at its actual source rather than risking it being
+  // masked by unrelated rows later getting filtered out as unreachable.
+  checkRosterCardinality((members ?? []).length, ROSTER_CARDINALITY_CEILING, projectId, logDate)
 
   const roster: OutboundRosterEngineer[] = []
   for (const m of members ?? []) {

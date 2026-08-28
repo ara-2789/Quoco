@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   filterEveningRoster,
   resolveRosterEngineer,
+  checkRosterCardinality,
   type OutboundRosterEngineer,
   type EveningTodayLogRow,
 } from '@/lib/whatsapp/outbound/roster'
@@ -124,5 +125,32 @@ describe('resolveRosterEngineer', () => {
 
   it('still throws on a genuinely malformed join (no id at all) -- a different, more severe class, unchanged by this fix', () => {
     expect(() => resolveRosterEngineer({ full_name: 'No ID Here' })).toThrow()
+  })
+})
+
+describe('checkRosterCardinality', () => {
+  it('does not throw when count is under the ceiling', () => {
+    expect(() => checkRosterCardinality(3, 50, 'proj-1', '2026-09-01')).not.toThrow()
+  })
+
+  it('does not throw when count exactly EQUALS the ceiling -- the ceiling itself is not a violation', () => {
+    expect(() => checkRosterCardinality(50, 50, 'proj-1', '2026-09-01')).not.toThrow()
+  })
+
+  it('throws the instant count exceeds the ceiling by one', () => {
+    expect(() => checkRosterCardinality(51, 50, 'proj-1', '2026-09-01')).toThrow(/exceeding the 50-engineer circuit breaker/)
+  })
+
+  it('throws for a grossly oversized roster, not just a boundary case', () => {
+    expect(() => checkRosterCardinality(10_000, 50, 'proj-1', '2026-09-01')).toThrow()
+  })
+
+  it('does not throw for a genuinely empty roster -- this guard is about EXPLOSION, not absence', () => {
+    expect(() => checkRosterCardinality(0, 50, 'proj-1', '2026-09-01')).not.toThrow()
+  })
+
+  it('the thrown error names the project and date, so an operator does not have to guess which checkpoint aborted', () => {
+    expect(() => checkRosterCardinality(99, 50, 'proj-xyz', '2026-09-05')).toThrow(/proj-xyz/)
+    expect(() => checkRosterCardinality(99, 50, 'proj-xyz', '2026-09-05')).toThrow(/2026-09-05/)
   })
 })
