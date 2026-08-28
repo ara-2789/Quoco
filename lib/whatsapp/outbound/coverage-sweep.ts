@@ -65,7 +65,7 @@ import * as Sentry from '@sentry/nextjs'
 import { istDateString } from '@/lib/daily-logs/date'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
-import { fetchMorningRoster, fetchEveningRoster } from './roster'
+import { fetchMorningRoster, fetchEveningRoster, fetchActiveProjects } from './roster'
 import { RATE_LIMITED_MARKER } from './trigger'
 import vercelConfig from '@/vercel.json'
 
@@ -100,18 +100,6 @@ export interface CoverageSweepResult {
 }
 
 /**
- * SET 1 of the coverage check -- active projects, same shape
- * app/api/cron/dpr-generate/route.ts's own runDprGenerateTrigger already
- * uses (`SELECT id, tenant_id FROM projects WHERE status='active'`), not a
- * new pattern.
- */
-async function fetchActiveProjectIds(client: SupabaseClient): Promise<string[]> {
-  const { data, error } = await client.from('projects').select('id').eq('status', 'active')
-  if (error) throw error
-  return (data ?? []).map((p) => p.id as string)
-}
-
-/**
  * Global expected-roster-size for one checkpoint, summed across every
  * active project -- NOT tenant- or project-scoped in the result (the plan's
  * own comparison is a flat "expected roster size vs. sent count", per
@@ -125,13 +113,13 @@ async function expectedRosterSize(
   checkpoint: Checkpoint,
   logDate: string,
 ): Promise<number> {
-  const projectIds = await fetchActiveProjectIds(client)
+  const projects = await fetchActiveProjects(client)
   let total = 0
-  for (const projectId of projectIds) {
+  for (const project of projects) {
     const roster =
       checkpoint === 'morning_send'
-        ? await fetchMorningRoster(client, projectId, logDate)
-        : await fetchEveningRoster(client, projectId, logDate)
+        ? await fetchMorningRoster(client, project.id, logDate)
+        : await fetchEveningRoster(client, project.id, logDate)
     total += roster.length
   }
   return total
