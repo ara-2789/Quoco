@@ -59,6 +59,12 @@ describe('sendWhatsAppTemplate', () => {
     expect(body.get('To')).toBe('whatsapp:+919876543210')
     expect(body.get('ContentSid')).toBe('HXd4a896b66bfd7b237f53dc4dca77fb76')
     expect(JSON.parse(body.get('ContentVariables')!)).toEqual({ '1': 'Arjun Nair', '2': 'Emerald Heights' })
+    // Item D dependency: without this, Twilio has nowhere to POST delivery
+    // status, and the status-callback route (app/api/whatsapp/status-
+    // callback/route.ts) never receives anything in production. Pinned to
+    // the production origin, never an env-derived one -- see send.ts's own
+    // header.
+    expect(body.get('StatusCallback')).toBe('https://app.quoco.co.in/api/whatsapp/status-callback')
   })
 
   it('does not double-prefix a "to" that already carries "whatsapp:"', async () => {

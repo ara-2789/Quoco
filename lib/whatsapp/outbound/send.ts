@@ -29,6 +29,22 @@
 // process.env only. Never logged, never included in an error message or
 // any payload dump -- only the response status/body (which never echoes
 // the request's own auth header) is ever surfaced.
+//
+// STATUSCALLBACK, ADDED FOR ITEM D (2026-08-28) -- WITHOUT THIS, ITEM D
+// RECEIVES NOTHING. Twilio's Messages API only POSTs delivery-status
+// updates to a StatusCallback URL that was supplied ON THE SEND ITSELF
+// (per-message, not an account-wide default this codebase configures
+// anywhere) -- confirmed against Twilio's own Messages resource docs, same
+// verification discipline as this file's own IDEMPOTENCY KEY note above.
+// Pointed at PRODUCTION_WEBHOOK_ORIGIN (lib/whatsapp/twilio-signature.ts) --
+// the pinned production origin, never the env-derived fallback the same
+// module also exposes for validation: this value is embedded in the
+// OUTGOING Twilio API call itself, so it must be a real, reachable
+// production URL, not whatever NEXT_PUBLIC_APP_URL happens to resolve to in
+// a non-production environment (a test run must never ask Twilio to
+// callback a URL that doesn't exist).
+
+import { PRODUCTION_WEBHOOK_ORIGIN } from '@/lib/whatsapp/twilio-signature'
 
 export interface SendTemplateParams {
   /** E.164, e.g. "+919876543210" -- the "whatsapp:" prefix is added here, not by the caller. */
@@ -94,6 +110,7 @@ export async function sendWhatsAppTemplate(
     To: withWhatsAppPrefix(params.to),
     ContentSid: params.contentSid,
     ContentVariables: JSON.stringify(params.contentVariables),
+    StatusCallback: `${PRODUCTION_WEBHOOK_ORIGIN}/api/whatsapp/status-callback`,
   })
 
   const res = await fetchFn(url, {
