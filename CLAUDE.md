@@ -834,6 +834,11 @@ their FLOWS and dashboard views are not built in the Spine.
       only because, until the item below ships, there is no cron capable of
       starting one at all. Read §27 before sizing any future work in this
       area as "the inbound path already covers it."
+      **RETIRED, 2026-08-28** — the scaffolding described above is gone.
+      `routeInboundMessage`'s no-active-session branch no longer starts a
+      flow at all; it returns one of four static acknowledgement replies
+      (`design-decisions-beta-feedback.md` §38). See that file's own
+      header for the current design in full.
     * THE TRIGGER CRON IS NOT "ADD A CRON JOB." A cron can decide WHEN to
       send something; it cannot MAKE a send happen, because nothing in this
       codebase can construct an outbound WhatsApp message outside a webhook

@@ -268,3 +268,27 @@ export async function fetchEveningRoster(
 
   return filterEveningRoster(roster, byEngineer)
 }
+
+export interface ActiveProject {
+  id: string
+  tenant_id: string
+  name: string
+}
+
+/**
+ * Every active project, tenant_id and name included so a caller looping
+ * over projects (item E's own two cron routes; item F's coverage-sweep
+ * expected-roster-size computation) never needs a second query per
+ * project just to get its name for the message template or its tenant_id
+ * for triggerCheckIn's own params. Same `SELECT ... WHERE status='active'`
+ * shape app/api/cron/dpr-generate/route.ts's own trigger already uses --
+ * not a new query pattern, just shared rather than duplicated a third
+ * time (coverage-sweep.ts used to keep its own private copy of the id-only
+ * version; moved here 2026-08-28 so item E's routes reuse the exact same
+ * function instead of a fourth copy).
+ */
+export async function fetchActiveProjects(client: SupabaseClient): Promise<ActiveProject[]> {
+  const { data, error } = await client.from('projects').select('id, tenant_id, name').eq('status', 'active')
+  if (error) throw error
+  return (data ?? []) as ActiveProject[]
+}
