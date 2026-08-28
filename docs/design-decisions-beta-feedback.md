@@ -2764,6 +2764,23 @@ before Pass 1 ships, this copy must change to something honest BEFORE
 that happens — not be discovered false by an engineer waiting on a
 message that never comes.
 
+**REFRAMED, 2026-08-28 (item D/F/E pre-flight audit) — this is a
+POST-item-E verification, never a THIRD precondition alongside GATE
+1/B3, despite living inside a section titled "Two hard preconditions."**
+Named explicitly because that placement invites exactly the misreading:
+GATE 1 and B3 are things that must be true BEFORE the two `vercel.json`
+cron entries are added; this item cannot be checked until AFTER they are
+— it requires observing a real, refused engineer actually receive the
+promised message, which cannot happen before the crons that send it
+exist. **It gates nothing about enabling the crons; it is what you check
+the day after you do.** Do not read "both preconditions confirmed
+cleared" (this same section, below) as covering this item too — it does
+not, and never did; the two are independently satisfiable in a way GATE
+1/B3 are not. See §38 for the two now-decided replacement strings that
+make this checklist item finally checkable at all — until this entry,
+retirement itself (§28(w)) had no copy to verify for two of its four
+branches.
+
 ## 36. UNIQUE index on `project_members(user_id)` — DECIDED IN PRINCIPLE, NOT SCHEDULED, 2026-08-26
 
 **Citation correction, on read:** this entry was requested citing "§35's
@@ -2949,6 +2966,91 @@ idiom):
 
 > No site report was received for {{1}} today, {{2}}. There is nothing to
 > share for this date.
+
+## 38. Inbound-start retirement — the two missing acknowledgement strings, DECIDED (2026-08-28)
+
+Item D/F/E pre-flight audit, this session. §2's own retirement plan
+(`docs/plans/pass1-outbound-send-plan.md`) leaves `routeInboundMessage`
+with four idle-inbound branches once built: two already refuse with
+static copy (`MORNING_WINDOW_CLOSED_REPLY`, `EVENING_WINDOW_NOT_OPEN_
+REPLY`, §35b) and can return that text unconditionally once retirement
+removes the RPC calls that currently sit past them; the other two
+currently START a real flow (`applyMorningFlowTurn`/`applyEveningFlowTurn`
+with `startFlow: true`) and have no refusal copy at all — retirement
+removes the start, and until now nothing filled the gap it leaves.
+
+### a. Approved copy (Aravind, 2026-08-28)
+
+```
+Morning, before morningCutoff:
+"Good morning. Your check-in will arrive shortly — it comes to you automatically."
+
+Evening, after eveningSend:
+"Your evening check-in will arrive shortly — it comes to you automatically."
+```
+
+### b. Reasoning
+
+- **Fills the genuine gap, not a cosmetic one.** Two of `routeInboundMessage`'s
+  four idle branches currently start a flow rather than refusing — retirement
+  (§2 item 1) leaves them with no reply at all unless this copy exists. The
+  other two already refuse and need no new text.
+- **§28(w)'s original fallback proposal is WRONG for these two branches —
+  corrected here, dated, so it is not implemented as originally written.**
+  §2 item 2 proposed falling back to the "already-done"/`REPORT_READY_REPLY`-
+  style acknowledgement for every idle branch. `REPORT_READY_REPLY` ("Today's
+  report is ready") states the OPPOSITE of the truth at, say, 09:00 or 19:00
+  under these two branches — that half's check-in has not happened yet. Not a
+  gap in the original proposal, a wrong answer for these two specific cases;
+  do not implement §2 item 2 literally for the morning-before-cutoff or
+  evening-after-send branches.
+- **Register matches the two existing refusal strings deliberately — all
+  four now read as one voice.** Both new strings echo "...it comes to you
+  automatically" / "...will arrive shortly," the same construction as
+  `MORNING_WINDOW_CLOSED_REPLY`/`EVENING_WINDOW_NOT_OPEN_REPLY`'s own
+  "...will be sent automatically." States the fact rather than instructing
+  the engineer — he is messaging because he believes he must start it
+  himself; the copy's job is to make that belief unnecessary, not to correct
+  him for holding it.
+
+### c. Accepted imprecision, named honestly
+
+"Shortly" is true before that half's own trigger has fired and merely
+optimistic after it — if he ignored the 08:30 (or 18:30) trigger itself,
+nothing further arrives until the nudge (Pass 2, not built, §35d). Naming
+the actual clock time was considered and rejected: it hardcodes a
+checkpoint value into copy that drifts the moment `CHECKIN_CHECKPOINTS`
+changes (the same reasoning `REPORT_READY_REPLY`'s own "tomorrow morning,"
+not a time, already used). Accepted knowingly, not overlooked.
+
+### d. All four branches are TEMPORARY — known end date
+
+`MORNING_WINDOW_CLOSED_REPLY`, `EVENING_WINDOW_NOT_OPEN_REPLY`, and both
+strings above are every one of them SCAFFOLDING (§35b's own framing,
+extended here to the two new strings by the same reasoning) — §28(x)'s
+ad-hoc menu, once genuinely built, replaces all four with a single
+interactive front door. This copy has a known expiration, not an indefinite
+lifespan; do not invest further precision into any of the four beyond what
+is recorded here.
+
+### e. Two pre-flight findings, reconfirmed this round, not new
+
+- **§35(f)'s checklist item is a POST-item-E verification, not a
+  pre-flight one** — corrected in place at §35f above (REFRAMED,
+  2026-08-28) and in `docs/plans/pass1-outbound-send-plan.md`'s own "Two
+  hard preconditions" section (same date). It cannot be satisfied until an
+  engineer refused during either window is observed actually receiving the
+  promised message — impossible before the crons that send it exist.
+- **§37(b) remains live, unchanged by this entry.** An engineer who never
+  submits morning still receives the morning refusal on every inbound
+  message for the rest of the day, on any timeline — confirmed against
+  `main`'s actual code this same audit, not merely cited from §37(b)'s own
+  2026-08-27 record. His real evening send still arrives via the cron
+  (item E, once built), which does not route through `routeInboundMessage`
+  at all — but the inbound echo itself stays wrong for that specific
+  engineer shape until §28(x)'s menu ships. Not fixed by this entry's own
+  two new strings, which do not touch this branch's own already-covered
+  refusal text.
 
 `{{1}}` = project name, `{{2}}` = date — same variable shape as templates 6
 and 7. Category: Utility (same default basis as every other operational
