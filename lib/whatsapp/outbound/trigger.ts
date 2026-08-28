@@ -90,7 +90,16 @@ export type Checkpoint = 'morning_send' | 'evening_send'
 // (or a distinct status value) would let the schema say what the test
 // above currently enforces instead. Not its own migration -- rides
 // whichever migration next touches outbound_sends for its own reason.
-const RATE_LIMITED_MARKER = 'rate_limited_429_retryable'
+//
+// EXPORTED (2026-08-28, item F): lib/whatsapp/outbound/coverage-sweep.ts
+// needs the exact same literal to partition the rate-limited backlog out
+// of its stuck-row alert scan (docs/plans/pass1-outbound-send-plan.md's
+// own Amendment (b) correction, "THE PARTITION"). Imported, never
+// re-typed -- a second hardcoded copy of this string is exactly the kind
+// of drift the CAS invariant test above exists to prevent for this file's
+// OWN writers; a second file re-typing it would be the same hazard one
+// file over.
+export const RATE_LIMITED_MARKER = 'rate_limited_429_retryable'
 
 export interface TriggerParams {
   checkpoint: Checkpoint

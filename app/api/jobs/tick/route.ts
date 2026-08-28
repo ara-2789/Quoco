@@ -9,6 +9,12 @@ import {
   reportMorningSweepError,
   type MorningCutoffSweepResult,
 } from '@/lib/daily-logs/morning-cutoff-sweep'
+import {
+  runOutboundCoverageSweep,
+  reportOutboundCoverageAnomalies,
+  reportOutboundCoverageSweepError,
+  type CoverageSweepResult,
+} from '@/lib/whatsapp/outbound/coverage-sweep'
 import { createServiceClient } from '@/lib/supabase/service'
 
 // This endpoint is polled by Vercel Cron every 60 seconds (NFR-16).
@@ -61,6 +67,21 @@ export async function runJobsTick(client: SupabaseClient) {
     morningSweep = reportMorningSweepError(err)
   }
 
+  // Item F -- the outbound-send coverage/stuck-claim sweep (docs/plans/
+  // pass1-outbound-send-plan.md, Amendment (b), F1). Same placement and
+  // isolation discipline as the morning sweep immediately above: runs every
+  // tick, time-triggered rather than queued, isolated in its own try/catch
+  // so a failure here never prevents job claiming/processing from running
+  // this tick, and never silently swallowed either (reportOutboundCoverage-
+  // SweepError, same shape as reportMorningSweepError).
+  let outboundCoverage: CoverageSweepResult | { error: string }
+  try {
+    outboundCoverage = await runOutboundCoverageSweep(client, new Date())
+    reportOutboundCoverageAnomalies(outboundCoverage)
+  } catch (err) {
+    outboundCoverage = reportOutboundCoverageSweepError(err)
+  }
+
   const jobs = await claimJobs(3, client)
 
   const results = await Promise.allSettled(
@@ -89,6 +110,7 @@ export async function runJobsTick(client: SupabaseClient) {
     claimed: jobs.length,
     results: results.map((r) => (r.status === 'fulfilled' ? r.value : r.reason)),
     morningSweep,
+    outboundCoverage,
   }
 }
 

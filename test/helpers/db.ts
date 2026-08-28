@@ -91,26 +91,31 @@ export const TEST_PHONE_PREFIX = '+19995550'
 // A SEPARATE PREFIX ENTIRELY, RESERVED WHOLESALE:
 //   +19995551NNNNNN (6-digit random suffix, NOT the 3-digit
 //   TEST_PHONE_PREFIX convention above) -- reserved wholesale to the
-//   outbound-send suite (lib/whatsapp/outbound/*'s own test/outbound-
-//   trigger.test.ts, `mintOutboundEngineer()`). Mints exactly ONE `users`
-//   row per CI run, in that file's own `beforeAll` -- NOT one per test
-//   (see UNIQUENESS AXIS RULE below for why, and that file's own header
-//   for the incident this corrected: an earlier draft called
-//   `mintOutboundEngineer()` from inside every `it()` block instead,
-//   minting 11 rows/run rather than 1, caught 2026-08-28 -- 3 real CI
-//   runs had already left 33 minted rows plus the 2 anchored legacy rows
-//   above, 35 total). Permanent either way -- see that file's own header
-//   for why cleanup is deliberately not a code path. Do not add a
-//   `+19995551...` fixture anywhere else -- the whole prefix belongs to
-//   this one suite by construction, not by convention.
+//   outbound-send suite (lib/whatsapp/outbound/*, `mintOutboundEngineer()`,
+//   now shared via test/helpers/outbound-fixtures.ts -- 2026-08-28, item
+//   D/F build). Each of this suite's own test FILES mints its engineer(s)
+//   exactly ONCE per CI run, in its own `beforeAll` -- NOT one per test
+//   (see UNIQUENESS AXIS RULE below for why, and test/outbound-
+//   trigger.test.ts's own header for the incident this corrected: an
+//   earlier draft called `mintOutboundEngineer()` from inside every
+//   `it()` block instead, minting 11 rows/run rather than 1, caught
+//   2026-08-28). CURRENT TOTAL RATE, as of the item D/F PR: 4 `users`
+//   rows per full CI run of this suite -- 1 (test/outbound-trigger.
+//   test.ts) + 2 (test/outbound-coverage-sweep.test.ts, engineerA +
+//   engineerB) + 1 (test/status-callback.test.ts). Permanent either way --
+//   see test/outbound-trigger.test.ts's own header for why cleanup is
+//   deliberately not a code path. Do not add a `+19995551...` fixture
+//   anywhere else -- the whole prefix belongs to this one suite by
+//   construction, not by convention.
 //
-// RESERVED DATE RANGE, SAME SUITE: test/outbound-trigger.test.ts also
-// reserves 2026-09-01 through 2026-09-11 (its own LOG_DATE_* constants)
-// against its one shared engineer + fixed tenant/project -- see that
-// file's own header. Only matters within that file's own
-// (tenant_id, recipient_user_id) pair, so it does not need tracking here
-// the way phone slots do; recorded for visibility, not because another
-// file could collide with it.
+// RESERVED DATE RANGE, SAME SUITE, ONE RANGE PER FILE -- against the same
+// shared tenant/project (test/helpers/outbound-fixtures.ts), only matters
+// within each file's own (tenant_id, recipient_user_id) pair, so this
+// does not need tracking here the way phone slots do; recorded for
+// visibility, not because another file could collide with it:
+//   test/outbound-trigger.test.ts        -- 2026-09-01 through 2026-09-11
+//   test/outbound-coverage-sweep.test.ts -- 2026-09-12 through 2026-09-16
+//   test/status-callback.test.ts         -- 2026-09-17 through 2026-09-19
 //
 // UNIQUENESS AXIS RULE (2026-08-28, the fix for the incident named
 // above): when a test-db fixture needs a fresh, per-test-unique value to

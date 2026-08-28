@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
-import crypto from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isNewMessage } from '@/lib/whatsapp/idempotency'
 import { normalisePhoneNumber } from '@/lib/whatsapp/normalise'
@@ -9,41 +8,14 @@ import { applyMorningFlowTurn, buildMorningReply } from '@/lib/whatsapp/flows/mo
 import { routeInboundMessage } from '@/lib/whatsapp/inbound-start'
 import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
 import { decideInboundGate, clearMessagingBlock } from '@/lib/whatsapp/reactivation'
+import { validateTwilioSignature } from '@/lib/whatsapp/twilio-signature'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
 // processing anything. Twilio signs each webhook request using your Auth
-// Token; we recompute the signature and compare. Non-matching -> 403.
-function validateTwilioSignature(
-  url: string,
-  params: Record<string, string>,
-  twilioSignature: string,
-  authToken: string,
-): boolean {
-  const sortedKeys = Object.keys(params).sort()
-  let data = url
-  for (const key of sortedKeys) {
-    data += key + params[key]
-  }
-
-  const expectedSignature = crypto
-    .createHmac('sha1', authToken)
-    .update(Buffer.from(data, 'utf-8'))
-    .digest('base64')
-
-  const expectedBuf = Buffer.from(expectedSignature)
-  const providedBuf = Buffer.from(twilioSignature)
-
-  // timingSafeEqual THROWS RangeError on length-mismatched buffers. A garbage
-  // X-Twilio-Signature of the wrong length would otherwise become an unhandled
-  // 500 — and Twilio retries 5xx, so malformed-signature probes create retry
-  // noise (S1). A length mismatch is invalid by definition; return false. Length
-  // is not secret, so short-circuiting here is not a timing leak.
-  if (expectedBuf.length !== providedBuf.length) {
-    return false
-  }
-
-  return crypto.timingSafeEqual(expectedBuf, providedBuf)
-}
+// Token; we recompute the signature (against a pinned allowlist of known-
+// good hosts, not a single env-derived string -- see lib/whatsapp/twilio-
+// signature.ts's own header for the 2026-08-19 incident this closes) and
+// compare. Non-matching against every allowlisted host -> 403.
 
 // Escape the five XML predefined entities before embedding free text in TwiML.
 // Engineer answers are arbitrary free text and can contain & < > " ' — none of
@@ -135,9 +107,7 @@ export async function handleWebhookPost(
     params[key] = value.toString()
   })
 
-  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/whatsapp/webhook`
-
-  const isValid = validateTwilioSignature(webhookUrl, params, twilioSignature, authToken)
+  const isValid = validateTwilioSignature('/api/whatsapp/webhook', params, twilioSignature, authToken)
 
   if (!isValid) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })

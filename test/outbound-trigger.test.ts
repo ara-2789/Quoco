@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { testClient, readSession } from './helpers/db'
+import {
+  OUTBOUND_TEST_TENANT_ID,
+  OUTBOUND_TEST_PROJECT_ID,
+  ensureOutboundParentFixtures,
+  mintOutboundEngineer,
+  type MintedEngineer,
+} from './helpers/outbound-fixtures'
 import { triggerCheckIn } from '@/lib/whatsapp/outbound/trigger'
 import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID } from '@/lib/whatsapp/outbound/templates'
 
@@ -118,8 +125,13 @@ import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID }
 //   table-grants-gap.md) diffs against -- the whole reason a rehearsal
 //   environment is useful is that it carries prod's real ACL truth, not a
 //   test-only relaxation of it.
-const OUTBOUND_TEST_TENANT_ID = '00000000-0000-4000-a000-000000031000'
-const OUTBOUND_TEST_PROJECT_ID = '00000000-0000-4000-a000-000000031001'
+// OUTBOUND_TEST_TENANT_ID, OUTBOUND_TEST_PROJECT_ID, ensureOutboundParent-
+// Fixtures, and mintOutboundEngineer now live in test/helpers/outbound-
+// fixtures.ts (2026-08-28, item D/F build) -- extracted so
+// test/status-callback.test.ts can reuse the exact same parent fixtures
+// and minting logic instead of re-typing it. Imported above; the doc
+// comments on THE SHAPE USED HERE / SESSION SHARING / ACCRETION in this
+// file's own header above still describe the design in full.
 
 // RESERVED DATE RANGE: one date per it() block, plus one extra for the
 // one block with two sub-scenarios against the same shared engineer.
@@ -140,74 +152,6 @@ const LOG_DATE_429_THEN_5XX = '2026-09-08'
 const LOG_DATE_CAS_RACE_LOSER = '2026-09-09'
 const LOG_DATE_TEMPLATE_WITH_PLAN = '2026-09-10'
 const LOG_DATE_TEMPLATE_NO_PLAN = '2026-09-11'
-
-async function ensureOutboundParentFixtures(): Promise<void> {
-  const db = testClient()
-  const { error: tenantErr } = await db
-    .from('tenants')
-    .upsert(
-      { id: OUTBOUND_TEST_TENANT_ID, name: 'ZZ Test Tenant (outbound-send suite)', slug: 'zz-outbound-send' },
-      { onConflict: 'id' },
-    )
-  if (tenantErr) throw new Error(`ensureOutboundParentFixtures tenant failed: ${tenantErr.message}`)
-
-  const { error: projErr } = await db
-    .from('projects')
-    .upsert(
-      { id: OUTBOUND_TEST_PROJECT_ID, tenant_id: OUTBOUND_TEST_TENANT_ID, name: 'ZZ Test Project (outbound-send suite)' },
-      { onConflict: 'id' },
-    )
-  if (projErr) throw new Error(`ensureOutboundParentFixtures project failed: ${projErr.message}`)
-}
-
-interface MintedEngineer {
-  id: string
-  whatsappNumber: string
-}
-
-/**
- * Insert a brand-new `users` row under the shared outbound-send tenant,
- * with a randomly generated whatsapp_number -- retried on a unique-
- * constraint collision (users.whatsapp_number), so a genuine collision
- * (unlikely, not impossible) never flakes the test. The "+19995551"
- * prefix is deliberately the fake NANP test space (test/helpers/db.ts's
- * own TEST_PHONE_PREFIX, "+19995550") with its LAST prefix digit changed
- * from 0 to 1 -- a disjoint range from every existing fixed testPhone('NNN')
- * slot in this repo, by construction, not by checking a list that could
- * go stale.
- *
- * CALLED ONCE, in this file's own `beforeAll` -- not per test. See the
- * file header's THE SHAPE USED HERE / DRAFT 3 sections for why: this
- * function used to be called from inside every `it()` block, which
- * produced 11 permanent `users` rows per CI run instead of 1. Per-test
- * uniqueness now comes from each test's own reserved LOG_DATE_* constant.
- */
-async function mintOutboundEngineer(): Promise<MintedEngineer> {
-  const db = testClient()
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const suffix = Math.floor(Math.random() * 1_000_000)
-      .toString()
-      .padStart(6, '0')
-    const whatsappNumber = `+19995551${suffix}`
-    const { data, error } = await db
-      .from('users')
-      .insert({
-        tenant_id: OUTBOUND_TEST_TENANT_ID,
-        full_name: 'ZZ Test Engineer (outbound-send suite, minted)',
-        role: 'engineer',
-        status: 'active',
-        messaging_blocked: false,
-        whatsapp_number: whatsappNumber,
-        auth_id: null,
-      })
-      .select('id')
-      .single<{ id: string }>()
-    if (!error) return { id: data.id, whatsappNumber }
-    if (error.code !== '23505') throw new Error(`mintOutboundEngineer insert failed: ${error.message}`)
-    // whatsapp_number collision -- retry with a fresh random suffix.
-  }
-  throw new Error('mintOutboundEngineer: exhausted retries minting a unique whatsapp_number')
-}
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })

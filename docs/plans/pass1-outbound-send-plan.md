@@ -630,6 +630,49 @@ as a few extra lines on an already-justified migration, never the sole reason on
 opened. Named here so a future author touching this table has somewhere to check for a
 free improvement, not because it is itself a task to schedule.
 
+### (h) Item F's own coverage-gap alerting needed a gate — derived from `vercel.json`, not declared (2026-08-28)
+
+**Found while building item F (items D2/F1-F4's own PR), not originally asked for.**
+`app/api/jobs/tick/route.ts` is already live in production today — it fires every 60
+seconds regardless of item D/F's own PR, per its own existing `vercel.json` entry. Item
+E's two trigger crons — the *only* mechanism that will ever populate `outbound_sends`
+with real rows — are deliberately withheld pending GATE 1/B3 confirmation (see "Two hard
+preconditions," below). Without a gate, item F's coverage check (comparing roster size
+against `status='sent'` count, past each checkpoint's own cutoff) would find every
+checkpoint's *full roster* as a "gap" every single day, from the moment items D/F merge
+until item E ships, and alert on it — the same "first burst teaches everyone to ignore
+the only channel real stuck rows have" hazard Amendment (g) already named for the
+rate-limited case, one level earlier and considerably worse: daily, not just during a
+rate-limit burst.
+
+**The gate is DERIVED from `vercel.json`, not a declared value of any kind — no env var,
+no hardcoded boolean either.** A first draft used a hardcoded `const
+OUTBOUND_TRIGGER_CRON_LIVE = false`, flipped by hand in the same commit that adds item
+E's two `vercel.json` entries. That already closed the *tamperability* failure mode a
+runtime env-var flag would have had (this codebase's own `ENABLE_TEST_FLOW_TRIGGER`
+precedent, and roster.ts's own `ROSTER_CARDINALITY_CEILING` argument: "changed via code +
+review, never a runtime knob" — a hardcoded const already satisfies that). **What it did
+NOT close was SYNCHRONISATION** — two separate files (`vercel.json` and the constant's own
+file) that had to agree, with nothing enforcing it. Item E's own PR could add its two
+cron entries to `vercel.json` and simply forget to also flip the constant — leaving
+coverage alerting silently OFF while real sends were already happening. Fails safe, but
+silently wrong, and nothing would have detected it; the failure would only have surfaced
+as "why did nobody get paged for that real gap last Tuesday."
+
+**Fix:** `isOutboundTriggerCronLive` (`lib/whatsapp/outbound/coverage-sweep.ts`) reads
+`vercel.json`'s own `crons` array directly and returns true the moment it contains
+anything beyond `KNOWN_PRE_ITEM_E_CRON_PATHS` (today: `/api/jobs/tick`,
+`/api/cron/dpr-generate`) — item E's own eventual route name is not guessed, since item E
+is unbuilt and its path isn't decided; the check only needs to notice something new
+exists, not what it's called. **Item E's builder does not need to remember anything.**
+Adding item E's two `vercel.json` entries in its own PR *is* enabling the gate, in the
+same commit, by construction — there is no second file to synchronize by hand. A test
+(`test/unit/outbound-coverage-sweep-sentry.test.ts`) pins this against the REAL
+`vercel.json`, not a fixture: it asserts the gate is off given today's actual file. Once
+item E's PR adds its two entries, that same assertion — reading the same real file —
+starts failing, forcing item E's author to look at it. That is the enforcement mechanism:
+a broken CI assertion, not a checklist line to remember.
+
 ---
 
 ## Two hard preconditions for enabling Pass 1's cron entries (`vercel.json` item E)
