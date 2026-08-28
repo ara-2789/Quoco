@@ -36,7 +36,7 @@ describe('reportOutboundCoverageAnomalies', () => {
     expect(captureMessage).not.toHaveBeenCalled()
   })
 
-  it('PRODUCTION DEFAULT: a real coverage gap, past window close, is NEVER alerted while the REAL vercel.json still holds only today\'s two known-pre-item-E crons -- item E does not exist yet, so a gap here is expected, not a bug (called with no third argument, exactly like the real jobs/tick call site -- the default derives from the actual file, not a declared value)', () => {
+  it('PRODUCTION DEFAULT: a real coverage gap, past window close, IS alerted now that the REAL vercel.json carries item E\'s two trigger entries (called with no third argument, exactly like the real jobs/tick call site -- the default derives from the actual file, not a declared value) -- flipped 2026-08-28 when this PR added those entries; the prior "never alerted" assertion here is the tripwire (Amendment (h)) firing exactly as designed, not a bug', () => {
     reportOutboundCoverageAnomalies(
       emptyResult({
         checkpoints: [
@@ -44,7 +44,7 @@ describe('reportOutboundCoverageAnomalies', () => {
         ],
       }),
     )
-    expect(captureMessage).not.toHaveBeenCalled()
+    expect(captureMessage).toHaveBeenCalledTimes(1)
   })
 
   it('a coverage gap BEFORE the window closes is never alerted even with triggerCronLive=true -- checking too early is a false positive by construction', () => {
@@ -157,18 +157,15 @@ describe('reportOutboundCoverageSweepError', () => {
 })
 
 // THE GATE MECHANISM ITSELF, PINNED AGAINST THE REAL vercel.json -- NOT A
-// FIXTURE. This is the tripwire: item E's own PR, once it adds its two
-// cron entries to the real vercel.json, changes what vercelConfig.crons
-// actually contains -- the first test below then evaluates against a
-// vercel.json that genuinely has more than the two known-pre-item-E
-// paths, and isOutboundTriggerCronLive correctly starts returning true,
-// which flips this test's own assertion from pass to fail. Item E's PR
-// cannot land with CI green without someone looking at this test --
-// nothing to remember, a broken assertion forces the acknowledgment
-// instead of relying on a human to recall a separate step.
+// FIXTURE. This IS the tripwire firing: this PR added item E's two cron
+// entries to the real vercel.json in the same commit as this test's own
+// update -- the assertion below flipped from `false` to `true` here,
+// exactly as designed (Amendment (h)): nothing to remember, a broken
+// assertion forced this file to be looked at and updated deliberately
+// rather than silently drifting from reality.
 describe('isOutboundTriggerCronLive', () => {
-  it('with the REAL, current vercel.json (today: exactly jobs/tick + dpr-generate, nothing else), the gate is OFF', () => {
-    expect(isOutboundTriggerCronLive(vercelConfig.crons)).toBe(false)
+  it('with the REAL, current vercel.json (item E\'s two trigger entries now present, 2026-08-28), the gate is ON', () => {
+    expect(isOutboundTriggerCronLive(vercelConfig.crons)).toBe(true)
   })
 
   it('a third cron entry beyond the known-pre-item-E paths trips the gate ON -- proves the mechanism reacts to ANY new entry, not a guess at item E\'s own (not-yet-decided) route name', () => {
