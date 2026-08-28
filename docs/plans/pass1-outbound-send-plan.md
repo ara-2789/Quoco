@@ -537,6 +537,44 @@ same gate is not accidentally carried into the OUTBOUND roster query by a future
 implementer reasoning from `routeInboundMessage`'s existing shape as precedent — it is
 not precedent for this query.
 
+### (g) 429 re-claim is UNBOUNDED in item B — item E must decide the retry
+budget explicitly, not inherit one that doesn't exist (2026-08-28)
+
+**RECORDED HERE ON PURPOSE, NOT SOLVED — a decisions-file note alone will not be read at
+build time; this file is where item E's own author will actually look.** Item B
+(`lib/whatsapp/outbound/trigger.ts`) makes a 429 genuinely retryable: a rejected send
+marks its `outbound_sends` row re-claimable, and the *next* `triggerCheckIn` call for the
+same `event_key` wins it back via an atomic conditional `UPDATE`. Nothing in item B caps
+how many times this can happen. The bound, if any, belongs entirely to the **caller's own
+retry cadence** — and that caller is item E, which does not exist yet. Item B was written
+deliberately not to own this decision (the mechanism only answers "can a retry succeed
+when attempted," never "how often should one be attempted") — but that means the decision
+is currently unowned, not that it doesn't need making.
+
+**Why this is a real question, not a hypothetical one.** This project's own account sits
+on the unverified-business messaging tier — **250 business-initiated conversations per
+rolling 24 hours** (`docs/reviews/whatsapp-template-submission-status.md`'s own
+"Answered-on-attempt" table, closed 2026-08-23). The morning cron fires the whole day's
+roster in one burst against that cap. A sustained 429 condition across some slice of the
+roster during that burst is a realistic STEADY STATE at anything beyond a handful of
+engineers, not an exotic edge case — this is the same premise §37(a)'s own 429-retryable
+decision was made against.
+
+**The question item E must answer explicitly, before its own `vercel.json` cron entries
+ship:**
+- How many times may a persistently rate-limited engineer be retried for the same
+  checkpoint, in one day?
+- Does that budget apply **per engineer**, **per checkpoint** (i.e., shared across every
+  engineer hitting the SAME burst), or is it a property of the cron's own invocation
+  cadence with no explicit cap at all?
+- What happens when the budget (if any) is exhausted — does the engineer's day end
+  silently at whatever the row's last state was (`'sending'`, marker still set), or does
+  something explicitly close it out (analogous to item F's own stuck-row reconciliation,
+  but for a row still genuinely re-claimable rather than ambiguously stuck)?
+
+Not answered here. Item E's own review package must state its answer, not assume item B
+already provided one.
+
 ---
 
 ## Two hard preconditions for enabling Pass 1's cron entries (`vercel.json` item E)

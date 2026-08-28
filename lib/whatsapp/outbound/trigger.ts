@@ -67,6 +67,23 @@ export type Checkpoint = 'morning_send' | 'evening_send'
 // 'sending' throughout, matching every other "left ambiguous" case) to
 // mark a row as safe to re-claim. Never matched against by anything other
 // than the exact string equality check in the re-claim UPDATE below.
+//
+// INVARIANT THIS MARKER DEPENDS ON, NOT SCHEMA-ENFORCED -- CHECKED, NOT
+// ASSUMED (2026-08-28): no .update() in this file may leave a row at
+// status='sending' while writing anything into `error` other than `null`
+// or this exact literal. The CAS below matches on `status='sending' AND
+// error=<this marker>` -- that's only safe because the one writer of REAL
+// Twilio error text into `error` always sets status='failed' in the SAME
+// atomic UPDATE (a 'failed' row can never satisfy the CAS's status half
+// regardless of its text). outbound_sends.error is a plain nullable TEXT
+// column with no CHECK tying its content to status, so nothing in the
+// schema enforces this -- it is enforced by
+// test/unit/outbound-trigger-cas-invariant.test.ts, a static source guard
+// that scans this file's own .update() calls and fails if a future change
+// (e.g. logging a 5xx's message into `error` for debugging, a natural-
+// looking addition that says nothing about re-claim semantics) violates
+// it. Keep that test passing rather than re-deriving this reasoning from
+// scratch if it ever fails.
 const RATE_LIMITED_MARKER = 'rate_limited_429_retryable'
 
 export interface TriggerParams {
@@ -182,7 +199,18 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
     // 'sending' -- reconciling a stuck row is item F's job (out of scope
     // here; see 031's own STUCK-CLAIM RECONCILIATION section for why a
     // blind retry is rejected there). No RPC call.
+    // DEDUP: per (reason, engineer, IST day), same convention as
+    // reportMorningSweepAnomalies/roster.ts's reportUnreachableEngineer.
+    // This exact branch cannot itself repeat for the SAME event_key under
+    // today's code -- a network exception leaves the row un-reclaimable
+    // (no marker written), so a later call for this event_key short-
+    // circuits to already_claimed before ever reaching another Twilio
+    // call. Fingerprinted anyway for consistency with the other five
+    // branches and so a chronic connectivity issue recurring across
+    // different engineers/checkpoints on the SAME day still collapses
+    // sensibly rather than relying on Sentry's own default grouping.
     Sentry.captureException(err, {
+      fingerprint: ['outbound-send', 'network_exception', params.engineerId, params.logDate],
       tags: { feature: 'outbound-send', checkpoint: params.checkpoint },
       extra: { eventKey, engineerId: params.engineerId, claimId },
     })
@@ -204,8 +232,18 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
       if (updateError) {
         throw new Error(`triggerCheckIn: failed to mark ${claimId} rate-limited: ${updateError.message}`)
       }
+      // DEDUP: per (reason, engineer, IST day) -- THE branch this matters
+      // most for. This is the only outcome that is genuinely re-claimable,
+      // so a persistently rate-limited engineer can page THIS exact
+      // message once per retry attempt for the same event_key, all day,
+      // for as long as the (not-yet-built) caller keeps retrying -- see
+      // docs/plans/pass1-outbound-send-plan.md's own item-E requirement
+      // recording the retry-budget question this depends on. Without this
+      // fingerprint, every attempt would open a fresh issue instead of
+      // collapsing into one growing one.
       Sentry.captureMessage('outbound-send: Twilio 429 rate limit, will retry next tick', {
         level: 'warning',
+        fingerprint: ['outbound-send', 'rate_limited_429', params.engineerId, params.logDate],
         tags: { feature: 'outbound-send', checkpoint: params.checkpoint },
         extra: { eventKey, engineerId: params.engineerId, claimId },
       })
@@ -214,8 +252,16 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
     if (sendResult.status >= 500) {
       // Retryable but ambiguous, same reasoning as the network-exception
       // branch above -- leave the ledger row at 'sending'.
+      // DEDUP: per (reason, engineer, IST day). Same structural note as
+      // the network-exception branch above -- a 5xx is NOT re-claimable
+      // (the CAS requires the 429 marker, never written here), so this
+      // exact event_key cannot retrigger this branch a second time under
+      // today's code. Fingerprinted for consistency and to collapse a
+      // chronic-5xx day across checkpoints, not because a single
+      // event_key can page it repeatedly.
       Sentry.captureMessage('outbound-send: Twilio 5xx on template send', {
         level: 'warning',
+        fingerprint: ['outbound-send', 'twilio_5xx', params.engineerId, params.logDate],
         tags: { feature: 'outbound-send', checkpoint: params.checkpoint },
         extra: {
           eventKey,
@@ -241,8 +287,15 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
     if (updateError) {
       throw new Error(`triggerCheckIn: failed to mark ${claimId} as failed: ${updateError.message}`)
     }
+    // DEDUP: per (reason, engineer, IST day). status='failed' is terminal
+    // -- the event_key can never be re-claimed again (the CAS requires
+    // status='sending'), so this branch fires at most once per event_key.
+    // Fingerprinted for consistency and to collapse a bad-number/quality-
+    // rating-class problem recurring across checkpoints on the same day,
+    // not because a single event_key can page it repeatedly.
     Sentry.captureMessage('outbound-send: Twilio rejected template send (non-retryable)', {
       level: 'error',
+      fingerprint: ['outbound-send', 'twilio_4xx_failed', params.engineerId, params.logDate],
       tags: { feature: 'outbound-send', checkpoint: params.checkpoint },
       extra: {
         eventKey,
@@ -291,8 +344,15 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
     // genuine race (B3's sweep should make this rare, not eliminate it
     // structurally), worth a loud alert to investigate, not a silent
     // accept.
+    // DEDUP: per (reason, engineer, IST day). The row becomes terminal
+    // ('sent') regardless of this anomaly, so this exact event_key cannot
+    // retrigger this branch. Fingerprinted for consistency and to
+    // collapse a genuinely recurring race (the same engineer hitting this
+    // more than once in a day, across morning/evening checkpoints) into
+    // one issue instead of two unrelated-looking ones.
     Sentry.captureMessage('outbound-send: RPC did not return "start" on a startFlow:true call', {
       level: 'error',
+      fingerprint: ['outbound-send', 'rpc_not_start', params.engineerId, params.logDate],
       tags: { feature: 'outbound-send', checkpoint: params.checkpoint },
       extra: { eventKey, engineerId: params.engineerId, claimId, rpcOutcome: turn.outcome },
     })
@@ -314,7 +374,13 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
     // only the bookkeeping write failed. Alert, don't throw: throwing here
     // would misrepresent a real, successful send as a failure to whatever
     // caller loop is iterating a roster.
+    // DEDUP: per (reason, engineer, IST day). A message was genuinely
+    // delivered here -- this event_key stays stuck at status='sending'
+    // with error=null afterward (not re-claimable: the CAS needs the 429
+    // marker, never written on this path), so it cannot retrigger this
+    // branch again. Fingerprinted for consistency, same as the rest.
     Sentry.captureException(sentUpdateError, {
+      fingerprint: ['outbound-send', 'ledger_update_failed', params.engineerId, params.logDate],
       tags: { feature: 'outbound-send', checkpoint: params.checkpoint },
       extra: { eventKey, engineerId: params.engineerId, claimId, twilioSid: sendResult.sid },
     })
