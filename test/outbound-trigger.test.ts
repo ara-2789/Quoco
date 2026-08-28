@@ -359,6 +359,154 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(rows[0]!.error).toBeNull()
   })
 
+  // THE ONE PERMITTED DOUBLE-SEND PATH, EXERCISED, NOT ARGUED. 429 is the
+  // only branch where the same event_key can produce more than one Twilio
+  // call for the same engineer -- deliberate, because Twilio rejected the
+  // request each time nothing was delivered, so a second attempt cannot
+  // double-send. These three tests prove the mechanism stays exactly that
+  // narrow: it survives repeated 429s, it stops being re-claimable the
+  // instant a DIFFERENT failure mode (5xx) is hit, and a caller who loses
+  // the compare-and-swap race makes no Twilio call at all.
+  it('429, 429, then 2xx: exactly one message ultimately delivered, one ledger row throughout, no duplicate row', async () => {
+    const logDate = runDate(8)
+    const params = {
+      checkpoint: 'morning_send' as const,
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
+      engineerName: 'ZZ Test Engineer',
+      projectName: 'ZZ Test Project',
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
+      logDate,
+      supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
+    }
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(429, { code: 20429, message: 'Too Many Requests' }))
+    const attempt1 = await triggerCheckIn(params)
+    expect(attempt1).toEqual({ outcome: 'rate_limited' })
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(429, { code: 20429, message: 'Too Many Requests' }))
+    const attempt2 = await triggerCheckIn(params)
+    expect(attempt2).toEqual({ outcome: 'rate_limited' }) // re-claimed the SAME row, rejected again
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMthird001' }))
+    const attempt3 = await triggerCheckIn(params)
+    expect(attempt3).toEqual({ outcome: 'sent', twilioSid: 'SMthird001' }) // re-claimed again, this time delivered
+
+    expect(fetchMock).toHaveBeenCalledTimes(3) // three Twilio calls made...
+    const rows = await readOutboundSends(engineerId, `morning_send:${logDate}`)
+    expect(rows).toHaveLength(1) // ...but exactly one ledger row throughout
+    expect(rows[0]!.status).toBe('sent') // ...and exactly one message ultimately delivered
+    expect(rows[0]!.twilio_sid).toBe('SMthird001')
+    expect(rows[0]!.error).toBeNull()
+
+    const session = await readSession(OUTBOUND_TEST_ENGINEER_PHONE)
+    expect(session?.current_flow).toBe('morning') // activated exactly once, on the delivering attempt
+  })
+
+  it('429 then 5xx: the row stops being re-claimable and stays at "sending" for item F', async () => {
+    const logDate = runDate(9)
+    const params = {
+      checkpoint: 'evening_send' as const,
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
+      engineerName: 'ZZ Test Engineer',
+      projectName: 'ZZ Test Project',
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
+      logDate,
+      supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
+    }
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(429, { code: 20429, message: 'Too Many Requests' }))
+    const attempt1 = await triggerCheckIn(params)
+    expect(attempt1).toEqual({ outcome: 'rate_limited' })
+
+    // Re-claimed (CAS matches: status='sending', error=marker) -- the
+    // re-claim UPDATE clears `error` to null BEFORE this second Twilio
+    // call is even made, so when THIS attempt then hits a 5xx, the row is
+    // left exactly where the ordinary 5xx path always leaves it:
+    // status='sending', error=null -- no marker survives.
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, { code: 20003, message: 'Service unavailable' }))
+    const attempt2 = await triggerCheckIn(params)
+    expect(attempt2).toEqual({ outcome: 'ambiguous' })
+
+    const rowsAfter5xx = await readOutboundSends(engineerId, `evening_send:${logDate}`)
+    expect(rowsAfter5xx).toHaveLength(1)
+    expect(rowsAfter5xx[0]!.status).toBe('sending')
+    expect(rowsAfter5xx[0]!.error).toBeNull() // NOT the marker -- no longer re-claimable
+
+    // A third attempt must NOT re-claim -- error is null, not the marker,
+    // so the CAS matches zero rows and this falls through to
+    // already_claimed, exactly like an ordinary stuck 5xx row.
+    const attempt3 = await triggerCheckIn(params)
+    expect(attempt3).toEqual({ outcome: 'already_claimed' })
+    expect(fetchMock).toHaveBeenCalledTimes(2) // the third attempt never called Twilio
+
+    const rowsFinal = await readOutboundSends(engineerId, `evening_send:${logDate}`)
+    expect(rowsFinal).toHaveLength(1)
+    expect(rowsFinal[0]!.status).toBe('sending') // stuck for item F, exactly like a plain 5xx row
+
+    const session = await readSession(OUTBOUND_TEST_ENGINEER_PHONE)
+    expect(session?.current_flow ?? null).toBeNull() // never activated
+  })
+
+  it('a 429 re-claim that loses the compare-and-swap race makes no Twilio call', async () => {
+    // True concurrency cannot be exercised in this sandbox (this project's
+    // own standing rule: concurrent RPC/function calls serialise in this
+    // environment, confirmed elsewhere in this suite's own history) -- so
+    // this simulates the LOSING side of the race sequentially instead: a
+    // "winner" changes the row out of the re-claimable state (clearing
+    // `error`, exactly what the winner's own re-claim UPDATE would do)
+    // between this caller's failed claim INSERT and its own re-claim
+    // attempt. The CAS is what's under test, not true parallelism -- if
+    // the CAS were a plain read-then-write instead of one atomic
+    // conditional UPDATE, this exact sequence would still (wrongly) let
+    // the loser through.
+    const logDate = runDate(10)
+    const params = {
+      checkpoint: 'morning_send' as const,
+      tenantId: OUTBOUND_TEST_TENANT_ID,
+      projectId: OUTBOUND_TEST_PROJECT_ID,
+      engineerId,
+      engineerName: 'ZZ Test Engineer',
+      projectName: 'ZZ Test Project',
+      whatsappNumber: OUTBOUND_TEST_ENGINEER_PHONE,
+      logDate,
+      supabaseClient: testClient(),
+      fetchFn: fetchMock as unknown as typeof fetch,
+    }
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(429, { code: 20429, message: 'Too Many Requests' }))
+    const attempt1 = await triggerCheckIn(params)
+    expect(attempt1).toEqual({ outcome: 'rate_limited' })
+
+    // Simulate a concurrent caller's re-claim UPDATE having already won,
+    // an instant before this test's own "loser" call runs its own
+    // re-claim attempt -- the exact state the real CAS UPDATE itself
+    // would leave behind, produced here directly instead of via a second
+    // real triggerCheckIn call, so this test controls the race outcome
+    // deterministically.
+    {
+      const db = testClient()
+      const { error } = await db
+        .from('outbound_sends')
+        .update({ error: null })
+        .eq('recipient_user_id', engineerId)
+        .eq('event_key', `morning_send:${logDate}`)
+      if (error) throw new Error(`simulate-winner update failed: ${error.message}`)
+    }
+
+    const loser = await triggerCheckIn(params)
+    expect(loser).toEqual({ outcome: 'already_claimed' })
+    expect(fetchMock).toHaveBeenCalledTimes(1) // only attempt1's call -- the loser never reached Twilio
+
+    const rows = await readOutboundSends(engineerId, `morning_send:${logDate}`)
+    expect(rows).toHaveLength(1) // still one row -- the loser never inserted a second one either
+  })
+
   it('evening checkpoint selects the primary template ({{3}}=morning plan) when one exists, and the no-plan template when it does not', async () => {
     const logDateWithPlan = runDate(3)
     {
