@@ -28,6 +28,105 @@ import type { EquipmentEchoItem } from '@/lib/whatsapp/flows/evening'
 // this suite creates carries this prefix; cleanup keys on it.
 export const TEST_PHONE_PREFIX = '+19995550'
 
+// ---------------------------------------------------------------------------
+// RESERVED PHONE/PREFIX BLOCKS, READ THIS BEFORE PICKING A NEW SLOT
+// (2026-08-28). Grepping your own file for a free 3-digit slot is NOT
+// enough -- it only tells you your file has never used that slot, not that
+// no OTHER file has. Two real cross-suite collisions happened this way:
+// test/unit/checkin-escalations-sweep.test.ts and (twice) test/outbound-
+// trigger.test.ts each independently picked a slot that "looked free" from
+// inside their own file, raced each other's `beforeAll`, and one suite's
+// fixture logic silently adopted the other's users row cross-tenant --
+// permanently, because outbound_sends' own composite FK is RESTRICT and
+// the table has no DELETE grant for any role, so an adopted row can never
+// be reclaimed by its rightful owner again (docs/reviews/031-outbound-
+// send-ledger-review-package.md; the incident itself:
+// test/unit/checkin-escalations-sweep.test.ts's own +19995550301 history,
+// commit 621beda).
+//
+// BEFORE ADDING A NEW testPhone('NNN') SLOT OR A NEW PREFIX: run
+//   grep -rohE "testPhone\('[0-9]+'\)|\+19995550[0-9]{3}" test/
+// and check the block list below -- this file's own registry can go
+// stale (a slot added elsewhere after this comment was last updated
+// wouldn't be reflected here), so the grep is the actual source of
+// truth; this list is a map of it, not a replacement for it.
+//
+// CLAIMED SLOTS under TEST_PHONE_PREFIX (+19995550NNN, 3-digit suffix),
+// as of 2026-08-28 -- by range, not by file (several files share ranges
+// deliberately, e.g. the four-digit step-sequences):
+//   101-105, 190           -- scattered single-file fixtures
+//   200, 209, 299           -- scattered single-file fixtures
+//   301-304, 306-313        -- test/morning-flow.test.ts and neighbours
+//                              (305 is a real gap, not a typo -- never
+//                              claimed by anything, safe to use)
+//   321-327                 -- test/morning-flow.test.ts
+//   401-432                 -- test/unit/morning-cutoff-sweep.test.ts and
+//                              neighbours
+//   501-506                 -- scattered single-file fixtures
+//   600                     -- test/unit/checkin-escalations-sweep.test.ts's
+//                              own ENGINEER_NORMAL_ID_KEY (moved here from
+//                              301, see commit 621beda)
+//   690-694                 -- scattered single-file fixtures
+//   701                     -- test/migration-007.test.ts
+//   801-816                 -- scattered single-file fixtures
+//   999                     -- test/unit/morning-flow-mirror.test.ts
+//
+// PERMANENTLY ANCHORED, DO NOT REUSE EVEN THOUGH IT LOOKS LIKE AN
+// ORDINARY testPhone() SLOT:
+//   +199955503XX -- reserved to the outbound-send suite
+//   (lib/whatsapp/outbound/*, test/outbound-trigger.test.ts). The specific
+//   point +19995550301 is a real, currently-existing users row
+//   (id cdfe1a22-230a-454b-bcc8-17c92438ff40) permanently pinned to the
+//   outbound-send suite's own tenant (000...031000) by the incident above
+//   -- it was originally checkin-escalations-sweep.test.ts's own row,
+//   adopted cross-tenant, and can never be deleted or reclaimed. Treat the
+//   whole 03XX block as off-limits, not just the one poisoned point.
+//   +19995550550 -- also a real, currently-existing users row (id
+//   7972f990-8d27-479e-9718-7105d81738fe), an orphaned artifact of an
+//   earlier outbound-send-suite fixture design (a single shared engineer,
+//   superseded by the minting scheme below) -- still present, still
+//   referenced by outbound_sends rows, still undeletable. Not reused by
+//   any current code; still off-limits for a new fixture regardless.
+//
+// A SEPARATE PREFIX ENTIRELY, RESERVED WHOLESALE:
+//   +19995551NNNNNN (6-digit random suffix, NOT the 3-digit
+//   TEST_PHONE_PREFIX convention above) -- reserved wholesale to the
+//   outbound-send suite (lib/whatsapp/outbound/*'s own test/outbound-
+//   trigger.test.ts, `mintOutboundEngineer()`). Mints exactly ONE `users`
+//   row per CI run, in that file's own `beforeAll` -- NOT one per test
+//   (see UNIQUENESS AXIS RULE below for why, and that file's own header
+//   for the incident this corrected: an earlier draft called
+//   `mintOutboundEngineer()` from inside every `it()` block instead,
+//   minting 11 rows/run rather than 1, caught 2026-08-28 -- 3 real CI
+//   runs had already left 33 minted rows plus the 2 anchored legacy rows
+//   above, 35 total). Permanent either way -- see that file's own header
+//   for why cleanup is deliberately not a code path. Do not add a
+//   `+19995551...` fixture anywhere else -- the whole prefix belongs to
+//   this one suite by construction, not by convention.
+//
+// RESERVED DATE RANGE, SAME SUITE: test/outbound-trigger.test.ts also
+// reserves 2026-09-01 through 2026-09-11 (its own LOG_DATE_* constants)
+// against its one shared engineer + fixed tenant/project -- see that
+// file's own header. Only matters within that file's own
+// (tenant_id, recipient_user_id) pair, so it does not need tracking here
+// the way phone slots do; recorded for visibility, not because another
+// file could collide with it.
+//
+// UNIQUENESS AXIS RULE (2026-08-28, the fix for the incident named
+// above): when a test-db fixture needs a fresh, per-test-unique value to
+// satisfy a UNIQUE constraint, carry that uniqueness on a STRING FIELD
+// ALREADY PART OF THE KEY (a date, an event_key, a label) -- never on a
+// newly minted `users`/engineer row, whenever the table the constraint
+// lives on sits downstream of a no-DELETE-grant, RESTRICT-FK'd table like
+// `outbound_sends`. A minted row is free to create and PERMANENT the
+// instant anything references it; a string costs nothing and leaves
+// nothing behind. This is why test/outbound-trigger.test.ts mints its
+// engineer once (in `beforeAll`) and carries per-test uniqueness on
+// `LOG_DATE_*` instead of on a fresh `users` row per test -- read that
+// file's own header before copying its former per-test-mint shape into a
+// new fixture.
+// ---------------------------------------------------------------------------
+
 // Fixed, recognisable tenant the sessions hang off (whatsapp_sessions.tenant_id
 // is NOT NULL). Deterministic UUID so cleanup/re-runs are idempotent.
 export const TEST_TENANT_ID = '00000000-0000-4000-a000-00000000d013'

@@ -468,6 +468,46 @@ one. This was NOT future work deferred past Pass 1 — it was mis-scoped as such
 this section's original text, caught only because item F and the stuck-row gap turned
 out to be the same failure mode viewed from two sides, both already in this Pass.
 
+**CORRECTED AGAIN, 2026-08-28 — this spec predates the 429-retryable decision (Amendment
+(g) above / `design-decisions-beta-feedback.md`) and item F as written pages on benign
+backlog as a result.** The scan above is a bare `status='sending' AND updated_at <
+now() - INTERVAL '10 minutes'` — full stop. But a row the 429 mechanism marked
+re-claimable (`error = RATE_LIMITED_MARKER`, `status` still `'sending'`) IS
+`status='sending'` past ten minutes whenever item E's own retry cadence is slower than
+that gap — and on this account's 250-conversation/24h tier, a sustained 429 condition
+during the morning burst (Amendment (g)'s own premise) is the STEADY STATE this design
+was built for, not a rare edge. Item F as specced cannot tell that row apart from a
+genuinely dead one and pages on it regardless.
+
+**Worse than noise — this INVERTS 031's own argument for the alert-only design.** 031's
+header (STUCK-CLAIM RECONCILIATION, restated above) rests the entire case for "alert, not
+auto-retry" on stuck-row signal PURITY: every `status='sending'`-past-threshold row was
+assumed to mean the SAME thing (a dead process, remediated by a human checking Twilio's
+own delivery record). The 429 mechanism introduces a SECOND population sharing that exact
+signature with a DIFFERENT remediation path: `sending`+`error IS NULL` waits on
+callback-evidence reconciliation (031's own designed closer, item D, still unbuilt);
+`sending`+`error=RATE_LIMITED_MARKER` waits on item E's own retry cadence, nothing else —
+checking Twilio's delivery record for THAT row answers nothing, because Twilio never
+received it. Feeding both into one undifferentiated scan is exactly the "stuck-signal
+purity" 031 argued mattered, now violated by this Pass's own later decision.
+
+**THE PARTITION, for item F's builder to read before writing the query, not discover by
+paging on a burst:**
+- **True-stuck alert (031's original case, unchanged): `status='sending' AND error IS
+  NULL AND updated_at < now() - INTERVAL '10 minutes'`.** Exactly the population 031's own
+  reconciliation argument was written for.
+- **Rate-limited backlog (`status='sending' AND error=RATE_LIMITED_MARKER`): NOT the same
+  alert.** Either (a) excluded from item F's stuck-row scan entirely, with its own COUNT
+  surfaced separately (a healthy signal — "N engineers still queued behind rate limits" —
+  not a failure one), or (b) scanned with its own distinct Sentry fingerprint so it never
+  collapses into the same issue as a genuinely dead row. Not decided here which of (a)/(b)
+  — recorded as the fork item F's own author must resolve, not defaulted to either
+  silently.
+
+Not built here — record only, same discipline as Amendment (g). Item F remains entirely
+unbuilt; this is the correction to its spec so the eventual build reads the partition
+first.
+
 ### (c) Fast-reply race — added to §6
 
 Full text folded into §6 above, at the point where it belongs alongside the
@@ -536,6 +576,59 @@ never a decided requirement for the roster query this item describes. Named here
 same gate is not accidentally carried into the OUTBOUND roster query by a future
 implementer reasoning from `routeInboundMessage`'s existing shape as precedent — it is
 not precedent for this query.
+
+### (g) 429 re-claim is UNBOUNDED in item B — item E must decide the retry
+budget explicitly, not inherit one that doesn't exist (2026-08-28)
+
+**RECORDED HERE ON PURPOSE, NOT SOLVED — a decisions-file note alone will not be read at
+build time; this file is where item E's own author will actually look.** Item B
+(`lib/whatsapp/outbound/trigger.ts`) makes a 429 genuinely retryable: a rejected send
+marks its `outbound_sends` row re-claimable, and the *next* `triggerCheckIn` call for the
+same `event_key` wins it back via an atomic conditional `UPDATE`. Nothing in item B caps
+how many times this can happen. The bound, if any, belongs entirely to the **caller's own
+retry cadence** — and that caller is item E, which does not exist yet. Item B was written
+deliberately not to own this decision (the mechanism only answers "can a retry succeed
+when attempted," never "how often should one be attempted") — but that means the decision
+is currently unowned, not that it doesn't need making.
+
+**Why this is a real question, not a hypothetical one.** This project's own account sits
+on the unverified-business messaging tier — **250 business-initiated conversations per
+rolling 24 hours** (`docs/reviews/whatsapp-template-submission-status.md`'s own
+"Answered-on-attempt" table, closed 2026-08-23). The morning cron fires the whole day's
+roster in one burst against that cap. A sustained 429 condition across some slice of the
+roster during that burst is a realistic STEADY STATE at anything beyond a handful of
+engineers, not an exotic edge case — this is the same premise §37(a)'s own 429-retryable
+decision was made against.
+
+**The question item E must answer explicitly, before its own `vercel.json` cron entries
+ship:**
+- How many times may a persistently rate-limited engineer be retried for the same
+  checkpoint, in one day?
+- Does that budget apply **per engineer**, **per checkpoint** (i.e., shared across every
+  engineer hitting the SAME burst), or is it a property of the cron's own invocation
+  cadence with no explicit cap at all?
+- What happens when the budget (if any) is exhausted — does the engineer's day end
+  silently at whatever the row's last state was (`'sending'`, marker still set), or does
+  something explicitly close it out (analogous to item F's own stuck-row reconciliation,
+  but for a row still genuinely re-claimable rather than ambiguously stuck)?
+
+Not answered here. Item E's own review package must state its answer, not assume item B
+already provided one.
+
+**RIDER, NOT A STANDALONE TASK (2026-08-28) — the schema upgrade path for the marker
+itself.** `RATE_LIMITED_MARKER` currently shares `outbound_sends.error` with real Twilio
+failure text — proven safe today only by this file's own control flow (every writer of
+real error text also sets `status='failed'` in the same atomic write), pinned by
+`test/unit/outbound-trigger-cas-invariant.test.ts` rather than by the schema. A dedicated
+column (or a distinct `status` value) would let the schema say what that test currently
+enforces — but is explicitly NOT its own migration: doing it now would be a schema change
+against a live production table, through the external-review gate, justified by a risk
+that test already reduces to zero. Instead: this upgrade **rides whichever migration next
+touches `outbound_sends` for its own independent reason** (item D's status-callback
+route is the most likely candidate — it already needs to write to this table) — folded in
+as a few extra lines on an already-justified migration, never the sole reason one gets
+opened. Named here so a future author touching this table has somewhere to check for a
+free improvement, not because it is itself a task to schedule.
 
 ---
 
