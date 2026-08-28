@@ -92,11 +92,39 @@ export const TEST_PHONE_PREFIX = '+19995550'
 //   +19995551NNNNNN (6-digit random suffix, NOT the 3-digit
 //   TEST_PHONE_PREFIX convention above) -- reserved wholesale to the
 //   outbound-send suite (lib/whatsapp/outbound/*'s own test/outbound-
-//   trigger.test.ts, `mintOutboundEngineer()`). Every test in that file
-//   mints a brand-new `users` row here, on every run, permanently (see
-//   that file's own header for why cleanup is deliberately not a code
-//   path). Do not add a `+19995551...` fixture anywhere else -- the whole
-//   prefix belongs to this one suite by construction, not by convention.
+//   trigger.test.ts, `mintOutboundEngineer()`). Mints exactly ONE `users`
+//   row per CI run, in that file's own `beforeAll` -- NOT one per test
+//   (see UNIQUENESS AXIS RULE below for why, and that file's own header
+//   for the incident this corrected: an earlier draft called
+//   `mintOutboundEngineer()` from inside every `it()` block instead,
+//   minting 11 rows/run rather than 1, caught 2026-08-28 -- 3 real CI
+//   runs had already left 33 minted rows plus the 2 anchored legacy rows
+//   above, 35 total). Permanent either way -- see that file's own header
+//   for why cleanup is deliberately not a code path. Do not add a
+//   `+19995551...` fixture anywhere else -- the whole prefix belongs to
+//   this one suite by construction, not by convention.
+//
+// RESERVED DATE RANGE, SAME SUITE: test/outbound-trigger.test.ts also
+// reserves 2026-09-01 through 2026-09-11 (its own LOG_DATE_* constants)
+// against its one shared engineer + fixed tenant/project -- see that
+// file's own header. Only matters within that file's own
+// (tenant_id, recipient_user_id) pair, so it does not need tracking here
+// the way phone slots do; recorded for visibility, not because another
+// file could collide with it.
+//
+// UNIQUENESS AXIS RULE (2026-08-28, the fix for the incident named
+// above): when a test-db fixture needs a fresh, per-test-unique value to
+// satisfy a UNIQUE constraint, carry that uniqueness on a STRING FIELD
+// ALREADY PART OF THE KEY (a date, an event_key, a label) -- never on a
+// newly minted `users`/engineer row, whenever the table the constraint
+// lives on sits downstream of a no-DELETE-grant, RESTRICT-FK'd table like
+// `outbound_sends`. A minted row is free to create and PERMANENT the
+// instant anything references it; a string costs nothing and leaves
+// nothing behind. This is why test/outbound-trigger.test.ts mints its
+// engineer once (in `beforeAll`) and carries per-test uniqueness on
+// `LOG_DATE_*` instead of on a fresh `users` row per test -- read that
+// file's own header before copying its former per-test-mint shape into a
+// new fixture.
 // ---------------------------------------------------------------------------
 
 // Fixed, recognisable tenant the sessions hang off (whatsapp_sessions.tenant_id
