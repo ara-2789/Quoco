@@ -814,15 +814,26 @@ their FLOWS and dashboard views are not built in the Spine.
   string is a silent runtime failure. Do not trust a string carried over
   from an earlier session without checking.
 - WhatsApp: Twilio WhatsApp Business API — webhook at /api/whatsapp/webhook
-  STANDING ARCHITECTURAL FACT (2026-08-20, II2, HH1 assessment): NO TWILIO SDK
-  IS IMPORTED ANYWHERE IN THIS CODEBASE — confirmed by grep, zero
-  `require('twilio')`/`from 'twilio'` hits outside comments. Every outbound
-  message this system has ever sent is inline TwiML constructed inside the
-  webhook's own HTTP response (`app/api/whatsapp/webhook/route.ts`'s
-  `twimlMessage`/`twimlEmpty`). **THIS SYSTEM CAN ONLY REPLY. IT CANNOT
-  INITIATE.** No code path anywhere can send a WhatsApp message except as the
-  synchronous response to an inbound one. This changes how two roadmap items
-  must be sized, not just described:
+  STANDING ARCHITECTURAL FACT (2026-08-20, II2, HH1 assessment) — SUPERSEDED
+  2026-08-28, THIS COMMIT. NO TWILIO SDK IS IMPORTED ANYWHERE IN THIS
+  CODEBASE (still true — confirmed by grep, zero `require('twilio')`/
+  `from 'twilio'` hits outside comments; the send primitive, items B/D
+  below, is a raw `fetch` to Twilio's classic Messages API, not the SDK).
+  **"THIS SYSTEM CAN ONLY REPLY, IT CANNOT INITIATE" IS NO LONGER TRUE AS
+  OF THIS COMMIT.** That claim held from 2026-08-20 until the outbound-send
+  primitive (items B–F, PR #120/#126) and item E's two trigger routes
+  (`app/api/cron/morning-trigger`, `app/api/cron/evening-trigger`,
+  PR #129) existed, and until `vercel.json` actually scheduled them — this
+  commit is that last step. From here, `jobs/tick`'s own coverage-sweep
+  gate (`isOutboundTriggerCronLive`) confirms the crons are live, and the
+  next 08:30/18:30 IST fire genuinely constructs and sends a WhatsApp
+  message with no inbound message ever having triggered it. A claim that
+  goes stale at merge time is corrected in the same commit that makes it
+  stale, not left as a follow-up — this paragraph is that correction, not
+  a new finding.
+  This changes how two roadmap items
+  must be sized, not just described (kept for its own historical
+  reasoning — both items below are now built, not merely sized):
     * Inbound-as-start-trigger (the shortest path to a real beta, per HH1)
       works INSIDE this architecture unchanged — a start-trigger reply is
       still a reply, triggered by an inbound message, answered the same way
@@ -839,21 +850,21 @@ their FLOWS and dashboard views are not built in the Spine.
       flow at all; it returns one of four static acknowledgement replies
       (`design-decisions-beta-feedback.md` §38). See that file's own
       header for the current design in full.
-    * THE TRIGGER CRON IS NOT "ADD A CRON JOB." A cron can decide WHEN to
-      send something; it cannot MAKE a send happen, because nothing in this
-      codebase can construct an outbound WhatsApp message outside a webhook
-      response. The missing piece is a genuine OUTBOUND SEND CAPABILITY — the
-      #69/031 outbound-send primitive — a Twilio client construction, API
-      credentials wired for real calls, delivery-status handling, the whole
-      surface this codebase has never built. Reading "scheduling, cron, jobs
-      queue" in §2's SPINE list without this fact will mis-size that work by
-      an order of magnitude: the scheduler is the easy 10%; the send
-      primitive underneath it is the other 90%, and does not exist yet in
-      any form. **Per PP2, this is now not merely "the precondition" in the
-      abstract — it is the head of the build sequence: the system's
-      CORRECT behaviour (cron-triggered check-ins) cannot exist until this
-      ships, and every other Fast-Follow/Spine sequencing question sits
-      downstream of it.**
+    * THE TRIGGER CRON IS NOT "ADD A CRON JOB" — was true, kept for the
+      reasoning, no longer describes the current state. A cron deciding
+      WHEN to send used to be blocked on nothing in this codebase being
+      able to construct an outbound WhatsApp message outside a webhook
+      response. **BUILT, as of this commit**: the outbound-send primitive
+      (`lib/whatsapp/outbound/{send,templates,roster,trigger}.ts`, items
+      B–D, PR #120/#126 — raw `fetch` to Twilio's classic Messages API,
+      credentials wired, delivery-status handling via the status-callback
+      route) and the two trigger routes + retry budget (item E,
+      `lib/whatsapp/outbound/checkpoint-trigger.ts`, PR #129) both exist,
+      and `vercel.json` now schedules them (this commit). The "90% of the
+      work is the send primitive, not the scheduler" sizing warning
+      applied to the roadmap-planning stage this note was written for; it
+      is not a live warning against work still to be sized now that both
+      halves are built and scheduled.
 - Billing: Razorpay payment links — NOT Stripe (Stripe paused India onboarding)
 - Deployment: Vercel Pro — required for 6 IST cron times + 60s function timeout
 - Email: Resend — DPR delivery to owner
