@@ -166,6 +166,11 @@ build the menu").
    evidence already showed in production). This is not a new code path — it's the
    scaffolding's EXISTING fallback behaviour, now reached from every idle-inbound case
    instead of only some of them, until the ad-hoc menu (§7/§28(x)) is actually built.
+   **CORRECTED, 2026-08-28 — `REPORT_READY_REPLY`-style text must NOT be used for the
+   morning-before-cutoff or evening-after-send branches specifically (it states the
+   opposite of the truth while that half's window is still open); see the DECIDED note
+   below and `design-decisions-beta-feedback.md` §38 for the actual approved copy for
+   those two.**
 3. **Consequence, stated plainly:** for the length of Pass 1, an engineer who messages
    in unprompted at idle gets an acknowledgement, never a flow, never a menu. This is
    a real product regression from what §28(x) ultimately wants (the menu as a "front
@@ -199,8 +204,25 @@ retirement item 1 already calls for; the copy survives, repointed as a
 time-aware idle acknowledgement** (an inbound before 15:00 gets one
 acknowledgement shape, 15:00-18:30 another, matching what §35's guards
 already say, without the now-dead `startFlow: true` call behind them).
-Not decided here — answer this before item E ships, not discovered as a
+Not decided here — answer this before item E ships, not decided as a
 loose end at cron-enable time.
+
+**DECIDED, 2026-08-28 (item D/F/E pre-flight audit) — the proposal above was
+right for HALF the branches, wrong by omission for the other half.**
+`routeInboundMessage` has four idle branches once retirement removes its
+two `startFlow: true` calls, not two: the morning/evening window guards
+above already have static refusal copy and can return it unconditionally,
+as proposed — but the two branches that currently START a flow
+(morning-not-submitted-before-`morningCutoff`, evening-open-morning-
+submitted-after-`eveningSend`) have NO existing copy to repoint, since they
+never refused before. **Item 2's own `REPORT_READY_REPLY`-style fallback
+proposal, above, must NOT be used for these two** — "Today's report is
+ready" states the opposite of the truth while that half's window is still
+open. Approved copy for these two branches, full reasoning, the accepted
+"shortly" imprecision, and the note that all four branches are temporary
+pending §28(x)'s menu: `design-decisions-beta-feedback.md` §38. Retirement
+itself remains unbuilt — this is the copy decision that unblocks it, not
+the build.
 
 ---
 
@@ -759,6 +781,17 @@ closed. If Pass 1 slips, or real engineers arrive before it ships, this
 copy must be rewritten to something honest BEFORE that happens — accepted
 as a known-false string only at current scale (one engineer, days not
 months away), not indefinitely.
+
+**REFRAMED, 2026-08-28 (item D/F/E pre-flight audit) — restated bluntly
+because this paragraph's own placement, immediately inside a section
+titled "Two hard preconditions" and immediately before "BOTH PRECONDITIONS
+CONFIRMED CLEARED" below, invites reading it as a third precondition. It
+is not. GATE 1 and B3 must be true BEFORE the crons are added; this item
+cannot be checked until AFTER — it requires observing a refused engineer
+actually receive the message the crons themselves send. "Both
+preconditions confirmed cleared," below, covers GATE 1 and B3 only; it
+does not and never did cover this item. Do not treat this paragraph as
+blocking cron-enable — it is what gets checked the day after.**
 
 **BOTH PRECONDITIONS CONFIRMED CLEARED, 2026-08-26 (Pass 1's own freshness
 check, before any Pass 1 code was written).** GATE 1: LIFTED (evidence in
