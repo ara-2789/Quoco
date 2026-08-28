@@ -19,7 +19,7 @@ import {
 } from './helpers/db'
 import { MORNING_QUESTIONS } from '@/lib/whatsapp/flows/morning'
 import { EVENING_QUESTIONS, EVENING_ALREADY_COMPLETE_REPLY } from '@/lib/whatsapp/flows/evening'
-import { REPORT_READY_REPLY, MORNING_WINDOW_CLOSED_REPLY } from '@/lib/whatsapp/inbound-start'
+import { REPORT_READY_REPLY, MORNING_WINDOW_CLOSED_REPLY, MORNING_AWAITING_TRIGGER_REPLY } from '@/lib/whatsapp/inbound-start'
 
 // T-WH: the HTTP-level webhook harness named in CLAUDE.md's TESTING DEBT entry
 // and migration 022's review package §10. Exercises handleWebhookPost
@@ -409,7 +409,7 @@ describe('handleWebhookPost — routes to whichever flow is active (dispatchInbo
   })
 })
 
-describe('handleWebhookPost — no active session starts a flow (II3, routeInboundMessage wiring)', () => {
+describe('handleWebhookPost — no active session (routeInboundMessage wiring)', () => {
   it('T-WH-11: registered engineer, no session, nothing submitted today — never silent', async () => {
     // See the file header: no `now` injection point exists here, so the
     // exact outcome depends on which IST window the suite runs in. All
@@ -417,10 +417,14 @@ describe('handleWebhookPost — no active session starts a flow (II3, routeInbou
     // this test actually proves, is that the reply is never '' any more —
     // the BOT-07 silence CLAUDE.md's "BOT-07 SILENCE IS A RULE 3.5
     // DEAD-END" entry names is closed for this case by this build.
-    // THREE outcomes as of §35a (design-decisions-beta-feedback.md,
-    // 2026-08-26), not two — MORNING_WINDOW_CLOSED_REPLY covers the whole
-    // morningCutoff..eveningClose window (15:00-19:45 IST), a real interval
-    // this suite can genuinely run inside.
+    // RETIRED, 2026-08-28: idle inbound no longer starts a flow
+    // (MORNING_QUESTIONS[1] is no longer a possible outcome of this path
+    // at all) -- MORNING_AWAITING_TRIGGER_REPLY replaces it for the
+    // before-morningCutoff window. THREE outcomes still, per §35a
+    // (design-decisions-beta-feedback.md, 2026-08-26): MORNING_WINDOW_
+    // CLOSED_REPLY covers the whole morningCutoff..eveningClose window
+    // (15:00-19:45 IST), a real interval this suite can genuinely run
+    // inside.
     const req = buildWebhookRequest({
       From: `whatsapp:${TEST_ENGINEER_PHONE}`,
       Body: 'hi',
@@ -431,8 +435,14 @@ describe('handleWebhookPost — no active session starts a flow (II3, routeInbou
     const reply = await twimlText(res)
     expect(reply).not.toBeNull()
     expect(
-      reply === MORNING_QUESTIONS[1] || reply === MORNING_WINDOW_CLOSED_REPLY || reply === REPORT_READY_REPLY,
+      reply === MORNING_AWAITING_TRIGGER_REPLY ||
+        reply === MORNING_WINDOW_CLOSED_REPLY ||
+        reply === REPORT_READY_REPLY,
     ).toBe(true)
+    // No RPC is ever called from this path any more -- confirm no session
+    // row materialised, regardless of which of the three windows this run
+    // landed in.
+    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
   })
 
   it('T-WH-12: registered engineer, no session, both already submitted today — an already-done reply, no restart', async () => {

@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 
 // STATIC SOURCE GUARD (same technique as jobs-claim-index.test.ts's index/
-// query-predicate check, dispatch.test.ts's onBeforeRetry/onBeforeStart
-// absence check) for the invariant trigger.ts's 429 re-claim CAS depends on:
+// query-predicate check, dispatch.test.ts's onBeforeRetry absence check)
+// for the invariant trigger.ts's 429 re-claim CAS depends on:
 //
 //   No .update() in this file may leave a row at status='sending' (i.e. an
 //   update that does not itself set status to a terminal value) while

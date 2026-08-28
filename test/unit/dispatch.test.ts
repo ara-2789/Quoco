@@ -26,12 +26,13 @@ describe('webhook route — no onBeforeRetry reference (static source guard)', (
     expect(src).not.toContain('onBeforeRetry')
   })
 
-  // Same guarantee, same mechanism, for inbound-start.ts's own test-only hook
-  // (KK2, II3 build) -- onBeforeStart lets a test move the session to a
-  // different flow between routeInboundMessage's readCurrentFlow check and
-  // its startFlow:true RPC call, deterministically constructing the flow-
-  // race FLOW_RACE_REPLY now guards against (see test/inbound-start.test.ts).
-  it('route.ts contains no reference to onBeforeStart', () => {
-    expect(src).not.toContain('onBeforeStart')
-  })
+  // The sibling guard that used to live here -- "route.ts contains no
+  // reference to onBeforeStart" -- is REMOVED, 2026-08-28, not merely
+  // passing vacuously. onBeforeStart itself no longer exists anywhere in
+  // the codebase: retirement (lib/whatsapp/inbound-start.ts's own header,
+  // design-decisions-beta-feedback.md §38) deleted routeInboundMessage's
+  // startFlow:true RPC call entirely, and onBeforeStart existed only to
+  // let a test race that specific call. A guard asserting the absence of
+  // a hook that has been deleted everywhere protects nothing; keeping it
+  // would be a stale artifact, not a real check.
 })

@@ -25,6 +25,18 @@ fix (design-decisions-beta-feedback.md §10, decided 2026-08-15) remains NOT bun
 timeline; this build's (b) mitigation exists specifically to hold that gap closed until
 it does.**
 
+**RETIRED, 2026-08-28 — the prediction in the header above came true.**
+`routeInboundMessage`'s no-active-session branch no longer calls `apply_
+morning_flow_turn`/`apply_evening_flow_turn` with `startFlow: true` for
+anything. It now returns one of four static replies (the two window-guard
+refusals this plan's own §35a work added later, plus two new acknowledgement
+strings, `design-decisions-beta-feedback.md` §38) -- never starts a flow.
+The cron (Pass 1 items B-F) is the sole flow-starter now, per §27's own
+decision this file already anticipated. `lib/whatsapp/inbound-start.ts`'s
+own header carries the current design in full; this plan document is a
+historical record of the scaffolding it describes, not the current
+behaviour.
+
 ## Scope boundary, stated first
 
 This plan covers ONLY the case `readCurrentFlow` returns null (no active session) for a
