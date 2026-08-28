@@ -1894,15 +1894,32 @@ variants approve in the same batch, on the same clock.
 Records that under (l), attendance="No" is now a **second route** to a null
 `morning_plan`, alongside the pre-existing never-engaged case §28(i) already named.
 
-### t. OPEN, NOT DECIDED — attendance "No" is currently irreversible
+### t. DECIDED (2026-08-28) — attendance "No" stays irreversible; check-in windows are a
+data-integrity boundary, not a convenience limit
 
-Stamps completion and ends the morning flow, so an engineer who answers no at 08:30 and
-reaches site at 11:00 has no route back to Q2-Q4 despite the 15:00 cutoff. Evening then
-asks what was completed with no plan captured. **This is the restart-semantics question
-arriving through a side door** — belongs with the outbound send primitive (#69/031),
-not here. Recorded against §28(d), whose "No terminates the flow" was decided on the
-assumption that no work follows — an assumption since contradicted by the half-day and
-late-arrival cases.
+**The scenario that raised this, unchanged from the original entry:** "No" stamps
+completion and ends the morning flow (§28(d)), so an engineer who answers no at 08:30 and
+reaches site at 11:00 has no route back to Q2-Q4 despite the 15:00 cutoff still being
+open. Evening then asks what was completed with no plan captured.
+
+**DECIDED: no route back is built. The irreversibility is correct behaviour, not a gap.**
+Check-in windows (`morningCutoff`, `eveningSend`, `eveningClose`) are a DATA-INTEGRITY
+boundary, not a convenience limit that exists only to nudge timely submission. Late data
+is not merely late — it is data whose date nobody can trust: an engineer answering
+morning questions at 11:00, or amending a "No" after the fact, produces a record dated
+to a day that, from the system's point of view, was never actually observed in real
+time. A DPR built from it misrepresents a day already closed as if it had been captured
+as it happened. Flexible update windows do not recover lost data faithfully — they
+attract bad data (answered from memory, hours or days later, un-verifiable against what
+was actually true at the time) and produce date misattribution (today's correction
+silently rewriting yesterday's record). The correct response to a missed or wrong
+morning answer is the same one this codebase already applies everywhere else state needs
+correcting after the fact: the PM edit RPC (migration 019), a human-reviewed correction
+with its own audit trail — never a reopened engineer-facing window.
+
+This closes the "restart-semantics question arriving through a side door" the original
+entry named — it does not belong with the outbound-send primitive as unresolved
+plumbing; it is resolved, and the resolution is that no plumbing gets built for it.
 
 ### u. NOT BUILT BY THIS ENTRY
 
