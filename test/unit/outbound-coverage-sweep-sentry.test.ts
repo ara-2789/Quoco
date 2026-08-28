@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   reportOutboundCoverageAnomalies,
   reportOutboundCoverageSweepError,
+  isOutboundTriggerCronLive,
   type CoverageSweepResult,
 } from '@/lib/whatsapp/outbound/coverage-sweep'
+import vercelConfig from '@/vercel.json'
 
 // F3/F4 -- pure-logic unit tests of the alerting half, no database needed,
 // same shape as test/unit/morning-cutoff-sweep-sentry.test.ts (that file's
@@ -34,7 +36,7 @@ describe('reportOutboundCoverageAnomalies', () => {
     expect(captureMessage).not.toHaveBeenCalled()
   })
 
-  it('PRODUCTION DEFAULT: a real coverage gap, past window close, is NEVER alerted while OUTBOUND_TRIGGER_CRON_LIVE is false -- item E does not exist yet, so a gap here is expected, not a bug (called with no third argument, exactly like the real jobs/tick call site)', () => {
+  it('PRODUCTION DEFAULT: a real coverage gap, past window close, is NEVER alerted while the REAL vercel.json still holds only today\'s two known-pre-item-E crons -- item E does not exist yet, so a gap here is expected, not a bug (called with no third argument, exactly like the real jobs/tick call site -- the default derives from the actual file, not a declared value)', () => {
     reportOutboundCoverageAnomalies(
       emptyResult({
         checkpoints: [
@@ -151,5 +153,39 @@ describe('reportOutboundCoverageSweepError', () => {
     expect(captureException).toHaveBeenCalledTimes(1)
     const [err] = captureException.mock.calls[0]
     expect(err).toBeInstanceOf(Error)
+  })
+})
+
+// THE GATE MECHANISM ITSELF, PINNED AGAINST THE REAL vercel.json -- NOT A
+// FIXTURE. This is the tripwire: item E's own PR, once it adds its two
+// cron entries to the real vercel.json, changes what vercelConfig.crons
+// actually contains -- the first test below then evaluates against a
+// vercel.json that genuinely has more than the two known-pre-item-E
+// paths, and isOutboundTriggerCronLive correctly starts returning true,
+// which flips this test's own assertion from pass to fail. Item E's PR
+// cannot land with CI green without someone looking at this test --
+// nothing to remember, a broken assertion forces the acknowledgment
+// instead of relying on a human to recall a separate step.
+describe('isOutboundTriggerCronLive', () => {
+  it('with the REAL, current vercel.json (today: exactly jobs/tick + dpr-generate, nothing else), the gate is OFF', () => {
+    expect(isOutboundTriggerCronLive(vercelConfig.crons)).toBe(false)
+  })
+
+  it('a third cron entry beyond the known-pre-item-E paths trips the gate ON -- proves the mechanism reacts to ANY new entry, not a guess at item E\'s own (not-yet-decided) route name', () => {
+    const withExtraCron = [...vercelConfig.crons, { path: '/api/cron/some-future-thing', schedule: '0 0 * * *' }]
+    expect(isOutboundTriggerCronLive(withExtraCron)).toBe(true)
+  })
+
+  it('the two known-pre-item-E paths, given directly rather than read from the real file, evaluate to OFF -- pins the list\'s own contents, not only today\'s file state', () => {
+    expect(
+      isOutboundTriggerCronLive([
+        { path: '/api/jobs/tick' },
+        { path: '/api/cron/dpr-generate' },
+      ]),
+    ).toBe(false)
+  })
+
+  it('an empty crons array is OFF -- no crons at all is not evidence item E exists', () => {
+    expect(isOutboundTriggerCronLive([])).toBe(false)
   })
 })

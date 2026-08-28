@@ -67,6 +67,7 @@ import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
 import { fetchMorningRoster, fetchEveningRoster } from './roster'
 import { RATE_LIMITED_MARKER } from './trigger'
+import vercelConfig from '@/vercel.json'
 
 function hhmmToMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number)
@@ -227,16 +228,12 @@ export async function runOutboundCoverageSweep(client: SupabaseClient, now: Date
   return { checkpoints, stuckClaims, rateLimitedBacklogCount }
 }
 
-// COVERAGE-GAP ALERTING IS GATED ON ITEM E BEING LIVE -- a hardcoded
-// constant, flipped via a deliberate code change + review in the SAME
-// commit that adds item E's two vercel.json cron entries, matching this
-// codebase's own established "changed via code + review, never a runtime
-// knob" discipline (roster.ts's own ROSTER_CARDINALITY_CEILING already
-// argues this exact point for a comparable safety-relevant constant --
-// not repeated here).
+// COVERAGE-GAP ALERTING IS GATED ON ITEM E BEING LIVE -- DERIVED FROM
+// vercel.json, NOT DECLARED (2026-08-28, replacing an earlier hardcoded
+// OUTBOUND_TRIGGER_CRON_LIVE boolean, per Aravind's own correction).
 //
-// WHY THIS GATE EXISTS, NOT ORIGINALLY ASKED FOR BUT FOUND WHILE BUILDING
-// THIS FILE (2026-08-28): app/api/jobs/tick/route.ts is ALREADY LIVE in
+// WHY THIS GATE EXISTS AT ALL, NOT ORIGINALLY ASKED FOR BUT FOUND WHILE
+// BUILDING THIS FILE: app/api/jobs/tick/route.ts is ALREADY LIVE in
 // production today -- it fires every 60 seconds regardless of this PR,
 // per its own existing vercel.json entry. Item E's own two trigger crons
 // -- the ONLY mechanism that will ever populate outbound_sends with real
@@ -254,12 +251,60 @@ export async function runOutboundCoverageSweep(client: SupabaseClient, now: Date
 // both are correctly silent/empty when outbound_sends has no rows at
 // all, by construction, so there is nothing to falsely alert on there
 // even before item E exists.
-// Exported as a real constant (not buried as a bare default value) so the
-// production call site (app/api/jobs/tick/route.ts) and this file's own
-// test both read the SAME single source of truth, and so flipping it is a
-// one-line, reviewable diff when item E ships -- never a magic literal
-// duplicated at each call site.
-export const OUTBOUND_TRIGGER_CRON_LIVE = false
+//
+// WHY DERIVED FROM vercel.json, NOT A HARDCODED CONSTANT -- the earlier
+// design (a plain `export const OUTBOUND_TRIGGER_CRON_LIVE = false`,
+// flipped by hand in the same commit that adds item E's cron entries)
+// already closed the TAMPERABILITY failure mode a runtime env-var flag
+// would have had (this codebase's own ENABLE_TEST_FLOW_TRIGGER precedent,
+// and roster.ts's own ROSTER_CARDINALITY_CEILING argument: "changed via
+// code + review, never a runtime knob" -- a hardcoded const already
+// satisfies that). What it did NOT close was SYNCHRONISATION: two
+// separate files (vercel.json and this one) that had to agree, with
+// nothing enforcing it. Item E's own PR could add the two cron entries to
+// vercel.json and simply forget to also flip the constant here -- leaving
+// coverage alerting silently OFF while real sends were already
+// happening. Fails safe, but silently wrong, and nothing would have
+// detected it; the failure would only surface as "why did nobody get
+// paged for that real gap last Tuesday."
+//
+// Deriving the gate from vercel.json's own `crons` array removes the
+// second file entirely: adding item E's cron entries to vercel.json IS
+// enabling this gate, in the same commit, by construction. There is
+// nothing for item E's builder to remember -- the gate cannot disagree
+// with reality because it reads reality directly.
+//
+// KNOWN_PRE_ITEM_E_CRON_PATHS -- the two cron entries vercel.json holds
+// TODAY, before item E ships. Any entry in vercel.json's own `crons`
+// array beyond this list is treated as evidence item E (or some other
+// new cron) now exists -- item E's own route path is not guessed here,
+// since item E is unbuilt and its final path name is not yet decided;
+// this only needs to notice that ANYTHING new was added, not what it's
+// called.
+//
+// ACCEPTABLE FALSE-POSITIVE SURFACE, NAMED, NOT SILENTLY ACCEPTED: this
+// does not distinguish "a cron was added because item E shipped" from "a
+// cron was added for some entirely unrelated reason" -- either trips the
+// gate on. Judged ACCEPTABLE:
+//   (a) the failure direction when WRONGLY on is a false-positive
+//       coverage alert for a gap that doesn't reflect a real broken send
+//       path (since item E still doesn't exist) -- investigable, low
+//       cost, and the OPPOSITE of the failure this gate exists to
+//       prevent (a real gap silently unalarmed).
+//   (b) vercel.json has held exactly these two entries for this
+//       project's entire history; a third cron shipping for an unrelated
+//       reason is rare, and when it happens is a one-line, reviewable,
+//       INTENTIONAL addition to this list, not silent drift -- the same
+//       "changed via code + review" property the earlier hardcoded
+//       constant had, just narrower in scope (only needs touching for a
+//       genuinely new, unrelated cron, not for item E at all).
+// This list DOES need maintaining -- only in that one direction, and only
+// rarely. Update it in the SAME PR that adds an unrelated new cron entry.
+const KNOWN_PRE_ITEM_E_CRON_PATHS = ['/api/jobs/tick', '/api/cron/dpr-generate']
+
+export function isOutboundTriggerCronLive(crons: readonly { path: string }[]): boolean {
+  return crons.some((c) => !KNOWN_PRE_ITEM_E_CRON_PATHS.includes(c.path))
+}
 
 /**
  * DEDUP, same convention as reportMorningSweepAnomalies (lib/daily-logs/
@@ -272,14 +317,16 @@ export const OUTBOUND_TRIGGER_CRON_LIVE = false
  * than one undifferentiated alert a human has to unpack. The rate-limited
  * backlog count is NEVER passed to Sentry here -- see F3 above.
  *
- * `triggerCronLive` defaults to the real OUTBOUND_TRIGGER_CRON_LIVE
- * constant -- injectable so this file's own test can exercise the
- * alerting path (pass `true`) independently of proving the PRODUCTION
- * default is actually off (call with no second argument at all).
+ * `triggerCronLive` defaults to isOutboundTriggerCronLive(vercelConfig.
+ * crons) -- the REAL, current vercel.json, read directly -- injectable so
+ * this file's own test can exercise the alerting path (pass `true`)
+ * independently of proving the PRODUCTION default (call with no second
+ * argument at all) genuinely reflects today's real vercel.json, not a
+ * separate declared value that could disagree with it.
  */
 export function reportOutboundCoverageAnomalies(
   result: CoverageSweepResult,
-  triggerCronLive: boolean = OUTBOUND_TRIGGER_CRON_LIVE,
+  triggerCronLive: boolean = isOutboundTriggerCronLive(vercelConfig.crons),
 ): void {
   for (const c of result.checkpoints) {
     if (!triggerCronLive || !c.windowClosed || c.gap <= 0) continue
