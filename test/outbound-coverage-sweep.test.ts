@@ -26,15 +26,28 @@ import { MORNING_CHECKIN_SID } from '@/lib/whatsapp/outbound/templates'
 // test files create their own active projects/engineers, so
 // expectedRosterSize is genuinely shared, uncontrolled state from this
 // file's point of view; asserting an exact value would be fragile against
-// unrelated suites, not a real test of this file's own logic. What IS
-// safely, exactly assertable: `sentCount` for THIS file's own reserved
-// event_keys (outbound_sends is exclusively written by this suite --
-// confirmed via docs/reviews/outbound-sends-test-accretion.md's own
-// count-to-date, no other test file has ever inserted into this table),
-// and `windowClosed`'s boundary against a directly-injected `now`. Both
-// verified below, precisely; `expectedRosterSize`/`gap` are asserted only
-// via cross-checking `gap === Math.max(0, expected - sent)` from whatever
-// value actually came back, never a hardcoded number.
+// unrelated suites, not a real test of this file's own logic. `gap` is
+// asserted only via cross-checking `gap === Math.max(0, expected - sent)`
+// from whatever value actually came back, never a hardcoded number.
+//
+// sentCount IS NOT SAFELY ASSERTABLE AS AN ABSOLUTE VALUE EITHER --
+// CORRECTED 2026-08-28, CI's own second run on this PR caught it (first
+// run: sentCount==1, passed; second run: sentCount==2, failed -- see
+// git blame on this comment for the original, wrong claim). A reserved
+// DATE prevents INSERT collisions (event_key's uniqueness is per-
+// recipient, so a fresh engineer each CI run never collides on the
+// UNIQUE constraint) -- but sentCountForEventKey's own query correctly
+// aggregates status='sent' rows ACROSS EVERY RECIPIENT sharing that
+// event_key STRING (required production behaviour: many engineers, one
+// event_key per checkpoint per day). Since outbound_sends never gets
+// cleaned up, EVERY prior CI run that ever exercised this exact reserved
+// date left its own 'sent' row under the same event_key, permanently --
+// the count is NOT a property of this test run alone, it is the running
+// total across this reserved date's entire CI history. An absolute
+// assertion (`.toBe(1)`) could only ever pass on that date's very FIRST
+// CI run. Fixed below: assert the DELTA this test's own two inserts
+// produce (before -> after), never an absolute count -- robust to
+// however many prior runs have already touched this event_key.
 //
 // RESERVED DATES, CONTINUING test/outbound-trigger.test.ts's OWN RANGE
 // (2026-09-01 through 2026-09-11): this file reserves 2026-09-12 through
@@ -89,20 +102,34 @@ describe('runOutboundCoverageSweep', () => {
 
   it('F2: sentCount counts only status=\'sent\' rows for the exact event_key, never a bare row count', async () => {
     const eventKey = `morning_send:${LOG_DATE_COVERAGE}`
+    // now: well past morningCutoff (15:00 IST) on LOG_DATE_COVERAGE, so this
+    // checkpoint's windowClosed is true.
+    const now = new Date(`${LOG_DATE_COVERAGE}T11:00:00Z`) // 16:30 IST
+
+    // BASELINE, before this test's own inserts -- see this file's own
+    // header for why an absolute count is not safely assertable against a
+    // reserved date that accumulates rows across every CI run that has
+    // ever touched it. Delta, not absolute value, is what this test
+    // actually owns.
+    const before = await runOutboundCoverageSweep(testClient(), now)
+    const sentCountBefore =
+      before.checkpoints.find((c) => c.checkpoint === 'morning_send' && c.logDate === LOG_DATE_COVERAGE)
+        ?.sentCount ?? 0
+
     // Same event_key, two DIFFERENT engineers (event_key alone does not
     // embed the recipient -- 031's own header) -- one delivered, one not.
     await insertLedgerRow({ engineerId: engineerA.id, toPhoneNumber: engineerA.whatsappNumber, eventKey, status: 'sent' })
     await insertLedgerRow({ engineerId: engineerB.id, toPhoneNumber: engineerB.whatsappNumber, eventKey, status: 'failed', error: 'simulated non-retryable failure' })
 
-    // now: well past morningCutoff (15:00 IST) on LOG_DATE_COVERAGE, so this
-    // checkpoint's windowClosed is true.
-    const now = new Date(`${LOG_DATE_COVERAGE}T11:00:00Z`) // 16:30 IST
     const result = await runOutboundCoverageSweep(testClient(), now)
 
     const morning = result.checkpoints.find((c) => c.checkpoint === 'morning_send' && c.logDate === LOG_DATE_COVERAGE)
     expect(morning).toBeDefined()
     expect(morning!.windowClosed).toBe(true)
-    expect(morning!.sentCount).toBe(1) // the 'failed' row must NOT be counted
+    // DELTA, not absolute value -- exactly +1, proving the 'failed' row
+    // (the second insert) was NOT counted, regardless of how many 'sent'
+    // rows this event_key already carries from prior CI runs.
+    expect(morning!.sentCount - sentCountBefore).toBe(1)
     // gap arithmetic holds regardless of expectedRosterSize's own value
     // (shared, uncontrolled state -- see this file's own header).
     expect(morning!.gap).toBe(Math.max(0, morning!.expectedRosterSize - morning!.sentCount))
