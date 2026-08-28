@@ -1425,3 +1425,12 @@ Existing "CLAUDE.md §10" references across docs/ and the review packages
 (~60 of them) now mean docs/build-status.md — left unedited deliberately,
 since several live in frozen review packages this project's own rules say
 never to rewrite.
+
+## Design skills (installed 2026-08-27)
+
+- Two project-scoped skills: `impeccable` (v4.1.1, pinned by committed files) and `design-taste-frontend` (taste-skill v2, pinned via skills-lock.json hash).
+- Scope split: `impeccable` owns ALL product UI — dashboard, wizards, forms, PM/owner surfaces ("Operate" mode). `design-taste-frontend` is scoped to marketing/landing surfaces ONLY (it self-excludes dashboards per its Section 13). If both fire on one task, impeccable wins — and flag the collision to Aravind.
+- Precedence: on ANY conflict with either skill, `docs/design-system-ux-rules.md` wins. Quoco surfaces are trust-first / low-comfort-user: when taste-skill applies, use its trust-first dial preset (VARIANCE 3-4, MOTION 2-3, DENSITY 4-5).
+- PRODUCT.md / DESIGN.md at repo root (once generated via /impeccable init) are impeccable's standing brief — keep consistent with the design doc; changes to them get the same review as CLAUDE.md changes.
+- Layout note: `.claude/skills/impeccable/` and `.agents/skills/impeccable/` are DIFFERENT builds (Claude vs cross-harness) — never deduplicate or symlink them. taste-skill is one real copy in `.agents/` + symlink in `.claude/`.
+- Fresh-clone note: skill files arrive via git, but the impeccable hook is wired in `.claude/settings.local.json` (untracked) — rerun `npx impeccable install` or `/impeccable hooks on` on a new machine.
