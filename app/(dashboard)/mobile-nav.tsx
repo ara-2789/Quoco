@@ -19,8 +19,13 @@ import { usePathname } from 'next/navigation'
 //
 // Conditionally RENDERED (not CSS-hidden) while closed, so the nav links are
 // simply absent from the DOM — and therefore from tab order — rather than
-// present-but-hidden. No transition/duration classes anywhere: instant
-// show/hide, per the house's low-motion style.
+// present-but-hidden. The PANEL itself has no transition/duration classes —
+// instant show/hide, per the house's low-motion style. That "no motion" rule
+// is scoped to the panel's own mount/unmount; ordinary hover-state color
+// transitions (`transition-colors`, below) are a different, much subtler
+// category the rest of the house uses everywhere (including the desktop
+// <aside>'s own links, one file up) — they're kept here to match, not
+// dropped in the name of the same rule.
 
 export type MobileNavLink = { label: string; href: string }
 
@@ -34,13 +39,22 @@ export function MobileNav({
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
 
-  // Auto-close on any route change (a nav link click, the back button,
-  // anything) — the layout persists across client-side navigations within
-  // (dashboard), so without this the panel would stay open after navigating.
-  // Adjusted DURING RENDER, not in a useEffect — React's own recommended
-  // pattern for resetting state when a prop changes (avoids the extra
-  // render-then-effect-then-render cascade an effect-based reset causes;
-  // eslint's react-hooks/set-state-in-effect flags the effect version).
+  // Auto-close on any route CHANGE (the back button, a link elsewhere on the
+  // page, anything that isn't this panel's own links) — the layout persists
+  // across client-side navigations within (dashboard), so without this the
+  // panel would stay open after navigating. Adjusted DURING RENDER, not in a
+  // useEffect — React's own recommended pattern for resetting state when a
+  // prop changes (avoids the extra render-then-effect-then-render cascade an
+  // effect-based reset causes; eslint's react-hooks/set-state-in-effect flags
+  // the effect version).
+  //
+  // NOT SUFFICIENT ON ITS OWN: tapping the link for the route already open
+  // doesn't change pathname, so this watcher never fires for that tap — the
+  // panel would stay open and the tap would look ignored. The onClick on
+  // each Link below covers exactly that case. Keep BOTH — they cover
+  // different triggers (this: navigation from anywhere; that: a tap on one
+  // of THIS panel's own links, same-route or not), not one mechanism
+  // duplicating the other.
   const [prevPathname, setPrevPathname] = useState(pathname)
   if (pathname !== prevPathname) {
     setPrevPathname(pathname)
@@ -54,9 +68,15 @@ export function MobileNav({
         <button
           type="button"
           aria-expanded={open}
-          aria-controls="mobile-dashboard-nav"
+          // No aria-controls: #mobile-dashboard-nav is conditionally
+          // RENDERED (see the header comment) and simply absent from the DOM
+          // while closed, so the reference would dangle half the time. That
+          // conditional render is the deliberate choice — it's what keeps
+          // the panel's links out of tab order while closed — so it stays,
+          // and aria-controls is dropped rather than switching to
+          // render-and-hide just to keep the attribute valid.
           onClick={() => setOpen((o) => !o)}
-          className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+          className="rounded-md px-3 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
         >
           {open ? 'Close menu' : 'Menu'}
         </button>
@@ -68,7 +88,10 @@ export function MobileNav({
             <Link
               key={href}
               href={href}
-              className="flex items-center px-3 py-2 text-sm text-gray-700 rounded-md hover:bg-gray-100 hover:text-gray-900"
+              // Covers the same-route tap the pathname watcher above can't
+              // (see that comment) — both stay, different triggers.
+              onClick={() => setOpen(false)}
+              className="flex items-center px-3 py-3 text-base text-gray-700 rounded-md hover:bg-gray-100 hover:text-gray-900 transition-colors"
             >
               {label}
             </Link>
@@ -76,7 +99,7 @@ export function MobileNav({
           <form action={signOutAction} className="pt-2 mt-2 border-t border-gray-200">
             <button
               type="submit"
-              className="w-full text-left px-3 py-2 text-sm text-gray-600 rounded-md hover:bg-gray-100 hover:text-gray-900"
+              className="w-full text-left px-3 py-3 text-base text-gray-600 rounded-md hover:bg-gray-100 hover:text-gray-900 transition-colors"
             >
               Sign out
             </button>
