@@ -76,6 +76,11 @@ export default async function ProjectsPage() {
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          {/* overflow-hidden above clips the rounded corners, not scrolling
+              — it must stay for that. Horizontal scroll lives on this INNER
+              wrapper instead, so a narrow viewport scrolls the 6-column
+              table without losing the card's rounding. */}
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
@@ -115,6 +120,7 @@ export default async function ProjectsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
