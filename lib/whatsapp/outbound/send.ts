@@ -90,6 +90,22 @@
 // value is Twilio's own opaque error-classification integer, not personal
 // data, and is exactly what makes an error like today's identifiable
 // without needing any content capture at all.
+//
+// `.json` URL SUFFIX -- FIX, 2026-08-29 (docs/reviews/first-cron-fire-
+// record.md's own dated correction). Twilio's 2010 API
+// (api.twilio.com/2010-04-01/...) returns XML BY DEFAULT -- confirmed
+// against Twilio's own current docs (twilio.com/docs/usage/twilios-response,
+// "Twilio 2010 APIs... return XML responses by default"; JSON is requested
+// by appending `.json` to the resource URI, the mechanism their own docs
+// describe -- an Accept header is a separate, undocumented-for-this-API
+// alternative and is deliberately not added alongside the extension, so a
+// later reader is never left wondering which of two mechanisms is doing the
+// work). This file's URL never requested JSON, so every real send has
+// received XML back and every `JSON.parse` above has failed -- not a
+// hypothetical, confirmed directly: `outbound_sends` has never once held a
+// `status='sent'` row. The fix is the URL suffix below; everything else in
+// this file (the parse-and-describe logic, the shape capture) is unchanged
+// and correct -- it was always doing the right thing with the wrong input.
 
 import { createHash } from 'crypto'
 import { PRODUCTION_WEBHOOK_ORIGIN } from '@/lib/whatsapp/twilio-signature'
@@ -185,7 +201,7 @@ export async function sendWhatsAppTemplate(
 ): Promise<SendTemplateResult> {
   const { accountSid, authToken, fromNumber } = readCredentials()
   const authHeader = `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages`
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`
 
   const body = new URLSearchParams({
     From: withWhatsAppPrefix(fromNumber),

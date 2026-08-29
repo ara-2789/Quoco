@@ -48,7 +48,7 @@ describe('sendWhatsAppTemplate', () => {
     expect(result).toEqual({ ok: true, status: 201, sid: 'SMabc123' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]!
-    expect(url).toBe('https://api.twilio.com/2010-04-01/Accounts/ACzztest0000000000000000000000000/Messages')
+    expect(url).toBe('https://api.twilio.com/2010-04-01/Accounts/ACzztest0000000000000000000000000/Messages.json')
     expect(init.method).toBe('POST')
     expect(init.headers['Content-Type']).toBe('application/x-www-form-urlencoded')
     expect(init.headers.Authorization).toBe(
@@ -65,6 +65,26 @@ describe('sendWhatsAppTemplate', () => {
     // the production origin, never an env-derived one -- see send.ts's own
     // header.
     expect(body.get('StatusCallback')).toBe('https://app.quoco.co.in/api/whatsapp/status-callback')
+  })
+
+  // THE TEST THAT WOULD HAVE CAUGHT THE REAL BUG (2026-08-29,
+  // docs/reviews/first-cron-fire-record.md's own dated correction). Every
+  // other test in this file mocks `fetch` -- the RESPONSE shape in every
+  // case above is a fixture we wrote ourselves, never a real Twilio
+  // response, so no amount of response-shape coverage here could ever have
+  // caught "Twilio's real 2010 API defaults to XML, and this file never
+  // asked for JSON" -- a fixture cannot be wrong about what the real API
+  // does when the fixture IS the definition of what the test believes the
+  // API does. A green suite across four review rounds and an external
+  // review never touched this, because none of them touched the real
+  // thing. The one thing a mocked-fetch test CAN verify honestly is what
+  // this code SENDS, not what it receives -- so this test pins the request
+  // URL itself, the one place the actual defect lived.
+  it('requests the URL with the .json suffix -- Twilio\'s 2010 API returns XML by default otherwise, and every other test here only mocks the response, never the real one', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMabc123' }))
+    await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
+    const [url] = fetchMock.mock.calls[0]!
+    expect(url).toMatch(/\.json$/)
   })
 
   it('does not double-prefix a "to" that already carries "whatsapp:"', async () => {
