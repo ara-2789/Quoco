@@ -81,7 +81,7 @@ export default async function ProjectsPage() {
               wrapper instead, so a narrow viewport scrolls the 6-column
               table without losing the card's rounding. */}
           <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-max text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
                 <th className="px-4 py-3 font-medium text-gray-600">Project</th>
