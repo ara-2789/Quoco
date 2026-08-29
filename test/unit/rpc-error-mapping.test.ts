@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { classifyRpcError } from '@/lib/daily-logs/rpc-error-mapping'
+import { classifyRpcError, forbiddenBecauseNotPm, FORBIDDEN_MESSAGE } from '@/lib/daily-logs/rpc-error-mapping'
+import { canEditLog } from '@/lib/daily-logs/correction'
 
 describe('classifyRpcError', () => {
   it('42501 -> forbidden, reported (defense-in-depth signal now that the role gate exists)', () => {
@@ -33,5 +34,29 @@ describe('classifyRpcError', () => {
     const result = classifyRpcError({ message: 'network error' })
     expect(result.kind).toBe('unknown')
     expect(result.reportToSentry).toBe(true)
+  })
+})
+
+describe('forbiddenBecauseNotPm (the PRE-RPC role check in correctDailyLogField)', () => {
+  it('a qs-role project member is forbidden via the pure pre-check, same copy as the post-gate 42501 path — but structurally incapable of a Sentry report', () => {
+    // The condition this branch actually gates on:
+    expect(canEditLog('qs')).toBe(false)
+    expect(canEditLog('admin')).toBe(false)
+    expect(canEditLog('pm')).toBe(true)
+
+    const preCheck = forbiddenBecauseNotPm()
+    expect(preCheck).toEqual({ kind: 'forbidden', message: FORBIDDEN_MESSAGE })
+
+    // Message parity with the RPC's own 42501 mapping — one shared constant,
+    // not two literals that could silently drift apart.
+    const postGate = classifyRpcError({ code: '42501', message: 'permission denied for function' })
+    expect(preCheck.message).toBe(postGate.message)
+
+    // Unlike classifyRpcError's result, this one carries no `reportToSentry`
+    // field at all — there is nothing for a caller to report, which is the
+    // structural proof (not a mock) that an ordinary non-PM project member
+    // reaching this Server Action never fires Sentry. Only a 42501 the RPC
+    // returns AFTER this check has already passed does that.
+    expect('reportToSentry' in preCheck).toBe(false)
   })
 })

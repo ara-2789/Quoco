@@ -3,8 +3,8 @@
 import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
-import { COLUMN_CONTRACT, validateValue, type CorrectableColumn } from '@/lib/daily-logs/correction'
-import { classifyRpcError } from '@/lib/daily-logs/rpc-error-mapping'
+import { COLUMN_CONTRACT, canEditLog, validateValue, type CorrectableColumn } from '@/lib/daily-logs/correction'
+import { classifyRpcError, forbiddenBecauseNotPm } from '@/lib/daily-logs/rpc-error-mapping'
 
 // DASH-03 Rule 4.3 inline correction — the ONE Server Action for this
 // surface, calling migration 019's correct_daily_log RPC. Deliberately its
@@ -16,7 +16,11 @@ import { classifyRpcError } from '@/lib/daily-logs/rpc-error-mapping'
 export type CorrectionActionResult =
   | { status: 'saved'; editId: string }
   | { status: 'no-change' }
-  | { status: 'error'; kind: 'forbidden' | 'not-found' | 'too-large' | 'unknown'; message: string }
+  | {
+      status: 'error'
+      kind: 'forbidden' | 'not-found' | 'too-large' | 'required' | 'invalid' | 'unknown'
+      message: string
+    }
 
 export async function correctDailyLogField(
   dailyLogsId: string,
@@ -31,16 +35,34 @@ export async function correctDailyLogField(
   if (!(column in COLUMN_CONTRACT)) {
     return { status: 'error', kind: 'unknown', message: 'Something went wrong — please try again.' }
   }
+  // validateValue's own kind ('required' | 'invalid' | 'too-large') is
+  // passed through as-is, not collapsed to one bucket — the caller (Sentry
+  // tags, any future analytics) should be able to tell "the value was too
+  // long" apart from "no value was given" without the kind and the message
+  // disagreeing.
   const validated = validateValue(column, rawValue)
   if (!validated.ok) {
-    return { status: 'error', kind: 'too-large', message: validated.error }
+    return { status: 'error', kind: validated.kind, message: validated.error }
   }
 
   const supabase = await createClient()
-  // Enforces auth (redirects to /login if unauthenticated) before ever
-  // reaching the RPC — a clean redirect rather than relying solely on the
-  // RPC's own auth.uid()-is-null rejection path.
-  await getProfile()
+  const profile = await getProfile() // also enforces auth — redirects to /login if unauthenticated
+
+  // The role gate for WRITES. The read side is deliberately NOT gated: any
+  // project_members role can view the detail page, but only role==='pm' may
+  // write. Checked HERE, before the RPC, not left to the RPC's own 42501 —
+  // a Server Action is callable directly regardless of what the UI renders
+  // (same "untyped/forged call is possible" reasoning as the column
+  // whitelist above), so a non-PM project member reaching this function is
+  // an expected, ordinary path, not a hypothetical. Deliberately NOT
+  // Sentry-reported (forbiddenBecauseNotPm's own comment has the full
+  // reasoning) — reporting it would tag every ordinary non-PM read-then-
+  // attempted-edit as a bug, drowning the one signal that actually matters:
+  // a 42501 the RPC returns AFTER this check has already passed.
+  if (!canEditLog(profile.role)) {
+    const forbidden = forbiddenBecauseNotPm()
+    return { status: 'error', kind: forbidden.kind, message: forbidden.message }
+  }
 
   const { data, error } = await supabase.rpc('correct_daily_log', {
     p_daily_logs_id: dailyLogsId,

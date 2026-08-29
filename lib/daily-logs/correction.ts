@@ -1,7 +1,7 @@
 // Pure, framework-free contract for Rule 4.3 inline correction (DASH-03),
 // matching migration 019_daily_log_corrections.sql's own whitelist. No React,
-// no Supabase — unit-tested directly (test/unit/column-contract.test.ts,
-// test/unit/correction.test.ts), same style as reactivate-copy.ts / date.ts.
+// no Supabase — unit-tested directly (test/unit/column-contract.test.ts),
+// same style as reactivate-copy.ts / date.ts.
 //
 // COLUMN_CONTRACT deliberately mirrors the FULL RPC/DB-level whitelist — all 9
 // columns 019 allows correct_daily_log to touch — not just the subset this
@@ -48,7 +48,7 @@ export const MAX_VALUE_BYTES = 95_000
 
 export type ValidationResult =
   | { ok: true; value: boolean | number | string | null }
-  | { ok: false; error: string }
+  | { ok: false; kind: 'required' | 'invalid' | 'too-large'; error: string }
 
 function byteLength(s: string): number {
   return new TextEncoder().encode(s).length
@@ -69,8 +69,8 @@ export function validateValue(column: CorrectableColumn, raw: unknown): Validati
   const castType = COLUMN_CONTRACT[column]
 
   if (castType === 'boolean') {
-    if (raw === null || raw === undefined) return { ok: false, error: 'A value is required.' }
-    if (typeof raw !== 'boolean') return { ok: false, error: 'Expected yes or no.' }
+    if (raw === null || raw === undefined) return { ok: false, kind: 'required', error: 'A value is required.' }
+    if (typeof raw !== 'boolean') return { ok: false, kind: 'invalid', error: 'Expected yes or no.' }
     return { ok: true, value: raw }
   }
 
@@ -78,7 +78,7 @@ export function validateValue(column: CorrectableColumn, raw: unknown): Validati
     if (raw === null || raw === '' || raw === undefined) return { ok: true, value: null }
     const n = typeof raw === 'number' ? raw : Number(raw)
     if (!Number.isInteger(n) || !Number.isFinite(n) || n < 0) {
-      return { ok: false, error: 'Enter a whole number, 0 or more.' }
+      return { ok: false, kind: 'invalid', error: 'Enter a whole number, 0 or more.' }
     }
     return { ok: true, value: n }
   }
@@ -88,7 +88,7 @@ export function validateValue(column: CorrectableColumn, raw: unknown): Validati
   const trimmed = String(raw).trim()
   if (trimmed === '') return { ok: true, value: null }
   if (byteLength(trimmed) > MAX_VALUE_BYTES) {
-    return { ok: false, error: "That's too long to save." }
+    return { ok: false, kind: 'too-large', error: "That's too long to save." }
   }
   return { ok: true, value: trimmed }
 }
