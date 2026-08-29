@@ -108,7 +108,12 @@ export default async function DprsPage() {
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
+          {/* overflow-hidden above clips the rounded corners, not scrolling
+              — it must stay for that. Horizontal scroll lives on this INNER
+              wrapper instead, so a narrow viewport scrolls the table without
+              losing the card's rounding. */}
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-max text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
                 <th className="px-4 py-3 font-medium text-gray-600">Project</th>
@@ -152,6 +157,7 @@ export default async function DprsPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
