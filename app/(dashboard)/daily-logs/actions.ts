@@ -1,6 +1,7 @@
 'use server'
 
 import * as Sentry from '@sentry/nextjs'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
 import { COLUMN_CONTRACT, canEditLog, validateValue, type CorrectableColumn } from '@/lib/daily-logs/correction'
@@ -80,5 +81,15 @@ export async function correctDailyLogField(
     return { status: 'error', kind: classified.kind, message: classified.message }
   }
   if (data === null) return { status: 'no-change' }
+
+  // 'saved' branch ONLY — never on 'no-change' (nothing changed, the
+  // server-rendered page is already accurate) and never on 'error' (the
+  // write never happened). This invalidates the Next.js cache for the
+  // detail route; the actual client re-render is triggered separately by
+  // router.refresh() in lib/daily-logs/use-field-correction.ts (and
+  // holiday-field.tsx's own orchestration) once this action resolves —
+  // revalidatePath alone does not cause an already-mounted client
+  // component to re-fetch on its own.
+  revalidatePath(`/daily-logs/${dailyLogsId}`)
   return { status: 'saved', editId: data as string }
 }

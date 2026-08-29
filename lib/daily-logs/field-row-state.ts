@@ -93,3 +93,27 @@ export function fieldRowReducer<T>(
       return state
   }
 }
+
+/**
+ * Whether a correctDailyLogField result warrants a refresh — TRUE only for
+ * an actual write ('saved'). Never for 'no-change' (nothing changed; the
+ * server-rendered page is already accurate) and never for 'error' (the
+ * write never happened). Extracted as its own pure function, next to the
+ * reducer, rather than left inline where router.refresh() is actually
+ * called (lib/daily-logs/use-field-correction.ts, components/daily-logs/
+ * holiday-field.tsx) — router.refresh() itself needs next/navigation's
+ * app-router client context and can't be exercised under plain vitest, so
+ * this is the seam that CAN be unit-tested (test/unit/field-row-state.test.ts),
+ * same pattern lib/daily-logs/rpc-error-mapping.ts already established for
+ * classifyRpcError vs. the actual Sentry.captureException call.
+ *
+ * NOTE for HolidayField specifically: its turn-on path can make up to two
+ * correctDailyLogField calls (reason, then is_holiday). The caller must
+ * call this once per RESULT and OR the outcomes together, then refresh at
+ * most ONCE for the whole user action — not once per sub-write — since a
+ * reason-then-holiday save that both succeed should still produce a single
+ * refresh, not two.
+ */
+export function shouldRefreshAfter(status: 'saved' | 'no-change' | 'error'): boolean {
+  return status === 'saved'
+}

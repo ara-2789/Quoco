@@ -1,9 +1,10 @@
 'use client'
 
 import { useReducer } from 'react'
+import { useRouter } from 'next/navigation'
 import { Pencil } from 'lucide-react'
 import { validateValue, formatValue } from '@/lib/daily-logs/correction'
-import { fieldRowReducer, initialFieldRowState } from '@/lib/daily-logs/field-row-state'
+import { fieldRowReducer, initialFieldRowState, shouldRefreshAfter } from '@/lib/daily-logs/field-row-state'
 import { formatIstTime } from '@/lib/daily-logs/date'
 import { correctDailyLogField } from '@/app/(dashboard)/daily-logs/actions'
 
@@ -56,6 +57,7 @@ export function HolidayField({
     fieldRowReducer<string>,
     initialFieldRowState<string>(currentHolidayReason),
   )
+  const router = useRouter()
 
   const editing = holidayState.mode !== 'view' || reasonState.mode !== 'view'
   const saving = holidayState.mode === 'saving' || reasonState.mode === 'saving'
@@ -75,41 +77,59 @@ export function HolidayField({
     reasonDispatch({ type: 'CANCEL' })
   }
 
-  async function saveReason(): Promise<boolean> {
+  // Both return the outcome (not just ok/fail) so handleSave can decide,
+  // across up to two calls, whether ANY of them actually wrote — and
+  // therefore whether the single end-of-action router.refresh() below is
+  // warranted. 'no-change' is a real outcome (nothing to refresh for) and
+  // is distinct from 'error' (also nothing to refresh for, but for a
+  // different reason) — both fall through shouldRefreshAfter as false.
+  async function saveReason(): Promise<'saved' | 'no-change' | 'error'> {
     const validated = validateValue('holiday_reason', reasonState.draftValue)
     if (!validated.ok) {
       reasonDispatch({ type: 'SAVE_ERROR', message: validated.error })
-      return false
+      return 'error'
     }
     reasonDispatch({ type: 'SUBMIT' })
     const result = await correctDailyLogField(dailyLogsId, 'holiday_reason', validated.value)
     if (result.status === 'saved') {
       reasonDispatch({ type: 'SAVE_SUCCESS', value: validated.value as string | null })
-      return true
+      return 'saved'
     }
     if (result.status === 'no-change') {
       reasonDispatch({ type: 'NO_CHANGE' })
-      return true
+      return 'no-change'
     }
     reasonDispatch({ type: 'SAVE_ERROR', message: result.message })
-    return false
+    return 'error'
   }
 
-  async function saveHoliday(next: boolean): Promise<void> {
+  async function saveHoliday(next: boolean): Promise<'saved' | 'no-change' | 'error'> {
     const validated = validateValue('is_holiday', next)
     if (!validated.ok) {
       holidayDispatch({ type: 'SAVE_ERROR', message: validated.error })
-      return
+      return 'error'
     }
     holidayDispatch({ type: 'SUBMIT' })
     const result = await correctDailyLogField(dailyLogsId, 'is_holiday', next)
-    if (result.status === 'saved') holidayDispatch({ type: 'SAVE_SUCCESS', value: next })
-    else if (result.status === 'no-change') holidayDispatch({ type: 'NO_CHANGE' })
-    else holidayDispatch({ type: 'SAVE_ERROR', message: result.message })
+    if (result.status === 'saved') {
+      holidayDispatch({ type: 'SAVE_SUCCESS', value: next })
+      return 'saved'
+    }
+    if (result.status === 'no-change') {
+      holidayDispatch({ type: 'NO_CHANGE' })
+      return 'no-change'
+    }
+    holidayDispatch({ type: 'SAVE_ERROR', message: result.message })
+    return 'error'
   }
 
   async function handleSave() {
     const reasonChanged = reasonDraftText !== (currentHolidayReason ?? '').trim()
+    // Tracks whether ANY sub-write actually happened this action, so the
+    // refresh below fires ONCE for the whole user action regardless of
+    // whether it took one RPC call or two — never once per sub-write, and
+    // never when nothing changed.
+    let anySaved = false
 
     if (turningOn) {
       // Reason-first ordering: a failure between the two calls leaves a
@@ -117,25 +137,39 @@ export function HolidayField({
       // reason. Save is disabled below until hasReason is true, so this
       // branch always has a reason to write (new or already-present).
       if (reasonChanged) {
-        const ok = await saveReason()
-        if (!ok) return // stop — is_holiday untouched
+        const reasonOutcome = await saveReason()
+        if (shouldRefreshAfter(reasonOutcome)) anySaved = true
+        if (reasonOutcome === 'error') {
+          // Stop — is_holiday untouched. Still refresh if the reason write
+          // itself succeeded before this branch was reached (it can't be,
+          // structurally, since 'error' means IT failed — anySaved is false
+          // here — but the check stays symmetric with the two returns below
+          // rather than assuming it).
+          if (anySaved) router.refresh()
+          return
+        }
       }
-      await saveHoliday(true)
+      const holidayOutcome = await saveHoliday(true)
+      if (shouldRefreshAfter(holidayOutcome)) anySaved = true
+      if (anySaved) router.refresh()
       return
     }
 
     if (turningOff) {
-      await saveHoliday(false)
+      const holidayOutcome = await saveHoliday(false)
+      if (shouldRefreshAfter(holidayOutcome)) anySaved = true
       // holiday_reason is deliberately left untouched — not cleared, not
       // re-validated. Close its editing UI without writing anything.
       reasonDispatch({ type: 'CANCEL' })
+      if (anySaved) router.refresh()
       return
     }
 
     // is_holiday unchanged this session — an independent reason-only edit
     // (e.g. fixing a typo), or nothing changed at all.
     if (reasonChanged) {
-      await saveReason()
+      const reasonOutcome = await saveReason()
+      if (shouldRefreshAfter(reasonOutcome)) router.refresh()
     } else {
       cancel()
     }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fieldRowReducer, initialFieldRowState } from '@/lib/daily-logs/field-row-state'
+import { fieldRowReducer, initialFieldRowState, shouldRefreshAfter } from '@/lib/daily-logs/field-row-state'
 
 describe('fieldRowReducer', () => {
   it('starts in view with the given current value', () => {
@@ -93,5 +93,28 @@ describe('fieldRowReducer', () => {
     expect(s.mode).toBe('saving')
     s = fieldRowReducer(s, { type: 'SAVE_SUCCESS', value: 'sunny' })
     expect(s).toMatchObject({ mode: 'view', currentValue: 'sunny' })
+  })
+})
+
+// PR #137 manual-walkthrough finding: a successful save updated the row's
+// VALUE (optimistic reducer state, above) but never its PROVENANCE line,
+// because `edit` is a server-rendered prop, re-derived fresh on every
+// render, never captured into this reducer — so without a refresh it just
+// never changes, and a PM's own edit rendered under the engineer's old
+// "As reported by" line. router.refresh() itself can't run under plain
+// vitest (needs next/navigation's app-router client context), so this pure
+// decision is the testable seam — same pattern as classifyRpcError's
+// reportToSentry flag vs. the actual Sentry.captureException call.
+describe('shouldRefreshAfter', () => {
+  it('saved -> true (the ONLY case that warrants a refresh)', () => {
+    expect(shouldRefreshAfter('saved')).toBe(true)
+  })
+
+  it('no-change -> false (nothing changed; the server-rendered page is already accurate)', () => {
+    expect(shouldRefreshAfter('no-change')).toBe(false)
+  })
+
+  it('error -> false (the write never happened)', () => {
+    expect(shouldRefreshAfter('error')).toBe(false)
   })
 })
