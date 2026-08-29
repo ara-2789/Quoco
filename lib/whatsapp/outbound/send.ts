@@ -28,7 +28,10 @@
 // `Basic base64(accountSid:authToken)`, credentials read from
 // process.env only. Never logged, never included in an error message or
 // any payload dump -- only the response status/body (which never echoes
-// the request's own auth header) is ever surfaced.
+// the request's own auth header) is ever surfaced. `authHeader` is used
+// exactly once, to build the outgoing `fetch` call below, and is never
+// referenced again after that -- nothing downstream of the request could
+// leak it even by accident.
 //
 // STATUSCALLBACK, ADDED FOR ITEM D (2026-08-28) -- WITHOUT THIS, ITEM D
 // RECEIVES NOTHING. Twilio's Messages API only POSTs delivery-status
@@ -43,7 +46,52 @@
 // production URL, not whatever NEXT_PUBLIC_APP_URL happens to resolve to in
 // a non-production environment (a test run must never ask Twilio to
 // callback a URL that doesn't exist).
+//
+// RESPONSE SHAPE CAPTURE, ADDED 2026-08-29 (docs/reviews/first-cron-fire-
+// record.md's own finding #2). The original `res.json().catch(() => null)`
+// collapsed two genuinely different failure states -- "valid JSON with no
+// `sid` field" and "JSON.parse itself threw" -- into one indistinguishable
+// branch, and captured nothing else about the response. That is exactly
+// what made 2026-08-29's real incident (a message Twilio's own console
+// shows it created, with a real `sid`, that this codebase recorded as
+// "2xx with no sid") impossible to fully explain after the fact.
+//
+// THE FIX IS SHAPE, NOT CONTENT -- considered and rejected a truncated raw-
+// body capture. Twilio's own documented Message resource echoes `to`/
+// `from` (E.164 numbers) and, for a Content Template send, a rendered
+// `body` field containing the substituted template variables -- this
+// codebase's own templates.ts passes the engineer's real name and project
+// name as those variables. In Twilio's own documented example response,
+// keys come back roughly alphabetically, and `body` and `from` both land
+// within the first ~150-250 characters of a compact response that runs
+// 400-800 characters total. There is no truncation bound that is both
+// meaningfully smaller than "the whole thing" and reliably short enough to
+// exclude that content -- and `outbound_sends` has no DELETE grant (031's
+// own REVOKE) while Sentry has its own retention window, so a captured
+// snippet, once written, is not something this codebase can take back
+// later if the bound turns out to have been too generous. So: capture
+// SHAPE, never content, unconditionally, not just "usually" --
+// - `contentType` -- the response's own Content-Type header.
+// - `bodyLength` -- the raw body's length in characters. A number, not
+//   text; carries no content.
+// - `bodyHash` -- the first 16 hex characters of SHA-256(raw body text).
+//   Lets a human notice "this is the identical response shape as last
+//   time" across occurrences without the hash ever being reversible back
+//   to what the body said in any practical sense.
+// - `parsed` -- whether JSON.parse succeeded at all.
+// - `parsedKeys` -- ONLY when it did: the parsed object's own top-level
+//   key NAMES, sorted, never values. Twilio's own field names (`to`,
+//   `from`, `body`, `sid`, `status`, ...) are not personal data; what they
+//   point at is. Seeing that a response has (or is missing) a `sid` key,
+//   or has an unexpected extra key, is exactly the diagnostic signal this
+//   capture exists for.
+// Twilio's own numeric `error.code` field (e.g. 63015) is separately
+// surfaced via the existing `errorCode` field below when present -- that
+// value is Twilio's own opaque error-classification integer, not personal
+// data, and is exactly what makes an error like today's identifiable
+// without needing any content capture at all.
 
+import { createHash } from 'crypto'
 import { PRODUCTION_WEBHOOK_ORIGIN } from '@/lib/whatsapp/twilio-signature'
 
 export interface SendTemplateParams {
@@ -55,9 +103,29 @@ export interface SendTemplateParams {
   contentVariables: Record<string, string>
 }
 
+/**
+ * Structural description of a Twilio HTTP response -- see this file's own
+ * header ("RESPONSE SHAPE CAPTURE") for why this is shape, never content.
+ */
+export interface ResponseShape {
+  contentType: string | null
+  bodyLength: number
+  /** First 16 hex chars of SHA-256(raw body text) -- correlation only. */
+  bodyHash: string
+  parsed: boolean
+  /** Only present when `parsed` is true. Top-level key NAMES, sorted -- never values. */
+  parsedKeys?: string[]
+}
+
 export type SendTemplateResult =
   | { ok: true; status: number; sid: string }
-  | { ok: false; status: number; errorCode?: string; errorMessage?: string }
+  | {
+      ok: false
+      status: number
+      errorCode?: string
+      errorMessage?: string
+      responseShape: ResponseShape
+    }
 
 function readCredentials(): { accountSid: string; authToken: string; fromNumber: string } {
   const accountSid = process.env.TWILIO_ACCOUNT_SID
@@ -76,6 +144,20 @@ function readCredentials(): { accountSid: string; authToken: string; fromNumber:
 
 function withWhatsAppPrefix(e164: string): string {
   return e164.startsWith('whatsapp:') ? e164 : `whatsapp:${e164}`
+}
+
+function describeResponseShape(rawText: string, contentType: string | null, parsed: unknown, parseOk: boolean): ResponseShape {
+  const bodyHash = createHash('sha256').update(rawText, 'utf8').digest('hex').slice(0, 16)
+  const shape: ResponseShape = {
+    contentType,
+    bodyLength: rawText.length,
+    bodyHash,
+    parsed: parseOk,
+  }
+  if (parseOk && parsed !== null && typeof parsed === 'object') {
+    shape.parsedKeys = Object.keys(parsed as Record<string, unknown>).sort()
+  }
+  return shape
 }
 
 /**
@@ -121,13 +203,31 @@ export async function sendWhatsAppTemplate(
     },
     body: body.toString(),
   })
+  // Nothing below this line ever reads `authHeader` or the request's own
+  // headers again -- only the RESPONSE (status, headers, body) is read
+  // from here on, so there is nothing of the Authorization header left to
+  // leak into any capture below, by construction.
 
-  // Twilio's error responses are JSON ({code, message, more_info, status})
-  // on non-2xx same as success responses on 2xx -- one parse path for both,
-  // per Twilio's own documented error-response shape.
-  const responseBody = (await res.json().catch(() => null)) as
-    | { sid?: string; code?: number; message?: string }
-    | null
+  const contentType = res.headers.get('content-type')
+  const rawText = await res.text()
+
+  // Parsed once, here, ourselves -- replaces the old `res.json().catch(()
+  // => null)`, which discarded exactly the distinction (did it parse at
+  // all?) this capture now preserves.
+  let parsed: unknown = null
+  let parseOk = false
+  try {
+    parsed = JSON.parse(rawText)
+    parseOk = true
+  } catch {
+    parsed = null
+    parseOk = false
+  }
+
+  const responseBody =
+    parseOk && parsed !== null && typeof parsed === 'object'
+      ? (parsed as { sid?: string; code?: number; message?: string })
+      : null
 
   if (!res.ok) {
     return {
@@ -135,15 +235,29 @@ export async function sendWhatsAppTemplate(
       status: res.status,
       errorCode: responseBody?.code != null ? String(responseBody.code) : undefined,
       errorMessage: responseBody?.message,
+      responseShape: describeResponseShape(rawText, contentType, parsed, parseOk),
     }
   }
 
   const sid = responseBody?.sid
   if (!sid) {
-    // 2xx with no sid is not a shape this endpoint is documented to return --
-    // refuse to guess a fake success, same reasoning as submit-templates.ts's
-    // own "returned 2xx but no sid field" refusal.
-    return { ok: false, status: res.status, errorMessage: 'Twilio returned 2xx with no "sid" field in the response body.' }
+    // 2xx without a usable `sid` -- refuse to guess a fake success, same
+    // reasoning as submit-templates.ts's own "returned 2xx but no sid
+    // field" refusal. Three genuinely different shapes, now genuinely
+    // distinguishable in the message text (and, structurally, in
+    // `responseShape.parsed` / `bodyLength`) instead of collapsing into
+    // one string as before.
+    const reason = !parseOk
+      ? rawText.length === 0
+        ? 'an empty response body'
+        : 'a body that is not valid JSON'
+      : 'valid JSON with no "sid" field'
+    return {
+      ok: false,
+      status: res.status,
+      errorMessage: `Twilio returned 2xx with ${reason}.`,
+      responseShape: describeResponseShape(rawText, contentType, parsed, parseOk),
+    }
   }
 
   return { ok: true, status: res.status, sid }
