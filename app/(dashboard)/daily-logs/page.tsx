@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs'
+import Link from 'next/link'
 import { CircleAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
@@ -12,8 +13,11 @@ import { DateNav } from './date-nav'
 import { ReactivateCta } from './reactivate-cta'
 
 // DASH-03 Daily Logs — PM triage board. One card per engineer per day, morning
-// + evening halves. Read-only this pass (Rule 4.3 inline correction is a
-// deferred follow-up). Scoped to the PM's projects via project_members (§4).
+// + evening halves. A card with a check-in row links through to the Rule 4.3
+// inline correction detail route (./[logId]/page.tsx) — NOT role-gated here:
+// read access is preserved for every project_members role, only the edit
+// affordances on the detail page itself are gated on role === 'pm'. Scoped to
+// the PM's projects via project_members (§4).
 
 function formatTime(iso: string | null): string {
   if (!iso) return ''
@@ -137,8 +141,8 @@ export default async function DailyLogsPage({
                     // of the today-only rule — no past-date CTA.
                     const isBlocked =
                       morningStatus.state === 'messaging_blocked' || eveningStatus.state === 'messaging_blocked'
-                    return (
-                      <div key={eng.engineerId} className="rounded-lg border border-gray-200 bg-white p-4">
+                    const cardHeaderAndHalves = (
+                      <>
                         <div className="mb-2 flex items-center justify-between">
                           <span className="text-sm font-medium text-gray-900">{eng.engineerName}</span>
                         </div>
@@ -146,12 +150,38 @@ export default async function DailyLogsPage({
                           <HalfRow half="morning" status={morningStatus} submittedAt={eng.log?.morning_submitted_at ?? null} />
                           <HalfRow half="evening" status={eveningStatus} submittedAt={eng.log?.evening_submitted_at ?? null} />
                         </div>
+                      </>
+                    )
+                    // ReactivateCta renders its own <a>/<button> (a "Forward
+                    // to wa.me" link, a copy button) — it must stay a SIBLING
+                    // of the Link below, never a child of it, or the nested
+                    // <a> would be invalid HTML and its clicks would also
+                    // trigger card navigation. Only the name+halves region is
+                    // the link target.
+                    return (
+                      <div key={eng.engineerId} className="rounded-lg border border-gray-200 bg-white p-4">
+                        {eng.log ? (
+                          <Link href={`/daily-logs/${eng.log.id}`} className="block hover:opacity-80">
+                            {cardHeaderAndHalves}
+                          </Link>
+                        ) : (
+                          cardHeaderAndHalves
+                        )}
                         {isBlocked && (
                           <ReactivateCta
                             engineerName={eng.engineerName}
                             engineerWhatsappNumber={eng.engineerWhatsappNumber}
                             quocoNumber={quocoNumber}
                           />
+                        )}
+                        {!eng.log && (
+                          // A card with no daily_logs row has nothing to
+                          // correct (the correction RPC takes a
+                          // daily_logs_id; there is no insert path) — no
+                          // link, one line explaining why.
+                          <p className="mt-2 text-xs text-gray-400">
+                            Nothing to correct yet — check-ins for this day haven&apos;t come in.
+                          </p>
                         )}
                       </div>
                     )

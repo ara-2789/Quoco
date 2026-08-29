@@ -34,3 +34,20 @@ export function istDateString(now: Date): string {
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
   return `${get('year')}-${get('month')}-${get('day')}`
 }
+
+/**
+ * IST wall-clock time ("6:42 AM") for an ISO instant, or '' for null — the
+ * shared form of the formatter `page.tsx` keeps a local copy of. Lives here
+ * (not duplicated per new file) since the DASH-03 correction surface needs it
+ * in three places: field-row provenance, the holiday consequence copy, and the
+ * DPR delivery note.
+ */
+export function formatIstTime(iso: string | null): string {
+  if (!iso) return ''
+  return new Date(iso).toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
+  })
+}
