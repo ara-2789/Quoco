@@ -242,3 +242,76 @@ UNIQUE constraint, the re-claim CAS correctly refused a `status='failed'` row (i
 ever matches `status='sending' AND error='rate_limited_429_retryable'`), and the run
 resolved to `already_claimed` with zero side effects — no duplicate row, no second
 Twilio call, no session mutation. First real-world exercise of this guarantee; it held.
+
+## Dated correction, 2026-08-29 — the real cause of "Finding #2," found the same day
+
+**This corrects "Finding #2" above (the "2xx with no sid" cause is still unexplained")
+— not by editing it away, same discipline this file already applied to its own
+ruling-out error.** Finding #2 was half right: it correctly stated the raw body was
+never captured and was therefore unrecoverable for the specific 08:31 IST incident. It
+was wrong to leave the underlying cause as an open question, because the cause is not
+incident-specific at all — it is structural, and it predates both this morning's and
+tonight's failures.
+
+**The actual cause: `send.ts`'s request URL never asked Twilio for JSON.** Twilio's
+classic 2010 API (`api.twilio.com/2010-04-01/...`) returns XML **by default** —
+confirmed against Twilio's own current docs (`twilio.com/docs/usage/twilios-response`:
+"Twilio 2010 APIs... return XML responses by default"), not memory. JSON is requested
+by appending `.json` to the resource URI — the mechanism Twilio's own docs describe.
+`send.ts`'s URL was `.../Messages`, with no `.json` suffix and no `Accept` header. Every
+POST this file has ever made has therefore received XML back, and every attempt to
+`JSON.parse` (or, pre-PR #135, `res.json()`) that body has failed.
+
+**Re-reading this morning's failure under this cause: both original claims were true,
+and the record's own "unexplained" framing was the only part that was wrong.** The 63015
+async rejection was real (Twilio's own console confirmed it). The parse failure was also
+real — but it was never a Twilio-side anomaly or a bug of unknown origin; it was
+`JSON.parse` choking on XML, deterministically, on every call. Before PR #135's response-
+shape capture, `res.json().catch(() => null)` could not distinguish "valid JSON, no
+`sid` key" from "the parse itself threw" — both collapsed into the identical `null`, so
+the original record could not have told these apart even if it had gone looking. That
+ambiguity is exactly what made the cause look unexplained; it was never actually
+unknowable, only unobserved until the capture existed to show it.
+
+**One root cause explains 100% of this system's real send failures to date, and it
+predates both incidents.** Checked directly on production, not inferred: `outbound_sends`
+has **never once held a `status='sent'` row** — the only two rows in the table's
+history, this morning's and tonight's, are both `status='failed'`. Every real trigger
+this system has fired has hit this. Consequence, stated plainly rather than left
+implicit: the status-callback correlation (`app/api/whatsapp/status-callback/route.ts`,
+matching on `twilio_sid`) has never had a row to correlate against, because no row has
+ever captured a real `twilio_sid`. Item F's coverage sweep (`sentCountForEventKey`,
+counting `status='sent'` rows) has never counted a real delivery, because there has
+never been one to count. Both mechanisms are exactly as this record's earlier sections
+described their design and logic to be — untouched, correctly written — but **neither
+has ever actually executed against a real success path.** "Believed working" and
+"exercised" are not the same claim, and this record's earlier sections, written before
+this correction, did not distinguish them as carefully as they should have.
+
+**The methodological finding — the durable one, more than the bug itself.** Every test
+in `test/unit/outbound-send.test.ts` mocks `fetch`; the response in every one of those
+tests is a fixture this codebase wrote itself, never a real Twilio response. A green
+suite there — across four review rounds (031's own review history) and one external
+review (CLAUDE.md §0's gate, tripped by the ledger table's own grants) — could not have
+caught this, structurally, no matter how thorough: the fixture IS the definition of what
+the test believes the real API does, so a wrong belief about the real API's default
+representation is invisible to any test built entirely on that belief. **Same class of
+finding as `docs/reviews/sandbox-cannot-test-concurrency.md`** — that document found this
+sandbox cannot produce genuine RPC concurrency against test-db, so a local green run for
+a concurrency-dependent test proves nothing about the real mechanism; this one finds the
+unit-test suite cannot produce a genuine Twilio response, so a green run there proves
+something narrower than "this correctly talks to Twilio" — only "this correctly handles
+whatever shape of response we told it to expect." Both are instances of the same
+underlying limit: **the environment available to write and run a test is not always
+capable of producing the actual condition the test is meant to verify, and a green
+result under that limit is not the same evidence it would be otherwise.** Cross-
+referenced deliberately, not coincidentally similar — the next time a test suite goes
+green across multiple review rounds without incident, "did anything in this suite ever
+touch the real thing" is the question this pairing exists to prompt.
+
+**Fix applied same day**, `lib/whatsapp/outbound/send.ts`: `.json` appended to the
+Messages URL. A new test (`test/unit/outbound-send.test.ts`) asserts the request URL
+itself ends in `.json` — the one thing a mocked-`fetch` test can verify honestly, since
+it tests what this code SENDS, not what it receives. Verification beyond the test suite
+requires a real send; see the operational checklist recorded alongside this fix's own
+PR for what to observe on the next trigger.
