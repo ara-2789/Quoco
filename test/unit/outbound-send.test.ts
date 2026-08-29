@@ -75,15 +75,19 @@ describe('sendWhatsAppTemplate', () => {
     expect(body.get('To')).toBe('whatsapp:+919876543210')
   })
 
-  it('returns ok:false with the Twilio error code/message on a 4xx (non-retryable)', async () => {
+  it('returns ok:false with the Twilio error code/message on a 4xx (non-retryable), plus a shape descriptor', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(400, { code: 21211, message: "The 'To' number is not a valid phone number." }))
     const result = await sendWhatsAppTemplate({ to: '+91000', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
-    expect(result).toEqual({
-      ok: false,
-      status: 400,
-      errorCode: '21211',
-      errorMessage: "The 'To' number is not a valid phone number.",
-    })
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected ok:false')
+    expect(result.status).toBe(400)
+    expect(result.errorCode).toBe('21211')
+    expect(result.errorMessage).toBe("The 'To' number is not a valid phone number.")
+    expect(result.responseShape.parsed).toBe(true)
+    expect(result.responseShape.contentType).toBe('application/json')
+    expect(result.responseShape.parsedKeys).toEqual(['code', 'message'])
+    expect(result.responseShape.bodyLength).toBeGreaterThan(0)
+    expect(result.responseShape.bodyHash).toMatch(/^[0-9a-f]{16}$/)
   })
 
   it('returns ok:false on a 5xx, still reporting the status for the caller to classify as retryable', async () => {
@@ -93,13 +97,63 @@ describe('sendWhatsAppTemplate', () => {
     expect(result.status).toBe(503)
   })
 
-  it('returns ok:false, refusing to guess a fake success, when Twilio returns 2xx with no "sid" field', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(201, {}))
+  // The four distinguishable response shapes send.ts must now tell apart --
+  // docs/reviews/first-cron-fire-record.md's own finding #2. Before this
+  // change all three failure shapes below produced the identical error
+  // string; each now has both a distinct message AND a distinct
+  // `responseShape` (never distinct by CONTENT -- see send.ts's own header
+  // for why content is never captured, only structure).
+
+  it('shape 1/4 -- valid JSON WITH sid: unchanged success path, ok:true', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMabc123' }))
+    const result = await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
+    expect(result).toEqual({ ok: true, status: 201, sid: 'SMabc123' })
+  })
+
+  it('shape 2/4 -- valid JSON WITHOUT sid: parsed=true, parsedKeys present, distinct message', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { status: 'queued', to: 'whatsapp:+919876543210' }))
     const result = await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
     expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.errorMessage).toMatch(/no "sid" field/)
-    }
+    if (result.ok) throw new Error('expected ok:false')
+    expect(result.errorMessage).toBe('Twilio returned 2xx with valid JSON with no "sid" field.')
+    expect(result.responseShape.parsed).toBe(true)
+    expect(result.responseShape.parsedKeys).toEqual(['status', 'to'])
+    expect(result.responseShape.bodyLength).toBeGreaterThan(0)
+    // SHAPE ONLY -- the fixture's own `to` VALUE must never leak into the
+    // error message or anywhere else in the result, only its presence as
+    // a key name.
+    expect(result.errorMessage).not.toContain('919876543210')
+    expect(JSON.stringify(result)).not.toContain('919876543210')
+  })
+
+  it('shape 3/4 -- non-JSON body: parsed=false, bodyLength>0, distinct message', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('<html><body>Bad Gateway</body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } }),
+    )
+    const result = await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected ok:false')
+    expect(result.errorMessage).toBe('Twilio returned 2xx with a body that is not valid JSON.')
+    expect(result.responseShape.parsed).toBe(false)
+    expect(result.responseShape.parsedKeys).toBeUndefined()
+    expect(result.responseShape.contentType).toBe('text/html')
+    expect(result.responseShape.bodyLength).toBeGreaterThan(0)
+    // SHAPE ONLY -- the HTML body's own content must never appear in the
+    // error message.
+    expect(result.errorMessage).not.toContain('Bad Gateway')
+  })
+
+  it('shape 4/4 -- empty body: parsed=false, bodyLength=0, distinct message from the non-JSON case', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const result = await sendWhatsAppTemplate({ to: '+919876543210', contentSid: 'HXabc', contentVariables: {} }, fetchMock)
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected ok:false')
+    expect(result.errorMessage).toBe('Twilio returned 2xx with an empty response body.')
+    expect(result.responseShape.parsed).toBe(false)
+    expect(result.responseShape.bodyLength).toBe(0)
+    // Same `parsed:false` as shape 3, but distinguishable by bodyLength and
+    // by the error message itself -- this is the whole point: the old code
+    // could not tell these two apart at all.
   })
 
   it('a thrown network error (no HTTP response at all) propagates -- the caller decides how to treat it, this function does not swallow it', async () => {

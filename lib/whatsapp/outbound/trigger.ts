@@ -284,18 +284,33 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
           claimId,
           status: sendResult.status,
           errorCode: sendResult.errorCode,
+          responseShape: sendResult.responseShape,
         },
       })
       return { outcome: 'ambiguous' }
     }
-    // Non-retryable (4xx) -- bad/unreachable number, template rejected by
-    // Meta, etc. Real, actionable failure (plan §5). Session is NEVER
-    // activated on this path -- no RPC call.
+    // Non-retryable (4xx, or a 2xx send.ts itself refused to trust -- see
+    // send.ts's own "2xx with no sid" handling) -- bad/unreachable number,
+    // template rejected by Meta, or an unexpected response shape. Real,
+    // actionable failure (plan §5). Session is NEVER activated on this
+    // path -- no RPC call.
+    //
+    // responseShape appended to the ledger's own `error` TEXT column, not
+    // just to Sentry -- 2026-08-29's own incident was diagnosed days later,
+    // straight from this column via `supabase db query`, with no Sentry
+    // access needed for the ledger read itself. A human reading this row
+    // later gets the same structural facts without a second system to
+    // check. Shape only, per send.ts's own header -- never raw content.
+    const shapeSuffix = ` [response: content-type=${sendResult.responseShape.contentType ?? 'none'}, ` +
+      `bodyLength=${sendResult.responseShape.bodyLength}, bodyHash=${sendResult.responseShape.bodyHash}, ` +
+      `parsed=${sendResult.responseShape.parsed}` +
+      (sendResult.responseShape.parsedKeys ? `, keys=[${sendResult.responseShape.parsedKeys.join(',')}]` : '') +
+      `]`
     const { error: updateError } = await supabase
       .from('outbound_sends')
       .update({
         status: 'failed',
-        error: sendResult.errorMessage ?? `HTTP ${sendResult.status}`,
+        error: (sendResult.errorMessage ?? `HTTP ${sendResult.status}`) + shapeSuffix,
         updated_at: new Date().toISOString(),
       })
       .eq('id', claimId)
@@ -319,6 +334,7 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
         status: sendResult.status,
         errorCode: sendResult.errorCode,
         errorMessage: sendResult.errorMessage,
+        responseShape: sendResult.responseShape,
       },
     })
     return { outcome: 'failed', errorCode: sendResult.errorCode, errorMessage: sendResult.errorMessage }
