@@ -207,3 +207,38 @@ A production sender has no join/expiry concept; 63015 is specific to the sandbox
 incident is one more concrete reason to prioritize that swap, beyond the reasons already
 recorded in the runbook itself — it is not just a config inconvenience, it is a standing,
 recurring, silent failure mode for every unattended cron send until the swap happens.
+
+## Dated observation, 2026-08-29 — the idempotency gate, exercised for real for the first time
+
+Aravind manually triggered `app/api/cron/morning-trigger` via Vercel's Run button, hours
+after the original 08:31 IST failure, with `morning_send:2026-08-29` already claimed at
+`status='failed'`. This is the first time the `UNIQUE(tenant_id, recipient_user_id,
+event_key)` claim guarantee — and the re-claim CAS's refusal to touch a non-`'sending'`
+row — has ever been exercised against a real prior claim rather than a test fixture.
+Checked from data, read-only, against production, not from the absence of a WhatsApp
+message:
+
+- **`outbound_sends`**: still exactly one row for `morning_send:2026-08-29`.
+  `created_at`/`updated_at` both byte-identical to the original 08:31:37 IST claim
+  (`03:01:37.064936+00` / `03:01:37.385+00`). No second row, no touched timestamp.
+- **Twilio's own message log** (queried directly, read-only, via the Messages list API —
+  credentials read from env and never printed; response saved to a file and only
+  structural fields extracted, body content tested for known phrases rather than
+  printed): the most recent entry for `+919176865600` before the manual run was the
+  03:05:36 UTC `MORNING_AWAITING_TRIGGER_REPLY` acknowledgement (already accounted for
+  in this record's own "What happened" section, not new). Nothing exists between then
+  and the check itself (04:24 UTC, roughly 79 minutes later, spanning the manual run).
+  No new Twilio API call was made.
+- **`whatsapp_sessions`** for `+919176865600`: unchanged, `current_flow: null,
+  current_step: 0`, `updated_at` still 2026-08-26. No activation.
+- **The route's actual response / Vercel's invocation log were not read** — this
+  environment has no Vercel CLI or dashboard access. The verdict below rests on the
+  three data points above (all only possible if the code returned `already_claimed`
+  before any Twilio call, per `trigger.ts`'s own control flow), not on a log read; that
+  distinction is worth keeping precise rather than papering over.
+
+**Verdict: the idempotency gate behaved exactly as designed.** The claim INSERT hit the
+UNIQUE constraint, the re-claim CAS correctly refused a `status='failed'` row (it only
+ever matches `status='sending' AND error='rate_limited_429_retryable'`), and the run
+resolved to `already_claimed` with zero side effects — no duplicate row, no second
+Twilio call, no session mutation. First real-world exercise of this guarantee; it held.
