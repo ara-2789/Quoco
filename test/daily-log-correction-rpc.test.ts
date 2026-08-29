@@ -24,6 +24,15 @@ import { MAX_VALUE_BYTES } from '@/lib/daily-logs/correction'
 // Dates unique to this suite, clear of migration-019.test.ts's own project-A
 // seeds and daily-log-detail-query.test.ts's (2026-10-11).
 const LOG_DATE = '2026-10-12'
+// ROW_HOLIDAY needs its OWN date, not LOG_DATE: daily_logs carries
+// UNIQUE(project_id, engineer_id, log_date) (001_core_schema.sql:130,
+// daily_logs_project_id_engineer_id_log_date_key) — one log per engineer per
+// day. Both rows below share project A + fx.profileAId as engineer_id, so
+// two rows on the same date collide on that natural key even though they
+// have distinct ids; `{ onConflict: 'id' }` only dedupes on the PK and does
+// not help here. Mirrors test/migration-019.test.ts's own LOG_DATE /
+// PAST_LOG_DATE split for the identical reason.
+const HOLIDAY_LOG_DATE = '2026-10-13'
 
 const ROW_SIZE = '00000000-0000-4000-a000-0000000190e1'
 const ROW_HOLIDAY = '00000000-0000-4000-a000-0000000190e2'
@@ -31,7 +40,7 @@ const ROW_HOLIDAY = '00000000-0000-4000-a000-0000000190e2'
 let fx: TwoTenantFixtures
 let jwtA: SupabaseClient
 
-async function seedLog(id: string, cols: Record<string, unknown> = {}): Promise<void> {
+async function seedLog(id: string, logDate: string, cols: Record<string, unknown> = {}): Promise<void> {
   const db = testClient()
   const { error } = await db.from('daily_logs').upsert(
     {
@@ -39,7 +48,7 @@ async function seedLog(id: string, cols: Record<string, unknown> = {}): Promise<
       tenant_id: TEST_TENANT_A_ID,
       project_id: TEST_PROJECT_A_ID,
       engineer_id: fx.profileAId,
-      log_date: LOG_DATE,
+      log_date: logDate,
       ...cols,
     },
     { onConflict: 'id' },
@@ -80,8 +89,8 @@ beforeAll(async () => {
     { project_id: TEST_PROJECT_A_ID, user_id: fx.profileAId, tenant_id: TEST_TENANT_A_ID, role: 'pm' },
     { onConflict: 'project_id,user_id' },
   )
-  await seedLog(ROW_SIZE, { weather: 'clear' })
-  await seedLog(ROW_HOLIDAY, { is_holiday: false, holiday_reason: null })
+  await seedLog(ROW_SIZE, LOG_DATE, { weather: 'clear' })
+  await seedLog(ROW_HOLIDAY, HOLIDAY_LOG_DATE, { is_holiday: false, holiday_reason: null })
 
   jwtA = await jwtClient(TEST_007_USER_A_EMAIL, TEST_007_PASSWORD)
 })

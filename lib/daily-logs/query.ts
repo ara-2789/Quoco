@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PostgrestError } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import type { LogHalfInput } from './status'
-import { UI_VISIBLE_COLUMNS, type CorrectableColumn } from './correction'
+import { UI_VISIBLE_COLUMNS, type UiVisibleColumn } from './correction'
 
 // Data layer for the Daily Logs board (DASH-03).
 //
@@ -184,7 +184,7 @@ export type LogDetail = {
   morningSubmittedAt: string | null
   eveningSubmittedAt: string | null
   /** Current value of every UI-visible correctable column (§ correction.ts), keyed by column name. */
-  columns: Record<CorrectableColumn, unknown>
+  columns: Record<UiVisibleColumn, unknown>
   /** attendance_defaulted / attendance_raw (030) — is_holiday's defaulted-provenance case. NOTE:
    *  types/database.ts has not been regenerated since 030 landed these columns (see the
    *  prerequisite-PR note in the detail page) — this select is correct against the LIVE schema;
@@ -192,7 +192,7 @@ export type LogDetail = {
   attendanceDefaulted: boolean | null
   attendanceRaw: string | null
   /** Latest daily_log_edits row per corrected column, keyed by column name. An un-edited column is absent. */
-  edits: Partial<Record<CorrectableColumn, LatestEdit>>
+  edits: Partial<Record<UiVisibleColumn, LatestEdit>>
 }
 
 export type LogDetailResult =
@@ -221,7 +221,7 @@ type DetailRow = {
   evening_submitted_at: string | null
   attendance_defaulted: boolean | null
   attendance_raw: string | null
-} & Record<CorrectableColumn, unknown>
+} & Record<UiVisibleColumn, unknown>
 
 type EditRow = {
   column_name: string
@@ -313,7 +313,7 @@ export async function getDailyLogDetail(
     }
   }
 
-  const edits: Partial<Record<CorrectableColumn, LatestEdit>> = {}
+  const edits: Partial<Record<UiVisibleColumn, LatestEdit>> = {}
   for (const column of UI_VISIBLE_COLUMNS) {
     const e = editsByColumn.get(column)
     if (!e) continue
@@ -326,7 +326,7 @@ export async function getDailyLogDetail(
     }
   }
 
-  const columns = {} as Record<CorrectableColumn, unknown>
+  const columns = {} as Record<UiVisibleColumn, unknown>
   for (const column of UI_VISIBLE_COLUMNS) columns[column] = row[column]
 
   return {

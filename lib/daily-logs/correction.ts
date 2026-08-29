@@ -34,8 +34,19 @@ export type ColumnCastType = (typeof COLUMN_CONTRACT)[CorrectableColumn]
 // product question this build does not answer). Excluding it here is a named
 // UI decision layered on top of the full contract above, not a narrowing of
 // what the RPC/DB actually allows.
-export const UI_VISIBLE_COLUMNS = (Object.keys(COLUMN_CONTRACT) as CorrectableColumn[]).filter(
-  (c) => c !== 'weather',
+//
+// UiVisibleColumn is a REAL type-level narrowing (Exclude, not just the
+// runtime UI_VISIBLE_COLUMNS array) so a caller keying a Record on
+// CorrectableColumn — the full 9 — can't silently claim `weather` exists
+// where only these 8 are actually selected/rendered. getDailyLogDetail's
+// DetailRow/LogDetail types use this, not CorrectableColumn, for exactly
+// that reason (a prior draft used CorrectableColumn there, which let a test
+// assert on `columns.weather` — a key genuinely never selected — without
+// tsc catching it).
+export type UiVisibleColumn = Exclude<CorrectableColumn, 'weather'>
+
+export const UI_VISIBLE_COLUMNS: UiVisibleColumn[] = (Object.keys(COLUMN_CONTRACT) as CorrectableColumn[]).filter(
+  (c): c is UiVisibleColumn => c !== 'weather',
 )
 
 // The real RPC boundary (019: `pg_column_size(p_new_value) > 100000` raises

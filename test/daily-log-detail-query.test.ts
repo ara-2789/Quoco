@@ -101,7 +101,11 @@ describe('getDailyLogDetail', () => {
     expect(result.data.id).toBe(ROW_MEMBER)
     expect(result.data.projectId).toBe(TEST_PROJECT_A_ID)
     expect(result.data.logDate).toBe(LOG_DATE)
-    expect(result.data.columns.weather).toBe('cloudy')
+    // NOT `columns.weather` — weather is excluded from UI_VISIBLE_COLUMNS
+    // (no capture path exists in the product) and therefore from
+    // getDailyLogDetail's select entirely; `columns` is typed
+    // Record<UiVisibleColumn, unknown> specifically so asserting on a key
+    // that was never selected is a compile error, not a silent `undefined`.
     expect(result.data.columns.morning_plan).toBe('pour slab')
     expect(result.data.edits).toEqual({})
   })
@@ -125,6 +129,13 @@ describe('getDailyLogDetail', () => {
     const db = testClient()
     const older = new Date(Date.now() - 60_000).toISOString()
     const newer = new Date().toISOString()
+    // old_value/new_value are jsonb — the supabase-js client already
+    // JSON-encodes whatever JS value is given (a plain string becomes a
+    // jsonb string scalar). Passing JSON.stringify('pour slab') here would
+    // hand the client the JS string '"pour slab"' (quote characters
+    // included), which it then encodes AGAIN — the stored jsonb value ends
+    // up being the string `"pour slab"`, literal quotes and all, not
+    // `pour slab`. Pass the raw string; let the client do the one encoding.
     await db.from('daily_log_edits').insert([
       {
         tenant_id: TEST_TENANT_A_ID,
@@ -132,8 +143,8 @@ describe('getDailyLogDetail', () => {
         project_id: TEST_PROJECT_A_ID,
         log_date: LOG_DATE,
         column_name: 'morning_plan',
-        old_value: JSON.stringify('pour slab'),
-        new_value: JSON.stringify('pour slab v1'),
+        old_value: 'pour slab',
+        new_value: 'pour slab v1',
         edited_by: fx.profileAId,
         created_at: older,
       },
@@ -143,8 +154,8 @@ describe('getDailyLogDetail', () => {
         project_id: TEST_PROJECT_A_ID,
         log_date: LOG_DATE,
         column_name: 'morning_plan',
-        old_value: JSON.stringify('pour slab v1'),
-        new_value: JSON.stringify('pour slab v2 — final'),
+        old_value: 'pour slab v1',
+        new_value: 'pour slab v2 — final',
         edited_by: fx.profileAId,
         created_at: newer,
       },
