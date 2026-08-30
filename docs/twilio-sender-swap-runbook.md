@@ -1,9 +1,35 @@
 # Twilio production sender swap + supervised live run (JJ4 runbook)
 
-**Status: WRITTEN, NOT EXECUTED, per direct instruction (JJ4). Both the sender swap
+~~**Status: WRITTEN, NOT EXECUTED, per direct instruction (JJ4). Both the sender swap
 (HH2/II4) and the supervised live run below need their own go-ahead — this document
 exists so the full sequence can run in one sitting once authorized, rather than being
-reconstructed from a chat transcript at that point.**
+reconstructed from a chat transcript at that point.**~~
+
+**STATUS: SENDER SWAP EXECUTED, 2026-08-30 (Aravind). The supervised live run (§4)
+has not — that's a separate go-ahead, still outstanding.** What actually changed:
+
+- `TWILIO_WHATSAPP_NUMBER` in Vercel → `Config` type, **Production only** →
+  `whatsapp:+919940875600`.
+- `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` — **unchanged.** The production WABA
+  sender lives under the **same** Twilio account as the sandbox, confirmed directly
+  (§1's own unresolved question, now closed) — see the new note in §1 below. The
+  SID/Auth-Token mismatch hazard §0 and §1 both warned about **never applied**; only one
+  env var actually needed to change.
+- Twilio Console, production WABA sender's own Messaging configuration:
+  - Incoming webhook → `https://app.quoco.co.in/api/whatsapp/webhook`, HTTP POST — as
+    named in §2.
+  - **Status callback → `https://app.quoco.co.in/api/whatsapp/status-callback`, HTTP
+    POST — a step this runbook never named.** See the new note in §2 below for why this
+    matters as much as the incoming webhook did.
+- Redeployed at commit `c75d679`.
+- **Verified, same session, read-only against production:** an inbound sent to the new
+  number produced a `processed_messages` row (`SMc2e59db50827fa6f42f11adc1cb892cc`,
+  `2026-08-30 18:10:19 UTC`) — signature validation passed against the pinned allowlist,
+  the first real production exercise of that mechanism. `whatsapp_sessions` and today's
+  `daily_logs` row for the test engineer were both confirmed untouched by that inbound
+  (`updated_at`/`created_at` unchanged from this morning's completion) — the idle inbound
+  was handled correctly, no flow started, retirement held regardless of which sender the
+  message arrived through.
 
 **CORRECTED, 2026-08-30 — THIS IS NO LONGER AN IMPROVEMENT QUEUED BEHIND OTHER WORK. IT
 IS A HARD PREREQUISITE.** Confirmed directly against Twilio's current docs
@@ -85,13 +111,26 @@ site and reads, taken as a summary of the whole variable, as dangerously wrong t
 
 - `app/api/whatsapp/webhook/route.ts:122` — `TWILIO_AUTH_TOKEN`, used to recompute the
   HMAC-SHA1 signature Twilio attaches to every inbound webhook call
-  (`validateTwilioSignature`). **If the production WABA sender lives under a different
+  (`validateTwilioSignature`). ~~If the production WABA sender lives under a different
   Twilio Account (a different Account SID) than the sandbox, its Auth Token is also
-  different** — swapping only the phone number while leaving the sandbox's Auth Token in
+  different — swapping only the phone number while leaving the sandbox's Auth Token in
   place would make every real inbound fail signature validation (403), not silently
   degrade. Confirm which is true (same account, new number vs. genuinely new
   account/subaccount) before touching anything — Twilio Console → Account → General
-  Settings shows the Auth Token for whichever account is currently active.
+  Settings shows the Auth Token for whichever account is currently active.~~
+  **RESOLVED, 2026-08-30: same account, confirmed directly by Aravind before the swap.**
+  `+919940875600` lives under the identical Twilio Account as the sandbox number — no
+  Account SID or Auth Token change was needed, and the hazard this bullet warned about
+  (a silently-broken Auth Token orphaning an in-flight sandbox conversation, §0's own new
+  precondition) never had a chance to occur. Only `TWILIO_WHATSAPP_NUMBER` changed.
+- **NEW, 2026-08-30 — `app/api/whatsapp/status-callback/route.ts:52`.** A fourth reader
+  of `TWILIO_AUTH_TOKEN`, missed in the "three, not two" correction above — its own
+  independent `process.env.TWILIO_AUTH_TOKEN` read and `validateTwilioSignature` call,
+  validating Twilio's async delivery-status callbacks the same way the inbound webhook
+  validates messages. Doesn't change what to DO (same env var, already covered by the
+  swap), but widens what an Auth Token mismatch would have broken, had the accounts
+  differed: not just inbound replies, but delivery-status correlation itself — see this
+  file's own header for why that specific mechanism matters (it's what caught 63027).
 - `app/(dashboard)/daily-logs/page.tsx:69` — `TWILIO_WHATSAPP_NUMBER`, read for the
   DASH-03 reactivation CTA display only (formats and shows the number a blocked
   engineer should text START to). Purely cosmetic for THIS call site specifically; a
@@ -123,6 +162,14 @@ harmless-but-inert; it is load-bearing for every real send, same as the other tw
      `whatsapp:+14155238886`).
    - `TWILIO_AUTH_TOKEN` → the Auth Token for whichever Twilio account now owns that
      sender (per §1 above — do not assume it's unchanged).
+   - **DONE, 2026-08-30 — recorded exactly as executed.** `TWILIO_WHATSAPP_NUMBER` set
+     as `Config` type, **Production environment only**; `TWILIO_AUTH_TOKEN` left
+     unchanged (same-account finding, §1). **Preview was deliberately left scoped
+     separately, still pointing at the sandbox** — a PR preview deploy cannot message a
+     real number through the approved WABA sender, only through the sandbox (join-code
+     gated, same as every test send before this swap). Worth stating as a deliberate
+     safety property, not an oversight: this runbook never discussed Preview at all
+     before now.
 2. In Twilio Console → the WABA sender's own configuration (not the sandbox's) → ~~set
    the inbound webhook URL to `https://<production-domain>/api/whatsapp/webhook`, HTTP
    POST~~ **NAMED EXACTLY, 2026-08-30 (previously left as a placeholder):**
@@ -141,6 +188,28 @@ harmless-but-inert; it is load-bearing for every real send, same as the other tw
      accounted for.
    - **Method:** HTTP POST — the exact same route, no code change; only the sandbox's
      separate webhook config pointed elsewhere before.
+2b. **NEW, 2026-08-30 — a step this runbook never named, found only after the swap was
+    already planned and corrected here from what was actually done.** The production
+    WABA sender's Messaging configuration also needs its **status callback URL** set,
+    separately from the incoming-message webhook in step 2 above:
+    - **Field:** the same Messaging configuration section → **status callback URL**
+      (Twilio's own delivery-status webhook, distinct from "When a message comes in").
+    - **Value, exactly:**
+      ```
+      https://app.quoco.co.in/api/whatsapp/status-callback
+      ```
+    - **Method:** HTTP POST.
+    - **Why this matters as much as step 2 did:** without it, Twilio has nowhere to
+      report an async delivery failure on the new sender — `app/api/whatsapp/status-
+      callback/route.ts` (§1's own new bullet above) would never be called at all, and
+      `outbound_sends` rows would sit at `status='sent'` regardless of what actually
+      happened to the message. **This is the exact mechanism that correctly caught
+      today's 63027 finding** (this file's own header) — a swap that changed the sender
+      but left this URL unconfigured on the sandbox's old value (or unset) would have
+      traded one invisible failure mode for another: template delivery might work, but a
+      genuine failure downstream of Twilio's synchronous accept would go undetected,
+      exactly the gap `docs/reviews/first-cron-fire-record.md`'s own "2xx means ACCEPTED,
+      not DELIVERED" finding warned about.
 3. Trigger a new Vercel deploy (or confirm the env var change alone takes effect —
    Vercel env vars are read at request time for these two call sites, not build time, so
    a redeploy is not strictly required, but doing one removes any doubt). **CORRECTED,
