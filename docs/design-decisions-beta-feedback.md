@@ -3173,3 +3173,72 @@ They belong with PR #67's two-stage delivery work
 (`docs/dpr-delivery-versioning-plan.md`), not with (e)'s eligibility logic
 and not as a new generation-time gate. Recorded here as scope, not
 implemented — no code in this entry.
+
+## 39. `EVENING_AWAITING_TRIGGER_REPLY` promises a message that will never come on a
+site-holiday day — THIRD instance of the promises-something-that-does-not-happen class
+(2026-08-30)
+
+**Observed live, today, not hypothesized.** An engineer whose morning check-in resolved
+to `attendance='site_holiday'` messaged in after `eveningSend` (18:30 IST). Per §30(b)'s
+own decided rule — *"Cancels every remaining trigger for that engineer that day —
+evening trigger, morning nudge, evening nudge, PM escalation"* — `filterEveningRoster`
+(`lib/whatsapp/outbound/roster.ts`) correctly excludes him from tonight's evening
+roster; confirmed directly against the function's own filter, `attendance !==
+'site_holiday'`. But `routeInboundMessage`'s idle branch (`lib/whatsapp/inbound-
+start.ts`) returned `EVENING_AWAITING_TRIGGER_REPLY` — *"Your evening check-in will
+arrive shortly — it comes to you automatically."* **A message promised that will
+correctly, deliberately, never come.**
+
+**Why:** `routeInboundMessage`'s existing `daily_logs` read selects only
+`morning_submitted_at, evening_submitted_at` — never `attendance`. Its own branching
+logic only asks "is morning submitted, is evening submitted," never "will evening ever
+be attempted for this engineer today." For a site-holiday day, `morning_submitted_at`
+IS set (the holiday follow-up's own write includes it, per `morning.ts`'s step-5
+branch) and `evening_submitted_at` is null — indistinguishable, from this read alone,
+from an engineer whose evening genuinely is still pending. **Scoped precisely: this is
+specific to `attendance='site_holiday'`.** `attendance='absent'` does NOT trigger this
+— §30(b)'s own text is explicit that the evening trigger *still fires* for an absent
+engineer (half-day/late-arrival cases), matching `filterEveningRoster`'s own single
+exclusion condition exactly. No other attendance value produces this gap.
+
+**Third instance of a named class, not a new one — and a genuinely different proximate
+cause from the first two, worth stating precisely rather than lumping together:**
+1. **Template 8** (`quoco_engineer_optin`, "reply STOP") — false because the promised
+   *mechanism* was never built (no code ever sets `messaging_blocked=true`; BOT-27
+   SET-HALF, still open). A capability gap.
+2. **§35f's original two refusal strings** — false because the promised *sender*
+   didn't exist yet (no cron, no outbound-send primitive, at the time they were
+   written). An infrastructure gap, since closed — item E's crons are live.
+3. **This entry** — the sender and the cron both exist and fire correctly. The promise
+   is false because the *reply-generation logic* doesn't know about a per-engineer,
+   per-day exclusion that the *send-side* roster logic already, correctly, knows about.
+   Not a capability gap, not an infrastructure gap — a **information gap between two
+   code paths that should agree and don't.** §35f's own "accepted, verify once the cron
+   exists" resolution does not apply here: the cron existing is exactly what does NOT
+   fix this instance, since the falseness never depended on the cron's existence in the
+   first place.
+
+**§28(x)'s ad-hoc menu does NOT fix this — checked directly against the actual merged
+spec, not assumed.** `docs/plans/adhoc-menu-spec.md` §a (DECIDED, 2026-08-28) resolves
+`routeInboundMessage`'s six idle-branch replies into two groups: Group 1
+(`REPORT_READY_REPLY`, `EVENING_ALREADY_COMPLETE_REPLY`) is **replaced** by the menu;
+Group 2 — the four checkpoint-window replies, **including
+`EVENING_AWAITING_TRIGGER_REPLY`** — **survives, with a pointer to the menu appended,
+not replaced.** The false promise's own text persists verbatim after the menu ships;
+only an extra sentence gets appended after it. **This also corrects §38(d) above**
+("§28(x)'s ad-hoc menu, once genuinely built, replaces all four with a single
+interactive front door") — that framing predates the menu spec's own later, more
+specific decision and is superseded by it, not edited in place here per this file's own
+correction discipline; §38(d) itself is left as written, dated, with this cross-
+reference standing in for the fix.
+
+**The fix, named, not built, per explicit instruction.** `routeInboundMessage`'s own
+`daily_logs` SELECT already reads this exact row — extending it to also select
+`attendance` is one additional column on an existing query, not a new read. With that
+column in hand, the "morning submitted, evening not" branch (`EVENING_WINDOW_NOT_OPEN_
+REPLY` / `EVENING_AWAITING_TRIGGER_REPLY`) checks `attendance === 'site_holiday'`
+first: if true, the day is already, correctly, complete — the honest reply is in
+`REPORT_READY_REPLY`'s own register (nothing more to capture today), not a promise of
+an arrival that the roster filter has already, correctly, ruled out. Not designed
+further here — column addition and branch condition only, no copy drafted, no code
+written.
