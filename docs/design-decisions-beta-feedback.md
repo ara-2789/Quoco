@@ -3176,7 +3176,7 @@ implemented — no code in this entry.
 
 ## 39. `EVENING_AWAITING_TRIGGER_REPLY` promises a message that will never come on a
 site-holiday day — THIRD instance of the promises-something-that-does-not-happen class
-(2026-08-30)
+(2026-08-30) — **RESOLVED-BY-DESIGN, same day, see closing note below**
 
 **Observed live, today, not hypothesized.** An engineer whose morning check-in resolved
 to `attendance='site_holiday'` messaged in after `eveningSend` (18:30 IST). Per §30(b)'s
@@ -3242,3 +3242,19 @@ first: if true, the day is already, correctly, complete — the honest reply is 
 an arrival that the roster filter has already, correctly, ruled out. Not designed
 further here — column addition and branch condition only, no copy drafted, no code
 written.
+
+**RESOLVED-BY-DESIGN (Aravind, 2026-08-30), same day — not left open.**
+`docs/plans/adhoc-menu-spec.md` §a's own 2026-08-28 decision (Group 2 survives, primary,
+with a pointer appended — the framing this entry's own "does NOT fix this" paragraph
+above correctly assessed) is itself superseded, same day as this entry: the menu is now
+the ONLY reply to an idle inbound, full stop, with the four Group 2 replies **demoted to
+a state-computed header line** above the list rather than surviving as primary text.
+This closes the finding above, not merely narrows it: the header is computed from
+`attendance` (and the rest of today's `daily_logs` row) via the exact fix this entry
+already named — `routeInboundMessage`'s existing read, one column wider — applied at
+the header's own construction site instead of independently. **The false promise this
+entry records cannot recur under the new design**, because the reply no longer infers
+"a check-in is coming" from the clock at all; it reads whether one actually will. See
+`docs/plans/adhoc-menu-spec.md` §a for the full decision, the approved rough header
+shape, and the Twilio/Meta delivery-mechanism research this resolution's own copy pass
+depends on.
