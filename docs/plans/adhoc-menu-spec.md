@@ -91,12 +91,90 @@ as a menu request" resolved as:**
   consultation before finalizing, per this project's own standing rule (§37(e) applies the
   same discipline to a comparable render decision) — flagged as open, not freelanced.
 
-**DECIDED (Aravind, 2026-08-28) — accepted as proposed.** Both groups resolve as above:
-Group 1 (`REPORT_READY_REPLY`, `EVENING_ALREADY_COMPLETE_REPLY`) replaced by the menu;
-Group 2 (`MORNING_AWAITING_TRIGGER_REPLY`, `MORNING_WINDOW_CLOSED_REPLY`,
+~~**DECIDED (Aravind, 2026-08-28) — accepted as proposed.** Both groups resolve as
+above: Group 1 (`REPORT_READY_REPLY`, `EVENING_ALREADY_COMPLETE_REPLY`) replaced by the
+menu; Group 2 (`MORNING_AWAITING_TRIGGER_REPLY`, `MORNING_WINDOW_CLOSED_REPLY`,
 `EVENING_WINDOW_NOT_OPEN_REPLY`, `EVENING_AWAITING_TRIGGER_REPLY`) survives with an
-appended pointer. All six of the idle branch's own static replies are accounted for, none
-left unresolved. Exact pointer wording/keyword remains its own open copy question (below).
+appended pointer. All six of the idle branch's own static replies are accounted for,
+none left unresolved. Exact pointer wording/keyword remains its own open copy question
+(below).~~
+
+**SUPERSEDED (Aravind, 2026-08-30) — THE MENU IS THE ONLY REPLY TO AN IDLE INBOUND, WITH
+A STATE-COMPUTED HEADER. The 2026-08-28 decision above (Group 2 survives, primary, with
+a pointer appended) is now wrong and is replaced, not amended.**
+
+**The rule: an inbound at idle ALWAYS gets the menu.** Check-ins are always
+cron-triggered and never reachable by inbound — one rule the engineer holds: *what I
+send is for reporting things; check-ins come to me.* Splitting idle replies into "some
+get the menu, some get their own text with a pointer" (the 2026-08-28 shape) asked the
+engineer to hold a second, narrower rule on top of that — this collapses the two.
+
+**The four Group 2 replies are not deleted — they are DEMOTED to a header line above the
+list**, computed from the same state each reply already keyed off. Same information,
+better placement: the engineer gets the door AND an answer to whatever prompted him to
+message, in one reply instead of a choice between them. **Group 1's own resolution is
+unchanged** — those two replies were already fully replaced, nothing about that changes
+here.
+
+**THE HEADER MUST BE COMPUTED FROM STATE, NOT FROM THE CLOCK — this is the whole point,
+not a refinement.** `design-decisions-beta-feedback.md` §39 (2026-08-30) recorded why:
+`EVENING_AWAITING_TRIGGER_REPLY` promised an evening check-in that would never arrive on
+a site-holiday day, because the reply inferred "a check-in is coming" from the clock
+(morning submitted, evening not, past `eveningSend`) rather than from whether one
+actually would. **A header computed the same clock-inferring way has the identical bug,
+just relocated one line up.** `routeInboundMessage` already reads today's `daily_logs`
+row for this exact purpose — the header is computed from that plus the roster, the same
+fix §39 already named, now applied at the header's own construction site instead of
+independently.
+
+**Rough shape, approved — refine wording in the copy pass, not decided here:**
+
+| Condition | Header |
+|---|---|
+| Before `morningSend`, nothing recorded | "Your check-in will arrive shortly." |
+| After `morningCutoff`, morning missed | "The morning window has closed for today." |
+| `attendance = 'site_holiday'` | "Site holiday recorded — nothing further today." |
+| Both halves submitted | "Today's check-in is complete." |
+| Nothing notable | No header — just the list. |
+
+**This closes §39, not merely narrows it.** §39's finding is `design-decisions-beta-
+feedback.md`'s own — marked resolved-by-design there, dated 2026-08-30, cross-
+referencing this decision; not re-litigated here beyond restating why: the false
+promise disappears because the header is computed from `attendance` (and the rest of
+today's `daily_logs` row), never from the clock alone.
+
+**This also simplifies the spec — the "which replies survive, which are replaced"
+question in this section is gone entirely.** Six idle replies collapse to one message
+(the menu) with a variable header. There is no longer a Group 1/Group 2 split to
+maintain — every idle inbound gets the identical structural reply (header + list),
+differing only in which header line, or none, applies.
+
+**OPEN, must be checked before the copy pass — the header's own delivery mechanism,
+verified here against both Twilio's and Meta's current docs, not assumed:**
+
+Fetched directly, 2026-08-30, not recalled: **Twilio's own `twilio/list-picker` Content
+API type — the actual mechanism this project sends through, per §b's own verified
+delivery path — has NO separate header field at all.** Full parameter table, confirmed
+(`twilio.com/docs/content/twiliolist-picker`): `body` (required, max **1,024
+characters**), `button` (required, no stated max), `items` (required, 1–10, each with
+`item` max 24 chars and `description` max 72 chars — consistent with §b's own
+Meta-sourced row-title/row-description numbers above). **No header or title parameter
+exists in Twilio's schema for this content type.**
+
+This is a stronger answer than "which field is the better home" — **there is no choice
+to make; `body` is the only field available on the mechanism this project actually
+uses.** Meta's own raw Cloud API interactive-list object DOES expose a separate header
+field, plain text, no markdown — commonly cited at a **~60-character limit** (third-
+party BSP sources, e.g. wati.io, the same class of independent source §b's own table
+already relies on; not independently corroborated by a second organization the way §b's
+10-row number was, and Meta's own primary docs pages fetched for this check did not
+state a numeric limit directly) — but that field is **not exposed through Twilio's
+Content API abstraction for `twilio/list-picker`**, so it is not reachable by this
+project's own send path regardless of its real limit. **Consequence: the header line
+goes into `body`, prepended before whatever intro/prompt text the menu's body already
+carries, separated by a line break — not a length concern (1,024 chars is not a binding
+constraint for any of the five lines above, all well under 60 characters as drafted),
+only a copy-pass question of ordering and visual separation within one field.**
 
 ---
 
@@ -600,9 +678,12 @@ not yet applied to `design-decisions-beta-feedback.md`:
 **a and e are DECIDED (2026-08-28, accepted as proposed) and removed from this list** — see
 §a and §e above for the final text. What remains open:
 
-- **a (copy only).** Group RESOLUTION is decided (Group 1 replaced, Group 2 survives with a
-  pointer); Group 2's exact pointer WORDING/keyword for reaching the menu on demand during a
-  check-in window is still open — a copy question, not a design one.
+- **a (superseded, 2026-08-30).** No more Group 1/Group 2 split, no more pointer concept —
+  every idle inbound gets the menu, with a state-computed header line. What's open now: the
+  five header lines' exact wording (rough shape approved, not final copy), and confirming the
+  header's own placement inside the list-picker `body` field (prepended, line-break-separated
+  — not a length concern, Twilio's own `body` field caps at 1,024 characters) reads well once
+  drafted alongside the menu's own intro text.
 - **b.** Row-description copy for all seven items (character-budgeted, not drafted); which of
   the three "eighth item" options (second page, hard cap, hybrid free-text row) to take if/when
   an eighth item is ever needed — explicitly not decided, no recommendation given.
