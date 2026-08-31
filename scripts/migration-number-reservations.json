@@ -8,5 +8,10 @@
     "number": "034",
     "claimedBy": "docs/reviews/034_owner_email_delivery.sql",
     "note": "Owner-email delivery schema (notification_email, owner_email_verifications). Renumbered from 030 on 2026-08-31 after a real collision with the already-applied 030_morning_flow_attendance.sql. Held on PR #71, blocked on the trigger-cron workstream landing first. This entry exists so the number stays protected even on a branch (like this one) that doesn't yet carry PR #71's own file."
+  },
+  {
+    "number": "035",
+    "claimedBy": "docs/reviews/035_evening_flow_restructuring.sql",
+    "note": "Evening flow restructuring (5-question redesign) + morning/evening §42 unmatched-token capture + equipment count/hours-used redesign. Originally drafted against a stale '034' in the scoping plan -- corrected the same day when 034 was taken by the owner-email migration (docs/reviews/034-apply-record.md). This entry was itself added late, after the migration-lint reservation rule (PR #148) was run against this branch and correctly flagged the file as unreserved -- recorded here rather than silently, since a reservation added only after being caught by the tool is worth being honest about."
   }
 ]
