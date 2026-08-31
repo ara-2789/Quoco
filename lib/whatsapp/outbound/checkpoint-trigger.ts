@@ -55,6 +55,10 @@
 // 3-attempt budget, regardless of cause. See docs/plans/pass1-outbound-
 // send-plan.md's own Amendment (g) resolution for the full research.
 
+// KNOWN GAP: SupabaseClient here is bare, not SupabaseClient<Database> --
+// every query in this file is unchecked against the real schema. See
+// docs/reviews/outbound-untyped-supabase-client-gap.md for what it would
+// take to close (not a one-line fix -- expect real errors to surface).
 import type { SupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
 import {

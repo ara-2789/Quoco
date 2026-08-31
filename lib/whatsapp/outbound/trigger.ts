@@ -53,6 +53,12 @@
 // code path. There is no separate "retry old rows" sweep to widen by
 // mistake; the only door in is this one conditional UPDATE.
 
+// KNOWN GAP: SupabaseClient here is bare, not SupabaseClient<Database> --
+// every query in this file is unchecked against the real schema, even
+// though createServiceClient() below already builds a properly typed
+// client; the type is erased at this file's own function boundary. See
+// docs/reviews/outbound-untyped-supabase-client-gap.md for what it would
+// take to close (not a one-line fix -- expect real errors to surface).
 import type { SupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase/service'

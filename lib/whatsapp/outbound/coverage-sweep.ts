@@ -60,6 +60,10 @@
 // argument" finding) -- gated is only whether a shortfall becomes a Sentry
 // call.
 
+// KNOWN GAP: SupabaseClient here is bare, not SupabaseClient<Database> --
+// every query in this file is unchecked against the real schema. See
+// docs/reviews/outbound-untyped-supabase-client-gap.md for what it would
+// take to close (not a one-line fix -- expect real errors to surface).
 import type { SupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
 import { istDateString } from '@/lib/daily-logs/date'

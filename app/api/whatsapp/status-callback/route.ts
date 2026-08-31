@@ -35,6 +35,12 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
+// KNOWN GAP: SupabaseClient here is bare, not SupabaseClient<Database> --
+// every query in this file is unchecked against the real schema, even
+// though createServiceClient() below already builds a properly typed
+// client; the type is erased at this file's own function boundary. See
+// docs/reviews/outbound-untyped-supabase-client-gap.md for what it would
+// take to close (not a one-line fix -- expect real errors to surface).
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import { validateTwilioSignature } from '@/lib/whatsapp/twilio-signature'
