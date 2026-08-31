@@ -627,6 +627,44 @@ longer than usual to generate. We will notify you when it is ready.~~)*
 > Your check-in pause for {{1}} ended on {{2}}.
 > Daily check-ins have resumed.
 
+### 14. `quoco_dpr_owner_no_report`
+**Category: Utility.** **Audience: Owner — the first owner-facing WhatsApp template in
+this product** (`design-decisions-beta-feedback.md` §37(d)). Sent only when
+`evening_submitted_at IS NULL` for the day (§37(c)'s gate) **and** the owner has a
+WhatsApp number on file; email is the fallback when he does not (Decision 2,
+2026-08-31, same session — WhatsApp is optional for owners, not required).
+**Variables:** `{{1}}` project, `{{2}}` date — same `{{1}}`/`{{2}}` shape as templates 6/7.
+**Sample values:** `{{1}}` = "Emerald Heights", `{{2}}` = "27 Aug 2026".
+
+> No site report was received for {{1}}, dated {{2}}. There is nothing to share for this date.
+
+**LOAD-BEARING SECOND SENTENCE — recorded so a later edit doesn't drop it (Aravind,
+2026-08-31).** "There is nothing to share for this date." is not padding. Without it the
+body ends on `{{2}}` — a trailing variable is rule 1's own automatic-rejection condition,
+the exact defect templates 6 and 7 were already fixed for (this file's own Compliance
+audit section, rule 1). A later tightening pass that reads the second sentence as
+restating the first and cuts it for concision would reintroduce that defect. Keep both
+sentences.
+
+**Compliance audit (same 6 rules as the 2026-08-21 pass): 6/6 pass.** (1) no `{{n}}` at
+the start or end — opens on "No", closes on "date." — pass, and is exactly what the note
+above protects. (2) `2x+1` non-variable words for `x=2` variables → needs ≥5; body has 15
+— pass. (3) variables numbered 1..2, no gap — pass. (4) no two variables immediately
+adjacent — `{{1}}, dated {{2}}` — pass. (5) zero emoji — pass. (6) category defensible —
+Utility, matches this file's own default reasoning (a transactional update inside an
+existing nightly-report relationship, not an offer or re-engagement) — pass.
+
+**Single-source-of-truth requirement for whoever builds the email fallback (§37(d)'s own
+"falls back to email" branch, Decision 2) — named here, not built:** this body string, not
+a re-authored paraphrase, is what the email fallback must render (placeholders substituted
+the same way), and a test must assert the rendering constant still equals THIS body as
+recorded approved for this template's HX SID in `docs/reviews/whatsapp-template-
+submission-status.md` (not against a possibly-mid-edit draft) — a wording change becomes
+"new template version + constant change," together, or it doesn't ship. See
+`docs/reviews/034-owner-email-review-package.md`'s delta section (**renumbered from 030 —
+a real numbering collision, not a typo; see that package's own header note**), §12c, for
+the full argument for why a shared source ALONE is not sufficient here.
+
 ---
 
 ## Fast-Follow template
@@ -914,13 +952,15 @@ today for all three, `approved` (or a rejection) once Meta has reviewed. Three G
 one per HX SID above, is the whole check — nothing in this codebase currently automates
 it into a single command.
 
-## Total (2026-08-21, updated 2026-08-31): 14 templates (12 Spine + 1 Fast-Follow + 1
-Authentication) + 4 spare variants + 3 re-cut variants = 21
+## Total (2026-08-21, updated 2026-08-31): 15 templates (13 Spine + 1 Fast-Follow + 1
+Authentication) + 4 spare variants + 3 re-cut variants = 22
 
-**Changed from the 13+4=17 recorded earlier — the new `quoco_evening_checkin_no_plan`
-(2b, §28(s)) adds one Spine template with no spare.** Of the original 18: 2 hold (8, 12
-— see `docs/reviews/whatsapp-template-submission-status.md`'s submit/hold list), 16
-clear to submit. **Plus 3 re-cut variants (2026-08-31, above): all three clear to
+**Changed from the 14+4+3=21 recorded earlier — template 14 (`quoco_dpr_owner_no_report`,
+§37(d)) adds one Spine template, no spare, dry-run only this pass (not yet submitted —
+Aravind submits, credentials are on his machine).** Of the (now 19) original-batch
+templates: 2 hold (8, 12 — see `docs/reviews/whatsapp-template-submission-status.md`'s
+submit/hold list), 16 already cleared to submit, 1 (14) drafted and audited this pass but
+not yet submitted. **Plus 3 re-cut variants (2026-08-31, above): all three clear to
 submit** — 1v3 and 2v3 on Aravind's own provided copy, 8v2 on its own separate
 copy-approval (given 2026-08-31). GATE 2 continues, unchanged, to hold the original
 template 8.
