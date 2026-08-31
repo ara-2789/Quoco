@@ -160,5 +160,29 @@
     "body": "Your Quoco login code is {{1}}. This code expires in 10 minutes.",
     "samples": { "1": "482913" },
     "button": null
+  },
+  {
+    "id": "1v3",
+    "name": "quoco_morning_checkin_v3",
+    "category": "UTILITY",
+    "body": "Good morning {{1}}. This is your morning check-in for {{2}}.\nAre you on site today? Reply yes or no.",
+    "samples": { "1": "Arjun Nair", "2": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "2v3",
+    "name": "quoco_evening_checkin_v3",
+    "category": "UTILITY",
+    "body": "Good evening {{1}}. This is your evening check-in for {{2}}.\nWhat work was completed today? Enter quantity wherever applicable — e.g. \"slab concrete 120 sqm\" or \"brickwork 8 m3\".",
+    "samples": { "1": "Arjun Nair", "2": "Emerald Heights" },
+    "button": null
+  },
+  {
+    "id": "8v2",
+    "name": "quoco_engineer_optin_v2",
+    "category": "UTILITY",
+    "body": "Hello {{1}}. Your team at {{2}} has added you to Quoco for daily check-ins on {{3}}.\nReply YES to start.\nYou can reply in any language — English, Tamil, or a mix.",
+    "samples": { "1": "Arjun Nair", "2": "Shivalik Infraprojects Pvt Ltd", "3": "Emerald Heights" },
+    "button": null
   }
 ]
