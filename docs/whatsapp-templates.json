@@ -141,6 +141,14 @@
     "button": null
   },
   {
+    "id": "14",
+    "name": "quoco_dpr_owner_no_report",
+    "category": "UTILITY",
+    "body": "No site report was received for {{1}}, dated {{2}}. There is nothing to share for this date.",
+    "samples": { "1": "Emerald Heights", "2": "27 Aug 2026" },
+    "button": null
+  },
+  {
     "id": "12",
     "name": "quoco_safety_alert_pm",
     "category": "UTILITY",

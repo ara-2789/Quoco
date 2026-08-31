@@ -27,15 +27,67 @@
 // exceptions, including two probe-script bugs that were found and fixed
 // before this file was written (a DECIMAL comma-truncation bug, and a bare
 // `value` substring match that caught JSONB audit-log columns).
+//
+// HELD MIGRATIONS, ADDED 2026-08-31 (external review, migration 034's own
+// renumbering incident — 030 was drafted, held in docs/reviews/, and sat
+// unnoticed while 030/031/032/033 were each claimed by other work, six days
+// and three numbers out of date before anyone caught it). Every rule above
+// now ALSO runs against docs/reviews/*.sql files matching the migration
+// filename shape (`^\d+_.*\.sql$`) — a held-but-unapplied migration is not
+// exempt from any of these defect classes just because it hasn't shipped
+// yet; scanning only supabase/migrations/ is exactly the sweep-scope limit
+// that let 034's own service_role grant gap sit undetected through three
+// prior sweeps (see CLAUDE.md's own standing rule on this). Two new checks
+// specific to held files:
+//
+//   unique-migration-prefix (WIDENED, not a new rule) — now checks the
+//     UNION of applied + held filenames, not just applied ones. A held file
+//     colliding with an ALREADY-APPLIED number (030's own defect) and two
+//     held files colliding with EACH OTHER are now the same check.
+//   held-migration-reservation-required (NEW, rule 8) — every held file
+//     must have a matching entry in scripts/migration-number-
+//     reservations.json (number + exact claimedBy path). Formalises what
+//     CLAUDE.md §3's own prose did once, informally, for migration 031
+//     ("already informally reserved by CLAUDE.md §3's own text" —
+//     docs/reviews/session-transition-lock-wait-flake.md) — that worked only
+//     because a later author happened to read the right paragraph before
+//     numbering their own file. This rule makes the same protection
+//     mechanical instead of dependent on someone reading the right prose.
+//
+// Held-directory files are identified in every violation by their path
+// RELATIVE TO THE REPO ROOT (e.g. "docs/reviews/026_dpr_generation_
+// stale.sql"), never a bare filename — applied-directory files keep their
+// existing bare-filename identifiers, unchanged, for exceptions-file
+// backward compatibility. Qualification is necessary, not cosmetic: two
+// real files in this repo share an identical basename across the two
+// directories today (`028_dprs_engineer_id_option_a.sql`, both a live
+// migration and a historical, faithful-record copy kept in docs/reviews/ for
+// the record) — a bare-name-only identifier could not tell them apart.
+//
+// NOT EVERY docs/reviews/*.sql FILE IS A LIVE COLLISION RISK, NAMED SO THE
+// EXCEPTIONS BELOW AREN'T MISREAD AS NOISE. Two shapes exist in that
+// directory today that are NOT "pending, will be promoted under this
+// number" the way 026/034 are: a historical copy of an already-applied
+// migration kept for the record (028_dprs_engineer_id_option_a.sql), and a
+// permanently-rejected design alternative that will never apply under any
+// number (028_dprs_engineer_id_option_b.sql). Both correctly trip the
+// widened unique-migration-prefix check (028 is genuinely taken) and the
+// new reservation-required check (neither will ever be reserved, because
+// neither is pending) — exempted below with the reason stated, per this
+// script's own no-file-wide-exemptions discipline, not silently excluded
+// from the scan.
 
 import { readFileSync, readdirSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(__dirname, '..')
 const MIGDIR = join(REPO_ROOT, 'supabase', 'migrations')
+const HELDDIR = join(REPO_ROOT, 'docs', 'reviews')
 const EXCEPTIONS_PATH = join(__dirname, 'migration-lint-exceptions.json')
+const RESERVATIONS_PATH = join(__dirname, 'migration-number-reservations.json')
+const MIGRATION_FILENAME_RE = /^\d+_.*\.sql$/
 
 // ---------------------------------------------------------------------------
 // Shared parsing helpers
@@ -293,22 +345,58 @@ function ruleServiceRoleGrantRequired(file, sql, blocks) {
 
 // ---------------------------------------------------------------------------
 // Rule 7 — unique-migration-prefix
+// WIDENED 2026-08-31 (held migrations, see file header): `entries` is now
+// the UNION of applied + held files, each as { name, qualified } — `name`
+// is the bare filename (what the number prefix is read from; applied and
+// held files can share a bare name, see the 028 note in the file header),
+// `qualified` is what gets reported (bare for applied, `docs/reviews/...`
+// for held). A held file colliding with an applied number and two held
+// files colliding with each other are now the same check, not two.
 // ---------------------------------------------------------------------------
-function ruleUniqueMigrationPrefix(files) {
+function ruleUniqueMigrationPrefix(entries) {
   const byPrefix = new Map()
-  for (const f of files) {
-    const m = /^(\d+)_/.exec(f)
+  for (const e of entries) {
+    const m = /^(\d+)_/.exec(e.name)
     if (!m) continue
     const list = byPrefix.get(m[1]) ?? []
-    list.push(f)
+    list.push(e)
     byPrefix.set(m[1], list)
   }
   const violations = []
   for (const [prefix, list] of byPrefix) {
     if (list.length > 1) {
-      for (const f of list) {
-        violations.push({ file: f, object: `duplicate-prefix-${prefix}`, rule: 'unique-migration-prefix' })
+      for (const e of list) {
+        violations.push({ file: e.qualified, object: `duplicate-prefix-${prefix}`, rule: 'unique-migration-prefix' })
       }
+    }
+  }
+  return violations
+}
+
+// ---------------------------------------------------------------------------
+// Rule 8 — held-migration-reservation-required (NEW, 2026-08-31)
+// ---------------------------------------------------------------------------
+// Every held file (docs/reviews/*.sql matching the migration filename
+// shape) must have a matching entry in scripts/migration-number-
+// reservations.json: the entry's `number` must equal the file's own prefix,
+// AND its `claimedBy` must equal this file's qualified path exactly — a
+// missing entry, or one pointing at a DIFFERENT file than the one actually
+// using that number, both fail. This is what makes a plan-time reservation
+// (CLAUDE.md §3's own informal "031 reserved" prose, once) mechanically
+// checked instead of dependent on a later author reading the right
+// paragraph before numbering their own file.
+function ruleHeldMigrationReservationRequired(heldEntries, reservations) {
+  const byNumber = new Map(reservations.map((r) => [r.number, r]))
+  const violations = []
+  for (const e of heldEntries) {
+    const m = /^(\d+)_/.exec(e.name)
+    if (!m) continue
+    const number = m[1]
+    const entry = byNumber.get(number)
+    if (!entry) {
+      violations.push({ file: e.qualified, object: `unreserved-${number}`, rule: 'held-migration-reservation-required' })
+    } else if (entry.claimedBy !== e.qualified) {
+      violations.push({ file: e.qualified, object: `reservation-mismatch-${number}`, rule: 'held-migration-reservation-required' })
     }
   }
   return violations
@@ -331,25 +419,64 @@ function loadExceptions() {
   return set
 }
 
+// scripts/migration-number-reservations.json — {number, claimedBy, note}
+// triples. Protects a number claimed at PLAN TIME, before any file exists —
+// see the file header (HELD MIGRATIONS) for why. `note` is required, same
+// discipline as the exceptions file's own `reason` field: a reservation
+// with no explanation is exactly the kind of thing a later reader can't
+// evaluate.
+function loadReservations() {
+  const raw = JSON.parse(readFileSync(RESERVATIONS_PATH, 'utf8'))
+  for (const r of raw) {
+    if (!r.number || !r.claimedBy || !r.note) {
+      throw new Error(
+        `migration-lint: malformed reservation entry (needs number, claimedBy, note): ${JSON.stringify(r)}`,
+      )
+    }
+  }
+  return raw
+}
+
+// Reads a directory's own migration-shaped .sql files and returns
+// { name, qualified } entries — `name` for prefix matching, `qualified` for
+// reporting. `qualify` is identity for the applied directory (bare
+// filenames, backward-compatible with the existing exceptions file) and
+// repo-root-relative for the held directory (disambiguates the 028 same-
+// basename case, see the file header).
+function listMigrationEntries(dir, qualify) {
+  return readdirSync(dir)
+    .filter((f) => MIGRATION_FILENAME_RE.test(f))
+    .sort()
+    .map((name) => ({ name, qualified: qualify(name) }))
+}
+
 function main() {
-  const files = readdirSync(MIGDIR).filter((f) => f.endsWith('.sql')).sort()
+  // Applied: bare-filename identity, unchanged (exceptions-file backward
+  // compatibility). Held: repo-root-relative identity (the 028 same-
+  // basename case — see file header).
+  const appliedEntries = listMigrationEntries(MIGDIR, (name) => name)
+  const heldEntries = listMigrationEntries(HELDDIR, (name) => relative(REPO_ROOT, join(HELDDIR, name)))
   const exceptions = loadExceptions()
+  const reservations = loadReservations()
 
   const violations = []
-  for (const file of files) {
-    const raw = readFileSync(join(MIGDIR, file), 'utf8')
-    const sql = stripComments(raw)
-    const blocks = findCreateTableBlocks(sql)
-    const alterColumns = findAlterAddColumns(sql)
+  for (const [dir, entries] of [[MIGDIR, appliedEntries], [HELDDIR, heldEntries]]) {
+    for (const { name, qualified } of entries) {
+      const raw = readFileSync(join(dir, name), 'utf8')
+      const sql = stripComments(raw)
+      const blocks = findCreateTableBlocks(sql)
+      const alterColumns = findAlterAddColumns(sql)
 
-    violations.push(...ruleOrphanSecurityDefiner(file, sql))
-    violations.push(...ruleTenantIdRequired(file, blocks))
-    violations.push(...ruleRlsRequired(file, sql, blocks))
-    violations.push(...ruleMoneyColumnPrecision(file, blocks, alterColumns))
-    violations.push(...ruleStatusColumnShape(file, sql, blocks))
-    violations.push(...ruleServiceRoleGrantRequired(file, sql, blocks))
+      violations.push(...ruleOrphanSecurityDefiner(qualified, sql))
+      violations.push(...ruleTenantIdRequired(qualified, blocks))
+      violations.push(...ruleRlsRequired(qualified, sql, blocks))
+      violations.push(...ruleMoneyColumnPrecision(qualified, blocks, alterColumns))
+      violations.push(...ruleStatusColumnShape(qualified, sql, blocks))
+      violations.push(...ruleServiceRoleGrantRequired(qualified, sql, blocks))
+    }
   }
-  violations.push(...ruleUniqueMigrationPrefix(files))
+  violations.push(...ruleUniqueMigrationPrefix([...appliedEntries, ...heldEntries]))
+  violations.push(...ruleHeldMigrationReservationRequired(heldEntries, reservations))
 
   // --json: dump every RAW violation (pre-exceptions-filter) as JSON, for
   // building/auditing scripts/migration-lint-exceptions.json itself — never
