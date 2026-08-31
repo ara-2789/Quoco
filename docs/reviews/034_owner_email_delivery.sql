@@ -29,14 +29,42 @@
 -- place, and matches what actually happened there: 028's file moved into
 -- supabase/migrations/ at apply time, not before.
 --
--- STATUS: WRITTEN, NOT TO BE APPLIED YET. Per the split-package sequencing
--- decision (external review, 2026-08-19): this half is BLOCKED on the
--- trigger-cron workstream (the actual ownerSend cron entry, and #69's own
--- outbound-send primitive for PM-notify) — applying this schema before that
--- exists would add live PII columns and a public verification surface with
--- no code path that ever populates or reads them. Written now so the review
--- package is complete and the next artifact, once trigger-cron lands, is a
--- go-ahead to apply this file, not another design pass.
+-- STATUS: BLOCK LIFTED, 2026-08-31 (Aravind, deliberate decision, not a
+-- lapse -- full reasoning: review package §12i). Original text preserved
+-- below, not deleted, per this project's own correction discipline:
+--
+--   ~~WRITTEN, NOT TO BE APPLIED YET. Per the split-package sequencing
+--   decision (external review, 2026-08-19): this half is BLOCKED on the
+--   trigger-cron workstream (the actual ownerSend cron entry, and #69's own
+--   outbound-send primitive for PM-notify) — applying this schema before
+--   that exists would add live PII columns and a public verification
+--   surface with no code path that ever populates or reads them. Written
+--   now so the review package is complete and the next artifact, once
+--   trigger-cron lands, is a go-ahead to apply this file, not another
+--   design pass.~~
+--
+-- SHORT FORM, full argument in §12i: the original guard was correct when
+-- written (a live PII surface with literally zero consumer, for weeks, is
+-- real risk for no benefit). What changed is the DISTANCE to the consumer,
+-- not the principle -- #69's outbound-send primitive now exists and is
+-- proven (2026-08-31); the ownerSend cron correctly still does not, and
+-- correctly should not until it ships with the route that uses it
+-- (cutoffs.ts's own header). The guard had become CIRCULAR: nothing that
+-- would consume this schema can be meaningfully written, tested, or
+-- deployed while every status value it needs to write (pm_notified,
+-- skipped_no_template, skipped_unverified, no_report_sent,
+-- owner_send_failed, no_report_failed) is absent from the LIVE CHECK
+-- (023's original five: pending, delivered, paused, skipped_no_data,
+-- failed, confirmed unwidened by any migration since). Code written
+-- against that gap either violates the constraint on first real
+-- invocation or sits undeployable until this file lands -- then gets
+-- rewritten, the exact "revisit that depends on someone remembering"
+-- failure this project keeps recording. STATUS NOW: cleared for its
+-- remaining pre-apply work (disposable scaffold, written-and-executed
+-- rollback, a fresh external-review round over the consolidated file,
+-- test-db rehearsal including the service_role negative-capability probe,
+-- an apply runbook) -- still not applied, still gated on all of that, per
+-- §11 below.
 --
 -- CLAUDE.md §0 GATING ASSESSMENT, condition by condition:
 --   (a) "CREATES OR MODIFIES a live function's LOGIC." Does not trip — no

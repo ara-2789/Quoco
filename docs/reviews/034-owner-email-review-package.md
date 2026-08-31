@@ -1,4 +1,4 @@
-# Migration 034 review package — owner-email delivery (BLOCKED half)
+# Migration 034 review package — owner-email delivery (sequencing block LIFTED 2026-08-31 — §12i; own pre-apply checklist remains, §11)
 
 **RENUMBERED 030 → 034 (2026-08-31) — a real collision, not a cosmetic rename.** This
 package and its migration were drafted and named under 030 on 2026-08-20. A different,
@@ -11,7 +11,8 @@ claimed by other work in the meantime. Caught 2026-08-31 while making the delive
 revision below. Full account, including why this happened and a candidate migration-lint
 check for the collision class, is in **§12** of this document.
 
-**Status: WRITTEN, NOT APPLIED, NOT REHEARSED, BLOCKED.** This package accompanies
+**Status: WRITTEN, NOT APPLIED, NOT REHEARSED.** ~~BLOCKED~~ — the sequencing block is
+LIFTED, 2026-08-31, deliberately, on the record (§12i) — this package now accompanies
 `docs/reviews/034_owner_email_delivery.sql` — RELOCATED here from
 `supabase/migrations/030_owner_email_delivery.sql` (2026-08-20, BB2; the original,
 now-superseded number — see the renumbering note above): a file sitting unapplied, on no
@@ -27,13 +28,23 @@ SHA). Originally pinned at commit `e6a06826ad17df6c27f73db5584f97896d5c0ef2` (br
 `docs/dpr-delivery-versioning-plan`). Design record: `docs/dpr-delivery-versioning-plan.md`
 §2j (frozen).
 
-**Sequencing (external review, split-package decision):** BLOCKED on the trigger-cron
-workstream — no cron exists yet for `ownerSend` (`lib/daily-logs/cutoffs.ts`'s own header:
-"the `ownerSend` cron entry is NOT yet in `vercel.json`"), and no code path exists to
-populate or read `notification_email`/`notification_email_verified_at` until it does.
-Applying this schema now would add live PII columns and a public verification surface with
-nothing consuming them. Written now so the package is complete and the next artifact, once
-trigger-cron lands, is a go-ahead to apply, not another design pass.
+**Sequencing (external review, split-package decision, 2026-08-19) — LIFTED 2026-08-31,
+§12i, not silently dropped:**
+
+~~BLOCKED on the trigger-cron workstream — no cron exists yet for `ownerSend`
+(`lib/daily-logs/cutoffs.ts`'s own header: "the `ownerSend` cron entry is NOT yet in
+`vercel.json`"), and no code path exists to populate or read
+`notification_email`/`notification_email_verified_at` until it does. Applying this schema
+now would add live PII columns and a public verification surface with nothing consuming
+them. Written now so the package is complete and the next artifact, once trigger-cron
+lands, is a go-ahead to apply, not another design pass.~~
+
+Correct when written; became circular once every status this migration's own consumer
+code needs to write was confirmed absent from the live CHECK, with no way to build that
+consumer against today's schema without throwaway work. Full reasoning: §12i. **Lifting
+sequencing does not clear this migration to apply** — §11's own pre-apply checklist
+(disposable scaffold, written-and-executed rollback, a fresh external-review round,
+test-db rehearsal, an apply runbook) is the gate now.
 
 ---
 
@@ -228,20 +239,30 @@ header; restated here for the package record.
 
 ## 10. Rehearsal plan + pre-apply probes
 
-**Not run — this package is BLOCKED, not merely unrehearsed.** Rehearsal against test-db
-is deliberately deferred until trigger-cron lands and there is real code to exercise this
-schema against — rehearsing a schema nothing reads or writes yet would prove only that the
-`CREATE TABLE`/`ALTER TABLE` statements parse, not that the design is correct in practice.
-Probe queries (pre-apply column/constraint absence checks, mirroring 029's package §7
-shape) will be written and run at that time, not sketched prematurely here.
+**TEST-DB rehearsal specifically: still not run.** Distinct from §13's disposable LOCAL
+scaffold evidence (2026-08-31, pre-apply checklist item (a)/(b)) — that proves the file
+parses and applies cleanly against a REAL structural dump; it is not, and does not
+substitute for, a rehearsal against the actual test-db instance (§7's own standing "this
+is NOT the test-db rehearsal" rule). Test-db rehearsal, including the `service_role`
+negative-capability probe CLAUDE.md's standing rule requires for any new table, remains
+pre-apply checklist item (d) — §11, §12i — not run in this pass.
 
 ---
 
 ## 11. Apply runbook
 
-Per `docs/migration-runbook-template.md`. **Not scheduled.** The next artifact for this
-migration is a go-ahead to apply, gated on trigger-cron's own workstream landing first —
-named here as the explicit trigger condition, not a date.
+Per `docs/migration-runbook-template.md`. **Not scheduled — see §12i: the BLOCK on
+sequencing is lifted (2026-08-31), but the migration's own remaining pre-apply work is
+not, and that work is the actual gate now.** Order, none of it skippable:
+  a. Disposable local scaffold, whole consolidated file — never run as a whole against
+     this session's delta.
+  b. Written-AND-EXECUTED rollback, same standard as 031/033's own apply records.
+  c. A fresh external-review round over the consolidated file — two deltas since it was
+     last read whole.
+  d. Test-db rehearsal, including the `service_role` negative-capability probe (DELETE,
+     TRUNCATE, REFERENCES, TRIGGER) CLAUDE.md's standing rule requires for any new table.
+  e. An apply runbook with the ledger repair as its own numbered step, and the migration
+     number RE-VERIFIED at promotion time, not assumed still open.
 
 ---
 
@@ -640,3 +661,273 @@ touch), and converting the CONVENTION itself (updating `docs/migration-runbook-t
 deciding whether already-held files like `026` get grandfathered or migrated) is real,
 separate design work, named here so it has somewhere durable to live, not designed
 further in this pass.
+
+### 12i. The sequencing BLOCK is LIFTED — DECIDED, recorded as a deliberate lift, not a lapse
+
+**DECIDED (Aravind, 2026-08-31).** The "BLOCKED on the trigger-cron workstream" sequencing
+decision (external review, 2026-08-19 — §12/status block above, and the SQL file's own
+header) is lifted. Recorded as a lifted block WITH reasoning, on purpose: a standing rule
+quietly stopped once, with no record of why, reads as noise the next time it fires — this
+project's own history (the CRON_SECRET section of CLAUDE.md, the migration-lint sections
+above) is full of exactly that failure shape. This entry is the record.
+
+**Why the original guard was right when it was written.** Applying live PII columns
+(`notification_email`, `notification_email_verified_at`, and this session's
+`whatsapp_declined_at`) and a public, unauthenticated verification surface
+(`owner_email_verifications`) with genuinely nothing consuming either would have left dead
+schema sitting in production for weeks — real attack surface, real PII exposure, zero
+offsetting benefit. The guard was doing its job.
+
+**What actually changed is the DISTANCE to the consumer, not the principle behind the
+guard.** Checked against live code, not the plan, in the immediately preceding turn of
+this session:
+- **#69's outbound-send primitive now exists and is proven end-to-end** — `lib/whatsapp/
+  outbound/{send,templates,roster,trigger,checkpoint-trigger,coverage-sweep,
+  status-callback}.ts` are all real, and `docs/reviews/first-successful-delivery-record.md`
+  (2026-08-31) confirms a real WhatsApp send/receive round trip. This is the half of the
+  original guard's two named conditions that has genuinely resolved.
+- **The `ownerSend` cron entry does not exist, and correctly should not yet** —
+  `vercel.json` carries no such entry; `lib/daily-logs/cutoffs.ts`'s own header is
+  unchanged: "deliberately deferred to the PR that ships the owner-deliver route... a cron
+  pointing at a route that doesn't exist yet would 404 nightly." This is right, not a gap
+  to force closed — a cron ships WITH its route, never ahead of it.
+
+**The guard had become circular, which is the actual reason to lift it, not merely a
+convenient one.** The live `delivery_status` CHECK today is exactly the original five from
+migration 023 (`pending, delivered, paused, skipped_no_data, failed` — confirmed by
+reading `023_dpr_reports.sql` directly, unwidened by any migration since). Every status
+value the eventual PM-notify and owner-send code paths need to write —
+`pm_notified`, `skipped_no_template`, `skipped_unverified`, `no_report_sent`,
+`owner_send_failed`, `no_report_failed` — is absent. Code for those routes written against
+today's live schema either violates the CHECK on its first real invocation, or sits
+undeployable until this migration lands — and gets rewritten once it does, which is
+precisely the "revisit that depends on someone remembering" failure this project's own
+history keeps recording (the migration-lint sections above are the most recent instance).
+Waiting for "the consumer" before applying the schema the consumer needs to exist at all
+is not a sequencing safeguard in this shape — it is a dependency cycle.
+
+**Owner delivery is now the immediate next build, not an indefinite one — this is what
+actually makes lifting the block safe, not merely convenient.** In August, applying this
+schema early would have meant weeks of unused PII surface with nothing scheduled to touch
+it. Today, per the independent-slice work starting in parallel (email renderer, §37(c)'s
+gating decision) and the trigger-route/confirm-route work this migration directly
+unblocks, the distance from "schema applied" to "schema consumed" is days, not an
+open-ended wait. **The rationale expired; the sentence describing it did not, until this
+entry.**
+
+**What lifting the block does NOT do — stated so it isn't overclaimed.** This migration is
+not cleared to apply. Sequencing was the ONE gate this entry addresses; the migration's
+own remaining pre-apply work (§11's ordered list — disposable scaffold, written-and-
+executed rollback, a fresh external-review round over the consolidated file, test-db
+rehearsal with the `service_role` negative-capability probe, an apply runbook with the
+number re-verified at promotion) is unchanged and un-skippable. Lifting sequencing moves
+this file from "blocked on a workstream that hasn't started" to "blocked on its own
+remaining checklist" — a real change in status, not a green light to apply.
+
+---
+
+## 13. Pre-apply checklist items (a) and (b) — executed, raw evidence, not asserted
+
+**Both run 2026-08-31, same session as §12i's block-lift decision.** Per CLAUDE.md §7's
+disposable-dry-run rule and this project's own standing "verified by direct observation,
+never by trusting a checklist status" discipline — commands and output pinned below, not
+paraphrased.
+
+### 13a. Disposable local scaffold — the WHOLE consolidated file, run for the first time
+
+**Never run as a whole before this pass** — this session's entire delta (transition table,
+`whatsapp_declined_at`, the REVOKE rewrite, the GET/POST security fix, three schema nits)
+had only ever been read, never executed. The last two migrations to skip this step each
+found a real defect at exactly this point (029's inline-FK ordering bug, 031's first-draft
+`service_role` grant gap) — treated with the same seriousness here, not as a formality.
+
+**Environment, matched to the standing rule, not assumed:** local Postgres 17.11
+(Homebrew) — the linked project's own cached `postgres-version` reads `17.6.1.127`, same
+major version, per CLAUDE.md §7's `POSTGRES VERSION MUST MATCH THE SERVER` requirement.
+`pgvector` confirmed installed locally (required — the real structural dump references
+`public.vector(1536)` on three tables: `boq_items`, `rate_catalog`,
+`tender_document_chunks`).
+
+**1. Real structural dump, not hand-built** (CLAUDE.md §7's own requirement — a hand-built
+scaffold can only ever agree with the file being tested):
+```
+$ supabase db dump --linked --schema public --dry-run   # script only, redirected straight
+                                                          # to a file per CLAUDE.md's own
+                                                          # credential-safety rule (this
+                                                          # exact command embeds a live
+                                                          # PGPASSWORD line) -- never printed
+$ bash <dry-run script> > schema.sql
+```
+Result: `schema.sql`, 171,923 bytes, 29 `CREATE TABLE` statements, zero `ERROR` lines in
+the load log — grepped for `PGPASSWORD`/`postgres://`/`postgresql://` before this package
+was written to confirm the dump output itself carries nothing sensitive (0 matches; the
+credential lives only in the invocation script, never in the dump it produces).
+
+**2. Named stubs, per CLAUDE.md §7's own list, nothing beyond it:**
+```sql
+CREATE ROLE anon NOLOGIN;
+CREATE ROLE authenticated NOLOGIN;
+CREATE ROLE service_role NOLOGIN BYPASSRLS;
+CREATE ROLE supabase_auth_admin NOLOGIN CREATEROLE;
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE SCHEMA IF NOT EXISTS auth;
+CREATE TABLE auth.users (id uuid PRIMARY KEY);
+CREATE FUNCTION auth.uid() RETURNS uuid AS $$ SELECT NULL::uuid $$ LANGUAGE sql STABLE;
+```
+All eight statements: `CREATE ROLE` x4, `CREATE EXTENSION`, `CREATE SCHEMA`, `CREATE
+TABLE`, `CREATE FUNCTION` — no errors.
+
+**3. Load the real dump** — `psql -f schema.sql`, `ON_ERROR_STOP=1`: **exit 0, zero
+`ERROR` lines.** The full, real prod/test-db structure (functions, RLS policies, grants,
+all 29 tables) now exists in the disposable cluster.
+
+**4. Apply `034_owner_email_delivery.sql` itself** — `psql -f
+docs/reviews/034_owner_email_delivery.sql`, `ON_ERROR_STOP=1`:
+```
+BEGIN
+ALTER TABLE
+COMMENT
+ALTER TABLE
+ALTER TABLE
+CREATE TABLE
+CREATE INDEX
+ALTER TABLE
+REVOKE
+GRANT
+COMMENT
+COMMIT
+```
+**Exit 0. Every statement in the file — parses, ordering, referenced objects — succeeded
+against the real structure, for the first time.**
+
+**5. Structural verification, not just "it applied":**
+```sql
+SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'dprs_delivery_status_check';
+```
+```
+CHECK ((delivery_status = ANY (ARRAY['pending'::text, 'pm_notified'::text, 'delivered'::text,
+'paused'::text, 'skipped_no_data'::text, 'skipped_no_template'::text,
+'skipped_unverified'::text, 'failed'::text, 'no_report_sent'::text, 'owner_send_failed'::text,
+'no_report_failed'::text])))
+```
+All 11 values present, matching §12a's design exactly.
+```sql
+SELECT column_name, data_type, is_nullable FROM information_schema.columns
+WHERE table_schema='public' AND table_name='users'
+  AND column_name IN ('notification_email','notification_email_verified_at','whatsapp_declined_at');
+```
+```
+          column_name           |        data_type         | is_nullable
+---------------------------------+---------------------------+-------------
+ notification_email             | text                     | YES
+ notification_email_verified_at | timestamp with time zone | YES
+ whatsapp_declined_at           | timestamp with time zone | YES
+```
+```sql
+SELECT conname, contype, pg_get_constraintdef(oid)
+FROM pg_constraint WHERE conrelid = 'public.owner_email_verifications'::regclass;
+```
+```
+ owner_email_verifications_expires_after_created | c | CHECK ((expires_at > created_at))
+ owner_email_verifications_pkey                  | p | PRIMARY KEY (id)
+ owner_email_verifications_tenant_id_fkey        | f | FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT
+ owner_email_verifications_token_hash_key        | u | UNIQUE (token_hash)
+ owner_email_verifications_used_after_created    | c | CHECK (((used_at IS NULL) OR (used_at >= created_at)))
+ owner_email_verifications_user_id_fkey          | f | FOREIGN KEY (user_id, tenant_id) REFERENCES users(id, tenant_id) ON DELETE CASCADE
+```
+Both nits' constraints (§12g) present exactly as designed: the direct `tenant_id` FK, and
+both lifecycle CHECKs.
+```sql
+SELECT grantee, privilege_type FROM information_schema.role_table_grants
+WHERE table_schema='public' AND table_name='owner_email_verifications'
+  AND grantee IN ('service_role','anon','authenticated','PUBLIC');
+```
+```
+   grantee    | privilege_type
+--------------+----------------
+ service_role | INSERT
+ service_role | SELECT
+ service_role | UPDATE
+```
+**Exactly** `service_role`: INSERT, SELECT, UPDATE — no DELETE/TRUNCATE/REFERENCES/TRIGGER,
+and `anon`/`authenticated`/`PUBLIC` hold **zero** rows in this result — confirms the §12d/
+§12g REVOKE rewrite (matching `031`'s own shape) actually produced the intended privilege
+set on a real Postgres instance, not just in the SQL text.
+```sql
+SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname='owner_email_verifications';
+-- t | f
+SELECT count(*) FROM pg_policies WHERE tablename='owner_email_verifications';
+-- 0
+```
+RLS enabled, zero policies — default-deny, exactly as designed (§4).
+
+**LIMIT, named per this rule's own standing caveat, not overclaimed:** this scaffold
+proves intra-file ordering, real-object references, and grant/constraint TEXT correctness
+against a genuine structural dump. It does NOT and cannot prove the `service_role`
+negative-capability result would hold against Supabase's own project-level default ACL
+mechanism (vanilla Postgres has no analogue) — that remains test-db rehearsal's own job,
+item (d), not run in this pass. The privilege-grant table above shows what THIS
+migration's own REVOKE/GRANT statements produce textually; it is not a substitute for the
+`has_table_privilege` probe against Supabase's real ACL layer.
+
+### 13b. Rollback — written AND executed, same standard as 031/033
+
+`docs/reviews/034-rollback.sql` — full file, this same commit. Reverses 034 in mirror
+order of its own forward steps (§3's `owner_email_verifications` first, back through §2's
+CHECK, to §1's columns) — simpler than 030's own rollback since 034 is purely additive
+(no renames, no data transform), and safe by construction rather than merely by care:
+034 has never applied to prod or test-db, so no real row anywhere has ever populated any
+of the new columns or written any of the new `delivery_status` values — restoring the
+narrower CHECK cannot orphan a row into an illegal value, because no such row exists.
+
+Executed against the SAME disposable scaffold §13a just built (034 still applied there):
+
+**R1 — pre-rollback state:**
+```sql
+SELECT count(*) FROM pg_tables WHERE tablename = 'owner_email_verifications';        -- 1
+SELECT count(*) FROM information_schema.columns WHERE table_schema='public'
+  AND table_name='users' AND column_name IN
+  ('notification_email','notification_email_verified_at','whatsapp_declined_at');    -- 3
+SELECT pg_get_constraintdef(oid) FROM pg_constraint
+  WHERE conname = 'dprs_delivery_status_check';
+-- CHECK (... 11 values, per §13a's own result above ...)
+```
+
+**R2 — the rollback itself (write):**
+```
+$ psql -v ON_ERROR_STOP=1 -f docs/reviews/034-rollback.sql
+BEGIN
+DROP TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+COMMIT
+```
+Exit 0. Every statement succeeded.
+
+**R3 — post-rollback state, each value the exact inverse of R1:**
+```sql
+SELECT count(*) FROM pg_tables WHERE tablename = 'owner_email_verifications';        -- 0
+SELECT count(*) FROM information_schema.columns WHERE table_schema='public'
+  AND table_name='users' AND column_name IN
+  ('notification_email','notification_email_verified_at','whatsapp_declined_at');    -- 0
+SELECT pg_get_constraintdef(oid) FROM pg_constraint
+  WHERE conname = 'dprs_delivery_status_check';
+-- CHECK ((delivery_status = ANY (ARRAY['pending'::text, 'delivered'::text,
+--   'paused'::text, 'skipped_no_data'::text, 'failed'::text])))
+```
+**Byte-identical to `023_dpr_reports.sql`'s own original CHECK, confirmed by reading that
+file directly.** Sanity check — `users` itself was not damaged, only the three added
+columns removed: `information_schema.columns` count for `users` returns 14 post-rollback.
+**Checked against the real dump, not left as an open flag:** `schema.sql`'s own
+`CREATE TABLE "public"."users"` (line 2376) lists exactly 14 columns pre-034 — `id,
+created_at, tenant_id, full_name, avatar_url, role, whatsapp_number, hierarchy_level,
+reporting_manager_id, delegation_active, employee_id, status, messaging_blocked, auth_id`
+— counted directly, not estimated. 14 pre-034, 17 with 034 applied (14+3, matching §13a's
+own R1), 14 post-rollback — exact match, not a discrepancy. The original guess of "11"
+above was wrong on arrival (an unchecked assumption, not a verified figure) and is
+corrected here rather than left standing.
+
+**Rollback proof: complete and exact for all three touched objects** — the new table
+(existence, R1/R3), the CHECK constraint (byte-identical to 023's original), and `users`'
+column set (14 → 17 → 14, verified against the real dump, not assumed).
