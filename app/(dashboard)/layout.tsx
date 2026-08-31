@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { MobileNav } from './mobile-nav'
 
 async function signOut() {
   'use server'
@@ -28,8 +29,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!user) redirect('/login')
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <aside className="w-60 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+    <div className="flex flex-col md:flex-row min-h-screen bg-gray-50">
+      {/* md:hidden below — a `hidden` element takes zero space, so this
+          addition does not change the md:+ row layout at all. */}
+      <MobileNav navLinks={NAV_LINKS} signOutAction={signOut} />
+
+      {/* Byte-identical at md:+ ("hidden md:flex md:w-60 md:flex-shrink-0"
+          is exactly "flex w-60 flex-shrink-0" once `hidden` no longer
+          applies); simply absent below md:, where MobileNav renders instead. */}
+      <aside className="hidden md:flex md:w-60 md:flex-shrink-0 bg-white border-r border-gray-200 flex-col">
         <div className="px-5 py-4 border-b border-gray-200">
           <span className="text-xl font-semibold text-gray-900 tracking-tight">Quoco</span>
           <p className="text-xs text-gray-500 mt-0.5">Construction Management</p>

@@ -25,4 +25,14 @@ describe('webhook route — no onBeforeRetry reference (static source guard)', (
   it('route.ts contains no reference to onBeforeRetry', () => {
     expect(src).not.toContain('onBeforeRetry')
   })
+
+  // The sibling guard that used to live here -- "route.ts contains no
+  // reference to onBeforeStart" -- is REMOVED, 2026-08-28, not merely
+  // passing vacuously. onBeforeStart itself no longer exists anywhere in
+  // the codebase: retirement (lib/whatsapp/inbound-start.ts's own header,
+  // design-decisions-beta-feedback.md §38) deleted routeInboundMessage's
+  // startFlow:true RPC call entirely, and onBeforeStart existed only to
+  // let a test race that specific call. A guard asserting the absence of
+  // a hook that has been deleted everywhere protects nothing; keeping it
+  // would be a stale artifact, not a real check.
 })

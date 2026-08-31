@@ -132,9 +132,34 @@ submission. Do not build against an assumed answer here.
 
 ### Trigger-vs-session collision (BOT-21)
 - Previous-day session at trigger time → force-reset, start fresh.
-- Same-day ACTIVE session at trigger time → add trigger to pending_flows,
+- ~~Same-day ACTIVE session at trigger time → add trigger to pending_flows,
   send the trigger question immediately after the current flow completes.
-  The trigger is never lost; the active flow is never destroyed.
+  The trigger is never lost; the active flow is never destroyed.~~
+
+DATED CORRECTION (2026-08-20, HH1/II1 assessment): the struck text describes a
+GUARANTEE THE SYSTEM DOES NOT CURRENTLY PROVIDE. `acquireAndTransition` /
+`drainNextPendingFlow` (`lib/whatsapp/session.ts:78,121`) and their RPCs
+(`acquire_and_transition_session`, `drain_next_pending_flow`) are fully built and
+tested (`test/session-transition.test.ts`, 5/5 passing) but have **ZERO
+production callers** — confirmed by grep across `app/`, `lib/`, `scripts/`
+excluding test files: nothing outside `session.ts`'s own definition and the test
+suite ever calls either function. **What actually runs today**, same-day, ACTIVE
+session at trigger time: `apply_morning_flow_turn`
+(`022_evening_flow_apply_turn.sql:157-173`) and `apply_evening_flow_turn`
+(`025_evening_productivity_reconciliation.sql:229-243`) both take the plain
+`ELSE v_outcome := 'reask'` branch — the trigger is answered by RE-ASKING THE
+CURRENT FLOW'S ACTIVE QUESTION, not queued, not remembered, not sent after the
+active flow completes. The active flow is genuinely never destroyed (that half
+of the struck claim holds), but "the trigger is never lost" does not — a
+collision today simply re-prompts what's already in progress and the
+would-be-triggered flow is not automatically started afterward.
+
+**The pending_flows/BOT-21/BOT-26 machinery is UNWIRED, not deleted, and not
+removed here.** It may be exactly what the outbound-send primitive (#69/031)
+needs once a real trigger cron exists to collide with something — see CLAUDE.md's
+architectural-fact entry on why no trigger cron can exist without that primitive
+first. Until then, this section's own guarantee should be read as aspirational
+design, not current behaviour.
 
 ### Pending flow ordering (BOT-26)
 - pending_flows is an ordered list, stable total order:
@@ -152,59 +177,84 @@ submission. Do not build against an assumed answer here.
 
 ## MORNING CHECK-IN (6 questions, one at a time)
 
+**SUPERSEDED (2026-08-21, §28(l), `design-decisions-beta-feedback.md`) — struck
+through, not deleted or rewritten, per this project's own correction discipline. The
+question list below is no longer the design; §28(l) is the current one: attendance is
+now Q1, morning is 4 questions not 6, and the old Q4 (execution plan) is removed from
+the flow (column not dropped — separate decision, §28(b)). Read §28(l) for the live
+spec.**
+
 <!-- 2026-07-15 (Pass 2): a cofounder note describing Q3 as "bare activity names"
      referred to the FREE-TEXT plan questions (Q1 plan / Q4 execution), NOT Q3.
      Q3 remains equipment + hire rate per this spec. Terse Tamil/English tolerance
      applies to all four morning questions. -->
 
-Q1: Plan of action today (free text) → morning_plan.
-    'Site closed today' quick reply → is_holiday=true, holiday_reason;
-    suppresses evening trigger + nudges for this engineer (BOT-20).
-Q2: Workers planned by trade. Format: Trade — count.
-    → morning_manpower_planned [{trade, planned_count}].
-Q3: Equipment on site + hire rate. Format: Equipment — owned/hired — Rs rate/day.
-    → morning_equipment [{type, count, owned_or_hired, daily_hire_cost}].
-Q4: Execution method/sequence (free text) → morning_execution_plan.
-Q5: Procurement dependencies. Capture ALL items first, THEN one follow-up:
-    "For each item above, who is responsible? One name for all, or skip
-    with 'not sure'." → morning_dependencies [{item, responsible_party}].
-    Skip the responsibility prompt if no dependencies listed. (BOT-24)
-Q6: Existing site blockers. Same pattern as Q5.
-    → morning_hindrances [{description, responsible_party}].
+~~Q1: Plan of action today (free text) → morning_plan.~~
+    ~~'Site closed today' quick reply → is_holiday=true, holiday_reason;~~
+    ~~suppresses evening trigger + nudges for this engineer (BOT-20).~~
+~~Q2: Workers planned by trade. Format: Trade — count.~~
+    ~~→ morning_manpower_planned [{trade, planned_count}].~~
+~~Q3: Equipment on site + hire rate. Format: Equipment — owned/hired — Rs rate/day.~~
+    ~~→ morning_equipment [{type, count, owned_or_hired, daily_hire_cost}].~~
+~~Q4: Execution method/sequence (free text) → morning_execution_plan.~~
+~~Q5: Procurement dependencies. Capture ALL items first, THEN one follow-up:~~
+    ~~"For each item above, who is responsible? One name for all, or skip~~
+    ~~with 'not sure'." → morning_dependencies [{item, responsible_party}].~~
+    ~~Skip the responsibility prompt if no dependencies listed. (BOT-24)~~
+~~Q6: Existing site blockers. Same pattern as Q5.~~
+    ~~→ morning_hindrances [{description, responsible_party}].~~
 
-NOTE: Q5/Q6 data is STORED but NOT surfaced in the Spine DPR. It feeds
-Fast-Follow accountability when the escalation engine ships.
+~~NOTE: Q5/Q6 data is STORED but NOT surfaced in the Spine DPR. It feeds~~
+~~Fast-Follow accountability when the escalation engine ships.~~
+
+Struck through with the rest — §28(l)'s 4-question morning flow has no Q5/Q6 at all.
+Not resolved here: whether `morning_dependencies`/`morning_hindrances` (the columns Q5/Q6
+wrote) join `morning_execution_plan` on §28(p)'s "becomes unread, do not drop" list —
+§28(p) as dictated names five columns and does not include these two; flagged as a
+likely gap in that list, not decided or added to it here.
 
 ---
 
 ## EVENING CHECK-IN (6 questions, one at a time)
 
+**SUPERSEDED (2026-08-21, §28(l), `design-decisions-beta-feedback.md`) — struck
+through, not deleted or rewritten. The question list below is no longer the design;
+§28(l) is current: 5 questions, fires regardless of attendance, plan-met (old Q2) is
+DELETED entirely (§28(m) — nothing is compared against a plan anymore), old Q3 (miss
+reason) is reframed as unconditional hindrance capture and moved last, and Q6
+(tomorrow's dependencies) does not appear in §28(l) at all. Read §28(l) for the live
+spec.**
+
 Trigger template (closed-window fallback only, per TRIGGER TIMES above)
 includes morning-plan summary truncated to 150 chars in {{3}} — a template
 variable limit. The free-form primary path is not length-constrained and
-sends the untruncated plan.
+sends the untruncated plan. **Not struck through — §28(s) decides the {{3}} handling
+separately (a second no-morning-plan template variant), and this paragraph is a
+mechanism note, not part of the question list itself. It will need its own review once
+the flow migration is scoped, since "omit the morning-plan echo" below no longer maps
+cleanly onto §28(l)'s question order.**
 
-Q1: Work completed today + quantity/area. Format: Activity — quantity done.
-    Photo optional. → evening_output + evening_output_quantities.
-    If NO morning submission: omit the morning-plan echo (BOT-22).
-Q2: Plan met? Yes/No → evening_schedule_met.
-    Yes → skip Q3, go to Q4. No → ask Q3.
-    If NO morning submission: skip Q2 AND Q3 entirely, go straight to Q4 —
-    same BOT-22 pattern as Q1's morning-plan echo above (decided 2026-08-12,
-    couples with "Evening trigger no longer waits on morning" under TRIGGER
-    TIMES). Never ask "was the plan met?" of someone who never gave a plan.
-Q3: (conditional, only if Q2=No) Reason plan not met →
-    evening_schedule_miss_reason.
-Q4: Workers on site + productivity (two sub-steps):
-    Step 1 headcount "How many on site today?"
-    Step 2 productivity "All productive, or any idle? If idle: how many + why?"
-    → evening_workers_on_site + evening_productive_manpower.
-Q5: Equipment hours per machine. Bot echoes the morning equipment list by
-    name and pre-fills a format per machine. AUTO-SKIPPED entirely if the
-    morning equipment list is empty (BOT-22) — store empty utilisation array.
-    Photo optional if idle/broken. → evening_equipment_utilisation.
-Q6: Tomorrow's dependencies + responsibility. Same pattern as morning Q5/Q6.
-    → evening_dependencies [{item, responsible_party, required_by_time}].
+~~Q1: Work completed today + quantity/area. Format: Activity — quantity done.~~
+    ~~Photo optional. → evening_output + evening_output_quantities.~~
+    ~~If NO morning submission: omit the morning-plan echo (BOT-22).~~
+~~Q2: Plan met? Yes/No → evening_schedule_met.~~
+    ~~Yes → skip Q3, go to Q4. No → ask Q3.~~
+    ~~If NO morning submission: skip Q2 AND Q3 entirely, go straight to Q4 —~~
+    ~~same BOT-22 pattern as Q1's morning-plan echo above (decided 2026-08-12,~~
+    ~~couples with "Evening trigger no longer waits on morning" under TRIGGER~~
+    ~~TIMES). Never ask "was the plan met?" of someone who never gave a plan.~~
+~~Q3: (conditional, only if Q2=No) Reason plan not met →~~
+    ~~evening_schedule_miss_reason.~~
+~~Q4: Workers on site + productivity (two sub-steps):~~
+    ~~Step 1 headcount "How many on site today?"~~
+    ~~Step 2 productivity "All productive, or any idle? If idle: how many + why?"~~
+    ~~→ evening_workers_on_site + evening_productive_manpower.~~
+~~Q5: Equipment hours per machine. Bot echoes the morning equipment list by~~
+    ~~name and pre-fills a format per machine. AUTO-SKIPPED entirely if the~~
+    ~~morning equipment list is empty (BOT-22) — store empty utilisation array.~~
+    ~~Photo optional if idle/broken. → evening_equipment_utilisation.~~
+~~Q6: Tomorrow's dependencies + responsibility. Same pattern as morning Q5/Q6.~~
+    ~~→ evening_dependencies [{item, responsible_party, required_by_time}].~~
 
 ---
 
@@ -325,6 +375,18 @@ A job that fails the claim exits silently. Stale claims (>5 min) reset to retry.
 5. generation_status='idle' on completion.
 
 ### Late data before 9 PM owner send
+**DATED SUPERSESSION (2026-08-15, docs/dpr-delivery-versioning-plan.md #67, review
+round): the "silent replace, never a new version row" design below is being reversed,
+not amended.** The versioning plan proposes a `dpr_versions` history table — every
+regeneration writes a new row, `dprs.current_version` advances, nothing is silently
+overwritten. This is a real design reversal of the decision recorded here and in
+migration 023's own `COMMENT ON TABLE public.dprs` ("UPSERT target for regeneration —
+silent replace, never a new version row per bot-flows.md"), not a clarification of it —
+023's comment quotes THIS section as its authority, so both must be corrected together
+in whichever migration ships the history table, not just one of the two. **Not yet
+shipped** — #67 is plan-only as of this note; the text immediately below still describes
+what is actually live today, and stays accurate until that migration applies.
+
 Regenerate via UPSERT. Silent replace. last_regenerated_at updated.
 No PM notification unless already paused.
 
@@ -411,12 +473,37 @@ DASH-07 hindrance tracker, DASH-10 accountability view + resolve action.
 
 ---
 
-## WHATSAPP TEMPLATES (12 total — submit ALL on Week 2 Day 1)
+## WHATSAPP TEMPLATES (13 total — submit ALL on Week 2 Day 1)
 
-11 Spine + 1 Fast-Follow. Submit all 12 to Meta together — pre-warming costs
-nothing and approval takes days. Keep every template Utility-category and
-non-promotional. Keep one spare variant of each critical template
-pre-approved (a Meta pause on the morning trigger otherwise halts check-ins).
+DATED NOTE (2026-08-20, template design v2 — Y-round): copy is now ENGLISH-ONLY, no
+bilingual (English+Tamil) template pairs — input accepts any language, output stays
+simple English (`docs/design-principles.md` Rule 3.11, revised same pass). A bilingual
+template set was drafted under an earlier, now-cancelled plan; it is NOT being submitted
+to Meta, per that cancellation. Full copy deck: `docs/whatsapp-templates.md` — RENAMED
+(2026-08-20, BB3) from `claude/whatsapp-templates-en-ta.md`. The old path put a
+repo-tracked file in the `claude/` namespace, which belongs to the claude.ai project
+(`auth-and-session-decisions.md`, the source of template 13, lives there) — having the
+same filename addressable in both places was the dual-copy risk that produced AA1's
+confusion in the first place. This repo's copy is CANONICAL for Meta submission; the
+project holds the design record.
+
+DATED CORRECTION (2026-08-20, AA1, same day as the note above): that note originally
+flagged a 13-vs-12 count discrepancy as unresolved, having grepped this repo for the
+missing 13th template's origin and found nothing. **Correction: the 13th template is
+real, not phantom — `quoco_login_otp`.** It originates in `auth-and-session-decisions.md`,
+which lives in the claude.ai PROJECT, not this repo — a document this repo's own grep
+could never find regardless of how thoroughly run, because it was never here. Recorded as
+a standing boundary, not just fixed in place: design decisions and session records live in
+the claude.ai project; code and this repo (including `bot-flows.md` itself) live in the
+repo. A grep across the repo answers "does it exist in the repo," never "does it exist at
+all" — when a referenced artifact isn't found here, the honest report is "not found in
+repo, may be project-side," not "does not exist." The count is 13, correctly, from here on.
+
+11 Spine + 1 Fast-Follow + 1 Authentication. Submit all 13 to Meta together —
+pre-warming costs nothing and approval takes days. Keep every non-Authentication
+template Utility-category and non-promotional. Keep one spare variant of each
+critical template pre-approved (a Meta pause on the morning trigger otherwise
+halts check-ins).
 
 DATED NOTE (2026-08-12): templates #1–4 below (quoco_morning_checkin,
 quoco_evening_checkin, quoco_morning_nudge, quoco_evening_nudge) are the
@@ -425,22 +512,70 @@ TRIGGER TIMES above. Still submit and pre-approve all four; the fallback
 path is the reason a Meta pause on any one of them halts check-ins (an
 engineer with a closed 24h window has no other way to receive it).
 
+DATED SUPERSESSION (2026-08-20): template 7 below, `quoco_dpr_owner`, sent a 3-line
+report summary directly to the OWNER over WhatsApp. Per the #67 decision (owner receives
+the DPR by email, not WhatsApp — `docs/dpr-delivery-versioning-plan.md`), that content no
+longer goes by WhatsApp at all. Replaced by `quoco_dpr_owner_email_sent` — a PM-facing
+confirmation that the email send happened, {{1}} project, {{2}} date only, no summary
+variable. Full copy: `docs/whatsapp-templates.md` template 7.
+
+DATED NOTE (2026-08-20): templates 6 and 12 now take a CTA URL button for their
+dashboard/details link instead of a body-variable link — drop the old {{3}}/{{5}} link
+variables from both when re-submitting; the button component carries the URL instead.
+Template 6's copy states an 8:30 PM deadline — VERIFIED against `CHECKIN_CHECKPOINTS`
+(`lib/daily-logs/cutoffs.ts`), not assumed: 8:30 PM (`ownerSend`) is correct there
+specifically as the PM's edit-window deadline, NOT as when the report becomes ready
+(that's 7:45 PM, `eveningClose`) — see `docs/whatsapp-templates.md` template 6
+for the full check, since conflating the two would have been a wrong-copy re-approval
+cost.
+
 Spine:
-1.  quoco_morning_checkin    — {{1}} name, {{2}} project
-2.  quoco_evening_checkin    — {{1}} name, {{2}} project, {{3}} morning plan ≤150 chars
-3.  quoco_morning_nudge      — {{1}} name, {{2}} project
-4.  quoco_evening_nudge      — {{1}} name, {{2}} project
-5.  quoco_manager_missed     — {{1}} engineer, {{2}} project
-6.  quoco_dpr_ready_pm       — {{1}} project, {{2}} date, {{3}} dashboard link
-7.  quoco_dpr_owner          — {{1}} project, {{2}} date, {{3}} 3-line summary
-8.  quoco_engineer_optin     — {{1}} name, {{2}} company, {{3}} project
-9.  quoco_dpr_silent_day     — {{1}} project, {{2}} PM name
-10. quoco_dpr_delayed        — {{1}} project, {{2}} PM name
-11. quoco_dpr_pause_expired  — {{1}} project, {{2}} date
+1.  quoco_morning_checkin       — {{1}} name, {{2}} project
+2.  quoco_evening_checkin       — {{1}} name, {{2}} project, {{3}} morning plan ≤150 chars
+3.  quoco_morning_nudge         — {{1}} name, {{2}} project
+4.  quoco_evening_nudge         — {{1}} name, {{2}} project
+5.  quoco_manager_missed        — {{1}} engineer, {{2}} project
+6.  quoco_dpr_ready_pm          — {{1}} project, {{2}} date, CTA URL button (was {{3}} link)
+7.  quoco_dpr_owner_email_sent  — {{1}} project, {{2}} date (SUPERSEDES quoco_dpr_owner —
+                                  see the dated supersession note above)
+8.  quoco_engineer_optin        — {{1}} name, {{2}} company, {{3}} project — now carries
+                                  "reply in any language" + "reply STOP" (see
+                                  CLAUDE.md's BOT-27 entry: the STOP promise is not yet
+                                  kept by the code — named pre-launch blocker)
+9.  quoco_dpr_silent_day        — {{1}} project, {{2}} PM name
+10. quoco_dpr_delayed           — {{1}} project, {{2}} PM name
+11. quoco_dpr_pause_expired     — {{1}} project, {{2}} date
 
 Fast-Follow:
-12. quoco_safety_alert_pm    — {{1}} project, {{2}} engineer, {{3}} type/location,
-                               {{4}} injury status, {{5}} dashboard link
+12. quoco_safety_alert_pm       — {{1}} project, {{2}} engineer, {{3}} type/location,
+                                  {{4}} injury status, CTA URL button (was {{5}} link)
+
+Authentication:
+13. quoco_login_otp             — {{1}} numeric code. AUTHENTICATION category (Meta's own
+                                  template class, distinct from Utility) — origin:
+                                  `auth-and-session-decisions.md`, claude.ai project, not
+                                  this repo (AA1). Category-specific rules, not the
+                                  Utility rules above:
+                                    * Purely functional wording — no branding flourish, no
+                                      greeting, nothing beyond stating the code and its
+                                      purpose.
+                                    * A mandatory validity line ("This code expires in N
+                                      minutes") — Meta requires this for Authentication
+                                      category approval; a Utility-style template with no
+                                      expiry statement will not pass review under this
+                                      category.
+                                    * The code itself is a BARE numeric variable — no
+                                      surrounding words inside {{1}}, no formatting
+                                      (dashes, spaces) baked into the variable, so the
+                                      WhatsApp client's own tap-to-copy behavior works.
+                                    * Charged on EVERY delivery, including when the
+                                      recipient's 24-hour session window is already open —
+                                      Authentication-category templates do not get the
+                                      free-in-window exception Utility templates do (see
+                                      the Sandbox limitation note below for that
+                                      exception's own scope). Budget accordingly; this is
+                                      not a "submit and forget" template the way #1-4's
+                                      closed-window fallback is.
 
 ### Sandbox limitation
 The Twilio SANDBOX cannot send custom approved templates — session messages

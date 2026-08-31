@@ -9,9 +9,14 @@ import type { EveningOutcome, EquipmentEchoItem } from './flows/evening'
 // Implements the retry contract from that migration's own header ("call the
 // OTHER rpc exactly once. Bounded by construction: one retry, never a
 // loop") for ORDINARY inbound replies only -- starting a flow is a separate,
-// explicit directive (the env-gated test-start sentinel in route.ts) and is
-// deliberately NOT handled here; see the design-decisions §11 note on why
-// evening has no equivalent starter yet.
+// explicit directive and is deliberately NOT handled here. Two starters
+// exist above this module, neither inside it: the env-gated test-start
+// sentinel (route.ts, morning-only, deterministic smoke seeding) and, as of
+// the II3 build, lib/whatsapp/inbound-start.ts's routeInboundMessage (both
+// flows, real production traffic, no flag -- see that file's own header).
+// design-decisions-beta-feedback.md §10 (corrected cross-reference — was
+// mis-cited as §11) is the restart-semantics record this build's (b)
+// submitted-check mitigates around, not fixes.
 //
 // THE RACE THIS EXISTS FOR: readCurrentFlow is an UNLOCKED read. Between
 // that read and the chosen RPC taking its row lock, the flow can change (a
@@ -42,9 +47,17 @@ type Flow = 'morning' | 'evening'
 // Discriminated on `flow` so the reply builder below can narrow to the
 // correct outcome type without a cast. evening carries an extra
 // equipmentEcho — Q5's prompt is data-driven (024_evening_flow_q4_q5.sql),
-// unlike every other step's static text; morning has no equivalent.
+// unlike every other step's static text. morning carries `attendance` (the
+// morning flow migration, 030) for the equivalent reason: three different
+// completions now share (outcome: 'advance', currentStep: 0) and need it to
+// pick the right reply — see buildMorningReply's own doc.
 type Attempt =
-  | { flow: 'morning'; outcome: MorningOutcome; currentStep: number }
+  | {
+      flow: 'morning'
+      outcome: MorningOutcome
+      currentStep: number
+      attendance: 'present' | 'absent' | 'site_holiday' | null
+    }
   | {
       flow: 'evening'
       outcome: EveningOutcome
@@ -119,7 +132,12 @@ async function attempt(
       ...(common.now !== undefined ? { now: common.now } : {}),
       ...(common.supabaseClient !== undefined ? { supabaseClient: common.supabaseClient } : {}),
     })
-    return { flow: 'morning', outcome: result.outcome, currentStep: result.currentStep }
+    return {
+      flow: 'morning',
+      outcome: result.outcome,
+      currentStep: result.currentStep,
+      attendance: result.attendance,
+    }
   }
 
   const result = await applyEveningFlowTurn({
@@ -142,7 +160,7 @@ async function attempt(
 
 function replyFor(a: Attempt): string {
   return a.flow === 'morning'
-    ? buildMorningReply(a.outcome, a.currentStep)
+    ? buildMorningReply(a.outcome, a.currentStep, a.attendance)
     : buildEveningReply(a.outcome, a.currentStep, a.equipmentEcho ?? undefined)
 }
 

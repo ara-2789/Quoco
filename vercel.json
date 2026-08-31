@@ -7,6 +7,14 @@
     {
       "path": "/api/cron/dpr-generate",
       "schedule": "15 14 * * *"
+    },
+    {
+      "path": "/api/cron/morning-trigger",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/evening-trigger",
+      "schedule": "0 13 * * *"
     }
   ]
 }

@@ -50,3 +50,6 @@ supabase/.temp/
 # local tooling config + scratch/working files — never repo content
 .claude/
 docs/scratch/
+!.claude/
+.claude/*
+!.claude/skills/

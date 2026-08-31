@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Stage 2 of the process-hardening work order's P2 (CI gates). Text-only
 // parse of supabase/migrations/*.sql — no DB connection, no `supabase` CLI.
-// Six rules, chosen because each one is a real incident class this repo has
-// already lived through once:
+// Seven rules, chosen because each one is a real incident class this repo
+// has already lived through once:
 //
 //   no-orphan-security-definer  — the 020 incident (seven functions shipped
 //                                  with PostgreSQL's default PUBLIC EXECUTE)
@@ -10,6 +10,11 @@
 //   rls-required                — RLS must be turned on, not just intended
 //   money-column-precision      — CLAUDE.md §6's DECIMAL(12,2) rule
 //   status-column-shape         — CLAUDE.md §6's TEXT+CHECK rule, no ENUMs
+//   service-role-grant-required — the 2026-08-26 finding (dpr_versions,
+//                                  and 031's own first draft): the same
+//                                  020 incident, one object class over —
+//                                  see Rule 6's own header for what this
+//                                  can and cannot catch
 //   unique-migration-prefix     — two files racing for the same number
 //
 // Every violation found is checked against scripts/migration-lint-exceptions.json
@@ -241,7 +246,53 @@ function ruleStatusColumnShape(file, sql, blocks) {
 }
 
 // ---------------------------------------------------------------------------
-// Rule 6 — unique-migration-prefix
+// Rule 6 — service-role-grant-required
+// ---------------------------------------------------------------------------
+// The service_role table-grant gap, mechanised: `docs/reviews/
+// service-role-table-grants-gap.md` and CLAUDE.md §0 (2026-08-26).
+// Supabase's project-level default ACL grants `service_role` ALL
+// privileges on every new public-schema table automatically — a
+// table-level REVOKE that names only `anon`/`authenticated` (the two
+// roles a migration author naturally thinks about, since those are what
+// PostgREST exposes externally) leaves that default fully in place.
+// `service_role` bypasses RLS by design, so for this role the grant layer
+// is the ONLY defense. This rule requires a REVOKE naming `service_role`,
+// somewhere in the file, for every table the file CREATEs.
+//
+// WHAT THIS RULE DOES NOT AND CANNOT CATCH — recorded here, not left
+// implicit. This is a TEXTUAL check: it confirms `service_role` is named
+// in SOME revoke targeting the table, not that the resulting privilege
+// set is actually correct (a `REVOKE SELECT ON t FROM ... service_role`
+// would satisfy this regex while leaving DELETE/TRUNCATE untouched — that
+// gap is caught only by an actual `has_table_privilege` probe against a
+// real database, never by parsing SQL text). More importantly, this rule
+// cannot mechanise the SECOND standing rule the same finding produced —
+// CLAUDE.md §7's REHEARSAL REQUIREMENT, that a new table's test-db
+// rehearsal must probe `service_role`'s NEGATIVE capabilities (DELETE,
+// TRUNCATE) directly against a live database. That requirement lives in
+// REHEARSAL DESIGN — what a human writes into a review package's own
+// test suite — not in migration FILE TEXT, so no static parse of the .sql
+// file can verify it. A file can pass this rule (REVOKE mentions
+// service_role) while its author never actually ran the negative-capability
+// probe the rehearsal rule requires; the two rules are independent and
+// both are needed. This rule closes the half of the finding that CAN be
+// mechanised; the other half stays a human, per-migration discipline.
+function ruleServiceRoleGrantRequired(file, sql, blocks) {
+  const violations = []
+  for (const b of blocks) {
+    const hasServiceRoleRevoke = new RegExp(
+      `REVOKE\\s+[^;]*ON\\s+(?:TABLE\\s+)?(?:public\\.)?"?${b.table}"?\\s+FROM\\s+[^;]*\\bservice_role\\b`,
+      'i',
+    ).test(sql)
+    if (!hasServiceRoleRevoke) {
+      violations.push({ file, object: b.table, rule: 'service-role-grant-required' })
+    }
+  }
+  return violations
+}
+
+// ---------------------------------------------------------------------------
+// Rule 7 — unique-migration-prefix
 // ---------------------------------------------------------------------------
 function ruleUniqueMigrationPrefix(files) {
   const byPrefix = new Map()
@@ -296,6 +347,7 @@ function main() {
     violations.push(...ruleRlsRequired(file, sql, blocks))
     violations.push(...ruleMoneyColumnPrecision(file, blocks, alterColumns))
     violations.push(...ruleStatusColumnShape(file, sql, blocks))
+    violations.push(...ruleServiceRoleGrantRequired(file, sql, blocks))
   }
   violations.push(...ruleUniqueMigrationPrefix(files))
 

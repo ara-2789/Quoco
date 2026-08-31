@@ -28,6 +28,110 @@ import type { EquipmentEchoItem } from '@/lib/whatsapp/flows/evening'
 // this suite creates carries this prefix; cleanup keys on it.
 export const TEST_PHONE_PREFIX = '+19995550'
 
+// ---------------------------------------------------------------------------
+// RESERVED PHONE/PREFIX BLOCKS, READ THIS BEFORE PICKING A NEW SLOT
+// (2026-08-28). Grepping your own file for a free 3-digit slot is NOT
+// enough -- it only tells you your file has never used that slot, not that
+// no OTHER file has. Two real cross-suite collisions happened this way:
+// test/unit/checkin-escalations-sweep.test.ts and (twice) test/outbound-
+// trigger.test.ts each independently picked a slot that "looked free" from
+// inside their own file, raced each other's `beforeAll`, and one suite's
+// fixture logic silently adopted the other's users row cross-tenant --
+// permanently, because outbound_sends' own composite FK is RESTRICT and
+// the table has no DELETE grant for any role, so an adopted row can never
+// be reclaimed by its rightful owner again (docs/reviews/031-outbound-
+// send-ledger-review-package.md; the incident itself:
+// test/unit/checkin-escalations-sweep.test.ts's own +19995550301 history,
+// commit 621beda).
+//
+// BEFORE ADDING A NEW testPhone('NNN') SLOT OR A NEW PREFIX: run
+//   grep -rohE "testPhone\('[0-9]+'\)|\+19995550[0-9]{3}" test/
+// and check the block list below -- this file's own registry can go
+// stale (a slot added elsewhere after this comment was last updated
+// wouldn't be reflected here), so the grep is the actual source of
+// truth; this list is a map of it, not a replacement for it.
+//
+// CLAIMED SLOTS under TEST_PHONE_PREFIX (+19995550NNN, 3-digit suffix),
+// as of 2026-08-28 -- by range, not by file (several files share ranges
+// deliberately, e.g. the four-digit step-sequences):
+//   101-105, 190           -- scattered single-file fixtures
+//   200, 209, 299           -- scattered single-file fixtures
+//   301-304, 306-313        -- test/morning-flow.test.ts and neighbours
+//                              (305 is a real gap, not a typo -- never
+//                              claimed by anything, safe to use)
+//   321-327                 -- test/morning-flow.test.ts
+//   401-432                 -- test/unit/morning-cutoff-sweep.test.ts and
+//                              neighbours
+//   501-506                 -- scattered single-file fixtures
+//   600                     -- test/unit/checkin-escalations-sweep.test.ts's
+//                              own ENGINEER_NORMAL_ID_KEY (moved here from
+//                              301, see commit 621beda)
+//   690-694                 -- scattered single-file fixtures
+//   701                     -- test/migration-007.test.ts
+//   801-816                 -- scattered single-file fixtures
+//   999                     -- test/unit/morning-flow-mirror.test.ts
+//
+// PERMANENTLY ANCHORED, DO NOT REUSE EVEN THOUGH IT LOOKS LIKE AN
+// ORDINARY testPhone() SLOT:
+//   +199955503XX -- reserved to the outbound-send suite
+//   (lib/whatsapp/outbound/*, test/outbound-trigger.test.ts). The specific
+//   point +19995550301 is a real, currently-existing users row
+//   (id cdfe1a22-230a-454b-bcc8-17c92438ff40) permanently pinned to the
+//   outbound-send suite's own tenant (000...031000) by the incident above
+//   -- it was originally checkin-escalations-sweep.test.ts's own row,
+//   adopted cross-tenant, and can never be deleted or reclaimed. Treat the
+//   whole 03XX block as off-limits, not just the one poisoned point.
+//   +19995550550 -- also a real, currently-existing users row (id
+//   7972f990-8d27-479e-9718-7105d81738fe), an orphaned artifact of an
+//   earlier outbound-send-suite fixture design (a single shared engineer,
+//   superseded by the minting scheme below) -- still present, still
+//   referenced by outbound_sends rows, still undeletable. Not reused by
+//   any current code; still off-limits for a new fixture regardless.
+//
+// A SEPARATE PREFIX ENTIRELY, RESERVED WHOLESALE:
+//   +19995551NNNNNN (6-digit random suffix, NOT the 3-digit
+//   TEST_PHONE_PREFIX convention above) -- reserved wholesale to the
+//   outbound-send suite (lib/whatsapp/outbound/*, `mintOutboundEngineer()`,
+//   now shared via test/helpers/outbound-fixtures.ts -- 2026-08-28, item
+//   D/F build). Each of this suite's own test FILES mints its engineer(s)
+//   exactly ONCE per CI run, in its own `beforeAll` -- NOT one per test
+//   (see UNIQUENESS AXIS RULE below for why, and test/outbound-
+//   trigger.test.ts's own header for the incident this corrected: an
+//   earlier draft called `mintOutboundEngineer()` from inside every
+//   `it()` block instead, minting 11 rows/run rather than 1, caught
+//   2026-08-28). CURRENT TOTAL RATE, as of the item D/F PR: 4 `users`
+//   rows per full CI run of this suite -- 1 (test/outbound-trigger.
+//   test.ts) + 2 (test/outbound-coverage-sweep.test.ts, engineerA +
+//   engineerB) + 1 (test/status-callback.test.ts). Permanent either way --
+//   see test/outbound-trigger.test.ts's own header for why cleanup is
+//   deliberately not a code path. Do not add a `+19995551...` fixture
+//   anywhere else -- the whole prefix belongs to this one suite by
+//   construction, not by convention.
+//
+// RESERVED DATE RANGE, SAME SUITE, ONE RANGE PER FILE -- against the same
+// shared tenant/project (test/helpers/outbound-fixtures.ts), only matters
+// within each file's own (tenant_id, recipient_user_id) pair, so this
+// does not need tracking here the way phone slots do; recorded for
+// visibility, not because another file could collide with it:
+//   test/outbound-trigger.test.ts        -- 2026-09-01 through 2026-09-11
+//   test/outbound-coverage-sweep.test.ts -- 2026-09-12 through 2026-09-16
+//   test/status-callback.test.ts         -- 2026-09-17 through 2026-09-19
+//
+// UNIQUENESS AXIS RULE (2026-08-28, the fix for the incident named
+// above): when a test-db fixture needs a fresh, per-test-unique value to
+// satisfy a UNIQUE constraint, carry that uniqueness on a STRING FIELD
+// ALREADY PART OF THE KEY (a date, an event_key, a label) -- never on a
+// newly minted `users`/engineer row, whenever the table the constraint
+// lives on sits downstream of a no-DELETE-grant, RESTRICT-FK'd table like
+// `outbound_sends`. A minted row is free to create and PERMANENT the
+// instant anything references it; a string costs nothing and leaves
+// nothing behind. This is why test/outbound-trigger.test.ts mints its
+// engineer once (in `beforeAll`) and carries per-test uniqueness on
+// `LOG_DATE_*` instead of on a fresh `users` row per test -- read that
+// file's own header before copying its former per-test-mint shape into a
+// new fixture.
+// ---------------------------------------------------------------------------
+
 // Fixed, recognisable tenant the sessions hang off (whatsapp_sessions.tenant_id
 // is NOT NULL). Deterministic UUID so cleanup/re-runs are idempotent.
 export const TEST_TENANT_ID = '00000000-0000-4000-a000-00000000d013'
@@ -255,18 +359,27 @@ export async function drainNextPendingFlow(params: {
   return (data as WhatsAppSession | null) ?? null
 }
 
-// Result shape returned by apply_morning_flow_turn (jsonb).
+// Result shape returned by apply_morning_flow_turn (jsonb). `attendance`
+// added by 030_morning_flow_attendance.sql — see lib/whatsapp/flows/
+// morning.ts's buildMorningReply doc for why (disambiguating which of three
+// completions occurred).
 export interface MorningTurnRow {
   outcome: MorningOutcome
   current_flow: SessionFlow | null
   current_step: number
   log_date: string
+  attendance: 'present' | 'absent' | 'site_holiday' | null
 }
 
 // Wrapper over the single transactional morning-flow RPC. Parameter names match
 // apply_morning_flow_turn's SQL signature EXACTLY (p_phone_number, p_tenant_id,
-// p_user_id, p_project_id, p_message, p_start_flow, p_now, p_test_sleep_ms) —
-// NOT the acquire_and_transition_session names. Engineer/project default to the
+// p_user_id, p_project_id, p_message, p_start_flow, p_manpower, p_manpower_ok,
+// p_equipment, p_equipment_ok, p_now, p_test_sleep_ms) — BYTE-IDENTICAL to the
+// pre-030 signature (REWORKED 2026-08-23, review package §10: Q1/holiday
+// yes-no classification now happens INSIDE the RPC via quoco_classify_yes_no,
+// not as precomputed p_yesno_met/p_yesno_ok parameters — the first draft's
+// appended params created a duplicate, orphaned function overload). NOT the
+// acquire_and_transition_session names. Engineer/project default to the
 // morning fixtures but can be overridden.
 export async function applyMorningFlowTurn(params: {
   phone: string
@@ -279,9 +392,10 @@ export async function applyMorningFlowTurn(params: {
   testSleepMs?: number
 }): Promise<MorningTurnRow> {
   const db = testClient()
-  // Mirror the production wrapper: parse both Pass-2 shapes unconditionally and
-  // pass them (+ *_ok flags) so the RPC selects by active step. See the cast
-  // note in lib/whatsapp/flows/morning.ts (params added by migration 018).
+  // Mirror the production wrapper: parse every shape unconditionally and
+  // pass it (+ *_ok flags) so the RPC selects by active step. See the cast
+  // note in lib/whatsapp/flows/morning.ts. Q1/holiday yes-no classification
+  // is NOT computed here — it happens inside apply_morning_flow_turn itself.
   const manpower = parseLabourCount(params.message)
   const equipment = parseEquipment(params.message)
   const { data, error } = await db.rpc('apply_morning_flow_turn', {
@@ -371,19 +485,38 @@ export async function applyEveningFlowTurn(params: {
   return data as EveningTurnRow
 }
 
-// Drives a full morning check-in to completion with an explicit "no
-// equipment" answer at Q3. Moved here from test/migration-024.test.ts
-// (2026-08-12, the productivity-reconciliation mirror test) so a second
-// test file needing the identical setup imports one shared definition
-// instead of a second hand-copy — the same class of divergence risk this
-// project has been burned by for production code, avoided here for test
-// setup before it had the chance to recur.
-export async function completeMorningNoEquipment(phone: string, now: string): Promise<void> {
+// Drives a full morning check-in to completion, with the Q4 equipment reply
+// as a parameter — the value doesn't matter to most callers, but a few
+// (test/migration-022.test.ts's context-merge tests, test/migration-024.test.ts's
+// productivity/equipment-hours suite) specifically need morning_equipment to
+// come back non-null with a REAL parsed item, which drives evening's own Q5
+// auto-skip decision downstream. Originally three separate hand-copies of
+// this exact sequence existed (test/helpers/db.ts, test/migration-022.test.ts's
+// local `completeMorning`, test/migration-024.test.ts's local
+// `completeMorningWithEquipment`) — consolidated here, 2026-08-24, after
+// migration 030's test-db rehearsal caught the other two copies still
+// driving the OLD pre-030 turn order (free-text plan first, no attendance
+// question) and failing as a result. One definition now; the two local
+// copies are gone.
+//
+// RENUMBERED by 030_morning_flow_attendance.sql: Q1 attendance ("yes") now
+// precedes plan, and equipment (Q4) completes the flow directly — there is
+// no longer a fifth "execution plan" turn after equipment; the OLD final
+// "Crew A then Crew B" turn is gone because morning_execution_plan is no
+// longer written.
+export async function completeMorningWithEquipment(phone: string, now: string, equipmentReply: string): Promise<void> {
   await applyMorningFlowTurn({ phone, message: '', startFlow: true, now })
+  await applyMorningFlowTurn({ phone, message: 'yes', startFlow: false, now }) // Q1: attendance
   await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now })
   await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: 'no', startFlow: false, now }) // Q3: explicit none
-  await applyMorningFlowTurn({ phone, message: 'Crew A then Crew B', startFlow: false, now })
+  await applyMorningFlowTurn({ phone, message: equipmentReply, startFlow: false, now }) // Q4: completes
+}
+
+// Thin wrapper over completeMorningWithEquipment for the (more common) case
+// where the equipment reply's content doesn't matter, only that the flow
+// completes with an explicit "none" answer.
+export async function completeMorningNoEquipment(phone: string, now: string): Promise<void> {
+  return completeMorningWithEquipment(phone, now, 'no') // Q4: explicit none, completes
 }
 
 // Drives evening to the start of Q4 (step 4) via the Q2=Yes edge (shortest
@@ -450,8 +583,12 @@ export interface DailyLogRow {
   project_id: string
   engineer_id: string
   log_date: string
+  attendance: 'present' | 'absent' | 'site_holiday' | null
+  attendance_defaulted: boolean | null
+  attendance_raw: string | null
+  is_holiday: boolean | null
   morning_plan: string | null
-  morning_manpower_planned: unknown | null
+  morning_manpower: unknown | null
   morning_equipment: unknown | null
   morning_execution_plan: string | null
   morning_submitted_at: string | null
@@ -482,7 +619,7 @@ export async function getDailyLog(logDate: string): Promise<DailyLogRow | null> 
   const { data, error } = await db
     .from('daily_logs')
     .select(
-      'project_id, engineer_id, log_date, morning_plan, morning_manpower_planned, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site, evening_productive_manpower, evening_equipment_utilisation, evening_submitted_at',
+      'project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_plan, morning_manpower, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site, evening_productive_manpower, evening_equipment_utilisation, evening_submitted_at',
     )
     .eq('project_id', TEST_PROJECT_ID)
     .eq('engineer_id', testEngineerId())
@@ -490,6 +627,33 @@ export async function getDailyLog(logDate: string): Promise<DailyLogRow | null> 
     .maybeSingle<DailyLogRow>()
   if (error) throw new Error(`getDailyLog failed: ${error.message}`)
   return data ?? null
+}
+
+// Directly seed a daily_logs row's submission markers for the fixture
+// engineer/project (bypassing the RPC) so a test can construct a specific
+// morning/evening submitted-state combination without driving a full flow
+// to completion. Added for test/inbound-start.test.ts (II3 build) — the
+// window/submission-state matrix needs precise, independent control over
+// both markers, which no existing helper provides. Upserts on the same
+// UNIQUE(project_id, engineer_id, log_date) key every RPC write uses.
+export async function seedDailyLogSubmission(params: {
+  logDate: string
+  morningSubmittedAt?: string | null
+  eveningSubmittedAt?: string | null
+}): Promise<void> {
+  const db = testClient()
+  const { error } = await db.from('daily_logs').upsert(
+    {
+      tenant_id: TEST_TENANT_ID,
+      project_id: TEST_PROJECT_ID,
+      engineer_id: testEngineerId(),
+      log_date: params.logDate,
+      morning_submitted_at: params.morningSubmittedAt ?? null,
+      evening_submitted_at: params.eveningSubmittedAt ?? null,
+    },
+    { onConflict: 'project_id,engineer_id,log_date' },
+  )
+  if (error) throw new Error(`seedDailyLogSubmission failed: ${error.message}`)
 }
 
 // Read the current session row for a phone (for resume/step assertions).

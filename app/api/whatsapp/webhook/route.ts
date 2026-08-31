@@ -1,49 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
-import crypto from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isNewMessage } from '@/lib/whatsapp/idempotency'
 import { normalisePhoneNumber } from '@/lib/whatsapp/normalise'
 import { createServiceClient } from '@/lib/supabase/service'
 import { applyMorningFlowTurn, buildMorningReply } from '@/lib/whatsapp/flows/morning'
-import { dispatchInboundTurn } from '@/lib/whatsapp/dispatch'
+import { routeInboundMessage } from '@/lib/whatsapp/inbound-start'
 import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
 import { decideInboundGate, clearMessagingBlock } from '@/lib/whatsapp/reactivation'
+import { validateTwilioSignature } from '@/lib/whatsapp/twilio-signature'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
 // processing anything. Twilio signs each webhook request using your Auth
-// Token; we recompute the signature and compare. Non-matching -> 403.
-function validateTwilioSignature(
-  url: string,
-  params: Record<string, string>,
-  twilioSignature: string,
-  authToken: string,
-): boolean {
-  const sortedKeys = Object.keys(params).sort()
-  let data = url
-  for (const key of sortedKeys) {
-    data += key + params[key]
-  }
-
-  const expectedSignature = crypto
-    .createHmac('sha1', authToken)
-    .update(Buffer.from(data, 'utf-8'))
-    .digest('base64')
-
-  const expectedBuf = Buffer.from(expectedSignature)
-  const providedBuf = Buffer.from(twilioSignature)
-
-  // timingSafeEqual THROWS RangeError on length-mismatched buffers. A garbage
-  // X-Twilio-Signature of the wrong length would otherwise become an unhandled
-  // 500 — and Twilio retries 5xx, so malformed-signature probes create retry
-  // noise (S1). A length mismatch is invalid by definition; return false. Length
-  // is not secret, so short-circuiting here is not a timing leak.
-  if (expectedBuf.length !== providedBuf.length) {
-    return false
-  }
-
-  return crypto.timingSafeEqual(expectedBuf, providedBuf)
-}
+// Token; we recompute the signature (against a pinned allowlist of known-
+// good hosts, not a single env-derived string -- see lib/whatsapp/twilio-
+// signature.ts's own header for the 2026-08-19 incident this closes) and
+// compare. Non-matching against every allowlisted host -> 403.
 
 // Escape the five XML predefined entities before embedding free text in TwiML.
 // Engineer answers are arbitrary free text and can contain & < > " ' — none of
@@ -135,9 +107,7 @@ export async function handleWebhookPost(
     params[key] = value.toString()
   })
 
-  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/whatsapp/webhook`
-
-  const isValid = validateTwilioSignature(webhookUrl, params, twilioSignature, authToken)
+  const isValid = validateTwilioSignature('/api/whatsapp/webhook', params, twilioSignature, authToken)
 
   if (!isValid) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
@@ -270,11 +240,12 @@ export async function handleWebhookPost(
 
   // --- Test-only flow start (env-gated sentinel) --------------------------
   // startFlow structurally cannot be true without ENABLE_TEST_FLOW_TRIGGER=
-  // 'true'. Only morning has a starter — dispatch.ts's own header explains why
-  // evening deliberately doesn't yet (design-decisions-beta-feedback.md §11).
-  // Kept as a direct applyMorningFlowTurn call: dispatchInboundTurn is scoped
-  // to ORDINARY replies only (its own header says so), starting a flow is a
-  // separate, explicit directive.
+  // 'true'. Kept as a direct applyMorningFlowTurn call, morning-only, by
+  // design — this sentinel exists to deterministically seed a morning flow
+  // for smoke tests, not to exercise the real start-decision logic (that is
+  // routeInboundMessage's job below, unconditionally, no flag — see
+  // lib/whatsapp/inbound-start.ts's own header for why no flag). Unrelated
+  // to dispatchInboundTurn's own "ordinary replies only" scoping.
   if (startFlow) {
     console.warn(
       `TEST-ONLY flow trigger fired for ${fromNumber} — ENABLE_TEST_FLOW_TRIGGER must NOT be set in production`,
@@ -288,18 +259,22 @@ export async function handleWebhookPost(
       startFlow: true,
       supabaseClient: supabase,
     })
-    const reply = buildMorningReply(result.outcome, result.currentStep)
+    const reply = buildMorningReply(result.outcome, result.currentStep, result.attendance)
     return reply === '' ? twimlEmpty() : twimlMessage(reply)
   }
 
-  // --- Ordinary inbound reply: dispatch to whichever flow is active -------
-  // dispatchInboundTurn (lib/whatsapp/dispatch.ts) REPLACES the previous
-  // hardcoded-to-morning call here: it reads current_flow, tries the matching
-  // RPC, and retries the other flow exactly once on 'wrong_flow'. Migration
-  // 022's review package named this wiring as its §10 deliverable — this is
-  // that wiring. Reply text is single-sourced from morning.ts/evening.ts via
-  // dispatchInboundTurn's own reply builders — never inlined here.
-  const { reply } = await dispatchInboundTurn({
+  // --- Ordinary inbound: route to the active flow, or start one -----------
+  // routeInboundMessage (lib/whatsapp/inbound-start.ts, II3 build) REPLACES
+  // the previous direct dispatchInboundTurn call: when a flow IS active, it
+  // delegates straight through to dispatchInboundTurn unchanged (reads
+  // current_flow, tries the matching RPC, retries the other flow exactly
+  // once on 'wrong_flow' — migration 022's review package §10 deliverable).
+  // When NO flow is active, it now decides whether/what to start instead of
+  // this webhook staying silent — see docs/inbound-start-trigger-plan.md.
+  // Reply text is single-sourced from morning.ts/evening.ts (or
+  // inbound-start.ts's own REPORT_READY_REPLY / EVENING_ALREADY_COMPLETE_
+  // REPLY for the no-RPC-called branches) — never inlined here.
+  const { reply } = await routeInboundMessage({
     phoneNumber: fromNumber,
     tenantId: user.tenant_id,
     userId: user.id,
