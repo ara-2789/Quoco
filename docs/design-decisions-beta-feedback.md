@@ -3316,3 +3316,112 @@ single-template evening design ships as its own Content resource
 pair until the SID constants are repointed, as its own separate change, once Meta
 approves the replacement. This entry records the design decision and its full reasoning;
 it does not itself touch `templates.ts` or unsubmit anything.
+
+## 41. Photos are a first-customer requirement, not a Fast-Follow (2026-08-31) — DECIDED, not built
+
+**DECIDED (Aravind, 2026-08-31).** Docs only — no schema, no code, no migration. This
+entry reorders the roadmap; it does not build any part of it.
+
+### a. Rationale, recorded because it reorders the roadmap
+
+Indian construction sites already run on photos — a PM's WhatsApp is a photo feed. A
+text-only product asks engineers to translate out of the medium they already use, and
+competes with a habit that works. This moves inbound media handling from §28(aa)(1)'s
+"load-bearing but unscheduled" framing (2026-08-21: "Invoices, delivery notes and cash
+receipts are all photographs. Needs Twilio media download, a storage bucket, and a
+retention policy") to a **prerequisite for onboarding a first customer.**
+
+### b. It collapses three items into one build
+
+Three of the ad-hoc menu's six CAPTURE items (`docs/plans/adhoc-menu-spec.md` §c —
+excluding item 7, stop-messages, which is not a capture) are photographs: **material
+received** (item 4) and **site document** (item 6) are each marked, verbatim,
+"Buildable without media: **no**. Blocked on `§28(aa)(1)`"; **invoice** (item 5) is
+blocked on the same section for the same reason, worded slightly differently in the
+spec's own text ("blocked on `§28(aa)(1)` directly (its own photo) AND structurally on
+item 4"). Checked directly against the spec's own per-item flow, not restated from
+memory. §6's compulsory evening work-completed photo is the same missing capability.
+**The menu without media ships half its items degraded** — three of six capture items
+simply cannot function.
+
+**REVISED ORDER: owner delivery → inbound media handling → ad-hoc menu.** This
+sequences three pieces of work already recorded but never ordered against each other:
+owner delivery (§28(bb), still email-only, no owner-facing WhatsApp template exists)
+comes first; inbound media handling (§28(aa)(1)) second, now elevated by this entry;
+the ad-hoc menu (§28(x), "the engineer's front door") third, since half its items
+depend on the second. **Does not change CLAUDE.md §2's SPINE/FAST-FOLLOW
+classification** — ad-hoc safety/invoice/hindrance flows remain listed there as
+Fast-Follow; this entry orders the prerequisite work *within* what CLAUDE.md already
+leaves unscheduled, it does not move anything across that boundary.
+
+### c. Photos carry a purpose at capture
+
+Relevance is a property of the purpose, decided at write time, never a judgement made
+later. This is a **product** rule the schema will not enforce: a photo's purpose
+derives from which flow captured it, so the enforcement is that hindrance photos can
+only ever arrive through the hindrance flow (and so on for each of the other
+photo-bearing capture items) — never a general upload with a purpose assigned
+afterward.
+
+### d. Three tiers in the DPR
+
+- **EMBEDDED: work-completed photos only.** This is what an owner opens the report to
+  see. Home: DPR Section 1, "Execution Output" (`docs/bot-flows.md`'s "The 6 Spine DPR
+  sections" — "what was done, with quantities"), beside the activity the photo
+  documents, per (e) below.
+- **LINKED: everything else owner-facing** — safety, hindrance, invoice, site expense,
+  site document. Each link must be **clearly named, never ambiguous**: the owner must
+  know what he is opening before he opens it. Name the item and its subject, e.g.
+  "Invoice — Ambuja Cement, ₹42,000," never "Photo 3."
+- **NOT IN THE DPR: attendance photos.** Proof-of-presence for the PM, nothing an
+  owner acts on. **This is §6's existing "morning = team/site/machinery photos"
+  decision** (`design-decisions-beta-feedback.md` §6, "Compulsory photos") and §28(e)'s
+  own "photo attendance... DEFERRED to §6's compulsory-photos work" — traced explicitly
+  here so the mapping is not left implicit: morning's compulsory photo is what this
+  entry calls an attendance photo, and §28(e)'s own trap ("attendance must NOT be
+  inferred from photo arrival... a photo is evidence a message was sent with an
+  attachment — it is not proof of presence") is exactly why it stays out of an
+  owner-facing report rather than merely out of the embedded tier.
+
+### e. The cap applies to embeds only
+
+Maximum 10 embedded photos per DPR. Links are unbounded — a link costs a line of text,
+not a screen, so capping them would hide activity for no benefit.
+
+Photos sit **with their section**, not in a gallery at the end — the brickwork photo
+beside "brickwork, 8 m³," inside DPR Section 1 (per (d) above), not a separate photos
+block.
+
+**OPEN, decide before build: what happens at an eleventh work-completed photo.** State
+the drop rule, and require the DPR to **state** the truncation — "12 work photos
+captured, 10 shown" — never silently omit. Silent truncation makes a report look
+complete when it is not, contradicting the standard the DPR already holds for missing
+data (`docs/dpr-engineer-report-spec.md`, rule 1, "Missing-ness is structural, not
+conditional" — that document numbers rules, not `§`-sections; cited by name to avoid
+the bare-`§N` ambiguity CLAUDE.md's own citation rule warns against). **Not decided
+here** — named as an open question for whoever designs the actual capture/render
+logic, not resolved by this entry.
+
+### f. What this costs, stated honestly and not deferred
+
+- **Twilio media download, a storage bucket, a `photos` table.** No schema authored by
+  this entry — `daily_log_photos` (§6, "Compulsory photos": `{daily_log_id, phase,
+  photo_url, caption, received_at}`) is the closest existing shape on record, built for
+  a narrower case (morning/evening compulsory photos only); this entry's own
+  ad-hoc-menu photos (material received, invoice, site document) need their own storage
+  path per table (`hindrances.photo_url`, `invoices.image_url` already exist per
+  `docs/schema.md`; `material_received` and a site-document equivalent do not exist at
+  all — no schema for either).
+- **A retention policy, which has no answer today.** §28(aa)(3) records that the thread
+  becomes a financial record with statutory retention once it holds invoices and
+  delivery notes. Photos make that concrete — the first thing built with a compliance
+  clock attached.
+- **The first recurring storage cost per project per month.** §6's own "Compulsory
+  photos" entry already named this direction ("this becomes the product's largest
+  object-storage consumer") — this entry confirms it as a recurring cost, not a
+  one-time build cost.
+- **Links need hosting the owner can reach WITHOUT logging in.** A real design
+  question, and it interacts with the owner mobile app (§28(cc), "BLOCKED ON DATA, NOT
+  ON CLIENT WORK" — "site photos... do not exist anywhere" is named there as one of
+  the missing data surfaces the mobile app itself is blocked on; this entry is the
+  decision that makes that data surface real).
