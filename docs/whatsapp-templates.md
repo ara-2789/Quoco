@@ -831,6 +831,89 @@ checked against the AS-AUTHORED length (the `{{n}}` placeholder text as submitte
 figure Meta's own review checks), with the rendered (samples-substituted) length also
 shown for realism.
 
+**All three submitted, 2026-08-31 — status `received`, awaiting Meta review.** HX SIDs
+and the real submission record: `docs/reviews/whatsapp-template-submission-status.md`,
+rows 1v3/2v3/8v2. `templates.ts` is unaffected — this section's own repointing
+checklist, below, is not started.
+
+### Repointing checklist — when Meta approves, not before
+
+**A checklist for the change, not the change itself.** Nothing below is built by this
+entry. Do this only once each SID's own approval status (see the "Checking approval
+status" note at the end of this section) reads `approved`, not `received`.
+
+1. **`lib/whatsapp/outbound/templates.ts` — `MORNING_CHECKIN_SID`.** Value changes from
+   `HXd4a896b66bfd7b237f53dc4dca77fb76` (template 1) to
+   `HXbb534f41c814a2c3a32b5682713579df` (1v3). `buildMorningTemplate` itself is
+   unchanged — same two variables, same shape.
+2. **`EVENING_CHECKIN_SID`.** Value changes from `HX48e6eab79b422dd4351071f67827881c`
+   (template 2) to `HX8fb39a251eee9bfb2ec075086cd7800a` (2v3).
+3. **`EVENING_CHECKIN_NO_PLAN_SID` and its whole branch are REMOVED, not repointed —
+   this is more than a constant swap.** §40 (`design-decisions-beta-feedback.md`)
+   decided one evening template, no `{{3}}`. Once 2v3 is live, `selectEveningTemplate`'s
+   null-plan branch has nothing left to select between — the function collapses to the
+   same two-variable shape as `buildMorningTemplate`. Concretely: delete
+   `EVENING_CHECKIN_NO_PLAN_SID`, `selectEveningTemplate`'s `EveningTemplateSelection`
+   branching and its `truncateMorningPlan` call, and `MORNING_PLAN_MAX_CHARS`/
+   `truncateMorningPlan` themselves (nothing else uses plan truncation). Upstream, the
+   `morningPlan` plumbing that exists ONLY to feed this branch becomes dead and should
+   go with it — `trigger.ts`'s `TriggerParams.morningPlan` and its call site,
+   `checkpoint-trigger.ts`'s `morningPlan` extraction/passthrough (lines ~161–237), and
+   `roster.ts`'s `EveningRosterEngineer.morningPlan` field and the `daily_logs.
+   morning_plan` join in `fetchEveningRoster` that populates it. Trace each with a
+   fresh grep at repoint time rather than trusting this list verbatim — this is a
+   snapshot of 2026-08-31's code, and the exact line numbers will have moved.
+4. **`quoco_engineer_optin_v2` (8v2) has no constant to repoint to.** Checked directly,
+   2026-08-31: no `ENGINEER_OPTIN_SID` (or equivalent) constant exists anywhere in this
+   codebase for template 8 either — onboarding has no outbound-send path built yet
+   (CLAUDE.md §1's SPINE list: "Auth, onboarding, engineer + owner registration" is
+   still to build). Repointing here means something different from 1 and 2 above: when
+   the onboarding send path is eventually built, it should read `quoco_engineer_optin_v2`
+   (`HX40923a2de0fa55ea4e7335607c9a1bb9`) directly, never `quoco_engineer_optin`
+   (`8`, still GATE-2-held) — there is nothing live to redirect away from today.
+5. **Regenerate `types/database.ts`? No** — these are Twilio Content SIDs, not a schema
+   change; nothing here touches `supabase/migrations/`. Not applicable, stated so it
+   isn't wondered about at repoint time.
+6. **Verification that the repoint worked**, same discipline as every other change in
+   this codebase — checked by observation, not by trusting the diff compiled:
+   - `tsc --noEmit` clean, and (for #3) confirm no remaining reference to
+     `EVENING_CHECKIN_NO_PLAN_SID`, `truncateMorningPlan`, or the removed `morningPlan`
+     plumbing anywhere in `lib/` or `app/` (a grep, not an assumption).
+   - The next real trigger fire (morning or evening) produces an `outbound_sends` row
+     whose `content_sid` matches the NEW SID (`1v3`'s or `2v3`'s), not the old one —
+     `docs/reviews/first-successful-delivery-record.md` is the precedent for exactly
+     this kind of read-only, breadcrumbed production check.
+   - The rendered message a real recipient receives matches the new copy — "This is
+     your morning check-in" / "This is your evening check-in" phrasing, and, for
+     evening, no "This morning you planned:" line at all.
+7. **Rollback is unusually cheap for this class of change, worth stating explicitly.**
+   The old templates (1, 2, 2b) stay `approved` and fully usable at Meta throughout —
+   repointing never touches their approval status, only which SID this codebase's own
+   constants point at. If anything is wrong post-repoint, reverting is one file
+   (`templates.ts`, plus whatever #3's cleanup touched) back to its pre-repoint state,
+   not a re-submission, not a new Meta review, not a wait for approval. This is a
+   materially lower-risk rollback than most changes in this codebase get to claim.
+
+**Checking approval status without re-running the submit script.** `scripts/submit-
+templates.ts` has no read-only status-check mode — running it again would attempt to
+CREATE new Content resources for anything not yet marked submitted in the status doc,
+which is not what a status check should ever risk. Poll each HX SID's own approval
+resource directly instead — a plain `GET`, not a `POST`, so it can never accidentally
+resubmit or duplicate anything:
+
+```
+GET https://content.twilio.com/v1/Content/{HX_SID}/ApprovalRequests
+```
+
+(Basic Auth, same `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` the submit script reads —
+this endpoint is unverified against a real response by this session, same caveat
+`scripts/submit-templates.ts`'s own header carries for every Twilio API shape in this
+file; confirm the exact response shape against Twilio's current docs before trusting a
+field name from this note alone.) The field to read is the approval `status` — `received`
+today for all three, `approved` (or a rejection) once Meta has reviewed. Three GETs,
+one per HX SID above, is the whole check — nothing in this codebase currently automates
+it into a single command.
+
 ## Total (2026-08-21, updated 2026-08-31): 14 templates (12 Spine + 1 Fast-Follow + 1
 Authentication) + 4 spare variants + 3 re-cut variants = 21
 
