@@ -1,6 +1,13 @@
 # Evening flow restructuring + §33 equipment count fix — scoping plan
 
-**Status: PLAN ONLY. No code, no migration file. Written 2026-08-31.**
+**Status: PLAN ONLY through §18. Written 2026-08-31, revised same day
+across several rounds (see §12/§13 for two self-caught corrections, §15-18
+for reviewer-independent decisions folded in mid-day). REVIEWER RETURNED
+SCOPE APPROVED WITH FINDINGS, same day — all 8 findings folded in at their
+relevant sections (§0(a), §6, §8, §11, §13, §15, §17), not collected in one
+place, so read this as a live document, not a single-pass draft. SQL
+authoring begins after this fold-in, in a separate work product from this
+plan.**
 
 Scope: §28(l)'s evening redesign (5 questions, all unconditional except the
 existing equipment auto-skip) and §33's equipment-captures-units decision,
@@ -382,7 +389,31 @@ as still true.
 - `test/productivity-reconciliation-mirror.test.ts:115,116,130,165` —
   `current_step: 5` fixture (evening step space), `evening_productive_manpower`
   reads. Entire file tests logic being deleted (aggregate productive/idle
-  reconciliation) — likely retired outright, not migrated.
+  reconciliation) — **retired outright, confirmed, not migrated.** This is
+  also the ONLY file importing `dispatchEveningFlow`
+  (`test/productivity-reconciliation-mirror.test.ts:3,129` — `import {
+  dispatchEveningFlow, ... }`, `describe('UNIT — dispatchEveningFlow ...')`)
+  — deleting this file and deleting `dispatchEveningFlow` (§1, DECIDED) are
+  the same event, not two independent removals to sequence.
+  **CHECKED, review round (2026-08-31): `test/outbound-trigger.test.ts:88`'s
+  reference to "dispatchMorningFlow/dispatchEveningFlow" is a COMMENT only —
+  no import, no call. Confirmed inert.** Safe to delete `dispatchEveningFlow`
+  without breaking that file's tests, but its comment will then name a
+  function that no longer exists — update the comment in the same change,
+  not left as a dangling reference for the next reader.
+  **LEDGER CONSEQUENCE, review round (2026-08-31):** if a conventions
+  ledger or review-package entry elsewhere records this file as the
+  dual-copy enforcement test for migration 025's productivity-reconciliation
+  logic (the reviewer's own citation: "convention 11"), that entry must be
+  struck with a dated note when this file is deleted. **Searched this repo
+  directly for that citation — `grep -rn "onvention 11" docs/ CLAUDE.md` —
+  zero hits.** Either it lives in a document not yet in this repo (the
+  reviewer's own working notes, or a future review package this migration
+  hasn't generated yet) or the citation number belongs to a numbering
+  scheme not currently grep-able here. Not fabricated or guessed at — recorded
+  as a checklist item for whoever assembles this migration's actual review
+  package: locate and strike whatever ledger entry cites this test, dated,
+  before that package is considered complete.
 
 **Renamed/deleted-column assertions:**
 - `test/helpers/db.ts:369,422,426,552,564,579-581,597-622` — fixture types
@@ -513,9 +544,11 @@ waiting on it.
   Mixer used 4 hours." — the morning equipment list echoed, one number
   each. `available_hours`/"hours on site" is **DROPPED — there is no
   second number, ever, by this question.** Replacement shape:
-  `{type, hours_used, raw, confidence, matched}` keyed by `type` string
-  directly (the same join key `canonicalEquipment` already produces), no
-  positional index, no `available_hours` field, no `idle_reason` field —
+  `{type, hours_used, raw, confidence, matched, implausible}` (last field
+  name per the plausibility ruling below — added, not yet in a prior draft
+  of this bullet) keyed by `type` string directly (the same join key
+  `canonicalEquipment` already produces), no positional index, no
+  `available_hours` field, no `idle_reason` field —
   the prompt no longer asks about idle at all, so there is nothing to
   capture a reason for (whether a parser opportunistically keeps trailing
   free text as a note is a small implementation detail, not decided here).
@@ -533,14 +566,24 @@ waiting on it.
   to §0(a)'s cost/benefit analysis: not "make the rejection explain
   itself" (§0(a)'s own proposal, still valid for whatever failure modes
   remain) but "remove the comparison that produced the silent rejection in
-  the first place." **Not fully closed, flagged for whoever builds the
-  parser:** a single "hours used" number, summed across however many units
-  of that type exist, may still want SOME upper bound (24 hours × `count`,
-  say, so a fleet of 2 JCBs can't report 40 hours used) — whether that
-  bound exists, and whether it's a hard reject or something softer, is not
-  decided here; the point is only that TONIGHT's specific guard shape (two
-  numbers compared to each other) cannot recur, because there is only one
-  number.
+  the first place." **RULED, review round (2026-08-31): the plausibility
+  bound is a FLAG, never a GATE.** Above 24 hours × `count`, the number is
+  still CAPTURED verbatim, marked implausible, and rendered marked — it is
+  never rejected, never triggers a reask, and is never silently converted
+  into an unflagged acceptance. This closes the residual left open above by
+  ruling out all three failure shapes the 2026-08-31 incident actually
+  contained in sequence — reject, explain nothing, then (on budget
+  exhaustion) convert silence into unflagged acceptance — a flag commits
+  none of the three: nothing is rejected, so nothing needs explaining, and
+  what's captured is never presented as more trustworthy than it is.
+  **This is the confidence-field shape Rule 3.5 has owed since migration
+  024** (§32(c)'s own prerequisite list: "A CONFIDENCE FIELD... nothing
+  marks which parses were guesses") — same ruling shape as
+  `attendance_defaulted` (`030_morning_flow_attendance.sql:163,353,448,
+  525,551-556`): evidence captured at write time, judgment rendered to the
+  reader, never enforced by the system itself. Add the equivalent flag
+  (exact key name not decided here) to Evening Q4's shape (§6's shape
+  bullet above) alongside `matched`.
 - **CONSEQUENCE 1(b) — §33(b) is SUPERSEDED, not deferred, dated correction
   here (this plan's own copy; the source decision in
   `design-decisions-beta-feedback.md` is untouched by this plan).**
@@ -550,8 +593,17 @@ waiting on it.
   merely postponed:** with `available_hours` dropped from the question
   entirely, that data will never exist in the daily record. Derived idle
   is not deferred pending a denominator — it is **structurally
-  uncapturable from daily check-in data at all**, permanently. The invoice
-  becomes the only denominator that will ever exist (Decision 2 below).
+  uncapturable from daily check-in data as this migration leaves it.**
+  **SOFTENED, review round (2026-08-31), per finding: "permanently" overstated
+  this.** What this decision removes is the SUBSTRATE — the daily record no
+  longer contains a second number for anything to divide against. That is
+  not an irreversible law of the product; a future decision could
+  reintroduce a second question and start collecting `available_hours`
+  again, exactly as deliberately as this one stopped collecting it. Nothing
+  here forecloses that future decision — it only means today's migration
+  does not leave the data lying around unused, and reintroduction is a new
+  decision requiring new collection, not a switch to flip on data already
+  sitting in the table.
   §33(b)'s SEPARATE claim — type-level aggregation, "aggregates are sums,"
   not per-machine — is **unaffected and still stands**; only its
   idle-derivation half is superseded. §13 (below) previously called this
@@ -712,23 +764,47 @@ current, less-than-zero-risk-by-construction situation):**
    as morning's plan**: this is exactly the silent-wrong-data class this
    whole compliance apparatus exists to prevent.
 3. **Deploy in the quiet window** (after `eveningClose` 19:45 IST, before
-   `morningSend` 08:30 IST) — **recommended, same as morning's plan**,
-   cheaper, and composes with (1) as belt-and-suspenders. **Slightly
-   weaker guarantee than morning had at the equivalent point**, because
-   there is no evening-side 033-equivalent forcing every session closed by
-   a fixed clock — recommend pairing the quiet-window deploy with a direct
-   read-only session check (like the one just run) immediately before
-   applying, not relying on the window alone.
+   `morningSend` 08:30 IST).
 
-**This same window already covers morning too, for a stronger reason than
-evening's:** 19:45–08:30 sits entirely after morning's own `morningCutoff`
+**REVISED, review round (2026-08-31): option 3 alone is NOT sufficient for
+evening, and this changes the apply plan, not just this section's
+framing.** The original text below option 3 called the sweep (option 1)
+"belt-and-suspenders" on top of a "recommended" quiet-window deploy — that
+ordering is backwards for evening specifically. Morning's quiet-window
+guarantee is REAL because 033's sweep forces every morning session closed
+by 15:00 IST regardless of engineer behaviour — the window is safe BECAUSE
+a sweep already runs on a fixed clock. **Evening has no such sweep.** A
+session abandoned mid-flow days or weeks ago — not merely "still open
+tonight" — stays `current_flow='evening'` indefinitely, since only BOT-07's
+LAZY next-IST-day wipe ever touches it, and that wipe's own triggering
+condition is not a guarantee it fires before any given deploy. A read-only
+check immediately before deploy (as this session ran, showing zero) proves
+nothing was stuck AT THAT MOMENT; it does not prove the window itself is
+safe by construction the way morning's is. **Consequence: the apply plan
+for THIS migration MUST include an explicit sweep/reset of both flows'
+in-flight sessions as a required step of the apply itself — not an optional
+belt-and-suspenders layered on a sufficient window, because for evening the
+window alone is not sufficient.** The migration-time sweep (option 1) is
+promoted from "one of three options" to "required for evening, and cheap
+to extend to morning at the same time since the SQL shape is identical."
+The quiet-window deploy timing is still worth keeping — it minimizes how
+much in-flight data the sweep might have to preserve/discard — but it is
+no longer standing in as the safety mechanism.
+
+**This same window still covers morning on its own, independently of this
+change:** 19:45–08:30 sits entirely after morning's own `morningCutoff`
 (15:00 IST, enforced by 033's sweep) and before `morningSend` (08:30 IST) —
-by construction, no morning session should be open anywhere inside it,
-independent of anything this migration does. Combined with §8's own
-finding above (morning's exposure here is lower in KIND, not just
-count), the recommendation for option 3 needs no separate morning-specific
-version — one deploy-timing decision covers both RPCs this migration now
-touches.
+by construction, no morning session should be open anywhere inside it. That
+finding is unchanged by this revision; it just no longer implies evening
+gets the same guarantee for free.
+
+**Runbook consequence, named explicitly:** whoever writes the apply runbook
+for this migration includes a sweep step (reset/close any lingering
+`current_flow IN ('morning','evening')` session, preserving whatever
+partial data §29(d)'s morning precedent already established how to
+preserve) as part of the apply sequence — not as a contingency, as a
+standing step, since evening's exposure is open-ended in time, not bounded
+to "the deploy window" the way morning's is.
 
 ---
 
@@ -834,9 +910,47 @@ not assumed).
    a named prerequisite (moving the lexicon from `lexicon.ts` to data), not
    scheduled, not designed here. Do not let it creep into this migration's
    scope; §43(f) says so directly.
-7. Then: one migration, one external review package (§10), dry-run scaffold
-   built from a real schema dump, apply in the evening quiet window with a
-   fresh in-flight-session check immediately beforehand (§8).
+7. **CHECKLIST, review round (2026-08-31) — explicit line, not folded into
+   prose:** re-verify the full context-write site inventory in
+   `apply_evening_flow_turn`'s live body
+   (`025_evening_productivity_reconciliation.sql`) AFTER renumbering, not
+   before. Confirmed concretely: `e4_headcount`/`e5_reask` are written by
+   LITERAL step-numbered keys at `025:501-502` (`(v_session.context -
+   'e4_headcount') || jsonb_build_object('e5_reask', 0)`) and `025:511`
+   (`jsonb_build_object('e5_reask', v_reask + 1)`) — these are not read
+   from a shared constant, so renumbering steps does not automatically
+   rename them. Every such literal-keyed context write in the live body
+   must be found fresh against the ACTUAL file at build time and matched to
+   its NEW step number — this plan's own §2 reask-key table is the starting
+   map, not a substitute for re-grepping the real file.
+8. **TESTS PROVEN RED FIRST, review round (2026-08-31) — required before
+   this migration is considered done, sequenced ahead of the SQL being
+   treated as complete.** A seeded unmatched-token case (e.g. the real
+   `docs/reviews/field-samples.md` sample 1 evidence, "Civil - 25 Nos,
+   P.EB - 11 Nos") must be asserted to produce the exact `{trade, count,
+   matched: false}` capture (or whatever the final key names are) in BOTH
+   flows (morning manpower, evening manpower, evening idle hours) and, for
+   equipment, the by-type `matched` case — at BOTH layers: the TS parser
+   function called directly, AND a live RPC call with the resulting
+   `daily_logs` row read back, the same integration-test shape
+   `morning-flow.test.ts`/`migration-024.test.ts` already use. **The
+   RPC-layer half is not optional** — it is what would have caught §15(e)'s
+   own finding this session (the SQL reshape silently dropping an extra
+   JSONB key) if it had existed before that finding was made by manual
+   inspection instead. Every one of these assertions must be run and
+   confirmed RED against CURRENT code before any implementation lands, not
+   written alongside it. **Shared fixture corpus across all four call
+   sites** (morning manpower, evening manpower, evening idle hours,
+   equipment), mirroring `test/helpers/yesno-corpus.ts`'s own precedent —
+   one corpus, checked against every implementation that claims to honor
+   the same contract, so the four cannot drift from each other the way nothing
+   currently prevents. This is TS-side test-writing, not SQL — the next
+   phase after the checkpoint this turn reports at (below), not part of
+   "write the SQL."
+9. Then: one migration, one external review package (§10), dry-run scaffold
+   built from a real schema dump, apply in the evening quiet window WITH the
+   required session sweep (§8, revised — no longer optional for evening),
+   and a fresh in-flight-session check immediately beforehand.
 
 ---
 
@@ -887,33 +1001,52 @@ chosen now, revisit once invoices exist" (afternoon). **Decision 1 (this
 round) goes further: the residual this section's "parked" framing left
 open is now closed, and the framing itself needs one more correction.**
 Evening Q4 asks for exactly one number per type — hours used. There is no
-`available_hours`/"hours on site" question at all, not now, not later from
-this source. §14's original 2026-08-10 question ("does Q5 need to ask for
-available hours at all?") is answered permanently: no.
+`available_hours`/"hours on site" question at all, not now, not from this
+source under this migration's design. §14's original 2026-08-10 question
+("does Q5 need to ask for available hours at all?") is answered: no.
 
 **Why "parked" was still too weak, stated precisely.** "Parked" implied a
 convention would eventually be CHOSEN and applied to data this system is
 already collecting — pick a standard, multiply by `count`, revisit later.
-Decision 1(b) forecloses that path structurally: `available_hours` is never
-asked, so there is no daily-record field for ANY future convention
-(constant, configurable standard, or otherwise) to apply itself to. This
-isn't "we haven't decided the denominator yet" — it's "the daily record
-will never contain what a denominator needs." The **only** future
-denominator source is the invoice (Decision 1(b)/2 above) — run hours vs.
-invoiced hours, reconciled in a future weekly cost/efficiency report. §14
-is superseded, not deferred — recorded here with its own dated note,
-`design-decisions-beta-feedback.md`'s own §33(b) left unedited by this
-plan, per this project's correction discipline.
+Decision 1(b) forecloses that path AS THIS MIGRATION LEAVES IT:
+`available_hours` is not asked, so there is no daily-record field for ANY
+convention (constant, configurable standard, or otherwise) to apply itself
+to today. **Softened per the review round (2026-08-31), same correction as
+§6's Consequence 1(b) above:** this removes the substrate, not the
+possibility — a later decision could reintroduce a second question and
+start collecting it again; nothing here rules that out, it just isn't
+collected now.
+
+**HONESTY CORRECTION, review round (2026-08-31) — the supersession pointed
+at nothing, and that gap is fixed here rather than papered over.** Earlier
+drafts of this section named "a future weekly cost/efficiency report,
+reconciled against the invoice" as where the denominator eventually comes
+from. **That report does not exist. No owner is assigned to it. No
+migration, plan, or roadmap entry schedules it.** Naming it as the
+destination was prose describing an artifact that isn't real — exactly the
+gap §17's "the reader judges" principle depends on staying honest about.
+**Stated plainly instead: idle/utilisation economics for equipment live
+NOWHERE in this product today, and will continue to live nowhere until
+someone schedules and builds that report.** This is not a defect this
+migration needs to fix — §17 already establishes that showing raw numbers
+with no computed figure is the deliberate, permanent design for the DAILY
+report, independent of whether a WEEKLY report ever exists — but the
+WEEKLY report itself is a real gap, unowned, unscheduled, and this plan
+does not get to treat it as already accounted for by gesturing at it.
+Whoever schedules that work names an owner and a closer at that time; this
+plan does not invent one to make the sentence above read more finished
+than it is.
 
 **Consequence for §6, §7, §15 — now settled, not conditional:** the
 equipment redesign's write shape (§6) is `{type, hours_used, raw,
-confidence, matched}` — no `available_hours`, no `idle_reason`, no
-denominator field of any kind. §33(a) (`count`, not `daily_hire_cost`)
-remains required — for its original reason (§33(c), the fabricated-rupee
-defect), because `count` makes a by-type aggregate legible as a sentence
-regardless of any computation, and because the eventual invoice
-reconciliation will need it — but, as already noted before this round,
-not because a same-migration idle/utilisation figure is waiting on it.
+confidence, matched, implausible}` — no `available_hours`, no
+`idle_reason`, no denominator field of any kind. §33(a) (`count`, not
+`daily_hire_cost`) remains required — for its original reason (§33(c), the
+fabricated-rupee defect) and because `count` makes a by-type aggregate
+legible as a sentence regardless of any computation — but, as already
+noted before this round, not because a same-migration idle/utilisation
+figure is waiting on it, and (per the honesty correction just above) not
+because a specific future report is already scheduled to consume it either.
 See §17 for why this design (observed numbers, no computed metric) is the
 DELIBERATE shape, not a fallback pending future capability.
 
@@ -970,6 +1103,31 @@ equipment (§6's redesign already needs a `matched` flag added, see the
 edit there) and for the two brand-new evening by-trade fields, which have
 no existing drop-then-total behavior to fix — they simply must not
 introduce it.
+
+**PRESERVATION REQUIREMENT, review round (2026-08-31): the captured token
+must be AS HEARD, pre-normalisation — or the normalisation applied must be
+named, not silently assumed absent.** §43's future PM-teaching surface
+(§16) needs to see what the engineer actually typed to make an informed
+mapping decision; a normalized form can hide the exact spelling/punctuation
+a real mapping decision depends on ("P.EB" vs "peb" vs "PEB" are different
+evidence of the same underlying gap). **This is not automatic today —
+checked directly, not assumed:** `parseLabourCount`
+(`lib/whatsapp/flows/parsers/labour.ts:39`) lowercases and tokenizes the
+ENTIRE input — `splitDigitBoundaries(raw_text.toLowerCase())` — before
+`canonicalTrade` ever runs. Whatever an unmatched capture grabs at that
+point in the current tokenizing pipeline is already lowercased, with digit
+boundaries split; it is not the original surface form. Building §42's
+unmatched capture on top of the EXISTING tokens (the cheap, obvious
+implementation) would silently violate this requirement. Whoever builds
+this must either (a) capture a substring of the ORIGINAL `raw_text` at the
+matching token's position, before lowercasing, or (b) if that's not
+practical, name explicitly which normalisation was applied (lowercase,
+digit-boundary split) so a later reader of the corpus knows the string in
+front of them has already been transformed and by how much. Not decided
+here which of (a)/(b) — recorded as a requirement whichever way it's built,
+because "the raw text survives somewhere in `raw_text`" (true today) is not
+the same claim as "the unmatched item's own token is unnormalized" (not
+true today, and not automatic to make true).
 
 **b. DPR consequence, decided, not designed.** An unmatched trade/type
 cannot count toward EFFICIENCY (§28(m)) or UTILISATION, because no
@@ -1044,8 +1202,26 @@ deletes evening's old Q4a (§2) — whether the boundary-rename is still worth
 keeping once the only remaining caller is morning Q3 is a real question,
 not answered by this plan.
 
-**f. DELIBERATE EXCEPTION TO §30's SCOPE DISCIPLINE — named so it does not
-read as the rule weakening.** §30(a) (`design-decisions-beta-feedback.md`,
+**f. DATED CARVE-OUT TO §30, review round (2026-08-31) — recorded as a rule
+applied, not a discipline eroded.** Stated as a rule, the way CLAUDE.md
+states its own: **a migration may cross flows when the change is
+DEFECT-SYMMETRIC — the same bug, in the same shared pattern, present in
+both flows independently of anything else being built. A migration may
+NOT cross flows for an IMPROVEMENT spotted in one flow while working on
+the other — that case stays exactly as separate as §30(a) already
+requires.** This carve-out is grounded in the STRONGER of the two
+precedents available, deliberately: not analogy to this migration's own
+reasoning, but CLAUDE.md's own standing rule, "WHEN A DEFECT IS FIXED
+STRUCTURALLY, GREP THE REPOSITORY FOR THE SAME PATTERN BEFORE CLOSING IT"
+— born from the `test/morning-flow.test.ts` timeline (a race-condition fix
+landing in one file, the identical shape left live in a sibling for eleven
+hours until CI caught it on an unrelated PR). Applying §30(a)'s split
+mechanically here — evening-only, defer morning — would not honor that
+rule, it would DELIBERATELY MANUFACTURE the exact finding that rule exists
+to prevent, at flow level instead of file level. Full reasoning below,
+predating this carve-out's formal statement:
+
+§30(a) (`design-decisions-beta-feedback.md`,
 2026-08-22) split morning and evening into separate migrations specifically
 so a bug found in evening's restructuring could never block morning's
 already-scoped, simpler change from shipping — "Bundled, a bug found in the
@@ -1154,8 +1330,9 @@ standard, no benchmark, no computed percentage.
 
 **This is not modesty — it is what avoids being confidently wrong.** A
 computed utilisation figure needs a denominator this system does not have
-(§13: structurally, not temporarily — Decision 1 forecloses it from the
-daily record permanently), applied to trades whose `productivity_standards`
+(§13: Decision 1 removes it from the daily record as this migration ships
+— the substrate, not a permanent prohibition, per §6/§13's softened
+language), applied to trades whose `productivity_standards`
 do not exist (§28(r), §32(c)'s own prerequisite list), computed from parsed
 data that — absent this session's own §42/§33(a) fixes — carries no
 confidence signal distinguishing a clean parse from a guess. **Every one of
@@ -1179,6 +1356,24 @@ there is no metric left in this design for them to feed. They are in
 service of THE READER'S TRUST IN THE RAW NUMBERS THEMSELVES**, which is the
 entire load-bearing surface once the system stops computing anything on
 the reader's behalf.
+
+**BOUNDARY CONDITION, review round (2026-08-31) — named so this principle
+is not overclaimed.** The argument above assumes an EXPERT reader: a PM who
+has personally run twenty excavation jobs and can convert "13 hours" into
+an expectation without help. Per CLAUDE.md §1/§5, the OWNER receives this
+same report (WhatsApp + email) and is not guaranteed to have that
+experience — an owner may have no independent basis for judging whether 13
+JCB-hours against a given output is good, bad, or unremarkable. **This
+design survives that gap only because the product's claim is FAITHFUL
+REPORTING, not judgment.** The system promises an honest record of what was
+captured; it does not promise that every reader can interpret it usefully.
+An owner who cannot make sense of raw hours-and-output is experiencing a
+limit of the report's USEFULNESS to them, not a false or misleading claim
+made TO them — the two are different failures, and only the second is what
+§17's design is actually built to avoid. Stated plainly rather than left
+implicit: this section's reasoning is strongest for the PM and weaker,
+honestly, for an inexperienced owner — the report is still truthful for
+that reader, just not necessarily illuminating.
 
 ---
 
