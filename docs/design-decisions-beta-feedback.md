@@ -3258,3 +3258,61 @@ entry records cannot recur under the new design**, because the reply no longer i
 `docs/plans/adhoc-menu-spec.md` §a for the full decision, the approved rough header
 shape, and the Twilio/Meta delivery-mechanism research this resolution's own copy pass
 depends on.
+
+## 40. ONE evening template — {{3}}, the morning-plan echo, is REMOVED (2026-08-31) — supersedes §28(s)
+
+**DECIDED (Aravind, 2026-08-31).** The evening check-in template drops `{{3}}` (the
+morning-plan echo) entirely. `quoco_evening_checkin_no_plan` (2b), the template §28(s)
+built specifically to handle the no-plan case, becomes unnecessary once there is no
+plan-carrying variant left for it to be the fallback of — **one evening template, not
+two, going forward.**
+
+**This supersedes §28(s); §28(s) is left as written, not rewritten, per this file's own
+correction discipline.** §28(s) itself remains an accurate record of why the two-template
+split existed at the time it was decided (a fixed Meta body can't omit a variable
+conditionally, so "no plan" needed its own template rather than a filler string). That
+reasoning is not wrong; it is now moot, because the variable it was built to work around
+no longer exists in the template at all.
+
+**Reasoning, in full — recorded because this will be re-litigated as "why not remind him
+what he planned?":**
+
+- **PRIMARY (Aravind's own reasoning).** Echoing the plan **anchors** the evening
+  answer. Putting "This morning you planned: {{3}}" directly above "What work was
+  completed today?" invites the engineer to report *against the plan* — confirming or
+  adjusting a stated intention — rather than reporting *against the day* as it actually
+  happened. That is exactly the contamination §28(m) ("NO PLAN-VS-ACTUAL REPORTING")
+  already named and ruled out for the SYSTEM's own comparison logic: morning is intent,
+  evening is observation, and the two must not be allowed to influence each other. §28(m)
+  stopped the system from computing a plan-vs-actual comparison; this decision stops the
+  template from inviting the ENGINEER to compute one in his head before answering. Same
+  principle, applied one layer earlier, at the point where the anchoring actually
+  happens — a human reading his own stated plan half a page above the question, not a
+  server-side join.
+- **SECONDARY.** `{{3}}` was structurally fragile in two independent ways, both already
+  on record: it goes **empty on a missed morning** (Meta rejects an empty variable value
+  at send time — `templates.ts`'s `selectEveningTemplate` exists ONLY because of this,
+  routing to `quoco_evening_checkin_no_plan` whenever `morningPlan` is null), and it
+  **echoes garbled text back** whenever the plan itself parsed badly — `morning_plan` is
+  stored as free-text verbatim (`morning.ts`'s step-2 branch, `.trim()` only, no
+  parsing), so anything an engineer typed, however malformed, would be echoed back to
+  him inside an approved template's rendered body.
+- **What is lost, stated plainly, not minimised.** The engineer no longer sees his own
+  morning plan when asked what he completed. §28(s) valued that as a courtesy — a
+  reminder, not a demand. Nothing downstream computes against `{{3}}`'s absence: §28(m)
+  already removed the one mechanism (the system's own plan-vs-actual comparison) that
+  might have needed it, so there is no functional gap behind the lost courtesy, only the
+  courtesy itself.
+
+**Consequence for `quoco_evening_checkin_no_plan` (2b).** Retired going forward, not
+retroactively un-submitted — it is already `approved` at Meta
+(`docs/reviews/whatsapp-template-submission-status.md`, HX SID
+`HX29c10ebad1290a1787e8ef14142ef4fc`) and approval cannot be undone or reversed by this
+decision. `lib/whatsapp/outbound/templates.ts`'s `EVENING_CHECKIN_NO_PLAN_SID` constant
+and `selectEveningTemplate`'s branch on it are **unchanged by this entry** — the new
+single-template evening design ships as its own Content resource
+(`quoco_evening_checkin_v3`, no `{{3}}`), submitted alongside this decision
+(`docs/whatsapp-templates.md`), and the live code keeps sending the current two-template
+pair until the SID constants are repointed, as its own separate change, once Meta
+approves the replacement. This entry records the design decision and its full reasoning;
+it does not itself touch `templates.ts` or unsubmit anything.

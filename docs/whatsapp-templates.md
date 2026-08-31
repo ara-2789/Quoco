@@ -76,6 +76,14 @@ under Meta's own rules.
 path — cron, onboarding route, a manual test — can reach for it. Leaving it unapproved
 makes the gate self-enforcing rather than dependent on everyone remembering.
 
+**NOTE, 2026-08-31 — a second, differently-named resource exists and is NOT covered by
+this gate.** `quoco_engineer_optin_v2` ("Re-cut variants" section, below) re-cuts this
+template's copy with the STOP line removed — GATE 2's reason for holding
+`quoco_engineer_optin` does not apply to it. It is not exempt from review, though: it
+carries its own, separate hold (Aravind's copy approval, not yet given) until it is
+submitted. This gate itself is unchanged and continues to hold the original
+`quoco_engineer_optin` exactly as before.
+
 ## Design change, stated plainly (Y1/Y2)
 
 **Output is simple English only. Input accepts any language — English, Tamil, or a mix.**
@@ -698,12 +706,125 @@ expires in 10 minutes.~~)*
 
 ---
 
-## Total (2026-08-21): 14 templates (12 Spine + 1 Fast-Follow + 1 Authentication) + 4 spare variants = 18
+---
+
+## Re-cut variants (2026-08-31) — NEW immutable Content resources, not spares
+
+**Approved templates cannot be edited.** Every template below re-cuts the copy of an
+already-`approved` template (1, 2, 8), so each is submitted under a **new
+`friendly_name`**, a genuinely separate Meta Content resource — not an edit to the
+approved one, and not a `_v2`/`_v3` **spare** in the "Spare variants (II5)" sense above
+(a spare shadows its primary's wording almost exactly, as a rejection fallback; these
+change what the template actually says). **The existing approved templates (1, 2, 8's
+`SID`s currently wired in `lib/whatsapp/outbound/templates.ts`) keep sending live
+traffic unchanged** — repointing the SID constants to the new resources is a separate,
+later change, made only after Meta approves these, never as part of this submission.
+
+### 1v3. `quoco_morning_checkin_v3`
+**Audience:** engineer. **Category: Utility** (same basis as template 1 — a daily
+operational process the engineer is already enrolled in). **Variables:** `{{1}}` name,
+`{{2}}` project. **Re-cuts:** template 1.
+**Sample values:** `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights" (same fictional
+identity set as the rest of this file).
+
+> Good morning {{1}}. This is your morning check-in for {{2}}.
+> Are you on site today? Reply yes or no.
+
+**Wording change from template 1:** "This is Quoco for {{2}}" → "This is your morning
+check-in for {{2}}" — names what the message actually is, rather than the product's own
+name, matching this file's own Rule 3.11/3.12 preference for concrete over abstract.
+**Compliance audit (6-rule check, run 2026-08-31):** PASS on all six — 2 variables, not
+adjacent, sequential (`{{1}}`, `{{2}}`), body starts/ends on real words, 19 non-variable
+words against a 5-word minimum, zero emoji. **Body length:** 100 characters as authored
+(115 rendered against the sample values above) — well inside the 1,024-character body
+limit (see the character-limit note at the end of this section for how that figure was
+verified).
+
+### 2v3. `quoco_evening_checkin_v3`
+**Audience:** engineer. **Category: Utility** (same basis as template 2). **Variables:**
+`{{1}}` name, `{{2}}` project — **no `{{3}}`.** **Re-cuts:** template 2.
+**Sample values:** `{{1}}` = "Arjun Nair", `{{2}}` = "Emerald Heights".
+
+> Good evening {{1}}. This is your evening check-in for {{2}}.
+> What work was completed today? Enter quantity wherever applicable — e.g. "slab
+> concrete 120 sqm" or "brickwork 8 m3".
+
+**`{{3}}` (the morning-plan echo) is REMOVED — decided in full, with reasoning, in
+`design-decisions-beta-feedback.md` §40 (2026-08-31), which also supersedes §28(s)
+without rewriting it.** One evening template replaces the template-2/template-2b split;
+`quoco_evening_checkin_no_plan` (2b) is retired going forward (its own `SID` stays wired
+and unchanged in `templates.ts` until the repoint — see the section intro above).
+**Two worked examples, not one, deliberately** — both drawn from real field data
+(`docs/reviews/field-samples.md`: "…30 sq.m…", "…0.5m³…" in Sample 1; "Land excavation -
+3 m3" in Sample 2) — teaching the quantity shape AND that the unit genuinely varies by
+trade (area for slabs/plastering, volume for concrete/excavation), not just showing one
+example and letting an engineer guess whether it generalises.
+**Compliance audit (2026-08-31):** PASS on all six — 2 variables, sequential, not
+adjacent, body starts/ends on real words, 29 non-variable words against a 5-word
+minimum, zero emoji. **Body length:** 178 characters as authored (193 rendered) —
+**longer than template 2's own 154-character body** (the two-example rewrite outweighs
+the dropped `{{3}}` line, so the net is longer, not shorter), still well inside the
+1,024-character limit.
+
+### 8v2. `quoco_engineer_optin_v2` — DRAFT COPY, NOT YET APPROVED BY ARAVIND
+
+**This section's copy is a draft, submitted for approval, not decided.** Unlike 1v3 and
+2v3 above (approved copy, provided directly), this one only has direction: remove the
+false "Reply STOP" promise (§29(a) — there is no STOP keyword; opt-out is PM-managed via
+`status='deactivated'`, and, once built, an ad-hoc menu item per §29(b)) and either
+describe the real route or omit the line if nothing true can be said yet.
+**Checked directly against `docs/plans/adhoc-menu-spec.md`: the ad-hoc menu is decided,
+not built** — so today, there is no real opt-out route this template could truthfully
+describe (§29(b)'s own words: "until the ad-hoc menu is actually built, there is NO
+opt-out path of any kind in this product"). **The STOP line is omitted, not replaced**
+— the direction's second option, taken because the first is not available honestly
+right now. This is the same "do not promise what does not happen yet" discipline
+already applied three times over in this project's own history (`EVENING_AWAITING_
+TRIGGER_REPLY`, twice, §39; and the site-holiday finding it names).
+**Re-cuts:** template 8. **Audience:** engineer. **Category: Utility**, same
+recategorisation-risk flag template 8's own section already carries — unaffected by
+this rewrite, since the flagged risk was the onboarding/invitation framing, not the
+STOP line. **Variables:** `{{1}}` name, `{{2}}` company, `{{3}}` project.
+**Sample values:** `{{1}}` = "Arjun Nair", `{{2}}` = "Shivalik Infraprojects Pvt Ltd",
+`{{3}}` = "Emerald Heights" (same as template 8's own).
+
+> Hello {{1}}. Your team at {{2}} has added you to Quoco for daily check-ins on {{3}}.
+> Reply YES to start.
+> You can reply in any language — English, Tamil, or a mix.
+
+**Only one commitment left in this copy (contrast template 8's own two, Y4/Y5):** "You
+can reply in any language" — holds today, same verification as template 8's own entry
+(`bot-flows.md`'s MIXED-LANGUAGE INPUT section). The STOP commitment is gone with the
+line that made it, not merely unverified.
+**Compliance audit (2026-08-31):** PASS on all six — 3 variables, sequential, not
+adjacent, body starts/ends on real words, 31 non-variable words against a 7-word
+minimum, zero emoji. **Body length:** 162 characters as authored (202 rendered).
+**Not hard-excluded by GATE 2's own literal name check** (`HARD_EXCLUDED_NAMES` in
+`scripts/submit-templates.ts` matches the literal string `quoco_engineer_optin`, not
+`quoco_engineer_optin_v2`) — correctly, since GATE 2 existed for exactly one reason
+(the STOP promise) and this copy no longer makes it. Template 8 itself remains held,
+unchanged, under GATE 2 — this entry does not lift it or touch it.
+**Still requires explicit approval before `--submit` is ever run against it** — per
+direct instruction, distinct from and in addition to GATE 2.
+
+**Character-limit note, both templates above.** WhatsApp/Meta's own template body
+limit — confirmed 2026-08-31 against current third-party documentation (Twilio's own
+Content-type reference pages do not state this figure directly; it is a Meta-side
+platform limit that Twilio's Content API passes through, not a Twilio-defined one) — is
+**1,024 characters** for the body of a Utility-category template. Every body above is
+checked against the AS-AUTHORED length (the `{{n}}` placeholder text as submitted, the
+figure Meta's own review checks), with the rendered (samples-substituted) length also
+shown for realism.
+
+## Total (2026-08-21, updated 2026-08-31): 14 templates (12 Spine + 1 Fast-Follow + 1
+Authentication) + 4 spare variants + 3 re-cut variants = 21
 
 **Changed from the 13+4=17 recorded earlier — the new `quoco_evening_checkin_no_plan`
-(2b, §28(s)) adds one Spine template with no spare.** Of these 18: 2 hold (8, 12 — see
-`docs/reviews/whatsapp-template-submission-status.md`'s submit/hold list), 16 clear to
-submit.
+(2b, §28(s)) adds one Spine template with no spare.** Of the original 18: 2 hold (8, 12
+— see `docs/reviews/whatsapp-template-submission-status.md`'s submit/hold list), 16
+clear to submit. **Plus 3 re-cut variants (2026-08-31, above): 1v3 and 2v3 clear to
+submit; 8v2 holds on Aravind's copy approval, separate from and in addition to GATE 2,
+which continues to hold the original template 8.**
 
 Submission tracking (dates, per-template status, Meta review outcomes) lives in
 `docs/reviews/whatsapp-template-submission-status.md`, not here — this file is the copy
