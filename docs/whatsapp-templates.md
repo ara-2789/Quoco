@@ -657,8 +657,9 @@ existing nightly-report relationship, not an offer or re-engagement) — pass.
 **Single-source-of-truth requirement for whoever builds the email fallback (§37(d)'s own
 "falls back to email" branch, Decision 2) — named here, not built:** this body string, not
 a re-authored paraphrase, is what the email fallback must render (placeholders substituted
-the same way). See `docs/reviews/030-owner-email-review-package.md`'s delta section for
-the full argument for why — the two channels must share one source string, not two
+the same way). See `docs/reviews/034-owner-email-review-package.md`'s delta section
+(**renumbered from 030 — a real numbering collision, not a typo; see that package's own
+header note**) for the full argument for why — the two channels must share one source string, not two
 independently-maintained copies checked by a test after the fact.
 
 ---
