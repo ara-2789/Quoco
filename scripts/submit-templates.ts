@@ -308,6 +308,36 @@ function checkBodyDriftAgainstMarkdown(templates: ParsedTemplate[]): void {
   }
 }
 
+// KNOWN FALSE-POSITIVE, RECORDED NOT FIXED (2026-08-31, found reading this
+// run's own dry-run output) -- the HX-pattern match below cannot distinguish
+// "a live submission exists" from "an HX SID is merely MENTIONED somewhere in
+// this row's prose." Template 13 (quoco_login_otp) is the live case: its
+// Notes cell documents an orphaned Content resource (HXff09a18d...) that was
+// created 2026-08-22, failed its ApprovalRequests call (wrong content type
+// for AUTHENTICATION), and was DELETED the same day (204, confirmed 404 on a
+// follow-up GET) -- never actually submitted to Meta. The regex below still
+// matches that dead SID inside the explanatory prose and marks 13 as
+// "already submitted," permanently, for the wrong reason. HARMLESS TODAY --
+// 13 should not be resubmitted until its whatsapp/authentication shape is
+// redesigned anyway (see the status doc's own row for that) -- but this will
+// have to be noticed and manually worked around the day 13 IS actually
+// ready, rather than the skip simply not firing.
+//
+// THE FIX, ARGUED, NOT BUILT: key this off the STATUS CELL (cells[6]) --
+// this file's own `## Status legend` already defines exactly what belongs
+// there (`not submitted` / `pending` / `approved` / `rejected`, though
+// `received` is also in live use and undocumented in that legend -- a
+// second, smaller drift worth folding into the same fix) -- rather than
+// pattern-matching an HX SID anywhere across cells[5]/cells[7]'s free-form
+// prose. A row is "already submitted" iff its Status cell does NOT start
+// with "not submitted" -- structured-field equality, not a regex over
+// prose. This is the same lesson this file's own header already states for
+// markdown BODY parsing (three real failures, the third one silent and
+// wrong) applied one field over: a free-text scan can always find a
+// plausible-looking match for the wrong reason, and the fix each time is
+// to trust the structured field that already carries the fact, not to
+// pattern-match around it. Not implemented here, per direct instruction --
+// this comment is the record for whoever next touches this function.
 function loadAlreadySubmitted(statusMd: string): Set<string> {
   const submitted = new Set<string>()
   for (const line of statusMd.split('\n')) {
