@@ -1,7 +1,21 @@
 -- =============================================================================
--- 030_owner_email_delivery.sql
+-- 034_owner_email_delivery.sql
 -- DPR delivery/versioning, BLOCKED HALF (docs/dpr-delivery-versioning-plan.md
 -- §2j, §2e's pm_notified/skipped_no_template/skipped_unverified widening).
+--
+-- RENUMBERED 030 -> 034 (2026-08-31, real collision, not cosmetic): this file
+-- was drafted and named under 030 on 2026-08-20, the same day (per the plan
+-- doc's own record) as a DIFFERENT, concurrently-drafted migration,
+-- 030_morning_flow_attendance.sql, which applied under that number on
+-- 2026-08-25 -- six days before this correction. This file sat held out of
+-- supabase/migrations/ the whole time (per the RELOCATED note below), so
+-- there was never a live on-disk collision, but nothing checked its
+-- FILENAME against the numbers being consumed around it: 031, 032, and 033
+-- were each claimed by other work in the meantime while this file kept the
+-- now-taken 030 name. Caught while making an unrelated delivery_status
+-- revision to this same file. 034 is the true next open number per
+-- `ls supabase/migrations/` as of this correction. Full account:
+-- docs/reviews/034-owner-email-review-package.md's delta section.
 --
 -- RELOCATED (2026-08-20, BB2): moved from supabase/migrations/ to here.
 -- A file sitting unapplied, on no ledger, in the scanned migrations
@@ -50,7 +64,7 @@
 --       sense — additive only.
 --   (e) "Moves money." Does not trip.
 --   NET: (b) and (c) both trip — full external-review package required.
---   This IS that package (docs/reviews/030-owner-email-review-package.md).
+--   This IS that package (docs/reviews/034-owner-email-review-package.md).
 --
 -- UNDOCUMENTED DEPENDENCY, cited (external review finding, not previously
 -- stated anywhere): `role = 'owner'` (§2j/A1's operator INSERT) is legal
@@ -85,6 +99,21 @@ ALTER TABLE public.users
     CHECK (notification_email ~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'),
   ADD COLUMN notification_email_verified_at TIMESTAMPTZ NULL;
 
+-- NOT SHIPPED HERE, NAMED SO IT ISN'T MISSED (2026-08-31 delta, review
+-- package §12b): WhatsApp is optional for owners (Decision 2, 2026-08-31) --
+-- the §37(d) no-report notice falls back to email when the owner has no
+-- WhatsApp number, and provisioning must record an explicit DECLINE
+-- distinct from "never asked" (a null whatsapp_number alone cannot tell the
+-- two apart). The shape this needs -- most likely a nullable
+-- whatsapp_declined_at TIMESTAMPTZ, same NULL-means-unset pattern as
+-- notification_email_verified_at immediately above -- is deliberately NOT
+-- added in this migration. This file's own schema (email/verification) has
+-- no reader for it; the column belongs with whichever future migration
+-- ships the §2j/A1 provisioning script and the eveningClose/ownerSend
+-- application code that would actually populate and read it, per this
+-- migration's own standing reason for staying BLOCKED (a schema column with
+-- no consuming code path). Full argument: review package §12b.
+
 -- S4 — PII exposure recorded against the existing tracked item, not left to
 -- be discovered later. users_select (007_auth_surgery.sql:214-216) is
 -- column-agnostic — any authenticated tenant member who can see a users row
@@ -105,15 +134,41 @@ COMMENT ON COLUMN public.users.notification_email IS
   'confirm route, never by the seeding step itself (§2j/A2).';
 
 -- ----------------------------------------------------------------------------
--- 2. delivery_status widened — three new values, scoped per the plan's own
---    2e/§2j findings.
+-- 2. delivery_status widened — six new values now, scoped per the plan's own
+--    2e/§2j findings PLUS the 2026-08-31 delta (review package §12a):
+--      pm_notified, skipped_no_template, skipped_unverified -- original three.
+--      no_report_sent    -- NEW. Success: the §37(d) no-report notice reached
+--                            the owner (WhatsApp template 14, or its email
+--                            fallback per §12b -- either channel writes this
+--                            same value; the channel actually used is not
+--                            part of this column's job to record).
+--      owner_send_failed -- NEW. Failure, paired with `delivered`: the
+--                            full-report EMAIL attempt failed (bounce,
+--                            complaint, provider/API rejection -- any
+--                            sub-cause, not split further, §12a). Written by
+--                            the email delivery-status webhook, #67's own
+--                            §2g dependency -- NOT built yet.
+--      no_report_failed  -- NEW. Failure, paired with `no_report_sent`: the
+--                            no-report WHATSAPP attempt failed (unreachable
+--                            number, template rejected, a 63xxx-class async
+--                            failure). Written by the ALREADY-BUILT
+--                            /api/whatsapp/status-callback route (item D,
+--                            PR #120/#126) -- same mechanism the four
+--                            engineer checkpoints already use.
+--    `failed` (already live, no DDL here) is RE-SCOPED IN MEANING ONLY,
+--    going forward: it now means stage 1 (PM-notify) failed, specifically,
+--    not "either stage failed" -- the same re-scoping treatment `delivered`
+--    already got when owner delivery moved from WhatsApp to email (§2e).
+--    Full argument for two paired failure values instead of one shared
+--    value: review package §12a.
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.dprs DROP CONSTRAINT dprs_delivery_status_check;
 ALTER TABLE public.dprs
   ADD CONSTRAINT dprs_delivery_status_check
     CHECK (delivery_status IN (
       'pending', 'pm_notified', 'delivered', 'paused',
-      'skipped_no_data', 'skipped_no_template', 'skipped_unverified', 'failed'
+      'skipped_no_data', 'skipped_no_template', 'skipped_unverified', 'failed',
+      'no_report_sent', 'owner_send_failed', 'no_report_failed'
     ));
 
 -- ----------------------------------------------------------------------------
@@ -169,6 +224,32 @@ ALTER TABLE public.owner_email_verifications ENABLE ROW LEVEL SECURITY;
 -- (RLS enabled, zero policies) is the correct state, not an oversight.
 REVOKE ALL ON public.owner_email_verifications FROM authenticated;
 REVOKE ALL ON public.owner_email_verifications FROM anon;
+
+-- service_role — ADDED 2026-08-31 delta (review package §12d). Supabase's
+-- project-level default ACL grants service_role ALL privileges on every new
+-- public-schema table automatically, the moment it's created (CLAUDE.md's
+-- standing rule, added 2026-08-26 -- SIX DAYS AFTER this file was first
+-- drafted, which is why the gap existed uncaught until this pass, not an
+-- authoring mistake at the time). This is the FOURTH confirmed instance of
+-- the pattern: dpr_versions (029, live on prod), 031_outbound_send_ledger.sql
+-- (caught pre-apply by its own rehearsal), and this file's own first draft --
+-- now fixed here before any rehearsal ever ran against it. Worth recording
+-- as a real limit of the 2026-08-26 grep sweep that found the first three:
+-- that sweep scanned supabase/migrations/, the directory every apply/
+-- rehearsal tool reads -- this file sat in docs/reviews/ the entire time
+-- (correctly, per BB2), which is exactly why a migrations-directory grep
+-- missed it. service_role is the ONE legitimate caller of this table (the
+-- confirm-email route's service-role client, §5) -- it needs SELECT (to find
+-- the row by token_hash) and UPDATE (to set used_at on success). It needs
+-- NONE of DELETE, TRUNCATE, REFERENCES, or TRIGGER -- expired/used rows are
+-- left in place (§9's own PRUNABLE HYGIENE classification: a future pass may
+-- add a scheduled prune, not this migration, and not via ad-hoc DELETE from
+-- the route handler), and nothing in this design ever truncates or adds a
+-- trigger to this table. State the audience explicitly rather than trust
+-- RLS enabled-zero-policies to be the only layer for a role that bypasses
+-- RLS by construction:
+REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON public.owner_email_verifications FROM service_role;
 
 COMMENT ON TABLE public.owner_email_verifications IS
   'Double opt-in confirmation tokens for users.notification_email (docs/dpr-'

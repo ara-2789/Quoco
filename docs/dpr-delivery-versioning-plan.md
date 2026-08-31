@@ -11,15 +11,31 @@ EXERCISABLE half; the sentence above is preserved as the historical starting poi
 updated in place.** §2c/§2d (versioning) shipped as migration `029_dpr_versioning.sql` —
 **APPLIED TO PRODUCTION AND LEDGERED, 2026-08-20**, full external-review record at
 `docs/reviews/029-dpr-versioning-review-package.md`. §2j/§2e (owner-email delivery,
-`030_owner_email_delivery.sql`) remains **WRITTEN, NOT APPLIED, BLOCKED** on the
-trigger-cron workstream exactly as this plan's own split-package sequencing decision
-(below) always intended — its file lives at `docs/reviews/030_owner_email_delivery.sql`
-(relocated from `supabase/migrations/`, BB2 — a written-but-unapplied migration does not
-belong in the directory every apply tool scans), review package at
-`docs/reviews/030-owner-email-review-package.md`. Wherever this document's own body text
-below still reads as if neither half exists yet, that is the original plan's own voice,
-correctly preserved — treat the two package files as the current source of truth for what
-actually happened to each half.
+**RENUMBERED 034, 2026-08-31 — see the dated correction immediately below**) remains
+**WRITTEN, NOT APPLIED, BLOCKED** on the trigger-cron workstream exactly as this plan's
+own split-package sequencing decision (below) always intended — its file lives at
+`docs/reviews/034_owner_email_delivery.sql` (relocated from `supabase/migrations/`, BB2 —
+a written-but-unapplied migration does not belong in the directory every apply tool
+scans), review package at `docs/reviews/034-owner-email-review-package.md`. Wherever this
+document's own body text below still reads as if neither half exists yet, that is the
+original plan's own voice, correctly preserved — treat the two package files as the
+current source of truth for what actually happened to each half.
+
+**DATED CORRECTION (2026-08-31) — owner-email delivery renumbered 030 → 034, a real
+collision, not a cosmetic rename.** This section originally named the owner-email schema
+`030_owner_email_delivery.sql`. That number was never applied under that name — a
+DIFFERENT migration, `030_morning_flow_attendance.sql` (a separate, concurrently-drafted
+workstream), claimed and applied under 030 on 2026-08-25 (`whatsapp-templates.md`'s own
+"GATE 1: LIFTED" entry, same date). The owner-email file sat correctly held out of
+`supabase/migrations/` per BB2 the whole time, so there was never a live on-disk
+collision — but its FILENAME kept the now-taken number for six days while 031, 032, and
+033 were each claimed by other work in the meantime, and nothing checked a held
+migration's number against what was being consumed around it. Caught 2026-08-31, before
+any apply, while making an unrelated `delivery_status` revision to the same file.
+Renumbered to **034** — the true next open number per `ls supabase/migrations/` as of
+this correction (`033_sweep_stale_morning_sessions.sql` is the current highest). Full
+account, including a candidate migration-lint check for this collision class, in
+`docs/reviews/034-owner-email-review-package.md`'s own delta section.
 
 **REVISION 3 (2026-08-15, same day, review round 2) — decision handed down, not proposed
 here: the owner receives the DPR by EMAIL for MVP, not WhatsApp.** This resolves THE
@@ -132,9 +148,11 @@ design record the packages cite, not itself edited further:**
 - **Migrations 029 (exercisable: `dpr_versions`, `dprs` additions, `daily_log_edits.
   comment`) and 030 (blocked: owner-email schema) are the artifacts this document graduates
   into** — `supabase/migrations/029_dpr_versioning.sql`,
-  `supabase/migrations/030_owner_email_delivery.sql`, full review packages at
+  `supabase/migrations/030_owner_email_delivery.sql` **[RENUMBERED 034, 2026-08-31 — the
+  "030" name in this passage was never live under that number; see the dated correction
+  near the top of this document]**, full review packages at
   `docs/reviews/029-dpr-versioning-review-package.md` and
-  `docs/reviews/030-owner-email-review-package.md`. Neither has been applied or rehearsed
+  `docs/reviews/034-owner-email-review-package.md`. Neither has been applied or rehearsed
   against any database — writing the files is this pass's artifact; rehearsal is its own,
   separately-confirmed next step, per CLAUDE.md §0's standing rule against collapsing
   "build" and "database-touching" into one continuous stretch.
