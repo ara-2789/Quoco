@@ -250,13 +250,31 @@ CREATED (0) — dprs was the sole entry in this bucket; nothing remains in it.]
   the same convention:
   `{items: [{morning_item_index, type, available_hours, actual_hours,
   idle_reason, raw}], raw_text, confidence}`.
-  `morning_item_index` is the ACTUAL join key back to
+  ~~`morning_item_index` is the ACTUAL join key back to
   `morning_equipment.items` — POSITION, not `type`: two machines of the SAME
   type at different hire rates (two JCBs) would collide on a type-string
   join, since morning_equipment carries no other distinguishing field
-  between them. `type` is still stored per entry, for display only. See
+  between them. `type` is still stored per entry, for display only.~~ See
   024_evening_flow_q4_q5.sql's EQUIPMENT JOIN KEY note for the full
   reasoning and how the echo order guarantees the join resolves.
+
+  [DATED CORRECTION 2026-08-31, per design-decisions-beta-feedback.md §33(b)
+  (2026-08-25, later than this passage) — struck above, not rewritten. The
+  struck sentence correctly described why POSITION beat TYPE under the
+  design goal in force at the time: distinguishing individual same-type
+  machines from each other, which needed a field (hire rate) to tell two
+  JCBs apart. §33(b) abandons that goal outright — "Not per individual
+  machine... a type-level answer, exactly as manpower is trade-level" — so
+  the collision the struck sentence was solving no longer needs solving,
+  rather than being solved wrong. §33(a) (same section, same date) removes
+  the one field (`daily_hire_cost`) the struck rationale depended on to
+  distinguish machines in the first place, so even the OLD per-machine goal
+  could no longer be served this way going forward. NOT YET BUILT: this
+  correction records that the position-based join is SUPERSEDED BY DECISION,
+  not that the live schema has changed — migration 024's shape above,
+  `morning_item_index` included, remains what is actually live in
+  `daily_logs.evening_equipment_utilisation` today. The by-type replacement
+  shape is scoped, not shipped — see the evening-flow restructuring plan.]
 
   [DATED CORRECTION 2026-08-10: the three entries above previously read
   "(WRITTEN, NOT YET REHEARSED OR APPLIED, 2026-08-08)" for all three
