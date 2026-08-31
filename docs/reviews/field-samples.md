@@ -163,3 +163,50 @@ first real-world raw input this project has on record, ahead of whatever parser 
 eval-harness-input-layer work eventually reads it. When that work begins, this file (or
 wherever its contents migrate to) is where to start, not a WhatsApp thread two days
 (or longer, by then) stale.
+
+---
+
+## Sample 2 — 2026-08-31, real site engineer, first successful automated trigger
+
+Received 2026-08-31, in reply to the first `app/api/cron/morning-trigger` fire that
+delivered end to end (`docs/reviews/first-successful-delivery-record.md`). Same engineer
+and project as Sample 1 (Vikram Rao, Speed Mechatronics) — a second data point from the
+same real user, not a second user, worth stating plainly before drawing any pattern from
+two samples.
+
+**Morning Q2 (plan of action) answer, verbatim, as stored in `daily_logs.morning_plan`:**
+
+```
+Land excavation - 3 m3
+```
+
+### What this demonstrates
+
+**Two samples, same behaviour — accumulating evidence for §28(m)'s reasoning, not a
+reversal of it.** Exactly like Sample 1's "4m³, 30 sq.m, 0.5m³, 1900 sq.m" against its own
+plan items, this answer carries a planned quantity — **"3 m3"** — attached to a Q2 answer
+the system never asked to be quantified. `design-decisions-beta-feedback.md` §28(m) ("NO
+PLAN-VS-ACTUAL REPORTING") and §28(l)'s Q2 spec ("free text, captured verbatim, NO
+quantities → `morning_plan`") are unchanged by this: the system still asks for a plan, not
+a number, and still has nothing on the evening side shaped to compare against one even
+when a number arrives anyway. What two samples now show, that one could not, is that this
+is not a one-off habit of a single verbose message (Sample 1 was six line items across
+four structures; Sample 2 is one line, five words) — the SAME engineer, on two different
+days, in two very different message shapes, both volunteered a quantity against a plan
+item unprompted. The evidence is about what engineers naturally supply, not about how they
+format it.
+
+**Stored exactly as before — confirmed against the same code path, not re-derived.**
+`morning.ts`'s step-2 branch (quoted in Sample 1's own "How this is handled today"
+section) is unchanged: `text.trim()` only, no parsing, no quantity extraction. "3 m3"
+lands in `morning_plan` as inert characters inside one free-text column, identical in kind
+to Sample 1's four quantities and to a plain unquantified plan like "pour slab on level
+3." Nothing downstream of Q2 reads any structure out of this column today, on either
+sample.
+
+**One difference worth naming, not over-reading:** Sample 1 arrived unprompted, before any
+flow was active, under the now-retired inbound-start scaffolding (§38). Sample 2 arrived
+as a genuine Q2 answer inside an active, cron-triggered flow — the intended path, not a
+side effect of a since-removed behaviour. The quantity-volunteering pattern held across
+both circumstances; nothing about which trigger mechanism was in use appears to affect it,
+though two samples is not enough to call that finding load-bearing on its own.
