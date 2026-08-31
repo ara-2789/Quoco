@@ -79,10 +79,9 @@ makes the gate self-enforcing rather than dependent on everyone remembering.
 **NOTE, 2026-08-31 — a second, differently-named resource exists and is NOT covered by
 this gate.** `quoco_engineer_optin_v2` ("Re-cut variants" section, below) re-cuts this
 template's copy with the STOP line removed — GATE 2's reason for holding
-`quoco_engineer_optin` does not apply to it. It is not exempt from review, though: it
-carries its own, separate hold (Aravind's copy approval, not yet given) until it is
-submitted. This gate itself is unchanged and continues to hold the original
-`quoco_engineer_optin` exactly as before.
+`quoco_engineer_optin` does not apply to it. Its own copy was reviewed separately and
+**approved by Aravind, 2026-08-31** — clear to submit. This gate itself is unchanged
+and continues to hold the original `quoco_engineer_optin` exactly as before.
 
 ## Design change, stated plainly (Y1/Y2)
 
@@ -766,13 +765,14 @@ minimum, zero emoji. **Body length:** 178 characters as authored (193 rendered) 
 the dropped `{{3}}` line, so the net is longer, not shorter), still well inside the
 1,024-character limit.
 
-### 8v2. `quoco_engineer_optin_v2` — DRAFT COPY, NOT YET APPROVED BY ARAVIND
+### 8v2. `quoco_engineer_optin_v2` — APPROVED (Aravind, 2026-08-31)
 
-**This section's copy is a draft, submitted for approval, not decided.** Unlike 1v3 and
-2v3 above (approved copy, provided directly), this one only has direction: remove the
-false "Reply STOP" promise (§29(a) — there is no STOP keyword; opt-out is PM-managed via
-`status='deactivated'`, and, once built, an ad-hoc menu item per §29(b)) and either
-describe the real route or omit the line if nothing true can be said yet.
+**This section's copy was drafted for approval, then approved as drafted, same day.**
+Unlike 1v3 and 2v3 above (approved copy, provided directly), this one started as
+direction only: remove the false "Reply STOP" promise (§29(a) — there is no STOP
+keyword; opt-out is PM-managed via `status='deactivated'`, and, once built, an ad-hoc
+menu item per §29(b)) and either describe the real route or omit the line if nothing
+true can be said yet.
 **Checked directly against `docs/plans/adhoc-menu-spec.md`: the ad-hoc menu is decided,
 not built** — so today, there is no real opt-out route this template could truthfully
 describe (§29(b)'s own words: "until the ad-hoc menu is actually built, there is NO
@@ -804,8 +804,23 @@ minimum, zero emoji. **Body length:** 162 characters as authored (202 rendered).
 `quoco_engineer_optin_v2`) — correctly, since GATE 2 existed for exactly one reason
 (the STOP promise) and this copy no longer makes it. Template 8 itself remains held,
 unchanged, under GATE 2 — this entry does not lift it or touch it.
-**Still requires explicit approval before `--submit` is ever run against it** — per
-direct instruction, distinct from and in addition to GATE 2.
+**Approved as drafted (Aravind, 2026-08-31).** "Omitting rather than inventing an
+opt-out route is correct — no true statement is available today, and a placeholder
+promise is what got template 8 held in the first place." Clear to submit.
+
+**Recorded before submission, per direct instruction — the contingency if Meta rejects
+this for having no opt-out language.** This template goes to Meta with **no opt-out
+language of any kind.** That is honest, and the send is business-initiated onboarding
+(the engineer's account already exists before this message, not a cold solicitation)
+rather than marketing, so it is expected to clear review on that basis. **If Meta
+rejects it and asks for an opt-out line, the fix is NOT to invent one under approval
+pressure.** The only real opt-out route this product has decided is §28(x)/§29(b)'s
+ad-hoc menu item — and it is not built. A rejection here is resolved by building that
+menu first, then re-cutting this copy again (a third resource, `_v3`) to describe the
+now-real route — never by writing a promise ahead of the mechanism that keeps it, which
+is the exact defect this rewrite exists to remove from template 8 in the first place.
+Recorded explicitly here so this is not papered over later under review pressure, or
+mistaken for a copy problem solvable by wordsmithing alone.
 
 **Character-limit note, both templates above.** WhatsApp/Meta's own template body
 limit — confirmed 2026-08-31 against current third-party documentation (Twilio's own
@@ -822,9 +837,10 @@ Authentication) + 4 spare variants + 3 re-cut variants = 21
 **Changed from the 13+4=17 recorded earlier — the new `quoco_evening_checkin_no_plan`
 (2b, §28(s)) adds one Spine template with no spare.** Of the original 18: 2 hold (8, 12
 — see `docs/reviews/whatsapp-template-submission-status.md`'s submit/hold list), 16
-clear to submit. **Plus 3 re-cut variants (2026-08-31, above): 1v3 and 2v3 clear to
-submit; 8v2 holds on Aravind's copy approval, separate from and in addition to GATE 2,
-which continues to hold the original template 8.**
+clear to submit. **Plus 3 re-cut variants (2026-08-31, above): all three clear to
+submit** — 1v3 and 2v3 on Aravind's own provided copy, 8v2 on its own separate
+copy-approval (given 2026-08-31). GATE 2 continues, unchanged, to hold the original
+template 8.
 
 Submission tracking (dates, per-template status, Meta review outcomes) lives in
 `docs/reviews/whatsapp-template-submission-status.md`, not here — this file is the copy
