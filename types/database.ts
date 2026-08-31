@@ -269,6 +269,7 @@ export type Database = {
       daily_log_edits: {
         Row: {
           column_name: string
+          comment: string | null
           created_at: string
           daily_logs_id: string
           edited_by: string
@@ -282,6 +283,7 @@ export type Database = {
         }
         Insert: {
           column_name: string
+          comment?: string | null
           created_at?: string
           daily_logs_id: string
           edited_by: string
@@ -295,6 +297,7 @@ export type Database = {
         }
         Update: {
           column_name?: string
+          comment?: string | null
           created_at?: string
           daily_logs_id?: string
           edited_by?: string
@@ -340,6 +343,8 @@ export type Database = {
       daily_logs: {
         Row: {
           attendance: string | null
+          attendance_defaulted: boolean | null
+          attendance_raw: string | null
           created_at: string | null
           dpr_approved_by: string | null
           dpr_generated_at: string | null
@@ -372,6 +377,8 @@ export type Database = {
         }
         Insert: {
           attendance?: string | null
+          attendance_defaulted?: boolean | null
+          attendance_raw?: string | null
           created_at?: string | null
           dpr_approved_by?: string | null
           dpr_generated_at?: string | null
@@ -404,6 +411,8 @@ export type Database = {
         }
         Update: {
           attendance?: string | null
+          attendance_defaulted?: boolean | null
+          attendance_raw?: string | null
           created_at?: string | null
           dpr_approved_by?: string | null
           dpr_generated_at?: string | null
@@ -458,14 +467,81 @@ export type Database = {
           },
         ]
       }
+      dpr_versions: {
+        Row: {
+          content: string
+          created_at: string
+          delivered_to_owner_at: string | null
+          dpr_id: string
+          generated_at: string
+          generated_by: string
+          generated_by_user: string | null
+          id: string
+          structured: Json
+          tenant_id: string
+          version: number
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          delivered_to_owner_at?: string | null
+          dpr_id: string
+          generated_at?: string
+          generated_by: string
+          generated_by_user?: string | null
+          id?: string
+          structured: Json
+          tenant_id: string
+          version: number
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          delivered_to_owner_at?: string | null
+          dpr_id?: string
+          generated_at?: string
+          generated_by?: string
+          generated_by_user?: string | null
+          id?: string
+          structured?: Json
+          tenant_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dpr_versions_dpr_id_fkey"
+            columns: ["dpr_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "dprs"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "dpr_versions_generated_by_user_fkey"
+            columns: ["generated_by_user", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "dpr_versions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dprs: {
         Row: {
           content: string | null
           created_at: string
+          current_version: number
           delivered_owner_at: string | null
           delivery_status: string
           engineer_id: string
           generated_at: string | null
+          generated_by: string
+          generated_by_user: string | null
           generation_status: string
           generator_job_id: string | null
           id: string
@@ -478,10 +554,13 @@ export type Database = {
         Insert: {
           content?: string | null
           created_at?: string
+          current_version?: number
           delivered_owner_at?: string | null
           delivery_status?: string
           engineer_id: string
           generated_at?: string | null
+          generated_by?: string
+          generated_by_user?: string | null
           generation_status?: string
           generator_job_id?: string | null
           id?: string
@@ -494,10 +573,13 @@ export type Database = {
         Update: {
           content?: string | null
           created_at?: string
+          current_version?: number
           delivered_owner_at?: string | null
           delivery_status?: string
           engineer_id?: string
           generated_at?: string | null
+          generated_by?: string
+          generated_by_user?: string | null
           generation_status?: string
           generator_job_id?: string | null
           id?: string
@@ -511,6 +593,13 @@ export type Database = {
           {
             foreignKeyName: "dprs_engineer_id_tenant_id_fkey"
             columns: ["engineer_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "dprs_generated_by_user_tenant_id_fkey"
+            columns: ["generated_by_user", "tenant_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id", "tenant_id"]
@@ -737,6 +826,118 @@ export type Database = {
           type?: string
         }
         Relationships: []
+      }
+      outbound_sends: {
+        Row: {
+          content_sid: string
+          created_at: string
+          error: string | null
+          event_key: string
+          id: string
+          project_id: string
+          recipient_user_id: string
+          status: string
+          tenant_id: string
+          to_phone_number: string
+          twilio_sid: string | null
+          updated_at: string
+        }
+        Insert: {
+          content_sid: string
+          created_at?: string
+          error?: string | null
+          event_key: string
+          id?: string
+          project_id: string
+          recipient_user_id: string
+          status?: string
+          tenant_id: string
+          to_phone_number: string
+          twilio_sid?: string | null
+          updated_at?: string
+        }
+        Update: {
+          content_sid?: string
+          created_at?: string
+          error?: string | null
+          event_key?: string
+          id?: string
+          project_id?: string
+          recipient_user_id?: string
+          status?: string
+          tenant_id?: string
+          to_phone_number?: string
+          twilio_sid?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outbound_sends_project_id_tenant_id_fkey"
+            columns: ["project_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "outbound_sends_recipient_user_id_tenant_id_fkey"
+            columns: ["recipient_user_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "outbound_sends_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      owner_email_verifications: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          tenant_id: string
+          token_hash: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          tenant_id: string
+          token_hash: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          tenant_id?: string
+          token_hash?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_email_verifications_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_email_verifications_user_id_fkey"
+            columns: ["user_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
       }
       processed_messages: {
         Row: {
@@ -1532,10 +1733,13 @@ export type Database = {
           hierarchy_level: number | null
           id: string
           messaging_blocked: boolean
+          notification_email: string | null
+          notification_email_verified_at: string | null
           reporting_manager_id: string | null
           role: string | null
           status: string
           tenant_id: string | null
+          whatsapp_declined_at: string | null
           whatsapp_number: string | null
         }
         Insert: {
@@ -1548,10 +1752,13 @@ export type Database = {
           hierarchy_level?: number | null
           id?: string
           messaging_blocked?: boolean
+          notification_email?: string | null
+          notification_email_verified_at?: string | null
           reporting_manager_id?: string | null
           role?: string | null
           status?: string
           tenant_id?: string | null
+          whatsapp_declined_at?: string | null
           whatsapp_number?: string | null
         }
         Update: {
@@ -1564,10 +1771,13 @@ export type Database = {
           hierarchy_level?: number | null
           id?: string
           messaging_blocked?: boolean
+          notification_email?: string | null
+          notification_email_verified_at?: string | null
           reporting_manager_id?: string | null
           role?: string | null
           status?: string
           tenant_id?: string | null
+          whatsapp_declined_at?: string | null
           whatsapp_number?: string | null
         }
         Relationships: [
@@ -1858,7 +2068,19 @@ export type Database = {
         }
       }
       get_user_tenant_id: { Args: never; Returns: string }
+      quoco_classify_yes_no: { Args: { p_text: string }; Returns: Json }
       quoco_same_ist_day: { Args: { a: string; b: string }; Returns: boolean }
+      sweep_stale_morning_sessions: { Args: { p_now?: string }; Returns: Json }
+      write_dpr_version: {
+        Args: {
+          p_content: string
+          p_dpr_id: string
+          p_generated_by: string
+          p_generated_by_user?: string
+          p_structured: Json
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
