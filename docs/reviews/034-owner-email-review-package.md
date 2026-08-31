@@ -243,30 +243,165 @@ header; restated here for the package record.
 
 ## 10. Rehearsal plan + pre-apply probes
 
-**TEST-DB rehearsal specifically: still not run.** Distinct from §13's disposable LOCAL
-scaffold evidence (2026-08-31, pre-apply checklist item (a)/(b)) — that proves the file
-parses and applies cleanly against a REAL structural dump; it is not, and does not
-substitute for, a rehearsal against the actual test-db instance (§7's own standing "this
-is NOT the test-db rehearsal" rule). Test-db rehearsal, including the `service_role`
-negative-capability probe CLAUDE.md's standing rule requires for any new table, remains
-pre-apply checklist item (d) — §11, §12i — not run in this pass.
+**TEST-DB rehearsal: DONE, 2026-08-31 — §14.** This section originally distinguished §13's
+disposable LOCAL scaffold evidence (proves the file parses and applies cleanly against a
+real structural dump) from an actual test-db rehearsal (§7's own standing "this is NOT the
+test-db rehearsal" rule) and left the latter as future work. It is no longer future work —
+§14 has the full account: apply, ledger, the complete structural probe including the
+`service_role` negative-capability check, both rollback branches (guard fires on a seeded
+row, clean path succeeds once resolved), re-apply, and the migration left live on test-db
+per direct instruction (the consumer's integration tests need it there).
 
 ---
 
 ## 11. Apply runbook
 
-Per `docs/migration-runbook-template.md`. **Not scheduled — see §12i: the BLOCK on
-sequencing is lifted (2026-08-31), but the migration's own remaining pre-apply work is
-not, and that work is the actual gate now.** Order, none of it skippable:
-  a. Disposable local scaffold, whole consolidated file — never run as a whole against
-     this session's delta.
-  b. Written-AND-EXECUTED rollback, same standard as 031/033's own apply records.
-  c. A fresh external-review round over the consolidated file — two deltas since it was
-     last read whole.
-  d. Test-db rehearsal, including the `service_role` negative-capability probe (DELETE,
-     TRUNCATE, REFERENCES, TRIGGER) CLAUDE.md's standing rule requires for any new table.
-  e. An apply runbook with the ledger repair as its own numbered step, and the migration
-     number RE-VERIFIED at promotion time, not assumed still open.
+Per `docs/migration-runbook-template.md`, adapted below in full for this migration.
+**Status of the checklist §12i named: (a) and (b) done, §13. (c) — this package has now
+been through a design-GO round with two blocking findings fixed (§12i itself: the lift's
+own reasoning corrected in place; §13b: the rollback's blocking gap fixed and re-verified)
+— treated as the fresh external-review round this checklist required. (d) — test-db
+rehearsal complete, §14. (e) — this section, now written in full, including the
+ledger-repair workaround and
+the promotion-time number re-verification (§12m).** Prod apply itself remains a SEPARATE,
+Aravind-executed action (SQL Editor, by hand) — writing this runbook is not authorization
+to run it.
+
+### Strict-alternation apply checklist — PROD (mirrors the template's A–E exactly)
+
+Point the SQL Editor at **prod** (`jvxwqignooseazzmwhvl` — confirm the project ref
+selector visually, not the test-db branch) before any write step. Wait for owner confirm
+at each lettered step, per the template's own discipline.
+
+**A. PITR window observation (no SQL).** Dashboard → Database → Backups → Point in Time.
+Observe an active restore window ending ~now. Record the timestamp. **Verified by
+observation, per CLAUDE.md §0 — a "PITR provisioned" checklist line is not evidence; the
+dashboard state is.** → confirm before B.
+
+**B. Pre-apply state probe (read-only).** Confirms prod has never seen this migration —
+mirrors the probe already run clean against test-db pre-apply (§14):
+```sql
+SELECT
+  (SELECT count(*) FROM information_schema.columns WHERE table_schema='public'
+     AND table_name='users' AND column_name IN
+     ('notification_email','notification_email_verified_at','whatsapp_declined_at')
+  ) AS users_new_columns_expect_0,
+  (SELECT count(*) FROM pg_tables WHERE tablename='owner_email_verifications'
+  ) AS token_table_expect_0,
+  (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+     WHERE conname='dprs_delivery_status_check') AS current_check_expect_5_values,
+  (SELECT version FROM supabase_migrations.schema_migrations WHERE version='034'
+  ) AS ledger_row_expect_null;
+```
+PROCEED only if: `users_new_columns_expect_0 = 0`, `token_table_expect_0 = 0`,
+`current_check_expect_5_values` is the bare 023 five-value CHECK, `ledger_row_expect_null`
+is NULL. **STOP on anything else** — any non-zero/non-null result means this migration (or
+something claiming its objects) already touched prod, and applying again would not be a
+first apply. → confirm before C.
+
+**C. Apply (write).** Fresh SQL Editor tab, full paste of the PINNED SQL —
+`git show <sha-of-this-commit>:docs/reviews/034_owner_email_delivery.sql` — deselect (a
+stray highlight runs "only this"), Run. Paste the result. → confirm before D.
+
+**D. Post-apply probes (read-only) — THE FINGERPRINT SPEC, per direct instruction. Every
+line below is the exact probe already run and matched against real test-db, §14 — not a
+first-time spec, the proven one, re-pointed at prod.** One query, one result set, every
+line individually checkable against the design, not summarised:**
+```sql
+SELECT
+  (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+     WHERE conname = 'dprs_delivery_status_check') AS delivery_status_check,
+  (SELECT jsonb_agg(jsonb_build_object('column_name', column_name, 'data_type', data_type,
+     'is_nullable', is_nullable) ORDER BY column_name)
+     FROM information_schema.columns WHERE table_schema='public' AND table_name='users'
+     AND column_name IN ('notification_email','notification_email_verified_at','whatsapp_declined_at')
+  ) AS users_new_columns,
+  (SELECT jsonb_agg(jsonb_build_object('conname', conname, 'contype', contype,
+     'def', pg_get_constraintdef(oid)) ORDER BY conname)
+     FROM pg_constraint WHERE conrelid = 'public.owner_email_verifications'::regclass
+  ) AS owner_email_verifications_constraints,
+  (SELECT relrowsecurity FROM pg_class WHERE relname='owner_email_verifications') AS rls_enabled,
+  (SELECT count(*) FROM pg_policies WHERE tablename='owner_email_verifications') AS policy_count,
+  has_table_privilege('service_role', 'public.owner_email_verifications', 'DELETE') AS service_role_can_delete,
+  has_table_privilege('service_role', 'public.owner_email_verifications', 'TRUNCATE') AS service_role_can_truncate,
+  has_table_privilege('service_role', 'public.owner_email_verifications', 'REFERENCES') AS service_role_can_references,
+  has_table_privilege('service_role', 'public.owner_email_verifications', 'TRIGGER') AS service_role_can_trigger,
+  has_table_privilege('service_role', 'public.owner_email_verifications', 'SELECT') AS service_role_can_select,
+  has_table_privilege('service_role', 'public.owner_email_verifications', 'INSERT') AS service_role_can_insert,
+  has_table_privilege('service_role', 'public.owner_email_verifications', 'UPDATE') AS service_role_can_update,
+  has_table_privilege('anon', 'public.owner_email_verifications', 'SELECT') AS anon_can_select,
+  has_table_privilege('authenticated', 'public.owner_email_verifications', 'SELECT') AS authenticated_can_select;
+```
+Expected values, stated so a PROCEED/STOP decision does not require re-deriving them from
+the design at apply time:
+- `delivery_status_check` — all 11 values: `pending, pm_notified, delivered, paused,
+  skipped_no_data, skipped_no_template, skipped_unverified, failed, no_report_sent,
+  owner_send_failed, no_report_failed`.
+- `users_new_columns` — exactly 3 rows, all `is_nullable: YES`.
+- `owner_email_verifications_constraints` — exactly 6 rows: `_pkey` (p), `_token_hash_key`
+  (u), `_expires_after_created` (c, `expires_at > created_at`), `_used_after_created` (c,
+  `used_at IS NULL OR used_at >= created_at`), `_tenant_id_fkey` (f, direct, `REFERENCES
+  tenants(id) ... ON DELETE RESTRICT`), `_user_id_fkey` (f, composite, `REFERENCES
+  users(id, tenant_id) ... ON DELETE CASCADE`).
+- `rls_enabled` — `true`; `policy_count` — `0`.
+- `service_role_can_{delete,truncate,references,trigger}` — all `false`.
+- `service_role_can_{select,insert,update}` — all `true`.
+- `anon_can_select` / `authenticated_can_select` — both `false`.
+
+→ confirm before E.
+
+**E. Ledger repair (write) + verify.** `supabase migration repair --status applied 034
+--linked`, breadcrumb confirmed first (project ref printed in the same output as the
+command, per CLAUDE.md's standing rule). **Named as its own step, not optional
+scaffolding, per the template's own post-030 correction.**
+
+**KNOWN FRICTION, hit for real during test-db rehearsal (§14), documented here so prod
+apply does not rediscover it:** `migration repair` globs the LOCAL `supabase/migrations/`
+directory to resolve a bare version number to a filename — it does not operate on the
+number alone. Since `034_owner_email_delivery.sql` correctly lives in `docs/reviews/`
+until this exact moment (BB2), the repair command has nothing to resolve `034` against
+unless the file is present there. Workaround, same as 031/033's own apply records:
+1. `cp docs/reviews/034_owner_email_delivery.sql supabase/migrations/034_owner_email_delivery.sql`
+   (working tree only — **do not commit this copy**).
+2. `supabase migration repair --status applied 034 --linked`.
+3. `rm supabase/migrations/034_owner_email_delivery.sql` **immediately** — leaving it in
+   place is a live hazard the same shape as the 026 incident (any tool that globs
+   `supabase/migrations/` decides what's pending by diffing that directory against the
+   ledger).
+4. Confirm clean: `git status --porcelain supabase/migrations/` returns nothing.
+
+Follow with `supabase migration list --linked` and confirm `034` now appears with
+`remote: 034`. **This is the moment 034 is actually promoted** — per CLAUDE.md's own
+"a migration is not done when applied and ledgered, it is done when the file is on `main`"
+rule, the REAL promotion (moving `034_owner_email_delivery.sql` from `docs/reviews/` to
+`supabase/migrations/` as a real, committed change, in the same commit/session as this
+apply) is Aravind's own next action after E confirms — not before, and not silently
+deferred past this session.
+
+### Promotion-time number re-verification (§12m — item 3, run now, not assumed)
+
+**Checked 2026-08-31, same session as this runbook, not carried over from an earlier
+check:** `supabase/migrations/` on `origin/main` runs through `033`; `docs/reviews/`'s own
+numbered `.sql` files are `026` and the two `028` historical entries — **034 remains
+free**, confirmed by direct listing, not inferred from the reservation manifest alone.
+`scripts/migration-number-reservations.json` on `origin/main` still carries `034 ->
+docs/reviews/034_owner_email_delivery.sql`, matching the actual file.
+
+**The new migration-lint rule's first real use, tested for real, not asserted:** copied a
+throwaway file into `supabase/migrations/034_fake_collision_test.sql` (content borrowed
+from `026_dpr_generation_stale.sql`, irrelevant to the test) to simulate the exact 030-style
+incident — a different migration claiming 034's number while this file sits held. Result:
+```
+migration-lint: 2 violation(s) not covered by scripts/migration-lint-exceptions.json:
+
+  034_fake_collision_test.sql: duplicate-prefix-034  [unique-migration-prefix]
+  docs/reviews/034_owner_email_delivery.sql: duplicate-prefix-034  [unique-migration-prefix]
+```
+**It catches it — both files flagged, immediately, no exceptions entry to hide behind.**
+Confirmed clean again after removing the throwaway file. **Re-run this exact check at the
+moment of actual promotion, not trusted from this session's own result** — a genuine
+collision could still land between now and the real apply, which is precisely the failure
+mode this whole rule exists to catch.
 
 ---
 
@@ -909,10 +1044,11 @@ RLS enabled, zero policies — default-deny, exactly as designed (§4).
 proves intra-file ordering, real-object references, and grant/constraint TEXT correctness
 against a genuine structural dump. It does NOT and cannot prove the `service_role`
 negative-capability result would hold against Supabase's own project-level default ACL
-mechanism (vanilla Postgres has no analogue) — that remains test-db rehearsal's own job,
-item (d), not run in this pass. The privilege-grant table above shows what THIS
-migration's own REVOKE/GRANT statements produce textually; it is not a substitute for the
-`has_table_privilege` probe against Supabase's real ACL layer.
+mechanism (vanilla Postgres has no analogue) — that is test-db rehearsal's own job, item
+(d). The privilege-grant table above shows what THIS migration's own REVOKE/GRANT
+statements produce textually; it is not a substitute for the `has_table_privilege` probe
+against Supabase's real ACL layer. **That probe has since been run for real, against
+`exfccwlrhoutkgrlikod` — §14 — and matches this scaffold's own result exactly.**
 
 ### 13b. Rollback — written AND executed, same standard as 031/033
 
@@ -1076,3 +1212,117 @@ users new-columns count: 0
 guard blocks correctly, names the right row, protects the whole transaction atomically,
 and does not block a legitimate rollback once the precondition genuinely holds. Both
 outcomes verified by direct execution, neither asserted.
+
+---
+
+## 14. Test-db rehearsal — executed 2026-08-31, against `exfccwlrhoutkgrlikod`, not a fresh branch
+
+**Per the standing rule (CLAUDE.md's REHEARSE ON A CLEANED EXISTING BRANCH rule) — the
+EXISTING, schema-complete test-db, never a fresh Supabase branch (the confirmed platform
+bug: a fresh provision has come up missing `users.auth_id` twice, mechanism unconfirmed).**
+Full raw logs (every command, literal output, nothing summarised) live at
+`/Users/aravindanrajamani/.claude/jobs/48655f83/tmp/testdb-rehearsal/` — 18 numbered files,
+one per step. This section is the durable, committed record; that directory is the
+unabridged one.
+
+**0. Breadcrumb, then re-link — in that order, per direct instruction.** `cat
+supabase/.temp/project-ref` → `exfccwlrhoutkgrlikod`. SQL breadcrumb (`SELECT
+current_database(), now()`) run against whatever was linked at the time, confirmed live
+and responsive, THEN `supabase link --project-ref exfccwlrhoutkgrlikod` run explicitly —
+`{"project_ref":"exfccwlrhoutkgrlikod","message":""}`. Pre-apply ledger checked before
+anything else: local/remote agree exactly through `001`–`033`, no `034` row — confirmed,
+not assumed.
+
+**1. Apply.** `supabase db query --linked -f docs/reviews/034_owner_email_delivery.sql` —
+exit 0, empty result set (pure DDL). Project ref printed immediately before, in the same
+command sequence, per the PROD-APPLIES discipline extended here to test-db.
+
+**2. Ledger — the copy-temporarily-remove-immediately workaround, same as 031/033.**
+`cp docs/reviews/034_owner_email_delivery.sql supabase/migrations/034_owner_email_delivery.sql`
+→ `supabase migration repair --status applied 034 --linked` → `Repaired migration history:
+[034] => applied` → `rm supabase/migrations/034_owner_email_delivery.sql` immediately,
+confirmed absent (`git status --porcelain supabase/migrations/` empty). `supabase
+migration list --linked` afterward: `{"local":"","remote":"034","time":"034"}` — ledgered,
+`local` blank because the file correctly does not live there yet (BB2).
+
+**3. Full structural verification — one combined query (see §11 step D for the exact SQL;
+same query, this is where it was first run), every result matching design exactly:**
+```json
+{
+  "delivery_status_check": "CHECK ((delivery_status = ANY (ARRAY['pending', 'pm_notified',
+    'delivered', 'paused', 'skipped_no_data', 'skipped_no_template', 'skipped_unverified',
+    'failed', 'no_report_sent', 'owner_send_failed', 'no_report_failed'])))",
+  "users_new_columns": [
+    {"column_name": "notification_email", "data_type": "text", "is_nullable": "YES"},
+    {"column_name": "notification_email_verified_at", "data_type": "timestamp with time zone", "is_nullable": "YES"},
+    {"column_name": "whatsapp_declined_at", "data_type": "timestamp with time zone", "is_nullable": "YES"}
+  ],
+  "owner_email_verifications_constraints": [
+    {"conname": "owner_email_verifications_expires_after_created", "contype": "c", "def": "CHECK ((expires_at > created_at))"},
+    {"conname": "owner_email_verifications_pkey", "contype": "p", "def": "PRIMARY KEY (id)"},
+    {"conname": "owner_email_verifications_tenant_id_fkey", "contype": "f", "def": "FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT"},
+    {"conname": "owner_email_verifications_token_hash_key", "contype": "u", "def": "UNIQUE (token_hash)"},
+    {"conname": "owner_email_verifications_used_after_created", "contype": "c", "def": "CHECK (((used_at IS NULL) OR (used_at >= created_at)))"},
+    {"conname": "owner_email_verifications_user_id_fkey", "contype": "f", "def": "FOREIGN KEY (user_id, tenant_id) REFERENCES users(id, tenant_id) ON DELETE CASCADE"}
+  ],
+  "rls_enabled": true, "rls_forced": false, "policy_count": 0,
+  "service_role_can_delete": false, "service_role_can_truncate": false,
+  "service_role_can_references": false, "service_role_can_trigger": false,
+  "service_role_can_select": true, "service_role_can_insert": true, "service_role_can_update": true,
+  "anon_can_select": false, "anon_can_insert": false,
+  "authenticated_can_select": false, "authenticated_can_insert": false,
+  "ledger_row": "034"
+}
+```
+**All 3 columns, all 6 constraints, RLS+zero-policy, the four-way service_role negative
+probe, the three-way positive probe, and both anon/authenticated denials — every one
+matching §12a/§12d/§12g's design exactly, on the real database, not the local scaffold.**
+
+**4. Rollback, guard branch — seeded, not assumed.** Throwaway tenant/project/user/dprs
+row inserted under a clearly-marked, single-purpose UUID prefix
+(`99999999-0000-0000-0000-...`, slug `rehearsal-034-throwaway`), the `dprs` row carrying
+`delivery_status = 'no_report_sent'`. Ran `docs/reviews/034-rollback.sql` against test-db:
+```
+ERROR:  P0001: Rollback aborted: 1 dprs row(s) carry a delivery_status value the restored
+CHECK cannot accept (pm_notified / skipped_no_template / skipped_unverified /
+no_report_sent / owner_send_failed / no_report_failed). First 1 row id(s):
+99999999-0000-0000-0000-000000000004. Resolve each row -- update it to a pre-034 status by
+hand, or defer this rollback -- before re-running this file. This is the correct failure:
+a silent restore would strand these rows in a value the live constraint no longer
+recognises.
+```
+Exit 1 at the `supabase db query` level this time (stronger than the local `psql` run's
+exit 0 — `supabase db query` surfaces a SQL error as a hard failure, `psql` does not by
+default). **Atomicity confirmed, not assumed:** post-attempt probe shows the token table
+still exists (`DROP TABLE`, step 1, did not survive either — the abort unwound the whole
+transaction), the CHECK still has all 11 values, the seeded row's status unchanged.
+
+**5. Rollback, clean branch.** Resolved the seeded row (`UPDATE ... SET delivery_status =
+'delivered'`), re-ran the rollback: exit 0, empty result set, real success. Post-state: 0
+rows in `pg_tables` for `owner_email_verifications`, CHECK restored to the bare 023 five
+values, 0 new `users` columns, the resolved `dprs` row survived intact
+(`delivery_status: 'delivered'`) — the rollback touches schema only, never ordinary data.
+**Ledger, separately** (the rollback SQL itself never touches
+`supabase_migrations.schema_migrations` — confirmed the ledger still read `034` immediately
+after this clean rollback, a real schema/ledger mismatch until repaired): `cp` the file
+back temporarily, `supabase migration repair --status reverted 034 --linked` →
+`Repaired migration history: [034] => reverted`, `rm` immediately.
+
+**6. Re-apply, final, and LEAVE APPLIED — per direct instruction, the consumer's
+integration tests need it there.** `supabase db query --linked -f
+docs/reviews/034_owner_email_delivery.sql` again — exit 0, clean. Ledger re-repaired to
+`applied` (same copy/repair/remove workaround). Throwaway rehearsal data (tenant, project,
+user, dprs row) explicitly `DELETE`d afterward — test-db is shared with real CI runs; fake
+data does not stay. **Final state reconfirmed** with the identical structural-verification
+query from step 3 — byte-identical result, confirming the leave-applied state is correct
+and the cleanup didn't disturb anything it shouldn't have.
+
+**7. Full test suite — NOT run in this session, honestly, not silently skipped.** This
+sandbox has no `.env.test` (`SUPABASE_TEST_URL`/`SUPABASE_TEST_SERVICE_ROLE_KEY`/
+`SUPABASE_TEST_ANON_KEY`/`SUPABASE_TEST_PROJECT_REF`), so `test/setup/guard.ts`'s own
+project-wide global-setup guard refuses to run ANY test file locally, the identical
+constraint already recorded against PR #151 (§12, this same package's own prior round).
+Not bypassed. **Real verification comes from CI on this commit** — pushing this section's
+own commit re-triggers the full suite (`Test (real test-db)`) against test-db in its
+CURRENT, post-034 state, which is the actual, live signal "did anything else break" needs
+— checked and reported once that run completes, not asserted here.

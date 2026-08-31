@@ -73,12 +73,17 @@
 -- that PR ships WITH rate limiting and POST-consume (§S below) as GATE
 -- CONDITIONS, carries its own §0(c) review, and does NOT merge before this
 -- file is confirmed live on prod (not merely applied -- observed, per
--- CLAUDE.md's own standing rule). STATUS NOW: cleared for its remaining
--- pre-apply work (disposable scaffold, written-and-executed rollback --
--- both done, §12i -- a fresh external-review round over the consolidated
--- file, test-db rehearsal including the service_role negative-capability
--- probe, an apply runbook) -- still not applied, still gated on all of
--- that, per §11 below.
+-- CLAUDE.md's own standing rule). STATUS NOW (updated 2026-08-31, rehearsal
+-- complete): disposable scaffold and written-and-executed rollback done
+-- (§13); the design-GO review round with two blocking findings fixed
+-- counts as the fresh external-review pass the checklist required (§12i,
+-- §13b); test-db rehearsal DONE against exfccwlrhoutkgrlikod, including
+-- the service_role negative-capability probe, both rollback branches, and
+-- 034 LEFT APPLIED there per direct instruction (§14); the apply runbook
+-- is written in full (§11). STILL NOT APPLIED TO PROD -- that remains a
+-- separate, Aravind-executed action (SQL Editor, by hand), gated on §11's
+-- own PITR-observation and pre-apply-probe steps, not on anything left in
+-- this checklist.
 --
 -- CLAUDE.md §0 GATING ASSESSMENT, condition by condition:
 --   (a) "CREATES OR MODIFIES a live function's LOGIC." Does not trip — no
