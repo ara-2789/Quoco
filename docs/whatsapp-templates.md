@@ -657,10 +657,13 @@ existing nightly-report relationship, not an offer or re-engagement) — pass.
 **Single-source-of-truth requirement for whoever builds the email fallback (§37(d)'s own
 "falls back to email" branch, Decision 2) — named here, not built:** this body string, not
 a re-authored paraphrase, is what the email fallback must render (placeholders substituted
-the same way). See `docs/reviews/034-owner-email-review-package.md`'s delta section
-(**renumbered from 030 — a real numbering collision, not a typo; see that package's own
-header note**) for the full argument for why — the two channels must share one source string, not two
-independently-maintained copies checked by a test after the fact.
+the same way), and a test must assert the rendering constant still equals THIS body as
+recorded approved for this template's HX SID in `docs/reviews/whatsapp-template-
+submission-status.md` (not against a possibly-mid-edit draft) — a wording change becomes
+"new template version + constant change," together, or it doesn't ship. See
+`docs/reviews/034-owner-email-review-package.md`'s delta section (**renumbered from 030 —
+a real numbering collision, not a typo; see that package's own header note**), §12c, for
+the full argument for why a shared source ALONE is not sufficient here.
 
 ---
 
