@@ -12,14 +12,25 @@ plan.**
 Scope: §28(l)'s evening redesign (5 questions, all unconditional except the
 existing equipment auto-skip) and §33's equipment-captures-units decision,
 shipped as **one migration** — per Aravind's explicit instruction overriding
-§33(f)'s "not decided" sequencing question. Working migration number: **034**
-(next unused — confirm with `ls supabase/migrations/` at write time, per
-CLAUDE.md §6; do not hardcode).
+§33(f)'s "not decided" sequencing question. **Working migration number:
+CORRECTED to 035** (re-verified at SQL-authoring time, per CLAUDE.md §6 —
+the "034" figure this plan originally used went stale the same day it was
+written: migration 034, an unrelated owner-email-delivery change, was
+proposed, reviewed, rehearsed, and APPLIED TO PROD later the same
+2026-08-31 session, per `docs/reviews/034-apply-record.md`. Confirmed by
+reading `origin/main` directly, not inferred from this plan's own earlier
+text — exactly the "session notes describe the past, the repo describes
+the present" trap CLAUDE.md names, caught here before it caused a
+collision.).
 
-Repo state at time of writing: `main`, working tree has one uncommitted
-change (`docs/reviews/whatsapp-template-submission-status.md`, unrelated to
-this scope). Migrations present: 001–007, 011–025, 027–033 (no 008–010, no
-026 — both pre-existing gaps, not introduced here).
+Repo state at SQL-authoring time (re-checked, not carried over from this
+plan's original writing): `origin/main` includes migrations through 033 in
+`supabase/migrations/` (no 008–010, no 026 — pre-existing gaps) plus
+migration 034 (owner email delivery), which is applied to prod and
+ledgered but whose `.sql` file lives in `docs/reviews/034_owner_email_
+delivery.sql`, never moved into `supabase/migrations/` — a possible
+process gap, out of scope for this plan to fix, noted only so the next
+reader isn't confused by its absence from the numbered directory.
 
 ---
 
