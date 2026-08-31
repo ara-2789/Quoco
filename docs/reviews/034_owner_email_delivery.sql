@@ -43,28 +43,42 @@
 --   trigger-cron lands, is a go-ahead to apply this file, not another
 --   design pass.~~
 --
--- SHORT FORM, full argument in §12i: the original guard was correct when
--- written (a live PII surface with literally zero consumer, for weeks, is
--- real risk for no benefit). What changed is the DISTANCE to the consumer,
--- not the principle -- #69's outbound-send primitive now exists and is
--- proven (2026-08-31); the ownerSend cron correctly still does not, and
--- correctly should not until it ships with the route that uses it
--- (cutoffs.ts's own header). The guard had become CIRCULAR: nothing that
--- would consume this schema can be meaningfully written, tested, or
--- deployed while every status value it needs to write (pm_notified,
--- skipped_no_template, skipped_unverified, no_report_sent,
--- owner_send_failed, no_report_failed) is absent from the LIVE CHECK
--- (023's original five: pending, delivered, paused, skipped_no_data,
--- failed, confirmed unwidened by any migration since). Code written
--- against that gap either violates the constraint on first real
--- invocation or sits undeployable until this file lands -- then gets
--- rewritten, the exact "revisit that depends on someone remembering"
--- failure this project keeps recording. STATUS NOW: cleared for its
--- remaining pre-apply work (disposable scaffold, written-and-executed
--- rollback, a fresh external-review round over the consolidated file,
--- test-db rehearsal including the service_role negative-capability probe,
--- an apply runbook) -- still not applied, still gated on all of that, per
--- §11 below.
+-- SHORT FORM, CORRECTED 2026-08-31 (external review, second pass -- the
+-- prior version of this note called the guard CIRCULAR; that was wrong,
+-- not just imprecise, and is corrected here rather than left standing.
+-- Full argument in §12i.) The strike-through above stays struck -- the
+-- guard was right to hold, in effect -- but not for the reason first given.
+--
+-- NOT CIRCULAR: the consumer can be written and held on a branch, merged
+-- the moment this file applies -- ordinary apply-then-merge sequencing,
+-- the same pattern migration 033 already used, not a rewrite. The real
+-- coupling is narrower: the consumer's INTEGRATION TESTS cannot run
+-- against test-db until this schema is live there (the same test-schema
+-- dependency 030's own mirror tests had on that migration) -- a real but
+-- ordinary sequencing cost, not a cycle.
+--
+-- THE ACTUAL REASON THE GUARD LIFTS: the 2026-08-19 guard conflated the
+-- SCHEMA with the SURFACE. This file, applied alone, creates two nullable
+-- PII columns with no data, one nullable consent-state column, and an
+-- EMPTY token table with RLS enabled, zero policies, and no grant to
+-- anon/authenticated/PUBLIC (§3, §5) -- nothing can reach it, because
+-- nothing that can reach it exists yet. The public, unauthenticated write
+-- surface the original guard was actually protecting against is born when
+-- the CONFIRM ROUTE deploys -- application code, gated by ITS OWN merge,
+-- not by this file's apply. Applying this schema inert is the 029 shape:
+-- mechanism installed, wiring follows. The exposure the guard names was
+-- never in this file.
+--
+-- THE GUARD DOES NOT DISAPPEAR -- IT RELOCATES to the confirm-route PR:
+-- that PR ships WITH rate limiting and POST-consume (§S below) as GATE
+-- CONDITIONS, carries its own §0(c) review, and does NOT merge before this
+-- file is confirmed live on prod (not merely applied -- observed, per
+-- CLAUDE.md's own standing rule). STATUS NOW: cleared for its remaining
+-- pre-apply work (disposable scaffold, written-and-executed rollback --
+-- both done, §12i -- a fresh external-review round over the consolidated
+-- file, test-db rehearsal including the service_role negative-capability
+-- probe, an apply runbook) -- still not applied, still gated on all of
+-- that, per §11 below.
 --
 -- CLAUDE.md §0 GATING ASSESSMENT, condition by condition:
 --   (a) "CREATES OR MODIFIES a live function's LOGIC." Does not trip — no

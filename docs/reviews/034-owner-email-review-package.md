@@ -39,12 +39,16 @@ now would add live PII columns and a public verification surface with nothing co
 them. Written now so the package is complete and the next artifact, once trigger-cron
 lands, is a go-ahead to apply, not another design pass.~~
 
-Correct when written; became circular once every status this migration's own consumer
-code needs to write was confirmed absent from the live CHECK, with no way to build that
-consumer against today's schema without throwaway work. Full reasoning: §12i. **Lifting
-sequencing does not clear this migration to apply** — §11's own pre-apply checklist
-(disposable scaffold, written-and-executed rollback, a fresh external-review round,
-test-db rehearsal, an apply runbook) is the gate now.
+Correct when written; **NOT circular, corrected 2026-08-31 (external review, second
+pass)** — the consumer can be written and held on a branch, merged the moment this file
+applies, ordinary apply-then-merge sequencing (033's own pattern), not a rewrite. The
+actual reason it lifts: the 2026-08-19 guard conflated the SCHEMA with the SURFACE — this
+file alone creates inert, empty, unreachable objects; the real exposure is born when the
+confirm route deploys, and the guard relocates to THAT PR's own merge gate, not this
+one's apply. Full reasoning: §12i. **Lifting sequencing does not clear this migration to
+apply** — §11's own pre-apply checklist (disposable scaffold, written-and-executed
+rollback — both done, §12i — a fresh external-review round, test-db rehearsal, an apply
+runbook) is the gate now.
 
 ---
 
@@ -664,6 +668,12 @@ further in this pass.
 
 ### 12i. The sequencing BLOCK is LIFTED — DECIDED, recorded as a deliberate lift, not a lapse
 
+**CORRECTED 2026-08-31, external review, second pass over this same entry — the
+"CIRCULAR" framing below was wrong, not just imprecise, and the entry is corrected in
+place rather than left standing (this project's own audit discipline: a document
+submitted for review is checked for the CLAIM, not just the conclusion). The conclusion
+(lift the block) survives; the reasoning that got it there is replaced below.**
+
 **DECIDED (Aravind, 2026-08-31).** The "BLOCKED on the trigger-cron workstream" sequencing
 decision (external review, 2026-08-19 — §12/status block above, and the SQL file's own
 header) is lifted. Recorded as a lifted block WITH reasoning, on purpose: a standing rule
@@ -692,19 +702,53 @@ this session:
   pointing at a route that doesn't exist yet would 404 nightly." This is right, not a gap
   to force closed — a cron ships WITH its route, never ahead of it.
 
-**The guard had become circular, which is the actual reason to lift it, not merely a
-convenient one.** The live `delivery_status` CHECK today is exactly the original five from
-migration 023 (`pending, delivered, paused, skipped_no_data, failed` — confirmed by
-reading `023_dpr_reports.sql` directly, unwidened by any migration since). Every status
-value the eventual PM-notify and owner-send code paths need to write —
-`pm_notified`, `skipped_no_template`, `skipped_unverified`, `no_report_sent`,
-`owner_send_failed`, `no_report_failed` — is absent. Code for those routes written against
-today's live schema either violates the CHECK on its first real invocation, or sits
-undeployable until this migration lands — and gets rewritten once it does, which is
-precisely the "revisit that depends on someone remembering" failure this project's own
-history keeps recording (the migration-lint sections above are the most recent instance).
-Waiting for "the consumer" before applying the schema the consumer needs to exist at all
-is not a sequencing safeguard in this shape — it is a dependency cycle.
+**NOT CIRCULAR — corrected. The consumer can be written and held on a branch, merged the
+moment this file applies.** That is ordinary apply-then-merge sequencing, the exact
+pattern migration 033 already used for its own function — write, review, hold, merge once
+the dependency is live. Nothing about "the schema doesn't exist yet" prevents the
+`eveningClose`/`ownerSend` trigger routes or the confirm-email route from being written,
+code-reviewed, and unit-tested today. **The real coupling, stated at its actual size, not
+inflated to a cycle: the consumer's INTEGRATION TESTS cannot run against test-db until
+this migration is applied there** — the identical test-schema dependency migration 030's
+own mirror tests had on that migration before it applied. That is a real, ordinary
+sequencing cost (hold two artifacts in loose step for the length of a review cycle), not
+a dependency cycle — and the actual hazard it creates is narrower too: not "the code gets
+rewritten," but "holding a written-and-tested-at-the-unit-level consumer on a branch for
+days is exactly the kind of gap where someone forgets to finish wiring it up," the
+ordinary remember-to-revisit hazard, not a structural impossibility.
+
+**THE ACTUAL REASON THE GUARD LIFTS — the reviewer's own correction, adopted here: the
+2026-08-19 guard conflated the SCHEMA with the SURFACE.** This migration, applied alone,
+creates:
+- Two nullable PII columns (`notification_email`, `notification_email_verified_at`) —
+  populated by NOTHING; no code path writes them.
+- One nullable consent-state column (`whatsapp_declined_at`) — same, empty.
+- One EMPTY table (`owner_email_verifications`) — RLS enabled, ZERO policies, and (§4,
+  §12d) no grant to `anon`, `authenticated`, or `PUBLIC` at all. Nothing that can reach
+  this table exists yet, because the ONE thing that could reach it — the confirm-email
+  route — has not been written.
+
+None of this is exploitable on its own. An empty table nothing can query, and null
+columns nothing has populated, carry no real PII exposure and no real attack surface —
+the ACTUAL public, unauthenticated write surface the original guard was protecting
+against is born the moment the CONFIRM ROUTE deploys (real application code, a real
+reachable endpoint), not the moment this migration applies. **Applying this schema inert
+is the exact shape migration 029 already used** — `dpr_versions` and `write_dpr_version()`
+shipped and went live before the DPR regenerate-action UI that would ever call them
+existed, and that was correctly not treated as premature exposure, because a mechanism
+with no caller is not a surface. The same reasoning applies here, one migration later —
+recognized this round, not a new precedent invented for it.
+
+**THE GUARD DOES NOT DISAPPEAR — IT RELOCATES, to the confirm-route PR's own merge gate.**
+Stated explicitly so it's a checkable condition, not a vibe: that PR
+- ships WITH rate limiting and the GET-renders/POST-consumes split (§12f) as gate
+  conditions, not optional hardening to add later;
+- carries its OWN §0(c) gate evaluation (it is the piece that actually touches identity in
+  a live, reachable way — this migration's own §0(c) trip was about the SCHEMA existing
+  for that surface, the route PR's trip is about the surface itself going live);
+- does NOT merge before this migration is confirmed live on prod — CONFIRMED, per
+  CLAUDE.md's own standing rule, meaning observed directly (a live catalog probe), never
+  assumed from an "applied" label or a ledger row alone.
 
 **Owner delivery is now the immediate next build, not an indefinite one — this is what
 actually makes lifting the block safe, not merely convenient.** In August, applying this
@@ -875,10 +919,24 @@ migration's own REVOKE/GRANT statements produce textually; it is not a substitut
 `docs/reviews/034-rollback.sql` — full file, this same commit. Reverses 034 in mirror
 order of its own forward steps (§3's `owner_email_verifications` first, back through §2's
 CHECK, to §1's columns) — simpler than 030's own rollback since 034 is purely additive
-(no renames, no data transform), and safe by construction rather than merely by care:
-034 has never applied to prod or test-db, so no real row anywhere has ever populated any
-of the new columns or written any of the new `delivery_status` values — restoring the
-narrower CHECK cannot orphan a row into an illegal value, because no such row exists.
+(no renames, no data transform).
+
+**CORRECTED, external review, blocking finding (2026-08-31) — the original claim here was
+WRONG, not just incomplete, and is corrected rather than restated more carefully:** this
+section previously argued the rollback was "safe by construction... because no such row
+exists" — true only about the SPECIFIC databases this file had touched up to that point
+(034 has still never applied to prod or test-db), but stated as if it were a property of
+the rollback ITSELF, which it is not. Nothing about `ADD CONSTRAINT`'s own validation
+behaviour depends on this migration's apply history — the moment a real `dprs` row exists
+carrying one of the six new `delivery_status` values (which will start being true the
+day the application code this migration unblocks actually ships), `ADD CONSTRAINT` fails
+with `23514` against that row, same as it would against any table with real data. The
+rollback's OWN first execution (§13b below) never exercised this branch because the
+scaffold had zero `dprs` rows at all — the clean path was the only one ever run, and the
+"safe by construction" line generalised from that single, unrepresentative case. Fixed:
+`034-rollback.sql`'s own PRECONDITION and STEP 2 GUARD sections (a named `DO` block, not a
+silent remap — argued in full there). Re-executed below with a seeded offending row so the
+guard branch is verified, not assumed.
 
 Executed against the SAME disposable scaffold §13a just built (034 still applied there):
 
@@ -931,3 +989,90 @@ corrected here rather than left standing.
 **Rollback proof: complete and exact for all three touched objects** — the new table
 (existence, R1/R3), the CHECK constraint (byte-identical to 023's original), and `users`'
 column set (14 → 17 → 14, verified against the real dump, not assumed).
+
+**R1-R3 above is the CLEAN path only — exactly the gap the blocking finding names.** The
+guard branch is exercised below, for real, against a genuinely seeded offending row —
+not asserted, not inferred from the clean path's own success.
+
+**R4 — 034 re-applied to the scaffold (fresh forward apply, same clean result as §13a).**
+
+**R5 — seed one `dprs` row carrying a post-034 status**, plus the minimal parent rows it
+needs (`tenants`, `projects`, `users`, all FK-required):
+```sql
+INSERT INTO public.tenants (id, name, slug) VALUES (..., 'Test Tenant', 'test-tenant');
+INSERT INTO public.projects (id, tenant_id, name) VALUES (..., 'Test Project');
+INSERT INTO public.users (id, tenant_id, full_name, role, status)
+  VALUES (..., 'Test Engineer', 'engineer', 'active');
+INSERT INTO public.dprs (id, tenant_id, project_id, engineer_id, log_date, delivery_status)
+  VALUES ('44444444-4444-4444-4444-444444444444', ..., '2026-08-31', 'no_report_sent');
+```
+```
+--- seeded row, confirmed present ---
+                  id                  | delivery_status
+--------------------------------------+-----------------
+ 44444444-4444-4444-4444-444444444444 | no_report_sent
+```
+
+**R6 — run `034-rollback.sql` against the seeded database. Literal output, not
+paraphrased:**
+```
+$ psql -f docs/reviews/034-rollback.sql
+BEGIN
+DROP TABLE
+psql:034-rollback.sql:150: ERROR:  Rollback aborted: 1 dprs row(s) carry a delivery_status
+value the restored CHECK cannot accept (pm_notified / skipped_no_template /
+skipped_unverified / no_report_sent / owner_send_failed / no_report_failed). First 1 row
+id(s): 44444444-4444-4444-4444-444444444444. Resolve each row -- update it to a pre-034
+status by hand, or defer this rollback -- before re-running this file. This is the correct
+failure: a silent restore would strand these rows in a value the live constraint no longer
+recognises.
+CONTEXT:  PL/pgSQL function inline_code_block line 25 at RAISE
+psql:034-rollback.sql:152: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:034-rollback.sql:157: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:034-rollback.sql:165: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK
+```
+**Exit 0 at the shell level (psql's own convention — it does not exit non-zero on a SQL
+error within a script), but the transaction itself aborted and rolled back, atomically —
+confirmed, not assumed:**
+```sql
+SELECT count(*) FROM pg_tables WHERE tablename='owner_email_verifications';  -- 1, NOT dropped
+SELECT pg_get_constraintdef(oid) FROM pg_constraint
+  WHERE conname='dprs_delivery_status_check';  -- still all 11 values, NOT restored
+SELECT delivery_status FROM public.dprs;  -- still 'no_report_sent', untouched
+```
+**The guard did exactly its job: named the exact offending row, explained why, and
+protected the ENTIRE transaction — `DROP TABLE` (step 1, which ran before the guard) did
+not survive either, since the abort unwound the whole `BEGIN...COMMIT` block, not just
+the failing statement.** A rollback that partially applied (table dropped, CHECK left
+widened) would have been a worse outcome than the guard blocking outright.
+
+**R7 — resolve the row, confirm the CLEAN path still succeeds** (the guard must not block
+a legitimate rollback once nothing offends it):
+```sql
+UPDATE public.dprs SET delivery_status = 'delivered'
+  WHERE id = '44444444-4444-4444-4444-444444444444';
+```
+```
+$ psql -v ON_ERROR_STOP=1 -f docs/reviews/034-rollback.sql
+BEGIN
+DROP TABLE
+DO
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+COMMIT
+```
+Exit 0, real success this time — the `DO` step appears and completes without raising.
+Post-state, same three probes as R3, all confirmed reverted:
+```
+owner_email_verifications table count: 0
+dprs_delivery_status_check: CHECK ((delivery_status = ANY (ARRAY['pending', 'delivered',
+  'paused', 'skipped_no_data', 'failed'])))
+users new-columns count: 0
+```
+
+**Rollback proof, restated with both branches now covered, not just the clean one:** the
+guard blocks correctly, names the right row, protects the whole transaction atomically,
+and does not block a legitimate rollback once the precondition genuinely holds. Both
+outcomes verified by direct execution, neither asserted.
