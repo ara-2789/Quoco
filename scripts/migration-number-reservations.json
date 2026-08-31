@@ -1,0 +1,12 @@
+[
+  {
+    "number": "026",
+    "claimedBy": "docs/reviews/026_dpr_generation_stale.sql",
+    "note": "generation_claimed_at / stale-run reconciliation for dpr_generate. Unapplied draft, relocated out of supabase/migrations/ 2026-08-21 (never committed on any branch, absent from both prod and test-db ledgers as of that date)."
+  },
+  {
+    "number": "034",
+    "claimedBy": "docs/reviews/034_owner_email_delivery.sql",
+    "note": "Owner-email delivery schema (notification_email, owner_email_verifications). Renumbered from 030 on 2026-08-31 after a real collision with the already-applied 030_morning_flow_attendance.sql. Held on PR #71, blocked on the trigger-cron workstream landing first. This entry exists so the number stays protected even on a branch (like this one) that doesn't yet carry PR #71's own file."
+  }
+]

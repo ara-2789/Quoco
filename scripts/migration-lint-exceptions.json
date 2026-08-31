@@ -484,5 +484,35 @@
     "object": "dpr_versions",
     "rule": "service-role-grant-required",
     "reason": "CONFIRMED live instance of the 2026-08-26 service_role table-grant gap -- has_table_privilege('service_role', 'public.dpr_versions', 'DELETE'/'TRUNCATE'/'REFERENCES'/'TRIGGER') all true on prod, against 6 real rows, despite this table's own COMMENT ON TABLE calling it \"Append-only DPR generation history.\" Full record and the fix's own required scope: docs/reviews/service-role-table-grants-gap.md. Its own migration, under the §0 external review gate; not fixed here."
+  },
+  {
+    "file": "028_dprs_engineer_id_option_a.sql",
+    "object": "duplicate-prefix-028",
+    "rule": "unique-migration-prefix",
+    "reason": "The APPLIED file's own side of the same non-collision -- see the docs/reviews/028_dprs_engineer_id_option_a.sql exception immediately below for the full reason (a historical, faithful-record copy shares this bare filename, not a second live claimant on 028). Only started tripping once the held-migration scan widened to compare against docs/reviews/ (2026-08-31); this file itself is unchanged and was never at risk."
+  },
+  {
+    "file": "docs/reviews/028_dprs_engineer_id_option_a.sql",
+    "object": "duplicate-prefix-028",
+    "rule": "unique-migration-prefix",
+    "reason": "Not a live collision -- this is a historical, faithful-record COPY of the applied supabase/migrations/028_dprs_engineer_id_option_a.sql (028's own PROCESS GAP note, applied file header: copied into docs/reviews/ 2026-08-19/20 to make the already-live schema match this project's own 'every numbered file present is LIVE' rule after the two briefly diverged). 028 is genuinely, permanently taken by the applied file; this copy will never be independently promoted under any number. Added 2026-08-31 when the held-migration lint scan was widened to cover docs/reviews/*.sql for the first time."
+  },
+  {
+    "file": "docs/reviews/028_dprs_engineer_id_option_b.sql",
+    "object": "duplicate-prefix-028",
+    "rule": "unique-migration-prefix",
+    "reason": "Not a live collision -- this is Option B of migration 028's design, REJECTED in review round 2 (2026-08-14, mechanically broken: Postgres cannot infer the partial unique index this file creates as an ON CONFLICT arbiter through supabase-js's .upsert(), so every dprs writer would throw 42P10 the first night). Kept for the record per this file's own header ('NOT a live choice'); will never apply under any number. Added 2026-08-31 when the held-migration lint scan was widened to cover docs/reviews/*.sql for the first time."
+  },
+  {
+    "file": "docs/reviews/028_dprs_engineer_id_option_a.sql",
+    "object": "unreserved-028",
+    "rule": "held-migration-reservation-required",
+    "reason": "Not a pending migration -- see this same file's unique-migration-prefix exception above for why it will never be independently promoted or need a reservation."
+  },
+  {
+    "file": "docs/reviews/028_dprs_engineer_id_option_b.sql",
+    "object": "unreserved-028",
+    "rule": "held-migration-reservation-required",
+    "reason": "Not a pending migration -- see this same file's unique-migration-prefix exception above for why it will never be independently promoted or need a reservation."
   }
 ]
