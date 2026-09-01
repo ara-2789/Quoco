@@ -124,21 +124,41 @@ server code, per the review package §4's own note) — the
 
 ## Open items — status
 
-**PENDING — the reviewer's own closing artifact.** The first real
-15:00 IST production run of `sweep_stale_morning_sessions`, triggered by
-the live `jobs/tick` cron, has not happened yet as of this record. When
-it does, record here, verbatim:
-- the tick's `morningSweep` object exactly as returned (not paraphrased);
-- any Sentry events raised (`reportMorningSweepAnomalies` /
-  `reportMorningSweepError`, B2) — screenshot or exported event data, or
-  an explicit "none raised" if the parked-session baseline stays at 0
-  through the first real run;
-- a `whatsapp_sessions` before/after probe (`current_flow IS NOT NULL`,
-  same shape as the pre/post fingerprint table above) bracketing that
-  first run, so the sweep's actual effect on production data is observed
-  directly, not inferred from the function's mere presence.
+**PARTIALLY CLOSED, 2026-09-01 — the reviewer's own closing artifact,
+first real run.** The first real 15:00 IST production run of
+`sweep_stale_morning_sessions` happened today, on a genuinely parked
+session (a real engineer's morning flow, truncated at step 4). Full
+record: `docs/reviews/033-first-sweep-record.md` — not paraphrased here,
+per this project's own "artifact provenance is pinned, not paraphrased"
+rule. Status against this note's own three original asks:
 
-Everything else in this record is CLOSED: SHA provenance pinned and
+- **The tick's `morningSweep` object exactly as returned — NOT obtained,
+  still open.** This environment has no Vercel CLI/dashboard access; the
+  raw tick response was never captured and is not recoverable
+  retroactively. `033-first-sweep-record.md` §3 reconstructs the sweep's
+  effect instead (the `daily_logs` stamp, the session close, the
+  downstream reply behaviour) — a materially different, indirect evidence
+  class, stated as such there, not conflated with the literal return
+  value this item asked for.
+- **Sentry events raised — reasoned closed, not directly queried.** No
+  authenticated Sentry MCP session was available this record; instead,
+  `033-first-sweep-record.md` §3 confirms neither of B2's two capture
+  conditions (`skippedSessions`, `missingDailyLogsRows`) was met, from the
+  data itself (single project membership; the `UPDATE` affected a real
+  row) — a code-level deduction, weaker than a direct Sentry read, named
+  as such.
+- **A `whatsapp_sessions` before/after probe bracketing the run —
+  NOT obtainable, window closed.** This record's own investigation began
+  after 18:16 IST, by which point the row had already been overwritten
+  once more by the same day's evening completion (18:32 IST). No live
+  bracket around the 15:00 IST run was taken in real time, and the
+  specific state that existed between 15:00 and 18:30 IST can no longer be
+  reconstructed from the current row. `033-first-sweep-record.md` §1-§2
+  substitutes a `daily_logs`-based reconstruction of the sweep's effect,
+  explicitly distinguished from a live bracket rather than presented as
+  one.
+
+Everything else in this record remains CLOSED: SHA provenance pinned and
 verified byte-identical end to end, pre/post fingerprint clean with no
 anomaly, deploy confirmed live on `main` (both the Vercel status and the
 actual tick-route code), ledger repaired and its friction documented for

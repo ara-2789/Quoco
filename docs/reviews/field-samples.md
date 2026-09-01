@@ -210,3 +210,90 @@ as a genuine Q2 answer inside an active, cron-triggered flow — the intended pa
 side effect of a since-removed behaviour. The quantity-volunteering pattern held across
 both circumstances; nothing about which trigger mechanism was in use appears to affect it,
 though two samples is not enough to call that finding load-bearing on its own.
+
+---
+
+## Sample 3 — 2026-09-01, evening Q4 step 2 (productivity/idle) answer
+
+Received 2026-09-01, same engineer and project as Samples 1-2 (Vikram Rao, Speed
+Mechatronics). Captured as part of `docs/reviews/033-first-sweep-record.md` (B3's first
+real production sweep of a genuinely parked morning session, same day) — recorded here
+because it's a real productivity/idle answer, not because it relates to the sweep itself.
+
+**Q4 step 2 answer, verbatim, as stored in `daily_logs.evening_productive_manpower`:**
+
+```
+No , no work for 4
+```
+
+Full stored value (`daily_logs`, `log_date = 2026-09-01`, `engineer_id =
+3534756b-2a32-4b91-954b-0bab15c2dba1`):
+
+```json
+{
+  "raw_text": "No , no work for 4",
+  "productive_count": 12,
+  "idle_count": 4,
+  "idle_reason": "work for",
+  "confidence": "high"
+}
+```
+
+Context from the same row: `evening_workers_on_site = 16` (Q4 step 1, the headcount this
+answer is reconciled against), `morning_manpower.total = 12` (this same engineer's own
+morning headcount, coincidentally equal to today's `productive_count` — not causally
+related; see below for the real derivation).
+
+### What this demonstrates — traced against the live parser, not assumed
+
+**a. A real "no, with a number and an unfinished reason" answer — not a template match.**
+"No , no work for 4" answers "All productive, or any idle? If idle: how many + why?" the
+way a real person answers a compound question under one breath: a flat "no" (not all
+productive), then a number, then the start of a reason that never actually finishes ("work
+for" — for what is never said). No cofounder sample or prior field sample looks like this.
+
+**b. `idle_count = 4` — the single-unanchored-number default, not an anchor match.**
+`parseProductivity` (`lib/whatsapp/flows/parsers/productivity.ts`) tokenizes to `["no",
+"no", "work", "for", "4"]`. The message contains neither anchor word ("idle" or
+"productive"), so PASS 1's anchor-adjacent scan (the file's own "ANCHOR-WORD PAIRING" logic)
+finds nothing to pair. PASS 2 then finds exactly one unclaimed digit ("4") with `idle_count`
+still `null`, and assigns it there — the parser's documented default for a bare-number idle
+answer with no anchor at all, exercised here by a real message for what may be the first
+time (this parser's own header names only synthetic/reviewed examples, all containing the
+literal word "idle").
+
+**c. `idle_reason = "work for"` — a correct, not a broken, extraction of an incomplete
+reason.** `classifyYesNo` matches the first "no" as a NO_WORD, and `PRODUCTIVITY_STOPWORDS`
+(`lexicon.ts:408`) spreads `NO_WORDS` into itself specifically so a classification word like
+"no" doesn't leak into the reason text — confirmed both "no" tokens are stripped as
+stopwords, "4" is stripped as the already-claimed count, and "work"/"for" (neither a
+stopword) are what's left, joined verbatim. **The engineer never actually stated a cause**
+("work for" what — material, drawings, instructions? — is never said); `idle_reason`
+faithfully reflects that omission rather than fabricating a plausible-sounding cause. Field
+evidence that this parser's reason-extraction can produce a genuinely uninformative but
+*honest* string, not a defect to fix — the alternative (guessing a cause) is the exact class
+of fabrication this parser's own header (`THE GENERAL GUARD`) is built to avoid.
+
+**d. `productive_count = 12` is derived, not parsed — reconciled correctly against the real
+headcount.** `parse.productive_count` from the file above is `null` (the word "productive"
+never appears in the message). The actual `12` comes from `lib/whatsapp/flows/evening.ts`'s
+own reconciliation (`evening.ts:562-586`): since `parse.productive_count` is `null`, it falls
+to the plain-derivation branch, `Math.max(headcount - idleCount, 0)` — `headcount` here is
+today's `evening_workers_on_site` (**16**, this evening's own Q4-step-1 answer), not
+`morning_manpower.total` (**12**, this morning's headcount — the same number appearing in
+both fields today is coincidence, traced through the code rather than assumed from the
+matching value). `16 - 4 = 12`, `confidence: 'high'` (answered, headcount known, no
+arithmetic-guard trip — `idle_count(4) ≤ headcount(16)`).
+
+**e. No trade-level breakdown exists to evaluate — named precisely, not conflated with a
+different function.** No function named `parseIdleHoursByTrade` exists in this codebase
+(grepped, zero hits) — the parser that actually produced this sample is `parseProductivity`,
+whose own header documents it as **AGGREGATE-ONLY v1, decided** (`design-decisions-beta-
+feedback.md` §9): a total idle count + one free-text reason, with trade-level idle
+attribution explicitly deferred (canonicalTrade's silent-failure risk, Civil-biased
+vernacular coverage, multi-word-trade tokenizer gap — same three reasons Sample 1's own §28
+finding already named for `morning_manpower`'s trade capture). This sample is real evidence
+for *that* design, not for a not-yet-built trade-level parser: a genuine field answer that
+names no trade at all ("no work for 4" — four of what, doing what, is never specified)
+directly supports the decision to ship aggregate-only rather than assume engineers report
+idle time trade-by-trade in the first place.
