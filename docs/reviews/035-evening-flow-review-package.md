@@ -1028,3 +1028,40 @@ version they would have been identical.
 `idle_hours_skip_equipment` sections) and the SQL file's own header note
 under **AMENDED AFTER REVIEWER APPROVAL**. Not asking you to re-review the
 file wholesale — the rest is unchanged from what you already approved.
+
+---
+
+### 13.1 Reviewer's finding — APPROVED WITH ONE FINDING, fixed (2026-09-01)
+
+**Finding**: the defensive `COALESCE((p_parse->'3'->>'all_working')::
+boolean, false)` / `COALESCE((...->>'unknown')::boolean, false)` in both
+branches — added to tolerate a caller omitting the fields — stores
+`{all_working:false, unknown:false}` for that case: a FOURTH shape this
+field was designed to have exactly three of, and specifically defaults
+`unknown` to `false` — "known to not be unknown" where nothing was
+actually known. The same class of error the plausibility flag (§5a) got
+right a dozen lines away in this same file, reintroduced by the very
+amendment meant to fix its sibling case.
+
+**Fixed**: both branches now `RAISE EXCEPTION` when either field is
+missing, instead of defaulting. A caller omitting these fields is a bug —
+code that predates this migration's tri-state contract — and must be
+legible as an error, matching this codebase's own
+`assertPostMigrationPayload` precedent (`lib/dpr/dispatch.ts:46`) for the
+same class of pre-migration-shape mismatch. `jsonb_build_object` now casts
+`all_working`/`unknown` directly, no `COALESCE`, since the `IF` above
+guarantees both are present by the time it runs.
+
+**Verified for real**, standalone, against a throwaway local Postgres
+instance (destroyed after): both valid tri-state cases (`all_working`,
+`unknown`) still produce the correct stored shape; the malformed case
+(`{by_trade:[]}`, both fields omitted) now raises exactly
+`apply_evening_flow_turn: p_parse[3] missing all_working/unknown --
+pre-035 caller shape (idle-hours tri-state contract violated)` instead of
+silently defaulting — confirmed by observing the `ERROR:` line itself, not
+inferred from the code reading correctly.
+
+**Status**: the reviewer approved §13's delta WITH this finding attached —
+this section records the fix he asked for, applied. The record shows
+exactly two post-approval deltas to this file now (§13's tri-state
+addition, §13.1's RAISE fix), both named rather than silently folded in.

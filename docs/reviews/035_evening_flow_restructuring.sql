@@ -786,9 +786,26 @@ BEGIN
     -- p_parse (parseIdleHoursByTrade's own tri-state, lib/whatsapp/flows/
     -- parsers/idle-hours.ts) rather than re-derived here, so the SQL layer
     -- can never disagree with the TS layer about which of the three states
-    -- applies. COALESCE(...,false) is defensive only -- this is a brand-new
-    -- column with no live caller to be backward-compatible with, unlike
-    -- manpower's matched COALESCE above.
+    -- applies.
+    --
+    -- RAISE, NOT COALESCE-TO-FALSE (round-3 review finding, fixing a
+    -- self-inflicted recurrence of the exact bug this tri-state exists to
+    -- close). The first draft of this branch defended a caller omitting
+    -- BOTH fields with `COALESCE(..., false)` on each -- which stores
+    -- `{all_working:false, unknown:false}`, a FOURTH shape this field was
+    -- designed to never have, and specifically defaults `unknown` to
+    -- false: "known to not be unknown" where nothing was actually known.
+    -- Same class of error the plausibility flag (§5a) got right twelve
+    -- lines away in this same file: absence of information must never
+    -- default toward the confident reading. A caller omitting these
+    -- fields is a BUG (code that predates this migration's tri-state, the
+    -- same class of mismatch `assertPostMigrationPayload`,
+    -- `lib/dpr/dispatch.ts:46`, already guards against for a different
+    -- payload) -- it must be legible as an error, not papered over as a
+    -- valid state.
+    IF (p_parse->'3'->'all_working') IS NULL OR (p_parse->'3'->'unknown') IS NULL THEN
+      RAISE EXCEPTION 'apply_evening_flow_turn: p_parse[3] missing all_working/unknown -- pre-035 caller shape (idle-hours tri-state contract violated)';
+    END IF;
     INSERT INTO daily_logs AS d
       (tenant_id, project_id, engineer_id, log_date, evening_idle_hours)
     VALUES
@@ -807,8 +824,8 @@ BEGIN
                   )
            FROM jsonb_array_elements(COALESCE(p_parse->'3'->'by_trade', '[]'::jsonb)) AS t
          ),
-         'all_working', COALESCE((p_parse->'3'->>'all_working')::boolean, false),
-         'unknown',     COALESCE((p_parse->'3'->>'unknown')::boolean, false),
+         'all_working', (p_parse->'3'->>'all_working')::boolean,
+         'unknown',     (p_parse->'3'->>'unknown')::boolean,
          'raw_text', p_parse->'3'->>'raw_text'
        ))
     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
@@ -820,6 +837,14 @@ BEGIN
     -- write, so a partial state (idle-hours written, equipment forever
     -- NULL) can never be observed between turns. Mirrors 024/025's own
     -- 'productivity_complete' shape for the identical reason.
+    --
+    -- RAISE, NOT COALESCE-TO-FALSE -- same fix, same reasoning, as the
+    -- plain 'idle_hours' branch above. Duplicated rather than factored out
+    -- because this branch's two-column write already duplicates the
+    -- by_trade reshape too (pre-existing shape, not introduced here).
+    IF (p_parse->'3'->'all_working') IS NULL OR (p_parse->'3'->'unknown') IS NULL THEN
+      RAISE EXCEPTION 'apply_evening_flow_turn: p_parse[3] missing all_working/unknown -- pre-035 caller shape (idle-hours tri-state contract violated)';
+    END IF;
     INSERT INTO daily_logs AS d
       (tenant_id, project_id, engineer_id, log_date,
        evening_idle_hours, evening_equipment_utilisation)
@@ -839,12 +864,8 @@ BEGIN
                   )
            FROM jsonb_array_elements(COALESCE(p_parse->'3'->'by_trade', '[]'::jsonb)) AS t
          ),
-         -- TRI-STATE -- same addition, same reasoning, as the plain
-         -- 'idle_hours' branch above. Duplicated rather than factored out
-         -- because this branch's two-column write already duplicates the
-         -- by_trade reshape too (pre-existing shape, not introduced here).
-         'all_working', COALESCE((p_parse->'3'->>'all_working')::boolean, false),
-         'unknown',     COALESCE((p_parse->'3'->>'unknown')::boolean, false),
+         'all_working', (p_parse->'3'->>'all_working')::boolean,
+         'unknown',     (p_parse->'3'->>'unknown')::boolean,
          'raw_text', p_parse->'3'->>'raw_text'
        ),
        jsonb_build_object('items', '[]'::jsonb, 'raw_text', NULL, 'confidence', NULL))
