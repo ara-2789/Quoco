@@ -941,3 +941,90 @@ than reporting as-is:
   parser code, confirmed two independent ways (standalone isolation, and a
   clean full-suite reproduction) rather than dismissed on the first
   reasonable-sounding explanation.
+
+---
+
+## 13. DELTA FOR REVIEWER — idle-hours amended AFTER your approval (2026-09-01)
+
+**You approved `035_evening_flow_restructuring.sql` with no findings against
+the SQL.** The same session then found a real gap the approved version
+carried, and fixed it. This section is the delta — what changed, why the
+version you approved was wrong, and how the fix was verified — so re-review
+can be scoped to exactly this, not the whole file again. Full round-3
+context (unrelated TypeScript work) is §12; this section is self-contained
+and does not require reading that one.
+
+### What changed
+
+Two branches — `v_col = 'idle_hours'` and `v_col = 'idle_hours_skip_
+equipment'` — each gained two new keys in the `evening_idle_hours` JSONB
+they write:
+
+```sql
+'all_working', COALESCE((p_parse->'3'->>'all_working')::boolean, false),
+'unknown',     COALESCE((p_parse->'3'->>'unknown')::boolean, false),
+```
+
+Nothing else changed. Both RPCs' signatures (the byte-identical-to-live
+parameter lists you already reviewed in §1) are untouched — this is
+entirely internal to two branches' JSONB construction.
+
+### Why the approved version was wrong
+
+The approved version only ever wrote `by_trade` and `raw_text` from
+`p_parse->'3'`. A downstream requirement surfaced after your approval: an
+UNPARSEABLE idle-hours answer (garbled text, no number, no recognisable
+signal) must be stored as UNKNOWN, never coerced into a zero — the same
+principle already in this file for the plausibility flag (§5a, NULL when
+there's nothing to check, never `false`).
+
+The approved version had no way to express that. A genuine "nobody was
+idle" answer and a genuinely unparseable one BOTH stored as `{by_trade:
+[], raw_text: "..."}` — identical shapes, no field distinguishing them.
+That is a live recurrence of §42 itself (the thing this whole migration
+exists to fix): information the TS layer can tell apart collapses to the
+same value at the write boundary, indistinguishable to anything reading
+the column afterward — a DPR narrative pass, a PM dashboard, anyone.
+
+The fix: `parseIdleHoursByTrade` (new, `lib/whatsapp/flows/parsers/idle-
+hours.ts`) now produces a genuine tri-state — `by_trade` non-empty (real
+data), `all_working: true` (a confident, explicit zero), or `unknown: true`
+(nothing recognisable — never a fabricated zero). The two new SQL keys
+read that tri-state straight through rather than re-deriving it, so the
+TS and SQL layers can never disagree about which of the three states
+applies.
+
+### Verification — four cases, against a real Postgres instance, not reasoned about
+
+Before committing, the exact `jsonb_build_object` expression from the
+amended branch was run — standalone, not the full scaffold — against a
+throwaway local Postgres instance (`initdb`/`pg_ctl`, destroyed
+immediately after), with four representative `p_parse->'3'` payloads:
+
+| Case | Input | Stored result |
+|---|---|---|
+| Real data | `{by_trade:[{trade:mason,...},{trade:PEB,matched:false,...}],all_working:false,unknown:false}` | `by_trade` preserved (including the unmatched `PEB` entry, §42), `all_working:false`, `unknown:false` |
+| Confident zero | `{by_trade:[],all_working:true,unknown:false}` | `by_trade:[]`, `all_working:true`, `unknown:false` |
+| Genuinely unknown | `{by_trade:[],all_working:false,unknown:true}` | `by_trade:[]`, `all_working:false`, `unknown:true` |
+| Caller omits both fields (defensive `COALESCE` edge) | `{by_trade:[]}` | `all_working:false`, `unknown:false` (degrades to neither confident-zero nor unknown — a hypothetical malformed-caller case only, never produced by the real parser, which always sets both fields) |
+
+All four produced the correct, distinct stored shape. The confident-zero
+and genuinely-unknown cases are the ones that matter: they now store
+DIFFERENTLY, which is the entire point of the fix — under the approved
+version they would have been identical.
+
+### What this does NOT change
+
+- Neither RPC's argument list — the byte-identical signature proof in §1
+  still holds as reviewed.
+- The `manpower` branch's `matched` addition (§4 Site 2) — unrelated to
+  this delta, unchanged since your approval.
+- The equipment-hours (step 4) branch — unrelated to this delta, unchanged.
+- Nothing has been applied anywhere. This file is still WRITTEN, NOT
+  APPLIED (its own header). The test-db rehearsal has not started.
+
+**Ask**: re-review the two changed branches (the diff above, in full in
+`docs/reviews/035_evening_flow_restructuring.sql`'s `idle_hours` /
+`idle_hours_skip_equipment` sections) and the SQL file's own header note
+under **AMENDED AFTER REVIEWER APPROVAL**. Not asking you to re-review the
+file wholesale — the rest is unchanged from what you already approved.
