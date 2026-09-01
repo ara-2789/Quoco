@@ -249,12 +249,27 @@ turn advanced normally (`outcome: "advance"`, current_step moved to 5) —
 no reask fired, confirming the "never a gate" half of the ruling was
 actually exercised, not just written into a comment.
 
-**NULL, not false, when the count is unknown:** the same test run's
-`borewell_rig` item (an equipment keyword `morning_equipment` never
-listed) came back `"implausible": null`, not `false` — SQL confirms
-"nothing to check the plausibility bound against" is a different claim
-from "checked and found plausible," per the migration's own `CASE WHEN
-v_morning_count_for_type IS NULL THEN NULL` branch.
+### 5a. TRI-STATE FINDING — NULL is not false (recorded because it generalizes, not because it was asked for)
+
+The same test run's `borewell_rig` item (an equipment keyword
+`morning_equipment` never listed) came back `"implausible": null`, not
+`false` — SQL confirms "nothing to check the plausibility bound against" is
+a different claim from "checked and found plausible," per the migration's
+own `CASE WHEN v_morning_count_for_type IS NULL THEN NULL` branch.
+
+**Why this is worth keeping as its own finding, not just a scaffold-run
+footnote:** `implausible` is a three-state field (`true` / `false` / `null`),
+and the third state carries real, distinct meaning — "no denominator was
+available to check against," never collapsed into either "plausible" or
+"implausible." Absence of a denominator is recorded as absence. A reader (or
+a future consumer of this column, e.g. a DPR narrative pass) that treats
+`implausible` as a boolean and reads `null` as falsy would silently
+mis-render "nothing to check" as "checked and fine" — the exact kind of
+unearned confidence §17's "the DPR reports, the reader judges" principle
+exists to prevent. This is a general shape (a flag computed FROM an
+optional denominator should be nullable, not boolean, whenever the
+denominator can itself be absent), not specific to equipment hours — worth
+carrying forward to any future flag built the same way.
 
 ---
 
@@ -393,11 +408,76 @@ Verified two ways:
 
 ## 9. Apply runbook (not executed — for the eventual apply, once reviewed)
 
-Numbered, per this project's own runbook-template convention. **S3 is a
-DEDICATED step** — the ledger-repair pattern this session's own reading of
+**CORRECTION, this addendum (2026-09-01), before the numbered steps: the
+original S1 below ("Companion TypeScript merged first... before touching
+any database") had the ordering backwards and must not be followed.**
+Reviewer ruling this round named two coupling hazards this migration's own
+S1 never accounted for — recorded here explicitly rather than silently
+reordering the list, per this project's own audit-the-package discipline
+(CLAUDE.md, "a document submitted for external review is audited for
+asserted-but-nonexistent artifacts"): a stale ordering claim is the same
+species of problem, just in the opposite direction (an artifact that DOES
+exist, described wrong).
+
+**Finding A — evening requires a true lockstep, not "TS first."**
+`apply_evening_flow_turn` is a FULL rewrite (5 linear steps replacing 6,
+the only branch deleted). Unlike migration 029/034 (an inert schema
+addition; nothing live reads the new shape until something is told to),
+the DEPLOYED `evening.ts` today constructs and sends the OLD `p_parse`
+shape on every single evening turn. There is no safe one-directional
+order:
+  - **New SQL, old TS still deployed** — the live webhook keeps sending the
+    OLD 6-question shape into a body that no longer has those steps.
+    Breaks immediately, for every engineer messaging during the window.
+  - **New TS deployed, old SQL still live** — the reverse break: the new
+    `evening.ts` sends the NEW 5-step shape into a body still expecting the
+    old one. Equally broken, same population.
+Both directions fail LOUDLY and immediately — this is NOT the morning
+case (Finding B) where the wrong order fails silently. The fix is 030's
+own precedent, S4's own words ("Merge-is-deploy for this project... must
+land in one motion, not two separated by any observable gap"): apply the
+SQL, then merge the TS PR immediately after, with no gap — see the
+renumbered S2→S3 pair below. **This is the OPPOSITE of 034's ordering** —
+034's file sat applied-but-unmerged-to-`main` for a real stretch with
+nothing breaking in the gap, because nothing live depended on the file
+being on `main` yet. Inheriting that pattern here — apply now, merge the
+TS "sometime after" — would break every evening check-in for the entire
+length of the gap.
+
+**Finding B — morning's coupling is the reverse shape: one-directional,
+and silent rather than loud.** Only the `v_col = 'manpower'` branch
+changes, and its `COALESCE((t->>'matched')::boolean, true)` (§4, Site 2)
+was deliberately written to tolerate an old caller that never sends
+`matched` at all — scaffold-verified both ways (§8, test sequence 3). So:
+  - **New SQL, old TS (labour.ts without `matched`)** — SAFE. Every
+    `by_trade` element defaults to `matched: true`, byte-identical to
+    today's behavior. This can persist indefinitely with no observable
+    effect.
+  - **New TS (labour.ts emitting `matched: false` for an unrecognised
+    trade), old SQL still live** — SILENTLY INEFFECTIVE, not broken. The
+    OLD reshape (`030_morning_flow_attendance.sql:596`,
+    `jsonb_build_object('trade', ..., 'count', ...)`) has no `matched` key
+    in it at all — it simply doesn't read the field TS is now sending, and
+    the unmatched token vanishes exactly as it does today. Nothing errors,
+    nothing pages anyone, and §42's own fix silently isn't real yet — the
+    disease this migration exists to cure, reproduced by shipping the two
+    halves in the wrong order.
+  **SQL-FIRST IS THEREFORE REQUIRED for morning specifically** — not
+  because reversing it breaks anything visibly, but because reversing it
+  means the fix ships invisibly inert, which is worse to discover later
+  than an immediate break would be. In practice this collapses to the
+  SAME procedure as Finding A's lockstep (apply once, for both RPCs in one
+  file, then merge immediately) — recorded as its own finding because the
+  REASON differs (a visible two-directional break vs. a silent
+  one-directional no-op), even though the resulting runbook step is
+  identical for both.
+
+Numbered steps, per this project's own runbook-template convention. **S3 is
+a DEDICATED step** — the ledger-repair pattern this session's own reading of
 migration 032's incident (`docs/reviews/032-ledger-repair-record.md`)
 showed is easy to fold silently into "the apply" and then forget to verify
-independently.
+independently; per 030's own S6 precedent, ledger repair is placed LAST so
+it never competes with S2→S3's lockstep urgency.
 
 - **S0 — Pre-flight.** Confirm `main`'s current HEAD and re-read
   `supabase/migrations/` + `docs/reviews/*.sql` directly (not from this
@@ -405,38 +485,55 @@ independently.
   **Re-verify the migration number at THIS moment** — 035 was corrected
   once already this same day; a second collision between drafting and
   applying is exactly the failure class §0a's test targeted. Re-run
-  `npm run lint:migrations` fresh.
-- **S1 — Companion TypeScript merged first.** This migration's `p_parse`
-  shapes are contracts, not guesses — do not apply against a caller that
-  doesn't yet emit them (§11, Pending). Confirm the parser/mirror PRs are
-  merged and deployed before touching any database.
-- **S2 — Apply window: BOTH flows' sessions cleared, not one.** Per §6,
+  `npm run lint:migrations` fresh. Confirm the companion TypeScript PR
+  (§10/§11's pending parsers + mirror + `evening.ts` rewrite) is open,
+  reviewed, and ready to merge on a keystroke — NOT already merged (Finding
+  A/B above: merging it before this point is itself the hazard).
+- **S1 — Apply window: BOTH flows' sessions cleared, not one.** Per §6,
   evening has no cutoff-sweep guarantee the way morning does — do not
   reuse morning's "any quiet window works" reasoning uncritically. Run a
   direct read-only session check (`SELECT current_flow, current_step,
   count(*) FROM whatsapp_sessions WHERE current_flow IS NOT NULL GROUP BY
   1,2`) immediately before applying, on the TARGET database, not carried
-  over from an earlier check.
-- **S3 — Apply, and ledger-repair as its own verified step, not folded
-  into S2.** `supabase db query --linked -f docs/reviews/
-  035_evening_flow_restructuring.sql` (or the SQL Editor, per CLAUDE.md
-  §0's accepted apply paths) against test-db first, prod second — never
-  `db push`. Immediately after EACH apply: run `supabase migration list
-  --linked` against that same database and confirm 035 appears on BOTH
-  `local` and `remote` — if the ledger doesn't reflect the apply (034's own
-  precedent: applied and rehearsed, still shows an empty `local` column
-  today), repair it explicitly (`supabase migration repair`) as a
-  verified sub-step here, not assumed to have happened because the SQL
-  ran without error.
-- **S4 — Post-apply fingerprint.** Re-probe both function bodies'
+  over from an earlier check. **PROCEED condition: `count = 0`** (or,
+  failing that, confirmation the migration's own built-in sweep, STEP 3 of
+  the SQL file, will correctly close whatever it finds — §6's scaffold
+  evidence already proved this for a seeded session, not just asserted it).
+- **S2 — Apply, ONE sitting, no gap to S3.** Fresh linked-project
+  breadcrumb pasted immediately before the apply (CLAUDE.md §0's PROD
+  APPLIES rule), `supabase db query --linked -f docs/reviews/
+  035_evening_flow_restructuring.sql` (never `db push`) against test-db
+  first, prod second. This single statement replaces both RPCs and runs
+  the one-time session sweep together, inside the file's own
+  `BEGIN`/`COMMIT` — there is no intermediate state where one RPC is new
+  and the other is old.
+- **S3 — Merge — THE LOCKSTEP CLAUSE, per Findings A and B above.** The
+  companion TypeScript PR (parsers + mirror + `evening.ts` rewrite) merges
+  IMMEDIATELY after S2 confirms, not "sometime after" — Vercel deploys on
+  merge to `main` for this project, so merging is the deploy. Do not
+  proceed to S4 until the merge/deploy is confirmed live.
+- **S4 — Confirm live + tests green — the FIRST real run, a NAMED step.**
+  Once the companion parsers exist (§10/§11), their rehearsal/mirror test
+  suites get their first real execution against the now-live RPCs here —
+  matching 030's own S5 precedent that this is a named, required step, not
+  an assumed side effect of S2/S3.
+- **S5 — Post-apply fingerprint.** Re-probe both function bodies'
   `prosrc` hash and both signatures against the live database, compare to
   the values pinned in §1 of this package. Confirm the two new columns
   exist with the expected type and the column-bound grant list from §7.
-- **S5 — Merge the file into `main`.** Per CLAUDE.md's own "a migration is
-  not done when applied and ledgered — it is done when the file is on
-  `main`" rule — confirmed by reading `main` directly
-  (`git show origin/main:supabase/migrations/035_...`), not trusted from a
-  merge button.
+- **S6 — Ledger repair + confirm the file is on `main` — LAST, deliberately
+  (030's own S6 reasoning: neither carries S2/S3's lockstep-timing
+  urgency).** Run `supabase migration list --linked` against each database
+  applied to and confirm 035 appears on BOTH `local` and `remote` — if the
+  ledger doesn't reflect the apply (034's own precedent: applied and
+  rehearsed, still showed an empty `local` column at one point), repair it
+  explicitly (`supabase migration repair`) as a verified sub-step, not
+  assumed to have happened because the SQL ran without error. Then confirm
+  the migration file itself is reachable from `main` by reading `main`
+  directly (`git show origin/main:supabase/migrations/035_...`), per
+  CLAUDE.md's "a migration is not done when applied and ledgered — it is
+  done when the file is on `main`" rule — never trusted from a merge
+  button's result alone.
 
 ---
 
@@ -478,3 +575,94 @@ row-read-back layer, and a CI run exercising the real webhook → RPC →
 rehearsal or CI run can honestly be called end-to-end until it does** —
 today's scaffold evidence is real, valuable, and insufficient on its own
 for an apply decision.
+
+---
+
+## 11. §42 RED tests — committed as expected-fail, run for real (2026-09-01 addendum)
+
+Per Aravind's instruction this round: write the §42 tests NOW, against
+CURRENT (pre-035, pre-parser) behaviour, so the capture gap is a failing
+test list that cannot be forgotten, rather than something someone has to
+remember. **All numbers below are from an actual run, not asserted** — see
+the command lines under each result.
+
+**Shared fixture corpus** — `test/helpers/section-42-corpus.ts`. ONE corpus
+(`SECTION_42_CORPUS`), three cases (`manpower`, `idle_hours`,
+`equipment_hours`), referenced by name from both test layers below so they
+cannot silently diverge on what "an unmatched token" means — same
+discipline as `test/helpers/yesno-corpus.ts`'s existing role for the
+yes/no classifier. The `manpower` case reuses "PEB" directly from
+`docs/reviews/field-samples.md`'s own sample 1 ("Civil - 25 Nos, P.EB - 11
+Nos") and from this package's own §4/§8 scaffold evidence, rather than
+inventing a fourth spelling of the same real discipline.
+
+**How "expected-fail without turning CI red" actually works** — Vitest's
+`it.fails` / `test.fails`, confirmed present in the installed
+`vitest@3.2.7` (`ChainableTestAPI` includes `"fails"` —
+`node_modules/@vitest/runner/dist/tasks.d-CkscK4of.d.ts:314`, checked
+directly, not assumed from memory). `it.fails` inverts the pass/fail
+signal: a test body that throws is reported PASSED; a test body that
+stops throwing is reported FAILED. **This was sanity-checked both
+directions, not just asserted:** a throwaway test wrapping
+`expect(1).toBe(1)` in `it.fails` was run and confirmed to exit 1 (a
+real CI failure) — proving the mechanism doesn't just look like it works,
+it actually flips red the moment an assertion it's supposed to be
+protecting starts passing for real. This is exactly the property needed:
+CI stays green today, and CI going RED later is the signal that a pending
+§42 item shipped and the `.fails` wrapper needs removing — the opposite of
+`.skip`/`.todo`, which would let the gap go quiet with no signal either
+way.
+
+**Site coverage, matched honestly to what §10 says is actually pending —
+not "every by-trade/by-type field in the product":**
+
+| Site | TS-parser layer | Post-RPC row-read-back layer |
+|---|---|---|
+| `manpower` (shared, morning Q2 + evening step 2) | `test/unit/section-42-unmatched-capture.test.ts` — real `parseLabourCount`, RED | `test/section-42-row-readback.test.ts` — real `apply_morning_flow_turn` on live test-db, RED |
+| `idle_hours` (evening step 3, new) | same file — no parser exists; dynamic `import()` of the future path rejects at runtime, caught by `.fails` | **not achievable today** — no parser AND no RPC step exist |
+| `equipment_hours` (evening step 4 redesign) | same file — real `parseEquipmentHours`, asserts the TARGET shape (`type`/`hours_used`/`matched`) against the current two-number shape, RED | **not achievable today** — the live `apply_evening_flow_turn` has no step reading a type-joined single-number payload; calling it with a target-shape payload would prove nothing about §42 |
+
+**The asymmetry is named, not hidden**, matching this project's own
+"state limits, don't overclaim" habit: `manpower` is the only site with
+BOTH a live parser and a live RPC branch to drive end-to-end through the
+real webhook path today, so it is the only site with a post-RPC proof.
+The other two sites' row-read-back proof waits on the TypeScript round
+(§10) and, for evening specifically, on 035 actually applying — restated
+in both new test files' own headers, not just here.
+
+**Actual run output, this session, against this exact worktree:**
+```
+$ npx tsc --noEmit
+(exit 0, zero errors — the three new files, including the dynamic-import
+ pattern used for not-yet-existing modules, type-check clean)
+
+$ npx vitest run test/unit/section-42-unmatched-capture.test.ts
+ ✓ site 1: manpower > TARGET: ... matched:false          (it.fails — PASS, throws as expected)
+ ✓ site 1: manpower > TODAY: the token silently vanishes  (ordinary — PASS, documents the gap)
+ ✓ idle_hours > TARGET: parseIdleHoursByTrade exists ...  (it.fails — PASS, module import rejects)
+ ✓ idle_hours > TODAY: the module does not exist at all   (ordinary — PASS)
+ ✓ equipment_hours > TARGET: {type, hours_used, matched}  (it.fails — PASS, fields undefined today)
+ ✓ equipment_hours > TODAY: old two-number shape           (ordinary — PASS)
+ Test Files  1 passed (1)   Tests  6 passed (6)
+
+$ npx vitest run test/section-42-row-readback.test.ts   # real test-db, exfccwlrhoutkgrlikod
+ ✓ TARGET: daily_logs.morning_manpower.by_trade ... matched:false   (it.fails — PASS, 1806ms)
+ ✓ TODAY: the row stores the matched trade, drops the unmatched one (ordinary — PASS, 1899ms)
+ Test Files  1 passed (1)   Tests  2 passed (2)
+```
+Zero errors, zero unexpected failures, both new files exit 0 — CI stays
+green with these files committed, exactly as required. The full existing
+suite was also run afterward (`npx vitest run`, no path filter) to confirm
+no interference with pre-existing tests or leftover test-db rows from the
+new `testPhone('305')` slot (confirmed unclaimed via the required
+`grep -rohE "testPhone\('[0-9]+'\)|\+19995550[0-9]{3}" test/` check, per
+`test/helpers/db.ts`'s own registry instructions, before it was used).
+
+**What happens to these tests once the pending TypeScript ships (§10):**
+each TARGET test's `it.fails` wrapper is removed and the assertion becomes
+an ordinary, permanently-green test; each paired "TODAY" test is deleted
+(it documents behavior that will no longer exist, not a regression worth
+guarding). The `idle_hours` and `equipment_hours` row-read-back gap in the
+table above closes at that point too, once 035 is applied — new tests
+get added to `test/section-42-row-readback.test.ts` then, not retrofitted
+onto today's manpower-only file.
