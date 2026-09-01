@@ -666,3 +666,278 @@ guarding). The `idle_hours` and `equipment_hours` row-read-back gap in the
 table above closes at that point too, once 035 is applied — new tests
 get added to `test/section-42-row-readback.test.ts` then, not retrofitted
 onto today's manpower-only file.
+
+
+---
+
+## 12. TypeScript round 3 — all three parsers built, §42 RED tests flipped GREEN (2026-09-01)
+
+Per Aravind's round-3 instructions: the lowercasing fix approved as designed
+(§4's own "checked at plan time" caveat is now closed); reusing
+`classifyYesNo` for idle-hours' "all working" detection REJECTED, replaced
+with a purpose-built sentinel; a NEW tri-state requirement (unparseable
+idle-hours records UNKNOWN, never a fabricated zero) designed and built,
+including a necessary SQL amendment; then all three parsers built, plus a
+scope discovery mid-build that changed how the equipment-hours redesign
+actually ships.
+
+### 12.1 The lowercasing fix, applied identically across all three sites
+
+Every parser that reshapes an unmatched token used to lowercase the whole
+input string before tokenising, so a captured token would come back
+`"peb"`, never `"PEB"` — violating finding 5's as-heard requirement.
+Fixed by tokenising on ORIGINAL-CASE text and pushing `.toLowerCase()`
+into the lookup call only (`canonicalTrade`/`canonicalEquipment` already
+lowercase internally). Applied to `labour.ts`, `idle-hours.ts` (new), and
+`equipment-hours.ts`'s redesign — verified, not assumed, by every §42 test
+below asserting the exact-case literal `'PEB'`/`'hydra'`, which would fail
+on a re-cased capture.
+
+### 12.2 REJECTED: classifyYesNo for idle-hours' "all working" — purpose-built sentinel instead
+
+`classifyYesNo`'s vocabulary already carries two loaded semantics
+(schedule-met, then attendance — `morning-flow-migration-review-package.md`
+§11.5). Its attendance-tuned present-side forms ("half day", "late",
+"coming late", "reached site") mean the OPPOSITE thing on an idle-hours
+question — "half day" reads `met:true` (present) on attendance, but
+plausibly means HALF THE DAY WAS IDLE on this question. Reusing it would
+have been a third semantic loaded onto one lexicon, the same risk pattern
+§11.5 already recorded once.
+
+Built instead: `isAllWorkingSentinel` (`lexicon.ts`), a small, purpose-built
+phrase list ("all working", "everyone working", "all productive", "everyone
+productive", "fully productive", "full productivity", "nobody idle", "no
+one idle") checked as a substring match against the whole normalised
+answer — plain negatives ("no idle", "none") remain covered by the existing,
+generic `isNoneSentinel`, reused unchanged since negation isn't
+question-specific.
+
+A forward-pointing comment was added directly above `classifyYesNo`'s own
+definition recording this rejection, so the next person reaching for it for
+a THIRD question sees the warning before writing the code, not after.
+**Citation audit caught mid-write**: an early draft of that comment cited
+`design-decisions-beta-feedback.md §32`, which turned out to be about the
+parse-attempt corpus, not this — checked against the actual file before
+commit (not assumed), corrected in place to cite
+`morning-flow-migration-review-package.md §11.5`, the real source.
+
+**Regression guard, run for real** (`test/unit/idle-hours-parser.test.ts`):
+`"half day"` on the idle-hours question resolves to `unknown:true,
+all_working:false` — never a confident zero. Also checked: `"late"`,
+`"coming late"`, `"reached site"` — none resolve `all_working:true`.
+
+### 12.3 NEW: tri-state idle-hours (`by_trade` / `all_working` / `unknown`) — a necessary SQL amendment, not just a TS one
+
+**The requirement**: an unparseable idle-hours answer must record UNKNOWN,
+never a fabricated zero — the same discipline as the plausibility flag's
+NULL-not-false ruling (§5a), and the same discipline migration 024 already
+applied once at the SQL layer (`T-024-23`, "unclassifiable after budget ->
+NULL, never a fabricated 0").
+
+**Shape, `IdleHoursParse`** (`lib/whatsapp/flows/parsers/idle-hours.ts`):
+```
+{ by_trade: [{trade, idle_hours, matched}], all_working: boolean,
+  unknown: boolean, raw_text: string }
+```
+Exactly one of three states holds: real `by_trade` data; `all_working:true`
+(a confident zero, an explicit sentinel recognised); `unknown:true`
+(nothing recognisable at all — no number, no trade, no sentinel). `unknown`
+is the ONLY state that gates a reask (`isIdleHoursAnswered`).
+
+**Why this could not stay TS-only, traced not assumed**: the SQL branches
+this file already wrote (`v_col = 'idle_hours'` / `'idle_hours_skip_
+equipment'`) only ever read `by_trade` and `raw_text` from `p_parse->'3'` —
+they would have silently dropped `all_working`/`unknown` at the write
+boundary, collapsing a confident zero and a genuine unknown into the
+IDENTICAL stored shape (`{by_trade:[], raw_text:...}`), indistinguishable
+to any later reader — the exact §42 disease, recurring at a different
+field. `035_evening_flow_restructuring.sql`'s two `idle_hours` branches now
+also write `'all_working', COALESCE((p_parse->'3'->>'all_working')::
+boolean, false)` and `'unknown', COALESCE(...,false)`, read straight from
+the TS parser's own tri-state rather than re-derived in SQL, so the two
+layers can never disagree about which state applies.
+
+**Verified for real, standalone, before committing** — not the full
+disposable scaffold (that's the test-db rehearsal, next), a lighter,
+targeted check: a throwaway local Postgres instance, the EXACT
+`jsonb_build_object` expression from the amended branch, against four
+representative `p_parse->'3'` payloads (real data; `all_working`; `unknown`;
+a caller omitting both fields, the defensive-COALESCE edge). All four
+produced the correct, distinct stored shape — real data preserved
+including the unmatched `PEB` entry; `all_working` and `unknown` correctly
+mutually exclusive and distinct from each other. Instance destroyed after.
+
+**Reviewer-approval amendment, stated where it can't be missed**: the
+reviewer approved this SQL file with no findings against it; this same
+session then found the tri-state gap and amended the file AFTER that
+approval. `035_evening_flow_restructuring.sql`'s own header now carries an
+explicit **AMENDED AFTER REVIEWER APPROVAL** note naming exactly what
+changed (two branches' internal JSONB construction) and what did NOT
+(neither RPC's signature) — re-review of this specific delta is owed
+before the file is treated as re-approved wholesale.
+
+### 12.4 SCOPE DISCOVERY mid-build: the equipment-hours redesign ships ADDITIVELY, not in place
+
+The design record throughout this migration (plan §6, this package's own
+§10/§11) always described this as "`parseEquipmentHours`, redesigned" — an
+in-place replacement. Tracing the actual blast radius before touching
+anything found that doesn't hold today:
+
+- `dispatchEveningFlow` (evening.ts, the PURE mirror) calls the old
+  `parseEquipmentHours` — safe to delete, already a settled decision
+  (plan §1), not production-connected (`dispatchInboundTurn`/`route.ts`
+  call `applyEveningFlowTurn` directly, per that file's own header note).
+- **`applyEveningFlowTurn`** (evening.ts:715–796) — the REAL, LIVE,
+  production RPC-calling wrapper, used by `lib/whatsapp/outbound/
+  trigger.ts` — independently calls `parseEquipmentHours(params.message)`
+  (line 748) and sends it keyed as `p_parse['6']` (the OLD 6-step
+  numbering) into the CURRENTLY-LIVE `apply_evening_flow_turn` (025's
+  body) on every real evening turn.
+
+Redesigning `parseEquipmentHours` in place, before 035 applies AND
+`applyEveningFlowTurn` is rewritten to match, would ship exactly this
+package's own §9 Finding A: new-shaped TS data into an old-shaped live RPC
+body, breaking every live evening check-in from the moment it merges — not
+hypothetical, a traced, confirmed dependency chain. Rewriting
+`applyEveningFlowTurn` for the new 5-step design and new `p_parse` keying
+is itself a large, separate task (the "companion TypeScript" this
+package's own runbook S0/S1 already named as not-yet-started) — well
+beyond this round's asked scope of three parsers + a mirror + fixtures.
+
+**Resolution**: the redesign ships as NEW, additive exports in the SAME
+file — `parseEquipmentHoursByType`, `EquipmentHoursByTypeItem`,
+`EquipmentHoursByTypeParse`, `isEquipmentHoursByTypeAnswered` — leaving
+`parseEquipmentHours`/`isEquipmentHoursAnswered`/`EquipmentHoursItem`/
+`EquipmentHoursParse` (the OLD design) fully untouched, so `evening.ts`
+keeps compiling and PRODUCTION STAYS SAFE. `equipment-hours.ts`'s own
+header now documents this in full, including the eventual consolidation:
+when `evening.ts` gets its real rewrite (lockstep with 035's apply, §9
+Finding A), the OLD exports are deleted and `parseEquipmentHoursByType` is
+renamed back to the clean `parseEquipmentHours` name.
+
+**Named precedent, not a new pattern**: this is the SAME transitional shape
+migration 030's own §10.2 finding already named and accepted once — "an
+overload hazard traded for a duplicate-logic hazard." Two implementations
+coexisting for a bounded window is the deliberately-chosen alternative to
+shipping a live break, not a compromise invented for this round.
+
+**Verified, not assumed**: `npx tsc --noEmit` — zero errors, confirming
+`evening.ts` (and everything it touches: `outbound/trigger.ts`,
+`test/dispatch.test.ts`, `test/inbound-start.test.ts`,
+`test/productivity-reconciliation-mirror.test.ts`,
+`test/unit/equipment-label.test.ts`, `test/webhook.test.ts`,
+`test/helpers/db.ts`) compiles unchanged.
+
+### 12.5 A latent bug found and fixed while tracing the real behaviour (labour.ts)
+
+Building the tri-state/§42 capture correctly required tracing
+`parseLabourCount`'s exact token-by-token behaviour against the corpus's
+own `"25 mason 11 PEB"` case — which surfaced a pre-existing bug the OLD
+code already had: the "after ?? before" trade tie-break could attribute a
+SECOND number to a trade word already consumed by an EARLIER number.
+`"25 mason 11 PEB"`, under the OLD code, actually produced `by_trade:
+[{trade:'mason',planned_count:25},{trade:'mason',planned_count:11}]` — a
+double-attribution, not a clean drop of PEB — invisible in a prior round's
+own RED test only because that test used `.find()`, which silently picked
+the first matching entry. Fixed with `consumedTradeTokens`, a set of token
+indices already attributed, checked before either tie-break candidate is
+used — verified via a dedicated regression test
+(`test/unit/labour-parser.test.ts`, "two numbers, one matched one not — no
+double-attribution").
+
+A second, smaller gap found the same way: the first `§42` capture draft
+would have wrongly swept generic filler words ("per", "aalu" — the exact
+words `test/unit/labour-parser.test.ts`'s own pre-existing "mixed
+Tamil/English" test uses) into `by_trade` as fake unmatched trades. Fixed
+with a small, dedicated `LABOUR_FILLER_WORDS` set (not borrowed from
+`RATE_STOPWORDS`/`QUANTITY_STOPWORDS`, which serve different questions) and
+a Unicode-letter check (`\p{L}`, not `[a-zA-Z]`) so a transliterated or
+Tamil-script trade word is still captured as unmatched while punctuation
+remnants and filler are not. The same two fixes (filler exclusion,
+Unicode-letter check) were applied to `idle-hours.ts` and the
+`equipment-hours.ts` redesign for consistency across all three sites.
+
+### 12.6 Test results — what flipped GREEN, what correctly stayed RED, run for real
+
+**tsc**: `npx tsc --noEmit` — zero errors throughout every step of this
+round, including after the equipment-hours additive change.
+
+**§42 TS-parser layer** (`test/unit/section-42-unmatched-capture.test.ts`)
+— ALL THREE sites flipped GREEN, `it.fails` wrappers removed (the
+assertions now genuinely pass), the paired "TODAY" documentation tests
+DELETED per the plan this file's own header already stated ("documents
+behaviour that will no longer exist"). Confirmed by reading the actual
+diff, not assumed: each TARGET assertion is now an ordinary `it(...)`.
+
+**Dedicated new parser test files, run for real**:
+- `test/unit/idle-hours-parser.test.ts` — 15/15 passed, including both
+  named regression guards ("half day" ≠ zero idle; unparseable = unknown
+  ≠ zero) and a mutual-exclusivity check (`by_trade`/`all_working`/
+  `unknown` — exactly one true, every case).
+- `test/unit/equipment-hours-by-type-parser.test.ts` — 10/10 passed,
+  including the ORIGINAL 2026-08-31 incident input (`"2 JCB 8"`) now
+  parsing cleanly with no rejection, and a large-hours case (`"JCB used 50
+  hours"`) stored as-is with no guard firing.
+- `test/unit/labour-parser.test.ts` — 13/13 passed (existing 11 updated for
+  the new `matched` field and one corrected expectation; 2 new regression
+  tests added).
+- `test/unit/morning-dispatch.test.ts` — 24/24 passed (existing manpower
+  reshape assertion updated for `matched`; 1 new §42 mirror test added).
+
+**§42 post-RPC row-read-back layer** (`test/section-42-row-readback.test.ts`,
+against LIVE test-db) — **correctly did NOT flip green**, and confirming
+that by actually running it (not assuming) surfaced something the original
+"TODAY" test had wrong: the OLD, still-live SQL reshape does an
+UNCONDITIONAL per-element map with no filter on matched status, so once
+`parseLabourCount` started including the unmatched `PEB` entry, the OLD RPC
+started carrying it through TOO — just with no `matched` key on any
+element (confirmed live: `{"count": 11, "trade": "PEB"}` already present
+in the stored row, pre-035). The bug was entirely a TS-layer drop, never an
+SQL-layer filter. The TARGET test (still `.fails`) correctly still throws —
+it specifically checks for the `matched` key, which only 035's own reshape
+will ever write — and the TODAY companion test was corrected to document
+this real, verified three-tier state instead of the wrong assumption it
+replaced. **This is the "none flipped for the wrong reason" check,
+performed for real**: the manpower row-readback TARGET staying red, for
+the RIGHT reason (RPC unchanged), is exactly as correct as the TS-layer
+tests going green for the right reason (parsers built) — flipping this one
+green now would have been the wrong-reason failure mode Aravind's
+instruction named.
+
+**Lints**: `npm run lint:migrations` — clean (86 known violations, all
+exempted, unchanged). `npm run lint:filesize` — clean, this package still
+well under the 120,000-char warn threshold.
+
+**Full suite** (`npx vitest run`, no path filter) — run TWICE, not once,
+because the FIRST run surfaced something that needed investigating rather
+than reporting as-is:
+
+- **Run 1**: 63 failed, 843 passed, 27 skipped, 1 todo (934 total) — 12
+  files, ALL failures a foreign-key violation on `daily_logs_project_id_
+  fkey` / `users_tenant_id_fkey`, the shared-fixture chain
+  (`ensureMorningFixtures`/`removeMorningFixtures`, `test/helpers/db.ts`)
+  every migration-numbered integration test file depends on.
+- **Investigated before reporting, per this file's own standing discipline
+  ("test for real, don't reason about it")**: `test/morning-flow.test.ts`
+  run STANDALONE (the file with the most failures in run 1) passed
+  CLEANLY, 19/19 — proving the round-3 parser changes were not the cause; a
+  real code regression would fail the same way in isolation. A direct
+  read-only probe of `tenants`/`projects` confirmed the shared fixture rows
+  were correctly absent (the normal post-teardown state, not corruption).
+- **Run 2, immediately after**: 1 failed, 932 passed, 1 todo (934 total) —
+  the SAME single known flake this package's earlier evidence (§0a's own
+  session context) already names (`test/session-transition.test.ts`'s
+  Test B, the documented sandbox lock-wait limitation,
+  `docs/reviews/session-transition-lock-wait-flake.md`, CLAUDE.md's
+  "CONCURRENCY, LOCK, AND RACE VERIFICATION IS CI-ONLY" rule). Nothing else
+  failed.
+- **Conclusion, not assumed**: run 1's 63 failures were a transient event
+  in the shared-fixture lifecycle under this round's added file count (four
+  new files, each with their own `beforeAll`/`afterAll` touching the same
+  hardcoded `TEST_TENANT_ID`/`TEST_PROJECT_ID`), consistent with this
+  project's own already-documented test-db fragility findings (`docs/
+  reviews/test-db-reliability-workstream.md`,
+  `sandbox-cannot-test-concurrency.md`) — not a defect in this round's
+  parser code, confirmed two independent ways (standalone isolation, and a
+  clean full-suite reproduction) rather than dismissed on the first
+  reasonable-sounding explanation.

@@ -192,8 +192,8 @@ describe('dispatchMorningFlow (pure decision mirror)', () => {
       morning_manpower: {
         total: 20,
         by_trade: [
-          { trade: 'mason', count: 12 },
-          { trade: 'helper', count: 8 },
+          { trade: 'mason', count: 12, matched: true },
+          { trade: 'helper', count: 8, matched: true },
         ],
         raw_text: '12 mason 8 helper',
       },
@@ -201,6 +201,26 @@ describe('dispatchMorningFlow (pure decision mirror)', () => {
     expect(d.sessionUpdate.current_step).toBe(4)
     expect(d.sessionUpdate.context).toEqual({ q3_reask: 0 })
     expect(d.reply).toBe(MORNING_QUESTIONS[4])
+  })
+
+  // 11a. §42 (migration 035 round 3, review package §4 Site 3): the mirror's
+  //      reshape adds `matched` in lockstep with the RPC's own
+  //      COALESCE(matched, true) -- an unmatched trade token (parseLabourCount
+  //      now captures these, see labour-parser.test.ts) survives the reshape
+  //      as matched:false rather than being silently dropped or defaulted.
+  it('advance Q3: §42 unmatched trade survives the reshape as matched:false', () => {
+    const session = makeSession({ current_flow: 'morning', current_step: 3 })
+    const d = dispatchMorningFlow(session, '25 mason 11 PEB')
+    expect(d.dailyLogWrite).toEqual({
+      morning_manpower: {
+        total: 36,
+        by_trade: [
+          { trade: 'mason', count: 25, matched: true },
+          { trade: 'PEB', count: 11, matched: false },
+        ],
+        raw_text: '25 mason 11 PEB',
+      },
+    })
   })
 
   // 12. Q3 unparseable (no number) -> reask ONCE via q3_reask (renamed from

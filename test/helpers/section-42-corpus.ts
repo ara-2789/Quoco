@@ -15,12 +15,17 @@
 // (docs/reviews/035-evening-flow-review-package.md §4, §8) already used, and
 // re-using it here rather than inventing a third spelling is deliberate.
 //
-// Each case documents what TODAY (pre-035, nothing in §11's PENDING list
-// built yet) actually does with the unmatched token — the RED tests assert
-// against that. Once a site's parser/mirror/SQL exists, the SAME case is
-// reused to assert the target shape (matched:false, token preserved) rather
-// than duplicated — a second corpus would be exactly the drift risk finding
-// 8 (review round) was raised to prevent.
+// UPDATED, migration 035 round 3: all three TS parsers now exist
+// (parseLabourCount fixed in place, parseIdleHoursByTrade new,
+// parseEquipmentHoursByType new/additive — see each file's own header).
+// These SAME cases now drive the flipped-GREEN target assertions in
+// test/unit/section-42-unmatched-capture.test.ts, test/unit/idle-hours-
+// parser.test.ts, and test/unit/equipment-hours-by-type-parser.test.ts,
+// rather than a second, duplicated corpus — the drift risk finding 8
+// (review round) was raised to prevent. The post-RPC row-read-back layer
+// (test/section-42-row-readback.test.ts) still only exercises the
+// `manpower` site — idle_hours and equipment_hours have no live RPC step to
+// call until 035 actually applies (the test-db rehearsal, next).
 
 export interface UnmatchedTokenCase {
   site: 'manpower' | 'idle_hours' | 'equipment_hours'

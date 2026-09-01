@@ -1,4 +1,4 @@
-import { canonicalEquipment } from './lexicon'
+import { canonicalEquipment, RATE_STOPWORDS } from './lexicon'
 
 // Q5 (equipment hours) parser — Evening Flow Pass 2. PURE — no Supabase, no
 // IO, and deliberately NO KNOWLEDGE of morning_equipment.
@@ -164,5 +164,134 @@ export function parseEquipmentHours(raw: string): EquipmentHoursParse {
 // valid (guard-passing) number. Garbled or arithmetically-impossible-only
 // drives the reask-once path. Mirrored in SQL as p_parse_ok['6'].
 export function isEquipmentHoursAnswered(parse: EquipmentHoursParse): boolean {
+  return parse.items.length > 0
+}
+
+// =============================================================================
+// REDESIGN -- evening step 4, ONE number per equipment TYPE (migration 035
+// restructuring, review package §10 item 3). Everything ABOVE this line
+// (parseEquipmentHours, isEquipmentHoursAnswered, EquipmentHoursItem,
+// EquipmentHoursParse) is the OLD two-number, per-machine, MATCH-TIERS
+// design and is LEFT UNTOUCHED, deliberately -- not because it's still
+// correct, but because it is still LIVE: evening.ts's applyEveningFlowTurn
+// (the real, production RPC-calling wrapper used by
+// lib/whatsapp/outbound/trigger.ts) calls parseEquipmentHours unconditionally
+// on every evening turn and sends its shape into the CURRENTLY-LIVE
+// apply_evening_flow_turn (025's body). Redesigning that function IN PLACE
+// here, before 035 applies AND evening.ts's own wrapper is rewritten to
+// match, would ship exactly the hazard this migration's own review package
+// §9 Finding A names: new-shaped TS data sent into an old-shaped RPC body,
+// breaking every live evening check-in from the moment this merges -- not a
+// hypothetical, a traced, confirmed dependency (evening.ts:748,
+// `const equipmentHours = parseEquipmentHours(params.message)`, keyed into
+// `p_parse['6']`, the OLD step numbering).
+//
+// So this round adds the redesigned parser under a NEW name
+// (`parseEquipmentHoursByType`) instead, coexisting with the old one until
+// evening.ts's own rewrite (the same "companion TypeScript" the review
+// package's runbook S0 already names as a separate, larger, not-yet-started
+// piece) replaces `applyEveningFlowTurn`'s step dispatch AND deletes
+// everything above this line IN THE SAME LOCKSTEP DEPLOY AS THE SQL APPLY
+// (§9 Finding A/B) -- at which point `parseEquipmentHoursByType` is renamed
+// back to the clean `parseEquipmentHours` name, reclaiming it. This is the
+// SAME transitional shape migration 030's own §10.2 finding already named
+// and accepted once: "an overload hazard traded for a duplicate-logic
+// hazard" -- two implementations coexisting for a bounded window is the
+// deliberately-chosen alternative to shipping a live break.
+//
+// TARGET SHAPE (035_evening_flow_restructuring.sql's own P_PARSE SHAPES
+// comment): {items: [{type, hours_used, matched, raw}], raw_text}. `type` is
+// canonicalEquipment's output when matched, else the token exactly as heard
+// (original case -- see the lowercasing-fix note below). This parser still
+// has NO KNOWLEDGE of morning_equipment (unchanged architectural principle
+// from this file's own original header above) -- the RPC does the type join
+// under its own lock.
+//
+// NO ARITHMETIC GUARD, ON PURPOSE -- the single biggest behavioural
+// difference from the OLD design above. The old parser's ARITHMETIC GUARDS
+// (see its own header) rejected an out-of-range answer outright, silently,
+// with no explanation -- the exact failure sequence in the 2026-08-31
+// production incident this whole migration exists to fix. Implausibility is
+// now a SQL-side FLAG computed against morning_equipment's count (review
+// package §5), never a TS-side rejection. Whatever number is reported is
+// stored, exactly as given.
+//
+// LOWERCASING FIX (migration 035 round 3, applied identically across
+// labour.ts, idle-hours.ts, and this redesign): tokenise on the
+// ORIGINAL-CASE text; push `.toLowerCase()` into the `canonicalEquipment`
+// lookup call (it lowercases internally) rather than lowercasing the whole
+// string up front. Matching stays case-insensitive; an unmatched token is
+// captured exactly as the engineer typed it (§42), never silently recased.
+
+export interface EquipmentHoursByTypeItem {
+  // canonicalEquipment's output when matched, else the raw token exactly as
+  // heard (original case).
+  type: string
+  hours_used: number
+  // true when canonicalEquipment resolved the token; false when the token
+  // is preserved unmatched (§42). Always present.
+  matched: boolean
+  raw: string
+}
+
+export interface EquipmentHoursByTypeParse {
+  items: EquipmentHoursByTypeItem[]
+  raw_text: string
+}
+
+const HOURS_FILLER_WORDS: ReadonlySet<string> = new Set(['hours', 'hour', 'hrs', 'used', 'run', 'ran', 'today'])
+
+function parseByTypeChunk(chunk: string): EquipmentHoursByTypeItem | null {
+  const tokens = splitDigitBoundaries(chunk)
+    .split(/\s+/)
+    .filter(Boolean)
+
+  let hours_used: number | null = null
+  let matchedType: string | null = null
+  let firstWord: string | null = null // original case, for the unmatched fallback
+
+  for (const t of tokens) {
+    if (/^\d+$/.test(t)) {
+      if (hours_used === null) hours_used = parseInt(t, 10)
+      continue
+    }
+    const kw = canonicalEquipment(t) // lowercases internally
+    if (kw && matchedType === null) {
+      matchedType = kw
+      continue
+    }
+    const lower = t.toLowerCase()
+    if (firstWord === null && /\p{L}/u.test(t) && !RATE_STOPWORDS.has(lower) && !HOURS_FILLER_WORDS.has(lower)) {
+      firstWord = t
+    }
+  }
+
+  if (hours_used === null) return null
+
+  const type = matchedType ?? firstWord ?? 'equipment'
+  return { type, hours_used, matched: matchedType !== null, raw: chunk.trim() }
+}
+
+export function parseEquipmentHoursByType(raw: string): EquipmentHoursByTypeParse {
+  const raw_text = raw.trim()
+  if (raw_text === '') return { items: [], raw_text }
+
+  const chunks = raw_text
+    .split(/[,\n;]|\band\b|\bplus\b/i)
+    .map((c) => c.trim())
+    .filter(Boolean)
+
+  const items: EquipmentHoursByTypeItem[] = []
+  for (const chunk of chunks) {
+    const item = parseByTypeChunk(chunk)
+    if (item) items.push(item)
+  }
+
+  return { items, raw_text }
+}
+
+// Whether this parse is an acceptable step-4 answer: at least one item
+// parsed. Mirrored in SQL as p_parse_ok['4'].
+export function isEquipmentHoursByTypeAnswered(parse: EquipmentHoursByTypeParse): boolean {
   return parse.items.length > 0
 }

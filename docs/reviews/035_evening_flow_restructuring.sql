@@ -5,6 +5,19 @@
 -- when it is written" rule, this file lives in docs/reviews/ until an apply is
 -- actually happening -- do not copy it into supabase/migrations/ yet.
 --
+-- AMENDED AFTER REVIEWER APPROVAL (round 3, 2026-09-01) -- stated explicitly
+-- so the approved version is never mistaken for the current one. The
+-- reviewer approved this file with no findings against the SQL itself; the
+-- SAME session then surfaced a real requirement the approved version did not
+-- handle (an unparseable idle-hours answer would have been stored
+-- indistinguishably from a confident "all working" zero). The `idle_hours`
+-- and `idle_hours_skip_equipment` branches below now also write
+-- `all_working`/`unknown` -- see each branch's own comment for why. The
+-- byte-identical-signature proof (both RPCs' parameter lists) is UNAFFECTED
+-- -- only two branches' internal JSONB construction changed, not either
+-- function's signature. Re-review of this specific delta is owed before
+-- this file is treated as re-approved wholesale.
+--
 -- Full design record: docs/plans/evening-flow-restructuring-scope.md (18
 -- sections plus a reviewer SCOPE-APPROVED round folding in 8 findings). This
 -- header summarises; it is not a substitute for that plan.
@@ -67,13 +80,23 @@
 --      normalisation applied must be named -- not solved by this SQL file,
 --      which only reshapes whatever TS provides).
 --     p_parse_ok->'2': whether a number was found (same gate as today).
---   Evening step 3 (idle hours by trade) -- p_parse->'3', a NEW parser this
---     migration has no TS counterpart for yet:
---     {by_trade: [{trade, idle_hours, matched}], raw_text}.
---     p_parse_ok->'3': answered (a number found, OR an explicit
---     "none idle"/"all working" signal -- this question is now
---     UNCONDITIONAL, so "nobody idle" must be a real, common, valid answer,
---     not treated as unanswered).
+--   Evening step 3 (idle hours by trade) -- p_parse->'3':
+--     {by_trade: [{trade, idle_hours, matched}], all_working: boolean,
+--      unknown: boolean, raw_text}. TRI-STATE, ADDED ROUND 3 (Aravind's
+--     ruling, after this branch's first draft carried only by_trade/
+--     raw_text): an unparseable answer must record UNKNOWN, never a
+--     fabricated zero -- `all_working` is the CONFIDENT-zero state (an
+--     explicit "all working"/"no idle" signal was recognised, by_trade
+--     empty), `unknown` is the genuinely-unparseable state (nothing
+--     recognisable at all, by_trade empty, all_working false). The two are
+--     mutually exclusive by construction in parseIdleHoursByTrade
+--     (lib/whatsapp/flows/parsers/idle-hours.ts) -- this SQL reads them
+--     straight through rather than re-deriving either, so the two layers
+--     can never disagree about which state applies.
+--     p_parse_ok->'3': answered (a number found, OR all_working=true --
+--     this question is now UNCONDITIONAL, so "nobody idle" must be a real,
+--     common, valid answer, not treated as unanswered). unknown=true is the
+--     ONLY state that gates a reask.
 --   Evening step 4 (equipment, hours used) -- p_parse->'4':
 --     {items: [{type, hours_used, matched, raw}], raw_text}. `type` is
 --     canonicalEquipment's output when matched=true, the raw token when
@@ -98,7 +121,8 @@
 -- RE-LITIGATED DESIGN DECISIONS (the plan left exact JSONB key names
 -- undecided on purpose -- "schema design out of scope for this record"):
 --   evening_manpower:   {total, by_trade:[{trade,count,matched}], raw_text}
---   evening_idle_hours: {by_trade:[{trade,idle_hours,matched}], raw_text}
+--   evening_idle_hours: {by_trade:[{trade,idle_hours,matched}],
+--     all_working, unknown, raw_text} -- all_working/unknown added round 3
 --   evening_equipment_utilisation:
 --     {items:[{type,hours_used,matched,implausible,raw,confidence}],
 --      raw_text, confidence}
@@ -754,6 +778,17 @@ BEGIN
       SET evening_manpower = EXCLUDED.evening_manpower;
 
   ELSIF v_col = 'idle_hours' THEN
+    -- TRI-STATE, NOT BOOLEAN (added round 3, Aravind's ruling, after this
+    -- branch's first draft only carried `by_trade`/`raw_text` -- an
+    -- unparseable answer would have collapsed into the exact same stored
+    -- shape as a confident "all working" zero, indistinguishable to any
+    -- later reader. `all_working` and `unknown` are read straight from
+    -- p_parse (parseIdleHoursByTrade's own tri-state, lib/whatsapp/flows/
+    -- parsers/idle-hours.ts) rather than re-derived here, so the SQL layer
+    -- can never disagree with the TS layer about which of the three states
+    -- applies. COALESCE(...,false) is defensive only -- this is a brand-new
+    -- column with no live caller to be backward-compatible with, unlike
+    -- manpower's matched COALESCE above.
     INSERT INTO daily_logs AS d
       (tenant_id, project_id, engineer_id, log_date, evening_idle_hours)
     VALUES
@@ -772,6 +807,8 @@ BEGIN
                   )
            FROM jsonb_array_elements(COALESCE(p_parse->'3'->'by_trade', '[]'::jsonb)) AS t
          ),
+         'all_working', COALESCE((p_parse->'3'->>'all_working')::boolean, false),
+         'unknown',     COALESCE((p_parse->'3'->>'unknown')::boolean, false),
          'raw_text', p_parse->'3'->>'raw_text'
        ))
     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
@@ -802,6 +839,12 @@ BEGIN
                   )
            FROM jsonb_array_elements(COALESCE(p_parse->'3'->'by_trade', '[]'::jsonb)) AS t
          ),
+         -- TRI-STATE -- same addition, same reasoning, as the plain
+         -- 'idle_hours' branch above. Duplicated rather than factored out
+         -- because this branch's two-column write already duplicates the
+         -- by_trade reshape too (pre-existing shape, not introduced here).
+         'all_working', COALESCE((p_parse->'3'->>'all_working')::boolean, false),
+         'unknown',     COALESCE((p_parse->'3'->>'unknown')::boolean, false),
          'raw_text', p_parse->'3'->>'raw_text'
        ),
        jsonb_build_object('items', '[]'::jsonb, 'raw_text', NULL, 'confidence', NULL))
