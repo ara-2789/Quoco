@@ -1295,6 +1295,31 @@ How to verify locally (ask me to run these; show me the command)
 If you cannot write a test for something, say so and explain why, so I can
 decide whether to accept it. Do not quietly skip the test.
 
+A TEST FILE'S OWN SUMMARY LINE CAN BE MISSING FROM A FULL `vitest run`'S
+PRINTED OUTPUT WITHOUT ITS TESTS ACTUALLY FAILING TO RUN — MECHANISM NOT
+CONFIRMED, DO NOT ASSUME BASENAME (found 2026-09-02, building the
+owner_deliver handler; corrected same day after the first write-up's own
+leading theory was tested and disconfirmed). `test/owner-deliver-
+dispatch.test.ts` (integration, ~45s) and `test/unit/owner-deliver-
+dispatch.test.ts` (unit, ~1ms) shared an identical basename — the
+integration file's own line was absent from two consecutive full-suite
+runs (not failed, not errored, simply not printed), both landing on an
+identical total test count. **The first write-up here asserted the shared
+basename as the cause — tested directly with two trivial same-named
+scratch files (one deliberately failing) added to the same 75-file suite,
+and the collision did NOT reproduce: both lines printed correctly, the
+failure was reported.** So basename alone is disconfirmed, not confirmed.
+The identical totals across all three real runs (including the one where
+the line printed) suggest the tests were likely counted throughout regardless
+of whether the line printed — a reporter-display quirk, not a
+non-execution one, most likely correlated with the file's own long
+runtime, but that specific confound was never isolated either. Full
+account: `docs/reviews/vitest-basename-collision.md`. CONSEQUENCE: don't
+conclude a test file "isn't covered" from a full run's file list alone —
+compare the TOTAL count against a known baseline, and confirm a specific
+file directly (`npx vitest run <path>`) when its line is unexpectedly
+missing, before assuming either the best or the worst.
+
 ---
 
 ## 8. ENVIRONMENT VARIABLES
@@ -1309,6 +1334,8 @@ TWILIO_ACCOUNT_SID=              ← server-side only
 TWILIO_AUTH_TOKEN=               ← server-side only
 TWILIO_WHATSAPP_NUMBER=          ← e.g. whatsapp:+14155238886
 RESEND_API_KEY=                  ← server-side only
+RESEND_FROM_EMAIL=               ← e.g. noreply@quoco.co.in (added 2026-09-02,
+                                    lib/email/send.ts — owner-deliver's email path)
 RAZORPAY_KEY_ID=                 ← server-side only
 RAZORPAY_KEY_SECRET=             ← server-side only
 SENTRY_DSN=

@@ -247,7 +247,11 @@ function codeTemplatedVerdict(morning: CheckInStatusResult['morning'], evening: 
   return 'No check-in received today, so we do not know what was done.'
 }
 
-function formatDate(logDate: string): string {
+// Exported 2026-09-02 so the owner-deliver handler (lib/dpr/owner-deliver-
+// dispatch.ts) renders the same date format for the same report's email
+// copy, rather than a second, independently-maintained formatter that
+// could silently drift from this one.
+export function formatDate(logDate: string): string {
   // e.g. "Thu 13 Aug" — code-side, never fed through containment (S1).
   const d = new Date(`${logDate}T00:00:00Z`)
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' })

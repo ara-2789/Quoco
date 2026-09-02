@@ -16,15 +16,15 @@
 // (matching what a single `daily_logs`/`dprs` row actually carries, per
 // 028's per-engineer key widening). It does NOT decide how a caller
 // AGGREGATES this across every engineer on a project to produce ONE
-// owner-facing send for that project-day — that aggregation policy is a
-// genuinely open, unbuilt question (034's own review package §12a names
-// it explicitly: "the no-report notice is sent ONCE per owner per
-// project-day; dprs rows are per engineer... something must resolve which
-// N before any UPDATE runs"). Deciding an aggregation rule here would be
-// answering a question this file was not asked to answer; a caller with a
-// roster of engineers calls this once per engineer and combines the
-// results under whatever policy gets decided when the owner-send handler
-// is actually built.
+// owner-facing send for that project-day — 034's own review package §12a
+// named that aggregation policy as a genuinely open, unbuilt question
+// ("the no-report notice is sent ONCE per owner per project-day; dprs rows
+// are per engineer... something must resolve which N before any UPDATE
+// runs"). RESOLVED, 2026-09-02: `lib/dpr/owner-deliver-dispatch.ts` calls
+// this function once per engineer and fans the notice-path outcome out to
+// every 'notice'-routed row in one batch write, sending exactly one real
+// WhatsApp/email notice per project-day. Full reasoning:
+// docs/reviews/owner-deliver-handler-record.md, Decision 1.
 
 export type OwnerDeliveryRoute = 'report' | 'notice'
 

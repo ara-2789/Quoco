@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { claimJobs, completeJob, failJob, type Job } from '@/lib/queue/jobs'
 import { isCronRequestAuthorized } from '@/lib/cron/auth'
 import { handleDprGenerateJob, markDprGenerationFailed, type DprGenerateJobPayload } from '@/lib/dpr/dispatch'
+import { handleOwnerDeliverJob, type OwnerDeliverJobPayload } from '@/lib/dpr/owner-deliver-dispatch'
 import {
   sweepStaleMorningSessions,
   reportMorningSweepAnomalies,
@@ -19,18 +20,24 @@ import { createServiceClient } from '@/lib/supabase/service'
 
 // This endpoint is polled by Vercel Cron every 60 seconds (NFR-16).
 // It claims up to 3 pending/retry-due jobs and processes each one.
-// Handlers for real job types (owner_deliver, etc.) get added to the
-// dispatch map below as those features are built.
+// Handlers for real job types get added to the dispatch map below as those
+// features are built. owner_deliver's own handler is built (2026-09-02),
+// application code only -- nothing enqueues it yet.
 
 async function dispatchJob(job: Job, client: SupabaseClient): Promise<void> {
   switch (job.type) {
     case 'dpr_generate':
       await handleDprGenerateJob(job.payload as unknown as DprGenerateJobPayload, job.id, { supabaseClient: client })
       return
+    case 'owner_deliver':
+      // Nothing enqueues this job type yet (no eveningClose/ownerSend cron
+      // entry exists) -- see lib/dpr/owner-deliver-dispatch.ts's own header
+      // for what else must exist before this handler reaches a real owner.
+      await handleOwnerDeliverJob(job.payload as unknown as OwnerDeliverJobPayload, { supabaseClient: client })
+      return
     // Placeholder handler — proves the claim/complete/fail loop works
     // end-to-end before these job types exist. Remove entries as their
     // real handlers are wired up.
-    case 'owner_deliver':
     case 'template_send':
     case 'morning_trigger':
     case 'evening_trigger':
