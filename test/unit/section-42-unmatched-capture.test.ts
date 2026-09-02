@@ -1,19 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { parseLabourCount } from '@/lib/whatsapp/flows/parsers/labour'
 import { parseIdleHoursByTrade } from '@/lib/whatsapp/flows/parsers/idle-hours'
-import { parseEquipmentHoursByType } from '@/lib/whatsapp/flows/parsers/equipment-hours'
+import { parseEquipmentHours } from '@/lib/whatsapp/flows/parsers/equipment-hours'
 import { SECTION_42_CORPUS } from '../helpers/section-42-corpus'
 
 // §42 (unmatched trade/equipment tokens are CAPTURED, not silently dropped)
 // — TS-PARSER LAYER. FLIPPED GREEN, migration 035 round 3 (all three
 // pending parsers from review package §10 are now built): parseLabourCount
 // (labour.ts, existing, fixed in place), parseIdleHoursByTrade (idle-hours.ts,
-// new), parseEquipmentHoursByType (equipment-hours.ts, ADDITIVE — see that
-// file's own header for why the redesign lives under a new name rather than
-// replacing parseEquipmentHours in place: evening.ts's live production
-// wrapper, applyEveningFlowTurn, still calls the OLD parseEquipmentHours on
-// every real evening turn, and cannot be rewired until 035 applies in the
-// same lockstep deploy — review package §9 Finding A).
+// new), parseEquipmentHours (equipment-hours.ts — reclaimed the clean name
+// now that evening.ts's own rewrite lands in the same commit as this
+// parser's redesign; the old two-number MATCH-TIERS design is deleted, not
+// coexisting).
 //
 // This file previously carried `it.fails` TARGET tests (expected-fail, per
 // CLAUDE.md's own build discipline) alongside "TODAY" tests documenting the
@@ -69,9 +67,9 @@ describe('§42 unmatched-token capture — site: idle_hours (evening step 3, new
   })
 })
 
-describe('§42 unmatched-token capture — site: equipment_hours (evening step 4 redesign, parseEquipmentHoursByType)', () => {
+describe('§42 unmatched-token capture — site: equipment_hours (evening step 4 redesign, parseEquipmentHours)', () => {
   it('an unmatched equipment token is preserved as {type, hours_used, matched:false}, original case intact', () => {
-    const parse = parseEquipmentHoursByType(equipmentHoursCase.input)
+    const parse = parseEquipmentHours(equipmentHoursCase.input)
     const item = parse.items.find((i) => i.raw.includes(equipmentHoursCase.unmatchedToken))
     expect(item).toBeDefined()
     expect(item!.type).toBe(equipmentHoursCase.unmatchedToken)
@@ -80,7 +78,7 @@ describe('§42 unmatched-token capture — site: equipment_hours (evening step 4
   })
 
   it('the matched equipment type alongside it resolves via canonicalEquipment', () => {
-    const parse = parseEquipmentHoursByType(equipmentHoursCase.input)
+    const parse = parseEquipmentHours(equipmentHoursCase.input)
     const item = parse.items.find((i) => i.type === equipmentHoursCase.matchedToken)
     expect(item).toEqual({ type: 'jcb', hours_used: 6, matched: true, raw: 'JCB 6 hours' })
   })

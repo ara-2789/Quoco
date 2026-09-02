@@ -26,12 +26,14 @@ import { assertPairwiseDistinct, stripEcho, type DistinctnessCase } from './help
 //     035 (that migration only edits the `manpower` branch), so this runs
 //     against whatever is currently live, no rehearsal required.
 //   - `idle_hours` (evening step 3) and `equipment_hours` (evening step 4)
-//     — NOT COVERED HERE. Neither branch exists on live test-db until 035
-//     applies. Marked `it.todo` below rather than silently absent, and
-//     will be built for real as part of the test-db rehearsal (review
-//     package §9/§14), added to `test/section-42-row-readback.test.ts`
-//     alongside the manpower site already there — not retrofitted onto
-//     this file, which stays scoped to what's live today.
+//     — BUILT, but in `test/section-42-row-readback.test.ts`, not here,
+//     per this file's own original plan ("added to test/section-42-row-
+//     readback.test.ts alongside the manpower site already there — not
+//     retrofitted onto this file"). Both use the SAME `assertPairwiseDistinct`/
+//     `stripEcho` helpers this file's own equipment case does. Still
+//     `it.fails`-wrapped there (035 is not applied anywhere) — see that
+//     file's own header for the real, passing evidence from the test-db
+//     rehearsal (review package §14.3).
 
 const LOG_DATE = '2026-03-16'
 const P_NOW = '2026-03-16T09:00:00+05:30'
@@ -108,7 +110,7 @@ describe('write-boundary distinctness — equipment (morning Q3, live today)', (
   })
 })
 
-describe('write-boundary distinctness — evening (steps 3/4, NOT achievable until 035 applies)', () => {
-  it.todo('idle_hours (evening step 3): real data / all_working / unknown must be pairwise distinct — needs 035 applied, see test/section-42-row-readback.test.ts')
-  it.todo('equipment_hours (evening step 4): implausible true/false/null must be pairwise distinct — needs 035 applied + a seeded morning_equipment count, see test/section-42-row-readback.test.ts')
-})
+// Evening's own write-boundary distinctness cases (idle_hours' real-data/
+// all_working/unknown tri-state; equipment_hours' implausible true/false/
+// null tri-state) live in test/section-42-row-readback.test.ts, not here —
+// see this file's own header COVERAGE note for why.

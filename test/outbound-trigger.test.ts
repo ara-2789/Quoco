@@ -84,9 +84,10 @@ import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID }
 //   design got a clean session row for free, because a brand-new
 //   whatsapp_number had never had a session row created against it. With
 //   ONE shared engineer, every test now shares ONE session row -- and
-//   apply_{morning,evening}_flow_turn's own `startFlow` branch (mirrored
-//   in dispatchMorningFlow/dispatchEveningFlow) only produces outcome
-//   'start' when session.current_flow IS NULL; otherwise it falls into
+//   apply_{morning,evening}_flow_turn's own `startFlow` branch (mirrored in
+//   dispatchMorningFlow for morning; evening has no mirror, migration 035's
+//   evening.ts rewrite — see that file's own header for why) only produces
+//   outcome 'start' when session.current_flow IS NULL; otherwise it falls into
 //   'reask' and leaves the row's current_flow/current_step untouched. Left
 //   unhandled, the FIRST test in this file to reach a 2xx delivery would
 //   permanently set current_flow to non-null, and every later test

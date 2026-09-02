@@ -1256,3 +1256,172 @@ applied anywhere. The next real apply (to test-db, then prod) still needs
 the full lockstep TS/SQL deploy this package's own §9 Findings A/B
 describe — this rehearsal proves the SQL is correct and the tri-state fix
 holds; it does not shorten that remaining work.
+
+
+---
+
+## 15. evening.ts rewrite — the last gate before 035's lockstep (2026-09-02)
+
+Full scope built: `evening.ts`'s flow rewritten for the 5-question shape,
+pointed at the three new parsers, the transition from `parseEquipmentHoursByType`
+completed (reclaiming the clean `parseEquipmentHours` name, old design
+deleted rather than coexisting), the largest test deletion this project has
+made carried out only after its replacement coverage was proven green, and
+write-boundary distinctness extended to evening's own branches.
+
+### 15.1 Pre-checks, before any code
+
+**Template approval status** (read-only `GET .../ApprovalRequests`, four
+real calls): all four (1v3, 2v3, 8v2, 14) came back `approved`. One
+anomaly found and flagged, not resolved: 1v3 (`quoco_morning_checkin_v3`)
+came back Meta-categorized `MARKETING`, not the `UTILITY` it was submitted
+as (`allow_category_change: true` was set at submission) — the other
+three came back `UTILITY` as expected. Recorded, not investigated further;
+out of this round's scope.
+
+**SID repoint — argued as separate, not bundled.** Traced the actual
+coupling: `{{3}}` (the morning-plan echo) lives entirely in
+`lib/whatsapp/outbound/templates.ts`'s `selectEveningTemplate` (the
+TRIGGER message); `evening.ts`'s own `EVENING_QUESTIONS[1]` never echoed
+the plan. No functional dependency exists between the template's `{{3}}`
+removal and what the flow does once the engineer replies. §40 itself
+already declared the repoint "its own separate change" — that gating
+condition (Meta's approval) is now satisfied, which makes the repoint
+*possible*, not *required alongside this one*. Not done this round.
+
+**Q1 copy correction, and the ONLY divergence.** The evening Q1 text had
+drifted from `quoco_evening_checkin_v3`'s approved body ("Add the quantity
+if you can" vs. the approved "Enter quantity wherever applicable... or
+'brickwork 8 m3'") — a real, confirmed gap: two live-adjacent strings for
+the same question, one in the trigger template, one in the flow's own
+reask/start text. Fixed to match the template exactly. Grepped every other
+template that embeds a flow's own first question (only 1/1v3 and 2/2v3 do
+this): morning's own re-cut changed only its framing line, not the
+question itself — confirmed clean, no other divergence exists.
+
+**`db.ts`'s `applyEveningFlowTurn`, every caller, printed before touching
+it**: all three current callers (`test/migration-022.test.ts`,
+`test/migration-024.test.ts`, `test/productivity-reconciliation-mirror.test.ts`)
+were already on the deletion list — nothing kept depended on its old
+behaviour, confirmed before rewriting it, not assumed.
+
+### 15.2 Prompt copy, as approved with corrections
+
+- Q1: unchanged from the template-corrected text above.
+- Q2 (workers by trade): mirrors morning Q3's own wording, evening tense.
+- Q3 (idle hours by trade, NEW): approved as drafted.
+- Q4 (equipment hours by type, NEW): approved as drafted — one number,
+  morning equipment echoed by name (no positional numbering, since
+  matching is by type string now), no second number.
+- Q5 (hindrance): examples CUT per correction — "Anything that *slowed
+  execution* today? Reply in a few words, or \"none\"." — no longer lists
+  four categories that risked anchoring the engineer.
+- Reask copy (Q2/Q3/Q4): approved as drafted, each stating the one real
+  rejection reason each parser can report today (the two-number
+  arithmetic-guard scenario the original §0(a) finding analysed is moot —
+  Q4 asks for one number now, nothing left to compare).
+
+### 15.3 The rewrite
+
+`lib/whatsapp/flows/evening.ts`: 800 lines → 286. Deleted in full:
+`dispatchEveningFlow`, `matchEquipmentHoursItems`, the old numbered
+`buildEquipmentHoursPrompt`, `EveningDispatch`/`EveningDispatchOptions`/
+`EveningDailyLogWrite`/`EquipmentUtilisationItem` (the entire pure-mirror
+section — confirmed via `git grep` that nothing outside this file imported
+any of them), `EVENING_Q4_HEADCOUNT_KEY`/`EVENING_Q5_REASK_KEY`/
+`EVENING_Q6_REASK_KEY`. `applyEveningFlowTurn`'s own exported params/return
+shape kept byte-identical — `dispatch.ts` and `outbound/trigger.ts` needed
+zero changes, confirmed by a clean `tsc --noEmit` after the rewrite.
+
+`lib/whatsapp/flows/parsers/equipment-hours.ts`: the old two-number
+MATCH-TIERS design deleted outright; `parseEquipmentHoursByType`/
+`isEquipmentHoursByTypeAnswered`/`EquipmentHoursByTypeItem`/
+`EquipmentHoursByTypeParse` renamed back to the clean
+`parseEquipmentHours`/`isEquipmentHoursAnswered`/`EquipmentHoursItem`/
+`EquipmentHoursParse` names — the transition §12.4 opened is now closed,
+not left coexisting.
+
+`test/helpers/db.ts`: `applyEveningFlowTurn` rewritten for the same 5-step
+shape (parsers' own output passed straight through, no reshaping);
+`completeMorningWithEquipment`/`completeMorningNoEquipment`/`reachStep4`
+deleted (every caller was already on the deletion list, confirmed);
+`EquipmentUtilisationItemRow` updated to the new per-item shape.
+
+### 15.4 Sequencing — coverage never lapsed
+
+Per explicit instruction: `test/evening-flow.test.ts` (19 tests — 4
+version-agnostic and genuinely green against the CURRENTLY-LIVE pre-035
+RPC, 15 `it.fails`-wrapped and real) was written and run FIRST, proven
+green, BEFORE `test/migration-022.test.ts` (13 tests) +
+`test/migration-024.test.ts` (31 tests) +
+`test/productivity-reconciliation-mirror.test.ts` (14 tests) — 58 tests
+total, all exercising the OLD 6-step design — were deleted. At no point
+did evening coverage lapse to zero while CI still passed.
+
+**A real gap found and closed while proving this green, not glossed
+over**: three of the 15 `it.fails` tests initially came back reporting
+"Expect test to fail" — meaning they PASSED against the old RPC, for the
+wrong reason. Traced precisely: their assertions checked only outcome/
+step-number/reply-text, which coincidentally COINCIDE between the old and
+new designs on these specific paths (the same generic reask mechanism;
+`buildEveningReply` is pure client-side TS that always renders the new
+copy regardless of which RPC body is live; and old-vs-new step numbering
+happens to land on the same number after a reask-then-accept sequence).
+Fixed by strengthening each to check the actual STORED column shape
+instead — which genuinely differs between designs — confirmed each now
+throws for the right reason. This is the "confirm none flipped because an
+assertion was weakened" check, run in the opposite direction: confirming
+none of the EXPECTED failures were papering over a coincidental pass.
+
+### 15.5 Write-boundary distinctness extended to evening's branches
+
+Per instruction — `idle_hours`'s and `equipment_hours`'s distinctness
+cases (already built during the test-db rehearsal, §14.3) live in
+`test/section-42-row-readback.test.ts`, using the SAME `assertPairwiseDistinct`/
+`stripEcho` helpers `test/section-42-write-boundary-distinctness.test.ts`'s
+own equipment case uses. That file's own `it.todo` stubs for these two
+sites are now replaced with a pointer to where the real coverage actually
+lives, rather than duplicating it.
+
+### 15.6 Full-suite verification — two timeouts investigated, neither a regression
+
+First full run: 2 failed — the known `session-transition.test.ts` flake,
+and a ~36-second timeout in `test/outbound-trigger.test.ts`'s "a Twilio
+4xx..." test (a file that imports the just-rewritten `applyEveningFlowTurn`,
+so investigated directly rather than assumed environmental). Standalone
+re-run: **10/10 passed, fast** (the specific test that timed out ran in
+1268ms).
+
+**Second full run, quiet window reconfirmed**: 2 failed again — the same
+known flake, and `test/outbound-trigger.test.ts` timed out AGAIN, but on a
+DIFFERENT test this time ("a 429 re-claim that loses the compare-and-swap
+race", 30247ms). A different test failing each run, in a file whose
+failing tests never reach the code this round actually changed (Twilio
+HTTP-status/retry mocking, not evening-flow content), and which passes
+10/10 cleanly on EVERY standalone run (checked twice) — this is
+environmental timing sensitivity under full-suite load, the same species
+as this migration's own rehearsal's migration-020 timeout (§14.4), not a
+regression. Recorded as a candidate for its own standing-flake doc
+(matching `docs/reviews/test-fixture-lifecycle-flake.md`'s own shape) —
+not written here, out of this round's scope.
+
+**Net result across both full runs and four standalone confirmations**:
+zero failures attributable to this round's actual changes. Only the
+already-documented `session-transition.test.ts` flake and this newly-
+observed (but twice-confirmed environmental) `outbound-trigger.test.ts`
+timing sensitivity.
+
+### 15.7 What still cannot run, stated plainly
+
+Every `it.fails`-wrapped test in `test/evening-flow.test.ts` and
+`test/section-42-row-readback.test.ts` (idle_hours/equipment_hours sites)
+needs 035 actually applied to run for real — that is the entire content
+test for steps 2–5 (workers by trade, idle hours by trade, equipment
+hours by type, hindrance), every §42 capture case, both auto-skip paths,
+the idle-hours tri-state, the equipment implausible tri-state, and
+completion/already-complete. None of this is a gap in today's build — it
+is the honest boundary this round's own scope stops at. The lockstep
+apply (035's SQL + this TS, in one sitting, per review package §9's
+Findings A/B) is the separate event that flips all of it real — per
+explicit instruction, NOT started here: no runbook run, no live
+zero-sessions probe, nothing applied anywhere.

@@ -53,13 +53,17 @@ describe('equipmentLabel', () => {
 })
 
 describe('buildEquipmentHoursPrompt', () => {
-  it('renders the full prompt, humanized labels, pinned against accidental wording edits', () => {
+  it('renders the full prompt, humanized labels, comma-joined (NO positional numbering — matching is by type string now), pinned against accidental wording edits', () => {
     const prompt = buildEquipmentHoursPrompt([{ type: 'jcb' }, { type: 'concrete_mixer' }])
     expect(prompt).toBe(
-      'For each machine below, reply with its number, hours on site, hours ' +
-        'actually run, and a reason if it was idle. Like this: 1) 8 6 waiting for fuel\n' +
-        '1) JCB\n' +
-        '2) Concrete Mixer',
+      'Equipment you listed this morning: JCB, Concrete Mixer. How many *hours* was each used today? e.g. "JCB 6 hours, mixer 4 hours".',
+    )
+  })
+
+  it('a single machine renders without a trailing comma', () => {
+    const prompt = buildEquipmentHoursPrompt([{ type: 'jcb' }])
+    expect(prompt).toBe(
+      'Equipment you listed this morning: JCB. How many *hours* was each used today? e.g. "JCB 6 hours, mixer 4 hours".',
     )
   })
 })

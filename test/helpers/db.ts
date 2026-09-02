@@ -5,8 +5,7 @@ import type { EveningOutcome } from '@/lib/whatsapp/flows/evening'
 import { parseLabourCount, isLabourAnswered } from '@/lib/whatsapp/flows/parsers/labour'
 import { parseEquipment, isEquipmentAnswered } from '@/lib/whatsapp/flows/parsers/equipment'
 import { parseQuantities } from '@/lib/whatsapp/flows/parsers/quantities'
-import { classifyYesNo } from '@/lib/whatsapp/flows/parsers/lexicon'
-import { parseProductivity, isProductivityAnswered } from '@/lib/whatsapp/flows/parsers/productivity'
+import { parseIdleHoursByTrade, isIdleHoursAnswered } from '@/lib/whatsapp/flows/parsers/idle-hours'
 import {
   parseEquipmentHours,
   isEquipmentHoursAnswered,
@@ -417,9 +416,8 @@ export async function applyMorningFlowTurn(params: {
 }
 
 // Result shape returned by apply_evening_flow_turn (jsonb) — same shape as
-// MorningTurnRow, distinct outcome union, plus Pass 2's equipment_echo
-// (024_evening_flow_q4_q5.sql) — the data-driven Q5 prompt's machine list,
-// null except when current_step becomes 6.
+// MorningTurnRow, distinct outcome union, plus the data-driven Q4 prompt's
+// machine list (equipment_echo), null except when current_step becomes 4.
 export interface EveningTurnRow {
   outcome: EveningOutcome
   current_flow: SessionFlow | null
@@ -428,18 +426,19 @@ export interface EveningTurnRow {
   equipment_echo: EquipmentEchoItem[] | null
 }
 
-// Wrapper over the single transactional evening-flow RPC (migrations 022 +
-// 024). Parameter names match apply_evening_flow_turn's SQL signature EXACTLY
-// (p_phone_number, p_tenant_id, p_user_id, p_project_id, p_message,
-// p_start_flow, p_parse, p_parse_ok, p_now, p_test_sleep_ms) — UNCHANGED by
-// 024 (Q4/Q5 fit the existing step-keyed p_parse/p_parse_ok shape, no new RPC
-// arguments). Mirrors the production wrapper (lib/whatsapp/flows/evening.ts):
-// every parsed step's shape is computed unconditionally and sent KEYED BY
-// STEP ID — the RPC selects the entry matching the step it resolves under its
-// lock (see the 022 header note on why this is not "the parse for the active
-// step"). Q5's parser (parseEquipmentHours) never sees morning_equipment —
-// see that file's own header; the RPC resolves the join itself. Engineer/
-// project default to the (shared, not morning-specific) fixtures but can be
+// Wrapper over the single transactional evening-flow RPC — RESTRUCTURED
+// (migration 035, 2026-09-02) for the 5-step design (workers by trade, idle
+// hours by trade, equipment hours by type, hindrance). Parameter names
+// match apply_evening_flow_turn's SQL signature EXACTLY (p_phone_number,
+// p_tenant_id, p_user_id, p_project_id, p_message, p_start_flow, p_parse,
+// p_parse_ok, p_now, p_test_sleep_ms) — UNCHANGED by this restructuring, same
+// as the production wrapper (lib/whatsapp/flows/evening.ts), which this
+// mirrors exactly: every parsed step's shape is computed unconditionally and
+// sent KEYED BY STEP ID, straight from each parser's own output shape, no
+// TS-side reshaping — the RPC selects the entry matching the step it
+// resolves under its lock. None of these parsers see morning_equipment or
+// morning_manpower; the RPC resolves any join itself. Engineer/project
+// default to the (shared, not morning-specific) fixtures but can be
 // overridden.
 export async function applyEveningFlowTurn(params: {
   phone: string
@@ -453,9 +452,8 @@ export async function applyEveningFlowTurn(params: {
 }): Promise<EveningTurnRow> {
   const db = testClient()
   const quantities = parseQuantities(params.message)
-  const yesno = classifyYesNo(params.message)
-  const headcount = parseLabourCount(params.message)
-  const productivity = parseProductivity(params.message)
+  const manpower = parseLabourCount(params.message)
+  const idleHours = parseIdleHoursByTrade(params.message)
   const equipmentHours = parseEquipmentHours(params.message)
   const { data, error } = await db.rpc('apply_evening_flow_turn', {
     p_phone_number: params.phone,
@@ -466,66 +464,21 @@ export async function applyEveningFlowTurn(params: {
     p_start_flow: params.startFlow,
     p_parse: {
       '1': quantities,
-      '2': { met: yesno.met },
-      '4': headcount,
-      '5': productivity,
-      '6': equipmentHours,
+      '2': manpower,
+      '3': idleHours,
+      '4': equipmentHours,
     },
     p_parse_ok: {
       '1': true,
-      '2': yesno.ok,
-      '4': isLabourAnswered(headcount),
-      '5': isProductivityAnswered(productivity),
-      '6': isEquipmentHoursAnswered(equipmentHours),
+      '2': isLabourAnswered(manpower),
+      '3': isIdleHoursAnswered(idleHours),
+      '4': isEquipmentHoursAnswered(equipmentHours),
     },
     ...(params.now !== undefined ? { p_now: params.now } : {}),
     ...(params.testSleepMs !== undefined ? { p_test_sleep_ms: params.testSleepMs } : {}),
   })
   if (error) throw new Error(`apply_evening_flow_turn failed: ${error.message}`)
   return data as EveningTurnRow
-}
-
-// Drives a full morning check-in to completion, with the Q4 equipment reply
-// as a parameter — the value doesn't matter to most callers, but a few
-// (test/migration-022.test.ts's context-merge tests, test/migration-024.test.ts's
-// productivity/equipment-hours suite) specifically need morning_equipment to
-// come back non-null with a REAL parsed item, which drives evening's own Q5
-// auto-skip decision downstream. Originally three separate hand-copies of
-// this exact sequence existed (test/helpers/db.ts, test/migration-022.test.ts's
-// local `completeMorning`, test/migration-024.test.ts's local
-// `completeMorningWithEquipment`) — consolidated here, 2026-08-24, after
-// migration 030's test-db rehearsal caught the other two copies still
-// driving the OLD pre-030 turn order (free-text plan first, no attendance
-// question) and failing as a result. One definition now; the two local
-// copies are gone.
-//
-// RENUMBERED by 030_morning_flow_attendance.sql: Q1 attendance ("yes") now
-// precedes plan, and equipment (Q4) completes the flow directly — there is
-// no longer a fifth "execution plan" turn after equipment; the OLD final
-// "Crew A then Crew B" turn is gone because morning_execution_plan is no
-// longer written.
-export async function completeMorningWithEquipment(phone: string, now: string, equipmentReply: string): Promise<void> {
-  await applyMorningFlowTurn({ phone, message: '', startFlow: true, now })
-  await applyMorningFlowTurn({ phone, message: 'yes', startFlow: false, now }) // Q1: attendance
-  await applyMorningFlowTurn({ phone, message: 'Pour slab on level 3', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: '12 mason 8 helper', startFlow: false, now })
-  await applyMorningFlowTurn({ phone, message: equipmentReply, startFlow: false, now }) // Q4: completes
-}
-
-// Thin wrapper over completeMorningWithEquipment for the (more common) case
-// where the equipment reply's content doesn't matter, only that the flow
-// completes with an explicit "none" answer.
-export async function completeMorningNoEquipment(phone: string, now: string): Promise<void> {
-  return completeMorningWithEquipment(phone, now, 'no') // Q4: explicit none, completes
-}
-
-// Drives evening to the start of Q4 (step 4) via the Q2=Yes edge (shortest
-// path — Q1 -> Q2 yes -> step 4, per 024's routing change). Moved here
-// alongside completeMorningNoEquipment above, same reasoning.
-export async function reachStep4(phone: string, now: string): Promise<void> {
-  await applyEveningFlowTurn({ phone, message: '', startFlow: true, now })
-  await applyEveningFlowTurn({ phone, message: 'Slab concrete 120 sqm', startFlow: false, now })
-  await applyEveningFlowTurn({ phone, message: 'yes', startFlow: false, now })
 }
 
 // ---------------------------------------------------------------------------
@@ -561,17 +514,17 @@ export async function seedSession(row: {
   if (error) throw new Error(`seedSession failed: ${error.message}`)
 }
 
-// One resolved entry in evening_equipment_utilisation.items — see migration
-// 024's STORAGE SHAPES / MATCH TIERS notes. Mirrors
-// lib/whatsapp/flows/evening.ts's EquipmentUtilisationItem.
+// One resolved entry in evening_equipment_utilisation.items — RESTRUCTURED
+// (migration 035): joined by TYPE STRING only, one hours-used number, an
+// implausibility FLAG (never a gate — see review package §5/§5a: NULL when
+// the morning count for this type is unknown, never coerced to false), and
+// §42's matched flag for an unrecognised type.
 export interface EquipmentUtilisationItemRow {
-  morning_item_index: number | null
-  type: string | null
-  available_hours: number | null
-  actual_hours: number | null
-  idle_reason: string | null
-  raw: string | null
-  confidence: 'high' | 'low' | null
+  type: string
+  hours_used: number | null // null on a "not reported" entry (Case B)
+  matched: boolean
+  implausible: boolean | null
+  raw: string | null // null on a "not reported" entry (Case B)
 }
 
 // Shape of a daily_logs row (the morning + evening columns either flow
