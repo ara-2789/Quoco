@@ -118,8 +118,6 @@ export interface TriggerParams {
   whatsappNumber: string
   /** IST calendar date, "YYYY-MM-DD" -- the day this checkpoint is for. */
   logDate: string
-  /** daily_logs.morning_plan for today, or null/undefined -- only used when checkpoint === 'evening_send'; ignored for 'morning_send'. */
-  morningPlan?: string | null
   supabaseClient?: SupabaseClient
   /** Injectable, defaulting to global `fetch` when omitted -- see send.ts's own doc for why this must be injected rather than stubbed globally in a test. */
   fetchFn?: typeof fetch
@@ -143,7 +141,7 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
   const template =
     params.checkpoint === 'morning_send'
       ? buildMorningTemplate(params.engineerName, params.projectName)
-      : selectEveningTemplate(params.engineerName, params.projectName, params.morningPlan)
+      : selectEveningTemplate(params.engineerName, params.projectName)
 
   // 1. CLAIM. content_sid/to_phone_number are NOT NULL on outbound_sends by
   // design (031's own header: both are required Twilio POST parameters,

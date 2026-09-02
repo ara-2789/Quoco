@@ -869,62 +869,81 @@ checked against the AS-AUTHORED length (the `{{n}}` placeholder text as submitte
 figure Meta's own review checks), with the rendered (samples-substituted) length also
 shown for realism.
 
-**All three submitted, 2026-08-31 — status `received`, awaiting Meta review.** HX SIDs
-and the real submission record: `docs/reviews/whatsapp-template-submission-status.md`,
-rows 1v3/2v3/8v2. `templates.ts` is unaffected — this section's own repointing
-checklist, below, is not started.
+**All three submitted 2026-08-31, all approved by 2026-09-02** — 1v3 came back
+recategorised MARKETING (see `docs/reviews/whatsapp-marketing-category-investigation.md`),
+2v3 and 8v2 came back UTILITY as submitted. HX SIDs and the real submission record:
+`docs/reviews/whatsapp-template-submission-status.md`, rows 1v3/2v3/8v2. `templates.ts`
+now reflects the repointing checklist's item 2/3 (evening only) — item 1 (morning)
+stays open by decision, not by oversight; see below.
 
 ### Repointing checklist — when Meta approves, not before
 
-**A checklist for the change, not the change itself.** Nothing below is built by this
-entry. Do this only once each SID's own approval status (see the "Checking approval
-status" note at the end of this section) reads `approved`, not `received`.
+**A checklist for the change, not the change itself** — updated 2026-09-02 to record
+what actually happened, which is NOT what this checklist originally assumed (both SIDs
+repointing together). See `docs/reviews/whatsapp-marketing-category-investigation.md`
+for the full reasoning; this section only records the checklist consequences.
 
-1. **`lib/whatsapp/outbound/templates.ts` — `MORNING_CHECKIN_SID`.** Value changes from
-   `HXd4a896b66bfd7b237f53dc4dca77fb76` (template 1) to
-   `HXbb534f41c814a2c3a32b5682713579df` (1v3). `buildMorningTemplate` itself is
-   unchanged — same two variables, same shape.
-2. **`EVENING_CHECKIN_SID`.** Value changes from `HX48e6eab79b422dd4351071f67827881c`
-   (template 2) to `HX8fb39a251eee9bfb2ec075086cd7800a` (2v3).
-3. **`EVENING_CHECKIN_NO_PLAN_SID` and its whole branch are REMOVED, not repointed —
-   this is more than a constant swap.** §40 (`design-decisions-beta-feedback.md`)
-   decided one evening template, no `{{3}}`. Once 2v3 is live, `selectEveningTemplate`'s
-   null-plan branch has nothing left to select between — the function collapses to the
-   same two-variable shape as `buildMorningTemplate`. Concretely: delete
-   `EVENING_CHECKIN_NO_PLAN_SID`, `selectEveningTemplate`'s `EveningTemplateSelection`
-   branching and its `truncateMorningPlan` call, and `MORNING_PLAN_MAX_CHARS`/
-   `truncateMorningPlan` themselves (nothing else uses plan truncation). Upstream, the
-   `morningPlan` plumbing that exists ONLY to feed this branch becomes dead and should
-   go with it — `trigger.ts`'s `TriggerParams.morningPlan` and its call site,
-   `checkpoint-trigger.ts`'s `morningPlan` extraction/passthrough (lines ~161–237), and
-   `roster.ts`'s `EveningRosterEngineer.morningPlan` field and the `daily_logs.
-   morning_plan` join in `fetchEveningRoster` that populates it. Trace each with a
-   fresh grep at repoint time rather than trusting this list verbatim — this is a
-   snapshot of 2026-08-31's code, and the exact line numbers will have moved.
-4. **`quoco_engineer_optin_v2` (8v2) has no constant to repoint to.** Checked directly,
+1. **`MORNING_CHECKIN_SID` — NOT REPOINTED, DELIBERATELY (Aravind, 2026-09-02).** 1v3
+   came back Meta-approved as MARKETING instead of the submitted UTILITY, which carries
+   a per-user frequency cap this codebase can neither observe nor control on the 08:30
+   send. Template 1 (`HXd4a896b66bfd7b237f53dc4dca77fb76`) stays live. A
+   recategorisation request is filed separately (WhatsApp Manager, 60-day window from
+   2026-08-31) — if Meta reclassifies 1v3 back to UTILITY, repointing this constant
+   becomes its own small change at that point, using this same checklist item. Until
+   then, this item stays open, not done.
+2. **`EVENING_CHECKIN_SID` — DONE, 2026-09-02.** Value changed from
+   `HX48e6eab79b422dd4351071f67827881c` (template 2) to
+   `HX8fb39a251eee9bfb2ec075086cd7800a` (2v3), which came back UTILITY as submitted —
+   none of item 1's risk applies here.
+3. **`EVENING_CHECKIN_NO_PLAN_SID` and its whole branch — REMOVED, DONE, 2026-09-02.**
+   §40 (`design-decisions-beta-feedback.md`) decided one evening template, no `{{3}}`.
+   `selectEveningTemplate` no longer branches at all — collapsed to the same
+   two-variable shape as `buildMorningTemplate`. Deleted: `EVENING_CHECKIN_NO_PLAN_SID`,
+   the branching + `truncateMorningPlan` call inside `selectEveningTemplate`, and
+   `MORNING_PLAN_MAX_CHARS`/`truncateMorningPlan` themselves. Also deleted, upstream,
+   since it existed only to feed this branch: `trigger.ts`'s `TriggerParams.morningPlan`
+   and its call site, `checkpoint-trigger.ts`'s `morningPlan` extraction/passthrough,
+   and `roster.ts`'s `EveningRosterEngineer` type (collapsed into `OutboundRosterEngineer`
+   — it carried no other field) and the `daily_logs.morning_plan` join in
+   `fetchEveningRoster` that populated it. `tsc --noEmit` clean afterward; grep confirms
+   zero remaining references anywhere in `lib/`, `app/`, or `test/`.
+4. **`quoco_engineer_optin_v2` (8v2) has no constant to repoint to.** Unchanged since
    2026-08-31: no `ENGINEER_OPTIN_SID` (or equivalent) constant exists anywhere in this
    codebase for template 8 either — onboarding has no outbound-send path built yet
    (CLAUDE.md §1's SPINE list: "Auth, onboarding, engineer + owner registration" is
-   still to build). Repointing here means something different from 1 and 2 above: when
-   the onboarding send path is eventually built, it should read `quoco_engineer_optin_v2`
-   (`HX40923a2de0fa55ea4e7335607c9a1bb9`) directly, never `quoco_engineer_optin`
-   (`8`, still GATE-2-held) — there is nothing live to redirect away from today.
+   still to build). When the onboarding send path is eventually built, it should read
+   `quoco_engineer_optin_v2` (`HX40923a2de0fa55ea4e7335607c9a1bb9`) directly, never
+   `quoco_engineer_optin` (`8`, still GATE-2-held).
 5. **Regenerate `types/database.ts`? No** — these are Twilio Content SIDs, not a schema
-   change; nothing here touches `supabase/migrations/`. Not applicable, stated so it
-   isn't wondered about at repoint time.
-6. **Verification that the repoint worked**, same discipline as every other change in
+   change; nothing here touches `supabase/migrations/`. Not applicable.
+6. **COPY DIVERGENCE CHECK — run this EVERY time a checkpoint's outbound `*_SID`
+   constant repoints, added 2026-09-02.** The flow's own free-text reask/reply copy
+   (`MORNING_QUESTIONS`/`EVENING_QUESTIONS` in `lib/whatsapp/flows/{morning,evening}.ts`)
+   is a SEPARATE string from the outbound template's own approved body, and the two
+   have drifted before: evening's own Q1 reask text drifted from `quoco_evening_checkin_v3`'s
+   approved body until the evening.ts rewrite caught and fixed it (recorded in
+   `docs/build-status.md`'s evening.ts-rewrite entry). Checked this round: `morning.ts`'s
+   `MORNING_QUESTIONS[1]` ("Good morning. Are you on site today? Reply yes or no.")
+   still agrees with template 1's own question text ("Are you on site today? Reply
+   yes or no.") — no divergence found, morning is clean. **If 1v3 is ever recategorised
+   and repointed, this check has to run again against 1v3's exact body** (the framing
+   line differs from template 1's — "This is your morning check-in for {{2}}" vs. "This
+   is Quoco for {{2}}" — though `MORNING_QUESTIONS[1]` doesn't quote that framing line at
+   all today, so re-check whether it should before assuming "no divergence" carries over
+   unchanged).
+7. **Verification that the repoint worked**, same discipline as every other change in
    this codebase — checked by observation, not by trusting the diff compiled:
-   - `tsc --noEmit` clean, and (for #3) confirm no remaining reference to
-     `EVENING_CHECKIN_NO_PLAN_SID`, `truncateMorningPlan`, or the removed `morningPlan`
-     plumbing anywhere in `lib/` or `app/` (a grep, not an assumption).
-   - The next real trigger fire (morning or evening) produces an `outbound_sends` row
-     whose `content_sid` matches the NEW SID (`1v3`'s or `2v3`'s), not the old one —
-     `docs/reviews/first-successful-delivery-record.md` is the precedent for exactly
-     this kind of read-only, breadcrumbed production check.
+   - `tsc --noEmit` clean (confirmed 2026-09-02) and a grep confirming no remaining
+     reference to any removed symbol (confirmed 2026-09-02).
+   - The next real evening trigger fire produces an `outbound_sends` row whose
+     `content_sid` matches 2v3's SID, not the old one — `docs/reviews/first-successful-
+     delivery-record.md` is the precedent for exactly this kind of read-only,
+     breadcrumbed production check. NOT yet done — this is a post-lockstep-apply check,
+     since evening's own RPC shape changes in the same lockstep.
    - The rendered message a real recipient receives matches the new copy — "This is
-     your morning check-in" / "This is your evening check-in" phrasing, and, for
-     evening, no "This morning you planned:" line at all.
-7. **Rollback is unusually cheap for this class of change, worth stating explicitly.**
+     your evening check-in" phrasing, no "This morning you planned:" line at all. Morning
+     stays unchanged ("This is Quoco for {{2}}") since it did not repoint.
+8. **Rollback is unusually cheap for this class of change, worth stating explicitly.**
    The old templates (1, 2, 2b) stay `approved` and fully usable at Meta throughout —
    repointing never touches their approval status, only which SID this codebase's own
    constants point at. If anything is wrong post-repoint, reverting is one file

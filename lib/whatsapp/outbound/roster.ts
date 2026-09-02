@@ -53,9 +53,8 @@ export interface OutboundRosterEngineer extends RosterEngineer {
 //     cardinality this project does not have yet.
 //   - Hardcoded constant: matches this codebase's own established pattern
 //     for exactly this kind of safety threshold -- MAX_ATTEMPTS in
-//     lib/queue/jobs.ts, CHECKIN_CHECKPOINTS in lib/daily-logs/cutoffs.ts,
-//     MORNING_PLAN_MAX_CHARS in templates.ts -- all changed via code +
-//     review, never a runtime knob.
+//     lib/queue/jobs.ts, CHECKIN_CHECKPOINTS in lib/daily-logs/cutoffs.ts --
+//     all changed via code + review, never a runtime knob.
 //
 // 50 is deliberately generous: today's honest roster is single digits.
 const ROSTER_CARDINALITY_CEILING = 50
@@ -204,15 +203,9 @@ export async function fetchMorningRoster(
   return fetchActiveEngineers(client, projectId, logDate)
 }
 
-export interface EveningRosterEngineer extends OutboundRosterEngineer {
-  /** daily_logs.morning_plan for today, or null if no row / no plan captured. Feeds templates.ts's own template-variant selection -- NOT a gate. */
-  morningPlan: string | null
-}
-
 /** What today's daily_logs row (if any) contributes to the evening-roster decision -- deliberately narrow, mirrors lib/checkin-escalations/roster.ts's own TodayLogRow-shaped narrowing. */
 export interface EveningTodayLogRow {
   attendance: string | null
-  morning_plan: string | null
 }
 
 /**
@@ -239,10 +232,8 @@ export interface EveningTodayLogRow {
 export function filterEveningRoster(
   roster: OutboundRosterEngineer[],
   todayLogsByEngineer: ReadonlyMap<string, EveningTodayLogRow>,
-): EveningRosterEngineer[] {
-  return roster
-    .filter((r) => todayLogsByEngineer.get(r.engineer_id)?.attendance !== 'site_holiday')
-    .map((r) => ({ ...r, morningPlan: todayLogsByEngineer.get(r.engineer_id)?.morning_plan ?? null }))
+): OutboundRosterEngineer[] {
+  return roster.filter((r) => todayLogsByEngineer.get(r.engineer_id)?.attendance !== 'site_holiday')
 }
 
 /**
@@ -253,14 +244,14 @@ export async function fetchEveningRoster(
   client: SupabaseClient,
   projectId: string,
   logDate: string,
-): Promise<EveningRosterEngineer[]> {
+): Promise<OutboundRosterEngineer[]> {
   const roster = await fetchActiveEngineers(client, projectId, logDate)
   if (roster.length === 0) return []
 
   const engineerIds = roster.map((r) => r.engineer_id)
   const { data: logs, error } = await client
     .from('daily_logs')
-    .select('engineer_id, attendance, morning_plan')
+    .select('engineer_id, attendance')
     .eq('project_id', projectId)
     .eq('log_date', logDate)
     .in('engineer_id', engineerIds)
