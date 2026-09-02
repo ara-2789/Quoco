@@ -594,6 +594,14 @@ export interface DailyLogRow {
   morning_submitted_at: string | null
   evening_output: string | null
   evening_output_quantities: unknown | null
+  // Migration 035 (evening flow restructuring) -- added round 3, §42.
+  // Typed as `unknown`, not the specific shape: the shape is still
+  // stabilising across this migration's own rounds (tri-state addition,
+  // §13.1's RAISE fix), and every call site that reads these already casts
+  // to its own narrow local type rather than trusting a shared interface --
+  // see test/section-42-row-readback.test.ts for the pattern.
+  evening_manpower: unknown | null
+  evening_idle_hours: unknown | null
   evening_schedule_met: boolean | null
   evening_schedule_miss_reason: string | null
   evening_workers_on_site: number | null
@@ -619,7 +627,7 @@ export async function getDailyLog(logDate: string): Promise<DailyLogRow | null> 
   const { data, error } = await db
     .from('daily_logs')
     .select(
-      'project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_plan, morning_manpower, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site, evening_productive_manpower, evening_equipment_utilisation, evening_submitted_at',
+      'project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_plan, morning_manpower, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_manpower, evening_idle_hours, evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site, evening_productive_manpower, evening_equipment_utilisation, evening_submitted_at',
     )
     .eq('project_id', TEST_PROJECT_ID)
     .eq('engineer_id', testEngineerId())

@@ -1065,3 +1065,194 @@ inferred from the code reading correctly.
 this section records the fix he asked for, applied. The record shows
 exactly two post-approval deltas to this file now (§13's tri-state
 addition, §13.1's RAISE fix), both named rather than silently folded in.
+
+
+---
+
+## 14. TEST-DB REHEARSAL — done, then rolled back (2026-09-01)
+
+The precedent for this whole section is migration 030's own rehearsal
+(`morning-flow-migration-review-package.md` §10.3), not migration 034's —
+argued at length before starting (this package's own conversation record):
+034 was safe to leave applied because nothing outside its own branch
+depended on the pre-034 shape; 035's evening half is a full rewrite that
+every OTHER branch's unmodified code is actively incompatible with. 030's
+own rehearsal proved the cost directly: an unrelated docs-only PR (#98)
+broke because `main`'s code had none of 030's changes while test-db was
+running 030's new RPC. Rolled back the same day specifically because "a
+rehearsal on the ONLY shared test-db blocks CI for every OTHER branch, not
+just this one." That is this rehearsal's own governing precedent.
+
+### 14.1 Shared-database plan, stated before touching anything
+
+**Quiet window, not accept the collision** — the recommendation from before
+this section started, followed: `gh run list --status in_progress` /
+`--status queued` checked immediately before applying (clear both times,
+re-checked at the moment of apply), and again before every full-suite run
+in this section except one — see 14.5's own admission, which is the reason
+this plan's own reasoning gets to be validated by a live incident rather
+than staying theoretical.
+
+**Decision: roll back afterward, argued, not defaulted.** Leaving 035
+applied means every other branch's CI fails on evening-flow tests, every
+run, until the real lockstep TS ships — the exact "RPC ahead of the code
+calling it" condition already named twice this session (PR #155's
+investigation). Rolling back costs nothing this round was actually
+depending on: the post-RPC read-back tests are wrapped in `it.fails`,
+which stays green either way, and their value — proving the RPC branches
+work — comes from running them for real DURING the rehearsal and capturing
+that as point-in-time evidence here, exactly 030's own §10.3 shape.
+
+### 14.2 Apply — quiet window confirmed, fingerprints pinned
+
+Linked project ref pasted immediately before the apply, same output:
+`exfccwlrhoutkgrlikod`. `gh run list` confirmed clear (`in_progress` and
+`queued` both empty) immediately before.
+
+**Pre-apply baseline** (`SELECT md5(prosrc), length(prosrc) FROM pg_proc
+WHERE proname IN (...)`):
+- `apply_evening_flow_turn`: `body_md5=9bd64d28c9cbf0056c7fd63a83c12d3b`,
+  `body_len=35150` — independently cross-checked against CLAUDE.md's own
+  recorded reference for 025's body from the `db push` incident record
+  (identical hash, confirming the live function really was still 025's
+  untouched body before this apply).
+- `apply_morning_flow_turn`: `body_md5=dfab64f6f78ce8049b2be52ba579818a`,
+  `body_len=15106`.
+
+**Apply**: `supabase db query --linked -f
+docs/reviews/035_evening_flow_restructuring.sql` — zero errors.
+
+**Post-apply**: both signatures byte-identical to pre-apply (no overload
+risk, confirmed not assumed); both bodies changed
+(`apply_evening_flow_turn` → `b2e53ed4265f9ad215728c3a4ff081bc`,
+`apply_morning_flow_turn` → `5c1ad1403b8aad1b350b93d7cdb13c5c`);
+`evening_manpower`/`evening_idle_hours` both present, type `jsonb`.
+
+**Ledger**: `supabase/migrations/035_evening_flow_restructuring.sql`
+placed temporarily (required — `migration repair` globs for the file to
+resolve the version), `supabase migration repair --status applied 035
+--linked` → `migration list` confirmed `{"local":"035","remote":"035"}`.
+
+### 14.3 Post-RPC read-back — the tests that could not run before, run for real
+
+`test/section-42-row-readback.test.ts`, extended with real (non-`.fails`)
+tests for `idle_hours` and `equipment_hours`, driven DIRECTLY against the
+RPC (not through `evening.ts`'s wrapper, which still sends the OLD shapes
+— §12.4) via a rehearsal-only `applyEveningFlowTurnDirect` helper
+constructing payloads from the REAL parsers. **All 5 passed**:
+
+1. Manpower's own TARGET finally flips green for real: `matched:false`
+   preserved.
+2. Idle-hours unmatched-trade capture: `matched:false`, original case
+   (`PEB`) preserved.
+3. **The exact case §13.1 fixed** — idle-hours write-boundary
+   distinctness (real data / confident zero / genuinely unknown) — all
+   three pairwise distinct:
+   ```
+   real data:       {by_trade:[{trade:mason,idle_hours:2,matched:true}], all_working:false, unknown:false}
+   confident zero:   {by_trade:[], all_working:true,  unknown:false}
+   genuinely unknown:{by_trade:[], all_working:false, unknown:true}
+   ```
+   Confirming the reviewer's finding is genuinely closed, not just
+   theoretically fixed.
+4. Equipment-hours unmatched-type capture: `matched:false`, `hydra`
+   preserved.
+5. Equipment-hours implausible tri-state, all pairwise distinct:
+   `implausible:false` (6h ≤ 24×2), `implausible:true` (50h > 24×1),
+   `implausible:null` (type never in `morning_equipment`).
+
+**The §13.1 RAISE fix, verified against the ACTUALLY-APPLIED migration**,
+not just the earlier throwaway-Postgres check: a malformed idle-hours
+payload (missing `all_working`/`unknown`) sent to the live, applied RPC
+raised exactly `apply_evening_flow_turn: p_parse[3] missing all_working/
+unknown -- pre-035 caller shape (idle-hours tri-state contract violated)`
+— confirmed via a scratch test, deleted after use.
+
+### 14.4 Rollback — both branches, verified two ways
+
+**`docs/reviews/035-rollback.sql` applied** — zero errors.
+
+**Structural check #1, hash comparison — INITIALLY ALARMING, INVESTIGATED,
+RESOLVED.** Post-rollback body hashes did NOT match the pre-apply
+baseline (`apply_evening_flow_turn`: `6c4c486a...`/17137 chars vs. the
+baseline's `9bd64d28...`/35150; similarly for morning). Stopped and
+diffed rather than either panicking or assuming the mismatch was fine:
+stripped every comment (inline and standalone) from both the rollback
+file's bodies and the live `025`/`030` source files and re-diffed — the
+CODE is byte-for-byte identical; every difference is a stripped comment
+(`docs/reviews/035-rollback.sql` was evidently authored as a
+comment-light copy at some earlier point this session, not a byte-exact
+one). `prosrc` includes comments verbatim, so any comment difference
+changes the hash despite zero behavioral difference — the hash check
+alone was the wrong tool for this specific comparison; a full-suite
+behavioral run (below) is the check that actually matters.
+
+**Structural check #2, ledger**: `supabase migration repair --status
+reverted 035 --linked`, then the temporary
+`supabase/migrations/035_evening_flow_restructuring.sql` removed.
+`migration list` afterward is **byte-identical to the pre-apply baseline**
+— through `033`, then `{"local":"","remote":"034"}`, no `035` entry
+anywhere. Confirmed by direct comparison of the two JSON payloads, not
+by eye.
+
+**Behavioral check — the one that actually closes the loop, same as 030's
+own §10.3 close**: full suite run against the rolled-back test-db, taking
+THREE attempts to get a trustworthy answer, each one investigated rather
+than accepted or dismissed at face value:
+
+1. **First attempt**: 63 failed, the fixture-lifecycle flake signature
+   (FK violations) — collided with PR #156's own CI running concurrently
+   against the same test-db (§14.5). Not test-db's fault, not a real
+   regression; this session's own fault for opening that PR before this
+   run had finished.
+2. **Second attempt**, quiet window reconfirmed clear beforehand: 5
+   failed, but a DIFFERENT signature entirely — `test/migration-020.test.ts`
+   took ~49 minutes (vs. its normal few seconds) and every one of its
+   failures was a plain 30-second hook/test TIMEOUT, not an FK violation.
+   This run also spanned an overnight gap in wall-clock time (the
+   session's own clock rolled from 2026-09-01 to 09-02 mid-run) —
+   consistent with the sandbox process being suspended and resumed,
+   stalling whatever connection was open at that moment. Investigated,
+   not assumed: `test/migration-020.test.ts` run standalone immediately
+   after came back 9/9 clean in under 8 seconds total, confirming the
+   timeout was environmental (this session's own execution gap), not a
+   defect in the rolled-back state.
+3. **Third attempt**, quiet window reconfirmed clear again: **936 passed,
+   1 failed (the known `session-transition.test.ts` lock-wait flake), 3
+   todo (940 total)**. Clean, and now the ONLY explanation left standing —
+   the other two runs' failures were both traced to their own distinct,
+   external causes (a self-inflicted CI collision, then a sandbox
+   suspend/resume gap), neither pointing at test-db's actual state.
+
+Test-db is genuinely, behaviorally back to its pre-rehearsal state, not
+just structurally — confirmed by ruling out the alternatives, not by
+picking the run that happened to look clean.
+
+### 14.5 A live instance of the finding this session documented, self-inflicted
+
+Opening the fixture-flake PR (#156) while this section's own final
+full-suite confirmation was still running in the background put TWO
+concurrent test-db suites in flight at once — exactly the collision class
+`docs/reviews/test-fixture-lifecycle-flake.md` describes, caught by
+constructing it, not just reading about it. Both runs failed together: PR
+#156's own "Test (real test-db)" job, and this session's local run —
+13 files, the fixture-lifecycle FK-violation signature, matching the
+documented pattern precisely. Resolution: confirmed the quiet window was
+genuinely clear (no in-progress/queued runs) before re-running each
+sequentially rather than concurrently, and both came back clean on the
+re-run. Recorded here as a second, independent, live confirmation of the
+flake doc's own thesis — not swept under the rug as an inconvenient
+coincidence during the very rehearsal that was supposed to demonstrate
+disciplined shared-database use.
+
+### 14.6 Final state
+
+**Test-db is at 034-state, ledger-confirmed byte-identical to the
+pre-rehearsal baseline.** `test/section-42-row-readback.test.ts`'s five
+rehearsal tests are wrapped back in `it.fails` (correctly — they cannot
+pass against the currently-live pre-035 RPC), with this section as their
+permanent record of the real, passing run. Nothing from this rehearsal is
+applied anywhere. The next real apply (to test-db, then prod) still needs
+the full lockstep TS/SQL deploy this package's own §9 Findings A/B
+describe — this rehearsal proves the SQL is correct and the tri-state fix
+holds; it does not shorten that remaining work.
