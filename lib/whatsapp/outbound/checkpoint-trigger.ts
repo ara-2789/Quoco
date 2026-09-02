@@ -66,7 +66,6 @@ import {
   fetchMorningRoster,
   fetchEveningRoster,
   type OutboundRosterEngineer,
-  type EveningRosterEngineer,
 } from './roster'
 import { triggerCheckIn, type Checkpoint, type TriggerOutcome } from './trigger'
 
@@ -162,7 +161,6 @@ async function triggerForEngineer(
   logDate: string,
   engineer: OutboundRosterEngineer,
   project: { id: string; tenant_id: string; name: string },
-  morningPlan: string | null,
   fetchFn?: typeof fetch,
 ): Promise<EngineerTriggerResult> {
   const { outcome, attempts } = await triggerWithRetryBudget({
@@ -174,7 +172,6 @@ async function triggerForEngineer(
     projectName: project.name,
     whatsappNumber: engineer.whatsapp_number,
     logDate,
-    ...(checkpoint === 'evening_send' ? { morningPlan } : {}),
     supabaseClient: client,
     ...(fetchFn ? { fetchFn } : {}),
   })
@@ -236,9 +233,8 @@ export async function runCheckpointTrigger(
         : await fetchEveningRoster(client, project.id, logDate)
 
     for (const engineer of roster) {
-      const morningPlan = checkpoint === 'evening_send' ? (engineer as EveningRosterEngineer).morningPlan : null
       // Sequential, deliberately -- see this file's own header.
-      const result = await triggerForEngineer(client, checkpoint, logDate, engineer, project, morningPlan)
+      const result = await triggerForEngineer(client, checkpoint, logDate, engineer, project)
       results.push(result)
     }
   }

@@ -8,7 +8,7 @@ import {
   type MintedEngineer,
 } from './helpers/outbound-fixtures'
 import { triggerCheckIn } from '@/lib/whatsapp/outbound/trigger'
-import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID, EVENING_CHECKIN_NO_PLAN_SID } from '@/lib/whatsapp/outbound/templates'
+import { MORNING_CHECKIN_SID, EVENING_CHECKIN_SID } from '@/lib/whatsapp/outbound/templates'
 
 // Integration test against REAL test-db (this project's own standing
 // practice -- integration tests hit a real database, not mocks). Only the
@@ -151,8 +151,7 @@ const LOG_DATE_NETWORK_EXCEPTION = '2026-09-06'
 const LOG_DATE_429_429_2XX = '2026-09-07'
 const LOG_DATE_429_THEN_5XX = '2026-09-08'
 const LOG_DATE_CAS_RACE_LOSER = '2026-09-09'
-const LOG_DATE_TEMPLATE_WITH_PLAN = '2026-09-10'
-const LOG_DATE_TEMPLATE_NO_PLAN = '2026-09-11'
+const LOG_DATE_EVENING_TEMPLATE = '2026-09-10'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -546,33 +545,17 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     expect(rows).toHaveLength(1) // still one row -- the loser never inserted a second one either
   })
 
-  it('evening checkpoint selects the primary template ({{3}}=morning plan) when one exists, and the no-plan template when it does not', async () => {
-    // ONE shared engineer for both halves -- two dates suffice, a second
-    // minted engineer is not needed. outbound_sends' own uniqueness comes
-    // from event_key's date half (LOG_DATE_TEMPLATE_WITH_PLAN vs
-    // LOG_DATE_TEMPLATE_NO_PLAN), and daily_logs' own UNIQUE(project_id,
-    // engineer_id, log_date) is satisfied the same way -- the no-plan
-    // half's date has no daily_logs row seeded for it, preserving the
-    // original "no daily_logs row exists for this one at all" guarantee
-    // even though the engineer_id is now the same for both halves.
+  it('evening checkpoint always sends the evening check-in template, regardless of morning-plan state', async () => {
+    // Pre-2v3, this test exercised a branch (plan vs no-plan -> two
+    // different SIDs) that no longer exists: §40 retired the {{3}}
+    // morning-plan echo, so selectEveningTemplate no longer branches at
+    // all (templates.ts's own header, 2026-09-02). One case is now the
+    // whole test -- confirming the checkpoint uses the current
+    // EVENING_CHECKIN_SID (2v3) is what's left worth asserting here; the
+    // pure two-variable shape itself is covered by
+    // test/unit/outbound-templates.test.ts.
     fetchMock.mockReset()
-    {
-      const db = testClient()
-      const { error } = await db.from('daily_logs').upsert(
-        {
-          tenant_id: OUTBOUND_TEST_TENANT_ID,
-          project_id: OUTBOUND_TEST_PROJECT_ID,
-          engineer_id: engineer.id,
-          log_date: LOG_DATE_TEMPLATE_WITH_PLAN,
-          morning_submitted_at: new Date().toISOString(),
-          morning_plan: 'Pour slab on level 3',
-        },
-        { onConflict: 'project_id,engineer_id,log_date' },
-      )
-      if (error) throw new Error(`seed morning_plan failed: ${error.message}`)
-    }
-
-    fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMplan001' }))
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMevening001' }))
     await triggerCheckIn({
       checkpoint: 'evening_send',
       tenantId: OUTBOUND_TEST_TENANT_ID,
@@ -581,41 +564,11 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
       engineerName: 'ZZ Test Engineer',
       projectName: 'ZZ Test Project',
       whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE_TEMPLATE_WITH_PLAN,
-      morningPlan: 'Pour slab on level 3',
+      logDate: LOG_DATE_EVENING_TEMPLATE,
       supabaseClient: testClient(),
       fetchFn: fetchMock as unknown as typeof fetch,
     })
-    const rowsWithPlan = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE_TEMPLATE_WITH_PLAN}`)
-    expect(rowsWithPlan[0]!.content_sid).toBe(EVENING_CHECKIN_SID)
-
-    // Reset the session between the two halves -- both calls above and
-    // below are genuine 2xx activations, and each should start fresh (see
-    // the file header's SESSION SHARING section) rather than the second
-    // one landing on 'reask' because the first already left current_flow
-    // non-null. The no-plan half's own LOG_DATE has no daily_logs row
-    // seeded for it, so no cross-scenario cleanup is needed there either.
-    {
-      const db = testClient()
-      const { error } = await db.from('whatsapp_sessions').delete().eq('phone_number', engineer.whatsappNumber)
-      if (error) throw new Error(`session reset failed: ${error.message}`)
-    }
-
-    fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMnoplan001' }))
-    await triggerCheckIn({
-      checkpoint: 'evening_send',
-      tenantId: OUTBOUND_TEST_TENANT_ID,
-      projectId: OUTBOUND_TEST_PROJECT_ID,
-      engineerId: engineer.id,
-      engineerName: 'ZZ Test Engineer',
-      projectName: 'ZZ Test Project',
-      whatsappNumber: engineer.whatsappNumber,
-      logDate: LOG_DATE_TEMPLATE_NO_PLAN,
-      morningPlan: null, // never engaged that day -- no daily_logs row at all
-      supabaseClient: testClient(),
-      fetchFn: fetchMock as unknown as typeof fetch,
-    })
-    const rowsNoPlan = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE_TEMPLATE_NO_PLAN}`)
-    expect(rowsNoPlan[0]!.content_sid).toBe(EVENING_CHECKIN_NO_PLAN_SID)
+    const rows = await readOutboundSends(engineer.id, `evening_send:${LOG_DATE_EVENING_TEMPLATE}`)
+    expect(rows[0]!.content_sid).toBe(EVENING_CHECKIN_SID)
   })
 })

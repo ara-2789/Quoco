@@ -5,38 +5,26 @@
 // selection logic at a new call site.
 //
 // HX SIDs pinned from docs/reviews/whatsapp-template-submission-status.md
-// (all `approved`, checked 2026-08-23) -- not re-derived, not guessed.
+// -- not re-derived, not guessed.
+//
+// MORNING STAYS ON TEMPLATE 1, DELIBERATELY (Aravind, 2026-09-02). 1v3
+// (quoco_morning_checkin_v3, HXbb534f41c814a2c3a32b5682713579df) came back
+// Meta-approved as MARKETING instead of the submitted UTILITY --
+// allow_category_change was exercised, and MARKETING carries a per-user
+// frequency cap (2 marketing template messages / rolling 24h, enforced
+// ACROSS ALL SENDERS, not just Quoco's own traffic) that UTILITY is exempt
+// from. The 08:30 morning trigger is the single message the whole product
+// depends on; a failure mode Quoco can neither observe in advance nor
+// control is not worth trading for the improved framing line. A
+// recategorisation request is filed separately (WhatsApp Manager, 60-day
+// window from 2026-08-31) -- if it succeeds, repointing MORNING_CHECKIN_SID
+// is its own small change at that point. Full research:
+// docs/reviews/whatsapp-marketing-category-investigation.md.
 
 /** HX Content SID for quoco_morning_checkin -- {{1}} name, {{2}} project. */
 export const MORNING_CHECKIN_SID = 'HXd4a896b66bfd7b237f53dc4dca77fb76'
-/** HX Content SID for quoco_evening_checkin -- {{1}} name, {{2}} project, {{3}} morning plan (<=150 chars). Only ever sent when a real morning plan exists (design-decisions-beta-feedback.md §28(s)). */
-export const EVENING_CHECKIN_SID = 'HX48e6eab79b422dd4351071f67827881c'
-/** HX Content SID for quoco_evening_checkin_no_plan -- {{1}} name, {{2}} project, no {{3}}. Fires whenever morning_plan is null -- the never-engaged case and the attendance='absent' case, per §28(s)/§28(i)/§28(d). */
-export const EVENING_CHECKIN_NO_PLAN_SID = 'HX29c10ebad1290a1787e8ef14142ef4fc'
-
-const MORNING_PLAN_MAX_CHARS = 150
-
-/**
- * Truncate a morning plan to the template's <=150-char limit, breaking on
- * the last word boundary before the limit and appending an ellipsis --
- * NEVER a bare mid-word slice. Decided explicitly (design-decisions-
- * beta-feedback.md §28(v), 2026-08-22): a mid-word cut is illegible, and
- * was exactly the bug found in this template's own SAMPLE value before
- * this rule was written down. Returns the string unchanged if it already
- * fits.
- */
-export function truncateMorningPlan(plan: string): string {
-  if (plan.length <= MORNING_PLAN_MAX_CHARS) return plan
-  // Reserve 1 char for the ellipsis so the final string never exceeds the limit.
-  const budget = MORNING_PLAN_MAX_CHARS - 1
-  const slice = plan.slice(0, budget)
-  const lastSpace = slice.lastIndexOf(' ')
-  // No space at all in the budget (one very long word) -- fall back to a
-  // hard cut rather than producing an empty string; still bounded by the
-  // template's own limit, which is the property that actually matters.
-  const boundary = lastSpace > 0 ? lastSpace : budget
-  return slice.slice(0, boundary) + '…'
-}
+/** HX Content SID for quoco_evening_checkin_v3 -- {{1}} name, {{2}} project, no {{3}}. Approved UTILITY, 2026-09-02. Repoints from template 2 (which carried a {{3}} morning-plan echo) per design-decisions-beta-feedback.md §40 -- one evening template, no plan echo, no branching. */
+export const EVENING_CHECKIN_SID = 'HX8fb39a251eee9bfb2ec075086cd7800a'
 
 export interface EveningTemplateSelection {
   contentSid: string
@@ -44,31 +32,19 @@ export interface EveningTemplateSelection {
 }
 
 /**
- * Select the evening template variant and build its variables. Per §28(s):
- * a Meta template body is fixed at approval, so "omit the morning-plan
- * echo" (bot-flows.md:211, the free-form path's own behaviour) has no
- * template-side equivalent -- a SEPARATE template with no {{3}} slot is
- * the fix, not a filler string. `morningPlan` is `daily_logs.morning_plan`
- * for the day, exactly as read from the database -- pass null/undefined
- * for both the never-engaged case and the attendance='absent' case; this
- * function does not itself decide WHICH engineers to send to (that is
- * roster.ts's job, per §37(a) -- this function never gates on whether
- * morning was submitted, only on whether a plan STRING exists to quote).
+ * Build the evening check-in template's variables. Historically this
+ * function selected between two template variants depending on whether a
+ * morning plan existed to quote in {{3}} (§28(s)) -- retired 2026-09-02
+ * when §40 replaced both with quoco_evening_checkin_v3, which has no {{3}}
+ * slot at all. Collapses to the same two-variable shape as
+ * buildMorningTemplate below; kept as its own function (not merged with
+ * buildMorningTemplate) because the two checkpoints remain conceptually
+ * distinct call sites in trigger.ts, not because the bodies still differ.
  */
-export function selectEveningTemplate(
-  engineerName: string,
-  projectName: string,
-  morningPlan: string | null | undefined,
-): EveningTemplateSelection {
-  if (morningPlan == null || morningPlan.trim() === '') {
-    return {
-      contentSid: EVENING_CHECKIN_NO_PLAN_SID,
-      contentVariables: { '1': engineerName, '2': projectName },
-    }
-  }
+export function selectEveningTemplate(engineerName: string, projectName: string): EveningTemplateSelection {
   return {
     contentSid: EVENING_CHECKIN_SID,
-    contentVariables: { '1': engineerName, '2': projectName, '3': truncateMorningPlan(morningPlan) },
+    contentVariables: { '1': engineerName, '2': projectName },
   }
 }
 
