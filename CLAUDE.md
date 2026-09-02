@@ -421,6 +421,44 @@
   review), independent of which number the app currently sends live traffic
   through — so template submission is unblocked by this finding, even
   though the app-to-sender wiring (the swap runbook) is not.
+- A LOCAL GIT REF IS NOT CURRENT UNTIL FETCHED — COMPARE AGAINST
+  `origin/<branch>`, NEVER A LOCAL BRANCH POINTER, BEFORE ANY CLAIM ABOUT
+  DIVERGENCE, FILES TOUCHED, OR CONFLICTS (standing rule since 2026-09-02,
+  migration 035's consolidation round). Same family as the "SESSION NOTES
+  DESCRIBE THE PAST; THE REPO DESCRIBES THE PRESENT" rule above, one layer
+  more mechanical: a local branch pointer (`main`, unqualified) is itself a
+  snapshot from whenever it was last fetched — comparing against it instead
+  of `origin/main` produces a wrong-but-plausible divergence picture with no
+  error, no warning, nothing to notice. `git fetch origin` before any
+  `git log`/`git diff` claim about "ahead/behind," "touches this file," or
+  "conflicts with that branch" — the comparison is only as current as the
+  ref on both sides of it.
+  EVIDENCE, this project's own history, same underlying class (trusting a
+  reference without re-verifying it against the live/current source) —
+  cited together because this is the SECOND instance in the SAME
+  workstream, not a one-off: (1) **the migration-number staleness**,
+  `scripts/migration-number-reservations.json`'s own 035 entry: "Originally
+  drafted against a stale '034' in the scoping plan -- corrected the same
+  day when 034 was taken by the owner-email migration" — 034 itself having
+  just been "Renumbered from 030... after a real collision with the
+  already-applied 030_morning_flow_attendance.sql." (2) **This rule's own
+  origin, 2026-09-02**: asked to prepare a migration-035 lockstep runbook,
+  a local `main` pointer sitting at `f3d7b1b` (stale) was compared against
+  `worktree-evening-flow-plan-commit` instead of the actual `origin/main`
+  (`4e720c1`) — producing a completely wrong picture: "37 commits ahead, 0
+  behind" (the true figures, against `origin/main`, were 12 and 2), five
+  files reported as touched (`checkpoint-trigger.ts`, `roster.ts`,
+  `trigger.ts`, `submit-templates.ts`, plus a "+30 lines") that the branch
+  does not touch AT ALL against the real `origin/main` (confirmed: empty
+  diff), and a conflict that did not exist. Built on that wrong picture, a
+  recommendation was made to merge the 035 branch into `main` FIRST — which
+  would have shipped a TypeScript rewrite expecting the NEW 5-step RPC
+  against the OLD 6-step one still live in prod, breaking every evening
+  check-in from deploy until the SQL landed (the review package's own
+  Finding A, a lockstep hazard this exact rule exists to keep visible).
+  Caught only because the recommendation contradicted the review package's
+  own explicit sequencing, not because the stale comparison announced
+  itself.
 - FILE SIZE LIMITS (standing rule since 2026-08-22). CLAUDE.md has a
   150,000-character limit. Past it, the TAIL is silently dropped: the file
   still loads, no error is raised, and the most recently added content is
