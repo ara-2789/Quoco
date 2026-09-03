@@ -18,5 +18,10 @@
     "number": "036",
     "claimedBy": "docs/reviews/036_hindrance_timing_column.sql",
     "note": "hindrances.timing (active/potential), the one schema change blocking ad-hoc menu item 1 (docs/plans/adhoc-menu-spec.md §f). Nullable, no default, no backfill -- see the migration file's own header for the full reasoning. Rehearsal explicitly withheld pending the ad-hoc-menu build conversation's remaining outstanding items."
+  },
+  {
+    "number": "037",
+    "claimedBy": "docs/reviews/037_hindrances_pm_notified_at.sql",
+    "note": "hindrances.pm_notified_at, matching safety_incidents' existing column -- the send-once guard for item 1's PM email notification (docs/plans/adhoc-menu-spec.md §g.9). Own file, not folded into 036, since 036 is already rehearsed and pinned. Independent of 036 -- applies in either order. Not yet rehearsed, diff-only per explicit instruction."
   }
 ]

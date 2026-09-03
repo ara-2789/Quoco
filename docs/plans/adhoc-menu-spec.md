@@ -757,23 +757,25 @@ written. This section records them WITH the reasoning that produced them, matchi
 file's own convention elsewhere — none of this authorizes writing the flow code itself.
 
 **1. Build order is menu-first, media-last, registration-UI-third.** The menu (items 1, 2,
-3, 7 — text-only) ships first; media handling (unblocking 4, 5, 6) ships second; a real
-registration UI ships third. Reasoning: `lib/whatsapp/inbound-start.ts`'s own retirement
-header already frames the menu as a LAUNCH PREREQUISITE — "must ship before the first real
-engineer is onboarded, because at that point inbound becomes his only surface." Registration
-today is SQL-only (a PM runs a direct INSERT — confirmed no registration UI exists anywhere
-under `app/`) and the menu does not depend on that changing; a real registration UI is its
-own, larger, unrelated workstream (auth, onboarding UX) that does not block or get blocked
-by the menu. Media handling unblocks real value (items 4-6) but the menu proves the
-mechanism and ships value (1, 2, 3, 7) without waiting on it.
+7 — text-only, item 3 CUT from this slice, see point 10 below) ships first; media handling
+(unblocking 4, 5, 6) ships second; a real registration UI ships third. Reasoning:
+`lib/whatsapp/inbound-start.ts`'s own retirement header already frames the menu as a LAUNCH
+PREREQUISITE — "must ship before the first real engineer is onboarded, because at that point
+inbound becomes his only surface." Registration today is SQL-only (a PM runs a direct INSERT
+— confirmed no registration UI exists anywhere under `app/`) and the menu does not depend on
+that changing; a real registration UI is its own, larger, unrelated workstream (auth,
+onboarding UX) that does not block or get blocked by the menu. Media handling unblocks real
+value (items 4-6) but the menu proves the mechanism and ships value (1, 2, 7) without waiting
+on it.
 
-**2. Items 4, 5, 6 are OMITTED from the rendered list, never shown disabled.** A tapped row
-that does nothing — or replies "not available yet" — teaches a low-comfort-user engineer
+**2. Items 3, 4, 5, 6 are OMITTED from the rendered list, never shown disabled.** A tapped
+row that does nothing — or replies "not available yet" — teaches a low-comfort-user engineer
 (this project's own persona, `design-principles.md`) that the bot is unreliable, which is a
-worse outcome than the row simply not existing yet. Their row numbers (4 = material
-received, 5 = invoice, 6 = site document) stay PERMANENTLY RESERVED per this file's own §a
-numbering rule — when media handling ships, they slot into the list at the same numbers,
-never renumbered, never colliding with whatever an engineer already learned from 1/2/3/7.
+worse outcome than the row simply not existing yet. Their row numbers (3 = site expense,
+4 = material received, 5 = invoice, 6 = site document) stay PERMANENTLY RESERVED per this
+file's own §a numbering rule — when each one's own blocker clears, it slots into the list at
+its same number, never renumbered, never colliding with whatever an engineer already learned
+from 1/2/7.
 
 **3. The photo question joins item 1 AFTER media handling ships, as a follow-on invitation,
 not a sixth question inserted into the flow.** Item 1 ships (§c) as the two-question flow
@@ -903,6 +905,67 @@ exists there today (confirmed by grep, same absence §c item 7 already named for
   actionable REQUEST already implies a real notification path was always owed here; email
   is what makes that concrete, at near-zero marginal cost now that the domain is live.
 
-**Full findings — the PM lookup, the drafted copy, the failure/ledger design questions —
-recorded in the same day's conversation, not duplicated here; folded into this section
-once accepted.**
+**PM lookup — the actual query, and its failure posture, confirmed for the record:**
+```sql
+select pm2.user_id as pm_user_id, u.full_name
+from project_members pm1
+join project_members pm2 on pm2.project_id = pm1.project_id and pm2.role = 'pm'
+join users u on u.id = pm2.user_id
+where pm1.user_id = '<engineer_id>';
+```
+`project_members.role` (a per-membership role) is the right column, NOT `users.role` (the
+account-level login role) — a real project can have its PM sitting at `users.role='admin'`
+while holding `project_members.role='pm'` on that specific project, confirmed live against
+the one real project on prod. The PM's email comes from `auth.users.email` (PMs authenticate
+via Supabase Auth; no email column exists on `public.users`), joined by `id` — structurally
+reliable for any real pm/admin/qs account since `public.users.id === auth.users.id` for those
+roles by construction.
+
+**No constraint enforces exactly one `role='pm'` row per project** — only
+`UNIQUE(project_id, user_id)`, which prevents a duplicate of the same person, not multiple
+PMs or zero. **DECIDED: skip-and-surface on `count != 1`, same posture as project resolution
+itself** — the capture (hindrance/safety row) always saves regardless of whether the PM
+lookup succeeds; only the notification is skipped when the PM count isn't exactly one, with
+a Sentry warning on skip (matching `runOwnerSendTrigger`'s own `skipped_no_owner`
+precedent) — never a guess at which PM, never a fabricated notification.
+
+**Confirmation copy — final, corrected (Aravind, 2026-09-03):**
+> Item 1: *"Sent to your PM."*
+> Item 2: *"Sent to your PM — take care out there."*
+
+Changed from an earlier draft ("Your PM has been notified") specifically because the
+architecture enqueues the notification AFTER the confirmation is already written (§ FAILURE
+below) — "sent to" describes what the flow just did (enqueued/dispatched), not an outcome
+the flow cannot yet know. Optimistic confirmation is still the right call (see below); the
+sentence itself just shouldn't claim more than the architecture can back up at the moment
+it's written.
+
+**Failure handling — the architecture forces optimistic confirmation, not a preference.**
+Every existing outbound pattern in this codebase (`outbound_sends`, `owner_deliver`) enqueues
+a job rather than sending synchronously inside a webhook response — the ad-hoc menu's own
+confirmation text is written inside that synchronous reply, before any job has run. The flow
+therefore cannot know the real send outcome before confirming. DECIDED: optimistic confirm +
+automatic job retry on failure + a Sentry alert on a PERSISTENT (not every transient) failure.
+Trade-off named plainly: an engineer can be told "sent" when the send later fails — the same
+accepted cost this codebase already carries for owner delivery, where neither the engineer
+nor the owner is ever told the send's real-time outcome either.
+
+**Ledger — item 2 already has the hook (`safety_incidents.pm_notified_at`, unused until now);
+item 1 did not, closed by migration 037** (`hindrances.pm_notified_at`, own file, kept
+separate from the already-rehearsed-and-pinned 036 — see 037's own header for the full
+reasoning and the confirmation that 036/037 apply independently, in either order).
+`outbound_sends` (031) cannot hold an email send at all — its own `content_sid`/
+`to_phone_number` columns are WhatsApp-specific and NOT NULL, structurally excluding any
+other channel. A nullable timestamp, checked before send and set after, is the send-once
+guard for both tables now — not a general notification ledger, sufficient for phase one's
+one-notification-per-row shape only.
+
+**10. ITEM 3 CUT FROM THE FIRST SLICE (Aravind, 2026-09-03) — same false-promise shape as
+the dead nav links removed the same night, just gentler.** Item 3's own confirmation copy
+("logged — a PM will see this...") describes a PM checking an expense queue that has no
+dashboard route and no reader, exactly the "sidebar link to a page that doesn't exist"
+pattern this session already found and fixed elsewhere in the product. Three items with
+real egress (1, 2, 7) beats four where one goes nowhere. **The menu ships items 1, 2, 7
+only.** Item 3's row number stays permanently reserved (per point 2 above, widened to
+include it) — it returns to the list the moment it has a real reader (a PM-facing expense
+queue view), not before, and not renumbered when it does.
