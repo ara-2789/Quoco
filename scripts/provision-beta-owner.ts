@@ -7,13 +7,32 @@
 //      hash, email the raw token as a confirmation link.
 // Run: npx tsx scripts/provision-beta-owner.ts <project_id> <full_name> <notification_email>
 //
-// BUILT, NOT RUN (2026-09-03) -- per direct instruction, this script is
-// reviewed before it is ever executed against a real database. It also
-// cannot fully work yet: app/api/owner/confirm-email (034 §5) does not
-// exist, so step 3's link will 404 until that route ships. The email still
-// sends and the token still gets stored correctly -- the operator can
-// re-trigger step 3 alone once the route exists, without re-running steps
-// 1/2 (see NOTES below).
+// app/api/owner/confirm-email (034 §5) is live -- merged and deployed
+// 2026-09-03, same day as this file's own first real run. If step 3
+// alone ever needs re-running for an EXISTING owner (a lost raw token,
+// a bounced send, anything short of re-running steps 1/2) --
+// scripts/resend-owner-confirmation.ts is that recovery path; it takes
+// project_id, refuses if owner_user_id isn't already set, and does
+// nothing else this file does.
+//
+// PRECONDITIONS CHECKED FIRST, BEFORE ANY WRITE (fixed 2026-09-03, real
+// incident, not a hypothetical). The ORIGINAL order checked
+// RESEND_API_KEY/RESEND_FROM_EMAIL/NEXT_PUBLIC_APP_URL only right before
+// they were used, in step 3b -- AFTER the users row and the
+// projects.owner_user_id UPDATE had already committed. The first real
+// run hit exactly this: Vercel Production had the Resend credentials set,
+// but the local .env.local this script actually reads did not, so
+// sendEmail's own readCredentials() threw only after both writes had
+// already gone through -- leaving a half-provisioned owner (a real row,
+// a real project association, but no email ever sent and, worse, a
+// verification token already minted and stored with its raw value alive
+// only in that one now-dead process's memory, unrecoverable). This is
+// exactly why scripts/resend-owner-confirmation.ts had to be built. Now
+// fixed at the source: readCredentials() and the NEXT_PUBLIC_APP_URL
+// check both run before any database read or write, so a missing
+// credential fails the script before it creates anything, not halfway
+// through. Safe to reorder -- both checks are pure environment reads with
+// no dependency on the project/owner data resolved afterward.
 //
 // THE CRITICAL CONSTRAINT, STRUCTURAL, NOT A STYLE PREFERENCE: an owner row
 // created by this script MUST have auth_id = NULL. get_user_tenant_id() --
@@ -54,7 +73,7 @@ config({ path: '.env.local' })
 
 import { randomBytes, createHash } from 'crypto'
 import { createServiceClient } from '../lib/supabase/service'
-import { sendEmail } from '../lib/email/send'
+import { sendEmail, readCredentials } from '../lib/email/send'
 
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days -- 034's own recommendation
 
@@ -72,6 +91,14 @@ async function main() {
   if (!projectId || !fullName || !notificationEmail) {
     console.error('Usage: npx tsx scripts/provision-beta-owner.ts <project_id> <full_name> <notification_email>')
     process.exit(1)
+  }
+
+  // Preconditions FIRST, before any database read or write -- see this
+  // file's own header for the incident that made this ordering matter.
+  readCredentials()
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) {
+    throw new Error('provision-beta-owner: NEXT_PUBLIC_APP_URL must be set to build the confirmation link.')
   }
 
   const client = createServiceClient()
@@ -145,12 +172,11 @@ async function main() {
   console.log(`Step 2: project ${projectId} (${project.name}) owner_user_id -> ${owner.id}.`)
 
   // Step 3 -- generate the token, store its hash, send the confirmation
-  // email carrying the raw token as a link. NOTE: if this step alone needs
-  // re-running later (e.g. once app/api/owner/confirm-email actually
-  // exists, or the first email bounced) without repeating steps 1/2,
-  // insert a fresh owner_email_verifications row by hand for the existing
-  // owner id and re-send -- this script does not special-case that path,
-  // since running steps 1/2 twice is already guarded against above.
+  // email carrying the raw token as a link. If this step alone needs
+  // re-running later for an EXISTING owner (a lost raw token, a bounced
+  // send) without repeating steps 1/2, use
+  // scripts/resend-owner-confirmation.ts -- not this file, which refuses
+  // to run again once owner_user_id is already set.
   const rawToken = randomBytes(32).toString('hex')
   const tokenHash = createHash('sha256').update(rawToken).digest('hex')
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString()
@@ -165,13 +191,10 @@ async function main() {
 
   console.log(`Step 3a: verification token stored, expires ${expiresAt}.`)
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL
-  if (!appUrl) {
-    throw new Error('provision-beta-owner: NEXT_PUBLIC_APP_URL must be set to build the confirmation link.')
-  }
+  // appUrl already checked at the top -- reused here, not re-read.
   // Confirm route is GET-renders/POST-consumes (034 §5) -- this is the
   // GET link; the route's own page carries the token into its POST form
-  // from there. Not built yet -- see this file's header.
+  // from there.
   const confirmUrl = `${appUrl}/api/owner/confirm-email?token=${rawToken}`
 
   const emailResult = await sendEmail({
