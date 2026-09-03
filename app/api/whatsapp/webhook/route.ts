@@ -115,28 +115,6 @@ export async function handleWebhookPost(
 
   const fromNumber = normalisePhoneNumber(params.From ?? '')
 
-  // TEMPORARY DIAGNOSTIC, ADDED 2026-09-03, TO BE REVERTED THE SAME DAY --
-  // ad-hoc-menu tap-test payload capture (per explicit instruction). Gated
-  // to the one test sender number so this never runs for real traffic.
-  // Never logs params.Body or params.From -- only the full set of KEY
-  // NAMES present (safe: no phone numbers, no message content) plus the
-  // VALUES of any key that looks like an interactive-reply field (matches
-  // /button|list/i in its name), since that's the one thing this capture
-  // exists to see and neither Body nor From can match that pattern.
-  if (fromNumber === '+919176865600') {
-    const interactiveFields: Record<string, string> = {}
-    for (const [key, value] of Object.entries(params)) {
-      if (key !== 'Body' && key !== 'From' && /button|list/i.test(key)) {
-        interactiveFields[key] = value
-      }
-    }
-    Sentry.captureMessage('adhoc-menu tap-test payload capture', {
-      level: 'info',
-      tags: { feature: 'adhoc-menu-tap-test' },
-      extra: { keyNames: Object.keys(params).sort(), interactiveFields },
-    })
-  }
-
   // --- Registration + gate lookup FIRST (BOT-08 / ENG-02) ---------------
   // This runs BEFORE the idempotency insert so an unregistered or gated
   // number leaves ZERO storage footprint — not even a processed_messages
