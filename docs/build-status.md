@@ -29,9 +29,13 @@ Week 1: COMPLETE
 - Project CRUD: create, list, detail, members
 - Migrations 001–005 live. TypeScript zero errors.
 - GitHub: github.com/ara-2789/Quoco
-- NOTE: sidebar shows Safety/Invoices/Hindrances nav items — those are
+- ~~NOTE: sidebar shows Safety/Invoices/Hindrances nav items — those are
   Fast-Follow. Hide or disable them for the Spine so beta PMs don't click
-  into empty sections.
+  into empty sections.~~
+  RESOLVED 2026-09-03 (over five weeks after this note was first written
+  and never acted on): all three removed from `NAV_LINKS`
+  (`app/(dashboard)/layout.tsx`) — found while auditing egress for the
+  ad-hoc menu spec. Restore each individually once its route is built.
 
 Week 2: IN PROGRESS
 Day 1 checklist:
@@ -1844,3 +1848,7 @@ If a probe hangs during the apply, read that as a network symptom
 consistent with this entry, not as a finding about the database or the
 migration — retry the probe rather than escalating it as a database
 problem on first hang.
+
+### [2026-09-03] Migration 035's Q4 equipment-echo bug — near-miss, zero real engineers affected
+
+`v_equipment_echo` shipped permanently `NULL` in 035's own RPC (fixed same-day, `f632a5f`); verified against `outbound_sends`/`daily_logs` that the bug window (09:05-10:28:35 IST) closed hours before the one real `evening_send` trigger for that date (18:30 IST) — nobody hit it. Full evidence and the dated correction to the commit message's own impact claim: `docs/reviews/035-apply-record.md`, "Production incident" section.

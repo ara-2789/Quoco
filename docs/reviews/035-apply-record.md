@@ -313,6 +313,38 @@ through `dispatchInboundTurn` (the real webhook path):
   Both pass against the live post-035 RPC shape, on test-db, post the
   apply above.
 
+**DATED CORRECTION (Aravind, 2026-09-03, same day) — the impact claim above
+is FALSE IMPACT, not just imprecise wording, and is corrected here rather
+than reinterpreted.** The commit that shipped this fix (`f632a5f`, own
+message) states: *"every real engineer reaching evening Q4 received: 'Equipment
+you listed this morning: . How many hours was each used today?' — an empty
+list, live on production."* That sentence describes what the CODE would do,
+conditionally — it is not a claim that anyone actually hit it, but it reads
+as one, and was flagged as such rather than left to be misread later.
+
+**Verified, live, against `outbound_sends` and `daily_logs` on production
+(`jvxwqignooseazzmwhvl`) — the actual count is ZERO.** The bug window was
+09:05 IST (this migration's own apply) to 10:28:35 IST (`f632a5f`'s own
+commit time). The ONLY `evening_send` outbound trigger for 2026-09-03 fired
+at `13:00:14 UTC` = **18:30:14 IST — over eight hours after the fix
+landed**, per `outbound_sends`:
+```
+recipient_user_id                    event_key                status  created_at
+3534756b-2a32-4b91-954b-0bab15c2dba1 evening_send:2026-09-03  sent    2026-09-03 13:00:14 UTC
+```
+The one real `engineer`-role user on production completed the full evening
+flow, Q4 included, at `evening_submitted_at: 2026-09-03 13:02:41 UTC`
+(18:32:41 IST) — two and a half minutes after that trigger, entirely on the
+already-fixed RPC. No other session was active or lingering during the bug
+window (`whatsapp_sessions` holds exactly one row for this project,
+matching this same completion). **Zero real engineers received the broken
+prompt.** The near-miss is real and worth keeping on record — the fix
+landed hours before the one trigger that would have exercised it, not
+after — but the sentence quoted above should be read as corrected to:
+"the code, unfixed, would have sent this to every real engineer reaching
+evening Q4 in the bug window; verified against `outbound_sends` and
+`daily_logs`, nobody did."
+
 ### 4. Migration files moved to `supabase/migrations/`
 
 Both files hash-verified against their own apply-record-pinned sha256
