@@ -85,6 +85,63 @@
 // genuine concurrent job claims (this project's own standing rule --
 // concurrency/lock/race verification is CI-only in this sandbox).
 //
+// THE ASYNC-FAILURE GAP ON BOTH SEND BRANCHES IS ONE OPEN DEPENDENCY, NOT
+// TWO -- RECORDED, NOT FIXED (Aravind, 2026-09-03, template-14 send-path
+// review). Both branches write a STAGE_2_TERMINAL `dprs.delivery_status`
+// (`no_report_sent`, `delivered`) the moment the provider's SYNCHRONOUS
+// accept comes back ok -- never on confirmed delivery. A terminal value is
+// never revisited (classifyDprRowForStage2 treats it as already_terminal
+// forever), so if the provider fails ASYNCHRONOUSLY after accepting --
+// WhatsApp render-rejected or an unreachable number, an email bounce or
+// complaint -- nothing in this codebase ever corrects the row. This is
+// true on both channels, for the same underlying reason, not two separate
+// bugs:
+//   - WhatsApp: this file calls `sendWhatsAppTemplate()` directly, not
+//     `lib/whatsapp/outbound/trigger.ts`'s claim-before-send flow, so no
+//     `outbound_sends` row is ever written for this send. A real async
+//     failure callback from Twilio has no `twilio_sid` to match against --
+//     `app/api/whatsapp/status-callback/route.ts` finds zero rows and
+//     emits only a decorrelated Sentry WARNING (fingerprinted by SID
+//     alone, not linked to this project/log_date/dprs row).
+//   - Email: no Resend bounce/complaint webhook route exists in this repo
+//     at all (not even an unwired one) -- confirmed by grep. §2g, named in
+//     034's own review package, remains unbuilt.
+//   Even fixing the WhatsApp half in isolation (routing this send through
+//   trigger.ts's ledger so a callback has a row to match) would NOT close
+//   this gap on its own: migration 034_owner_email_delivery.sql's own
+//   PROPAGATION GAP comment already names the real missing piece -- no
+//   mapping exists from an outbound_sends/provider-message row back to the
+//   right `dprs` row(s), and the relationship is ONE-TO-N, not 1:1 (one
+//   no-report notice per owner per project-day; `dprs` rows are per
+//   engineer). Wiring the ledger without that propagation logic would
+//   leave `outbound_sends.status` correctly `'failed'` while
+//   `dprs.delivery_status` stays silently wrong -- a fix that LOOKS closed
+//   and is not, worse than the open gap it replaces because it stops
+//   looking suspicious.
+//   DECIDED: accept the gap, do not half-fix it. Do not route this send
+//   through trigger.ts's ledger without the propagation logic built
+//   alongside it -- treat "build the propagation layer" as the one future
+//   piece of work that closes both channels together, not "wire WhatsApp
+//   into a ledger" as a separate, smaller task. Also: no owner row exists
+//   in production yet for either channel to reach today (see this file's
+//   own header above), so there is no live exposure behind this decision.
+//   Full trace: docs/reviews/owner-deliver-handler-record.md.
+//
+// CORRECTION TO THE RECORD (Aravind, 2026-09-03): an earlier description
+// of this gap, in conversation, characterized Twilio error 63015 landing
+// as a zero-match/decorrelated Sentry event as an OBSERVED 2026-08-30
+// production incident. It was not -- checked directly against
+// docs/reviews/first-cron-fire-record.md and first-successful-delivery-
+// record.md before this entry was written. The 2026-08-29 63015 incident
+// never captured a `twilio_sid` at all (a separate XML-parsing bug), so
+// the row never reached `status='sent'` and the zero-match scenario was
+// explicitly NOT confirmed to have occurred; the 2026-08-30 event was a
+// different error (63027) whose callback matched correctly and flipped
+// `sent` -> `failed` as designed. The zero-match orphan-callback scenario
+// above is a real, argued, ANTICIPATED risk in this codebase -- not
+// observed history. Recorded here so the next reader doesn't inherit the
+// same misattribution.
+//
 // WHAT CAN BE TESTED LOCALLY, AND IS (test/unit/owner-deliver-dispatch.test.ts,
 // test/owner-deliver-job.test.ts -- named distinctly from the unit file,
 // see that file's own header for why): the routing fan-out (which rows go
