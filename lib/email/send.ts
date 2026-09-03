@@ -60,7 +60,14 @@ export type SendEmailResult =
       responseShape: EmailResponseShape
     }
 
-function readCredentials(): { apiKey: string; fromAddress: string } {
+// Exported (2026-09-03) so a caller can check credentials BEFORE doing
+// anything else -- the exact ordering defect this fixes: provision-beta-
+// owner.ts used to write two rows before ever reaching sendEmail's own
+// internal call to this function, so a missing credential was discovered
+// only after real data was already committed. Calling this once, up
+// front, fails the same way but before any write -- see that script's
+// own header for the incident this closes.
+export function readCredentials(): { apiKey: string; fromAddress: string } {
   const apiKey = process.env.RESEND_API_KEY
   const fromAddress = process.env.RESEND_FROM_EMAIL
   if (!apiKey || !fromAddress) {
