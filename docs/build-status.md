@@ -1844,3 +1844,7 @@ If a probe hangs during the apply, read that as a network symptom
 consistent with this entry, not as a finding about the database or the
 migration — retry the probe rather than escalating it as a database
 problem on first hang.
+
+### [2026-09-03] Migration 035's Q4 equipment-echo bug — near-miss, zero real engineers affected
+
+`v_equipment_echo` shipped permanently `NULL` in 035's own RPC (fixed same-day, `f632a5f`); verified against `outbound_sends`/`daily_logs` that the bug window (09:05-10:28:35 IST) closed hours before the one real `evening_send` trigger for that date (18:30 IST) — nobody hit it. Full evidence and the dated correction to the commit message's own impact claim: `docs/reviews/035-apply-record.md`, "Production incident" section.
