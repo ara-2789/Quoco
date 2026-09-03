@@ -252,6 +252,10 @@ export async function handleOwnerDeliverJob(
     throw new Error(`handleOwnerDeliverJob: project ${payload.project_id} has no owner_user_id -- nobody to deliver to.`)
   }
 
+  // profile-lookup-guard:allow-id-eq -- project.owner_user_id is a resolved
+  // users.id (projects.owner_user_id, a plain FK column), never an auth
+  // uid -- same reasoning as dispatch.ts's own identical tag, one column
+  // over.
   const { data: owner, error: ownerError } = await client
     .from('users')
     .select('full_name, whatsapp_number, notification_email, notification_email_verified_at')
