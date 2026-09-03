@@ -166,19 +166,181 @@ same divergence 034's own apply record documented. Not a deviation from the
 runbook's intent; a documented alternate path CLAUDE.md's own PROD APPLIES
 rule already accepts.
 
+## Follow-up round (2026-09-03, same session) — test-db apply, it.fails resolution, file moves, production incident
+
+Both open items above are now resolved, in the order authorized: (1) test-db
+apply, (2) it.fails wrapper removal, (3) file moves. A fourth, unplanned item
+was found and fixed in the same window: a live production defect in the
+Q4 equipment echo, deadline 18:30 IST same day.
+
+### 1. Test-db apply
+
+**Full-file apply FAILED, as found and reported before any fix:**
+re-applying the complete pinned file (sha256 `cae77de9...`) to test-db hit
+`42701: column "evening_manpower" of relation "daily_logs" already exists`.
+Root cause: the 2026-08-31 rehearsal's own `docs/reviews/035-rollback.sql`
+deliberately left the additive schema (`evening_manpower`/
+`evening_idle_hours` columns, the `authenticated` UPDATE grant) in place on
+rollback, per that file's own "real data is not migration scaffolding"
+principle — see that file's own header, now updated with this exact gap and
+its resolution. The failed transaction rolled back atomically: both
+function body hashes (`md5(prosrc)`) were confirmed byte-identical
+before and after the failed attempt — `6c4c486a.../17137` (evening),
+`16d91836.../8784` (morning) — zero corruption, proven not assumed.
+
+**Resolution, per explicit authorization (Option 1):** extracted only the
+two `CREATE OR REPLACE FUNCTION` statements (each with its own trailing
+EXECUTE grant reassertion) from the exact byte-identical pinned file —
+line ranges 219–487 (morning) and 489–937 (evening), each independently
+re-sliced and re-hashed from the pinned source to confirm no transcription
+error (`dd075ae2.../269 lines` and `2dc3756d.../449 lines` respectively).
+Wrapped in a fresh `BEGIN;`/`COMMIT;`, applied successfully.
+
+**Acceptance test — test-db vs. production directly, not against a written
+expectation:**
+
+| Check | Production | Test-db (post-fix) | Verdict |
+|---|---|---|---|
+| `apply_evening_flow_turn` body md5 | `b2e53ed4265f9ad215728c3a4ff081bc` | `b2e53ed4265f9ad215728c3a4ff081bc` | **PASS** |
+| `apply_morning_flow_turn` body md5 | `5c1ad1403b8aad1b350b93d7cdb13c5c` | `5c1ad1403b8aad1b350b93d7cdb13c5c` | **PASS** |
+| Both function signatures | identical | identical | **PASS** |
+| `evening_manpower`/`evening_idle_hours` column types | `jsonb`/`jsonb` | `jsonb`/`jsonb` | **PASS** |
+| `authenticated` UPDATE grant, new + prior columns | present | present | **PASS** |
+| `service_role`/`authenticated`/`anon` EXECUTE, both functions | `true`/`false`/`false` | `true`/`false`/`false` | **PASS** |
+
+Test-db's final state is indistinguishable from production on every axis
+checked. Ledgered (`supabase migration repair --status applied 035
+--linked`); `supabase migration list --linked` confirms `{"local":"035",
+"remote":"035"}`.
+
+### 2. it.fails resolution — all 20 (15 + 5), full breakdown
+
+Full re-verification, not a repeat of the earlier assumption: every
+`it.fails` in `test/evening-flow.test.ts` (15) and
+`test/section-42-row-readback.test.ts` (5) was run standalone, then the
+whole of each file was bulk-unwrapped and run together in real file order
+(catching order-dependent false positives a single-test run would miss).
+
+**`test/section-42-row-readback.test.ts` — all 5 flipped cleanly, unwrapped.**
+
+**`test/evening-flow.test.ts` — 13 flipped cleanly; 2 needed a real fix
+first (both fixed, then flipped); all 15 now unwrapped, 0 remain wrapped:**
+
+- **4 tests had a test-authoring bug**, not an RPC defect: three Q3
+  idle-hours expected literals were missing a `raw_text` field the RPC
+  correctly writes (confirmed by cross-reference — the sibling Q2/Q4 tests
+  already expected it correctly). Fixed by adding the field to each literal.
+- **2 Q5 tests shared a seeding bug**: both called
+  `seedMorningEquipment([])` — an EMPTY items array triggers the SAME
+  auto-skip as no submission at all
+  (`035_evening_flow_restructuring.sql:629-630`,
+  `IS NULL OR jsonb_array_length(...) = 0`), so Q3 auto-skipped straight to
+  step 5 and `driveToStep`'s own hardcoded step-4 message landed as the Q5
+  answer instead — completing the flow before the real hindrance message
+  was ever sent. One of the two (`already_complete: post-completion inbound
+  writes nothing...`) technically PASSED under this bug, but for the WRONG
+  REASON: its assertions (outcome `already_complete`, frozen timestamp) hold
+  regardless of which message actually completed the flow, so it asserted
+  nothing about the behavior it was named for. **Both confirmed as false
+  positives before being trusted — neither was unwrapped as-is.** Fixed by
+  seeding non-empty equipment, matching what `driveToStep` already assumes.
+- **1 assertion was DROPPED, not fixed** (`morning HAS equipment -> step 4`
+  and the Q4 reask test): both asserted `equipment_echo` on the RPC's own
+  return value, which this file's helper (`test/helpers/db.ts`) reads by
+  calling the RPC DIRECTLY — bypassing `lib/whatsapp/flows/evening.ts`
+  entirely. The RPC deliberately never populates that field (see the
+  production incident below), so this file can never exercise the real fix
+  regardless of wrapper state. Worse, the reask test's `toContain('JCB')`
+  assertion was a SECOND false positive: `EVENING_REASK_MESSAGES[4]`
+  hardcodes "JCB 6 hours" as its own static example text, so that assertion
+  passed whether or not any real echo worked, before OR after any fix. Both
+  assertions removed with an explanatory comment pointing to where the real
+  coverage now lives (`test/dispatch.test.ts`).
+
+**None flipped for the wrong reason in the FINAL committed state** — the
+two genuine false positives above were caught and fixed before unwrapping,
+not unwrapped and left standing.
+
+### 3. Production incident — Q4 equipment echo, found and fixed same session
+
+**Not part of the original plan; found while diagnosing the "morning HAS
+equipment" test's non-flip, above.** `035_evening_flow_
+restructuring.sql:524` declares `v_equipment_echo JSONB := NULL` and never
+assigns it anywhere in the function body (confirmed by full grep). Per its
+own comment (line ~911), this was deliberate — populating it was left to
+"the caller's own prompt-building code," explicitly out of scope for the
+SQL file. But `evening.ts`, shipped in the same PR, was never updated to
+drop that dependency: its own docstring said `equipmentEcho` was "REQUIRED
+to render step 4's prompt... the RPC returns it on both paths." From
+~09:05 IST (this migration's own lockstep apply) until the fix, `dispatch.ts`
+passed the RPC's permanently-null field straight into `buildEveningReply`,
+so every real engineer reaching evening Q4 received: *"Equipment you listed
+this morning: . How many *hours* was each used today?"* — an empty list,
+live on production, with tonight's 18:30 IST trigger about to hit it again
+for every engineer who reaches Q4.
+
+**This is the SAME class of gap Finding A (§9 above) exists to prevent — a
+disagreement between the SQL and TypeScript halves of one migration's
+contract — just the other direction of the contract.** Finding A checked
+that the two sides agreed on what the RPC RECEIVES; nothing checked they
+agreed on what it RETURNS. A follow-up note is recorded directly after
+Finding A's own text in `docs/reviews/035-evening-flow-review-package.md`
+with the general lesson for future reviews.
+
+**Fix: TypeScript only, no second SQL apply.** `lib/whatsapp/flows/
+evening.ts`'s `applyEveningFlowTurn` now reads `morning_equipment` directly
+from `daily_logs` (keyed on `project_id`/`engineer_id`/`log_date` — the same
+unique key the RPC's own `ON CONFLICT` already relies on) whenever
+`current_step === 4`, bypassing the RPC's dead `equipment_echo` field
+entirely. One extra indexed read, only on turns that reach or are re-asked
+at Q4 — not a per-turn cost. `EquipmentEchoItem`'s docstring,
+`buildEveningReply`'s docstring, and `EveningTurnResult.equipmentEcho`'s
+docstring all corrected to state this — the stale claims ("Populated by the
+RPC") are exactly what let the mismatch through undetected.
+
+**Tested against the real post-035 RPC, through the actual production
+wrapper — not the RPC-only test helper that cannot exercise this fix at
+all.** `test/dispatch.test.ts` gained a new suite,
+`evening Q4 equipment echo — real morning_equipment, not the RPC`, going
+through `dispatchInboundTurn` (the real webhook path):
+  - engineer WITH morning equipment (`concrete_mixer` — deliberately not
+    `jcb`, since the reask copy's own static example text contains "JCB"
+    and would mask a fake pass) reaches Q4 and the reply starts with
+    `"Equipment you listed this morning: Concrete Mixer."` — the real echo,
+    exact-match asserted.
+  - engineer with NO morning equipment auto-skips straight to Q5, reply
+    equals `EVENING_QUESTIONS[5]` verbatim — no read even attempted.
+  Both pass against the live post-035 RPC shape, on test-db, post the
+  apply above.
+
+### 4. Migration files moved to `supabase/migrations/`
+
+Both files hash-verified against their own apply-record-pinned sha256
+BEFORE and AFTER `git mv`:
+
+- `034_owner_email_delivery.sql`: `13dfff1f3580f62b68db92722b4a12d891591c8092670dfade71e02f07188065`
+  (matches `034-apply-record.md`'s own pin) — identical post-move.
+- `035_evening_flow_restructuring.sql`: `cae77de9bed877951cf34c35f9bb373d2c6ef281e219df46697d49f2a561cb6d`
+  (matches this record's own §"SHA provenance" pin) — identical post-move.
+
+`npm run lint:migrations` after the move: `migration-lint: clean. 86 known
+violation(s), all exempted.`
+
 ## Open items — status
 
-**OPEN, both surfaced this session, neither fixed without asking first:**
-1. **Test-db does not have 035** — the it.fails suites cannot demonstrate a
-   flip until this is resolved. Applying to test-db is a real database
-   write and needs the same explicit go-ahead as any other apply.
-2. **The migration file has not moved to `supabase/migrations/` on `main`**
-   — currently reachable only from `docs/reviews/`. A real commit, not
-   performed here.
+**ALL CLOSED, this round:**
+1. ~~Test-db does not have 035~~ — resolved above (function-only apply,
+   acceptance test PASS on every axis, ledgered).
+2. ~~The migration file has not moved to `supabase/migrations/`~~ —
+   resolved above (both 034 and 035 moved, hash-verified, lint clean).
 
-**CLOSED:** SHA provenance pinned and re-verified byte-identical at two
-points; PITR observed live pre-apply by Aravind; S1's live session/daily-log
-probes both run fresh and clean; Vercel confirmed deployed; S5's seven
-fingerprint checks all PASS against production; S6's ledger repair run and
-verified on production. PR #157 merged (`--merge`, matching repo
-convention), not squashed.
+**CLOSED, prior round:** SHA provenance pinned and re-verified byte-identical
+at two points; PITR observed live pre-apply by Aravind; S1's live
+session/daily-log probes both run fresh and clean; Vercel confirmed
+deployed; S5's seven fingerprint checks all PASS against production; S6's
+ledger repair run and verified on production. PR #157 merged (`--merge`,
+matching repo convention), not squashed.
+
+**NEW, this round:** the Q4 equipment-echo production incident (§3 above) —
+found, fixed, tested, and recorded in the same session, ahead of the 18:30
+IST evening trigger.

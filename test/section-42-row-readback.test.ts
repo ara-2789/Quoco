@@ -23,15 +23,12 @@ import { assertPairwiseDistinct, stripEcho, type DistinctnessCase } from './help
 // test/unit/section-42-unmatched-capture.test.ts (the TS-parser layer);
 // both share test/helpers/section-42-corpus.ts.
 //
-// STILL WRAPPED IN `it.fails`, stated plainly, not glossed over: 035 itself
-// has not been applied anywhere (review package §14's rehearsal was rolled
-// back — the lockstep apply is a separate event, per Aravind's own
-// instruction, needing its own runbook, a live zero-sessions probe, and a
-// human at the SQL Editor). The TS side built here is real, and the SAME
-// tests below already passed for real during the rehearsal (review package
-// §14.3) against a temporarily-applied 035 — that evidence is not
-// re-proven on every CI run against a currently-unmatched RPC; it lives in
-// the review package instead.
+// UNWRAPPED 2026-09-03, after the real lockstep apply (035 live on prod
+// ~09:05 IST same day, test-db re-applied same session) — every `it.fails`
+// below flipped cleanly to a genuine `it()`, re-verified fresh against the
+// live post-035 RPC, all for the right reason (matches review package
+// §14.3's own rehearsal evidence, now confirmed against the real apply
+// rather than a rolled-back rehearsal).
 
 const LOG_DATE = '2026-03-16'
 const P_NOW = '2026-03-16T09:00:00+05:30'
@@ -98,7 +95,7 @@ afterAll(async () => {
 })
 
 describe('§42 unmatched-token capture — post-RPC row read-back (manpower)', () => {
-  it.fails('daily_logs.morning_manpower.by_trade preserves the unmatched trade with matched:false', async () => {
+  it('daily_logs.morning_manpower.by_trade preserves the unmatched trade with matched:false', async () => {
     const phone = testPhone('305')
     await driveToManpowerAnswer(phone)
 
@@ -115,7 +112,7 @@ describe('§42 unmatched-token capture — post-RPC row read-back (manpower)', (
 })
 
 describe('§42 unmatched-token capture + tri-state — post-RPC row read-back (idle_hours)', () => {
-  it.fails('an unmatched trade is preserved in evening_idle_hours.by_trade with matched:false', async () => {
+  it('an unmatched trade is preserved in evening_idle_hours.by_trade with matched:false', async () => {
     const phone = testPhone('317')
     await driveToIdleHoursStep(phone)
     const r = await applyEveningFlowTurn({ phone, message: idleHoursCase.input, startFlow: false, now: P_NOW })
@@ -128,7 +125,7 @@ describe('§42 unmatched-token capture + tri-state — post-RPC row read-back (i
     expect(unmatched!.matched).toBe(false)
   })
 
-  it.fails('WRITE-BOUNDARY DISTINCTNESS: real data / all_working / unknown produce pairwise-distinct stored shapes — the exact case §13.1 fixed', async () => {
+  it('WRITE-BOUNDARY DISTINCTNESS: real data / all_working / unknown produce pairwise-distinct stored shapes — the exact case §13.1 fixed', async () => {
     const cases: DistinctnessCase[] = []
 
     // Real data.
@@ -179,7 +176,7 @@ describe('§42 unmatched-token capture + tri-state — post-RPC row read-back (i
 })
 
 describe('§42 unmatched-token capture + implausible tri-state — post-RPC row read-back (equipment_hours)', () => {
-  it.fails('an unmatched equipment type is preserved with matched:false', async () => {
+  it('an unmatched equipment type is preserved with matched:false', async () => {
     const phone = testPhone('328')
     await driveToEquipmentHoursStep(phone, [{ type: 'jcb', count: 2 }])
     const r = await applyEveningFlowTurn({ phone, message: equipmentHoursCase.input, startFlow: false, now: P_NOW })
@@ -191,7 +188,7 @@ describe('§42 unmatched-token capture + implausible tri-state — post-RPC row 
     expect(unmatched!.matched).toBe(false)
   })
 
-  it.fails('WRITE-BOUNDARY DISTINCTNESS: implausible true/false/null are pairwise distinct', async () => {
+  it('WRITE-BOUNDARY DISTINCTNESS: implausible true/false/null are pairwise distinct', async () => {
     const cases: DistinctnessCase[] = []
 
     // implausible:false — 6 hours <= 24 * count(2) = 48.

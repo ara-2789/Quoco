@@ -444,6 +444,45 @@ being on `main` yet. Inheriting that pattern here — apply now, merge the
 TS "sometime after" — would break every evening check-in for the entire
 length of the gap.
 
+**Finding A — follow-up, a gap Finding A itself did not cover (2026-09-03,
+same-day production incident, fixed same day, deadline 18:30 IST).**
+Finding A above checked that the two sides of the lockstep agreed on what
+the RPC RECEIVES (the `p_parse` shape) — it said nothing about whether they
+agreed on what the RPC RETURNS, and that second contract had exactly the
+same kind of SQL/TypeScript disagreement, just quieter. The RPC declares
+`v_equipment_echo JSONB := NULL` (line ~524) and never assigns it anywhere
+in the function body — confirmed by full grep, zero other references. Per
+its own comment (line ~911), populating it was deliberately left to "the
+caller's own prompt-building code," out of scope for the SQL file. But
+`evening.ts` shipped in the SAME PR still assumed the RPC would populate
+it — its own docstring said `equipmentEcho` was "REQUIRED to render step
+4's prompt... the RPC returns it on both paths." Nobody built the TS-side
+piece the SQL comment said was needed. Both sides individually looked
+correct: the SQL comment honestly disclosed the gap, and the TS code
+correctly consumed whatever the RPC gave it — the mismatch existed only in
+the space BETWEEN the two files, which is exactly what made it invisible to
+a review of either file alone. From ~09:05 IST (035's lockstep apply) until
+this fix, every real engineer reaching evening Q4 received "Equipment you
+listed this morning: . How many hours..." — an empty list, live on
+production.
+
+**Why this is the SAME class as Finding A, not a new one:** a return-value
+contract is exactly as capable of silent disagreement as a parameter-shape
+contract, and this project's own review discipline had a name and a check
+for the parameter direction (Finding A itself) but none for the return
+direction. **THE GENERAL LESSON, recorded here because Finding A is where
+the NEXT reviewer will look for it:** when two files divide a single
+RPC's contract between them, the review needs to check BOTH directions of
+that contract explicitly — what one side sends AND what the other side
+promised to read back — not just the direction that happens to fail loudly
+if wrong. A field one side promises and the other simply never fills does
+not throw, does not fail a type check (both sides agree on the TYPE,
+`EquipmentEchoItem[] | null` — just not on who populates it), and does not
+fail CI (no test exercised the actual production wrapper — see the fix's
+own record for why `test/evening-flow.test.ts` alone could never have
+caught this). Full incident, fix, and test evidence: `docs/reviews/035-
+apply-record.md`'s "2026-09-03 same-day incident" section.
+
 **Finding B — morning's coupling is the reverse shape: one-directional,
 and silent rather than loud.** Only the `v_col = 'manpower'` branch
 changes, and its `COALESCE((t->>'matched')::boolean, true)` (§4, Site 2)

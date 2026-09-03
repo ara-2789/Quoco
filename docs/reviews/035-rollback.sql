@@ -14,6 +14,33 @@
 --   - The daily_logs authenticated UPDATE grant addition -- harmless to leave.
 --   - The one-time session sweep -- already happened, nothing to undo; any
 --     session reset to idle by it simply starts fresh under the restored code.
+--
+-- KNOWN GAP, FOUND AND WORKED AROUND 2026-09-03 (test-db re-apply round):
+-- leaving the additive schema in place on rollback is CORRECT (per the
+-- principle above), but it makes RE-APPLYING THE FULL 035 FILE VERBATIM
+-- IMPOSSIBLE afterward -- `ALTER TABLE ... ADD COLUMN evening_manpower`
+-- fails with 42701 ("column already exists") the second time around,
+-- because the columns this rollback deliberately kept are still there. Hit
+-- for real on test-db: the full pinned file (sha256
+-- cae77de9bed877951cf34c35f9bb373d2c6ef281e219df46697d49f2a561cb6d) was
+-- re-applied after a prior rollback, and the ALTER TABLE step failed
+-- exactly this way. The failure was loud, transaction-wrapped, and rolled
+-- back atomically -- confirmed by re-fingerprinting both function bodies
+-- (md5(prosrc)) before and after the failed attempt: byte-identical either
+-- side, zero corruption.
+--
+-- THE RESOLUTION, now a known procedure rather than a rediscovery: after a
+-- rollback that used THIS file, do not re-run the full 035 file. Extract
+-- and re-run ONLY its two `CREATE OR REPLACE FUNCTION` statements (each
+-- with its own trailing EXECUTE grant reassertion) from the exact
+-- byte-identical pinned source, wrapped in a fresh BEGIN/COMMIT. The
+-- ALTER TABLE and GRANT statements in the full file are no-ops in this
+-- state -- the additive schema and grant are already there, left by this
+-- rollback on purpose -- so skipping them changes nothing about the
+-- resulting schema, only avoids the redundant (and now-erroring) DDL.
+-- Verified by direct comparison against production afterward: function
+-- body hashes, column types, and grants all matched exactly, on every axis
+-- checked. Full record: docs/reviews/035-apply-record.md.
 -- =============================================================================
 
 BEGIN;

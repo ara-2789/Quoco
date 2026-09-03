@@ -212,3 +212,89 @@ describe('dispatchInboundTurn', () => {
     expect(await getDailyLog(LOG_DATE)).toBeNull()
   })
 })
+
+// 2026-09-03 production incident, fixed same day: 035's RPC declares
+// v_equipment_echo := NULL and never assigns it (deliberate — see
+// evening.ts's own EquipmentEchoItem comment). evening.ts shipped in the
+// same PR still assumed the RPC would populate it, so every live Q4 prompt
+// went out with an empty equipment list from ~09:05 IST until this fix
+// (applyEveningFlowTurn now reads morning_equipment directly). These tests
+// go through dispatchInboundTurn — the REAL webhook path — specifically
+// because test/evening-flow.test.ts's own applyEveningFlowTurn helper calls
+// the RPC directly (test/helpers/db.ts) and so cannot exercise this fix at
+// all; only the production wrapper (lib/whatsapp/flows/evening.ts) can.
+// 'concrete_mixer' deliberately used, not 'jcb' — EVENING_REASK_MESSAGES[4]
+// hardcodes "JCB 6 hours" as its own illustrative example text, so a test
+// using jcb cannot tell a genuine echo apart from that static copy (the
+// exact false-positive this incident's own diagnosis caught in
+// test/evening-flow.test.ts's Q4 reask test).
+async function seedMorningEquipmentForDispatch(
+  items: Array<{ type: string; count: number | null }> | null,
+): Promise<void> {
+  const db = testClient()
+  const { error } = await db.from('daily_logs').upsert(
+    {
+      tenant_id: TEST_TENANT_ID,
+      project_id: TEST_PROJECT_ID,
+      engineer_id: testEngineerId(),
+      log_date: LOG_DATE,
+      morning_equipment: items === null ? null : { items, none: items.length === 0, raw_text: 'seeded' },
+    },
+    { onConflict: 'project_id,engineer_id,log_date' },
+  )
+  if (error) throw new Error(`seedMorningEquipmentForDispatch failed: ${error.message}`)
+}
+
+describe('evening Q4 equipment echo — real morning_equipment, not the RPC (2026-09-03 fix)', () => {
+  it('engineer WITH morning equipment reaches Q4 and sees the REAL list, not an empty one or the static example', async () => {
+    const phone = testPhone('507')
+    await seedMorningEquipmentForDispatch([{ type: 'concrete_mixer', count: 1 }])
+    await seedSession({
+      phone,
+      currentFlow: 'evening',
+      currentStep: 3, // Q3 — idle hours
+      context: {},
+      updatedAt: P_NOW,
+    })
+    const { reply, resolvedFlow } = await dispatchInboundTurn({
+      phoneNumber: phone,
+      tenantId: TEST_TENANT_ID,
+      userId: testEngineerId(),
+      projectId: TEST_PROJECT_ID,
+      message: 'all working',
+      now: P_NOW,
+      supabaseClient: testClient(),
+    })
+    expect(resolvedFlow).toBe('evening')
+    // The REAL echo: exact match on the prefix, not just toContain, so a
+    // future change that echoes the wrong item (but happens to still
+    // mention 'Concrete Mixer' somewhere) can't slip past this check. 'JCB'
+    // still legitimately appears later in this same reply — it's the
+    // prompt's own static usage example ("e.g. \"JCB 6 hours...\""),
+    // unrelated to the echo this test verifies.
+    expect(reply.startsWith('Equipment you listed this morning: Concrete Mixer.')).toBe(true)
+  })
+
+  it('engineer with NO morning equipment auto-skips Q4 straight to Q5 — no echo needed, no read triggered', async () => {
+    const phone = testPhone('508')
+    await seedMorningEquipmentForDispatch(null) // no morning submission at all
+    await seedSession({
+      phone,
+      currentFlow: 'evening',
+      currentStep: 3,
+      context: {},
+      updatedAt: P_NOW,
+    })
+    const { reply, resolvedFlow } = await dispatchInboundTurn({
+      phoneNumber: phone,
+      tenantId: TEST_TENANT_ID,
+      userId: testEngineerId(),
+      projectId: TEST_PROJECT_ID,
+      message: 'all working',
+      now: P_NOW,
+      supabaseClient: testClient(),
+    })
+    expect(resolvedFlow).toBe('evening')
+    expect(reply).toBe(EVENING_QUESTIONS[5])
+  })
+})

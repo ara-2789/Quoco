@@ -128,8 +128,19 @@ export const EVENING_IDLE_REPLY = ''
 export const EVENING_WRONG_FLOW_REPLY = ''
 
 // A minimal shape for the echoed morning equipment list — only what Q4's
-// prompt needs to render. Mirrors the RPC's `equipment_echo` return value
-// (morning_equipment->'items').
+// prompt needs to render.
+//
+// NOT SOURCED FROM THE RPC (fixed 2026-09-03, same-day production incident —
+// see this file's own header addendum below and docs/reviews/035-apply-
+// record.md's Finding A follow-up). 035_evening_flow_restructuring.sql
+// declares `v_equipment_echo JSONB := NULL` and never assigns it — by that
+// migration's own comment (line ~911), populating it was explicitly left to
+// "the caller's own prompt-building code," out of scope for the SQL file.
+// This TypeScript file shipped in the SAME PR still assuming the RPC would
+// fill it in, so every Q4 prompt rendered with an empty list from the
+// moment 035 went live (~09:05 IST) until this fix. applyEveningFlowTurn
+// below now reads morning_equipment directly from daily_logs instead of
+// trusting the RPC's (permanently null) equipment_echo field.
 export interface EquipmentEchoItem {
   type: string
 }
@@ -154,8 +165,9 @@ export function buildEquipmentHoursPrompt(items: readonly EquipmentEchoItem[]): 
  * post-turn current_step. Completion is signalled by outcome 'advance' with
  * current_step 0 (the RPC resets the step to 0 when the flow completes).
  * `equipmentEcho` is REQUIRED to render step 4's prompt (advancing INTO
- * step 4, or reasking while step 4 is active — the RPC returns it on both
- * paths) and ignored for every other step.
+ * step 4, or reasking while step 4 is active) and ignored for every other
+ * step. Populated by applyEveningFlowTurn's own direct daily_logs read, NOT
+ * by the RPC — see EquipmentEchoItem's own comment for why.
  */
 export function buildEveningReply(
   outcome: EveningOutcome,
@@ -194,8 +206,36 @@ export interface EveningTurnResult {
   currentFlow: SessionFlow | null
   currentStep: number
   logDate: string
-  /** Populated by the RPC when current_step becomes 4 (advance or reask). */
+  /**
+   * Populated by a direct daily_logs read (NOT the RPC — it never fills
+   * this in, see EquipmentEchoItem's own comment) whenever current_step is
+   * 4 (advance or reask). Null on every other step.
+   */
   equipmentEcho: EquipmentEchoItem[] | null
+}
+
+// Fetches the morning equipment list directly, bypassing the RPC's
+// equipment_echo field entirely (permanently null — see EquipmentEchoItem's
+// comment). Called only when current_step === 4, so this is NOT a
+// per-turn cost — the vast majority of turns never reach here.
+async function fetchMorningEquipmentEcho(
+  supabase: SupabaseClient,
+  params: { projectId: string; userId: string; logDate: string },
+): Promise<EquipmentEchoItem[]> {
+  const { data, error } = await supabase
+    .from('daily_logs')
+    .select('morning_equipment')
+    .eq('project_id', params.projectId)
+    .eq('engineer_id', params.userId)
+    .eq('log_date', params.logDate)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`fetchMorningEquipmentEcho failed for project ${params.projectId}: ${error.message}`)
+  }
+
+  const morningEquipment = data?.morning_equipment as { items?: Array<{ type: string }> } | null
+  return (morningEquipment?.items ?? []).map((item) => ({ type: item.type }))
 }
 
 export async function applyEveningFlowTurn(params: {
@@ -273,14 +313,26 @@ export async function applyEveningFlowTurn(params: {
     current_flow: SessionFlow | null
     current_step: number
     log_date: string
+    // equipment_echo is intentionally NOT read below — the RPC never
+    // populates it (see EquipmentEchoItem's own comment). Left in this type
+    // only because the RPC still returns the key.
     equipment_echo: EquipmentEchoItem[] | null
   }
+
+  const equipmentEcho =
+    result.current_step === 4
+      ? await fetchMorningEquipmentEcho(supabase, {
+          projectId: params.projectId,
+          userId: params.userId,
+          logDate: result.log_date,
+        })
+      : null
 
   return {
     outcome: result.outcome,
     currentFlow: result.current_flow,
     currentStep: result.current_step,
     logDate: result.log_date,
-    equipmentEcho: result.equipment_echo,
+    equipmentEcho,
   }
 }
