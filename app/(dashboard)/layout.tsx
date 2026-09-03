@@ -10,14 +10,20 @@ async function signOut() {
   redirect('/login')
 }
 
+// Safety, Invoices, and Hindrances removed 2026-09-03: all three routes
+// have never existed (Fast-Follow, CLAUDE.md §2 -- "table exists, flow
+// ships later"), and this array has no role gate, so every authenticated
+// user has seen three broken nav links since the very first commit that
+// created this file (a71e5fa, 2026-06-28) -- flagged and never acted on
+// even then (docs/build-status.md's own Week 1 note: "Hide or disable them
+// for the Spine so beta PMs don't click into empty sections"). Restore
+// each one individually once its route is actually built -- do not batch
+// them back in together.
 const NAV_LINKS = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Projects', href: '/projects' },
   { label: 'Daily Logs', href: '/daily-logs' },
   { label: 'DPRs', href: '/dprs' },
-  { label: 'Safety', href: '/safety' },
-  { label: 'Invoices', href: '/invoices' },
-  { label: 'Hindrances', href: '/hindrances' },
 ]
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {

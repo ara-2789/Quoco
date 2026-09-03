@@ -29,9 +29,13 @@ Week 1: COMPLETE
 - Project CRUD: create, list, detail, members
 - Migrations 001–005 live. TypeScript zero errors.
 - GitHub: github.com/ara-2789/Quoco
-- NOTE: sidebar shows Safety/Invoices/Hindrances nav items — those are
+- ~~NOTE: sidebar shows Safety/Invoices/Hindrances nav items — those are
   Fast-Follow. Hide or disable them for the Spine so beta PMs don't click
-  into empty sections.
+  into empty sections.~~
+  RESOLVED 2026-09-03 (over five weeks after this note was first written
+  and never acted on): all three removed from `NAV_LINKS`
+  (`app/(dashboard)/layout.tsx`) — found while auditing egress for the
+  ad-hoc menu spec. Restore each individually once its route is built.
 
 Week 2: IN PROGRESS
 Day 1 checklist:
