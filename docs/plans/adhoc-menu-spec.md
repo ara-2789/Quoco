@@ -482,6 +482,43 @@ one of the seven menu items inherits the same unresolved ambiguity 033 and 031 a
 had to make their own call about — the menu is simply the FIRST inbound-path writer to hit
 it for these three (and, eventually, four new) tables specifically.
 
+**"Count != 1" is two DIFFERENT cases, not one (added 2026-09-03) — the count=0 case is
+not a "which project?" question and must not be treated as one.**
+
+- **count = 1** — proceed silently. The only live path today (registration is currently
+  SQL-only, and one-engineer-one-project is the decided, if not yet DB-enforced, product
+  rule).
+- **count > 1** — ask which project.
+- **count = 0** — the engineer has NO project to name, so asking "which project?" is the
+  wrong question entirely; the honest problem is that his own registration is incomplete.
+  **Reachable, not hypothetical — checked directly:** no trigger, deferred constraint, or
+  FK enforces "every `users` row with `role='engineer'` has a matching `project_members`
+  row" (grepped every migration's `CREATE TRIGGER` statement against `project_members`;
+  the only hit, `on_auth_user_created` in `007_auth_surgery.sql`, fires solely on
+  `auth.users` inserts — engineers have `auth_id = null` and are never touched by it).
+  Since registration is a direct, separate SQL `INSERT INTO users` followed by a SEPARATE
+  `INSERT INTO project_members`, nothing stops the second statement from being skipped,
+  mistyped, or interrupted. **Not a new case invented for this section** — migration 033's
+  own sweep already distinguishes it by name: `'reason', CASE WHEN v_project_count = 0
+  THEN 'zero_project_memberships' ELSE 'multiple_project_memberships' END`
+  (`033_sweep_stale_morning_sessions.sql:224-230`). Not yet observed occurring in practice
+  (the one real sweep record on file shows `skipped_count: 0`), but the distinction the
+  reply below depends on already exists one layer down.
+
+  **Draft reply, count = 0 (for approval, register per Rule 3.12 — two short sentences, no
+  idiom, states the problem and the fix, matching `notRegisteredResponse`'s own closing
+  convention):**
+  > Your account isn't linked to a project yet, so this can't be saved. Contact your
+  > Project Manager to fix your account.
+
+  **Must NOT accept the report into a void — named explicitly:** this reply is returned
+  INSTEAD of proceeding with any menu item's own flow, not after it. Whatever the engineer
+  had already typed (a hindrance description, a safety detail) is not stored anywhere —
+  there is no `project_id` to write it against, and guessing one is exactly the
+  fabricated-fact risk this section's own earlier argument already rejects. The engineer
+  loses nothing he was ever told was captured; the alternative (accepting text with no
+  home for it) would silently promise otherwise.
+
 ---
 
 ## Attribution day — none of the three existing tables has one, and the consequence is undecided
@@ -710,3 +747,225 @@ not yet applied to `design-decisions-beta-feedback.md`:
   from `created_at`, or an engineer-asked day — three options named, none chosen. Also
   flags `invoices.invoice_date` as an existing-but-different-semantics field, not a ready
   answer.
+
+---
+
+## g. Phase-one build-order and scope decisions (2026-09-03) — recorded, none built
+
+Six decisions made while planning the build order for PR 1/PR 2, before any flow code was
+written. This section records them WITH the reasoning that produced them, matching this
+file's own convention elsewhere — none of this authorizes writing the flow code itself.
+
+**1. Build order is menu-first, media-last, registration-UI-third.** The menu (items 1, 2,
+7 — text-only, item 3 CUT from this slice, see point 10 below) ships first; media handling
+(unblocking 4, 5, 6) ships second; a real registration UI ships third. Reasoning:
+`lib/whatsapp/inbound-start.ts`'s own retirement header already frames the menu as a LAUNCH
+PREREQUISITE — "must ship before the first real engineer is onboarded, because at that point
+inbound becomes his only surface." Registration today is SQL-only (a PM runs a direct INSERT
+— confirmed no registration UI exists anywhere under `app/`) and the menu does not depend on
+that changing; a real registration UI is its own, larger, unrelated workstream (auth,
+onboarding UX) that does not block or get blocked by the menu. Media handling unblocks real
+value (items 4-6) but the menu proves the mechanism and ships value (1, 2, 7) without waiting
+on it.
+
+**2. Items 3, 4, 5, 6 are OMITTED from the rendered list, never shown disabled.** A tapped
+row that does nothing — or replies "not available yet" — teaches a low-comfort-user engineer
+(this project's own persona, `design-principles.md`) that the bot is unreliable, which is a
+worse outcome than the row simply not existing yet. Their row numbers (3 = site expense,
+4 = material received, 5 = invoice, 6 = site document) stay PERMANENTLY RESERVED per this
+file's own §a numbering rule — when each one's own blocker clears, it slots into the list at
+its same number, never renumbered, never colliding with whatever an engineer already learned
+from 1/2/7.
+
+**3. The photo question joins item 1 AFTER media handling ships, as a follow-on invitation,
+not a sixth question inserted into the flow.** Item 1 ships (§c) as the two-question flow
+already specified there (Q1 free-text description, Q2 timing) — not restructured to insert
+a photo step ahead of completion, which would couple the flow's own completion to
+infrastructure (media handling) that doesn't exist at ship time, and would complicate 036's
+own "the row is always written once Q1 has content" invariant. Once media handling exists,
+the photo becomes a separate, optional message the engineer can send AFTER the confirmation
+— e.g. "if you have a photo, you can send it now" — the same "reply anytime" framing this
+session's own item 2 (§e below) explicitly REMOVES from any current mock-up, precisely
+because it isn't true until media handling ships; it becomes true, and the copy can return,
+at that point. `hindrances.photo_url` already exists as a column (confirmed live against
+production's actual column list, `docs/reviews/036_hindrance_timing_column.sql`'s own
+evidence trail) — attaching a photo later is an UPDATE on the existing row, not a new
+migration.
+
+**4. Voice notes are out of scope for capture, but must not be told they're a photo.** An
+inbound voice note hits the exact same "has media" branch (`NumMedia !== '0'`) this
+session's own build-plan report proposed for the photo-idle-reply case — but Twilio's
+webhook payload also carries `MediaContentType0` (and further-indexed siblings) per media
+item, which distinguishes an audio MIME type from an image one. Telling an engineer who
+sent a voice note "I can't receive photos yet" is wrong on its face, not just imprecise —
+the media-idle-reply branch must inspect the content-type prefix (`audio/` vs `image/`) and
+return a distinct string for each, not one generic "no media" reply. Low marginal cost:
+the same webhook payload already carries the field this needs: nothing further to build to
+detect it, only to branch on it.
+
+**5. NOT phase one, recorded with reasoning, none scheduled:**
+   - **Update-an-existing-hindrance flow.** No design work has happened on this; it is not
+     implied by anything decided so far.
+   - **Hindrance closure (marking a row resolved).** Checked directly, not assumed: `grep`
+     across `lib/`, `app/`, and every migration file's runtime SQL for any `UPDATE` (or
+     `.update(`) touching `hindrances` returns zero hits outside one COMMENTED-OUT DDL line
+     in migration 016's own rollback block. **`hindrances.status`, `resolved_at`, and
+     `resolved_by` have no writer anywhere in this codebase after the initial INSERT** —
+     every row this project has ever written stays at whatever `status` it was created
+     with, permanently, today. Any future "open hindrances" surface (a PM dashboard view,
+     an exceptions list) would degrade BY DESIGN the moment it ships, showing every
+     hindrance ever captured as perpetually open, until a closure writer exists. Named so
+     the next person building that surface doesn't discover this the hard way.
+   - **Morning-hindrance duplicate detection** (an ad-hoc hindrance report that duplicates
+     what the same engineer already free-texted into `morning_hindrances` that day). Not
+     designed; no dedup mechanism proposed.
+
+**6. OPEN, deliberately not resolved here:**
+   - Whether `hindrance_type` (the existing CHECK'd column —
+     material_delay/weather/equipment/labour/design/utility/other) earns its own structured
+     question in the ad-hoc flow, or stays derived/unset, since it's largely recoverable
+     from the free-text description a PM or future classifier could read.
+   - Whether `responsible_party` should be captured. Checked directly: the SCHEDULED flows
+     already capture this exact field for the same subject — `morning_hindrances JSONB —
+     [{description, responsible_party}]` and `morning_dependencies`/`evening_dependencies`
+     (`docs/schema.md`, `lib/dpr/schema.ts:227`) all carry it. The ad-hoc path, as specified
+     in §c today (Q1 description, Q2 timing only), captures LESS than the scheduled flows
+     already do for the equivalent free-text hindrance/dependency report — a real gap
+     between the two capture surfaces, named here, not resolved.
+
+**7. THIS SPEC'S OWN NUMBERING IS THE ONLY AUTHORITY (2026-09-03) — recorded so an
+external mock-up can never resurface as apparent precedent.** A WhatsApp menu mock-up was
+reviewed this session showing `1 Safety / 2 Hindrance / 3 Invoice` and a four-question
+item-1 flow that never asks `timing` — both directly contradicting this file's own §a
+(`1. Hindrance/Dependency`, `2. Safety incident`, `3. Site expense`, permanent numbers,
+never renumbered) and §c (item 1 is Q1 description + Q2 timing, two questions). Checked
+directly, not assumed: the mock-up does not exist anywhere in this repository (exhaustive
+grep across `docs/`, `CLAUDE.md`, and every committed branch reachable from `origin/main`
+found nothing matching its text) — it came from outside the repo and was never a source
+in the first place. **Decided (Aravind, 2026-09-03): do not reconcile anything to it.**
+This file's own §a/§c numbering and question sequencing stand as written, unchanged by
+this entry. Recorded here only so a future reader who encounters that mock-up again does
+not mistake it for an earlier or competing design this file failed to account for.
+
+**8. `submitted_via` IS A REQUIRED EXPLICIT WRITE FOR ITEM 1, NOT DB-ENFORCED
+(2026-09-03) — recorded because 036's own rehearsal traded a loud failure for a silent
+one.** `hindrances.submitted_via` had `DEFAULT 'whatsapp'`, which never satisfied its own
+CHECK constraint (`hindrances_submitted_via_check` — live since migration 001, confirmed
+identical on prod and test-db) — migration 036 drops that broken default rather than
+correcting it, per the same no-fabricated-value posture `timing` already uses (§f). The
+rehearsal empirically confirmed the consequence: `submitted_via` is nullable, carries no
+separate NOT NULL, so an INSERT that omits it now succeeds silently with NULL instead of
+being rejected by anything at the database layer.
+
+**Consequence for item 1's flow, stated so it is not assumed:**
+- Item 1's own INSERT into `hindrances` MUST set `submitted_via = 'whatsapp_adhoc'`
+  explicitly, every time, no exceptions. Nothing in the schema will catch an omission —
+  the write simply succeeds with a NULL that looks, to any later reader, like a
+  legitimately absent value rather than a bug.
+- **A NULL in `submitted_via` on any future row means a write path forgot to set it — it
+  is a DEFECT, not a legitimate data state, and must be read that way by whoever
+  eventually looks at it** (a PM view, a future audit, a debugging session). Unlike
+  `timing`'s own NULL (which has an honest, permanent meaning — "pre-menu legacy row,"
+  §f above), `submitted_via` has no such story: every row this table has ever held, or
+  ever will hold through any currently-known write path, has a real, nameable channel.
+  A NULL here is never "unknown, please infer" — it is always "something upstream broke."
+- **Same posture as `timing`, stated explicitly rather than left implicit:** both columns
+  are enforced by the writing flow, not by the database, by deliberate design (§f's own
+  reasoning — a DB-level default or NOT NULL would either fabricate a value or block a
+  write path that has a legitimate reason to leave a field genuinely unresolved). That
+  design choice has a real cost — a forgotten write is silent, not loud — and this entry
+  exists so that cost is written down and known, not discovered later as a surprise when
+  a real NULL turns up and nobody remembers why the column allows it at all.
+
+**9. EGRESS DECIDED: EMAIL NOW, PUSH NOTIFICATION LATER (2026-09-03).** Every item that
+gets a PM notification at all sends it by email, not WhatsApp, for phase one. Reasoning:
+the `quoco.co.in` Resend domain is now verified (SPF/DKIM/MX, same-day) — email has no
+Meta template to submit and no review clock, unlike any new WhatsApp-side PM
+notification, which would need its own approved template (the same lead-time cost §37(d)
+already named for the owner-facing no-report notice). Email is the cheap, correct answer
+for what phase one actually needs: a PM finding out something happened, not a rich
+interactive surface. A push notification into the PM dashboard is the eventual right
+answer once the dashboard has anywhere to push TO — no exceptions/notifications surface
+exists there today (confirmed by grep, same absence §c item 7 already named for DASH-01)
+— so it is recorded as a later migration, not designed further here.
+
+**Per-item notification decisions:**
+- **Item 1 (hindrance) → email, immediate.**
+- **Item 2 (safety) → email, immediate.**
+- **Item 3 (site expense) → NO email.** A petty-cash capture belongs in a review queue a
+  PM checks on their own schedule, not an inbox interruption for every rupee logged —
+  the volume/urgency shape is different from a hindrance or a safety report, and an email
+  per expense would train PMs to ignore this channel for everything else on it.
+- **Item 7 (opt-out) → email, not urgent but decided.** Accepted, not just recorded: an
+  engineer opting out silently stops his PM's reports with no visible cause — the
+  existing `checkin_escalations` mechanism (027) would eventually flag the SYMPTOM (a
+  missing submission, via its own 10:00–10:30 AM PM notification) but never the CAUSE,
+  and never surfaces the human problem behind it (why did he stop — needs help, feels
+  spammed, left the project). §29(b)'s own decision that this routes to the PM as an
+  actionable REQUEST already implies a real notification path was always owed here; email
+  is what makes that concrete, at near-zero marginal cost now that the domain is live.
+
+**PM lookup — the actual query, and its failure posture, confirmed for the record:**
+```sql
+select pm2.user_id as pm_user_id, u.full_name
+from project_members pm1
+join project_members pm2 on pm2.project_id = pm1.project_id and pm2.role = 'pm'
+join users u on u.id = pm2.user_id
+where pm1.user_id = '<engineer_id>';
+```
+`project_members.role` (a per-membership role) is the right column, NOT `users.role` (the
+account-level login role) — a real project can have its PM sitting at `users.role='admin'`
+while holding `project_members.role='pm'` on that specific project, confirmed live against
+the one real project on prod. The PM's email comes from `auth.users.email` (PMs authenticate
+via Supabase Auth; no email column exists on `public.users`), joined by `id` — structurally
+reliable for any real pm/admin/qs account since `public.users.id === auth.users.id` for those
+roles by construction.
+
+**No constraint enforces exactly one `role='pm'` row per project** — only
+`UNIQUE(project_id, user_id)`, which prevents a duplicate of the same person, not multiple
+PMs or zero. **DECIDED: skip-and-surface on `count != 1`, same posture as project resolution
+itself** — the capture (hindrance/safety row) always saves regardless of whether the PM
+lookup succeeds; only the notification is skipped when the PM count isn't exactly one, with
+a Sentry warning on skip (matching `runOwnerSendTrigger`'s own `skipped_no_owner`
+precedent) — never a guess at which PM, never a fabricated notification.
+
+**Confirmation copy — final, corrected (Aravind, 2026-09-03):**
+> Item 1: *"Sent to your PM."*
+> Item 2: *"Sent to your PM — take care out there."*
+
+Changed from an earlier draft ("Your PM has been notified") specifically because the
+architecture enqueues the notification AFTER the confirmation is already written (§ FAILURE
+below) — "sent to" describes what the flow just did (enqueued/dispatched), not an outcome
+the flow cannot yet know. Optimistic confirmation is still the right call (see below); the
+sentence itself just shouldn't claim more than the architecture can back up at the moment
+it's written.
+
+**Failure handling — the architecture forces optimistic confirmation, not a preference.**
+Every existing outbound pattern in this codebase (`outbound_sends`, `owner_deliver`) enqueues
+a job rather than sending synchronously inside a webhook response — the ad-hoc menu's own
+confirmation text is written inside that synchronous reply, before any job has run. The flow
+therefore cannot know the real send outcome before confirming. DECIDED: optimistic confirm +
+automatic job retry on failure + a Sentry alert on a PERSISTENT (not every transient) failure.
+Trade-off named plainly: an engineer can be told "sent" when the send later fails — the same
+accepted cost this codebase already carries for owner delivery, where neither the engineer
+nor the owner is ever told the send's real-time outcome either.
+
+**Ledger — item 2 already has the hook (`safety_incidents.pm_notified_at`, unused until now);
+item 1 did not, closed by migration 037** (`hindrances.pm_notified_at`, own file, kept
+separate from the already-rehearsed-and-pinned 036 — see 037's own header for the full
+reasoning and the confirmation that 036/037 apply independently, in either order).
+`outbound_sends` (031) cannot hold an email send at all — its own `content_sid`/
+`to_phone_number` columns are WhatsApp-specific and NOT NULL, structurally excluding any
+other channel. A nullable timestamp, checked before send and set after, is the send-once
+guard for both tables now — not a general notification ledger, sufficient for phase one's
+one-notification-per-row shape only.
+
+**10. ITEM 3 CUT FROM THE FIRST SLICE (Aravind, 2026-09-03) — same false-promise shape as
+the dead nav links removed the same night, just gentler.** Item 3's own confirmation copy
+("logged — a PM will see this...") describes a PM checking an expense queue that has no
+dashboard route and no reader, exactly the "sidebar link to a page that doesn't exist"
+pattern this session already found and fixed elsewhere in the product. Three items with
+real egress (1, 2, 7) beats four where one goes nowhere. **The menu ships items 1, 2, 7
+only.** Item 3's row number stays permanently reserved (per point 2 above, widened to
+include it) — it returns to the list the moment it has a real reader (a PM-facing expense
+queue view), not before, and not renumbered when it does.
