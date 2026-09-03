@@ -791,6 +791,76 @@
   signature (the specific unsafe construct, not just the symptom) BEFORE
   the fix is considered closed. A fix that stops at "the file I was
   looking at is now correct" is half a fix.
+- A LIVE WHATSAPP MESSAGE IS NEVER SENT TO A NUMBER THAT HAS NOT BEEN
+  EXPLICITLY CONFIRMED BY ARAVIND IN CHAT, IN THE SAME SESSION (standing
+  rule since 2026-09-03). Inference from a `users` row, a tenant name, a
+  session record, or any other database evidence is NOT confirmation, no
+  matter how strong the circumstantial match — the only thing that counts
+  is Aravind stating the number, or explicitly confirming a specific
+  number Claude Code names, in the current chat session, before the send.
+  Origin: an ad-hoc-menu tap-test built and sent a real WhatsApp message to
+  `+919176865600`, inferred from the one `engineer`-role `users` row on
+  production (`full_name: "Vikram Rao"`, tenant `"Rajamani Constructions
+  Pvt Ltd"`) rather than asked for directly. The inference turned out
+  correct — the number was Aravind's own test handset — but this was
+  established only AFTER the send, when asked to justify it, not before.
+  A wrong inference in this exact shape sends a real message to a real
+  stranger's phone with no way to unsend it. Being right once is not
+  evidence the process was sound; the process is the rule, not the
+  outcome. Applies to every outbound WhatsApp send this codebase or a
+  Claude Code session might ever construct outside the normal
+  cron-triggered/reply paths — test messages, diagnostics, one-off sends —
+  not only the tap-test that produced this rule.
+- A ONE-OFF SCRIPT THAT SENDS A REAL WHATSAPP MESSAGE NEVER RESOLVES ITS OWN
+  SENDER CREDENTIALS BY RE-READING A LOCAL ENV FILE (standing rule since
+  2026-09-03; THIRD INSTANCE of the same sandbox-vs-production failure
+  class on this project — named as a pattern, not re-litigated as three
+  separate root causes). It either imports and calls the real send path
+  (`lib/whatsapp/outbound/send.ts`'s `sendWhatsAppTemplate`/
+  `readCredentials`) so it can never resolve a different sender than
+  production does, or — if it must construct its own request outside that
+  path (as a Content-API-only diagnostic legitimately might) — it fetches
+  the `From` number it is ABOUT TO USE and asserts it equals the known real
+  WABA sender (`+919940875600`) BEFORE sending, refusing otherwise. Origin:
+  the ad-hoc-menu tap-test script loaded `TWILIO_WHATSAPP_NUMBER` from local
+  `.env.local` independently rather than calling `readCredentials()` — that
+  file still holds the Twilio Sandbox number (`+14155238886`), stale
+  relative to Vercel Production's own env (correctly `+919940875600`, per
+  today's real morning/evening sends, both confirmed `status: "read"`).
+  Two live WhatsApp messages were sent, both failed at Twilio before ever
+  reaching the webhook (`error_code: 63015`, sandbox-join-required — a
+  different mechanism from the 24-hour session window this diagnosis was
+  first, wrongly, attributed to), and both were reported as "sent" on the
+  strength of Twilio's initial `queued` response, never checked to a
+  terminal status. **No production code path reads a local env file** —
+  grepped, confirmed: `TWILIO_WHATSAPP_NUMBER` has exactly one production
+  reader (`send.ts:149`, inside `readCredentials()`, populated only from
+  the deployed environment); the divergence is possible only in
+  hand-written, uncommitted diagnostic tooling that reimplements credential
+  loading instead of reusing the real path — exactly the shape this rule
+  closes. **THIRD INSTANCE, same underlying class, cited by number so a
+  fourth doesn't get treated as new:** `63015` and `63027` both recurred
+  during Morning Flow Pass 1's own first cron fire
+  (`docs/reviews/first-successful-delivery-record.md`,
+  `docs/reviews/first-cron-fire-record.md`) — this project has now hit
+  "code silently talks to the sandbox instead of production" three
+  separate times, in three different scripts, none of which shared a root
+  cause with each other beyond the same broad failure shape. A fourth
+  enumerated fix is not the answer; reusing the one already-correct
+  credential path is.
+- A MESSAGE'S STATUS IS NOT ITS TERMINAL STATUS UNTIL FETCHED — "QUEUED" OR
+  "ACCEPTED" IS NEVER REPORTED AS "SENT" (standing rule since 2026-09-03,
+  same incident). Twilio's synchronous API response to a send call reports
+  only that the request was ACCEPTED for delivery, not that it arrived —
+  the real outcome (`delivered`, `read`, or `failed` with an `error_code`)
+  is only known by fetching `GET /Messages/{Sid}.json` afterward, or via
+  the `StatusCallback` webhook this codebase already wires
+  (`app/api/whatsapp/status-callback`). Reporting a send as done because
+  the API call returned a SID with a "queued" status — without that
+  follow-up fetch — is reporting a claim as a fact. Applies to every
+  WhatsApp (and, by the same reasoning, email — Resend's own send response
+  carries the same queued-not-delivered gap) send a Claude Code session
+  reports on, not only diagnostics.
 
 ---
 
