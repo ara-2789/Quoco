@@ -27,7 +27,11 @@
 // Every literal below is checked against the live word lists as of
 // 2026-08-24 (lib/whatsapp/flows/parsers/lexicon.ts's YES_WORDS/NO_WORDS/
 // NONE_WORDS) -- this file does not invent vocabulary, it enumerates what
-// already exists on the TS side and asserts the SQL side agrees.
+// already exists on the TS side and asserts the SQL side agrees. TWO CASES
+// BELOW (added 2026-09-03, 'ya'/'ys') are the first exception to "asserts
+// the SQL side agrees" -- see pendingSqlMigration's own doc comment above
+// for why, and test/unit/yesno-mirror.test.ts's own header for how the
+// mirror test honours the exception without silently widening its scope.
 //
 // RE-TUNED FOR ATTENDANCE, 2026-08-24 (external review round 2, review
 // package §11.5): 'half' moved from NO_WORDS to YES_WORDS, and
@@ -55,10 +59,37 @@
 export interface YesNoCorpusCase {
   input: string
   expected: { met: boolean; ok: boolean }
+  /**
+   * Set ONLY for a word that TS (classifyYesNo/YES_WORDS or NO_WORDS) has
+   * already learned but quoco_classify_yes_no (SQL,
+   * 030_morning_flow_attendance.sql, already applied/live) has not yet —
+   * an already-shipped migration file cannot be edited in place (CLAUDE.md's
+   * own rule), so closing this gap needs its own follow-up migration, not a
+   * same-day edit here. test/unit/yesno-mirror.test.ts skips ONLY the live
+   * SQL RPC assertion for a case flagged this way -- the TS assertion still
+   * runs and must still pass. Remove this flag (and confirm the corpus's
+   * own "every word here" invariant holds via the mirror test running
+   * clean, unflagged) the moment the follow-up SQL migration ships -- it is
+   * a temporary, dated exception, never a permanent one.
+   */
+  pendingSqlMigration?: string
 }
 
 export const YESNO_CORPUS: readonly YesNoCorpusCase[] = [
   // --- YES_WORDS, one entry per word ---
+  // 'ya'/'ys' ADDED 2026-09-03 -- real engineer typos observed 2026-09-02,
+  // 18:47/18:48 IST, on the live evening flow. Neither classified that
+  // night: "Ya" produced a reask; "Ys" exhausted the reask budget and
+  // force-advanced to the NO branch, storing a false schedule-miss reason
+  // ("Completed") from what was actually a typo'd yes. TS-side only for
+  // now (YES_WORDS, lexicon.ts) -- quoco_classify_yes_no's own v_yes_words
+  // array (030_morning_flow_attendance.sql) is an ALREADY-APPLIED, LIVE
+  // migration and cannot be edited in place; adding these words there
+  // needs its own follow-up migration, deliberately not folded into 035
+  // (which is reviewed, rehearsed, and about to apply). See
+  // pendingSqlMigration's own doc comment above.
+  { input: 'ya', expected: { met: true, ok: true }, pendingSqlMigration: '2026-09-03: needs a follow-up migration to add to quoco_classify_yes_no\'s v_yes_words' },
+  { input: 'ys', expected: { met: true, ok: true }, pendingSqlMigration: '2026-09-03: needs a follow-up migration to add to quoco_classify_yes_no\'s v_yes_words' },
   { input: 'yes', expected: { met: true, ok: true } },
   { input: 'y', expected: { met: true, ok: true } },
   { input: 'yeah', expected: { met: true, ok: true } },
