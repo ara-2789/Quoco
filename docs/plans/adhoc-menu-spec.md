@@ -844,3 +844,33 @@ in the first place. **Decided (Aravind, 2026-09-03): do not reconcile anything t
 This file's own §a/§c numbering and question sequencing stand as written, unchanged by
 this entry. Recorded here only so a future reader who encounters that mock-up again does
 not mistake it for an earlier or competing design this file failed to account for.
+
+**8. `submitted_via` IS A REQUIRED EXPLICIT WRITE FOR ITEM 1, NOT DB-ENFORCED
+(2026-09-03) — recorded because 036's own rehearsal traded a loud failure for a silent
+one.** `hindrances.submitted_via` had `DEFAULT 'whatsapp'`, which never satisfied its own
+CHECK constraint (`hindrances_submitted_via_check` — live since migration 001, confirmed
+identical on prod and test-db) — migration 036 drops that broken default rather than
+correcting it, per the same no-fabricated-value posture `timing` already uses (§f). The
+rehearsal empirically confirmed the consequence: `submitted_via` is nullable, carries no
+separate NOT NULL, so an INSERT that omits it now succeeds silently with NULL instead of
+being rejected by anything at the database layer.
+
+**Consequence for item 1's flow, stated so it is not assumed:**
+- Item 1's own INSERT into `hindrances` MUST set `submitted_via = 'whatsapp_adhoc'`
+  explicitly, every time, no exceptions. Nothing in the schema will catch an omission —
+  the write simply succeeds with a NULL that looks, to any later reader, like a
+  legitimately absent value rather than a bug.
+- **A NULL in `submitted_via` on any future row means a write path forgot to set it — it
+  is a DEFECT, not a legitimate data state, and must be read that way by whoever
+  eventually looks at it** (a PM view, a future audit, a debugging session). Unlike
+  `timing`'s own NULL (which has an honest, permanent meaning — "pre-menu legacy row,"
+  §f above), `submitted_via` has no such story: every row this table has ever held, or
+  ever will hold through any currently-known write path, has a real, nameable channel.
+  A NULL here is never "unknown, please infer" — it is always "something upstream broke."
+- **Same posture as `timing`, stated explicitly rather than left implicit:** both columns
+  are enforced by the writing flow, not by the database, by deliberate design (§f's own
+  reasoning — a DB-level default or NOT NULL would either fabricate a value or block a
+  write path that has a legitimate reason to leave a field genuinely unresolved). That
+  design choice has a real cost — a forgotten write is silent, not loud — and this entry
+  exists so that cost is written down and known, not discovered later as a surprise when
+  a real NULL turns up and nobody remembers why the column allows it at all.
