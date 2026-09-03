@@ -40,7 +40,12 @@
 // it in the same commit.
 
 export const CHECKIN_CHECKPOINTS = {
-  /** IST "HH:MM" — morning check-in trigger send (not yet automated; no cron exists). */
+  /** IST "HH:MM" — morning check-in trigger send. DATED CORRECTION (2026-09-03):
+   *  this comment previously read "not yet automated; no cron exists" -- false.
+   *  vercel.json now carries a live entry for this checkpoint
+   *  ({"path": "/api/cron/morning-trigger", "schedule": "0 3 * * *"} = 08:30
+   *  IST) -- see CLAUDE.md §3's own "SUPERSEDED" note on the send primitive
+   *  going live. The send is automated. */
   morningSend: '08:30',
   /** IST "HH:MM" — morning nudge, if still unsubmitted. */
   morningNudge: '10:00',
@@ -48,7 +53,12 @@ export const CHECKIN_CHECKPOINTS = {
   morningEscalate: '10:30',
   /** IST "HH:MM" — morning cutoff: closes an unsubmitted half as not_submitted, no further nudging. */
   morningCutoff: '15:00',
-  /** IST "HH:MM" — evening check-in trigger send (not yet automated; no cron exists). */
+  /** IST "HH:MM" — evening check-in trigger send. DATED CORRECTION (2026-09-03):
+   *  this comment previously read "not yet automated; no cron exists" -- false.
+   *  vercel.json now carries a live entry for this checkpoint
+   *  ({"path": "/api/cron/evening-trigger", "schedule": "0 13 * * *"} = 18:30
+   *  IST) -- see CLAUDE.md §3's own "SUPERSEDED" note on the send primitive
+   *  going live. The send is automated. */
   eveningSend: '18:30',
   /** IST "HH:MM" — evening nudge, if still unsubmitted. Also DASH-03's evening "past cutoff" boundary. */
   eveningNudge: '19:15',

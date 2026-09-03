@@ -7,10 +7,18 @@
 // retry budget, the loud exhaustion alert) lives in checkpoint-trigger.ts,
 // not here.
 //
-// NOT YET WIRED INTO vercel.json -- see that file's own state and
+// DATED CORRECTION (2026-09-03): the two lines below this one previously
+// said this route was "NOT YET WIRED INTO vercel.json" and that its own
+// existence "does not mean it is being called on a schedule" -- false as of
+// vercel.json's live entry: {"path": "/api/cron/morning-trigger", "schedule":
+// "0 3 * * *"} (08:30 IST, matching CHECKIN_CHECKPOINTS.morningSend). This
+// route IS called on a schedule now. Kept below, struck, rather than
+// silently deleted, per the house rule on corrected claims:
+//
+// ~~NOT YET WIRED INTO vercel.json -- see that file's own state and
 // docs/plans/pass1-outbound-send-plan.md's "Two hard preconditions"
 // section. This route existing and being callable does not mean it is
-// being called on a schedule.
+// being called on a schedule.~~
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
