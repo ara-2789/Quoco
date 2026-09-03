@@ -791,6 +791,26 @@
   signature (the specific unsafe construct, not just the symptom) BEFORE
   the fix is considered closed. A fix that stops at "the file I was
   looking at is now correct" is half a fix.
+- A LIVE WHATSAPP MESSAGE IS NEVER SENT TO A NUMBER THAT HAS NOT BEEN
+  EXPLICITLY CONFIRMED BY ARAVIND IN CHAT, IN THE SAME SESSION (standing
+  rule since 2026-09-03). Inference from a `users` row, a tenant name, a
+  session record, or any other database evidence is NOT confirmation, no
+  matter how strong the circumstantial match — the only thing that counts
+  is Aravind stating the number, or explicitly confirming a specific
+  number Claude Code names, in the current chat session, before the send.
+  Origin: an ad-hoc-menu tap-test built and sent a real WhatsApp message to
+  `+919176865600`, inferred from the one `engineer`-role `users` row on
+  production (`full_name: "Vikram Rao"`, tenant `"Rajamani Constructions
+  Pvt Ltd"`) rather than asked for directly. The inference turned out
+  correct — the number was Aravind's own test handset — but this was
+  established only AFTER the send, when asked to justify it, not before.
+  A wrong inference in this exact shape sends a real message to a real
+  stranger's phone with no way to unsend it. Being right once is not
+  evidence the process was sound; the process is the rule, not the
+  outcome. Applies to every outbound WhatsApp send this codebase or a
+  Claude Code session might ever construct outside the normal
+  cron-triggered/reply paths — test messages, diagnostics, one-off sends —
+  not only the tap-test that produced this rule.
 
 ---
 
