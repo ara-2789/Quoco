@@ -98,3 +98,53 @@ have hidden that decision inside the library. PR #135's response-shape capture d
 reading the raw response body/headers — an SDK returning an already-parsed result object
 gives nothing to capture. Same reasoning applied to `lib/email/send.ts` before a single
 real email has ever been sent, not after an equivalent incident.
+
+## The async-failure gap on both send branches is one open dependency, not two — recorded, not fixed (2026-09-03)
+
+Both stage-2 send branches write a `STAGE_2_TERMINAL` `dprs.delivery_status`
+(`no_report_sent` on the WhatsApp side, `delivered` on the email side) the moment the
+provider's SYNCHRONOUS accept comes back ok — never on confirmed delivery. A terminal value
+is never revisited (`classifyDprRowForStage2` treats it as `already_terminal` forever), so
+if the provider fails ASYNCHRONOUSLY after accepting — a WhatsApp send render-rejected or
+sent to an unreachable number, an email bounce or spam complaint — nothing in this codebase
+ever corrects the row. This is the same underlying gap on both channels, not two separate
+bugs:
+
+- **WhatsApp**: `owner-deliver-dispatch.ts` calls `sendWhatsAppTemplate()` directly, not
+  `lib/whatsapp/outbound/trigger.ts`'s claim-before-send flow — so no `outbound_sends` row
+  is ever written for this send. A real async failure callback from Twilio has no
+  `twilio_sid` to match against; `app/api/whatsapp/status-callback/route.ts` finds zero rows
+  and emits only a decorrelated Sentry WARNING, fingerprinted by the message SID alone, not
+  linked to the project, log_date, or `dprs` row it belongs to.
+- **Email**: no Resend bounce/complaint webhook route exists in this repo at all — not even
+  an unwired one, confirmed by grep. §2g, named in `034-owner-email-review-package.md`, is
+  still unbuilt.
+
+**Fixing the WhatsApp half in isolation would not close this gap.**
+`034_owner_email_delivery.sql`'s own PROPAGATION GAP comment already names the real missing
+piece: no mapping exists from a provider-message row back to the right `dprs` row(s), and
+the relationship is **one-to-N, not 1:1** — one no-report notice is sent per owner per
+project-day, while `dprs` rows are per engineer. Routing the WhatsApp send through
+`trigger.ts`'s ledger, on its own, would leave `outbound_sends.status` correctly `'failed'`
+while `dprs.delivery_status` stays silently wrong — a fix that *looks* closed and isn't,
+worse than the open gap it replaces because it stops looking suspicious.
+
+**Decided: accept the gap, do not half-fix it.** Do not wire the WhatsApp send into
+`trigger.ts`'s ledger without the `outbound_sends → dprs` propagation logic built alongside
+it — the propagation layer is the one future piece of work that closes both channels
+together, not "give WhatsApp a ledger row" as a smaller task on its own. No owner row exists
+in production yet for either channel to reach today (§"The gap this handler does not close"
+above), so there is no live exposure behind this decision. Recorded in
+`lib/dpr/owner-deliver-dispatch.ts`'s own header alongside this entry.
+
+**Correction to the record.** An earlier description of this gap, in conversation,
+characterized Twilio error 63015 landing as a zero-match/decorrelated Sentry event as an
+OBSERVED 2026-08-30 production incident. It was not — checked directly against
+`docs/reviews/first-cron-fire-record.md` and `first-successful-delivery-record.md` before
+this entry was written. The 2026-08-29 63015 incident never captured a `twilio_sid` at all
+(a separate XML-parsing bug), so that row never reached `status='sent'` and the zero-match
+scenario was explicitly **not confirmed** to have occurred; the 2026-08-30 event was a
+different error (63027) whose callback matched correctly and flipped `sent` → `failed` as
+designed. The zero-match orphan-callback scenario described above is a real, argued,
+**anticipated** risk in this codebase — not observed history. Recorded here so the next
+reader doesn't inherit the same misattribution.
