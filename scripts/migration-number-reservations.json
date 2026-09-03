@@ -13,5 +13,10 @@
     "number": "035",
     "claimedBy": "docs/reviews/035_evening_flow_restructuring.sql",
     "note": "Evening flow restructuring (5-question redesign) + morning/evening §42 unmatched-token capture + equipment count/hours-used redesign. Originally drafted against a stale '034' in the scoping plan -- corrected the same day when 034 was taken by the owner-email migration (docs/reviews/034-apply-record.md). This entry was itself added late, after the migration-lint reservation rule (PR #148) was run against this branch and correctly flagged the file as unreserved -- recorded here rather than silently, since a reservation added only after being caught by the tool is worth being honest about."
+  },
+  {
+    "number": "036",
+    "claimedBy": "docs/reviews/036_hindrance_timing_column.sql",
+    "note": "hindrances.timing (active/potential), the one schema change blocking ad-hoc menu item 1 (docs/plans/adhoc-menu-spec.md §f). Nullable, no default, no backfill -- see the migration file's own header for the full reasoning. Rehearsal explicitly withheld pending the ad-hoc-menu build conversation's remaining outstanding items."
   }
 ]
