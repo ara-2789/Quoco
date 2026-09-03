@@ -3425,3 +3425,33 @@ logic, not resolved by this entry.
   ON CLIENT WORK" — "site photos... do not exist anywhere" is named there as one of
   the missing data surfaces the mobile app itself is blocked on; this entry is the
   decision that makes that data surface real).
+
+### g. PRECONDITION, RECORDED 2026-09-03, BEFORE ANY §41 PHOTO-LINK WORK STARTS —
+Resend click tracking is enabled on `quoco.co.in` and cannot be disabled from the
+dashboard UI (checked directly by Aravind while completing domain verification for
+owner-email delivery, same session). **Today this affects nothing** — checked directly
+against the two email templates that actually send (`lib/dpr/render-email.ts`,
+`lib/dpr/owner-no-report.ts`), full source read, not grepped-and-assumed: neither
+contains an `<a href>`, a constructed URL, or any link markup anywhere. Every value
+rendered into either template's HTML is `escapeHtml`'d plain content (project name,
+engineer name, dates, verdict, body text) — there is nothing in a DPR or no-report
+email for a click tracker to rewrite.
+
+**This becomes load-bearing the moment §41 ships a photo link into an email body** —
+that's the entry this precondition attaches to, since §41(f) above already names "links
+need hosting the owner can reach without logging in" as an open question, and whatever
+answers it will be an `<a href>` this same click-tracking layer touches. The concern,
+named precisely: a Resend-rewritten link means the recipient's first hop goes through
+Resend's own tracking domain before (presumably) redirecting to the real destination —
+if that destination is a Supabase Storage SIGNED URL (a `photo_url`-shaped value,
+carrying its own signature/expiry in the query string), the request is routed through a
+third party before it ever reaches Supabase, regardless of whether the redirect
+ultimately preserves the signature correctly. **Not verified either way in this
+entry** — whether Resend's rewrite preserves a signed URL's query string intact through
+its redirect, whether the redirect exposes the destination URL in a referer header, and
+whether disabling tracking per-send (vs. only at the domain level) is possible via the
+API even though the dashboard doesn't expose it, are all open questions this entry
+raises but does not answer. **Consequence: whoever builds §41's actual link/hosting
+answer verifies Resend's click-tracking behavior against a real signed URL BEFORE
+shipping it, not after** — this is a precondition on that work, not a today problem;
+nothing currently sending is affected.
