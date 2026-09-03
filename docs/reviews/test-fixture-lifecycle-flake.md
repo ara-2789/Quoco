@@ -158,3 +158,62 @@ do with that PR's actual content. Recorded here specifically so the next
 occurrence is a thirty-second "known flake, check morning-flow-mirror.ts:83
 or the failing file standalone, re-run once" instead of a fresh
 investigation from zero.
+
+## A structural filter gap in `removeMorningFixtures()`, found separately (2026-09-03)
+
+**Not the same class as the occurrences above — those are timing races on an
+otherwise-complete teardown; this is the teardown itself being incomplete for a
+specific case, independent of any race.** Found during a local `npm test` run for
+an unrelated, UI-only PR (#177, ProjectStatusTag): `test/reactivation-db.test.ts >
+clearMessagingBlock (BOT-27 clear-half)` failed in its own `afterAll` with
+`removeMorningFixtures user failed: update or delete on table "users" violates
+foreign key constraint "whatsapp_sessions_user_id_fkey" on table
+"whatsapp_sessions"` (`test/helpers/db.ts:320`). CI for the same PR passed clean
+(`Test (real test-db)`, 10m13s, no failures) — so this did not collide with
+anything that run, and per this document's own standing rule, that clean CI result
+is not being treated as evidence the local failure was transient; the mechanism
+below was checked directly against the code instead.
+
+**Checked directly, not assumed:** `removeMorningFixtures()`
+(`test/helpers/db.ts:297-321`) already calls `cleanupTestSessions()` *before* the
+`users` delete — ordering is not the defect. `cleanupTestSessions()`
+(`test/helpers/db.ts:201-208`) deletes `whatsapp_sessions` rows via
+`.like('phone_number', '${TEST_PHONE_PREFIX}%')` (`TEST_PHONE_PREFIX =
+'+19995550'`, `db.ts:28`) — a **phone-number-prefix filter, not a `user_id =
+engineerId` filter**. Any `whatsapp_sessions` row created against `engineerId`
+during a test but carrying a phone number outside that prefix (or otherwise missed
+by the `LIKE` match) survives `cleanupTestSessions()` intact, and the later
+`.from('users').delete().eq('id', engineerId)` then hits the FK —
+deterministically, for that row, regardless of timing. `clearMessagingBlock
+(BOT-27 clear-half)` is a plausible place for this to surface (its own subject is
+messaging-block/session state), but this record does not claim to have inspected
+that specific test's fixture data to confirm which row triggered it — the
+mechanism is confirmed from the teardown code itself, not from tracing this one
+occurrence's exact row.
+
+**Consequence, left unresolved deliberately (per this document's own "not fixed
+here"):** this run's own teardown aborted after `project_members`/sessions/
+`projects` deletes succeeded but before `users`/`tenants` ran (the five-step chain
+has no `try`/`catch`, per this document's mechanism #2 above) — leaving an
+orphaned `users` row (and, transitively, whatever still references it) in the
+shared test DB (`exfccwlrhoutkgrlikod`) after this local run. Not cleaned up by
+this record. The fix, when someone picks this up, is narrow and named so it isn't
+re-derived: scope `cleanupTestSessions()` (or a variant called from
+`removeMorningFixtures()`) by `user_id = engineerId` in addition to, or instead
+of, the phone-number prefix, so a session row can't outlive the user it's about to
+orphan a delete against.
+
+**The open question this record currently leaves unasked.** If the orphaned
+`whatsapp_sessions` row persists in the shared test DB, every subsequent local
+run of this teardown should hit the same FK — yet CI's `Test (real test-db)`
+passed clean against the same database afterwards. Three possibilities, not
+resolved here: (a) the row was removed between the two runs by another suite's
+own cleanup, (b) CI does not reach this teardown in the same fixture state, or
+(c) the local failure depended on local-run state this record has not
+identified. Which one is true changes what the fix has to cover: under (a) or
+(b) the filter change alone is enough; under (c) there may also be a row to
+delete by hand before the next local run. Note that seeding is not at risk
+either way — `ensureMorningEngineer()` (`test/helpers/db.ts:216-220`) is
+idempotent on the unique `whatsapp_number`, so a leftover `users` row is
+reused, not collided with. It is the teardown that keeps failing, not the
+setup.
