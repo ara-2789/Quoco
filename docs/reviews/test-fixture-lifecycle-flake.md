@@ -202,3 +202,18 @@ re-derived: scope `cleanupTestSessions()` (or a variant called from
 `removeMorningFixtures()`) by `user_id = engineerId` in addition to, or instead
 of, the phone-number prefix, so a session row can't outlive the user it's about to
 orphan a delete against.
+
+**The open question this record currently leaves unasked.** If the orphaned
+`whatsapp_sessions` row persists in the shared test DB, every subsequent local
+run of this teardown should hit the same FK — yet CI's `Test (real test-db)`
+passed clean against the same database afterwards. Three possibilities, not
+resolved here: (a) the row was removed between the two runs by another suite's
+own cleanup, (b) CI does not reach this teardown in the same fixture state, or
+(c) the local failure depended on local-run state this record has not
+identified. Which one is true changes what the fix has to cover: under (a) or
+(b) the filter change alone is enough; under (c) there may also be a row to
+delete by hand before the next local run. Note that seeding is not at risk
+either way — `ensureMorningEngineer()` (`test/helpers/db.ts:216-220`) is
+idempotent on the unique `whatsapp_number`, so a leftover `users` row is
+reused, not collided with. It is the teardown that keeps failing, not the
+setup.
