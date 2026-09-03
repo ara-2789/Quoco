@@ -1,16 +1,10 @@
 -- =============================================================================
 -- 036_hindrance_timing_column.sql
--- WRITTEN, NOT YET APPLIED, NOT YET REHEARSED. Per CLAUDE.md's "a migration
--- file enters supabase/migrations/ when it is being applied, not when it is
--- written" rule, this file lives in docs/reviews/ until an apply is actually
--- happening -- do not copy it into supabase/migrations/ yet.
---
--- REHEARSAL EXPLICITLY WITHHELD (Aravind, 2026-09-03): do not rehearse this
--- file against test-db until the outstanding items in the ad-hoc-menu build
--- conversation are resolved. The Q2 parse-failure write-behaviour question
--- this note originally pointed at is now answered (see the DATED CORRECTION
--- block below) -- withholding continues per Aravind's own explicit
--- instruction, not because that question is still open.
+-- WRITTEN, REHEARSED TWICE (see both dated rehearsal notes below), NOT YET
+-- APPLIED. Per CLAUDE.md's "a migration file enters supabase/migrations/
+-- when it is being applied, not when it is written" rule, this file lives
+-- in docs/reviews/ until an apply is actually happening -- do not copy it
+-- into supabase/migrations/ yet.
 --
 -- MIGRATION NUMBER: 036, verified against origin/main's supabase/migrations/
 -- (035 is the highest applied number, both on prod and, as of today, on
@@ -20,18 +14,22 @@
 -- commit as this file, per the held-migration-reservation-required lint rule
 -- (scripts/lint-migrations.mjs rule 8).
 --
--- SCOPE: two columns. docs/plans/adhoc-menu-spec.md §f names the first
+-- SCOPE: three changes. docs/plans/adhoc-menu-spec.md §f names the first
 -- (`timing`) as the one schema change blocking ad-hoc menu item 1
 -- (hindrance/dependency) from shipping, even though item 1's own WhatsApp
 -- flow is otherwise text-only -- "text-only" describes the flow shape, not
 -- database readiness (§f). The second (`timing_raw`) was added 2026-09-03,
--- see the DATED CORRECTION block below.
+-- see the first DATED CORRECTION block below. The third (dropping
+-- `submitted_via`'s own broken DEFAULT) was folded in the same day, found
+-- during this file's own first rehearsal -- see the second DATED
+-- CORRECTION block below.
 --
 -- WHAT THIS DOES
 --   ALTER TABLE hindrances
 --     ADD COLUMN timing TEXT
 --       CHECK (timing IN ('active', 'potential', 'unspecified')),
---     ADD COLUMN timing_raw TEXT.
+--     ADD COLUMN timing_raw TEXT,
+--     ALTER COLUMN submitted_via DROP DEFAULT.
 --
 --   Aravind's own seven-item decision (adhoc-menu-spec.md, "The seven items
 --   -- DECIDED") names active-vs-potential as the field the merged
@@ -50,7 +48,7 @@
 -- specifically the axis Aravind's decision describes: whether the hindrance
 -- is blocking work NOW (active) or MAY block work later (potential).
 --
--- NULLABLE, NO DEFAULT, on both columns -- deliberate, not an oversight:
+-- NULLABLE, NO DEFAULT, on both new columns -- deliberate, not an oversight:
 --   * Nullable matches this table's own existing precedent for its other
 --     categorical columns -- hindrance_type and impact_level are BOTH
 --     nullable in the live prod schema (confirmed same probe as above).
@@ -82,7 +80,7 @@
 -- "unknown, please infer."
 --
 -- =============================================================================
--- DATED CORRECTION (Aravind, 2026-09-03, same day as the first draft) --
+-- DATED CORRECTION #1 (Aravind, 2026-09-03, same day as the first draft) --
 -- STRUCK THROUGH, NOT DELETED, per this project's own correction discipline
 -- (CLAUDE.md's "session notes... struck-through, not silently edited"
 -- convention, e.g. 034's own header). The block below was this file's
@@ -138,30 +136,104 @@
 -- reading a migration file to be understood correctly.
 -- =============================================================================
 --
--- RISK CLASS: additive, two nullable columns, no function/grant/RLS/auth/
--- money surface touched -- trips none of CLAUDE.md §0's external-review-gate
--- conditions (checked against all five: (a) no function logic created or
--- modified; (b) no grant/RLS/SECURITY DEFINER surface touched -- hindrances
--- uses table-level RLS policies to `authenticated`, no column-bound grants
--- exist on this table to update, confirmed by grep against
--- supabase/migrations/002_rls_policies.sql; (c) no auth/identity surface;
--- (d) fully reversible, DROP COLUMN x2 is the exact inverse; (e) no money
--- surface). Normal migration, no external review package required.
+-- =============================================================================
+-- DATED CORRECTION #2 (Aravind, 2026-09-03, found during this file's own
+-- FIRST rehearsal, folded in rather than deferred to a second migration).
 --
--- REHEARSED: NOT YET, WITHHELD PER ABOVE. NOT YET APPLIED ANYWHERE.
+-- THE FINDING: `hindrances.submitted_via` has `DEFAULT 'whatsapp'`, but its
+-- own CHECK constraint (`hindrances_submitted_via_check`) only allows
+-- `('whatsapp_scheduled', 'whatsapp_adhoc', 'web_app')` -- the column's own
+-- default value has never satisfied its own constraint, on either prod
+-- (jvxwqignooseazzmwhvl) or test-db, confirmed identical on both, live,
+-- 2026-09-03. Surfaced by the first rehearsal's own throwaway INSERT
+-- (Case 1, omitting `submitted_via`), which failed on
+-- `hindrances_submitted_via_check` before `timing` was ever exercised.
+--
+-- NOT UNRELATED, NOT LATENT -- Aravind's own correction to the first
+-- rehearsal's framing: this sits directly in ad-hoc menu item 1's own write
+-- path, the first code that will ever successfully insert into this table.
+-- `hindrances` has zero rows in production today precisely because nothing
+-- has ever inserted successfully relying on this default -- confirmed by
+-- grep across the entire codebase: the only existing code that inserts into
+-- `hindrances` at all (`test/migration-016.test.ts`'s own T-016-08) already
+-- supplies `submitted_via: 'whatsapp_scheduled'` explicitly, with its own
+-- comment naming this exact bug ("avoid the unrelated 001 default-CHECK
+-- bug") -- known, unfixed, since migration 016, months before this entry.
+-- Zero hits rely on the default; none COULD, since any insert that did would
+-- already fail today, on the currently-live constraint, unconditionally.
+--
+-- THE FIX: `ALTER COLUMN submitted_via DROP DEFAULT` -- not corrected to a
+-- valid value (e.g. `'whatsapp_adhoc'`). Same posture as `timing`'s own
+-- no-default design above: an unstated origin should not be fabricated: an
+-- omitted `submitted_via` on some future write path would otherwise silently
+-- record a plausible-looking but invented channel. Every real write path
+-- already knows and states its own origin -- item 1's own flow supplies
+-- `'whatsapp_adhoc'` explicitly, migration 016's test supplies
+-- `'whatsapp_scheduled'` explicitly, the schema's own original
+-- `'whatsapp_scheduled'/'whatsapp_adhoc'/'web_app'` CHECK values are already
+-- specific enough that no generic fallback was ever the honest answer.
+--
+-- CONSEQUENCE, EMPIRICALLY CONFIRMED (this file's second rehearsal, not
+-- reasoned from the schema alone): `submitted_via` is nullable
+-- (`is_nullable = 'YES'`, confirmed on both prod and test-db) and carries no
+-- separate NOT NULL constraint. Dropping the DEFAULT means an INSERT that
+-- omits `submitted_via` now succeeds with NULL (CHECK constraints in
+-- Postgres do not reject NULL -- only a value that evaluates the expression
+-- false) rather than failing outright. This means the DB layer does not
+-- force every write path to supply `submitted_via` -- exactly the same
+-- division of responsibility `timing`'s own header already argues for above
+-- (enforced by the writing flow, not by a DB-level NOT NULL) -- so
+-- application code choosing to omit it is a silent NULL, not a rejected
+-- write. Named here so a future write path is not surprised either way.
+--
+-- §0 GATE CHECK FOR THIS ADDITION SPECIFICALLY, STATED NOT ASSUMED (Aravind's
+-- own instruction): dropping a DEFAULT on a zero-row table touches none of
+-- CLAUDE.md §0's five conditions -- (a) no function logic; (b) no grant/RLS/
+-- SECURITY DEFINER surface (hindrances' RLS policies are unchanged, still
+-- table-level to `authenticated`, confirmed by grep against
+-- `002_rls_policies.sql`); (c) no auth/identity surface; (d) trivially
+-- reversible (`ALTER COLUMN ... SET DEFAULT 'whatsapp'` restores it exactly,
+-- and there is no data on the table to lose either way -- zero rows,
+-- confirmed both rehearsals); (e) no money surface. Worth stating explicitly
+-- rather than inherited from the original RISK CLASS note below, since this
+-- file now MODIFIES an existing column's own definition, not only adds new
+-- ones -- a different shape than the original scope, checked on its own
+-- terms rather than assumed to inherit the earlier clean read.
+-- =============================================================================
+--
+-- RISK CLASS: additive on two new columns, one existing-column DEFAULT
+-- dropped on a zero-row table -- no function/grant/RLS/auth/money surface
+-- touched (both new columns' own check above, and DATED CORRECTION #2's own
+-- gate check for the DROP DEFAULT specifically) -- trips none of CLAUDE.md
+-- §0's external-review-gate conditions. Normal migration, no external
+-- review package required.
+--
+-- REHEARSED TWICE. First rehearsal (2026-09-03): the original two-column
+-- version, all five `timing` CHECK cases correct, clean teardown, ledger
+-- untouched -- but surfaced the `submitted_via` finding above via its own
+-- Case 1, prompting DATED CORRECTION #2 before any real apply. Second
+-- rehearsal (2026-09-03, this file's current version): full case set
+-- re-run against the corrected file, including the new omitted-
+-- `submitted_via` case DATED CORRECTION #2 predicts -- see the rehearsal
+-- record in the same day's conversation for the literal results. NOT YET
+-- APPLIED ANYWHERE.
 -- =============================================================================
 
 BEGIN;
 
 ALTER TABLE hindrances
   ADD COLUMN timing TEXT CHECK (timing IN ('active', 'potential', 'unspecified')),
-  ADD COLUMN timing_raw TEXT;
+  ADD COLUMN timing_raw TEXT,
+  ALTER COLUMN submitted_via DROP DEFAULT;
 
 COMMENT ON COLUMN hindrances.timing IS
   'Ad-hoc menu item 1 (migration 036, 2026-09-03). Whether the hindrance is blocking work NOW (active) or MAY block work later (potential) -- or, on a genuinely exhausted Q2 reask budget, ''unspecified'' (see timing_raw for what the engineer actually typed in that case). Three explicit meanings, nothing inferred: NULL = pre-menu legacy row (predates this column; no ad-hoc-menu write ever leaves this NULL). ''unspecified'' = asked, answered, never resolved -- the row is still written, Q1''s content is never discarded on account of Q2 failing (per §42''s unmatched-token-is-captured-not-dropped discipline). ''active''/''potential'' = the engineer''s real, resolved answer.';
 
 COMMENT ON COLUMN hindrances.timing_raw IS
   'Ad-hoc menu item 1 (migration 036, 2026-09-03). The engineer''s literal Q2 reply text, captured only when timing = ''unspecified'' -- same shape and reasoning as attendance_raw (migration 030): the structured classification failed, but the operator''s own words are preserved rather than thrown away. NULL whenever timing is NULL (pre-menu row) or resolved to ''active''/''potential'' (nothing unresolved to preserve).';
+
+COMMENT ON COLUMN hindrances.submitted_via IS
+  'DEFAULT dropped, migration 036, 2026-09-03: the prior DEFAULT ''whatsapp'' never satisfied this column''s own CHECK constraint (hindrances_submitted_via_check, live since migration 001) -- confirmed on prod and test-db, and confirmed by grep that no code has ever relied on it (the only existing insert already supplies this column explicitly). Every real write path states its own origin explicitly (''whatsapp_scheduled''/''whatsapp_adhoc''/''web_app''); an omitted value now inserts NULL rather than silently fabricating one, matching this table''s own division of responsibility for timing above -- enforced by the writing flow, not by a DB-level default or NOT NULL.';
 
 COMMIT;
 
@@ -170,5 +242,8 @@ COMMIT;
 -- project's own migration-file convention, matching 021's own DOWN block
 -- style for a single reversible schema change):
 --
---   ALTER TABLE hindrances DROP COLUMN timing, DROP COLUMN timing_raw;
+--   ALTER TABLE hindrances
+--     DROP COLUMN timing,
+--     DROP COLUMN timing_raw,
+--     ALTER COLUMN submitted_via SET DEFAULT 'whatsapp';
 -- =============================================================================
