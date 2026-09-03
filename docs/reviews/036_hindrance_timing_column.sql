@@ -7,11 +7,10 @@
 --
 -- REHEARSAL EXPLICITLY WITHHELD (Aravind, 2026-09-03): do not rehearse this
 -- file against test-db until the outstanding items in the ad-hoc-menu build
--- conversation are resolved (Q2 parse-failure write behaviour in particular
--- -- this file's own column comment already reflects the answer, but the
--- WhatsApp-flow code that writes to this column does not exist yet, and this
--- column should not be rehearsed against a schema the flow hasn't been
--- built to write to correctly).
+-- conversation are resolved. The Q2 parse-failure write-behaviour question
+-- this note originally pointed at is now answered (see the DATED CORRECTION
+-- block below) -- withholding continues per Aravind's own explicit
+-- instruction, not because that question is still open.
 --
 -- MIGRATION NUMBER: 036, verified against origin/main's supabase/migrations/
 -- (035 is the highest applied number, both on prod and, as of today, on
@@ -21,14 +20,18 @@
 -- commit as this file, per the held-migration-reservation-required lint rule
 -- (scripts/lint-migrations.mjs rule 8).
 --
--- SCOPE: one column. docs/plans/adhoc-menu-spec.md §f names this as the one
--- schema change blocking ad-hoc menu item 1 (hindrance/dependency) from
--- shipping, even though item 1's own WhatsApp flow is otherwise text-only --
--- "text-only" describes the flow shape, not database readiness (§f).
+-- SCOPE: two columns. docs/plans/adhoc-menu-spec.md §f names the first
+-- (`timing`) as the one schema change blocking ad-hoc menu item 1
+-- (hindrance/dependency) from shipping, even though item 1's own WhatsApp
+-- flow is otherwise text-only -- "text-only" describes the flow shape, not
+-- database readiness (§f). The second (`timing_raw`) was added 2026-09-03,
+-- see the DATED CORRECTION block below.
 --
 -- WHAT THIS DOES
---   ALTER TABLE hindrances ADD COLUMN timing TEXT
---     CHECK (timing IN ('active', 'potential')).
+--   ALTER TABLE hindrances
+--     ADD COLUMN timing TEXT
+--       CHECK (timing IN ('active', 'potential', 'unspecified')),
+--     ADD COLUMN timing_raw TEXT.
 --
 --   Aravind's own seven-item decision (adhoc-menu-spec.md, "The seven items
 --   -- DECIDED") names active-vs-potential as the field the merged
@@ -47,59 +50,102 @@
 -- specifically the axis Aravind's decision describes: whether the hindrance
 -- is blocking work NOW (active) or MAY block work later (potential).
 --
--- NULLABLE, NO DEFAULT -- deliberate, not an oversight:
+-- NULLABLE, NO DEFAULT, on both columns -- deliberate, not an oversight:
 --   * Nullable matches this table's own existing precedent for its other
 --     categorical columns -- hindrance_type and impact_level are BOTH
 --     nullable in the live prod schema (confirmed same probe as above).
---   * No DEFAULT of either 'active' or 'potential': a default fabricates a
---     stored fact exactly the way a guessed project_id would (per this
---     project's own "a write, with downstream consumers, that treats a
---     fabricated row as real data" reasoning, CLAUDE.md's project-resolution
---     discussion) -- a false 'active' could misdirect a PM's urgency triage,
---     a false 'potential' could suppress something genuinely blocking.
---   * The REQUIREMENT that every ad-hoc-menu write always populate this
---     column is enforced by the WhatsApp flow (Q2 is asked, and the flow
---     does not reach its own INSERT until Q2 resolves to a valid value --
---     see the column comment below for what "resolves" means on parse
---     failure), not by a NOT NULL constraint at the DB layer. Same division
---     of responsibility this table already uses for hindrance_type/
---     impact_level.
+--     `attendance_raw` (030) is the direct precedent for `timing_raw`'s own
+--     shape -- nullable TEXT, no CHECK, populated only on the branch that
+--     needs it.
+--   * No DEFAULT of 'active' or 'potential' on `timing`: a default
+--     fabricates a stored fact exactly the way a guessed project_id would
+--     (per this project's own "a write, with downstream consumers, that
+--     treats a fabricated row as real data" reasoning, CLAUDE.md's
+--     project-resolution discussion) -- a false 'active' could misdirect a
+--     PM's urgency triage, a false 'potential' could suppress something
+--     genuinely blocking. 'unspecified' is not a default in this sense --
+--     it is only ever written explicitly, by the flow, on a real exhausted-
+--     reask branch (see DATED CORRECTION below), never assumed by the
+--     column itself.
+--   * The REQUIREMENT that every ad-hoc-menu write always populate `timing`
+--     to one of its three real values (never leave it NULL) is enforced by
+--     the WhatsApp flow, not by a NOT NULL constraint at the DB layer --
+--     same division of responsibility this table already uses for
+--     hindrance_type/impact_level.
 --
 -- NO BACKFILL for existing rows -- deliberate. The active/potential concept
 -- did not exist when prior hindrances rows were captured; there is no
 -- source data to derive it from for those rows, and guessing a direction
 -- for them is the identical fabrication problem the "no DEFAULT" bullet
--- above already rejects. Existing rows keep timing = NULL permanently,
--- meaning "captured before this column existed" -- not "unknown, please
--- infer."
+-- above already rejects. Existing rows keep timing = NULL, timing_raw = NULL
+-- permanently, meaning "captured before this column existed" -- not
+-- "unknown, please infer."
 --
--- Q2 PARSE-FAILURE, THE INVARIANT THIS COLUMN'S COMMENT DEPENDS ON: NULL
--- means "pre-menu row" ONLY IF THE AD-HOC FLOW NEVER WRITES A ROW WITH
--- timing UNRESOLVED. Decided (Aravind's conversation, 2026-09-03): unlike
--- attendance (030), which forces a defaulted value after an exhausted
--- reask budget because that flow is clock-bound and MUST produce a
--- daily_logs row for the day one way or another, item 1's ad-hoc flow is
--- engineer-initiated with no clock forcing completion. If Q2 (active vs.
--- potential) does not resolve to a valid structured answer -- including
--- after the flow's own reask budget is exhausted -- the flow does not
--- write the hindrances row AT ALL. Nothing is inserted with timing left
--- unresolved; the engineer's attempt is simply abandoned (same fate as any
--- other incomplete WhatsApp flow in this codebase today, swept the same
--- way stale sessions already are). This is what makes "timing IS NULL"
--- mean "pre-menu row" unconditionally at the application level, not just
--- distinguishable via a sibling raw-answer column -- no sibling column is
--- added here for that reason; NOT designed further in this file, since it
--- is flow code, not schema, but named here so the schema's own comment
--- is not read as a promise the flow doesn't keep.
+-- =============================================================================
+-- DATED CORRECTION (Aravind, 2026-09-03, same day as the first draft) --
+-- STRUCK THROUGH, NOT DELETED, per this project's own correction discipline
+-- (CLAUDE.md's "session notes... struck-through, not silently edited"
+-- convention, e.g. 034's own header). The block below was this file's
+-- original Q2-parse-failure design. It is WRONG and REPLACED, not amended:
 --
--- RISK CLASS: additive, one nullable column, no function/grant/RLS/auth/
+--   ~~Q2 PARSE-FAILURE, THE INVARIANT THIS COLUMN'S COMMENT DEPENDS ON: NULL
+--   ~~means "pre-menu row" ONLY IF THE AD-HOC FLOW NEVER WRITES A ROW WITH
+--   ~~timing UNRESOLVED. Decided (Aravind's conversation, 2026-09-03): unlike
+--   ~~attendance (030), which forces a defaulted value after an exhausted
+--   ~~reask budget because that flow is clock-bound and MUST produce a
+--   ~~daily_logs row for the day one way or another, item 1's ad-hoc flow is
+--   ~~engineer-initiated with no clock forcing completion. If Q2 (active vs.
+--   ~~potential) does not resolve to a valid structured answer -- including
+--   ~~after the flow's own reask budget is exhausted -- the flow does not
+--   ~~write the hindrances row AT ALL. Nothing is inserted with timing left
+--   ~~unresolved; the engineer's attempt is simply abandoned (same fate as
+--   ~~any other incomplete WhatsApp flow in this codebase today, swept the
+--   ~~same way stale sessions already are). This is what makes "timing IS
+--   ~~NULL" mean "pre-menu row" unconditionally at the application level,
+--   ~~not just distinguishable via a sibling raw-answer column -- no sibling
+--   ~~column is added here for that reason.
+--
+-- WHY IT'S WRONG (Aravind's own objection, verbatim reasoning): abandoning
+-- the whole insert on a Q2 failure destroys Q1's content along with it --
+-- the engineer's actual free-text hindrance description, which parsed FINE,
+-- gets discarded as collateral damage from a DIFFERENT question failing.
+-- That directly contradicts §42 (migration 035's own unmatched-token
+-- discipline: an unmatched/unresolved answer is captured as its own named
+-- item, never silently dropped) -- the abandon design applied §42's
+-- opposite at the row level instead of the field level.
+--
+-- THE FIX: the row is ALWAYS written once Q1 has content, regardless of how
+-- Q2 resolves. `timing` gains a THIRD real value, 'unspecified', for the
+-- exhausted-reask-budget branch specifically -- not a fourth NULL-adjacent
+-- state, a genuine, named, queryable value. `timing_raw` (new column, this
+-- correction) captures the engineer's literal Q2 answer whenever `timing`
+-- resolves to 'unspecified' -- same shape and same reasoning as
+-- `attendance_raw` (030): the classification failed, but the operator's own
+-- words are never thrown away.
+--
+-- THE INVARIANT, RESTATED CORRECTLY: `timing` now carries exactly three
+-- meanings, all explicit, none inferred:
+--   NULL          -- pre-menu legacy row (predates migration 036; no
+--                    ad-hoc-menu write ever leaves this column NULL).
+--   'unspecified' -- the engineer was asked Q2, answered, but the reply
+--                    never resolved to active/potential even after the
+--                    flow's reask budget was exhausted. `timing_raw` holds
+--                    what he actually typed.
+--   'active' /
+--   'potential'   -- the engineer's real, resolved answer.
+-- Both COMMENT ON COLUMN statements below state this three-way split
+-- explicitly, not just this header -- the schema itself should not require
+-- reading a migration file to be understood correctly.
+-- =============================================================================
+--
+-- RISK CLASS: additive, two nullable columns, no function/grant/RLS/auth/
 -- money surface touched -- trips none of CLAUDE.md §0's external-review-gate
 -- conditions (checked against all five: (a) no function logic created or
 -- modified; (b) no grant/RLS/SECURITY DEFINER surface touched -- hindrances
 -- uses table-level RLS policies to `authenticated`, no column-bound grants
 -- exist on this table to update, confirmed by grep against
 -- supabase/migrations/002_rls_policies.sql; (c) no auth/identity surface;
--- (d) fully reversible, DROP COLUMN is the exact inverse; (e) no money
+-- (d) fully reversible, DROP COLUMN x2 is the exact inverse; (e) no money
 -- surface). Normal migration, no external review package required.
 --
 -- REHEARSED: NOT YET, WITHHELD PER ABOVE. NOT YET APPLIED ANYWHERE.
@@ -108,10 +154,14 @@
 BEGIN;
 
 ALTER TABLE hindrances
-  ADD COLUMN timing TEXT CHECK (timing IN ('active', 'potential'));
+  ADD COLUMN timing TEXT CHECK (timing IN ('active', 'potential', 'unspecified')),
+  ADD COLUMN timing_raw TEXT;
 
 COMMENT ON COLUMN hindrances.timing IS
-  'Ad-hoc menu item 1 (migration 036, 2026-09-03): whether the hindrance is blocking work NOW (active) or MAY block work later (potential). NULL means one of exactly two things, both benign: (1) this row predates migration 036 (no backfill was performed -- the concept did not exist when it was captured), or (2) not applicable -- structurally impossible for any row written by the ad-hoc menu flow, which never inserts with this column unresolved (see this migration file''s own header). NULL never means "asked and got an unparseable answer" -- that case does not reach a write at all.';
+  'Ad-hoc menu item 1 (migration 036, 2026-09-03). Whether the hindrance is blocking work NOW (active) or MAY block work later (potential) -- or, on a genuinely exhausted Q2 reask budget, ''unspecified'' (see timing_raw for what the engineer actually typed in that case). Three explicit meanings, nothing inferred: NULL = pre-menu legacy row (predates this column; no ad-hoc-menu write ever leaves this NULL). ''unspecified'' = asked, answered, never resolved -- the row is still written, Q1''s content is never discarded on account of Q2 failing (per §42''s unmatched-token-is-captured-not-dropped discipline). ''active''/''potential'' = the engineer''s real, resolved answer.';
+
+COMMENT ON COLUMN hindrances.timing_raw IS
+  'Ad-hoc menu item 1 (migration 036, 2026-09-03). The engineer''s literal Q2 reply text, captured only when timing = ''unspecified'' -- same shape and reasoning as attendance_raw (migration 030): the structured classification failed, but the operator''s own words are preserved rather than thrown away. NULL whenever timing is NULL (pre-menu row) or resolved to ''active''/''potential'' (nothing unresolved to preserve).';
 
 COMMIT;
 
@@ -120,5 +170,5 @@ COMMIT;
 -- project's own migration-file convention, matching 021's own DOWN block
 -- style for a single reversible schema change):
 --
---   ALTER TABLE hindrances DROP COLUMN timing;
+--   ALTER TABLE hindrances DROP COLUMN timing, DROP COLUMN timing_raw;
 -- =============================================================================
