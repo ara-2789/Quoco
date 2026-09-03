@@ -179,16 +179,30 @@ export function buildMorningReply(
 // caller, evening's Q4a headcount, which reads .planned_total directly) is
 // UNCHANGED -- the rename lives only at this write boundary. See
 // 030_morning_flow_attendance.sql's header for why it stops here.
+//
+// `matched` ADDED (migration 035 round 3, review package §4 Site 3): mirrors
+// apply_morning_flow_turn's own `v_col = 'manpower'` reshape
+// (035_evening_flow_restructuring.sql), which does the IDENTICAL
+// `COALESCE(matched, true)` -- an entry from a not-yet-updated parser that
+// omits `matched` defaults to true, same historical-default reasoning as the
+// SQL side. This mirror is documentation/test-only (see this file's own
+// AUTHORITY NOTE) -- it is not what production actually sends; keeping it
+// byte-for-byte aligned with the RPC's own reshape is the entire point of
+// having it.
 export interface MorningManpowerWrite {
   total: number | null
-  by_trade: Array<{ trade: string; count: number }>
+  by_trade: Array<{ trade: string; count: number; matched: boolean }>
   raw_text: string
 }
 
 function reshapeLabourForStorage(parse: LabourParse): MorningManpowerWrite {
   return {
     total: parse.planned_total,
-    by_trade: parse.by_trade.map((t) => ({ trade: t.trade, count: t.planned_count })),
+    by_trade: parse.by_trade.map((t) => ({
+      trade: t.trade,
+      count: t.planned_count,
+      matched: t.matched ?? true,
+    })),
     raw_text: parse.raw_text,
   }
 }

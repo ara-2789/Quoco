@@ -73,6 +73,22 @@
 //     twilio/text and twilio/call-to-action content types, and the
 //     ApprovalRequests/whatsapp category field's expected casing) against Twilio's
 //     current docs. This script has never been run against the real API.
+//
+// allow_category_change IS DEPRECATED AND NON-PROTECTIVE -- DO NOT SET IT FALSE
+// EXPECTING A GUARD (recorded 2026-09-02, after quoco_morning_checkin_v3 came back
+// Meta-approved as MARKETING despite being submitted as UTILITY). This script never
+// sets allow_category_change at all -- buildApprovalPayload sends only {name, category}
+// -- yet a live GET on EVERY submitted template's ApprovalRequests resource (1, 1v3,
+// 2v3, 8v2, 14 -- all five checked) came back with allow_category_change: true. Per
+// Twilio's own changelog (twilio.com/en-us/changelog/whatsapp-reclassifications,
+// fetched 2026-09-02): Meta has discontinued this property. Automatic reclassification
+// to MARKETING is now the DEFAULT with NO way to prevent it through this field, and
+// Twilio has unpublished it from their docs because it no longer functions. The
+// instinct on the next template that comes back miscategorised will be to set
+// allow_category_change: false on the resubmission and assume that fixes it -- it will
+// not. See docs/reviews/whatsapp-marketing-category-investigation.md for the full
+// research (pricing, per-user frequency capping, opt-in requirements, and the real
+// recategorisation-request path via WhatsApp Manager).
 
 import { config } from 'dotenv'
 config({ path: '.env.local' })

@@ -292,6 +292,30 @@ export const QUANTITY_STOPWORDS: ReadonlySet<string> = new Set([
 // cofounder review before it's added, same as every other vernacular entry
 // in this file.
 //
+// DO NOT REUSE classifyYesNo FOR A THIRD QUESTION WITHOUT READING THIS
+// (added migration 035 round 3, 2026-09-01). This lexicon already carries
+// TWO semantics (schedule-met, then attendance — the RE-TUNED note above).
+// A third candidate came up during the evening restructuring: evening step
+// 3's new "how many hours were idle, by trade?" question needs an
+// "everyone was working" / "nobody idle" signal, and classifyYesNo looked
+// like a natural fit. REJECTED: this lexicon's present-side attendance
+// forms ("half day", "late", "coming late", "reached site") mean the
+// OPPOSITE thing on an idle-hours question — "half day" on "was the
+// engineer present?" reads MET/present (correct), but "half day" as an
+// answer to "how many hours were idle?" plausibly means HALF THE DAY WAS
+// IDLE, the exact inversion of what classifyYesNo would return. Idle-hours'
+// "all working" detection is therefore a SMALL, PURPOSE-BUILT list
+// (`isAllWorkingSentinel`, this file, EVENING FLOW step 3 section below),
+// built for this one question, not borrowed from one built for two others
+// already. See the RE-TUNED note above (docs/reviews/morning-flow-migration-
+// review-package.md §11.5) for the FIRST time this lexicon's vocabulary was
+// stretched across a second, different question — this is that same risk
+// almost recurring a third time, caught before it shipped rather than
+// after. CITATION CHECKED: an earlier draft of this comment cited
+// design-decisions-beta-feedback.md §32, which turned out to be about the
+// parse-attempt corpus, not this — corrected in place before commit, not
+// left as a dangling reference for the next reader to trip on.
+//
 // COVERAGE HONESTY (read before extending): the affirmative list below is
 // English plus the three standard transliterations of ஆமா/ஆம். It is DELIBERATELY
 // short. The morning lexicon's vernacular depth (mesthiri, thozhilaali, kannar…)
@@ -429,3 +453,39 @@ export const PRODUCTIVITY_STOPWORDS: ReadonlySet<string> = new Set([
   ...YES_WORDS,
   ...NO_WORDS,
 ])
+
+// ---------------------------------------------------------------------------
+// EVENING FLOW step 3 (idle hours by trade, migration 035 restructuring).
+// PURPOSE-BUILT for this one question — see the "DO NOT REUSE classifyYesNo"
+// note above classifyYesNo's own definition for why this is a dedicated list
+// rather than a third semantic loaded onto that lexicon.
+//
+// This question is now UNCONDITIONAL (asked every evening turn), so "nobody
+// was idle" must resolve to a CONFIDENT zero, not a non-answer. Two shapes
+// of "zero idle" exist:
+//   - A plain NEGATIVE ("no idle", "none", "nil") — already covered by the
+//     shared isNoneSentinel above; generic negation isn't question-specific,
+//     unlike the affirmatives below, so it is reused unchanged.
+//   - An AFFIRMATIVE stating full productivity with no negation word present
+//     ("all working", "fully productive") — isNoneSentinel's token-wise
+//     negative-word check cannot catch these; they need matching on the
+//     whole phrase, not a single token.
+// Phrase-matched (substring, not token-wise) against the normalised whole
+// answer, since these are inherently multi-word and may appear with
+// trailing text ("all working today", "everyone productive, no issues").
+const IDLE_ALL_WORKING_PHRASES: readonly string[] = [
+  'all working',
+  'everyone working',
+  'all productive',
+  'everyone productive',
+  'fully productive',
+  'full productivity',
+  'nobody idle',
+  'no one idle',
+]
+
+export function isAllWorkingSentinel(text: string): boolean {
+  const cleaned = text.trim().toLowerCase().replace(/\s+/g, ' ')
+  if (cleaned === '') return false
+  return IDLE_ALL_WORKING_PHRASES.some((phrase) => cleaned.includes(phrase))
+}
