@@ -874,3 +874,35 @@ being rejected by anything at the database layer.
   design choice has a real cost — a forgotten write is silent, not loud — and this entry
   exists so that cost is written down and known, not discovered later as a surprise when
   a real NULL turns up and nobody remembers why the column allows it at all.
+
+**9. EGRESS DECIDED: EMAIL NOW, PUSH NOTIFICATION LATER (2026-09-03).** Every item that
+gets a PM notification at all sends it by email, not WhatsApp, for phase one. Reasoning:
+the `quoco.co.in` Resend domain is now verified (SPF/DKIM/MX, same-day) — email has no
+Meta template to submit and no review clock, unlike any new WhatsApp-side PM
+notification, which would need its own approved template (the same lead-time cost §37(d)
+already named for the owner-facing no-report notice). Email is the cheap, correct answer
+for what phase one actually needs: a PM finding out something happened, not a rich
+interactive surface. A push notification into the PM dashboard is the eventual right
+answer once the dashboard has anywhere to push TO — no exceptions/notifications surface
+exists there today (confirmed by grep, same absence §c item 7 already named for DASH-01)
+— so it is recorded as a later migration, not designed further here.
+
+**Per-item notification decisions:**
+- **Item 1 (hindrance) → email, immediate.**
+- **Item 2 (safety) → email, immediate.**
+- **Item 3 (site expense) → NO email.** A petty-cash capture belongs in a review queue a
+  PM checks on their own schedule, not an inbox interruption for every rupee logged —
+  the volume/urgency shape is different from a hindrance or a safety report, and an email
+  per expense would train PMs to ignore this channel for everything else on it.
+- **Item 7 (opt-out) → email, not urgent but decided.** Accepted, not just recorded: an
+  engineer opting out silently stops his PM's reports with no visible cause — the
+  existing `checkin_escalations` mechanism (027) would eventually flag the SYMPTOM (a
+  missing submission, via its own 10:00–10:30 AM PM notification) but never the CAUSE,
+  and never surfaces the human problem behind it (why did he stop — needs help, feels
+  spammed, left the project). §29(b)'s own decision that this routes to the PM as an
+  actionable REQUEST already implies a real notification path was always owed here; email
+  is what makes that concrete, at near-zero marginal cost now that the domain is live.
+
+**Full findings — the PM lookup, the drafted copy, the failure/ledger design questions —
+recorded in the same day's conversation, not duplicated here; folded into this section
+once accepted.**
