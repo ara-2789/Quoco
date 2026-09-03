@@ -906,6 +906,45 @@ their FLOWS and dashboard views are not built in the Spine.
 - Billing: Razorpay payment links — NOT Stripe (Stripe paused India onboarding)
 - Deployment: Vercel Pro — required for 6 IST cron times + 60s function timeout
 - Email: Resend — DPR delivery to owner
+  DATED NOTE (2026-09-03) — RESEND IS NOW DECIDED, NOT INHERITED, STATED
+  PLAINLY. It has named Resend since the very first commit to touch this
+  file (`c9fbc85`, 2026-06-28, day one — a 687-line bulk paste, no
+  rationale given). The one round that ever engaged with the email channel
+  (`61a7974`, "#67 revision 3 — owner receives DPR by email, not
+  WhatsApp," 2026-08-15) explicitly declined to re-litigate the provider —
+  its own words: "Resend, per the stack doc's own existing naming — not
+  re-litigated here, just noted as already the project's stated intent,
+  not a new choice." Honest, but it meant no comparison against an
+  alternative (SES, SendGrid, Postmark) ever actually happened, at any
+  point in this project's history, until now.
+  DECIDED, 2026-09-03, on these grounds: `lib/email/send.ts` (PR #159) is
+  already a raw `fetch`, no SDK — the entire provider-specific surface is
+  one URL, one Bearer auth header, one JSON payload shape, one response
+  shape, roughly 50 lines total. A swap to any other bearer-token JSON
+  provider would stay a same-size diff, so the switching cost this
+  decision forecloses is genuinely small, not a lock-in. Checked against
+  Resend's own current docs (not memory): a new account can send TODAY,
+  with zero DNS/domain-verification lead time, from the shared
+  `onboarding@resend.dev` test domain. Revisiting the provider choice now
+  costs more (an unforced comparison exercise) than it saves (a marginal
+  chance a different bearer-token JSON provider would have been slightly
+  better). Account created under `ar.rcpl@gmail.com`; `RESEND_API_KEY` and
+  `RESEND_FROM_EMAIL=onboarding@resend.dev` added to Vercel Production as
+  Secret type, same session.
+  THE CONSTRAINT THIS CARRIES, recorded so it isn't rediscovered as a
+  surprise: Resend's free-tier test domain (`onboarding@resend.dev`) can
+  only send `to` the email address the Resend account itself was signed
+  up under — confirmed directly against Resend's docs
+  (`resend.com/docs/knowledge-base/403-error-resend-dev-domain`), not a
+  paraphrase. **This does NOT generalise past one owner.** It works for
+  the very first real send specifically because the test owner
+  (`ar.rcpl@gmail.com`) and the Resend account holder are the same
+  person. A second real owner, at a different address, requires a
+  verified sending domain (SPF/DKIM/DMARC) — real DNS lead time — before
+  Resend will deliver to them at all. Free-tier volume caps also apply
+  regardless of domain: 100/day, 3,000/month (Resend's own pricing docs) —
+  irrelevant to one test send, load-bearing the moment this scales past a
+  handful of owners.
 - Monitoring: Sentry — wire Week 2 Day 1, all environments
 - UI: Tailwind CSS + shadcn/ui — VERIFY Tailwind major version in the repo
   DATED NOTE (2026-07-16, per the DASH-03 token proposal): shadcn/ui is NOT yet
@@ -1295,6 +1334,31 @@ How to verify locally (ask me to run these; show me the command)
 If you cannot write a test for something, say so and explain why, so I can
 decide whether to accept it. Do not quietly skip the test.
 
+A TEST FILE'S OWN SUMMARY LINE CAN BE MISSING FROM A FULL `vitest run`'S
+PRINTED OUTPUT WITHOUT ITS TESTS ACTUALLY FAILING TO RUN — MECHANISM NOT
+CONFIRMED, DO NOT ASSUME BASENAME (found 2026-09-02, building the
+owner_deliver handler; corrected same day after the first write-up's own
+leading theory was tested and disconfirmed). `test/owner-deliver-
+dispatch.test.ts` (integration, ~45s) and `test/unit/owner-deliver-
+dispatch.test.ts` (unit, ~1ms) shared an identical basename — the
+integration file's own line was absent from two consecutive full-suite
+runs (not failed, not errored, simply not printed), both landing on an
+identical total test count. **The first write-up here asserted the shared
+basename as the cause — tested directly with two trivial same-named
+scratch files (one deliberately failing) added to the same 75-file suite,
+and the collision did NOT reproduce: both lines printed correctly, the
+failure was reported.** So basename alone is disconfirmed, not confirmed.
+The identical totals across all three real runs (including the one where
+the line printed) suggest the tests were likely counted throughout regardless
+of whether the line printed — a reporter-display quirk, not a
+non-execution one, most likely correlated with the file's own long
+runtime, but that specific confound was never isolated either. Full
+account: `docs/reviews/vitest-basename-collision.md`. CONSEQUENCE: don't
+conclude a test file "isn't covered" from a full run's file list alone —
+compare the TOTAL count against a known baseline, and confirm a specific
+file directly (`npx vitest run <path>`) when its line is unexpectedly
+missing, before assuming either the best or the worst.
+
 ---
 
 ## 8. ENVIRONMENT VARIABLES
@@ -1309,6 +1373,8 @@ TWILIO_ACCOUNT_SID=              ← server-side only
 TWILIO_AUTH_TOKEN=               ← server-side only
 TWILIO_WHATSAPP_NUMBER=          ← e.g. whatsapp:+14155238886
 RESEND_API_KEY=                  ← server-side only
+RESEND_FROM_EMAIL=               ← e.g. noreply@quoco.co.in (added 2026-09-02,
+                                    lib/email/send.ts — owner-deliver's email path)
 RAZORPAY_KEY_ID=                 ← server-side only
 RAZORPAY_KEY_SECRET=             ← server-side only
 SENTRY_DSN=

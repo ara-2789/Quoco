@@ -68,6 +68,12 @@ export const TEST_PHONE_PREFIX = '+19995550'
 //   690-694                 -- scattered single-file fixtures
 //   701                     -- test/migration-007.test.ts
 //   801-816                 -- scattered single-file fixtures
+//   900-901                 -- test/owner-deliver-dispatch.test.ts (owner
+//                              fixture + one extra engineer, both minted
+//                              once in beforeAll, reused across cases per
+//                              the UNIQUENESS AXIS RULE below -- per-test
+//                              uniqueness carried on log_date strings, not
+//                              a fresh user row)
 //   999                     -- test/unit/morning-flow-mirror.test.ts
 //
 // PERMANENTLY ANCHORED, DO NOT REUSE EVEN THOUGH IT LOOKS LIKE AN

@@ -31,10 +31,15 @@
 // engineer report for a project-day. This function renders exactly ONE
 // engineer's report, matching what a single `dprs` row actually stores
 // (028's per-engineer key widening) — the "how many emails, aggregated
-// how" question belongs to whatever job calls this function (the
-// ownerSend handler, unbuilt), not to the renderer. A caller wanting one
-// combined email would call this once per engineer and compose the
-// results; this file does not assume either answer.
+// how" question belongs to whatever job calls this function. BUILT,
+// 2026-09-02 (`lib/dpr/owner-deliver-dispatch.ts`): per-engineer, one call
+// per row, one email per engineer — but this is recorded as an OPEN
+// PRODUCT QUESTION, not a technical decision, since it's the owner's
+// actual inbox experience and nobody has looked at a real one yet. Full
+// argument: docs/reviews/owner-deliver-handler-record.md, Decision 2. A
+// caller wanting one combined email later would still call this once per
+// engineer and compose the results — this file's own shape does not need
+// to change either way.
 
 import type { EngineerDprFacts, CheckInStatus } from './schema'
 import { renderEngineerBody } from './render'
