@@ -31,6 +31,19 @@ import { istDateString } from '@/lib/daily-logs/date'
 // more project-level "skip" state. An engineer with zero daily_logs rows
 // still gets a full report reading "not received" throughout (the
 // silent-engineer fix this reformat exists to build).
+//
+// FOLLOW-UP, NAMED NOT FIXED (2026-09-03, from app/api/cron/owner-send's
+// own build): this loop has no per-project try/catch — a thrown error
+// partway through (a query failure on project 3 of 10, say) aborts the
+// whole batch for every remaining project that night. owner-send's own
+// trigger deliberately diverges from this exact shape, on the argument
+// that a missed generation here CAN be re-run by hand
+// (scripts/generate-one-dpr.ts exists for exactly that), so the
+// trade-off is less severe than owner-send's own (a dropped owner-send
+// has no recovery path and nobody is notified). The identical argument
+// arguably applies here too — nothing today DETECTS that a partial run
+// needs re-running — but that is a separate, deliberate decision for
+// whoever picks it up, not changed in this comment.
 
 export interface DprGenerateTriggerResult {
   project_id: string
