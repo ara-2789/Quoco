@@ -304,6 +304,18 @@ export const QUANTITY_STOPWORDS: ReadonlySet<string> = new Set([
 export const YES_WORDS: ReadonlySet<string> = new Set([
   'yes',
   'y',
+  // 'ya'/'ys' ADDED 2026-09-03 -- real engineer typos observed 2026-09-02,
+  // 18:47/18:48 IST, on the live evening flow. Neither classified that
+  // night: "Ya" produced a reask; "Ys" exhausted the reask budget and
+  // force-advanced to the NO branch, storing a false schedule-miss reason
+  // from what was actually a typo'd yes. quoco_classify_yes_no's own SQL
+  // port (030_morning_flow_attendance.sql) does NOT have these words yet --
+  // that migration is already applied/live and cannot be edited in place;
+  // closing the gap needs its own follow-up migration, deliberately not
+  // done here. See test/helpers/yesno-corpus.ts's pendingSqlMigration doc
+  // comment for the full account.
+  'ya',
+  'ys',
   'yeah',
   'yep',
   'yup',
