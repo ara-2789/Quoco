@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { ProjectStatusTag } from '@/components/ui/project-status-tag'
 
 type Project = {
   id: string
@@ -21,17 +22,6 @@ type UserRow = {
 type MemberRow = {
   role: string
   users: UserRow | null
-}
-
-function statusBadge(status: string) {
-  const map: Record<string, string> = {
-    active: 'bg-green-100 text-green-700',
-    on_hold: 'bg-yellow-100 text-yellow-700',
-    completed: 'bg-gray-100 text-gray-600',
-    in_bidding: 'bg-blue-100 text-blue-700',
-    bids_submitted: 'bg-purple-100 text-purple-700',
-  }
-  return map[status] ?? 'bg-gray-100 text-gray-600'
 }
 
 function formatDate(date: string | null) {
@@ -89,9 +79,7 @@ export default async function ProjectDetailPage({
             Created {formatDate(project.created_at.split('T')[0])}
           </p>
         </div>
-        <span className={`text-sm px-3 py-1 rounded-full ${statusBadge(project.status)}`}>
-          {project.status.replace(/_/g, ' ')}
-        </span>
+        <ProjectStatusTag status={project.status} size="default" />
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
@@ -105,12 +93,6 @@ export default async function ProjectDetailPage({
               {project.contract_value !== null
                 ? `₹${Number(project.contract_value).toLocaleString('en-IN')}`
                 : '—'}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-gray-500">Status</dt>
-            <dd className="font-medium text-gray-900 mt-0.5">
-              {project.status.replace(/_/g, ' ')}
             </dd>
           </div>
           <div>

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
+import { ProjectStatusTag } from '@/components/ui/project-status-tag'
 
 type ProjectRow = {
   id: string
@@ -12,17 +13,6 @@ type ProjectRow = {
 type MemberRow = {
   project_id: string
   projects: ProjectRow | null
-}
-
-function statusBadge(status: string) {
-  const map: Record<string, string> = {
-    active: 'bg-green-100 text-green-700',
-    on_hold: 'bg-yellow-100 text-yellow-700',
-    completed: 'bg-gray-100 text-gray-600',
-    in_bidding: 'bg-blue-100 text-blue-700',
-    bids_submitted: 'bg-purple-100 text-purple-700',
-  }
-  return map[status] ?? 'bg-gray-100 text-gray-600'
 }
 
 export default async function DashboardPage() {
@@ -80,11 +70,7 @@ export default async function DashboardPage() {
             >
               <div className="flex items-start justify-between gap-2 mb-2">
                 <h3 className="font-medium text-gray-900 text-sm leading-snug">{p.name}</h3>
-                <span
-                  className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full ${statusBadge(p.status)}`}
-                >
-                  {p.status.replace(/_/g, ' ')}
-                </span>
+                <ProjectStatusTag status={p.status} size="sm" className="flex-shrink-0" />
               </div>
               {p.contract_value !== null && (
                 <p className="text-sm text-gray-500">

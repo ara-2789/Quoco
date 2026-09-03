@@ -70,6 +70,33 @@ reference meaning not raw color). The block below is the *proposed* definition t
 ```
 (Background/border shades come from the matching `-50`/`-200` steps of the same hue.)
 
+**DATED ENTRY (2026-09-03, project-status-tag consolidation).** `projects.status`
+(`active` / `on_hold` / `completed` / `in_bidding` / `bids_submitted`) is a project
+LIFECYCLE state, not a site-condition judgment — it does not belong to the four
+semantic roles above, and per the 2026-07-18 `muted` refinement it must not be
+folded into `muted` either (that refinement is explicit that `muted` is not a
+5th semantic role and must never be extended to represent an actual
+site-condition judgment; lifecycle is not one, but it isn't `muted`'s
+"not yet due" meaning either — it needed its own atom, not a reuse of either
+existing one). Renders as flat neutral grey (`bg-gray-100` / `text-gray-700` /
+`border-gray-200`, no icon, no per-state colour) via
+`components/ui/project-status-tag.tsx` — deliberately its own component,
+never merged into `StatusChip`.
+
+Before this entry, three files (`app/(dashboard)/dashboard/page.tsx`,
+`app/(dashboard)/projects/page.tsx`, `app/(dashboard)/projects/[id]/page.tsx`)
+each hand-rolled an identical `statusBadge()` colour map, live in production,
+that violated this very section twice over:
+- ~~`on_hold: 'bg-yellow-100 text-yellow-700'`~~ — the exact `-700`-on-light
+  contrast pair this section's own "Amber uses `-800` text, not `-700`" note
+  warns against, by name.
+- ~~`bids_submitted: 'bg-purple-100 text-purple-700'`~~ — purple, a colour
+  outside the four-role system entirely ("No decorative color in status
+  contexts").
+
+All three `statusBadge()` maps are deleted; every call site now renders
+`<ProjectStatusTag status={...} />` instead.
+
 ---
 
 ## 2. TYPOGRAPHY — §6 "max 3 sizes, max 2 weights"
