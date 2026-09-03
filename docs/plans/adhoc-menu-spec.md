@@ -482,6 +482,43 @@ one of the seven menu items inherits the same unresolved ambiguity 033 and 031 a
 had to make their own call about — the menu is simply the FIRST inbound-path writer to hit
 it for these three (and, eventually, four new) tables specifically.
 
+**"Count != 1" is two DIFFERENT cases, not one (added 2026-09-03) — the count=0 case is
+not a "which project?" question and must not be treated as one.**
+
+- **count = 1** — proceed silently. The only live path today (registration is currently
+  SQL-only, and one-engineer-one-project is the decided, if not yet DB-enforced, product
+  rule).
+- **count > 1** — ask which project.
+- **count = 0** — the engineer has NO project to name, so asking "which project?" is the
+  wrong question entirely; the honest problem is that his own registration is incomplete.
+  **Reachable, not hypothetical — checked directly:** no trigger, deferred constraint, or
+  FK enforces "every `users` row with `role='engineer'` has a matching `project_members`
+  row" (grepped every migration's `CREATE TRIGGER` statement against `project_members`;
+  the only hit, `on_auth_user_created` in `007_auth_surgery.sql`, fires solely on
+  `auth.users` inserts — engineers have `auth_id = null` and are never touched by it).
+  Since registration is a direct, separate SQL `INSERT INTO users` followed by a SEPARATE
+  `INSERT INTO project_members`, nothing stops the second statement from being skipped,
+  mistyped, or interrupted. **Not a new case invented for this section** — migration 033's
+  own sweep already distinguishes it by name: `'reason', CASE WHEN v_project_count = 0
+  THEN 'zero_project_memberships' ELSE 'multiple_project_memberships' END`
+  (`033_sweep_stale_morning_sessions.sql:224-230`). Not yet observed occurring in practice
+  (the one real sweep record on file shows `skipped_count: 0`), but the distinction the
+  reply below depends on already exists one layer down.
+
+  **Draft reply, count = 0 (for approval, register per Rule 3.12 — two short sentences, no
+  idiom, states the problem and the fix, matching `notRegisteredResponse`'s own closing
+  convention):**
+  > Your account isn't linked to a project yet, so this can't be saved. Contact your
+  > Project Manager to fix your account.
+
+  **Must NOT accept the report into a void — named explicitly:** this reply is returned
+  INSTEAD of proceeding with any menu item's own flow, not after it. Whatever the engineer
+  had already typed (a hindrance description, a safety detail) is not stored anywhere —
+  there is no `project_id` to write it against, and guessing one is exactly the
+  fabricated-fact risk this section's own earlier argument already rejects. The engineer
+  loses nothing he was ever told was captured; the alternative (accepting text with no
+  home for it) would silently promise otherwise.
+
 ---
 
 ## Attribution day — none of the three existing tables has one, and the consequence is undecided
@@ -793,3 +830,17 @@ detect it, only to branch on it.
      in §c today (Q1 description, Q2 timing only), captures LESS than the scheduled flows
      already do for the equivalent free-text hindrance/dependency report — a real gap
      between the two capture surfaces, named here, not resolved.
+
+**7. THIS SPEC'S OWN NUMBERING IS THE ONLY AUTHORITY (2026-09-03) — recorded so an
+external mock-up can never resurface as apparent precedent.** A WhatsApp menu mock-up was
+reviewed this session showing `1 Safety / 2 Hindrance / 3 Invoice` and a four-question
+item-1 flow that never asks `timing` — both directly contradicting this file's own §a
+(`1. Hindrance/Dependency`, `2. Safety incident`, `3. Site expense`, permanent numbers,
+never renumbered) and §c (item 1 is Q1 description + Q2 timing, two questions). Checked
+directly, not assumed: the mock-up does not exist anywhere in this repository (exhaustive
+grep across `docs/`, `CLAUDE.md`, and every committed branch reachable from `origin/main`
+found nothing matching its text) — it came from outside the repo and was never a source
+in the first place. **Decided (Aravind, 2026-09-03): do not reconcile anything to it.**
+This file's own §a/§c numbering and question sequencing stand as written, unchanged by
+this entry. Recorded here only so a future reader who encounters that mock-up again does
+not mistake it for an earlier or competing design this file failed to account for.
