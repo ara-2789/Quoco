@@ -696,13 +696,14 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
     lines.push(...needsAttention)
   }
 
-  // NOT ASKED YET — pre-Q6, unconditional, same reasoning as the old
-  // design's TOMORROWS_PLAN_DATA_STATUS_FORCED constant: nothing captures
-  // tomorrow's plan yet, so there's nothing this section could ever say
-  // other than this one line, until Q6 ships.
-  lines.push('')
-  lines.push('NOT ASKED YET')
-  lines.push("Tomorrow's plan.")
+  // "NOT ASKED YET / Tomorrow's plan." REMOVED 2026-09-04 (Aravind,
+  // production incident): this was internal build-status scaffolding
+  // ("nothing captures tomorrow's plan yet, so there's nothing this
+  // section could ever say other than this one line") that shipped
+  // unconditionally into two real customer-facing DPR emails. Removed
+  // outright, not replaced -- when Q6 (tomorrow's plan capture) ships,
+  // this section is added back with real content, not restored as a
+  // placeholder.
 
   return lines.join('\n')
 }
