@@ -123,6 +123,18 @@ export const manpowerFacts: ManpowerFacts = {
 // label for the 'jcb' canonical type (matching the rawInputText's "JCB" and
 // this file's own header comment naming it a JCB), not a fixed-up
 // 'jcb_excavator'.
+// daily_hire_cost/idle_cost CORRECTED 2026-09-04 (§33(a)/(c), design-
+// decisions-beta-feedback.md, 2026-08-25 — built as part of the production
+// hire-rate-removal fix). Previously 'reported' with real values (1500/375,
+// 800/0) — that shape can no longer come out of the real pipeline: Q4
+// captures unit count, not a rate (§33(a)), so the parser never writes a
+// real daily_hire_cost, and idle_cost is never computed (§33(e)) even for
+// historical rows this case doesn't model. Same category of fix this file
+// already applied once before for `type: 'jcb_excavator'` (see that
+// comment below) — an input shape the pipeline cannot produce. This case
+// exists to prove §12's manpower-suppression rule and the equipment
+// distinct-type merge; neither depends on cost, so not_captured here
+// changes nothing about what this case actually tests.
 export const equipmentFacts: EquipmentFacts = {
   items: [
     {
@@ -132,8 +144,8 @@ export const equipmentFacts: EquipmentFacts = {
       type: 'JCB',
       available_hours: { status: 'reported', value: 8 },
       actual_hours: { status: 'reported', value: 6 },
-      daily_hire_cost: { status: 'reported', value: 1500 },
-      idle_cost: { status: 'reported', value: 375 }, // 1500 * (1 - 6/8)
+      daily_hire_cost: { status: 'not_captured', value: null },
+      idle_cost: { status: 'not_captured', value: null },
     },
     {
       // aggregate-assembly index 1 (Suresh's row).
@@ -141,8 +153,8 @@ export const equipmentFacts: EquipmentFacts = {
       type: 'Concrete Mixer',
       available_hours: { status: 'reported', value: 8 },
       actual_hours: { status: 'reported', value: 8 },
-      daily_hire_cost: { status: 'reported', value: 800 },
-      idle_cost: { status: 'reported', value: 0 },
+      daily_hire_cost: { status: 'not_captured', value: null },
+      idle_cost: { status: 'not_captured', value: null },
     },
   ],
 }
@@ -171,9 +183,10 @@ twice (do not sum). Do NOT state a combined headcount or productivity
 figure. Declare this section not captured.
 
 Equipment:
-- Rajesh: JCB Excavator (item 0) — available 8h, actual 6h, hire rate Rs 1500/day.
-- Suresh: Concrete Mixer (item 1) — available 8h, actual 8h, hire rate Rs 800/day.
+- Rajesh: JCB Excavator (item 0) — available 8h, actual 6h.
+- Suresh: Concrete Mixer (item 1) — available 8h, actual 8h.
 These are DIFFERENT machine types — report both in full with their own hours.
+No hire rate or cost figure is ever given to you (§33(c)) — do not invent one.
 
 Tomorrow's dependencies: none reported.
 `.trim()

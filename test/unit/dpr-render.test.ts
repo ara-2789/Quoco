@@ -335,77 +335,16 @@ describe('renderDpr — a raw JS boolean must never reach rendered content', () 
   })
 })
 
-describe('renderDpr — Indian currency formatting for money fields (idle_cost, daily_hire_cost)', () => {
-  it('a small idle cost (375) renders with ₹ and no unnecessary grouping', () => {
-    const facts: DprFacts = {
-      ...emptyFacts,
-      equipment: {
-        items: [
-          {
-            morning_item_index: 0,
-            type: 'JCB',
-            available_hours: { status: 'reported', value: 8 },
-            actual_hours: { status: 'reported', value: 6 },
-            daily_hire_cost: { status: 'reported', value: 1500 },
-            idle_cost: { status: 'reported', value: 375 },
-          },
-        ],
-      },
-    }
-    const result = renderDpr(facts, baseJudgment, [])
-    expect(result.structured.equipment.items[0].idle_cost).toBe('₹375')
-    expect(result.structured.equipment.items[0].daily_hire_cost).toBe('₹1,500')
-  })
-
-  it('a larger figure uses Indian digit grouping (lakh convention: ₹1,50,000, not ₹150,000)', () => {
-    const facts: DprFacts = {
-      ...emptyFacts,
-      equipment: {
-        items: [
-          {
-            morning_item_index: 0,
-            type: 'Crane',
-            available_hours: { status: 'reported', value: 8 },
-            actual_hours: { status: 'reported', value: 8 },
-            daily_hire_cost: { status: 'reported', value: 150000 },
-            idle_cost: { status: 'reported', value: 0 },
-          },
-        ],
-      },
-    }
-    const result = renderDpr(facts, baseJudgment, [])
-    expect(result.structured.equipment.items[0].daily_hire_cost).toBe('₹1,50,000')
-  })
-
-  it('a not_captured money value renders the phrase, never "₹null" or "₹undefined" — and, being wholly blank, collapses per-field to the Inline/Standalone defaults', () => {
-    const facts: DprFacts = {
-      ...emptyFacts,
-      equipment: {
-        items: [
-          {
-            morning_item_index: 0,
-            type: 'JCB',
-            available_hours: { status: 'not_captured', value: null },
-            actual_hours: { status: 'not_captured', value: null },
-            daily_hire_cost: { status: 'not_captured', value: null },
-            idle_cost: { status: 'not_captured', value: null },
-          },
-        ],
-      },
-    }
-    const result = renderDpr(facts, baseJudgment, [])
-    // Every field here is not_captured and the item isn't suppressed — this
-    // is the wholly-blank collapse case, not a partial one. idle_cost AND
-    // daily_hire_cost are both Inline (Fix 1 audit, 2026-08-11 — both are
-    // "Label: value" money fields, same class as headcount/utilisation_pct;
-    // daily_hire_cost was mistyped Standalone in the first pass, harmless
-    // only because nothing prints it in content yet). `blank` is the one
-    // genuine Standalone explanation here — a complete sentence, no label.
-    expect(result.structured.equipment.items[0].idle_cost).toBe('not captured')
-    expect(result.structured.equipment.items[0].daily_hire_cost).toBe('not captured')
-    expect(result.structured.equipment.items[0].blank).toBe('Not captured today.')
-  })
-})
+// "renderDpr — Indian currency formatting for money fields" DELETED
+// 2026-09-04 (§33(c), design-decisions-beta-feedback.md, 2026-08-25 —
+// built as part of the production hire-rate-removal fix), not rewritten:
+// this described formatIndianCurrency/fmtMoneyInline, both removed from
+// render.ts along with the daily_hire_cost/idle_cost fields on
+// RenderedEquipmentItem — the feature this block tested no longer exists.
+// A rate typed from memory is not factual and must not render as if it
+// were; rewriting these assertions to expect "not captured" everywhere
+// would prove nothing this file's other not_captured tests don't already
+// cover for available_hours/actual_hours.
 
 describe('renderDpr — THE "Not captured today.h" BUG: a not-captured hours value must never carry a unit suffix', () => {
   it('a not_captured available_hours/actual_hours renders the bare phrase, no "h" appended, anywhere it appears — and the wholly-blank item collapses to one content line', () => {
@@ -509,10 +448,13 @@ describe('renderDpr — a PARTIALLY captured equipment item composes real and no
     // Not wholly blank — available_hours IS captured — so this renders the
     // detailed two-line block, not the collapse. Every not-captured
     // fragment inside it must be the lowercase Inline flavor, with no
-    // stray period before the next word.
-    expect(result.content).toContain('  - JCB: 8h available, not captured actual, idle cost not captured')
+    // stray period before the next word. No idle-cost fragment (§33(c),
+    // 2026-09-04) — removed from this line entirely, not rendered as
+    // "not captured".
+    expect(result.content).toContain('  - JCB: 8h available, not captured actual')
     expect(result.content).not.toContain('Not captured today. actual')
     expect(result.content).not.toContain('Not captured today.,')
+    expect(result.content).not.toContain('idle cost')
   })
 })
 

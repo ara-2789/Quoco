@@ -272,9 +272,12 @@ describe('apply_morning_flow_turn (morning flow, attendance-first)', () => {
   //     columns + submitted_at, session reset + marker, morning_execution_plan
   //     stays null (no longer written, §28(p)).
   it('Q4: completes — all morning columns + submitted_at, session reset', async () => {
+    // Message updated 2026-09-04 (§33(a), design-decisions-beta-feedback.md,
+    // 2026-08-25 — built as part of the production hire-rate-removal fix):
+    // Q4 now captures unit count, not a hire rate. "JCB 2" is two JCBs.
     const phone = testPhone('308')
     await driveTo(phone, 4)
-    const r = await applyMorningFlowTurn({ phone, message: 'JCB 1500', startFlow: false, now: P_NOW })
+    const r = await applyMorningFlowTurn({ phone, message: 'JCB 2', startFlow: false, now: P_NOW })
     expect(r.outcome).toBe('advance')
     expect(r.current_flow).toBeNull()
     expect(r.current_step).toBe(0)
@@ -287,8 +290,8 @@ describe('apply_morning_flow_turn (morning flow, attendance-first)', () => {
     expect(log?.morning_manpower).toMatchObject({ total: 20 })
     expect(log?.morning_equipment).toMatchObject({
       none: false,
-      items: [{ type: 'jcb', daily_hire_cost: 1500 }],
-      raw_text: 'JCB 1500',
+      items: [{ type: 'jcb', count: 2, daily_hire_cost: null }],
+      raw_text: 'JCB 2',
     })
     expect(log?.morning_execution_plan).toBeNull()
     expect(log?.morning_submitted_at).not.toBeNull()

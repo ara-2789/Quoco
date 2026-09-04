@@ -132,9 +132,11 @@ describe('checkContainment — section-scoped, not whole-prompt', () => {
   })
 
   it('THE CASE READING A EXISTS TO CATCH: a real number from a DIFFERENT section is still a violation — it is a fabrication wearing a real number, not a legitimate cross-reference', () => {
-    // 1500 is a real equipment daily_hire_cost elsewhere in the same report,
-    // but it is not an execution Fact — a whole-Facts (union) corpus would
-    // wrongly pass this; a section-scoped one correctly rejects it.
+    // 1500 stands in for a real number from a DIFFERENT section of the same
+    // report (any section works for this test — checkContainment is
+    // generic, not DPR-specific) — it is not an execution Fact, so a
+    // whole-Facts (union) corpus would wrongly pass this; a section-scoped
+    // one correctly rejects it.
     const result = checkContainment('Productivity was strong, output valued at 1500.', corpus)
     expect(result.ok).toBe(false)
     expect(result.violations).toEqual([1500])

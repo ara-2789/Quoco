@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { computeIdleCost } from './idle-cost'
 import { equipmentLabel } from '@/lib/whatsapp/flows/parsers/lexicon'
 import type {
   CapturedCount,
@@ -279,11 +278,9 @@ export function mergeDprFacts(rows: CorrectedDailyLogRow[], opts: MergeDprFactsO
         : isHireRateTrusted(item.daily_hire_cost)
           ? { status: 'reported' as const, value: item.daily_hire_cost }
           : notCapturedNumber
-    const idle_cost = withInheritedLowConfidence(
-      computeIdleCost(available_hours, actual_hours, daily_hire_cost),
-      available_hours,
-      actual_hours,
-    )
+    // computeIdleCost no longer called — see mergeEngineerDprFacts's
+    // identical note above (§33(c)/(e)).
+    const idle_cost = notCapturedNumber
     equipmentItems.push({
       morning_item_index: nextIndex++,
       type: equipmentLabel(item.type), // humanized — see the suppressed-branch comment above
@@ -579,7 +576,15 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
     const available_hours = eveningMatch ? wrapNumber(eveningMatch.available_hours, equipmentConfidence) : notCapturedNumber
     const actual_hours = eveningMatch ? wrapNumber(eveningMatch.actual_hours, equipmentConfidence) : notCapturedNumber
     const daily_hire_cost = morningItem.daily_hire_cost === null ? notCapturedNumber : { status: 'reported' as const, value: morningItem.daily_hire_cost }
-    const idle_cost = withInheritedLowConfidence(computeIdleCost(available_hours, actual_hours, daily_hire_cost), available_hours, actual_hours)
+    // computeIdleCost no longer called (§33(e), design-decisions-beta-
+    // feedback.md, 2026-08-25, built 2026-09-04 — production incident):
+    // idle cost is removed from the DPR (§33(c)); the function itself
+    // stays, unused, for the invoice era. daily_hire_cost stays wired
+    // as-is (§33(e) "do not drop") — the parser no longer writes a real
+    // value into it (equipment.ts, §33(a)), so this naturally reads
+    // not_captured on every new row; historical rows still flow through
+    // honestly, per this file's own "render bad data honestly" design.
+    const idle_cost = notCapturedNumber
     return {
       type: equipmentLabel(morningItem.type),
       daily_hire_cost,

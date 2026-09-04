@@ -85,15 +85,19 @@ function formatFacts(facts: DprFacts, meta: GenerateMeta): string {
   }
   lines.push('')
 
-  lines.push('EQUIPMENT FACTS (section 4) — code-computed idle cost, do not restate or recalculate:')
+  // No idle-cost figure fed to the model (§33(c), design-decisions-beta-
+  // feedback.md, 2026-08-25, built 2026-09-04 — production incident: a
+  // rate typed from memory is not factual, so it must never enter a
+  // report as if it were, whether via code-templated text or the model's
+  // own prompt). idle_cost stays on EquipmentItemFacts (§33(e)) but this
+  // prompt never mentions it.
+  lines.push('EQUIPMENT FACTS (section 4):')
   if (facts.equipment.items.length === 0) lines.push('  (none reported)')
   for (const item of facts.equipment.items) {
     if (item.suppressed) {
       lines.push(`  - item ${item.morning_item_index} (${item.type}): suppressed (reported by ${item.suppressed.engineer_count} engineers, not aggregated)`)
     } else {
-      lines.push(
-        `  - item ${item.morning_item_index} (${item.type}): available ${fmtNumber(item.available_hours)}h, actual ${fmtNumber(item.actual_hours)}h, idle cost Rs ${fmtNumber(item.idle_cost)}`,
-      )
+      lines.push(`  - item ${item.morning_item_index} (${item.type}): available ${fmtNumber(item.available_hours)}h, actual ${fmtNumber(item.actual_hours)}h`)
     }
   }
   lines.push('')

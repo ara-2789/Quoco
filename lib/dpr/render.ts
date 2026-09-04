@@ -121,34 +121,13 @@ function fmtCountInline(c: CapturedCount | CapturedNumber): Inline {
   return c.status === 'not_captured' ? NOT_CAPTURED_INLINE : inline(String(c.value))
 }
 
-// Indian digit grouping (lakh/crore convention): the last three digits form
-// one group, everything before that groups in pairs of two going left —
-// ₹1,50,000, not ₹150,000. Decimal part is dropped when it's exactly .00
-// (₹375, not ₹375.00) since idle cost is usually a clean figure; kept when
-// it isn't (a genuine fractional-hour idle-cost computation).
-function formatIndianCurrency(value: number): string {
-  const negative = value < 0
-  const [intPart, decPart] = Math.abs(value).toFixed(2).split('.')
-  const lastThree = intPart.slice(-3)
-  const rest = intPart.slice(0, -3)
-  const grouped = rest === '' ? lastThree : `${rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',')},${lastThree}`
-  const decimalSuffix = decPart === '00' ? '' : `.${decPart}`
-  return `${negative ? '-' : ''}₹${grouped}${decimalSuffix}`
-}
-
-// Money fields (idle_cost, daily_hire_cost) — ₹ + Indian grouping, or the
-// not-captured phrase. Both are "Label: value" data fields per the rule
-// above — Inline, even though daily_hire_cost isn't composed onto a
-// content line today (it's `structured`-only). Fixed alongside idle_cost
-// in the Fix 1 audit: it was mistyped Standalone, with zero CURRENT
-// visible effect only because nothing prints it in content yet — the same
-// latent-inconsistency shape as headcount/utilisation_pct, just not yet
-// exposed. Fixed now rather than left as a landmine for the day content
-// does surface it.
-function fmtMoneyInline(c: CapturedNumber): Inline {
-  if (c.status !== 'reported' || c.value === null) return NOT_CAPTURED_INLINE
-  return inline(formatIndianCurrency(c.value))
-}
+// formatIndianCurrency/fmtMoneyInline REMOVED (§33(c), design-decisions-
+// beta-feedback.md, 2026-08-25, built 2026-09-04 — production incident: a
+// rate typed from memory in free text is not factual and must not render
+// as if it were). Unlike computeIdleCost (§33(e) — kept, unwritten, for
+// the invoice era once a real rate exists), this was a pure render-layer
+// text formatter with no other caller; removed outright rather than left
+// truly dead in this file.
 
 // Hour fields (available_hours, actual_hours) — unit is baked into the
 // formatted string here, not appended later by the content template (the
@@ -271,11 +250,9 @@ interface RenderedEquipmentItem {
   type: string
   available_hours: Inline
   actual_hours: Inline
-  // Inline, per the Fix 1 audit (2026-08-11) — see fmtMoneyInline's own
-  // comment. Was mistyped Standalone; harmless today only because nothing
-  // prints this field in content yet.
-  daily_hire_cost: Inline
-  idle_cost: Inline
+  // daily_hire_cost/idle_cost REMOVED (§33(c), 2026-08-25, built
+  // 2026-09-04 — production incident): the Facts-layer fields stay
+  // (§33(e)), but this render layer never composes them into output.
   note: Standalone
   // Present when EITHER the item is Facts-suppressed (§12) OR every
   // rendered field is independently not_captured (isEquipmentItemNoteDiscarded's
@@ -305,8 +282,6 @@ function renderEquipmentItem(item: EquipmentItemFacts, judgment: DprJudgment): R
       type: item.type,
       available_hours: NOT_CAPTURED_INLINE,
       actual_hours: NOT_CAPTURED_INLINE,
-      daily_hire_cost: NOT_CAPTURED_INLINE,
-      idle_cost: NOT_CAPTURED_INLINE,
       note: text,
       blank: text,
     }
@@ -316,8 +291,6 @@ function renderEquipmentItem(item: EquipmentItemFacts, judgment: DprJudgment): R
     type: item.type,
     available_hours: fmtHoursInline(item.available_hours),
     actual_hours: fmtHoursInline(item.actual_hours),
-    daily_hire_cost: fmtMoneyInline(item.daily_hire_cost),
-    idle_cost: fmtMoneyInline(item.idle_cost),
     // isEquipmentItemNoteDiscarded is false here, so this item was one of
     // the eligible indices the model was asked about — modelNote should
     // always be found by identity-echo (generate.ts's own check on the
@@ -505,10 +478,11 @@ function renderContent(s: RenderedDpr['structured']): string {
       lines.push(`  - ${item.type}: ${item.blank}`)
       continue
     }
-    // No hardcoded unit suffix here — fmtHoursInline/fmtMoneyInline already
-    // bake in "h" / "₹" (or the lowercase inline not-captured fragment) at
-    // the value layer.
-    lines.push(`  - ${item.type}: ${item.available_hours} available, ${item.actual_hours} actual, idle cost ${item.idle_cost}`)
+    // No hardcoded unit suffix here — fmtHoursInline already bakes in "h"
+    // (or the lowercase inline not-captured fragment) at the value layer.
+    // No idle-cost figure (§33(c)) — a rate typed from memory is not
+    // factual and must not appear in an owner-facing report as if it were.
+    lines.push(`  - ${item.type}: ${item.available_hours} available, ${item.actual_hours} actual`)
     lines.push(`    ${item.note}`)
   }
   lines.push('')
@@ -641,13 +615,14 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
   if (facts.equipment.items.length === 0) {
     lines.push('Equipment — planned: not reported | used: not reported')
   }
+  // §33(c) (design-decisions-beta-feedback.md, 2026-08-25, built
+  // 2026-09-04, production incident): a rate typed from memory in free
+  // text is not factual and must not appear in an owner-facing report as
+  // if it were. daily_hire_cost stays on EngineerDprFacts (§33(e) — not
+  // dropped, for the invoice era) but is never composed into report text.
   for (const item of facts.equipment.items) {
-    const plannedParts: string[] = [item.type]
-    if (item.daily_hire_cost.status === 'reported' && item.daily_hire_cost.value !== null) {
-      plannedParts.push(`₹${item.daily_hire_cost.value}/day`)
-    }
     const used = item.actual_hours.status === 'reported' ? `${item.actual_hours.value} hours` : 'not reported'
-    lines.push(`Equipment — planned: ${plannedParts.join(', ')} | used: ${used}`)
+    lines.push(`Equipment — planned: ${item.type} | used: ${used}`)
   }
 
   // §2 Schedule — no planned side (spec binding table); single value line.

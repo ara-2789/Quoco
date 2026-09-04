@@ -92,7 +92,10 @@ export const MORNING_QUESTIONS: Readonly<Record<number, string>> = {
   1: 'Good morning. Are you on site today? Reply yes or no.',
   2: "What's your *plan of action* for today?",
   3: 'How many *workers* today? You can just send a number, or a breakdown like "12 mason 8 helper".',
-  4: 'Any *equipment / machinery* on site? Send name + hire rate (e.g. "JCB 1500"), or reply "no" if none.',
+  // Count, not rate (§33(a), 2026-08-25 — built 2026-09-04): "JCB 2" means
+  // two JCBs, not a hire rate. Rates typed from memory are not factual and
+  // must never enter a report as if they were (§33(c)).
+  4: 'Any *equipment / machinery* on site? Send name + number of units (e.g. "JCB 2"), or reply "no" if none.',
   5: 'Is it a site holiday? Reply yes or no.',
 }
 

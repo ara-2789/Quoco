@@ -2,8 +2,8 @@ import { canonicalEquipment, detectTenure, isNoneSentinel, RATE_STOPWORDS } from
 
 // Q3 equipment parser (Morning Flow Pass 2). PURE — no Supabase, no IO.
 //
-// Domain reality: terse Tamil/English. Answers look like "JCB 1500",
-// "mixer 800 per day", "2 lorry hired", or a bare negative "illa" / "no" /
+// Domain reality: terse Tamil/English. Answers look like "JCB 2",
+// "mixer 3", "2 lorry hired", or a bare negative "illa" / "no" /
 // "nothing". The spec shape is [{type, count, owned_or_hired, daily_hire_cost}];
 // we keep that per-item and preserve the raw answer at the top level.
 //
@@ -11,10 +11,22 @@ import { canonicalEquipment, detectTenure, isNoneSentinel, RATE_STOPWORDS } from
 //   - none:true, items:[]  -> a "no equipment" answer. ANSWERED-EMPTY, never a
 //     reask. (Evening Q5 auto-skips when the list is empty, BOT-22.)
 //   - items.length > 0      -> at least one confident item (a known machine
-//     keyword OR a machine word carrying a number/rate).
+//     keyword OR a machine word carrying a number).
 //   - items:[] && !none     -> garbled (non-empty but nothing recognisable):
 //     the RPC / mirror reasks ONCE, then accepts the raw text and advances so a
 //     field engineer is never trapped. raw_text preserves what they sent.
+//
+// COUNT, NOT RATE (design-decisions-beta-feedback.md §33(a), 2026-08-25,
+// built 2026-09-04 as part of the production hire-rate-removal fix): Q4 now
+// asks for unit count ("JCB 2" = two JCBs), not a hire rate. The engineer's
+// number maps directly to `count` — the exact number he already types,
+// with no new parsing logic needed to distinguish "this is a count" from
+// "this is a rate". This DISSOLVES the defect that made `daily_hire_cost`
+// a miscaptured count (docs/reviews/equipment-parser-count-gap.md) rather
+// than patching it: there is no longer a rate for the first numeric token
+// to be mistaken for. `daily_hire_cost` is kept on the shape (§33(e): the
+// column and the idle-cost code stay, unwritten, for the invoice era) but
+// this parser never populates it — it is always null on every return.
 
 export interface EquipmentItem {
   type: string
@@ -43,14 +55,14 @@ function parseChunk(chunk: string): EquipmentItem | null {
     .filter(Boolean)
 
   let keyword: string | null = null
-  let cost: number | null = null
+  let count: number | null = null
   let firstNameWord: string | null = null
 
   for (const t of tokens) {
     if (/^\d+$/.test(t)) {
-      // First number in the chunk is taken as the daily hire rate — the field
-      // gives rates ("JCB 1500"), not counts. count stays null.
-      if (cost === null) cost = parseInt(t, 10)
+      // First number in the chunk is the unit count (§33(a)) — the field
+      // gives counts ("JCB 2"), not rates. daily_hire_cost stays null.
+      if (count === null) count = parseInt(t, 10)
       continue
     }
     const kw = canonicalEquipment(t)
@@ -58,16 +70,16 @@ function parseChunk(chunk: string): EquipmentItem | null {
     if (firstNameWord === null && !RATE_STOPWORDS.has(t)) firstNameWord = t
   }
 
-  const hasNumber = cost !== null
+  const hasNumber = count !== null
   // No known machine AND no number -> we cannot confidently call this equipment.
   if (keyword === null && !hasNumber) return null
 
   const type = keyword ?? firstNameWord ?? 'equipment'
   return {
     type,
-    count: null,
+    count,
     owned_or_hired: detectTenure(tokens),
-    daily_hire_cost: cost,
+    daily_hire_cost: null,
     raw: chunk.trim(),
   }
 }

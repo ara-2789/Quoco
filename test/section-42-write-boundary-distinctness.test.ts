@@ -68,7 +68,9 @@ describe('write-boundary distinctness — equipment (morning Q3, live today)', (
     {
       const phone = testPhone('314')
       await driveToEquipmentStep(phone)
-      await applyMorningFlowTurn({ phone, message: 'JCB 1500', startFlow: false, now: P_NOW }) // completes
+      // "JCB 2" not "JCB 1500" — Q4 now captures unit count, not a hire
+      // rate (§33(a), 2026-08-25, built 2026-09-04).
+      await applyMorningFlowTurn({ phone, message: 'JCB 2', startFlow: false, now: P_NOW }) // completes
       const row = await getDailyLog(LOG_DATE)
       cases.push({ label: 'real items', shape: stripEcho(row!.morning_equipment as Record<string, unknown>) })
       await cleanupTestDailyLogs()
@@ -102,7 +104,7 @@ describe('write-boundary distinctness — equipment (morning Q3, live today)', (
     // Spelled out too, not just "didn't throw" -- confirms WHY they're
     // distinct, not just that assertPairwiseDistinct's own logic ran.
     expect(cases[0].shape).toEqual({
-      items: [{ type: 'jcb', count: null, owned_or_hired: null, daily_hire_cost: 1500 }],
+      items: [{ type: 'jcb', count: 2, owned_or_hired: null, daily_hire_cost: null }],
       none: false,
     })
     expect(cases[1].shape).toEqual({ items: [], none: true })

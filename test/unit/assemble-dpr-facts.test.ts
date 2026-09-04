@@ -50,7 +50,12 @@ describe('mergeDprFacts — single engineer, happy path', () => {
     expect(facts.manpower.suppressed).toBeUndefined()
   })
 
-  it('equipment: computes idle cost via computeIdleCost, no suppression', () => {
+  // §33(c)/(e) (design-decisions-beta-feedback.md, 2026-08-25 — built
+  // 2026-09-04, production incident): idle_cost is no longer computed —
+  // computeIdleCost stays as a function (see idle-cost.test.ts, unchanged)
+  // but mergeDprFacts no longer calls it. Renamed from "computes idle cost
+  // via computeIdleCost" to reflect the current behaviour.
+  it('equipment: idle_cost is always not_captured, hours pass through, no suppression', () => {
     const facts = mergeDprFacts([
       row({
         morning_equipment: { items: [{ type: 'JCB Excavator', daily_hire_cost: 8000 }] },
@@ -61,7 +66,8 @@ describe('mergeDprFacts — single engineer, happy path', () => {
       }),
     ])
     expect(facts.equipment.items).toHaveLength(1)
-    expect(facts.equipment.items[0].idle_cost).toEqual({ status: 'reported', value: 4730 })
+    expect(facts.equipment.items[0].idle_cost).toEqual({ status: 'not_captured', value: null })
+    expect(facts.equipment.items[0].actual_hours).toEqual({ status: 'reported', value: 3.27 })
     expect(facts.equipment.items[0].suppressed).toBeUndefined()
   })
 })
@@ -80,7 +86,10 @@ describe('mergeDprFacts — low_confidence carried, not discarded (Option C)', (
     expect(facts.manpower.headcount).toEqual({ status: 'reported', value: 45 })
   })
 
-  it('low-confidence equipment hours propagate onto the computed idle_cost', () => {
+  // idle_cost no longer inherits low_confidence — it's never computed at
+  // all now (§33(c)/(e), see the renamed test above). available_hours
+  // still carries its own low_confidence flag independently.
+  it('low-confidence equipment hours flag available_hours; idle_cost stays not_captured regardless', () => {
     const facts = mergeDprFacts([
       row({
         morning_equipment: { items: [{ type: 'Concrete Mixer', daily_hire_cost: 800 }] },
@@ -91,7 +100,7 @@ describe('mergeDprFacts — low_confidence carried, not discarded (Option C)', (
       }),
     ])
     expect(facts.equipment.items[0].available_hours.low_confidence).toBe(true)
-    expect(facts.equipment.items[0].idle_cost).toEqual({ status: 'reported', value: 0, low_confidence: true })
+    expect(facts.equipment.items[0].idle_cost).toEqual({ status: 'not_captured', value: null })
   })
 
   it('not_captured never carries low_confidence (nothing to be doubtful ABOUT)', () => {
