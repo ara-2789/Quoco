@@ -3455,3 +3455,97 @@ raises but does not answer. **Consequence: whoever builds §41's actual link/hos
 answer verifies Resend's click-tracking behavior against a real signed URL BEFORE
 shipping it, not after** — this is a precondition on that work, not a today problem;
 nothing currently sending is affected.
+
+## 43. Engineer-side correction of a submitted morning check-in: APPEND, never overwrite
+— DECIDED, not built (2026-09-03)
+
+**NUMBERED §43, NOT §42 — DELIBERATE, NOT A TYPO.** §42 already names a real, heavily-
+used decision in `docs/plans/evening-flow-restructuring-scope.md` (the unmatched-parse-
+token capture rule, cited bare as "§42" throughout migration 035's own header and this
+project's own recent commits). Adding a SECOND thing called "§42" in a different file
+is exactly the collision class CLAUDE.md's own standing rule already warns against
+("a label whose meaning was assumed rather than checked against what else uses it") —
+checked here before numbering, not after.
+
+**The decision:** once an engineer's morning check-in has been submitted, he can ADD to
+it later the same day — a manpower count that grew after submission, for instance. He
+can never OVERWRITE what he already said. A PM can still correct/overwrite (Rule 4.3,
+migration 019, PR #137) — this decision does not touch that. An engineer only ever adds.
+
+**Motivating scenario:** an engineer answers "12 workers" at 08:35. Four more arrive at
+10:00. Today, nothing exists for him to say so — the morning flow is already complete,
+and CLAUDE.md's own §28(t) decision keeps that irreversible by design.
+
+**Reasoning:**
+- **Not a reversal of the PM-corrects-not-re-types rule.** `design-principles.md` Rule
+  4.3, verbatim: *"PM is a data steward, not data entry. The PM corrects and completes
+  (fix a parsed trade name, fill a skipped gap) — never re-types the day. Correction UI
+  is inline on the daily log card, two clicks max."* Migration 019's edit RPC and PR
+  #137's inline correction UI build exactly that. This decision leaves all of it
+  standing — a PM still corrects (fixes a wrong value, fills a gap). An engineer never
+  gets that power; he only ever ADDS a new fact alongside the original one.
+- **The engineer knows first.** He's the one who watched four more workers walk onto
+  site at 10:00. Routing that fact through a PM who wasn't there — wait for the PM to
+  notice, or for the engineer to separately call/message the PM, who then has to use
+  the correction UI on secondhand information — is slower and worse than letting the
+  person who observed it say so directly, the same day, close to when it happened.
+- **Why overwrite specifically is refused, not just "not built yet":** an
+  engineer-writable overwrite would let a day be quietly rewritten to match the plan
+  after the fact — the identical risk this project's own DPR containment/audit
+  discipline already exists to prevent elsewhere, and the identical concern §28(t)
+  raises about late data being unverifiable against what was actually true when
+  submitted. `morning_submitted_at` is stamped once, by a real human, at the moment he
+  actually answered — overwriting it (or the answer it stamps) erases that. Append
+  keeps both facts on the record: planned 12, actual 16 — a real variance, more useful
+  to an owner reading the DPR than a silently corrected 16 that hides the plan ever
+  changed.
+- **No audit question arises from this decision, by construction.** Nothing is ever
+  overwritten, so there is nothing to reconcile against a prior value the way an edit
+  RPC's own audit trail (`daily_log_edits`, migration 019) has to. A future append
+  mechanism may still want its own record of what was added and when — named as an
+  open item below, not designed here.
+
+**Does this reverse §28(t) (2026-08-28, "attendance 'No' stays irreversible")? Checked
+directly against that entry's own text, not assumed either way.** §28(t)'s literal
+words are broader than its own scenario: *"never a reopened engineer-facing window"* —
+read bare, that phrase could be stretched to forbid this decision too. **It doesn't,
+once §28(t)'s own SCOPE and REASONING are checked, not just its closing sentence:**
+- §28(t)'s scenario is REOPENING THE SAME FLOW — restarting Q2-Q4 of a morning check-in
+  that already answered "No" and ended. This decision does not reopen any flow; it is a
+  structurally separate write path (the ad-hoc menu, once built), never touching the
+  original session or its own questions again.
+- §28(t)'s own reasoning is about DATE-INTEGRITY and backdating specifically: *"a record
+  dated to a day that... was never actually observed in real time... late data...
+  answered from memory, hours or days later, un-verifiable against what was actually
+  true at the time."* This decision's own motivating scenario is same-day, close to
+  real-time (08:35 to 10:00) — the exact failure mode §28(t) names does not apply to it.
+- §28(t) is also about a MISSING or WRONG original answer needing to be replaced. This
+  decision is about a TRUE original answer (12 workers, correct at 08:35) later becoming
+  incomplete as the day continues — not wrong when given, just no longer the whole
+  picture.
+
+**Conclusion: this is a NEW decision, narrower in scope than §28(t)'s own literal
+wording might suggest, not a reversal of it — but §28(t)'s text should be read
+alongside this entry from now on, since "never a reopened engineer-facing window" and
+"an engineer can append via a separate channel" sit close enough together that a future
+reader comparing the two, without this entry's own reconciliation, could reasonably see
+a contradiction where none is intended.** Whoever eventually builds this should re-read
+both together, not just this entry alone.
+
+**OPEN, to be decided when this is actually built — recorded as open, not answered
+here:**
+a. **Where the append lands, schematically.** `daily_logs` is one row per
+   `(project_id, engineer_id, log_date)`, upserted on that triple — an append is either
+   a JSONB array column on that same row, or a separate table keyed to it (matching this
+   project's own existing "log first, structure later" precedent in other tables). Not
+   decided.
+b. **Discoverable menu item, or free-text inbound.** A dedicated ad-hoc menu row makes
+   the capability findable but adds one more thing to explain; "4 more workers came" is
+   what an engineer would naturally type unprompted, but free text is harder to parse
+   reliably than a structured pick. Not decided.
+c. **How the DPR renders two numbers as a variance, not a contradiction.** Planned 12,
+   actual 16, both true at different times of the same day — the render logic needs to
+   say that plainly rather than read as two conflicting facts about headcount. Not
+   designed here.
+
+**Not built. This entry records the decision and its reasoning only.**
