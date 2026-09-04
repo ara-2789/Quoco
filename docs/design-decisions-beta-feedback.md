@@ -3547,5 +3547,19 @@ c. **How the DPR renders two numbers as a variance, not a contradiction.** Plann
    actual 16, both true at different times of the same day — the render logic needs to
    say that plainly rather than read as two conflicting facts about headcount. Not
    designed here.
+d. **The cutoff for appending — the question §28(t) would ask if it could.** This
+   entry's own reconciliation with §28(t) rests on the motivating scenario being
+   same-day and close to real-time (08:35 to 10:00) — exactly where §28(t)'s
+   backdating concern doesn't reach. That reconciliation stops holding at some later
+   point the same day: at 23:00, after the DPR has already generated (19:45) and
+   already been delivered to the owner (20:30), an append at that hour IS backdating
+   in every sense §28(t) cares about — AND it changes a record someone has already
+   read, which §28(t)'s own scenario never had to contend with (nobody reads a DPR
+   before it exists). Candidate anchors to weigh when this is actually built, none
+   chosen here: `finalized_at`-style flag, DPR generation time, or reusing the
+   existing `eveningClose` cutoff this project's own check-in windows already define.
+   **Related, and explicitly a product question, not a schema one:** if a late append
+   does land after the DPR already went to the owner, does he get a correction sent,
+   or does the change only ever surface in the next day's report? Not decided.
 
 **Not built. This entry records the decision and its reasoning only.**
