@@ -2592,6 +2592,52 @@ Updated in this same pass: the count gap recorded there is superseded by
 is the reason for this decision, not a closed incident with no further
 use.
 
+### h. BUILT 2026-09-04 — production incident, not the planned trigger. ADDENDUM.
+
+This shipped as an emergency fix, not on the sequencing this section left
+open at (f). Two real DPR emails (2026-09-03, 2026-09-04) contained
+fabricated equipment rates the parser had miscaptured as counts — exactly
+the defect (a) names — because nothing in this section's OWN decision had
+been built yet when those two check-ins ran. Full incident: the production
+report Aravind gave 2026-09-04 comparing WhatsApp screenshots against sent
+DPR content.
+
+Built: (a) parser count-not-rate (`lib/whatsapp/flows/parsers/equipment.ts`,
+`lib/whatsapp/flows/morning.ts`), (c)/(e) idle cost removed from both DPR
+renderers and never computed (`lib/dpr/render.ts`, `lib/dpr/generate.ts`,
+`lib/dpr/assemble.ts` — both the live per-engineer path and the unused
+project-level path, same defect class, same fix). (f)'s stated blocker —
+"the write path is the morning RPC, so this needs a migration" — did NOT
+hold: `030_morning_flow_attendance.sql:334` documents `p_equipment` as
+"stored verbatim," and `morning_equipment` is bare, unconstrained JSONB
+(migration 001) with no CHECK on its internal shape anywhere in the
+migration history. No migration was needed; this shipped as a pure
+TypeScript change. (d) (the rate formula for the invoice era) remains
+unbuilt, as designed.
+
+**A confidence gate existed and did not hold — but not the one first
+suspected.** `isHireRateTrusted` (the deferred project-level assembler,
+`mergeDprFacts`) was checked and found to be dead code — no call site
+outside tests and two scripts touches `renderDpr`/`mergeDprFacts` at all.
+The function that actually produced the two fabricated values,
+`mergeEngineerDprFacts` (the live per-engineer assembler), has **no trust
+gate by explicit design** — its own comment: *"No isHireRateTrusted
+option, unlike the old assembler — deliberate, not an oversight. The
+spec's own instruction... means daily_hire_cost is always shown as-is
+here, garbled or not."* That instruction, from
+`docs/dpr-engineer-report-spec.md`, was written for a context where a
+human would see the garbled output and notice the defect. It shipped
+unmodified into a path with no human checkpoint before an owner's inbox.
+
+**The lesson, stated precisely**: "render bad data honestly so the defect
+is visible" is a debugging-context design principle. Applied to a
+customer-facing artifact with no review gate, "visible" only ever meant
+"visible to the customer" — the defect became visible to Aravind by
+accident, from a screenshot comparison, two days after two real owners
+had already read it. A design principle written for one audience does not
+automatically carry over when the same code path's actual audience
+changes.
+
 ## 34. `checkin_escalations` cannot distinguish "asked, no answer" from "never asked" — OPEN, 2026-08-25
 
 **Record only, not built.** Found while building B3 (the 15:00 IST morning

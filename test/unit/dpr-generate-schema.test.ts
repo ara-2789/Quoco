@@ -154,6 +154,10 @@ describe('eligibleEquipmentIndices / buildPerCallSchema — equipment items excl
     expect(eligibleEquipmentIndices(facts)).toEqual([])
   })
 
+  // daily_hire_cost/idle_cost are always not_captured post-§33 (never
+  // asserted by this describe block — eligibility is driven entirely by
+  // available_hours/actual_hours) — kept not_captured rather than
+  // 'reported' so the fixture matches what the real pipeline can produce.
   it('a partially captured equipment item (available known, actual not) stays eligible', () => {
     const facts: DprFacts = {
       ...baseFacts,
@@ -164,7 +168,7 @@ describe('eligibleEquipmentIndices / buildPerCallSchema — equipment items excl
             type: 'JCB',
             available_hours: reported(8),
             actual_hours: notCaptured,
-            daily_hire_cost: reported(1500),
+            daily_hire_cost: notCaptured,
             idle_cost: notCaptured,
           },
         ],
@@ -196,8 +200,8 @@ describe('eligibleEquipmentIndices / buildPerCallSchema — equipment items excl
             type: 'Concrete Mixer',
             available_hours: reported(8),
             actual_hours: reported(6),
-            daily_hire_cost: reported(1500),
-            idle_cost: reported(375),
+            daily_hire_cost: notCaptured,
+            idle_cost: notCaptured,
           },
         ],
       },

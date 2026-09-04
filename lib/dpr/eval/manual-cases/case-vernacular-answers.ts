@@ -43,6 +43,11 @@ export const manpowerFacts: ManpowerFacts = {
   utilisation_pct: { status: 'reported', value: 60 },
 }
 
+// daily_hire_cost/idle_cost CORRECTED 2026-09-04 (§33(a)/(c)/(e) — see
+// case-complete-two-engineer-day.ts's identical note): 'reported' cost can
+// no longer come out of the real pipeline. This case is a manual prose-
+// quality review of idle_reason paraphrasing (see file header) — unrelated
+// to cost either way.
 export const equipmentFacts: EquipmentFacts = {
   items: [
     {
@@ -50,8 +55,8 @@ export const equipmentFacts: EquipmentFacts = {
       type: 'concrete_mixer',
       available_hours: { status: 'reported', value: 8 },
       actual_hours: { status: 'reported', value: 5 },
-      daily_hire_cost: { status: 'reported', value: 1200 },
-      idle_cost: { status: 'reported', value: 450 }, // 1200 * (1 - 5/8)
+      daily_hire_cost: { status: 'not_captured', value: null },
+      idle_cost: { status: 'not_captured', value: null },
     },
   ],
 }

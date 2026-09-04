@@ -197,15 +197,20 @@ export interface EquipmentItemFacts {
   // other value here; render.ts and the model never touch it.
   available_hours: CapturedNumber
   actual_hours: CapturedNumber
+  // §33(a)/(c)/(e) (design-decisions-beta-feedback.md, 2026-08-25, built
+  // 2026-09-04 — production incident): CLOSES the "A COUNT IN A MONEY
+  // FIELD" debt this comment used to name, by dissolving it rather than
+  // detecting it — Q4 now asks for unit count, not a rate, so the parser
+  // never produces an untrustworthy daily_hire_cost to begin with.
+  // Both fields STAY on this type (§33(e), "do not drop" — same treatment
+  // as morning_execution_plan): daily_hire_cost is simply never written
+  // going forward, and idle_cost (CODE-COMPUTED: daily_hire_cost * (1 -
+  // actual/available)) is never computed (computeIdleCost, lib/dpr/idle-
+  // cost.ts, stays as a function, no longer called). Neither field is
+  // rendered into any DPR output (render.ts) or fed to the model
+  // (generate.ts) — §33(c), "idle cost removed from the DPR."
   daily_hire_cost: CapturedNumber
-  idle_cost: CapturedNumber // CODE-COMPUTED: daily_hire_cost * (1 - actual/available).
-  // KNOWN DEBT (CLAUDE.md §10, "A COUNT IN A MONEY FIELD"): daily_hire_cost
-  // can be a miscaptured count, not a real rate — the 018-era parser always
-  // reads the first number in a chunk as a rate. Whatever populates idle_cost
-  // MUST force status: 'not_captured' when the rate's provenance is
-  // untrusted, rather than compute confidently off a bad rate. The detection
-  // heuristic is not decided here — this is a flag for the generator, not a
-  // fix.
+  idle_cost: CapturedNumber
   // Present when this item's `type` was ALSO reported by another engineer
   // (§12) — distinct from ordinary not_captured (nobody reported it).
   // Distinct types across engineers are never touched. When present, the
@@ -616,15 +621,19 @@ export interface EngineerManpowerFacts {
   working: CapturedCount
 }
 
-// §4 Equipment. planned needs NO NEW TYPE — per the spec's binding table
-// and the round-1 resolution, it's a render-layer composition of `type`
-// (already-humanized string) + `daily_hire_cost` (CapturedNumber), both
-// already the right shape. actual = actual_hours alone (spec: "used: 6
-// hours") — asymmetric with planned by design (no planned-hours field
-// exists upstream; see the spec's own "Known data gap" section).
-// available_hours/idle_cost are carried for NEEDS ATTENTION's idle-cost
-// line (existing computeIdleCost, lib/dpr/idle-cost.ts, unchanged), never
-// for the Equipment pair line itself.
+// §4 Equipment. planned is `type` alone (render-layer composition) — was
+// `type` + `daily_hire_cost` per the spec's original round-1 resolution;
+// CORRECTED by §33(c) (design-decisions-beta-feedback.md, 2026-08-25,
+// built 2026-09-04 — production incident): a rate typed from memory is
+// not factual and must not render as if it were, so render.ts
+// (renderEngineerBody) composes `type` only. actual = actual_hours alone
+// (spec: "used: 6 hours") — asymmetric with planned by design (no
+// planned-hours field exists upstream; see the spec's own "Known data
+// gap" section). daily_hire_cost/idle_cost STAY on this type (§33(e), "do
+// not drop") but are never rendered and idle_cost is never computed
+// (computeIdleCost, lib/dpr/idle-cost.ts, stays as a function, no longer
+// called) — kept for the invoice era, when a real rate exists to compute
+// from.
 export interface EngineerEquipmentItemFacts {
   type: string
   daily_hire_cost: CapturedNumber
