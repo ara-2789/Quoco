@@ -54,6 +54,9 @@ import { MORNING_CHECKIN_SID } from '@/lib/whatsapp/outbound/templates'
 // 2026-09-16, same tenant/project, documented in test/helpers/db.ts
 // alongside that file's own reservation.
 const LOG_DATE_COVERAGE = '2026-09-12'
+// 2026-09-13, added 2026-09-04: within this file's own already-reserved
+// 09-12 through 09-16 range (test/helpers/db.ts), previously unused.
+const LOG_DATE_TRUNCATION = '2026-09-13'
 const LOG_DATE_STUCK_TRUE = '2026-09-14'
 const LOG_DATE_STUCK_FALSE_RECENT = '2026-09-15'
 const LOG_DATE_RATE_LIMITED = '2026-09-16'
@@ -147,17 +150,88 @@ describe('runOutboundCoverageSweep', () => {
     expect(morningAt!.windowClosed).toBe(true) // >= cutoff, not only strictly after
   })
 
-  it('F4: a row stuck at \'sending\' with error IS NULL past the 10-minute threshold is reported', async () => {
+  // REWRITTEN 2026-09-04 (the fetchStuckClaims order/limit fix, same date):
+  // the original assertion checked `result.stuckClaims.some(r => r.id ===
+  // id)` -- presence in the (now bounded) returned array. That's exactly
+  // what STUCK_CLAIM_SCAN_LIMIT's own accretion incident broke: this file's
+  // own fixture dates are NOT the newest in the shared suite (status-
+  // callback.test.ts reserves 2026-09-17 through 2026-09-19, later than
+  // this file's LOG_DATE_STUCK_TRUE of 2026-09-14), so neither "oldest
+  // first" nor "newest first" durably guarantees this test's own row
+  // survives a limited scan of an ever-growing shared table -- the same
+  // problem F2's own header already names ("DELTA, not absolute value...
+  // regardless of how many rows this event_key already carries from prior
+  // CI runs"), one level broader here since fetchStuckClaims deliberately
+  // has no event_key scope at all (see its own header for why that's
+  // correct). Split into two independent, robust checks instead:
+  //   1. DETECTION -- stuckClaimsTotalMatching (server-side exact count,
+  //      immune to ORDER/LIMIT) increases by exactly 1. This is what F4
+  //      actually exists to prove: the row is found BY THE FILTER.
+  //   2. SHAPE -- a direct by-id read (not a search through the possibly-
+  //      truncated stuckClaims array) confirms the row's own stored fields
+  //      are correct. Decoupled entirely from truncation behaviour.
+  it('F4: a row stuck at \'sending\' with error IS NULL past the 10-minute threshold is counted, and its stored fields are correct', async () => {
     const eventKey = `morning_send:${LOG_DATE_STUCK_TRUE}`
-    const id = await insertLedgerRow({ engineerId: engineerA.id, toPhoneNumber: engineerA.whatsappNumber, eventKey, status: 'sending' })
     const now = new Date(`${LOG_DATE_STUCK_TRUE}T05:00:00Z`)
+
+    const before = await runOutboundCoverageSweep(testClient(), now)
+
+    const id = await insertLedgerRow({ engineerId: engineerA.id, toPhoneNumber: engineerA.whatsappNumber, eventKey, status: 'sending' })
     await backdateUpdatedAt(id, new Date(now.getTime() - 20 * 60 * 1000).toISOString()) // 20 min before `now`
 
     const result = await runOutboundCoverageSweep(testClient(), now)
-    expect(result.stuckClaims.some((r) => r.id === id)).toBe(true)
-    const row = result.stuckClaims.find((r) => r.id === id)!
-    expect(row.toPhoneNumber).toBe(engineerA.whatsappNumber)
-    expect(row.contentSid).toBe(MORNING_CHECKIN_SID)
+    expect(result.stuckClaimsTotalMatching - before.stuckClaimsTotalMatching).toBe(1)
+
+    const { data: row, error } = await testClient()
+      .from('outbound_sends')
+      .select('to_phone_number, content_sid')
+      .eq('id', id)
+      .single<{ to_phone_number: string; content_sid: string }>()
+    if (error) throw error
+    expect(row.to_phone_number).toBe(engineerA.whatsappNumber)
+    expect(row.content_sid).toBe(MORNING_CHECKIN_SID)
+  })
+
+  // NEW 2026-09-04, same fix: the truncation-detection path itself,
+  // exercised with real rows and a small injected limit rather than
+  // needing hundreds of rows to reach STUCK_CLAIM_SCAN_LIMIT for real.
+  it('stuckClaimLimit truncates stuckClaims but stuckClaimsTotalMatching still reports the true count', async () => {
+    const now = new Date(`${LOG_DATE_TRUNCATION}T05:00:00Z`)
+    const backdated = new Date(now.getTime() - 20 * 60 * 1000).toISOString()
+
+    const before = await runOutboundCoverageSweep(testClient(), now, 0)
+    const totalBefore = before.stuckClaimsTotalMatching
+
+    // Three distinct (recipient_user_id, event_key) pairs on the same
+    // reserved date -- event_key's own CHECK constraint (031's migration:
+    // `^[a-z_]+:\d{4}-\d{2}-\d{2}$`) allows no per-row suffix, so
+    // uniqueness here comes from the two engineers x two checkpoints this
+    // file already has, same convention as the F2 test above (two
+    // engineers, one event_key).
+    const combos: Array<{ engineer: MintedEngineer; checkpoint: 'morning_send' | 'evening_send' }> = [
+      { engineer: engineerA, checkpoint: 'morning_send' },
+      { engineer: engineerB, checkpoint: 'morning_send' },
+      { engineer: engineerA, checkpoint: 'evening_send' },
+    ]
+    const ids = await Promise.all(
+      combos.map(async ({ engineer, checkpoint }) => {
+        const id = await insertLedgerRow({
+          engineerId: engineer.id,
+          toPhoneNumber: engineer.whatsappNumber,
+          eventKey: `${checkpoint}:${LOG_DATE_TRUNCATION}`,
+          status: 'sending',
+        })
+        await backdateUpdatedAt(id, backdated)
+        return id
+      }),
+    )
+
+    // limit=2 against (at least) 3 newly-matching rows -- must truncate,
+    // and must SAY SO via the total, not just silently return a shorter list.
+    const result = await runOutboundCoverageSweep(testClient(), now, 2)
+    expect(result.stuckClaims.length).toBe(2)
+    expect(result.stuckClaimsTotalMatching - totalBefore).toBeGreaterThanOrEqual(ids.length)
+    expect(result.stuckClaimsTotalMatching).toBeGreaterThan(result.stuckClaims.length)
   })
 
   it('a row still \'sending\' within the 10-minute threshold is NOT reported as stuck', async () => {
