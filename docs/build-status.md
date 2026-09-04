@@ -333,6 +333,29 @@ a confidence field expecting it to be populated. Origin + full reasoning:
 docs/design-decisions-beta-feedback.md §9 (evening Q4 v1 scope), where this was
 first written down before being promoted here as cross-cutting debt.
 
+TWO REAL VERNACULAR/TYPO EXAMPLES, RECORDED 2026-09-04 (not fixed here — found
+during the fabricated-hire-cost row audit, docs/reviews/equipment-parser-count-
+gap.md's own class, one level further: a garbled TYPE match, not a garbled
+number). Both are exactly Rule 3.5's own named consequence, concretely: the
+equipment lexicon silently matched a typo/garble to a real-sounding but WRONG
+canonical type, with nothing distinguishing it from a clean match — a PM reading
+either row today would have no way to know it was ever ambiguous.
+  * `daily_logs` row 34f8bbb5-974e-4520-8f72-dc488dee4d25 (2026-08-13), raw
+    "Job 15oo" — matched canonical type `job`. This is "JCB" typo'd (the
+    engineer's own established vocabulary elsewhere in this same project's
+    rows), not a real equipment category — `job` is not a machine. "15oo" is
+    also a separately-garbled rate ("1500" with letters substituted for
+    zeros), parsed to a bare `15`.
+  * `daily_logs` row 303fb071-2afa-4b08-92cf-ab7202730051 (2026-08-21), raw
+    "Cement micsur 1000" — matched canonical type `cement`. "Micsur" is
+    "mixer" typo'd; "cement" is a material, not a machine, and was never the
+    engineer's intended category.
+These are the real vernacular examples this project's own case-vernacular-
+answers.ts fixture (lib/dpr/eval/manual-cases/) has been waiting on — they
+arrived unprompted, from an actual engineer's real check-ins, not authored.
+Record only, per this entry's own standing posture — no lexicon change made
+here.
+
 HIGH-1 (users_update self-privilege-escalation) — CLOSED by migration 015,
 applied to prod 2026-07-12, dual-verified and externally reviewed. Full
 record: docs/schema.md:497-517 + docs/reviews/015-review-package.md. Standing
