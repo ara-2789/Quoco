@@ -72,8 +72,8 @@ git show <full-sha>:<path> | shasum -a 256
 
 ### 4. What I want attacked
 
-- Is the three-value `timing` CHECK ('active', 'potential', 'unspecified') right, or
-  should 'unspecified' be a NULL-with-timing_raw instead of its own named value?
+- Is the three-value timing CHECK ('active', 'potential', 'unspecified') right, or should
+  'unspecified' be a NULL-with-timing_raw instead of its own named value?
 - Is dropping `submitted_via`'s DEFAULT the right fix, versus correcting it to
   `'whatsapp_adhoc'`?
 - Does either DOWN block miss anything?
