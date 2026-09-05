@@ -10,6 +10,8 @@
 // keyword-gated resume contract (bot-flows.md B2) so it needn't change when the
 // SET stage ships.
 
+import { waMeHref } from '@/lib/whatsapp/links'
+
 /**
  * Strip Twilio's "whatsapp:" prefix from TWILIO_WHATSAPP_NUMBER for display,
  * clipboard, and copy text. The env value is stored as "whatsapp:+14155238886"
@@ -64,5 +66,5 @@ export function buildForwardHref(
   const digits = engineerWhatsappNumber.replace(/\D/g, '')
   if (!digits) return null
   const text = encodeURIComponent(buildForwardMessage(engineerName, quocoNumber))
-  return `https://wa.me/${digits}?text=${text}`
+  return `${waMeHref(engineerWhatsappNumber)}?text=${text}`
 }
