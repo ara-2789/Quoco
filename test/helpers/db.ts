@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import sharedFixtureFkCoverage from '../../scripts/shared-fixture-fk-coverage.json'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
 import type { MorningOutcome } from '@/lib/whatsapp/flows/morning'
 import type { EveningOutcome } from '@/lib/whatsapp/flows/evening'
@@ -207,8 +208,62 @@ export async function cleanupTestSessions(): Promise<void> {
   if (error) throw new Error(`cleanupTestSessions failed: ${error.message}`)
 }
 
+// 2026-09-05 FK-cascade incident (docs/reviews/admin-merge-retrospective-
+// 2026-09-05.md): removeMorningFixtures()/removeTestTenant() used to delete
+// the shared fixture engineer/tenant without first clearing every OTHER
+// table that still references them without ON DELETE CASCADE. A stray
+// daily_logs row (a table nobody had widened cleanup for) blocked the users
+// delete and cascaded into 16 failing test files in one CI run.
+//
+// scripts/shared-fixture-fk-coverage.json is the single source of truth for
+// which tables need clearing, and scripts/lint-migrations.mjs's
+// shared-fixture-fk-coverage rule (no exceptions mechanism, unlike every
+// other lint rule) fails the build the moment a migration adds a
+// non-CASCADE FK to users(id)/tenants(id) that isn't listed here — so this
+// list cannot silently go stale the way the project_id-only scope of
+// cleanupTestDailyLogs() did. Called ONLY with the shared fixture's own id
+// (never a wildcard), against testClient() (test-db only, gated by test/
+// setup/guard.ts's hard allowlist abort before any test runs) — this can
+// only ever touch rows that reference that exact fixture id.
+async function sweepSharedFixtureReferences(parent: 'users' | 'tenants', id: string): Promise<void> {
+  const db = testClient()
+  for (const entry of sharedFixtureFkCoverage as Array<{
+    table: string
+    column: string
+    parent: string
+    action: string
+  }>) {
+    if (entry.parent !== parent) continue
+    if (entry.action === 'not-applicable') continue // see the entry's own note in the JSON file
+
+    if (entry.action === 'delete') {
+      const { error } = await db.from(entry.table).delete().eq(entry.column, id)
+      if (error) {
+        throw new Error(
+          `sweepSharedFixtureReferences: ${entry.table}.${entry.column} delete failed: ${error.message}`,
+        )
+      }
+    } else if (entry.action === 'null') {
+      const { error } = await db
+        .from(entry.table)
+        .update({ [entry.column]: null })
+        .eq(entry.column, id)
+      if (error) {
+        throw new Error(
+          `sweepSharedFixtureReferences: ${entry.table}.${entry.column} null failed: ${error.message}`,
+        )
+      }
+    } else {
+      throw new Error(
+        `sweepSharedFixtureReferences: unknown action "${entry.action}" for ${entry.table}.${entry.column}`,
+      )
+    }
+  }
+}
+
 export async function removeTestTenant(): Promise<void> {
   const db = testClient()
+  await sweepSharedFixtureReferences('tenants', TEST_TENANT_ID)
   const { error } = await db.from('tenants').delete().eq('id', TEST_TENANT_ID)
   if (error) throw new Error(`removeTestTenant failed: ${error.message}`)
 }
@@ -316,6 +371,8 @@ export async function removeMorningFixtures(): Promise<void> {
   if (projErr) throw new Error(`removeMorningFixtures project failed: ${projErr.message}`)
 
   if (engineerId) {
+    await sweepSharedFixtureReferences('users', engineerId)
+
     const { error: userErr } = await db.from('users').delete().eq('id', engineerId)
     if (userErr) throw new Error(`removeMorningFixtures user failed: ${userErr.message}`)
 
