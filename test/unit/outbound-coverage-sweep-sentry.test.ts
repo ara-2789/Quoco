@@ -21,6 +21,11 @@ function emptyResult(overrides: Partial<CoverageSweepResult> = {}): CoverageSwee
   return {
     checkpoints: [],
     stuckClaims: [],
+    // Defaults to the (now-set) stuckClaims length so a caller overriding
+    // ONLY stuckClaims doesn't have to separately keep this in sync for
+    // every existing test -- see the two call sites below for why this
+    // matters (they set stuckClaims without mentioning this field at all).
+    stuckClaimsTotalMatching: overrides.stuckClaims?.length ?? 0,
     rateLimitedBacklogCount: 0,
     ...overrides,
   }
@@ -130,6 +135,47 @@ describe('reportOutboundCoverageAnomalies', () => {
       }),
     )
     expect(captureMessage).toHaveBeenCalledTimes(2)
+  })
+
+  // 2026-09-04: the scan-truncation alert -- the fix for fetchStuckClaims'
+  // own unbounded/unordered scan silently dropping rows past PostgREST's
+  // 1000-row cap. See coverage-sweep.ts's own STUCK_CLAIM_SCAN_LIMIT and
+  // CoverageSweepResult.stuckClaimsTotalMatching comments for the incident.
+  it('stuckClaimsTotalMatching > stuckClaims.length fires ONE additional, stably-fingerprinted alert for the truncation itself -- not per missing row', () => {
+    reportOutboundCoverageAnomalies(
+      emptyResult({
+        stuckClaims: [{ id: 'row-1', toPhoneNumber: '+919876543210', contentSid: 'HXone', updatedAt: '2026-09-01T10:00:00Z' }],
+        stuckClaimsTotalMatching: 1247,
+      }),
+    )
+    // 1 for the one returned row's own per-row alert, 1 for the truncation condition.
+    expect(captureMessage).toHaveBeenCalledTimes(2)
+    const truncationCall = captureMessage.mock.calls.find(([message]) => message.includes('truncating'))
+    expect(truncationCall).toBeDefined()
+    const [message, options] = truncationCall!
+    expect(message).toContain('truncating')
+    expect(options).toMatchObject({
+      level: 'error',
+      fingerprint: ['outbound-send', 'stuck_claim_scan_truncated'],
+      tags: { feature: 'outbound-send' },
+      extra: { total_matching: 1247, returned: 1 },
+    })
+  })
+
+  it('stuckClaimsTotalMatching === stuckClaims.length (no truncation) never fires the truncation alert', () => {
+    reportOutboundCoverageAnomalies(
+      emptyResult({
+        stuckClaims: [{ id: 'row-1', toPhoneNumber: '+919876543210', contentSid: 'HXone', updatedAt: '2026-09-01T10:00:00Z' }],
+        stuckClaimsTotalMatching: 1,
+      }),
+    )
+    expect(captureMessage.mock.calls.some(([message]) => message.includes('truncating'))).toBe(false)
+  })
+
+  it('the truncation alert is NOT gated by triggerCronLive -- default (false in this test env) still fires it, same treatment as per-row stuck-claim alerts', () => {
+    reportOutboundCoverageAnomalies(emptyResult({ stuckClaims: [], stuckClaimsTotalMatching: 5 }))
+    expect(captureMessage).toHaveBeenCalledTimes(1)
+    expect(captureMessage.mock.calls[0][0]).toContain('truncating')
   })
 })
 

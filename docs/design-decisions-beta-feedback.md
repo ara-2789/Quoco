@@ -499,6 +499,16 @@ test token — see `022_evening_flow_apply_turn.sql`'s header and
 (decided 2026-08-09; opened as an open question 2026-08-08 while scoping
 evening Q4/Q5)
 
+> **SUPERSEDED (2026-09-05 audit, `docs/reviews/design-decisions-audit-
+> batch2-2026-09-05.md`).** This section describes the project-level DPR
+> pipeline (`mergeDprFacts`/`generateDprJudgment`/`renderDpr`), which
+> stopped shipping DPRs on 2026-08-14 when `lib/dpr/dispatch.ts` was
+> rewired to the per-engineer pipeline. That pipeline is still exported
+> and tested but has no live caller. The decision to defer it, and why, is
+> recorded in `docs/dpr-engineer-report-spec.md`'s "Deferred decisions"
+> section — not here. What follows is kept for the record; do not build
+> against it as current behavior.
+
 **DECIDED.** bot-flows.md's DPR GENERATION spec named section 5 "Tomorrow's
 Plan — engineer's stated plan + dependencies." Scoping migration 024 (evening
 Q4 headcount/productivity + Q5 equipment hours) surfaced a prior gap: no
@@ -549,6 +559,13 @@ its own entry, not restated here.
 ## 12. DPR rollup rule — DECIDED: suppress narrowly, not by section
 (decided 2026-08-09; opened as an open question the same day while scoping
 golden case #5)
+
+> **SUPERSEDED (2026-09-05 audit, `docs/reviews/design-decisions-audit-
+> batch2-2026-09-05.md`).** Same disposition as §11 above: this describes
+> the project-level pipeline's `SuppressionNote`/`ManpowerFacts` rollup
+> rule, dead since the 2026-08-14 per-engineer rewire
+> (`lib/dpr/dispatch.ts`). Deferral recorded in `docs/dpr-engineer-report-
+> spec.md`'s "Deferred decisions" section, not here. Kept for the record.
 
 **DECISION: safe default now, revisit with real data.** `daily_logs` is
 `UNIQUE(project_id, engineer_id, log_date)` — one row per engineer, per day.
@@ -722,6 +739,15 @@ problem for the no-collision case only, and does not answer it.
 ## 13. Accountability (§6) — ship per-day status, suppress the 7-day pattern
 (decided 2026-08-10)
 
+> **SUPERSEDED (2026-09-05 audit, `docs/reviews/design-decisions-audit-
+> batch2-2026-09-05.md`).** Same disposition as §11/§12: `assembleAccountability`
+> is one of the four functions `lib/dpr/dispatch.ts`'s own header names as
+> deliberately left unwired since the 2026-08-14 per-engineer rewire.
+> Deferral recorded in `docs/dpr-engineer-report-spec.md`'s "Deferred
+> decisions" section, not here. The two prerequisites named below (delivery-
+> status observability, block history) remain real, independent gaps
+> regardless of which pipeline ships — only the §6 mechanism itself is dead.
+
 **THE FACT THAT DECIDED THIS.** Before picking how to handle the pattern's
 `messaging_blocked` exclusion, we established what actually sets that flag.
 Grepped every write path in `app/`, `lib/`, `supabase/migrations/`: **nothing
@@ -873,6 +899,14 @@ being folded into a bug-fix migration.
 boundary violation waiting to happen, not built yet (2026-08-11, surfaced
 during PR #45's equipment-label humanize fix)
 
+> **RESOLVED, DIFFERENT PIPELINE (2026-09-05 audit, `docs/reviews/design-
+> decisions-audit-batch2-2026-09-05.md`).** The finding below was filed
+> against the project-level `assemble.ts` function, dead since the
+> 2026-08-14 per-engineer rewire (see §11's note above). Good news, not a
+> gap: the live per-engineer path already does this correctly —
+> `assembleEngineerDprFacts` calls `equipmentLabel()` directly when building
+> each equipment item. Kept for the record; nothing to fix here today.
+
 **The finding.** PR #45 fixed `buildEquipmentHoursPrompt` (the WhatsApp Q5
 prompt) so a site engineer reads "1) JCB" instead of "1) jcb". While
 confirming no other render path had the same raw-string problem, a second
@@ -914,6 +948,14 @@ optional polish.
 ## 17. `numbers_discarded` isn't persisted — a low confidence can't be
 explained after the fact (2026-08-11, surfaced running the evening-flow
 scenario 2/3 smoke test against prod)
+
+> **MOOT (2026-09-05 audit, `docs/reviews/design-decisions-audit-batch2-
+> 2026-09-05.md`).** `evening_productive_manpower` — the column this
+> section's `confidence` field lives on — no longer exists. Migration 035
+> (2026-08-31) replaced it with `evening_manpower`/`evening_idle_hours`,
+> which do not carry an equivalent single confidence field at all. Nothing
+> to fix; the question this section raises doesn't apply to the current
+> schema. Kept for the record.
 
 **The gap.** `numbers_discarded` (`productivity.ts`, added alongside the
 2026-08-10 inversion fix) is THE GENERAL GUARD — any numeric token the
@@ -1034,6 +1076,15 @@ against a failure mode not yet observed in real output.
 ## 20. First real generator run: decision (c) cost nothing measurable, and a
 real cost-per-DPR figure (2026-08-11, PR #50 follow-up — first live calls
 against Claude, not a fixture or a dry run)
+
+> **SUPERSEDED (2026-09-05 audit, `docs/reviews/design-decisions-audit-
+> batch2-2026-09-05.md`).** Both golden cases measured below
+> (`case-complete-two-engineer-day`, `case-manpower-equipment-not-captured`)
+> exercise the project-level pipeline, dead since the 2026-08-14
+> per-engineer rewire (see §11's note above). No equivalent cost figure for
+> the live per-engineer generator exists anywhere in this document — that
+> is a real, open gap, not answered by the numbers below. Kept for the
+> record; do not cite these figures as current DPR generation cost.
 
 **Decision (c)'s empirical answer.** §18 accepted a real tradeoff blind —
 moving `schedule_miss_reason_note` and `tomorrows_plan_carry_forward_note`
