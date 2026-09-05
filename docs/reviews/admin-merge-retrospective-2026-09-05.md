@@ -5,6 +5,11 @@ tonight, four merges went through with `--admin`, each individually
 diff-checked but never proven by mechanism. This package answers his four
 numbered questions. C3 (PR #195) stays parked until this is read.
 
+**Status**: Fix 1 (Cause B, the FK cascade) is built and open as PR #197.
+Fix 2 (`outbound_sends` accretion) and the scoping-only pass on `users`/
+`whatsapp_sessions`/`jobs` (Fix 3) are next, in that order, per Aravind's
+sequencing.
+
 ## THE FINDING — not a footnote
 
 **PR #194 was merged with `--admin` over a genuine, undiagnosed failure.**
@@ -27,6 +32,22 @@ whatever was actually broken, would have shipped it anyway looking exactly
 as confident as this one did. That is the failure mode Aravind flagged
 before this retrospective existed, and this section exists so it reads as
 the finding it is, not as a detail inside Q2's answer.
+
+**A second, wider pattern, same night**: this is now the THIRD recorded-
+but-unbuilt item to surface as a live failure, not the first.
+`cleanupTestDailyLogs()`'s narrow `project_id`-only scope was flagged as
+"TEST-DB HYGIENE DEBT... not urgent" on 2026-07-25 and sat six weeks before
+causing the 16-file cascade above. Migration §33 (the escalation sweep)
+sat nine days between being recorded and needing revisiting. And the
+`jobs` table's own unbounded growth (Q4 below — 27 rows, no cleanup path
+found) was already named explicitly in the 2026-07-27 retention posture
+audit (`docs/build-status.md`) and never resolved — it just hasn't caused
+a visible failure *yet*, the same state §33 and the daily_logs debt were
+in right before they did. Three instances of "recorded, judged non-urgent,
+no owner, no trigger to revisit, eventually surfaces live" is a pattern,
+not three coincidences — this is the argument for moving the §-by-§ audit
+of `design-decisions-beta-feedback.md` up to right after Fix 1, before PR
+C3 resumes.
 
 **Correction up front, before the four answers**: the prior status update
 this session said "four admin merges" and attributed all of them to "the
