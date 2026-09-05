@@ -469,7 +469,12 @@ export interface CorrectedEngineerLogRow {
   morning_equipment: { items: Array<{ type: string; daily_hire_cost: number | null }>; none: boolean } | null
   evening_output: string | null // correctable (scalar)
   evening_output_quantities: { items: Array<{ activity: string; quantity: number | null; unit: string }> } | null
-  evening_schedule_met: boolean | null // correctable (scalar)
+  // Q5 hindrance answer, per §2's own comment above (mergeEngineerDprFacts) —
+  // correctable (scalar), migration 019's original whitelist entry, kept
+  // live and correct by 035's reuse rather than a rename (that migration's
+  // own reasoning).
+  evening_schedule_miss_reason: string | null
+  evening_schedule_met: boolean | null // correctable (scalar) — dead since 035, kept only for deriveHalfCompleteness, never fed to Facts
   evening_workers_on_site: number | null // correctable (scalar)
   evening_productive_manpower: { productive_count: number | null; idle_count: number | null; confidence: 'high' | 'low' } | null
   evening_equipment_utilisation: {
@@ -514,7 +519,7 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
       morning_status: checkInStatus.morning,
       evening_status: checkInStatus.evening,
       work: { planned: notCapturedText, done_text: notCapturedText, done_quantity: notCapturedNumber, unit: '' },
-      schedule: { met: null },
+      hindrance: { note: notCapturedText },
       manpower: { planned: notCapturedCount, on_site: notCapturedCount, working: notCapturedCount },
       equipment: { items: [] },
     }
@@ -538,8 +543,14 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
     unit: firstQuantity?.unit ?? '',
   }
 
-  // §2 Schedule — no planned side (spec binding table).
-  const schedule: EngineerDprFacts['schedule'] = { met: row.evening_schedule_met }
+  // §2 Hindrance — REPLACED 2026-09-05 (PR C1). This used to read
+  // row.evening_schedule_met, which has had no write path since migration
+  // 035 (2026-08-31) deleted the question it answered — five days of
+  // permanent null, not a genuine gap. The column that actually holds live
+  // engineer input here is evening_schedule_miss_reason, reused by 035 for
+  // the new unconditional Q5 hindrance question (that migration's own
+  // COMMENT ON COLUMN says so). Read it as what it is.
+  const hindrance: EngineerDprFacts['hindrance'] = { note: wrapText(row.evening_schedule_miss_reason) }
 
   // §3 Manpower — planned = morning_manpower.total (renamed from
   // morning_manpower_planned.planned_total by the morning flow migration,
@@ -598,7 +609,7 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
     morning_status: checkInStatus.morning,
     evening_status: checkInStatus.evening,
     work,
-    schedule,
+    hindrance,
     manpower,
     equipment: { items },
   }
@@ -766,6 +777,11 @@ export async function assembleEngineerDprFacts(
     morning_equipment: logs.morning_equipment as CorrectedEngineerLogRow['morning_equipment'],
     evening_output: parseCorrectedText('evening_output', logs.evening_output as string | null, latestEditByColumn.get('evening_output')),
     evening_output_quantities: logs.evening_output_quantities as CorrectedEngineerLogRow['evening_output_quantities'],
+    evening_schedule_miss_reason: parseCorrectedText(
+      'evening_schedule_miss_reason',
+      logs.evening_schedule_miss_reason as string | null,
+      latestEditByColumn.get('evening_schedule_miss_reason'),
+    ),
     evening_schedule_met: parseCorrectedBoolean('evening_schedule_met', logs.evening_schedule_met as boolean | null, latestEditByColumn.get('evening_schedule_met')),
     evening_workers_on_site: parseCorrectedInteger('evening_workers_on_site', logs.evening_workers_on_site as number | null, latestEditByColumn.get('evening_workers_on_site')),
     evening_productive_manpower: logs.evening_productive_manpower as CorrectedEngineerLogRow['evening_productive_manpower'],
