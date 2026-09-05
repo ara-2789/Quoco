@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { testClient } from './helpers/db'
 import {
   OUTBOUND_TEST_TENANT_ID,
   OUTBOUND_TEST_PROJECT_ID,
   ensureOutboundParentFixtures,
   mintOutboundEngineer,
+  cleanupOutboundSends,
   type MintedEngineer,
 } from './helpers/outbound-fixtures'
 import { runOutboundCoverageSweep } from '@/lib/whatsapp/outbound/coverage-sweep'
@@ -99,6 +100,8 @@ describe('runOutboundCoverageSweep', () => {
     engineerA = await mintOutboundEngineer()
     engineerB = await mintOutboundEngineer()
   })
+
+  afterAll(cleanupOutboundSends)
 
   it('F2: sentCount counts only status=\'sent\' rows for the exact event_key, never a bare row count', async () => {
     const eventKey = `morning_send:${LOG_DATE_COVERAGE}`

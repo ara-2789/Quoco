@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest'
 import { testClient, readSession } from './helpers/db'
 import {
   OUTBOUND_TEST_TENANT_ID,
   OUTBOUND_TEST_PROJECT_ID,
   ensureOutboundParentFixtures,
   mintOutboundEngineer,
+  cleanupOutboundSends,
   type MintedEngineer,
 } from './helpers/outbound-fixtures'
 import { triggerCheckIn } from '@/lib/whatsapp/outbound/trigger'
@@ -189,14 +190,19 @@ describe('triggerCheckIn (claim -> send -> activate)', () => {
     if (error) throw new Error(`session reset failed: ${error.message}`)
   })
 
-  // No outbound_sends/users/daily_logs cleanup and no afterAll teardown --
-  // see the file header's ACCRETION section. The shared engineer's
-  // whatsapp_sessions row IS reset every test (above); outbound_sends
-  // rows are not and never will be (no DELETE grant, RESTRICT FKs) -- each
-  // test's own reserved LOG_DATE_* constant keeps its event_key disjoint
-  // from every other test's, so cross-test state bleed on outbound_sends
-  // (the actual bug in this file's first two drafts) stays structurally
-  // impossible even with one shared recipient_user_id.
+  // UPDATED 2026-09-05 (Fix 2, admin-merge retrospective): outbound_sends IS
+  // now cleaned, in afterAll below, via a test-db-only DELETE grant (see
+  // scripts/test-db-only-grants.sql) -- the "no DELETE grant" reasoning this
+  // comment used to give is no longer true for THIS table. users/daily_logs
+  // cleanup remains out of scope here (see the retrospective's Fix 3 --
+  // users rides on Fix 1's own plumbing, a separate PR). Each test's own
+  // reserved LOG_DATE_* constant still keeps its event_key disjoint from
+  // every other test's regardless, so cross-test state bleed on
+  // outbound_sends (the actual bug in this file's first two drafts) stays
+  // structurally impossible either way -- this afterAll is about not
+  // accumulating rows forever, not about test isolation.
+  afterAll(cleanupOutboundSends)
+
   it('claims, sends, and activates the session on a fresh morning checkpoint; a second call for the same day is a silent no-op', async () => {
     fetchMock.mockReset()
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { sid: 'SMfirst001' }))

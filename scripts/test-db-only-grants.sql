@@ -1,0 +1,34 @@
+-- TEST-DB-ONLY. NEVER APPLY THIS TO PRODUCTION. NEVER MOVE THIS FILE INTO
+-- supabase/migrations/.
+--
+-- Target: test-db ONLY (project ref exfccwlrhoutkgrlikod). NOT prod
+-- (jvxwqignooseazzmwhvl). Run it with an EXPLICIT --db-url or an explicit
+-- test-db project selection -- never `supabase db query --linked`, since
+-- `--linked` in this worktree currently resolves to PROD (confirmed via
+-- `cat supabase/.temp/project-ref` -> jvxwqignooseazzmwhvl).
+--
+-- WHY THIS FILE, NOT A MIGRATION (the actual mechanism that stops this
+-- reaching prod, not a comment asserting it): every apply/rehearsal/lint
+-- tool this project uses -- `supabase db push`, `supabase db query --linked
+-- -f`, scripts/lint-migrations.mjs, the CI "Migration Lint" job -- scans
+-- ONLY supabase/migrations/*.sql (files matching `^\d+_.*\.sql$` in that
+-- one directory; see CLAUDE.md's "A MIGRATION FILE ENTERS
+-- supabase/migrations/ WHEN IT IS BEING APPLIED" rule). This file lives in
+-- scripts/, has no numeric prefix, and will never be picked up by any of
+-- them -- it is not a migration that could accidentally get promoted or
+-- replayed against prod, it is inert data as far as every apply path is
+-- concerned. The only way this SQL reaches a database is a human pasting
+-- it into an explicitly-targeted psql/`supabase db query --db-url` session.
+--
+-- WHAT THIS DOES: gives service_role DELETE on outbound_sends, test-db
+-- ONLY. Prod's migration (031_outbound_send_ledger.sql) deliberately grants
+-- service_role no DELETE on this table -- it is a durable, append-only send
+-- ledger there, and MUST STAY THAT WAY. Test-db needs the opposite property
+-- (a way for its own test suite to clean up after itself) -- see
+-- docs/reviews/admin-merge-retrospective-2026-09-05.md (Fix 2) and CLAUDE.md
+-- ("outbound_sends' schema now differs between test-db and prod") for why
+-- this divergence is deliberate and documented, not an inconsistency.
+--
+-- Run once. Idempotent (GRANT is a no-op if already held).
+
+GRANT DELETE ON public.outbound_sends TO service_role;
