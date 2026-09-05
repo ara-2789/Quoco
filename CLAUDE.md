@@ -1120,6 +1120,68 @@ Database
 - Every table: id UUID PK DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ DEFAULT now().
 - Full schema + migration order: docs/schema.md.
+- A MIGRATION'S FILENAME NAMES ITS HEADLINE CHANGE, NOT EVERYTHING IT
+  TOUCHES — grep the file's own `CREATE OR REPLACE FUNCTION`/`ALTER TABLE`
+  statements before assuming what it does or doesn't redefine (standing
+  rule since 2026-09-05, the DPR column audit, docs/reviews/dpr-column-
+  audit-2026-09-05.md). `035_evening_flow_restructuring.sql` redefines
+  `apply_morning_flow_turn` as well as `apply_evening_flow_turn` — one
+  changed branch (the manpower `by_trade` reshape, §42) needed alongside
+  the evening rewrite, folded into the same file rather than a second
+  migration. Nobody looking for "the current morning flow logic" would
+  think to check a file named for evening restructuring; this audit only
+  found it by reading 035's full body line by line, not from its name or
+  header summary. Anyone tracing "what does the live version of function X
+  do" must grep every migration for a `CREATE OR REPLACE` of that function
+  name and take the LAST one chronologically — never assume the
+  most-recently-named migration for a flow is that flow's most recent
+  writer.
+- A MIGRATION THAT ADDS, REMOVES, RENAMES, REPURPOSES, OR RESHAPES A COLUMN
+  ENUMERATES EVERY READER AND WRITER OF THAT COLUMN, BEFORE APPLY — standing
+  rule since 2026-09-05, the DPR column audit (docs/reviews/dpr-column-
+  audit-2026-09-05.md). 035 (2026-08-31) changed five column shapes/names
+  on daily_logs in one migration; six of eight real defects this project's
+  own DPR generation carried for the next five days trace to that one
+  file, and every one of them went through review, dry-run, rollback prep,
+  and rehearsal — every gate this project already has verified the
+  migration in isolation, correctly. Nothing asked what reads OR writes
+  these columns.
+  READERS AND WRITERS BOTH — not readers alone. A column with no reader
+  left renders a real answer invisible; a column with no writer left
+  renders "not reported" forever with nothing distinguishing it from a
+  genuine gap (evening_schedule_met, trigger (b) below, is exactly this:
+  the write path was removed, and nothing forced anyone to ask "does
+  anything still expect this to be written?").
+  THE TRIGGER: a migration that does any of the following to an existing
+  column —
+    a. adds a new column that duplicates or supersedes what an existing
+       column meant (evening_manpower alongside the now-dead evening_
+       workers_on_site),
+    b. removes the question/write-path a column depended on, without
+       dropping the column itself (evening_schedule_met),
+    c. reshapes a JSONB column's internal keys,
+    d. renames a column,
+    e. repurposes a column — same name, same type, different meaning
+       (evening_schedule_miss_reason, called out explicitly: a name-based
+       or type-based check would have missed this one entirely, since
+       neither changed)
+  — must, BEFORE APPLY (not before merge — a migration can merge clean and
+  sit unapplied for a stretch, per this file's own "a migration is not
+  done when applied and ledgered, it's done when the file is on main"
+  entry working in the other direction: a MERGED migration that has not
+  yet been APPLIED still owes this check before that apply happens, not
+  at merge time), grep the whole repo for every READER and every WRITER of
+  that column (grep -rn '<column_name>' across lib/, app/, test/, same
+  discipline this audit itself used) and list, per consumer file, one of:
+  CHANGES IN THIS PR (and where), or DOES NOT CHANGE, BECAUSE (a one-line
+  reason — "this reader is for a different column with the same prefix,"
+  "this writer already stopped being called," etc.). A consumer list with
+  no entries is not evidence nothing reads or writes the column — it's
+  evidence the grep wasn't run.
+  RETROACTIVE: any migration already merged but not yet applied to prod
+  owes this check before that apply, same as a new one — see 036/037's own
+  entry (docs/reviews/036-037-consumer-check-2026-09-05.md) for the first
+  run of it.
 - A ONE-TIME MIGRATION STATEMENT TARGETING SPECIFIC EXISTING ROWS IS PINNED
   OR GENERAL BASED ON WHETHER IT'S DESTRUCTIVE — ONE RULE, TWO CASES
   (standing rule since 2026-08-20, migration 029's external review, P3;
