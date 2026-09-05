@@ -321,3 +321,33 @@ assuming it does because something nearby does." Worth a standing check
 the next time a safeguard is assumed present: confirm it lives in the
 code with the live call site, not in a sibling, a comment, or a deferred
 implementation that reads like it should.
+
+## Q7 — a related but distinct pattern: two artifacts disagree about the same fact, and nothing forces a check
+
+Adjacent to Q6, not a restatement of it — Q6 is "the safeguard lives in a
+path that doesn't run"; this is "two written claims about the same state
+disagree, and nothing catches it until someone reads both." Surfaced
+during migration 037's reviewer round (2026-09-05): the file's own header
+read *"WRITTEN, NOT YET REHEARSED, NOT YET APPLIED, per explicit
+instruction -- diff first"*, while PR #182's own body separately
+described a completed, clean, two-step rehearsal (disposable dry-run +
+test-db apply/verify/teardown) as already done. Both artifacts describe
+the SAME migration file's SAME fact (has it been rehearsed) and disagree
+outright -- neither is a paraphrase of the other going stale gradually,
+they contradict directly. Whichever was accurate when written, nothing
+in this project's process re-checked the file's own header against its
+PR body before either was read as current, and the discrepancy sat
+undetected until this round's own amendment forced a fresh look at both.
+
+Same family as Q6's own buildBodyCorpus instance (a citation asserting
+something that turned out not to match reality, caught only by someone
+checking rather than trusting the written claim) -- the shared root
+cause across both Q6 and this entry: a written claim about state is a
+snapshot from whenever it was written, and this project's process has no
+standing step that re-checks a claim against its own sibling artifacts
+(a file's header against its PR body, a comment against the schema it
+describes, a migration's own REHEARSED line against what actually ran)
+before the claim is acted on. **RECORDED, NOT YET A STANDING CHECK**: no
+general mechanism proposed here to catch this class before the fact --
+naming the second instance is the contribution; closing it, if it
+recurs a third time, is a separate piece of work.
