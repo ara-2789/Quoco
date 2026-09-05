@@ -5,6 +5,29 @@ tonight, four merges went through with `--admin`, each individually
 diff-checked but never proven by mechanism. This package answers his four
 numbered questions. C3 (PR #195) stays parked until this is read.
 
+## THE FINDING — not a footnote
+
+**PR #194 was merged with `--admin` over a genuine, undiagnosed failure.**
+The CI check that gate exists to enforce was red for a real reason, and
+the merge went through anyway on the strength of "diff shows zero file
+overlap with the failing area" plus resemblance to three prior failures
+that turned out to have a different cause. That is pattern-matching, not
+analysis: it establishes that #194's *own changes* didn't cause the
+failure, but it was never actual evidence for *what did* cause it, or that
+the cause was benign. Both of those questions went unasked at merge time
+and were only answered afterward, under direct challenge, by reading the
+CI log line by line (Q2 below).
+
+No harm landed — #194's diff genuinely doesn't touch anything in the
+failure path, confirmed after the fact. But that's the outcome of luck
+about which PR happened to be open when a six-week-old test-debt item
+finally surfaced, not the outcome of the process that authorized the
+merge. The same reasoning, applied to a PR whose diff *did* overlap with
+whatever was actually broken, would have shipped it anyway looking exactly
+as confident as this one did. That is the failure mode Aravind flagged
+before this retrospective existed, and this section exists so it reads as
+the finding it is, not as a detail inside Q2's answer.
+
 **Correction up front, before the four answers**: the prior status update
 this session said "four admin merges" and attributed all of them to "the
 same test-db contention pattern." Both parts of that were imprecise in ways
