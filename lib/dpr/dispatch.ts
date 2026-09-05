@@ -6,7 +6,7 @@ import type { Json } from '@/types/database'
 import { assembleEngineerDprFacts } from './assemble'
 import { fetchEngineerNarrativeContext } from './narrative-context'
 import { generateEngineerVerdict } from './generate'
-import { renderEngineerBody, renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from './render'
+import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from './render'
 import type { CheckInStatus } from './schema'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
@@ -143,8 +143,6 @@ export async function handleDprGenerateJob(
     // exact morning-only shape to the model.
     const eveningNeedsModel = evening.status === 'complete' || evening.status === 'partial'
 
-    const body = renderEngineerBody(facts)
-
     let verdict: string
     let verdictStatus: 'model' | 'placeholder' | 'code_templated'
     if (!eveningNeedsModel) {
@@ -152,7 +150,7 @@ export async function handleDprGenerateJob(
       verdictStatus = 'code_templated'
     } else {
       const result = await timed('generateEngineerVerdict', () =>
-        generateEngineerVerdict(anthropic, facts, narrative, body, { project_name: project.name, log_date: payload.log_date }),
+        generateEngineerVerdict(anthropic, facts, narrative, { project_name: project.name, log_date: payload.log_date }),
       )
       if (result.verdict_status === 'placeholder') {
         Sentry.captureException(new Error('DPR verdict containment failed twice, falling back to placeholder'), {

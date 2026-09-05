@@ -4,7 +4,7 @@ import type { DprFacts, DprJudgment, EngineerDprFacts } from './schema'
 import type { NarrativeContext } from './narrative-context'
 import { validateJudgment, type ValidationViolation } from './validate'
 import { isManpowerNoteDiscarded, isScheduleNoteDiscarded, isEquipmentItemNoteDiscarded } from './discarded-fields'
-import { extractDigitTokens, checkContainment } from './containment'
+import { buildEngineerFactsCorpus, checkContainment } from './containment'
 import type { NarrativeContext as EngineerNarrativeContext } from './narrative-context'
 
 // The Anthropic client wrapper — the primary deliverable of this slice
@@ -445,17 +445,28 @@ export interface EngineerVerdictResult {
 
 // S10: at most ONE immediate in-process retry on containment failure, then
 // the placeholder — never throws, never involves markDprGenerationFailed,
-// never touches the external job-retry path at all. renderedBody is the
-// ALREADY-RENDERED report body (renderEngineerBody, render.ts) — the
-// containment corpus is built from it directly (S1/S9), not from Facts.
+// never touches the external job-retry path at all.
+//
+// CORPUS SOURCE CHANGED 2026-09-05 (the "113 fabrication" incident,
+// second half): this used to build its corpus from
+// extractDigitTokens(renderedBody) — the ALREADY-RENDERED report body
+// (renderEngineerBody, render.ts) — S1/S9's original design, "not from
+// Facts." That was provenance-blind: once raw context text (manpower,
+// hindrance) is quoted verbatim in the rendered body, its digits are
+// indistinguishable, by string inspection alone, from a genuinely citable
+// Fact's digits — see containment.ts's own record of this. Now built via
+// buildEngineerFactsCorpus(facts, meta) — an explicit field allowlist,
+// same shape as buildExecutionCorpus on the aggregate path — so a digit's
+// source is known before it enters the corpus, never inferred from a
+// flattened string. `renderedBody` is no longer a parameter of this
+// function; nothing else here ever used it.
 export async function generateEngineerVerdict(
   client: Anthropic,
   facts: EngineerDprFacts,
   narrative: EngineerNarrativeContext | null,
-  renderedBody: string,
   meta: { project_name: string; log_date: string },
 ): Promise<EngineerVerdictResult> {
-  const corpus = extractDigitTokens(renderedBody)
+  const corpus = buildEngineerFactsCorpus(facts, meta)
   const promptText = formatEngineerFacts(facts, narrative, meta)
 
   let totalInputTokens = 0
