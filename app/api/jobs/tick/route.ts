@@ -16,6 +16,12 @@ import {
   reportOutboundCoverageSweepError,
   type CoverageSweepResult,
 } from '@/lib/whatsapp/outbound/coverage-sweep'
+import {
+  runCheckinEscalationTickSweep,
+  reportCheckinEscalationSweepAnomalies,
+  reportCheckinEscalationSweepError,
+  type CheckinEscalationSweepResult,
+} from '@/lib/checkin-escalations/sweep'
 import { createServiceClient } from '@/lib/supabase/service'
 
 // This endpoint is polled by Vercel Cron every 60 seconds (NFR-16).
@@ -89,6 +95,30 @@ export async function runJobsTick(client: SupabaseClient) {
     outboundCoverage = reportOutboundCoverageSweepError(err)
   }
 
+  // Check-in escalation sweep (lib/checkin-escalations/sweep.ts) — same
+  // placement and isolation discipline as the two sweeps immediately above:
+  // runs every tick, time-triggered rather than queued, isolated in its own
+  // try/catch so a failure here never prevents job claiming/processing from
+  // running this tick, and never silently swallowed either
+  // (reportCheckinEscalationSweepError, same shape as the other two). It
+  // loops active projects x both halves internally and isolates each
+  // (project, half) call on its own — see CheckinEscalationSweepResult's own
+  // doc comment for why a single bad project must not abort the rest.
+  //
+  // Writes escalation STATE ONLY — it sends nothing. Per status.ts's own
+  // CORRECTION 1, determineTargetStatus never produces 'nudged' and this
+  // sweep never sets nudge_sent_at, so a row can legitimately jump
+  // awaited -> escalated with no message ever sent to the engineer. That is
+  // correct and intended (self-repairing once a sender slice exists), not a
+  // bug to work around here.
+  let checkinEscalations: CheckinEscalationSweepResult | { error: string }
+  try {
+    checkinEscalations = await runCheckinEscalationTickSweep(client, new Date())
+    reportCheckinEscalationSweepAnomalies(checkinEscalations, new Date())
+  } catch (err) {
+    checkinEscalations = reportCheckinEscalationSweepError(err)
+  }
+
   const jobs = await claimJobs(3, client)
 
   const results = await Promise.allSettled(
@@ -118,6 +148,7 @@ export async function runJobsTick(client: SupabaseClient) {
     results: results.map((r) => (r.status === 'fulfilled' ? r.value : r.reason)),
     morningSweep,
     outboundCoverage,
+    checkinEscalations,
   }
 }
 
