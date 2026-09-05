@@ -664,6 +664,7 @@ export async function seedDailyLogSubmission(params: {
   logDate: string
   morningSubmittedAt?: string | null
   eveningSubmittedAt?: string | null
+  attendance?: 'present' | 'absent' | 'site_holiday' | null
 }): Promise<void> {
   const db = testClient()
   const { error } = await db.from('daily_logs').upsert(
@@ -674,6 +675,7 @@ export async function seedDailyLogSubmission(params: {
       log_date: params.logDate,
       morning_submitted_at: params.morningSubmittedAt ?? null,
       evening_submitted_at: params.eveningSubmittedAt ?? null,
+      attendance: params.attendance ?? null,
     },
     { onConflict: 'project_id,engineer_id,log_date' },
   )
