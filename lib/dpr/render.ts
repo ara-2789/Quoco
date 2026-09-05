@@ -553,10 +553,6 @@ function fmtText(c: CapturedText): string {
   return c.status === 'reported' && c.value !== null ? `"${c.value}"` : 'not reported'
 }
 
-function fmtCaptured(c: CapturedCount | CapturedNumber): string {
-  return c.status === 'reported' || c.status === 'zero' ? String(c.value) : 'not reported'
-}
-
 // Trade names are stored lowercase, underscore-joined for compounds
 // ("mason", "bar_bender") — same canonical-key convention equipment.ts
 // uses ("concrete_mixer"). FIRST DRAFT of this helper only uppercased the
@@ -616,16 +612,28 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
   const done = facts.work.done_text.status === 'reported' || facts.work.done_quantity.status === 'reported' ? doneParts.join(' — ') : 'not reported'
   lines.push(`Work — planned: ${fmtText(facts.work.planned)} | done: ${done}`)
 
-  // §3 Manpower — REPLACED 2026-09-05 (PR C2, design-decisions-beta-
-  // feedback.md's DPR scope principle: "035 asks for fewer things, so the
-  // DPR reports fewer things"). `working` (a productive-count headcount)
-  // is gone from Facts entirely — evening_manpower gives an actual total
-  // by trade, evening_idle_hours gives idle HOURS by trade, and there is
-  // no way to combine those into a headcount without inventing a number
-  // nobody reported. on_site is the only real figure left; idle time is
-  // reported honestly, in its own place, as hours (see idle_hours_by_trade
-  // below).
-  lines.push(`Manpower — planned: ${fmtCaptured(facts.manpower.planned)} | on site: ${fmtCaptured(facts.manpower.on_site)}`)
+  // §3 Manpower — CHANGED 2026-09-05 (the "113 fabrication" incident,
+  // schema.ts's own EngineerManpowerFacts comment has the full story).
+  // Both fields are CapturedText now, rendered via fmtText (quoted
+  // verbatim, or "not reported") — never a computed number. A prior
+  // version of this line rendered `on_site` as a parser-summed total
+  // (evening_manpower.total) that a real engineer never stated as one
+  // figure; that number reached an owner. `working`/idle-as-headcount
+  // reasoning from the 2026-09-05 PR C2 pass (design-decisions-beta-
+  // feedback.md's "035 asks for fewer things, so the DPR reports fewer
+  // things") still holds unchanged — idle time is reported honestly, in
+  // its own place, as hours (see idle_hours_by_trade below).
+  //
+  // TWO LINES, NOT ONE (Aravind's correction, 2026-09-05, same day as the
+  // fix above): a single "planned: X | reported: Y" line was designed for
+  // two NUMBERS, where side-by-side invites a direct comparison. With both
+  // sides now raw prose, that comparison doesn't hold — an owner reading
+  // two long free-text strings side by side has to parse both and do the
+  // arithmetic the parser itself couldn't safely do. Side by side is worse
+  // than either alone: it implies a comparability the two strings don't
+  // have. Two labeled lines make no such implication.
+  lines.push(`Manpower planned — ${fmtText(facts.manpower.planned)}`)
+  lines.push(`Manpower reported — ${fmtText(facts.manpower.on_site)}`)
 
   // §4 Equipment — one line per item; an empty list still gets one line,
   // rather than a header with nothing under it, to keep the body's fixed

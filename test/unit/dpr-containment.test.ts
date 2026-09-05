@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { extractDigitTokens, buildExecutionCorpus, checkContainment } from '@/lib/dpr/containment'
-import type { ExecutionOutputFacts } from '@/lib/dpr/schema'
+import { extractDigitTokens, buildExecutionCorpus, buildEngineerFactsCorpus, checkContainment } from '@/lib/dpr/containment'
+import type { ExecutionOutputFacts, EngineerDprFacts } from '@/lib/dpr/schema'
 
 describe('extractDigitTokens', () => {
   it('extracts a bare integer', () => {
@@ -192,5 +192,104 @@ describe('buildExecutionCorpus — equipmentLabel() humanization (2026-08-11, PR
     const result = checkContainment('Completed 320 units of shuttering.', corpus)
     expect(result.ok).toBe(false)
     expect(result.violations).toEqual([320])
+  })
+})
+
+// buildEngineerFactsCorpus — added 2026-09-05, the "113 fabrication"
+// incident's second half. Minimal valid EngineerDprFacts, everything
+// not_captured/empty unless a test overrides it — same convention
+// buildExecutionCorpus's own tests use above.
+function baseEngineerFacts(): EngineerDprFacts {
+  return {
+    morning_status: { status: 'complete' },
+    evening_status: { status: 'complete' },
+    work: {
+      planned: { status: 'not_captured', value: null },
+      done_text: { status: 'not_captured', value: null },
+      done_quantity: { status: 'not_captured', value: null },
+      unit: '',
+    },
+    hindrance: { note: { status: 'not_captured', value: null } },
+    manpower: {
+      planned: { status: 'not_captured', value: null },
+      on_site: { status: 'not_captured', value: null },
+    },
+    idle_hours_by_trade: [],
+    equipment: { items: [] },
+  }
+}
+
+describe('buildEngineerFactsCorpus', () => {
+  const meta = { project_name: 'Speed Mechatronics' }
+
+  it('includes digits embedded in verbatim-quoted work text (the 2026-08-14 decision: quoted free text is deliberately citable)', () => {
+    const facts = baseEngineerFacts()
+    facts.work.planned = { status: 'reported', value: 'Continue Tower 2, 3rd floor slab' }
+    facts.work.done_text = { status: 'reported', value: 'Poured M25 concrete' }
+    const corpus = buildEngineerFactsCorpus(facts, meta)
+    expect(corpus.has(2)).toBe(true) // "Tower 2" / "3rd"
+    expect(corpus.has(3)).toBe(true) // "3rd"
+    expect(corpus.has(25)).toBe(true) // "M25"
+  })
+
+  it('includes a reported work.done_quantity value', () => {
+    const facts = baseEngineerFacts()
+    facts.work.done_quantity = { status: 'reported', value: 40 }
+    const corpus = buildEngineerFactsCorpus(facts, meta)
+    expect(corpus.has(40)).toBe(true)
+  })
+
+  it('includes idle_hours_by_trade values', () => {
+    const facts = baseEngineerFacts()
+    facts.idle_hours_by_trade = [{ trade: 'mason', idle_hours: 3 }]
+    const corpus = buildEngineerFactsCorpus(facts, meta)
+    expect(corpus.has(3)).toBe(true)
+  })
+
+  it('includes equipment actual_hours values', () => {
+    const facts = baseEngineerFacts()
+    facts.equipment = {
+      items: [{ type: 'JCB', daily_hire_cost: { status: 'not_captured', value: null }, actual_hours: { status: 'reported', value: 6 }, idle_cost: { status: 'not_captured', value: null }, implausible: null }],
+    }
+    const corpus = buildEngineerFactsCorpus(facts, meta)
+    expect(corpus.has(6)).toBe(true)
+  })
+
+  it('THE CASE THIS FUNCTION EXISTS TO FIX: does NOT include a digit from raw manpower text, even though it is real and would previously have entered the corpus via extractDigitTokens(renderedBody)', () => {
+    const facts = baseEngineerFacts()
+    facts.manpower.planned = { status: 'reported', value: '12 masons / 7 helpers / 8 peb workers' }
+    facts.manpower.on_site = { status: 'reported', value: 'TOTAL - 37Nos , CIVIL Team 25 nos, mASON - 7' }
+    const corpus = buildEngineerFactsCorpus(facts, meta)
+    expect(corpus.has(12)).toBe(false)
+    expect(corpus.has(37)).toBe(false)
+    expect(corpus.has(25)).toBe(false)
+    // The real end-to-end check: a verdict citing a real substring digit
+    // from raw manpower text as though it were a confirmed fact must FAIL
+    // containment, not pass because the digit happens to be real elsewhere.
+    const result = checkContainment('The site had a full civil team of 25 workers today.', corpus)
+    expect(result.ok).toBe(false)
+    expect(result.violations).toEqual([25])
+  })
+
+  it('does NOT include a digit from hindrance.note, even though generate.ts still shows it to the model as a Fact line (the resolved hindrance_note/narrative.hindrance_note contradiction)', () => {
+    const facts = baseEngineerFacts()
+    facts.hindrance = { note: { status: 'reported', value: 'Rain for 3 hours delayed the pour' } }
+    const corpus = buildEngineerFactsCorpus(facts, meta)
+    expect(corpus.has(3)).toBe(false)
+    const result = checkContainment('Rain delayed work for 3 hours.', corpus)
+    expect(result.ok).toBe(false)
+    expect(result.violations).toEqual([3])
+  })
+
+  it('includes project_name digits, matching buildExecutionCorpus\'s own convention', () => {
+    const facts = baseEngineerFacts()
+    const corpus = buildEngineerFactsCorpus(facts, { project_name: 'Phase 2 Site' })
+    expect(corpus.has(2)).toBe(true)
+  })
+
+  it('an entirely empty Facts object still yields a valid (possibly empty-of-digits) corpus, no throw', () => {
+    const facts = baseEngineerFacts()
+    const corpus = buildEngineerFactsCorpus(facts, { project_name: 'Site A' })
+    expect(corpus).toBeInstanceOf(Set)
   })
 })

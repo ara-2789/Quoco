@@ -1,4 +1,4 @@
-import type { ExecutionOutputFacts } from './schema'
+import type { ExecutionOutputFacts, EngineerDprFacts } from './schema'
 
 // THE CONTAINMENT CHECK — the one piece of code that actually enforces the
 // Facts/Judgment boundary schema.ts declares. Pure, no IO, no API call.
@@ -35,6 +35,58 @@ import type { ExecutionOutputFacts } from './schema'
 // (ii) is retired for this corpus specifically, not for
 // buildExecutionCorpus below, which is unchanged and still excludes raw
 // free text per the original decision.
+
+// THE CONTAINMENT LIMIT — named 2026-09-05, the "113 fabrication" incident
+// (schema.ts's EngineerManpowerFacts comment has the full story). This
+// function's corpus is built from `renderedBody` — whatever is ALREADY in
+// the rendered output by the time the model sees it. That means containment
+// catches an INVENTED digit (one the model made up, present in neither Facts
+// nor the rendered body) but CANNOT catch a FABRICATED one (a wrong number
+// that CODE itself put into the rendered body before the model ever ran) —
+// the model citing it is, by this check's own definition, doing exactly what
+// it's supposed to do. evening_manpower.total (a parser-summed number, not
+// an engineer-stated one — see parseLabourCount, lib/whatsapp/flows/parsers/
+// labour.ts) was one such fabricated number: wrong, but already in the body,
+// so a model citing it as "113 workers on site" passed this check cleanly.
+// This is not a defect in this function — extractDigitTokens is doing
+// exactly what it was built to do (READING A, this file's own header:
+// containment against code-owned Fact/body values, checking the MODEL, not
+// the code that assembled those values). The fix for a fabricated-at-the-
+// source number belongs upstream, at the point the value is assembled
+// (assemble.ts) and rendered (render.ts/generate.ts) — not here. Recorded
+// so the next false-confidence read of "containment passed" on a manpower-
+// or count-shaped field checks the SOURCE of the number, not just whether a
+// safety net exists.
+//
+// THE SAME INCIDENT'S SECOND HALF, RECORDED SEPARATELY BECAUSE IT'S A
+// DIFFERENT MECHANISM, NOT A RESTATEMENT — the fix for the fabricated
+// total (quoting the engineer's raw manpower text instead) made this
+// check WEAKER, not stronger, for a few hours the same day. Before that
+// fix, a real number like "25" buried in "CIVIL Team 25 nos" was NOT in
+// renderedBody at all — a model citing "25 workers on the civil team" as
+// a fact would have been an INVENTED digit, caught cleanly by
+// extractDigitTokens(renderedBody). After the fix, that same raw text is
+// quoted verbatim in renderedBody (Rule 2b: raw text renders exactly as
+// stored) — so "25" became genuinely present in that corpus, and the
+// identical sentence would have passed cleanly. Restating a real
+// substring of raw context as though it were a confirmed fact is the
+// SAME fabrication, in prose instead of a computed total — and a
+// whole-body digit scan cannot tell the difference, by design: it
+// validates that a digit appears SOMEWHERE in the report, never that the
+// sentence citing it means what the sentence claims.
+//
+// RESOLVED, same day: `extractDigitTokens(renderedBody)` is no longer
+// what the per-engineer path uses. `buildEngineerFactsCorpus` below
+// builds the corpus from the STRUCTURED Facts object instead — an
+// explicit allowlist of fields, the same shape buildExecutionCorpus
+// already used — so a digit's provenance is known before it ever enters
+// the corpus, not inferred after the fact from a flattened string (the
+// inference `extractDigitTokens(renderedBody)` was making, and the exact
+// thing that let this gap open). ENGINEER_SYSTEM_PROMPT's own exclusion
+// sentence is the request; this function is the mechanism the model
+// cannot talk its way around. Named as its own pattern in the admin-merge
+// retrospective (isHireRateTrusted, buildBodyCorpus, this) — recorded
+// there, not repeated here.
 
 // Every digit-bearing token in a string, normalized to a comparable number so
 // "4,730" (thousands separator) and "4730", or "37.50" and "37.5", compare
@@ -134,6 +186,75 @@ export function buildExecutionCorpus(execution: ExecutionOutputFacts, meta: Cont
     for (const token of extractDigitTokens(item.activity)) corpus.add(token)
     if (item.quantity.status === 'reported' && item.quantity.value !== null) {
       corpus.add(item.quantity.value)
+    }
+  }
+
+  return corpus
+}
+
+// PER-ENGINEER CORPUS — added 2026-09-05, closing THE CONTAINMENT LIMIT
+// note above for the per-engineer path specifically (generate.ts used to
+// build its corpus from `extractDigitTokens(renderedBody)` -- the whole
+// rendered string, provenance-blind). This function is built the same way
+// buildExecutionCorpus already is: from the STRUCTURED Facts object,
+// field by field, an explicit allowlist -- not from a flattened string,
+// because a flattened string cannot answer "which field did this digit
+// come from," and that question is exactly what distinguishes a citable
+// number from a context-only one here.
+//
+// PROVENANCE, NOT APPEARANCE, IS THE RULE -- confirmed by a real
+// counterexample found while designing this, not assumed: `evening_
+// schedule_miss_reason`'s raw string is fed into the per-engineer prompt
+// TWICE -- once as `facts.hindrance.note` (previously treated as a
+// citable Fact, formatEngineerFacts's own Hindrance line) and once as
+// `narrative.hindrance_note` ("context only, never a source of a new
+// digit", the SAME byte-identical text). Nothing about the VALUE
+// distinguishes these two framings -- only which field of EngineerDprFacts/
+// EngineerNarrativeContext it travels through. This function resolves
+// that contradiction by NOT including hindrance.note here: a hindrance is
+// a reason, not a quantity, and ENGINEER_SYSTEM_PROMPT's own exclusion
+// sentence already lists "hindrance" as a context-only field -- this
+// corpus now matches that, instead of silently permitting the digit
+// anyway via the old whole-body scan.
+//
+// CITABLE, explicitly, and why:
+//   - work.planned / work.done_text (verbatim quoted text) -- DELIBERATE
+//     per containment.ts's own header, the 2026-08-14 decision: quoting
+//     engineer free text verbatim in the rendered body is intended to
+//     make any digit inside it citable, since the source sits directly
+//     adjacent to whatever the verdict might cite. Structurally, this is
+//     the ONE place "which field it came from" says "citable" for a raw
+//     free-text field -- every other raw-text field (hindrance, manpower
+//     planned/reported, manpower idle reason, equipment idle reason) is
+//     the opposite.
+//   - work.done_quantity, idle_hours_by_trade[].idle_hours, equipment
+//     items[].actual_hours -- real, code-computed/reported quantities.
+// NEVER a digit source: hindrance.note, manpower.planned, manpower.on_site
+// -- all three are raw engineer text, all three are also fed to the model
+// as explicit "context only" lines (formatEngineerFacts), and none of the
+// three is a quantity the DPR is meant to state as fact.
+export function buildEngineerFactsCorpus(facts: EngineerDprFacts, meta: { project_name: string }): Set<number> {
+  const corpus = new Set<number>()
+
+  for (const token of extractDigitTokens(meta.project_name)) corpus.add(token)
+
+  if (facts.work.planned.status === 'reported' && facts.work.planned.value !== null) {
+    for (const token of extractDigitTokens(facts.work.planned.value)) corpus.add(token)
+  }
+  if (facts.work.done_text.status === 'reported' && facts.work.done_text.value !== null) {
+    for (const token of extractDigitTokens(facts.work.done_text.value)) corpus.add(token)
+  }
+  if (facts.work.done_quantity.status === 'reported' && facts.work.done_quantity.value !== null) {
+    corpus.add(facts.work.done_quantity.value)
+  }
+
+  for (const trade of facts.idle_hours_by_trade) {
+    corpus.add(trade.idle_hours)
+  }
+
+  for (const item of facts.equipment.items) {
+    if (item.actual_hours.status === 'reported' && item.actual_hours.value !== null) {
+      corpus.add(item.actual_hours.value)
     }
   }
 

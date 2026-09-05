@@ -4,7 +4,7 @@ import type { DprFacts, DprJudgment, EngineerDprFacts } from './schema'
 import type { NarrativeContext } from './narrative-context'
 import { validateJudgment, type ValidationViolation } from './validate'
 import { isManpowerNoteDiscarded, isScheduleNoteDiscarded, isEquipmentItemNoteDiscarded } from './discarded-fields'
-import { extractDigitTokens, checkContainment } from './containment'
+import { buildEngineerFactsCorpus, checkContainment } from './containment'
 import type { NarrativeContext as EngineerNarrativeContext } from './narrative-context'
 
 // The Anthropic client wrapper — the primary deliverable of this slice
@@ -382,7 +382,6 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
   lines.push(`Work — planned: ${fmtFactText(facts.work.planned)}`)
   lines.push(`Work — done: ${fmtFactText(facts.work.done_text)}${facts.work.done_quantity.status === 'reported' ? `, ${facts.work.done_quantity.value} ${facts.work.unit}` : ''}`)
   lines.push(`Hindrance: ${fmtFactText(facts.hindrance.note)}`)
-  lines.push(`Manpower — planned: ${fmtFactNumber(facts.manpower.planned)}, on site: ${fmtFactNumber(facts.manpower.on_site)}`)
   for (const trade of facts.idle_hours_by_trade) {
     lines.push(`Idle hours, ${trade.trade}: ${trade.idle_hours}h`)
   }
@@ -392,6 +391,20 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
     )
   }
   if (narrative?.hindrance_note) lines.push(`\nRaw hindrance note (context only, never a source of a new digit): ${narrative.hindrance_note}`)
+  // Manpower, CHANGED 2026-09-05 (the "113 fabrication" incident,
+  // schema.ts's own EngineerManpowerFacts comment). Both used to be
+  // fmtFactNumber'd into the citable Facts section above -- removed
+  // because the underlying values are parser-summed, not engineer-stated
+  // (parseLabourCount sums every digit found in free text; no concept of
+  // a stated total distinct from a breakdown). Raw text only, context-only,
+  // same treatment as manpower_idle_reason directly below: the model may
+  // read it for color, never cite a number out of it as a new Fact.
+  if (facts.manpower.planned.status === 'reported') {
+    lines.push(`Raw manpower planned, morning (context only, never a source of a new digit): ${facts.manpower.planned.value}`)
+  }
+  if (facts.manpower.on_site.status === 'reported') {
+    lines.push(`Raw manpower reported, evening (context only, never a source of a new digit): ${facts.manpower.on_site.value}`)
+  }
   if (narrative?.manpower_idle_reason) lines.push(`Raw manpower idle reason (context only): ${narrative.manpower_idle_reason}`)
   for (const eq of narrative?.equipment_idle_reasons ?? []) {
     if (eq.idle_reason) lines.push(`Raw equipment idle reason, ${eq.type} (context only): ${eq.idle_reason}`)
@@ -399,9 +412,25 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
   return lines.join('\n')
 }
 
+// THE EXCLUSION SENTENCE BELOW WAS MISSING UNTIL 2026-09-05 (the "113
+// fabrication" incident's second half). The aggregate/deferred path's own
+// SYSTEM_PROMPT (above in this file) already had the equivalent sentence
+// ("never a number from manpower, equipment, or narrative context, even
+// if that number is real elsewhere in this report") -- this prompt, the
+// one that actually ships, did not. Without it, "Every digit you write
+// must be traceable to a number shown in the Facts you were given" does
+// NOT exclude the raw manpower/hindrance/idle-reason context lines below
+// (formatEngineerFacts) -- a number inside them (e.g. "25" in "CIVIL Team
+// 25 nos") genuinely IS "a number shown ... you were given," so the model
+// citing it as a fact ("the site had a full civil team of 25") was never
+// actually forbidden. Named as its own pattern in the admin-merge
+// retrospective: the third time this session a safeguard turned out to
+// live only in code that doesn't run (isHireRateTrusted on the deferred
+// project-level assembler; the buildBodyCorpus comment; now this prompt).
 const ENGINEER_SYSTEM_PROMPT =
   'You write ONE sentence summarising a construction site engineer\'s day, from Facts already computed elsewhere. ' +
   'Every digit you write must be traceable to a number shown in the Facts you were given — never invent, round, or recompute a figure. ' +
+  'You may cite a digit ONLY if it appears in a line stated as a Fact above — never a number from a line marked "context only" (hindrance, manpower planned, manpower reported, manpower idle reason, or equipment idle reason), even if that number is real elsewhere in this report. ' +
   'Never attribute anything to a named person, crew, or contractor — describe only what was done, where, and how much. ' +
   'If the Facts are mostly empty, say so plainly in one short sentence rather than padding.'
 
@@ -416,17 +445,28 @@ export interface EngineerVerdictResult {
 
 // S10: at most ONE immediate in-process retry on containment failure, then
 // the placeholder — never throws, never involves markDprGenerationFailed,
-// never touches the external job-retry path at all. renderedBody is the
-// ALREADY-RENDERED report body (renderEngineerBody, render.ts) — the
-// containment corpus is built from it directly (S1/S9), not from Facts.
+// never touches the external job-retry path at all.
+//
+// CORPUS SOURCE CHANGED 2026-09-05 (the "113 fabrication" incident,
+// second half): this used to build its corpus from
+// extractDigitTokens(renderedBody) — the ALREADY-RENDERED report body
+// (renderEngineerBody, render.ts) — S1/S9's original design, "not from
+// Facts." That was provenance-blind: once raw context text (manpower,
+// hindrance) is quoted verbatim in the rendered body, its digits are
+// indistinguishable, by string inspection alone, from a genuinely citable
+// Fact's digits — see containment.ts's own record of this. Now built via
+// buildEngineerFactsCorpus(facts, meta) — an explicit field allowlist,
+// same shape as buildExecutionCorpus on the aggregate path — so a digit's
+// source is known before it enters the corpus, never inferred from a
+// flattened string. `renderedBody` is no longer a parameter of this
+// function; nothing else here ever used it.
 export async function generateEngineerVerdict(
   client: Anthropic,
   facts: EngineerDprFacts,
   narrative: EngineerNarrativeContext | null,
-  renderedBody: string,
   meta: { project_name: string; log_date: string },
 ): Promise<EngineerVerdictResult> {
-  const corpus = extractDigitTokens(renderedBody)
+  const corpus = buildEngineerFactsCorpus(facts, meta)
   const promptText = formatEngineerFacts(facts, narrative, meta)
 
   let totalInputTokens = 0

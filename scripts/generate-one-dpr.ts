@@ -29,7 +29,7 @@ import { createServiceClient } from '../lib/supabase/service'
 import { assembleEngineerDprFacts } from '../lib/dpr/assemble'
 import { fetchEngineerNarrativeContext } from '../lib/dpr/narrative-context'
 import { generateEngineerVerdict } from '../lib/dpr/generate'
-import { renderEngineerBody, renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from '../lib/dpr/render'
+import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from '../lib/dpr/render'
 
 async function main() {
   const [projectId, engineerId, logDate] = process.argv.slice(2)
@@ -51,10 +51,8 @@ async function main() {
   const { facts, completeness } = await assembleEngineerDprFacts(client, projectId, engineerId, logDate)
   const narrative = await fetchEngineerNarrativeContext(client, projectId, engineerId, logDate)
 
-  const body = renderEngineerBody(facts)
-
   console.log('Calling Claude...')
-  const result = await generateEngineerVerdict(anthropic, facts, narrative, body, { project_name: project.name, log_date: logDate })
+  const result = await generateEngineerVerdict(anthropic, facts, narrative, { project_name: project.name, log_date: logDate })
   const verdict = result.verdict_status === 'placeholder' ? CONTAINMENT_FAILURE_PLACEHOLDER : result.verdict
 
   const rendered = renderEngineerReport(

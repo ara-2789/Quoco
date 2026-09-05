@@ -624,25 +624,32 @@ export interface EngineerHindranceFacts {
   note: CapturedText
 }
 
-// §3 Manpower. planned = morning_manpower.total (CapturedCount — a real,
-// small integer that CAN legitimately be a reported zero, matching
-// CapturedCount's existing zero/not_captured split).
-//
-// `working` REMOVED 2026-09-05 (PR C2, design-decisions-beta-feedback.md's
-// DPR scope principle: "035 asks for fewer things, so the DPR reports
-// fewer things"). It used to read evening_productive_manpower.
-// productive_count — a column with no write path since migration 035
-// (2026-08-31) replaced that question with evening_manpower (actual
-// workers BY TRADE) and evening_idle_hours (idle HOURS by trade,
-// EngineerIdleHoursByTrade below). There is no productive-count concept
-// to reconnect this to: deriving one from total minus idle HOURS would be
-// arithmetic across incompatible units (a headcount against a duration).
-// on_site (now evening_manpower.total) is the only real number left;
-// idle time is reported honestly, as hours, in its own place — see
-// EngineerDprFacts.idle_hours_by_trade.
+// §3 Manpower. Both fields CapturedText (raw engineer text), NOT
+// CapturedCount — CHANGED 2026-09-05 (the "113 fabrication" incident).
+// morning_manpower.total and evening_manpower.total are NOT reported
+// numbers: parseLabourCount (lib/whatsapp/flows/parsers/labour.ts) builds
+// `total` by SUMMING every digit token found in the free-text answer, with
+// no concept of an engineer-stated total distinct from a per-trade
+// breakdown. "12 masons / 7 helpers / 8 peb workers" happens to sum
+// correctly (27); "TOTAL - 37Nos, CIVIL Team 25..." does not — the
+// explicit "37" and the breakdown figures both get summed, inflating the
+// total well past what the engineer actually stated. A real instance of
+// this (113) reached an owner. Containment did not catch it: the digit
+// corpus is built from the rendered body itself (generate.ts's
+// extractDigitTokens), and the fabricated number was already IN the
+// rendered body by the time the model could cite it — containment catches
+// an INVENTED digit (one absent from Facts), not a FABRICATED one (one
+// present in Facts because code put it there). Both `planned` and
+// `on_site` now carry the engineer's own raw_text verbatim instead —
+// render.ts (renderEngineerBody) shows it quoted or "not reported", never
+// a computed number; generate.ts (formatEngineerFacts) treats both as
+// context-only, matching manpower_idle_reason's own "never a source of a
+// new digit" framing, not as citable Facts. This is a fix, not a scope
+// change: EngineerManpowerFacts still means "what the engineer said about
+// manpower," it just no longer pretends a code-computed sum is that.
 export interface EngineerManpowerFacts {
-  planned: CapturedCount
-  on_site: CapturedCount
+  planned: CapturedText
+  on_site: CapturedText
 }
 
 // Evening Q3 (idle hours by trade), migration 035, read for the first
@@ -715,8 +722,17 @@ export interface EngineerDprFacts {
 // (unlike the old DprJudgment's no-digit notes) because this sentence is a
 // whole-day verdict citing real quantities ("850 of 1000 sq m done"), but
 // containment-checked against the rendered BODY's own digits (see
-// containment.ts's buildBodyCorpus, added alongside buildExecutionCorpus —
-// S1/S9), not Facts, and not the old section-scoped execution-only corpus.
+// generate.ts's extractDigitTokens(renderedBody) — CORRECTED 2026-09-05,
+// this comment previously named a containment.ts function,
+// "buildBodyCorpus", that does not exist anywhere in this codebase; grepped,
+// zero hits, the same asserted-but-nonexistent-artifact class this
+// project's own standing rule already tracks), not Facts, and not the old
+// section-scoped execution-only corpus. See containment.ts's own docs for
+// the LIMIT this implies: the corpus is built from whatever is already in
+// the rendered body, so a fabricated (not invented) digit — one code put
+// there itself, not one the model made up — validates cleanly. The "113
+// fabrication" (this file's own EngineerManpowerFacts comment) is exactly
+// that case.
 export interface EngineerDprJudgment {
   verdict: string
 }
