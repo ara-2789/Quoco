@@ -217,3 +217,80 @@ either way — `ensureMorningEngineer()` (`test/helpers/db.ts:216-220`) is
 idempotent on the unique `whatsapp_number`, so a leftover `users` row is
 reused, not collided with. It is the teardown that keeps failing, not the
 setup.
+
+## The suite cannot currently measure a change against this database (2026-09-05)
+
+**Record only — the database is not touched by this entry.** Seven full-suite
+runs against the shared test DB (`exfccwlrhoutkgrlikod`) in one evening
+(2026-09-04/05, the check-in-escalation-sweep-wiring work), in order:
+
+| Start (IST) | Files failed | Tests failed | What was running |
+|---|---|---|---|
+| 22:13 | 8 | 49 | branch, real-DB wrapper tests, one still had its own bug |
+| 22:27 | 9 | 23 | branch, own bug fixed |
+| 23:11 | **2** | 2 | **clean `origin/main`** |
+| 23:24 | 11 | 42 | branch, real-DB wrapper tests |
+| 23:43 | 17 | 40 | branch, production wiring only (wrapper tests reverted) |
+| 00:07 | **15** | 67 | **clean `origin/main`, again** |
+| 00:17 | 2 | 2 | branch, wrapper tests rewritten to stub the DB entirely |
+
+(Seven runs, not six — corrected against the actual job output on disk rather
+than a remembered count, per this project's own house rule about verifying a
+number before writing it down.)
+
+**The load-bearing pair is rows 3 and 6: `origin/main`, unchanged, zero code
+difference between them, 2 failing files at 23:11 and 15 failing files at
+00:07.** The database, not the diff, is what changed between those two
+readings. Every run in between plausibly left teardown damage behind (this
+document's own mechanism above, and the session-filter FK gap recorded
+separately) that the next run inherited — the runs are not independent
+measurements of whatever code happened to be checked out; each one mutates
+the shared resource the next one is measured against.
+
+**Consequence, stated plainly: this suite currently cannot be used to
+measure whether a change caused a regression, and a same-evening
+before/after comparison against this database is invalid by construction.**
+A failing-file count taken in isolation, without also re-running the
+*other* side of the comparison back to back and immediately, proves
+nothing about the code under test — it may only be reporting how dirty the
+database has become since the last clean state. (The final row above still
+demonstrates the intended fix: an unscoped, system-wide production query
+stubbed out of the test path drops failures back to the 2-file baseline
+even directly after row 6's degraded 15 — but that comparison's own
+validity rests on structural argument, not the numbers alone: the wrapper's
+unscoped active-projects query is gone from the test path entirely, the
+remaining real-DB tests are project-scoped like every other test in this
+suite, and no test anywhere in this repository calls `runJobsTick` in the
+first place. The numbers corroborate that; they don't carry it on their
+own — see the commit alongside this entry for the full argument.)
+
+**This is now blocking real work, not merely producing noise.** A
+same-evening before/after test-count comparison was the natural first tool
+reached for to settle whether a change was safe; it produced three
+different, mutually-contradicting-looking readings before the actual
+mechanism (database degradation, not code) was identified. Whoever next
+needs to trust this suite's own count as evidence should expect the same
+thing to happen again until the underlying database reliability problem
+(already tracked: `docs/reviews/test-db-reliability-workstream.md`,
+`docs/reviews/service-role-table-grants-gap.md`'s sibling findings, and this
+document's own earlier sections) is actually addressed. **Not done here —
+the database is not cleaned, reset, or otherwise touched by this entry.**
+
+**Addendum, same evening: a red check on this repo is not evidence of a test
+failure until its duration is checked.** Three separate `ci-test-db-suite`
+concurrency-group preemptions occurred across three different PRs this same
+night (PR #177, PR #183, PR #192's own first `Test (real test-db)` run) —
+each one showed `fail` in GitHub's PR-checks summary view, and each one's
+actual `conclusion`, read via `gh api .../check-runs`, was `cancelled`, with
+the identical annotation: `"Canceling since a higher priority waiting
+request for ci-test-db-suite exists"`. **No test ran in any of the three —
+a cancelled run carries no information about the code under test, positive
+or negative — yet the summary view's own `fail` label is indistinguishable
+at a glance from a genuine assertion failure.** The cheapest tell, observed
+directly rather than inferred: **duration**. This suite takes 11-24 minutes
+end to end (this same evening's own genuine runs: 10m13s, 12m1s, 12m20s);
+every one of the three preemptions completed in well under a minute (48s,
+1m11s, 31s respectively). A real run cannot finish in under ten minutes —
+anyone reading a red check on this repo should check the duration column
+before the conclusion, and treat anything under a few minutes as a
+preemption to re-run, not a failure to diagnose.
