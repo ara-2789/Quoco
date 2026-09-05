@@ -623,7 +623,17 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
   // feedback.md's "035 asks for fewer things, so the DPR reports fewer
   // things") still holds unchanged — idle time is reported honestly, in
   // its own place, as hours (see idle_hours_by_trade below).
-  lines.push(`Manpower — planned: ${fmtText(facts.manpower.planned)} | reported: ${fmtText(facts.manpower.on_site)}`)
+  //
+  // TWO LINES, NOT ONE (Aravind's correction, 2026-09-05, same day as the
+  // fix above): a single "planned: X | reported: Y" line was designed for
+  // two NUMBERS, where side-by-side invites a direct comparison. With both
+  // sides now raw prose, that comparison doesn't hold — an owner reading
+  // two long free-text strings side by side has to parse both and do the
+  // arithmetic the parser itself couldn't safely do. Side by side is worse
+  // than either alone: it implies a comparability the two strings don't
+  // have. Two labeled lines make no such implication.
+  lines.push(`Manpower planned — ${fmtText(facts.manpower.planned)}`)
+  lines.push(`Manpower reported — ${fmtText(facts.manpower.on_site)}`)
 
   // §4 Equipment — one line per item; an empty list still gets one line,
   // rather than a header with nothing under it, to keep the body's fixed

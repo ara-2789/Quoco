@@ -56,7 +56,8 @@ describe('renderEmailReport', () => {
     // fmtText wraps reported text values in double quotes (render.ts's own convention).
     expect(result.text).toContain('Work — planned: "Continue slab work" | done: "Slab concrete poured" — 120 sqm')
     expect(result.text).toContain('Hindrance — Rain for 1 hour')
-    expect(result.text).toContain('Manpower — planned: "20 workers" | reported: "18 workers"')
+    expect(result.text).toContain('Manpower planned — "20 workers"')
+    expect(result.text).toContain('Manpower reported — "18 workers"')
   })
 
   it('html output is a real, escaped HTML document containing the same facts', () => {
