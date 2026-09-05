@@ -63,8 +63,8 @@ export function buildForwardHref(
   quocoNumber: string | null,
 ): string | null {
   if (!engineerWhatsappNumber || !quocoNumber) return null
-  const digits = engineerWhatsappNumber.replace(/\D/g, '')
-  if (!digits) return null
+  const href = waMeHref(engineerWhatsappNumber)
+  if (!href) return null
   const text = encodeURIComponent(buildForwardMessage(engineerName, quocoNumber))
-  return `${waMeHref(engineerWhatsappNumber)}?text=${text}`
+  return `${href}?text=${text}`
 }

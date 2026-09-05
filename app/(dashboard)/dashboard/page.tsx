@@ -190,11 +190,13 @@ export default async function DashboardPage() {
   return (
     <div className="p-4 sm:p-8 max-w-3xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Welcome, {firstName}</h1>
-        <p className="text-gray-500 mt-1 text-sm">
+        <h1 className="text-2xl font-semibold text-gray-900">
           {tiles.length === 0
-            ? 'Nothing needs you right now.'
-            : `${tiles.length} thing${tiles.length === 1 ? '' : 's'} need${tiles.length === 1 ? 's' : ''} your attention.`}
+            ? 'Nothing needs you right now'
+            : `${tiles.length} thing${tiles.length === 1 ? '' : 's'} need${tiles.length === 1 ? 's' : ''} you`}
+        </h1>
+        <p className="text-gray-500 mt-1 text-sm">
+          {firstName}, {now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })} — {formatTime(now.toISOString())}
         </p>
       </div>
 
@@ -262,7 +264,7 @@ function TileCard({ tile }: { tile: Tile }) {
             href={wa}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+            className="inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
           >
             WhatsApp
           </a>

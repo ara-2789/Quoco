@@ -217,3 +217,48 @@ either way — `ensureMorningEngineer()` (`test/helpers/db.ts:216-220`) is
 idempotent on the unique `whatsapp_number`, so a leftover `users` row is
 reused, not collided with. It is the teardown that keeps failing, not the
 setup.
+
+## A pure-function test cannot run at all without test-db credentials (2026-09-05)
+
+**Same family as everything else in this file, but a different shape again —
+not a race, not an incomplete teardown, a global gate that blocks execution
+before any test body runs, regardless of what that test actually touches.**
+Found while verifying a one-line change to `buildForwardHref`
+(`lib/daily-logs/reactivate-copy.ts`) during the DASH-01 build: its own test,
+`test/unit/reactivate-copy.test.ts`, is a pure-function test — no Supabase
+client, no I/O, nothing but string in/string out. Trying to run it in
+isolation (`npx vitest run test/unit/reactivate-copy.test.ts`) still aborts
+before a single test executes:
+
+```
+Error: [guard] ABORT: .env.test is missing SUPABASE_TEST_URL,
+SUPABASE_TEST_SERVICE_ROLE_KEY, SUPABASE_TEST_ANON_KEY, or
+SUPABASE_TEST_PROJECT_REF. Refusing to run.
+  ❯ Object.guard [as setup] test/setup/guard.ts:13:11
+```
+
+`vitest.config.ts`'s global setup (`test/setup/guard.ts`) runs once for the
+whole `vitest` invocation, before any file's tests — including a `--filter`
+run scoped to one file. There is no way, today, to run any single test file
+without first satisfying the test-db credential guard, even a file whose own
+tests never call `createClient()` or touch the network at all.
+
+**Consequence:** the change to `buildForwardHref` this session (substituting
+`waMeHref` for its own inline digit-stripping) could not be verified by
+actually running its test — verification fell back to a manual trace against
+the test's own assertions (confirmed compatible: same digit-stripping regex,
+null-return cases exit through an earlier guard clause untouched by the
+substitution). That fallback happened to be sufficient here because the
+change was small and the test file was already read in full, but it is not a
+general answer — a future pure-function change with a less obvious diff would
+have no equivalent fallback available in this environment.
+
+**Not fixed here, per this document's own convention — named so the next
+person doesn't re-derive it.** The shape of a fix, if someone picks this up:
+either scope the credential guard to skip when the filtered file set contains
+only files with no test-db dependency (would need a declared way to mark a
+test file as pure, e.g. a naming convention or an explicit tag vitest can
+check before running global setup), or move the guard from global setup into
+a per-file `beforeAll` that only files actually needing test-db opt into —
+so a pure unit test's own directory (`test/unit/`) stops requiring a database
+to exist before it can prove a string function is correct.
