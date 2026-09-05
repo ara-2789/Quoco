@@ -86,8 +86,6 @@ export default async function DashboardPage() {
 
   const board = await getDailyLogsBoard(supabase, profile.id, today)
 
-  const firstName = profile.full_name?.split(' ')[0] ?? 'there'
-
   // A failed read must NEVER render as "nothing needs you" — that's the exact
   // all-amber lie query.ts's own B1 comment bans, one level up (an all-clear
   // lie instead of an all-gap one). Explicit error state, not a blank/happy
@@ -196,7 +194,7 @@ export default async function DashboardPage() {
             : `${tiles.length} thing${tiles.length === 1 ? '' : 's'} need${tiles.length === 1 ? 's' : ''} you`}
         </h1>
         <p className="text-gray-500 mt-1 text-sm">
-          {firstName}, {now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })} — {formatTime(now.toISOString())}
+          {now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })} — {formatTime(now.toISOString())}
         </p>
       </div>
 
