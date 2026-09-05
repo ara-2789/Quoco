@@ -474,11 +474,31 @@ export interface CorrectedEngineerLogRow {
   // live and correct by 035's reuse rather than a rename (that migration's
   // own reasoning).
   evening_schedule_miss_reason: string | null
-  evening_schedule_met: boolean | null // correctable (scalar) — dead since 035, kept only for deriveHalfCompleteness, never fed to Facts
-  evening_workers_on_site: number | null // correctable (scalar)
-  evening_productive_manpower: { productive_count: number | null; idle_count: number | null; confidence: 'high' | 'low' } | null
+  // evening_schedule_met/evening_workers_on_site/evening_productive_manpower
+  // REMOVED 2026-09-05 (PR C2) -- none have had a write path since migration
+  // 035 (2026-08-31); nothing here reads them anymore. Superseded by
+  // evening_manpower and evening_idle_hours below.
+  //
+  // Evening Q2 (workers by trade). Actual on-site headcount, by trade --
+  // schema.ts's EngineerManpowerFacts.on_site source.
+  evening_manpower: { total: number | null; by_trade: Array<{ trade: string; count: number }>; raw_text: string | null } | null
+  // Evening Q3 (idle hours by trade), tri-state (all_working/unknown) per
+  // its own migration-035 CHECK. by_trade feeds EngineerIdleHoursByTrade;
+  // the tri-state itself is not consumed yet (PR C2 renders idle entries
+  // when present, same as before this reconnection existed for anything).
+  evening_idle_hours: {
+    by_trade: Array<{ trade: string; idle_hours: number | null; matched: boolean }>
+    all_working: boolean | null
+    unknown: boolean | null
+    raw_text: string | null
+  } | null
+  // Evening Q4 (equipment hours used), migration 035 RESHAPE -- type-string
+  // keyed, one number (hours_used) per type, no morning_item_index, no
+  // available_hours. implausible: 035's own attention flag (schema.ts's
+  // own comment on EngineerEquipmentItemFacts.implausible).
   evening_equipment_utilisation: {
-    items: Array<{ morning_item_index: number | null; type: string; available_hours: number | null; actual_hours: number | null }>
+    items: Array<{ type: string; hours_used: number | null; matched: boolean; implausible: boolean | null; raw: string | null }>
+    raw_text: string | null
     confidence: 'high' | 'low'
   } | null
 }
@@ -520,7 +540,8 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
       evening_status: checkInStatus.evening,
       work: { planned: notCapturedText, done_text: notCapturedText, done_quantity: notCapturedNumber, unit: '' },
       hindrance: { note: notCapturedText },
-      manpower: { planned: notCapturedCount, on_site: notCapturedCount, working: notCapturedCount },
+      manpower: { planned: notCapturedCount, on_site: notCapturedCount },
+      idle_hours_by_trade: [],
       equipment: { items: [] },
     }
   }
@@ -554,38 +575,57 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
 
   // §3 Manpower — planned = morning_manpower.total (renamed from
   // morning_manpower_planned.planned_total by the morning flow migration,
-  // 030_morning_flow_attendance.sql);
-  // actual = on_site (evening_workers_on_site) + working (productive_count).
-  const pm = row.evening_productive_manpower
+  // 030_morning_flow_attendance.sql). on_site = evening_manpower.total,
+  // REPLACED 2026-09-05 (PR C2): evening_workers_on_site/evening_
+  // productive_manpower have had no write path since migration 035
+  // (2026-08-31) — see schema.ts's own EngineerManpowerFacts comment for
+  // why `working` has no replacement field at all rather than a
+  // reconnected one.
   const manpower: EngineerDprFacts['manpower'] = {
     planned: wrapCount(row.morning_manpower?.total ?? null),
-    on_site: wrapCount(row.evening_workers_on_site),
-    working: wrapCount(pm?.productive_count ?? null, pm?.confidence),
+    on_site: wrapCount(row.evening_manpower?.total ?? null),
   }
 
-  // §4 Equipment — THE FIX (docs/dpr-engineer-report-spec.md's "Known
-  // upstream defect this does NOT fix" section, and the whole reason this
-  // reformat exists): morning_equipment is walked ON ITS OWN here, not
-  // merely as a side lookup keyed by an evening item's morning_item_index
-  // (the old assemble.ts §4's exact bug, lines 217-240). Every morning
-  // item becomes a Facts item — actual_hours/available_hours/idle_cost
-  // are 'not_captured' unless a matching evening item exists (matched by
-  // position, morning_item_index, same join-key convention the old
-  // multi-row assembler already uses — schema.md's EQUIPMENT JOIN KEY
-  // note). Render bad structured data honestly (spec): a garbled morning
-  // item ("job", ₹15/day) still becomes a real Facts item, not silently
-  // dropped for looking wrong.
-  const eveningByIndex = new Map<number, { available_hours: number | null; actual_hours: number | null }>()
+  // §3b Idle hours by trade — NEW 2026-09-05 (PR C2). evening_idle_hours
+  // has existed since 035 with nothing reading it (DPR column audit
+  // bucket 3b). One entry per trade the engineer reported idle time for;
+  // a trade with idle_hours null/0, or never mentioned, gets no entry —
+  // render.ts turns each entry into its own NEEDS ATTENTION line, the
+  // same convention equipment idle-hours already used pre-035.
+  const idle_hours_by_trade: EngineerDprFacts['idle_hours_by_trade'] = (row.evening_idle_hours?.by_trade ?? [])
+    .filter((t) => t.idle_hours !== null && t.idle_hours > 0)
+    .map((t) => ({ trade: t.trade, idle_hours: t.idle_hours as number }))
+
+  // §4 Equipment — JOIN FIXED 2026-09-05 (PR C2). morning_equipment is
+  // walked ON ITS OWN here, not merely as a side lookup (docs/dpr-
+  // engineer-report-spec.md's "Known upstream defect this does NOT fix"
+  // section, and the whole reason this reformat exists) — every morning
+  // item becomes a Facts item, actual_hours/implausible 'not_captured'/
+  // null unless a matching evening item exists. THE FIX ITSELF: the join
+  // key was morning_item_index (a POSITIONAL scheme migration 035
+  // deliberately retired — "the entire per-machine matching apparatus
+  // this replaces is retired outright, not patched", that migration's own
+  // words). Since 2026-08-31 this always missed: item.morning_item_index
+  // is undefined on the real (035) stored shape, undefined !== null is
+  // true, so eveningByIndex was keyed entirely on `undefined` and the
+  // real per-engineer index lookup below always returned nothing (DPR
+  // column audit, docs/reviews/dpr-column-audit-2026-09-05.md §3c — the
+  // mechanism behind the 2026-09-04 incident's equipment-hours finding).
+  // Rejoined by TYPE STRING, 035's own real join key, case/whitespace-
+  // normalized (normalizeType, already used by the deferred assembler's
+  // own §12 equipment section for the identical reason). Render bad
+  // structured data honestly (spec): a garbled morning item ("job",
+  // ₹15/day) still becomes a real Facts item, not silently dropped for
+  // looking wrong.
+  const eveningByType = new Map<string, { hours_used: number | null; implausible: boolean | null }>()
   for (const item of row.evening_equipment_utilisation?.items ?? []) {
-    if (item.morning_item_index !== null) {
-      eveningByIndex.set(item.morning_item_index, { available_hours: item.available_hours, actual_hours: item.actual_hours })
-    }
+    eveningByType.set(normalizeType(item.type), { hours_used: item.hours_used, implausible: item.implausible })
   }
   const equipmentConfidence = row.evening_equipment_utilisation?.confidence
-  const items: EngineerDprFacts['equipment']['items'] = (row.morning_equipment?.items ?? []).map((morningItem, index) => {
-    const eveningMatch = eveningByIndex.get(index)
-    const available_hours = eveningMatch ? wrapNumber(eveningMatch.available_hours, equipmentConfidence) : notCapturedNumber
-    const actual_hours = eveningMatch ? wrapNumber(eveningMatch.actual_hours, equipmentConfidence) : notCapturedNumber
+  const items: EngineerDprFacts['equipment']['items'] = (row.morning_equipment?.items ?? []).map((morningItem) => {
+    const eveningMatch = eveningByType.get(normalizeType(morningItem.type))
+    const actual_hours = eveningMatch ? wrapNumber(eveningMatch.hours_used, equipmentConfidence) : notCapturedNumber
+    const implausible = eveningMatch?.implausible ?? null
     const daily_hire_cost = morningItem.daily_hire_cost === null ? notCapturedNumber : { status: 'reported' as const, value: morningItem.daily_hire_cost }
     // computeIdleCost no longer called (§33(e), design-decisions-beta-
     // feedback.md, 2026-08-25, built 2026-09-04 — production incident):
@@ -600,7 +640,7 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
       type: equipmentLabel(morningItem.type),
       daily_hire_cost,
       actual_hours,
-      available_hours,
+      implausible,
       idle_cost,
     }
   })
@@ -611,6 +651,7 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
     work,
     hindrance,
     manpower,
+    idle_hours_by_trade,
     equipment: { items },
   }
 }
@@ -782,9 +823,12 @@ export async function assembleEngineerDprFacts(
       logs.evening_schedule_miss_reason as string | null,
       latestEditByColumn.get('evening_schedule_miss_reason'),
     ),
-    evening_schedule_met: parseCorrectedBoolean('evening_schedule_met', logs.evening_schedule_met as boolean | null, latestEditByColumn.get('evening_schedule_met')),
-    evening_workers_on_site: parseCorrectedInteger('evening_workers_on_site', logs.evening_workers_on_site as number | null, latestEditByColumn.get('evening_workers_on_site')),
-    evening_productive_manpower: logs.evening_productive_manpower as CorrectedEngineerLogRow['evening_productive_manpower'],
+    // evening_manpower/evening_idle_hours: NOT correctable (JSONB, outside
+    // migration 019's scalar-only whitelist, same treatment as the fields
+    // they replace) — read straight through, per this file's own existing
+    // convention for every other JSONB column.
+    evening_manpower: logs.evening_manpower as CorrectedEngineerLogRow['evening_manpower'],
+    evening_idle_hours: logs.evening_idle_hours as CorrectedEngineerLogRow['evening_idle_hours'],
     evening_equipment_utilisation: logs.evening_equipment_utilisation as CorrectedEngineerLogRow['evening_equipment_utilisation'],
   }
 

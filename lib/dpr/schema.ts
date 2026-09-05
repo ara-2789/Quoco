@@ -624,16 +624,36 @@ export interface EngineerHindranceFacts {
   note: CapturedText
 }
 
-// §3 Manpower. planned = morning_manpower.total
-// (CapturedCount — a real, small integer that CAN legitimately be a
-// reported zero, matching CapturedCount's existing zero/not_captured
-// split). actual is a composite: on_site (evening_workers_on_site) +
-// working (evening_productive_manpower.productive_count) — spec's sample:
-// `on site: 18, working: 15`.
+// §3 Manpower. planned = morning_manpower.total (CapturedCount — a real,
+// small integer that CAN legitimately be a reported zero, matching
+// CapturedCount's existing zero/not_captured split).
+//
+// `working` REMOVED 2026-09-05 (PR C2, design-decisions-beta-feedback.md's
+// DPR scope principle: "035 asks for fewer things, so the DPR reports
+// fewer things"). It used to read evening_productive_manpower.
+// productive_count — a column with no write path since migration 035
+// (2026-08-31) replaced that question with evening_manpower (actual
+// workers BY TRADE) and evening_idle_hours (idle HOURS by trade,
+// EngineerIdleHoursByTrade below). There is no productive-count concept
+// to reconnect this to: deriving one from total minus idle HOURS would be
+// arithmetic across incompatible units (a headcount against a duration).
+// on_site (now evening_manpower.total) is the only real number left;
+// idle time is reported honestly, as hours, in its own place — see
+// EngineerDprFacts.idle_hours_by_trade.
 export interface EngineerManpowerFacts {
   planned: CapturedCount
   on_site: CapturedCount
-  working: CapturedCount
+}
+
+// Evening Q3 (idle hours by trade), migration 035, read for the first
+// time in PR C2 — column existed, nothing consumed it (DPR column audit,
+// docs/reviews/dpr-column-audit-2026-09-05.md, bucket 3b). One entry per
+// trade with idle_hours > 0; a trade fully productive or never mentioned
+// simply has no entry — render.ts composes a NEEDS ATTENTION line per
+// entry, the same convention equipment idle-hours already used pre-035.
+export interface EngineerIdleHoursByTrade {
+  trade: string
+  idle_hours: number
 }
 
 // §4 Equipment. planned is `type` alone (render-layer composition) — was
@@ -642,19 +662,34 @@ export interface EngineerManpowerFacts {
 // built 2026-09-04 — production incident): a rate typed from memory is
 // not factual and must not render as if it were, so render.ts
 // (renderEngineerBody) composes `type` only. actual = actual_hours alone
-// (spec: "used: 6 hours") — asymmetric with planned by design (no
-// planned-hours field exists upstream; see the spec's own "Known data
-// gap" section). daily_hire_cost/idle_cost STAY on this type (§33(e), "do
-// not drop") but are never rendered and idle_cost is never computed
-// (computeIdleCost, lib/dpr/idle-cost.ts, stays as a function, no longer
-// called) — kept for the invoice era, when a real rate exists to compute
-// from.
+// (spec: "used: 6 hours").
+//
+// `available_hours` REMOVED 2026-09-05 (PR C2, same "035 asks for fewer
+// things" principle as EngineerManpowerFacts.working above). Migration
+// 035's own header is explicit: the redesigned evening Q4 asks for ONE
+// number per equipment type (hours_used) — "no available_hours, no idle_
+// reason, no positional index... supersedes [the old] per-machine/two-
+// number design entirely." There is no available-hours answer to
+// reconnect this to; an idle-hours computation (available - actual) would
+// be inferred, not reported — the same fabrication class §33(c) already
+// closed for hire rates. `implausible` (below) is 035's own replacement
+// attention signal, already computed and stored, never read until now.
+//
+// daily_hire_cost/idle_cost STAY on this type (§33(e), "do not drop") but
+// are never rendered and idle_cost is never computed (computeIdleCost,
+// lib/dpr/idle-cost.ts, stays as a function, no longer called) — kept for
+// the invoice era, when a real rate exists to compute from.
 export interface EngineerEquipmentItemFacts {
   type: string
   daily_hire_cost: CapturedNumber
   actual_hours: CapturedNumber
-  available_hours: CapturedNumber
   idle_cost: CapturedNumber
+  // 035's own flag: hours_used > 24 * (summed count across every morning
+  // item sharing this type). null when the type's count can't be
+  // determined (no morning match, or a matching morning item with count
+  // still null) — "unknown" is deliberately silent, not a warning: a flag
+  // must mean "checked and looks wrong", never "we couldn't check".
+  implausible: boolean | null
 }
 
 export interface EngineerEquipmentFacts {
@@ -672,6 +707,7 @@ export interface EngineerDprFacts {
   work: EngineerWorkFacts
   hindrance: EngineerHindranceFacts
   manpower: EngineerManpowerFacts
+  idle_hours_by_trade: EngineerIdleHoursByTrade[]
   equipment: EngineerEquipmentFacts
 }
 

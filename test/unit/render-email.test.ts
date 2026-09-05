@@ -31,8 +31,8 @@ function makeFacts(overrides: Partial<EngineerDprFacts> = {}): EngineerDprFacts 
     manpower: {
       planned: { status: 'reported', value: 20 },
       on_site: { status: 'reported', value: 18 },
-      working: { status: 'reported', value: 15 },
     },
+    idle_hours_by_trade: [],
     equipment: { items: [] },
     ...overrides,
   }
@@ -56,7 +56,7 @@ describe('renderEmailReport', () => {
     // fmtText wraps reported text values in double quotes (render.ts's own convention).
     expect(result.text).toContain('Work — planned: "Continue slab work" | done: "Slab concrete poured" — 120 sqm')
     expect(result.text).toContain('Hindrance — Rain for 1 hour')
-    expect(result.text).toContain('Manpower — planned: 20 | on site: 18, working: 15')
+    expect(result.text).toContain('Manpower — planned: 20 | on site: 18')
   })
 
   it('html output is a real, escaped HTML document containing the same facts', () => {
@@ -98,7 +98,6 @@ describe('renderEmailReport', () => {
       manpower: {
         planned: { status: 'reported', value: 20 },
         on_site: { status: 'not_captured', value: null },
-        working: { status: 'not_captured', value: null },
       },
     })
     const result = renderEmailReport(facts, 'No evening data reported.', MORNING_COMPLETE, { status: 'not_received' }, META)

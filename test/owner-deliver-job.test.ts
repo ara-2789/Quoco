@@ -48,8 +48,8 @@ const VALID_FACTS: EngineerDprFacts = {
   manpower: {
     planned: { status: 'reported', value: 20 },
     on_site: { status: 'reported', value: 18 },
-    working: { status: 'reported', value: 15 },
   },
+  idle_hours_by_trade: [],
   equipment: { items: [] },
 }
 
