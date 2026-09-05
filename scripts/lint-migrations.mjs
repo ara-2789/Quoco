@@ -87,6 +87,7 @@ const MIGDIR = join(REPO_ROOT, 'supabase', 'migrations')
 const HELDDIR = join(REPO_ROOT, 'docs', 'reviews')
 const EXCEPTIONS_PATH = join(__dirname, 'migration-lint-exceptions.json')
 const RESERVATIONS_PATH = join(__dirname, 'migration-number-reservations.json')
+const FK_COVERAGE_PATH = join(__dirname, 'shared-fixture-fk-coverage.json')
 const MIGRATION_FILENAME_RE = /^\d+_.*\.sql$/
 
 // ---------------------------------------------------------------------------
@@ -344,6 +345,103 @@ function ruleServiceRoleGrantRequired(file, sql, blocks) {
 }
 
 // ---------------------------------------------------------------------------
+// Rule 9 — shared-fixture-fk-coverage
+// ---------------------------------------------------------------------------
+// The 2026-09-05 FK-cascade incident (docs/reviews/admin-merge-retrospective-
+// 2026-09-05.md): test/helpers/db.ts's removeMorningFixtures()/
+// removeTestTenant() delete the shared fixture engineer (a users row) / the
+// shared fixture tenant (a tenants row) without first clearing every OTHER
+// table that still references them without ON DELETE CASCADE. A stray
+// daily_logs row (a table nobody had widened cleanup for) blocked the users
+// delete and cascaded into 16 failing test files in one CI run.
+//
+// The fix is an explicit, hand-maintained coverage list
+// (scripts/shared-fixture-fk-coverage.json) that test/helpers/db.ts's
+// sweepSharedFixtureReferences() reads and acts on before either delete.
+// THIS RULE is what keeps that list honest: it scans every migration file
+// for a foreign key referencing users(id) or tenants(id) that does NOT
+// carry ON DELETE CASCADE (a cascading FK self-cleans — nothing to sweep)
+// and requires a matching entry in the coverage file.
+//
+// UNLIKE EVERY OTHER RULE IN THIS FILE, THIS ONE HAS NO EXCEPTIONS
+// MECHANISM — deliberately. migration-lint-exceptions.json exists for
+// intentional trade-offs a human has judged acceptable; an unswept table
+// here is a live-cascade risk, not a judgment call, so a violation is
+// unconditionally fatal (see main() below — this rule's output is never
+// filtered against the exceptions set). A finding means: add the table to
+// the coverage file and teach the sweep function to act on it, not exempt it.
+//
+// SCOPE, STATED PLAINLY: this only checks the migration-file TEXT for the
+// FK shape (same limitation as every other rule here) — it cannot verify
+// the coverage file's `action` (delete vs null) is the right choice for a
+// NOT NULL column, or that sweepSharedFixtureReferences() actually runs
+// against a real database correctly. That's proven by the test suite
+// itself running green, not by this static check.
+function tableForOffset(sql, offset) {
+  const createRe = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_."]+)/gi
+  let m
+  while ((m = createRe.exec(sql))) {
+    if (m.index > offset) break
+    const nameEnd = m.index + m[0].length
+    const block = extractParenBlock(sql, nameEnd)
+    if (!block) continue
+    if (offset >= nameEnd && offset < block.endIdx) return bareName(m[1])
+  }
+  // Not inside any CREATE TABLE body — fall back to the nearest ALTER TABLE
+  // header in the same statement (no ';' between it and this offset). Every
+  // FK this codebase adds outside a CREATE TABLE is an
+  // `ALTER TABLE x ADD COLUMN|ADD CONSTRAINT ...` immediately before it.
+  const beforeText = sql.slice(0, offset)
+  const lastSemi = beforeText.lastIndexOf(';')
+  const stmt = sql.slice(lastSemi + 1, offset + 1)
+  const alterM = /ALTER\s+TABLE\s+(?:ONLY\s+)?([a-zA-Z0-9_."]+)/i.exec(stmt)
+  return alterM ? bareName(alterM[1]) : null
+}
+
+function ruleSharedFixtureFkCoverage(file, sql, coverage) {
+  const found = []
+
+  // Column-level: `col_name UUID ... REFERENCES [public.]parent(id) [ON DELETE ...]`
+  // — matches both a CREATE TABLE body line and an ALTER TABLE ADD COLUMN
+  // statement; not anchored to line-start since ADD COLUMN precedes the
+  // column name on the same line.
+  const colFkRe =
+    /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+UUID\b[^,;\n]*?REFERENCES\s+(?:public\.)?"?(users|tenants)"?\s*\(\s*id\s*\)([^,;\n]*)/gi
+  let m
+  while ((m = colFkRe.exec(sql))) {
+    const [, column, parent, trailing] = m
+    if (/ON\s+DELETE\s+CASCADE/i.test(trailing)) continue
+    const table = tableForOffset(sql, m.index)
+    if (table) found.push({ table, column, parent })
+  }
+
+  // Composite / out-of-line: `[CONSTRAINT name] FOREIGN KEY (cols) REFERENCES
+  // [public.]parent (cols) [ON UPDATE ...] [ON DELETE ...]` — inside a
+  // CREATE TABLE body or a standalone ALTER TABLE ADD CONSTRAINT. The local
+  // column that maps to the parent's own `id` is always the FIRST column in
+  // the list, by this codebase's own composite-FK convention (id is always
+  // listed first on the parent side too).
+  const fkClauseRe =
+    /FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+(?:public\.)?"?(users|tenants)"?\s*\(([^)]+)\)([^;,)]*)/gi
+  while ((m = fkClauseRe.exec(sql))) {
+    const [, localCols, parent, , trailing] = m
+    if (/ON\s+DELETE\s+CASCADE/i.test(trailing)) continue
+    const table = tableForOffset(sql, m.index)
+    const column = localCols.split(',')[0].trim()
+    if (table) found.push({ table, column, parent })
+  }
+
+  const violations = []
+  for (const { table, column, parent } of found) {
+    const covered = coverage.some((c) => c.table === table && c.column === column && c.parent === parent)
+    if (!covered) {
+      violations.push({ file, object: `${table}.${column} -> ${parent}`, rule: 'shared-fixture-fk-coverage' })
+    }
+  }
+  return violations
+}
+
+// ---------------------------------------------------------------------------
 // Rule 7 — unique-migration-prefix
 // WIDENED 2026-08-31 (held migrations, see file header): `entries` is now
 // the UNION of applied + held files, each as { name, qualified } — `name`
@@ -458,8 +556,10 @@ function main() {
   const heldEntries = listMigrationEntries(HELDDIR, (name) => relative(REPO_ROOT, join(HELDDIR, name)))
   const exceptions = loadExceptions()
   const reservations = loadReservations()
+  const fkCoverage = JSON.parse(readFileSync(FK_COVERAGE_PATH, 'utf8'))
 
   const violations = []
+  const fkCoverageViolations = []
   for (const [dir, entries] of [[MIGDIR, appliedEntries], [HELDDIR, heldEntries]]) {
     for (const { name, qualified } of entries) {
       const raw = readFileSync(join(dir, name), 'utf8')
@@ -473,6 +573,7 @@ function main() {
       violations.push(...ruleMoneyColumnPrecision(qualified, blocks, alterColumns))
       violations.push(...ruleStatusColumnShape(qualified, sql, blocks))
       violations.push(...ruleServiceRoleGrantRequired(qualified, sql, blocks))
+      fkCoverageViolations.push(...ruleSharedFixtureFkCoverage(qualified, sql, fkCoverage))
     }
   }
   violations.push(...ruleUniqueMigrationPrefix([...appliedEntries, ...heldEntries]))
@@ -482,8 +583,28 @@ function main() {
   // building/auditing scripts/migration-lint-exceptions.json itself — never
   // used by CI, only by a human curating that file.
   if (process.argv.includes('--json')) {
-    console.log(JSON.stringify(violations, null, 2))
+    console.log(JSON.stringify([...violations, ...fkCoverageViolations], null, 2))
     return
+  }
+
+  // shared-fixture-fk-coverage has NO exceptions mechanism — see the rule's
+  // own header for why. Any finding here is fatal on its own, checked
+  // before the exemptible violations below.
+  if (fkCoverageViolations.length > 0) {
+    console.error(
+      `migration-lint: ${fkCoverageViolations.length} table(s) with a non-CASCADE FK to ` +
+        `users(id)/tenants(id) missing from scripts/shared-fixture-fk-coverage.json:\n`,
+    )
+    for (const v of fkCoverageViolations) {
+      console.error(`  ${v.file}: ${v.object}  [${v.rule}]`)
+    }
+    console.error(
+      '\nThis has no exceptions mechanism. Add the table to ' +
+        'scripts/shared-fixture-fk-coverage.json and teach ' +
+        'sweepSharedFixtureReferences() (test/helpers/db.ts) to act on the new entry — ' +
+        'see docs/reviews/admin-merge-retrospective-2026-09-05.md for why.',
+    )
+    process.exit(1)
   }
 
   const unexempted = violations.filter((v) => !exceptions.has(`${v.file}::${v.object}::${v.rule}`))
