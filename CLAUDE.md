@@ -1439,6 +1439,31 @@ the roles a migration author is naturally worried about (`anon`,
 `authenticated`) is exactly the shape that let `dpr_versions`' own gap
 ship undetected.
 
+A TEARDOWN VERIFIES COMMENTS TOO, NOT ONLY STRUCTURE AND CONSTRAINTS
+(standing rule since 2026-09-05, migrations 036/037's reviewer-round
+rehearsal). "Baseline restored, byte-identical" has meant "same columns,
+same constraints, same defaults/nullability" every time this project has
+said it — never "same `COMMENT ON COLUMN` text." Found live, not assumed:
+test-db's `hindrances.submitted_via` carried a stale comment from an
+EARLIER rehearsal round whose schema-level DOWN had run correctly (the
+DEFAULT was back, the column was nullable again) while its own comment
+text was never reset alongside it — a teardown that reported clean while
+leaving real residue behind. SAME FAILURE SHAPE AS THE
+`REHEARSAL REQUIREMENT` ABOVE, one layer over: that rule is "the dry-run
+scaffold verifies structure but not grants, so grants need their own
+explicit check"; this one is "a teardown verifies structure but not
+comments, so comments need their own explicit check." A stale comment is
+low-harm on its own — it's the PATTERN that matters: a verification step
+that only checks some of what changed will report clean regardless of
+what it didn't check, and the next thing left behind by an incomplete
+teardown will not always be as harmless as a comment.
+**CONSEQUENCE:** any rehearsal's post-teardown verification queries
+`col_description`/`obj_description` for every column or object the
+migration's own `COMMENT ON` statements touch, alongside the existing
+structure/constraint check, and confirms it matches the pre-rehearsal
+value (usually NULL) — not just that the column/constraint itself is
+gone or restored.
+
 How to verify locally (ask me to run these; show me the command)
 - DB change: run migrations against a Supabase BRANCH first, never prod.
   Confirm no errors, then I review before it touches the real database.
