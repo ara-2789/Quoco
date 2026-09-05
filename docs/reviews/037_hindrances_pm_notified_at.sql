@@ -1,0 +1,158 @@
+-- =============================================================================
+-- 037_hindrances_pm_notified_at.sql
+-- WRITTEN, REHEARSED (2026-09-05, against the current file -- see the
+-- REHEARSED note near the end for the full record, including a real
+-- discrepancy found between this file's own prior header text and PR
+-- #182's body about whether an earlier rehearsal had already happened),
+-- NOT YET APPLIED. Per CLAUDE.md's "a migration file enters supabase/migrations/
+-- when it is being applied, not when it is written" rule, this file lives
+-- in docs/reviews/ until an apply is actually happening.
+--
+-- MIGRATION NUMBER: 037, verified against origin/main's supabase/migrations/
+-- (035 is the highest applied number on both prod and test-db; 036 is held,
+-- rehearsed, not yet applied -- docs/reviews/036_hindrance_timing_column.sql)
+-- and against scripts/migration-number-reservations.json (no entry claims
+-- 037 as of this write). Reservation entry added in the same commit as this
+-- file.
+--
+-- SCOPE: one column. `hindrances.pm_notified_at TIMESTAMPTZ`, matching the
+-- shape `safety_incidents.pm_notified_at` already has (migration 001) --
+-- `hindrances` is the one item-1/item-2-adjacent table that never got the
+-- equivalent column. Found while scoping ad-hoc menu item 1's own PM email
+-- notification (docs/plans/adhoc-menu-spec.md §g.9): without this column, a
+-- retried notification job has no way to know a hindrance was already
+-- emailed to its PM, and a PM has no way to tell a retried duplicate email
+-- from a genuine second report.
+--
+-- WHY ITS OWN FILE, NOT FOLDED INTO 036 (Aravind's own instruction,
+-- 2026-09-03): 036 is already rehearsed twice and pinned at a certified
+-- sha256 (`f878057d...`, PR #180). Growing it again would decertify that
+-- pin a third time for an unrelated concern -- this column has nothing to
+-- do with `timing`/`timing_raw`/`submitted_via`, the three things 036
+-- actually touches. Two small, single-purpose migrations are cheaper to
+-- reason about than one growing file that keeps re-invalidating its own
+-- rehearsal history.
+--
+-- APPLY ORDER: 036 and 037 are independent and can be applied in EITHER
+-- order, or interleaved with anything else -- checked directly, not
+-- assumed. 037's own `ALTER TABLE` touches exactly one column
+-- (`pm_notified_at`), with no FK, no CHECK, and no reference to any column
+-- 036 adds or modifies (`timing`, `timing_raw`, `submitted_via`) or vice
+-- versa. Neither file's own SQL body mentions the other's column names.
+-- Applying 037 before 036, after 036, or 036 alone without 037 (or the
+-- reverse) all leave a structurally valid, internally consistent
+-- `hindrances` table each time.
+--
+-- SHAPE, MATCHING safety_incidents.pm_notified_at EXACTLY: nullable
+-- TIMESTAMPTZ, no default. NULL is the send-once guard's own "not yet
+-- notified" state -- a job checks `WHERE pm_notified_at IS NULL` before
+-- sending, and sets it to `now()` immediately after a successful send, the
+-- same pattern this project's own `STAGE_2_TERMINAL` classification
+-- already uses for owner-DPR delivery (`lib/dpr/owner-deliver-
+-- dispatch.ts`) -- a nullable timestamp as the terminal-state check, not a
+-- separate status enum. No DEFAULT: a defaulted `now()` at row-creation
+-- time would fabricate a notification that never happened, the identical
+-- reasoning 036's own `timing`/`submitted_via` columns already argue
+-- against fabricated values.
+--
+-- NOT A NOTIFICATION LEDGER -- NAMED SO THE LIMIT ISN'T ASSUMED AWAY: this
+-- is one boolean-shaped timestamp, not `outbound_sends`' own event_key/
+-- idempotency mechanism (031). It answers "has this row been notified at
+-- all," not "which specific send attempt succeeded," and it cannot
+-- accommodate more than one notification per row ever meaning something
+-- different (e.g. a re-notify-on-update flow, if one is ever built, would
+-- need its own design -- not assumed solved by this column). Sufficient
+-- for item 1's phase-one shape (one notification, once, per hindrance);
+-- not a general-purpose mechanism.
+--
+-- RISK CLASS: additive, one nullable column, no function/grant/RLS/auth/
+-- money surface touched -- trips none of CLAUDE.md §0's external-review-
+-- gate conditions: (a) no function logic; (b) no grant/RLS/SECURITY
+-- DEFINER surface (hindrances' RLS stays table-level to `authenticated`,
+-- unchanged); (c) no auth/identity surface; (d) fully reversible, DROP
+-- COLUMN is the exact inverse, and the table has zero rows in production
+-- (confirmed live, same session as 036's own rehearsal) so nothing is at
+-- risk either way; (e) no money surface. Normal migration, no external
+-- review package required.
+--
+-- RETROACTIVE CONSUMER CHECK (this project's own standing rule, applied
+-- here, 2026-09-05): `pm_notified_at` -- DOES NOT CHANGE. Zero readers and
+-- zero writers exist anywhere in this codebase today (grepped: the only
+-- hit is this column's own reservation entry in scripts/migration-number-
+-- reservations.json). Item 1's own notification job, the only intended
+-- reader/writer, is unbuilt. This migration adds the column; nothing yet
+-- consumes it.
+--
+-- REVIEWER ROUND (2026-09-05) -- ONE FINDING OF REAL WEIGHT, ACCEPTED. THE
+-- RACE: this file's own COMMENT already prescribed check-then-send-then-
+-- set without ever naming it as a race. Two concurrent notification-job
+-- runs can both read pm_notified_at IS NULL, both send, both set --
+-- amended into the column's own COMMENT above (not just here) so a future
+-- reader sees the trade without needing this migration file: duplicate-
+-- over-silence, deliberately, because a duplicate PM email is visible and
+-- recoverable while a row asserting "notified" when nobody was told is
+-- permanent, undetectable silence. Mitigation recorded there too: a
+-- single serialized notification runner per tick, reducing the race to
+-- process overlap rather than a design gap live on every run.
+--
+-- A DISCREPANCY FOUND BEFORE REHEARSING, NAMED NOT SILENTLY RESOLVED: this
+-- file's own header above previously read "REHEARSED: NOT YET, PER
+-- EXPLICIT INSTRUCTION -- diff first" (its original 2026-09-03 text), but
+-- PR #182's own body separately described a completed two-step rehearsal
+-- (disposable dry-run + test-db apply/verify/teardown) as already done --
+-- the file and its own PR disagreed about whether it had been rehearsed at
+-- all. Moot either way: the COMMENT amendment above changes this file's
+-- content, so a fresh rehearsal against THIS version was required
+-- regardless of which prior claim was accurate.
+--
+-- REHEARSED (2026-09-05, against real test-db, exfccwlrhoutkgrlikod --
+-- not a local scratch scaffold, no disposable dry-run needed first for a
+-- single nullable-column addition with no CHECK/FK to get ordering-wrong):
+-- pre-flight confirmed 0 active connections, 0 hindrances rows. Applied
+-- via `supabase db query --linked -f`; structure verified
+-- (`pm_notified_at`: nullable, `timestamp with time zone`, no default).
+-- Two cases run as real INSERT attempts inside a transaction, rolled back
+-- at the end: an explicit timestamp accepted, an omitted value accepted
+-- with NULL -- both confirmed via a direct row read mid-transaction (1
+-- NULL row, 1 non-NULL row) before rollback, not inferred from absence of
+-- an error alone. ONE TESTING NOTE, NOT A MIGRATION DEFECT: the first
+-- attempt at both cases returned 0 rows inserted, not 2 -- both failed on
+-- `hindrances_submitted_via_check`, because `submitted_via`'s own
+-- baseline DEFAULT ('whatsapp') does not satisfy its own CHECK constraint
+-- (migration 001's own pre-existing, already-documented bug, unrelated to
+-- this migration -- see 036's own DATED CORRECTION #2). Every real test
+-- insert against this table, for either 036 or 037, must supply
+-- `submitted_via` explicitly; the retest that did passed both cases
+-- cleanly. Row count reconfirmed 0 after rollback. DOWN applied cleanly;
+-- post-teardown constraint list confirmed byte-identical to true
+-- baseline (the same 8 constraints 036's own rehearsal restored to).
+-- Ledger untouched throughout. NOT YET APPLIED ANYWHERE.
+-- =============================================================================
+
+BEGIN;
+
+ALTER TABLE hindrances
+  ADD COLUMN pm_notified_at TIMESTAMPTZ;
+
+COMMENT ON COLUMN hindrances.pm_notified_at IS
+  'Send-once guard for the ad-hoc menu item 1 PM email notification (migration 037, 2026-09-03), matching safety_incidents.pm_notified_at''s own shape. NULL = not yet notified -- a notification job checks WHERE pm_notified_at IS NULL before sending. Set to now() immediately after a successful send; never defaulted, never backfilled -- a defaulted value would fabricate a notification that never happened. RACE, NAMED EXPLICITLY (reviewer round, 2026-09-05): this is check-then-send-then-set, not one atomic step -- two concurrent job runs can both read pm_notified_at IS NULL, both send, both set. The trade is deliberate: duplicate-over-silence. A duplicate PM email is visible and recoverable; a row that reads notified when nobody was actually told is permanent, undetectable silence -- the exact failure this product exists to prevent (contrast 031''s claim-before-call, which correctly takes the inverse trade for outbound sends, where a claimed-but-uncalled row is the disease, not the cure). Mitigated, not eliminated, by a single serialized notification runner per tick -- reduces the race to process overlap (two runners running at once) rather than a design flaw every single run is exposed to.';
+
+COMMIT;
+
+-- =============================================================================
+-- DOWN (exact inverse, not applied by this file):
+--
+--   ALTER TABLE hindrances DROP COLUMN pm_notified_at;
+--
+-- CONSEQUENCE, STATED NOT JUST IMPLIED (reviewer round, 2026-09-05):
+-- down-then-reapply RE-ARMS the send-once guard for every existing row.
+-- pm_notified_at is the ONLY record that a notification ever happened --
+-- there is no separate ledger of past sends (see the "NOT A NOTIFICATION
+-- LEDGER" note above). Every previously-notified hindrance reads NULL
+-- again the moment the column comes back, and the very next job run
+-- re-emails its PM -- not a cosmetic reversal, a guaranteed duplicate
+-- send for every row that was ever legitimately notified before DOWN ran.
+-- Sharper than "drop a column": dropping and re-adding this specific
+-- column re-triggers the real-world side effect the column exists to
+-- prevent.
+-- =============================================================================

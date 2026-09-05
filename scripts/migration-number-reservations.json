@@ -13,5 +13,15 @@
     "number": "035",
     "claimedBy": "docs/reviews/035_evening_flow_restructuring.sql",
     "note": "Evening flow restructuring (5-question redesign) + morning/evening §42 unmatched-token capture + equipment count/hours-used redesign. Originally drafted against a stale '034' in the scoping plan -- corrected the same day when 034 was taken by the owner-email migration (docs/reviews/034-apply-record.md). This entry was itself added late, after the migration-lint reservation rule (PR #148) was run against this branch and correctly flagged the file as unreserved -- recorded here rather than silently, since a reservation added only after being caught by the tool is worth being honest about."
+  },
+  {
+    "number": "036",
+    "claimedBy": "docs/reviews/036_hindrance_timing_column.sql",
+    "note": "hindrances.timing (active/potential) + timing_raw + submitted_via DROP DEFAULT, the schema change blocking ad-hoc menu item 1 (docs/plans/adhoc-menu-spec.md §f). Held and rehearsed on its own branch/PR (#180), not carried on this branch -- this entry exists so the number stays protected here too, per this project's own precedent (034's entry, above, does the identical thing for a file this branch also doesn't carry)."
+  },
+  {
+    "number": "037",
+    "claimedBy": "docs/reviews/037_hindrances_pm_notified_at.sql",
+    "note": "hindrances.pm_notified_at, matching safety_incidents' existing column -- the send-once guard for ad-hoc menu item 1's PM email notification (docs/plans/adhoc-menu-spec.md §g.9/§g.10). Own branch/PR, split out from #180 for branch hygiene (Aravind, 2026-09-03) -- independent of 036, applies in either order. Rehearsed on this branch; see this branch's own rehearsal record."
   }
 ]
