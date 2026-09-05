@@ -51,6 +51,28 @@
   Rationale: paraphrase drifts and GitHub can serve a stale branch cache to the
   reviewer; a pinned `git show`/probe frame is verifiable and cache-proof. The
   canonical apply skeleton lives in docs/migration-runbook-template.md.
+- A BRANCH CARRYING A CERTIFIED ARTIFACT IS NEVER UPDATED WITH `main` —
+  STALENESS DISCIPLINE APPLIES TO CODE BRANCHES, PINNED ARTIFACTS ARE THE
+  EXCEPTION (standing rule since 2026-09-05, migration 036/037's own PRs
+  #180/#182). The "A LOCAL GIT REF IS NOT CURRENT UNTIL FETCHED" rule below,
+  and the general practice of merging `main` into a stale PR branch before
+  trusting its CI, do NOT apply here — they'd actively hurt. A held-migration
+  PR's own body cites the exact commit SHA the file was certified at (per
+  the ARTIFACT PROVENANCE rule above, e.g. "File certified at `60b3cc3`, sha256
+  pinned"). Merging `main` in creates a new merge commit, moving the PR's HEAD
+  away from that certified SHA even when the file's own content and hash don't
+  change at all — invalidating a correct citation for zero benefit. These
+  files live in `docs/reviews/`, not `supabase/migrations/` (per the MIGRATION
+  FILE ENTERS `supabase/migrations/` WHEN APPLIED rule below), so nothing in
+  CI ever executes or applies them — a red `Test (real test-db)` check on one
+  of these PRs says nothing about the migration's own readiness, since that
+  suite never touches the file at all. Leave these branches exactly as pinned.
+  THE ONE CHECK THAT DOES APPLY, because it's the one way a held migration can
+  genuinely go stale: a migration-NUMBER collision with something merged to
+  `main` since the number was reserved. Check `scripts/migration-number-
+  reservations.json` on `origin/main` for the number, and confirm
+  `supabase/migrations/` on `origin/main` hasn't reached or passed it —
+  neither requires touching the PR branch itself.
 - REHEARSE ON A CLEANED EXISTING BRANCH, NOT A FRESH PROVISION — CONDITIONAL RULE
   (2026-07-26, from the 019 round-2 rehearsal; PR #17). A freshly-provisioned
   Supabase branch is NOT a faithful prod clone: its schema is built by REPLAYING the
