@@ -311,6 +311,31 @@ period, likely tied to India's own financial-record-keeping requirements
 for a billed communication record) requiring its own review, not a
 default outcome of this table simply existing.
 
+DATED ADDITION (2026-09-04) — concrete growth evidence, from the same
+investigation that found `fetchStuckClaims`'s unbounded/unordered scan
+silently truncating past PostgREST's 1000-row default cap
+(`lib/whatsapp/outbound/coverage-sweep.ts`; fix tracked separately). Row
+counts, checked live against test-db (`exfccwlrhoutkgrlikod`), not
+inferred: **78 total rows on 2026-08-28** (per `docs/reviews/outbound-
+sends-test-accretion.md`, the same day this table's own accretion
+mechanism was first documented) → **3,390 total rows / 1,389 in
+`status='sending'` on 2026-09-04** — roughly 43x growth in 8 days, driven
+almost entirely by ordinary CI runs of this project's own outbound test
+suite (`outbound-coverage-sweep.test.ts`, `outbound-trigger.test.ts`,
+`status-callback.test.ts`), which mint fresh fixture rows every run under
+the reserved `+19995551` prefix and can never remove them (same
+no-DELETE-grant, RESTRICT-FK'd shape the entry above already names). This
+is now the SECOND time in one session a no-deletion-path table caused a
+concrete problem, not a hypothetical one — the first-known consequence was
+the query truncation above. Recorded as a further data point for the
+2026-07-27 five-table retention-posture audit this whole section
+originates from (`daily_logs`, `daily_log_edits`, `jobs`,
+`processed_messages`, `whatsapp_sessions`) — `checkin_escalations` (2026-
+08-13) and `outbound_sends` itself (2026-08-26, this entry) already
+extended that list once each; this addition does not extend the list
+again, only sharpens `outbound_sends`' own entry with numbers. Record
+only — no policy decided here, per this section's own standing convention.
+
 PARSER DEBT — RULE 3.5's LOW-CONFIDENCE FLAG DOES NOT EXIST (opened 2026-07-28,
 tracked, NOT fixed). Cross-cutting: affects EVERY future consumer of parsed
 check-in data, not one flow. Rule 3.5 (docs/design-principles.md:31 — note:
