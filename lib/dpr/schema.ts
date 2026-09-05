@@ -602,11 +602,26 @@ export interface EngineerWorkFacts {
   unit: string
 }
 
-// §2 Schedule — no planned side at all (spec's binding table). Boolean,
-// not a status wrapper: null means not_captured, same as the project-level
-// ScheduleFacts.schedule_met already does.
-export interface EngineerScheduleFacts {
-  met: boolean | null
+// §2 Schedule — REMOVED 2026-09-05 (PR C1, design-decisions-beta-feedback.md's
+// DPR scope decision, 2026-09-04 production incident). evening_schedule_met
+// has had no automated write path since migration 035 (2026-08-31) deleted
+// the question this field answered — it has read as permanently null for
+// five days, not a genuine "not reported" state, a dead field with nothing
+// left to report. EngineerScheduleFacts is not kept as a dormant type: there
+// is no data source for it anymore, unlike daily_hire_cost/idle_cost (§33(e)),
+// which stay for a real future feature (invoicing). Replaced by `hindrance`
+// below, which is what evening_schedule_miss_reason actually holds now.
+
+// §2 Hindrance — 035 (2026-08-31) reused evening_schedule_miss_reason for the
+// new unconditional Q5 ("anything that slowed execution today?"), per that
+// migration's own COMMENT ON COLUMN. lib/dpr/ kept reading and rendering it
+// as a schedule-miss reason for five days — the production defect PR C1
+// fixes: an owner read a hindrance as an explanation for a schedule that was
+// never assessed. Column name unchanged (035's own reasoning: keeps
+// migration 019's correction whitelist entry live and correct); TS-side
+// field named for what it actually is.
+export interface EngineerHindranceFacts {
+  note: CapturedText
 }
 
 // §3 Manpower. planned = morning_manpower.total
@@ -655,7 +670,7 @@ export interface EngineerDprFacts {
   morning_status: CheckInHalfStatus
   evening_status: CheckInHalfStatus
   work: EngineerWorkFacts
-  schedule: EngineerScheduleFacts
+  hindrance: EngineerHindranceFacts
   manpower: EngineerManpowerFacts
   equipment: EngineerEquipmentFacts
 }

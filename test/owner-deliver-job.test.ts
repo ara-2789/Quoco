@@ -44,7 +44,7 @@ const VALID_FACTS: EngineerDprFacts = {
     done_quantity: { status: 'reported', value: 120 },
     unit: 'sqm',
   },
-  schedule: { met: true },
+  hindrance: { note: { status: 'not_captured', value: null } },
   manpower: {
     planned: { status: 'reported', value: 20 },
     on_site: { status: 'reported', value: 18 },

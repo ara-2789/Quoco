@@ -625,9 +625,19 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
     lines.push(`Equipment — planned: ${item.type} | used: ${used}`)
   }
 
-  // §2 Schedule — no planned side (spec binding table); single value line.
-  const scheduleValue = facts.schedule.met === null ? 'not reported' : facts.schedule.met ? 'met' : 'not met'
-  lines.push(`Schedule — ${scheduleValue}`)
+  // §2 Hindrance — REPLACED 2026-09-05 (PR C1, production incident:
+  // evening_schedule_miss_reason was reused by migration 035 (2026-08-31)
+  // for the new unconditional Q5 hindrance question, but this section kept
+  // labeling its content as a schedule assessment that no longer happens —
+  // an owner reading "Schedule not met" over hindrance text like "Rain 1
+  // hour" was reading a real answer under a false frame. The old Schedule
+  // line/MISSING/NEEDS ATTENTION entries are removed outright, not
+  // reworded — schedule status itself has had no data source since 035
+  // (see hindrance's own comment in assemble.ts), so there is nothing left
+  // to report under that heading.
+  if (facts.hindrance.note.status === 'reported') {
+    lines.push(`Hindrance — ${facts.hindrance.note.value}`)
+  }
 
   // MISSING — what we failed to collect (Rule 5, "our problem"). Driven by
   // check-in status: a not_received half is the primary case; a partial
@@ -638,15 +648,13 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
   if (facts.evening_status.status === 'partial') {
     if (facts.work.done_text.status === 'not_captured' && facts.work.done_quantity.status === 'not_captured') missing.push('Work done: not reported.')
     if (facts.manpower.on_site.status === 'not_captured') missing.push('Manpower on site: not reported.')
-    if (facts.schedule.met === null) missing.push('Schedule: not reported.')
   }
 
   // NEEDS ATTENTION — what went wrong on site (Rule 5, "the customer's
   // problem"). Code-composed sentences splicing in raw engineer text
   // verbatim (Rule 2b — not a paraphrase, a direct substring), never a
-  // model field. Idle manpower/equipment only — a schedule miss has no
-  // separate reason field in this design (verdict-only Judgment; a model
-  // wishing to explain a miss does so in the one sentence it's given).
+  // model field. Idle manpower/equipment only — the hindrance answer
+  // renders in its own section above, not folded in here.
   const needsAttention: string[] = []
   if (facts.manpower.working.status !== 'not_captured' && facts.manpower.on_site.status !== 'not_captured') {
     const idle = (facts.manpower.on_site.value ?? 0) - (facts.manpower.working.value ?? 0)
@@ -658,7 +666,6 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
       if (idleHours > 0) needsAttention.push(`${item.type} idle for ${idleHours} hours.`)
     }
   }
-  if (facts.schedule.met === false) needsAttention.push('Schedule not met.')
 
   if (missing.length > 0) {
     lines.push('')

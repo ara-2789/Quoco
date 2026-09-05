@@ -25,11 +25,21 @@ export interface EquipmentIdleReason {
 }
 
 export interface NarrativeContext {
-  schedule_miss_reason: string | null // evening_schedule_miss_reason, raw.
-  // Feeds BOTH schedule_miss_reason_note AND tomorrows_plan_carry_forward_
-  // note — schema.ts's own field description already says the carry-forward
-  // note applies the Q2/Q3 miss reason forward; there is no separate Q6 raw
-  // text to fetch (Q6 hasn't shipped — TOMORROWS_PLAN_DATA_STATUS_FORCED).
+  // RENAMED 2026-09-05 (PR C1). This column is evening_schedule_miss_reason,
+  // but 035 (2026-08-31) reused it for the unconditional Q5 hindrance
+  // question — its own COMMENT ON COLUMN says so plainly. The old field
+  // name here (schedule_miss_reason) kept feeding the deferred project-
+  // level formatFacts prompt AND the live per-engineer formatEngineerFacts
+  // prompt labeled as a schedule-miss reason for five days; named for what
+  // it actually is now.
+  hindrance_note: string | null // evening_schedule_miss_reason, raw.
+  // KNOWN BROKEN, NOT FIXED HERE (found while building C1, deferred to PR
+  // C2 — "reconnect the evening reads"): evening_productive_manpower has
+  // had no write path since 035 either, so manpower_idle_reason reads
+  // permanently null; evening_equipment_utilisation's real (035) shape has
+  // no `idle_reason` key at all (it's `raw`), so equipment_idle_reasons'
+  // own idle_reason field is always undefined too. Both feed the live
+  // model verdict prompt with dead context today.
   manpower_idle_reason: string | null // evening_productive_manpower.idle_reason, raw.
   equipment_idle_reasons: EquipmentIdleReason[] // evening_equipment_utilisation.items[].idle_reason, raw, one per item.
 }
@@ -58,7 +68,7 @@ export async function fetchNarrativeContext(
   const row = rows[0] as unknown as NarrativeContextRow
 
   return {
-    schedule_miss_reason: row.evening_schedule_miss_reason,
+    hindrance_note: row.evening_schedule_miss_reason,
     manpower_idle_reason: row.evening_productive_manpower?.idle_reason ?? null,
     equipment_idle_reasons: (row.evening_equipment_utilisation?.items ?? []).map((item) => ({
       morning_item_index: item.morning_item_index,
@@ -103,7 +113,7 @@ export async function fetchEngineerNarrativeContext(
 
   const typed = row as unknown as NarrativeContextRow
   return {
-    schedule_miss_reason: typed.evening_schedule_miss_reason,
+    hindrance_note: typed.evening_schedule_miss_reason,
     manpower_idle_reason: typed.evening_productive_manpower?.idle_reason ?? null,
     equipment_idle_reasons: (typed.evening_equipment_utilisation?.items ?? []).map((item) => ({
       morning_item_index: item.morning_item_index,
