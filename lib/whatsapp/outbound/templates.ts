@@ -7,22 +7,25 @@
 // HX SIDs pinned from docs/reviews/whatsapp-template-submission-status.md
 // -- not re-derived, not guessed.
 //
-// MORNING STAYS ON TEMPLATE 1, DELIBERATELY (Aravind, 2026-09-02). 1v3
-// (quoco_morning_checkin_v3, HXbb534f41c814a2c3a32b5682713579df) came back
-// Meta-approved as MARKETING instead of the submitted UTILITY --
-// allow_category_change was exercised, and MARKETING carries a per-user
-// frequency cap (2 marketing template messages / rolling 24h, enforced
-// ACROSS ALL SENDERS, not just Quoco's own traffic) that UTILITY is exempt
-// from. The 08:30 morning trigger is the single message the whole product
-// depends on; a failure mode Quoco can neither observe in advance nor
-// control is not worth trading for the improved framing line. A
-// recategorisation request is filed separately (WhatsApp Manager, 60-day
-// window from 2026-08-31) -- if it succeeds, repointing MORNING_CHECKIN_SID
-// is its own small change at that point. Full research:
-// docs/reviews/whatsapp-marketing-category-investigation.md.
+// MORNING REPOINTED TO 1v3 (2026-09-05). Was pinned to template 1
+// (HXd4a896b66bfd7b237f53dc4dca77fb76) because 1v3 first came back
+// Meta-approved as MARKETING instead of the submitted UTILITY -- MARKETING
+// carries a per-user frequency cap (2 marketing template messages / rolling
+// 24h, enforced ACROSS ALL SENDERS, not just Quoco's own traffic) that
+// UTILITY is exempt from, and the 08:30 morning trigger is the single
+// message the whole product depends on. The recategorisation request filed
+// 2026-08-31 (WhatsApp Manager) has now been approved -- confirmed directly
+// against Twilio's Content API (GET /v1/Content/{Sid}/ApprovalRequests),
+// not from this file's own prior note: category UTILITY, status approved.
+// Variable shape unchanged (2 vars, same order/positions) -- see
+// docs/whatsapp-templates.md's 1v3 entry. Full research on the original
+// gap: docs/reviews/whatsapp-marketing-category-investigation.md.
+//
+// HX SIDs pinned from docs/reviews/whatsapp-template-submission-status.md
+// -- not re-derived, not guessed.
 
-/** HX Content SID for quoco_morning_checkin -- {{1}} name, {{2}} project. */
-export const MORNING_CHECKIN_SID = 'HXd4a896b66bfd7b237f53dc4dca77fb76'
+/** HX Content SID for quoco_morning_checkin_v3 -- {{1}} name, {{2}} project. UTILITY, approved. Repoints from template 1 (MARKETING-capped) 2026-09-05. */
+export const MORNING_CHECKIN_SID = 'HXbb534f41c814a2c3a32b5682713579df'
 /** HX Content SID for quoco_evening_checkin_v3 -- {{1}} name, {{2}} project, no {{3}}. Approved UTILITY, 2026-09-02. Repoints from template 2 (which carried a {{3}} morning-plan echo) per design-decisions-beta-feedback.md §40 -- one evening template, no plan echo, no branching. */
 export const EVENING_CHECKIN_SID = 'HX8fb39a251eee9bfb2ec075086cd7800a'
 
