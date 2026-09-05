@@ -1,10 +1,18 @@
 -- =============================================================================
 -- 036_hindrance_timing_column.sql
--- WRITTEN, REHEARSED TWICE (see both dated rehearsal notes below), NOT YET
--- APPLIED. Per CLAUDE.md's "a migration file enters supabase/migrations/
--- when it is being applied, not when it is written" rule, this file lives
--- in docs/reviews/ until an apply is actually happening -- do not copy it
--- into supabase/migrations/ yet.
+-- WRITTEN, REHEARSED A THIRD TIME (2026-09-05, against the current file --
+-- see the REHEARSED status near the end for the full record), NOT YET
+-- APPLIED. The first two rehearsals ran against an earlier version of this
+-- file and are superseded by the REVIEWER ROUND amendments below (a new
+-- table-level CHECK constraint, submitted_via NOT NULL) -- they no longer
+-- certify anything on their own; the third rehearsal is what certifies the
+-- current file. The prior certification at commit `60b3cc3` (PR #180's own
+-- body) is likewise superseded -- do not read that SHA/hash as current.
+-- Per CLAUDE.md's
+-- "a migration file enters supabase/migrations/ when it is being applied,
+-- not when it is written" rule, this file lives in docs/reviews/ until an
+-- apply is actually happening -- do not copy it into supabase/migrations/
+-- yet.
 --
 -- MIGRATION NUMBER: 036, verified against origin/main's supabase/migrations/
 -- (035 is the highest applied number, both on prod and, as of today, on
@@ -201,22 +209,168 @@
 -- terms rather than assumed to inherit the earlier clean read.
 -- =============================================================================
 --
--- RISK CLASS: additive on two new columns, one existing-column DEFAULT
--- dropped on a zero-row table -- no function/grant/RLS/auth/money surface
--- touched (both new columns' own check above, and DATED CORRECTION #2's own
--- gate check for the DROP DEFAULT specifically) -- trips none of CLAUDE.md
--- §0's external-review-gate conditions. Normal migration, no external
--- review package required.
+-- =============================================================================
+-- REVIEWER ROUND (2026-09-05) -- EXTERNAL REVIEW, TWO FINDINGS, BOTH
+-- ACCEPTED. PRIOR CERTIFICATION SUPERSEDED: this file was previously
+-- certified at commit `60b3cc3`, sha256
+-- f878057d2e608358373377f66f735d80a5583d62c6788e0a292cbf26af077ff4 (PR
+-- #180's own body). That certification is SUPERSEDED by this round --
+-- the file content has materially changed (a new table-level CHECK
+-- constraint, submitted_via NOT NULL, both COMMENT ON COLUMN statements
+-- rewritten, a new DOWN consequence line) and BOTH of this file's own
+-- prior rehearsals no longer certify it. A third rehearsal, covering the
+-- full new case set, is required before any apply -- see the updated
+-- REHEARSED status below.
 --
--- REHEARSED TWICE. First rehearsal (2026-09-03): the original two-column
--- version, all five `timing` CHECK cases correct, clean teardown, ledger
--- untouched -- but surfaced the `submitted_via` finding above via its own
--- Case 1, prompting DATED CORRECTION #2 before any real apply. Second
--- rehearsal (2026-09-03, this file's current version): full case set
--- re-run against the corrected file, including the new omitted-
--- `submitted_via` case DATED CORRECTION #2 predicts -- see the rehearsal
--- record in the same day's conversation for the literal results. NOT YET
--- APPLIED ANYWHERE.
+-- FINDING 1 -- THE PAIRING CHECK. The `timing`/`timing_raw` relationship
+-- (DATED CORRECTION #1's own three-way invariant, above) was documented
+-- in two COMMENT ON COLUMN statements but never enforced -- a future
+-- write path could set timing='unspecified' with timing_raw left NULL,
+-- or set timing_raw alongside a resolved 'active'/'potential' value, and
+-- the database would accept either silently. `hindrances_timing_raw_
+-- pairing_check` (CHECK ((timing = 'unspecified') = (timing_raw IS NOT
+-- NULL))) makes the COMMENT's contract structural rather than
+-- conventional. VERIFIED against real Postgres 17.11 (a disposable local
+-- scratch database, not test-db, not taken on the reviewer's word or
+-- Aravind's) -- all seven cases behave exactly as specified:
+--   ('unspecified', NULL)   -> REJECTED (pairing check)
+--   ('active', 'some text') -> REJECTED (pairing check)
+--   (NULL, NULL)            -> ACCEPTED (legacy row, both NULL)
+--   ('unspecified', 'text') -> ACCEPTED
+--   ('active', NULL)        -> ACCEPTED
+--   ('potential', NULL)     -> ACCEPTED
+--   ('bogus', NULL)         -> REJECTED (pre-existing `timing IN (...)` check,
+--                              unaffected by this addition)
+-- Both bug shapes the old comment-only contract could only document are
+-- now impossible to write, not merely discouraged. The reviewer's second
+-- argument, worth recording independently of the CHECK itself: a PM
+-- triage list written as `WHERE timing <> 'active'` silently drops every
+-- NULL row (Postgres: NULL never satisfies `<>`) -- under this NULL-as-
+-- unresolved-legacy design, the hindrances most needing a human look
+-- would vanish from every such consumer's query, invisibly. Recorded in
+-- the `timing` column's own COMMENT above, not only here, so a future
+-- query author reads it without needing this migration file.
+--
+-- FINDING 2 -- submitted_via SET NOT NULL. `timing` has a genuine
+-- unresolved state ('unspecified') and is deliberately left able to
+-- carry it; `submitted_via` has NO legitimate unknown state -- every
+-- real write path already states its own origin explicitly (see DATED
+-- CORRECTION #2 above). Dropping the DEFAULT alone (that correction's
+-- original fix) left "an omitted submitted_via silently records NULL"
+-- standing as an accepted cost. SET NOT NULL removes that cost for this
+-- one clause while the table is still provably empty -- the nullable
+-- siblings `hindrance_type`/`impact_level` are this table's own 001-era
+-- weak posture, not a precedent worth extending to a column being
+-- touched anyway. VERIFIED against the same local Postgres instance:
+-- omitting the column on INSERT is now rejected outright
+-- ("null value in column ... violates not-null constraint"); supplying
+-- any explicit value is accepted, unchanged.
+-- PRECONDITION -- RE-VERIFIED LIVE, NOT CARRIED FORWARD FROM 2026-09-03:
+-- `hindrances` row count checked directly against test-db
+-- (exfccwlrhoutkgrlikod) during this round's own rehearsal, 2026-09-05:
+-- 0 rows, before the apply and again after the DOWN teardown. Same
+-- precondition DATED CORRECTION #2's own gate check named for DROP
+-- DEFAULT; re-checked on its own terms for this addition rather than
+-- assumed to still hold two days later.
+--
+-- A SECOND FINDING FROM ACTUALLY RUNNING THIS REHEARSAL, NOT FROM
+-- INSPECTION: test-db's live `hindrances.submitted_via` column carried a
+-- STALE COMMENT from an earlier, incompletely-torn-down rehearsal round --
+-- the exact text of this file's OWN `DEFAULT dropped...` comment, even
+-- though the live column's DEFAULT was still `'whatsapp'` and still
+-- nullable (i.e. the schema-level DOWN from that earlier round had run,
+-- but its comment had not been reset alongside it). Reset to NULL as part
+-- of this round's own teardown, so the baseline this round tore down TO is
+-- the real 001-era baseline, not a residue-carrying one. Named here so the
+-- next person rehearsing this file doesn't read that stale comment as
+-- evidence of anything.
+--
+-- §0 GATE CHECK FOR BOTH FINDINGS: a table-level CHECK constraint and a
+-- NOT NULL on an existing column, both on a zero-row table -- (a) no
+-- function logic; (b) no grant/RLS/SECURITY DEFINER surface; (c) no
+-- auth/identity surface; (d) both reversible (DROP CONSTRAINT, DROP NOT
+-- NULL) while the table stays empty -- see the DOWN block's own
+-- consequence note for where that stops being true; (e) no money
+-- surface. Trips none of CLAUDE.md §0's conditions; this file's RISK
+-- CLASS classification below is unchanged by this round.
+--
+-- RETROACTIVE CONSUMER CHECK (this project's own standing rule, applied
+-- here): every reader and writer of `timing`, `timing_raw`, and
+-- `submitted_via`, checked by grep against this codebase as of
+-- 2026-09-05 --
+--   `timing`       -- DOES NOT CHANGE. Zero readers and zero writers
+--                     exist anywhere in this codebase today (ad-hoc menu
+--                     item 1's own flow, the only intended writer, is
+--                     unbuilt -- docs/plans/adhoc-menu-spec.md's own
+--                     status). This migration adds the column and its
+--                     constraint; nothing yet consumes either.
+--   `timing_raw`   -- DOES NOT CHANGE, same reason -- no reader or
+--                     writer exists yet.
+--   `submitted_via`-- DOES NOT CHANGE FOR WRITERS THAT ALREADY SUPPLY IT
+--                     EXPLICITLY (grepped: `test/migration-016.test.ts`'s
+--                     T-016-08 is the only existing writer, supplies
+--                     `'whatsapp_scheduled'` explicitly -- unaffected by
+--                     NOT NULL, since it never omitted the column).
+--                     CHANGES FOR ANY FUTURE WRITER THAT OMITS IT: an
+--                     omission that previously inserted NULL silently
+--                     now fails the INSERT outright. No such omitting
+--                     writer exists in this codebase today (confirmed by
+--                     the same grep) -- the change has a real effect in
+--                     principle, zero effect on any code that exists now.
+-- =============================================================================
+--
+-- RISK CLASS: additive on two new columns plus one table-level CHECK
+-- constraint, one existing-column DEFAULT dropped and NOT NULL added on
+-- a zero-row table -- no function/grant/RLS/auth/money surface touched
+-- (both new columns' own check above, DATED CORRECTION #2's own gate
+-- check for the DROP DEFAULT, and the REVIEWER ROUND's own gate check
+-- for the pairing CHECK/NOT NULL above) -- trips none of CLAUDE.md §0's
+-- external-review-gate conditions. Normal migration, no external review
+-- package required.
+--
+-- REHEARSED THREE TIMES. First rehearsal (2026-09-03): the original
+-- two-column version, all five `timing` CHECK cases correct, clean
+-- teardown, ledger untouched -- but surfaced the `submitted_via` finding
+-- above via its own Case 1, prompting DATED CORRECTION #2 before any real
+-- apply. Second rehearsal (2026-09-03, that file version): full case set
+-- re-run against the corrected file, including the omitted-`submitted_via`
+-- case DATED CORRECTION #2 predicts.
+--
+-- THIRD REHEARSAL (2026-09-05, THIS file, against real test-db --
+-- exfccwlrhoutkgrlikod, not a local scratch scaffold): pre-flight
+-- confirmed 0 active connections and 0 `hindrances` rows; applied via
+-- `supabase db query --linked -f`; structure verified
+-- (`information_schema.columns`: `timing`/`timing_raw` nullable no
+-- default, `submitted_via` NOT NULL no default); all 9 cases run as real
+-- INSERT attempts inside a transaction rolled back at the end (the
+-- original 7 pairing-check cases plus 2 more for submitted_via NOT NULL):
+--   ('unspecified', NULL)   -> rejected (pairing check) -- as expected
+--   ('active', 'some text') -> rejected (pairing check) -- as expected
+--   (NULL, NULL)            -> accepted -- as expected
+--   ('unspecified', 'text') -> accepted -- as expected
+--   ('active', NULL)        -> accepted -- as expected
+--   ('potential', NULL)     -> accepted -- as expected
+--   ('bogus', NULL)         -> rejected (pre-existing timing check) -- as expected
+--   submitted_via omitted   -> rejected (not_null_violation) -- as expected
+--   submitted_via explicit  -> accepted -- as expected
+-- 5 accepted / 4 rejected, cross-checked against a live row count taken
+-- mid-transaction before the rollback (5) -- exact match, not just a
+-- per-case NOTICE read. Transaction rolled back; row count reconfirmed 0
+-- afterward. DOWN then applied for real: FIRST ATTEMPT FAILED
+-- ("hindrances_timing_raw_pairing_check does not exist") -- caught here,
+-- not assumed away -- because DROP COLUMN cascades and removes the
+-- pairing CHECK before an explicit DROP CONSTRAINT clause in the same
+-- statement would run; DOWN block corrected (see its own note, above) and
+-- re-applied successfully. Structure and constraint list both confirmed
+-- back to exact baseline afterward, including resetting the stale
+-- `submitted_via` comment residue found live (its own note, above).
+-- Ledger untouched throughout -- `supabase db query` never touches
+-- `schema_migrations`, by construction. Certification (commit SHA +
+-- sha256 of this file) is recorded in PR #180's own body, per this
+-- project's established convention, not inside this file -- update there
+-- once this version is committed; do not read the OLD `60b3cc3`/
+-- `f878057d...` pair (named near this file's own top) as current. NOT YET
+-- APPLIED TO PROD.
 -- =============================================================================
 
 BEGIN;
@@ -224,16 +378,19 @@ BEGIN;
 ALTER TABLE hindrances
   ADD COLUMN timing TEXT CHECK (timing IN ('active', 'potential', 'unspecified')),
   ADD COLUMN timing_raw TEXT,
-  ALTER COLUMN submitted_via DROP DEFAULT;
+  ADD CONSTRAINT hindrances_timing_raw_pairing_check
+    CHECK ((timing = 'unspecified') = (timing_raw IS NOT NULL)),
+  ALTER COLUMN submitted_via DROP DEFAULT,
+  ALTER COLUMN submitted_via SET NOT NULL;
 
 COMMENT ON COLUMN hindrances.timing IS
-  'Ad-hoc menu item 1 (migration 036, 2026-09-03). Whether the hindrance is blocking work NOW (active) or MAY block work later (potential) -- or, on a genuinely exhausted Q2 reask budget, ''unspecified'' (see timing_raw for what the engineer actually typed in that case). Three explicit meanings, nothing inferred: NULL = pre-menu legacy row (predates this column; no ad-hoc-menu write ever leaves this NULL). ''unspecified'' = asked, answered, never resolved -- the row is still written, Q1''s content is never discarded on account of Q2 failing (per §42''s unmatched-token-is-captured-not-dropped discipline). ''active''/''potential'' = the engineer''s real, resolved answer.';
+  'Ad-hoc menu item 1 (migration 036, 2026-09-03; pairing structurally enforced, reviewer round, 2026-09-05). Whether the hindrance is blocking work NOW (active) or MAY block work later (potential) -- or, on a genuinely exhausted Q2 reask budget, ''unspecified'' (see timing_raw for what the engineer actually typed in that case). Three explicit meanings, nothing inferred: NULL = pre-menu legacy row (predates this column; no ad-hoc-menu write ever leaves this NULL). ''unspecified'' = asked, answered, never resolved -- the row is still written, Q1''s content is never discarded on account of Q2 failing (per §42''s unmatched-token-is-captured-not-dropped discipline). ''active''/''potential'' = the engineer''s real, resolved answer. hindrances_timing_raw_pairing_check makes this THREE-WAY split structural, not conventional: timing=''unspecified'' without timing_raw is rejected, and a resolved value (NULL/''active''/''potential'') carrying timing_raw is rejected -- both bug shapes this comment used to only document are now impossible to write, not merely discouraged. A PM triage query written as WHERE timing <> ''active'' silently drops every NULL row (Postgres CHECK/comparison semantics: NULL never satisfies <>) -- under this NULL-as-unresolved-legacy design, that would make exactly the hindrances most needing a human look vanish from the query, invisibly. Any future consumer filtering on timing must account for NULL explicitly (e.g. WHERE timing IS DISTINCT FROM ''active''), never rely on <> alone.';
 
 COMMENT ON COLUMN hindrances.timing_raw IS
-  'Ad-hoc menu item 1 (migration 036, 2026-09-03). The engineer''s literal Q2 reply text, captured only when timing = ''unspecified'' -- same shape and reasoning as attendance_raw (migration 030): the structured classification failed, but the operator''s own words are preserved rather than thrown away. NULL whenever timing is NULL (pre-menu row) or resolved to ''active''/''potential'' (nothing unresolved to preserve).';
+  'Ad-hoc menu item 1 (migration 036, 2026-09-03). The engineer''s literal Q2 reply text, captured only when timing = ''unspecified'' -- same shape and reasoning as attendance_raw (migration 030): the structured classification failed, but the operator''s own words are preserved rather than thrown away. NULL whenever timing is NULL (pre-menu row) or resolved to ''active''/''potential'' (nothing unresolved to preserve). hindrances_timing_raw_pairing_check enforces this pairing at the DB layer, not just by convention.';
 
 COMMENT ON COLUMN hindrances.submitted_via IS
-  'DEFAULT dropped, migration 036, 2026-09-03: the prior DEFAULT ''whatsapp'' never satisfied this column''s own CHECK constraint (hindrances_submitted_via_check, live since migration 001) -- confirmed on prod and test-db, and confirmed by grep that no code has ever relied on it (the only existing insert already supplies this column explicitly). Every real write path states its own origin explicitly (''whatsapp_scheduled''/''whatsapp_adhoc''/''web_app''); an omitted value now inserts NULL rather than silently fabricating one, matching this table''s own division of responsibility for timing above -- enforced by the writing flow, not by a DB-level default or NOT NULL.';
+  'DEFAULT dropped, migration 036, 2026-09-03; NOT NULL added, reviewer round, 2026-09-05: the prior DEFAULT ''whatsapp'' never satisfied this column''s own CHECK constraint (hindrances_submitted_via_check, live since migration 001) -- confirmed on prod and test-db, and confirmed by grep that no code has ever relied on it (the only existing insert already supplies this column explicitly). Every real write path states its own origin explicitly (''whatsapp_scheduled''/''whatsapp_adhoc''/''web_app''); NOT NULL means an omitted value is now REJECTED, not silently recorded as NULL -- unlike timing, submitted_via has no legitimate unknown state, and dropping the DEFAULT alone (this column''s original 2026-09-03 fix) would have let "omission succeeds silently as NULL" stand as an accepted cost while the table is provably still empty. Adding NOT NULL now removes that cost for this one clause instead of carrying it forward. The nullable siblings hindrance_type/impact_level are this table''s own 001-era weak posture, not a precedent to match here.';
 
 COMMIT;
 
@@ -245,5 +402,29 @@ COMMIT;
 --   ALTER TABLE hindrances
 --     DROP COLUMN timing,
 --     DROP COLUMN timing_raw,
---     ALTER COLUMN submitted_via SET DEFAULT 'whatsapp';
+--     ALTER COLUMN submitted_via SET DEFAULT 'whatsapp',
+--     ALTER COLUMN submitted_via DROP NOT NULL;
+--
+-- NO EXPLICIT DROP CONSTRAINT FOR hindrances_timing_raw_pairing_check --
+-- CAUGHT BY ACTUALLY RUNNING THIS DOWN BLOCK, NOT BY INSPECTION (reviewer
+-- round rehearsal, 2026-09-05). An earlier draft of this DOWN block
+-- included one; it FAILS ("constraint ... does not exist") because
+-- DROP COLUMN timing/timing_raw already cascades and removes the pairing
+-- CHECK (it references both columns) before an explicit DROP CONSTRAINT
+-- clause in the same statement would ever run. Same fate would befall
+-- hindrances_timing_check for the identical reason, which is why no
+-- earlier version of this DOWN block ever tried to drop that one either --
+-- this is not a new exception, just the first time the OTHER
+-- column-dependent constraint's identical behavior was made explicit,
+-- because this round is the first to add a constraint that depends on
+-- BOTH new columns rather than one.
+--
+-- CONSEQUENCE, STATED NOT JUST IMPLIED (reviewer round, 2026-09-05, same
+-- documented-loss line 030's and 034's own DOWN blocks carry): once real
+-- rows exist, DOWN destroys `timing_raw` -- the engineer's own literal
+-- words for every 'unspecified' hindrance (§42's own data) -- irreversibly.
+-- DROP NOT NULL is a harmless reversal on its own; DROP COLUMN timing_raw
+-- is not. While the table stays at zero rows this is
+-- inert; it stops being inert the moment ad-hoc menu item 1 ships and a
+-- real engineer answer lands in it.
 -- =============================================================================
