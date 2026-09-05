@@ -73,6 +73,7 @@ that matter:
 | 1 | #187 | `10defb7` | [33898620733](https://github.com/ara-2789/Quoco/actions/runs/33898620733) | `test/outbound-coverage-sweep.test.ts` — F4 |
 | 2 | #191 | `ea43b6b` | [33957599710](https://github.com/ara-2789/Quoco/actions/runs/33957599710) | `test/outbound-coverage-sweep.test.ts` — F4 (same assertion) |
 | 3 | #194 | `786930d` | [33959976204](https://github.com/ara-2789/Quoco/actions/runs/33959976204) | 16 test files, cascading (see Q2) |
+| 4 | #205 | `717669e` | [33968019196](https://github.com/ara-2789/Quoco/actions/runs/33968019196) | `test/outbound-coverage-sweep.test.ts` — F4 (Cause A, same assertion as #1/#2; #188 diagnosed but not yet merged at override time) |
 
 Verified via `gh pr view <n> --json mergedAt,mergeCommit,statusCheckRollup`
 (each shows `"Test (real test-db)": FAILURE` alongside a real `mergedAt`,
@@ -230,3 +231,47 @@ their own follow-up (tracked here, not built here, matching the "record
 the finding, don't silently fix everything in the same breath" approach
 the retention-workstream note already established for this class of issue
 on 2026-07-27).
+
+## Q5 — follow-up, later the same night: F4 proven fixed, and a rerun-mechanism finding
+
+**#188 merged** (`0dddfe4`). `main`'s own CI run at that merge commit —
+[33971532671](https://github.com/ara-2789/Quoco/actions/runs/33971532671) —
+is fully green: Typecheck, Lint, Migration Lint, File Size Lint, and
+**Test (real test-db)** all pass, F4 included. That is the proof Cause A
+is genuinely fixed, not resemblance — the identical mechanism this whole
+retrospective already insists on (Q2's own framing: prove per-failure,
+never by resemblance).
+
+**A rerun-mechanism finding, worth recording so it isn't misread later.**
+Re-running PR #205's own originally-failed job
+([33968019196](https://github.com/ara-2789/Quoco/actions/runs/33968019196),
+after #188 had already merged) still showed F4 red — same assertion, same
+file. This is NOT evidence the fix doesn't work; it's a property of how
+`pull_request`-triggered CI works. A `pull_request` event checks out a ref
+frozen at the moment the event fired; re-running a job on a **closed**
+PR's own recorded run re-executes that same frozen snapshot, not current
+`main`. #205 is merged and closed — its own check can never reflect a fix
+that landed on `main` afterward, no matter how many times it's rerun.
+**The instrument for "did the fix work" is a fresh run of `main` at the
+merge commit that contains the fix — never a rerun of a closed PR's own
+check.** Recorded here specifically so nobody later finds #205's own red
+rerun in the Actions history and reads it as evidence against #188's fix;
+it's testing stale code by construction, not disputing anything.
+
+**The real lesson isn't "the overrides were fine" — it's what let them
+keep happening.** Cause A (`outbound_sends` unbounded scan × PostgREST's
+1000-row cap) is a genuine production defect that manufactured a false red
+`Test (real test-db)` check on *every* CI run touching that suite, for a
+full day, across at least four unrelated PRs (#187, #191, #205, and this
+session's own #196/#188-lane collisions) — while its own fix (#188) sat
+open, diagnosed and ready, for the entire window. Each individual
+`--admin` override cited above was correctly reasoned: the diff genuinely
+didn't touch the failing area, checked per-PR, not by resemblance (Q2).
+But four correct individual judgment calls sharing one root cause, on one
+still-open fix, is not four independent events — it's one systemic cost
+(repeatedly re-justifying a bypass) standing in for the one-time cost of
+just merging the fix. The lesson for next time isn't "verify more before
+overriding" — Q2 already forces that. It's: once a genuine root cause is
+diagnosed and its fix is ready, merging that fix promptly is cheaper than
+absorbing another override on the next PR that happens to be open when it
+fires again.
