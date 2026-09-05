@@ -4,13 +4,27 @@
 // no new schema (Vercel Cron's at-least-once semantics answered with only
 // what 027 already provides: the UNIQUE key and a rank-guarded UPDATE).
 //
-// NOT REGISTERED AS A CRON ROUTE — no app/api/ file calls this yet. A future
+// DATED CORRECTION (2026-09-04): the paragraph below, struck, predates this
+// file's own wrapper actually being wired in and was wrong on two counts.
+// It said the future loop calls runCheckinEscalationSweep "once per
+// project" (singular) — the real loop calls it once per project PER HALF
+// (two calls each, 'morning' and 'evening'). And it predicted a
+// CRON_SECRET-gated HTTP route, which never happened: this sweep runs
+// inside the EXISTING app/api/jobs/tick cron instead
+// (runCheckinEscalationTickSweep, this file), the same placement as B3's
+// morning-cutoff sweep and the outbound coverage sweep — see runJobsTick's
+// own header for why idempotent time-triggered sweeps live there rather
+// than as queued jobs or a dedicated route. vercel.json is unchanged.
+//
+// ~~NOT REGISTERED AS A CRON ROUTE — no app/api/ file calls this yet. A future
 // slice loops over active projects (same SELECT id, tenant_id FROM projects
 // WHERE status='active' shape app/api/cron/dpr-generate/route.ts already
 // uses) and calls runCheckinEscalationSweep once per project. That loop, and
-// the CRON_SECRET-gated HTTP route around it, are out of scope here.
+// the CRON_SECRET-gated HTTP route around it, are out of scope here.~~
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
+import { istDateString } from '@/lib/daily-logs/date'
 import { fetchDueRoster, type DueRosterEngineer } from './roster'
 import { determineTargetStatus, allowedSourceStatuses, timestampColumnFor, type CheckinStatus, type Half } from './status'
 
@@ -123,4 +137,135 @@ export async function runCheckinEscalationSweep(params: SweepParams): Promise<Sw
   }
 
   return { engineersConsidered: roster.length, writesAttempted }
+}
+
+// -----------------------------------------------------------------------------
+// runCheckinEscalationTickSweep — the loop this file's own header used to
+// only anticipate. Called once per app/api/jobs/tick invocation (see that
+// route's own header for placement/isolation discipline), same active-
+// projects query app/api/cron/dpr-generate/route.ts uses, then
+// runCheckinEscalationSweep once per project PER HALF.
+// -----------------------------------------------------------------------------
+
+export interface CheckinEscalationSweepFailure {
+  projectId: string
+  half: Half
+  message: string
+}
+
+export interface CheckinEscalationSweepResult {
+  projectsSwept: number
+  engineersConsidered: number
+  writesAttempted: number
+  /**
+   * PER-PROJECT ISOLATION. Unlike sweepStaleMorningSessions/
+   * runOutboundCoverageSweep (single operations), this is a loop over N
+   * active projects x 2 halves — a naive version would let the first
+   * throwing project abort every project after it, silently, reporting one
+   * tick-level error indistinguishable from a genuine single failure. Each
+   * (project, half) call below is isolated in its own try/catch; a failure
+   * is collected here, not thrown, so one bad project never prevents the
+   * rest of the tick's projects from being swept. Empty in the normal case.
+   */
+  failures: CheckinEscalationSweepFailure[]
+}
+
+const HALVES: readonly Half[] = ['morning', 'evening']
+
+export async function runCheckinEscalationTickSweep(
+  client: SupabaseClient,
+  now: Date,
+): Promise<CheckinEscalationSweepResult> {
+  const logDate = istDateString(now)
+
+  // Only this query failing rejects the whole sweep — with no active-projects
+  // list, looping over "nothing" would be a false all-clear (projectsSwept: 0,
+  // no failures), not an honest report that the sweep never ran at all.
+  const { data: projects, error: projectsError } = await client
+    .from('projects')
+    .select('id, tenant_id')
+    .eq('status', 'active')
+  if (projectsError) throw projectsError
+
+  let engineersConsidered = 0
+  let writesAttempted = 0
+  const failures: CheckinEscalationSweepFailure[] = []
+
+  for (const project of projects ?? []) {
+    for (const half of HALVES) {
+      try {
+        // NOT hoisted: fetchDueRoster (via runCheckinEscalationSweep) issues
+        // two queries and is called once per half here, so the identical
+        // roster is fetched twice per project per tick. Left as-is
+        // deliberately — hoisting it would change runCheckinEscalationSweep's
+        // own signature (roster becomes an input, not something it fetches),
+        // out of scope for this change. Revisit if active projects reach the
+        // dozens; at today's scale the duplicate fetch is noise.
+        const result = await runCheckinEscalationSweep({
+          client,
+          tenantId: project.tenant_id,
+          projectId: project.id,
+          logDate,
+          half,
+          now,
+        })
+        engineersConsidered += result.engineersConsidered
+        writesAttempted += result.writesAttempted
+      } catch (err) {
+        failures.push({
+          projectId: project.id,
+          half,
+          message: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+  }
+
+  return {
+    projectsSwept: (projects ?? []).length,
+    engineersConsidered,
+    writesAttempted,
+    failures,
+  }
+}
+
+/**
+ * Same dedup convention as reportMorningSweepAnomalies (lib/daily-logs/
+ * morning-cutoff-sweep.ts): fingerprint ends in the IST calendar day, so
+ * same-day recurrences of the same (project, half) failure collapse into
+ * one growing issue rather than paging every tick, while a failure still
+ * live the NEXT day surfaces as a fresh issue.
+ *
+ * THE ONLY ANOMALY REPORTED HERE IS A PER-PROJECT FAILURE FROM THE LOOP
+ * ABOVE. A project/half with zero engineers on the roster is a normal
+ * product condition (exactly what DASH-01 will surface as its own tile,
+ * not an error) — engineersConsidered: 0 is carried in the result for
+ * whoever reads it, never sent to Sentry. Using an error tracker as a
+ * product-data channel is the mistake this reporter deliberately does not
+ * make.
+ */
+export function reportCheckinEscalationSweepAnomalies(result: CheckinEscalationSweepResult, now: Date): void {
+  const day = istDateString(now)
+
+  for (const f of result.failures) {
+    Sentry.captureMessage('checkin-escalation-sweep: project sweep failed', {
+      level: 'warning',
+      fingerprint: ['checkin-escalation-sweep', 'project_sweep_failed', f.projectId, f.half, day],
+      tags: { feature: 'checkin-escalation-sweep', reason: 'project_sweep_failed' },
+      extra: { project_id: f.projectId, half: f.half, message: f.message },
+    })
+  }
+}
+
+/**
+ * Third leg, same shape as reportMorningSweepError/
+ * reportOutboundCoverageSweepError — extracted so the Sentry call is
+ * directly unit-testable without a full tick-route harness.
+ */
+export function reportCheckinEscalationSweepError(err: unknown): { error: string } {
+  const message = err instanceof Error ? err.message : String(err)
+  Sentry.captureException(err instanceof Error ? err : new Error(message), {
+    tags: { feature: 'checkin-escalation-sweep' },
+  })
+  return { error: message }
 }
