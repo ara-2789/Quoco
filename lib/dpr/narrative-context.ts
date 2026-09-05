@@ -20,7 +20,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // already uses.
 
 export interface EquipmentIdleReason {
-  morning_item_index: number | null
+  type: string
   idle_reason: string | null
 }
 
@@ -33,21 +33,26 @@ export interface NarrativeContext {
   // prompt labeled as a schedule-miss reason for five days; named for what
   // it actually is now.
   hindrance_note: string | null // evening_schedule_miss_reason, raw.
-  // KNOWN BROKEN, NOT FIXED HERE (found while building C1, deferred to PR
-  // C2 — "reconnect the evening reads"): evening_productive_manpower has
-  // had no write path since 035 either, so manpower_idle_reason reads
-  // permanently null; evening_equipment_utilisation's real (035) shape has
-  // no `idle_reason` key at all (it's `raw`), so equipment_idle_reasons'
-  // own idle_reason field is always undefined too. Both feed the live
-  // model verdict prompt with dead context today.
-  manpower_idle_reason: string | null // evening_productive_manpower.idle_reason, raw.
-  equipment_idle_reasons: EquipmentIdleReason[] // evening_equipment_utilisation.items[].idle_reason, raw, one per item.
+  // RECONNECTED 2026-09-05 (PR C2, found while building C1). Was
+  // evening_productive_manpower.idle_reason — a column with no write path
+  // since 035, permanently null. There is no per-trade idle_reason in the
+  // new shape either (evening_idle_hours' by_trade carries only trade/
+  // idle_hours/matched) — the closest raw text is the Q3 answer's own
+  // raw_text, one string for the whole reply, same granularity loss this
+  // field already had for schedule_miss_reason pre-035 (whole-answer raw
+  // text, not per-item).
+  manpower_idle_reason: string | null // evening_idle_hours.raw_text, whole-answer raw.
+  // RECONNECTED 2026-09-05 (PR C2, found while building C1). 035's real
+  // shape has no `idle_reason` key (it's `raw`) and no `morning_item_index`
+  // (it's `type` — the join key migration 035 replaced position with,
+  // same fix as assemble.ts's equipment join, PR C2's other half).
+  equipment_idle_reasons: EquipmentIdleReason[] // evening_equipment_utilisation.items[].raw, one per type.
 }
 
 interface NarrativeContextRow {
   evening_schedule_miss_reason: string | null
-  evening_productive_manpower: { idle_reason: string | null } | null
-  evening_equipment_utilisation: { items: Array<{ morning_item_index: number | null; idle_reason: string | null }> } | null
+  evening_idle_hours: { raw_text: string | null } | null
+  evening_equipment_utilisation: { items: Array<{ type: string; raw: string | null }> } | null
 }
 
 export async function fetchNarrativeContext(
@@ -57,7 +62,7 @@ export async function fetchNarrativeContext(
 ): Promise<NarrativeContext | null> {
   const { data: rows, error } = await client
     .from('daily_logs')
-    .select('evening_schedule_miss_reason, evening_productive_manpower, evening_equipment_utilisation')
+    .select('evening_schedule_miss_reason, evening_idle_hours, evening_equipment_utilisation')
     .eq('project_id', project_id)
     .eq('log_date', log_date)
 
@@ -69,10 +74,10 @@ export async function fetchNarrativeContext(
 
   return {
     hindrance_note: row.evening_schedule_miss_reason,
-    manpower_idle_reason: row.evening_productive_manpower?.idle_reason ?? null,
+    manpower_idle_reason: row.evening_idle_hours?.raw_text ?? null,
     equipment_idle_reasons: (row.evening_equipment_utilisation?.items ?? []).map((item) => ({
-      morning_item_index: item.morning_item_index,
-      idle_reason: item.idle_reason,
+      type: item.type,
+      idle_reason: item.raw,
     })),
   }
 }
@@ -89,9 +94,9 @@ export async function fetchNarrativeContext(
 // for): the verdict sentence still needs raw text as PROMPT INPUT to write
 // something coherent about WHY, e.g. the spec's own sample verdict "3
 // workers were idle waiting for material" — "waiting for material" is
-// nowhere in Facts, only in evening_productive_manpower.idle_reason. The
-// Facts/Judgment boundary this module respects is about what the model may
-// OUTPUT (never fabricate a number), never what it may READ.
+// nowhere in Facts, only in the raw Q3 answer (evening_idle_hours.raw_text,
+// PR C2). The Facts/Judgment boundary this module respects is about what
+// the model may OUTPUT (never fabricate a number), never what it may READ.
 // -----------------------------------------------------------------------
 
 export async function fetchEngineerNarrativeContext(
@@ -102,7 +107,7 @@ export async function fetchEngineerNarrativeContext(
 ): Promise<NarrativeContext | null> {
   const { data: row, error } = await client
     .from('daily_logs')
-    .select('evening_schedule_miss_reason, evening_productive_manpower, evening_equipment_utilisation')
+    .select('evening_schedule_miss_reason, evening_idle_hours, evening_equipment_utilisation')
     .eq('project_id', project_id)
     .eq('engineer_id', engineer_id)
     .eq('log_date', log_date)
@@ -114,10 +119,10 @@ export async function fetchEngineerNarrativeContext(
   const typed = row as unknown as NarrativeContextRow
   return {
     hindrance_note: typed.evening_schedule_miss_reason,
-    manpower_idle_reason: typed.evening_productive_manpower?.idle_reason ?? null,
+    manpower_idle_reason: typed.evening_idle_hours?.raw_text ?? null,
     equipment_idle_reasons: (typed.evening_equipment_utilisation?.items ?? []).map((item) => ({
-      morning_item_index: item.morning_item_index,
-      idle_reason: item.idle_reason,
+      type: item.type,
+      idle_reason: item.raw,
     })),
   }
 }

@@ -557,6 +557,20 @@ function fmtCaptured(c: CapturedCount | CapturedNumber): string {
   return c.status === 'reported' || c.status === 'zero' ? String(c.value) : 'not reported'
 }
 
+// Trade names are stored lowercase, underscore-joined for compounds
+// ("mason", "bar_bender") — same canonical-key convention equipment.ts
+// uses ("concrete_mixer"). FIRST DRAFT of this helper only uppercased the
+// first character, producing "Bar_bender" — same humanization equipmentLabel()
+// (lib/whatsapp/flows/parsers/lexicon.ts) already applies to equipment
+// types, applied here for trades: split on `_`, capitalize each word, join
+// with a space ("Bar Bender"). No acronym-override map — trades don't have
+// one like equipment's "jcb" -> "JCB".
+function tradeLabel(trade: string): string {
+  const words = trade.trim().toLowerCase().split('_').filter(Boolean)
+  if (words.length === 0) return trade
+  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
 const CHECK_IN_LABEL: Record<CheckInStatus, string> = {
   complete: 'complete',
   partial: 'partial',
@@ -602,12 +616,16 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
   const done = facts.work.done_text.status === 'reported' || facts.work.done_quantity.status === 'reported' ? doneParts.join(' — ') : 'not reported'
   lines.push(`Work — planned: ${fmtText(facts.work.planned)} | done: ${done}`)
 
-  // §3 Manpower
-  const manpowerActual =
-    facts.manpower.on_site.status === 'not_captured' && facts.manpower.working.status === 'not_captured'
-      ? 'not reported'
-      : `${fmtCaptured(facts.manpower.on_site)}, working: ${fmtCaptured(facts.manpower.working)}`
-  lines.push(`Manpower — planned: ${fmtCaptured(facts.manpower.planned)} | on site: ${manpowerActual}`)
+  // §3 Manpower — REPLACED 2026-09-05 (PR C2, design-decisions-beta-
+  // feedback.md's DPR scope principle: "035 asks for fewer things, so the
+  // DPR reports fewer things"). `working` (a productive-count headcount)
+  // is gone from Facts entirely — evening_manpower gives an actual total
+  // by trade, evening_idle_hours gives idle HOURS by trade, and there is
+  // no way to combine those into a headcount without inventing a number
+  // nobody reported. on_site is the only real figure left; idle time is
+  // reported honestly, in its own place, as hours (see idle_hours_by_trade
+  // below).
+  lines.push(`Manpower — planned: ${fmtCaptured(facts.manpower.planned)} | on site: ${fmtCaptured(facts.manpower.on_site)}`)
 
   // §4 Equipment — one line per item; an empty list still gets one line,
   // rather than a header with nothing under it, to keep the body's fixed
@@ -620,9 +638,19 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
   // text is not factual and must not appear in an owner-facing report as
   // if it were. daily_hire_cost stays on EngineerDprFacts (§33(e) — not
   // dropped, for the invoice era) but is never composed into report text.
+  //
+  // implausible: 035's own attention signal (schema.ts's own comment on
+  // EngineerEquipmentItemFacts.implausible), read for the first time in
+  // PR C2. Deliberately NOT a computed idle-hours number — migration 035
+  // dropped available_hours from the question entirely, so an idle figure
+  // would be inferred, not reported, the same fabrication class §33(c)
+  // already closed for hire rates. `(check this)` on the SAME line as the
+  // hours, not a separate NEEDS ATTENTION entry — it qualifies the number
+  // that's already there, it isn't a new fact.
   for (const item of facts.equipment.items) {
     const used = item.actual_hours.status === 'reported' ? `${item.actual_hours.value} hours` : 'not reported'
-    lines.push(`Equipment — planned: ${item.type} | used: ${used}`)
+    const flag = item.implausible === true ? ' (check this)' : ''
+    lines.push(`Equipment — planned: ${item.type} | used: ${used}${flag}`)
   }
 
   // §2 Hindrance — REPLACED 2026-09-05 (PR C1, production incident:
@@ -653,18 +681,19 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
   // NEEDS ATTENTION — what went wrong on site (Rule 5, "the customer's
   // problem"). Code-composed sentences splicing in raw engineer text
   // verbatim (Rule 2b — not a paraphrase, a direct substring), never a
-  // model field. Idle manpower/equipment only — the hindrance answer
-  // renders in its own section above, not folded in here.
+  // model field. The hindrance answer renders in its own section above,
+  // not folded in here; equipment's own attention signal (implausible)
+  // renders inline on its Equipment line above, not duplicated here.
+  //
+  // Idle hours by trade — RECONNECTED 2026-09-05 (PR C2). Read for the
+  // first time since migration 035 (2026-08-31) added evening_idle_hours;
+  // nothing consumed this column before (DPR column audit, docs/reviews/
+  // dpr-column-audit-2026-09-05.md, bucket 3b). REPORTED, not computed —
+  // the engineer answered hours directly per trade; no arithmetic here,
+  // unlike the pre-035 workers-idle line this replaces.
   const needsAttention: string[] = []
-  if (facts.manpower.working.status !== 'not_captured' && facts.manpower.on_site.status !== 'not_captured') {
-    const idle = (facts.manpower.on_site.value ?? 0) - (facts.manpower.working.value ?? 0)
-    if (idle > 0) needsAttention.push(`${idle} workers idle.`)
-  }
-  for (const item of facts.equipment.items) {
-    if (item.available_hours.status === 'reported' && item.actual_hours.status === 'reported') {
-      const idleHours = (item.available_hours.value ?? 0) - (item.actual_hours.value ?? 0)
-      if (idleHours > 0) needsAttention.push(`${item.type} idle for ${idleHours} hours.`)
-    }
+  for (const trade of facts.idle_hours_by_trade) {
+    needsAttention.push(`${tradeLabel(trade.trade)} idle ${trade.idle_hours} hours.`)
   }
 
   if (missing.length > 0) {

@@ -124,7 +124,7 @@ function formatNarrativeContext(narrative: NarrativeContext | null): string {
   lines.push(`  Hindrance (raw): ${narrative.hindrance_note ?? '(none)'}`)
   lines.push(`  Manpower idle reason (raw): ${narrative.manpower_idle_reason ?? '(none)'}`)
   for (const eq of narrative.equipment_idle_reasons) {
-    lines.push(`  Equipment item ${eq.morning_item_index ?? 'unmatched'} idle reason (raw): ${eq.idle_reason ?? '(none)'}`)
+    lines.push(`  Equipment ${eq.type} idle reason (raw): ${eq.idle_reason ?? '(none)'}`)
   }
   return lines.join('\n')
 }
@@ -382,14 +382,19 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
   lines.push(`Work — planned: ${fmtFactText(facts.work.planned)}`)
   lines.push(`Work — done: ${fmtFactText(facts.work.done_text)}${facts.work.done_quantity.status === 'reported' ? `, ${facts.work.done_quantity.value} ${facts.work.unit}` : ''}`)
   lines.push(`Hindrance: ${fmtFactText(facts.hindrance.note)}`)
-  lines.push(`Manpower — planned: ${fmtFactNumber(facts.manpower.planned)}, on site: ${fmtFactNumber(facts.manpower.on_site)}, working: ${fmtFactNumber(facts.manpower.working)}`)
+  lines.push(`Manpower — planned: ${fmtFactNumber(facts.manpower.planned)}, on site: ${fmtFactNumber(facts.manpower.on_site)}`)
+  for (const trade of facts.idle_hours_by_trade) {
+    lines.push(`Idle hours, ${trade.trade}: ${trade.idle_hours}h`)
+  }
   for (const item of facts.equipment.items) {
-    lines.push(`Equipment ${item.type} — available ${fmtFactNumber(item.available_hours)}h, actual ${fmtFactNumber(item.actual_hours)}h`)
+    lines.push(
+      `Equipment ${item.type} — used ${fmtFactNumber(item.actual_hours)}h${item.implausible ? ' (flagged implausible -- do not restate as fact, only that it was flagged)' : ''}`,
+    )
   }
   if (narrative?.hindrance_note) lines.push(`\nRaw hindrance note (context only, never a source of a new digit): ${narrative.hindrance_note}`)
   if (narrative?.manpower_idle_reason) lines.push(`Raw manpower idle reason (context only): ${narrative.manpower_idle_reason}`)
   for (const eq of narrative?.equipment_idle_reasons ?? []) {
-    if (eq.idle_reason) lines.push(`Raw equipment idle reason, item ${eq.morning_item_index ?? 'unmatched'} (context only): ${eq.idle_reason}`)
+    if (eq.idle_reason) lines.push(`Raw equipment idle reason, ${eq.type} (context only): ${eq.idle_reason}`)
   }
   return lines.join('\n')
 }
