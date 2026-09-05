@@ -109,6 +109,17 @@ export const MORNING_AWAITING_TRIGGER_REPLY =
 export const EVENING_AWAITING_TRIGGER_REPLY =
   'Your evening check-in will arrive shortly — it comes to you automatically.'
 
+// §39 fix (design-decisions-beta-feedback.md §39, audit finding J,
+// 2026-09-05). EVENING_AWAITING_TRIGGER_REPLY is false on a site-holiday
+// day -- filterEveningRoster (lib/whatsapp/outbound/roster.ts) excludes
+// attendance='site_holiday' from the evening send, so nothing is coming.
+// Stated as a fact about the site, not the record ("marked as" would read
+// as a database claim to a man standing on it) -- Aravind's correction,
+// 2026-09-05. Does NOT extend to attendance='absent': the evening cron
+// still sends for 'absent' (§37(a), a morning absence doesn't imply an
+// evening one), so EVENING_AWAITING_TRIGGER_REPLY stays accurate there.
+export const EVENING_SITE_HOLIDAY_REPLY = 'No evening check-in today — the site is on holiday.'
+
 export interface InboundRouteResult {
   reply: string
   /** Always null for every branch in this file's own idle handling now -- nothing here starts a flow any more. Non-null only via dispatchInboundTurn's own delegation when a flow is already active. */
@@ -158,11 +169,15 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
 
   const { data: log, error } = await supabase
     .from('daily_logs')
-    .select('morning_submitted_at, evening_submitted_at')
+    .select('morning_submitted_at, evening_submitted_at, attendance')
     .eq('project_id', params.projectId)
     .eq('engineer_id', params.userId)
     .eq('log_date', ist.date)
-    .maybeSingle<{ morning_submitted_at: string | null; evening_submitted_at: string | null }>()
+    .maybeSingle<{
+      morning_submitted_at: string | null
+      evening_submitted_at: string | null
+      attendance: 'present' | 'absent' | 'site_holiday' | null
+    }>()
 
   if (error) {
     throw new Error(
@@ -192,7 +207,14 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
     return { reply: MORNING_AWAITING_TRIGGER_REPLY, resolvedFlow: null }
   }
 
-  // Morning submitted, evening not.
+  // Morning submitted, evening not. site_holiday is checked ahead of the
+  // window logic below: filterEveningRoster excludes it from the evening
+  // send regardless of clock time, so EVENING_AWAITING_TRIGGER_REPLY would
+  // otherwise promise a message that is never coming (§39).
+  if (log?.attendance === 'site_holiday') {
+    return { reply: EVENING_SITE_HOLIDAY_REPLY, resolvedFlow: null }
+  }
+
   if (ist.minutes < cutoffMinutes(CHECKIN_CHECKPOINTS.eveningSend)) {
     return { reply: EVENING_WINDOW_NOT_OPEN_REPLY, resolvedFlow: null }
   }

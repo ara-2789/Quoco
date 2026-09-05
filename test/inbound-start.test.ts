@@ -6,6 +6,7 @@ import {
   EVENING_WINDOW_NOT_OPEN_REPLY,
   MORNING_AWAITING_TRIGGER_REPLY,
   EVENING_AWAITING_TRIGGER_REPLY,
+  EVENING_SITE_HOLIDAY_REPLY,
 } from '@/lib/whatsapp/inbound-start'
 import {
   testClient,
@@ -216,6 +217,67 @@ describe('routeInboundMessage — §35a window guards (morningCutoff, eveningSen
     // file's own header).
     expect(results['19:00']).toBe(MORNING_WINDOW_CLOSED_REPLY)
     expect(results['21:00']).toBe(REPORT_READY_REPLY) // past eveningClose -- top-level refusal
+  })
+})
+
+// §39 fix (design-decisions-beta-feedback.md §39, audit finding J,
+// 2026-09-05): a site-holiday day must not promise an evening check-in
+// that filterEveningRoster (lib/whatsapp/outbound/roster.ts) has already
+// excluded. Locks in the §37(a) distinction alongside it — 'absent' does
+// NOT get this treatment, since the evening cron still sends for an
+// absent-in-the-morning engineer — so nobody "fixes" absent later on the
+// mistaken assumption the two attendance values should behave alike here.
+describe('routeInboundMessage — §39 site-holiday evening reply', () => {
+  it('site_holiday: evening not yet due (18:29) — still gets the holiday reply, not "not yet time"', async () => {
+    const phone = testPhone('817')
+    await seedDailyLogSubmission({
+      logDate: LOG_DATE,
+      morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z`,
+      attendance: 'site_holiday',
+    })
+    const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, JUST_BEFORE_EVENING_SEND))
+    expect(reply).toBe(EVENING_SITE_HOLIDAY_REPLY)
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
+  })
+
+  it('site_holiday: at eveningSend (18:30) — holiday reply, not the awaiting-trigger promise', async () => {
+    const phone = testPhone('818')
+    await seedDailyLogSubmission({
+      logDate: LOG_DATE,
+      morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z`,
+      attendance: 'site_holiday',
+    })
+    const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_EVENING_SEND))
+    expect(reply).toBe(EVENING_SITE_HOLIDAY_REPLY)
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
+  })
+
+  it("absent: at eveningSend — still the ordinary awaiting-trigger reply (§37(a), the evening cron still sends)", async () => {
+    const phone = testPhone('819')
+    await seedDailyLogSubmission({
+      logDate: LOG_DATE,
+      morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z`,
+      attendance: 'absent',
+    })
+    const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_EVENING_SEND))
+    expect(reply).toBe(EVENING_AWAITING_TRIGGER_REPLY)
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
+  })
+
+  it('present: at eveningSend — the ordinary awaiting-trigger reply, unchanged baseline', async () => {
+    const phone = testPhone('820')
+    await seedDailyLogSubmission({
+      logDate: LOG_DATE,
+      morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z`,
+      attendance: 'present',
+    })
+    const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_EVENING_SEND))
+    expect(reply).toBe(EVENING_AWAITING_TRIGGER_REPLY)
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
   })
 })
 
