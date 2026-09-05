@@ -57,6 +57,30 @@ import type { ExecutionOutputFacts } from './schema'
 // so the next false-confidence read of "containment passed" on a manpower-
 // or count-shaped field checks the SOURCE of the number, not just whether a
 // safety net exists.
+//
+// THE SAME INCIDENT'S SECOND HALF, RECORDED SEPARATELY BECAUSE IT'S A
+// DIFFERENT MECHANISM, NOT A RESTATEMENT — the fix for the fabricated
+// total (quoting the engineer's raw manpower text instead) made this
+// check WEAKER, not stronger. Before that fix, a real number like "25"
+// buried in "CIVIL Team 25 nos" was NOT in renderedBody at all — a model
+// citing "25 workers on the civil team" as a fact would have been an
+// INVENTED digit, caught cleanly. After the fix, that same raw text is
+// quoted verbatim in renderedBody (Rule 2b: raw text renders exactly as
+// stored) — so "25" is now genuinely present in the corpus, and the
+// identical sentence passes this check cleanly. Restating a real
+// substring of raw context as though it were a confirmed fact is the
+// SAME fabrication, in prose instead of a computed total — and this
+// check cannot tell the difference, by design: it validates that a digit
+// appears SOMEWHERE in the report, never that the sentence citing it
+// means what the sentence claims. The actual fix for this half lives in
+// the prompt, not here (generate.ts's ENGINEER_SYSTEM_PROMPT now
+// explicitly excludes every "context only" line as a digit source) — a
+// prompt instruction, not a mechanism, so it is a request the model can
+// ignore. A real mechanism — a corpus that only admits digits from lines
+// actually stated as Facts, never from a line marked context-only, even
+// when that digit is also (coincidentally) real — is scoped but not yet
+// built; tracked in the admin-merge retrospective as its own named
+// pattern, not resolved by this comment.
 
 // Every digit-bearing token in a string, normalized to a comparable number so
 // "4,730" (thousands separator) and "4730", or "37.50" and "37.5", compare

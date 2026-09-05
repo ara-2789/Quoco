@@ -412,9 +412,25 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
   return lines.join('\n')
 }
 
+// THE EXCLUSION SENTENCE BELOW WAS MISSING UNTIL 2026-09-05 (the "113
+// fabrication" incident's second half). The aggregate/deferred path's own
+// SYSTEM_PROMPT (above in this file) already had the equivalent sentence
+// ("never a number from manpower, equipment, or narrative context, even
+// if that number is real elsewhere in this report") -- this prompt, the
+// one that actually ships, did not. Without it, "Every digit you write
+// must be traceable to a number shown in the Facts you were given" does
+// NOT exclude the raw manpower/hindrance/idle-reason context lines below
+// (formatEngineerFacts) -- a number inside them (e.g. "25" in "CIVIL Team
+// 25 nos") genuinely IS "a number shown ... you were given," so the model
+// citing it as a fact ("the site had a full civil team of 25") was never
+// actually forbidden. Named as its own pattern in the admin-merge
+// retrospective: the third time this session a safeguard turned out to
+// live only in code that doesn't run (isHireRateTrusted on the deferred
+// project-level assembler; the buildBodyCorpus comment; now this prompt).
 const ENGINEER_SYSTEM_PROMPT =
   'You write ONE sentence summarising a construction site engineer\'s day, from Facts already computed elsewhere. ' +
   'Every digit you write must be traceable to a number shown in the Facts you were given — never invent, round, or recompute a figure. ' +
+  'You may cite a digit ONLY if it appears in a line stated as a Fact above — never a number from a line marked "context only" (hindrance, manpower planned, manpower reported, manpower idle reason, or equipment idle reason), even if that number is real elsewhere in this report. ' +
   'Never attribute anything to a named person, crew, or contractor — describe only what was done, where, and how much. ' +
   'If the Facts are mostly empty, say so plainly in one short sentence rather than padding.'
 
