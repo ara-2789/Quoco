@@ -36,6 +36,28 @@ import type { ExecutionOutputFacts } from './schema'
 // buildExecutionCorpus below, which is unchanged and still excludes raw
 // free text per the original decision.
 
+// THE CONTAINMENT LIMIT — named 2026-09-05, the "113 fabrication" incident
+// (schema.ts's EngineerManpowerFacts comment has the full story). This
+// function's corpus is built from `renderedBody` — whatever is ALREADY in
+// the rendered output by the time the model sees it. That means containment
+// catches an INVENTED digit (one the model made up, present in neither Facts
+// nor the rendered body) but CANNOT catch a FABRICATED one (a wrong number
+// that CODE itself put into the rendered body before the model ever ran) —
+// the model citing it is, by this check's own definition, doing exactly what
+// it's supposed to do. evening_manpower.total (a parser-summed number, not
+// an engineer-stated one — see parseLabourCount, lib/whatsapp/flows/parsers/
+// labour.ts) was one such fabricated number: wrong, but already in the body,
+// so a model citing it as "113 workers on site" passed this check cleanly.
+// This is not a defect in this function — extractDigitTokens is doing
+// exactly what it was built to do (READING A, this file's own header:
+// containment against code-owned Fact/body values, checking the MODEL, not
+// the code that assembled those values). The fix for a fabricated-at-the-
+// source number belongs upstream, at the point the value is assembled
+// (assemble.ts) and rendered (render.ts/generate.ts) — not here. Recorded
+// so the next false-confidence read of "containment passed" on a manpower-
+// or count-shaped field checks the SOURCE of the number, not just whether a
+// safety net exists.
+
 // Every digit-bearing token in a string, normalized to a comparable number so
 // "4,730" (thousands separator) and "4730", or "37.50" and "37.5", compare
 // equal regardless of which side happens to carry the formatting. Currency

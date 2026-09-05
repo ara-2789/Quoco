@@ -540,7 +540,7 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
       evening_status: checkInStatus.evening,
       work: { planned: notCapturedText, done_text: notCapturedText, done_quantity: notCapturedNumber, unit: '' },
       hindrance: { note: notCapturedText },
-      manpower: { planned: notCapturedCount, on_site: notCapturedCount },
+      manpower: { planned: notCapturedText, on_site: notCapturedText },
       idle_hours_by_trade: [],
       equipment: { items: [] },
     }
@@ -573,17 +573,17 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
   // COMMENT ON COLUMN says so). Read it as what it is.
   const hindrance: EngineerDprFacts['hindrance'] = { note: wrapText(row.evening_schedule_miss_reason) }
 
-  // §3 Manpower — planned = morning_manpower.total (renamed from
-  // morning_manpower_planned.planned_total by the morning flow migration,
-  // 030_morning_flow_attendance.sql). on_site = evening_manpower.total,
-  // REPLACED 2026-09-05 (PR C2): evening_workers_on_site/evening_
-  // productive_manpower have had no write path since migration 035
-  // (2026-08-31) — see schema.ts's own EngineerManpowerFacts comment for
-  // why `working` has no replacement field at all rather than a
-  // reconnected one.
+  // §3 Manpower — CHANGED 2026-09-05 (the "113 fabrication" incident,
+  // schema.ts's own EngineerManpowerFacts comment has the full story).
+  // Both fields now source `.raw_text`, never `.total` — `.total` on
+  // BOTH morning_manpower and evening_manpower is a parser-summed number
+  // (parseLabourCount sums every digit found in the free-text answer),
+  // not something the engineer stated as one total. `.raw_text` is the
+  // engineer's own answer, verbatim, already stored on both columns —
+  // no new capture needed.
   const manpower: EngineerDprFacts['manpower'] = {
-    planned: wrapCount(row.morning_manpower?.total ?? null),
-    on_site: wrapCount(row.evening_manpower?.total ?? null),
+    planned: wrapText(row.morning_manpower?.raw_text ?? null),
+    on_site: wrapText(row.evening_manpower?.raw_text ?? null),
   }
 
   // §3b Idle hours by trade — NEW 2026-09-05 (PR C2). evening_idle_hours

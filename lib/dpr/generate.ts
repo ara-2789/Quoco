@@ -382,7 +382,6 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
   lines.push(`Work — planned: ${fmtFactText(facts.work.planned)}`)
   lines.push(`Work — done: ${fmtFactText(facts.work.done_text)}${facts.work.done_quantity.status === 'reported' ? `, ${facts.work.done_quantity.value} ${facts.work.unit}` : ''}`)
   lines.push(`Hindrance: ${fmtFactText(facts.hindrance.note)}`)
-  lines.push(`Manpower — planned: ${fmtFactNumber(facts.manpower.planned)}, on site: ${fmtFactNumber(facts.manpower.on_site)}`)
   for (const trade of facts.idle_hours_by_trade) {
     lines.push(`Idle hours, ${trade.trade}: ${trade.idle_hours}h`)
   }
@@ -392,6 +391,20 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
     )
   }
   if (narrative?.hindrance_note) lines.push(`\nRaw hindrance note (context only, never a source of a new digit): ${narrative.hindrance_note}`)
+  // Manpower, CHANGED 2026-09-05 (the "113 fabrication" incident,
+  // schema.ts's own EngineerManpowerFacts comment). Both used to be
+  // fmtFactNumber'd into the citable Facts section above -- removed
+  // because the underlying values are parser-summed, not engineer-stated
+  // (parseLabourCount sums every digit found in free text; no concept of
+  // a stated total distinct from a breakdown). Raw text only, context-only,
+  // same treatment as manpower_idle_reason directly below: the model may
+  // read it for color, never cite a number out of it as a new Fact.
+  if (facts.manpower.planned.status === 'reported') {
+    lines.push(`Raw manpower planned, morning (context only, never a source of a new digit): ${facts.manpower.planned.value}`)
+  }
+  if (facts.manpower.on_site.status === 'reported') {
+    lines.push(`Raw manpower reported, evening (context only, never a source of a new digit): ${facts.manpower.on_site.value}`)
+  }
   if (narrative?.manpower_idle_reason) lines.push(`Raw manpower idle reason (context only): ${narrative.manpower_idle_reason}`)
   for (const eq of narrative?.equipment_idle_reasons ?? []) {
     if (eq.idle_reason) lines.push(`Raw equipment idle reason, ${eq.type} (context only): ${eq.idle_reason}`)
