@@ -1,7 +1,10 @@
 -- =============================================================================
 -- 037_hindrances_pm_notified_at.sql
--- WRITTEN, NOT YET REHEARSED, NOT YET APPLIED, per explicit instruction --
--- diff first. Per CLAUDE.md's "a migration file enters supabase/migrations/
+-- WRITTEN, REHEARSED (2026-09-05, against the current file -- see the
+-- REHEARSED note near the end for the full record, including a real
+-- discrepancy found between this file's own prior header text and PR
+-- #182's body about whether an earlier rehearsal had already happened),
+-- NOT YET APPLIED. Per CLAUDE.md's "a migration file enters supabase/migrations/
 -- when it is being applied, not when it is written" rule, this file lives
 -- in docs/reviews/ until an apply is actually happening.
 --
@@ -72,8 +75,58 @@
 -- risk either way; (e) no money surface. Normal migration, no external
 -- review package required.
 --
--- REHEARSED: NOT YET, PER EXPLICIT INSTRUCTION -- diff first. NOT YET
--- APPLIED ANYWHERE.
+-- RETROACTIVE CONSUMER CHECK (this project's own standing rule, applied
+-- here, 2026-09-05): `pm_notified_at` -- DOES NOT CHANGE. Zero readers and
+-- zero writers exist anywhere in this codebase today (grepped: the only
+-- hit is this column's own reservation entry in scripts/migration-number-
+-- reservations.json). Item 1's own notification job, the only intended
+-- reader/writer, is unbuilt. This migration adds the column; nothing yet
+-- consumes it.
+--
+-- REVIEWER ROUND (2026-09-05) -- ONE FINDING OF REAL WEIGHT, ACCEPTED. THE
+-- RACE: this file's own COMMENT already prescribed check-then-send-then-
+-- set without ever naming it as a race. Two concurrent notification-job
+-- runs can both read pm_notified_at IS NULL, both send, both set --
+-- amended into the column's own COMMENT above (not just here) so a future
+-- reader sees the trade without needing this migration file: duplicate-
+-- over-silence, deliberately, because a duplicate PM email is visible and
+-- recoverable while a row asserting "notified" when nobody was told is
+-- permanent, undetectable silence. Mitigation recorded there too: a
+-- single serialized notification runner per tick, reducing the race to
+-- process overlap rather than a design gap live on every run.
+--
+-- A DISCREPANCY FOUND BEFORE REHEARSING, NAMED NOT SILENTLY RESOLVED: this
+-- file's own header above previously read "REHEARSED: NOT YET, PER
+-- EXPLICIT INSTRUCTION -- diff first" (its original 2026-09-03 text), but
+-- PR #182's own body separately described a completed two-step rehearsal
+-- (disposable dry-run + test-db apply/verify/teardown) as already done --
+-- the file and its own PR disagreed about whether it had been rehearsed at
+-- all. Moot either way: the COMMENT amendment above changes this file's
+-- content, so a fresh rehearsal against THIS version was required
+-- regardless of which prior claim was accurate.
+--
+-- REHEARSED (2026-09-05, against real test-db, exfccwlrhoutkgrlikod --
+-- not a local scratch scaffold, no disposable dry-run needed first for a
+-- single nullable-column addition with no CHECK/FK to get ordering-wrong):
+-- pre-flight confirmed 0 active connections, 0 hindrances rows. Applied
+-- via `supabase db query --linked -f`; structure verified
+-- (`pm_notified_at`: nullable, `timestamp with time zone`, no default).
+-- Two cases run as real INSERT attempts inside a transaction, rolled back
+-- at the end: an explicit timestamp accepted, an omitted value accepted
+-- with NULL -- both confirmed via a direct row read mid-transaction (1
+-- NULL row, 1 non-NULL row) before rollback, not inferred from absence of
+-- an error alone. ONE TESTING NOTE, NOT A MIGRATION DEFECT: the first
+-- attempt at both cases returned 0 rows inserted, not 2 -- both failed on
+-- `hindrances_submitted_via_check`, because `submitted_via`'s own
+-- baseline DEFAULT ('whatsapp') does not satisfy its own CHECK constraint
+-- (migration 001's own pre-existing, already-documented bug, unrelated to
+-- this migration -- see 036's own DATED CORRECTION #2). Every real test
+-- insert against this table, for either 036 or 037, must supply
+-- `submitted_via` explicitly; the retest that did passed both cases
+-- cleanly. Row count reconfirmed 0 after rollback. DOWN applied cleanly;
+-- post-teardown constraint list confirmed byte-identical to true
+-- baseline (the same 8 constraints 036's own rehearsal restored to).
+-- Ledger untouched throughout. NOT YET APPLIED ANYWHERE.
 -- =============================================================================
 
 BEGIN;
@@ -82,7 +135,7 @@ ALTER TABLE hindrances
   ADD COLUMN pm_notified_at TIMESTAMPTZ;
 
 COMMENT ON COLUMN hindrances.pm_notified_at IS
-  'Send-once guard for the ad-hoc menu item 1 PM email notification (migration 037, 2026-09-03), matching safety_incidents.pm_notified_at''s own shape. NULL = not yet notified -- a notification job checks WHERE pm_notified_at IS NULL before sending. Set to now() immediately after a successful send; never defaulted, never backfilled -- a defaulted value would fabricate a notification that never happened.';
+  'Send-once guard for the ad-hoc menu item 1 PM email notification (migration 037, 2026-09-03), matching safety_incidents.pm_notified_at''s own shape. NULL = not yet notified -- a notification job checks WHERE pm_notified_at IS NULL before sending. Set to now() immediately after a successful send; never defaulted, never backfilled -- a defaulted value would fabricate a notification that never happened. RACE, NAMED EXPLICITLY (reviewer round, 2026-09-05): this is check-then-send-then-set, not one atomic step -- two concurrent job runs can both read pm_notified_at IS NULL, both send, both set. The trade is deliberate: duplicate-over-silence. A duplicate PM email is visible and recoverable; a row that reads notified when nobody was actually told is permanent, undetectable silence -- the exact failure this product exists to prevent (contrast 031''s claim-before-call, which correctly takes the inverse trade for outbound sends, where a claimed-but-uncalled row is the disease, not the cure). Mitigated, not eliminated, by a single serialized notification runner per tick -- reduces the race to process overlap (two runners running at once) rather than a design flaw every single run is exposed to.';
 
 COMMIT;
 
@@ -90,4 +143,16 @@ COMMIT;
 -- DOWN (exact inverse, not applied by this file):
 --
 --   ALTER TABLE hindrances DROP COLUMN pm_notified_at;
+--
+-- CONSEQUENCE, STATED NOT JUST IMPLIED (reviewer round, 2026-09-05):
+-- down-then-reapply RE-ARMS the send-once guard for every existing row.
+-- pm_notified_at is the ONLY record that a notification ever happened --
+-- there is no separate ledger of past sends (see the "NOT A NOTIFICATION
+-- LEDGER" note above). Every previously-notified hindrance reads NULL
+-- again the moment the column comes back, and the very next job run
+-- re-emails its PM -- not a cosmetic reversal, a guaranteed duplicate
+-- send for every row that was ever legitimately notified before DOWN ran.
+-- Sharper than "drop a column": dropping and re-adding this specific
+-- column re-triggers the real-world side effect the column exists to
+-- prevent.
 -- =============================================================================
