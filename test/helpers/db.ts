@@ -296,33 +296,139 @@ export async function cleanupTestDailyLogs(): Promise<void> {
   if (error) throw new Error(`cleanupTestDailyLogs failed: ${error.message}`)
 }
 
+// Run one teardown step, catching (not rethrowing) so a failure here never
+// prevents the REST of removeMorningFixtures from attempting its own steps —
+// see that function's own header for why this matters more than it looks.
+async function runTeardownStep(label: string, step: () => Promise<void>, failures: string[]): Promise<void> {
+  try {
+    await step()
+  } catch (err) {
+    failures.push(`${label}: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 // Tear down the morning fixtures in FK-safe order. Call in afterAll. Post-007
 // the engineer has NO auth.users entry (auth_id = NULL), so there is no auth row
 // to delete — just the public.users row.
+//
+// ATTEMPT EVERY STEP, THEN THROW ONCE (2026-09-05 -- docs/reviews/test-
+// fixture-lifecycle-flake.md's own dated entries for the incident this
+// closes). The previous version threw on the FIRST failing step, leaving
+// every step after it undone -- a partial teardown that then poisoned this
+// SAME shared engineer/project/tenant for every OTHER test file's own
+// afterAll for the rest of that run (this is the actual mechanism behind a
+// single evening's failing-file count going 2 -> 11 -> 17: not a database
+// degrading hour by hour, but one early teardown failure compounding within
+// each run, because the steps after it never got a chance to run either). A
+// teardown that half-runs is worse than one that fails loudly having done
+// all it could -- every step below runs regardless of whether an earlier
+// one errored, failures are collected, and the aggregate is thrown once at
+// the end so a genuine problem is still surfaced, just not at the cost of
+// leaving later steps undone.
 export async function removeMorningFixtures(): Promise<void> {
   const db = testClient()
+  const failures: string[] = []
 
-  await cleanupTestDailyLogs()
+  // Existing project/phone-scoped passes -- UNCHANGED, do not narrow these to
+  // the shared engineer alone. cleanupTestDailyLogs/cleanupTestSessions are
+  // also called standalone elsewhere (afterEach, other suites) and need to
+  // keep covering rows for OTHER engineers on TEST_PROJECT_ID / other phone
+  // numbers under TEST_PHONE_PREFIX that an engineer-scoped pass would never
+  // touch.
+  await runTeardownStep('daily_logs (by project)', cleanupTestDailyLogs, failures)
+  await runTeardownStep(
+    'project_members (by project)',
+    async () => {
+      const { error } = await db.from('project_members').delete().eq('project_id', TEST_PROJECT_ID)
+      if (error) throw new Error(error.message)
+    },
+    failures,
+  )
+  await runTeardownStep('whatsapp_sessions (by phone prefix)', cleanupTestSessions, failures)
 
-  const { error: memberErr } = await db
-    .from('project_members')
-    .delete()
-    .eq('project_id', TEST_PROJECT_ID)
-  if (memberErr) throw new Error(`removeMorningFixtures member failed: ${memberErr.message}`)
-
-  await cleanupTestSessions()
-
-  const { error: projErr } = await db.from('projects').delete().eq('id', TEST_PROJECT_ID)
-  if (projErr) throw new Error(`removeMorningFixtures project failed: ${projErr.message}`)
-
+  // ENGINEER-SCOPED CLEANUP, IN ADDITION TO THE PASSES ABOVE -- closes the
+  // #179/2026-09-05 class of gap: a child row for THIS engineer under a
+  // DIFFERENT project or phone number (e.g. test/dpr-generate-job.test.ts
+  // and test/dpr-generate-trigger.test.ts each seed a daily_logs row for
+  // this same shared engineer under THEIR OWN project_id, normally cleaned
+  // by their own per-test `finally`) is invisible to the project_id/phone-
+  // prefix filters above and would otherwise survive to block the users
+  // delete below -- the exact shape of both #179 (whatsapp_sessions, keyed
+  // on phone prefix) and the 2026-09-05 CI failure (daily_logs, keyed on
+  // project_id): children filtered by one key, parent deleted by another,
+  // so a child under a THIRD value of that other key outlives the parent
+  // delete it should have blocked correctly, or (worse) silently doesn't
+  // block it and leaves an orphan.
+  //
+  // SAFE TO RUN UNCONDITIONALLY, even though it overlaps with rows the
+  // passes above may already have removed: vitest.config.ts sets
+  // fileParallelism: false, so no other test file is running concurrently
+  // while this executes -- no live fixture belonging to a DIFFERENT,
+  // currently-running file can be pulled out from under it. This is the
+  // load-bearing assumption; if fileParallelism is ever turned on, this
+  // reasoning -- and this whole cleanup pass -- needs re-examining first.
   if (engineerId) {
-    const { error: userErr } = await db.from('users').delete().eq('id', engineerId)
-    if (userErr) throw new Error(`removeMorningFixtures user failed: ${userErr.message}`)
-
-    engineerId = null
+    const id = engineerId
+    await runTeardownStep(
+      'daily_logs (by engineer)',
+      async () => {
+        const { error } = await db.from('daily_logs').delete().eq('engineer_id', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'project_members (by engineer)',
+      async () => {
+        const { error } = await db.from('project_members').delete().eq('user_id', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'whatsapp_sessions (by engineer)',
+      async () => {
+        const { error } = await db.from('whatsapp_sessions').delete().eq('user_id', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
   }
 
-  await removeTestTenant()
+  await runTeardownStep(
+    'projects',
+    async () => {
+      const { error } = await db.from('projects').delete().eq('id', TEST_PROJECT_ID)
+      if (error) throw new Error(error.message)
+    },
+    failures,
+  )
+
+  if (engineerId) {
+    const id = engineerId
+    let userDeleteOk = false
+    await runTeardownStep(
+      'users',
+      async () => {
+        const { error } = await db.from('users').delete().eq('id', id)
+        if (error) throw new Error(error.message)
+        userDeleteOk = true
+      },
+      failures,
+    )
+    // Only clear the module-level cache once the row is actually confirmed
+    // gone -- if the delete failed, the row (and its id) are still real;
+    // the next ensureMorningEngineer() call will correctly re-find it via
+    // its own select-by-whatsapp_number lookup either way, but nulling this
+    // out on a FAILED delete would be asserting something false.
+    if (userDeleteOk) engineerId = null
+  }
+
+  await runTeardownStep('tenants', removeTestTenant, failures)
+
+  if (failures.length > 0) {
+    throw new Error(`removeMorningFixtures: ${failures.length} step(s) failed -- ${failures.join(' | ')}`)
+  }
 }
 
 // ---------------------------------------------------------------------------
