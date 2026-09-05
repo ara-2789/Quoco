@@ -1,0 +1,149 @@
+[
+  {
+    "table": "daily_logs",
+    "column": "engineer_id",
+    "parent": "users",
+    "action": "delete",
+    "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. The 2026-09-05 FK-cascade incident: this exact table/column blocked removeMorningFixtures' users delete."
+  },
+  {
+    "table": "dprs",
+    "column": "engineer_id",
+    "parent": "users",
+    "action": "delete",
+    "note": "028_dprs_engineer_id_option_a.sql -- composite (engineer_id, tenant_id) REFERENCES users(id, tenant_id) ON DELETE RESTRICT, and engineer_id is NOT NULL -- the row can't survive with engineer_id nulled, must be deleted."
+  },
+  {
+    "table": "dprs",
+    "column": "tenant_id",
+    "parent": "tenants",
+    "action": "delete",
+    "note": "023_dpr_reports.sql -- NOT NULL, no ON DELETE clause. This is the exact FK (dprs_tenant_id_fkey) that blocked removeTestTenant() in the 2026-09-05 incident."
+  },
+  {
+    "table": "dpr_versions",
+    "column": "generated_by_user",
+    "parent": "users",
+    "action": "delete",
+    "note": "029_dpr_versioning.sql -- composite (generated_by_user, tenant_id) REFERENCES users(id, tenant_id) ON DELETE RESTRICT. Nullable, but a CHECK requires it NOT NULL whenever generated_by='pm', so nulling it can violate the CHECK -- delete the row instead."
+  },
+  {
+    "table": "dpr_versions",
+    "column": "tenant_id",
+    "parent": "tenants",
+    "action": "delete",
+    "note": "029_dpr_versioning.sql -- NOT NULL, no ON DELETE clause."
+  },
+  {
+    "table": "daily_log_edits",
+    "column": "edited_by",
+    "parent": "users",
+    "action": "delete",
+    "note": "019_daily_log_corrections.sql -- NOT NULL, no ON DELETE clause."
+  },
+  {
+    "table": "daily_log_edits",
+    "column": "tenant_id",
+    "parent": "tenants",
+    "action": "delete",
+    "note": "019_daily_log_corrections.sql -- NOT NULL, no ON DELETE clause."
+  },
+  {
+    "table": "owner_email_verifications",
+    "column": "tenant_id",
+    "parent": "tenants",
+    "action": "not-applicable",
+    "note": "034_owner_email_delivery.sql -- NOT NULL, ON DELETE RESTRICT explicit. Cannot be 'delete': migration 034 grants service_role only SELECT/INSERT/UPDATE on this table (line 445, deliberate -- verification tokens are meant to be tamper-evident), so a sweep DELETE would error, confirmed live (this exact error surfaced while building this fix: 'permission denied for table owner_email_verifications'). Cannot be 'null' either -- tenant_id is NOT NULL. This table DOES use the shared TEST_TENANT_ID (unlike outbound_sends' dedicated fixture), but test/owner-confirm-email.test.ts already deletes its own rows by exact id in its own afterEach -- the generic sweep is redundant when that runs, and structurally cannot help when it doesn't. (The table's own user_id/tenant_id composite FK to users cascades, so no users-side entry is needed.)"
+  },
+  {
+    "table": "projects",
+    "column": "owner_user_id",
+    "parent": "users",
+    "action": "null",
+    "note": "016_corrections.sql -- nullable, ON DELETE RESTRICT explicit. action=null (not delete): a project row is independent of who happens to own it, so release the reference instead of deleting an unrelated project."
+  },
+  {
+    "table": "projects",
+    "column": "created_by",
+    "parent": "users",
+    "action": "null",
+    "note": "001_core_schema.sql -- nullable, no ON DELETE clause. Same reasoning as owner_user_id above."
+  },
+  {
+    "table": "dprs",
+    "column": "generated_by_user",
+    "parent": "users",
+    "action": "delete",
+    "note": "029_dpr_versioning.sql -- a SEPARATE column from dpr_versions.generated_by_user above, added to dprs itself in the same migration. Nullable, but a CHECK requires it NOT NULL whenever generated_by='pm' -- same reasoning as dpr_versions.generated_by_user, delete the row rather than risk violating the CHECK."
+  },
+  {
+    "table": "whatsapp_sessions",
+    "column": "user_id",
+    "parent": "users",
+    "action": "null",
+    "note": "001_core_schema.sql -- nullable, no ON DELETE clause. Not currently populated by any test fixture (seedSession et al. key off phone_number, not user_id) -- covered anyway per this rule's forward-safety intent."
+  },
+  {
+    "table": "safety_incidents",
+    "column": "reported_by",
+    "parent": "users",
+    "action": "delete",
+    "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. Phase 2 (pre-contract) table, not currently seeded by any Spine test -- covered anyway; a future safety-flow test would otherwise reintroduce this exact incident."
+  },
+  {
+    "table": "invoices",
+    "column": "submitted_by",
+    "parent": "users",
+    "action": "delete",
+    "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. Not currently seeded (Phase 2)."
+  },
+  {
+    "table": "invoices",
+    "column": "reviewed_by",
+    "parent": "users",
+    "action": "null",
+    "note": "001_core_schema.sql -- nullable, no ON DELETE clause. Not currently seeded (Phase 2)."
+  },
+  {
+    "table": "hindrances",
+    "column": "reported_by",
+    "parent": "users",
+    "action": "delete",
+    "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. This is the pre-contract hindrances table 036/037 add columns to (unapplied) -- same table, not currently seeded by any Spine test."
+  },
+  {
+    "table": "tenders",
+    "column": "created_by",
+    "parent": "users",
+    "action": "null",
+    "note": "001_core_schema.sql -- nullable, no ON DELETE clause. Phase 2, not currently seeded."
+  },
+  {
+    "table": "tender_chat_sessions",
+    "column": "user_id",
+    "parent": "users",
+    "action": "delete",
+    "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. Phase 2, not currently seeded."
+  },
+  {
+    "table": "boq_sessions",
+    "column": "created_by",
+    "parent": "users",
+    "action": "null",
+    "note": "001_core_schema.sql -- nullable, no ON DELETE clause. Phase 2, not currently seeded."
+  },
+  {
+    "table": "outbound_sends",
+    "column": "tenant_id",
+    "parent": "tenants",
+    "action": "not-applicable",
+    "note": "031_outbound_send_ledger.sql -- NOT NULL, no ON DELETE clause -- a real landmine in general, but never for the SHARED morning-flow fixture: this table's own test suite (test/outbound-*.test.ts) always writes under its own dedicated OUTBOUND_TEST_TENANT_ID, never TEST_TENANT_ID, and manages its own teardown separately (see test/outbound-trigger.test.ts's own header comment on this exact RESTRICT FK). Also: service_role has NO DELETE grant on this table at all today (031's own deliberate ledger-immutability design) -- a generic sweep delete would error, not no-op. sweepSharedFixtureReferences() must skip 'not-applicable' entries rather than act on them."
+  },
+  {
+    "table": "outbound_sends",
+    "column": "recipient_user_id",
+    "parent": "users",
+    "action": "not-applicable",
+    "note": "031_outbound_send_ledger.sql -- same reasoning as outbound_sends.tenant_id above: always the outbound suite's own dedicated fixture engineer, never the shared testEngineerId(), and no DELETE grant exists on this table today regardless."
+  }
+]
