@@ -99,6 +99,17 @@ export interface StuckClaimRow {
 export interface CoverageSweepResult {
   checkpoints: CoverageCheckpointResult[]
   stuckClaims: StuckClaimRow[]
+  /**
+   * The TRUE count of rows matching the stuck-claim filter, independent of
+   * `STUCK_CLAIM_SCAN_LIMIT` -- computed by the same query via PostgREST's
+   * `count: 'exact'`, not a second round-trip. `stuckClaims.length <
+   * stuckClaimsTotalMatching` means the scan is truncating: real stuck rows
+   * exist beyond what `stuckClaims` reports. See STUCK_CLAIM_SCAN_LIMIT's own
+   * comment for why this field exists at all -- 2026-09-04, the incident
+   * that found `fetchStuckClaims` silently dropping rows past PostgREST's
+   * 1000-row default cap, with nothing to say so.
+   */
+  stuckClaimsTotalMatching: number
   /** Excluded from the stuck-claim scan and from alerting entirely -- see F3 above. Visibility only. */
   rateLimitedBacklogCount: number
 }
@@ -171,26 +182,76 @@ async function checkCoverageForCheckpoint(
   }
 }
 
+// 2026-09-04 incident (docs/build-status.md's outbound_sends growth entry,
+// same date): this query originally had no .order() and no .limit() -- on a
+// table with no DELETE grant and RESTRICT-FK'd parents (031's own design,
+// deliberate for prod), that is genuinely unbounded, and PostgREST silently
+// truncates at its own default 1000-row response cap. With no explicit
+// order, WHICH 1000-of-N rows come back was unspecified -- a genuinely
+// stuck send could fall outside the returned set with no signal anything
+// was dropped, precisely during the kind of large-scale failure (a Twilio
+// outage, a mass crash between claim and terminal-update) this scan exists
+// to catch.
+//
+// STUCK_CLAIM_SCAN_LIMIT -- a reasoned ceiling, not the platform default.
+// At this project's own stated future scale (docs/build-status.md: "~50
+// engineers"), a single catastrophic single-tenant, single-day outage
+// affecting every claim across both checkpoints is on the order of 100
+// rows. 500 is 5x that, comfortably below PostgREST's 1000-row cap so a
+// breach is a DELIBERATE, visible condition (see stuckClaimsTotalMatching
+// below and its own alert in reportOutboundCoverageAnomalies), never a
+// silent one.
+const STUCK_CLAIM_SCAN_LIMIT = 500
+
 /**
  * F4 -- the stuck-claim scan. F3's partition applied directly in the query:
  * `error IS NULL` excludes the rate-limited backlog structurally, not as a
  * post-filter that could accidentally be dropped by a future edit.
+ *
+ * Deliberately NOT scoped by event_key/checkpoint/date -- a dead claim from
+ * any historical date is still a real, unresolved problem; the scan's job
+ * is to catch every one currently in the table (this file's own header,
+ * "so a dead process ... doesn't sit invisible forever"). The fix here is
+ * bounding and ordering an intentionally-broad query, not narrowing it.
+ *
+ * ORDER: newest-stuck-first (`updated_at` descending). Either direction is
+ * defensible for a single incident (a cluster of claims dying together
+ * sorts similarly either way) -- descending is chosen because a fresh
+ * failure is what an operator responding to "something just broke" cares
+ * about first, and because `stuckClaimsTotalMatching` (not row presence)
+ * is what any correctness check should rely on regardless -- ordering
+ * affects WHICH rows are visible under truncation, never WHETHER
+ * truncation is detected.
+ *
+ * `limit` is a parameter (default STUCK_CLAIM_SCAN_LIMIT), not hardcoded --
+ * same reason claimJobs (lib/queue/jobs.ts) exposes its own limit: lets a
+ * test exercise the truncation-detection path with a small number of real
+ * rows instead of needing hundreds.
  */
-async function fetchStuckClaims(client: SupabaseClient, now: Date): Promise<StuckClaimRow[]> {
+async function fetchStuckClaims(
+  client: SupabaseClient,
+  now: Date,
+  limit: number = STUCK_CLAIM_SCAN_LIMIT,
+): Promise<{ rows: StuckClaimRow[]; totalMatching: number }> {
   const threshold = new Date(now.getTime() - 10 * 60 * 1000).toISOString()
-  const { data, error } = await client
+  const { data, error, count } = await client
     .from('outbound_sends')
-    .select('id, to_phone_number, content_sid, updated_at')
+    .select('id, to_phone_number, content_sid, updated_at', { count: 'exact' })
     .eq('status', 'sending')
     .is('error', null)
     .lt('updated_at', threshold)
+    .order('updated_at', { ascending: false })
+    .limit(limit)
   if (error) throw error
-  return (data ?? []).map((r) => ({
-    id: r.id as string,
-    toPhoneNumber: r.to_phone_number as string,
-    contentSid: r.content_sid as string,
-    updatedAt: r.updated_at as string,
-  }))
+  return {
+    rows: (data ?? []).map((r) => ({
+      id: r.id as string,
+      toPhoneNumber: r.to_phone_number as string,
+      contentSid: r.content_sid as string,
+      updatedAt: r.updated_at as string,
+    })),
+    totalMatching: count ?? 0,
+  }
 }
 
 async function fetchRateLimitedBacklogCount(client: SupabaseClient): Promise<number> {
@@ -203,7 +264,11 @@ async function fetchRateLimitedBacklogCount(client: SupabaseClient): Promise<num
   return count ?? 0
 }
 
-export async function runOutboundCoverageSweep(client: SupabaseClient, now: Date): Promise<CoverageSweepResult> {
+export async function runOutboundCoverageSweep(
+  client: SupabaseClient,
+  now: Date,
+  stuckClaimLimit: number = STUCK_CLAIM_SCAN_LIMIT,
+): Promise<CoverageSweepResult> {
   const logDate = istDateString(now)
   const nowMinutes = istParts(now).minutes
 
@@ -212,12 +277,17 @@ export async function runOutboundCoverageSweep(client: SupabaseClient, now: Date
     checkCoverageForCheckpoint(client, 'evening_send', logDate, nowMinutes),
   ])
 
-  const [stuckClaims, rateLimitedBacklogCount] = await Promise.all([
-    fetchStuckClaims(client, now),
+  const [stuckClaimResult, rateLimitedBacklogCount] = await Promise.all([
+    fetchStuckClaims(client, now, stuckClaimLimit),
     fetchRateLimitedBacklogCount(client),
   ])
 
-  return { checkpoints, stuckClaims, rateLimitedBacklogCount }
+  return {
+    checkpoints,
+    stuckClaims: stuckClaimResult.rows,
+    stuckClaimsTotalMatching: stuckClaimResult.totalMatching,
+    rateLimitedBacklogCount,
+  }
 }
 
 // COVERAGE-GAP ALERTING IS GATED ON ITEM E BEING LIVE -- DERIVED FROM
@@ -345,6 +415,28 @@ export function reportOutboundCoverageAnomalies(
         to_phone_number: row.toPhoneNumber,
         content_sid: row.contentSid,
         updated_at: row.updatedAt,
+      },
+    })
+  }
+
+  // 2026-09-04: the truncation this scan is exposed to (STUCK_CLAIM_SCAN_LIMIT's
+  // own comment) must itself be visible, not just bounded -- a per-row alert
+  // above only ever fires for the rows fetchStuckClaims actually returned; a
+  // row past the limit gets no alert of its own. ONE stable-fingerprinted
+  // issue for the condition itself (not per-row -- there is nothing per-row
+  // to report about a row we didn't fetch), same dedup discipline as the
+  // coverage-gap alerts above. Deliberately NOT gated on triggerCronLive,
+  // same reasoning as the per-row stuck-claim alerts: this can only fire
+  // when outbound_sends genuinely holds more matching rows than the limit,
+  // which cannot happen before real sends exist.
+  if (result.stuckClaimsTotalMatching > result.stuckClaims.length) {
+    Sentry.captureMessage('outbound-send: stuck-claim scan is truncating -- more stuck rows exist than reported', {
+      level: 'error',
+      fingerprint: ['outbound-send', 'stuck_claim_scan_truncated'],
+      tags: { feature: 'outbound-send' },
+      extra: {
+        total_matching: result.stuckClaimsTotalMatching,
+        returned: result.stuckClaims.length,
       },
     })
   }
