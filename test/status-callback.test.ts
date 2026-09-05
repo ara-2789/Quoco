@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { NextRequest } from 'next/server'
 import crypto from 'crypto'
 import { handleStatusCallbackPost } from '@/app/api/whatsapp/status-callback/route'
@@ -8,6 +8,7 @@ import {
   OUTBOUND_TEST_PROJECT_ID,
   ensureOutboundParentFixtures,
   mintOutboundEngineer,
+  cleanupOutboundSends,
   type MintedEngineer,
 } from './helpers/outbound-fixtures'
 import { MORNING_CHECKIN_SID } from '@/lib/whatsapp/outbound/templates'
@@ -103,6 +104,8 @@ describe('handleStatusCallbackPost', () => {
     await ensureOutboundParentFixtures()
     engineer = await mintOutboundEngineer()
   })
+
+  afterAll(cleanupOutboundSends)
 
   describe('signature validation', () => {
     it('a valid signature against the env-derived allowlisted origin is accepted', async () => {

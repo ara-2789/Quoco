@@ -32,6 +32,27 @@ export async function ensureOutboundParentFixtures(): Promise<void> {
   if (projErr) throw new Error(`ensureOutboundParentFixtures project failed: ${projErr.message}`)
 }
 
+// Fix 2 of the 2026-09-05 --admin-merge retrospective
+// (docs/reviews/admin-merge-retrospective-2026-09-05.md): outbound_sends
+// grew from 78 rows (2026-08-28) to 3,716 (2026-09-05) with no deletion
+// path at all, which is what let an unbounded/unordered scan (fixed
+// separately in PR #188) silently truncate under PostgREST's 1000-row cap.
+// This is only callable at all because of a TEST-DB-ONLY grant --
+// see scripts/test-db-only-grants.sql for the exact statement and why it
+// can never reach prod. Call in each outbound-suite file's own afterAll,
+// never afterEach (per-test uniqueness on event_key, not per-test
+// isolation, is this suite's existing design -- see
+// test/outbound-trigger.test.ts's own ACCRETION section).
+//
+// Does NOT purge the 3,716 legacy rows already in test-db -- deliberately.
+// Ship the mechanism first, prove it holds across a few real runs, purge
+// the backlog separately once it has.
+export async function cleanupOutboundSends(): Promise<void> {
+  const db = testClient()
+  const { error } = await db.from('outbound_sends').delete().eq('project_id', OUTBOUND_TEST_PROJECT_ID)
+  if (error) throw new Error(`cleanupOutboundSends failed: ${error.message}`)
+}
+
 export interface MintedEngineer {
   id: string
   whatsappNumber: string

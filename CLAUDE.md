@@ -762,6 +762,30 @@
   tripped. Not started by this entry; recorded so it has somewhere
   durable to live, per `docs/reviews/service-role-table-grants-gap.md`'s
   own SCOPE OF THE FIX section.
+- `OUTBOUND_SENDS`' GRANTS NOW DIFFER BETWEEN TEST-DB AND PROD — A
+  DOCUMENTED, DELIBERATE EXCEPTION TO "TEST-DB MIRRORS PROD" (standing rule
+  since 2026-09-05, Fix 2 of the --admin-merge retrospective,
+  `docs/reviews/admin-merge-retrospective-2026-09-05.md`). Prod's migration
+  (031) deliberately grants `service_role` no DELETE on this table — a
+  durable, append-only send ledger, per the same reasoning as the rule
+  above. Test-db needs the OPPOSITE property: `outbound_sends` grew from 78
+  rows (2026-08-28) to 3,716 (2026-09-05) with no deletion path at all,
+  which is what let an unbounded/unordered scan silently truncate under
+  PostgREST's 1000-row cap (fixed separately in PR #188). `service_role` on
+  test-db ONLY now also holds DELETE on `outbound_sends`, granted via
+  `scripts/test-db-only-grants.sql` — never a migration file, so no apply
+  tool this project uses (`supabase db push`, `supabase db query --linked
+  -f`, `scripts/lint-migrations.mjs`) can ever pick it up or replay it
+  against prod; see that file's own header for the full mechanism. THIS IS
+  THE ONE NAMED EXCEPTION to the assumption several other standing rules
+  lean on — the disposable-dry-run-scaffold rule (§7) and the REHEARSE ON A
+  CLEANED EXISTING BRANCH rule both reason about test-db/prod SCHEMA
+  STRUCTURE (tables, columns, constraints) being identical; this exception
+  is scoped to a GRANT, not a schema shape, and is the only place in this
+  project where a role's privileges genuinely diverge between the two
+  databases by design. If a second such exception is ever added, name it
+  here too rather than letting "test-db mirrors prod" silently accrue
+  unstated exceptions.
 - WHEN A DEFECT IS FIXED STRUCTURALLY, GREP THE REPOSITORY FOR THE SAME
   PATTERN BEFORE CLOSING IT (standing rule since 2026-08-26; full record:
   docs/reviews/session-transition-lock-wait-flake.md's SCOPE GAP section).
