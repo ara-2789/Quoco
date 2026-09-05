@@ -275,3 +275,22 @@ thing to happen again until the underlying database reliability problem
 `docs/reviews/service-role-table-grants-gap.md`'s sibling findings, and this
 document's own earlier sections) is actually addressed. **Not done here —
 the database is not cleaned, reset, or otherwise touched by this entry.**
+
+**Addendum, same evening: a red check on this repo is not evidence of a test
+failure until its duration is checked.** Three separate `ci-test-db-suite`
+concurrency-group preemptions occurred across three different PRs this same
+night (PR #177, PR #183, PR #192's own first `Test (real test-db)` run) —
+each one showed `fail` in GitHub's PR-checks summary view, and each one's
+actual `conclusion`, read via `gh api .../check-runs`, was `cancelled`, with
+the identical annotation: `"Canceling since a higher priority waiting
+request for ci-test-db-suite exists"`. **No test ran in any of the three —
+a cancelled run carries no information about the code under test, positive
+or negative — yet the summary view's own `fail` label is indistinguishable
+at a glance from a genuine assertion failure.** The cheapest tell, observed
+directly rather than inferred: **duration**. This suite takes 11-24 minutes
+end to end (this same evening's own genuine runs: 10m13s, 12m1s, 12m20s);
+every one of the three preemptions completed in well under a minute (48s,
+1m11s, 31s respectively). A real run cannot finish in under ten minutes —
+anyone reading a red check on this repo should check the duration column
+before the conclusion, and treat anything under a few minutes as a
+preemption to re-run, not a failure to diagnose.
