@@ -275,3 +275,49 @@ overriding" — Q2 already forces that. It's: once a genuine root cause is
 diagnosed and its fix is ready, merging that fix promptly is cheaper than
 absorbing another override on the next PR that happens to be open when it
 fires again.
+
+## Q6 — a named pattern, found three times in one session: the safeguard lives in the code that doesn't run
+
+Not part of the `--admin` merges above — surfaced during the same
+session's "113 fabrication" manpower-total fix (PR #209) — but the same
+underlying failure shape as this retrospective's own subject, one level
+more general: a protection people would reasonably assume exists turns
+out to live only in a path that isn't actually the one shipping to
+production, or in a comment describing code that was never written at
+all. Three instances, same session:
+
+1. **`isHireRateTrusted`** (docs/design-decisions-beta-feedback.md's own
+   §33(c) writeup). A confidence gate on a hire-rate figure exists on the
+   DEFERRED project-level assembler (`mergeDprFacts`, dead code — no call
+   site outside tests and two scripts touches it). The LIVE per-engineer
+   assembler (`mergeEngineerDprFacts`) has **no trust gate by explicit
+   design** — its own comment says so. Two fabricated values shipped
+   through the path with no checkpoint, while a checkpoint-shaped
+   function sat, unused, one file over.
+2. **`buildBodyCorpus`** (schema.ts's own `EngineerDprJudgment` comment,
+   corrected this session in PR #209). Cited by name as the containment
+   mechanism; grepped, zero hits anywhere in the repo. The real mechanism
+   (`extractDigitTokens`, containment.ts) was never wrong — the comment
+   just named something that was never built, and nobody had checked
+   until this session's audit.
+3. **`ENGINEER_SYSTEM_PROMPT`'s missing exclusion sentence** (PR #209,
+   this session). The aggregate/deferred path's own `SYSTEM_PROMPT`
+   already excludes context-only text as a digit source ("never a number
+   from manpower, equipment, or narrative context, even if that number is
+   real elsewhere in this report"). The per-engineer prompt — the one
+   that actually ships — had no equivalent sentence, so a real number
+   inside a "context only" line was never actually forbidden from being
+   cited as a fact.
+
+**The pattern, stated once instead of three times**: in all three cases,
+a reasonable reader (a reviewer, a future engineer, this session's own
+first pass through the code) could look at the SIBLING path — the
+deferred assembler, a plausible-sounding function name, the aggregate
+prompt — and conclude the live path has the same protection, without
+checking. It doesn't, in any of the three. None of the three was caught
+by a normal read of the live path's own code; each was caught only by
+explicitly asking "does the path that actually runs have this, or am I
+assuming it does because something nearby does." Worth a standing check
+the next time a safeguard is assumed present: confirm it lives in the
+code with the live call site, not in a sibling, a comment, or a deferred
+implementation that reads like it should.
