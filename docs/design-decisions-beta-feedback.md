@@ -3561,5 +3561,17 @@ d. **The cutoff for appending — the question §28(t) would ask if it could.** 
    **Related, and explicitly a product question, not a schema one:** if a late append
    does land after the DPR already went to the owner, does he get a correction sent,
    or does the change only ever surface in the next day's report? Not decided.
+e. **`attendance` itself is a concrete motivating case, not just headcount (added
+   2026-09-05).** §39's evening-idle-inbound fix (PR #206) now states plainly, at
+   idle-inbound time, that no evening check-in is coming today when
+   `attendance = 'site_holiday'` — a firmer, more final-sounding claim than the
+   generic replies it replaces. If `attendance` itself was captured wrong that
+   morning (the engineer answered too fast, or the parser misread his answer), he
+   now gets told definitively that nothing is coming, with no way to say "no,
+   actually the site is working today." Before §39, an ambiguous generic reply at
+   least left room for doubt; the new one closes it. This is the same shape as the
+   headcount scenario above (a true-at-the-time answer that later needs amending,
+   same day), not a new kind of problem — named here so `attendance` is in scope
+   when this is actually built, not rediscovered as a separate decision later.
 
 **Not built. This entry records the decision and its reasoning only.**
