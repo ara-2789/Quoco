@@ -353,12 +353,10 @@ export async function removeMorningFixtures(): Promise<void> {
   // this same shared engineer under THEIR OWN project_id, normally cleaned
   // by their own per-test `finally`) is invisible to the project_id/phone-
   // prefix filters above and would otherwise survive to block the users
-  // delete below -- the exact shape of both #179 (whatsapp_sessions, keyed
-  // on phone prefix) and the 2026-09-05 CI failure (daily_logs, keyed on
-  // project_id): children filtered by one key, parent deleted by another,
-  // so a child under a THIRD value of that other key outlives the parent
-  // delete it should have blocked correctly, or (worse) silently doesn't
-  // block it and leaves an orphan.
+  // delete below -- children filtered by one key, parent deleted by
+  // another, so a child under a THIRD value of that other key outlives the
+  // parent delete it should have blocked correctly, or (worse) silently
+  // doesn't block it and leaves an orphan.
   //
   // SAFE TO RUN UNCONDITIONALLY, even though it overlaps with rows the
   // passes above may already have removed: vitest.config.ts sets
@@ -367,8 +365,175 @@ export async function removeMorningFixtures(): Promise<void> {
   // currently-running file can be pulled out from under it. This is the
   // load-bearing assumption; if fileParallelism is ever turned on, this
   // reasoning -- and this whole cleanup pass -- needs re-examining first.
+  //
+  // CATALOG-DERIVED, NOT HAND-MAINTAINED (2026-09-05). Every table with an
+  // FK to public.users, found by running (against the TEST db):
+  //
+  //   SELECT tc.table_name, kcu.column_name, tc.constraint_name
+  //   FROM information_schema.table_constraints tc
+  //   JOIN information_schema.key_column_usage kcu
+  //     ON tc.constraint_name = kcu.constraint_name
+  //   JOIN information_schema.constraint_column_usage ccu
+  //     ON tc.constraint_name = ccu.constraint_name
+  //   WHERE tc.constraint_type = 'FOREIGN KEY'
+  //     AND ccu.table_name = 'users'
+  //     AND tc.table_schema = 'public'
+  //   ORDER BY tc.table_name;
+  //
+  // ...then, for each row, its ON DELETE action from pg_constraint:
+  //
+  //   SELECT conrelid::regclass AS table_name, conname, confdeltype
+  //   FROM pg_constraint
+  //   WHERE contype = 'f' AND confrelid = 'public.users'::regclass;
+  //
+  // Tables whose FK is ON DELETE CASCADE need NOTHING here -- the users
+  // delete below cleans them automatically. Confirmed CASCADE, 2026-09-05:
+  // checkin_escalations (migration 027, by design), owner_email_verifications,
+  // AND project_members -- the last one was WRONGLY assumed to need an
+  // engineer-scoped pass in an earlier round of this same fix; the catalog
+  // said otherwise and that assumption is corrected here, not carried
+  // forward. Do not add project_members/checkin_escalations/
+  // owner_email_verifications cleanup below; if the catalog ever stops
+  // saying CASCADE for one of them, that's the signal to add it.
+  //
+  // Every remaining table needed a THIRD query -- the full FK graph, not
+  // just the users-referencing slice -- to order deletes safely and catch
+  // dependencies the users-only query can't see:
+  //
+  //   SELECT con.conrelid::regclass AS child_table,
+  //          con.confrelid::regclass AS parent_table,
+  //          con.conname, con.confdeltype
+  //   FROM pg_constraint con
+  //   JOIN pg_namespace n ON n.oid = con.connamespace
+  //   WHERE con.contype = 'f' AND n.nspname = 'public'
+  //   ORDER BY parent_table, child_table;
+  //
+  // That graph found exactly one real forcing edge among the tables below:
+  // daily_log_edits.daily_logs_id -> daily_logs.id (NO ACTION) -- a
+  // daily_log_edits row blocks deleting the daily_logs row it references
+  // regardless of who edited_by is, so it must go first. tender_chat_
+  // messages.session_id -> tender_chat_sessions.id (NO ACTION) is the same
+  // shape one hop further out (tender_chat_messages has no FK to users at
+  // all, so the first query above never surfaces it) and is handled the
+  // same way. dpr_versions.dpr_id -> dprs.id turned out to be CASCADE, so
+  // no manual ordering was needed there after all -- checked, not assumed,
+  // same as the project_members correction above.
+  //
+  // THE RULE for what to do with each column, so the next table found this
+  // way needs no re-discussion:
+  //   - nullable attribution column (records who did something, the row's
+  //     MEANING doesn't depend on it) -> NULL it. Gentle, and never blocks
+  //     anything else, so this pass runs first.
+  //   - NOT NULL attribution column, or an ownership column (the row's
+  //     meaning IS this engineer) -> DELETE the row. This is a shared TEST
+  //     fixture database, not customer data -- another test's row is
+  //     disposable and reseeds on its own next run; leaving it behind is
+  //     exactly what has been breaking every run.
   if (engineerId) {
     const id = engineerId
+
+    // --- NULL pass: nullable attribution columns, order-independent ---
+    await runTeardownStep(
+      'projects.created_by (null)',
+      async () => {
+        const { error } = await db.from('projects').update({ created_by: null }).eq('created_by', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'projects.owner_user_id (null)',
+      async () => {
+        const { error } = await db.from('projects').update({ owner_user_id: null }).eq('owner_user_id', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'invoices.reviewed_by (null)',
+      async () => {
+        const { error } = await db.from('invoices').update({ reviewed_by: null }).eq('reviewed_by', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'dprs.generated_by_user (null)',
+      async () => {
+        const { error } = await db.from('dprs').update({ generated_by_user: null }).eq('generated_by_user', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'dpr_versions.generated_by_user (null)',
+      async () => {
+        const { error } = await db.from('dpr_versions').update({ generated_by_user: null }).eq('generated_by_user', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'boq_sessions.created_by (null)',
+      async () => {
+        const { error } = await db.from('boq_sessions').update({ created_by: null }).eq('created_by', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'tenders.created_by (null)',
+      async () => {
+        const { error } = await db.from('tenders').update({ created_by: null }).eq('created_by', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+
+    // --- DELETE pass: ownership / NOT NULL attribution, FK-safe order ---
+    await runTeardownStep(
+      'tender_chat_messages (by this engineer\'s sessions)',
+      async () => {
+        const { data: sessions, error: selErr } = await db
+          .from('tender_chat_sessions')
+          .select('id')
+          .eq('user_id', id)
+        if (selErr) throw new Error(selErr.message)
+        const sessionIds = (sessions ?? []).map((s) => s.id as string)
+        if (sessionIds.length === 0) return
+        const { error } = await db.from('tender_chat_messages').delete().in('session_id', sessionIds)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'tender_chat_sessions (by engineer)',
+      async () => {
+        const { error } = await db.from('tender_chat_sessions').delete().eq('user_id', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'daily_log_edits (by editor)',
+      async () => {
+        const { error } = await db.from('daily_log_edits').delete().eq('edited_by', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'daily_log_edits (by edited log, regardless of editor)',
+      async () => {
+        const { data: logs, error: selErr } = await db.from('daily_logs').select('id').eq('engineer_id', id)
+        if (selErr) throw new Error(selErr.message)
+        const logIds = (logs ?? []).map((l) => l.id as string)
+        if (logIds.length === 0) return
+        const { error } = await db.from('daily_log_edits').delete().in('daily_logs_id', logIds)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
     await runTeardownStep(
       'daily_logs (by engineer)',
       async () => {
@@ -378,17 +543,49 @@ export async function removeMorningFixtures(): Promise<void> {
       failures,
     )
     await runTeardownStep(
-      'project_members (by engineer)',
+      'whatsapp_sessions (by engineer)',
       async () => {
-        const { error } = await db.from('project_members').delete().eq('user_id', id)
+        const { error } = await db.from('whatsapp_sessions').delete().eq('user_id', id)
         if (error) throw new Error(error.message)
       },
       failures,
     )
     await runTeardownStep(
-      'whatsapp_sessions (by engineer)',
+      'dprs (by engineer)',
       async () => {
-        const { error } = await db.from('whatsapp_sessions').delete().eq('user_id', id)
+        const { error } = await db.from('dprs').delete().eq('engineer_id', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'outbound_sends (by recipient)',
+      async () => {
+        const { error } = await db.from('outbound_sends').delete().eq('recipient_user_id', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'invoices (by submitter)',
+      async () => {
+        const { error } = await db.from('invoices').delete().eq('submitted_by', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'hindrances (by reporter)',
+      async () => {
+        const { error } = await db.from('hindrances').delete().eq('reported_by', id)
+        if (error) throw new Error(error.message)
+      },
+      failures,
+    )
+    await runTeardownStep(
+      'safety_incidents (by reporter)',
+      async () => {
+        const { error } = await db.from('safety_incidents').delete().eq('reported_by', id)
         if (error) throw new Error(error.message)
       },
       failures,
