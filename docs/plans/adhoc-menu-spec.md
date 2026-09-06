@@ -163,7 +163,7 @@ question in this section is gone entirely.** Six idle replies collapse to one me
 maintain — every idle inbound gets the identical structural reply (header + list),
 differing only in which header line, or none, applies.
 
-**OPEN, must be checked before the copy pass — the header's own delivery mechanism,
+~~**OPEN, must be checked before the copy pass — the header's own delivery mechanism,
 verified here against both Twilio's and Meta's current docs, not assumed:**
 
 Fetched directly, 2026-08-30, not recalled: **Twilio's own `twilio/list-picker` Content
@@ -188,11 +188,45 @@ project's own send path regardless of its real limit. **Consequence: the header 
 goes into `body`, prepended before whatever intro/prompt text the menu's body already
 carries, separated by a line break — not a length concern (1,024 chars is not a binding
 constraint for any of the five lines above, all well under 60 characters as drafted),
-only a copy-pass question of ordering and visual separation within one field.**
+only a copy-pass question of ordering and visual separation within one field.**~~
+
+**DATED CORRECTION (2026-09-06, PR 2 router design pass).** The struck subsection above
+is moot, not merely superseded: it exists entirely to solve a problem — "which field
+carries the header, given the list-picker Content API has no header field" — that no
+longer exists, because **plain text superseded the list-picker itself** (Aravind's
+decision, this same pass): with the beta menu down to one item (item 2 dropped 2026-09-06,
+item 7 held pending its own BOT-27 fix), there is nothing left to *pick from a list* — Rule
+3.1 already prefers typed numbers as the primary path, and a single-row interactive
+component adds a second `readCurrentFlow`-shaped lookup with nothing to show for it. There
+is no `body` field, no Content API send, no 1,024-character budget, because there is no
+list-picker send at all — the reply is one ordinary TwiML text reply, the same shape
+`routeInboundMessage`'s six static idle replies already use today.
+
+**What survives, unchanged: the 5-row header table above.** It fixes a real bug (§39 —
+`EVENING_AWAITING_TRIGGER_REPLY` promising a check-in a site-holiday day would never
+send) and that fix has nothing to do with how the reply is delivered. Read the table as
+current and live; read everything else in this section (the list-picker mechanism, the
+body-field workaround, the 1,024-character analysis) as historical record of a design
+this project no longer builds. See §g's own new "Idle-inbound reply, decided" subsection
+below for the actual reply text this collapses into, all five header states shown in
+full — added the same date as this correction, not yet written when this note was
+drafted, so not cited by a number that could go stale the way §g.9 already did once.
 
 ---
 
 ## b. Delivery — verified against Twilio's/Meta's current docs, not the decision text
+
+**DATED CORRECTION (2026-09-06, PR 2 router design pass), READ THIS FIRST — everything
+below in this section is HISTORICAL RECORD, not current design.** This entire section
+verifies constraints on the Twilio `twilio/list-picker` Content API send (row caps,
+section caps, button/row character limits, an eighth-item scaling question). None of it
+applies any more: plain text superseded the list-picker (one item in the beta menu, item
+2 dropped and item 7 held; Rule 3.1 already prefers typed numbers; no reason to add a
+second flow-state lookup for a component with nothing left to pick from — see §a's own
+correction, same date, for the full reasoning). There is no Content API send, so there is
+no row/section/character budget to track and no eighth-item problem to solve — kept below
+per this project's own provenance discipline (correct in place, don't silently rewrite),
+not because any of it still governs what ships. Don't build against it.
 
 §28(x)'s claim checked directly, not trusted: **confirmed live** against Twilio's Content
 API docs — WhatsApp's List Picker content type is explicitly **"❌ Not supported" for
@@ -703,6 +737,81 @@ leading numeral from the message `Body`. Both paths resolve to the same permanen
 number, so a tap and a typed "1" converge on identical downstream handling — the menu
 does not need two separate code paths for "how the engineer chose an item," only one
 followed by two ways of reaching it.
+
+**NAMED HONESTLY (2026-09-06): the `ListId` branch above is currently unreachable, not
+removed.** With plain text superseding the list-picker (§a/§b's own dated corrections),
+nothing this project sends today can ever produce a `ListId` — there is no row to tap.
+The branch stays in the router (free to keep; it's the same shape a future list-picker
+send would need, per the plain-text decision's own reasoning that choosing text now loses
+none of this design) but is dormant until a list send exists again. Recorded explicitly
+so this doesn't read as an accidental dead branch discovered later — the retrospective's
+Q6 pattern ("the safeguard lives in the code that doesn't run") is about logic that
+SHOULD run and silently doesn't; this is logic that deliberately doesn't run yet, on
+record as such.
+
+## Idle-inbound reply, decided (2026-09-06) — precedence, and all five replies in full
+
+**PRECEDENCE: a leading "1" always starts item 1's flow, regardless of what the header
+table below would otherwise say.** Decided by Aravind, this pass: a site-holiday engineer
+or one past the morning cutoff still has a genuine hindrance to report; the header exists
+to explain why no check-in is coming, never to say nothing can be reported. Confirmed
+buildable with no new cost — the "1" check runs first, before the header is even
+computed, and needs no data the header computation doesn't already read (`daily_logs` for
+today, already fetched by `routeInboundMessage`). Consequence for the four cases below:
+none of them ever fire when the message starts with "1" — that case dispatches straight
+into item 1's flow (built in this PR's step 4), never reaching this reply at all.
+
+**The three fallback replies, as accepted (chat, pre-compaction this session) — committed
+here so they stop living only in chat, the second time this session copy has been at risk
+of being lost (the tap-test payload above was the first):**
+
+- **Typed "2":**
+  > Safety reporting is not available here. If someone is hurt or in danger, call your
+  > site supervisor now. You can currently report: 1 for a site hindrance.
+- **Typed "3", "4", "5", "6", or "7":**
+  > That option isn't available yet. Nothing was recorded. You can currently report: 1
+  > for a site hindrance.
+- **Free text / unparseable (includes an ordinary idle message like "hi" that isn't an
+  attempt at any number):**
+  > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
+  > site hindrance.
+
+**The free-text/unparseable reply is the one that absorbs the header table** (§a's
+5-row table, still live — the typed-"2" and typed-"3"–"7" replies above are shown exactly
+as written, with NO header prepended, since they're direct answers to a specific
+attempted number, not a general idle check-in status message). When a header condition
+applies, it is prepended as its own line, separated by a line break, matching §a's own
+"separated by a line break" resolution (written for the list-picker's `body` field,
+equally correct for a plain-text reply — the field changed, the layout rule didn't). All
+five combinations, exactly as an engineer would receive them:
+
+1. **Before `morningSend`, nothing recorded:**
+   > Your check-in will arrive shortly.
+   > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
+   > site hindrance.
+2. **After `morningCutoff`, morning missed:**
+   > The morning window has closed for today.
+   > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
+   > site hindrance.
+3. **`attendance = 'site_holiday'`:**
+   > Site holiday recorded — nothing further today.
+   > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
+   > site hindrance.
+4. **Both halves submitted:**
+   > Today's check-in is complete.
+   > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
+   > site hindrance.
+5. **Nothing notable (no header):**
+   > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
+   > site hindrance.
+
+**Flagged, not silently smoothed over: #3 and #4 read slightly oddly** — "nothing
+further today" or "check-in is complete" immediately followed by "I didn't understand
+that" reads as two unrelated facts glued together (the first about check-in status, the
+second about the just-received message), because they are two unrelated facts. Not
+edited here since the fallback text itself was given as already-accepted copy, not
+freelanced by this pass — flagging for Aravind's own call on whether the juxtaposition
+needs smoothing before this ships, rather than assuming either way.
 
 ## §28(t) — closed, not left open (proposed rewrite, for review)
 
