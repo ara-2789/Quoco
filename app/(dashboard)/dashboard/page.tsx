@@ -282,7 +282,7 @@ function TileCard({ tile }: { tile: Tile }) {
           className={
             !wa && !call
               ? 'inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors'
-              : 'inline-flex items-center justify-center rounded-md px-4 py-1 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors'
+              : 'inline-flex items-center justify-center rounded-md px-4 py-3 sm:py-1 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors'
           }
         >
           Open project
