@@ -18,8 +18,8 @@ import {
   TEST_ENGINEER_PHONE,
 } from './helpers/db'
 import { MORNING_QUESTIONS } from '@/lib/whatsapp/flows/morning'
-import { EVENING_QUESTIONS, EVENING_ALREADY_COMPLETE_REPLY } from '@/lib/whatsapp/flows/evening'
-import { REPORT_READY_REPLY, MORNING_WINDOW_CLOSED_REPLY, MORNING_AWAITING_TRIGGER_REPLY } from '@/lib/whatsapp/inbound-start'
+import { EVENING_QUESTIONS } from '@/lib/whatsapp/flows/evening'
+import { buildIdleReply } from '@/lib/whatsapp/inbound-start'
 import { PHOTO_REPLY, VOICE_REPLY } from '@/lib/whatsapp/media-reply'
 
 // T-WH: the HTTP-level webhook harness named in CLAUDE.md's TESTING DEBT entry
@@ -476,14 +476,14 @@ describe('handleWebhookPost — no active session (routeInboundMessage wiring)',
     // this test actually proves, is that the reply is never '' any more —
     // the BOT-07 silence CLAUDE.md's "BOT-07 SILENCE IS A RULE 3.5
     // DEAD-END" entry names is closed for this case by this build.
-    // RETIRED, 2026-08-28: idle inbound no longer starts a flow
-    // (MORNING_QUESTIONS[1] is no longer a possible outcome of this path
-    // at all) -- MORNING_AWAITING_TRIGGER_REPLY replaces it for the
-    // before-morningCutoff window. THREE outcomes still, per §35a
-    // (design-decisions-beta-feedback.md, 2026-08-26): MORNING_WINDOW_
-    // CLOSED_REPLY covers the whole morningCutoff..eveningClose window
-    // (15:00-19:45 IST), a real interval this suite can genuinely run
-    // inside.
+    // RETIRED, 2026-08-28: idle inbound no longer starts a flow. ROUTER
+    // REWRITE, 2026-09-06: the three possible outcomes are now composed via
+    // buildIdleReply('unrecognized', <headerState>) -- 'hi' never matches
+    // any digit, so this always exercises the 'unrecognized' correction
+    // line. THREE header states still possible, per §35a (design-decisions-
+    // beta-feedback.md, 2026-08-26): 'morning_closed' covers the whole
+    // morningCutoff..eveningClose window (15:00-19:45 IST), a real interval
+    // this suite can genuinely run inside.
     const req = buildWebhookRequest({
       From: `whatsapp:${TEST_ENGINEER_PHONE}`,
       Body: 'hi',
@@ -494,9 +494,9 @@ describe('handleWebhookPost — no active session (routeInboundMessage wiring)',
     const reply = await twimlText(res)
     expect(reply).not.toBeNull()
     expect(
-      reply === MORNING_AWAITING_TRIGGER_REPLY ||
-        reply === MORNING_WINDOW_CLOSED_REPLY ||
-        reply === REPORT_READY_REPLY,
+      reply === buildIdleReply('unrecognized', 'awaiting_morning') ||
+        reply === buildIdleReply('unrecognized', 'morning_closed') ||
+        reply === buildIdleReply('unrecognized', 'complete'),
     ).toBe(true)
     // No RPC is ever called from this path any more -- confirm no session
     // row materialised, regardless of which of the three windows this run
@@ -518,8 +518,11 @@ describe('handleWebhookPost — no active session (routeInboundMessage wiring)',
     const res = await handleWebhookPost(req, { supabaseClient: testClient() })
     expect(res.status).toBe(200)
     const reply = await twimlText(res)
-    // Same before/after-eveningClose variance as T-WH-11, same reason.
-    expect(reply === EVENING_ALREADY_COMPLETE_REPLY || reply === REPORT_READY_REPLY).toBe(true)
+    // Unlike T-WH-11, this is now a SINGLE deterministic outcome, not a
+    // before/after-eveningClose variance: computeIdleHeaderState's
+    // 'complete' state fires once both halves are submitted regardless of
+    // clock time (ROUTER REWRITE, 2026-09-06).
+    expect(reply).toBe(buildIdleReply('unrecognized', 'complete'))
     // Neither outcome calls an RPC -- confirm no session row materialised.
     expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
   })
