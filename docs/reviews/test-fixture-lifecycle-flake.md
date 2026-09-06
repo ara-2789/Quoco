@@ -283,22 +283,22 @@ runs against the shared test DB (`exfccwlrhoutkgrlikod`) in one evening
 than a remembered count, per this project's own house rule about verifying a
 number before writing it down.)
 
-**The load-bearing pair is rows 3 and 6: `origin/main`, unchanged, zero code
+~~**The load-bearing pair is rows 3 and 6: `origin/main`, unchanged, zero code
 difference between them, 2 failing files at 23:11 and 15 failing files at
 00:07.** The database, not the diff, is what changed between those two
 readings. Every run in between plausibly left teardown damage behind (this
 document's own mechanism above, and the session-filter FK gap recorded
 separately) that the next run inherited — the runs are not independent
 measurements of whatever code happened to be checked out; each one mutates
-the shared resource the next one is measured against.
+the shared resource the next one is measured against.~~
 
-**Consequence, stated plainly: this suite currently cannot be used to
+~~**Consequence, stated plainly: this suite currently cannot be used to
 measure whether a change caused a regression, and a same-evening
 before/after comparison against this database is invalid by construction.**
 A failing-file count taken in isolation, without also re-running the
 *other* side of the comparison back to back and immediately, proves
 nothing about the code under test — it may only be reporting how dirty the
-database has become since the last clean state. (The final row above still
+database has become since the last clean state.~~ (The final row above still
 demonstrates the intended fix: an unscoped, system-wide production query
 stubbed out of the test path drops failures back to the 2-file baseline
 even directly after row 6's degraded 15 — but that comparison's own
@@ -309,7 +309,7 @@ suite, and no test anywhere in this repository calls `runJobsTick` in the
 first place. The numbers corroborate that; they don't carry it on their
 own — see the commit alongside this entry for the full argument.)
 
-**This is now blocking real work, not merely producing noise.** A
+~~**This is now blocking real work, not merely producing noise.** A
 same-evening before/after test-count comparison was the natural first tool
 reached for to settle whether a change was safe; it produced three
 different, mutually-contradicting-looking readings before the actual
@@ -319,7 +319,7 @@ thing to happen again until the underlying database reliability problem
 (already tracked: `docs/reviews/test-db-reliability-workstream.md`,
 `docs/reviews/service-role-table-grants-gap.md`'s sibling findings, and this
 document's own earlier sections) is actually addressed. **Not done here —
-the database is not cleaned, reset, or otherwise touched by this entry.**
+the database is not cleaned, reset, or otherwise touched by this entry.**~~
 
 **Addendum, same evening: a red check on this repo is not evidence of a test
 failure until its duration is checked.** Three separate `ci-test-db-suite`
@@ -339,3 +339,48 @@ every one of the three preemptions completed in well under a minute (48s,
 anyone reading a red check on this repo should check the duration column
 before the conclusion, and treat anything under a few minutes as a
 preemption to re-run, not a failure to diagnose.
+
+## Correction (2026-09-06): the "shared DB is poisoned" reading above is not established
+
+The struck paragraphs above, from the "suite cannot currently measure a change"
+entry, drew a causal conclusion — the shared test DB itself degrades across runs
+and cannot be trusted for same-evening before/after comparison — from seven full
+local runs against `exfccwlrhoutkgrlikod` in one evening. That entry was written
+before this branch (`feat/checkin-escalation-sweep-wiring`, PR #192) was parked
+on it. Two things have since come in that the original entry could not have had:
+
+- **All seven runs behind that conclusion were sequential, on one machine, in
+  one evening** — the entry's own table (above) lists every run's source as
+  either this branch or `origin/main`, run locally, back to back. Nothing in it
+  is an independent, cross-machine reading. The entry treated "the database
+  degraded between runs" as the explanation; "this one machine had resource
+  contention across a long run of back-to-back local test invocations" fits the
+  same numbers at least as well, and was never ruled out.
+- **CI has since run the identical suite, against the identical database, with
+  the pre-fix teardown code still in place (`removeMorningFixtures()` in
+  `test/helpers/db.ts`, the same fixture lifecycle this document's own earlier
+  sections describe, unchanged), and it did not reproduce the degradation this
+  entry describes.** PR #213's `Test (real test-db)` run (commit `9ee28fc`,
+  2026-09-05) scored **924/925 tests, 78/79 files** — nowhere near the 8-17
+  failing-file range this entry's table records for the same evening's local
+  runs. Its one failure was a 30-second `afterAll` HOOK TIMEOUT in
+  `test/section-42-write-boundary-distinctness.test.ts` — a different symptom
+  from this document's own FK-violation family (`## The signature`, above) —
+  and cleared cleanly on a single re-run, with no code change.
+
+**Consequence:** the "shared DB is poisoned, same-evening comparisons are
+invalid by construction" reading above is **not established**. CI does not
+reproduce it under conditions (same database, same pre-fix code) where the
+local runs said it should. Single-machine resource contention across seven
+back-to-back local invocations is at least as good an explanation for the
+2/9/11/15/17-style spread in that table, and nothing here rules it out either
+— this correction narrows the original claim, it does not replace it with a
+new established one. **What is NOT in doubt:** the structural teardown-scoping
+defect this document records elsewhere (`## A structural filter gap in
+removeMorningFixtures()`, above, and the FK-violation signature at the top of
+this document) is still real and still unfixed — only the *urgency* argued for
+it here, and the specific "database itself is currently unusable for
+comparison" framing, are what this correction withdraws. Treat CI as
+trustworthy for this suite going forward unless it says otherwise on its own
+terms — a red check on its own actual merits, not a locally-observed count
+from one machine's evening.
