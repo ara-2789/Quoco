@@ -1,12 +1,10 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
 import {
   routeInboundMessage,
-  REPORT_READY_REPLY,
-  MORNING_WINDOW_CLOSED_REPLY,
-  EVENING_WINDOW_NOT_OPEN_REPLY,
-  MORNING_AWAITING_TRIGGER_REPLY,
-  EVENING_AWAITING_TRIGGER_REPLY,
-  EVENING_SITE_HOLIDAY_REPLY,
+  classifyAdhocInput,
+  computeIdleHeaderState,
+  buildIdleReply,
+  HINDRANCE_REPORT_INTERIM_REPLY,
 } from '@/lib/whatsapp/inbound-start'
 import {
   testClient,
@@ -24,7 +22,7 @@ import {
   testEngineerId,
 } from './helpers/db'
 import { MORNING_QUESTIONS } from '@/lib/whatsapp/flows/morning'
-import { EVENING_QUESTIONS, EVENING_ALREADY_COMPLETE_REPLY } from '@/lib/whatsapp/flows/evening'
+import { EVENING_QUESTIONS } from '@/lib/whatsapp/flows/evening'
 
 // Integration tests for routeInboundMessage (lib/whatsapp/inbound-start.ts).
 // RETIRED, 2026-08-28 (this file's own header, design-decisions-beta-
@@ -40,6 +38,23 @@ import { EVENING_QUESTIONS, EVENING_ALREADY_COMPLETE_REPLY } from '@/lib/whatsap
 // construction as test/dispatch.test.ts -- no mocks. `now` is injected per
 // case so every window is deterministic, unlike webhook.test.ts's
 // end-to-end path (no `now` injection point there, matching production).
+//
+// ROUTER REWRITE, 2026-09-06 (ad-hoc menu PR 2, step 2). The six/seven
+// named static replies this file used to assert against
+// (MORNING_AWAITING_TRIGGER_REPLY, MORNING_WINDOW_CLOSED_REPLY,
+// EVENING_WINDOW_NOT_OPEN_REPLY, EVENING_AWAITING_TRIGGER_REPLY,
+// EVENING_SITE_HOLIDAY_REPLY, REPORT_READY_REPLY) are gone. Every idle
+// reply is now composed from computeIdleHeaderState + buildIdleReply
+// (inbound-start.ts's own exports) -- tests below construct the exact
+// expected string via buildIdleReply itself rather than duplicating the
+// fifteen approved literal strings (docs/plans/adhoc-menu-spec.md's
+// "Idle-inbound reply, decided" section is the source of truth for the
+// literal copy; this file only proves the STATE MACHINE picks the right
+// (kind, headerState) pair for each window). The default `baseParams`
+// message is 'hi', which classifies as 'unrecognized' -- every existing
+// window-table case below exercises that one input kind; a new describe
+// block at the end covers the other two kinds and the "1" precedence rule
+// directly.
 
 const LOG_DATE = '2026-08-20'
 
@@ -87,32 +102,32 @@ function baseParams(phone: string, now: string, message = 'hi') {
 }
 
 describe('routeInboundMessage — (a) window table, no active session', () => {
-  it('before morningSend, nothing submitted — awaiting-trigger acknowledgement, no session created', async () => {
+  it('before morningSend, nothing submitted — awaiting_morning header, no session created', async () => {
     const phone = testPhone('801')
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, BEFORE_MORNING_SEND))
-    expect(reply).toBe(MORNING_AWAITING_TRIGGER_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'awaiting_morning'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('mid-day, nothing submitted, before morningCutoff — awaiting-trigger acknowledgement, no session', async () => {
+  it('mid-day, nothing submitted, before morningCutoff — awaiting_morning header, no session', async () => {
     const phone = testPhone('802')
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, MID_DAY_NOT_SUBMITTED))
-    expect(reply).toBe(MORNING_AWAITING_TRIGGER_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'awaiting_morning'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('at eveningSend, morning submitted, evening not — awaiting-trigger acknowledgement, no session', async () => {
+  it('at eveningSend, morning submitted, evening not — no header (approved table has no "evening pending" row), no session', async () => {
     const phone = testPhone('803')
     await seedDailyLogSubmission({ logDate: LOG_DATE, morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z` })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, MID_DAY_MORNING_ONLY))
-    expect(reply).toBe(EVENING_AWAITING_TRIGGER_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'none'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('mid-day, both submitted — "both done" reply, no RPC called, no session created', async () => {
+  it('mid-day, both submitted — "complete" header, no RPC called, no session created', async () => {
     const phone = testPhone('804')
     await seedDailyLogSubmission({
       logDate: LOG_DATE,
@@ -120,15 +135,15 @@ describe('routeInboundMessage — (a) window table, no active session', () => {
       eveningSubmittedAt: `${LOG_DATE}T10:00:00.000Z`,
     })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, MID_DAY_BOTH_DONE))
-    expect(reply).toBe(EVENING_ALREADY_COMPLETE_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'complete'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('after eveningClose — refuses with REPORT_READY_REPLY, regardless of submission state', async () => {
+  it('after eveningClose — "complete" header regardless of submission state (the old REPORT_READY_REPLY condition folds in here)', async () => {
     const phone = testPhone('805')
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AFTER_EVENING_CLOSE))
-    expect(reply).toBe(REPORT_READY_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'complete'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
@@ -139,18 +154,18 @@ describe('routeInboundMessage — (a) window table, no active session', () => {
 // removed the RPC calls they used to sit in front of) rather than guarding
 // anything; the boundary itself is unchanged.
 describe('routeInboundMessage — §35a window guards (morningCutoff, eveningSend)', () => {
-  it('morning: window still open just before the cutoff (14:59) — awaiting-trigger acknowledgement, no session', async () => {
+  it('morning: window still open just before the cutoff (14:59) — awaiting_morning header, no session', async () => {
     const phone = testPhone('811')
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, JUST_BEFORE_MORNING_CUTOFF))
-    expect(reply).toBe(MORNING_AWAITING_TRIGGER_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'awaiting_morning'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('morning: refused exactly at the cutoff (15:00) — MORNING_WINDOW_CLOSED_REPLY, no session', async () => {
+  it('morning: refused exactly at the cutoff (15:00) — morning_closed header, no session', async () => {
     const phone = testPhone('812')
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_MORNING_CUTOFF))
-    expect(reply).toBe(MORNING_WINDOW_CLOSED_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'morning_closed'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
@@ -158,37 +173,37 @@ describe('routeInboundMessage — §35a window guards (morningCutoff, eveningSen
   it('morning: refused well after the cutoff (16:30) — the 2026-08-26 incident window', async () => {
     const phone = testPhone('813')
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AFTER_MORNING_CUTOFF))
-    expect(reply).toBe(MORNING_WINDOW_CLOSED_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'morning_closed'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('evening: refused just before eveningSend (18:29) even though morning is done', async () => {
+  it('evening: no header just before eveningSend (18:29) even though morning is done — same collapse as at eveningSend', async () => {
     const phone = testPhone('814')
     await seedDailyLogSubmission({ logDate: LOG_DATE, morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z` })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, JUST_BEFORE_EVENING_SEND))
-    expect(reply).toBe(EVENING_WINDOW_NOT_OPEN_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'none'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('evening: window open exactly at eveningSend (18:30) — awaiting-trigger acknowledgement, no session', async () => {
+  it('evening: window open exactly at eveningSend (18:30) — identical reply to just-before (real, accepted information loss — no dedicated "evening pending" row in the approved header table)', async () => {
     const phone = testPhone('815')
     await seedDailyLogSubmission({ logDate: LOG_DATE, morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z` })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_EVENING_SEND))
-    expect(reply).toBe(EVENING_AWAITING_TRIGGER_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'none'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
   it('the existing eveningClose refusal (19:45+) is NOT shadowed by the new evening guard — composition check', async () => {
     // Nothing submitted at all, well past BOTH window guards' own windows
-    // AND past eveningClose. REPORT_READY_REPLY is the only correct
+    // AND past eveningClose. The "complete" header is the only correct
     // outcome, and it must come from the top-level eveningClose check,
     // which runs before the `!morningSubmitted` branch is ever reached.
     const phone = testPhone('816')
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, `${LOG_DATE}T21:00:00+05:30`))
-    expect(reply).toBe(REPORT_READY_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'complete'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
@@ -209,14 +224,14 @@ describe('routeInboundMessage — §35a window guards (morningCutoff, eveningSen
     // eslint-disable-next-line no-console
     console.log('§35 composition table (nothing submitted):', JSON.stringify(results, null, 2))
 
-    expect(results['14:00']).toBe(MORNING_AWAITING_TRIGGER_REPLY) // before morningCutoff -- window still open
-    expect(results['16:00']).toBe(MORNING_WINDOW_CLOSED_REPLY) // past morningCutoff, morning not done
+    expect(results['14:00']).toBe(buildIdleReply('unrecognized', 'awaiting_morning')) // before morningCutoff -- window still open
+    expect(results['16:00']).toBe(buildIdleReply('unrecognized', 'morning_closed')) // past morningCutoff, morning not done
     // §37(b): 19:00 is past eveningSend too, but morning was NEVER
     // submitted -- the evening branch is unreachable for this engineer on
     // any timeline, not just at this instant. Accepted, not fixed (this
     // file's own header).
-    expect(results['19:00']).toBe(MORNING_WINDOW_CLOSED_REPLY)
-    expect(results['21:00']).toBe(REPORT_READY_REPLY) // past eveningClose -- top-level refusal
+    expect(results['19:00']).toBe(buildIdleReply('unrecognized', 'morning_closed'))
+    expect(results['21:00']).toBe(buildIdleReply('unrecognized', 'complete')) // past eveningClose -- top-level refusal
   })
 })
 
@@ -228,7 +243,7 @@ describe('routeInboundMessage — §35a window guards (morningCutoff, eveningSen
 // absent-in-the-morning engineer — so nobody "fixes" absent later on the
 // mistaken assumption the two attendance values should behave alike here.
 describe('routeInboundMessage — §39 site-holiday evening reply', () => {
-  it('site_holiday: evening not yet due (18:29) — still gets the holiday reply, not "not yet time"', async () => {
+  it('site_holiday: evening not yet due (18:29) — still gets the site_holiday header, not "no header"', async () => {
     const phone = testPhone('817')
     await seedDailyLogSubmission({
       logDate: LOG_DATE,
@@ -236,12 +251,12 @@ describe('routeInboundMessage — §39 site-holiday evening reply', () => {
       attendance: 'site_holiday',
     })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, JUST_BEFORE_EVENING_SEND))
-    expect(reply).toBe(EVENING_SITE_HOLIDAY_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'site_holiday'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('site_holiday: at eveningSend (18:30) — holiday reply, not the awaiting-trigger promise', async () => {
+  it('site_holiday: at eveningSend (18:30) — site_holiday header, not the evening-pending collapse', async () => {
     const phone = testPhone('818')
     await seedDailyLogSubmission({
       logDate: LOG_DATE,
@@ -249,12 +264,12 @@ describe('routeInboundMessage — §39 site-holiday evening reply', () => {
       attendance: 'site_holiday',
     })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_EVENING_SEND))
-    expect(reply).toBe(EVENING_SITE_HOLIDAY_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'site_holiday'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it("absent: at eveningSend — still the ordinary awaiting-trigger reply (§37(a), the evening cron still sends)", async () => {
+  it("absent: at eveningSend — no header, same evening-pending collapse as any other non-holiday attendance (§37(a), the evening cron still sends)", async () => {
     const phone = testPhone('819')
     await seedDailyLogSubmission({
       logDate: LOG_DATE,
@@ -262,12 +277,12 @@ describe('routeInboundMessage — §39 site-holiday evening reply', () => {
       attendance: 'absent',
     })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_EVENING_SEND))
-    expect(reply).toBe(EVENING_AWAITING_TRIGGER_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'none'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('present: at eveningSend — the ordinary awaiting-trigger reply, unchanged baseline', async () => {
+  it('present: at eveningSend — no header, unchanged baseline', async () => {
     const phone = testPhone('820')
     await seedDailyLogSubmission({
       logDate: LOG_DATE,
@@ -275,7 +290,7 @@ describe('routeInboundMessage — §39 site-holiday evening reply', () => {
       attendance: 'present',
     })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_EVENING_SEND))
-    expect(reply).toBe(EVENING_AWAITING_TRIGGER_REPLY)
+    expect(reply).toBe(buildIdleReply('unrecognized', 'none'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
@@ -291,10 +306,10 @@ describe('routeInboundMessage — already-submitted-then-messages-again', () => 
     })
 
     const first = await routeInboundMessage(baseParams(phone, MID_DAY_BOTH_DONE, 'hi'))
-    expect(first.reply).toBe(EVENING_ALREADY_COMPLETE_REPLY)
+    expect(first.reply).toBe(buildIdleReply('unrecognized', 'complete'))
 
     const second = await routeInboundMessage(baseParams(phone, MID_DAY_BOTH_DONE, 'hello again'))
-    expect(second.reply).toBe(EVENING_ALREADY_COMPLETE_REPLY)
+    expect(second.reply).toBe(buildIdleReply('unrecognized', 'complete'))
 
     expect(await readSession(phone)).toBeNull()
     // Confirm the markers are unchanged by either turn -- compared as
@@ -344,5 +359,122 @@ describe('routeInboundMessage — flow already active: delegates unchanged', () 
     expect(resolvedFlow).toBe('evening')
     expect(reply).toBe(EVENING_QUESTIONS[2])
     expect((await getDailyLog(LOG_DATE))?.evening_output).toBe('some work done')
+  })
+})
+
+// classifyAdhocInput -- pure, no DB needed. The one case worth locking in
+// with a real test: a leading digit must be STANDALONE (followed by a
+// non-digit or end-of-string) or it must not match at all -- "12 bags of
+// cement missing" must never be read as "1".
+describe('classifyAdhocInput', () => {
+  it('classifies a bare digit 1-7 as its own kind', () => {
+    expect(classifyAdhocInput('1')).toBe('item1')
+    expect(classifyAdhocInput('2')).toBe('item2')
+    expect(classifyAdhocInput('7')).toBe('item_reserved')
+  })
+
+  it('classifies a digit followed by non-digit text the same way', () => {
+    expect(classifyAdhocInput('1 crane blocked at gate')).toBe('item1')
+    expect(classifyAdhocInput('7,')).toBe('item_reserved')
+  })
+
+  it('does NOT match a multi-digit number starting with 1 or 2', () => {
+    expect(classifyAdhocInput('12 bags of cement missing')).toBe('unrecognized')
+    expect(classifyAdhocInput('10 workers today')).toBe('unrecognized')
+    expect(classifyAdhocInput('20')).toBe('unrecognized')
+  })
+
+  it('treats 0, 8, 9 as unrecognized -- never assigned to any item', () => {
+    expect(classifyAdhocInput('0')).toBe('unrecognized')
+    expect(classifyAdhocInput('8')).toBe('unrecognized')
+    expect(classifyAdhocInput('9')).toBe('unrecognized')
+  })
+
+  it('treats free text and empty input as unrecognized', () => {
+    expect(classifyAdhocInput('hi')).toBe('unrecognized')
+    expect(classifyAdhocInput('')).toBe('unrecognized')
+  })
+
+  it('tolerates leading whitespace', () => {
+    expect(classifyAdhocInput('   1')).toBe('item1')
+  })
+})
+
+// PRECEDENCE (docs/plans/adhoc-menu-spec.md, "Idle-inbound reply, decided",
+// Aravind's decision 2026-09-06): a leading "1" always starts item 1's
+// flow, regardless of check-in state -- the header explains why no
+// check-in is coming, never that nothing can be reported. Real DB
+// round-trip through the full routeInboundMessage path, not just the pure
+// classifier, so this proves the "1" check genuinely runs BEFORE the
+// daily_logs read decides a header, not just that the two functions agree
+// in isolation.
+describe('routeInboundMessage — ad-hoc precedence and fallback dispatch', () => {
+  it('leading "1" wins even during morning_closed — no daily_logs state suppresses it', async () => {
+    const phone = testPhone('821')
+    const { reply, resolvedFlow } = await routeInboundMessage(
+      baseParams(phone, AFTER_MORNING_CUTOFF, '1 the crane access is blocked'),
+    )
+    expect(reply).toBe(HINDRANCE_REPORT_INTERIM_REPLY)
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
+  })
+
+  it('leading "1" wins even during site_holiday — a genuine hindrance is still reportable on a holiday', async () => {
+    const phone = testPhone('822')
+    await seedDailyLogSubmission({
+      logDate: LOG_DATE,
+      morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z`,
+      attendance: 'site_holiday',
+    })
+    const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_EVENING_SEND, '1'))
+    expect(reply).toBe(HINDRANCE_REPORT_INTERIM_REPLY)
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
+  })
+
+  it('leading "1" wins even after both halves are already submitted', async () => {
+    const phone = testPhone('823')
+    await seedDailyLogSubmission({
+      logDate: LOG_DATE,
+      morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z`,
+      eveningSubmittedAt: `${LOG_DATE}T10:00:00.000Z`,
+    })
+    const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, MID_DAY_BOTH_DONE, '1'))
+    expect(reply).toBe(HINDRANCE_REPORT_INTERIM_REPLY)
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
+  })
+
+  it('typed "2" gets the safety fallback composed with whatever header applies', async () => {
+    const phone = testPhone('824')
+    const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AFTER_MORNING_CUTOFF, '2'))
+    expect(reply).toBe(buildIdleReply('item2', computeIdleHeaderState({
+      morningSubmitted: false,
+      eveningSubmitted: false,
+      attendance: null,
+      istMinutes: 16 * 60 + 30,
+    })))
+    expect(reply).toBe(buildIdleReply('item2', 'morning_closed'))
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
+  })
+
+  it('typed "7" (reserved, held pending its own BOT-27 fix) gets the reserved fallback, distinct from typed "2"', async () => {
+    const phone = testPhone('825')
+    const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, BEFORE_MORNING_SEND, '7'))
+    expect(reply).toBe(buildIdleReply('item_reserved', 'awaiting_morning'))
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
+  })
+
+  it('a multi-digit message starting with "1" does NOT dispatch into item 1 — it is unrecognized', async () => {
+    const phone = testPhone('826')
+    const { reply, resolvedFlow } = await routeInboundMessage(
+      baseParams(phone, BEFORE_MORNING_SEND, '10 bags of cement delivered'),
+    )
+    expect(reply).toBe(buildIdleReply('unrecognized', 'awaiting_morning'))
+    expect(reply).not.toBe(HINDRANCE_REPORT_INTERIM_REPLY)
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
   })
 })
