@@ -51,6 +51,20 @@ separately from hindrance. **Superseded by this entry's own item 1** (merge deci
 messages formalised as the seventh, per §29(b)). §28(x) is not wrong, it is the prior,
 narrower iteration this spec replaces.
 
+**BETA-SCOPE CORRECTION (Aravind, 2026-09-06): item 2 (Safety incident) is DROPPED from
+the beta menu specifically — the item's own permanent number (2) stays reserved, nothing
+about the seven-item model above changes.** Reasoning, not just a scope cut: `design-
+principles.md` Rule 7.3 states plainly that safety incidents carry a hard law from day one
+of that flow — immediate PM notification, bypassing the standard pipeline. BOT-19, the
+mechanism §e (below) describes as "existing... unchanged," was checked directly against
+the live, post-retirement codebase (grepped for any keyword-triggered flow start anywhere
+in `lib/whatsapp/`) and found NOT to exist — zero hits. Showing item 2 in a live menu with
+only a text-fallback reply ("not ready yet, call your supervisor") when no code path
+actually bypasses anything is worse than not showing it: a real emergency produces a tap-
+then-read sequence instead of an immediate call, in the one category where that added step
+has irreversible-harm stakes items 1 and 7 don't share. The menu ships with items 1 and 7
+visible; item 2 returns once a real notification path exists for it, under the same number.
+
 ---
 
 ## a. Trigger — which replies the menu touches, verified against the actual code
@@ -637,6 +651,59 @@ doesn't surface as a surprise once 1/2/3/7 are actually being built.
 
 ---
 
+## g. Row-to-answer mapping — DECIDED, verified against a real tap-test payload
+
+**This section did not exist until now.** `036`/`037`'s own migration comments cited
+`adhoc-menu-spec.md §g.9`/`§g.10` for the PM-notification design before this section was
+ever written — a citation to a section that had never existed, at any point in this
+file's git history, applied to production inside `037`'s own `COMMENT ON COLUMN` before
+being caught (see the admin-merge retrospective's Q7 for the full incident). That specific
+citation is being corrected to point at "Project resolution" instead, in its own follow-up
+PR — it was never actually about row-to-answer mapping. This section exists so a FUTURE
+`§g` citation has something real to point to, on a topic this letter never covered before:
+how an inbound reply — a tap or a typed number — maps back to which menu row the engineer
+meant.
+
+**THE TAP-TEST PAYLOAD (2026-09-03, Aravind's own handset, production sender)** — captured
+so nobody re-runs the experiment:
+
+> Tapped a list row titled "Option One", description "First test row", `id` `opt_1`. The
+> webhook received `interactiveFields`:
+> ```json
+> {"ListId": "opt_1", "ListTitle": "Option One", "ListDescription": "First test row"}
+> ```
+> Key names present vs. a plain text message: `ListId`, `ListTitle`, `ListDescription`,
+> `Forwarded`, `FrequentlyForwarded`, `OriginalRepliedMessageSender`,
+> `OriginalRepliedMessageSid`.
+>
+> Content SID: `HX09f0a455a3f5e1121c970b439bcf2fab`. Message SID:
+> `MM34daf0fbb6a575e0808a19296271dd3a`.
+
+**Two facts this establishes, empirically, not from Meta's/Twilio's own docs alone:**
+1. **`ListId` arrives intact, exactly as the sender set it on the row.** Not
+   re-derived, not stripped, not modified in transit through Twilio's own webhook
+   payload.
+2. **A tap is cleanly distinguishable from a typed message by `ListId`'s presence
+   alone** — a typed reply carries none of the seven interactive-only fields above; a
+   tap carries all of them. No ambiguous middle case observed.
+
+**DECIDED (Aravind, 2026-09-06): the permanent item number lives in BOTH the visible row
+title ("1. Site hindrance / blocker") and the row's own `id` (so `id` for item 1 is a
+value containing `1`, e.g. `opt_1`-shaped but item-specific) — never only one of the two.**
+Reason for carrying it in both, not just `ListId` alone: a typed "1" produces no `ListId`
+at all (confirmed above — that field only exists on an interactive reply), and low-comfort
+engineers will type rather than tap, per this project's own established behavior
+elsewhere in the flow (Rule 3.1, `design-principles.md`: typed numbers are the PRIMARY
+path, buttons the enhancement). A design that only checked `ListId` would work for a tap
+and silently fail every typed reply from exactly the user population this product is
+built for.
+
+**Router design, decided:** check `ListId` first; if absent, fall back to parsing a
+leading numeral from the message `Body`. Both paths resolve to the same permanent item
+number, so a tap and a typed "1" converge on identical downstream handling — the menu
+does not need two separate code paths for "how the engineer chose an item," only one
+followed by two ways of reaching it.
+
 ## §28(t) — closed, not left open (proposed rewrite, for review)
 
 The plan/decisions doc's own §28(t) is currently written as "OPEN, NOT DECIDED —
@@ -675,8 +742,9 @@ not yet applied to `design-decisions-beta-feedback.md`:
 
 ## Summary of open items this spec does NOT resolve
 
-**a and e are DECIDED (2026-08-28, accepted as proposed) and removed from this list** — see
-§a and §e above for the final text. What remains open:
+**a, e, and g are DECIDED and removed from this list** — see §a, §e, and §g above for the
+final text (g added 2026-09-06: row-to-answer mapping, verified against a real tap-test
+payload). What remains open:
 
 - **a (superseded, 2026-08-30).** No more Group 1/Group 2 split, no more pointer concept —
   every idle inbound gets the menu, with a state-computed header line. What's open now: the
