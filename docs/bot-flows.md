@@ -123,12 +123,54 @@ submission. Do not build against an assumed answer here.
 
 ## SESSION RULES (BOT-07)
 
-- 30-minute TTL.
-- Same calendar day IST + TTL expired → resume from last unanswered question
-  (answers already in context JSONB are retained; do NOT restart from Q1).
+- ~~30-minute TTL.~~
+- ~~Same calendar day IST + TTL expired → resume from last unanswered question
+  (answers already in context JSONB are retained; do NOT restart from Q1).~~
 - Next calendar day → fresh start regardless of session state.
 - State in whatsapp_sessions — NEVER in memory.
 - SELECT FOR UPDATE on the session row before any state change.
+
+DATED CORRECTION (2026-09-06, media-reply PR #216 review). The two struck
+bullets assert a safety property this system does not have. Verified live,
+not assumed:
+
+```
+$ grep -rn "expires_at" lib/ app/
+lib/whatsapp/session.ts:31:  expires_at: string
+```
+
+One hit, and it is a TypeScript interface field declaration, not a read of
+the column's value. `expires_at` is written by every session-generating RPC
+(`p_now + INTERVAL '30 minutes'`) and read by nothing, anywhere, in `lib/`,
+`app/`, the cron routes, or `app/api/jobs/tick`. There is no 30-minute TTL
+enforcement in this codebase, and no "TTL expired → resume" branch exists to
+resume from, because nothing ever checks whether it expired.
+
+**What actually closes a stale session, today:**
+1. The unstruck bullet above — BOT-07's own next-**calendar-day** wipe,
+   compared lazily against `updated_at` on the engineer's next inbound
+   message. Same-IST-day messages never trigger it, regardless of the gap
+   between them.
+2. Migration 033's `sweep_stale_morning_sessions` RPC, wired into
+   `app/api/jobs/tick` (every tick, no-op before 15:00 IST, idempotent
+   after) — closes any `whatsapp_sessions` row with `current_flow='morning'`
+   at/after the 15:00 IST cutoff, resetting `current_flow=NULL,
+   current_step=0`, REGARDLESS of TTL or clock time since the session was
+   last touched. Scoped to `current_flow='morning'` only; has its own
+   documented skip-branch for engineers with zero or more than one
+   `project_members` row (left fully parked, no reset at all — see that
+   migration's own header).
+
+This is not independently new — first found and recorded in
+`docs/plans/flow-migration-rescoping-plan.md`'s finding (j), re-verified
+there via the same grep. Recorded here too because BOT-07's own text is
+what a future reader actually consults for session semantics, and it
+still asserted the false property until this correction. Full walkthrough
+of what the absence of a TTL actually costs (an engineer resuming a
+same-day, cross-checkpoint stale session, and the evening-trigger
+collision it would create for the migration-033 skip-branch population):
+`docs/reviews/admin-merge-retrospective-2026-09-05.md`'s sixth
+recorded-but-unbuilt entry.
 
 ### Trigger-vs-session collision (BOT-21)
 - Previous-day session at trigger time → force-reset, start fresh.
