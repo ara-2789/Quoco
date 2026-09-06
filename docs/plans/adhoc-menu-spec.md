@@ -766,6 +766,24 @@ constant, not the authority; if they ever disagree, `cutoffs.ts` wins and this n
 updating, not the reverse"). Nothing enforces the two staying in sync automatically — a
 future edit to either one needs a matching edit to the other, by hand.**
 
+**UPDATED, SAME DAY: NOW ENFORCED, NOT JUST CONVENTION.**
+`test/unit/adhoc-menu-spec-sync.test.ts` reads this file directly, extracts the quoted
+reply text under each `**Free text / unparseable:**` / `**Typed "2":**` / `**Typed "3",
+"4", "5", "6", or "7":**` / item-1-interim marker below, and asserts it matches
+`buildIdleReply`/`buildItem1InterimReply`'s real output. A hand-edit to either side that
+drifts from the other now fails CI instead of silently becoming the sixth instance of
+`bot-flows.md`'s own "documented as working, never built" pattern (the dead 30-minute TTL,
+CLAUDE.md §0/the admin-merge retrospective).
+
+**PARSEABLE FORMAT CONSTRAINT, NAMED — the one real cost of the test above.** Every
+combination below must be written as exactly as many `> `-prefixed lines as the actual
+reply has real line breaks — **never wrap one reply line across two `>` lines** for
+markdown readability. This bit the typed-"2" set once already (its correction line was
+originally soft-wrapped across two `>` lines purely for line length, which the parser
+would have read as two separate reply lines instead of one) — fixed the same day this
+test was added. If this test ever fails after a pure markdown reformat with no copy
+change, check for exactly that before assuming the copy itself drifted.
+
 **PRECEDENCE: a leading "1" always wins on WHETHER item 1 is what happens next, regardless
 of what the header table below would otherwise say.** Decided by Aravind, this pass: a
 site-holiday engineer or one past the morning cutoff still has a genuine hindrance to
@@ -845,24 +863,19 @@ would receive them:**
    > You can report a site hindrance — reply 1.
 
 **Typed "2":**
-1. > Safety reporting is not available here. If someone is hurt or in danger, call your
-   > site supervisor now.
+1. > Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.
    > Your check-in will arrive shortly.
    > You can report a site hindrance now — reply 1.
-2. > Safety reporting is not available here. If someone is hurt or in danger, call your
-   > site supervisor now.
+2. > Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.
    > The morning window has closed for today.
    > You can still report a site hindrance — reply 1.
-3. > Safety reporting is not available here. If someone is hurt or in danger, call your
-   > site supervisor now.
+3. > Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.
    > Today is a site holiday, so there is nothing further to check in.
    > You can still report a site hindrance — reply 1.
-4. > Safety reporting is not available here. If someone is hurt or in danger, call your
-   > site supervisor now.
+4. > Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.
    > Today's check-in is complete.
    > You can still report a site hindrance — reply 1.
-5. > Safety reporting is not available here. If someone is hurt or in danger, call your
-   > site supervisor now.
+5. > Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.
    > You can report a site hindrance — reply 1.
 
 **Typed "3", "4", "5", "6", or "7":**
