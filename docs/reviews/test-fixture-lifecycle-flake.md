@@ -384,3 +384,68 @@ comparison" framing, are what this correction withdraws. Treat CI as
 trustworthy for this suite going forward unless it says otherwise on its own
 terms — a red check on its own actual merits, not a locally-observed count
 from one machine's evening.
+
+## Cleanup investigated and found unnecessary — "shared DB is poisoned" closed as NOT SUPPORTED (2026-09-06)
+
+Following the correction above, a read-only probe was run against the shared
+test DB (`exfccwlrhoutkgrlikod`) to check whether any actual cleanup was
+warranted before anyone considered an irreversible delete against a database
+with no PITR and no branching (`## TEST-DB IS NOT CONFIDENTLY REBUILDABLE`,
+CLAUDE.md §0). It was not:
+
+- `TEST_ENGINEER_PHONE` (`+19995550200`, `test/helpers/db.ts`) — **the exact
+  row the whole "poisoned DB" theory was about — has no row in the database at
+  all.** Not orphaned, not leftover: absent.
+- `daily_logs` orphaned outside `TEST_PROJECT_ID`: **0**.
+- `dprs` for any `+19995550%`-prefixed engineer: **0**.
+- `outbound_sends` with `status = 'sending'` (stale in-flight sends): **0**.
+- `projects` under `TEST_TENANT_ID` beyond `TEST_PROJECT_ID`: **0** rows.
+
+Two rows under the `+19995550%` prefix exist, but they belong to a completely
+different fixture family — `test/helpers/outbound-fixtures.ts`'s own
+`OUTBOUND_TEST_TENANT_ID`/`OUTBOUND_TEST_PROJECT_ID` (`...031000`/`...031001`,
+"ZZ Test Engineer (outbound-send suite)"), a persistent, deliberately-kept
+`status = 'active'` fixture project (created 2026-08-27), not a leftover from
+the morning-flow lifecycle this document is about at all.
+
+**The 5 `checkin_escalations` rows flagged in the read-only probe turned out
+to be 2 by the time they were read back in full** (the count itself changed
+between two checks minutes apart — this table is live, other work writes to
+it) **and both are confirmed SWEEP-authored, not fixture-authored, via the
+real production code path (`runCheckinEscalationTickSweep`,
+`determineTargetStatus`) — just not against real production data.**
+`runCheckinEscalationTickSweep` scans every `status = 'active'` project
+tenant-agnostically, by design (`lib/checkin-escalations/sweep.ts:185-187`) —
+so when PR #192's own `test/unit/checkin-escalations-sweep.test.ts` called it
+directly against the shared test-db (lines 521 and 560), it legitimately swept
+up the outbound-send suite's persistent active fixture project alongside
+whatever it meant to test. The future-dated `escalated_at`/`updated_at`
+(`2026-09-16 05:15:00+00`) that looked anomalous is that test file's own
+`WRAPPER_NOW = new Date('2026-09-16T05:15:00.000Z')` (line 392) — matched to
+the second, not a clock or sweep defect. The two rows' timestamp behavior is
+also consistent evidence FOR migration 027's own design, not against it: the
+still-`'awaited'` row (never transitioned) carries a real wall-clock
+`created_at`/`updated_at` from whenever the test actually ran (2026-09-04
+16:45 UTC, matching this document's own table of that evening's local runs);
+the `'escalated'` row (transitioned) carries `updated_at` explicitly set to
+`WRAPPER_NOW` — exactly what 027's header requires (`updated_at` is not
+trigger-maintained here; the sweep must set it explicitly on every write) and
+exactly what happened.
+
+**Consequence: the "shared test DB is poisoned" reading from the entry above
+is now closed as NOT SUPPORTED.** Every orphan count that would evidence
+actual damage is zero, the row the theory was originally about is absent
+entirely, and the only nonzero findings are correctly-scoped, correctly-
+behaving output from a different, unrelated, still-live test suite's own
+fixtures — not damage. The local 8/9/2/11/17/15/2 file-failure progression
+recorded earlier in this document is better explained by single-machine
+resource contention across seven sequential same-evening local runs than by
+database poisoning. **No cleanup was performed and none is warranted from
+this investigation** — the two outbound-send-suite rows are live fixtures
+belonging to test infrastructure that may be running concurrently (confirmed
+during this probe: a `Test (real test-db)` job for an unrelated PR was
+genuinely `in_progress` against this same database at the time), not debris.
+**Preserved as-is, not affected by this entry:** the structural teardown-
+scoping defect (`## A structural filter gap in removeMorningFixtures()`,
+above) is still real and still unfixed — only the poisoning story is retired,
+not the actual bug.
