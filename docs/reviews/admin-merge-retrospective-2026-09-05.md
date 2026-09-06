@@ -351,3 +351,22 @@ before the claim is acted on. **RECORDED, NOT YET A STANDING CHECK**: no
 general mechanism proposed here to catch this class before the fact --
 naming the second instance is the contribution; closing it, if it
 recurs a third time, is a separate piece of work.
+
+**IT RECURRED A THIRD TIME, SAME NIGHT (2026-09-06)**, before that "separate
+piece of work" was ever started -- migration 037's own `COMMENT ON COLUMN`
+cited `adhoc-menu-spec.md §g.9`/`§g.10` for its PM-notification design. That
+section has never existed, at any point in `adhoc-menu-spec.md`'s git
+history (checked directly: 3 commits total, none of them ever add a `§g`
+heading) -- not a stale reference to something since removed, a citation
+to something that was never there. This one differs from the first two in
+a way worth naming precisely: it was **inherited, not introduced, by this
+session** -- the citation was already wrong in 037's very first draft,
+carried through every rehearsal round (including this session's own
+third-rehearsal pass on the file) without anyone -- reviewer, Aravind, or
+this session -- checking it, and it is now **live on production** inside
+an applied `COMMENT ON COLUMN`, not sitting in an unapplied draft the way
+`buildBodyCorpus`'s comment was. Three for three now, and the third one
+shipped further than either of the first two before being caught -- named
+here as the pattern predicted, not a coincidence, and as the concrete
+argument for actually building the standing check the second instance
+deferred, rather than deferring it again.
