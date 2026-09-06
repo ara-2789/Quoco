@@ -757,15 +757,33 @@ record as such.
 
 ## Idle-inbound reply, decided (2026-09-06) — precedence, and all five replies in full
 
-**PRECEDENCE: a leading "1" always starts item 1's flow, regardless of what the header
-table below would otherwise say.** Decided by Aravind, this pass: a site-holiday engineer
-or one past the morning cutoff still has a genuine hindrance to report; the header exists
-to explain why no check-in is coming, never to say nothing can be reported. Confirmed
-buildable with no new cost — the "1" check runs first, before the header is even
-computed, and needs no data the header computation doesn't already read (`daily_logs` for
-today, already fetched by `routeInboundMessage`). Consequence for the four cases below:
-none of them ever fire when the message starts with "1" — that case dispatches straight
-into item 1's flow (built in this PR's step 4), never reaching this reply at all.
+**SINGLE SOURCE OF TRUTH (2026-09-06, added on Aravind's own question during PR #218's
+review): `lib/whatsapp/inbound-start.ts`'s `HEADER_LINE`/`ACTION_LINE`/`CORRECTION_LINE`
+constants are the AUTHORITATIVE copy. This section is a REFERENCE COPY for reviewing the
+decision, not the source — same relationship `bot-flows.md`'s own TRIGGER TIMES section
+already has with `lib/daily-logs/cutoffs.ts` ("this doc is a reference copy of that
+constant, not the authority; if they ever disagree, `cutoffs.ts` wins and this needs
+updating, not the reverse"). Nothing enforces the two staying in sync automatically — a
+future edit to either one needs a matching edit to the other, by hand.**
+
+**PRECEDENCE: a leading "1" always wins on WHETHER item 1 is what happens next, regardless
+of what the header table below would otherwise say.** Decided by Aravind, this pass: a
+site-holiday engineer or one past the morning cutoff still has a genuine hindrance to
+report; the header exists to explain why no check-in is coming, never to say nothing can
+be reported. Consequence for the three fallback cases below: none of them ever fire when
+the message starts with "1" — that case gets its own reply instead (see "Item 1's interim
+reply" below).
+
+**CORRECTED (2026-09-06, same day, PR #218 review) — "1" does NOT skip the header while
+step 4 is unbuilt.** The first draft of this section (and the first draft of the code)
+claimed the "1" check runs BEFORE the header is even computed, so item 1 would never carry
+one. That was true of the intended PERMANENT design (once step 4's real flow exists, it
+starts unconditionally and does its own reads — no header needed from this file at all)
+but wrong for the INTERIM state this PR actually ships: until step 4 lands, a leading "1"
+still needs to tell a site-holiday or post-cutoff engineer about today's check-in state,
+via the exact same header table — the first build's placeholder silently didn't, the same
+false-promise-by-omission shape items 2 and 7 were dropped/held over. Fixed in the same PR
+that found it; see "Item 1's interim reply" below for the corrected five combinations.
 
 **FINAL SHAPE, DECIDED (Aravind, 2026-09-06) — correction leads, header is context, action
 is last.** The first draft (header first, correction line, then action) put the wrong
@@ -862,6 +880,31 @@ would receive them:**
    > You can still report a site hindrance — reply 1.
 5. > That option isn't available yet. Nothing was recorded.
    > You can report a site hindrance — reply 1.
+
+**Item 1's interim reply (2026-09-06, corrected same day) — until step 4 ships.** Same
+correction-line-then-header shape as the three fallbacks above, but deliberately NO action
+line, since there is no action available (item 1 IS the action, and it isn't accepting
+input yet). Fixed correction line, never varies: "Hindrance reporting isn't ready yet.
+Nothing was recorded." All five combinations:
+1. Before `morningSend`, nothing recorded:
+   > Hindrance reporting isn't ready yet. Nothing was recorded.
+   > Your check-in will arrive shortly.
+2. After `morningCutoff`, morning missed:
+   > Hindrance reporting isn't ready yet. Nothing was recorded.
+   > The morning window has closed for today.
+3. `attendance = 'site_holiday'`:
+   > Hindrance reporting isn't ready yet. Nothing was recorded.
+   > Today is a site holiday, so there is nothing further to check in.
+4. Both halves submitted:
+   > Hindrance reporting isn't ready yet. Nothing was recorded.
+   > Today's check-in is complete.
+5. Nothing notable (no header):
+   > Hindrance reporting isn't ready yet. Nothing was recorded.
+
+**This whole reply is TEMPORARY, scoped to the window between this PR merging and step 4
+shipping.** Once item 1's real flow exists, this placeholder is replaced by the flow
+actually starting — the leading-"1" classification itself does not change, only what
+happens after it.
 
 **The "complete" header absorbs a second real condition, not just "both submitted"
 literally.** The old `REPORT_READY_REPLY` condition (past `eveningClose`, any submission
