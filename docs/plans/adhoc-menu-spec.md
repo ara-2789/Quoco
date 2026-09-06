@@ -141,13 +141,19 @@ row for this exact purpose — the header is computed from that plus the roster,
 fix §39 already named, now applied at the header's own construction site instead of
 independently.
 
-**Rough shape, approved — refine wording in the copy pass, not decided here:**
+**Rough shape, approved — refine wording in the copy pass, not decided here.** UPDATED
+(2026-09-06, router copy pass): the `site_holiday` row's wording changed from "Site
+holiday recorded — nothing further today" to the text below, once the copy pass moved the
+correction line ahead of the header and needed "recorded" freed up (it now appears only in
+the correction line, "Nothing was recorded," about the just-received message, never about
+the day) — see the "Idle-inbound reply, decided" section's own RESTORE NOTE for the full
+reasoning:
 
 | Condition | Header |
 |---|---|
 | Before `morningSend`, nothing recorded | "Your check-in will arrive shortly." |
 | After `morningCutoff`, morning missed | "The morning window has closed for today." |
-| `attendance = 'site_holiday'` | "Site holiday recorded — nothing further today." |
+| `attendance = 'site_holiday'` | "Today is a site holiday, so there is nothing further to check in." |
 | Both halves submitted | "Today's check-in is complete." |
 | Nothing notable | No header — just the list. |
 
@@ -761,57 +767,117 @@ today, already fetched by `routeInboundMessage`). Consequence for the four cases
 none of them ever fire when the message starts with "1" — that case dispatches straight
 into item 1's flow (built in this PR's step 4), never reaching this reply at all.
 
-**The three fallback replies, as accepted (chat, pre-compaction this session) — committed
-here so they stop living only in chat, the second time this session copy has been at risk
-of being lost (the tap-test payload above was the first):**
+**FINAL SHAPE, DECIDED (Aravind, 2026-09-06) — correction leads, header is context, action
+is last.** The first draft (header first, correction line, then action) put the wrong
+thing first: the engineer's own action belongs at the top, and the header's habit of
+"closed"/"complete" language needs its own acknowledgement word ("still") rather than
+sitting in front of an unrelated correction like two facts glued together. Revised shape,
+three lines, in order:
+1. **The specific correction** — what the engineer's own message did or didn't do.
+   Fixed per input kind, NEVER varies by header state (see the restore note below).
+2. **The header**, when one applies — context, not the lead.
+3. **The action** — "reply 1", always last, with "still" wherever the header says
+   something closed or finished (morning-closed, site-holiday, complete), plain "now"/no
+   qualifier otherwise.
 
-- **Typed "2":**
-  > Safety reporting is not available here. If someone is hurt or in danger, call your
-  > site supervisor now. You can currently report: 1 for a site hindrance.
-- **Typed "3", "4", "5", "6", or "7":**
-  > That option isn't available yet. Nothing was recorded. You can currently report: 1
-  > for a site hindrance.
-- **Free text / unparseable (includes an ordinary idle message like "hi" that isn't an
-  attempt at any number):**
-  > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
-  > site hindrance.
+**RESTORE NOTE (2026-09-06, same day, later in the pass): "Nothing was recorded" is NOT
+dropped from any `site_holiday` combination.** An earlier draft of this section dropped it
+specifically from the `site_holiday` row because it collided with the THEN-current header
+wording, "Site holiday recorded — nothing further today" (same word, "recorded," three
+words apart, different meanings). That header was reworded in this same pass to "Today is
+a site holiday, so there is nothing further to check in" — the word "recorded" is gone
+from the header entirely, so the collision that justified the drop no longer exists.
+Keeping the drop after the header changed would have made `site_holiday` the only one of
+five states missing that line for no visible reason. Restored below, in both the
+free-text and typed-"3"-to-"7" sets (the typed-"2" set never contained "recorded" in its
+correction line at all, so nothing to restore there).
 
-**The free-text/unparseable reply is the one that absorbs the header table** (§a's
-5-row table, still live — the typed-"2" and typed-"3"–"7" replies above are shown exactly
-as written, with NO header prepended, since they're direct answers to a specific
-attempted number, not a general idle check-in status message). When a header condition
-applies, it is prepended as its own line, separated by a line break, matching §a's own
-"separated by a line break" resolution (written for the list-picker's `body` field,
-equally correct for a plain-text reply — the field changed, the layout rule didn't). All
-five combinations, exactly as an engineer would receive them:
+**The three fixed correction lines** — committed here so they stop living only in chat,
+the second time this session's copy was at risk of being lost (the tap-test payload above
+was the first):
+- **Typed "2":** "Safety reporting is not available here. If someone is hurt or in
+  danger, call your site supervisor now."
+- **Typed "3", "4", "5", "6", or "7":** "That option isn't available yet. Nothing was
+  recorded."
+- **Free text / unparseable** (includes an ordinary idle message like "hi" that isn't an
+  attempt at any number): "I didn't understand that. Nothing was recorded."
 
-1. **Before `morningSend`, nothing recorded:**
+**All fifteen combinations (3 correction lines × 5 header states), exactly as an engineer
+would receive them:**
+
+**Free text / unparseable:**
+1. Before `morningSend`, nothing recorded:
+   > I didn't understand that. Nothing was recorded.
    > Your check-in will arrive shortly.
-   > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
-   > site hindrance.
-2. **After `morningCutoff`, morning missed:**
+   > You can report a site hindrance now — reply 1.
+2. After `morningCutoff`, morning missed:
+   > I didn't understand that. Nothing was recorded.
    > The morning window has closed for today.
-   > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
-   > site hindrance.
-3. **`attendance = 'site_holiday'`:**
-   > Site holiday recorded — nothing further today.
-   > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
-   > site hindrance.
-4. **Both halves submitted:**
+   > You can still report a site hindrance — reply 1.
+3. `attendance = 'site_holiday'`:
+   > I didn't understand that. Nothing was recorded.
+   > Today is a site holiday, so there is nothing further to check in.
+   > You can still report a site hindrance — reply 1.
+4. Both halves submitted:
+   > I didn't understand that. Nothing was recorded.
    > Today's check-in is complete.
-   > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
-   > site hindrance.
-5. **Nothing notable (no header):**
-   > I didn't understand that. Nothing was recorded. You can currently report: 1 for a
-   > site hindrance.
+   > You can still report a site hindrance — reply 1.
+5. Nothing notable (no header):
+   > I didn't understand that. Nothing was recorded.
+   > You can report a site hindrance — reply 1.
 
-**Flagged, not silently smoothed over: #3 and #4 read slightly oddly** — "nothing
-further today" or "check-in is complete" immediately followed by "I didn't understand
-that" reads as two unrelated facts glued together (the first about check-in status, the
-second about the just-received message), because they are two unrelated facts. Not
-edited here since the fallback text itself was given as already-accepted copy, not
-freelanced by this pass — flagging for Aravind's own call on whether the juxtaposition
-needs smoothing before this ships, rather than assuming either way.
+**Typed "2":**
+1. > Safety reporting is not available here. If someone is hurt or in danger, call your
+   > site supervisor now.
+   > Your check-in will arrive shortly.
+   > You can report a site hindrance now — reply 1.
+2. > Safety reporting is not available here. If someone is hurt or in danger, call your
+   > site supervisor now.
+   > The morning window has closed for today.
+   > You can still report a site hindrance — reply 1.
+3. > Safety reporting is not available here. If someone is hurt or in danger, call your
+   > site supervisor now.
+   > Today is a site holiday, so there is nothing further to check in.
+   > You can still report a site hindrance — reply 1.
+4. > Safety reporting is not available here. If someone is hurt or in danger, call your
+   > site supervisor now.
+   > Today's check-in is complete.
+   > You can still report a site hindrance — reply 1.
+5. > Safety reporting is not available here. If someone is hurt or in danger, call your
+   > site supervisor now.
+   > You can report a site hindrance — reply 1.
+
+**Typed "3", "4", "5", "6", or "7":**
+1. > That option isn't available yet. Nothing was recorded.
+   > Your check-in will arrive shortly.
+   > You can report a site hindrance now — reply 1.
+2. > That option isn't available yet. Nothing was recorded.
+   > The morning window has closed for today.
+   > You can still report a site hindrance — reply 1.
+3. > That option isn't available yet. Nothing was recorded.
+   > Today is a site holiday, so there is nothing further to check in.
+   > You can still report a site hindrance — reply 1.
+4. > That option isn't available yet. Nothing was recorded.
+   > Today's check-in is complete.
+   > You can still report a site hindrance — reply 1.
+5. > That option isn't available yet. Nothing was recorded.
+   > You can report a site hindrance — reply 1.
+
+**The "complete" header absorbs a second real condition, not just "both submitted"
+literally.** The old `REPORT_READY_REPLY` condition (past `eveningClose`, any submission
+state — no dedicated row exists for it in the 5-row table) folds into the same "Today's
+check-in is complete" header: by `eveningClose` the DPR has already generated, so there is
+nothing left to contribute to today's check-in either way, submitted or not. Named here,
+not silently assumed, per this project's own standing discipline on stating a reading
+rather than picking one silently.
+
+**A real, accepted information loss, also named rather than silently dropped:** the
+5-row table has no row for "morning submitted, evening pending" (either before or after
+`eveningSend`) — both of those states collapse into "Nothing notable, no header." The old
+`EVENING_WINDOW_NOT_OPEN_REPLY`/`EVENING_AWAITING_TRIGGER_REPLY` distinction (whether an
+evening check-in is still pending vs. about to arrive) is no longer surfaced to the
+engineer. Inherited from the table as approved in §a, not introduced by this pass — flag
+to Aravind if this needs its own row.
 
 ## §28(t) — closed, not left open (proposed rewrite, for review)
 
