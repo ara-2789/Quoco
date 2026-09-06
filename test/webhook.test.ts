@@ -20,6 +20,7 @@ import {
 import { MORNING_QUESTIONS } from '@/lib/whatsapp/flows/morning'
 import { EVENING_QUESTIONS, EVENING_ALREADY_COMPLETE_REPLY } from '@/lib/whatsapp/flows/evening'
 import { REPORT_READY_REPLY, MORNING_WINDOW_CLOSED_REPLY, MORNING_AWAITING_TRIGGER_REPLY } from '@/lib/whatsapp/inbound-start'
+import { PHOTO_REPLY, VOICE_REPLY } from '@/lib/whatsapp/media-reply'
 
 // T-WH: the HTTP-level webhook harness named in CLAUDE.md's TESTING DEBT entry
 // and migration 022's review package §10. Exercises handleWebhookPost
@@ -406,6 +407,64 @@ describe('handleWebhookPost — routes to whichever flow is active (dispatchInbo
     expect(res.status).toBe(200)
     expect(await twimlText(res)).toBe(EVENING_QUESTIONS[2])
     expect((await getDailyLog(todayIST()))?.evening_output).toBe('some work done')
+  })
+})
+
+describe('handleWebhookPost — media replies (intercepted before any flow logic)', () => {
+  it('T-WH-13: a photo sent MID-FLOW is intercepted before dispatchInboundTurn — the session does not advance', async () => {
+    // The case media-reply.ts's own header exists for: routeInboundMessage's
+    // no-active-flow branch is skipped entirely when a flow IS active, so
+    // this proves the check sitting upstream in route.ts, not inside
+    // routeInboundMessage, actually covers the mid-flow path.
+    await seedSession({
+      phone: TEST_ENGINEER_PHONE,
+      currentFlow: 'morning',
+      currentStep: 2, // Q2 plan, same step T-WH-09 uses
+      context: {},
+      updatedAt: new Date().toISOString(),
+    })
+    const req = buildWebhookRequest({
+      From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+      Body: '', // Twilio sends an empty Body on a pure-media message
+      NumMedia: '1',
+      MediaContentType0: 'image/jpeg',
+      MessageSid: sid('media-mid-flow'),
+    })
+    const res = await handleWebhookPost(req, { supabaseClient: testClient() })
+    expect(res.status).toBe(200)
+    expect(await twimlText(res)).toBe(PHOTO_REPLY)
+    // Session step unchanged -- dispatchInboundTurn never ran, so this was
+    // never parsed as (a wrong) answer to the pending question.
+    expect((await readSession(TEST_ENGINEER_PHONE))?.current_step).toBe(2)
+    expect((await getDailyLog(todayIST()))?.morning_plan).toBeFalsy()
+  })
+
+  it('T-WH-14: a photo sent at idle gets the photo reply, no session is created', async () => {
+    const req = buildWebhookRequest({
+      From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+      Body: '',
+      NumMedia: '1',
+      MediaContentType0: 'image/png',
+      MessageSid: sid('media-idle-photo'),
+    })
+    const res = await handleWebhookPost(req, { supabaseClient: testClient() })
+    expect(res.status).toBe(200)
+    expect(await twimlText(res)).toBe(PHOTO_REPLY)
+    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
+  })
+
+  it('T-WH-15: a voice note sent at idle gets the distinct voice reply', async () => {
+    const req = buildWebhookRequest({
+      From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+      Body: '',
+      NumMedia: '1',
+      MediaContentType0: 'audio/ogg; codecs=opus',
+      MessageSid: sid('media-idle-voice'),
+    })
+    const res = await handleWebhookPost(req, { supabaseClient: testClient() })
+    expect(res.status).toBe(200)
+    expect(await twimlText(res)).toBe(VOICE_REPLY)
+    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
   })
 })
 
