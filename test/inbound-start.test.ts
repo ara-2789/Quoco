@@ -4,7 +4,7 @@ import {
   classifyAdhocInput,
   computeIdleHeaderState,
   buildIdleReply,
-  HINDRANCE_REPORT_INTERIM_REPLY,
+  buildItem1InterimReply,
 } from '@/lib/whatsapp/inbound-start'
 import {
   testClient,
@@ -405,21 +405,23 @@ describe('classifyAdhocInput', () => {
 // flow, regardless of check-in state -- the header explains why no
 // check-in is coming, never that nothing can be reported. Real DB
 // round-trip through the full routeInboundMessage path, not just the pure
-// classifier, so this proves the "1" check genuinely runs BEFORE the
-// daily_logs read decides a header, not just that the two functions agree
-// in isolation.
+// classifier, so this proves the "1" check genuinely runs and still
+// carries the daily_logs-derived header on the INTERIM reply (corrected
+// 2026-09-06 -- the first draft's placeholder never showed a header at
+// all, the exact false-promise-by-omission shape items 2/7 were dropped
+// over).
 describe('routeInboundMessage — ad-hoc precedence and fallback dispatch', () => {
-  it('leading "1" wins even during morning_closed — no daily_logs state suppresses it', async () => {
+  it('leading "1" wins even during morning_closed, and the interim reply still carries the header', async () => {
     const phone = testPhone('821')
     const { reply, resolvedFlow } = await routeInboundMessage(
       baseParams(phone, AFTER_MORNING_CUTOFF, '1 the crane access is blocked'),
     )
-    expect(reply).toBe(HINDRANCE_REPORT_INTERIM_REPLY)
+    expect(reply).toBe(buildItem1InterimReply('morning_closed'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('leading "1" wins even during site_holiday — a genuine hindrance is still reportable on a holiday', async () => {
+  it('leading "1" wins even during site_holiday, header included — a genuine hindrance is still reportable on a holiday', async () => {
     const phone = testPhone('822')
     await seedDailyLogSubmission({
       logDate: LOG_DATE,
@@ -427,12 +429,12 @@ describe('routeInboundMessage — ad-hoc precedence and fallback dispatch', () =
       attendance: 'site_holiday',
     })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_EVENING_SEND, '1'))
-    expect(reply).toBe(HINDRANCE_REPORT_INTERIM_REPLY)
+    expect(reply).toBe(buildItem1InterimReply('site_holiday'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
 
-  it('leading "1" wins even after both halves are already submitted', async () => {
+  it('leading "1" wins even after both halves are already submitted, header included', async () => {
     const phone = testPhone('823')
     await seedDailyLogSubmission({
       logDate: LOG_DATE,
@@ -440,7 +442,17 @@ describe('routeInboundMessage — ad-hoc precedence and fallback dispatch', () =
       eveningSubmittedAt: `${LOG_DATE}T10:00:00.000Z`,
     })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, MID_DAY_BOTH_DONE, '1'))
-    expect(reply).toBe(HINDRANCE_REPORT_INTERIM_REPLY)
+    expect(reply).toBe(buildItem1InterimReply('complete'))
+    expect(resolvedFlow).toBeNull()
+    expect(await readSession(phone)).toBeNull()
+  })
+
+  it('leading "1" with NO header state (evening-pending collapse) gets the interim line alone, no trailing blank line', async () => {
+    const phone = testPhone('827')
+    await seedDailyLogSubmission({ logDate: LOG_DATE, morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z` })
+    const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, MID_DAY_MORNING_ONLY, '1'))
+    expect(reply).toBe(buildItem1InterimReply('none'))
+    expect(reply).toBe("Hindrance reporting isn't ready yet. Nothing was recorded.")
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })
@@ -473,7 +485,7 @@ describe('routeInboundMessage — ad-hoc precedence and fallback dispatch', () =
       baseParams(phone, BEFORE_MORNING_SEND, '10 bags of cement delivered'),
     )
     expect(reply).toBe(buildIdleReply('unrecognized', 'awaiting_morning'))
-    expect(reply).not.toBe(HINDRANCE_REPORT_INTERIM_REPLY)
+    expect(reply).not.toBe(buildItem1InterimReply('awaiting_morning'))
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })

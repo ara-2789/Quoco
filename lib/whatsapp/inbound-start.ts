@@ -38,11 +38,15 @@ import { dispatchInboundTurn } from './dispatch'
 // below, and the spec's own "all five combinations in full" for the exact
 // approved wording.
 //
-// A leading "1" in Body is checked FIRST, before any of the above --
-// PRECEDENCE, DECIDED (Aravind, 2026-09-06): a site-holiday engineer or one
-// past the morning cutoff still has a genuine hindrance to report; the
+// A leading "1" in Body ALWAYS wins on whether item 1 is what happens next
+// -- PRECEDENCE, DECIDED (Aravind, 2026-09-06): a site-holiday engineer or
+// one past the morning cutoff still has a genuine hindrance to report; the
 // header explains why no check-in is coming, never that nothing can be
-// reported. See classifyAdhocInput below.
+// reported. See classifyAdhocInput below. Until step 4's real flow ships,
+// "what happens next" is buildItem1InterimReply -- a truthful placeholder
+// that STILL carries the header (corrected 2026-09-06 same day: the first
+// draft never did, silently repeating the exact false-promise-by-omission
+// shape items 2/7 were dropped/held over).
 //
 // SCOPE BOUNDARY (unchanged from the original build, restated): this
 // covers ONLY the case readCurrentFlow returns null. The refuse-when-
@@ -158,6 +162,18 @@ const ACTION_LINE: Record<IdleHeaderState, string> = {
 // colliding with the OLD "Site holiday recorded" header) was reverted once
 // the header itself was reworded to no longer contain the word "recorded"
 // at all; the collision this once avoided no longer exists. -------------
+//
+// SINGLE SOURCE OF TRUTH, NAMED EXPLICITLY (2026-09-06, Aravind's own
+// question on PR #218): HEADER_LINE/ACTION_LINE/CORRECTION_LINE below are
+// the AUTHORITATIVE copy. docs/plans/adhoc-menu-spec.md's "Idle-inbound
+// reply, decided" section is a REFERENCE COPY for humans reviewing the
+// decision, not the source -- same relationship bot-flows.md's own TRIGGER
+// TIMES section already has with lib/daily-logs/cutoffs.ts ("this doc is a
+// reference copy of that constant, not the authority; if they ever
+// disagree, cutoffs.ts wins and this needs updating, not the reverse").
+// Nothing enforces the two staying in sync automatically -- if this file's
+// copy changes, the spec's prose needs a matching edit, never the other
+// way around.
 const CORRECTION_LINE: Record<Exclude<AdhocInputKind, 'item1'>, string> = {
   unrecognized: "I didn't understand that. Nothing was recorded.",
   item_reserved: "That option isn't available yet. Nothing was recorded.",
@@ -170,16 +186,26 @@ export function buildIdleReply(kind: Exclude<AdhocInputKind, 'item1'>, headerSta
   return lines.filter((line): line is string => line !== undefined).join('\n')
 }
 
-// INTERIM, NOT THE REAL FLOW (2026-09-06) -- item 1's actual state machine
-// (Q1 free text, Q2 structured pick, the hindrances INSERT) is PR 2's step
-// 4, not yet built. This exists so a leading "1" gets a truthful, complete
-// reply now rather than either a half-built flow (asking Q1 with nothing
-// to capture the answer) or the wrong fallback (telling him "reply 1"
-// after he just did). Replace this whole function's body -- not its
-// call site -- when step 4 ships; classifyAdhocInput's 'item1' branch
-// itself does not change.
-export const HINDRANCE_REPORT_INTERIM_REPLY =
-  "Hindrance reporting isn't ready yet — it's being built now. Nothing was recorded."
+// INTERIM, NOT THE REAL FLOW (2026-09-06; corrected same day, Aravind's own
+// review of this PR) -- item 1's actual state machine (Q1 free text, Q2
+// structured pick, the hindrances INSERT) is PR 2's step 4, not yet built.
+// This exists so a leading "1" gets a truthful, complete reply now rather
+// than either a half-built flow (asking Q1 with nothing to capture the
+// answer) or the wrong fallback (telling him "reply 1" after he just did).
+//
+// CORRECTED: the first draft of this reply was a single fixed line with NO
+// header -- it never told a site-holiday or post-cutoff engineer anything
+// about today's check-in state, the exact false-promise-by-omission shape
+// items 2 and 7 were dropped/held over. Same two-line shape as every other
+// fallback now: this correction line, then the header when one applies --
+// but deliberately NO action line, since there is no action available
+// (item 1 IS the action, and it isn't accepting input yet).
+const ITEM1_INTERIM_LINE = "Hindrance reporting isn't ready yet. Nothing was recorded."
+
+export function buildItem1InterimReply(headerState: IdleHeaderState): string {
+  const lines = [ITEM1_INTERIM_LINE, HEADER_LINE[headerState]]
+  return lines.filter((line): line is string => line !== undefined).join('\n')
+}
 
 export interface InboundRouteResult {
   reply: string
@@ -219,12 +245,17 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
   }
 
   // --- No active session ---------------------------------------------
-  // PRECEDENCE, checked before anything else reads daily_logs: a leading
-  // "1" always starts item 1's flow, regardless of check-in state.
+  // PRECEDENCE, decided: a leading "1" always wins on WHETHER item 1's
+  // flow starts, regardless of check-in state -- classified here, acted on
+  // below. NOT classified-and-returned immediately any more (corrected
+  // 2026-09-06): the INTERIM placeholder (buildItem1InterimReply) still
+  // needs the header, so the daily_logs read below is NOT skipped for
+  // 'item1' the way it will be once step 4's real flow exists (that flow
+  // will do its own reads and won't need this file's header at all --
+  // whoever ships step 4 can reintroduce an early return here then, if the
+  // extra read is worth avoiding; leaving it unconditional today is not a
+  // real cost since every other case already needs it).
   const adhocKind = classifyAdhocInput(params.message)
-  if (adhocKind === 'item1') {
-    return { reply: HINDRANCE_REPORT_INTERIM_REPLY, resolvedFlow: null }
-  }
 
   const now = params.now !== undefined ? new Date(params.now) : new Date()
   const ist = istParts(now)
@@ -263,5 +294,9 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
     attendance: log?.attendance ?? null,
     istMinutes: ist.minutes,
   })
+
+  if (adhocKind === 'item1') {
+    return { reply: buildItem1InterimReply(headerState), resolvedFlow: null }
+  }
   return { reply: buildIdleReply(adhocKind, headerState), resolvedFlow: null }
 }
