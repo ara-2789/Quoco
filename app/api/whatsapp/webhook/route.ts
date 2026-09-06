@@ -9,6 +9,7 @@ import { routeInboundMessage } from '@/lib/whatsapp/inbound-start'
 import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
 import { decideInboundGate, clearMessagingBlock } from '@/lib/whatsapp/reactivation'
 import { validateTwilioSignature } from '@/lib/whatsapp/twilio-signature'
+import { classifyMediaReply, replyForMediaKind } from '@/lib/whatsapp/media-reply'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
 // processing anything. Twilio signs each webhook request using your Auth
@@ -233,6 +234,19 @@ export async function handleWebhookPost(
   const projectId = user.project_members[0]?.project_id
   if (!projectId) {
     return noProjectResponse()
+  }
+
+  // --- Media reply: intercepted BEFORE any menu/flow logic -----------------
+  // Fires ahead of isTestStartTrigger and routeInboundMessage, and therefore
+  // ahead of dispatchInboundTurn's own mid-flow path too -- routeInbound
+  // Message's no-active-flow branch is skipped whenever a flow IS already
+  // active, so a check placed only inside it would miss exactly that case
+  // (a media reply mid-check-in would otherwise reach dispatchInboundTurn
+  // with an empty Body and be parsed as an invalid text answer). See
+  // lib/whatsapp/media-reply.ts's own header.
+  const mediaKind = classifyMediaReply(params)
+  if (mediaKind) {
+    return twimlMessage(replyForMediaKind(mediaKind))
   }
 
   const messageBody = params.Body ?? ''
