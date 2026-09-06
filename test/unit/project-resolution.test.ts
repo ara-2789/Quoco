@@ -5,7 +5,7 @@ import {
   ZERO_MEMBERSHIPS_REPLY,
   MULTIPLE_MEMBERSHIPS_REPLY,
 } from '@/lib/whatsapp/project-resolution'
-import { testClient, TEST_TENANT_ID } from '../helpers/db'
+import { testClient, ensureTestTenant, TEST_TENANT_ID } from '../helpers/db'
 
 // Ad-hoc menu PR 2, step 3. Real test-db throughout, no mocks -- same
 // construction as every other integration test in this project. Fully
@@ -16,6 +16,14 @@ import { testClient, TEST_TENANT_ID } from '../helpers/db'
 // project_members carries UNIQUE(project_id, user_id) (001_core_schema.sql)
 // -- the 2+-membership case needs two DISTINCT projects, not two rows
 // against the same one.
+//
+// CI CAUGHT (2026-09-06): the first draft's beforeAll inserted directly
+// into `projects` under TEST_TENANT_ID without ensuring that tenant row
+// exists first -- other test files' own ensureMorningFixtures() happens to
+// upsert it as a side effect, but vitest test files run independently
+// (parallelizable, no guaranteed ordering), so this file cannot rely on
+// another file's setup having already run. ensureTestTenant() is the
+// dedicated, idempotent helper for exactly this (test/helpers/db.ts).
 
 const db = testClient()
 
@@ -26,6 +34,8 @@ let userOne: string
 let userMany: string
 
 beforeAll(async () => {
+  await ensureTestTenant()
+
   const { data: pA, error: pAErr } = await db
     .from('projects')
     .insert({ tenant_id: TEST_TENANT_ID, name: 'ZZ Test Project Resolution A' })
