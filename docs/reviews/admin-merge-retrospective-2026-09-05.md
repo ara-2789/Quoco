@@ -49,6 +49,28 @@ not three coincidences — this is the argument for moving the §-by-§ audit
 of `design-decisions-beta-feedback.md` up to right after Fix 1, before PR
 C3 resumes.
 
+**UPDATE (2026-09-06), the list grows.** Two more items from that same
+`design-decisions-beta-feedback.md` audit belong alongside the three
+above, plus one new one found the same night: §1/§28(d) (the absence
+"No" hierarchy handoff to a PM's own WhatsApp number — decided, then
+§28(d) itself records it "DEFERRED, not built" pending the outbound-send
+primitive, which has since shipped without anyone circling back to it)
+and §28(f) (equipment items with no lexicon match render as entered,
+"DECIDED, not built" as of 2026-08-21, status as of this entry not
+re-verified here). The new one, same family, found while scoping the
+ad-hoc menu's item 7 (stop messages): BOT-27's reactivate-half has been
+clearing `messaging_blocked` on ANY inbound message, unconditionally,
+since 2026-07-21 — the same day `docs/bot-flows.md`'s own BOT-27 entry
+named this "a known interim compliance gap" and specified the exact fix
+(STOP-detection before reactivate, an explicit START/RESUME keyword),
+conditioned on "the SET stage" (item 7) actually being built. It sat
+unbuilt, unflagged, for a month and a half — not because nobody thought
+of it, but because the precondition that would force revisiting it
+(item 7 shipping) never arrived until now. Per Aravind's own count, this
+is the fifth instance of this pattern in one project — recorded here as
+that count, not independently re-verified against every prior instance's
+current build status.
+
 **Correction up front, before the four answers**: the prior status update
 this session said "four admin merges" and attributed all of them to "the
 same test-db contention pattern." Both parts of that were imprecise in ways
