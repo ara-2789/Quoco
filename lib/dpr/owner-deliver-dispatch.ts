@@ -5,26 +5,27 @@
 // handler reads and writes; no migration, no apply, nothing here touches a
 // database beyond reads until a real send happens.
 //
-// SHIPS AND REACHES NOBODY YET -- STATED PLAINLY, NOT DISCOVERED LATER
-// (Aravind, 2026-09-02). Every REPORT-route row this handler processes
-// today writes `skipped_unverified` on its very first send attempt,
-// because no owner in production has a verified email -- the confirm
-// route that sets `notification_email_verified_at` is not built, and the
-// beta-provisioning operator script that would create real owner rows in
-// the first place is not built either. This handler is NECESSARY and NOT
-// SUFFICIENT. What else must exist before owner delivery reaches anyone:
-//   1. The confirm-email route (034's own §5/§12f -- token-gated write to
-//      notification_email_verified_at). NOT built here.
-//   2. The beta-provisioning operator script (034's own §2j/A1 -- the
-//      INSERT that creates a real `role='owner'` row with a
-//      notification_email in the first place). NOT built here.
-//   3. The eveningClose/ownerSend cron entries that actually ENQUEUE an
-//      owner_deliver job for a real project-day. NOT built here -- nothing
-//      in this codebase calls `enqueueJob('owner_deliver', ...)` anywhere,
-//      confirmed by grep, and that stays true after this file.
-// A reader merging this handler should not read a green test suite as "owner
-// delivery works now" -- it means the RECEIVING END is ready for the day the
-// other three pieces exist.
+// CORRECTED 2026-09-07 -- STALE SINCE BUILT, CAUGHT WHILE ANSWERING AN
+// UNRELATED QUESTION (Aravind flagged it: "that's the class of stale claim
+// that's cost us twice today"). This block originally read "SHIPS AND
+// REACHES NOBODY YET" and listed three pieces as "NOT built here." All
+// three now exist -- confirmed directly, not assumed:
+//   1. The confirm-email route (034's own §5/§12f) -- app/api/owner/
+//      confirm-email/route.ts exists.
+//   2. The beta-provisioning operator script (034's own §2j/A1) --
+//      scripts/provision-beta-owner.ts exists.
+//   3. The eveningClose/ownerSend cron entry -- app/api/cron/owner-send/
+//      route.ts exists, is wired into vercel.json at `0 15 * * *` (20:30
+//      IST), and genuinely calls `enqueueJob('owner_deliver', ...)` (via a
+//      locally-DI-renamed `enqueue` alias -- a bare grep for the literal
+//      string `enqueueJob('owner_deliver'` misses this call site, which is
+//      exactly how the original claim went stale unnoticed).
+// NOT independently confirmed from this note alone: whether a real,
+// production owner row with `notification_email_verified_at` actually set
+// exists yet -- that's a database fact, not a code fact, and this
+// correction doesn't assert it either way. What IS now false is the
+// structural claim that nothing calls this job at all; that stopped being
+// true once #3 shipped.
 //
 // JOB GRANULARITY -- DECIDED HERE, NOT SPECIFIED ELSEWHERE (see this
 // session's own report before writing). Neither `decideOwnerDeliveryRoute`
