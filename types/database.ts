@@ -351,6 +351,8 @@ export type Database = {
           engineer_id: string
           evening_dependencies: Json | null
           evening_equipment_utilisation: Json | null
+          evening_idle_hours: Json | null
+          evening_manpower: Json | null
           evening_output: string | null
           evening_output_quantities: Json | null
           evening_productive_manpower: Json | null
@@ -385,6 +387,8 @@ export type Database = {
           engineer_id: string
           evening_dependencies?: Json | null
           evening_equipment_utilisation?: Json | null
+          evening_idle_hours?: Json | null
+          evening_manpower?: Json | null
           evening_output?: string | null
           evening_output_quantities?: Json | null
           evening_productive_manpower?: Json | null
@@ -419,6 +423,8 @@ export type Database = {
           engineer_id?: string
           evening_dependencies?: Json | null
           evening_equipment_utilisation?: Json | null
+          evening_idle_hours?: Json | null
+          evening_manpower?: Json | null
           evening_output?: string | null
           evening_output_quantities?: Json | null
           evening_productive_manpower?: Json | null
@@ -630,13 +636,16 @@ export type Database = {
           id: string
           impact_level: string | null
           photo_url: string | null
+          pm_notified_at: string | null
           project_id: string
           reported_by: string
           resolved_at: string | null
           resolved_by: string | null
           status: string | null
-          submitted_via: string | null
+          submitted_via: string
           tenant_id: string
+          timing: string | null
+          timing_raw: string | null
         }
         Insert: {
           area_affected?: string | null
@@ -647,13 +656,16 @@ export type Database = {
           id?: string
           impact_level?: string | null
           photo_url?: string | null
+          pm_notified_at?: string | null
           project_id: string
           reported_by: string
           resolved_at?: string | null
           resolved_by?: string | null
           status?: string | null
-          submitted_via?: string | null
+          submitted_via: string
           tenant_id: string
+          timing?: string | null
+          timing_raw?: string | null
         }
         Update: {
           area_affected?: string | null
@@ -664,28 +676,31 @@ export type Database = {
           id?: string
           impact_level?: string | null
           photo_url?: string | null
+          pm_notified_at?: string | null
           project_id?: string
           reported_by?: string
           resolved_at?: string | null
           resolved_by?: string | null
           status?: string | null
-          submitted_via?: string | null
+          submitted_via?: string
           tenant_id?: string
+          timing?: string | null
+          timing_raw?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "hindrances_project_id_fkey"
-            columns: ["project_id"]
+            columns: ["project_id", "tenant_id"]
             isOneToOne: false
             referencedRelation: "projects"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "tenant_id"]
           },
           {
             foreignKeyName: "hindrances_reported_by_fkey"
-            columns: ["reported_by"]
+            columns: ["reported_by", "tenant_id"]
             isOneToOne: false
             referencedRelation: "users"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "tenant_id"]
           },
           {
             foreignKeyName: "hindrances_tenant_id_fkey"
@@ -2020,6 +2035,21 @@ export type Database = {
         }
         Returns: Json
       }
+      apply_hindrance_flow_turn: {
+        Args: {
+          p_message: string
+          p_now?: string
+          p_phone_number: string
+          p_project_id: string
+          p_start_flow: boolean
+          p_tenant_id: string
+          p_test_sleep_ms?: number
+          p_timing?: string
+          p_timing_ok?: boolean
+          p_user_id: string
+        }
+        Returns: Json
+      }
       apply_morning_flow_turn: {
         Args: {
           p_equipment?: Json
@@ -2099,12 +2129,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2128,11 +2158,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2153,11 +2183,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2178,11 +2208,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2195,11 +2225,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

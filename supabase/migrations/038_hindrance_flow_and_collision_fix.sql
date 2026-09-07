@@ -2,10 +2,18 @@
 -- Migration 038 -- apply_hindrance_flow_turn + scheduled-trigger-wins fix
 -- Ad-hoc menu PR 2, step 4 (docs/plans/adhoc-menu-spec.md).
 --
--- STATUS: WRITTEN, NOT YET APPLIED, NOT YET EXTERNALLY REVIEWED. Lives in
+-- DATED CORRECTION (2026-09-07): APPLIED TO PROD, verified by catalog probe
+-- (docs/reviews/038-post-apply-probe.sql -- function existence + exact
+-- signature for all three functions, both composite same-tenant FK
+-- constraints, EXECUTE grants for anon/authenticated/service_role across
+-- all three functions, and COMMENT text -- all 17 checks passed). Struck
+-- through below, not rewritten, per this project's own correction
+-- discipline -- the WRITTEN/reviewed facts still hold, only the
+-- applied-status claim is superseded:
+-- ~~STATUS: WRITTEN, NOT YET APPLIED, NOT YET EXTERNALLY REVIEWED. Lives in
 -- docs/reviews/ per CLAUDE.md's own "a migration file enters
 -- supabase/migrations/ when it is being applied" rule -- this one is not
--- being applied by this commit.
+-- being applied by this commit.~~
 --
 -- TEST-DB REHEARSAL -- NOT YET RUN (added 2026-09-07, before this package
 -- is signed off, so the gap is visible rather than assumed covered). Every
