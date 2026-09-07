@@ -7,6 +7,43 @@
 -- supabase/migrations/ when it is being applied" rule -- this one is not
 -- being applied by this commit.
 --
+-- TEST-DB REHEARSAL -- NOT YET RUN (added 2026-09-07, before this package
+-- is signed off, so the gap is visible rather than assumed covered). Every
+-- rehearsal claim elsewhere in this file and in docs/reviews/038-
+-- hindrance-flow-review-package.md -- the four scenarios, both DOWN-block
+-- bugs found and fixed -- ran against a LOCAL Postgres 17 instance loaded
+-- from a prod schema dump (CLAUDE.md §7's dry-run-scaffold discipline),
+-- never against a real Supabase database. That scaffold is explicitly NOT
+-- a substitute for the real test-db rehearsal (that rule's own text: "this
+-- is NOT the test-db rehearsal and does not substitute for it") -- it
+-- structurally cannot be, since a vanilla local Postgres has no analog to
+-- Supabase's project-level default ACLs. Three checks still required
+-- against ACTUAL Supabase test-db before this migration is applied to
+-- prod, none of them done yet:
+--   1. service_role NEGATIVE-capability probes on the new function and any
+--      touched grants (CLAUDE.md's own REHEARSAL REQUIREMENT entry,
+--      migration 031's own precedent) -- confirm service_role can do
+--      exactly what's intended and nothing more, not just that the
+--      intended call succeeds.
+--   2. A REAL anon-key call against the deployed function, confirming the
+--      REVOKE ... FROM PUBLIC, anon, authenticated below actually refuses
+--      (42501) live -- not just that the SQL reads correctly. Named
+--      explicitly because migration 029's own anon-EXECUTE hole
+--      (write_dpr_version) read exactly this correctly in SQL too, right
+--      up until a live anon call proved otherwise -- CLAUDE.md's own
+--      "STANDARD EVIDENCE SHAPE, MADE PROACTIVE" rule makes this a
+--      required line in every new SECURITY DEFINER function's review
+--      package, not optional, and this package has zero anon coverage
+--      anywhere in it as of this note.
+--   3. The DOWN block, rehearsed again against a live in-flight
+--      'hindrance' session on REAL test-db, not only the local scaffold --
+--      same reasoning as 1 and 2: Supabase-specific behavior the scaffold
+--      cannot reproduce.
+-- Nothing above changes this file's SQL logic -- this is a documentation-
+-- only addition. Made because a certified artifact's own text was found to
+-- claim less coverage than a careless reading would assume, not because
+-- anything it already claims turned out wrong.
+--
 -- WHY THIS TRIPS THE EXTERNAL REVIEW GATE (CLAUDE.md §0, condition (a)):
 -- this migration CREATES OR REPLACES apply_morning_flow_turn and
 -- apply_evening_flow_turn -- two live, already-externally-reviewed,
