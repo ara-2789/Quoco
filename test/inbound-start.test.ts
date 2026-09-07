@@ -4,8 +4,8 @@ import {
   classifyAdhocInput,
   computeIdleHeaderState,
   buildIdleReply,
-  buildItem1InterimReply,
 } from '@/lib/whatsapp/inbound-start'
+import { HINDRANCE_QUESTIONS, buildHindranceReply } from '@/lib/whatsapp/flows/hindrance'
 import {
   testClient,
   ensureMorningFixtures,
@@ -405,23 +405,30 @@ describe('classifyAdhocInput', () => {
 // flow, regardless of check-in state -- the header explains why no
 // check-in is coming, never that nothing can be reported. Real DB
 // round-trip through the full routeInboundMessage path, not just the pure
-// classifier, so this proves the "1" check genuinely runs and still
-// carries the daily_logs-derived header on the INTERIM reply (corrected
-// 2026-09-06 -- the first draft's placeholder never showed a header at
-// all, the exact false-promise-by-omission shape items 2/7 were dropped
-// over).
+// classifier, so this proves the "1" check genuinely runs.
+//
+// REWRITTEN, 2026-09-07 -- item 1 now starts the REAL hindrance flow
+// (migration 038 confirmed applied), not the retired INTERIM placeholder.
+// Header state is proven IRRELEVANT to item 1's outcome now (the four
+// cases below cover the same four header states the old interim-reply
+// tests did, each now asserting the identical real Q1 start regardless)
+// -- these are real writes against test-db (apply_hindrance_flow_turn
+// under its own row lock), cleaned up by this file's own afterEach.
 describe('routeInboundMessage — ad-hoc precedence and fallback dispatch', () => {
-  it('leading "1" wins even during morning_closed, and the interim reply still carries the header', async () => {
+  it('leading "1" starts the real hindrance flow even during morning_closed', async () => {
     const phone = testPhone('821')
     const { reply, resolvedFlow } = await routeInboundMessage(
       baseParams(phone, AFTER_MORNING_CUTOFF, '1 the crane access is blocked'),
     )
-    expect(reply).toBe(buildItem1InterimReply('morning_closed'))
-    expect(resolvedFlow).toBeNull()
-    expect(await readSession(phone)).toBeNull()
+    expect(reply).toBe(buildHindranceReply('start', 1))
+    expect(reply).toBe(HINDRANCE_QUESTIONS[1])
+    expect(resolvedFlow).toBe('hindrance')
+    const session = await readSession(phone)
+    expect(session?.current_flow).toBe('hindrance')
+    expect(session?.current_step).toBe(1)
   })
 
-  it('leading "1" wins even during site_holiday, header included — a genuine hindrance is still reportable on a holiday', async () => {
+  it('leading "1" starts the real hindrance flow during site_holiday — a genuine hindrance is still reportable on a holiday', async () => {
     const phone = testPhone('822')
     await seedDailyLogSubmission({
       logDate: LOG_DATE,
@@ -429,12 +436,14 @@ describe('routeInboundMessage — ad-hoc precedence and fallback dispatch', () =
       attendance: 'site_holiday',
     })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, AT_EVENING_SEND, '1'))
-    expect(reply).toBe(buildItem1InterimReply('site_holiday'))
-    expect(resolvedFlow).toBeNull()
-    expect(await readSession(phone)).toBeNull()
+    expect(reply).toBe(HINDRANCE_QUESTIONS[1])
+    expect(resolvedFlow).toBe('hindrance')
+    const session = await readSession(phone)
+    expect(session?.current_flow).toBe('hindrance')
+    expect(session?.current_step).toBe(1)
   })
 
-  it('leading "1" wins even after both halves are already submitted, header included', async () => {
+  it('leading "1" starts the real hindrance flow even after both halves are already submitted', async () => {
     const phone = testPhone('823')
     await seedDailyLogSubmission({
       logDate: LOG_DATE,
@@ -442,19 +451,22 @@ describe('routeInboundMessage — ad-hoc precedence and fallback dispatch', () =
       eveningSubmittedAt: `${LOG_DATE}T10:00:00.000Z`,
     })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, MID_DAY_BOTH_DONE, '1'))
-    expect(reply).toBe(buildItem1InterimReply('complete'))
-    expect(resolvedFlow).toBeNull()
-    expect(await readSession(phone)).toBeNull()
+    expect(reply).toBe(HINDRANCE_QUESTIONS[1])
+    expect(resolvedFlow).toBe('hindrance')
+    const session = await readSession(phone)
+    expect(session?.current_flow).toBe('hindrance')
+    expect(session?.current_step).toBe(1)
   })
 
-  it('leading "1" with NO header state (evening-pending collapse) gets the interim line alone, no trailing blank line', async () => {
+  it('leading "1" starts the real hindrance flow with no header state applicable (evening-pending collapse) -- identical outcome, proving header state has no effect on item 1 any more', async () => {
     const phone = testPhone('827')
     await seedDailyLogSubmission({ logDate: LOG_DATE, morningSubmittedAt: `${LOG_DATE}T04:00:00.000Z` })
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, MID_DAY_MORNING_ONLY, '1'))
-    expect(reply).toBe(buildItem1InterimReply('none'))
-    expect(reply).toBe("Hindrance reporting isn't ready yet. Nothing was recorded.")
-    expect(resolvedFlow).toBeNull()
-    expect(await readSession(phone)).toBeNull()
+    expect(reply).toBe(HINDRANCE_QUESTIONS[1])
+    expect(resolvedFlow).toBe('hindrance')
+    const session = await readSession(phone)
+    expect(session?.current_flow).toBe('hindrance')
+    expect(session?.current_step).toBe(1)
   })
 
   it('typed "2" gets the safety fallback composed with whatever header applies', async () => {
@@ -485,7 +497,7 @@ describe('routeInboundMessage — ad-hoc precedence and fallback dispatch', () =
       baseParams(phone, BEFORE_MORNING_SEND, '10 bags of cement delivered'),
     )
     expect(reply).toBe(buildIdleReply('unrecognized', 'awaiting_morning'))
-    expect(reply).not.toBe(buildItem1InterimReply('awaiting_morning'))
+    expect(reply).not.toBe(HINDRANCE_QUESTIONS[1])
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
   })

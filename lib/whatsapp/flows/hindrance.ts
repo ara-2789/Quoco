@@ -10,7 +10,12 @@ import { enqueueHindrancePmNotify } from '@/lib/hindrance/pm-notify'
 // is parsing Q2's answer, calling the RPC, and building the reply text --
 // same split as every other flow in this codebase.
 //
-// MIGRATION 038 IS NOT YET APPLIED (external-review-gate, CLAUDE.md §0
+// LIVE, 2026-09-07 -- SUPERSEDES THE PARAGRAPH BELOW. Migration 038 is
+// confirmed applied to prod (docs/reviews/038-post-apply-probe.sql, 17/17
+// checks) and inbound-start.ts's "1" branch now calls
+// applyHindranceFlowTurn(startFlow: true) directly -- a real leading "1"
+// reaches this module today. Struck through, not rewritten:
+// ~~MIGRATION 038 IS NOT YET APPLIED (external-review-gate, CLAUDE.md §0
 // condition (a) -- it modifies apply_morning_flow_turn/apply_evening_
 // flow_turn's own live logic). This module compiles and is fully tested
 // against a real Postgres 17 dry-run scaffold (docs/reviews/038's own
@@ -23,7 +28,7 @@ import { enqueueHindrancePmNotify } from '@/lib/hindrance/pm-notify'
 // hindrance_pm_notify job, but nothing calls applyHindranceFlowTurn in
 // production yet (inbound-start.ts's "1" branch still calls
 // buildItem1InterimReply, not this function), so this stays inert until
-// both 038 ships AND that router wiring lands.
+// both 038 ships AND that router wiring lands.~~
 
 export type HindranceOutcome = 'start' | 'advance' | 'reask' | 'idle' | 'wrong_flow'
 

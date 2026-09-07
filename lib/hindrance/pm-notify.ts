@@ -16,7 +16,13 @@ import { enqueueJob } from '@/lib/queue/jobs'
 // HINDRANCE_RESOLVED_REPLY/HINDRANCE_UNSPECIFIED_REPLY now say "Your
 // Project Manager will see it" on the strength of this.
 //
-// STILL NECESSARY, NOT SUFFICIENT, same shape as lib/dpr/owner-deliver-
+// REACHABLE, 2026-09-07 -- SUPERSEDES THE PARAGRAPH BELOW. Both conditions
+// it named are now met: migration 038 is confirmed applied to prod
+// (docs/reviews/038-post-apply-probe.sql, 17/17 checks), and
+// inbound-start.ts's "1" branch now calls applyHindranceFlowTurn directly.
+// This module is genuinely reachable from a real inbound WhatsApp message
+// today. Struck through, not rewritten:
+// ~~STILL NECESSARY, NOT SUFFICIENT, same shape as lib/dpr/owner-deliver-
 // dispatch.ts's own header: two things must ALSO be true before this
 // module is REACHABLE from a real inbound WhatsApp message, neither built
 // here:
@@ -30,7 +36,7 @@ import { enqueueJob } from '@/lib/queue/jobs'
 //      lockstep hazard as the precedent this avoids repeating).
 // Phase A proves the EMAIL CHANNEL works; it says nothing about whether a
 // real engineer's hindrance report can reach this handler yet -- it can't,
-// until both of the above ship.
+// until both of the above ship.~~
 //
 // OPEN RELIABILITY GAP, RECORDED NOT FIXED (Aravind, 2026-09-07, same
 // Phase A round). An earlier test send to a mistyped address

@@ -3,7 +3,6 @@ import fs from 'fs'
 import path from 'path'
 import {
   buildIdleReply,
-  buildItem1InterimReply,
   type IdleHeaderState,
 } from '@/lib/whatsapp/inbound-start'
 
@@ -111,14 +110,9 @@ describe('adhoc-menu-spec.md idle-reply copy matches inbound-start.ts exactly', 
     })
   })
 
-  it("item 1's interim reply", () => {
-    // Plain-text marker (not a standalone "**...**" line) -- unique in the
-    // document, confirmed via grep when this test was written. If a future
-    // edit adds another "All five combinations:" occurrence, this needs a
-    // more specific anchor.
-    const combos = extractCombinations('All five combinations:', 5)
-    combos.forEach((combo, i) => {
-      expect(combo).toBe(buildItem1InterimReply(HEADER_ORDER[i]))
-    })
-  })
+  // "item 1's interim reply" test REMOVED, 2026-09-07 -- the section it
+  // checked (docs/plans/adhoc-menu-spec.md's "Item 1's interim reply") is
+  // itself struck through now that step 4 shipped; item 1 starts the real
+  // flow unconditionally and has no header-varying reply left to sync
+  // against. See that section's own SUPERSEDED note for the full record.
 })
