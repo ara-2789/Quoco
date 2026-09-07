@@ -1018,27 +1018,781 @@ GRANT EXECUTE ON FUNCTION public.apply_evening_flow_turn(
 COMMIT;
 
 -- =============================================================================
--- DOWN / ROLLBACK -- exact inverse, not applied by this file. Written per
--- CLAUDE.md's own migration-runbook-template discipline.
+-- DOWN / ROLLBACK -- not applied by this file. Written AND REHEARSED
+-- against the same dry-run scaffold as the forward migration (a real
+-- 'hindrance' session seeded at step 2, this DOWN run against it,
+-- verified after) -- not hand-waved, per CLAUDE.md's own migration-
+-- runbook-template discipline.
 --
--- apply_hindrance_flow_turn: DROP FUNCTION (brand new, nothing to restore).
--- apply_morning_flow_turn / apply_evening_flow_turn: CREATE OR REPLACE with
--- 035's exact live body (no 'hindrance' ELSIF branch) -- byte-identical to
--- the "STEP 2"/"STEP 3" bodies above MINUS the branch marked "NEW BRANCH,
--- migration 038" in each. Not spelled out a second time here to avoid a
--- THIRD copy of ~150 lines each drifting from the other two; the applier
--- reconstructs it by deleting exactly that one ELSIF block from each
--- function and re-running CREATE OR REPLACE -- confirmed as a real,
--- mechanical DOWN path, not hand-waved, but not restated verbatim.
+-- REAL, SERIOUS FINDING FROM REHEARSING THIS, NOT ASSUMED (2026-09-07,
+-- caught before the reviewer had to): the FIRST draft of this DOWN block
+-- only reverted the two functions and dropped apply_hindrance_flow_turn --
+-- it did NOT clear any session still actively IN the 'hindrance' flow.
+-- Rehearsed directly: seeded a live 'hindrance' session (step 2), ran that
+-- first-draft DOWN, then confirmed two things empirically, not assumed --
+--   1. Calling apply_hindrance_flow_turn against that session now raises
+--      `undefined_function` -- the RPC that could process it is GONE.
+--   2. A same-day morning-trigger startFlow:true call against that SAME
+--      session -- exercising the exact reverted (pre-038) body -- returns
+--      'reask' and leaves current_flow='hindrance' COMPLETELY UNCHANGED.
+--      The reverted body's own quoco_same_ist_day check does not fire
+--      (same calendar day), and the force-reset branch that would have
+--      fired is exactly what was just reverted away.
+-- CONSEQUENCE, stated precisely, not softened: a same-day 'hindrance'
+-- session survives this DOWN with NO remaining recovery path at all until
+-- the NEXT calendar day (BOT-07's cross-day wipe, still present in the
+-- reverted bodies, is the only mechanism left, and it cannot fire same-
+-- day by construction). Worse than "unresettable": if the TypeScript
+-- routing fix (dispatch.ts's Flow extension, inbound-start.ts's
+-- currentFlow!==null delegation) is STILL DEPLOYED when this DOWN runs on
+-- the database -- a genuinely plausible sequencing, since a DB rollback
+-- and an app rollback are not the same operation -- every future inbound
+-- from that phone number calls a function that no longer exists at the
+-- DB layer: a hard, uncaught error, not a graceful reply, not silence,
+-- an actual application crash for that phone number specifically.
 --
--- CONSEQUENCE OF ROLLING BACK: any 'hindrance' session active at rollback
--- time reverts to being swallowed by the pre-038 'reask'/'wrong_flow'
--- collision behavior this migration exists to fix -- same as before this
--- file ever existed. No data loss on rollback itself (apply_hindrance_
--- flow_turn's own writes to `hindrances` are untouched by dropping the
--- function; only future calls stop working).
+-- FIX, ALREADY APPLIED TO THE DOWN BELOW, REHEARSED AFTER THE FIX TOO:
+-- clear any live 'hindrance' session BEFORE dropping the function that
+-- would otherwise be the only thing that could ever process it again.
+-- Re-ran the full rehearsal after adding this UPDATE -- the seeded session
+-- came back current_flow=NULL, current_step=0, context='{}', exactly
+-- idle, confirmed by direct query, not assumed from the UPDATE's own
+-- affected-row count alone. Same trade-off already accepted for the
+-- abandon-Q2 case (§42 boundary, this file's own header): losing an
+-- in-progress ad-hoc report to a schema rollback is recoverable (send "1"
+-- again, once the "1" wiring is live); leaving a phone number permanently
+-- unable to receive any reply at all is not an acceptable trade for
+-- avoiding that.
+--
+-- Both function bodies below are 035's own live text, verbatim -- the
+-- SAME bodies "STEP 2"/"STEP 3" above are built from, minus exactly the
+-- one ELSIF branch each marked "NEW BRANCH, migration 038". Confirmed via
+-- mechanical diff against the forward migration's own bodies before this
+-- file was finalized, not by eye.
+-- =============================================================================
+
+-- NOT EXECUTABLE AS PART OF THIS FILE -- every line below is commented
+-- out deliberately (CAUGHT IN REHEARSAL, 2026-09-07: the first draft of
+-- this file left this block as live, uncommented SQL, which meant
+-- applying the file ran the forward migration and then immediately
+-- reverted it in the same batch -- confirmed by re-running the full file
+-- and finding apply_hindrance_flow_turn no longer existed afterward. This
+-- is exactly why 036/037's own DOWN sections are fully commented out;
+-- this file now matches that convention). To actually roll back, strip
+-- the leading "-- " from every line below and run it as its own
+-- deliberate operation -- never by re-running this file.
+--
+-- BEGIN;
+--
+-- CREATE OR REPLACE FUNCTION apply_morning_flow_turn(
+--   p_phone_number  TEXT,
+--   p_tenant_id     UUID,
+--   p_user_id       UUID,
+--   p_project_id    UUID,
+--   p_message       TEXT,
+--   p_start_flow    BOOLEAN,
+--   p_manpower      JSONB    DEFAULT NULL,
+--   p_manpower_ok   BOOLEAN  DEFAULT NULL,
+--   p_equipment     JSONB    DEFAULT NULL,
+--   p_equipment_ok  BOOLEAN  DEFAULT NULL,
+--   p_now           TIMESTAMPTZ DEFAULT now(),
+--   p_test_sleep_ms INTEGER     DEFAULT NULL
+-- )
+-- RETURNS jsonb
+-- LANGUAGE plpgsql
+-- SECURITY DEFINER
+-- SET search_path = public
+-- AS $fn$
+-- DECLARE
+--   v_session    whatsapp_sessions;
+--   v_text       TEXT;
+--   v_log_date   DATE;
+--   v_outcome    TEXT;
+--   v_col        TEXT := NULL;
+--   v_reask      INTEGER;
+--   v_attendance TEXT := NULL;
+--   v_yesno      JSONB;
+--   v_attendance_defaulted BOOLEAN := NULL;
+--   v_attendance_raw        TEXT    := NULL;
+-- BEGIN
+--   v_log_date := (p_now AT TIME ZONE 'Asia/Kolkata')::date;
+--
+--   INSERT INTO whatsapp_sessions AS s
+--     (phone_number, tenant_id, user_id, pending_flows, expires_at, updated_at)
+--   VALUES
+--     (p_phone_number, p_tenant_id, p_user_id, '[]'::jsonb, p_now + INTERVAL '30 minutes', p_now)
+--   ON CONFLICT (phone_number) DO UPDATE
+--     SET phone_number = s.phone_number
+--   RETURNING * INTO v_session;
+--
+--   IF p_test_sleep_ms IS NOT NULL THEN
+--     PERFORM pg_sleep(p_test_sleep_ms / 1000.0);
+--   END IF;
+--
+--   IF NOT quoco_same_ist_day(p_now, v_session.updated_at) THEN
+--     v_session.current_flow  := NULL;
+--     v_session.current_step  := 0;
+--     v_session.context       := '{}'::jsonb;
+--     v_session.pending_flows := '[]'::jsonb;
+--   END IF;
+--
+--   v_session.context := COALESCE(v_session.context, '{}'::jsonb);
+--   v_text := btrim(COALESCE(p_message, ''));
+--
+--   IF p_start_flow THEN
+--     IF v_session.current_flow IS NULL THEN
+--       v_session.current_flow := 'morning';
+--       v_session.current_step := 1;
+--       v_session.context      := v_session.context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask';
+--       v_outcome := 'start';
+--     ELSE
+--       v_outcome := 'reask';
+--     END IF;
+--
+--   ELSIF v_session.current_flow IS NULL THEN
+--     IF COALESCE((v_session.context->>'morning_submitted')::boolean, false) THEN
+--       v_outcome := 'already_complete';
+--     ELSE
+--       v_outcome := 'idle';
+--     END IF;
+--
+--   ELSIF v_session.current_flow = 'morning' THEN
+--     IF v_text = '' THEN
+--       v_outcome := 'reask';
+--
+--     ELSIF v_session.current_step = 1 THEN
+--       v_yesno := quoco_classify_yes_no(p_message);
+--       v_reask := COALESCE((v_session.context->>'q1_reask')::int, 0);
+--       IF NOT COALESCE((v_yesno->>'ok')::boolean, false) AND v_reask < 1 THEN
+--         v_session.context := v_session.context || jsonb_build_object('q1_reask', v_reask + 1);
+--         v_outcome := 'reask';
+--       ELSIF COALESCE((v_yesno->>'ok')::boolean, false) AND NOT (v_yesno->>'met')::boolean THEN
+--         v_session.current_step := 5;
+--         v_session.context := v_session.context || jsonb_build_object('q1_reask', 0);
+--         v_outcome := 'advance';
+--       ELSE
+--         v_session.current_step := 2;
+--         v_session.context := v_session.context || jsonb_build_object('q1_reask', 0);
+--         v_attendance := 'present';
+--         v_col        := 'attendance';
+--         v_attendance_defaulted := NOT COALESCE((v_yesno->>'ok')::boolean, false);
+--         v_attendance_raw       := v_text;
+--         v_outcome    := 'advance';
+--       END IF;
+--
+--     ELSIF v_session.current_step = 2 THEN
+--       v_session.current_step := 3;
+--       v_outcome := 'advance';
+--       v_col     := 'plan';
+--
+--     ELSIF v_session.current_step = 3 THEN
+--       v_reask := COALESCE((v_session.context->>'q3_reask')::int, 0);
+--       IF COALESCE(p_manpower_ok, false) OR v_reask >= 1 THEN
+--         v_session.current_step := 4;
+--         v_session.context := v_session.context || jsonb_build_object('q3_reask', 0);
+--         v_outcome := 'advance';
+--         v_col     := 'manpower';
+--       ELSE
+--         v_session.context := v_session.context || jsonb_build_object('q3_reask', v_reask + 1);
+--         v_outcome := 'reask';
+--       END IF;
+--
+--     ELSIF v_session.current_step = 4 THEN
+--       v_reask := COALESCE((v_session.context->>'q4_reask')::int, 0);
+--       IF COALESCE(p_equipment_ok, false) OR v_reask >= 1 THEN
+--         v_session.current_flow := NULL;
+--         v_session.current_step := 0;
+--         v_session.context      := (v_session.context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask')
+--                                     || jsonb_build_object('morning_submitted', true);
+--         v_outcome := 'advance';
+--         v_col     := 'equipment';
+--       ELSE
+--         v_session.context := v_session.context || jsonb_build_object('q4_reask', v_reask + 1);
+--         v_outcome := 'reask';
+--       END IF;
+--
+--     ELSIF v_session.current_step = 5 THEN
+--       v_yesno := quoco_classify_yes_no(p_message);
+--       v_reask := COALESCE((v_session.context->>'q5_reask')::int, 0);
+--       IF NOT COALESCE((v_yesno->>'ok')::boolean, false) AND v_reask < 1 THEN
+--         v_session.context := v_session.context || jsonb_build_object('q5_reask', v_reask + 1);
+--         v_outcome := 'reask';
+--       ELSE
+--         IF COALESCE((v_yesno->>'ok')::boolean, false) AND (v_yesno->>'met')::boolean THEN
+--           v_attendance := 'site_holiday';
+--         ELSE
+--           v_attendance := 'absent';
+--         END IF;
+--         v_session.current_flow := NULL;
+--         v_session.current_step := 0;
+--         v_session.context      := (v_session.context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask')
+--                                     || jsonb_build_object('morning_submitted', true);
+--         v_col     := 'attendance_complete';
+--         v_attendance_defaulted := NOT COALESCE((v_yesno->>'ok')::boolean, false);
+--         v_attendance_raw       := v_text;
+--         v_outcome := 'advance';
+--       END IF;
+--
+--     ELSE
+--       v_outcome := 'reask';
+--     END IF;
+--
+--   ELSE
+--     v_outcome := 'wrong_flow';
+--   END IF;
+--
+--   IF v_col = 'attendance' THEN
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date, v_attendance, v_attendance_defaulted, v_attendance_raw)
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET attendance           = EXCLUDED.attendance,
+--           attendance_defaulted = EXCLUDED.attendance_defaulted,
+--           attendance_raw       = EXCLUDED.attendance_raw;
+--
+--   ELSIF v_col = 'attendance_complete' THEN
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_submitted_at)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date, v_attendance, v_attendance_defaulted, v_attendance_raw, (v_attendance = 'site_holiday'), p_now)
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET attendance           = EXCLUDED.attendance,
+--           attendance_defaulted = EXCLUDED.attendance_defaulted,
+--           attendance_raw       = EXCLUDED.attendance_raw,
+--           is_holiday           = EXCLUDED.is_holiday,
+--           morning_submitted_at = EXCLUDED.morning_submitted_at;
+--
+--   ELSIF v_col = 'plan' THEN
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date, morning_plan)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date, v_text)
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET morning_plan = EXCLUDED.morning_plan;
+--
+--   ELSIF v_col = 'manpower' THEN
+--     -- ONLY CHANGED BRANCH IN THIS FUNCTION. §42: the by_trade reshape now
+--     -- also carries `matched` through from whatever the TS parser supplied
+--     -- (COALESCE to true when absent, so a p_manpower payload from a caller
+--     -- not yet updated to emit `matched` -- e.g. mid-deploy -- degrades to
+--     -- "assume matched" rather than crash on a missing key; TRUE, not FALSE,
+--     -- because every element this RPC has ever received up to this migration
+--     -- WAS a matched trade -- the old parser never pushed unmatched ones at
+--     -- all, so the honest default for pre-migration-shaped input is "yes,
+--     -- this was matched", not "unknown, assume worst").
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date, morning_manpower)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date,
+--        jsonb_build_object(
+--          'total', p_manpower->'planned_total',
+--          'by_trade', (
+--            SELECT COALESCE(
+--                     jsonb_agg(
+--                       jsonb_build_object(
+--                         'trade',   t->>'trade',
+--                         'count',   (t->>'planned_count')::int,
+--                         'matched', COALESCE((t->>'matched')::boolean, true)
+--                       )
+--                     ),
+--                     '[]'::jsonb
+--                   )
+--            FROM jsonb_array_elements(COALESCE(p_manpower->'by_trade', '[]'::jsonb)) AS t
+--          ),
+--          'raw_text', p_manpower->'raw_text'
+--        ))
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET morning_manpower = EXCLUDED.morning_manpower;
+--
+--   ELSIF v_col = 'equipment' THEN
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date, morning_equipment, morning_submitted_at)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date, p_equipment, p_now)
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET morning_equipment    = EXCLUDED.morning_equipment,
+--           morning_submitted_at = EXCLUDED.morning_submitted_at;
+--   END IF;
+--
+--   UPDATE whatsapp_sessions
+--      SET current_flow  = v_session.current_flow,
+--          current_step  = v_session.current_step,
+--          context       = v_session.context,
+--          pending_flows = v_session.pending_flows,
+--          tenant_id     = COALESCE(whatsapp_sessions.tenant_id, p_tenant_id),
+--          user_id       = COALESCE(whatsapp_sessions.user_id, p_user_id),
+--          expires_at    = p_now + INTERVAL '30 minutes',
+--          updated_at    = p_now
+--    WHERE id = v_session.id
+--   RETURNING * INTO v_session;
+--
+--   RETURN jsonb_build_object(
+--     'outcome',      v_outcome,
+--     'current_flow', v_session.current_flow,
+--     'current_step', v_session.current_step,
+--     'log_date',     v_log_date,
+--     'attendance',   v_attendance
+--   );
+-- END;
+-- $fn$;
+--
+-- REVOKE EXECUTE ON FUNCTION public.apply_morning_flow_turn(
+--   text, uuid, uuid, uuid, text, boolean, jsonb, boolean, jsonb, boolean, timestamptz, integer
+-- ) FROM PUBLIC, anon, authenticated;
+-- GRANT EXECUTE ON FUNCTION public.apply_morning_flow_turn(
+--   text, uuid, uuid, uuid, text, boolean, jsonb, boolean, jsonb, boolean, timestamptz, integer
+-- ) TO service_role;
+--
+-- CREATE OR REPLACE FUNCTION apply_evening_flow_turn(
+--   p_phone_number  TEXT,
+--   p_tenant_id     UUID,
+--   p_user_id       UUID,
+--   p_project_id    UUID,
+--   p_message       TEXT,
+--   p_start_flow    BOOLEAN,
+--   p_parse         JSONB    DEFAULT NULL,
+--   p_parse_ok      JSONB    DEFAULT NULL,
+--   p_now           TIMESTAMPTZ DEFAULT now(),
+--   p_test_sleep_ms INTEGER     DEFAULT NULL
+-- )
+-- RETURNS jsonb   -- { outcome, current_flow, current_step, log_date, equipment_echo }
+-- LANGUAGE plpgsql
+-- SECURITY DEFINER
+-- SET search_path = public
+-- AS $fn$
+-- DECLARE
+--   v_session            whatsapp_sessions;
+--   v_text               TEXT;
+--   v_log_date           DATE;
+--   v_outcome            TEXT;
+--   v_col                TEXT    := NULL;
+--   v_reask              INTEGER;
+--   v_complete           BOOLEAN := false;
+--   v_morning_equipment  JSONB;
+--   v_confidence         TEXT;
+--   v_equip_items        JSONB;
+--   v_equipment_echo     JSONB   := NULL;  -- kept for RETURN shape compatibility; see note at RETURN
+--   i                     INTEGER;
+--   -- Evening Q4 (equipment) join state -- TYPE STRING only, no positional
+--   -- index, no label tiers. §33(b)/§6: the entire per-machine matching
+--   -- apparatus this replaces is retired outright, not patched.
+--   v_reply_count        INTEGER;
+--   v_reply_type         TEXT;
+--   v_morning_count_for_type INTEGER;  -- summed `count` across every morning_equipment item sharing this type
+-- BEGIN
+--   v_log_date := (p_now AT TIME ZONE 'Asia/Kolkata')::date;
+--
+--   INSERT INTO whatsapp_sessions AS s
+--     (phone_number, tenant_id, user_id, pending_flows, expires_at, updated_at)
+--   VALUES
+--     (p_phone_number, p_tenant_id, p_user_id, '[]'::jsonb, p_now + INTERVAL '30 minutes', p_now)
+--   ON CONFLICT (phone_number) DO UPDATE
+--     SET phone_number = s.phone_number
+--   RETURNING * INTO v_session;
+--
+--   IF p_test_sleep_ms IS NOT NULL THEN
+--     PERFORM pg_sleep(p_test_sleep_ms / 1000.0);
+--   END IF;
+--
+--   IF NOT quoco_same_ist_day(p_now, v_session.updated_at) THEN
+--     v_session.current_flow  := NULL;
+--     v_session.current_step  := 0;
+--     v_session.context       := '{}'::jsonb;
+--     v_session.pending_flows := '[]'::jsonb;
+--   END IF;
+--
+--   v_session.context := COALESCE(v_session.context, '{}'::jsonb);
+--   v_text := btrim(COALESCE(p_message, ''));
+--
+--   IF p_start_flow THEN
+--     IF v_session.current_flow IS NULL THEN
+--       v_session.current_flow := 'evening';
+--       v_session.current_step := 1;
+--       -- CONTEXT DISCIPLINE. Strips the full NEW reask-key set (e2/e3/e4) --
+--       -- the old set (e4_headcount/e5_reask/e6_reask) is a different regime
+--       -- and cannot appear once this migration is live, but stripping both
+--       -- costs nothing and matches STEP 3's own belt-and-braces sweep above.
+--       v_session.context := v_session.context
+--                             - 'e2_reask' - 'e3_reask' - 'e4_reask'
+--                             - 'e4_headcount' - 'e5_reask' - 'e6_reask';
+--       v_outcome := 'start';
+--     ELSE
+--       v_outcome := 'reask';
+--     END IF;
+--
+--   ELSIF v_session.current_flow IS NULL THEN
+--     IF COALESCE((v_session.context->>'evening_submitted')::boolean, false) THEN
+--       v_outcome := 'already_complete';
+--     ELSE
+--       v_outcome := 'idle';
+--     END IF;
+--
+--   ELSIF v_session.current_flow = 'evening' THEN
+--     IF v_text = '' THEN
+--       v_outcome := 'reask';
+--
+--     ELSIF v_session.current_step = 1 THEN
+--       -- Q1 (free text + enrichment) -> evening_output + quantities.
+--       -- BYTE-IDENTICAL to the pre-migration step 1 (plan §2: "unchanged").
+--       v_session.current_step := 2;
+--       v_outcome := 'advance';
+--       v_col     := 'output';
+--
+--     ELSIF v_session.current_step = 2 THEN
+--       -- Evening Q2 -- workers by trade. Reuses parseLabourCount's shape
+--       -- (§42 extends it with `matched`, plan §15(d)/§15(e) -- unlike
+--       -- morning's manpower branch, THIS reshape has no pre-existing field
+--       -- names to preserve across a shared-parser boundary, since this is a
+--       -- brand-new write site; `matched` still defaults to true when absent,
+--       -- same reasoning as morning's branch above.
+--       v_reask := COALESCE((v_session.context->>'e2_reask')::int, 0);
+--       IF COALESCE((p_parse_ok->>'2')::boolean, false) OR v_reask >= 1 THEN
+--         v_session.current_step := 3;
+--         v_session.context := v_session.context || jsonb_build_object('e2_reask', 0);
+--         v_col     := 'manpower';
+--         v_outcome := 'advance';
+--       ELSE
+--         v_session.context := v_session.context || jsonb_build_object('e2_reask', v_reask + 1);
+--         v_outcome := 'reask';
+--       END IF;
+--
+--     ELSIF v_session.current_step = 3 THEN
+--       -- Evening Q3 -- idle hours by trade. UNCONDITIONAL (asked every day,
+--       -- not gated on a bad day) -- "nobody idle" is a valid, common,
+--       -- ANSWERED (not defaulted) response; p_parse_ok->'3' is the TS
+--       -- parser's own judgment of that, not re-derived here.
+--       v_reask := COALESCE((v_session.context->>'e3_reask')::int, 0);
+--       IF COALESCE((p_parse_ok->>'3')::boolean, false) OR v_reask >= 1 THEN
+--         v_session.context := v_session.context || jsonb_build_object('e3_reask', 0);
+--         v_col     := 'idle_hours';
+--         v_outcome := 'advance';
+--
+--         -- EQUIPMENT AUTO-SKIP DECISION (BOT-22, unchanged trigger, moved
+--         -- from the old step 5 to here since idle-hours is now the step
+--         -- immediately before equipment). Same NULL-vs-empty distinction
+--         -- 024/025 already established: NULL (no morning submission at all)
+--         -- and empty ({items:[]}) both skip identically.
+--         SELECT morning_equipment INTO v_morning_equipment
+--           FROM daily_logs
+--          WHERE project_id = p_project_id AND engineer_id = p_user_id AND log_date = v_log_date;
+--
+--         IF v_morning_equipment IS NULL
+--            OR jsonb_array_length(v_morning_equipment->'items') = 0 THEN
+--           -- SKIP Evening Q4 entirely -> Evening Q5 (hindrance) directly.
+--           -- UNLIKE the old flow's auto-skip, this does NOT complete the
+--           -- turn -- hindrance is unconditional now, so there is always one
+--           -- more question regardless of equipment. Store an empty
+--           -- utilisation object, same "explicit empty, not silent absence"
+--           -- convention 024 established.
+--           v_session.current_step := 5;
+--           v_col := 'idle_hours_skip_equipment';
+--         ELSE
+--           v_session.current_step := 4;
+--         END IF;
+--       ELSE
+--         v_session.context := v_session.context || jsonb_build_object('e3_reask', v_reask + 1);
+--         v_outcome := 'reask';
+--       END IF;
+--
+--     ELSIF v_session.current_step = 4 THEN
+--       -- Evening Q4 -- equipment, HOURS USED, one number per type. Decision 1
+--       -- (2026-08-31): supersedes §33(b)'s per-machine/two-number design
+--       -- entirely -- no available_hours, no idle_reason, no positional index.
+--       -- Joined to morning_equipment by TYPE STRING only.
+--       v_reask := COALESCE((v_session.context->>'e4_reask')::int, 0);
+--       IF COALESCE((p_parse_ok->>'4')::boolean, false) OR v_reask >= 1 THEN
+--         v_confidence := CASE WHEN NOT COALESCE((p_parse_ok->>'4')::boolean, false)
+--                               THEN 'low' ELSE 'high' END;
+--
+--         SELECT morning_equipment INTO v_morning_equipment
+--           FROM daily_logs
+--          WHERE project_id = p_project_id AND engineer_id = p_user_id AND log_date = v_log_date;
+--         v_reply_count := COALESCE(jsonb_array_length(p_parse->'4'->'items'), 0);
+--
+--         -- BUILD ONE STORED ITEM PER REPLY ENTRY. No claimed/unclaimed
+--         -- array, no tiers -- the join is a single type-string comparison.
+--         -- implausible := hours_used > 24 * (summed count across every
+--         -- morning item sharing this type) -- FLAG ONLY (finding 1, review
+--         -- round), never a reject, never a reask trigger. NULL when the
+--         -- type's count can't be determined (no morning match, or a
+--         -- matching morning item with count still NULL) -- "unknown" is not
+--         -- "plausible", so this stays NULL, not false.
+--         v_equip_items := '[]'::jsonb;
+--         FOR i IN 0..v_reply_count - 1 LOOP
+--           v_reply_type := p_parse->'4'->'items'->i->>'type';
+--
+--           SELECT SUM((elem->>'count')::int) INTO v_morning_count_for_type
+--           FROM jsonb_array_elements(COALESCE(v_morning_equipment->'items', '[]'::jsonb)) AS elem
+--           WHERE elem->>'type' = v_reply_type;
+--
+--           v_equip_items := v_equip_items || jsonb_build_array(
+--             jsonb_build_object(
+--               'type',        v_reply_type,
+--               'hours_used',  (p_parse->'4'->'items'->i)->'hours_used',
+--               'matched',     COALESCE((p_parse->'4'->'items'->i->>'matched')::boolean, true),
+--               'implausible', CASE
+--                                 WHEN v_morning_count_for_type IS NULL THEN NULL
+--                                 WHEN ((p_parse->'4'->'items'->i)->>'hours_used') IS NULL THEN NULL
+--                                 ELSE ((p_parse->'4'->'items'->i->>'hours_used')::numeric
+--                                       > 24 * v_morning_count_for_type)
+--                               END,
+--               'raw',         (p_parse->'4'->'items'->i)->'raw'
+--             )
+--           );
+--         END LOOP;
+--
+--         -- CASE B, TYPE-LEVEL: one "not reported" entry per DISTINCT morning
+--         -- type the reply never mentioned at all. Direct analogue of 024/025's
+--         -- per-MACHINE Case B, now per TYPE since matching is type-level.
+--         v_equip_items := v_equip_items || (
+--           SELECT COALESCE(jsonb_agg(
+--                    jsonb_build_object(
+--                      'type', mtype, 'hours_used', NULL, 'matched', true,
+--                      'implausible', NULL, 'raw', NULL
+--                    )
+--                  ), '[]'::jsonb)
+--           FROM (
+--             SELECT DISTINCT elem->>'type' AS mtype
+--             FROM jsonb_array_elements(COALESCE(v_morning_equipment->'items', '[]'::jsonb)) AS elem
+--           ) morning_types
+--           WHERE NOT EXISTS (
+--             SELECT 1 FROM jsonb_array_elements(p_parse->'4'->'items') r
+--              WHERE r->>'type' = morning_types.mtype
+--           )
+--         );
+--
+--         v_col := 'equipment_hours';
+--         v_session.current_step := 5;
+--         v_outcome := 'advance';
+--       ELSE
+--         v_session.context := v_session.context || jsonb_build_object('e4_reask', v_reask + 1);
+--         v_outcome := 'reask';
+--       END IF;
+--
+--     ELSIF v_session.current_step = 5 THEN
+--       -- Evening Q5 -- hindrance, UNCONDITIONAL, free text, ungated (same
+--       -- shape as the old flow's step-3 miss-reason: no reask, no parser).
+--       -- REUSES evening_schedule_miss_reason -- see the column comment
+--       -- added in STEP 1 above. Terminal step: completes the flow.
+--       v_col      := 'hindrance';
+--       v_complete := true;
+--       v_outcome  := 'advance';
+--
+--     ELSE
+--       v_outcome := 'reask';
+--     END IF;
+--
+--   ELSE
+--     v_outcome := 'wrong_flow';
+--   END IF;
+--
+--   IF v_complete THEN
+--     v_session.current_flow := NULL;
+--     v_session.current_step := 0;
+--     v_session.context      := (v_session.context - 'e2_reask' - 'e3_reask' - 'e4_reask')
+--                               || jsonb_build_object('evening_submitted', true);
+--   END IF;
+--
+--   IF v_col = 'output' THEN
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date, evening_output, evening_output_quantities)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date, v_text, p_parse->'1')
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET evening_output            = EXCLUDED.evening_output,
+--           evening_output_quantities = EXCLUDED.evening_output_quantities;
+--
+--   ELSIF v_col = 'manpower' THEN
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date, evening_manpower)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date,
+--        jsonb_build_object(
+--          'total', p_parse->'2'->'planned_total',
+--          'by_trade', (
+--            SELECT COALESCE(
+--                     jsonb_agg(
+--                       jsonb_build_object(
+--                         'trade',   t->>'trade',
+--                         'count',   (t->>'planned_count')::int,
+--                         'matched', COALESCE((t->>'matched')::boolean, true)
+--                       )
+--                     ),
+--                     '[]'::jsonb
+--                   )
+--            FROM jsonb_array_elements(COALESCE(p_parse->'2'->'by_trade', '[]'::jsonb)) AS t
+--          ),
+--          'raw_text', p_parse->'2'->>'raw_text'
+--        ))
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET evening_manpower = EXCLUDED.evening_manpower;
+--
+--   ELSIF v_col = 'idle_hours' THEN
+--     -- TRI-STATE, NOT BOOLEAN (added round 3, Aravind's ruling, after this
+--     -- branch's first draft only carried `by_trade`/`raw_text` -- an
+--     -- unparseable answer would have collapsed into the exact same stored
+--     -- shape as a confident "all working" zero, indistinguishable to any
+--     -- later reader. `all_working` and `unknown` are read straight from
+--     -- p_parse (parseIdleHoursByTrade's own tri-state, lib/whatsapp/flows/
+--     -- parsers/idle-hours.ts) rather than re-derived here, so the SQL layer
+--     -- can never disagree with the TS layer about which of the three states
+--     -- applies.
+--     --
+--     -- RAISE, NOT COALESCE-TO-FALSE (round-3 review finding, fixing a
+--     -- self-inflicted recurrence of the exact bug this tri-state exists to
+--     -- close). The first draft of this branch defended a caller omitting
+--     -- BOTH fields with `COALESCE(..., false)` on each -- which stores
+--     -- `{all_working:false, unknown:false}`, a FOURTH shape this field was
+--     -- designed to never have, and specifically defaults `unknown` to
+--     -- false: "known to not be unknown" where nothing was actually known.
+--     -- Same class of error the plausibility flag (§5a) got right twelve
+--     -- lines away in this same file: absence of information must never
+--     -- default toward the confident reading. A caller omitting these
+--     -- fields is a BUG (code that predates this migration's tri-state, the
+--     -- same class of mismatch `assertPostMigrationPayload`,
+--     -- `lib/dpr/dispatch.ts:46`, already guards against for a different
+--     -- payload) -- it must be legible as an error, not papered over as a
+--     -- valid state.
+--     IF (p_parse->'3'->'all_working') IS NULL OR (p_parse->'3'->'unknown') IS NULL THEN
+--       RAISE EXCEPTION 'apply_evening_flow_turn: p_parse[3] missing all_working/unknown -- pre-035 caller shape (idle-hours tri-state contract violated)';
+--     END IF;
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date, evening_idle_hours)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date,
+--        jsonb_build_object(
+--          'by_trade', (
+--            SELECT COALESCE(
+--                     jsonb_agg(
+--                       jsonb_build_object(
+--                         'trade',      t->>'trade',
+--                         'idle_hours', (t->>'idle_hours')::numeric,
+--                         'matched',    COALESCE((t->>'matched')::boolean, true)
+--                       )
+--                     ),
+--                     '[]'::jsonb
+--                   )
+--            FROM jsonb_array_elements(COALESCE(p_parse->'3'->'by_trade', '[]'::jsonb)) AS t
+--          ),
+--          'all_working', (p_parse->'3'->>'all_working')::boolean,
+--          'unknown',     (p_parse->'3'->>'unknown')::boolean,
+--          'raw_text', p_parse->'3'->>'raw_text'
+--        ))
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET evening_idle_hours = EXCLUDED.evening_idle_hours;
+--
+--   ELSIF v_col = 'idle_hours_skip_equipment' THEN
+--     -- Same idle-hours write as above, PLUS the explicit-empty equipment
+--     -- placeholder (auto-skip case) in the SAME transaction/turn -- one
+--     -- write, so a partial state (idle-hours written, equipment forever
+--     -- NULL) can never be observed between turns. Mirrors 024/025's own
+--     -- 'productivity_complete' shape for the identical reason.
+--     --
+--     -- RAISE, NOT COALESCE-TO-FALSE -- same fix, same reasoning, as the
+--     -- plain 'idle_hours' branch above. Duplicated rather than factored out
+--     -- because this branch's two-column write already duplicates the
+--     -- by_trade reshape too (pre-existing shape, not introduced here).
+--     IF (p_parse->'3'->'all_working') IS NULL OR (p_parse->'3'->'unknown') IS NULL THEN
+--       RAISE EXCEPTION 'apply_evening_flow_turn: p_parse[3] missing all_working/unknown -- pre-035 caller shape (idle-hours tri-state contract violated)';
+--     END IF;
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date,
+--        evening_idle_hours, evening_equipment_utilisation)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date,
+--        jsonb_build_object(
+--          'by_trade', (
+--            SELECT COALESCE(
+--                     jsonb_agg(
+--                       jsonb_build_object(
+--                         'trade',      t->>'trade',
+--                         'idle_hours', (t->>'idle_hours')::numeric,
+--                         'matched',    COALESCE((t->>'matched')::boolean, true)
+--                       )
+--                     ),
+--                     '[]'::jsonb
+--                   )
+--            FROM jsonb_array_elements(COALESCE(p_parse->'3'->'by_trade', '[]'::jsonb)) AS t
+--          ),
+--          'all_working', (p_parse->'3'->>'all_working')::boolean,
+--          'unknown',     (p_parse->'3'->>'unknown')::boolean,
+--          'raw_text', p_parse->'3'->>'raw_text'
+--        ),
+--        jsonb_build_object('items', '[]'::jsonb, 'raw_text', NULL, 'confidence', NULL))
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET evening_idle_hours            = EXCLUDED.evening_idle_hours,
+--           evening_equipment_utilisation = EXCLUDED.evening_equipment_utilisation;
+--
+--   ELSIF v_col = 'equipment_hours' THEN
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date, evening_equipment_utilisation)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date,
+--        jsonb_build_object('items', v_equip_items, 'raw_text', p_parse->'4'->>'raw_text',
+--                            'confidence', v_confidence))
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET evening_equipment_utilisation = EXCLUDED.evening_equipment_utilisation;
+--
+--   ELSIF v_col = 'hindrance' THEN
+--     -- Terminal write. evening_schedule_miss_reason REUSED (STEP 1 column
+--     -- comment); evening_submitted_at stamped here, the only place it's set.
+--     INSERT INTO daily_logs AS d
+--       (tenant_id, project_id, engineer_id, log_date,
+--        evening_schedule_miss_reason, evening_submitted_at)
+--     VALUES
+--       (p_tenant_id, p_project_id, p_user_id, v_log_date, v_text, p_now)
+--     ON CONFLICT (project_id, engineer_id, log_date) DO UPDATE
+--       SET evening_schedule_miss_reason = EXCLUDED.evening_schedule_miss_reason,
+--           evening_submitted_at         = EXCLUDED.evening_submitted_at;
+--   END IF;
+--
+--   UPDATE whatsapp_sessions
+--      SET current_flow  = v_session.current_flow,
+--          current_step  = v_session.current_step,
+--          context       = v_session.context,
+--          pending_flows = v_session.pending_flows,
+--          tenant_id     = COALESCE(whatsapp_sessions.tenant_id, p_tenant_id),
+--          user_id       = COALESCE(whatsapp_sessions.user_id, p_user_id),
+--          expires_at    = p_now + INTERVAL '30 minutes',
+--          updated_at    = p_now
+--    WHERE id = v_session.id
+--   RETURNING * INTO v_session;
+--
+--   -- equipment_echo is NOT populated by this version -- Evening Q4's prompt
+--   -- is no longer built from a numbered per-machine echo (there is nothing
+--   -- to number any more), so the caller's own prompt-building code for step
+--   -- 4 needs its own, separate, non-SQL change (out of scope here, same as
+--   -- every other TS-side prerequisite named in this file's header). Kept in
+--   -- the RETURN shape, always NULL, so existing callers destructuring this
+--   -- key do not get a missing-key error mid-deploy.
+--   RETURN jsonb_build_object(
+--     'outcome',        v_outcome,
+--     'current_flow',   v_session.current_flow,
+--     'current_step',   v_session.current_step,
+--     'log_date',       v_log_date,
+--     'equipment_echo', v_equipment_echo
+--   );
+-- END;
+-- $fn$;
+--
+-- REVOKE EXECUTE ON FUNCTION public.apply_evening_flow_turn(
+--   text, uuid, uuid, uuid, text, boolean, jsonb, jsonb, timestamptz, integer
+-- ) FROM PUBLIC, anon, authenticated;
+-- GRANT EXECUTE ON FUNCTION public.apply_evening_flow_turn(
+--   text, uuid, uuid, uuid, text, boolean, jsonb, jsonb, timestamptz, integer
+-- ) TO service_role;
+--
+-- -- Clear any live 'hindrance' session BEFORE dropping the one function that
+-- -- could ever process it again -- see this section's own header for the
+-- -- rehearsed finding this fixes.
+-- UPDATE whatsapp_sessions
+--    SET current_flow = NULL, current_step = 0, context = '{}'::jsonb, pending_flows = '[]'::jsonb
+--  WHERE current_flow = 'hindrance';
 --
 -- DROP FUNCTION IF EXISTS apply_hindrance_flow_turn(
 --   text, uuid, uuid, uuid, text, boolean, text, boolean, timestamptz, integer
 -- );
--- =============================================================================
+--
+-- COMMIT;
+--
