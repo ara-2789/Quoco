@@ -49,6 +49,98 @@ not three coincidences — this is the argument for moving the §-by-§ audit
 of `design-decisions-beta-feedback.md` up to right after Fix 1, before PR
 C3 resumes.
 
+**UPDATE (2026-09-06), the list grows.** Two more items from that same
+`design-decisions-beta-feedback.md` audit belong alongside the three
+above, plus one new one found the same night: §1/§28(d) (the absence
+"No" hierarchy handoff to a PM's own WhatsApp number — decided, then
+§28(d) itself records it "DEFERRED, not built" pending the outbound-send
+primitive, which has since shipped without anyone circling back to it)
+and §28(f) (equipment items with no lexicon match render as entered,
+"DECIDED, not built" as of 2026-08-21, status as of this entry not
+re-verified here). The new one, same family, found while scoping the
+ad-hoc menu's item 7 (stop messages): BOT-27's reactivate-half has been
+clearing `messaging_blocked` on ANY inbound message, unconditionally,
+since 2026-07-21 — the same day `docs/bot-flows.md`'s own BOT-27 entry
+named this "a known interim compliance gap" and specified the exact fix
+(STOP-detection before reactivate, an explicit START/RESUME keyword),
+conditioned on "the SET stage" (item 7) actually being built. It sat
+unbuilt, unflagged, for a month and a half — not because nobody thought
+of it, but because the precondition that would force revisiting it
+(item 7 shipping) never arrived until now. Per Aravind's own count, this
+is the fifth instance of this pattern in one project — recorded here as
+that count, not independently re-verified against every prior instance's
+current build status.
+
+**SIXTH ITEM, A DIFFERENT SUB-CLASS (2026-09-06), found during the ad-hoc
+menu's media-reply PR review (#216).** The five above are all "decided and
+never built" — a real design choice on record, awaiting implementation,
+with the doc honest about that gap (§28(d)/§28(f) both say "DECIDED, not
+built" in their own text; BOT-27's fix was named as a gap the day it was
+found). This one is structurally different and worth naming as its own
+sub-class: **documented as working, and never built at all.**
+`docs/bot-flows.md`'s BOT-07 section asserted, with no hedge, "30-minute
+TTL" and "TTL expired → resume from last unanswered question" — read by
+anyone consulting session semantics as a live safety property, not a
+pending item. It never was one. Verified live:
+
+```
+$ grep -rn "expires_at" lib/ app/
+lib/whatsapp/session.ts:31:  expires_at: string
+```
+
+One hit — a TypeScript interface field, not a read. `expires_at` is
+written by every session-generating RPC and read by nothing, anywhere.
+First found and recorded independently in
+`docs/plans/flow-migration-rescoping-plan.md`'s finding (j) (same grep,
+re-run there); struck through in `bot-flows.md` itself this same day, not
+rewritten, per this project's own artifact-provenance convention.
+
+**Why this sub-class is worse than the other five, not just a sixth
+example of the same thing**: the other five have a legible signal a reader
+can act on — "DECIDED, not built" tells you not to trust it as shipped.
+BOT-07's text carried no such signal. Anyone building against it (this
+session included, until asked to verify it directly) would reasonably
+plan around a rolling 30-minute session window that does not exist.
+
+**What the missing TTL actually costs, walked through and traced against
+the real RPCs, not assumed:** an engineer starts the morning flow at
+08:30, answers Q1, stops at step 2, messages again at 17:00 the same day.
+For the normal case (his one active project — the Pass 1 assumption),
+nothing is lost: migration 033's `sweep_stale_morning_sessions`, wired
+into `app/api/jobs/tick` (every tick, no-op before 15:00 IST, idempotent
+after), independently closes his session at the 15:00 IST cutoff
+regardless of TTL — `current_flow=NULL, current_step=0` two hours before
+he messages again. His 17:00 reply lands on the correct idle branch
+(`EVENING_WINDOW_NOT_OPEN_REPLY`), and the 18:30 evening trigger's
+`applyEveningFlowTurn(startFlow: true)` proceeds cleanly, no collision.
+The dead TTL is invisible in this case because 033's hard cutoff already
+does the job a TTL would have done, via an unrelated mechanism.
+
+**The real, live case is 033's own documented skip-branch**: an engineer
+with zero or more than one `project_members` row (`schema.md`'s "one
+active project" is app-enforced, not a DB constraint) is left fully
+parked by that sweep — "no daily_logs write, no session reset, nothing."
+For that population, the 17:00 message genuinely IS parsed as the answer
+to the stale morning question, nine hours late. Worse, traced through
+`lib/whatsapp/outbound/trigger.ts`: the 18:30 evening-trigger WhatsApp
+send happens BEFORE the RPC call (activation is deliberately ordered
+after confirmed Twilio delivery, that file's own §1 crash-safety
+ordering) — so he receives the evening check-in prompt regardless, but
+`applyEveningFlowTurn(startFlow: true)` then finds `current_flow`
+still `'morning'` and takes the documented non-`'start'` branch instead
+(instrumented — `Sentry.captureMessage('outbound-send: RPC did not
+return "start"...')` fires — not silent, but also not corrected).
+`current_flow` stays `'morning'`, untransitioned. If he replies to that
+evening prompt, `dispatchInboundTurn` reads `current_flow='morning'`
+first and continues the stale morning flow — he answers morning questions
+immediately after being told it's time for his evening check-in. Real,
+not hypothetical, scoped specifically to the zero/multi-membership
+population 033 already names as recoverable only by an admin fixing
+`project_members` — incidence against real data not queried here.
+
+Full correction, in place, in `docs/bot-flows.md`'s own BOT-07 section
+(struck through, dated 2026-09-06).
+
 **Correction up front, before the four answers**: the prior status update
 this session said "four admin merges" and attributed all of them to "the
 same test-db contention pattern." Both parts of that were imprecise in ways
@@ -321,3 +413,52 @@ assuming it does because something nearby does." Worth a standing check
 the next time a safeguard is assumed present: confirm it lives in the
 code with the live call site, not in a sibling, a comment, or a deferred
 implementation that reads like it should.
+
+## Q7 — a related but distinct pattern: two artifacts disagree about the same fact, and nothing forces a check
+
+Adjacent to Q6, not a restatement of it — Q6 is "the safeguard lives in a
+path that doesn't run"; this is "two written claims about the same state
+disagree, and nothing catches it until someone reads both." Surfaced
+during migration 037's reviewer round (2026-09-05): the file's own header
+read *"WRITTEN, NOT YET REHEARSED, NOT YET APPLIED, per explicit
+instruction -- diff first"*, while PR #182's own body separately
+described a completed, clean, two-step rehearsal (disposable dry-run +
+test-db apply/verify/teardown) as already done. Both artifacts describe
+the SAME migration file's SAME fact (has it been rehearsed) and disagree
+outright -- neither is a paraphrase of the other going stale gradually,
+they contradict directly. Whichever was accurate when written, nothing
+in this project's process re-checked the file's own header against its
+PR body before either was read as current, and the discrepancy sat
+undetected until this round's own amendment forced a fresh look at both.
+
+Same family as Q6's own buildBodyCorpus instance (a citation asserting
+something that turned out not to match reality, caught only by someone
+checking rather than trusting the written claim) -- the shared root
+cause across both Q6 and this entry: a written claim about state is a
+snapshot from whenever it was written, and this project's process has no
+standing step that re-checks a claim against its own sibling artifacts
+(a file's header against its PR body, a comment against the schema it
+describes, a migration's own REHEARSED line against what actually ran)
+before the claim is acted on. **RECORDED, NOT YET A STANDING CHECK**: no
+general mechanism proposed here to catch this class before the fact --
+naming the second instance is the contribution; closing it, if it
+recurs a third time, is a separate piece of work.
+
+**IT RECURRED A THIRD TIME, SAME NIGHT (2026-09-06)**, before that "separate
+piece of work" was ever started -- migration 037's own `COMMENT ON COLUMN`
+cited `adhoc-menu-spec.md §g.9`/`§g.10` for its PM-notification design. That
+section has never existed, at any point in `adhoc-menu-spec.md`'s git
+history (checked directly: 3 commits total, none of them ever add a `§g`
+heading) -- not a stale reference to something since removed, a citation
+to something that was never there. This one differs from the first two in
+a way worth naming precisely: it was **inherited, not introduced, by this
+session** -- the citation was already wrong in 037's very first draft,
+carried through every rehearsal round (including this session's own
+third-rehearsal pass on the file) without anyone -- reviewer, Aravind, or
+this session -- checking it, and it is now **live on production** inside
+an applied `COMMENT ON COLUMN`, not sitting in an unapplied draft the way
+`buildBodyCorpus`'s comment was. Three for three now, and the third one
+shipped further than either of the first two before being caught -- named
+here as the pattern predicted, not a coincidence, and as the concrete
+argument for actually building the standing check the second instance
+deferred, rather than deferring it again.
