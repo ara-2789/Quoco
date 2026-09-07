@@ -265,6 +265,9 @@ export async function handleHindrancePmNotifyJob(
   const { data: project, error: projectError } = await client.from('projects').select('name').eq('id', row.project_id).single()
   if (projectError) throw projectError
 
+  // profile-lookup-guard:allow-id-eq -- row.reported_by is a resolved
+  // users.id (hindrances.reported_by, a plain FK column), never an auth
+  // uid -- same reasoning as owner-deliver-dispatch.ts's own identical tag.
   const { data: reporter, error: reporterError } = await client.from('users').select('full_name').eq('id', row.reported_by).single()
   if (reporterError) throw reporterError
 
