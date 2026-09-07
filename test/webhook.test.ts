@@ -21,6 +21,7 @@ import { MORNING_QUESTIONS } from '@/lib/whatsapp/flows/morning'
 import { EVENING_QUESTIONS } from '@/lib/whatsapp/flows/evening'
 import { buildIdleReply } from '@/lib/whatsapp/inbound-start'
 import { PHOTO_REPLY, VOICE_REPLY } from '@/lib/whatsapp/media-reply'
+import { ZERO_MEMBERSHIPS_REPLY, MULTIPLE_MEMBERSHIPS_REPLY } from '@/lib/whatsapp/project-resolution'
 
 // T-WH: the HTTP-level webhook harness named in CLAUDE.md's TESTING DEBT entry
 // and migration 022's review package §10. Exercises handleWebhookPost
@@ -148,6 +149,7 @@ const PHONE_PENDING = testPhone('691')
 const PHONE_DEACTIVATED = testPhone('692')
 const PHONE_REACTIVATE = testPhone('693')
 const PHONE_NO_PROJECT = testPhone('694')
+const PHONE_MULTI_PROJECT = testPhone('695')
 
 interface GateUserSpec {
   phone: string
@@ -207,6 +209,15 @@ async function removeGateUsers(phones: string[]): Promise<void> {
   if (userErr) throw new Error(`removeGateUsers users cleanup failed: ${userErr.message}`)
 }
 
+// A SECOND project, distinct from TEST_PROJECT_ID -- project_members carries
+// UNIQUE(project_id, user_id) (001_core_schema.sql), so the 2+-membership
+// case needs a genuinely different project, not a second row against the
+// same one. Same reasoning as test/unit/project-resolution.test.ts's own
+// projectA/projectB fixture, one file over -- TEST_TENANT_ID is already
+// guaranteed to exist by ensureMorningFixtures() below, so no separate
+// ensureTestTenant() call is needed here.
+let secondProjectId: string
+
 beforeAll(async () => {
   await ensureMorningFixtures()
   await cleanupTestSessions()
@@ -215,6 +226,24 @@ beforeAll(async () => {
   await ensureGateUser({ phone: PHONE_DEACTIVATED, status: 'deactivated', messagingBlocked: false, withProject: false })
   await ensureGateUser({ phone: PHONE_REACTIVATE, status: 'active', messagingBlocked: true, withProject: true })
   await ensureGateUser({ phone: PHONE_NO_PROJECT, status: 'active', messagingBlocked: false, withProject: false })
+
+  const db = testClient()
+  const { data: proj, error: projErr } = await db
+    .from('projects')
+    .insert({ tenant_id: TEST_TENANT_ID, name: 'ZZ Test Webhook Second Project' })
+    .select('id')
+    .single<{ id: string }>()
+  if (projErr || !proj) throw new Error(`second project insert failed: ${projErr?.message}`)
+  secondProjectId = proj.id
+
+  const multiUserId = await ensureGateUser({ phone: PHONE_MULTI_PROJECT, status: 'active', messagingBlocked: false, withProject: true })
+  const { error: secondMemberErr } = await db.from('project_members').insert({
+    tenant_id: TEST_TENANT_ID,
+    project_id: secondProjectId,
+    user_id: multiUserId,
+    role: 'engineer',
+  })
+  if (secondMemberErr) throw new Error(`second project_members insert failed: ${secondMemberErr.message}`)
 })
 
 afterEach(async () => {
@@ -223,7 +252,8 @@ afterEach(async () => {
 })
 
 afterAll(async () => {
-  await removeGateUsers([PHONE_PENDING, PHONE_DEACTIVATED, PHONE_REACTIVATE, PHONE_NO_PROJECT])
+  await removeGateUsers([PHONE_PENDING, PHONE_DEACTIVATED, PHONE_REACTIVATE, PHONE_NO_PROJECT, PHONE_MULTI_PROJECT])
+  await testClient().from('projects').delete().eq('id', secondProjectId)
   await testClient().from('processed_messages').delete().like('message_sid', `ZZTestWebhook-${RUN_TAG}-%`)
   await removeMorningFixtures()
 })
@@ -283,17 +313,32 @@ describe('handleWebhookPost — BOT-08 / BOT-27 gate', () => {
     expect(await wasProcessed(messageSid)).toBe(false)
   })
 
-  it('T-WH-06: registered + active + unblocked but no project membership gets an actionable message (SID still consumed)', async () => {
+  it('T-WH-06: registered + active + unblocked but no project membership gets the unified zero-memberships reply (SID still consumed)', async () => {
     const messageSid = sid('no-project')
     const req = buildWebhookRequest({ From: `whatsapp:${PHONE_NO_PROJECT}`, Body: 'hi', MessageSid: messageSid })
     const res = await handleWebhookPost(req, { supabaseClient: testClient() })
     expect(res.status).toBe(200)
-    expect(await twimlText(res)).toBe(
-      'Your number is registered but not yet linked to a project. Contact your Project Manager to be added.',
-    )
+    // Copy unified 2026-09-07 -- was route.ts's own noProjectResponse() text
+    // ("Your number is registered but not yet linked..."), now
+    // resolveEngineerProject's shared ZERO_MEMBERSHIPS_REPLY, same string
+    // the ad-hoc menu's own flow-start check uses.
+    expect(await twimlText(res)).toBe(ZERO_MEMBERSHIPS_REPLY)
     // Idempotency runs BEFORE project resolution in route.ts, so this differs
     // from T-WH-03/04/05: the SID IS recorded even though no flow ran.
     expect(await wasProcessed(messageSid)).toBe(true)
+  })
+
+  it('T-WH-16: registered + active + unblocked but 2+ project memberships gets the multiple-memberships reply, never a silent guess (SID still consumed)', async () => {
+    const messageSid = sid('multi-project')
+    const req = buildWebhookRequest({ From: `whatsapp:${PHONE_MULTI_PROJECT}`, Body: 'hi', MessageSid: messageSid })
+    const res = await handleWebhookPost(req, { supabaseClient: testClient() })
+    expect(res.status).toBe(200)
+    // Proves the fix directly: before 2026-09-07 this silently took
+    // project_members[0] and proceeded as if unambiguous
+    // (docs/reviews/route-ts-naive-project-pick.md). Now it refuses.
+    expect(await twimlText(res)).toBe(MULTIPLE_MEMBERSHIPS_REPLY)
+    expect(await wasProcessed(messageSid)).toBe(true)
+    expect(await readSession(PHONE_MULTI_PROJECT)).toBeNull()
   })
 
   it('T-WH-07: reactivate clears the block, then a Twilio RETRY of the SAME MessageSid is a no-op — NOT a morning-flow turn', async () => {
