@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { SessionFlow } from '@/lib/whatsapp/session'
+import { enqueueHindrancePmNotify } from '@/lib/hindrance/pm-notify'
 
 // Ad-hoc menu item 1's real flow (PR 2, step 4). Same locked-turn
 // architecture as morning/evening -- apply_hindrance_flow_turn (migration
@@ -15,6 +16,14 @@ import type { SessionFlow } from '@/lib/whatsapp/session'
 // against a real Postgres 17 dry-run scaffold (docs/reviews/038's own
 // header), but calling applyHindranceFlowTurn against test-db or prod will
 // fail with "function does not exist" until 038 is reviewed and applied.
+//
+// STEP 5 (PM notify, lib/hindrance/pm-notify.ts) IS WIRED IN BELOW, BUT
+// EQUALLY DORMANT -- same "necessary, not sufficient" state as that
+// module's own header describes. A genuine completion turn enqueues the
+// hindrance_pm_notify job, but nothing calls applyHindranceFlowTurn in
+// production yet (inbound-start.ts's "1" branch still calls
+// buildItem1InterimReply, not this function), so this stays inert until
+// both 038 ships AND that router wiring lands.
 
 export type HindranceOutcome = 'start' | 'advance' | 'reask' | 'idle' | 'wrong_flow'
 
@@ -142,6 +151,18 @@ export async function applyHindranceFlowTurn(params: {
     outcome: HindranceOutcome
     current_flow: SessionFlow | null
     current_step: number
+  }
+
+  // A genuine completion -- both wasExhausted:true (unresolved Q2) and
+  // wasExhausted:false (resolved Q2) cases -- enqueues the PM-notify job
+  // (lib/hindrance/pm-notify.ts, step 5). Fired here, not by the caller,
+  // so no future call site of this function can forget it. NEVER blocks
+  // or fails the engineer-facing reply: enqueueHindrancePmNotify itself
+  // never throws (see its own header) -- the hindrance row is already
+  // safely written by the RPC by this point regardless of whether the
+  // notify job successfully enqueues.
+  if (result.outcome === 'advance' && result.current_step === 0) {
+    await enqueueHindrancePmNotify({ projectId: params.projectId, userId: params.userId }, supabase)
   }
 
   return {
