@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { claimJobs, completeJob, failJob, type Job } from '@/lib/queue/jobs'
 import { isCronRequestAuthorized } from '@/lib/cron/auth'
 import { handleDprGenerateJob, markDprGenerationFailed, type DprGenerateJobPayload } from '@/lib/dpr/dispatch'
 import { handleOwnerDeliverJob, type OwnerDeliverJobPayload } from '@/lib/dpr/owner-deliver-dispatch'
+import { handleHindrancePmNotifyJob, type HindrancePmNotifyJobPayload } from '@/lib/hindrance/pm-notify'
 import {
   sweepStaleMorningSessions,
   reportMorningSweepAnomalies,
@@ -40,6 +42,14 @@ async function dispatchJob(job: Job, client: SupabaseClient): Promise<void> {
       // entry exists) -- see lib/dpr/owner-deliver-dispatch.ts's own header
       // for what else must exist before this handler reaches a real owner.
       await handleOwnerDeliverJob(job.payload as unknown as OwnerDeliverJobPayload, { supabaseClient: client })
+      return
+    case 'hindrance_pm_notify':
+      // Ad-hoc menu PR 2, step 5 -- see lib/hindrance/pm-notify.ts's own
+      // header for what else must exist (migration 038 applied, the
+      // router wired to the real flow) before this ever reaches a real
+      // PM. Enqueued today only by applyHindranceFlowTurn, which nothing
+      // in production calls yet.
+      await handleHindrancePmNotifyJob(job.payload as unknown as HindrancePmNotifyJobPayload, { supabaseClient: client })
       return
     // Placeholder handler — proves the claim/complete/fail loop works
     // end-to-end before these job types exist. Remove entries as their
@@ -137,6 +147,23 @@ export async function runJobsTick(client: SupabaseClient) {
         if (!willRetry && job.type === 'dpr_generate') {
           const payload = job.payload as unknown as DprGenerateJobPayload
           await markDprGenerationFailed(client, payload.project_id, payload.engineer_id, payload.log_date)
+        }
+        // hindrance_pm_notify has no dead-letter business state of its own
+        // (unlike dpr_generate's dprs.generation_status) -- pm_notified_at
+        // just stays NULL forever once retries are exhausted, silently,
+        // unless something says so. Given how much weight this
+        // notification's own reliability carries (Aravind, 2026-09-06:
+        // "the first question is whether the email actually reaches a
+        // human"), retry exhaustion gets an explicit, loud alert here
+        // rather than inheriting the silent-dead-row gap every OTHER job
+        // type in this switch still has.
+        if (!willRetry && job.type === 'hindrance_pm_notify') {
+          Sentry.captureMessage('hindrance_pm_notify: job exhausted all retries -- PM never notified', {
+            level: 'error',
+            fingerprint: ['hindrance-pm-notify', 'dead_letter', job.id],
+            tags: { feature: 'hindrance-pm-notify' },
+            extra: { jobId: job.id, payload: job.payload, lastError: message },
+          })
         }
         return { id: job.id, status: 'failed', willRetry, error: message }
       }

@@ -60,6 +60,24 @@ export type SendEmailResult =
       responseShape: EmailResponseShape
     }
 
+// "QUEUED IS NOT DELIVERED" -- CLAUDE.md's own standing rule for WhatsApp,
+// extended to email here (Aravind, 2026-09-06). SendEmailResult.ok:true
+// means Resend's SYNCHRONOUS response accepted the request; it says
+// nothing about whether the message actually reached an inbox. This is
+// the follow-up check: GET /emails/{id} for the provider's own
+// after-the-fact status. NOT VERIFIED AGAINST A LIVE RESPONSE -- same
+// caveat as this file's own header: no credentials exist in this sandbox.
+// The field name (`last_event`) and its possible values (`sent`,
+// `delivered`, `delivery_delayed`, `bounced`, `complained`, ...) are this
+// session's best understanding of Resend's documented API, unconfirmed
+// live. scripts/verify-email-delivery.ts is what actually exercises this,
+// and prints the full raw parsed body alongside its own interpretation so
+// a human can catch a shape mismatch immediately rather than trust a
+// silently-wrong parse.
+export type EmailStatusResult =
+  | { ok: true; status: number; id: string; lastEvent: string | null; raw: Record<string, unknown> }
+  | { ok: false; status: number; errorMessage?: string; responseShape: EmailResponseShape }
+
 // Exported (2026-09-03) so a caller can check credentials BEFORE doing
 // anything else -- the exact ordering defect this fixes: provision-beta-
 // owner.ts used to write two rows before ever reaching sendEmail's own
@@ -166,4 +184,58 @@ export async function sendEmail(params: SendEmailParams, fetchFn: typeof fetch =
   }
 
   return { ok: true, status: res.status, id }
+}
+
+/**
+ * Fetch Resend's own after-the-fact status for a previously-sent email.
+ * See EmailStatusResult's own doc comment above for the "queued is not
+ * delivered" reasoning and the not-verified-live caveat.
+ */
+export async function getEmailStatus(emailId: string, fetchFn: typeof fetch = fetch): Promise<EmailStatusResult> {
+  const { apiKey } = readCredentials()
+
+  const res = await fetchFn(`https://api.resend.com/emails/${emailId}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  })
+
+  const contentType = res.headers.get('content-type')
+  const rawText = await res.text()
+
+  let parsed: unknown = null
+  let parseOk = false
+  try {
+    parsed = JSON.parse(rawText)
+    parseOk = true
+  } catch {
+    parsed = null
+    parseOk = false
+  }
+
+  const body = parseOk && parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      errorMessage: typeof body?.message === 'string' ? body.message : undefined,
+      responseShape: describeResponseShape(rawText, contentType, parsed, parseOk),
+    }
+  }
+
+  if (!body) {
+    return {
+      ok: false,
+      status: res.status,
+      errorMessage: 'Resend returned 2xx with a body that is not valid JSON.',
+      responseShape: describeResponseShape(rawText, contentType, parsed, parseOk),
+    }
+  }
+
+  const id = typeof body.id === 'string' ? body.id : emailId
+  const lastEvent = typeof body.last_event === 'string' ? body.last_event : null
+
+  return { ok: true, status: res.status, id, lastEvent, raw: body }
 }
