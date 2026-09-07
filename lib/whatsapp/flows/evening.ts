@@ -212,6 +212,13 @@ export interface EveningTurnResult {
    * 4 (advance or reask). Null on every other step.
    */
   equipmentEcho: EquipmentEchoItem[] | null
+  /** S-set (a), discard observability (migration 038 external review round
+   * 2, B1) -- mirrors MorningTurnResult's own identical pair; see that
+   * interface's own doc comment (lib/whatsapp/flows/morning.ts) for the
+   * full reasoning. Non-null only when this turn's own hindrance-collision
+   * branch fired. */
+  hindranceDiscarded: boolean | null
+  hindranceHadDescription: boolean | null
 }
 
 // Fetches the morning equipment list directly, bypassing the RPC's
@@ -317,6 +324,8 @@ export async function applyEveningFlowTurn(params: {
     // populates it (see EquipmentEchoItem's own comment). Left in this type
     // only because the RPC still returns the key.
     equipment_echo: EquipmentEchoItem[] | null
+    hindrance_discarded: boolean | null
+    hindrance_had_description: boolean | null
   }
 
   const equipmentEcho =
@@ -334,5 +343,7 @@ export async function applyEveningFlowTurn(params: {
     currentStep: result.current_step,
     logDate: result.log_date,
     equipmentEcho,
+    hindranceDiscarded: result.hindrance_discarded,
+    hindranceHadDescription: result.hindrance_had_description,
   }
 }
