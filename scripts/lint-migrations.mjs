@@ -54,6 +54,21 @@
 //     numbering their own file. This rule makes the same protection
 //     mechanical instead of dependent on someone reading the right prose.
 //
+// down-section-must-be-commented (NEW, rule 9, added 2026-09-07 — migration
+//   038's own incident, docs/reviews/038-hindrance-flow-review-package.md).
+//   A file's first draft left its "-- DOWN" section as live, uncommented
+//   SQL — applying the file via `psql -f` ran the forward migration AND
+//   immediately reverted it in the same batch, caught only by re-running
+//   the whole file and noticing the new function was gone afterward. This
+//   is TEXT-ONLY, cheap, exactly the shape every other rule in this file
+//   already is: find a line matching `/^--\s*DOWN\b/` (036/037/038's own
+//   marker convention, consistent across all three); every line from there
+//   to EOF must be blank or itself start with `--`. Does not attempt to
+//   verify the DOWN's own SQL is CORRECT (that needs a real rehearsal,
+//   CLAUDE.md §7's own standing rule after this same incident) — only that
+//   it is inert when the file is applied normally, which a regex can
+//   genuinely guarantee.
+//
 // Held-directory files are identified in every violation by their path
 // RELATIVE TO THE REPO ROOT (e.g. "docs/reviews/026_dpr_generation_
 // stale.sql"), never a bare filename — applied-directory files keep their
@@ -501,6 +516,42 @@ function ruleHeldMigrationReservationRequired(heldEntries, reservations) {
 }
 
 // ---------------------------------------------------------------------------
+// Rule 9 — down-section-must-be-commented (2026-09-07, migration 038's own
+// incident: a first draft's "-- DOWN" section was live SQL, so applying the
+// file ran the forward migration and immediately reverted it in the same
+// batch). Operates on RAW text, not the comment-stripped `sql` every other
+// rule uses -- this rule's whole job is checking that comments ARE there.
+// Only checks that the section is INERT, not that its SQL is correct (a
+// regex cannot verify that; CLAUDE.md §7's own rehearsal discipline does).
+// ---------------------------------------------------------------------------
+function ruleDownSectionCommented(file, raw) {
+  const violations = []
+  const lines = raw.split('\n')
+  // DOWN must be immediately followed by "(" or "/" -- matches every real
+  // marker this project actually uses ("DOWN (exact inverse...", "DOWN /
+  // ROLLBACK...", "DOWN (reference..."). A bare `\bDOWN\b` match is too
+  // loose: 019_daily_log_corrections.sql:51 has "DOWN block)" as prose
+  // inside an unrelated multi-line comment, a false positive caught while
+  // writing this rule, not assumed away.
+  const downMarkerIdx = lines.findIndex((line) => /^--\s*DOWN\s*[/(]/.test(line))
+  if (downMarkerIdx === -1) return violations // no DOWN section -- not this rule's concern
+
+  for (let i = downMarkerIdx; i < lines.length; i++) {
+    const line = lines[i]
+    if (line.trim() === '') continue
+    if (!line.trimStart().startsWith('--')) {
+      violations.push({
+        file,
+        object: `uncommented-down-line-${i + 1}`,
+        rule: 'down-section-must-be-commented',
+      })
+      break // one violation is enough signal; no need to enumerate every line
+    }
+  }
+  return violations
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 function loadExceptions() {
@@ -573,6 +624,7 @@ function main() {
       violations.push(...ruleMoneyColumnPrecision(qualified, blocks, alterColumns))
       violations.push(...ruleStatusColumnShape(qualified, sql, blocks))
       violations.push(...ruleServiceRoleGrantRequired(qualified, sql, blocks))
+      violations.push(...ruleDownSectionCommented(qualified, raw))
       fkCoverageViolations.push(...ruleSharedFixtureFkCoverage(qualified, sql, fkCoverage))
     }
   }

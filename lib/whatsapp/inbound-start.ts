@@ -48,6 +48,22 @@ import { dispatchInboundTurn } from './dispatch'
 // draft never did, silently repeating the exact false-promise-by-omission
 // shape items 2/7 were dropped/held over).
 //
+// STEP 4's CODE IS WRITTEN, DELIBERATELY NOT WIRED IN YET (2026-09-07).
+// lib/whatsapp/flows/hindrance.ts (applyHindranceFlowTurn) and dispatch.ts's
+// Flow extension both exist and are tested, but migration 038
+// (docs/reviews/038_hindrance_flow_and_collision_fix.sql) that creates
+// apply_hindrance_flow_turn is NOT YET APPLIED -- it needs the full
+// external-review package first (CLAUDE.md §0 condition (a): it modifies
+// apply_morning_flow_turn/apply_evening_flow_turn's own live logic).
+// Wiring this file's "1" branch to call applyHindranceFlowTurn NOW, before
+// 038 is confirmed applied, would repeat migration 035's own named
+// lockstep hazard exactly: TypeScript expecting an RPC that doesn't exist
+// on the target database yet, breaking every real "1" in production the
+// moment this code deploys, until the SQL separately lands. Keep calling
+// buildItem1InterimReply here until 038 is confirmed applied (breadcrumb +
+// probe, same discipline as every other apply this project has done) --
+// then the wiring is a genuinely one-line swap, not a redesign.
+//
 // SCOPE BOUNDARY (unchanged from the original build, restated): this
 // covers ONLY the case readCurrentFlow returns null. The refuse-when-
 // submitted RPC fix (design-decisions-beta-feedback.md §10, decided
@@ -209,8 +225,8 @@ export function buildItem1InterimReply(headerState: IdleHeaderState): string {
 
 export interface InboundRouteResult {
   reply: string
-  /** Always null for every branch in this file's own idle handling now -- nothing here starts a flow any more. Non-null only via dispatchInboundTurn's own delegation when a flow is already active. */
-  resolvedFlow: 'morning' | 'evening' | null
+  /** Always null for every branch in this file's own idle handling now -- nothing here starts a flow any more. Non-null only via dispatchInboundTurn's own delegation when a flow is already active. 'hindrance' added 2026-09-07 for dispatch.ts's own Flow type -- not yet reachable in practice (item 1 still calls buildItem1InterimReply, not applyHindranceFlowTurn), but the type has to be honest about what dispatchInboundTurn's delegation can now return once a real 'hindrance' session exists. */
+  resolvedFlow: 'morning' | 'evening' | 'hindrance' | null
 }
 
 interface RouteParams {
@@ -240,7 +256,16 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
     // collapse mirrors dispatchInboundTurn's own internal readCurrentFlow
     // branch (dispatch.ts) exactly, so passing it through as firstFlow
     // doesn't cost this call a second unlocked read.
-    const firstFlow = currentFlow === 'evening' ? 'evening' : 'morning'
+    //
+    // FIXED, 2026-09-07 (migration 038's own header names this exact bug):
+    // this used to collapse ANY non-'evening' currentFlow to 'morning' --
+    // silently correct only because nothing has ever written current_flow=
+    // 'hindrance' (or 'safety'/'invoice', SessionFlow's other pre-
+    // provisioned-never-built values) until now. A real 'hindrance' session
+    // would have been dispatched into applyMorningFlowTurn, which does not
+    // know that flow at all.
+    const firstFlow =
+      currentFlow === 'evening' ? 'evening' : currentFlow === 'hindrance' ? 'hindrance' : 'morning'
     return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
   }
 

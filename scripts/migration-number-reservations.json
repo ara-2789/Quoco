@@ -13,5 +13,10 @@
     "number": "035",
     "claimedBy": "docs/reviews/035_evening_flow_restructuring.sql",
     "note": "Evening flow restructuring (5-question redesign) + morning/evening §42 unmatched-token capture + equipment count/hours-used redesign. Originally drafted against a stale '034' in the scoping plan -- corrected the same day when 034 was taken by the owner-email migration (docs/reviews/034-apply-record.md). This entry was itself added late, after the migration-lint reservation rule (PR #148) was run against this branch and correctly flagged the file as unreserved -- recorded here rather than silently, since a reservation added only after being caught by the tool is worth being honest about."
+  },
+  {
+    "number": "038",
+    "claimedBy": "docs/reviews/038_hindrance_flow_and_collision_fix.sql",
+    "note": "apply_hindrance_flow_turn (new RPC) + scheduled-triggers-always-win fix to apply_morning_flow_turn/apply_evening_flow_turn (ad-hoc menu PR 2, step 4). Held pending the external-review package -- trips CLAUDE.md §0 condition (a) (modifies two live functions' logic). Verified against a real Postgres 17 dry-run scaffold (fresh prod schema dump, 2026-09-07) before this reservation was added, not assumed correct."
   }
 ]
