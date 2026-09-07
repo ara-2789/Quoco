@@ -999,11 +999,25 @@ payload). What remains open:
 - **f (new).** Item 1's own migration: the exact column name, full CHECK value set, and
   default/nullability for the `hindrances` active/potential column — the REQUIREMENT is
   decided (§f above), the column's own design is not.
-- **Project resolution (new, 2026-08-28).** Which project a menu-triggered write belongs
-  to, when `project_members` is ambiguous for the sending engineer — argued toward
-  skip-and-surface, matching migration 033's own mechanism, not toward best-guessing; the
-  exact skip-time UX (what the engineer sees) is not designed. Closes permanently once
-  §36's `project_members(user_id)` UNIQUE index ships — still not scheduled.
+- **Project resolution (2026-08-28, RESOLVED 2026-09-07).** Which project a menu-triggered
+  write belongs to, when `project_members` is ambiguous for the sending engineer —
+  `resolveEngineerProject` (skip-and-surface, matching migration 033's own mechanism, never
+  best-guessing) is built and now the single resolution point for `route.ts` itself, not just
+  the ad-hoc menu — closes the identical hole for morning/evening too (PR #227,
+  `docs/reviews/route-ts-naive-project-pick.md`). No longer open.
+- **Menu unreachable mid-flow (new, 2026-09-07) — a named, accepted limitation, not a
+  blocker.** Idle-only has been this menu's scope boundary from the start
+  (`routeInboundMessage`'s own header states it directly) — an engineer with an active
+  morning or evening session isn't locked out permanently; he reaches the menu once that
+  flow completes or the morning-cutoff sweep force-resets it. But concretely: an engineer
+  who abandons his morning check-in at 08:35 and wants to report a blocker at 14:00 has no
+  route to the menu that day — his `"1"` is read as an answer to whatever question the
+  stale morning flow is sitting on, not as a menu tap. Worth writing down in these terms
+  specifically because "active" hindrances are urgent by definition (§g's own precedence
+  decision already established that a site-holiday or past-cutoff engineer "still has a
+  genuine hindrance to report") — so this limitation bites hardest on exactly the item this
+  menu exists for. Not designed here, per Aravind's own instruction; recorded so it's
+  obviously worth fixing later, not rediscovered from scratch.
 - **Attribution day (new, 2026-08-28).** Whether `hindrances`/`safety_incidents` (and the
   new tables for items 3/4/6/7) need a `log_date`-equivalent column, a read-time derivation
   from `created_at`, or an engineer-asked day — three options named, none chosen. Also
