@@ -217,3 +217,235 @@ either way — `ensureMorningEngineer()` (`test/helpers/db.ts:216-220`) is
 idempotent on the unique `whatsapp_number`, so a leftover `users` row is
 reused, not collided with. It is the teardown that keeps failing, not the
 setup.
+
+## A pure-function test cannot run at all without test-db credentials (2026-09-05)
+
+**Same family as everything else in this file, but a different shape again —
+not a race, not an incomplete teardown, a global gate that blocks execution
+before any test body runs, regardless of what that test actually touches.**
+Found while verifying a one-line change to `buildForwardHref`
+(`lib/daily-logs/reactivate-copy.ts`) during the DASH-01 build: its own test,
+`test/unit/reactivate-copy.test.ts`, is a pure-function test — no Supabase
+client, no I/O, nothing but string in/string out. Trying to run it in
+isolation (`npx vitest run test/unit/reactivate-copy.test.ts`) still aborts
+before a single test executes:
+
+```
+Error: [guard] ABORT: .env.test is missing SUPABASE_TEST_URL,
+SUPABASE_TEST_SERVICE_ROLE_KEY, SUPABASE_TEST_ANON_KEY, or
+SUPABASE_TEST_PROJECT_REF. Refusing to run.
+  ❯ Object.guard [as setup] test/setup/guard.ts:13:11
+```
+
+`vitest.config.ts`'s global setup (`test/setup/guard.ts`) runs once for the
+whole `vitest` invocation, before any file's tests — including a `--filter`
+run scoped to one file. There is no way, today, to run any single test file
+without first satisfying the test-db credential guard, even a file whose own
+tests never call `createClient()` or touch the network at all.
+
+**Consequence:** the change to `buildForwardHref` this session (substituting
+`waMeHref` for its own inline digit-stripping) could not be verified by
+actually running its test — verification fell back to a manual trace against
+the test's own assertions (confirmed compatible: same digit-stripping regex,
+null-return cases exit through an earlier guard clause untouched by the
+substitution). That fallback happened to be sufficient here because the
+change was small and the test file was already read in full, but it is not a
+general answer — a future pure-function change with a less obvious diff would
+have no equivalent fallback available in this environment.
+
+**Not fixed here, per this document's own convention — named so the next
+person doesn't re-derive it.** The shape of a fix, if someone picks this up:
+either scope the credential guard to skip when the filtered file set contains
+only files with no test-db dependency (would need a declared way to mark a
+test file as pure, e.g. a naming convention or an explicit tag vitest can
+check before running global setup), or move the guard from global setup into
+a per-file `beforeAll` that only files actually needing test-db opt into —
+so a pure unit test's own directory (`test/unit/`) stops requiring a database
+to exist before it can prove a string function is correct.
+
+## The suite cannot currently measure a change against this database (2026-09-05)
+
+**Record only — the database is not touched by this entry.** Seven full-suite
+runs against the shared test DB (`exfccwlrhoutkgrlikod`) in one evening
+(2026-09-04/05, the check-in-escalation-sweep-wiring work), in order:
+
+| Start (IST) | Files failed | Tests failed | What was running |
+|---|---|---|---|
+| 22:13 | 8 | 49 | branch, real-DB wrapper tests, one still had its own bug |
+| 22:27 | 9 | 23 | branch, own bug fixed |
+| 23:11 | **2** | 2 | **clean `origin/main`** |
+| 23:24 | 11 | 42 | branch, real-DB wrapper tests |
+| 23:43 | 17 | 40 | branch, production wiring only (wrapper tests reverted) |
+| 00:07 | **15** | 67 | **clean `origin/main`, again** |
+| 00:17 | 2 | 2 | branch, wrapper tests rewritten to stub the DB entirely |
+
+(Seven runs, not six — corrected against the actual job output on disk rather
+than a remembered count, per this project's own house rule about verifying a
+number before writing it down.)
+
+~~**The load-bearing pair is rows 3 and 6: `origin/main`, unchanged, zero code
+difference between them, 2 failing files at 23:11 and 15 failing files at
+00:07.** The database, not the diff, is what changed between those two
+readings. Every run in between plausibly left teardown damage behind (this
+document's own mechanism above, and the session-filter FK gap recorded
+separately) that the next run inherited — the runs are not independent
+measurements of whatever code happened to be checked out; each one mutates
+the shared resource the next one is measured against.~~
+
+~~**Consequence, stated plainly: this suite currently cannot be used to
+measure whether a change caused a regression, and a same-evening
+before/after comparison against this database is invalid by construction.**
+A failing-file count taken in isolation, without also re-running the
+*other* side of the comparison back to back and immediately, proves
+nothing about the code under test — it may only be reporting how dirty the
+database has become since the last clean state.~~ (The final row above still
+demonstrates the intended fix: an unscoped, system-wide production query
+stubbed out of the test path drops failures back to the 2-file baseline
+even directly after row 6's degraded 15 — but that comparison's own
+validity rests on structural argument, not the numbers alone: the wrapper's
+unscoped active-projects query is gone from the test path entirely, the
+remaining real-DB tests are project-scoped like every other test in this
+suite, and no test anywhere in this repository calls `runJobsTick` in the
+first place. The numbers corroborate that; they don't carry it on their
+own — see the commit alongside this entry for the full argument.)
+
+~~**This is now blocking real work, not merely producing noise.** A
+same-evening before/after test-count comparison was the natural first tool
+reached for to settle whether a change was safe; it produced three
+different, mutually-contradicting-looking readings before the actual
+mechanism (database degradation, not code) was identified. Whoever next
+needs to trust this suite's own count as evidence should expect the same
+thing to happen again until the underlying database reliability problem
+(already tracked: `docs/reviews/test-db-reliability-workstream.md`,
+`docs/reviews/service-role-table-grants-gap.md`'s sibling findings, and this
+document's own earlier sections) is actually addressed. **Not done here —
+the database is not cleaned, reset, or otherwise touched by this entry.**~~
+
+**Addendum, same evening: a red check on this repo is not evidence of a test
+failure until its duration is checked.** Three separate `ci-test-db-suite`
+concurrency-group preemptions occurred across three different PRs this same
+night (PR #177, PR #183, PR #192's own first `Test (real test-db)` run) —
+each one showed `fail` in GitHub's PR-checks summary view, and each one's
+actual `conclusion`, read via `gh api .../check-runs`, was `cancelled`, with
+the identical annotation: `"Canceling since a higher priority waiting
+request for ci-test-db-suite exists"`. **No test ran in any of the three —
+a cancelled run carries no information about the code under test, positive
+or negative — yet the summary view's own `fail` label is indistinguishable
+at a glance from a genuine assertion failure.** The cheapest tell, observed
+directly rather than inferred: **duration**. This suite takes 11-24 minutes
+end to end (this same evening's own genuine runs: 10m13s, 12m1s, 12m20s);
+every one of the three preemptions completed in well under a minute (48s,
+1m11s, 31s respectively). A real run cannot finish in under ten minutes —
+anyone reading a red check on this repo should check the duration column
+before the conclusion, and treat anything under a few minutes as a
+preemption to re-run, not a failure to diagnose.
+
+## Correction (2026-09-06): the "shared DB is poisoned" reading above is not established
+
+The struck paragraphs above, from the "suite cannot currently measure a change"
+entry, drew a causal conclusion — the shared test DB itself degrades across runs
+and cannot be trusted for same-evening before/after comparison — from seven full
+local runs against `exfccwlrhoutkgrlikod` in one evening. That entry was written
+before this branch (`feat/checkin-escalation-sweep-wiring`, PR #192) was parked
+on it. Two things have since come in that the original entry could not have had:
+
+- **All seven runs behind that conclusion were sequential, on one machine, in
+  one evening** — the entry's own table (above) lists every run's source as
+  either this branch or `origin/main`, run locally, back to back. Nothing in it
+  is an independent, cross-machine reading. The entry treated "the database
+  degraded between runs" as the explanation; "this one machine had resource
+  contention across a long run of back-to-back local test invocations" fits the
+  same numbers at least as well, and was never ruled out.
+- **CI has since run the identical suite, against the identical database, with
+  the pre-fix teardown code still in place (`removeMorningFixtures()` in
+  `test/helpers/db.ts`, the same fixture lifecycle this document's own earlier
+  sections describe, unchanged), and it did not reproduce the degradation this
+  entry describes.** PR #213's `Test (real test-db)` run (commit `9ee28fc`,
+  2026-09-05) scored **924/925 tests, 78/79 files** — nowhere near the 8-17
+  failing-file range this entry's table records for the same evening's local
+  runs. Its one failure was a 30-second `afterAll` HOOK TIMEOUT in
+  `test/section-42-write-boundary-distinctness.test.ts` — a different symptom
+  from this document's own FK-violation family (`## The signature`, above) —
+  and cleared cleanly on a single re-run, with no code change.
+
+**Consequence:** the "shared DB is poisoned, same-evening comparisons are
+invalid by construction" reading above is **not established**. CI does not
+reproduce it under conditions (same database, same pre-fix code) where the
+local runs said it should. Single-machine resource contention across seven
+back-to-back local invocations is at least as good an explanation for the
+2/9/11/15/17-style spread in that table, and nothing here rules it out either
+— this correction narrows the original claim, it does not replace it with a
+new established one. **What is NOT in doubt:** the structural teardown-scoping
+defect this document records elsewhere (`## A structural filter gap in
+removeMorningFixtures()`, above, and the FK-violation signature at the top of
+this document) is still real and still unfixed — only the *urgency* argued for
+it here, and the specific "database itself is currently unusable for
+comparison" framing, are what this correction withdraws. Treat CI as
+trustworthy for this suite going forward unless it says otherwise on its own
+terms — a red check on its own actual merits, not a locally-observed count
+from one machine's evening.
+
+## Cleanup investigated and found unnecessary — "shared DB is poisoned" closed as NOT SUPPORTED (2026-09-06)
+
+Following the correction above, a read-only probe was run against the shared
+test DB (`exfccwlrhoutkgrlikod`) to check whether any actual cleanup was
+warranted before anyone considered an irreversible delete against a database
+with no PITR and no branching (`## TEST-DB IS NOT CONFIDENTLY REBUILDABLE`,
+CLAUDE.md §0). It was not:
+
+- `TEST_ENGINEER_PHONE` (`+19995550200`, `test/helpers/db.ts`) — **the exact
+  row the whole "poisoned DB" theory was about — has no row in the database at
+  all.** Not orphaned, not leftover: absent.
+- `daily_logs` orphaned outside `TEST_PROJECT_ID`: **0**.
+- `dprs` for any `+19995550%`-prefixed engineer: **0**.
+- `outbound_sends` with `status = 'sending'` (stale in-flight sends): **0**.
+- `projects` under `TEST_TENANT_ID` beyond `TEST_PROJECT_ID`: **0** rows.
+
+Two rows under the `+19995550%` prefix exist, but they belong to a completely
+different fixture family — `test/helpers/outbound-fixtures.ts`'s own
+`OUTBOUND_TEST_TENANT_ID`/`OUTBOUND_TEST_PROJECT_ID` (`...031000`/`...031001`,
+"ZZ Test Engineer (outbound-send suite)"), a persistent, deliberately-kept
+`status = 'active'` fixture project (created 2026-08-27), not a leftover from
+the morning-flow lifecycle this document is about at all.
+
+**The 5 `checkin_escalations` rows flagged in the read-only probe turned out
+to be 2 by the time they were read back in full** (the count itself changed
+between two checks minutes apart — this table is live, other work writes to
+it) **and both are confirmed SWEEP-authored, not fixture-authored, via the
+real production code path (`runCheckinEscalationTickSweep`,
+`determineTargetStatus`) — just not against real production data.**
+`runCheckinEscalationTickSweep` scans every `status = 'active'` project
+tenant-agnostically, by design (`lib/checkin-escalations/sweep.ts:185-187`) —
+so when PR #192's own `test/unit/checkin-escalations-sweep.test.ts` called it
+directly against the shared test-db (lines 521 and 560), it legitimately swept
+up the outbound-send suite's persistent active fixture project alongside
+whatever it meant to test. The future-dated `escalated_at`/`updated_at`
+(`2026-09-16 05:15:00+00`) that looked anomalous is that test file's own
+`WRAPPER_NOW = new Date('2026-09-16T05:15:00.000Z')` (line 392) — matched to
+the second, not a clock or sweep defect. The two rows' timestamp behavior is
+also consistent evidence FOR migration 027's own design, not against it: the
+still-`'awaited'` row (never transitioned) carries a real wall-clock
+`created_at`/`updated_at` from whenever the test actually ran (2026-09-04
+16:45 UTC, matching this document's own table of that evening's local runs);
+the `'escalated'` row (transitioned) carries `updated_at` explicitly set to
+`WRAPPER_NOW` — exactly what 027's header requires (`updated_at` is not
+trigger-maintained here; the sweep must set it explicitly on every write) and
+exactly what happened.
+
+**Consequence: the "shared test DB is poisoned" reading from the entry above
+is now closed as NOT SUPPORTED.** Every orphan count that would evidence
+actual damage is zero, the row the theory was originally about is absent
+entirely, and the only nonzero findings are correctly-scoped, correctly-
+behaving output from a different, unrelated, still-live test suite's own
+fixtures — not damage. The local 8/9/2/11/17/15/2 file-failure progression
+recorded earlier in this document is better explained by single-machine
+resource contention across seven sequential same-evening local runs than by
+database poisoning. **No cleanup was performed and none is warranted from
+this investigation** — the two outbound-send-suite rows are live fixtures
+belonging to test infrastructure that may be running concurrently (confirmed
+during this probe: a `Test (real test-db)` job for an unrelated PR was
+genuinely `in_progress` against this same database at the time), not debris.
+**Preserved as-is, not affected by this entry:** the structural teardown-
+scoping defect (`## A structural filter gap in removeMorningFixtures()`,
+above) is still real and still unfixed — only the poisoning story is retired,
+not the actual bug.

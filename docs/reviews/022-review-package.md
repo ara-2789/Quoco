@@ -577,6 +577,44 @@ a merge-specific test (pre-existing `evening_submitted` + unrelated key
 survive a morning Q4 completion) and had its stale wrong_flow-as-idle
 assertion corrected.
 
+### 9.1 Extension — migration 038's own sites (2026-09-07, external review round 2, B1)
+
+**Same rule, seven new sites, three of them wrong until this round.** 038
+adds a brand-new flow (hindrance) and two collision branches inside the
+existing morning/evening functions; every one of them is a context write
+and therefore subject to §9's own rule above, unchanged. B1 (038's
+external review, round 2, blocking) found the SAME defect shape this
+section already named for morning — *a bare replace destroys whatever
+else lived in context* — reintroduced twice: once in each collision
+branch, plus once more in the DOWN block's own bulk sweep.
+
+| Site | Behaviour | Status |
+|---|---|---|
+| Hindrance START | `context := context - 'q2_reask' - 'description'` | Correct by design |
+| Hindrance Q1 ADVANCE | `context := context \|\| {'description': v_text}` | Correct by design |
+| Hindrance Q2 REASK | `context := context \|\| {'q2_reask': n+1}` | Correct by design |
+| Hindrance COMPLETE | `context := context - 'q2_reask' - 'description'` | Correct by design |
+| Morning×Hindrance COLLISION | `context := '{}'::jsonb` → **fixed to** two-branch: submitted → `context - 'q2_reask' - 'description'` (outcome `already_complete`); unsubmitted → `context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask' - 'q2_reask' - 'description'` (outcome `start`) | **Fixed round 2 (B1)** |
+| Evening×Hindrance COLLISION | same shape, mirrored | **Fixed round 2 (B1)** |
+| DOWN session-clearing sweep | `context = '{}'::jsonb` → **fixed to** `context = context - 'q2_reask' - 'description'` | **Fixed round 2 (B1)** |
+
+**Why the hindrance flow's own four sites were never wrong.** Same reason
+evening's own sites were never wrong in round 2 above: hindrance is new
+code written INTO a world where §9's rule was already the stated
+convention, so its own start/advance/reask/complete sites obey it from
+their first line — the trap this section already named ("copying the
+nearest existing line of code instead of the stated rule") only bites a
+site copied from BEFORE the rule existed. The three sites that got it
+wrong are exactly the three genuinely NEW pieces of logic 038 added: two
+collision branches with no existing sibling to copy correctly from, and a
+DOWN block's own bulk UPDATE, a different SQL shape (an UPDATE statement,
+not a `v_session.context :=` assignment) that the rule's own stated form
+didn't obviously cover by inspection even though its substance clearly
+does.
+
+Full trace, the SQL fix, and the RED→GREEN reproduction (Scenario 5):
+`docs/reviews/038-hindrance-flow-review-package.md`.
+
 ---
 
 ## 10. Explicitly out of scope / known follow-ups

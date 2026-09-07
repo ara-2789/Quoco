@@ -1464,6 +1464,53 @@ structure/constraint check, and confirms it matches the pre-rehearsal
 value (usually NULL) — not just that the column/constraint itself is
 gone or restored.
 
+THE DOWN BLOCK IS REHEARSED AND VERIFIED TOO, NOT JUST WRITTEN — AND FOR
+ANY MIGRATION THAT CHANGES ROUTING LOGIC OR A FUNCTION'S EXISTENCE, THE
+REHEARSAL MUST CONFIRM A LIVE IN-FLIGHT SESSION IS STILL PROCESSABLE
+AFTER THE DOWN RUNS, NOT JUST THAT THE SCHEMA REVERTED (added 2026-09-07 —
+two DOWN-block rehearsal failures in three migrations, not one, full
+record: `docs/reviews/038-hindrance-flow-review-package.md`). Migration
+036's own DOWN failed on first rehearsal for a cascade-ordering reason (an
+early draft's `DROP CONSTRAINT` for the pairing CHECK failed because an
+earlier `DROP COLUMN` in the same statement had already cascaded it away)
+— caught by actually running the DOWN against real Postgres, not by
+inspection. Migration 038's DOWN was worse, and "did the schema revert
+cleanly" would not have caught it: a first draft dropped the new
+`apply_hindrance_flow_turn` and reverted the two modified functions with
+zero SQL errors — but rehearsed against a session actively in-flight in
+the very flow being removed, it left that session PERMANENTLY STUCK. No
+remaining RPC could process it, and the reverted functions no longer
+force-reset it either (their own force-reset branch is exactly what the
+DOWN just removed). Worse than merely stuck: if the TypeScript routing
+layer that dispatches to the now-gone function is still deployed when the
+DOWN runs on the database — a real possibility, since a DB rollback and an
+app rollback are not the same operation, not a contrived edge case — every
+future inbound for that session's phone number hits a hard, uncaught
+`function does not exist` error, not a graceful reply, not silence, an
+actual crash for that specific phone number. **CONSEQUENCE:** every
+migration rehearsal executes the DOWN block against the disposable
+scaffold, not only the forward migration — "the forward migration applied
+cleanly" has never been sufficient evidence for a DOWN nobody has run. For
+any migration that changes routing logic, or removes/renames a function
+real application code calls, the rehearsal must additionally seed a
+session actively in the state/flow being changed and confirm, after the
+DOWN runs, that a subsequent turn against that session either completes
+cleanly or is explicitly, safely reset to idle — never left calling
+something that no longer exists.
+
+A SEPARATE, MECHANICAL LESSON FROM THE SAME INCIDENT: migration 038's
+first DOWN draft was also left as LIVE, UNCOMMENTED SQL rather than the
+inert reference text 036/037 already used — applying the file via
+`psql -f` ran the forward migration AND immediately reverted it in the
+same batch, caught only by re-running the whole file and noticing the new
+function was gone afterward. `scripts/lint-migrations.mjs`'s new
+`down-section-must-be-commented` rule (added the same day) checks this
+mechanically now — every line from a file's `-- DOWN (...`/`-- DOWN /...`
+marker to EOF must be blank or itself start with `--`. Text-only, cheap,
+same shape as this file's other seven rules; it verifies the DOWN section
+is INERT when the file is applied normally, not that its SQL is correct
+(only a real rehearsal, the rule immediately above, can verify that).
+
 How to verify locally (ask me to run these; show me the command)
 - DB change: run migrations against a Supabase BRANCH first, never prod.
   Confirm no errors, then I review before it touches the real database.

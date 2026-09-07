@@ -4,6 +4,8 @@ import { applyMorningFlowTurn, buildMorningReply } from './flows/morning'
 import type { MorningOutcome } from './flows/morning'
 import { applyEveningFlowTurn, buildEveningReply } from './flows/evening'
 import type { EveningOutcome, EquipmentEchoItem } from './flows/evening'
+import { applyHindranceFlowTurn, buildHindranceReply } from './flows/hindrance'
+import type { HindranceOutcome } from './flows/hindrance'
 
 // Webhook-wiring deliverable named in migration 022's review package (§10).
 // Implements the retry contract from that migration's own header ("call the
@@ -42,7 +44,7 @@ import type { EveningOutcome, EquipmentEchoItem } from './flows/evening'
 export const FLOW_RACE_REPLY =
   'Sorry, something interrupted your check-in — please resend your last message.'
 
-type Flow = 'morning' | 'evening'
+type Flow = 'morning' | 'evening' | 'hindrance'
 
 // Discriminated on `flow` so the reply builder below can narrow to the
 // correct outcome type without a cast. evening carries an extra
@@ -50,7 +52,9 @@ type Flow = 'morning' | 'evening'
 // unlike every other step's static text. morning carries `attendance` (the
 // morning flow migration, 030) for the equivalent reason: three different
 // completions now share (outcome: 'advance', currentStep: 0) and need it to
-// pick the right reply — see buildMorningReply's own doc.
+// pick the right reply — see buildMorningReply's own doc. hindrance carries
+// `wasExhausted` for the identical reason (migration 038, PR 2 step 4) —
+// see buildHindranceReply's own doc.
 type Attempt =
   | {
       flow: 'morning'
@@ -63,6 +67,12 @@ type Attempt =
       outcome: EveningOutcome
       currentStep: number
       equipmentEcho: EquipmentEchoItem[] | null
+    }
+  | {
+      flow: 'hindrance'
+      outcome: HindranceOutcome
+      currentStep: number
+      wasExhausted: boolean
     }
 
 interface DispatchParams {
@@ -140,7 +150,26 @@ async function attempt(
     }
   }
 
-  const result = await applyEveningFlowTurn({
+  if (flow === 'evening') {
+    const result = await applyEveningFlowTurn({
+      phoneNumber: common.phoneNumber,
+      tenantId: common.tenantId,
+      userId: common.userId,
+      projectId: common.projectId,
+      message: common.message,
+      startFlow: false,
+      ...(common.now !== undefined ? { now: common.now } : {}),
+      ...(common.supabaseClient !== undefined ? { supabaseClient: common.supabaseClient } : {}),
+    })
+    return {
+      flow: 'evening',
+      outcome: result.outcome,
+      currentStep: result.currentStep,
+      equipmentEcho: result.equipmentEcho,
+    }
+  }
+
+  const result = await applyHindranceFlowTurn({
     phoneNumber: common.phoneNumber,
     tenantId: common.tenantId,
     userId: common.userId,
@@ -151,17 +180,17 @@ async function attempt(
     ...(common.supabaseClient !== undefined ? { supabaseClient: common.supabaseClient } : {}),
   })
   return {
-    flow: 'evening',
+    flow: 'hindrance',
     outcome: result.outcome,
     currentStep: result.currentStep,
-    equipmentEcho: result.equipmentEcho,
+    wasExhausted: result.wasExhausted,
   }
 }
 
 function replyFor(a: Attempt): string {
-  return a.flow === 'morning'
-    ? buildMorningReply(a.outcome, a.currentStep, a.attendance)
-    : buildEveningReply(a.outcome, a.currentStep, a.equipmentEcho ?? undefined)
+  if (a.flow === 'morning') return buildMorningReply(a.outcome, a.currentStep, a.attendance)
+  if (a.flow === 'evening') return buildEveningReply(a.outcome, a.currentStep, a.equipmentEcho ?? undefined)
+  return buildHindranceReply(a.outcome, a.currentStep, a.wasExhausted)
 }
 
 /**
@@ -183,8 +212,14 @@ export async function dispatchInboundTurn(params: DispatchParams): Promise<Dispa
     firstFlow = firstFlowOverride
   } else {
     const current = await readCurrentFlow(common.phoneNumber, common.supabaseClient)
-    // "or morning, if idle/unknown" — review package §10, item 1.
-    firstFlow = current === 'evening' ? 'evening' : 'morning'
+    // "or morning, if idle/unknown" — review package §10, item 1. Extended
+    // for 'hindrance' (migration 038, PR 2 step 4) — this internal fallback
+    // is not exercised by routeInboundMessage in production (it always
+    // supplies firstFlow explicitly), only by tests calling
+    // dispatchInboundTurn directly, but leaving it unaware of 'hindrance'
+    // would be the identical bug this migration's own header names route.ts
+    // for, one layer lower.
+    firstFlow = current === 'evening' ? 'evening' : current === 'hindrance' ? 'hindrance' : 'morning'
   }
 
   const first = await attempt(firstFlow, common)
@@ -193,6 +228,16 @@ export async function dispatchInboundTurn(params: DispatchParams): Promise<Dispa
   }
 
   await onBeforeRetry?.()
+
+  // 'hindrance' has no well-defined "other flow" to retry against — unlike
+  // morning/evening's own mutual toggle, a stale 'hindrance' read racing
+  // against, say, the scheduled-trigger force-reset (migration 038) could
+  // have moved to EITHER morning or evening, and nothing here can tell
+  // which. Retrying blind would be a guess dressed up as a retry; FLOW_RACE_
+  // REPLY is the honest answer, same as the double-wrong_flow fallback below.
+  if (firstFlow === 'hindrance') {
+    return { reply: FLOW_RACE_REPLY, resolvedFlow: null }
+  }
 
   const secondFlow: Flow = firstFlow === 'morning' ? 'evening' : 'morning'
   const second = await attempt(secondFlow, common)

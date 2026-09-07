@@ -51,6 +51,20 @@ separately from hindrance. **Superseded by this entry's own item 1** (merge deci
 messages formalised as the seventh, per §29(b)). §28(x) is not wrong, it is the prior,
 narrower iteration this spec replaces.
 
+**BETA-SCOPE CORRECTION (Aravind, 2026-09-06): item 2 (Safety incident) is DROPPED from
+the beta menu specifically — the item's own permanent number (2) stays reserved, nothing
+about the seven-item model above changes.** Reasoning, not just a scope cut: `design-
+principles.md` Rule 7.3 states plainly that safety incidents carry a hard law from day one
+of that flow — immediate PM notification, bypassing the standard pipeline. BOT-19, the
+mechanism §e (below) describes as "existing... unchanged," was checked directly against
+the live, post-retirement codebase (grepped for any keyword-triggered flow start anywhere
+in `lib/whatsapp/`) and found NOT to exist — zero hits. Showing item 2 in a live menu with
+only a text-fallback reply ("not ready yet, call your supervisor") when no code path
+actually bypasses anything is worse than not showing it: a real emergency produces a tap-
+then-read sequence instead of an immediate call, in the one category where that added step
+has irreversible-harm stakes items 1 and 7 don't share. The menu ships with items 1 and 7
+visible; item 2 returns once a real notification path exists for it, under the same number.
+
 ---
 
 ## a. Trigger — which replies the menu touches, verified against the actual code
@@ -127,13 +141,19 @@ row for this exact purpose — the header is computed from that plus the roster,
 fix §39 already named, now applied at the header's own construction site instead of
 independently.
 
-**Rough shape, approved — refine wording in the copy pass, not decided here:**
+**Rough shape, approved — refine wording in the copy pass, not decided here.** UPDATED
+(2026-09-06, router copy pass): the `site_holiday` row's wording changed from "Site
+holiday recorded — nothing further today" to the text below, once the copy pass moved the
+correction line ahead of the header and needed "recorded" freed up (it now appears only in
+the correction line, "Nothing was recorded," about the just-received message, never about
+the day) — see the "Idle-inbound reply, decided" section's own RESTORE NOTE for the full
+reasoning:
 
 | Condition | Header |
 |---|---|
 | Before `morningSend`, nothing recorded | "Your check-in will arrive shortly." |
 | After `morningCutoff`, morning missed | "The morning window has closed for today." |
-| `attendance = 'site_holiday'` | "Site holiday recorded — nothing further today." |
+| `attendance = 'site_holiday'` | "Today is a site holiday, so there is nothing further to check in." |
 | Both halves submitted | "Today's check-in is complete." |
 | Nothing notable | No header — just the list. |
 
@@ -149,7 +169,7 @@ question in this section is gone entirely.** Six idle replies collapse to one me
 maintain — every idle inbound gets the identical structural reply (header + list),
 differing only in which header line, or none, applies.
 
-**OPEN, must be checked before the copy pass — the header's own delivery mechanism,
+~~**OPEN, must be checked before the copy pass — the header's own delivery mechanism,
 verified here against both Twilio's and Meta's current docs, not assumed:**
 
 Fetched directly, 2026-08-30, not recalled: **Twilio's own `twilio/list-picker` Content
@@ -174,11 +194,45 @@ project's own send path regardless of its real limit. **Consequence: the header 
 goes into `body`, prepended before whatever intro/prompt text the menu's body already
 carries, separated by a line break — not a length concern (1,024 chars is not a binding
 constraint for any of the five lines above, all well under 60 characters as drafted),
-only a copy-pass question of ordering and visual separation within one field.**
+only a copy-pass question of ordering and visual separation within one field.**~~
+
+**DATED CORRECTION (2026-09-06, PR 2 router design pass).** The struck subsection above
+is moot, not merely superseded: it exists entirely to solve a problem — "which field
+carries the header, given the list-picker Content API has no header field" — that no
+longer exists, because **plain text superseded the list-picker itself** (Aravind's
+decision, this same pass): with the beta menu down to one item (item 2 dropped 2026-09-06,
+item 7 held pending its own BOT-27 fix), there is nothing left to *pick from a list* — Rule
+3.1 already prefers typed numbers as the primary path, and a single-row interactive
+component adds a second `readCurrentFlow`-shaped lookup with nothing to show for it. There
+is no `body` field, no Content API send, no 1,024-character budget, because there is no
+list-picker send at all — the reply is one ordinary TwiML text reply, the same shape
+`routeInboundMessage`'s six static idle replies already use today.
+
+**What survives, unchanged: the 5-row header table above.** It fixes a real bug (§39 —
+`EVENING_AWAITING_TRIGGER_REPLY` promising a check-in a site-holiday day would never
+send) and that fix has nothing to do with how the reply is delivered. Read the table as
+current and live; read everything else in this section (the list-picker mechanism, the
+body-field workaround, the 1,024-character analysis) as historical record of a design
+this project no longer builds. See §g's own new "Idle-inbound reply, decided" subsection
+below for the actual reply text this collapses into, all five header states shown in
+full — added the same date as this correction, not yet written when this note was
+drafted, so not cited by a number that could go stale the way §g.9 already did once.
 
 ---
 
 ## b. Delivery — verified against Twilio's/Meta's current docs, not the decision text
+
+**DATED CORRECTION (2026-09-06, PR 2 router design pass), READ THIS FIRST — everything
+below in this section is HISTORICAL RECORD, not current design.** This entire section
+verifies constraints on the Twilio `twilio/list-picker` Content API send (row caps,
+section caps, button/row character limits, an eighth-item scaling question). None of it
+applies any more: plain text superseded the list-picker (one item in the beta menu, item
+2 dropped and item 7 held; Rule 3.1 already prefers typed numbers; no reason to add a
+second flow-state lookup for a component with nothing left to pick from — see §a's own
+correction, same date, for the full reasoning). There is no Content API send, so there is
+no row/section/character budget to track and no eighth-item problem to solve — kept below
+per this project's own provenance discipline (correct in place, don't silently rewrite),
+not because any of it still governs what ships. Don't build against it.
 
 §28(x)'s claim checked directly, not trusted: **confirmed live** against Twilio's Content
 API docs — WhatsApp's List Picker content type is explicitly **"❌ Not supported" for
@@ -637,6 +691,250 @@ doesn't surface as a surprise once 1/2/3/7 are actually being built.
 
 ---
 
+## g. Row-to-answer mapping — DECIDED, verified against a real tap-test payload
+
+**This section did not exist until now.** `036`/`037`'s own migration comments cited
+`adhoc-menu-spec.md §g.9`/`§g.10` for the PM-notification design before this section was
+ever written — a citation to a section that had never existed, at any point in this
+file's git history, applied to production inside `037`'s own `COMMENT ON COLUMN` before
+being caught (see the admin-merge retrospective's Q7 for the full incident). That specific
+citation is being corrected to point at "Project resolution" instead, in its own follow-up
+PR — it was never actually about row-to-answer mapping. This section exists so a FUTURE
+`§g` citation has something real to point to, on a topic this letter never covered before:
+how an inbound reply — a tap or a typed number — maps back to which menu row the engineer
+meant.
+
+**THE TAP-TEST PAYLOAD (2026-09-03, Aravind's own handset, production sender)** — captured
+so nobody re-runs the experiment:
+
+> Tapped a list row titled "Option One", description "First test row", `id` `opt_1`. The
+> webhook received `interactiveFields`:
+> ```json
+> {"ListId": "opt_1", "ListTitle": "Option One", "ListDescription": "First test row"}
+> ```
+> Key names present vs. a plain text message: `ListId`, `ListTitle`, `ListDescription`,
+> `Forwarded`, `FrequentlyForwarded`, `OriginalRepliedMessageSender`,
+> `OriginalRepliedMessageSid`.
+>
+> Content SID: `HX09f0a455a3f5e1121c970b439bcf2fab`. Message SID:
+> `MM34daf0fbb6a575e0808a19296271dd3a`.
+
+**Two facts this establishes, empirically, not from Meta's/Twilio's own docs alone:**
+1. **`ListId` arrives intact, exactly as the sender set it on the row.** Not
+   re-derived, not stripped, not modified in transit through Twilio's own webhook
+   payload.
+2. **A tap is cleanly distinguishable from a typed message by `ListId`'s presence
+   alone** — a typed reply carries none of the seven interactive-only fields above; a
+   tap carries all of them. No ambiguous middle case observed.
+
+**DECIDED (Aravind, 2026-09-06): the permanent item number lives in BOTH the visible row
+title ("1. Site hindrance / blocker") and the row's own `id` (so `id` for item 1 is a
+value containing `1`, e.g. `opt_1`-shaped but item-specific) — never only one of the two.**
+Reason for carrying it in both, not just `ListId` alone: a typed "1" produces no `ListId`
+at all (confirmed above — that field only exists on an interactive reply), and low-comfort
+engineers will type rather than tap, per this project's own established behavior
+elsewhere in the flow (Rule 3.1, `design-principles.md`: typed numbers are the PRIMARY
+path, buttons the enhancement). A design that only checked `ListId` would work for a tap
+and silently fail every typed reply from exactly the user population this product is
+built for.
+
+**Router design, decided:** check `ListId` first; if absent, fall back to parsing a
+leading numeral from the message `Body`. Both paths resolve to the same permanent item
+number, so a tap and a typed "1" converge on identical downstream handling — the menu
+does not need two separate code paths for "how the engineer chose an item," only one
+followed by two ways of reaching it.
+
+**NAMED HONESTLY (2026-09-06): the `ListId` branch above is currently unreachable, not
+removed.** With plain text superseding the list-picker (§a/§b's own dated corrections),
+nothing this project sends today can ever produce a `ListId` — there is no row to tap.
+The branch stays in the router (free to keep; it's the same shape a future list-picker
+send would need, per the plain-text decision's own reasoning that choosing text now loses
+none of this design) but is dormant until a list send exists again. Recorded explicitly
+so this doesn't read as an accidental dead branch discovered later — the retrospective's
+Q6 pattern ("the safeguard lives in the code that doesn't run") is about logic that
+SHOULD run and silently doesn't; this is logic that deliberately doesn't run yet, on
+record as such.
+
+## Idle-inbound reply, decided (2026-09-06) — precedence, and all five replies in full
+
+**SINGLE SOURCE OF TRUTH (2026-09-06, added on Aravind's own question during PR #218's
+review): `lib/whatsapp/inbound-start.ts`'s `HEADER_LINE`/`ACTION_LINE`/`CORRECTION_LINE`
+constants are the AUTHORITATIVE copy. This section is a REFERENCE COPY for reviewing the
+decision, not the source — same relationship `bot-flows.md`'s own TRIGGER TIMES section
+already has with `lib/daily-logs/cutoffs.ts` ("this doc is a reference copy of that
+constant, not the authority; if they ever disagree, `cutoffs.ts` wins and this needs
+updating, not the reverse"). Nothing enforces the two staying in sync automatically — a
+future edit to either one needs a matching edit to the other, by hand.**
+
+**UPDATED, SAME DAY: NOW ENFORCED, NOT JUST CONVENTION.**
+`test/unit/adhoc-menu-spec-sync.test.ts` reads this file directly, extracts the quoted
+reply text under each `**Free text / unparseable:**` / `**Typed "2":**` / `**Typed "3",
+"4", "5", "6", or "7":**` / item-1-interim marker below, and asserts it matches
+`buildIdleReply`/`buildItem1InterimReply`'s real output. A hand-edit to either side that
+drifts from the other now fails CI instead of silently becoming the sixth instance of
+`bot-flows.md`'s own "documented as working, never built" pattern (the dead 30-minute TTL,
+CLAUDE.md §0/the admin-merge retrospective).
+
+**PARSEABLE FORMAT CONSTRAINT, NAMED — the one real cost of the test above.** Every
+combination below must be written as exactly as many `> `-prefixed lines as the actual
+reply has real line breaks — **never wrap one reply line across two `>` lines** for
+markdown readability. This bit the typed-"2" set once already (its correction line was
+originally soft-wrapped across two `>` lines purely for line length, which the parser
+would have read as two separate reply lines instead of one) — fixed the same day this
+test was added. If this test ever fails after a pure markdown reformat with no copy
+change, check for exactly that before assuming the copy itself drifted.
+
+**PRECEDENCE: a leading "1" always wins on WHETHER item 1 is what happens next, regardless
+of what the header table below would otherwise say.** Decided by Aravind, this pass: a
+site-holiday engineer or one past the morning cutoff still has a genuine hindrance to
+report; the header exists to explain why no check-in is coming, never to say nothing can
+be reported. Consequence for the three fallback cases below: none of them ever fire when
+the message starts with "1" — that case gets its own reply instead (see "Item 1's interim
+reply" below).
+
+**CORRECTED (2026-09-06, same day, PR #218 review) — "1" does NOT skip the header while
+step 4 is unbuilt.** The first draft of this section (and the first draft of the code)
+claimed the "1" check runs BEFORE the header is even computed, so item 1 would never carry
+one. That was true of the intended PERMANENT design (once step 4's real flow exists, it
+starts unconditionally and does its own reads — no header needed from this file at all)
+but wrong for the INTERIM state this PR actually ships: until step 4 lands, a leading "1"
+still needs to tell a site-holiday or post-cutoff engineer about today's check-in state,
+via the exact same header table — the first build's placeholder silently didn't, the same
+false-promise-by-omission shape items 2 and 7 were dropped/held over. Fixed in the same PR
+that found it; see "Item 1's interim reply" below for the corrected five combinations.
+
+**FINAL SHAPE, DECIDED (Aravind, 2026-09-06) — correction leads, header is context, action
+is last.** The first draft (header first, correction line, then action) put the wrong
+thing first: the engineer's own action belongs at the top, and the header's habit of
+"closed"/"complete" language needs its own acknowledgement word ("still") rather than
+sitting in front of an unrelated correction like two facts glued together. Revised shape,
+three lines, in order:
+1. **The specific correction** — what the engineer's own message did or didn't do.
+   Fixed per input kind, NEVER varies by header state (see the restore note below).
+2. **The header**, when one applies — context, not the lead.
+3. **The action** — "reply 1", always last, with "still" wherever the header says
+   something closed or finished (morning-closed, site-holiday, complete), plain "now"/no
+   qualifier otherwise.
+
+**RESTORE NOTE (2026-09-06, same day, later in the pass): "Nothing was recorded" is NOT
+dropped from any `site_holiday` combination.** An earlier draft of this section dropped it
+specifically from the `site_holiday` row because it collided with the THEN-current header
+wording, "Site holiday recorded — nothing further today" (same word, "recorded," three
+words apart, different meanings). That header was reworded in this same pass to "Today is
+a site holiday, so there is nothing further to check in" — the word "recorded" is gone
+from the header entirely, so the collision that justified the drop no longer exists.
+Keeping the drop after the header changed would have made `site_holiday` the only one of
+five states missing that line for no visible reason. Restored below, in both the
+free-text and typed-"3"-to-"7" sets (the typed-"2" set never contained "recorded" in its
+correction line at all, so nothing to restore there).
+
+**The three fixed correction lines** — committed here so they stop living only in chat,
+the second time this session's copy was at risk of being lost (the tap-test payload above
+was the first):
+- **Typed "2":** "Safety reporting is not available here. If someone is hurt or in
+  danger, call your site supervisor now."
+- **Typed "3", "4", "5", "6", or "7":** "That option isn't available yet. Nothing was
+  recorded."
+- **Free text / unparseable** (includes an ordinary idle message like "hi" that isn't an
+  attempt at any number): "I didn't understand that. Nothing was recorded."
+
+**All fifteen combinations (3 correction lines × 5 header states), exactly as an engineer
+would receive them:**
+
+**Free text / unparseable:**
+1. Before `morningSend`, nothing recorded:
+   > I didn't understand that. Nothing was recorded.
+   > Your check-in will arrive shortly.
+   > You can report a site hindrance now — reply 1.
+2. After `morningCutoff`, morning missed:
+   > I didn't understand that. Nothing was recorded.
+   > The morning window has closed for today.
+   > You can still report a site hindrance — reply 1.
+3. `attendance = 'site_holiday'`:
+   > I didn't understand that. Nothing was recorded.
+   > Today is a site holiday, so there is nothing further to check in.
+   > You can still report a site hindrance — reply 1.
+4. Both halves submitted:
+   > I didn't understand that. Nothing was recorded.
+   > Today's check-in is complete.
+   > You can still report a site hindrance — reply 1.
+5. Nothing notable (no header):
+   > I didn't understand that. Nothing was recorded.
+   > You can report a site hindrance — reply 1.
+
+**Typed "2":**
+1. > Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.
+   > Your check-in will arrive shortly.
+   > You can report a site hindrance now — reply 1.
+2. > Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.
+   > The morning window has closed for today.
+   > You can still report a site hindrance — reply 1.
+3. > Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.
+   > Today is a site holiday, so there is nothing further to check in.
+   > You can still report a site hindrance — reply 1.
+4. > Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.
+   > Today's check-in is complete.
+   > You can still report a site hindrance — reply 1.
+5. > Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.
+   > You can report a site hindrance — reply 1.
+
+**Typed "3", "4", "5", "6", or "7":**
+1. > That option isn't available yet. Nothing was recorded.
+   > Your check-in will arrive shortly.
+   > You can report a site hindrance now — reply 1.
+2. > That option isn't available yet. Nothing was recorded.
+   > The morning window has closed for today.
+   > You can still report a site hindrance — reply 1.
+3. > That option isn't available yet. Nothing was recorded.
+   > Today is a site holiday, so there is nothing further to check in.
+   > You can still report a site hindrance — reply 1.
+4. > That option isn't available yet. Nothing was recorded.
+   > Today's check-in is complete.
+   > You can still report a site hindrance — reply 1.
+5. > That option isn't available yet. Nothing was recorded.
+   > You can report a site hindrance — reply 1.
+
+**Item 1's interim reply (2026-09-06, corrected same day) — until step 4 ships.** Same
+correction-line-then-header shape as the three fallbacks above, but deliberately NO action
+line, since there is no action available (item 1 IS the action, and it isn't accepting
+input yet). Fixed correction line, never varies: "Hindrance reporting isn't ready yet.
+Nothing was recorded." All five combinations:
+1. Before `morningSend`, nothing recorded:
+   > Hindrance reporting isn't ready yet. Nothing was recorded.
+   > Your check-in will arrive shortly.
+2. After `morningCutoff`, morning missed:
+   > Hindrance reporting isn't ready yet. Nothing was recorded.
+   > The morning window has closed for today.
+3. `attendance = 'site_holiday'`:
+   > Hindrance reporting isn't ready yet. Nothing was recorded.
+   > Today is a site holiday, so there is nothing further to check in.
+4. Both halves submitted:
+   > Hindrance reporting isn't ready yet. Nothing was recorded.
+   > Today's check-in is complete.
+5. Nothing notable (no header):
+   > Hindrance reporting isn't ready yet. Nothing was recorded.
+
+**This whole reply is TEMPORARY, scoped to the window between this PR merging and step 4
+shipping.** Once item 1's real flow exists, this placeholder is replaced by the flow
+actually starting — the leading-"1" classification itself does not change, only what
+happens after it.
+
+**The "complete" header absorbs a second real condition, not just "both submitted"
+literally.** The old `REPORT_READY_REPLY` condition (past `eveningClose`, any submission
+state — no dedicated row exists for it in the 5-row table) folds into the same "Today's
+check-in is complete" header: by `eveningClose` the DPR has already generated, so there is
+nothing left to contribute to today's check-in either way, submitted or not. Named here,
+not silently assumed, per this project's own standing discipline on stating a reading
+rather than picking one silently.
+
+**A real, accepted information loss, also named rather than silently dropped:** the
+5-row table has no row for "morning submitted, evening pending" (either before or after
+`eveningSend`) — both of those states collapse into "Nothing notable, no header." The old
+`EVENING_WINDOW_NOT_OPEN_REPLY`/`EVENING_AWAITING_TRIGGER_REPLY` distinction (whether an
+evening check-in is still pending vs. about to arrive) is no longer surfaced to the
+engineer. Inherited from the table as approved in §a, not introduced by this pass — flag
+to Aravind if this needs its own row.
+
 ## §28(t) — closed, not left open (proposed rewrite, for review)
 
 The plan/decisions doc's own §28(t) is currently written as "OPEN, NOT DECIDED —
@@ -675,8 +973,9 @@ not yet applied to `design-decisions-beta-feedback.md`:
 
 ## Summary of open items this spec does NOT resolve
 
-**a and e are DECIDED (2026-08-28, accepted as proposed) and removed from this list** — see
-§a and §e above for the final text. What remains open:
+**a, e, and g are DECIDED and removed from this list** — see §a, §e, and §g above for the
+final text (g added 2026-09-06: row-to-answer mapping, verified against a real tap-test
+payload). What remains open:
 
 - **a (superseded, 2026-08-30).** No more Group 1/Group 2 split, no more pointer concept —
   every idle inbound gets the menu, with a state-computed header line. What's open now: the
@@ -700,11 +999,25 @@ not yet applied to `design-decisions-beta-feedback.md`:
 - **f (new).** Item 1's own migration: the exact column name, full CHECK value set, and
   default/nullability for the `hindrances` active/potential column — the REQUIREMENT is
   decided (§f above), the column's own design is not.
-- **Project resolution (new, 2026-08-28).** Which project a menu-triggered write belongs
-  to, when `project_members` is ambiguous for the sending engineer — argued toward
-  skip-and-surface, matching migration 033's own mechanism, not toward best-guessing; the
-  exact skip-time UX (what the engineer sees) is not designed. Closes permanently once
-  §36's `project_members(user_id)` UNIQUE index ships — still not scheduled.
+- **Project resolution (2026-08-28, RESOLVED 2026-09-07).** Which project a menu-triggered
+  write belongs to, when `project_members` is ambiguous for the sending engineer —
+  `resolveEngineerProject` (skip-and-surface, matching migration 033's own mechanism, never
+  best-guessing) is built and now the single resolution point for `route.ts` itself, not just
+  the ad-hoc menu — closes the identical hole for morning/evening too (PR #227,
+  `docs/reviews/route-ts-naive-project-pick.md`). No longer open.
+- **Menu unreachable mid-flow (new, 2026-09-07) — a named, accepted limitation, not a
+  blocker.** Idle-only has been this menu's scope boundary from the start
+  (`routeInboundMessage`'s own header states it directly) — an engineer with an active
+  morning or evening session isn't locked out permanently; he reaches the menu once that
+  flow completes or the morning-cutoff sweep force-resets it. But concretely: an engineer
+  who abandons his morning check-in at 08:35 and wants to report a blocker at 14:00 has no
+  route to the menu that day — his `"1"` is read as an answer to whatever question the
+  stale morning flow is sitting on, not as a menu tap. Worth writing down in these terms
+  specifically because "active" hindrances are urgent by definition (§g's own precedence
+  decision already established that a site-holiday or past-cutoff engineer "still has a
+  genuine hindrance to report") — so this limitation bites hardest on exactly the item this
+  menu exists for. Not designed here, per Aravind's own instruction; recorded so it's
+  obviously worth fixing later, not rediscovered from scratch.
 - **Attribution day (new, 2026-08-28).** Whether `hindrances`/`safety_incidents` (and the
   new tables for items 3/4/6/7) need a `log_date`-equivalent column, a read-time derivation
   from `created_at`, or an engineer-asked day — three options named, none chosen. Also

@@ -9,6 +9,8 @@ import { routeInboundMessage } from '@/lib/whatsapp/inbound-start'
 import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
 import { decideInboundGate, clearMessagingBlock } from '@/lib/whatsapp/reactivation'
 import { validateTwilioSignature } from '@/lib/whatsapp/twilio-signature'
+import { classifyMediaReply, replyForMediaKind } from '@/lib/whatsapp/media-reply'
+import { resolveEngineerProject, replyForProjectResolution } from '@/lib/whatsapp/project-resolution'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
 // processing anything. Twilio signs each webhook request using your Auth
@@ -59,21 +61,14 @@ function notRegisteredResponse(): NextResponse {
   )
 }
 
-// A registered, active engineer with no project_members row — a real setup gap,
-// not a broken bot. Give them an actionable message rather than silence.
-function noProjectResponse(): NextResponse {
-  return twimlMessage(
-    'Your number is registered but not yet linked to a project. Contact your Project Manager to be added.',
-  )
-}
-
-// Shape of the single gate lookup (user row + embedded active-project rows).
+// Shape of the single gate lookup. Used to carry project_members(project_id)
+// too -- REMOVED 2026-09-07 alongside the naive-pick fix below; see
+// docs/reviews/route-ts-naive-project-pick.md.
 interface GateUser {
   id: string
   tenant_id: string
   status: string
   messaging_blocked: boolean
-  project_members: { project_id: string }[]
 }
 
 /**
@@ -122,13 +117,19 @@ export async function handleWebhookPost(
   // or has blocked. The retry cost (re-running this indexed lookup on Twilio
   // retries of unregistered numbers) is negligible and worth the guarantee.
   //
-  // The engineer's single active project is embedded in this SAME query
-  // (project_members(project_id)) — one round trip, read only after the gate
-  // passes. The gate itself still keys solely on status + messaging_blocked.
+  // Project resolution is NOT embedded in this query any more. It used to be
+  // (project_members(project_id), one round trip) -- REMOVED 2026-09-07: an
+  // unordered embedded join taking index [0] silently misattributed every
+  // write for any engineer on 2+ projects, undetected, for as long as that
+  // shape stayed live (docs/reviews/route-ts-naive-project-pick.md).
+  // resolveEngineerProject (below, after the gate) is the one ambiguity-safe
+  // resolution point for this entire request now -- a second round trip,
+  // traded deliberately for correctness. The gate itself still keys solely
+  // on status + messaging_blocked.
   const supabase = deps.supabaseClient ?? createServiceClient()
   const { data: user, error: lookupError } = await supabase
     .from('users')
-    .select('id, tenant_id, status, messaging_blocked, project_members(project_id)')
+    .select('id, tenant_id, status, messaging_blocked')
     .eq('whatsapp_number', fromNumber)
     .maybeSingle<GateUser>()
 
@@ -226,13 +227,37 @@ export async function handleWebhookPost(
     return NextResponse.json({ status: 'duplicate_ignored' })
   }
 
-  // --- Resolve the engineer's active project (Pass 1: single project) ----
-  // schema.md: one active project per engineer, app-enforced. Take the first
-  // membership. A registered active engineer with none is a real setup gap —
-  // reply with an actionable message, not silence.
-  const projectId = user.project_members[0]?.project_id
-  if (!projectId) {
-    return noProjectResponse()
+  // --- Resolve the engineer's active project ------------------------------
+  // resolveEngineerProject (lib/whatsapp/project-resolution.ts, built for the
+  // ad-hoc menu's own step 3) is the SINGLE choke point for project
+  // resolution across this entire request -- the test-start sentinel below
+  // AND routeInboundMessage (which covers both starting a flow and every
+  // dispatchInboundTurn continuation of one already active) both use
+  // whatever this resolves. Skip-and-surface on 0 or 2+ memberships, never a
+  // best guess. FIXED 2026-09-07 -- this replaces the naive
+  // `project_members[0]` pick that silently misattributed an ambiguous
+  // engineer's writes to whichever project Postgres happened to return
+  // first (docs/reviews/route-ts-naive-project-pick.md, that doc's own
+  // "FIXED" update has the full reasoning). Fixed HERE, at the one place
+  // every flow (morning, evening, and -- once wired -- hindrance) shares,
+  // closes it for all three at once, not just one.
+  const resolution = await resolveEngineerProject(user.id, supabase)
+  if (resolution.outcome !== 'resolved') {
+    return twimlMessage(replyForProjectResolution(resolution))
+  }
+  const projectId = resolution.projectId
+
+  // --- Media reply: intercepted BEFORE any menu/flow logic -----------------
+  // Fires ahead of isTestStartTrigger and routeInboundMessage, and therefore
+  // ahead of dispatchInboundTurn's own mid-flow path too -- routeInbound
+  // Message's no-active-flow branch is skipped whenever a flow IS already
+  // active, so a check placed only inside it would miss exactly that case
+  // (a media reply mid-check-in would otherwise reach dispatchInboundTurn
+  // with an empty Body and be parsed as an invalid text answer). See
+  // lib/whatsapp/media-reply.ts's own header.
+  const mediaKind = classifyMediaReply(params)
+  if (mediaKind) {
+    return twimlMessage(replyForMediaKind(mediaKind))
   }
 
   const messageBody = params.Body ?? ''

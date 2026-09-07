@@ -4,7 +4,6 @@ import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
 import { readCurrentFlow } from './session'
 import { dispatchInboundTurn } from './dispatch'
-import { EVENING_ALREADY_COMPLETE_REPLY } from './flows/evening'
 
 // RETIRED, 2026-08-28 (docs/plans/pass1-outbound-send-plan.md §2 item 1,
 // design-decisions-beta-feedback.md §38). This module used to treat an
@@ -18,42 +17,52 @@ import { EVENING_ALREADY_COMPLETE_REPLY } from './flows/evening'
 // two-writers-for-one-fact risk this codebase's own "HAND-MIRRORED
 // RECONCILIATION" history warns against.
 //
-// WHAT idle inbound reaches now, four cases, none of which call an RPC:
-//   1. Before morningCutoff, morning not submitted -- MORNING_AWAITING_
-//      TRIGGER_REPLY.
-//   2. At/after morningCutoff, morning not submitted -- MORNING_WINDOW_
-//      CLOSED_REPLY (this was already a static refusal; it is now
-//      unconditional, since there is no RPC call left behind it to guard).
-//   3. Morning submitted, evening not, before eveningSend -- EVENING_
-//      WINDOW_NOT_OPEN_REPLY (same as above: already static, now
-//      unconditional).
-//   4. Morning submitted, evening not, at/after eveningSend -- EVENING_
-//      AWAITING_TRIGGER_REPLY.
 // route.ts still calls THIS in place of dispatchInboundTurn for every real
 // inbound. When a flow IS already active, this still delegates straight
-// through to dispatchInboundTurn, completely unchanged by retirement.
+// through to dispatchInboundTurn, completely unchanged by any of the
+// history below.
 //
-// ALL FOUR REPLIES ARE TEMPORARY (§38's own framing, extended to all
-// four by the same reasoning as §35b already used for the two older
-// ones). §28(x)'s ad-hoc menu, once built, replaces every one of them
-// with a single interactive front door. None of the four is designed for
-// a long lifespan.
+// ROUTER REWRITE, 2026-09-06 (ad-hoc menu PR 2, step 2;
+// docs/plans/adhoc-menu-spec.md's "Idle-inbound reply, decided" section).
+// The four static checkpoint-window replies this file used to export
+// (MORNING_AWAITING_TRIGGER_REPLY, MORNING_WINDOW_CLOSED_REPLY,
+// EVENING_WINDOW_NOT_OPEN_REPLY, EVENING_AWAITING_TRIGGER_REPLY) plus
+// REPORT_READY_REPLY and EVENING_SITE_HOLIDAY_REPLY are GONE, not merely
+// renamed -- per the spec's own §a/§b dated correction (2026-09-06), every
+// idle inbound now gets the SAME three-line structural reply (a
+// correction line, naming what the engineer's message did or didn't do; an
+// optional header line, computed from today's check-in state; an action
+// line, pointing at the one ad-hoc item that ships). This collapses six/
+// seven distinct static strings into a composition of a handful of
+// building blocks -- see computeIdleHeader/CORRECTION_LINE/ACTION_LINE
+// below, and the spec's own "all five combinations in full" for the exact
+// approved wording.
 //
-// RECORD, 2026-08-28 (Aravind) -- THE POST-RETIREMENT DEAD WINDOW IS A
-// LAUNCH PREREQUISITE, NOT A LIVE GAP. Between retirement shipping and
-// §28(x)'s menu shipping, an idle inbound reaches ONLY the four static
-// replies above -- hindrance, invoice, delivery note, and site cash
-// (all Fast-Follow, CLAUDE.md §2) are unreachable via inbound at idle in
-// this window, same as they already were before retirement (this module
-// never routed to them; retirement does not newly close a door that was
-// open). This costs nothing TODAY because NO REAL SITE ENGINEER IS ON
-// THE SYSTEM until the menu exists -- the only inbound traffic this
-// account receives is Aravind's own sandbox testing. The consequence is
-// therefore a LAUNCH PREREQUISITE, not a live production degradation:
-// §28(x)'s menu must ship before the FIRST real engineer is onboarded,
-// because at that point inbound becomes his only surface for anything
-// beyond answering check-in questions. Read this as gating onboarding,
-// not as an outage to remediate on any particular timeline.
+// A leading "1" in Body ALWAYS wins on whether item 1 is what happens next
+// -- PRECEDENCE, DECIDED (Aravind, 2026-09-06): a site-holiday engineer or
+// one past the morning cutoff still has a genuine hindrance to report; the
+// header explains why no check-in is coming, never that nothing can be
+// reported. See classifyAdhocInput below. Until step 4's real flow ships,
+// "what happens next" is buildItem1InterimReply -- a truthful placeholder
+// that STILL carries the header (corrected 2026-09-06 same day: the first
+// draft never did, silently repeating the exact false-promise-by-omission
+// shape items 2/7 were dropped/held over).
+//
+// STEP 4's CODE IS WRITTEN, DELIBERATELY NOT WIRED IN YET (2026-09-07).
+// lib/whatsapp/flows/hindrance.ts (applyHindranceFlowTurn) and dispatch.ts's
+// Flow extension both exist and are tested, but migration 038
+// (docs/reviews/038_hindrance_flow_and_collision_fix.sql) that creates
+// apply_hindrance_flow_turn is NOT YET APPLIED -- it needs the full
+// external-review package first (CLAUDE.md §0 condition (a): it modifies
+// apply_morning_flow_turn/apply_evening_flow_turn's own live logic).
+// Wiring this file's "1" branch to call applyHindranceFlowTurn NOW, before
+// 038 is confirmed applied, would repeat migration 035's own named
+// lockstep hazard exactly: TypeScript expecting an RPC that doesn't exist
+// on the target database yet, breaking every real "1" in production the
+// moment this code deploys, until the SQL separately lands. Keep calling
+// buildItem1InterimReply here until 038 is confirmed applied (breadcrumb +
+// probe, same discipline as every other apply this project has done) --
+// then the wiring is a genuinely one-line swap, not a redesign.
 //
 // SCOPE BOUNDARY (unchanged from the original build, restated): this
 // covers ONLY the case readCurrentFlow returns null. The refuse-when-
@@ -62,68 +71,162 @@ import { EVENING_ALREADY_COMPLETE_REPLY } from './flows/evening'
 // separately, on its own timeline, through the full external-review path.
 //
 // §37(b), NAMED SO IT IS NOT REDISCOVERED HERE: an engineer who never
-// submits morning at all gets MORNING_WINDOW_CLOSED_REPLY on every
-// inbound for the rest of the day, on any timeline -- the evening branch
-// below is only reachable when morningSubmitted is true from the start.
-// Accepted, not fixed, by that entry; unchanged by this retirement pass.
-// His real evening send still arrives via the cron (a separate code path
-// from this file), independent of what this file echoes back to him.
+// submits morning at all gets the morning-closed header on every idle
+// inbound for the rest of the day, on any timeline -- the site-holiday and
+// evening-pending states below are only reachable when morningSubmitted is
+// true from the start. Accepted, not fixed, by that entry; unchanged by
+// this rewrite. His real evening send still arrives via the cron (a
+// separate code path from this file), independent of what this file
+// echoes back to him.
 
 function cutoffMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number)
   return h * 60 + m
 }
 
-// (a) After-hours refusal. Checked against Rule 3.12 in the plan: two short
-// sentences, no idiom, concrete ("tomorrow morning" not "later"), no
-// politeness scaffolding.
-export const REPORT_READY_REPLY = "Today's report is ready. Send your update tomorrow morning."
-
-// CHECK-IN WINDOW GUARDS (2026-08-26, design-decisions-beta-feedback.md §35).
-// Originally guarded an RPC call; retirement removed the call, so these are
-// now unconditional for their windows -- the CHECK survives unchanged (the
-// window boundary is still real), only what happens after it changed.
-export const MORNING_WINDOW_CLOSED_REPLY =
-  'The morning check-in window has closed for today. Your evening check-in will be sent automatically.'
-export const EVENING_WINDOW_NOT_OPEN_REPLY =
-  "It's not yet time for your evening check-in — it will be sent automatically."
-
-// THE TWO STRINGS RETIREMENT ITSELF NEEDED (design-decisions-beta-
-// feedback.md §38, Aravind, 2026-08-28) -- these two branches used to
-// start a real flow via the RPC; retirement removes that, and these are
-// what fills the resulting gap. Same register as the two guards above
-// ("...will be sent automatically" / "...it comes to you automatically"),
-// deliberately -- all four now read as one voice. States the fact rather
-// than instructing the engineer to act: he is messaging because he
-// believes he must start it himself; the copy's job is to make that
-// belief unnecessary, not to correct him for holding it.
+// --- Leading-numeral classification (docs/plans/adhoc-menu-spec.md §g) ---
 //
-// ACCEPTED IMPRECISION, named honestly (§38's own text): "shortly" is
-// true before that half's own trigger has fired and merely optimistic
-// after it -- if he ignored the 08:30/18:30 trigger itself, nothing
-// further arrives until the nudge (Pass 2, not built). Naming the actual
-// clock time was considered and rejected: it hardcodes a checkpoint value
-// into copy that drifts the moment CHECKIN_CHECKPOINTS changes.
-export const MORNING_AWAITING_TRIGGER_REPLY =
-  'Good morning. Your check-in will arrive shortly — it comes to you automatically.'
-export const EVENING_AWAITING_TRIGGER_REPLY =
-  'Your evening check-in will arrive shortly — it comes to you automatically.'
+// A STANDALONE leading digit only -- "12 bags of cement missing" must never
+// match "1". The digit has to be followed by a non-digit or end-of-string;
+// "12"/"10"/"123 problem" all fall through to 'unrecognized'.
+//
+// `ListId`-based tap detection (§g's own "check ListId first" router
+// design) is DELIBERATELY NOT implemented here. No interactive list-picker
+// send exists anywhere in this codebase today (plain text superseded it,
+// same date -- §a/§b's dated correction) -- there is no tap for a `ListId`
+// branch to ever see, and this project's own standing rule is not to build
+// for a hypothetical future. The design is recorded in the spec for when a
+// list-picker returns; only the Body-parsing half is real code today.
+export type AdhocInputKind = 'item1' | 'item2' | 'item_reserved' | 'unrecognized'
 
-// §39 fix (design-decisions-beta-feedback.md §39, audit finding J,
-// 2026-09-05). EVENING_AWAITING_TRIGGER_REPLY is false on a site-holiday
-// day -- filterEveningRoster (lib/whatsapp/outbound/roster.ts) excludes
-// attendance='site_holiday' from the evening send, so nothing is coming.
-// Stated as a fact about the site, not the record ("marked as" would read
-// as a database claim to a man standing on it) -- Aravind's correction,
-// 2026-09-05. Does NOT extend to attendance='absent': the evening cron
-// still sends for 'absent' (§37(a), a morning absence doesn't imply an
-// evening one), so EVENING_AWAITING_TRIGGER_REPLY stays accurate there.
-export const EVENING_SITE_HOLIDAY_REPLY = 'No evening check-in today — the site is on holiday.'
+export function classifyAdhocInput(body: string): AdhocInputKind {
+  const match = body.trimStart().match(/^([0-9])(?!\d)/)
+  if (!match) return 'unrecognized'
+  const digit = match[1]
+  if (digit === '1') return 'item1'
+  if (digit === '2') return 'item2'
+  if (digit >= '3' && digit <= '7') return 'item_reserved'
+  return 'unrecognized' // 0, 8, 9 -- never assigned to any item
+}
+
+// --- Header (docs/plans/adhoc-menu-spec.md §a, the 5-row table -- still
+// live; the list-picker delivery mechanism built around it is not) --------
+export type IdleHeaderState = 'awaiting_morning' | 'morning_closed' | 'site_holiday' | 'complete' | 'none'
+
+interface IdleHeaderParams {
+  morningSubmitted: boolean
+  eveningSubmitted: boolean
+  attendance: 'present' | 'absent' | 'site_holiday' | null
+  istMinutes: number
+}
+
+/**
+ * Which of the 5 approved header states applies right now. Two judgement
+ * calls made in this mapping, both flagged in the spec's own §a correction
+ * rather than assumed silently:
+ *  - The old REPORT_READY_REPLY condition (past eveningClose, ANY
+ *    submission state) folds into 'complete' -- the approved table has no
+ *    dedicated row for it, and by eveningClose the DPR has already
+ *    generated; there is nothing left to contribute to today's check-in
+ *    either way.
+ *  - EVENING_WINDOW_NOT_OPEN_REPLY's and EVENING_AWAITING_TRIGGER_REPLY's
+ *    conditions (morning submitted, evening pending, before/after
+ *    eveningSend) both collapse to 'none' -- the approved table has no row
+ *    for "evening pending" at all. Real information loss relative to the
+ *    old six/seven static replies (whether evening is still coming vs
+ *    already due is no longer surfaced), inherited from the table as
+ *    approved, not introduced here.
+ */
+export function computeIdleHeaderState(params: IdleHeaderParams): IdleHeaderState {
+  const { morningSubmitted, eveningSubmitted, attendance, istMinutes } = params
+
+  if ((morningSubmitted && eveningSubmitted) || istMinutes >= cutoffMinutes(CHECKIN_CHECKPOINTS.eveningClose)) {
+    return 'complete'
+  }
+
+  if (!morningSubmitted) {
+    return istMinutes >= cutoffMinutes(CHECKIN_CHECKPOINTS.morningCutoff) ? 'morning_closed' : 'awaiting_morning'
+  }
+
+  // Morning submitted, evening not, and not yet past eveningClose (handled above).
+  if (attendance === 'site_holiday') {
+    return 'site_holiday'
+  }
+
+  return 'none'
+}
+
+const HEADER_LINE: Partial<Record<IdleHeaderState, string>> = {
+  awaiting_morning: 'Your check-in will arrive shortly.',
+  morning_closed: 'The morning window has closed for today.',
+  site_holiday: 'Today is a site holiday, so there is nothing further to check in.',
+  complete: "Today's check-in is complete.",
+}
+
+const ACTION_LINE: Record<IdleHeaderState, string> = {
+  awaiting_morning: 'You can report a site hindrance now — reply 1.',
+  morning_closed: 'You can still report a site hindrance — reply 1.',
+  site_holiday: 'You can still report a site hindrance — reply 1.',
+  complete: 'You can still report a site hindrance — reply 1.',
+  none: 'You can report a site hindrance — reply 1.',
+}
+
+// --- The three fallback correction lines (adhoc-menu-spec.md, "Idle-
+// inbound reply, decided" -- committed there 2026-09-06, approved in chat
+// before that). Each is a FIXED string regardless of header state -- the
+// original per-header variation (dropping "Nothing was recorded" to avoid
+// colliding with the OLD "Site holiday recorded" header) was reverted once
+// the header itself was reworded to no longer contain the word "recorded"
+// at all; the collision this once avoided no longer exists. -------------
+//
+// SINGLE SOURCE OF TRUTH, NAMED EXPLICITLY (2026-09-06, Aravind's own
+// question on PR #218): HEADER_LINE/ACTION_LINE/CORRECTION_LINE below are
+// the AUTHORITATIVE copy. docs/plans/adhoc-menu-spec.md's "Idle-inbound
+// reply, decided" section is a REFERENCE COPY for humans reviewing the
+// decision, not the source -- same relationship bot-flows.md's own TRIGGER
+// TIMES section already has with lib/daily-logs/cutoffs.ts ("this doc is a
+// reference copy of that constant, not the authority; if they ever
+// disagree, cutoffs.ts wins and this needs updating, not the reverse").
+// Nothing enforces the two staying in sync automatically -- if this file's
+// copy changes, the spec's prose needs a matching edit, never the other
+// way around.
+const CORRECTION_LINE: Record<Exclude<AdhocInputKind, 'item1'>, string> = {
+  unrecognized: "I didn't understand that. Nothing was recorded.",
+  item_reserved: "That option isn't available yet. Nothing was recorded.",
+  item2:
+    'Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.',
+}
+
+export function buildIdleReply(kind: Exclude<AdhocInputKind, 'item1'>, headerState: IdleHeaderState): string {
+  const lines = [CORRECTION_LINE[kind], HEADER_LINE[headerState], ACTION_LINE[headerState]]
+  return lines.filter((line): line is string => line !== undefined).join('\n')
+}
+
+// INTERIM, NOT THE REAL FLOW (2026-09-06; corrected same day, Aravind's own
+// review of this PR) -- item 1's actual state machine (Q1 free text, Q2
+// structured pick, the hindrances INSERT) is PR 2's step 4, not yet built.
+// This exists so a leading "1" gets a truthful, complete reply now rather
+// than either a half-built flow (asking Q1 with nothing to capture the
+// answer) or the wrong fallback (telling him "reply 1" after he just did).
+//
+// CORRECTED: the first draft of this reply was a single fixed line with NO
+// header -- it never told a site-holiday or post-cutoff engineer anything
+// about today's check-in state, the exact false-promise-by-omission shape
+// items 2 and 7 were dropped/held over. Same two-line shape as every other
+// fallback now: this correction line, then the header when one applies --
+// but deliberately NO action line, since there is no action available
+// (item 1 IS the action, and it isn't accepting input yet).
+const ITEM1_INTERIM_LINE = "Hindrance reporting isn't ready yet. Nothing was recorded."
+
+export function buildItem1InterimReply(headerState: IdleHeaderState): string {
+  const lines = [ITEM1_INTERIM_LINE, HEADER_LINE[headerState]]
+  return lines.filter((line): line is string => line !== undefined).join('\n')
+}
 
 export interface InboundRouteResult {
   reply: string
-  /** Always null for every branch in this file's own idle handling now -- nothing here starts a flow any more. Non-null only via dispatchInboundTurn's own delegation when a flow is already active. */
-  resolvedFlow: 'morning' | 'evening' | null
+  /** Always null for every branch in this file's own idle handling now -- nothing here starts a flow any more. Non-null only via dispatchInboundTurn's own delegation when a flow is already active. 'hindrance' added 2026-09-07 for dispatch.ts's own Flow type -- not yet reachable in practice (item 1 still calls buildItem1InterimReply, not applyHindranceFlowTurn), but the type has to be honest about what dispatchInboundTurn's delegation can now return once a real 'hindrance' session exists. */
+  resolvedFlow: 'morning' | 'evening' | 'hindrance' | null
 }
 
 interface RouteParams {
@@ -139,33 +242,48 @@ interface RouteParams {
 
 /**
  * Route an inbound message: delegate to dispatchInboundTurn if a flow is
- * already active, otherwise return one of the four static idle replies.
- * See this file's own header for the full retirement history and design-
- * decisions-beta-feedback.md §§35, 38 for the copy's own reasoning.
+ * already active, otherwise dispatch a leading "1" into item 1's flow, or
+ * return the composed idle reply for everything else. See this file's own
+ * header for the full history and docs/plans/adhoc-menu-spec.md's
+ * "Idle-inbound reply, decided" section for the copy's own reasoning.
  */
 export async function routeInboundMessage(params: RouteParams): Promise<InboundRouteResult> {
   const supabase = params.supabaseClient ?? createServiceClient()
   const currentFlow = await readCurrentFlow(params.phoneNumber, supabase)
 
   if (currentFlow !== null) {
-    // A flow is already active -- retirement does not touch this path at
-    // all. The collapse below mirrors dispatchInboundTurn's own internal
-    // readCurrentFlow branch (dispatch.ts) exactly, so passing it through
-    // as firstFlow doesn't cost this call a second unlocked read.
-    const firstFlow = currentFlow === 'evening' ? 'evening' : 'morning'
+    // A flow is already active -- the ad-hoc router below never runs. The
+    // collapse mirrors dispatchInboundTurn's own internal readCurrentFlow
+    // branch (dispatch.ts) exactly, so passing it through as firstFlow
+    // doesn't cost this call a second unlocked read.
+    //
+    // FIXED, 2026-09-07 (migration 038's own header names this exact bug):
+    // this used to collapse ANY non-'evening' currentFlow to 'morning' --
+    // silently correct only because nothing has ever written current_flow=
+    // 'hindrance' (or 'safety'/'invoice', SessionFlow's other pre-
+    // provisioned-never-built values) until now. A real 'hindrance' session
+    // would have been dispatched into applyMorningFlowTurn, which does not
+    // know that flow at all.
+    const firstFlow =
+      currentFlow === 'evening' ? 'evening' : currentFlow === 'hindrance' ? 'hindrance' : 'morning'
     return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
   }
 
-  // --- No active session: one of four static replies, never an RPC call --
+  // --- No active session ---------------------------------------------
+  // PRECEDENCE, decided: a leading "1" always wins on WHETHER item 1's
+  // flow starts, regardless of check-in state -- classified here, acted on
+  // below. NOT classified-and-returned immediately any more (corrected
+  // 2026-09-06): the INTERIM placeholder (buildItem1InterimReply) still
+  // needs the header, so the daily_logs read below is NOT skipped for
+  // 'item1' the way it will be once step 4's real flow exists (that flow
+  // will do its own reads and won't need this file's header at all --
+  // whoever ships step 4 can reintroduce an early return here then, if the
+  // extra read is worth avoiding; leaving it unconditional today is not a
+  // real cost since every other case already needs it).
+  const adhocKind = classifyAdhocInput(params.message)
+
   const now = params.now !== undefined ? new Date(params.now) : new Date()
   const ist = istParts(now)
-
-  // After eveningClose the report has already generated (and, past
-  // ownerSend, been delivered) -- nothing captured now has anywhere to
-  // land today.
-  if (ist.minutes >= cutoffMinutes(CHECKIN_CHECKPOINTS.eveningClose)) {
-    return { reply: REPORT_READY_REPLY, resolvedFlow: null }
-  }
 
   const { data: log, error } = await supabase
     .from('daily_logs')
@@ -188,35 +306,22 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
   const morningSubmitted = log?.morning_submitted_at != null
   const eveningSubmitted = log?.evening_submitted_at != null
 
-  if (morningSubmitted && eveningSubmitted) {
-    // Both done. EVENING_ALREADY_COMPLETE_REPLY chosen over the morning
-    // equivalent: evening is the temporally later, more complete signal --
-    // it confirms the whole day is done, where the morning text alone
-    // would leave the engineer unsure whether evening still needs doing.
-    return { reply: EVENING_ALREADY_COMPLETE_REPLY, resolvedFlow: null }
-  }
+  // "Both submitted" is NOT special-cased to a bare static string here --
+  // computeIdleHeaderState already maps it to 'complete', and it goes
+  // through the SAME three-line composition as every other state (the
+  // approved design's whole point: one structural reply, never a splinter
+  // case). dispatchInboundTurn/evening.ts's own EVENING_ALREADY_COMPLETE_
+  // REPLY constant is a DIFFERENT call site (a real completed-evening-turn
+  // RPC outcome) and is deliberately not reused here.
+  const headerState = computeIdleHeaderState({
+    morningSubmitted,
+    eveningSubmitted,
+    attendance: log?.attendance ?? null,
+    istMinutes: ist.minutes,
+  })
 
-  if (!morningSubmitted) {
-    // §37(b): this branch is reached for the rest of the day, every time,
-    // for an engineer who never submits morning -- the evening branch
-    // below is unreachable for him regardless of clock time. Accepted,
-    // not fixed here (see this file's own header).
-    if (ist.minutes >= cutoffMinutes(CHECKIN_CHECKPOINTS.morningCutoff)) {
-      return { reply: MORNING_WINDOW_CLOSED_REPLY, resolvedFlow: null }
-    }
-    return { reply: MORNING_AWAITING_TRIGGER_REPLY, resolvedFlow: null }
+  if (adhocKind === 'item1') {
+    return { reply: buildItem1InterimReply(headerState), resolvedFlow: null }
   }
-
-  // Morning submitted, evening not. site_holiday is checked ahead of the
-  // window logic below: filterEveningRoster excludes it from the evening
-  // send regardless of clock time, so EVENING_AWAITING_TRIGGER_REPLY would
-  // otherwise promise a message that is never coming (§39).
-  if (log?.attendance === 'site_holiday') {
-    return { reply: EVENING_SITE_HOLIDAY_REPLY, resolvedFlow: null }
-  }
-
-  if (ist.minutes < cutoffMinutes(CHECKIN_CHECKPOINTS.eveningSend)) {
-    return { reply: EVENING_WINDOW_NOT_OPEN_REPLY, resolvedFlow: null }
-  }
-  return { reply: EVENING_AWAITING_TRIGGER_REPLY, resolvedFlow: null }
+  return { reply: buildIdleReply(adhocKind, headerState), resolvedFlow: null }
 }

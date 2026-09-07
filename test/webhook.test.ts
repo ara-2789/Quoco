@@ -18,8 +18,10 @@ import {
   TEST_ENGINEER_PHONE,
 } from './helpers/db'
 import { MORNING_QUESTIONS } from '@/lib/whatsapp/flows/morning'
-import { EVENING_QUESTIONS, EVENING_ALREADY_COMPLETE_REPLY } from '@/lib/whatsapp/flows/evening'
-import { REPORT_READY_REPLY, MORNING_WINDOW_CLOSED_REPLY, MORNING_AWAITING_TRIGGER_REPLY } from '@/lib/whatsapp/inbound-start'
+import { EVENING_QUESTIONS } from '@/lib/whatsapp/flows/evening'
+import { buildIdleReply } from '@/lib/whatsapp/inbound-start'
+import { PHOTO_REPLY, VOICE_REPLY } from '@/lib/whatsapp/media-reply'
+import { ZERO_MEMBERSHIPS_REPLY, MULTIPLE_MEMBERSHIPS_REPLY } from '@/lib/whatsapp/project-resolution'
 
 // T-WH: the HTTP-level webhook harness named in CLAUDE.md's TESTING DEBT entry
 // and migration 022's review package §10. Exercises handleWebhookPost
@@ -147,6 +149,7 @@ const PHONE_PENDING = testPhone('691')
 const PHONE_DEACTIVATED = testPhone('692')
 const PHONE_REACTIVATE = testPhone('693')
 const PHONE_NO_PROJECT = testPhone('694')
+const PHONE_MULTI_PROJECT = testPhone('695')
 
 interface GateUserSpec {
   phone: string
@@ -206,6 +209,15 @@ async function removeGateUsers(phones: string[]): Promise<void> {
   if (userErr) throw new Error(`removeGateUsers users cleanup failed: ${userErr.message}`)
 }
 
+// A SECOND project, distinct from TEST_PROJECT_ID -- project_members carries
+// UNIQUE(project_id, user_id) (001_core_schema.sql), so the 2+-membership
+// case needs a genuinely different project, not a second row against the
+// same one. Same reasoning as test/unit/project-resolution.test.ts's own
+// projectA/projectB fixture, one file over -- TEST_TENANT_ID is already
+// guaranteed to exist by ensureMorningFixtures() below, so no separate
+// ensureTestTenant() call is needed here.
+let secondProjectId: string
+
 beforeAll(async () => {
   await ensureMorningFixtures()
   await cleanupTestSessions()
@@ -214,6 +226,24 @@ beforeAll(async () => {
   await ensureGateUser({ phone: PHONE_DEACTIVATED, status: 'deactivated', messagingBlocked: false, withProject: false })
   await ensureGateUser({ phone: PHONE_REACTIVATE, status: 'active', messagingBlocked: true, withProject: true })
   await ensureGateUser({ phone: PHONE_NO_PROJECT, status: 'active', messagingBlocked: false, withProject: false })
+
+  const db = testClient()
+  const { data: proj, error: projErr } = await db
+    .from('projects')
+    .insert({ tenant_id: TEST_TENANT_ID, name: 'ZZ Test Webhook Second Project' })
+    .select('id')
+    .single<{ id: string }>()
+  if (projErr || !proj) throw new Error(`second project insert failed: ${projErr?.message}`)
+  secondProjectId = proj.id
+
+  const multiUserId = await ensureGateUser({ phone: PHONE_MULTI_PROJECT, status: 'active', messagingBlocked: false, withProject: true })
+  const { error: secondMemberErr } = await db.from('project_members').insert({
+    tenant_id: TEST_TENANT_ID,
+    project_id: secondProjectId,
+    user_id: multiUserId,
+    role: 'engineer',
+  })
+  if (secondMemberErr) throw new Error(`second project_members insert failed: ${secondMemberErr.message}`)
 })
 
 afterEach(async () => {
@@ -222,7 +252,8 @@ afterEach(async () => {
 })
 
 afterAll(async () => {
-  await removeGateUsers([PHONE_PENDING, PHONE_DEACTIVATED, PHONE_REACTIVATE, PHONE_NO_PROJECT])
+  await removeGateUsers([PHONE_PENDING, PHONE_DEACTIVATED, PHONE_REACTIVATE, PHONE_NO_PROJECT, PHONE_MULTI_PROJECT])
+  await testClient().from('projects').delete().eq('id', secondProjectId)
   await testClient().from('processed_messages').delete().like('message_sid', `ZZTestWebhook-${RUN_TAG}-%`)
   await removeMorningFixtures()
 })
@@ -282,17 +313,32 @@ describe('handleWebhookPost — BOT-08 / BOT-27 gate', () => {
     expect(await wasProcessed(messageSid)).toBe(false)
   })
 
-  it('T-WH-06: registered + active + unblocked but no project membership gets an actionable message (SID still consumed)', async () => {
+  it('T-WH-06: registered + active + unblocked but no project membership gets the unified zero-memberships reply (SID still consumed)', async () => {
     const messageSid = sid('no-project')
     const req = buildWebhookRequest({ From: `whatsapp:${PHONE_NO_PROJECT}`, Body: 'hi', MessageSid: messageSid })
     const res = await handleWebhookPost(req, { supabaseClient: testClient() })
     expect(res.status).toBe(200)
-    expect(await twimlText(res)).toBe(
-      'Your number is registered but not yet linked to a project. Contact your Project Manager to be added.',
-    )
+    // Copy unified 2026-09-07 -- was route.ts's own noProjectResponse() text
+    // ("Your number is registered but not yet linked..."), now
+    // resolveEngineerProject's shared ZERO_MEMBERSHIPS_REPLY, same string
+    // the ad-hoc menu's own flow-start check uses.
+    expect(await twimlText(res)).toBe(ZERO_MEMBERSHIPS_REPLY)
     // Idempotency runs BEFORE project resolution in route.ts, so this differs
     // from T-WH-03/04/05: the SID IS recorded even though no flow ran.
     expect(await wasProcessed(messageSid)).toBe(true)
+  })
+
+  it('T-WH-16: registered + active + unblocked but 2+ project memberships gets the multiple-memberships reply, never a silent guess (SID still consumed)', async () => {
+    const messageSid = sid('multi-project')
+    const req = buildWebhookRequest({ From: `whatsapp:${PHONE_MULTI_PROJECT}`, Body: 'hi', MessageSid: messageSid })
+    const res = await handleWebhookPost(req, { supabaseClient: testClient() })
+    expect(res.status).toBe(200)
+    // Proves the fix directly: before 2026-09-07 this silently took
+    // project_members[0] and proceeded as if unambiguous
+    // (docs/reviews/route-ts-naive-project-pick.md). Now it refuses.
+    expect(await twimlText(res)).toBe(MULTIPLE_MEMBERSHIPS_REPLY)
+    expect(await wasProcessed(messageSid)).toBe(true)
+    expect(await readSession(PHONE_MULTI_PROJECT)).toBeNull()
   })
 
   it('T-WH-07: reactivate clears the block, then a Twilio RETRY of the SAME MessageSid is a no-op — NOT a morning-flow turn', async () => {
@@ -409,6 +455,64 @@ describe('handleWebhookPost — routes to whichever flow is active (dispatchInbo
   })
 })
 
+describe('handleWebhookPost — media replies (intercepted before any flow logic)', () => {
+  it('T-WH-13: a photo sent MID-FLOW is intercepted before dispatchInboundTurn — the session does not advance', async () => {
+    // The case media-reply.ts's own header exists for: routeInboundMessage's
+    // no-active-flow branch is skipped entirely when a flow IS active, so
+    // this proves the check sitting upstream in route.ts, not inside
+    // routeInboundMessage, actually covers the mid-flow path.
+    await seedSession({
+      phone: TEST_ENGINEER_PHONE,
+      currentFlow: 'morning',
+      currentStep: 2, // Q2 plan, same step T-WH-09 uses
+      context: {},
+      updatedAt: new Date().toISOString(),
+    })
+    const req = buildWebhookRequest({
+      From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+      Body: '', // Twilio sends an empty Body on a pure-media message
+      NumMedia: '1',
+      MediaContentType0: 'image/jpeg',
+      MessageSid: sid('media-mid-flow'),
+    })
+    const res = await handleWebhookPost(req, { supabaseClient: testClient() })
+    expect(res.status).toBe(200)
+    expect(await twimlText(res)).toBe(PHOTO_REPLY)
+    // Session step unchanged -- dispatchInboundTurn never ran, so this was
+    // never parsed as (a wrong) answer to the pending question.
+    expect((await readSession(TEST_ENGINEER_PHONE))?.current_step).toBe(2)
+    expect((await getDailyLog(todayIST()))?.morning_plan).toBeFalsy()
+  })
+
+  it('T-WH-14: a photo sent at idle gets the photo reply, no session is created', async () => {
+    const req = buildWebhookRequest({
+      From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+      Body: '',
+      NumMedia: '1',
+      MediaContentType0: 'image/png',
+      MessageSid: sid('media-idle-photo'),
+    })
+    const res = await handleWebhookPost(req, { supabaseClient: testClient() })
+    expect(res.status).toBe(200)
+    expect(await twimlText(res)).toBe(PHOTO_REPLY)
+    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
+  })
+
+  it('T-WH-15: a voice note sent at idle gets the distinct voice reply', async () => {
+    const req = buildWebhookRequest({
+      From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+      Body: '',
+      NumMedia: '1',
+      MediaContentType0: 'audio/ogg; codecs=opus',
+      MessageSid: sid('media-idle-voice'),
+    })
+    const res = await handleWebhookPost(req, { supabaseClient: testClient() })
+    expect(res.status).toBe(200)
+    expect(await twimlText(res)).toBe(VOICE_REPLY)
+    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
+  })
+})
+
 describe('handleWebhookPost — no active session (routeInboundMessage wiring)', () => {
   it('T-WH-11: registered engineer, no session, nothing submitted today — never silent', async () => {
     // See the file header: no `now` injection point exists here, so the
@@ -417,14 +521,14 @@ describe('handleWebhookPost — no active session (routeInboundMessage wiring)',
     // this test actually proves, is that the reply is never '' any more —
     // the BOT-07 silence CLAUDE.md's "BOT-07 SILENCE IS A RULE 3.5
     // DEAD-END" entry names is closed for this case by this build.
-    // RETIRED, 2026-08-28: idle inbound no longer starts a flow
-    // (MORNING_QUESTIONS[1] is no longer a possible outcome of this path
-    // at all) -- MORNING_AWAITING_TRIGGER_REPLY replaces it for the
-    // before-morningCutoff window. THREE outcomes still, per §35a
-    // (design-decisions-beta-feedback.md, 2026-08-26): MORNING_WINDOW_
-    // CLOSED_REPLY covers the whole morningCutoff..eveningClose window
-    // (15:00-19:45 IST), a real interval this suite can genuinely run
-    // inside.
+    // RETIRED, 2026-08-28: idle inbound no longer starts a flow. ROUTER
+    // REWRITE, 2026-09-06: the three possible outcomes are now composed via
+    // buildIdleReply('unrecognized', <headerState>) -- 'hi' never matches
+    // any digit, so this always exercises the 'unrecognized' correction
+    // line. THREE header states still possible, per §35a (design-decisions-
+    // beta-feedback.md, 2026-08-26): 'morning_closed' covers the whole
+    // morningCutoff..eveningClose window (15:00-19:45 IST), a real interval
+    // this suite can genuinely run inside.
     const req = buildWebhookRequest({
       From: `whatsapp:${TEST_ENGINEER_PHONE}`,
       Body: 'hi',
@@ -435,9 +539,9 @@ describe('handleWebhookPost — no active session (routeInboundMessage wiring)',
     const reply = await twimlText(res)
     expect(reply).not.toBeNull()
     expect(
-      reply === MORNING_AWAITING_TRIGGER_REPLY ||
-        reply === MORNING_WINDOW_CLOSED_REPLY ||
-        reply === REPORT_READY_REPLY,
+      reply === buildIdleReply('unrecognized', 'awaiting_morning') ||
+        reply === buildIdleReply('unrecognized', 'morning_closed') ||
+        reply === buildIdleReply('unrecognized', 'complete'),
     ).toBe(true)
     // No RPC is ever called from this path any more -- confirm no session
     // row materialised, regardless of which of the three windows this run
@@ -459,8 +563,11 @@ describe('handleWebhookPost — no active session (routeInboundMessage wiring)',
     const res = await handleWebhookPost(req, { supabaseClient: testClient() })
     expect(res.status).toBe(200)
     const reply = await twimlText(res)
-    // Same before/after-eveningClose variance as T-WH-11, same reason.
-    expect(reply === EVENING_ALREADY_COMPLETE_REPLY || reply === REPORT_READY_REPLY).toBe(true)
+    // Unlike T-WH-11, this is now a SINGLE deterministic outcome, not a
+    // before/after-eveningClose variance: computeIdleHeaderState's
+    // 'complete' state fires once both halves are submitted regardless of
+    // clock time (ROUTER REWRITE, 2026-09-06).
+    expect(reply).toBe(buildIdleReply('unrecognized', 'complete'))
     // Neither outcome calls an RPC -- confirm no session row materialised.
     expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
   })

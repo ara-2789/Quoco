@@ -393,6 +393,37 @@ export async function triggerCheckIn(params: TriggerParams): Promise<TriggerOutc
     })
   }
 
+  // S-set (a), discard observability (migration 038 external review round
+  // 2, B1). The discard itself (a live 'hindrance' session colliding with
+  // this trigger) is CORRECT -- but was previously zero-observable: the
+  // forward migration's own stated design goal was a force-reset
+  // "indistinguishable from a genuine fresh start," which is exactly why
+  // nobody could ever tell whether it fires never or nightly, so a
+  // revisit decision could never be triggered by evidence. Same rule this
+  // codebase already applies to every sweep in jobs/tick's own runJobsTick
+  // (CLAUDE.md's "must not fail the tick" != "must not be silent"): a
+  // per-turn Sentry alert (the block immediately above) is for a genuine
+  // anomaly worth investigating NOW; a DELIBERATE, expected discard needs
+  // a COUNT that accumulates over time, not one alert per occurrence --
+  // this fingerprint carries NO per-event identifier (no engineerId, no
+  // logDate), unlike every other fingerprint in this file, specifically so
+  // Sentry aggregates every occurrence into ONE issue whose count is the
+  // actual signal: "this fired N times this week," answerable by looking
+  // at one issue instead of reconstructing it from N separate alerts.
+  if (turn.hindranceDiscarded) {
+    Sentry.captureMessage('outbound-send: live hindrance session discarded by scheduled trigger (expected, counted)', {
+      level: 'info',
+      fingerprint: ['outbound-send', 'hindrance_discarded'],
+      tags: { feature: 'outbound-send', checkpoint: params.checkpoint },
+      extra: {
+        eventKey,
+        engineerId: params.engineerId,
+        logDate: params.logDate,
+        hadDescription: turn.hindranceHadDescription,
+      },
+    })
+  }
+
   // Ledger UPDATE after RPC activation, not before -- §1's crash-safety
   // argument: if the process dies between these two writes, the SESSION
   // is already correctly activated (matching reality — the message really
