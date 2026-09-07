@@ -431,6 +431,8 @@ export interface MorningTurnRow {
   current_step: number
   log_date: string
   attendance: 'present' | 'absent' | 'site_holiday' | null
+  hindrance_discarded: boolean | null
+  hindrance_had_description: boolean | null
 }
 
 // Wrapper over the single transactional morning-flow RPC. Parameter names match
@@ -487,6 +489,8 @@ export interface EveningTurnRow {
   current_step: number
   log_date: string
   equipment_echo: EquipmentEchoItem[] | null
+  hindrance_discarded: boolean | null
+  hindrance_had_description: boolean | null
 }
 
 // Wrapper over the single transactional evening-flow RPC — RESTRUCTURED

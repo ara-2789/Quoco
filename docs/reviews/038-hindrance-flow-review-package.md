@@ -8,6 +8,167 @@ been applied anywhere. Last runbook executed: 036/037's own prod apply,
 2026-09-06 (`docs/reviews/route-ts-naive-project-pick.md`'s sibling record
 and PR #214 both reference it).
 
+## Round 2 (2026-09-07) — B1, blocking, resolved; S-set, all six done
+
+Your STOP verdict on the `3fc8a93` package: one blocking finding at three
+sites (B1), plus six secondary findings (S-set a–f). Independently
+verified before any fix was written, per your own instruction. Full delta
+below; new certified commit at the end of this section.
+
+### B1 verification — every cited line checked against the file directly
+
+| Your claim | Found at | Verdict |
+|---|---|---|
+| Morning completion writes the marker | lines 460/483 | Exact match, both sites |
+| Force-reset branch location | line 389 | Exact |
+| `already_complete` guard lives only in the `IS NULL` branch | line 407 | Exact |
+| Bare wipe | "line 397" | Actually line 400 — a comment sits at 397. Citation off by 3, substance unaffected |
+| Per-step upsert overwrites the real row | lines 510–518 | Exact — `ON CONFLICT ... DO UPDATE`, ends at `morning_submitted_at = EXCLUDED.morning_submitted_at` |
+| Evening mirror | 681–688 vs gate at 694 | Exact — 681 (branch), 687 (wipe), 694 (gate) |
+| Evening's disciplined strip sits four lines above | 676–679 | Off by one (statement is 677–679; 676 is its trailing comment) |
+| DOWN sweep, third site | (implied) | Line 1827 (pre-fix numbering): identical bare-wipe pattern, confirmed |
+
+Also checked, not stated by you but load-bearing: `already_complete` is
+already a real, modeled `MorningOutcome`/`EveningOutcome` value, and
+`trigger.ts` already treats any non-`'start'` return from a `startFlow:
+true` call as a genuine-race Sentry alert — it never sends the RPC's text
+reply (the template already went out before this call). So returning
+`already_complete` from the new branch reuses an existing signal path,
+not a new one.
+
+**B1 confirmed real, exactly as serious as described, at all three sites.**
+
+### The fix
+
+Two-clause branch, both morning's and evening's collision handlers:
+check the flow's own submitted marker BEFORE choosing an outcome.
+Submitted → clear the hindrance session (subtract-only: `context -
+'q2_reask' - 'description'`) and return `already_complete`, never
+`start`. Genuinely unsubmitted → force-reset survives unchanged in
+behavior, but the wipe is now subtract-only too (the flow's own reask
+keys plus hindrance's leftover keys — never a bare replace), so any
+cross-flow marker survives by construction. The DOWN block's bulk sweep
+gets the identical subtract-only treatment — no branching needed there,
+since it has no outcome to decide, just uniform state cleanup.
+
+### Scenario 5 — RED before, GREEN after (your own bar: its absence is how this passed twice)
+
+Real Postgres 17, same scaffold discipline as scenarios 1–4 (prod schema
+dump + named stubs). Sequence: real morning submission (present,
+complete) → engineer taps "1", starts hindrance, abandons at Q2 →
+scheduled trigger fires `startFlow:true` → engineer's *next* reply drives
+a second, bogus completion.
+
+**RED, against the pre-fix file (certified `3fc8a93`):**
+```
+STEP 3: force_reset_turn -> {"outcome": "start", "current_flow": "morning", "current_step": 1}
+STEP 3: morning_submitted_survived -> (null)
+STEP 4: second_q5 -> {"outcome": "advance", "attendance": "site_holiday", "current_flow": null}
+FINAL VERDICT: final_attendance -> site_holiday
+```
+The engineer's real `attendance='present'` row was silently overwritten
+to `site_holiday` — exact reproduction of your trace.
+
+**GREEN, after the fix:**
+```
+STEP 3: force_reset_turn -> {"outcome": "already_complete", "hindrance_discarded": true, "hindrance_had_description": true, "current_flow": null}
+STEP 3: morning_submitted_survived -> t
+STEP 4: second_q1 -> {"outcome": "already_complete", ...}  -- idempotent, no daily_logs write
+FINAL VERDICT: final_attendance -> present
+```
+The marker survives; the second "completion" attempt is correctly
+refused (`already_complete`, no write); the real row is untouched.
+
+**Four additional regression checks, zero failures:**
+- A genuinely-unsubmitted engineer's hindrance-collision still force-resets
+  to `start` (evening), unchanged behavior, now with `hindrance_discarded:
+  true`.
+- The DOWN sweep on an unsubmitted hindrance session clears to `{}` — no
+  fabricated marker.
+- The DOWN sweep on a session carrying `morning_submitted` preserves it
+  while clearing hindrance state — the fix, verified at the third site too.
+- Hindrance's own resolved happy path (original Scenario 1) is byte-for-byte
+  unaffected.
+
+### S-set — all six
+
+**(a) Discard observability.** Both RPCs' `RETURN` now carry
+`hindrance_discarded`/`hindrance_had_description` (`NULL` unless the
+collision branch fired this turn, never `false` as a default — so a
+caller can tell "didn't happen" from "happened, nothing to discard").
+`trigger.ts` consumes them into a `Sentry.captureMessage` at `info` level
+with a FIXED fingerprint (`['outbound-send', 'hindrance_discarded']`,
+deliberately no per-engineer/per-day component, unlike every other
+fingerprint in that file) — so every occurrence aggregates into one
+issue's count instead of fragmenting into per-event noise. Answers your
+own framing directly: "does this fire never or nightly" is now a number
+in Sentry, not a question nobody could answer.
+
+**(b) "Stale" overclaim.** Corrected throughout the file's own header —
+there is no age check anywhere in either collision branch; it fires
+identically on a session abandoned three seconds ago or three hours ago.
+Independently checked, not just corrected on your say-so: the ACTUAL
+live trigger window today is two events, not five — `morningSend` (08:30
+IST) and `eveningSend` (18:30 IST), the only real `startFlow:true`
+callers found by grep (`lib/whatsapp/outbound/trigger.ts`).
+`CHECKIN_CHECKPOINTS` also *defines* `morningNudge` (10:00) and
+`eveningNudge` (19:15), but neither has a cron route wired to it yet
+(confirmed: no `vercel.json` entry, no route file) — they don't fire
+today. The file's own prose now states this precisely rather than
+repeating "five" or any other unverified count.
+
+**(c) Cross-tenant.** Recommended and built: composite same-tenant FKs
+(`hindrances.project_id, tenant_id -> projects(id, tenant_id)`;
+`hindrances.reported_by, tenant_id -> users(id, tenant_id)`), mirroring
+migration 017's own `project_members` precedent exactly — the parent
+composite uniques (`users_id_tenant_id_key`, `projects_id_tenant_id_key`)
+already exist, so this is a pure FK swap, no new constraint scaffolding.
+**Why composite over the 019-style citation**, the alternative
+considered and rejected: 019's own "plain FKs are safe" argument depends
+on a table having exactly ONE writer, forever, deriving its values
+through an already-verified chain. That doesn't durably hold for
+`hindrances` — BOT-30 (Q6-hindrance promotion) and DASH-07 (the
+hindrance tracker) are both future writers this table's own roadmap
+already names, per CLAUDE.md's SPINE/FAST-FOLLOW split. A citation would
+need re-verifying against every new writer; a composite FK is structural
+and survives regardless. And it's genuinely free right now: grepped, zero
+`INSERT INTO hindrances` anywhere in this codebase before this migration
+— this is confirmed the table's first-ever writer, so there is no
+existing-data risk 017 itself had to work around. Verified directly, not
+asserted: a cross-tenant insert (`tenant_id` from tenant A, `project_id`
+from a real project in tenant B) is **rejected** by the new constraint; a
+same-tenant insert succeeds; the DOWN's own reversal restores the exact
+plain FK (confirmed: the identical cross-tenant insert that was rejected
+pre-DOWN **succeeds** after it, matching pre-038 behavior exactly, and no
+existing row can ever violate the DOWN's own restore since a composite
+FK is strictly more restrictive than the plain one it replaces).
+
+**(d) 022's inventory.** `docs/reviews/022-review-package.md` §9 gained a
+new §9.1 — the seven new/modified context-write sites from this
+migration, in the same table shape, same rule citation, explaining why
+the three genuinely-new sites (both collision branches, the DOWN sweep)
+were the only ones that could get it wrong: they're the only sites with
+no existing sibling line to copy the rule from correctly.
+
+**(e) DOWN runbook ordering.** The DOWN section's own header now opens
+with an explicit, imperative line — "REVERT THE TYPESCRIPT ROUTING
+FIRST, THEN RUN THIS DOWN" — as a checkable runbook step, not just prose
+buried in the existing risk paragraph a few lines below it.
+
+**(f) Divergence guard.** `docs/reviews/038-collision-divergence-guard.test.ts`
+— written, type-checked, linted, NOT moved into `test/` yet, deliberately:
+migration 038 isn't applied to test-db, so a live vitest file calling
+`apply_hindrance_flow_turn` there would fail CI on every future PR until
+it is — the exact 035-lockstep hazard this project's own history already
+names. Moves into `test/` in the same session that applies 038 to
+test-db. Three scenarios (cross-day-stale, same-day-live-submitted,
+same-day-live-unsubmitted), each driving BOTH morning and evening through
+the identical seeded shape and asserting matching post-states — guards
+against the two independently-written collision branches drifting apart
+in a future edit, the same failure shape 022's own §9 already
+demonstrated once. Helper extraction explicitly deferred, recorded as a
+rider on whichever migration next touches either RPC.
+
 ## What this migration does, in one paragraph
 
 Ad-hoc menu item 1 (a WhatsApp-driven hindrance report) needs its own

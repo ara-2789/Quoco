@@ -446,6 +446,23 @@ export interface MorningTurnResult {
    * holiday follow-up's completion) — see buildMorningReply's own doc for
    * why this exists (disambiguating which of three completions occurred). */
   attendance: 'present' | 'absent' | 'site_holiday' | null
+  /**
+   * S-set (a), discard observability (migration 038 external review round
+   * 2, B1). Non-null ONLY on the turn where a live 'hindrance' session
+   * collided with this scheduled trigger and was force-cleared/reset --
+   * null on every other outcome, so a caller can tell "this didn't happen"
+   * from "it happened and there was nothing to discard." See
+   * lib/whatsapp/outbound/trigger.ts's own consumption of this pair for
+   * why it exists: the discard itself is correct, but was previously
+   * zero-observable ("indistinguishable from a genuine fresh start" was
+   * the forward migration's own stated goal) -- meaning nobody could ever
+   * tell whether it fires never or nightly, so a revisit decision could
+   * never be triggered by evidence.
+   */
+  hindranceDiscarded: boolean | null
+  /** Whether Q1 had already been answered (a real description existed) at
+   * the moment of discard -- null under the same condition as hindranceDiscarded. */
+  hindranceHadDescription: boolean | null
 }
 
 export async function applyMorningFlowTurn(params: {
@@ -513,6 +530,8 @@ export async function applyMorningFlowTurn(params: {
     current_step: number
     log_date: string
     attendance: 'present' | 'absent' | 'site_holiday' | null
+    hindrance_discarded: boolean | null
+    hindrance_had_description: boolean | null
   }
 
   return {
@@ -521,5 +540,7 @@ export async function applyMorningFlowTurn(params: {
     currentStep: result.current_step,
     logDate: result.log_date,
     attendance: result.attendance,
+    hindranceDiscarded: result.hindrance_discarded,
+    hindranceHadDescription: result.hindrance_had_description,
   }
 }

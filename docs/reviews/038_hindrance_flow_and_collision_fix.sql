@@ -63,10 +63,12 @@
 --      check; a brand-new RPC needs its own).
 --   2. apply_morning_flow_turn -- CREATE OR REPLACE, SIGNATURE UNCHANGED
 --      (12 args, byte-identical to 035's live one). The ONLY change: one
---      new ELSIF branch inside the p_start_flow decision, handling a stale
---      'hindrance' session. Every other line reproduced verbatim from
---      035's live body, confirmed by direct read of that file at authoring
---      time, not from memory.
+--      new ELSIF branch inside the p_start_flow decision, handling a LIVE
+--      'hindrance' session (no age check -- see THE FIX below for why
+--      "stale" is the wrong word for what this branch actually catches).
+--      Every other line reproduced verbatim from 035's live body,
+--      confirmed by direct read of that file at authoring time, not from
+--      memory.
 --   3. apply_evening_flow_turn -- same treatment, SIGNATURE UNCHANGED
 --      (10 args, byte-identical to 035's live one).
 --
@@ -83,15 +85,32 @@
 -- a check-in genuinely lost, not merely delayed.
 --
 -- THE FIX, DECIDED (Aravind, 2026-09-07): scheduled triggers always win.
--- A stale 'hindrance' session is force-resettable by morning/evening's own
--- startFlow:true call -- unlike a genuine morning/evening collision, which
--- keeps its existing careful 'reask' handling untouched. Reasoning: the
--- daily check-in loop is the product; a two-question ad-hoc report is
--- secondary, and losing one is recoverable at zero cost (send "1" again).
--- The force-reset produces the SAME 'start' outcome and state a genuine
--- fresh flow start would -- no special-casing needed anywhere else, and
--- the engineer's next reply is read as a real check-in answer because the
--- session is now indistinguishable from one.
+-- A LIVE 'hindrance' session -- CORRECTED, external review round 2, S-set
+-- (b): NOT "a stale one." There is no age check anywhere in this branch;
+-- it fires identically whether the session was abandoned three seconds
+-- ago or three hours ago. An engineer mid-Q2 at 08:29:55, thirty seconds
+-- from finishing, loses that in-progress report exactly as completely as
+-- one abandoned at dawn the moment a trigger fires. Triggers-win is still
+-- the right decision (the daily check-in loop is the product; a two-
+-- question ad-hoc report is secondary, and losing one is recoverable at
+-- zero cost, send "1" again) -- but the right decision described honestly
+-- is "any live session loses to a scheduled trigger, no exceptions," not
+-- "a stale one gets cleaned up." THE ACTUAL WINDOW, checked directly
+-- against this codebase, not assumed: only two startFlow:true trigger
+-- events are LIVE today -- morningSend (08:30 IST) and eveningSend (18:30
+-- IST), both via lib/whatsapp/outbound/trigger.ts, the only real callers
+-- of applyMorningFlowTurn/applyEveningFlowTurn with startFlow:true found
+-- by grep. CHECKIN_CHECKPOINTS (lib/daily-logs/cutoffs.ts) also DEFINES
+-- morningNudge (10:00) and eveningNudge (19:15), but neither has a cron
+-- route wired to it yet (confirmed: no vercel.json entry, no route file)
+-- -- they do not fire today. So the honest current exposure is a roughly
+-- half-second-wide risk twice a day, growing to up to four times a day if
+-- the two nudge checkpoints are ever wired to this same RPC contract
+-- unchanged. The force-reset produces the SAME 'start' outcome and state
+-- a genuine fresh flow start would (on the genuinely-unsubmitted path --
+-- see the two-clause fix below for the other one) -- no special-casing
+-- needed anywhere else, and the engineer's next reply is read as a real
+-- check-in answer because the session is now indistinguishable from one.
 --
 -- THE ABANDONED Q1 TEXT: DISCARDED, NOT WRITTEN, DELIBERATELY -- THE §42
 -- BOUNDARY. context.description (if Q1 was answered) is wiped along with
@@ -138,6 +157,55 @@
 -- =============================================================================
 
 BEGIN;
+
+-- =============================================================================
+-- STEP 0 -- hindrances gains composite same-tenant FKs (S-set (c), external
+-- review round 2). `hindrances` has existed since migration 001 with PLAIN
+-- single-column FKs (hindrances_project_id_fkey -> projects(id),
+-- hindrances_reported_by_fkey -> users(id)) -- neither one checks that the
+-- referenced row's OWN tenant_id matches hindrances.tenant_id, so nothing
+-- at the schema layer stops a caller passing a project_id from tenant A
+-- alongside a tenant_id from tenant B (each individually valid, the PAIR
+-- never checked).
+--
+-- WHY FIX NOW, NOT CITE-AND-DEFER (the 019-style alternative, considered
+-- and rejected): 019's own "plain FKs are safe" argument (019's own
+-- header) depends on the table having exactly ONE writer, forever, whose
+-- values are derived through an already-verified chain, never client
+-- input. That argument does NOT durably hold here the way it holds for
+-- 019's daily_log_edits: `hindrances` is NOT designed as a permanently
+-- single-writer table -- BOT-30 (Q6-hindrance promotion, Fast-Follow,
+-- CLAUDE.md's own SPINE/FAST-FOLLOW split) and DASH-07 (the hindrance
+-- tracker, also Fast-Follow) are both future writers this table's own
+-- design already anticipates. A citation would need re-verifying against
+-- every NEW writer this table gets; a composite FK is a structural
+-- guarantee that survives regardless of who writes next -- and unlike 017
+-- (retrofitting onto a table with real production data, a genuinely costly
+-- migration) this table has never had a writer at all until STEP 1 below:
+-- confirmed by grep, zero INSERT INTO hindrances anywhere in this
+-- codebase's migrations or application code before this file. Migration
+-- 022's own CONTEXT DISCIPLINE section already argued this exact timing
+-- point: "before anything depends on the current behavior, before any
+-- production data is written against it, is the cheapest this fix will
+-- ever be." That is exactly this moment for this table.
+--
+-- Parent composite uniques already exist (017_rls_column_bounding.sql:
+-- users_id_tenant_id_key, projects_id_tenant_id_key) -- no new UNIQUE
+-- constraint needed, only the FK swap itself, mirroring 017's own
+-- project_members precedent exactly. ON DELETE behaviour preserved
+-- unchanged from each existing plain FK (both NO ACTION, the default --
+-- confirmed against the live prod schema dump, not assumed) -- this is a
+-- same-tenant CHECK added to an existing relationship, not a new cascade
+-- policy.
+ALTER TABLE public.hindrances DROP CONSTRAINT hindrances_project_id_fkey;
+ALTER TABLE public.hindrances
+  ADD CONSTRAINT hindrances_project_id_fkey
+  FOREIGN KEY (project_id, tenant_id) REFERENCES public.projects (id, tenant_id);
+
+ALTER TABLE public.hindrances DROP CONSTRAINT hindrances_reported_by_fkey;
+ALTER TABLE public.hindrances
+  ADD CONSTRAINT hindrances_reported_by_fkey
+  FOREIGN KEY (reported_by, tenant_id) REFERENCES public.users (id, tenant_id);
 
 -- =============================================================================
 -- STEP 1 -- apply_hindrance_flow_turn, brand new. SECURITY DEFINER,
@@ -355,6 +423,12 @@ DECLARE
   v_yesno      JSONB;
   v_attendance_defaulted BOOLEAN := NULL;
   v_attendance_raw        TEXT    := NULL;
+  -- S-set (a), discard observability (external review round 2): set only
+  -- by the hindrance-collision branch below, NEVER elsewhere -- NULL (not
+  -- false) on every other outcome, so the caller can tell "this branch
+  -- didn't fire" from "it fired and found nothing to discard."
+  v_hindrance_discarded      BOOLEAN := NULL;
+  v_hindrance_had_description BOOLEAN := NULL;
 BEGIN
   v_log_date := (p_now AT TIME ZONE 'Asia/Kolkata')::date;
 
@@ -387,18 +461,52 @@ BEGIN
       v_session.context      := v_session.context - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask';
       v_outcome := 'start';
     ELSIF v_session.current_flow = 'hindrance' THEN
-      -- NEW BRANCH, migration 038. Scheduled triggers always win over a
-      -- stale ad-hoc flow (Aravind, 2026-09-07) -- see 038's own file
-      -- header for the full collision trace and reasoning. Force-reset and
-      -- start cleanly: SAME 'start' outcome/state a genuine fresh start
-      -- produces, so buildMorningReply needs no special-casing and his
-      -- next reply is read as a real morning answer. context (including
-      -- any Q1 description) is discarded, not written anywhere -- see the
-      -- header's §42-boundary note for why this is deliberate, not a gap.
-      v_session.current_flow := 'morning';
-      v_session.current_step := 1;
-      v_session.context      := '{}'::jsonb;
-      v_outcome := 'start';
+      -- NEW BRANCH, migration 038 -- REVISED after external review round 2
+      -- (B1, BLOCKING): the original force-reset used a bare context wipe
+      -- (context := '{}'::jsonb), which silently destroyed
+      -- morning_submitted whenever an engineer completed morning, then
+      -- started (and abandoned) a hindrance report the same day. A
+      -- scheduled trigger firing into that live hindrance session would
+      -- restart morning for an ALREADY-SUBMITTED engineer, and his next
+      -- reply would overwrite the day's real attendance via the very same
+      -- ON CONFLICT upsert that recorded it in the first place --
+      -- reproduced exactly by Scenario 5 (docs/reviews/038-hindrance-flow-
+      -- review-package.md), RED against the original branch, GREEN here.
+      --
+      -- TWO-CLAUSE FIX: check the flow's own submitted marker BEFORE
+      -- choosing an outcome.
+      --   Already submitted -> the scheduled trigger's job here is
+      --   already done; morning is not "stale," it's complete. Clear the
+      --   hindrance session (subtract-only -- q2_reask/description are
+      --   hindrance's own leftover state, nothing left to do with them;
+      --   morning_submitted and any other cross-flow marker survive by
+      --   NOT being named, not because this branch specifically saved
+      --   them) and return 'already_complete' -- the SAME outcome the
+      --   idle branch already uses for this exact fact. Never re-run a
+      --   completed flow.
+      --   Genuinely unsubmitted -> scheduled triggers still win over a
+      --   live ad-hoc flow, no age check, unchanged reasoning (see THE
+      --   FIX in this file's own header for why "stale" overclaimed this).
+      --   The wipe is now
+      --   SUBTRACT-ONLY -- morning's own reask keys (matching the genuine
+      --   fresh-start branch three lines above, same discipline) plus
+      --   hindrance's own leftover keys -- never a bare replace, so any
+      --   cross-flow marker survives by construction, not convention.
+      v_hindrance_discarded       := true;
+      v_hindrance_had_description := (v_session.context ? 'description');
+      IF COALESCE((v_session.context->>'morning_submitted')::boolean, false) THEN
+        v_session.current_flow := NULL;
+        v_session.current_step := 0;
+        v_session.context      := v_session.context - 'q2_reask' - 'description';
+        v_outcome := 'already_complete';
+      ELSE
+        v_session.current_flow := 'morning';
+        v_session.current_step := 1;
+        v_session.context      := v_session.context
+                                    - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask'
+                                    - 'q2_reask' - 'description';
+        v_outcome := 'start';
+      END IF;
     ELSE
       v_outcome := 'reask';
     END IF;
@@ -582,11 +690,13 @@ BEGIN
   RETURNING * INTO v_session;
 
   RETURN jsonb_build_object(
-    'outcome',      v_outcome,
-    'current_flow', v_session.current_flow,
-    'current_step', v_session.current_step,
-    'log_date',     v_log_date,
-    'attendance',   v_attendance
+    'outcome',                    v_outcome,
+    'current_flow',               v_session.current_flow,
+    'current_step',               v_session.current_step,
+    'log_date',                   v_log_date,
+    'attendance',                 v_attendance,
+    'hindrance_discarded',        v_hindrance_discarded,
+    'hindrance_had_description',  v_hindrance_had_description
   );
 END;
 $fn$;
@@ -641,6 +751,10 @@ DECLARE
   v_reply_count        INTEGER;
   v_reply_type         TEXT;
   v_morning_count_for_type INTEGER;  -- summed `count` across every morning_equipment item sharing this type
+  -- S-set (a), discard observability -- same shape as apply_morning_flow_
+  -- turn's own identical addition; see that function's own comment.
+  v_hindrance_discarded      BOOLEAN := NULL;
+  v_hindrance_had_description BOOLEAN := NULL;
 BEGIN
   v_log_date := (p_now AT TIME ZONE 'Asia/Kolkata')::date;
 
@@ -679,13 +793,26 @@ BEGIN
                             - 'e4_headcount' - 'e5_reask' - 'e6_reask';
       v_outcome := 'start';
     ELSIF v_session.current_flow = 'hindrance' THEN
-      -- NEW BRANCH, migration 038. Mirrors apply_morning_flow_turn's own
-      -- new branch exactly -- see 038's own file header for the full
-      -- collision trace and reasoning.
-      v_session.current_flow := 'evening';
-      v_session.current_step := 1;
-      v_session.context      := '{}'::jsonb;
-      v_outcome := 'start';
+      -- NEW BRANCH, migration 038 -- REVISED after external review round 2
+      -- (B1, BLOCKING). Mirrors apply_morning_flow_turn's own revised
+      -- branch exactly -- see that function's own comment (STEP 2 above)
+      -- for the full trace, reasoning, and Scenario 5 reproduction.
+      v_hindrance_discarded       := true;
+      v_hindrance_had_description := (v_session.context ? 'description');
+      IF COALESCE((v_session.context->>'evening_submitted')::boolean, false) THEN
+        v_session.current_flow := NULL;
+        v_session.current_step := 0;
+        v_session.context      := v_session.context - 'q2_reask' - 'description';
+        v_outcome := 'already_complete';
+      ELSE
+        v_session.current_flow := 'evening';
+        v_session.current_step := 1;
+        v_session.context      := v_session.context
+                                    - 'e2_reask' - 'e3_reask' - 'e4_reask'
+                                    - 'e4_headcount' - 'e5_reask' - 'e6_reask'
+                                    - 'q2_reask' - 'description';
+        v_outcome := 'start';
+      END IF;
     ELSE
       v_outcome := 'reask';
     END IF;
@@ -1036,11 +1163,13 @@ BEGIN
   -- the RETURN shape, always NULL, so existing callers destructuring this
   -- key do not get a missing-key error mid-deploy.
   RETURN jsonb_build_object(
-    'outcome',        v_outcome,
-    'current_flow',   v_session.current_flow,
-    'current_step',   v_session.current_step,
-    'log_date',       v_log_date,
-    'equipment_echo', v_equipment_echo
+    'outcome',                    v_outcome,
+    'current_flow',               v_session.current_flow,
+    'current_step',               v_session.current_step,
+    'log_date',                   v_log_date,
+    'equipment_echo',             v_equipment_echo,
+    'hindrance_discarded',        v_hindrance_discarded,
+    'hindrance_had_description',  v_hindrance_had_description
   );
 END;
 $fn$;
@@ -1060,6 +1189,14 @@ COMMIT;
 -- 'hindrance' session seeded at step 2, this DOWN run against it,
 -- verified after) -- not hand-waved, per CLAUDE.md's own migration-
 -- runbook-template discipline.
+--
+-- RUNBOOK FACT, STATED AS AN ORDERING REQUIREMENT, NOT A RISK NOTE
+-- (S-set (e), external review round 2): REVERT THE TYPESCRIPT ROUTING
+-- FIRST, THEN RUN THIS DOWN. Never the other way around, never
+-- simultaneously. Reasoning is in full below (the "CONSEQUENCE, stated
+-- precisely" paragraph) -- this line exists so the ORDER is a checkable
+-- runbook step, not something a future operator has to reconstruct by
+-- reading prose under time pressure during an actual rollback.
 --
 -- REAL, SERIOUS FINDING FROM REHEARSING THIS, NOT ASSUMED (2026-09-07,
 -- caught before the reviewer had to): the FIRST draft of this DOWN block
@@ -1822,14 +1959,41 @@ COMMIT;
 --
 -- -- Clear any live 'hindrance' session BEFORE dropping the one function that
 -- -- could ever process it again -- see this section's own header for the
--- -- rehearsed finding this fixes.
+-- -- rehearsed finding this fixes. SUBTRACT-ONLY, not a bare wipe (external
+-- -- review round 2, B1's third site) -- a session in this bulk sweep can
+-- -- equally carry morning_submitted/evening_submitted from an earlier
+-- -- completed flow the same day; a bare context='{}'::jsonb here destroys
+-- -- that marker exactly like the two forward-migration sites B1 found, just
+-- -- for every row this sweep touches at once instead of one session at a
+-- -- time. No branching needed here (unlike the two RPCs above) -- this is a
+-- -- pure state-cleanup sweep with no 'outcome' to decide, so the SAME
+-- -- subtract-only strip applies uniformly to every row.
 -- UPDATE whatsapp_sessions
---    SET current_flow = NULL, current_step = 0, context = '{}'::jsonb, pending_flows = '[]'::jsonb
+--    SET current_flow = NULL, current_step = 0,
+--        context = context - 'q2_reask' - 'description',
+--        pending_flows = '[]'::jsonb
 --  WHERE current_flow = 'hindrance';
 --
 -- DROP FUNCTION IF EXISTS apply_hindrance_flow_turn(
 --   text, uuid, uuid, uuid, text, boolean, text, boolean, timestamptz, integer
 -- );
+--
+-- -- STEP 0's own reversal, last -- restores the exact plain single-column
+-- -- FKs hindrances had before this migration (same names, same target,
+-- -- same absent ON DELETE clause, i.e. the default). No data loss risk:
+-- -- a composite FK is strictly MORE restrictive than the plain FK it
+-- -- replaced, so every row satisfying the composite constraint already
+-- -- satisfies the plain one -- this direction can never fail on existing
+-- -- data.
+-- ALTER TABLE public.hindrances DROP CONSTRAINT hindrances_project_id_fkey;
+-- ALTER TABLE public.hindrances
+--   ADD CONSTRAINT hindrances_project_id_fkey
+--   FOREIGN KEY (project_id) REFERENCES public.projects (id);
+--
+-- ALTER TABLE public.hindrances DROP CONSTRAINT hindrances_reported_by_fkey;
+-- ALTER TABLE public.hindrances
+--   ADD CONSTRAINT hindrances_reported_by_fkey
+--   FOREIGN KEY (reported_by) REFERENCES public.users (id);
 --
 -- COMMIT;
 --
