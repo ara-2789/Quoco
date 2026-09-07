@@ -66,17 +66,22 @@ export function classifyHindranceTiming(message: string): HindranceTimingClassif
 
 // --- Copy (Aravind, 2026-09-06/07 -- docs/plans/adhoc-menu-spec.md's own
 // "Idle-inbound reply, decided" section carries the full design record).
-// No "your Project Manager will see it" line in either confirmation -- true
-// only once step 5 (PM email) ships; nothing notifies a PM before then. ---
+// "Your Project Manager will see it" ADDED 2026-09-07, once true, not
+// before: Phase A (scripts/verify-email-delivery.ts) confirmed a real,
+// verified-domain delivery to a non-account-holder address the same day
+// -- the PM-notify pipeline (lib/hindrance/pm-notify.ts, step 5) actually
+// works end to end. Held back deliberately until this exact moment; see
+// lib/hindrance/pm-notify.ts's own header for the one open reliability
+// gap this line's truth still depends on (silent bounce suppression). ---
 export const HINDRANCE_QUESTIONS: Readonly<Record<number, string>> = {
   1: "What's the hindrance? Describe it in your own words.",
   2: 'Is it blocking work right now, or could it block work later?\nReply 1 for blocking now\nReply 2 for may block later',
 }
 
-export const HINDRANCE_RESOLVED_REPLY = '✅ Hindrance recorded.'
+export const HINDRANCE_RESOLVED_REPLY = '✅ Hindrance recorded. Your Project Manager will see it.'
 
 export const HINDRANCE_UNSPECIFIED_REPLY =
-  "✅ Hindrance recorded. I couldn't tell if it's blocking now or later, but your report is saved."
+  "✅ Hindrance recorded. I couldn't tell if it's blocking now or later, but your report is saved. Your Project Manager will see it."
 
 /**
  * Build the outbound reply for a resolved hindrance turn. `wasExhausted`

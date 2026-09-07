@@ -5,10 +5,21 @@ import { sendEmail as sendEmailReal, type SendEmailParams, type SendEmailResult 
 import { enqueueJob } from '@/lib/queue/jobs'
 
 // Ad-hoc menu PR 2, step 5 (docs/plans/adhoc-menu-spec.md). PM lookup + the
-// egress email that makes "your Project Manager will see it" true --
-// NECESSARY, NOT SUFFICIENT, same shape as lib/dpr/owner-deliver-dispatch.ts's
-// own header: two things must ALSO be true before this ever reaches a real
-// PM's inbox, neither built here:
+// egress email that makes "your Project Manager will see it" true.
+//
+// PHASE A VERIFIED, 2026-09-07 (Aravind, via scripts/verify-email-delivery.ts):
+// a real email sent from the verified quoco.co.in domain (reports@quoco.co.in)
+// was CONFIRMED DELIVERED to an address other than the Resend account
+// holder's own. The send/status-check pipeline this file's job handler
+// calls (lib/email/send.ts's sendEmail + getEmailStatus) is proven working
+// end to end, not merely unit-tested. lib/whatsapp/flows/hindrance.ts's own
+// HINDRANCE_RESOLVED_REPLY/HINDRANCE_UNSPECIFIED_REPLY now say "Your
+// Project Manager will see it" on the strength of this.
+//
+// STILL NECESSARY, NOT SUFFICIENT, same shape as lib/dpr/owner-deliver-
+// dispatch.ts's own header: two things must ALSO be true before this
+// module is REACHABLE from a real inbound WhatsApp message, neither built
+// here:
 //   1. Migration 038 (apply_hindrance_flow_turn) must be applied -- held
 //      pending external review as of this file's own commit (see
 //      lib/whatsapp/flows/hindrance.ts's own header).
@@ -17,8 +28,29 @@ import { enqueueJob } from '@/lib/queue/jobs'
 //      deliberately NOT done yet, for the same lockstep reason 038 itself
 //      isn't applied yet (that file's own header names migration 035's
 //      lockstep hazard as the precedent this avoids repeating).
-// A green test suite for this file means the RECEIVING END is ready, not
-// that a real PM has ever been emailed.
+// Phase A proves the EMAIL CHANNEL works; it says nothing about whether a
+// real engineer's hindrance report can reach this handler yet -- it can't,
+// until both of the above ship.
+//
+// OPEN RELIABILITY GAP, RECORDED NOT FIXED (Aravind, 2026-09-07, same
+// Phase A round). An earlier test send to a mistyped address
+// (arajamani1989.rcpl@gmail.com) bounced (recipient not found) and Resend
+// SILENTLY SUPPRESSED that address -- every future send attempt to it will
+// be rejected by Resend without ever reaching the recipient's mail server
+// again. Nothing in this file (or anywhere else in this codebase) checks
+// Resend's suppression list, and no bounce/complaint webhook exists (the
+// SAME gap lib/dpr/owner-deliver-dispatch.ts's own header already names
+// for owner delivery, one channel-consumer over). CONSEQUENCE: if a real
+// PM's email address is ever mistyped, or genuinely stops accepting mail,
+// one bounce is enough to permanently and silently blackhole every future
+// hindrance notification to them -- `sendEmail`'s result would need to be
+// `ok:false` for this handler's own retry-then-dead-letter path to ever
+// surface it, and a Resend suppression may not even surface as a
+// synchronous rejection (unconfirmed -- not tested this round). NOT FIXED
+// HERE, per Aravind's own explicit instruction ("record it, don't build
+// it") -- filed as an open item for whoever eventually builds the
+// bounce/complaint webhook this codebase has needed since owner-deliver
+// shipped.
 //
 // FIRST USE OF THE SUPABASE ADMIN AUTH API IN THIS CODEBASE -- confirmed by
 // grep before writing this, zero prior hits. Necessary because `users` has
