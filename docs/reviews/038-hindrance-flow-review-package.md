@@ -188,46 +188,52 @@ its existing, unchanged `'reask'` handling.
 
 ## The certified file
 
-**AMENDED 2026-09-07 — cite `3fc8a93` (on `main`), not `bd7147b`.** The
-`TEST-DB REHEARSAL -- NOT YET RUN` addition below was authored and first
-committed as `bd7147b`, on a feature branch (`docs/038-test-db-rehearsal-
-gap-note`, PR #228) — that branch has since been squash-merged and
-deleted, same as every other PR this session. `bd7147b` itself is no
-longer reachable by a normal `git fetch`/clone (confirmed directly: it
-does not appear in `gh api repos/.../branches`, and `git branch -r
---contains bd7147b` returns nothing once the remote is pruned) — only
-`3fc8a93`, the squash commit actually on `main`, is a citation a reviewer
-can rely on. File CONTENT is identical between the two (confirmed: same
-sha256 both ways, shown below) — this is a reference correction, not a
-second content change.
-
-Documentation only, no SQL logic changed; re-verify the diff yourself
-before trusting that claim rather than taking it on faith. `3ecbbb4`
-(below, kept for traceability) claimed a rehearsal without stating plainly
-that every bit of it ran against a local Postgres scaffold, never real
-Supabase test-db, and without stating that the anon-refusal check —
-required for every new `SECURITY DEFINER` function per CLAUDE.md's own
-standing rule — was never run at all. `3fc8a93` adds exactly one new
-comment block naming that gap explicitly (`TEST-DB REHEARSAL -- NOT YET
-RUN`, near the top of the file, right after the STATUS line) and changes
-nothing else — confirmed by a direct diff against `3ecbbb4`, not asserted.
+**ROUND 2 AMENDMENT, 2026-09-07 — cite `b35b68d` (on `main`), the CURRENT
+and ONLY commit to sign off on.** This is the commit containing B1's fix
+(all three sites) and the full S-set (a–f) — see this document's own
+"Round 2" section above for the complete writeup. Every earlier reference
+below (`3fc8a93`, `3ecbbb4`, `3f376f6`) is now superseded and kept only
+for traceability of what each round actually fixed; do not review or sign
+off on any of them.
 
 ```
-git show 3fc8a93:docs/reviews/038_hindrance_flow_and_collision_fix.sql
+git show b35b68d:docs/reviews/038_hindrance_flow_and_collision_fix.sql
 ```
 
 sha256, reproduce directly — never trust a working-tree hash for a
 specific commit:
 
 ```
+$ git show b35b68d:docs/reviews/038_hindrance_flow_and_collision_fix.sql | shasum -a 256
+32d360e0e5b49c055db12c1ccea5fee4ed2851da31a6f42f3b115ebebf2f6438  -
+```
+
+### Prior rounds, kept for traceability only — do not sign off on any of these
+
+**Round 1 amendment — `3fc8a93` (on `main`), superseded by `b35b68d`
+above.** The `TEST-DB REHEARSAL -- NOT YET RUN` addition was authored and
+first committed as `bd7147b`, on a feature branch
+(`docs/038-test-db-rehearsal-gap-note`, PR #228) — that branch has since
+been squash-merged and deleted, same as every other PR this session.
+`bd7147b` itself is no longer reachable by a normal `git fetch`/clone
+(confirmed directly: it does not appear in `gh api repos/.../branches`,
+and `git branch -r --contains bd7147b` returns nothing once the remote is
+pruned) — `3fc8a93` was the squash commit actually on `main` at the time.
+File CONTENT was identical between the two (confirmed: same sha256 both
+ways) — that was a reference correction, not a second content change.
+
+`3fc8a93` added exactly one new comment block (`TEST-DB REHEARSAL -- NOT
+YET RUN`, naming the scaffold-vs-test-db gap and the missing anon-refusal
+check) on top of `3ecbbb4` and changed nothing else — confirmed by a
+direct diff against `3ecbbb4` at the time, not asserted.
+
+```
 $ git show 3fc8a93:docs/reviews/038_hindrance_flow_and_collision_fix.sql | shasum -a 256
 b2dee5606065e8fb81e028f152328292e1b468aaef5604b4e3a48dfb6353fd7a  -
 ```
 
-**Do not sign off on the strength of `3ecbbb4` alone** — it is missing the
-rehearsal-coverage disclosure `3fc8a93` adds. The record below (superseded
-commit, sha256) is kept only for traceability of the original authoring-bug
-fix it documents:
+The record below (superseded commit, sha256) is kept only for
+traceability of the original authoring-bug fix it documents:
 
 ```
 git show 3ecbbb4:docs/reviews/038_hindrance_flow_and_collision_fix.sql
@@ -241,7 +247,8 @@ ad44d7ceaade391146c760d62e416757a78b5b37c307d74605cdfcc9120b4489  -
 `3ecbbb4` was itself the FIXED version — it supersedes `3f376f6` (the same
 file's first draft, pushed to the same branch minutes earlier), which had a
 real, serious authoring bug described in full below. Do not review
-`3f376f6` either; only `3fc8a93` is certified now.
+`3f376f6` either. As stated at the top of this section: only `b35b68d` is
+certified now.
 
 ## What you don't have without reading this section first
 
