@@ -142,7 +142,7 @@ export async function applyHindranceFlowTurn(params: {
     p_project_id: params.projectId,
     p_message: params.message,
     p_start_flow: params.startFlow,
-    p_timing: classification.timing,
+    p_timing: classification.timing ?? undefined,
     p_timing_ok: classification.ok,
     ...(params.now !== undefined ? { p_now: params.now } : {}),
     ...(params.testSleepMs !== undefined ? { p_test_sleep_ms: params.testSleepMs } : {}),
