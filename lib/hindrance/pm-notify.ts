@@ -58,6 +58,22 @@ import { enqueueJob } from '@/lib/queue/jobs'
 // bounce/complaint webhook this codebase has needed since owner-deliver
 // shipped.
 //
+// SECOND OPEN GAP, RECORDED NOT FIXED (Aravind, 2026-09-07, PR #241's
+// pre-merge PM-resolvability check -- scripts/verify-pm-resolvability.ts).
+// Every PM on every real prod project today resolves to Aravind's own
+// address -- confirmed via the real resolveProjectPMEmails code path, not
+// assumed. This proves the RESOLUTION path (project_members -> auth_id ->
+// auth.users.email) works end to end, exactly like Phase A proved the SEND
+// path worked -- but, same as Phase A before it specifically tested a
+// non-account-holder address, this has never actually delivered a
+// hindrance email to anyone OTHER than the person who already knows the
+// report happened. Not the same gap as the bounce-suppression one above
+// (that one is about a KNOWN-bad address; this one is about never having
+// exercised a GENUINELY DIFFERENT recipient at all). NOT FIXED HERE, same
+// "record it, don't build it" instruction -- worth closing the same way
+// Phase A closed its own version: a real send to a real PM's mailbox that
+// isn't Aravind's own, once one exists.
+//
 // FIRST USE OF THE SUPABASE ADMIN AUTH API IN THIS CODEBASE -- confirmed by
 // grep before writing this, zero prior hits. Necessary because `users` has
 // no `email` column at all (only `notification_email`, an OWNER-specific
