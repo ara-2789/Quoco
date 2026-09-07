@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import { sendEmail as sendEmailReal, type SendEmailParams, type SendEmailResult } from '@/lib/email/send'
 import { enqueueJob } from '@/lib/queue/jobs'
+import { istDateString } from '@/lib/daily-logs/date'
 
 // Ad-hoc menu PR 2, step 5 (docs/plans/adhoc-menu-spec.md). PM lookup + the
 // egress email that makes "your Project Manager will see it" true.
@@ -188,12 +189,40 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;')
 }
 
+// Fixed lookup, NOT Intl/toLocaleDateString -- same reason lib/dpr/owner-
+// no-report.ts's own SHORT_MONTHS exists (checked directly there,
+// 2026-09-02): `toLocaleDateString('en-GB', { month: 'short' })` renders
+// September as "Sept" (4 letters), not "Sep". NOT importing that file's
+// own formatOwnerNoticeDate instead -- its date SHAPE happens to be
+// identical ("27 Aug 2026") but it is deliberately frozen to template 14's
+// own Meta-approved sample value, an unrelated concern this email must not
+// be coupled to (a future template resubmission changing that shape would
+// silently drag this email's shape along with it). Same
+// don't-share-render-helpers convention this file's own escapeHtml already
+// follows, one helper over.
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * IST calendar date for `createdAt` (a hindrance has no log_date of its own
+ * -- it is not tied to a daily_logs row -- so the report's own created_at
+ * is the only real date it has), rendered "07 Sep 2026". Reuses
+ * lib/daily-logs/date.ts's istDateString -- the general-purpose UTC->IST
+ * conversion this codebase already shares across checkin-escalations and
+ * the Daily Logs board, unlike the frozen owner-notice formatter above.
+ */
+function formatHindranceReportDate(createdAt: string): string {
+  const istDate = istDateString(new Date(createdAt))
+  const [year, month, day] = istDate.split('-').map(Number)
+  return `${String(day).padStart(2, '0')} ${SHORT_MONTHS[month - 1]} ${year}`
+}
+
 export interface HindrancePmNotifyEmailParams {
   projectName: string
   engineerName: string
   description: string
   timing: 'active' | 'potential' | 'unspecified' | null
   timingRaw: string | null
+  createdAt: string
 }
 
 /**
@@ -207,7 +236,7 @@ export interface HindrancePmNotifyEmailParams {
  * statement, never a fabricated claim about timing nobody has fabricated.
  */
 export function buildHindrancePmNotifyEmail(params: HindrancePmNotifyEmailParams): RenderedHindrancePmEmail {
-  const { projectName, engineerName, description, timing, timingRaw } = params
+  const { projectName, engineerName, description, timing, timingRaw, createdAt } = params
 
   let timingLine: string
   if (timing === 'active') {
@@ -220,7 +249,9 @@ export function buildHindrancePmNotifyEmail(params: HindrancePmNotifyEmailParams
     timingLine = 'Timing not confirmed.'
   }
 
-  const subject = `Hindrance reported — ${projectName}`
+  // WITH the date -- a PM with several hindrances across days can't tell
+  // them apart in a subject list otherwise. Decided 2026-09-07 (Aravind).
+  const subject = `Hindrance reported — ${projectName} — ${formatHindranceReportDate(createdAt)}`
   const openLine = `${engineerName} reported a hindrance on ${projectName}: "${description}".`
   const text = `${openLine}\n\n${timingLine}`
   const html = `<p>${escapeHtml(openLine)}</p><p>${escapeHtml(timingLine)}</p>`
@@ -250,6 +281,7 @@ interface HindranceRow {
   timing: 'active' | 'potential' | 'unspecified' | null
   timing_raw: string | null
   pm_notified_at: string | null
+  created_at: string
 }
 
 /**
@@ -284,7 +316,7 @@ export async function handleHindrancePmNotifyJob(
 
   const { data: hindrance, error: hindranceError } = await client
     .from('hindrances')
-    .select('id, project_id, reported_by, description, timing, timing_raw, pm_notified_at')
+    .select('id, project_id, reported_by, description, timing, timing_raw, pm_notified_at, created_at')
     .eq('id', payload.hindrance_id)
     .single()
   if (hindranceError) throw hindranceError
@@ -316,6 +348,7 @@ export async function handleHindrancePmNotifyJob(
     description: row.description,
     timing: row.timing,
     timingRaw: row.timing_raw,
+    createdAt: row.created_at,
   })
 
   let sentCount = 0
