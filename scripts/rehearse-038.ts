@@ -136,8 +136,34 @@ async function main() {
           AND pid <> pg_backend_pid()
         ORDER BY query_start;`,
     )
-    console.log(activity.rows)
-    console.log(`(${activity.rows.length} other connection(s) found — review above before trusting this rehearsal's isolation)`)
+    // Classify, don't just dump -- a real rehearsal run (2026-09-07) showed
+    // 8 rows that were ALL Supabase's own always-on infrastructure
+    // (PostgREST, pg_cron, postgres_exporter, pg_net), which is normal
+    // background noise on every Supabase project, not a contention signal.
+    // Printing all 8 undifferentiated made a human re-derive that by eye
+    // every single run -- this classifies known infrastructure by usename/
+    // application_name and buckets everything else separately, so only the
+    // OTHER bucket needs actual review. Named patterns are this session's
+    // best understanding of Supabase's own connection identities, not
+    // independently verified against Supabase's own docs -- if a future
+    // run shows a genuine infrastructure connection landing in OTHER,
+    // extend KNOWN_INFRA_USENAMES/KNOWN_INFRA_APP_NAMES rather than assume
+    // the check is wrong.
+    const KNOWN_INFRA_USENAMES = new Set(['supabase_admin', 'authenticator', 'pgbouncer', 'supabase_realtime_admin', 'supabase_storage_admin'])
+    const KNOWN_INFRA_APP_NAME_PATTERNS = [/postgrest/i, /pg_cron/i, /postgres_exporter/i, /pg_net/i, /supavisor/i, /realtime/i]
+    type ActivityRow = { pid: number; usename: string | null; application_name: string | null; [key: string]: unknown }
+    const isKnownInfra = (row: ActivityRow): boolean =>
+      (row.usename !== null && KNOWN_INFRA_USENAMES.has(row.usename)) ||
+      (row.application_name !== null && KNOWN_INFRA_APP_NAME_PATTERNS.some((p) => p.test(row.application_name as string)))
+
+    const infraRows = activity.rows.filter(isKnownInfra)
+    const otherRows = activity.rows.filter((r: ActivityRow) => !isKnownInfra(r))
+
+    console.log(`Known Supabase infrastructure (${infraRows.length}, informational only):`)
+    console.log(infraRows.map((r: ActivityRow) => ({ usename: r.usename, application_name: r.application_name, state: r.state })))
+    console.log(`\nOTHER connections (${otherRows.length}) — these need real review, not infrastructure noise:`)
+    console.log(otherRows)
+    assert(otherRows.length === 0, 'no non-infrastructure connections found — rehearsal isolation looks clean')
 
     // ---------------------------------------------------------------------
     marker('PRE-FLIGHT 0c — GATING QUESTION: is test-db at 036/037, or behind prod?')
