@@ -96,6 +96,31 @@ own subject matter. Full incident: this PR's own thread, and
 `docs/reviews/039-apply-record.md`. Step F exists so a third instance
 does not happen.
 
+- **G. Regenerate `types/database.ts` (CLAUDE.md §6, "regenerate types after
+  every schema migration").** `npx supabase gen types typescript --linked
+  --schema public > types/database.ts`, run immediately after F confirms —
+  not deferred, not left for the next PR that happens to touch the changed
+  table to discover via a `tsc` failure. Commit the regenerated file in the
+  same commit/session as the apply, same discipline as E and F.
+
+**Step G is not optional scaffolding, same as E and F — a THIRD instance of
+the identical concern on the SAME migration, not a new one.** Migration 039
+(PR #243, 2026-09-08) missed all three post-apply steps in sequence: first
+the real test-db apply (F, fixed same session — see F's own incident note
+above), then this one. `types/database.ts` was never regenerated after 039
+landed on prod — caught only when DASH-07 Phase 2's own Stage 2 work (the
+Acknowledge/Undo Server Actions, same PR's follow-on) tried to `.update()`
+the three new columns and `tsc --noEmit` failed with `TS2353: Object literal
+may only specify known properties` on `acknowledged_at`, because the
+generated `Update` type for `hindrances` still didn't know the columns
+existed. Nothing in CI catches this class of gap directly — `tsc` only fails
+once some *later* piece of code actually references the missing type, which
+can be an arbitrary distance (in time and in PRs) from the migration that
+caused it, same shape as the F gap being invisible to CI until a later PR's
+shared-fixture teardown broke. Fixed same-session, no separate incident
+record needed — regeneration is idempotent and read-only (introspects the
+now-permanent post-F schema), unlike E/F's own write-shaped steps.
+
 ## After apply
 
 - schema.md `<nnn>` entry — written **only after E AND F confirm**, so no

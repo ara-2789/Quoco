@@ -3,11 +3,14 @@ import { getProfile } from '@/lib/auth/profile'
 import { StatusChip, type StatusVariant } from '@/components/ui/status-chip'
 import { getHindranceQueue, type HindranceCard, type HindranceTiming } from '@/lib/hindrance/queue'
 import { formatHindranceAge } from '@/lib/hindrance/relative-time'
+import { HindranceAckControls } from './ack-controls'
 
-// DASH-07 Phase 1 — PM hindrance queue (docs/plans/dash-07-hindrance-queue.md).
-// READ-ONLY: no Acknowledge, no Seen state, no Undo. The acknowledged_at/
-// acknowledged_by columns don't exist yet -- a separate track owns that
-// migration; this page only reads what 038's flow already writes.
+// DASH-07 — PM hindrance queue (docs/plans/dash-07-hindrance-queue.md).
+// Phase 2 adds Acknowledge/Undo (migration 039 + app/(dashboard)/
+// hindrances/actions.ts). Acknowledged rows KEEP their position (never
+// sink, never hidden -- §Rendering rules) and get a quiet background tint,
+// never dimmed text (decision 2: acknowledged reads as "seen", not
+// "resolved/dismissed").
 //
 // ROUTE ACCESS -- no role gate, no redirect (§Route access). Matches
 // daily-logs/dprs: open to any authenticated user, scoped by data. A viewer
@@ -85,13 +88,18 @@ function ErrorState() {
 }
 
 // Row anatomy (§Row anatomy): project, chip, the engineer's words, then
-// attribution. No action row in Phase 1 -- do not add one, stubbed or not.
+// attribution and action. Acknowledged rows add a second attribution/action
+// line (Seen by ..., Undo) below the reporter line -- they don't replace it
+// (§Row anatomy's own "Acknowledged:" mockup keeps both lines).
 function HindranceRow({ item, now }: { item: HindranceCard; now: Date }) {
-  const chip = CHIP[item.timing]
+  const isAcknowledged = item.acknowledgedAt !== null
+  const chip = isAcknowledged ? { variant: 'muted' as const, label: 'Seen' } : CHIP[item.timing]
   const rawAnswer = item.timingRaw?.trim()
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
+    <div
+      className={`rounded-lg border border-gray-200 p-4 sm:p-5 ${isAcknowledged ? 'bg-gray-50' : 'bg-white'}`}
+    >
       <div className="mb-1 flex items-start justify-between gap-3">
         <p className="text-xs text-gray-500">{item.projectName}</p>
         <StatusChip variant={chip.variant} label={chip.label} />
@@ -107,6 +115,15 @@ function HindranceRow({ item, now }: { item: HindranceCard; now: Date }) {
       <p className="mt-2 text-xs text-gray-500">
         {item.reporterName} · {formatHindranceAge(item.createdAt, now)}
       </p>
+      <HindranceAckControls
+        hindranceId={item.id}
+        isAcknowledged={isAcknowledged}
+        acknowledgedAt={item.acknowledgedAt}
+        acknowledgedBySelf={item.acknowledgedBySelf}
+        acknowledgedByName={item.acknowledgedByName}
+        ackNotifiedAt={item.ackNotifiedAt}
+        reporterName={item.reporterName}
+      />
     </div>
   )
 }

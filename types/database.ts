@@ -628,6 +628,9 @@ export type Database = {
       }
       hindrances: {
         Row: {
+          ack_notified_at: string | null
+          acknowledged_at: string | null
+          acknowledged_by: string | null
           area_affected: string | null
           created_at: string | null
           description: string | null
@@ -648,6 +651,9 @@ export type Database = {
           timing_raw: string | null
         }
         Insert: {
+          ack_notified_at?: string | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
           area_affected?: string | null
           created_at?: string | null
           description?: string | null
@@ -668,6 +674,9 @@ export type Database = {
           timing_raw?: string | null
         }
         Update: {
+          ack_notified_at?: string | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
           area_affected?: string | null
           created_at?: string | null
           description?: string | null
@@ -688,6 +697,13 @@ export type Database = {
           timing_raw?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "hindrances_acknowledged_by_fkey"
+            columns: ["acknowledged_by", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "hindrances_project_id_fkey"
             columns: ["project_id", "tenant_id"]
@@ -2100,6 +2116,10 @@ export type Database = {
       get_user_tenant_id: { Args: never; Returns: string }
       quoco_classify_yes_no: { Args: { p_text: string }; Returns: Json }
       quoco_same_ist_day: { Args: { a: string; b: string }; Returns: boolean }
+      quoco_test_row_is_locked: {
+        Args: { p_phone_number: string }
+        Returns: boolean
+      }
       sweep_stale_morning_sessions: { Args: { p_now?: string }; Returns: Json }
       write_dpr_version: {
         Args: {
