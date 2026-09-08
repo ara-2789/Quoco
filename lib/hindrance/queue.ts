@@ -38,6 +38,17 @@ function isKnownTiming(value: string | null): value is HindranceTiming {
 
 export const HINDRANCE_WINDOW_DAYS = 14
 
+// DASH-01's own tile window -- DELIBERATELY INDEPENDENT of
+// HINDRANCE_WINDOW_DAYS above, even though both are 14 today. The two
+// numbers answer different questions (how far back the /hindrances queue
+// looks, vs. how long a stoppage stays on the DASH-01 home-page tile before
+// dropping off it) and coincide only by coincidence, not by principle --
+// merging them into one constant would mean a future change to one
+// silently changes the other. This is a DISPLAY RULE FOR THE TILE ONLY: an
+// active hindrance older than this never leaves /hindrances, and nothing in
+// the database changes -- see getActiveHindranceTiles.
+export const DASHBOARD_TILE_WINDOW_DAYS = 14
+
 // Whole calendar-day difference between two 'YYYY-MM-DD' strings. Diffing
 // the calendar-day strings themselves (via their UTC-midnight
 // representations) rather than the original instants is what keeps this
@@ -63,6 +74,24 @@ export function withinHindranceWindow(timing: HindranceTiming, createdAt: string
   const created = istDateString(new Date(createdAt))
   const today = istDateString(now)
   return calendarDaysBetween(created, today) <= HINDRANCE_WINDOW_DAYS
+}
+
+/**
+ * DASH-01's own tile window (see DASHBOARD_TILE_WINDOW_DAYS) -- NOT a
+ * parameterisation of withinHindranceWindow above, a separate predicate.
+ * withinHindranceWindow's `active` exemption is baked into that function's
+ * own contract for its one real caller (/hindrances); this tile needs the
+ * OPPOSITE verdict for the exact same timing value, from a different
+ * caller. getActiveHindranceTiles' own query already filters to
+ * timing='active' only, so unlike withinHindranceWindow this predicate
+ * never takes a `timing` argument at all -- there's only ever one value in
+ * play here. Shares calendarDaysBetween/istDateString with the function
+ * above; withinHindranceWindow itself is untouched.
+ */
+function withinDashboardTileWindow(createdAt: string, now: Date): boolean {
+  const created = istDateString(new Date(createdAt))
+  const today = istDateString(now)
+  return calendarDaysBetween(created, today) <= DASHBOARD_TILE_WINDOW_DAYS
 }
 
 /**
@@ -224,4 +253,85 @@ export async function getHindranceQueue(
   }))
 
   return { status: 'ok', items: orderHindranceQueue(items), hasAnyEver }
+}
+
+export type ActiveHindranceTile = {
+  id: string
+  projectId: string
+  projectName: string
+  description: string | null
+  acknowledgedAt: string | null
+}
+
+export type ActiveHindranceTilesResult =
+  | { status: 'ok'; items: ActiveHindranceTile[] }
+  | { status: 'error' }
+
+/**
+ * DASH-01's active-hindrances tile feed. timing='active' ONLY --
+ * potential/unspecified stay on /hindrances, never appear here. Windowed
+ * by withinDashboardTileWindow (14 days, independent of /hindrances' own
+ * window -- see DASHBOARD_TILE_WINDOW_DAYS). A read failure returns
+ * 'error', never a silent empty list: an empty list here means "nothing to
+ * show," and that must never be indistinguishable from "the read failed"
+ * -- the same failure mode dashboard/page.tsx's own board.status==='error'
+ * check already guards against for the check-in tiles, extended here to
+ * this feed too.
+ */
+export async function getActiveHindranceTiles(
+  supabase: SupabaseClient<Database>,
+  pmUserId: string,
+  now: Date,
+): Promise<ActiveHindranceTilesResult> {
+  const { data: memberData, error: memberErr } = await supabase
+    .from('project_members')
+    .select('project_id, projects(name)')
+    .eq('user_id', pmUserId)
+    .eq('role', 'pm')
+
+  if (memberErr) {
+    Sentry.captureException(memberErr, { tags: { feature: 'dash-01-hindrance-tile', stage: 'projects' } })
+    return { status: 'error' }
+  }
+
+  const members = (memberData ?? []) as unknown as MemberProjectRow[]
+  if (members.length === 0) return { status: 'ok', items: [] }
+
+  const projectNameById = new Map<string, string>()
+  for (const m of members) {
+    if (m.projects) projectNameById.set(m.project_id, m.projects.name)
+  }
+  const projectIds = [...projectNameById.keys()]
+
+  const { data: rawData, error: hindrancesErr } = await supabase
+    .from('hindrances')
+    .select('id, project_id, description, created_at, acknowledged_at')
+    .eq('timing', 'active')
+    .in('project_id', projectIds)
+
+  if (hindrancesErr) {
+    Sentry.captureException(hindrancesErr, { tags: { feature: 'dash-01-hindrance-tile', stage: 'hindrances' } })
+    return { status: 'error' }
+  }
+
+  type ActiveHindranceRow = {
+    id: string
+    project_id: string
+    description: string | null
+    created_at: string
+    acknowledged_at: string | null
+  }
+  const rows = (rawData ?? []) as unknown as ActiveHindranceRow[]
+
+  const items: ActiveHindranceTile[] = rows
+    .filter((r) => withinDashboardTileWindow(r.created_at, now))
+    .map((r) => ({
+      id: r.id,
+      projectId: r.project_id,
+      projectName: projectNameById.get(r.project_id) ?? '—',
+      description: r.description,
+      acknowledgedAt: r.acknowledged_at,
+    }))
+
+  return { status: 'ok', items }
 }
