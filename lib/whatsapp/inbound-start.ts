@@ -4,6 +4,7 @@ import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
 import { readCurrentFlow } from './session'
 import { dispatchInboundTurn } from './dispatch'
+import { applyHindranceFlowTurn, buildHindranceReply } from './flows/hindrance'
 
 // RETIRED, 2026-08-28 (docs/plans/pass1-outbound-send-plan.md §2 item 1,
 // design-decisions-beta-feedback.md §38). This module used to treat an
@@ -42,11 +43,23 @@ import { dispatchInboundTurn } from './dispatch'
 // -- PRECEDENCE, DECIDED (Aravind, 2026-09-06): a site-holiday engineer or
 // one past the morning cutoff still has a genuine hindrance to report; the
 // header explains why no check-in is coming, never that nothing can be
-// reported. See classifyAdhocInput below. Until step 4's real flow ships,
-// "what happens next" is buildItem1InterimReply -- a truthful placeholder
-// that STILL carries the header (corrected 2026-09-06 same day: the first
-// draft never did, silently repeating the exact false-promise-by-omission
-// shape items 2/7 were dropped/held over).
+// reported. See classifyAdhocInput below.
+//
+// WIRED, 2026-09-07 -- SUPERSEDES THE TWO PARAGRAPHS BELOW. Migration 038
+// (docs/reviews/038-post-apply-probe.sql, 17/17 checks) is confirmed applied
+// to prod; the "1" branch now calls applyHindranceFlowTurn(startFlow: true)
+// directly, unconditionally, regardless of header state -- the interim
+// placeholder (buildItem1InterimReply/ITEM1_INTERIM_LINE) is deleted, not
+// kept as an unreached fallback (this project's own standing lesson from
+// isHireRateTrusted: dead code left "for protection" in a path nothing
+// routes to just reads as protection later, when it is not). Struck
+// through below, not rewritten, per this project's own correction
+// discipline -- kept for why the wiring was held back as long as it was:
+// ~~Until step 4's real flow ships, "what happens next" is
+// buildItem1InterimReply -- a truthful placeholder that STILL carries the
+// header (corrected 2026-09-06 same day: the first draft never did,
+// silently repeating the exact false-promise-by-omission shape items 2/7
+// were dropped/held over).
 //
 // STEP 4's CODE IS WRITTEN, DELIBERATELY NOT WIRED IN YET (2026-09-07).
 // lib/whatsapp/flows/hindrance.ts (applyHindranceFlowTurn) and dispatch.ts's
@@ -62,7 +75,7 @@ import { dispatchInboundTurn } from './dispatch'
 // moment this code deploys, until the SQL separately lands. Keep calling
 // buildItem1InterimReply here until 038 is confirmed applied (breadcrumb +
 // probe, same discipline as every other apply this project has done) --
-// then the wiring is a genuinely one-line swap, not a redesign.
+// then the wiring is a genuinely one-line swap, not a redesign.~~
 //
 // SCOPE BOUNDARY (unchanged from the original build, restated): this
 // covers ONLY the case readCurrentFlow returns null. The refuse-when-
@@ -202,30 +215,9 @@ export function buildIdleReply(kind: Exclude<AdhocInputKind, 'item1'>, headerSta
   return lines.filter((line): line is string => line !== undefined).join('\n')
 }
 
-// INTERIM, NOT THE REAL FLOW (2026-09-06; corrected same day, Aravind's own
-// review of this PR) -- item 1's actual state machine (Q1 free text, Q2
-// structured pick, the hindrances INSERT) is PR 2's step 4, not yet built.
-// This exists so a leading "1" gets a truthful, complete reply now rather
-// than either a half-built flow (asking Q1 with nothing to capture the
-// answer) or the wrong fallback (telling him "reply 1" after he just did).
-//
-// CORRECTED: the first draft of this reply was a single fixed line with NO
-// header -- it never told a site-holiday or post-cutoff engineer anything
-// about today's check-in state, the exact false-promise-by-omission shape
-// items 2 and 7 were dropped/held over. Same two-line shape as every other
-// fallback now: this correction line, then the header when one applies --
-// but deliberately NO action line, since there is no action available
-// (item 1 IS the action, and it isn't accepting input yet).
-const ITEM1_INTERIM_LINE = "Hindrance reporting isn't ready yet. Nothing was recorded."
-
-export function buildItem1InterimReply(headerState: IdleHeaderState): string {
-  const lines = [ITEM1_INTERIM_LINE, HEADER_LINE[headerState]]
-  return lines.filter((line): line is string => line !== undefined).join('\n')
-}
-
 export interface InboundRouteResult {
   reply: string
-  /** Always null for every branch in this file's own idle handling now -- nothing here starts a flow any more. Non-null only via dispatchInboundTurn's own delegation when a flow is already active. 'hindrance' added 2026-09-07 for dispatch.ts's own Flow type -- not yet reachable in practice (item 1 still calls buildItem1InterimReply, not applyHindranceFlowTurn), but the type has to be honest about what dispatchInboundTurn's delegation can now return once a real 'hindrance' session exists. */
+  /** Null for every fallback branch (nothing here starts morning/evening any more -- the cron is the sole starter for those). 'hindrance' as of 2026-09-07: the item1 branch below is the one real exception, since a leading "1" genuinely does start a flow directly from idle -- see that branch's own comment for why item 1 is different from morning/evening here. Non-null otherwise only via dispatchInboundTurn's own delegation when a flow is already active. */
   resolvedFlow: 'morning' | 'evening' | 'hindrance' | null
 }
 
@@ -272,15 +264,32 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
   // --- No active session ---------------------------------------------
   // PRECEDENCE, decided: a leading "1" always wins on WHETHER item 1's
   // flow starts, regardless of check-in state -- classified here, acted on
-  // below. NOT classified-and-returned immediately any more (corrected
-  // 2026-09-06): the INTERIM placeholder (buildItem1InterimReply) still
-  // needs the header, so the daily_logs read below is NOT skipped for
-  // 'item1' the way it will be once step 4's real flow exists (that flow
-  // will do its own reads and won't need this file's header at all --
-  // whoever ships step 4 can reintroduce an early return here then, if the
-  // extra read is worth avoiding; leaving it unconditional today is not a
-  // real cost since every other case already needs it).
+  // immediately below via an early return. Item 1's real flow (2026-09-07)
+  // needs none of this file's own daily_logs/header machinery -- it does
+  // its own reads under apply_hindrance_flow_turn's own row lock, and its
+  // reply never varies by header state (unlike the INTERIM placeholder
+  // this superseded, which needed the header and so could not skip this
+  // read -- exactly the early return that placeholder's own removed
+  // comment said a future author could reintroduce here once it no longer
+  // applied).
   const adhocKind = classifyAdhocInput(params.message)
+
+  if (adhocKind === 'item1') {
+    const result = await applyHindranceFlowTurn({
+      phoneNumber: params.phoneNumber,
+      tenantId: params.tenantId,
+      userId: params.userId,
+      projectId: params.projectId,
+      message: params.message,
+      startFlow: true,
+      ...(params.now !== undefined ? { now: params.now } : {}),
+      supabaseClient: supabase,
+    })
+    return {
+      reply: buildHindranceReply(result.outcome, result.currentStep, result.wasExhausted),
+      resolvedFlow: 'hindrance',
+    }
+  }
 
   const now = params.now !== undefined ? new Date(params.now) : new Date()
   const ist = istParts(now)
@@ -320,8 +329,8 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
     istMinutes: ist.minutes,
   })
 
-  if (adhocKind === 'item1') {
-    return { reply: buildItem1InterimReply(headerState), resolvedFlow: null }
-  }
+  // adhocKind is never 'item1' here -- that case already returned above --
+  // so this is exactly buildIdleReply's own declared domain, no cast
+  // needed.
   return { reply: buildIdleReply(adhocKind, headerState), resolvedFlow: null }
 }

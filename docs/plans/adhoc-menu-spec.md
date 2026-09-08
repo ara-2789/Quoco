@@ -894,7 +894,22 @@ would receive them:**
 5. > That option isn't available yet. Nothing was recorded.
    > You can report a site hindrance — reply 1.
 
-**Item 1's interim reply (2026-09-06, corrected same day) — until step 4 ships.** Same
+**SUPERSEDED (2026-09-07) — step 4 shipped, exactly the way this section's own last
+paragraph said it would.** Struck through below, not rewritten, per this project's own
+correction discipline. Migration 038 applied to prod (docs/reviews/038-post-apply-probe.sql,
+17/17 checks) and `inbound-start.ts`'s "1" branch was wired to
+`applyHindranceFlowTurn(startFlow: true)` in the same round. `buildItem1InterimReply` and
+`ITEM1_INTERIM_LINE` are deleted from the codebase, not merely unused — this project's own
+standing practice is not to keep a guard or placeholder in a path nothing routes to (a
+dead-code-as-protection shape named explicitly after `isHireRateTrusted`). Item 1 now starts
+the real flow **unconditionally, regardless of header state** — `HINDRANCE_QUESTIONS[1]`
+("What's the hindrance? Describe it in your own words.") every time, whether before
+`morningSend`, after `morningCutoff`, on a site holiday, or after both halves are submitted.
+The header-state computation this section's own five combinations enumerated no longer has
+any effect on item 1's reply at all; it still runs (the `daily_logs` read below is not
+skipped for item1, per `inbound-start.ts`'s own comment) but only feeds the OTHER four
+fallback kinds above, never this one.
+~~**Item 1's interim reply (2026-09-06, corrected same day) — until step 4 ships.** Same
 correction-line-then-header shape as the three fallbacks above, but deliberately NO action
 line, since there is no action available (item 1 IS the action, and it isn't accepting
 input yet). Fixed correction line, never varies: "Hindrance reporting isn't ready yet.
@@ -917,7 +932,7 @@ Nothing was recorded." All five combinations:
 **This whole reply is TEMPORARY, scoped to the window between this PR merging and step 4
 shipping.** Once item 1's real flow exists, this placeholder is replaced by the flow
 actually starting — the leading-"1" classification itself does not change, only what
-happens after it.
+happens after it.~~
 
 **The "complete" header absorbs a second real condition, not just "both submitted"
 literally.** The old `REPORT_READY_REPLY` condition (past `eveningClose`, any submission
