@@ -3,9 +3,12 @@ import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { istDateString } from '@/lib/daily-logs/date'
 
-// DASH-07 Phase 1 — PM hindrance queue, READ-ONLY (docs/plans/
-// dash-07-hindrance-queue.md). No acknowledgement write here; the
-// acknowledged_at/acknowledged_by columns don't exist yet (other track).
+// DASH-07 — PM hindrance queue (docs/plans/dash-07-hindrance-queue.md).
+// Phase 2 adds the acknowledgement fields below (migration 039) as a
+// DISPLAY-LAYER OVERLAY on top of the existing read -- acknowledgement is
+// NOT a fourth HindranceTiming value (§Row anatomy / §Status roles), so
+// withinHindranceWindow/orderHindranceQueue are untouched: ack status never
+// affects windowing or ordering, only presentation.
 //
 // SCOPING (CLAUDE.md §4): hindrances_select RLS (002_rls_policies.sql:
 // 249-251) is TENANT-wide, not project-scoped -- byte-identical in shape to
@@ -17,6 +20,11 @@ import { istDateString } from '@/lib/daily-logs/date'
 // unfiltered membership, and never users.role).
 
 export type HindranceTiming = 'active' | 'unspecified' | 'potential'
+
+// Exported so callers that need to tell "a real name" from "no name on
+// record" apart (e.g. the Undo consequence line's first-name interpolation)
+// compare against this constant rather than duplicating the literal string.
+export const UNNAMED_ENGINEER_FALLBACK = 'Unnamed engineer'
 
 const TIMING_RANK: Record<HindranceTiming, number> = {
   active: 0,
@@ -80,6 +88,14 @@ export type HindranceCard = {
   timingRaw: string | null
   reporterName: string
   createdAt: string
+  /** null when never acknowledged. */
+  acknowledgedAt: string | null
+  /** true when the CURRENT viewer is the acknowledger -- picks "Seen by you" vs "Seen by {name}". */
+  acknowledgedBySelf: boolean
+  /** Resolved name of the acknowledger; null when never acknowledged. Irrelevant when acknowledgedBySelf. */
+  acknowledgedByName: string | null
+  /** Stage 3 (sender) field -- always null until that ships. Gates the Undo consequence line; never gate on acknowledgedAt alone. */
+  ackNotifiedAt: string | null
 }
 
 export type HindranceQueueResult =
@@ -101,6 +117,9 @@ type HindranceRow = {
   timing_raw: string | null
   reported_by: string
   created_at: string
+  acknowledged_at: string | null
+  acknowledged_by: string | null
+  ack_notified_at: string | null
 }
 
 /**
@@ -135,7 +154,9 @@ export async function getHindranceQueue(
 
   const { data: rawData, error: hindrancesErr } = await supabase
     .from('hindrances')
-    .select('id, project_id, description, timing, timing_raw, reported_by, created_at')
+    .select(
+      'id, project_id, description, timing, timing_raw, reported_by, created_at, acknowledged_at, acknowledged_by, ack_notified_at',
+    )
     .in('project_id', projectIds)
 
   if (hindrancesErr) return reportReadFailure('hindrances', hindrancesErr)
@@ -163,17 +184,26 @@ export async function getHindranceQueue(
   const windowed = knownRows.filter((r) => withinHindranceWindow(r.timing, r.created_at, now))
   if (windowed.length === 0) return { status: 'ok', items: [], hasAnyEver }
 
-  const reporterIds = [...new Set(windowed.map((r) => r.reported_by))]
-  const { data: reporterData, error: reporterErr } = await supabase
+  // One name-resolution query covers both roles that can appear here --
+  // reporters (engineers) and acknowledgers (PMs) both live in `users`, same
+  // id space. Separate fallback strings below keep the two roles honestly
+  // distinguishable if either full_name is ever null.
+  const reporterIds = windowed.map((r) => r.reported_by)
+  const acknowledgerIds = windowed
+    .map((r) => r.acknowledged_by)
+    .filter((v): v is string => v !== null)
+  const userIds = [...new Set([...reporterIds, ...acknowledgerIds])]
+
+  const { data: userData, error: userErr } = await supabase
     .from('users')
     .select('id, full_name')
-    .in('id', reporterIds)
+    .in('id', userIds)
 
-  if (reporterErr) return reportReadFailure('reporters', reporterErr)
+  if (userErr) return reportReadFailure('reporters', userErr)
 
-  const reporterNameById = new Map<string, string>()
-  for (const u of (reporterData ?? []) as unknown as { id: string; full_name: string | null }[]) {
-    reporterNameById.set(u.id, u.full_name ?? 'Unnamed engineer')
+  const nameById = new Map<string, string | null>()
+  for (const u of (userData ?? []) as unknown as { id: string; full_name: string | null }[]) {
+    nameById.set(u.id, u.full_name)
   }
 
   const items: HindranceCard[] = windowed.map((r) => ({
@@ -183,8 +213,14 @@ export async function getHindranceQueue(
     timing: r.timing,
     description: r.description,
     timingRaw: r.timing_raw,
-    reporterName: reporterNameById.get(r.reported_by) ?? 'Unnamed engineer',
+    reporterName: nameById.get(r.reported_by) ?? UNNAMED_ENGINEER_FALLBACK,
     createdAt: r.created_at,
+    acknowledgedAt: r.acknowledged_at,
+    acknowledgedBySelf: r.acknowledged_by === pmUserId,
+    acknowledgedByName: r.acknowledged_by
+      ? (nameById.get(r.acknowledged_by) ?? 'Unnamed PM')
+      : null,
+    ackNotifiedAt: r.ack_notified_at,
   }))
 
   return { status: 'ok', items: orderHindranceQueue(items), hasAnyEver }
