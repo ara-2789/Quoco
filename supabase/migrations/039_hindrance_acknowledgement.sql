@@ -1,12 +1,22 @@
 -- =============================================================================
 -- 039_hindrance_acknowledgement.sql
--- DASH-07 Phase 2, Stage 1 -- REHEARSAL ROUND 2 COMPLETE, 2026-09-08, held
+-- DASH-07 Phase 2, Stage 1 -- ~~REHEARSAL ROUND 2 COMPLETE, 2026-09-08, held
 -- for external review (RLS policy + CHECK constraint + the column-privilege
 -- fix below) before this enters supabase/migrations/ for real. Per
 -- CLAUDE.md's "a migration file enters supabase/migrations/ when it is
 -- being applied, not when it is written" rule, this file lives in
 -- docs/reviews/ until an apply is actually happening -- do not copy it
--- into supabase/migrations/ yet, review approval notwithstanding.
+-- into supabase/migrations/ yet, review approval notwithstanding.~~
+-- DATED CORRECTION (2026-09-08): APPLIED TO PROD (jvxwqignooseazzmwhvl),
+-- ledger repaired (`supabase migration repair --status applied 039
+-- --linked`). External review approved round 2 same day. Full apply
+-- sequence (PITR observation, reservation re-check, promotion, pre/post
+-- apply readback, ledger repair) recorded in
+-- docs/reviews/039-apply-record.md -- not repeated here. This file now
+-- lives in supabase/migrations/ because it is applied, not merely written
+-- -- struck through above, not rewritten, per this project's own
+-- correction discipline (matching 036's own precedent for this exact
+-- transition).
 --
 -- ROUND 2 CONTEXT: external review of round 1 (below, unchanged, kept as
 -- the record of what it actually tested) found ONE real gap -- RLS
