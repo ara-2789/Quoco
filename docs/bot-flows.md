@@ -511,7 +511,13 @@ seconds apart (claim race). DPR work is not "done" until these pass.
 - DASH-08 Mobile responsive: no native app in Phase 1.
 
 FAST-FOLLOW (do not build yet): DASH-05 invoice queue, DASH-06 safety log,
-DASH-07 hindrance tracker, DASH-10 accountability view + resolve action.
+~~DASH-07 hindrance tracker~~, DASH-10 accountability view + resolve action.
+
+DATED CORRECTION (2026-09-08): DASH-07 (PM hindrance queue, read-only Phase 1)
+shipped — see docs/plans/dash-07-hindrance-queue.md. Struck through, not
+silently rewritten. DASH-10's resolve action, and the acknowledgement write
+(needs its own migration for acknowledged_at/acknowledged_by), remain
+Fast-Follow, unchanged.
 
 ---
 

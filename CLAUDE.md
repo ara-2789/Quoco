@@ -945,10 +945,16 @@ SPINE — build and ship:
 FAST-FOLLOW — fully specified, DO NOT build yet:
 - Ad-hoc safety / invoice / hindrance flows
 - DPR accountability engine (dependency roll-forward, escalation, resolve path)
-- DASH-05 invoice queue, DASH-06 safety log, DASH-07 hindrance tracker,
+- DASH-05 invoice queue, DASH-06 safety log, ~~DASH-07 hindrance tracker~~,
   DASH-10 accountability view
 - BOT-30 Q6→hindrance promotion
 - resolutions table + source_key
+
+DATED CORRECTION (2026-09-08): DASH-07 (PM hindrance queue, read-only Phase 1)
+shipped — see docs/plans/dash-07-hindrance-queue.md. Struck through above, not
+silently removed, per this file's own correction discipline. Acknowledgement
+(Phase 2 — needs its own migration for acknowledged_at/acknowledged_by) and
+DASH-10 resolution remain Fast-Follow, unchanged.
 
 The Fast-Follow TABLES exist in the schema (so migrations are stable), but
 their FLOWS and dashboard views are not built in the Spine.
