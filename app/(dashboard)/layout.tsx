@@ -19,10 +19,17 @@ async function signOut() {
 // for the Spine so beta PMs don't click into empty sections"). Restore
 // each one individually once its route is actually built -- do not batch
 // them back in together.
+//
+// DATED UPDATE (2026-09-08): Hindrances restored -- DASH-07 Phase 1 shipped
+// (docs/plans/dash-07-hindrance-queue.md), a real read-only /hindrances
+// route now exists. Safety (DASH-06) and Invoices (DASH-05) still have no
+// route and stay out, per the "do not batch them back in together" rule
+// above -- restore each on its own, when its own route ships.
 const NAV_LINKS = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Projects', href: '/projects' },
   { label: 'Daily Logs', href: '/daily-logs' },
+  { label: 'Hindrances', href: '/hindrances' },
   { label: 'DPRs', href: '/dprs' },
 ]
 
