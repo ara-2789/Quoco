@@ -37,6 +37,76 @@ permissions:
   contents: read
 
 jobs:
+  # DOCS-ONLY PATH FILTER for the "Test (real test-db)" job ONLY (2026-09-08).
+  # "Test (real test-db)" is a REQUIRED status check on main (confirmed live
+  # against `gh api repos/.../branches/main/protection` before writing this,
+  # not assumed) -- a plain workflow-level `paths-ignore` would leave it
+  # permanently pending for a docs-only PR and BLOCK the merge, not allow it.
+  # This job classifies the PR's changed files; the `test` job below is
+  # gated on its output with a job-level `if:`, which reports the job as
+  # "skipped" rather than never appearing -- GitHub's documented behavior is
+  # that a skipped required check satisfies branch protection (this is
+  # NOT independently re-verified against THIS repo yet; the first
+  # genuinely docs-only PR opened after this ships is the real confirmation
+  # -- watch for it, per CLAUDE.md §0's "verified by observation" rule, not
+  # trusted on the strength of this comment alone).
+  #
+  # Skip set: docs/** (recursive) and *.md AT REPO ROOT ONLY (matched as
+  # "no '/' in the path, ends in .md" -- deliberately NOT `**/*.md`, so a
+  # markdown file under scripts/, test/, or anywhere else still counts as
+  # non-doc and forces the real test run). Every other path -- scripts/**,
+  # supabase/migrations/**, types/**, .github/**, test/**, app/**, lib/**
+  # included -- falls through to "non-doc" by construction, not via an
+  # explicit denylist; there is no glob broad enough here to accidentally
+  # catch them.
+  #
+  # Only applies to pull_request; a direct push to main always runs the
+  # full suite regardless of what changed (`test`'s own `if:` short-
+  # circuits on `github.event_name != 'pull_request'` before ever
+  # consulting this job's output).
+  changes:
+    name: Detect docs-only change
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - name: Classify changed files
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          FILES=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+          echo "Changed files:"
+          echo "$FILES"
+
+          docs_only=true
+          if [ -z "$FILES" ]; then
+            # No file list at all -- fail SAFE toward running the real
+            # suite, never toward skipping it.
+            docs_only=false
+          fi
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            if [[ "$f" == docs/* ]]; then
+              continue
+            fi
+            if [[ "$f" != */* && "$f" == *.md ]]; then
+              continue
+            fi
+            docs_only=false
+            break
+          done <<< "$FILES"
+
+          echo "docs_only=$docs_only"
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -92,6 +162,13 @@ jobs:
 
   test:
     name: Test (real test-db)
+    needs: [changes]
+    # `always()` overrides the default "skip if a needed job was skipped"
+    # behavior -- `changes` itself is skipped (by its own `if:`) on a push
+    # event, and without `always()` here that would cascade into skipping
+    # this job's condition evaluation entirely rather than reaching the
+    # `github.event_name != 'pull_request'` branch below.
+    if: always() && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true')
     runs-on: ubuntu-latest
     # DO NOT add ${{ github.ref }} (or anything branch/PR-scoped) to the
     # group below. That is the standard GitHub Actions idiom elsewhere, and
