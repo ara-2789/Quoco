@@ -51,7 +51,11 @@ export async function acknowledgeHindrance(hindranceId: string): Promise<AckActi
     return { status: 'error', message: SAVE_FAILURE_MESSAGE }
   }
 
+  // Both this action's callers -- the /hindrances row and the DASH-01 tile
+  // -- share it unchanged, so both paths are revalidated here regardless of
+  // which page triggered the write, ensuring either surface reflects it.
   revalidatePath('/hindrances')
+  revalidatePath('/dashboard')
   return { status: 'ok' }
 }
 
@@ -83,6 +87,10 @@ export async function unacknowledgeHindrance(hindranceId: string): Promise<AckAc
     return { status: 'error', message: SAVE_FAILURE_MESSAGE }
   }
 
+  // Both this action's callers -- the /hindrances row and the DASH-01 tile
+  // -- share it unchanged, so both paths are revalidated here regardless of
+  // which page triggered the write, ensuring either surface reflects it.
   revalidatePath('/hindrances')
+  revalidatePath('/dashboard')
   return { status: 'ok' }
 }

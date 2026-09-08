@@ -7,18 +7,35 @@ import { CHECKIN_CHECKPOINTS, type CutoffConfig } from '@/lib/daily-logs/cutoffs
 import { istDateString } from '@/lib/daily-logs/date'
 import { waMeHref, telHref } from '@/lib/whatsapp/links'
 import { StatusChip, type StatusVariant } from '@/components/ui/status-chip'
+import { getActiveHindranceTiles } from '@/lib/hindrance/queue'
+import { TileAcknowledgeButton } from './tile-acknowledge-button'
 
 // DASH-01 — the PM's exceptions home (design-principles.md Rule 4.1). This
 // screen stops being a welcome page and becomes the list of things that need
-// the PM, most-urgent first. Four tile kinds; 'awaiting' is never a tile —
+// the PM, most-urgent first. Five tile kinds; 'awaiting' is never a tile —
 // the half is not yet due, so there is nothing to act on yet.
 //
 // TODAY ONLY (Aravind's own correction, 2026-09-05): getDailyLogsBoard is
 // called ONCE, for today's IST date. A missing evening half from YESTERDAY
 // already went out in last night's 8:30pm report — it is history, not an
 // exception. There is no second call for a prior date here.
+//
+// ACTIVE-HINDRANCES TILE (added, design pass 2026-09-08): timing='active'
+// ONLY -- potential/unspecified stay on /hindrances, never appear here.
+// Ranked above every other tile kind. Inline Acknowledge, no WhatsApp/Call
+// (resolution happens outside the app -- those buttons would imply the fix
+// lives in Quoco). Drops off THIS TILE after DASHBOARD_TILE_WINDOW_DAYS
+// (lib/hindrance/queue.ts) -- a display rule only, the hindrance stays on
+// /hindrances indefinitely regardless. "Resolved" has no rendering here at
+// all: nothing writes hindrances.status/resolved_at yet (DASH-10), so this
+// tile only ever shows two states, unacknowledged or acknowledged.
 
-type TileKind = 'evening-missing' | 'morning-missing' | 'nobody-on-site' | 'stopped-messages'
+type TileKind =
+  | 'active-hindrance'
+  | 'evening-missing'
+  | 'morning-missing'
+  | 'nobody-on-site'
+  | 'stopped-messages'
 
 type Tile = {
   kind: TileKind
@@ -29,15 +46,20 @@ type Tile = {
   engineerId: string | null
   engineerName: string | null
   whatsappNumber: string | null
+  // active-hindrance only; null for every other kind.
+  hindranceId: string | null
+  description: string | null
+  isAcknowledged: boolean
 }
 
 // Urgency order — the whole point of this screen. Rendered as full-width
 // stacked cards, never a grid: a grid has no reading order.
 const TILE_RANK: Record<TileKind, number> = {
-  'evening-missing': 0,
-  'morning-missing': 1,
-  'nobody-on-site': 2,
-  'stopped-messages': 3,
+  'active-hindrance': 0,
+  'evening-missing': 1,
+  'morning-missing': 2,
+  'nobody-on-site': 3,
+  'stopped-messages': 4,
 }
 
 function formatTime(iso: string): string {
@@ -49,7 +71,12 @@ function formatTime(iso: string): string {
   })
 }
 
-function tileTitle(kind: TileKind, engineerName: string | null): string {
+// Excludes 'active-hindrance' deliberately -- that kind's title is
+// description reused verbatim, never an authored template (design pass
+// decision), so this function is never called for it. Narrowing the
+// parameter type (rather than adding a dead case to the switch below)
+// makes that enforced at compile time, not just by convention.
+function tileTitle(kind: Exclude<TileKind, 'active-hindrance'>, engineerName: string | null): string {
   switch (kind) {
     case 'evening-missing':
       return `${engineerName} hasn't sent an evening check-in`
@@ -84,24 +111,20 @@ export default async function DashboardPage() {
     evening: CHECKIN_CHECKPOINTS.eveningNudge,
   }
 
-  const board = await getDailyLogsBoard(supabase, profile.id, today)
+  // Parallel -- the two reads are independent of each other.
+  const [board, hindranceTilesResult] = await Promise.all([
+    getDailyLogsBoard(supabase, profile.id, today),
+    getActiveHindranceTiles(supabase, profile.id, now),
+  ])
 
   // A failed read must NEVER render as "nothing needs you" — that's the exact
   // all-amber lie query.ts's own B1 comment bans, one level up (an all-clear
   // lie instead of an all-gap one). Explicit error state, not a blank/happy
-  // screen.
-  if (board.status === 'error') {
-    return (
-      <div className="p-4 sm:p-8 max-w-3xl">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-          <h1 className="text-lg font-semibold text-red-900">Couldn&apos;t load your dashboard</h1>
-          <p className="text-sm text-red-700 mt-1">
-            Something went wrong reading today&apos;s check-ins. This has been reported — try
-            refreshing in a moment.
-          </p>
-        </div>
-      </div>
-    )
+  // screen. Extended to hindranceTilesResult on the same reasoning: an empty
+  // hindrance-tile list must never be indistinguishable from a failed read
+  // for that feed either.
+  if (board.status === 'error' || hindranceTilesResult.status === 'error') {
+    return <DashboardErrorState />
   }
 
   const tiles: Tile[] = []
@@ -120,6 +143,9 @@ export default async function DashboardPage() {
         engineerId: null,
         engineerName: null,
         whatsappNumber: null,
+        hindranceId: null,
+        description: null,
+        isAcknowledged: false,
       })
       continue
     }
@@ -141,6 +167,9 @@ export default async function DashboardPage() {
           engineerId: e.engineerId,
           engineerName: e.engineerName,
           whatsappNumber: e.engineerWhatsappNumber,
+          hindranceId: null,
+          description: null,
+          isAcknowledged: false,
         })
       }
       if (morningStatus.state === 'missing') {
@@ -153,6 +182,9 @@ export default async function DashboardPage() {
           engineerId: e.engineerId,
           engineerName: e.engineerName,
           whatsappNumber: e.engineerWhatsappNumber,
+          hindranceId: null,
+          description: null,
+          isAcknowledged: false,
         })
       }
       // Independent of the halves above — a blocked engineer's own missing
@@ -170,6 +202,9 @@ export default async function DashboardPage() {
           engineerId: e.engineerId,
           engineerName: e.engineerName,
           whatsappNumber: e.engineerWhatsappNumber,
+          hindranceId: null,
+          description: null,
+          isAcknowledged: false,
         })
       }
 
@@ -181,6 +216,26 @@ export default async function DashboardPage() {
         })
       }
     }
+  }
+
+  // One tile per hindrance, matching the pattern above -- not an aggregated
+  // rollup. A site with several active hindrances produces several cards.
+  for (const h of hindranceTilesResult.items) {
+    tiles.push({
+      kind: 'active-hindrance',
+      // Reuses /hindrances' own precedent exactly (page.tsx's CHIP map +
+      // the acknowledged-state swap) -- no new chip copy for this tile.
+      variant: h.acknowledgedAt ? 'muted' : 'blocked',
+      chipLabel: h.acknowledgedAt ? 'Seen' : 'Blocking now',
+      projectId: h.projectId,
+      projectName: h.projectName,
+      engineerId: null,
+      engineerName: null,
+      whatsappNumber: null,
+      hindranceId: h.id,
+      description: h.description,
+      isAcknowledged: h.acknowledgedAt !== null,
+    })
   }
 
   tiles.sort((a, b) => TILE_RANK[a.kind] - TILE_RANK[b.kind])
@@ -234,18 +289,39 @@ export default async function DashboardPage() {
   )
 }
 
+function DashboardErrorState() {
+  return (
+    <div className="p-4 sm:p-8 max-w-3xl">
+      <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+        <h1 className="text-lg font-semibold text-red-900">Couldn&apos;t load your dashboard</h1>
+        <p className="text-sm text-red-700 mt-1">
+          Something went wrong reading today&apos;s check-ins. This has been reported — try
+          refreshing in a moment.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function TileCard({ tile }: { tile: Tile }) {
   const wa = waMeHref(tile.whatsappNumber)
   const call = telHref(tile.whatsappNumber)
+  const isActiveHindrance = tile.kind === 'active-hindrance'
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3 mb-1">
         <div>
           <p className="text-xs text-gray-500 mb-1">{tile.projectName}</p>
-          <h3 className="font-medium text-gray-900 text-sm leading-snug">
-            {tileTitle(tile.kind, tile.engineerName)}
-          </h3>
+          {tile.kind === 'active-hindrance' ? (
+            <h3 className="font-medium text-gray-900 text-sm leading-snug line-clamp-2">
+              {tile.description}
+            </h3>
+          ) : (
+            <h3 className="font-medium text-gray-900 text-sm leading-snug">
+              {tileTitle(tile.kind, tile.engineerName)}
+            </h3>
+          )}
         </div>
         <StatusChip variant={tile.variant} label={tile.chipLabel} />
       </div>
@@ -256,38 +332,64 @@ function TileCard({ tile }: { tile: Tile }) {
         </p>
       )}
 
-      <div
-        className={`flex flex-col sm:flex-row gap-2 ${tile.kind === 'nobody-on-site' ? 'mt-3' : 'mt-4'}`}
-      >
-        {wa && (
-          <a
-            href={wa}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-          >
-            WhatsApp
-          </a>
-        )}
-        {call && (
-          <a
-            href={call}
-            className="inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            Call
-          </a>
-        )}
-        <Link
-          href={`/projects/${tile.projectId}`}
-          className={
-            !wa && !call
-              ? 'inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors'
-              : 'inline-flex items-center justify-center rounded-md px-4 py-3 sm:py-1 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors'
-          }
+      {isActiveHindrance ? (
+        tile.isAcknowledged ? (
+          // Acknowledged: nothing left to action inline -- the chip above
+          // already says Seen -- so this offers a way INTO the project
+          // instead of a second action, not Undo. Deliberately asymmetric
+          // with the unacknowledged branch below, not an inconsistency:
+          // Undo lives on /hindrances only, where state actually gets
+          // managed; this tile is a glanceable surface, not a place to
+          // manage it from. No WhatsApp/Call on this state either.
+          <div className="mt-4">
+            <Link
+              href={`/projects/${tile.projectId}`}
+              className="inline-flex items-center justify-center rounded-md px-4 py-3 sm:py-1 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+            >
+              Open project
+            </Link>
+          </div>
+        ) : (
+          // Unacknowledged: exactly one job, acknowledge it. No
+          // WhatsApp/Call (resolution happens outside the app), no link
+          // elsewhere -- this state has one thing to do, not a menu of
+          // options.
+          tile.hindranceId && <TileAcknowledgeButton hindranceId={tile.hindranceId} />
+        )
+      ) : (
+        <div
+          className={`flex flex-col sm:flex-row gap-2 ${tile.kind === 'nobody-on-site' ? 'mt-3' : 'mt-4'}`}
         >
-          Open project
-        </Link>
-      </div>
+          {wa && (
+            <a
+              href={wa}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            >
+              WhatsApp
+            </a>
+          )}
+          {call && (
+            <a
+              href={call}
+              className="inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Call
+            </a>
+          )}
+          <Link
+            href={`/projects/${tile.projectId}`}
+            className={
+              !wa && !call
+                ? 'inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors'
+                : 'inline-flex items-center justify-center rounded-md px-4 py-3 sm:py-1 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors'
+            }
+          >
+            Open project
+          </Link>
+        </div>
+      )}
     </div>
   )
 }
