@@ -488,6 +488,47 @@
   Caught only because the recommendation contradicted the review package's
   own explicit sequencing, not because the stale comparison announced
   itself.
+- REGULAR MERGE COMMITS, NOT SQUASH, FOR A PR ON A BRANCH THAT WILL KEEP
+  BEING WORKED ON (standing rule since 2026-09-08, PR #243/#244 incident).
+  Squash-merging a PR whose branch is expected to continue (a background-
+  agent worktree branch moving from one stage of a feature into the next,
+  the common shape this project's own multi-stage builds take — DASH-07
+  Phase 2's own Stage 1 → Stage 2 → Stage 3 split is a live example)
+  discards the branch's own commit chain: GitHub creates a NEW commit on
+  `main` with equivalent tree content but no ancestor relationship to the
+  branch's own commits. The branch's later work then has no common ancestor
+  with `main` newer than wherever the branch first diverged — `git
+  merge-base` falls back to a commit from BEFORE that PR's own work even
+  started, and any later merge of `main` into the branch (or the reverse)
+  sees the two sides as having independently, coincidentally arrived at
+  overlapping content, producing a SPURIOUS conflict on any file both sides
+  touched — even when one side's version is a strict superset of the
+  other's, nothing actually in dispute. EVIDENCE: PR #243 (migration 039 +
+  the runbook's own Step F) was squash-merged into `main` as `f87faf0`;
+  PR #244 (Stage 2, same branch, continuing directly on top of #243's own
+  pre-squash commits, having already added the runbook's Step G on that
+  same base) then showed `git merge-base HEAD origin/main` returning
+  `d137bbf` — a commit from BEFORE Stage 1 started, not `f87faf0`'s actual
+  logical parent. `git merge-tree` reported a genuine CONFLICT on
+  `docs/migration-runbook-template.md` despite the branch's version being
+  byte-for-byte `origin/main`'s version plus a pure insertion (confirmed via
+  `git diff origin/main:<path> de6f513:<path>` returning empty, i.e.
+  identical, before the merge) — resolved correctly this time (`-X ours`,
+  verified after the fact by confirming the merge diff was a pure addition
+  with zero deletions), but only after a full investigation cycle to tell
+  "real conflict" apart from "broken ancestry." **The SAME broken-ancestry
+  merge state ALSO silently stopped GitHub Actions from ever triggering
+  `pull_request`-event CI on PR #244 at all** — a `DIRTY`/`CONFLICTING`
+  mergeable status blocks GitHub from computing the merge ref some workflow
+  trigger paths depend on, so the missing CI run itself needed its own
+  separate investigation before anyone even noticed a check was absent
+  rather than merely slow. CONSEQUENCE: for any PR whose branch is expected
+  to keep being worked on after it merges, merge via a REGULAR MERGE COMMIT
+  (`gh pr merge --merge`), never squash and never rebase — preserving
+  ancestry is what keeps a later merge of `main` into the branch (or the
+  reverse) a true fast-forward-or-clean-merge instead of a structural
+  guessing game. Squash remains fine for a genuinely one-shot, short-lived
+  branch with no planned continuation.
 - FILE SIZE LIMITS (standing rule since 2026-08-22). CLAUDE.md has a
   150,000-character limit. Past it, the TAIL is silently dropped: the file
   still loads, no error is raised, and the most recently added content is
