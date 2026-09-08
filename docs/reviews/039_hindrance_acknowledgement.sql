@@ -1,12 +1,20 @@
 -- =============================================================================
 -- 039_hindrance_acknowledgement.sql
--- DASH-07 Phase 2, Stage 1 -- REHEARSED TWICE AGAINST REAL TEST-DB
--- (exfccwlrhoutkgrlikod), 2026-09-08, held for Aravind's Stage 1 review
--- before this enters supabase/migrations/ for real. Per CLAUDE.md's "a
--- migration file enters supabase/migrations/ when it is being applied,
--- not when it is written" rule, this file lives in docs/reviews/ until
--- an apply is actually happening -- do not copy it into
--- supabase/migrations/ yet, review approval notwithstanding.
+-- DASH-07 Phase 2, Stage 1 -- REHEARSAL ROUND 2 COMPLETE, 2026-09-08, held
+-- for external review (RLS policy + CHECK constraint + the column-privilege
+-- fix below) before this enters supabase/migrations/ for real. Per
+-- CLAUDE.md's "a migration file enters supabase/migrations/ when it is
+-- being applied, not when it is written" rule, this file lives in
+-- docs/reviews/ until an apply is actually happening -- do not copy it
+-- into supabase/migrations/ yet, review approval notwithstanding.
+--
+-- ROUND 2 CONTEXT: external review of round 1 (below, unchanged, kept as
+-- the record of what it actually tested) found ONE real gap -- RLS
+-- restricts which ROWS `authenticated` may UPDATE, but round 1 never
+-- checked which COLUMNS, and this table's `authenticated` grant was a
+-- blanket, all-columns UPDATE. See "COLUMN-LEVEL PRIVILEGE RESTRICTION"
+-- below for the fix, and "REHEARSAL RECORD -- ROUND 2" for the re-run
+-- (10 cases now, not 9) that verifies it.
 --
 -- REHEARSAL RECORD -- PASS 1, FULLY ROLLED BACK, NOTHING PERSISTED.
 -- Pre-flight: 0 active `hindrances` rows, structure/policy set matched
@@ -76,12 +84,78 @@
 -- query --linked` never touches `schema_migrations`, by construction, so
 -- this rehearsal leaves no trace there either way.
 --
--- WHAT THIS REHEARSAL DOES NOT COVER, STATED PLAINLY: `service_role`'s
--- negative capabilities on the three new columns (CLAUDE.md's REHEARSAL
--- REQUIREMENT is scoped to NEW TABLES; these are new COLUMNS on an
--- existing table whose service_role grants are untouched by this file)
--- and the actual Stage 2 write path (no application code calls this yet
--- -- Stage 1 is schema + policy only, per the task's own staging).
+-- WHAT ROUND 1'S REHEARSAL DID NOT COVER, STATED PLAINLY AT THE TIME:
+-- `service_role`'s negative capabilities on the three new columns
+-- (CLAUDE.md's REHEARSAL REQUIREMENT is scoped to NEW TABLES; these are new
+-- COLUMNS on an existing table whose service_role grants are untouched by
+-- this file) and the actual Stage 2 write path (no application code calls
+-- this yet -- Stage 1 is schema + policy only). ALSO NOT COVERED, FOUND BY
+-- EXTERNAL REVIEW RATHER THAN BY THIS ROUND'S OWN REHEARSAL: whether
+-- `authenticated`'s column-level UPDATE surface was scoped at all -- it
+-- wasn't; round 1 never checked column privileges, only row-level RLS. See
+-- below.
+--
+-- =============================================================================
+-- REHEARSAL RECORD -- ROUND 2, 2026-09-08 (external review's finding,
+-- reproduced and fixed same day). Both passes re-run in full against real
+-- test-db with the COLUMN-LEVEL PRIVILEGE RESTRICTION (below) now part of
+-- the file, plus one new case.
+--
+-- PASS 1 (fully rolled back, nothing persisted) -- same fixtures and same
+-- 9 cases as round 1 (all 9 PASS again, byte-identical results -- the new
+-- REVOKE/GRANT does not change any of them, since cases 1-5 run as the
+-- table owner (grants never apply to the owner) and cases 6-9's UPDATEs
+-- only ever touch acknowledged_at/acknowledged_by, which stay granted),
+-- PLUS:
+--   10. PM writes ack_notified_at
+--       directly (RLS-authorized row) -> REJECT (column privilege) -- PASS
+--       Actual: "rejected: permission denied for table hindrances" -- the
+--       SAME real fixture user as case 6 (fully RLS-authorized: pm of the
+--       hindrance's own project), attempting to write a column NOT in the
+--       new GRANT UPDATE (acknowledged_at, acknowledged_by) list. This
+--       isolates the column grant from RLS specifically: case 6 already
+--       proved this exact user/row combination passes ROW-level
+--       authorization; case 10 proves that passing RLS is NOT sufficient
+--       to write an arbitrary column, only the two now-granted ones. A
+--       column-privilege violation is a hard exception (42501,
+--       insufficient_privilege), not a silent 0-row RLS-style denial --
+--       genuinely a different failure mode, confirmed by actually
+--       triggering it rather than assumed from the grant text alone.
+--
+-- PASS 2 (real committed forward-apply, then real committed DOWN) --
+-- re-run with the REVOKE/GRANT and the DOWN's restorative GRANT included.
+-- Forward apply verified live: `authenticated`'s table-level privilege
+-- list no longer includes UPDATE at all (DELETE, INSERT, REFERENCES,
+-- SELECT, TRIGGER, TRUNCATE only), and `information_schema.column_
+-- privileges` shows UPDATE granted to `authenticated` on EXACTLY
+-- acknowledged_at and acknowledged_by -- nothing else, confirmed by name,
+-- not just by count. DOWN re-verified live afterward: `authenticated`'s
+-- table-level privileges include UPDATE again (restored to the exact
+-- pre-migration list), and column_privileges shows UPDATE granted on all
+-- 18 columns for `authenticated` again -- i.e. genuinely back to a
+-- blanket table-level grant, not a partial one masquerading as one.
+-- Without the DOWN's explicit `GRANT UPDATE ON hindrances TO
+-- authenticated` (added this round), this would NOT have held --
+-- DROP COLUMN acknowledged_at/acknowledged_by silently takes the
+-- column-scoped grant with it, and the table-level REVOKE this round
+-- also adds would otherwise leave `authenticated` with ZERO UPDATE
+-- privilege post-teardown, a stricter-than-baseline regression. Structure/
+-- constraint/policy counts unchanged from round 1's own Pass 2 result (0
+-- leftover columns, 0 leftover constraints, 0 leftover policy, 18 columns,
+-- 4 policies, 0 rows throughout).
+--
+-- GREP, REPRODUCED AGAINST origin/main (d137bbf) -- confirms zero
+-- authenticated UPDATE callers of hindrances exist in app/ or lib/ today,
+-- same finding the external reviewer already reported independently:
+-- `git grep -n "from('hindrances')" origin/main -- app/ lib/` returns
+-- exactly 4 hits (3 SELECTs, 1 UPDATE); the one UPDATE
+-- (lib/hindrance/pm-notify.ts, writes pm_notified_at) runs via
+-- `deps.supabaseClient ?? createServiceClient()` -- service_role by
+-- default, not `authenticated`, and service_role bypasses both RLS and
+-- these column grants entirely by design. This column-privilege
+-- restriction therefore has zero blast radius against any code that
+-- exists today; it exists purely to bound what Stage 2's own future write
+-- path can do, before that code is written.
 --
 -- MIGRATION NUMBER: 039, verified against origin/main's supabase/migrations/
 -- (038 is the highest applied number, both on prod and test-db as of
@@ -284,9 +358,11 @@
 --
 -- =============================================================================
 -- RISK CLASS: additive (three new nullable columns, one pairing CHECK, one
--- new composite FK) plus one new RESTRICTIVE RLS policy on an existing
--- table with real (if few) rows. Trips CLAUDE.md §0 condition (b) -- see
--- above. Does not touch (a) function logic, (c) auth/identity, (e) money.
+-- new composite FK) plus one new RESTRICTIVE RLS policy AND a column-level
+-- privilege narrowing (REVOKE/GRANT, round 2) on an existing table with
+-- real (if few) rows. Trips CLAUDE.md §0 condition (b) twice over now --
+-- RLS AND grants are both named in that condition -- see above. Does not
+-- touch (a) function logic, (c) auth/identity, (e) money.
 -- Reversible while the acknowledged/ack_notified data is empty (true today
 -- -- the table holds a small number of hindrance rows, per Phase 1's own
 -- "the table had zero rows before 2026-09-07" starting point, and nothing
@@ -296,6 +372,21 @@
 
 BEGIN;
 
+-- hindrances_ack_pairing_check DELIBERATELY PERMITS THE FULL ROUND TRIP BACK
+-- TO (NULL, NULL) -- STATED EXPLICITLY, NOT LEFT IMPLICIT (external review
+-- finding, 2026-09-08). The CHECK only constrains PAIRING (both null or both
+-- set); it says nothing about DIRECTION, so acknowledged/un-acknowledged is
+-- fully reversible in both directions by construction. This is INTENTIONAL,
+-- not an oversight: docs/plans/dash-07-hindrance-queue.md's own "Un-
+-- acknowledge -- quiet, but not hidden" section specifies Un-acknowledge as
+-- "Clears acknowledged_at and acknowledged_by ONLY... returns the row to
+-- unacknowledged" -- a FULL clear back to the pre-acknowledgement state, not
+-- a partial or soft one. Stage 2's Un-acknowledge write is exactly the
+-- UPDATE ... SET acknowledged_at = NULL, acknowledged_by = NULL that this
+-- CHECK is designed to accept. The one thing that must NEVER revert
+-- alongside it is ack_notified_at (see that column's own comment, and the
+-- GRANT/REVOKE block below, which makes that structurally true rather than
+-- only documented).
 ALTER TABLE hindrances
   ADD COLUMN acknowledged_at TIMESTAMPTZ,
   ADD COLUMN acknowledged_by UUID,
@@ -350,6 +441,40 @@ CREATE POLICY "hindrances_update_project_scoped" ON hindrances
     )
   );
 
+-- -----------------------------------------------------------------------------
+-- COLUMN-LEVEL PRIVILEGE RESTRICTION -- external review finding, 2026-09-08.
+-- RLS restricts WHICH ROWS `authenticated` may UPDATE; it says nothing about
+-- WHICH COLUMNS within an authorized row. Checked live against test-db
+-- before writing this (information_schema.role_table_grants), not assumed:
+-- `authenticated` currently holds a blanket, table-level, ALL-COLUMNS
+-- UPDATE grant on hindrances (no prior migration ever scoped it -- 002's
+-- own policies file grants RLS-level access only, and nothing since has
+-- touched the table-level GRANT). Combined with the two RLS UPDATE policies
+-- above, a same-project PM's authorized UPDATE could ALSO set ANY other
+-- column on the row -- including ack_notified_at, which would break Stage
+-- 3's send-once guarantee in either direction: a PM clearing it back to
+-- NULL after a real send re-arms a duplicate notification; a PM setting it
+-- to a fake non-null value silently suppresses the one send that should
+-- fire. Neither is a hypothetical -- it is exactly the column this whole
+-- migration's "THE SEND-ONCE GUARANTEE" section (above) already named as
+-- load-bearing.
+--
+-- EXACT COLUMN LIST, CONFIRMED NOT GUESSED: the complete authenticated
+-- write surface Stage 2 needs on this table is `acknowledged_at` and
+-- `acknowledged_by` -- Acknowledge sets both, Un-acknowledge clears both
+-- (see the pairing-CHECK note above), and NOTHING else in this table is
+-- ever written by an authenticated PM in Phase 1 or Phase 2's own scope
+-- (docs/plans/dash-07-hindrance-queue.md: the /hindrances page is read-only
+-- in Phase 1; Stage 2 adds exactly Acknowledge/Un-acknowledge and nothing
+-- more). Every other column -- timing/timing_raw (written by the WhatsApp
+-- flow's SECURITY DEFINER RPC), status/resolved_at/resolved_by (DASH-10,
+-- unbuilt Fast-Follow), ack_notified_at (Stage 3, service_role only), and
+-- everything else -- has no legitimate authenticated writer today, so the
+-- REVOKE-then-narrow-GRANT below is a complete list, not a partial one that
+-- happens to cover today's known callers.
+REVOKE UPDATE ON hindrances FROM authenticated;
+GRANT UPDATE (acknowledged_at, acknowledged_by) ON hindrances TO authenticated;
+
 COMMIT;
 
 -- =============================================================================
@@ -363,6 +488,26 @@ COMMIT;
 --     DROP COLUMN acknowledged_at,
 --     DROP COLUMN acknowledged_by,
 --     DROP COLUMN ack_notified_at;
+--
+--   GRANT UPDATE ON hindrances TO authenticated;
+--
+-- THE GRANT ABOVE IS NOT REDUNDANT -- external review finding, 2026-09-08.
+-- DROP COLUMN acknowledged_at/acknowledged_by ALSO drops the column-level
+-- `GRANT UPDATE (acknowledged_at, acknowledged_by) ON hindrances TO
+-- authenticated` this file adds, automatically, the same way it drops the
+-- CHECK and the composite FK (Postgres drops any column-scoped privilege
+-- when its column is dropped). Combined with this file's own `REVOKE
+-- UPDATE ON hindrances FROM authenticated` (the table-level revoke that
+-- made the column-scoped grant meaningful in the first place), the DOWN's
+-- own DROP COLUMN step alone would leave `authenticated` with ZERO UPDATE
+-- privilege on hindrances at all -- not the pre-039 baseline (a blanket,
+-- all-columns table-level grant), a STRICTER state than before this
+-- migration ever ran. The explicit re-GRANT above is what actually
+-- restores the exact baseline; without it, "tearing down" this migration
+-- would silently leave a permission REGRESSION relative to pre-039,
+-- exactly the kind of finding the "TEARDOWN VERIFIES..." class of standing
+-- rule exists to catch (CLAUDE.md §7) -- named here so the rehearsal below
+-- checks it explicitly rather than only checking the columns/constraints.
 --
 -- NO EXPLICIT DROP CONSTRAINT for hindrances_ack_pairing_check or
 -- hindrances_acknowledged_by_fkey -- LEARNED FROM 036's OWN REHEARSAL, NOT
