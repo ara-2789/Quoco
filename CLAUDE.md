@@ -177,6 +177,13 @@
        finished. Verify by reading `main` directly (`git show origin/main:
        <path>`), not by trusting a merge button's result or a PR's "open"
        status at a glance.
+    e. A PROD APPLY IS NOT DONE UNTIL TEST-DB CARRIES THE SAME MIGRATION,
+       FOR REAL (added 2026-09-08, migration 039/PR #243 — the SAME
+       failure class migration 038's own review package already named,
+       docs/reviews/038-hindrance-flow-review-package.md lines 159-162, one
+       migration earlier). Full rule + why: docs/migration-runbook-
+       template.md's Step F — this entry is a pointer, not a second copy,
+       so the two can't drift apart.
   Rationale: the SQL Editor rule's real purpose was preventing an apply
   against the wrong database — a pasted project ref plus a hash comparison
   is STRONGER evidence of that than a human glance at a dropdown, which
