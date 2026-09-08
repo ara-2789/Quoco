@@ -112,6 +112,13 @@
     "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. This is the pre-contract hindrances table 036/037 add columns to (unapplied) -- same table, not currently seeded by any Spine test."
   },
   {
+    "table": "hindrances",
+    "column": "acknowledged_by",
+    "parent": "users",
+    "action": "delete",
+    "note": "039_hindrance_acknowledgement.sql -- nullable, no ON DELETE clause. action=delete rather than null, deliberately: hindrances_ack_pairing_check requires acknowledged_at and acknowledged_by to be both null or both set, and sweepSharedFixtureReferences() only nulls the ONE column named in this entry -- an action=null here would set acknowledged_by=NULL while leaving acknowledged_at set, violating that CHECK the first time a real test exercises an acknowledged fixture row. delete avoids that; not currently seeded by any Spine test (Stage 2/3, the only writers, are unbuilt)."
+  },
+  {
     "table": "tenders",
     "column": "created_by",
     "parent": "users",

@@ -99,6 +99,14 @@ control (into a migration) the next time it's touched. Known entries:
     RLS-DISABLED. Codify via its own migration before any environment rebuild.
   * (historical) 001-005 — applied via the dashboard SQL editor, later reconciled
     into the migration set (see the note above); listed for completeness.
+  * `handle_new_user()`'s BODY (not the whole function — it does have migration
+    history, 005/007) — opened 2026-09-08, found rehearsing migration 039. Live
+    on test-db inserts `(id, auth_id) VALUES (gen_random_uuid(), NEW.id)`;
+    007's own text says `VALUES (NEW.id, NEW.id)`. Neither 015 nor 020 (the only
+    later files touching this function) ever redefines its body — 020's own
+    header even lists 007 as the version it verified. No migration file
+    documents the current live behavior; changed out-of-band. Prod not yet
+    checked. Full writeup: docs/reviews/handle-new-user-id-drift.md.
 
 SECURITY INCIDENT — anon-callable SECURITY DEFINER RPCs (migration 020, 2026-07-25).
 All SEVEN public SECURITY DEFINER function grants were over-broad (PostgreSQL's

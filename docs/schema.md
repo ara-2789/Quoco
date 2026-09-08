@@ -6,25 +6,38 @@ Migrations 001–005 are LIVE. The authoritative POST-migration state is below.
 Column notes: (BETA) = active Phase 1. (FUTURE) = nullable, no constraints,
 Phase 2/3 only. (FAST-FOLLOW) = Phase 1 but not Spine.
 
->>> PASS-1 BLOCKER — READ THIS (added 2026-07-07):
->>> The WhatsApp morning check-in flow (Pass 1: webhook + apply_morning_flow_turn
->>> / migration 014, code-complete and test-verified as of 2026-07-07) CANNOT
->>> SERVE A REAL ENGINEER YET. Reason: public.users.id still has a FK to
->>> auth.users(id) (constraint users_id_fkey). Migration 007 (the auth surgery)
->>> is what DROPS that FK so a users row can exist with auth_id = NULL and a
->>> standalone id — which is exactly ENG-01's model (PM creates an engineer from
->>> name + phone only, no email, no auth.users entry). 007 is NOT applied (blocked
->>> at Checkpoint 1). Until 007 ships, no real engineer/owner row can be created,
->>> so the bot logic works but NOBODY REAL CAN USE IT. This makes 007 a HARD
->>> PREREQUISITE for Pass 1 to matter in practice, not just an eventual cleanup.
->>> (The morning-flow integration tests sidestep this by creating their engineer
->>> via supabase.auth.admin.createUser(), which is a test-only crutch, not the
->>> production ENG-01 path.)
->>> NOTE: line ~56 below says "Migration 006 decouples users.id" — that conflicts
->>> with CLAUDE.md §5/§10, which assign the decouple to 007 (auth surgery). The
->>> observed FK (users_id_fkey still present on prod + branch) confirms it is NOT
->>> yet decoupled; treat 007 as the decoupling migration. Reconcile this line when
->>> 007 is authored.
+>>> ~~PASS-1 BLOCKER — READ THIS (added 2026-07-07):~~
+>>> ~~The WhatsApp morning check-in flow (Pass 1: webhook + apply_morning_flow_turn~~
+>>> ~~/ migration 014, code-complete and test-verified as of 2026-07-07) CANNOT~~
+>>> ~~SERVE A REAL ENGINEER YET. Reason: public.users.id still has a FK to~~
+>>> ~~auth.users(id) (constraint users_id_fkey). Migration 007 (the auth surgery)~~
+>>> ~~is what DROPS that FK so a users row can exist with auth_id = NULL and a~~
+>>> ~~standalone id — which is exactly ENG-01's model (PM creates an engineer from~~
+>>> ~~name + phone only, no email, no auth.users entry). 007 is NOT applied (blocked~~
+>>> ~~at Checkpoint 1). Until 007 ships, no real engineer/owner row can be created,~~
+>>> ~~so the bot logic works but NOBODY REAL CAN USE IT. This makes 007 a HARD~~
+>>> ~~PREREQUISITE for Pass 1 to matter in practice, not just an eventual cleanup.~~
+>>> ~~(The morning-flow integration tests sidestep this by creating their engineer~~
+>>> ~~via supabase.auth.admin.createUser(), which is a test-only crutch, not the~~
+>>> ~~production ENG-01 path.)~~
+>>> ~~NOTE: line ~56 below says "Migration 006 decouples users.id" — that conflicts~~
+>>> ~~with CLAUDE.md §5/§10, which assign the decouple to 007 (auth surgery). The~~
+>>> ~~observed FK (users_id_fkey still present on prod + branch) confirms it is NOT~~
+>>> ~~yet decoupled; treat 007 as the decoupling migration. Reconcile this line when~~
+>>> ~~007 is authored.~~
+>>> DATED CORRECTION (2026-09-08, status-accuracy pass, no code action): the
+>>> whole block above is STALE, struck through rather than deleted, per this
+>>> project's own correction discipline. Migration 007 (auth surgery) is
+>>> CONFIRMED MERGED AND LIVE on `main` (`dc74d72`, `43b3a3d`) — this was
+>>> already true well before this correction, not something that changed
+>>> today. `main` is currently at `d137bbf` (DASH-07 Phase 1, PR #242);
+>>> `supabase/migrations/` tops out at 038, with migration 039
+>>> (DASH-07 Phase 2's hindrance-acknowledgement schema change) held in
+>>> `docs/reviews/` pending external review, not yet applied. `users.id`
+>>> has been decoupled from `auth.users` for a long time; the "006 vs 007"
+>>> numbering conflict this note used to flag is moot now that 007 both
+>>> exists and has shipped — see the `users` table entry and the RLS helper
+>>> note below, both corrected in the same pass.
 
 ---
 
@@ -38,8 +51,11 @@ Helper function (in migration 002 — must exist before any policy):
     $$ LANGUAGE SQL SECURITY DEFINER STABLE SET search_path = public;
 
     -- NOTE: matches on auth_id = auth.uid(), NOT id = auth.uid().
-    -- After migration 006, users.id is a standalone PK and auth_id is the
-    -- link to auth.users. Every RLS policy depends on this function.
+    -- After migration 007 (auth surgery, applied -- corrected 2026-09-08,
+    -- this previously said "006", which was never the decoupling migration
+    -- and was flagged as an open conflict above until 007 shipped), users.id
+    -- is a standalone PK and auth_id is the link to auth.users. Every RLS
+    -- policy depends on this function.
 
 Standard policy for every tenant-scoped table:
 
@@ -76,7 +92,8 @@ Standard policy for every tenant-scoped table:
 
 ### users
 - id UUID PK DEFAULT gen_random_uuid() — standalone PK, NOT FK to auth.users.
-  Migration 006 decouples this from the original FK.
+  Migration 007 (auth surgery, applied) decouples this from the original FK
+  -- corrected 2026-09-08, this previously said "006".
 - created_at TIMESTAMPTZ DEFAULT now()
 - auth_id UUID REFERENCES auth.users(id) ON DELETE SET NULL — NULLABLE.
   NULL for engineer + owner roles. Set for pm, admin, qs. (BETA)
@@ -648,7 +665,12 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        No dependency on auth surgery — applied first since it was ready
        first and has zero risk to existing data.
 
-007 — auth surgery (Week 2). CHECKPOINT 1 before running.
+007 — auth surgery (Week 2). ~~CHECKPOINT 1 before running.~~ APPLIED
+       (`dc74d72`, `43b3a3d`) -- corrected 2026-09-08, status-accuracy pass;
+       this header line was written pre-apply and never updated once 007
+       shipped, even though the DATED CORRECTION immediately below it
+       already says "The APPLIED 007..." -- the body was current, the
+       header wasn't.
        DATED CORRECTION (2026-07-13): the header once read "auth surgery + column
        corrections" and the COLUMN-CORRECTION bullets below (owner_user_id;
        morning_* → JSONB; is_holiday/holiday_reason; evening_dependencies
@@ -680,8 +702,10 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        - Rename tenants.stripe_customer_id → payment_customer_id
        - Add tenants.paid_until, last_payment_ref
        - Add users.role value 'owner' to CHECK (rename from 'client')
-       IRREVERSIBLE (decouples users.id). Rehearse on a Supabase branch
-       snapshot; get the Checkpoint 1 review before running on prod.
+       IRREVERSIBLE (decouples users.id). ~~Rehearse on a Supabase branch
+       snapshot; get the Checkpoint 1 review before running on prod.~~
+       DONE -- 007 ran, on prod, long ago (corrected 2026-09-08). Retained
+       as the historical pre-apply checklist, not a current instruction.
 
 008 — dprs table + resolutions table + new columns (Week 4, before DPR work)
 
