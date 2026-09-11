@@ -1,11 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { DPR_JUDGMENT_SCHEMA, ENGINEER_DPR_JUDGMENT_SCHEMA } from './schema'
 import type { DprFacts, DprJudgment, EngineerDprFacts } from './schema'
-import type { NarrativeContext } from './narrative-context'
+import type { NarrativeContext, EngineerNarrativeContext } from './narrative-context'
 import { validateJudgment, type ValidationViolation } from './validate'
 import { isManpowerNoteDiscarded, isScheduleNoteDiscarded, isEquipmentItemNoteDiscarded } from './discarded-fields'
 import { buildEngineerFactsCorpus, checkContainment } from './containment'
-import type { NarrativeContext as EngineerNarrativeContext } from './narrative-context'
 
 // The Anthropic client wrapper — the primary deliverable of this slice
 // (2026-08-11 DPR generator slice), per Aravind's framing: "the Facts/
@@ -381,7 +380,11 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
   lines.push('')
   lines.push(`Work — planned: ${fmtFactText(facts.work.planned)}`)
   lines.push(`Work — done: ${fmtFactText(facts.work.done_text)}${facts.work.done_quantity.status === 'reported' ? `, ${facts.work.done_quantity.value} ${facts.work.unit}` : ''}`)
-  lines.push(`Hindrance: ${fmtFactText(facts.hindrance.note)}`)
+  // RENAMED 2026-09-11 (migration 040, Stage 2) -- was `Hindrance:`, reading
+  // facts.hindrance.note. Same field, same rename as schema.ts/render.ts's
+  // own moves -- see EngineerTomorrowNeedsFacts's own comment for the full
+  // history.
+  lines.push(`Dependency: ${fmtFactText(facts.tomorrowNeeds.note)}`)
   for (const trade of facts.idle_hours_by_trade) {
     lines.push(`Idle hours, ${trade.trade}: ${trade.idle_hours}h`)
   }
@@ -390,7 +393,8 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
       `Equipment ${item.type} — used ${fmtFactNumber(item.actual_hours)}h${item.implausible ? ' (flagged implausible -- do not restate as fact, only that it was flagged)' : ''}`,
     )
   }
-  if (narrative?.hindrance_note) lines.push(`\nRaw hindrance note (context only, never a source of a new digit): ${narrative.hindrance_note}`)
+  if (narrative?.tomorrow_needs_note)
+    lines.push(`\nRaw dependency note (context only, never a source of a new digit): ${narrative.tomorrow_needs_note}`)
   // Manpower, CHANGED 2026-09-05 (the "113 fabrication" incident,
   // schema.ts's own EngineerManpowerFacts comment). Both used to be
   // fmtFactNumber'd into the citable Facts section above -- removed
@@ -430,7 +434,7 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
 const ENGINEER_SYSTEM_PROMPT =
   'You write ONE sentence summarising a construction site engineer\'s day, from Facts already computed elsewhere. ' +
   'Every digit you write must be traceable to a number shown in the Facts you were given — never invent, round, or recompute a figure. ' +
-  'You may cite a digit ONLY if it appears in a line stated as a Fact above — never a number from a line marked "context only" (hindrance, manpower planned, manpower reported, manpower idle reason, or equipment idle reason), even if that number is real elsewhere in this report. ' +
+  'You may cite a digit ONLY if it appears in a line stated as a Fact above — never a number from a line marked "context only" (dependency, manpower planned, manpower reported, manpower idle reason, or equipment idle reason), even if that number is real elsewhere in this report. ' +
   'Never attribute anything to a named person, crew, or contractor — describe only what was done, where, and how much. ' +
   'If the Facts are mostly empty, say so plainly in one short sentence rather than padding.'
 

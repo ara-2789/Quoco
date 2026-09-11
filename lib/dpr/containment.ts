@@ -204,18 +204,24 @@ export function buildExecutionCorpus(execution: ExecutionOutputFacts, meta: Cont
 //
 // PROVENANCE, NOT APPEARANCE, IS THE RULE -- confirmed by a real
 // counterexample found while designing this, not assumed: `evening_
-// schedule_miss_reason`'s raw string is fed into the per-engineer prompt
+// schedule_miss_reason`'s raw string was fed into the per-engineer prompt
 // TWICE -- once as `facts.hindrance.note` (previously treated as a
 // citable Fact, formatEngineerFacts's own Hindrance line) and once as
 // `narrative.hindrance_note` ("context only, never a source of a new
 // digit", the SAME byte-identical text). Nothing about the VALUE
 // distinguishes these two framings -- only which field of EngineerDprFacts/
 // EngineerNarrativeContext it travels through. This function resolves
-// that contradiction by NOT including hindrance.note here: a hindrance is
-// a reason, not a quantity, and ENGINEER_SYSTEM_PROMPT's own exclusion
-// sentence already lists "hindrance" as a context-only field -- this
-// corpus now matches that, instead of silently permitting the digit
-// anyway via the old whole-body scan.
+// that contradiction by NOT including this field here: it is a reason
+// (or, since migration 040, a forward-looking request), not a quantity,
+// and ENGINEER_SYSTEM_PROMPT's own exclusion sentence already lists it as
+// a context-only field -- this corpus matches that, instead of silently
+// permitting the digit anyway via the old whole-body scan. RENAMED
+// 2026-09-11 (migration 040, Stage 2): `facts.hindrance.note` ->
+// `facts.tomorrowNeeds.note`, `narrative.hindrance_note` ->
+// `narrative.tomorrow_needs_note` -- same exclusion, same reasoning,
+// different column and different field name; this function's own code
+// never referenced either name (it excludes by omission), so the rename
+// touched only comments here, not logic.
 //
 // CITABLE, explicitly, and why:
 //   - work.planned / work.done_text (verbatim quoted text) -- DELIBERATE
@@ -224,15 +230,15 @@ export function buildExecutionCorpus(execution: ExecutionOutputFacts, meta: Cont
 //     make any digit inside it citable, since the source sits directly
 //     adjacent to whatever the verdict might cite. Structurally, this is
 //     the ONE place "which field it came from" says "citable" for a raw
-//     free-text field -- every other raw-text field (hindrance, manpower
-//     planned/reported, manpower idle reason, equipment idle reason) is
-//     the opposite.
+//     free-text field -- every other raw-text field (tomorrowNeeds,
+//     manpower planned/reported, manpower idle reason, equipment idle
+//     reason) is the opposite.
 //   - work.done_quantity, idle_hours_by_trade[].idle_hours, equipment
 //     items[].actual_hours -- real, code-computed/reported quantities.
-// NEVER a digit source: hindrance.note, manpower.planned, manpower.on_site
-// -- all three are raw engineer text, all three are also fed to the model
-// as explicit "context only" lines (formatEngineerFacts), and none of the
-// three is a quantity the DPR is meant to state as fact.
+// NEVER a digit source: tomorrowNeeds.note, manpower.planned,
+// manpower.on_site -- all three are raw engineer text, all three are also
+// fed to the model as explicit "context only" lines (formatEngineerFacts),
+// and none of the three is a quantity the DPR is meant to state as fact.
 export function buildEngineerFactsCorpus(facts: EngineerDprFacts, meta: { project_name: string }): Set<number> {
   const corpus = new Set<number>()
 

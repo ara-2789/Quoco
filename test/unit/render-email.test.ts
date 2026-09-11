@@ -27,13 +27,14 @@ function makeFacts(overrides: Partial<EngineerDprFacts> = {}): EngineerDprFacts 
       done_quantity: { status: 'reported', value: 120 },
       unit: 'sqm',
     },
-    hindrance: { note: { status: 'not_captured', value: null } },
+    tomorrowNeeds: { note: { status: 'not_captured', value: null } },
     manpower: {
       planned: { status: 'reported', value: '20 workers' },
       on_site: { status: 'reported', value: '18 workers' },
     },
     idle_hours_by_trade: [],
     equipment: { items: [] },
+    hindrances: [],
     ...overrides,
   }
 }
@@ -45,17 +46,18 @@ describe('renderEmailReport', () => {
   })
 
   it('text output carries the header, check-in lines, verdict, and body — same content the WhatsApp render would produce', () => {
-    const facts = makeFacts({ hindrance: { note: { status: 'reported', value: 'Rain for 1 hour' } } })
+    const facts = makeFacts({ tomorrowNeeds: { note: { status: 'reported', value: 'Rain for 1 hour' } } })
     const result = renderEmailReport(facts, 'Good progress today.', MORNING_COMPLETE, EVENING_COMPLETE, META)
     expect(result.text).toContain('Daily Progress — Emerald Heights — Mon 31 Aug')
     expect(result.text).toContain('Site engineer: Arjun Nair')
     expect(result.text).toContain('Morning check-in: complete')
     expect(result.text).toContain('Evening check-in: complete')
     expect(result.text).toContain('Good progress today.')
-    // Body content (from the shared renderEngineerBody) — Work/Hindrance/Manpower lines.
+    // Body content (from the shared renderEngineerBody) — Work/Dependency/Manpower lines.
     // fmtText wraps reported text values in double quotes (render.ts's own convention).
+    // Dependency — RENAMED from Hindrance —, migration 040 (Stage 2).
     expect(result.text).toContain('Work — planned: "Continue slab work" | done: "Slab concrete poured" — 120 sqm')
-    expect(result.text).toContain('Hindrance — Rain for 1 hour')
+    expect(result.text).toContain('Dependency — Rain for 1 hour')
     expect(result.text).toContain('Manpower planned — "20 workers"')
     expect(result.text).toContain('Manpower reported — "18 workers"')
   })

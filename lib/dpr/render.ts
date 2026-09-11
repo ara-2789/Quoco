@@ -661,18 +661,42 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
     lines.push(`Equipment — planned: ${item.type} | used: ${used}${flag}`)
   }
 
-  // §2 Hindrance — REPLACED 2026-09-05 (PR C1, production incident:
-  // evening_schedule_miss_reason was reused by migration 035 (2026-08-31)
-  // for the new unconditional Q5 hindrance question, but this section kept
-  // labeling its content as a schedule assessment that no longer happens —
-  // an owner reading "Schedule not met" over hindrance text like "Rain 1
-  // hour" was reading a real answer under a false frame. The old Schedule
-  // line/MISSING/NEEDS ATTENTION entries are removed outright, not
-  // reworded — schedule status itself has had no data source since 035
-  // (see hindrance's own comment in assemble.ts), so there is nothing left
-  // to report under that heading.
-  if (facts.hindrance.note.status === 'reported') {
-    lines.push(`Hindrance — ${facts.hindrance.note.value}`)
+  // §5 Dependency — RELABELED 2026-09-11 (migration 040, Stage 2). Was
+  // "Hindrance —", reading evening_schedule_miss_reason (035's reuse of the
+  // old schedule-miss column, itself already corrected once — PR C1,
+  // 2026-09-05, full history in assemble.ts's own comment on this field).
+  // Migration 040 replaces the underlying question with a forward-looking
+  // "anything extra needed tomorrow?" — the label changes to match. This
+  // is a DIFFERENT SECTION from the real Hindrance section below: this one
+  // is what the engineer said he needs; that one is what public.hindrances
+  // actually recorded as a disruption. Conflating the two labels is
+  // exactly the false-framing defect PR C1 already fixed once for this
+  // same line — never repeat it.
+  if (facts.tomorrowNeeds.note.status === 'reported') {
+    lines.push(`Dependency — ${facts.tomorrowNeeds.note.value}`)
+  }
+
+  // Hindrance — NEW 2026-09-11 (migration 040, Stage 2). The REAL
+  // hindrance section, sourced from public.hindrances (migration 038's
+  // ad-hoc menu flow), not from any daily_logs column — see
+  // EngineerHindranceRecord's own comment (schema.ts) for the join and why
+  // dpr_included is not the mechanism. One line per matching row,
+  // chronological by created_at (the order fetchEngineerHindrances already
+  // returns them in — not re-sorted here). Content is description only —
+  // hindrance_type/impact_level/area_affected are never written by the
+  // flow (schema.ts's own comment), so rendering them would print nulls.
+  // Omitted entirely when there is nothing to report, same convention as
+  // every other empty section in this body (equipment's own "no equipment
+  // reported" line is the one exception, and it exists precisely because
+  // that section's absence would otherwise look like a rendering gap, not
+  // a real fact — a hindrance section has no equivalent ambiguity, so a
+  // clean day simply omits it).
+  if (facts.hindrances.length > 0) {
+    lines.push('')
+    lines.push('Hindrance')
+    for (const h of facts.hindrances) {
+      lines.push(h.description)
+    }
   }
 
   // MISSING — what we failed to collect (Rule 5, "our problem"). Driven by
@@ -689,9 +713,10 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
   // NEEDS ATTENTION — what went wrong on site (Rule 5, "the customer's
   // problem"). Code-composed sentences splicing in raw engineer text
   // verbatim (Rule 2b — not a paraphrase, a direct substring), never a
-  // model field. The hindrance answer renders in its own section above,
-  // not folded in here; equipment's own attention signal (implausible)
-  // renders inline on its Equipment line above, not duplicated here.
+  // model field. Both the Dependency line and the real Hindrance section
+  // render above, not folded in here; equipment's own attention signal
+  // (implausible) renders inline on its Equipment line above, not
+  // duplicated here.
   //
   // Idle hours by trade — RECONNECTED 2026-09-05 (PR C2). Read for the
   // first time since migration 035 (2026-08-31) added evening_idle_hours;

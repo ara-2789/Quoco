@@ -10,7 +10,9 @@ import type {
   CheckInHalfStatus,
   CheckInStatus,
   EngineerDprFacts,
+  EngineerHindranceRecord,
 } from './schema'
+import { istDateString } from '@/lib/daily-logs/date'
 
 // The fact assembler — the deterministic half of DPR generation. No Claude
 // call anywhere in this file. Follows the repo's pure-decision + thin-IO
@@ -469,11 +471,14 @@ export interface CorrectedEngineerLogRow {
   morning_equipment: { items: Array<{ type: string; daily_hire_cost: number | null }>; none: boolean } | null
   evening_output: string | null // correctable (scalar)
   evening_output_quantities: { items: Array<{ activity: string; quantity: number | null; unit: string }> } | null
-  // Q5 hindrance answer, per §2's own comment above (mergeEngineerDprFacts) —
-  // correctable (scalar), migration 019's original whitelist entry, kept
-  // live and correct by 035's reuse rather than a rename (that migration's
-  // own reasoning).
-  evening_schedule_miss_reason: string | null
+  // Evening Q5, migration 040 (2026-09-11) -- "anything extra needed
+  // tomorrow?" REPLACES evening_schedule_miss_reason as this file's own
+  // source for §5 below (schema.ts's EngineerTomorrowNeedsFacts). Still
+  // correctable (scalar) -- migration 040's own STEP 5/6 moved the 019
+  // whitelist entry from evening_schedule_miss_reason to this column, not
+  // widened it. evening_schedule_miss_reason itself is frozen (not
+  // dropped, not read here anymore) as of the same migration.
+  evening_tomorrow_needs: string | null
   // evening_schedule_met/evening_workers_on_site/evening_productive_manpower
   // REMOVED 2026-09-05 (PR C2) -- none have had a write path since migration
   // 035 (2026-08-31); nothing here reads them anymore. Superseded by
@@ -533,16 +538,27 @@ export function parseCorrectedText(column: string, rawValue: string | null, edit
 // submitted or not). checkInStatus is computed by the caller
 // (deriveCheckInStatus below), not here — it needs project_members
 // membership data this function has no reason to fetch.
-export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, checkInStatus: { morning: CheckInHalfStatus; evening: CheckInHalfStatus }): EngineerDprFacts {
+// `hindrances` is a separate parameter, not read off `row` — it comes from
+// public.hindrances (migration 038), a table with no relationship to
+// daily_logs at all, joined by the caller (assembleEngineerDprFacts) on
+// (reported_by, created_at's IST date). Passed in rather than fetched here
+// to keep this function pure/DB-free, matching checkInStatus's own
+// existing pattern one parameter over.
+export function mergeEngineerDprFacts(
+  row: CorrectedEngineerLogRow | null,
+  checkInStatus: { morning: CheckInHalfStatus; evening: CheckInHalfStatus },
+  hindrances: EngineerHindranceRecord[] = [],
+): EngineerDprFacts {
   if (!row) {
     return {
       morning_status: checkInStatus.morning,
       evening_status: checkInStatus.evening,
       work: { planned: notCapturedText, done_text: notCapturedText, done_quantity: notCapturedNumber, unit: '' },
-      hindrance: { note: notCapturedText },
+      tomorrowNeeds: { note: notCapturedText },
       manpower: { planned: notCapturedText, on_site: notCapturedText },
       idle_hours_by_trade: [],
       equipment: { items: [] },
+      hindrances,
     }
   }
 
@@ -564,14 +580,14 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
     unit: firstQuantity?.unit ?? '',
   }
 
-  // §2 Hindrance — REPLACED 2026-09-05 (PR C1). This used to read
-  // row.evening_schedule_met, which has had no write path since migration
-  // 035 (2026-08-31) deleted the question it answered — five days of
-  // permanent null, not a genuine gap. The column that actually holds live
-  // engineer input here is evening_schedule_miss_reason, reused by 035 for
-  // the new unconditional Q5 hindrance question (that migration's own
-  // COMMENT ON COLUMN says so). Read it as what it is.
-  const hindrance: EngineerDprFacts['hindrance'] = { note: wrapText(row.evening_schedule_miss_reason) }
+  // §5 Tomorrow's needs — REPLACED AGAIN 2026-09-11 (migration 040, Stage
+  // 2). This used to read row.evening_schedule_miss_reason (035's reuse of
+  // the original evening_schedule_met/miss_reason pair, itself already a
+  // replacement -- see PR C1, 2026-09-05, for that history). 040 retires
+  // that column (frozen, not dropped) and introduces evening_tomorrow_needs
+  // as an honestly-named column instead of reusing the old one a third
+  // time. Read it as what it is.
+  const tomorrowNeeds: EngineerDprFacts['tomorrowNeeds'] = { note: wrapText(row.evening_tomorrow_needs) }
 
   // §3 Manpower — CHANGED 2026-09-05 (the "113 fabrication" incident,
   // schema.ts's own EngineerManpowerFacts comment has the full story).
@@ -649,10 +665,11 @@ export function mergeEngineerDprFacts(row: CorrectedEngineerLogRow | null, check
     morning_status: checkInStatus.morning,
     evening_status: checkInStatus.evening,
     work,
-    hindrance,
+    tomorrowNeeds,
     manpower,
     idle_hours_by_trade,
     equipment: { items },
+    hindrances,
   }
 }
 
@@ -753,12 +770,43 @@ export interface AssembleEngineerResult {
 // an oversight. The spec's own instruction ("render bad structured data
 // honestly... showing it is how the defect becomes visible") means
 // daily_hire_cost is always shown as-is here, garbled or not.
+// hindrances has no log_date column of its own (lib/hindrance/pm-notify.ts's
+// own comment: "a hindrance has no log_date of its own... the report's own
+// created_at is the only real date it has") -- join by reported_by =
+// engineer_id (a plain FK) plus created_at's IST calendar date matching
+// this report's log_date, computed client-side since there is no SQL-side
+// IST-aware date column to filter on directly. Fetched independent of
+// whether a daily_logs row exists at all -- the ad-hoc hindrance flow has
+// no relationship to daily_logs, so a genuinely silent engineer (no
+// check-in submitted) can still have a real hindrance to report.
+async function fetchEngineerHindrances(
+  client: SupabaseClient,
+  project_id: string,
+  engineer_id: string,
+  log_date: string,
+): Promise<EngineerHindranceRecord[]> {
+  const { data: rows, error } = await client
+    .from('hindrances')
+    .select('description, created_at')
+    .eq('project_id', project_id)
+    .eq('reported_by', engineer_id)
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+
+  return (rows ?? [])
+    .filter((row) => istDateString(new Date(row.created_at as string)) === log_date)
+    .map((row) => ({ description: row.description as string }))
+}
+
 export async function assembleEngineerDprFacts(
   client: SupabaseClient,
   project_id: string,
   engineer_id: string,
   log_date: string,
 ): Promise<AssembleEngineerResult> {
+  const hindrances = await fetchEngineerHindrances(client, project_id, engineer_id, log_date)
+
   const { data: logs, error: logsError } = await client
     .from('daily_logs')
     .select('*')
@@ -772,9 +820,10 @@ export async function assembleEngineerDprFacts(
   if (!logs) {
     // No row at all — a genuinely silent engineer. Both halves default to
     // not_received here; the caller overlays not_applicable if the
-    // send-time rule applies.
+    // send-time rule applies. hindrances is passed through regardless —
+    // see fetchEngineerHindrances's own comment.
     return {
-      facts: mergeEngineerDprFacts(null, { morning: { status: 'not_received' }, evening: { status: 'not_received' } }),
+      facts: mergeEngineerDprFacts(null, { morning: { status: 'not_received' }, evening: { status: 'not_received' } }, hindrances),
       completeness: { morning: 'not_received', evening: 'not_received' },
     }
   }
@@ -818,10 +867,10 @@ export async function assembleEngineerDprFacts(
     morning_equipment: logs.morning_equipment as CorrectedEngineerLogRow['morning_equipment'],
     evening_output: parseCorrectedText('evening_output', logs.evening_output as string | null, latestEditByColumn.get('evening_output')),
     evening_output_quantities: logs.evening_output_quantities as CorrectedEngineerLogRow['evening_output_quantities'],
-    evening_schedule_miss_reason: parseCorrectedText(
-      'evening_schedule_miss_reason',
-      logs.evening_schedule_miss_reason as string | null,
-      latestEditByColumn.get('evening_schedule_miss_reason'),
+    evening_tomorrow_needs: parseCorrectedText(
+      'evening_tomorrow_needs',
+      logs.evening_tomorrow_needs as string | null,
+      latestEditByColumn.get('evening_tomorrow_needs'),
     ),
     // evening_manpower/evening_idle_hours: NOT correctable (JSONB, outside
     // migration 019's scalar-only whitelist, same treatment as the fields
@@ -832,10 +881,14 @@ export async function assembleEngineerDprFacts(
     evening_equipment_utilisation: logs.evening_equipment_utilisation as CorrectedEngineerLogRow['evening_equipment_utilisation'],
   }
 
-  const facts = mergeEngineerDprFacts(correctedRow, {
-    morning: { status: completeness.morning },
-    evening: { status: completeness.evening },
-  })
+  const facts = mergeEngineerDprFacts(
+    correctedRow,
+    {
+      morning: { status: completeness.morning },
+      evening: { status: completeness.evening },
+    },
+    hindrances,
+  )
 
   return { facts, completeness }
 }

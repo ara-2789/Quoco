@@ -623,7 +623,12 @@ export interface DailyLogRow {
   evening_manpower: unknown | null
   evening_idle_hours: unknown | null
   evening_schedule_met: boolean | null
+  // FROZEN, not dropped, migration 040 (2026-09-11) -- no writer as of
+  // this migration; kept in the select list so a test can assert it stays
+  // null after a real Q5 turn, not because anything still writes it.
   evening_schedule_miss_reason: string | null
+  // NEW, migration 040 -- Q5's real write target now.
+  evening_tomorrow_needs: string | null
   evening_workers_on_site: number | null
   evening_productive_manpower: {
     productive_count: number
@@ -647,7 +652,7 @@ export async function getDailyLog(logDate: string): Promise<DailyLogRow | null> 
   const { data, error } = await db
     .from('daily_logs')
     .select(
-      'project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_plan, morning_manpower, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_manpower, evening_idle_hours, evening_schedule_met, evening_schedule_miss_reason, evening_workers_on_site, evening_productive_manpower, evening_equipment_utilisation, evening_submitted_at',
+      'project_id, engineer_id, log_date, attendance, attendance_defaulted, attendance_raw, is_holiday, morning_plan, morning_manpower, morning_equipment, morning_execution_plan, morning_submitted_at, evening_output, evening_output_quantities, evening_manpower, evening_idle_hours, evening_schedule_met, evening_schedule_miss_reason, evening_tomorrow_needs, evening_workers_on_site, evening_productive_manpower, evening_equipment_utilisation, evening_submitted_at',
     )
     .eq('project_id', TEST_PROJECT_ID)
     .eq('engineer_id', testEngineerId())

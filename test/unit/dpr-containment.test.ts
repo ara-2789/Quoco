@@ -209,13 +209,14 @@ function baseEngineerFacts(): EngineerDprFacts {
       done_quantity: { status: 'not_captured', value: null },
       unit: '',
     },
-    hindrance: { note: { status: 'not_captured', value: null } },
+    tomorrowNeeds: { note: { status: 'not_captured', value: null } },
     manpower: {
       planned: { status: 'not_captured', value: null },
       on_site: { status: 'not_captured', value: null },
     },
     idle_hours_by_trade: [],
     equipment: { items: [] },
+    hindrances: [],
   }
 }
 
@@ -271,9 +272,9 @@ describe('buildEngineerFactsCorpus', () => {
     expect(result.violations).toEqual([25])
   })
 
-  it('does NOT include a digit from hindrance.note, even though generate.ts still shows it to the model as a Fact line (the resolved hindrance_note/narrative.hindrance_note contradiction)', () => {
+  it('does NOT include a digit from tomorrowNeeds.note, even though generate.ts still shows it to the model as a Fact line (the resolved hindrance_note/narrative.hindrance_note contradiction, renamed to tomorrowNeeds/tomorrow_needs_note by migration 040)', () => {
     const facts = baseEngineerFacts()
-    facts.hindrance = { note: { status: 'reported', value: 'Rain for 3 hours delayed the pour' } }
+    facts.tomorrowNeeds = { note: { status: 'reported', value: 'Rain for 3 hours delayed the pour' } }
     const corpus = buildEngineerFactsCorpus(facts, meta)
     expect(corpus.has(3)).toBe(false)
     const result = checkContainment('Rain delayed work for 3 hours.', corpus)

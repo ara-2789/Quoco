@@ -1,14 +1,22 @@
 // Pure, framework-free contract for Rule 4.3 inline correction (DASH-03),
-// matching migration 019_daily_log_corrections.sql's own whitelist. No React,
+// matching correct_daily_log()'s own live whitelist -- originally migration
+// 019's, UPDATED 2026-09-11 by migration 040's STEP 6 (evening_schedule_
+// miss_reason -> evening_tomorrow_needs; NOT the table CHECK, which
+// migration 040 deliberately retains the old value in for historical rows
+// -- see that migration's own FIX 1/B1 comment. This contract mirrors the
+// CASE, the actual future-correctability gate, not the CHECK). No React,
 // no Supabase — unit-tested directly (test/unit/column-contract.test.ts),
 // same style as reactivate-copy.ts / date.ts.
 //
 // COLUMN_CONTRACT deliberately mirrors the FULL RPC/DB-level whitelist — all 9
-// columns 019 allows correct_daily_log to touch — not just the subset this
-// build renders. Migration 019 deliberately duplicates its whitelist across
-// the table CHECK and the RPC CASE so a partial widening fails closed; keeping
-// this map at the full 9 (verified byte-for-byte against the migration file by
-// column-contract.test.ts) makes it a real third gate on the same shape,
+// columns correct_daily_log's CASE allows it to touch — not just the subset
+// this build renders. Migration 019 deliberately duplicates its whitelist
+// across the table CHECK and the RPC CASE so a partial widening fails closed
+// (migration 040's STEP 5/6 preserves that duplication shape, just no longer
+// keeping the two lists identical to each other -- see 040's own FIX 1
+// comment for why); keeping this map at the full 9, always matching the
+// CASE (verified byte-for-byte against the live function definition by
+// column-contract.test.ts) makes it a real fourth gate on the same shape,
 // rather than a UI-scoped copy that could silently drift from what the RPC
 // actually allows.
 export const COLUMN_CONTRACT = {
@@ -20,7 +28,7 @@ export const COLUMN_CONTRACT = {
   evening_output: 'text',
   evening_workers_on_site: 'integer',
   evening_schedule_met: 'boolean',
-  evening_schedule_miss_reason: 'text',
+  evening_tomorrow_needs: 'text',
 } as const
 
 export type CorrectableColumn = keyof typeof COLUMN_CONTRACT
