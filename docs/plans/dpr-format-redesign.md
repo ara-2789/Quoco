@@ -410,6 +410,33 @@ one.
 
 ---
 
+## Known cost — labour raw text readability (recorded 2026-09-11, Stage 3 review)
+
+**Not a defect, no action needed** — recorded because Stage 3's own
+rendered sample against real prod data (2026-09-05, Speed Mechatronics)
+made it visible for the first time: `Labour reported — morning`/
+`Labour reported — evening` render a full wall of raw text when the
+engineer's answer lists every trade individually, e.g. (the real prod
+value on both halves that day — genuinely typed twice by the engineer,
+confirmed via a live DB probe, not a render bug):
+
+> "TOTAL - 37Nos , CIVIL Team 25 nos, mASON - 7 , helper - 11 , Fittern - 7,
+> roller operator - 1 , Supervisor -1, P.EB TEAM - 12 nOS , fitter - 3 ,
+> Helper - 6, Operator - 1, Supervisor - 2."
+
+Twelve comma-separated trade counts, inconsistent casing, on one line, is
+a real readability cost to the owner reading this report — but it is the
+**correct, deliberate consequence** of the 2026-09-05 "113 fabrication"
+incident's own fix (schema.ts's `EngineerManpowerFacts` comment): raw
+text, verbatim, never a parsed/summed number, because a parsed total was
+the exact defect that reached an owner. This redesign does not reopen
+that decision. It is what the owner reads **until equipment/labour
+parsing returns** (deferred, FAST-FOLLOW territory per CLAUDE.md §2) —
+recorded here so that eventual parsing work has a stated readability
+reason to exist, not only a data-structure one.
+
+---
+
 ## Field map — target format vs. what the assembler has today
 
 | Target field | Status | Detail |
