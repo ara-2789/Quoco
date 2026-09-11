@@ -15,7 +15,13 @@ import { parseEquipmentHours, isEquipmentHoursAnswered } from './parsers/equipme
 //   Q2 "Workers by trade"           -> evening_manpower                       (step 2, parsed, shares parseLabourCount with morning Q3)
 //   Q3 "Idle hours by trade"        -> evening_idle_hours                     (step 3, parsed, UNCONDITIONAL — "all working" is a real answer)
 //   Q4 "Equipment hours used"       -> evening_equipment_utilisation          (step 4, parsed, AUTO-SKIPPABLE on empty morning equipment)
-//   Q5 "Hindrance"                  -> evening_schedule_miss_reason (REUSED)  (step 5, ungated, terminal)
+//   Q5 "Tomorrow's needs"           -> evening_tomorrow_needs (migration 040) (step 5, ungated, terminal)
+//     RENAMED 2026-09-11 -- was "Hindrance" -> evening_schedule_miss_reason
+//     (REUSED). evening_schedule_miss_reason is now frozen (not dropped);
+//     Q5's answer lives in evening_tomorrow_needs instead, and asks a
+//     forward-looking question ("what's needed tomorrow"), not a backward-
+//     looking one -- the old hindrance role belongs to the explicit ad-hoc
+//     hindrance flow (migration 038, public.hindrances) now.
 // DELETED, not carried forward in any form: "did you meet today's plan"
 // (the old Q2), the miss-reason follow-up (the old conditional Q3),
 // aggregate workers-on-site (the old Q4a headcount), aggregate
@@ -93,7 +99,11 @@ export const EVENING_QUESTIONS: Readonly<Record<number, string>> = {
   2: 'How many *workers* were on site today? You can just send a number, or a breakdown like "12 mason 8 helper".',
   3: 'Was anyone *idle* today? Tell us which trade and for how long — e.g. "mason idle 2 hours". Reply *all working* if nobody was idle.',
   4: '', // DATA-DRIVEN — see buildEquipmentHoursPrompt / buildEveningReply. Never read directly.
-  5: 'Anything that *slowed execution* today? Reply in a few words, or "none".',
+  // RENAMED 2026-09-11 (migration 040) -- was 'Anything that *slowed
+  // execution* today? Reply in a few words, or "none".' Verbatim approved
+  // copy, per Aravind's own instruction and the migration's own STEP 1/3
+  // COMMENT ON COLUMN (supabase/migrations/040_evening_q5_tomorrow_needs.sql).
+  5: 'Anything *extra needed* tomorrow beyond the plan — material, labour or machine? Reply in a few words, or "none".',
 }
 
 // Reask copy — states WHY the reply was rejected, per the standing ruling

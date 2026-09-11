@@ -24,6 +24,16 @@ export interface EquipmentIdleReason {
   idle_reason: string | null
 }
 
+// UNCHANGED, feeds ONLY the deferred project-level fetchNarrativeContext
+// below (per this file's own "OLD project-level pipeline... NOT deleted
+// and NOT modified" convention, same as assemble.ts's identical split) --
+// still reads evening_schedule_miss_reason, which migration 040
+// (2026-09-11) froze (not dropped). hindrance_note here describes that
+// column's LAST live meaning (035's Q5 reuse) correctly for as long as
+// this deferred path is never rebuilt against the new column -- the live
+// per-engineer path has its own, separate EngineerNarrativeContext below,
+// reading the new column instead. Do NOT reuse this interface for new
+// code just because the shape looks similar.
 export interface NarrativeContext {
   // RENAMED 2026-09-05 (PR C1). This column is evening_schedule_miss_reason,
   // but 035 (2026-08-31) reused it for the unconditional Q5 hindrance
@@ -51,6 +61,32 @@ export interface NarrativeContext {
 
 interface NarrativeContextRow {
   evening_schedule_miss_reason: string | null
+  evening_idle_hours: { raw_text: string | null } | null
+  evening_equipment_utilisation: { items: Array<{ type: string; raw: string | null }> } | null
+}
+
+// NEW, migration 040 (2026-09-11), Stage 2 — a DISTINCT interface from
+// NarrativeContext above, not a reuse. Previously fetchEngineerNarrativeContext
+// shared NarrativeContext wholesale with the deferred fetchNarrativeContext
+// (generate.ts imported it as `NarrativeContext as EngineerNarrativeContext`,
+// a bare alias for the identical type) — that stopped being safe the moment
+// the two functions needed to read DIFFERENT columns for the same-shaped
+// field: the deferred path still reads evening_schedule_miss_reason
+// (frozen, unchanged); the live per-engineer path now reads
+// evening_tomorrow_needs. Keeping one shared `hindrance_note` field would
+// have meant either a misleading name on the live path's own data (calling
+// a "what's needed tomorrow" answer `hindrance_note`) or silently leaving
+// the live path reading the frozen column — exactly the "reads as live,
+// isn't" failure this whole migration exists to close off, one layer
+// removed from the Facts layer itself.
+export interface EngineerNarrativeContext {
+  tomorrow_needs_note: string | null // evening_tomorrow_needs, raw.
+  manpower_idle_reason: string | null // evening_idle_hours.raw_text, whole-answer raw.
+  equipment_idle_reasons: EquipmentIdleReason[] // evening_equipment_utilisation.items[].raw, one per type.
+}
+
+interface EngineerNarrativeContextRow {
+  evening_tomorrow_needs: string | null
   evening_idle_hours: { raw_text: string | null } | null
   evening_equipment_utilisation: { items: Array<{ type: string; raw: string | null }> } | null
 }
@@ -104,10 +140,10 @@ export async function fetchEngineerNarrativeContext(
   project_id: string,
   engineer_id: string,
   log_date: string,
-): Promise<NarrativeContext | null> {
+): Promise<EngineerNarrativeContext | null> {
   const { data: row, error } = await client
     .from('daily_logs')
-    .select('evening_schedule_miss_reason, evening_idle_hours, evening_equipment_utilisation')
+    .select('evening_tomorrow_needs, evening_idle_hours, evening_equipment_utilisation')
     .eq('project_id', project_id)
     .eq('engineer_id', engineer_id)
     .eq('log_date', log_date)
@@ -116,9 +152,9 @@ export async function fetchEngineerNarrativeContext(
   if (error) throw error
   if (!row) return null
 
-  const typed = row as unknown as NarrativeContextRow
+  const typed = row as unknown as EngineerNarrativeContextRow
   return {
-    hindrance_note: typed.evening_schedule_miss_reason,
+    tomorrow_needs_note: typed.evening_tomorrow_needs,
     manpower_idle_reason: typed.evening_idle_hours?.raw_text ?? null,
     equipment_idle_reasons: (typed.evening_equipment_utilisation?.items ?? []).map((item) => ({
       type: item.type,

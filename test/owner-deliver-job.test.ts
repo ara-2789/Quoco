@@ -44,13 +44,14 @@ const VALID_FACTS: EngineerDprFacts = {
     done_quantity: { status: 'reported', value: 120 },
     unit: 'sqm',
   },
-  hindrance: { note: { status: 'not_captured', value: null } },
+  tomorrowNeeds: { note: { status: 'not_captured', value: null } },
   manpower: {
     planned: { status: 'reported', value: '20 workers' },
     on_site: { status: 'reported', value: '18 workers' },
   },
   idle_hours_by_trade: [],
   equipment: { items: [] },
+  hindrances: [],
 }
 
 const VALID_STRUCTURED = {

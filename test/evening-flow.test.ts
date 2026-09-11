@@ -337,23 +337,31 @@ describe('Q4 — equipment hours used, one number per type (needs 035 applied)',
   })
 })
 
-describe('Q5 — hindrance, UNCONDITIONAL, terminal (needs 035 applied)', () => {
-  it('writes evening_schedule_miss_reason (reused) + evening_submitted_at, completes the flow', async () => {
+describe('Q5 — tomorrow\'s needs, UNCONDITIONAL, terminal (needs 040 applied)', () => {
+  // RENAMED 2026-09-11 (migration 040): Q5 used to write
+  // evening_schedule_miss_reason (035's reuse, "anything that slowed
+  // execution today?"). 040 retires that column (frozen, not dropped) and
+  // Q5 now writes evening_tomorrow_needs instead, answering "anything
+  // extra needed tomorrow?" — same shape (free text, unconditional,
+  // terminal, no reask), different column and different question.
+  it('writes evening_tomorrow_needs + evening_submitted_at, completes the flow', async () => {
     const phone = testPhone('357')
     // NOT seedMorningEquipment([]) — an empty items array triggers the SAME
     // auto-skip as no submission at all (035...sql:629-630: `IS NULL OR
     // jsonb_array_length(...) = 0`). With that seeding, Q3 auto-skips
     // straight to step 5, and driveToStep's own step-4 message ('JCB 6
     // hours') lands as THIS test's Q5 answer instead, completing the flow
-    // before the real hindrance message is ever sent. Non-empty equipment
-    // keeps step 4 genuinely reached, matching what driveToStep assumes.
+    // before the real tomorrow's-needs message is ever sent. Non-empty
+    // equipment keeps step 4 genuinely reached, matching what driveToStep
+    // assumes.
     await seedMorningEquipment([{ type: 'jcb', count: 1 }])
     await driveToStep(phone, 5)
-    const r = await applyEveningFlowTurn({ phone, message: 'RMC truck delayed by an hour', startFlow: false, now: P_NOW })
+    const r = await applyEveningFlowTurn({ phone, message: '2 masons, cement', startFlow: false, now: P_NOW })
     expect(r.outcome).toBe('advance')
     expect(r.current_step).toBe(0) // flow complete
     const row = await getDailyLog(LOG_DATE)
-    expect(row?.evening_schedule_miss_reason).toBe('RMC truck delayed by an hour')
+    expect(row?.evening_tomorrow_needs).toBe('2 masons, cement')
+    expect(row?.evening_schedule_miss_reason).toBeNull() // frozen, migration 040 -- confirm it stays untouched
     expect(row?.evening_submitted_at).not.toBeNull()
   })
 

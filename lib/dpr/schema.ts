@@ -609,19 +609,55 @@ export interface EngineerWorkFacts {
 // five days, not a genuine "not reported" state, a dead field with nothing
 // left to report. EngineerScheduleFacts is not kept as a dormant type: there
 // is no data source for it anymore, unlike daily_hire_cost/idle_cost (§33(e)),
-// which stay for a real future feature (invoicing). Replaced by `hindrance`
-// below, which is what evening_schedule_miss_reason actually holds now.
+// which stay for a real future feature (invoicing). Replaced first by
+// `hindrance` (035, see below's own history), then by `tomorrowNeeds`
+// (migration 040).
 
-// §2 Hindrance — 035 (2026-08-31) reused evening_schedule_miss_reason for the
-// new unconditional Q5 ("anything that slowed execution today?"), per that
-// migration's own COMMENT ON COLUMN. lib/dpr/ kept reading and rendering it
-// as a schedule-miss reason for five days — the production defect PR C1
-// fixes: an owner read a hindrance as an explanation for a schedule that was
-// never assessed. Column name unchanged (035's own reasoning: keeps
-// migration 019's correction whitelist entry live and correct); TS-side
-// field named for what it actually is.
-export interface EngineerHindranceFacts {
+// §5 Tomorrow's needs — RENAMED FROM EngineerHindranceFacts, migration 040
+// (2026-09-11). Two prior meanings on the underlying column, retired by 040:
+// meaning 1, the conditional "why wasn't the plan met" follow-up
+// evening_schedule_miss_reason's own name describes; meaning 2 (035,
+// 2026-08-31 to 040), the unconditional Q5 "anything that slowed execution
+// today?" answer, reused onto the SAME column — lib/dpr/ read and rendered
+// it as a schedule-miss reason for five days before that was fixed (PR C1,
+// 2026-09-05), a production defect this history is kept here to avoid
+// repeating a third time. Migration 040 does NOT reuse the column a third
+// time — it retires evening_schedule_miss_reason (frozen, not dropped) and
+// introduces a new, honestly-named evening_tomorrow_needs column instead.
+// This type (and the EngineerDprFacts property below) are renamed alongside
+// it, deliberately BOTH the interface and the container property, not just
+// the leaf field — a partial rename would still let a reader find
+// `facts.hindrance.tomorrowNeeds` and wonder why "hindrance" holds
+// forward-looking data. The full rename forces every call site (this file,
+// assemble.ts, render.ts, and every test referencing either name) to break
+// at compile time until all of them move together — the compiler, not
+// memory, is what guarantees no reader is left pointed at the frozen
+// column. Free text, unconditional, ungated, terminal — same shape as the
+// question it replaces; see evening_tomorrow_needs's own COMMENT ON COLUMN
+// (migration 040) for the exact question text.
+export interface EngineerTomorrowNeedsFacts {
   note: CapturedText
+}
+
+// The REAL hindrance section, migration 040's companion Stage 2 change —
+// NOT the same data as EngineerTomorrowNeedsFacts above (that field never
+// held real hindrance data past 035's five-day defect window). Sourced from
+// public.hindrances (migration 038's ad-hoc menu flow), joined by
+// reported_by = engineer_id and created_at's IST calendar date matching
+// this report's log_date (hindrances has no log_date column of its own —
+// lib/hindrance/pm-notify.ts's own comment: "a hindrance has no log_date of
+// its own... the report's own created_at is the only real date it has").
+// dpr_included is NOT the join mechanism — confirmed unusable before this
+// was built: the column has had no DEFAULT since migration 016 ("set by the
+// DPR generation job, not defaulted at insert") and nothing has ever
+// written it. Content is `description` ONLY (Aravind's decision) —
+// hindrance_type/impact_level/area_affected are never written by the flow
+// (grepped: apply_hindrance_flow_turn's own INSERT list, migration 038),
+// so rendering them would print nulls. One entry per matching row,
+// chronological by created_at — render.ts's own convention for a list this
+// shape (same as EngineerEquipmentFacts.items).
+export interface EngineerHindranceRecord {
+  description: string
 }
 
 // §3 Manpower. Both fields CapturedText (raw engineer text), NOT
@@ -712,10 +748,15 @@ export interface EngineerDprFacts {
   morning_status: CheckInHalfStatus
   evening_status: CheckInHalfStatus
   work: EngineerWorkFacts
-  hindrance: EngineerHindranceFacts
+  // RENAMED from `hindrance`, migration 040 -- see EngineerTomorrowNeedsFacts's
+  // own comment for the full history and why both the type and this property
+  // key moved together.
+  tomorrowNeeds: EngineerTomorrowNeedsFacts
   manpower: EngineerManpowerFacts
   idle_hours_by_trade: EngineerIdleHoursByTrade[]
   equipment: EngineerEquipmentFacts
+  // NEW, migration 040 Stage 2 -- see EngineerHindranceRecord's own comment.
+  hindrances: EngineerHindranceRecord[]
 }
 
 // The model's ENTIRE output (spec Rule 2) — one field. Digits allowed
