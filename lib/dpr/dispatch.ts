@@ -132,6 +132,28 @@ export async function handleDprGenerateJob(
       resolveCheckInStatus(client, payload, completeness),
     )
 
+    // FIX (2026-09-11, review round after Stage 4) -- render.ts's per-field
+    // gating (morningAnswered/eveningAnswered in renderEngineerBody) must
+    // read the SAME classification the check-in line and codeTemplatedVerdict
+    // already use, not facts.morning_status/evening_status as
+    // assembleEngineerDprFacts originally set them. Those came from
+    // deriveHalfCompleteness alone, which has NEVER been able to return
+    // 'not_applicable' -- this seam predates the redesign entirely (holiday/
+    // joined_late/left_early were already silently affected; Stage 4's
+    // not_on_site case is only the one that made it visible, because it was
+    // the first to be tested against the new per-field gating). Not fixing
+    // deriveHalfCompleteness itself here -- that is a bigger seam than this
+    // round's scope. `kind` is deliberately dropped -- render.ts's gating
+    // only ever needs `.status`, and CheckInHalfStatus (schema.ts) has no
+    // `kind` field to carry it; the check-in line and codeTemplatedVerdict
+    // already have the richer `morning`/`evening` values directly, so
+    // nothing downstream loses information.
+    facts = {
+      ...facts,
+      morning_status: { status: morning.status, reason: morning.reason },
+      evening_status: { status: evening.status, reason: evening.reason },
+    }
+
     // Stage 1 plumbing (2026-09-11, docs/plans/dpr-format-redesign.md §5)
     // -- now rendered (Stage 3): the WORK section's own "Project Manager:"
     // header line.
@@ -181,7 +203,20 @@ export async function handleDprGenerateJob(
       const result = await timed('generateEngineerVerdict', () =>
         generateEngineerVerdict(anthropic, facts, narrative, { project_name: project.name, log_date: payload.log_date }),
       )
-      if (result.verdict_status === 'placeholder') {
+      if (result.verdict_status === 'judgment_denylist') {
+        // 2026-09-11, docs/plans/dpr-format-redesign.md §9, Aravind's
+        // explicit fallback choice: option 1 (retry, already exhausted
+        // inside generateEngineerVerdict) then option 2 (codeTemplatedVerdict's
+        // line) -- never option 3 (stripping the word out of a model
+        // sentence, which leaves a worse fragment than either alternative).
+        Sentry.captureMessage('DPR verdict hit the judgment-language denylist twice, falling back to a code-templated line', {
+          level: 'warning',
+          tags: { feature: 'dpr-generate', failure_class: 'dpr_validation' },
+          extra: { project_id: payload.project_id, engineer_id: payload.engineer_id, log_date: payload.log_date },
+        })
+        verdict = codeTemplatedVerdict(morning, evening)
+        verdictStatus = 'code_templated'
+      } else if (result.verdict_status === 'placeholder') {
         Sentry.captureException(new Error('DPR verdict containment failed twice, falling back to placeholder'), {
           tags: { feature: 'dpr-generate', failure_class: 'dpr_validation' },
           extra: { project_id: payload.project_id, engineer_id: payload.engineer_id, log_date: payload.log_date },
@@ -247,10 +282,19 @@ export async function handleDprGenerateJob(
 // code-templated, no model call (Rule 2's "code already knows the whole
 // answer" pattern, applied to the verdict the same way schema.ts's
 // DataStatus sections already apply it). Deliberately not exhaustive prose
-// — one honest sentence per state. ONLY ever called when evening is NOT
-// complete/partial (the caller's eveningNeedsModel gate) — so every branch
-// here can assume evening has nothing real to report; only morning's
-// status distinguishes the remaining cases.
+// — one honest sentence per state.
+//
+// TWO CALLERS as of 2026-09-11 (docs/plans/dpr-format-redesign.md §9) —
+// the precondition below is now conditional on WHICH caller reached here,
+// stated explicitly so neither branch order nor a future reader assumes
+// the old single-caller guarantee still holds everywhere:
+//   1. dispatch.ts's `!eveningNeedsModel` path (the ORIGINAL caller) —
+//      evening is NEVER complete/partial here; every branch below except
+//      the last one assumes evening has nothing real to report.
+//   2. The denylist-fallback path (NEW) — evening MAY be complete/partial
+//      here (the model was actually called and had real data; it just
+//      failed validation twice). The LAST branch below exists
+//      specifically for this caller and is unreachable from caller 1.
 function codeTemplatedVerdict(morning: CheckInStatusResult['morning'], evening: CheckInStatusResult['evening']): string {
   // Structural check (round-4 NIT) — kind, not a substring match on reason
   // text. The old `.reason?.includes('holiday')` coupled this branch to the
@@ -282,6 +326,15 @@ function codeTemplatedVerdict(morning: CheckInStatusResult['morning'], evening: 
   // evening flow can be triggered — the untested branch that fires first.
   if (morning.status === 'complete' || morning.status === 'partial') {
     return 'No evening check-in, so we do not know what was done today.'
+  }
+  // Caller 2 ONLY (denylist fallback) — evening HAS real data, but the
+  // model's own verdict failed validation (containment or the judgment-
+  // language denylist) on both attempts. Every branch above this one
+  // assumes evening has nothing real; this is the one case where that
+  // assumption is false. PROPOSED TEXT, not yet confirmed copy — flagged
+  // for approval in the same review round that added this branch.
+  if (evening.status === 'complete' || evening.status === 'partial') {
+    return 'Evening check-in received; summary unavailable for this report.'
   }
   return 'No check-in received today, so we do not know what was done.'
 }

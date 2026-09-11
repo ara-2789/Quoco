@@ -380,17 +380,17 @@ describe('handleDprGenerateJob', () => {
       expect(dpr?.generation_status).toBe('idle')
       expect(dpr?.content).toContain('Engineer not on site today.')
       expect(dpr?.content).toContain('Check-in: Morning not applicable — not on site today · Evening not received')
-      // NOT asserting WORK is omitted here -- it is NOT, today. render.ts's
-      // per-field gating (morningAnswered) reads facts.morning_status
-      // (assembleEngineerDprFacts's own completeness, deriveHalfCompleteness
-      // -- 'complete', unaware of attendance), not resolveCheckInStatus's
-      // richer not_applicable/kind classification this test's fix adds --
-      // two independent signals, only one of which this Stage 4 change
-      // threads through. So WORK still shows "Morning plan: no input
-      // received" / RESOURCE shows "Labour reported — morning: no input
-      // received" here -- a real, separate finding, reported to Aravind,
-      // not fixed in this narrower round (scoped to the SUMMARY/verdict
-      // gate only, per the instruction that added this test).
+      // FIXED (2026-09-11, review round after Stage 4): dispatch.ts now
+      // overwrites facts.morning_status/evening_status with
+      // resolveCheckInStatus's own richer classification before rendering
+      // -- render.ts's per-field gating reads the SAME not_applicable
+      // signal the check-in line and codeTemplatedVerdict already used, so
+      // WORK/RESOURCE are correctly OMITTED entirely, not shown with "no
+      // input received" markers (which would wrongly imply a collection
+      // failure rather than "nobody was there to ask").
+      expect(dpr?.content).not.toContain('WORK')
+      expect(dpr?.content).not.toContain('RESOURCE')
+      expect(dpr?.content).not.toContain('no input received')
       const structured = dpr?.structured as { verdict?: string; verdict_status?: string } | null
       expect(structured?.verdict).toBe('Engineer not on site today.')
       expect(structured?.verdict_status).toBe('code_templated')

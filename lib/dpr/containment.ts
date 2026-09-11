@@ -284,3 +284,30 @@ export function checkContainment(outputText: string, corpus: Set<number>): Conta
   const violations = Array.from(outputTokens).filter((token) => !corpus.has(token))
   return { ok: violations.length === 0, violations }
 }
+
+// JUDGMENT-LANGUAGE DENYLIST (2026-09-11, docs/plans/dpr-format-redesign.md
+// §9, Aravind's approval). BACKSTOP behind the prompt constraint
+// (generate.ts's ENGINEER_SYSTEM_PROMPT already tells the model it may NAME
+// a reported fact like idle hours but never ASSESS or JUDGE it) -- prompts
+// drift, this does not. Deliberately narrow: seven words, no "low"/"high"
+// (both dropped -- Aravind's own call: they need scoping to a judgment noun
+// ("productivity was low") to avoid false-positiving on a legitimate plain
+// measurement, and "a denylist that needs context-awareness is not a
+// denylist; the prompt constraint is the primary guard and this is only the
+// backstop"). Case-insensitive, whole-word only (`\b...\b` — "goodwill"
+// must not trip on "good").
+const JUDGMENT_WORDS = ['poor', 'excellent', 'concerning', 'disappointing', 'good', 'bad', 'inadequate'] as const
+
+export interface JudgmentLanguageResult {
+  ok: boolean
+  matched?: string // the specific denylisted word found, for logs only
+}
+
+export function checkJudgmentLanguage(outputText: string): JudgmentLanguageResult {
+  for (const word of JUDGMENT_WORDS) {
+    if (new RegExp(`\\b${word}\\b`, 'i').test(outputText)) {
+      return { ok: false, matched: word }
+    }
+  }
+  return { ok: true }
+}

@@ -61,13 +61,20 @@ async function main() {
 
   console.log('Calling Claude...')
   const result = await generateEngineerVerdict(anthropic, facts, narrative, { project_name: project.name, log_date: logDate })
-  const verdict = result.verdict_status === 'placeholder' ? CONTAINMENT_FAILURE_PLACEHOLDER : result.verdict
+  // 'judgment_denylist' (2026-09-11) collapses into the same placeholder
+  // treatment as a containment failure HERE ONLY -- this script never
+  // calls resolveCheckInStatus (a pre-existing limitation, unrelated to
+  // this change), so it has no morning/evening classification to build
+  // the real codeTemplatedVerdict fallback dispatch.ts now uses. Fine for
+  // a hand-invoked debug script; not the production path.
+  const verdict = result.verdict_status !== 'model' ? CONTAINMENT_FAILURE_PLACEHOLDER : result.verdict
+  const verdictStatus = result.verdict_status === 'model' ? 'model' : 'placeholder'
   const projectManagerName = await resolveProjectManagerName(client, projectId)
 
   const rendered = renderEngineerReport(
     facts,
     verdict,
-    result.verdict_status,
+    verdictStatus,
     { status: completeness.morning },
     { status: completeness.evening },
     {

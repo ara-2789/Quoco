@@ -4,7 +4,7 @@ import type { DprFacts, DprJudgment, EngineerDprFacts } from './schema'
 import type { NarrativeContext, EngineerNarrativeContext } from './narrative-context'
 import { validateJudgment, type ValidationViolation } from './validate'
 import { isManpowerNoteDiscarded, isScheduleNoteDiscarded, isEquipmentItemNoteDiscarded } from './discarded-fields'
-import { buildEngineerFactsCorpus, checkContainment } from './containment'
+import { buildEngineerFactsCorpus, checkContainment, checkJudgmentLanguage } from './containment'
 
 // The Anthropic client wrapper — the primary deliverable of this slice
 // (2026-08-11 DPR generator slice), per Aravind's framing: "the Facts/
@@ -454,7 +454,13 @@ const ENGINEER_SYSTEM_PROMPT =
 
 export interface EngineerVerdictResult {
   verdict: string
-  verdict_status: 'model' | 'placeholder'
+  // 'judgment_denylist' ADDED 2026-09-11 (docs/plans/dpr-format-redesign.md
+  // §9) -- distinguishes "the LAST attempt's own failure was a denylist
+  // hit" from a containment/parse failure, so the caller (dispatch.ts) can
+  // fall back to codeTemplatedVerdict's line instead of the generic
+  // CONTAINMENT_FAILURE_PLACEHOLDER (Aravind's explicit fallback choice --
+  // option 1 then option 2, never option 3/stripping).
+  verdict_status: 'model' | 'placeholder' | 'judgment_denylist'
   usage: { input_tokens: number; output_tokens: number } // summed across attempts
   latency_ms: number // summed across attempts
   cost_usd: number // summed across attempts
@@ -490,6 +496,13 @@ export async function generateEngineerVerdict(
   let totalInputTokens = 0
   let totalOutputTokens = 0
   let totalLatencyMs = 0
+  // Tracks the LAST attempt's own failure reason -- 2026-09-11, denylist
+  // fallback. If the FINAL attempt's failure was a denylist hit
+  // specifically, the caller falls back to codeTemplatedVerdict's line
+  // instead of the generic placeholder (Aravind's explicit choice). A
+  // parse/containment failure on the final attempt keeps the existing
+  // 'placeholder' behavior, unchanged.
+  let lastFailureReason: 'parse_error' | 'containment' | 'judgment_denylist' = 'parse_error'
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     const start = Date.now()
@@ -529,30 +542,44 @@ export async function generateEngineerVerdict(
       }
       judgment = { verdict: parsed.verdict }
     } catch {
+      lastFailureReason = 'parse_error'
       continue // same as a containment failure: attempt 2, then the placeholder
     }
 
-    const result = checkContainment(judgment.verdict, corpus)
-    if (result.ok) {
-      const cost_usd = (totalInputTokens / 1_000_000) * INPUT_COST_PER_MTOK + (totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_MTOK
-      return {
-        verdict: judgment.verdict,
-        verdict_status: 'model',
-        usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
-        latency_ms: totalLatencyMs,
-        cost_usd,
-        attempts: attempt,
-      }
+    const containmentResult = checkContainment(judgment.verdict, corpus)
+    if (!containmentResult.ok) {
+      lastFailureReason = 'containment'
+      continue
+    }
+
+    // Judgment-language denylist (2026-09-11, docs/plans/dpr-format-
+    // redesign.md §9) -- checked ONLY after containment passes, same
+    // shared retry budget (ONE retry total, not a separate counter per
+    // check). A verdict must pass BOTH checks to ship as 'model'.
+    const judgmentResult = checkJudgmentLanguage(judgment.verdict)
+    if (!judgmentResult.ok) {
+      lastFailureReason = 'judgment_denylist'
+      continue
+    }
+
+    const cost_usd = (totalInputTokens / 1_000_000) * INPUT_COST_PER_MTOK + (totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_MTOK
+    return {
+      verdict: judgment.verdict,
+      verdict_status: 'model',
+      usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
+      latency_ms: totalLatencyMs,
+      cost_usd,
+      attempts: attempt,
     }
     // Falls through to attempt 2 (the ONE immediate in-process retry) on
-    // the first failure; falls through to the placeholder below on the
-    // second.
+    // the first failure; falls through to the placeholder/denylist-fallback
+    // below on the second.
   }
 
   const cost_usd = (totalInputTokens / 1_000_000) * INPUT_COST_PER_MTOK + (totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_MTOK
   return {
-    verdict: '', // caller (dispatch.ts) substitutes CONTAINMENT_FAILURE_PLACEHOLDER (render.ts) — kept out of generate.ts so the placeholder's copy lives in one place, the renderer
-    verdict_status: 'placeholder',
+    verdict: '', // caller (dispatch.ts) substitutes CONTAINMENT_FAILURE_PLACEHOLDER (render.ts) or codeTemplatedVerdict, per verdict_status below — kept out of generate.ts so that copy lives in one place, the renderer/dispatcher
+    verdict_status: lastFailureReason === 'judgment_denylist' ? 'judgment_denylist' : 'placeholder',
     usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
     latency_ms: totalLatencyMs,
     cost_usd,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractDigitTokens, buildExecutionCorpus, buildEngineerFactsCorpus, checkContainment } from '@/lib/dpr/containment'
+import { extractDigitTokens, buildExecutionCorpus, buildEngineerFactsCorpus, checkContainment, checkJudgmentLanguage } from '@/lib/dpr/containment'
 import type { ExecutionOutputFacts, EngineerDprFacts } from '@/lib/dpr/schema'
 
 describe('extractDigitTokens', () => {
@@ -319,5 +319,50 @@ describe('buildEngineerFactsCorpus', () => {
     const facts = baseEngineerFacts()
     const corpus = buildEngineerFactsCorpus(facts, { project_name: 'Site A' })
     expect(corpus).toBeInstanceOf(Set)
+  })
+})
+
+// checkJudgmentLanguage — 2026-09-11, docs/plans/dpr-format-redesign.md §9,
+// Aravind's approval: poor/excellent/concerning/disappointing/good/bad/
+// inadequate, case-insensitive, whole-word. "low"/"high" deliberately
+// excluded (need scoping to a judgment noun, dropped rather than
+// false-positiving on a plain measurement).
+describe('checkJudgmentLanguage', () => {
+  it('passes ordinary factual text with no judgment words', () => {
+    expect(checkJudgmentLanguage('2 masons idle 2 hours. Excavation continued.')).toEqual({ ok: true })
+  })
+
+  it('flags each denylisted word, case-insensitively', () => {
+    expect(checkJudgmentLanguage('Productivity was poor today.').ok).toBe(false)
+    expect(checkJudgmentLanguage('Productivity was POOR today.').ok).toBe(false)
+    expect(checkJudgmentLanguage('An excellent day of progress.').ok).toBe(false)
+    expect(checkJudgmentLanguage('This is concerning.').ok).toBe(false)
+    expect(checkJudgmentLanguage('A disappointing result.').ok).toBe(false)
+    expect(checkJudgmentLanguage('A good day overall.').ok).toBe(false)
+    expect(checkJudgmentLanguage('A bad outcome.').ok).toBe(false)
+    expect(checkJudgmentLanguage('Inadequate manpower today.').ok).toBe(false)
+  })
+
+  it('reports which word matched, for logs', () => {
+    expect(checkJudgmentLanguage('Productivity was poor today.')).toEqual({ ok: false, matched: 'poor' })
+  })
+
+  it('matches WHOLE WORDS only -- "goodwill"/"badge" must not trip on "good"/"bad"', () => {
+    expect(checkJudgmentLanguage('Goodwill gesture from the contractor.')).toEqual({ ok: true })
+    expect(checkJudgmentLanguage('Wearing a name badge on site.')).toEqual({ ok: true })
+  })
+
+  it('does NOT flag "low" or "high" -- deliberately dropped from the denylist (Aravind\'s decision)', () => {
+    expect(checkJudgmentLanguage('Low water levels observed at the site.')).toEqual({ ok: true })
+    expect(checkJudgmentLanguage('High tension cable laid today.')).toEqual({ ok: true })
+  })
+
+  it('when multiple denylisted words are present, the one checked first in DENYLIST order is reported (not text order)', () => {
+    // JUDGMENT_WORDS order is poor/excellent/concerning/disappointing/
+    // good/bad/inadequate -- "disappointing" is checked before "bad", so
+    // it wins even though "bad" appears earlier in the text.
+    const result = checkJudgmentLanguage('A bad and disappointing day.')
+    expect(result.ok).toBe(false)
+    expect(result.matched).toBe('disappointing')
   })
 })
