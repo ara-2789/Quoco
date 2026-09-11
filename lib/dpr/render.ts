@@ -551,9 +551,9 @@ function renderContent(s: RenderedDpr['structured']): string {
 // format-redesign.md §4): the not_captured fallback text is "no input
 // received", not "not reported" -- used ONLY for fields that follow the
 // inline-marker convention (a field left unanswered WITHIN an otherwise-
-// answered half). Idle hours/Machines reported/Run hours do NOT use this
-// helper -- they follow the separate "omit the whole line" convention
-// instead (§4's own explicit carve-out for those three fields).
+// answered half). Idle hours/Machines reported/Machine usage do NOT use
+// this helper -- they follow the separate "omit the whole line"
+// convention instead (§4's own explicit carve-out for those three fields).
 function fmtInline(c: CapturedText): string {
   return c.status === 'reported' && c.value !== null ? `"${c.value}"` : 'no input received'
 }
@@ -691,14 +691,18 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
   }
   pushSection(lines, 'WORK', work)
 
-  // RESOURCE -- Labour reported (morning/evening) follow the inline-
-  // marker convention (a genuinely missing answer within an answered
-  // half); Idle hours follows the SEPARATE omit-when-empty convention
-  // (decision 4's explicit carve-out -- no idle time reported is a real,
-  // common, non-missing answer, not a gap).
+  // RESOURCE -- Morning/Evening labour reported follow the inline-marker
+  // convention (a genuinely missing answer within an answered half); Idle
+  // hours follows the SEPARATE omit-when-empty convention (decision 4's
+  // explicit carve-out -- no idle time reported is a real, common,
+  // non-missing answer, not a gap).
+  //
+  // LABEL CHANGED 2026-09-11 (review round) -- "Labour reported —
+  // morning/evening" -> "Morning/Evening labour reported:", half-prefix
+  // moved to the front. Aravind's approval; content unchanged.
   const resource: string[] = []
-  if (morningAnswered) resource.push(`Labour reported — morning: ${fmtInline(facts.manpower.planned)}`)
-  if (eveningAnswered) resource.push(`Labour reported — evening: ${fmtInline(facts.manpower.on_site)}`)
+  if (morningAnswered) resource.push(`Morning labour reported: ${fmtInline(facts.manpower.planned)}`)
+  if (eveningAnswered) resource.push(`Evening labour reported: ${fmtInline(facts.manpower.on_site)}`)
   if (facts.idle_hours_by_trade.length > 0) {
     const idleText = facts.idle_hours_by_trade.map((t) => `${tradeLabel(t.trade)} idle ${t.idle_hours} hours`).join(', ')
     resource.push(`Idle hours: ${idleText}.`)
@@ -726,7 +730,13 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
     // anything in this pipeline transforms raw text outside spelling
     // correction -- this whole redesign rests on "as reported." Left
     // exactly as typed, deliberately. Do not "tidy" this.
-    machine.push(`Run hours: "${facts.equipment.run_hours.value}"`)
+    //
+    // LABEL CHANGED 2026-09-11 (review round) -- "Run hours:" ->
+    // "Machine usage:". The field's own raw text is often a fault/status
+    // note ("Pump breakdown 1 hr"), not a run duration -- "Run hours"
+    // implied the machine ran, which is not always true. Field content
+    // unchanged, still raw text verbatim; only the label changed.
+    machine.push(`Machine usage: "${facts.equipment.run_hours.value}"`)
   }
   pushSection(lines, 'MACHINE', machine)
 
@@ -745,10 +755,18 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
 
   // DEPENDENCY -- live, unchanged mechanism (evening_tomorrow_needs,
   // migration 040). Was rendered inline as "Dependency — <value>" on one
-  // line; now a bare "DEPENDENCY" header with the value on its own line
-  // underneath, matching every other section's shape.
+  // line, then briefly a bare "DEPENDENCY" header with the value on its
+  // own line underneath.
+  //
+  // LABEL CHANGED 2026-09-11 (review round, option (a), Aravind's
+  // approval) -- the bare value gave an owner no way to tell this is a
+  // FORWARD-LOOKING request (needed tomorrow) rather than today's
+  // blocker. Now a labelled field, "Needed tomorrow:", matching every
+  // other section's "Label: value" shape (WORK's "Morning plan:",
+  // RESOURCE's "Morning labour reported:", etc.). Heading unchanged;
+  // content unchanged, still raw text verbatim.
   if (facts.tomorrowNeeds.note.status === 'reported' && facts.tomorrowNeeds.note.value !== null) {
-    pushSection(lines, 'DEPENDENCY', [facts.tomorrowNeeds.note.value])
+    pushSection(lines, 'DEPENDENCY', [`Needed tomorrow: "${facts.tomorrowNeeds.note.value}"`])
   }
 
   return lines.join('\n')
