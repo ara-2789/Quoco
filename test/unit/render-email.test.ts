@@ -66,7 +66,10 @@ describe('renderEmailReport', () => {
     expect(result.text).toContain('The sections below are as reported from site.')
     expect(result.text).toContain('WORK')
     expect(result.text).toContain('Morning plan: "Continue slab work"')
-    expect(result.text).toContain('Work completed: "Slab concrete poured" — 120 sqm')
+    // Stage 3 review fix (item 2) -- the structured done_quantity/unit
+    // suffix is dropped entirely; free text only.
+    expect(result.text).toContain('Work completed: "Slab concrete poured"')
+    expect(result.text).not.toContain('120 sqm')
     expect(result.text).toContain('RESOURCE')
     expect(result.text).toContain('Labour reported — morning: "20 workers"')
     expect(result.text).toContain('Labour reported — evening: "18 workers"')

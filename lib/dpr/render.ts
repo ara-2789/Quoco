@@ -671,14 +671,23 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
     work.push(`Morning plan: ${fmtInline(facts.work.planned_corrected)}`)
   }
   if (eveningAnswered) {
-    const doneParts: string[] = []
-    if (facts.work.done_text_corrected.status === 'reported' && facts.work.done_text_corrected.value !== null) {
-      doneParts.push(`"${facts.work.done_text_corrected.value}"`)
-    }
-    if (facts.work.done_quantity.status === 'reported') {
-      doneParts.push(`${facts.work.done_quantity.value}${facts.work.unit ? ` ${facts.work.unit}` : ''}`)
-    }
-    work.push(`Work completed: ${doneParts.length > 0 ? doneParts.join(' — ') : 'no input received'}`)
+    // STAGE 3 FIX (2026-09-11, review round -- item 2). The structured
+    // done_quantity/unit suffix is DROPPED here, deliberately: it
+    // duplicated a number already inside done_text_corrected's own free
+    // text, and could be flatly wrong when it did (a real prod case:
+    // free text "Security Room - 100 m2", suffix rendered "— 100 m" --
+    // parseQuantities, lib/whatsapp/flows/parsers/quantities.ts, splits
+    // "m2" into tokens "m"/"2" before unit recognition runs, matches bare
+    // "m" as plain metres, and silently discards the "2" -- the identical
+    // failure class that file's own 2026-08-10 comment already documents
+    // for "M25". Tracked separately, not fixed here:
+    // docs/reviews/quantities-parser-m2-m3-unit-gap.md. The engineer's own
+    // words already carry whatever number they gave -- a second,
+    // parser-derived number can only ever repeat it or contradict it,
+    // never add information. facts.work.done_quantity/.unit are UNCHANGED
+    // on EngineerDprFacts (still available to containment, still stored)
+    // -- only this render line stops reading them.
+    work.push(`Work completed: ${fmtInline(facts.work.done_text_corrected)}`)
   }
   pushSection(lines, 'WORK', work)
 
@@ -709,6 +718,14 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
     machine.push(`Machines reported: "${facts.equipment.machines_reported.value}"`)
   }
   if (facts.equipment.run_hours.status === 'reported' && facts.equipment.run_hours.value !== null) {
+    // A raw_text value can contain a literal newline (an engineer typing
+    // one machine per line, e.g. "7 hours Roller\n5 hours JCB") -- it
+    // renders as two visual lines mid-section. CONSIDERED AND DECLINED
+    // (2026-09-11, review round): collapsing the newline to a separator,
+    // or indenting continuation lines, would both be the FIRST place
+    // anything in this pipeline transforms raw text outside spelling
+    // correction -- this whole redesign rests on "as reported." Left
+    // exactly as typed, deliberately. Do not "tidy" this.
     machine.push(`Run hours: "${facts.equipment.run_hours.value}"`)
   }
   pushSection(lines, 'MACHINE', machine)

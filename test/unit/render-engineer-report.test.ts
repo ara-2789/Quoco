@@ -138,7 +138,7 @@ describe('renderEngineerBody — WORK', () => {
     expect(body).not.toContain('arived')
   })
 
-  it('Work completed composes text and quantity with an em dash', () => {
+  it('Stage 3 review fix (item 2): Work completed renders free text ONLY -- the structured done_quantity/unit suffix is dropped, even when done_quantity is reported', () => {
     const facts = baseFacts({
       evening_status: { status: 'complete' },
       work: {
@@ -150,7 +150,13 @@ describe('renderEngineerBody — WORK', () => {
         done_text_corrected: reported('Excavation done'),
       },
     })
-    expect(renderEngineerBody(facts)).toContain('Work completed: "Excavation done" — 850 sq m')
+    const body = renderEngineerBody(facts)
+    // Scoped to the WORK line itself -- RESOURCE's own "Labour reported
+    // — evening" label legitimately contains an em dash of its own.
+    expect(body).toContain('Work completed: "Excavation done"\n')
+    expect(body).not.toContain('850')
+    expect(body).not.toContain('sq m')
+    expect(body).not.toContain('Excavation done" —')
   })
 
   it('a field left unanswered WITHIN an answered half shows the inline "no input received" marker', () => {
