@@ -600,6 +600,19 @@ export interface EngineerWorkFacts {
   done_text: CapturedText
   done_quantity: CapturedNumber
   unit: string
+  // STAGE 3 (2026-09-11, docs/plans/dpr-format-redesign.md §1) -- spelling-
+  // corrected versions of `planned`/`done_text`, produced by
+  // lib/dpr/spelling-correction.ts's correctEngineerWorkText, which
+  // dispatch.ts calls after assembleEngineerDprFacts returns. `planned`/
+  // `done_text` above are NEVER overwritten -- the raw, as-typed text
+  // stays on the fact object unconditionally, so a side-by-side audit
+  // against the corrected version is always possible from the stored row.
+  // mergeEngineerDprFacts (pure, no model access) defaults these to a
+  // COPY of the raw value -- any caller that never runs correction still
+  // gets a fully valid, renderable Facts object (uncorrected, but never
+  // missing). render.ts renders THESE fields, not the raw ones.
+  planned_corrected: CapturedText
+  done_text_corrected: CapturedText
 }
 
 // §2 Schedule — REMOVED 2026-09-05 (PR C1, design-decisions-beta-feedback.md's
@@ -737,6 +750,16 @@ export interface EngineerEquipmentItemFacts {
 
 export interface EngineerEquipmentFacts {
   items: EngineerEquipmentItemFacts[]
+  // STAGE 1 PLUMBING (2026-09-11, docs/plans/dpr-format-redesign.md §6) --
+  // the redesigned MACHINE section's own two raw-text lines. Sourced
+  // straight from morning_equipment.raw_text / evening_equipment_
+  // utilisation.raw_text (both already stored on daily_logs, neither read
+  // anywhere before this) -- NOT parsed, NOT reconciled with `items` above.
+  // Not yet rendered anywhere (render.ts's per-item Equipment loop is
+  // Stage C's job, not this one's) -- these two fields exist on Facts and
+  // nothing reads them yet, by design.
+  machines_reported: CapturedText
+  run_hours: CapturedText
 }
 
 // One engineer, one project-day. Never an array of rows — the whole point

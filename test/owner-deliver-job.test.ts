@@ -43,6 +43,8 @@ const VALID_FACTS: EngineerDprFacts = {
     done_text: { status: 'reported', value: 'Slab concrete poured' },
     done_quantity: { status: 'reported', value: 120 },
     unit: 'sqm',
+    planned_corrected: { status: 'reported', value: 'Continue slab work' },
+    done_text_corrected: { status: 'reported', value: 'Slab concrete poured' },
   },
   tomorrowNeeds: { note: { status: 'not_captured', value: null } },
   manpower: {
@@ -50,7 +52,7 @@ const VALID_FACTS: EngineerDprFacts = {
     on_site: { status: 'reported', value: '18 workers' },
   },
   idle_hours_by_trade: [],
-  equipment: { items: [] },
+  equipment: { items: [], machines_reported: { status: 'not_captured', value: null }, run_hours: { status: 'not_captured', value: null } },
   hindrances: [],
 }
 

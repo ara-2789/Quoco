@@ -7,6 +7,8 @@ import { assembleEngineerDprFacts } from './assemble'
 import { fetchEngineerNarrativeContext } from './narrative-context'
 import { generateEngineerVerdict } from './generate'
 import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from './render'
+import { resolveProjectManagerName } from './project-manager'
+import { correctEngineerWorkText } from './spelling-correction'
 import type { CheckInStatus } from './schema'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
@@ -116,9 +118,12 @@ export async function handleDprGenerateJob(
 
   const totalStart = Date.now()
   try {
-    const { facts, completeness } = await timed('assembleEngineerDprFacts', () =>
+    const assembled = await timed('assembleEngineerDprFacts', () =>
       assembleEngineerDprFacts(client, payload.project_id, payload.engineer_id, payload.log_date),
     )
+    const { completeness } = assembled
+    // Reassigned below once spelling correction resolves -- let, not const.
+    let facts = assembled.facts
     const narrative = await timed('fetchEngineerNarrativeContext', () =>
       fetchEngineerNarrativeContext(client, payload.project_id, payload.engineer_id, payload.log_date),
     )
@@ -126,6 +131,52 @@ export async function handleDprGenerateJob(
     const { morning, evening } = await timed('resolveCheckInStatus', () =>
       resolveCheckInStatus(client, payload, completeness),
     )
+
+    // FIX (2026-09-11, review round after Stage 4) -- render.ts's per-field
+    // gating (morningAnswered/eveningAnswered in renderEngineerBody) must
+    // read the SAME classification the check-in line and codeTemplatedVerdict
+    // already use, not facts.morning_status/evening_status as
+    // assembleEngineerDprFacts originally set them. Those came from
+    // deriveHalfCompleteness alone, which has NEVER been able to return
+    // 'not_applicable' -- this seam predates the redesign entirely (holiday/
+    // joined_late/left_early were already silently affected; Stage 4's
+    // not_on_site case is only the one that made it visible, because it was
+    // the first to be tested against the new per-field gating). Not fixing
+    // deriveHalfCompleteness itself here -- that is a bigger seam than this
+    // round's scope. `kind` is deliberately dropped -- render.ts's gating
+    // only ever needs `.status`, and CheckInHalfStatus (schema.ts) has no
+    // `kind` field to carry it; the check-in line and codeTemplatedVerdict
+    // already have the richer `morning`/`evening` values directly, so
+    // nothing downstream loses information.
+    facts = {
+      ...facts,
+      morning_status: { status: morning.status, reason: morning.reason },
+      evening_status: { status: evening.status, reason: evening.reason },
+    }
+
+    // Stage 1 plumbing (2026-09-11, docs/plans/dpr-format-redesign.md §5)
+    // -- now rendered (Stage 3): the WORK section's own "Project Manager:"
+    // header line.
+    const projectManagerName = await timed('resolveProjectManagerName', () =>
+      resolveProjectManagerName(client, payload.project_id),
+    )
+
+    // Stage 3 (2026-09-11, docs/plans/dpr-format-redesign.md §1) -- spelling
+    // correction for WORK's two free-text fields. Runs BEFORE the verdict
+    // gate below and BEFORE generateEngineerVerdict, so both the render
+    // path and the model see the same (corrected, or raw-fallback) text --
+    // never two different versions of what the engineer said. Facts is
+    // rebuilt with a new `work` object rather than mutated in place,
+    // matching this file's existing preference for constructing new
+    // objects over mutation. correctEngineerWorkText itself no-ops (no
+    // model call) when neither field has real text.
+    const workCorrection = await timed('correctEngineerWorkText', () =>
+      correctEngineerWorkText(anthropic, facts.work.planned, facts.work.done_text),
+    )
+    facts = {
+      ...facts,
+      work: { ...facts.work, planned_corrected: workCorrection.planned, done_text_corrected: workCorrection.done_text },
+    }
 
     // GATE, corrected (round-4 B1): the verdict sentence summarises what was
     // DONE — that only ever comes from the EVENING half (the morning half
@@ -152,7 +203,20 @@ export async function handleDprGenerateJob(
       const result = await timed('generateEngineerVerdict', () =>
         generateEngineerVerdict(anthropic, facts, narrative, { project_name: project.name, log_date: payload.log_date }),
       )
-      if (result.verdict_status === 'placeholder') {
+      if (result.verdict_status === 'judgment_denylist') {
+        // 2026-09-11, docs/plans/dpr-format-redesign.md §9, Aravind's
+        // explicit fallback choice: option 1 (retry, already exhausted
+        // inside generateEngineerVerdict) then option 2 (codeTemplatedVerdict's
+        // line) -- never option 3 (stripping the word out of a model
+        // sentence, which leaves a worse fragment than either alternative).
+        Sentry.captureMessage('DPR verdict hit the judgment-language denylist twice, falling back to a code-templated line', {
+          level: 'warning',
+          tags: { feature: 'dpr-generate', failure_class: 'dpr_validation' },
+          extra: { project_id: payload.project_id, engineer_id: payload.engineer_id, log_date: payload.log_date },
+        })
+        verdict = codeTemplatedVerdict(morning, evening)
+        verdictStatus = 'code_templated'
+      } else if (result.verdict_status === 'placeholder') {
         Sentry.captureException(new Error('DPR verdict containment failed twice, falling back to placeholder'), {
           tags: { feature: 'dpr-generate', failure_class: 'dpr_validation' },
           extra: { project_id: payload.project_id, engineer_id: payload.engineer_id, log_date: payload.log_date },
@@ -169,6 +233,7 @@ export async function handleDprGenerateJob(
       project_name: project.name,
       engineer_name: (engineerUser.full_name as string | null) ?? 'Unnamed engineer',
       formatted_date: formatDate(payload.log_date),
+      project_manager_name: projectManagerName,
     })
 
     await timed('dprsUpsert', async () => {
@@ -217,10 +282,19 @@ export async function handleDprGenerateJob(
 // code-templated, no model call (Rule 2's "code already knows the whole
 // answer" pattern, applied to the verdict the same way schema.ts's
 // DataStatus sections already apply it). Deliberately not exhaustive prose
-// — one honest sentence per state. ONLY ever called when evening is NOT
-// complete/partial (the caller's eveningNeedsModel gate) — so every branch
-// here can assume evening has nothing real to report; only morning's
-// status distinguishes the remaining cases.
+// — one honest sentence per state.
+//
+// TWO CALLERS as of 2026-09-11 (docs/plans/dpr-format-redesign.md §9) —
+// the precondition below is now conditional on WHICH caller reached here,
+// stated explicitly so neither branch order nor a future reader assumes
+// the old single-caller guarantee still holds everywhere:
+//   1. dispatch.ts's `!eveningNeedsModel` path (the ORIGINAL caller) —
+//      evening is NEVER complete/partial here; every branch below except
+//      the last one assumes evening has nothing real to report.
+//   2. The denylist-fallback path (NEW) — evening MAY be complete/partial
+//      here (the model was actually called and had real data; it just
+//      failed validation twice). The LAST branch below exists
+//      specifically for this caller and is unreachable from caller 1.
 function codeTemplatedVerdict(morning: CheckInStatusResult['morning'], evening: CheckInStatusResult['evening']): string {
   // Structural check (round-4 NIT) — kind, not a substring match on reason
   // text. The old `.reason?.includes('holiday')` coupled this branch to the
@@ -230,6 +304,17 @@ function codeTemplatedVerdict(morning: CheckInStatusResult['morning'], evening: 
   // knowing the other depends on it.
   if (morning.kind === 'holiday' || evening.kind === 'holiday') {
     return 'Site closed today.'
+  }
+  // Not-on-site (Stage 4, 2026-09-11, docs/plans/dpr-format-redesign.md
+  // §9). Checked structurally, same discipline as the holiday branch
+  // above — never a substring match on `reason`. Only reached when
+  // eveningNeedsModel is false (this function's own caller-gate), i.e.
+  // evening has nothing real either — "no real reported content," exactly
+  // the condition Aravind's instruction names. PROPOSED TEXT, not yet
+  // confirmed copy — flagged for approval in the same review round that
+  // added this branch, not invented-and-shipped silently.
+  if (morning.kind === 'not_on_site') {
+    return 'Engineer not on site today.'
   }
   if (morning.status === 'not_applicable' && evening.status === 'not_applicable') {
     return `${morning.reason ?? evening.reason ?? 'Added to this project after today\'s check-in window'} — first report covers the next check-in.`
@@ -241,6 +326,15 @@ function codeTemplatedVerdict(morning: CheckInStatusResult['morning'], evening: 
   // evening flow can be triggered — the untested branch that fires first.
   if (morning.status === 'complete' || morning.status === 'partial') {
     return 'No evening check-in, so we do not know what was done today.'
+  }
+  // Caller 2 ONLY (denylist fallback) — evening HAS real data, but the
+  // model's own verdict failed validation (containment or the judgment-
+  // language denylist) on both attempts. Every branch above this one
+  // assumes evening has nothing real; this is the one case where that
+  // assumption is false. PROPOSED TEXT, not yet confirmed copy — flagged
+  // for approval in the same review round that added this branch.
+  if (evening.status === 'complete' || evening.status === 'partial') {
+    return 'Evening check-in received; summary unavailable for this report.'
   }
   return 'No check-in received today, so we do not know what was done.'
 }
@@ -259,11 +353,23 @@ export function formatDate(logDate: string): string {
 // Exists so codeTemplatedVerdict (and any future reader) branches on a
 // stable code, not on substring-matching the plain-language `reason` text,
 // which the spec explicitly expects to be edited over time.
-type NotApplicableKind = 'holiday' | 'joined_late' | 'left_early'
+// 'not_on_site' ADDED Stage 4 (2026-09-11, docs/plans/dpr-format-redesign.md
+// §8/§9) — see resolveCheckInStatus's own comment on the attendance='absent'
+// branch for why this exists and what it fixes.
+type NotApplicableKind = 'holiday' | 'joined_late' | 'left_early' | 'not_on_site'
 
 export interface CheckInStatusResult {
   morning: { status: CheckInStatus; reason?: string; kind?: NotApplicableKind }
   evening: { status: CheckInStatus; reason?: string; kind?: NotApplicableKind }
+  // Stage 1 plumbing (2026-09-11, docs/plans/dpr-format-redesign.md §8).
+  // Read straight from daily_logs.attendance (migration 030) -- null when
+  // no daily_logs row exists (a genuinely silent engineer) or the value
+  // hasn't been captured yet. Not yet consumed by anything: this field
+  // exists so it can be read and tested independently of the render
+  // change (Stage C) that will actually branch on it. `attendance ===
+  // 'absent'` is the real "not-on-site" case (§8) -- 'site_holiday'
+  // already flows into the `kind: 'holiday'` branch above via is_holiday.
+  attendance: 'present' | 'absent' | 'site_holiday' | null
 }
 
 function checkpointMinutes(hhmm: string): number {
@@ -277,18 +383,20 @@ function checkpointMinutes(hhmm: string): number {
 // project_members timing (spec Rule 7) and holiday status get read —
 // deliberately kept out of assemble.ts, which has no reason to know about
 // roster membership at all.
-async function resolveCheckInStatus(
+export async function resolveCheckInStatus(
   client: SupabaseClient,
   payload: DprGenerateJobPayload,
   completeness: { morning: CheckInStatus; evening: CheckInStatus },
 ): Promise<CheckInStatusResult> {
   const { data: log } = await client
     .from('daily_logs')
-    .select('is_holiday, holiday_reason')
+    .select('is_holiday, holiday_reason, attendance')
     .eq('project_id', payload.project_id)
     .eq('engineer_id', payload.engineer_id)
     .eq('log_date', payload.log_date)
     .maybeSingle()
+
+  const attendance = (log?.attendance as 'present' | 'absent' | 'site_holiday' | null) ?? null
 
   if (log?.is_holiday) {
     const reason = (log.holiday_reason as string | null)?.trim()
@@ -296,6 +404,7 @@ async function resolveCheckInStatus(
     return {
       morning: { status: 'not_applicable', reason: text, kind: 'holiday' },
       evening: { status: 'not_applicable', reason: text, kind: 'holiday' },
+      attendance,
     }
   }
 
@@ -333,9 +442,34 @@ async function resolveCheckInStatus(
     return { status: half }
   }
 
+  // Not-on-site (Stage 4, 2026-09-11, docs/plans/dpr-format-redesign.md
+  // §8). MORNING ONLY — overrides whatever overlayHalf/deriveHalfCompleteness
+  // would otherwise say. Real bug this fixes: the morning flow's own
+  // attendance='absent' path (lib/whatsapp/flows/morning.ts) completes at
+  // Q1, setting morning_submitted_at with morning_plan/morning_manpower/
+  // morning_equipment all still null — deriveHalfCompleteness
+  // (assemble.ts) reads "morning_submitted_at set" alone as 'complete',
+  // with no way to know WHY nothing was captured. Left as 'complete',
+  // codeTemplatedVerdict's own "morning.status === 'complete'" branch
+  // would print "No evening check-in, so we do not know what was done
+  // today" — implying the engineer worked and the OUTCOME is merely
+  // unknown, when nothing was worked on at all. Evening is UNAFFECTED —
+  // independent of morning attendance (MORNING_ABSENT_REPLY's own copy:
+  // "We'll still check in this evening") — still goes through the
+  // ordinary overlay below, so a real evening check-in still reaches the
+  // real verdict model exactly as today.
+  if (attendance === 'absent') {
+    return {
+      morning: { status: 'not_applicable', reason: 'not on site today', kind: 'not_on_site' },
+      evening: overlayHalf(completeness.evening, CHECKIN_CHECKPOINTS.eveningSend),
+      attendance,
+    }
+  }
+
   return {
     morning: overlayHalf(completeness.morning, CHECKIN_CHECKPOINTS.morningSend),
     evening: overlayHalf(completeness.evening, CHECKIN_CHECKPOINTS.eveningSend),
+    attendance,
   }
 }
 

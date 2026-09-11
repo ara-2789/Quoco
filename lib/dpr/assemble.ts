@@ -468,7 +468,11 @@ export interface CorrectedEngineerLogRow {
   engineer_id: string
   morning_plan: string | null // correctable (scalar)
   morning_manpower: { total: number | null; by_trade: Array<{ trade: string; count: number }>; raw_text: string | null } | null
-  morning_equipment: { items: Array<{ type: string; daily_hire_cost: number | null }>; none: boolean } | null
+  // raw_text ADDED 2026-09-11 (Stage 1, docs/plans/dpr-format-redesign.md
+  // §6) -- already stored (JSONB, fetched by this file's own `select('*')`,
+  // schema.ts's own EngineerEquipmentFacts.machines_reported source),
+  // never previously typed here because nothing read it. Not parsed.
+  morning_equipment: { items: Array<{ type: string; daily_hire_cost: number | null }>; none: boolean; raw_text: string | null } | null
   evening_output: string | null // correctable (scalar)
   evening_output_quantities: { items: Array<{ activity: string; quantity: number | null; unit: string }> } | null
   // Evening Q5, migration 040 (2026-09-11) -- "anything extra needed
@@ -553,11 +557,11 @@ export function mergeEngineerDprFacts(
     return {
       morning_status: checkInStatus.morning,
       evening_status: checkInStatus.evening,
-      work: { planned: notCapturedText, done_text: notCapturedText, done_quantity: notCapturedNumber, unit: '' },
+      work: { planned: notCapturedText, done_text: notCapturedText, done_quantity: notCapturedNumber, unit: '', planned_corrected: notCapturedText, done_text_corrected: notCapturedText },
       tomorrowNeeds: { note: notCapturedText },
       manpower: { planned: notCapturedText, on_site: notCapturedText },
       idle_hours_by_trade: [],
-      equipment: { items: [] },
+      equipment: { items: [], machines_reported: notCapturedText, run_hours: notCapturedText },
       hindrances,
     }
   }
@@ -573,11 +577,19 @@ export function mergeEngineerDprFacts(
   // named, not solved, here (see the plan document's own open question on
   // this pairing for a future multi-activity day).
   const firstQuantity = row.evening_output_quantities?.items[0] ?? null
+  const workPlanned = wrapText(row.morning_plan)
+  const workDoneText = wrapText(row.evening_output)
+  // planned_corrected/done_text_corrected default to a COPY of the raw
+  // value (schema.ts's own comment on EngineerWorkFacts) -- this function
+  // has no model access, so it cannot correct anything itself.
+  // dispatch.ts overwrites both after calling correctEngineerWorkText.
   const work: EngineerDprFacts['work'] = {
-    planned: wrapText(row.morning_plan),
-    done_text: wrapText(row.evening_output),
+    planned: workPlanned,
+    done_text: workDoneText,
     done_quantity: firstQuantity ? wrapNumber(firstQuantity.quantity) : notCapturedNumber,
     unit: firstQuantity?.unit ?? '',
+    planned_corrected: workPlanned,
+    done_text_corrected: workDoneText,
   }
 
   // §5 Tomorrow's needs — REPLACED AGAIN 2026-09-11 (migration 040, Stage
@@ -661,6 +673,14 @@ export function mergeEngineerDprFacts(
     }
   })
 
+  // Stage 1 plumbing (2026-09-11, docs/plans/dpr-format-redesign.md §6) --
+  // raw text as reported, verbatim (wrapText, same "no formatter may trim/
+  // re-case/reorder" convention as manpower.planned/on_site above), NOT
+  // reconciled against `items` above -- the two are independent sources,
+  // parsed vs. raw, kept separate on purpose.
+  const machines_reported = wrapText(row.morning_equipment?.raw_text ?? null)
+  const run_hours = wrapText(row.evening_equipment_utilisation?.raw_text ?? null)
+
   return {
     morning_status: checkInStatus.morning,
     evening_status: checkInStatus.evening,
@@ -668,7 +688,7 @@ export function mergeEngineerDprFacts(
     tomorrowNeeds,
     manpower,
     idle_hours_by_trade,
-    equipment: { items },
+    equipment: { items, machines_reported, run_hours },
     hindrances,
   }
 }

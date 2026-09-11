@@ -30,6 +30,8 @@ import { assembleEngineerDprFacts } from '../lib/dpr/assemble'
 import { fetchEngineerNarrativeContext } from '../lib/dpr/narrative-context'
 import { generateEngineerVerdict } from '../lib/dpr/generate'
 import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from '../lib/dpr/render'
+import { resolveProjectManagerName } from '../lib/dpr/project-manager'
+import { correctEngineerWorkText } from '../lib/dpr/spelling-correction'
 
 async function main() {
   const [projectId, engineerId, logDate] = process.argv.slice(2)
@@ -48,23 +50,38 @@ async function main() {
   if (engineerError) throw engineerError
 
   console.log(`Assembling Facts for project ${projectId} (${project.name}), engineer ${engineerId}, ${logDate}...`)
-  const { facts, completeness } = await assembleEngineerDprFacts(client, projectId, engineerId, logDate)
+  const assembled = await assembleEngineerDprFacts(client, projectId, engineerId, logDate)
+  const { completeness } = assembled
+  let facts = assembled.facts
   const narrative = await fetchEngineerNarrativeContext(client, projectId, engineerId, logDate)
+
+  console.log('Correcting WORK spelling...')
+  const workCorrection = await correctEngineerWorkText(anthropic, facts.work.planned, facts.work.done_text)
+  facts = { ...facts, work: { ...facts.work, planned_corrected: workCorrection.planned, done_text_corrected: workCorrection.done_text } }
 
   console.log('Calling Claude...')
   const result = await generateEngineerVerdict(anthropic, facts, narrative, { project_name: project.name, log_date: logDate })
-  const verdict = result.verdict_status === 'placeholder' ? CONTAINMENT_FAILURE_PLACEHOLDER : result.verdict
+  // 'judgment_denylist' (2026-09-11) collapses into the same placeholder
+  // treatment as a containment failure HERE ONLY -- this script never
+  // calls resolveCheckInStatus (a pre-existing limitation, unrelated to
+  // this change), so it has no morning/evening classification to build
+  // the real codeTemplatedVerdict fallback dispatch.ts now uses. Fine for
+  // a hand-invoked debug script; not the production path.
+  const verdict = result.verdict_status !== 'model' ? CONTAINMENT_FAILURE_PLACEHOLDER : result.verdict
+  const verdictStatus = result.verdict_status === 'model' ? 'model' : 'placeholder'
+  const projectManagerName = await resolveProjectManagerName(client, projectId)
 
   const rendered = renderEngineerReport(
     facts,
     verdict,
-    result.verdict_status,
+    verdictStatus,
     { status: completeness.morning },
     { status: completeness.evening },
     {
       project_name: project.name,
       engineer_name: (engineer.full_name as string | null) ?? 'Unnamed engineer',
       formatted_date: new Date(`${logDate}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' }),
+      project_manager_name: projectManagerName,
     },
   )
 

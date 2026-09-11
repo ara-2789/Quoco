@@ -244,11 +244,18 @@ export function buildEngineerFactsCorpus(facts: EngineerDprFacts, meta: { projec
 
   for (const token of extractDigitTokens(meta.project_name)) corpus.add(token)
 
-  if (facts.work.planned.status === 'reported' && facts.work.planned.value !== null) {
-    for (const token of extractDigitTokens(facts.work.planned.value)) corpus.add(token)
+  // STAGE 3 (2026-09-11, docs/plans/dpr-format-redesign.md §1) -- reads
+  // planned_corrected/done_text_corrected, not the raw planned/done_text.
+  // These are provably digit-identical to the raw fields (the spelling
+  // guard's own rule 2 forbids a digit token from ever changing), so this
+  // is not a behavior change today -- but the corpus should track what is
+  // actually RENDERED and citable, not what was originally captured, as
+  // defense in depth if that guard invariant is ever weakened later.
+  if (facts.work.planned_corrected.status === 'reported' && facts.work.planned_corrected.value !== null) {
+    for (const token of extractDigitTokens(facts.work.planned_corrected.value)) corpus.add(token)
   }
-  if (facts.work.done_text.status === 'reported' && facts.work.done_text.value !== null) {
-    for (const token of extractDigitTokens(facts.work.done_text.value)) corpus.add(token)
+  if (facts.work.done_text_corrected.status === 'reported' && facts.work.done_text_corrected.value !== null) {
+    for (const token of extractDigitTokens(facts.work.done_text_corrected.value)) corpus.add(token)
   }
   if (facts.work.done_quantity.status === 'reported' && facts.work.done_quantity.value !== null) {
     corpus.add(facts.work.done_quantity.value)
@@ -276,4 +283,31 @@ export function checkContainment(outputText: string, corpus: Set<number>): Conta
   const outputTokens = extractDigitTokens(outputText)
   const violations = Array.from(outputTokens).filter((token) => !corpus.has(token))
   return { ok: violations.length === 0, violations }
+}
+
+// JUDGMENT-LANGUAGE DENYLIST (2026-09-11, docs/plans/dpr-format-redesign.md
+// §9, Aravind's approval). BACKSTOP behind the prompt constraint
+// (generate.ts's ENGINEER_SYSTEM_PROMPT already tells the model it may NAME
+// a reported fact like idle hours but never ASSESS or JUDGE it) -- prompts
+// drift, this does not. Deliberately narrow: seven words, no "low"/"high"
+// (both dropped -- Aravind's own call: they need scoping to a judgment noun
+// ("productivity was low") to avoid false-positiving on a legitimate plain
+// measurement, and "a denylist that needs context-awareness is not a
+// denylist; the prompt constraint is the primary guard and this is only the
+// backstop"). Case-insensitive, whole-word only (`\b...\b` — "goodwill"
+// must not trip on "good").
+const JUDGMENT_WORDS = ['poor', 'excellent', 'concerning', 'disappointing', 'good', 'bad', 'inadequate'] as const
+
+export interface JudgmentLanguageResult {
+  ok: boolean
+  matched?: string // the specific denylisted word found, for logs only
+}
+
+export function checkJudgmentLanguage(outputText: string): JudgmentLanguageResult {
+  for (const word of JUDGMENT_WORDS) {
+    if (new RegExp(`\\b${word}\\b`, 'i').test(outputText)) {
+      return { ok: false, matched: word }
+    }
+  }
+  return { ok: true }
 }

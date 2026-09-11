@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractDigitTokens, buildExecutionCorpus, buildEngineerFactsCorpus, checkContainment } from '@/lib/dpr/containment'
+import { extractDigitTokens, buildExecutionCorpus, buildEngineerFactsCorpus, checkContainment, checkJudgmentLanguage } from '@/lib/dpr/containment'
 import type { ExecutionOutputFacts, EngineerDprFacts } from '@/lib/dpr/schema'
 
 describe('extractDigitTokens', () => {
@@ -208,6 +208,8 @@ function baseEngineerFacts(): EngineerDprFacts {
       done_text: { status: 'not_captured', value: null },
       done_quantity: { status: 'not_captured', value: null },
       unit: '',
+      planned_corrected: { status: 'not_captured', value: null },
+      done_text_corrected: { status: 'not_captured', value: null },
     },
     tomorrowNeeds: { note: { status: 'not_captured', value: null } },
     manpower: {
@@ -215,7 +217,7 @@ function baseEngineerFacts(): EngineerDprFacts {
       on_site: { status: 'not_captured', value: null },
     },
     idle_hours_by_trade: [],
-    equipment: { items: [] },
+    equipment: { items: [], machines_reported: { status: 'not_captured', value: null }, run_hours: { status: 'not_captured', value: null } },
     hindrances: [],
   }
 }
@@ -223,10 +225,16 @@ function baseEngineerFacts(): EngineerDprFacts {
 describe('buildEngineerFactsCorpus', () => {
   const meta = { project_name: 'Speed Mechatronics' }
 
-  it('includes digits embedded in verbatim-quoted work text (the 2026-08-14 decision: quoted free text is deliberately citable)', () => {
+  it('includes digits embedded in verbatim-quoted work text (the 2026-08-14 decision: quoted free text is deliberately citable) -- reads the CORRECTED field (Stage 3)', () => {
     const facts = baseEngineerFacts()
-    facts.work.planned = { status: 'reported', value: 'Continue Tower 2, 3rd floor slab' }
-    facts.work.done_text = { status: 'reported', value: 'Poured M25 concrete' }
+    // Raw left deliberately different (uncorrected) to prove the corpus is
+    // built from planned_corrected/done_text_corrected, not the raw
+    // planned/done_text -- see this file's own Stage 3 comment on
+    // buildEngineerFactsCorpus.
+    facts.work.planned = { status: 'reported', value: 'raw text, ignored by the corpus' }
+    facts.work.done_text = { status: 'reported', value: 'raw text, ignored by the corpus' }
+    facts.work.planned_corrected = { status: 'reported', value: 'Continue Tower 2, 3rd floor slab' }
+    facts.work.done_text_corrected = { status: 'reported', value: 'Poured M25 concrete' }
     const corpus = buildEngineerFactsCorpus(facts, meta)
     expect(corpus.has(2)).toBe(true) // "Tower 2" / "3rd"
     expect(corpus.has(3)).toBe(true) // "3rd"
@@ -251,9 +259,28 @@ describe('buildEngineerFactsCorpus', () => {
     const facts = baseEngineerFacts()
     facts.equipment = {
       items: [{ type: 'JCB', daily_hire_cost: { status: 'not_captured', value: null }, actual_hours: { status: 'reported', value: 6 }, idle_cost: { status: 'not_captured', value: null }, implausible: null }],
+      machines_reported: { status: 'not_captured', value: null },
+      run_hours: { status: 'not_captured', value: null },
     }
     const corpus = buildEngineerFactsCorpus(facts, meta)
     expect(corpus.has(6)).toBe(true)
+  })
+
+  // Stage 1 (2026-09-11, docs/plans/dpr-format-redesign.md §6) — same class
+  // of hazard as the manpower case below: machines_reported/run_hours are
+  // raw engineer text, same as manpower.planned/on_site, and must not enter
+  // the citable corpus even though they can carry real digits. Not yet
+  // rendered anywhere, but the corpus function is the one place this
+  // matters for containment, so it is worth locking in now.
+  it('does NOT include a digit from raw machines_reported/run_hours text, same treatment as raw manpower text', () => {
+    const facts = baseEngineerFacts()
+    facts.equipment.machines_reported = { status: 'reported', value: '2 JCBs, 1 roller' }
+    facts.equipment.run_hours = { status: 'reported', value: 'JCB ran 9 hours, roller 5 hours' }
+    const corpus = buildEngineerFactsCorpus(facts, meta)
+    expect(corpus.has(2)).toBe(false)
+    expect(corpus.has(1)).toBe(false)
+    expect(corpus.has(9)).toBe(false)
+    expect(corpus.has(5)).toBe(false)
   })
 
   it('THE CASE THIS FUNCTION EXISTS TO FIX: does NOT include a digit from raw manpower text, even though it is real and would previously have entered the corpus via extractDigitTokens(renderedBody)', () => {
@@ -292,5 +319,50 @@ describe('buildEngineerFactsCorpus', () => {
     const facts = baseEngineerFacts()
     const corpus = buildEngineerFactsCorpus(facts, { project_name: 'Site A' })
     expect(corpus).toBeInstanceOf(Set)
+  })
+})
+
+// checkJudgmentLanguage — 2026-09-11, docs/plans/dpr-format-redesign.md §9,
+// Aravind's approval: poor/excellent/concerning/disappointing/good/bad/
+// inadequate, case-insensitive, whole-word. "low"/"high" deliberately
+// excluded (need scoping to a judgment noun, dropped rather than
+// false-positiving on a plain measurement).
+describe('checkJudgmentLanguage', () => {
+  it('passes ordinary factual text with no judgment words', () => {
+    expect(checkJudgmentLanguage('2 masons idle 2 hours. Excavation continued.')).toEqual({ ok: true })
+  })
+
+  it('flags each denylisted word, case-insensitively', () => {
+    expect(checkJudgmentLanguage('Productivity was poor today.').ok).toBe(false)
+    expect(checkJudgmentLanguage('Productivity was POOR today.').ok).toBe(false)
+    expect(checkJudgmentLanguage('An excellent day of progress.').ok).toBe(false)
+    expect(checkJudgmentLanguage('This is concerning.').ok).toBe(false)
+    expect(checkJudgmentLanguage('A disappointing result.').ok).toBe(false)
+    expect(checkJudgmentLanguage('A good day overall.').ok).toBe(false)
+    expect(checkJudgmentLanguage('A bad outcome.').ok).toBe(false)
+    expect(checkJudgmentLanguage('Inadequate manpower today.').ok).toBe(false)
+  })
+
+  it('reports which word matched, for logs', () => {
+    expect(checkJudgmentLanguage('Productivity was poor today.')).toEqual({ ok: false, matched: 'poor' })
+  })
+
+  it('matches WHOLE WORDS only -- "goodwill"/"badge" must not trip on "good"/"bad"', () => {
+    expect(checkJudgmentLanguage('Goodwill gesture from the contractor.')).toEqual({ ok: true })
+    expect(checkJudgmentLanguage('Wearing a name badge on site.')).toEqual({ ok: true })
+  })
+
+  it('does NOT flag "low" or "high" -- deliberately dropped from the denylist (Aravind\'s decision)', () => {
+    expect(checkJudgmentLanguage('Low water levels observed at the site.')).toEqual({ ok: true })
+    expect(checkJudgmentLanguage('High tension cable laid today.')).toEqual({ ok: true })
+  })
+
+  it('when multiple denylisted words are present, the one checked first in DENYLIST order is reported (not text order)', () => {
+    // JUDGMENT_WORDS order is poor/excellent/concerning/disappointing/
+    // good/bad/inadequate -- "disappointing" is checked before "bad", so
+    // it wins even though "bad" appears earlier in the text.
+    const result = checkJudgmentLanguage('A bad and disappointing day.')
+    expect(result.ok).toBe(false)
+    expect(result.matched).toBe('disappointing')
   })
 })

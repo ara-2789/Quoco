@@ -36,6 +36,8 @@ import { assembleEngineerDprFacts } from '../lib/dpr/assemble'
 import { fetchEngineerNarrativeContext } from '../lib/dpr/narrative-context'
 import { generateEngineerVerdict } from '../lib/dpr/generate'
 import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from '../lib/dpr/render'
+import { resolveProjectManagerName } from '../lib/dpr/project-manager'
+import { correctEngineerWorkText } from '../lib/dpr/spelling-correction'
 
 const WRITE_METHODS = ['insert', 'upsert', 'update', 'delete', 'rpc'] as const
 
@@ -117,6 +119,8 @@ async function main() {
 
   console.log(`Project ${projectId} (${project.name}), ${logDate} -- ${engineerIds.length} engineer(s):\n`)
 
+  const projectManagerName = await resolveProjectManagerName(client, projectId)
+
   for (const engineerId of engineerIds) {
     const { data: engineer, error: engineerError } = await client.from('users').select('full_name').eq('id', engineerId).single()
     if (engineerError) throw engineerError
@@ -125,23 +129,37 @@ async function main() {
     console.log(`Engineer ${engineerId} (${engineer.full_name ?? 'Unnamed engineer'})`)
     console.log('='.repeat(72))
 
-    const { facts, completeness } = await assembleEngineerDprFacts(client, projectId, engineerId, logDate)
+    const assembled = await assembleEngineerDprFacts(client, projectId, engineerId, logDate)
+    const { completeness } = assembled
+    let facts = assembled.facts
     const narrative = await fetchEngineerNarrativeContext(client, projectId, engineerId, logDate)
+
+    console.log('\n--- Correcting WORK spelling ---')
+    const workCorrection = await correctEngineerWorkText(anthropic, facts.work.planned, facts.work.done_text)
+    facts = { ...facts, work: { ...facts.work, planned_corrected: workCorrection.planned, done_text_corrected: workCorrection.done_text } }
 
     console.log('\n--- Calling Claude for the real narrative ---')
     const result = await generateEngineerVerdict(anthropic, facts, narrative, { project_name: project.name, log_date: logDate })
-    const verdict = result.verdict_status === 'placeholder' ? CONTAINMENT_FAILURE_PLACEHOLDER : result.verdict
+    // 'judgment_denylist' (2026-09-11) collapses into the same placeholder
+    // treatment as a containment failure HERE ONLY -- this script never
+    // calls resolveCheckInStatus (a pre-existing limitation, unrelated to
+    // this change), so it has no morning/evening classification to build
+    // the real codeTemplatedVerdict fallback dispatch.ts now uses. Fine
+    // for a read-only preview script; not the production path.
+    const verdict = result.verdict_status !== 'model' ? CONTAINMENT_FAILURE_PLACEHOLDER : result.verdict
+    const verdictStatus = result.verdict_status === 'model' ? 'model' : 'placeholder'
 
     const rendered = renderEngineerReport(
       facts,
       verdict,
-      result.verdict_status,
+      verdictStatus,
       { status: completeness.morning },
       { status: completeness.evening },
       {
         project_name: project.name,
         engineer_name: (engineer.full_name as string | null) ?? 'Unnamed engineer',
         formatted_date: new Date(`${logDate}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' }),
+        project_manager_name: projectManagerName,
       },
     )
 
