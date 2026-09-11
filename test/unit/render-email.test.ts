@@ -74,7 +74,9 @@ describe('renderEmailReport', () => {
     expect(result.text).toContain('Morning labour reported: "20 workers"')
     expect(result.text).toContain('Evening labour reported: "18 workers"')
     expect(result.text).toContain('DEPENDENCY')
-    expect(result.text).toContain('Rain for 1 hour')
+    // LABEL CHANGED 2026-09-11 (review round, option (a)) -- "Needed
+    // tomorrow:" makes the forward-looking nature explicit.
+    expect(result.text).toContain('Needed tomorrow: "Rain for 1 hour"')
     expect(result.text).toContain('SUMMARY (auto-generated)')
     expect(result.text).toContain('Good progress today.')
     // SUMMARY is the LAST thing in the report, not right after the header

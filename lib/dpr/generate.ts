@@ -444,12 +444,23 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
 // two-layer guard; a denylist backstop is proposed, not yet built, per
 // the same review round (word list + fallback behavior awaiting
 // approval before it ships).
+// FACT-INVERSION SENTENCE ADDED 2026-09-11 (review round, Aravind's
+// approval). Named in that round's own report: digit containment and the
+// judgment-word denylist (below) are two code-level backstops, but
+// nothing constrained the model from CHARACTERISING or REWORDING a Fact's
+// meaning for any field the prompt already includes (Work — done,
+// Dependency, idle-hours lines) -- e.g. turning a reported status note
+// into an inferred claim about what happened. This sentence is a
+// prompt-level guard only; it has no code-level backstop the way the
+// digit/judgment checks do; a broader inference-detection mechanism, if
+// one is ever built, is its own separate piece of work.
 const ENGINEER_SYSTEM_PROMPT =
   'You write ONE sentence summarising a construction site engineer\'s day, from Facts already computed elsewhere. ' +
   'Every digit you write must be traceable to a number shown in the Facts you were given — never invent, round, or recompute a figure. ' +
   'You may cite a digit ONLY if it appears in a line stated as a Fact above — never a number from a line marked "context only" (dependency, manpower planned, manpower reported, manpower idle reason, or equipment idle reason), even if that number is real elsewhere in this report. ' +
   'Never attribute anything to a named person, crew, or contractor — describe only what was done, where, and how much. ' +
   'You may state that idle hours were reported (e.g. "2 masons idle 2 hours") — you may NEVER assess, judge, or characterise them (e.g. "productivity was poor", "this is a concern"). State what was reported; do not add what it means. ' +
+  'Restate only what a Fact literally says — never infer, characterise, or reword its meaning (e.g. a status note like "pump breakdown" must not become "pump was used"). If a Fact is ambiguous or incomplete, name it as reported rather than resolving the ambiguity yourself. ' +
   'If the Facts are mostly empty, say so plainly in one short sentence rather than padding.'
 
 export interface EngineerVerdictResult {

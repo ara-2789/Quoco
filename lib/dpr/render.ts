@@ -755,10 +755,18 @@ export function renderEngineerBody(facts: EngineerDprFacts): string {
 
   // DEPENDENCY -- live, unchanged mechanism (evening_tomorrow_needs,
   // migration 040). Was rendered inline as "Dependency — <value>" on one
-  // line; now a bare "DEPENDENCY" header with the value on its own line
-  // underneath, matching every other section's shape.
+  // line, then briefly a bare "DEPENDENCY" header with the value on its
+  // own line underneath.
+  //
+  // LABEL CHANGED 2026-09-11 (review round, option (a), Aravind's
+  // approval) -- the bare value gave an owner no way to tell this is a
+  // FORWARD-LOOKING request (needed tomorrow) rather than today's
+  // blocker. Now a labelled field, "Needed tomorrow:", matching every
+  // other section's "Label: value" shape (WORK's "Morning plan:",
+  // RESOURCE's "Morning labour reported:", etc.). Heading unchanged;
+  // content unchanged, still raw text verbatim.
   if (facts.tomorrowNeeds.note.status === 'reported' && facts.tomorrowNeeds.note.value !== null) {
-    pushSection(lines, 'DEPENDENCY', [facts.tomorrowNeeds.note.value])
+    pushSection(lines, 'DEPENDENCY', [`Needed tomorrow: "${facts.tomorrowNeeds.note.value}"`])
   }
 
   return lines.join('\n')

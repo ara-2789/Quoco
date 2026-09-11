@@ -332,10 +332,30 @@ Aravind's approval).** The field's own raw text is often a fault/status
 note ("Pump breakdown 1 hr"), not a run duration — "Run hours" implied
 the machine ran, which is not always what was reported. Field content
 unchanged, still raw text verbatim; only the label changed. This is also
-the render-layer half of the "Pump breakdown" risk named in the SUMMARY
-prompt discussion below — the label itself no longer pre-judges the
-content, but the model summarising this section could still invert it
-(see "Summary prompt vs. reported fault/status notes," further down).
+the render-layer half of the "Pump breakdown" risk — see "Summary prompt
+vs. reported fault/status notes" immediately below — the label itself no
+longer pre-judges the content, but the model summarising this section
+could still invert it.
+
+**Summary prompt vs. reported fault/status notes (2026-09-11, review
+round).** Checked against the actual code, not assumed: `formatEngineerFacts`
+(`generate.ts`) does NOT include `facts.equipment.machines_reported`/
+`run_hours` in the prompt sent to the model at all — it only loops the
+old, itemized `equipment.items[]` array. So the concrete example that
+prompted this check ("Pump breakdown 1 hr" being summarised as "concrete
+pump used for 1 hour") cannot happen today through this exact pipeline;
+those raw fields are not wired into the SUMMARY prompt yet (tracked
+separately, see the field-map gap immediately below). The BROADER risk is
+real, though, and applies to every field that IS in the prompt (Work —
+done, Dependency, idle-hours lines): nothing previously stopped the model
+from characterising or rewording a Fact's stated meaning. Fixed
+2026-09-11 by adding one sentence to `ENGINEER_SYSTEM_PROMPT`
+(`generate.ts`): *"Restate only what a Fact literally says — never infer,
+characterise, or reword its meaning ... If a Fact is ambiguous or
+incomplete, name it as reported rather than resolving the ambiguity
+yourself."* Prompt-level guard only — unlike digit containment and the
+judgment-word denylist, this has no code-level backstop; a broader
+inference-detection mechanism, if ever needed, is separate future work.
 
 **`"Labour reported — morning/evening:"` RENAMED to `"Morning/Evening
 labour reported:"` (2026-09-11, review round, Aravind's approval).** Half
@@ -354,6 +374,13 @@ plus a new field on `EngineerDprFacts.equipment` (e.g.
 `morning_raw_text: CapturedText`, `run_hours_raw_text: CapturedText`),
 and `renderEngineerBody()`'s per-item equipment loop replaced with two
 plain lines reading those new fields instead of iterating `items[]`.
+
+**DEPENDENCY gains a "Needed tomorrow:" label (2026-09-11, review round,
+option (a), Aravind's approval).** The bare value under the `DEPENDENCY`
+header gave an owner no way to tell it was a forward-looking request
+(needed tomorrow) rather than today's blocker. Now `Needed tomorrow:
+"<note>"`, matching every other section's "Label: value" shape. Heading
+unchanged; content unchanged, still raw text verbatim.
 
 ---
 

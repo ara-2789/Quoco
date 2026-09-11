@@ -111,7 +111,7 @@ describe('renderEngineerBody — section omission', () => {
         'Cement delivery delayed',
         '',
         'DEPENDENCY',
-        'Need 2 more masons tomorrow',
+        'Needed tomorrow: "Need 2 more masons tomorrow"',
       ].join('\n'),
     )
   })
@@ -267,9 +267,9 @@ describe('renderEngineerBody — HINDRANCE / DEPENDENCY', () => {
     expect(renderEngineerBody(facts)).toBe('HINDRANCE\nCement delayed\nPower outage 2 hours')
   })
 
-  it('DEPENDENCY renders the note under a bare header, not inline with the label (the old "Dependency — X" shape is gone)', () => {
+  it('DEPENDENCY renders the note under the "Needed tomorrow:" label, making the forward-looking nature explicit (2026-09-11 review round, option (a))', () => {
     const facts = baseFacts({ tomorrowNeeds: { note: reported('Need more cement tomorrow') } })
-    expect(renderEngineerBody(facts)).toBe('DEPENDENCY\nNeed more cement tomorrow')
+    expect(renderEngineerBody(facts)).toBe('DEPENDENCY\nNeeded tomorrow: "Need more cement tomorrow"')
     expect(renderEngineerBody(facts)).not.toContain('Dependency —')
   })
 
