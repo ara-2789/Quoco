@@ -805,9 +805,16 @@ export function renderEngineerReport(
   }
   lines.push('')
   lines.push(fmtCombinedCheckInLine(morningStatus, eveningStatus))
-  lines.push('')
-  lines.push('The sections below are as reported from site.')
+  // "The sections below are as reported from site." is suppressed when
+  // there are no sections -- a not-on-site day omits WORK/RESOURCE
+  // entirely (the render-gap fix), and this sentence introducing nothing
+  // reads as a stray line, not a section header. `body` is already the
+  // single source of truth for "did any section render" (renderEngineerBody
+  // returns '' when WORK/RESOURCE/MACHINE/HINDRANCE/DEPENDENCY are all
+  // empty) -- same condition already gating whether `body` itself prints.
   if (body.length > 0) {
+    lines.push('')
+    lines.push('The sections below are as reported from site.')
     lines.push('')
     lines.push(body)
   }

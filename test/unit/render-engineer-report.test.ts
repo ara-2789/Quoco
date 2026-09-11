@@ -320,7 +320,32 @@ describe('renderEngineerReport — header/footer', () => {
     expect(result.content).toContain('Site Engineer: Vikram Rao\nProject Manager: Priya Singh\n\nCheck-in:')
   })
 
-  it('a fully empty body still produces a valid report -- no stray double blank line before SUMMARY', () => {
+  it('not-on-site day (attendance: absent -- morning not_applicable/kind:not_on_site, evening not_received): "The sections below are as reported from site." is suppressed, matching the real dispatch.ts shape', () => {
+    const result = renderEngineerReport(
+      baseFacts(),
+      'Engineer not on site today.',
+      'code_templated',
+      { status: 'not_applicable', reason: 'not on site today' },
+      { status: 'not_received' },
+      META,
+    )
+    expect(result.content).toBe(
+      [
+        'Good evening.',
+        'Daily Progress Report — Speed Mechatronics, Thu 11 Sep',
+        '',
+        'Site Engineer: Vikram Rao',
+        '',
+        'Check-in: Morning not applicable — not on site today · Evening not received',
+        '',
+        'SUMMARY (auto-generated)',
+        'Engineer not on site today.',
+      ].join('\n'),
+    )
+    expect(result.content).not.toContain('The sections below are as reported from site.')
+  })
+
+  it('a fully empty body: "The sections below are as reported from site." is suppressed -- no stray line introducing nothing', () => {
     const result = renderEngineerReport(baseFacts(), 'Site closed today.', 'code_templated', { status: 'not_applicable', reason: 'Site closed (holiday)' }, { status: 'not_applicable', reason: 'Site closed (holiday)' }, META)
     expect(result.content).toBe(
       [
@@ -331,12 +356,11 @@ describe('renderEngineerReport — header/footer', () => {
         '',
         'Check-in: Morning not applicable — Site closed (holiday) · Evening not applicable — Site closed (holiday)',
         '',
-        'The sections below are as reported from site.',
-        '',
         'SUMMARY (auto-generated)',
         'Site closed today.',
       ].join('\n'),
     )
+    expect(result.content).not.toContain('The sections below are as reported from site.')
   })
 
   it('structured passthrough is unchanged: facts/verdict/verdict_status/morning_status/evening_status', () => {

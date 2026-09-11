@@ -391,6 +391,11 @@ describe('handleDprGenerateJob', () => {
       expect(dpr?.content).not.toContain('WORK')
       expect(dpr?.content).not.toContain('RESOURCE')
       expect(dpr?.content).not.toContain('no input received')
+      // FIXED (2026-09-11, one more review round): with no sections
+      // rendering, "The sections below are as reported from site." would
+      // otherwise introduce nothing and sit above an empty space before
+      // SUMMARY -- suppressed under the same body-length condition.
+      expect(dpr?.content).not.toContain('The sections below are as reported from site.')
       const structured = dpr?.structured as { verdict?: string; verdict_status?: string } | null
       expect(structured?.verdict).toBe('Engineer not on site today.')
       expect(structured?.verdict_status).toBe('code_templated')

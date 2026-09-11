@@ -119,10 +119,15 @@ export function renderEmailReport(
   const body = renderEngineerBody(facts)
   const subject = `Daily Progress — ${meta.project_name} — ${meta.formatted_date}`
 
+  // "The sections below are as reported from site." is suppressed when
+  // there are no sections (body === '') -- same condition and reasoning
+  // as render.ts's own renderEngineerReport fix: a not-on-site day omits
+  // WORK/RESOURCE entirely, and this sentence introducing nothing reads
+  // as a stray line, not a section header.
   const textLines: string[] = ['Good evening.', `Daily Progress Report — ${meta.project_name}, ${meta.formatted_date}`, '', `Site Engineer: ${meta.engineer_name}`]
   if (meta.project_manager_name !== null) textLines.push(`Project Manager: ${meta.project_manager_name}`)
-  textLines.push('', fmtCombinedCheckInLine(morningStatus, eveningStatus), '', 'The sections below are as reported from site.')
-  if (body.length > 0) textLines.push('', body)
+  textLines.push('', fmtCombinedCheckInLine(morningStatus, eveningStatus))
+  if (body.length > 0) textLines.push('', 'The sections below are as reported from site.', '', body)
   textLines.push('', 'SUMMARY (auto-generated)', verdict)
   const text = textLines.join('\n')
 
@@ -133,18 +138,27 @@ export function renderEmailReport(
     .filter(Boolean)
     .join('\n')
 
+  const htmlBody =
+    body.length > 0
+      ? [
+          `<p style="color: #555;">The sections below are as reported from site.</p>`,
+          `<pre style="white-space: pre-wrap; font-family: sans-serif;">${escapeHtml(body)}</pre>`,
+        ].join('\n')
+      : ''
+
   const html = [
     `<div style="font-family: sans-serif; max-width: 640px;">`,
     `<p>Good evening.</p>`,
     `<h2 style="margin-bottom: 0;">Daily Progress Report — ${escapeHtml(meta.project_name)}, ${escapeHtml(meta.formatted_date)}</h2>`,
     htmlMeta,
     `<p>${escapeHtml(fmtCombinedCheckInLine(morningStatus, eveningStatus))}</p>`,
-    `<p style="color: #555;">The sections below are as reported from site.</p>`,
-    `<pre style="white-space: pre-wrap; font-family: sans-serif;">${escapeHtml(body)}</pre>`,
+    htmlBody,
     `<h3 style="margin-bottom: 4px;">SUMMARY (auto-generated)</h3>`,
     `<p><strong>${escapeHtml(verdict)}</strong></p>`,
     `</div>`,
-  ].join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   return { subject, text, html }
 }
