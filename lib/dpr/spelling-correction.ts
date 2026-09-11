@@ -46,10 +46,16 @@ import type { CapturedText } from './schema'
 //      token must be UNCHANGED. Punctuation is not spelling.
 //   4. Per word position: the punctuation-stripped "core" of the word may
 //      differ only within a small edit-distance ceiling -- a genuine
-//      typo fix, not a different word. Ceiling: the LARGER of 1 and 40%
-//      of the raw word's length (rounded up), capped at 4 characters
+//      typo fix, not a different word. Ceiling: the LARGER of 1 and 25%
+//      of the raw word's length (rounded down), capped at 2 characters
 //      absolute either way. Case is ignored for this comparison (a pure
 //      capitalisation change costs nothing against the ceiling).
+//      TIGHTENED 2026-09-11 (review round 2, Aravind) -- the original
+//      40%-capped-at-4 ceiling let "concrete" -> "complete" pass (3 edits
+//      on 8 characters), silently changing what a WORK sentence means
+//      while looking like a plausible typo fix. Real typos are rarely
+//      more than one or two characters off; anything past that is safer
+//      left alone.
 //   5. Any single word failing (2), (3), or (4), or the field failing
 //      (1), fails the WHOLE FIELD -- that field falls back to its raw
 //      text unmodified. The OTHER field's result is unaffected (per-field
@@ -114,7 +120,7 @@ export function checkSpellingGuard(raw: string, corrected: string): SpellingGuar
     }
 
     const distance = levenshtein(rawParts.core.toLowerCase(), corParts.core.toLowerCase())
-    const ceiling = Math.min(4, Math.max(1, Math.ceil(rawParts.core.length * 0.4)))
+    const ceiling = Math.min(2, Math.max(1, Math.floor(rawParts.core.length * 0.25)))
     if (distance > ceiling) {
       return { ok: false, reason: `word changed too much at position ${i}: "${rawTok}" -> "${corTok}" (distance ${distance} > ceiling ${ceiling})` }
     }
@@ -124,10 +130,12 @@ export function checkSpellingGuard(raw: string, corrected: string): SpellingGuar
 }
 
 // ---------------------------------------------------------------------
-// THE MODEL CALL -- ONE call covering both fields (Aravind's decision,
-// docs/plans/dpr-format-redesign.md §1: fewer round trips, lower cost).
-// Skipped entirely when neither field has real text -- nothing to
-// correct, no reason to spend a call.
+// THE MODEL CALL -- ONE call covering both fields, not two separate calls
+// (Aravind's decision, docs/plans/dpr-format-redesign.md §1: fewer round
+// trips, lower cost). "One call" was never about retries -- ONE RETRY on
+// a guard failure is added below (review round 2), mirroring generate.ts's
+// own verdict path exactly. Skipped entirely when neither field has real
+// text -- nothing to correct, no reason to spend a call.
 // ---------------------------------------------------------------------
 
 const MODEL = 'claude-sonnet-5'
@@ -192,15 +200,25 @@ function notAttempted(raw: CapturedText): { field: CapturedText; status: WorkTex
   return { field: raw, status: 'not_attempted' }
 }
 
+type FieldOutcome = { field: CapturedText; status: WorkTextFieldStatus }
+
 /**
  * Corrects spelling only, in place, for the WORK section's two free-text
  * fields. NOT wired into any render or assembly path yet -- see this
  * file's own header. Each field's own raw CapturedText is passed straight
  * through (status 'not_attempted') when it was never reported; a reported
  * field is corrected and guard-checked, falling back to its own raw text
- * (status 'fallback_raw') if the guard rejects it. Per-field isolation:
- * one field's guard failure never discards the other field's valid
- * correction (Aravind's explicit instruction).
+ * (status 'fallback_raw') if the guard rejects it after ONE RETRY.
+ *
+ * RETRY, review round 2 (2026-09-11): mirrors generate.ts's own verdict
+ * path -- on a guard failure (or an unparseable response), retry once,
+ * then fall back. Guard failures should be rare, so the cost is
+ * negligible. PER-FIELD ISOLATION ACROSS THE RETRY: a field that already
+ * passed the guard on the first attempt is LOCKED IN immediately and
+ * never re-evaluated, even if the retry call happens because the OTHER
+ * field failed -- one field's failure never discards the other's already-
+ * accepted correction, and a field is never silently overwritten by a
+ * second, possibly different, correction of the same text.
  */
 export async function correctEngineerWorkText(client: Anthropic, planned: CapturedText, doneText: CapturedText): Promise<EngineerWorkTextCorrectionResult> {
   const plannedRaw = planned.status === 'reported' ? planned.value : null
@@ -208,7 +226,7 @@ export async function correctEngineerWorkText(client: Anthropic, planned: Captur
 
   if (plannedRaw === null && doneTextRaw === null) {
     return {
-      ...notAttemptedPair(planned, doneText),
+      ...pairToResult(notAttempted(planned), notAttempted(doneText)),
       model_called: false,
       usage: { input_tokens: 0, output_tokens: 0 },
       latency_ms: 0,
@@ -218,67 +236,74 @@ export async function correctEngineerWorkText(client: Anthropic, planned: Captur
 
   const promptText = ['Morning plan:', plannedRaw ?? NOT_PROVIDED, '', 'Work completed:', doneTextRaw ?? NOT_PROVIDED].join('\n')
 
-  const start = Date.now()
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 800,
-    system: ENGINEER_SPELLING_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: promptText }],
-    output_config: { format: { type: 'json_schema', schema: ENGINEER_SPELLING_CORRECTION_SCHEMA } },
-  })
-  const latency_ms = Date.now() - start
-  const usage = { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens }
-  const cost_usd = (usage.input_tokens / 1_000_000) * INPUT_COST_PER_MTOK + (usage.output_tokens / 1_000_000) * OUTPUT_COST_PER_MTOK
+  let totalInputTokens = 0
+  let totalOutputTokens = 0
+  let totalLatencyMs = 0
 
-  // A missing text block or malformed/truncated JSON falls both fields
-  // back to raw -- same "model-output problem, not a transport failure"
-  // class generate.ts's own S1 handling treats per-attempt, but with no
-  // retry here (Aravind's "ONE model call," not "one call plus retries").
-  let parsed: { planned_corrected?: unknown; done_text_corrected?: unknown } | undefined
-  try {
-    const textBlock = response.content.find((b) => b.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') throw new Error(`No text block in response. stop_reason: ${response.stop_reason}`)
-    parsed = JSON.parse(textBlock.text) as { planned_corrected?: unknown; done_text_corrected?: unknown }
-  } catch {
-    return { ...notAttemptedFallbackPair(planned, doneText, plannedRaw, doneTextRaw), model_called: true, usage, latency_ms, cost_usd }
+  // A field with no raw text is resolved (not_attempted) before the loop
+  // even starts -- the loop below only ever fills in fields that were
+  // actually reported.
+  let plannedResolved: FieldOutcome | null = plannedRaw === null ? notAttempted(planned) : null
+  let doneTextResolved: FieldOutcome | null = doneTextRaw === null ? notAttempted(doneText) : null
+
+  for (let attempt = 1; attempt <= 2 && (!plannedResolved || !doneTextResolved); attempt++) {
+    const start = Date.now()
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 800,
+      system: ENGINEER_SPELLING_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: promptText }],
+      output_config: { format: { type: 'json_schema', schema: ENGINEER_SPELLING_CORRECTION_SCHEMA } },
+    })
+    totalLatencyMs += Date.now() - start
+    totalInputTokens += response.usage.input_tokens
+    totalOutputTokens += response.usage.output_tokens
+
+    // A missing text block or malformed/truncated JSON is a model-output
+    // problem, same class generate.ts's own S1 handling treats -- falls
+    // through to the retry (attempt 2), then to the raw fallback below.
+    let parsed: { planned_corrected?: unknown; done_text_corrected?: unknown } | undefined
+    try {
+      const textBlock = response.content.find((b) => b.type === 'text')
+      if (!textBlock || textBlock.type !== 'text') throw new Error(`No text block in response. stop_reason: ${response.stop_reason}`)
+      parsed = JSON.parse(textBlock.text) as { planned_corrected?: unknown; done_text_corrected?: unknown }
+    } catch {
+      continue
+    }
+
+    const isLastAttempt = attempt === 2
+    if (!plannedResolved) {
+      const result = resolveField(planned, plannedRaw as string, parsed.planned_corrected)
+      if (result.status === 'corrected' || isLastAttempt) plannedResolved = result
+    }
+    if (!doneTextResolved) {
+      const result = resolveField(doneText, doneTextRaw as string, parsed.done_text_corrected)
+      if (result.status === 'corrected' || isLastAttempt) doneTextResolved = result
+    }
   }
 
-  const plannedResult = resolveField(planned, plannedRaw, parsed.planned_corrected)
-  const doneTextResult = resolveField(doneText, doneTextRaw, parsed.done_text_corrected)
+  // Reached only if both attempts threw a parse error (never even
+  // produced a per-field verdict) -- fall both remaining fields back to
+  // raw, same "no per-field signal to isolate on" reasoning as before.
+  if (!plannedResolved) plannedResolved = { field: planned, status: 'fallback_raw' }
+  if (!doneTextResolved) doneTextResolved = { field: doneText, status: 'fallback_raw' }
+
+  const cost_usd = (totalInputTokens / 1_000_000) * INPUT_COST_PER_MTOK + (totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_MTOK
 
   return {
-    planned: plannedResult.field,
-    planned_status: plannedResult.status,
-    done_text: doneTextResult.field,
-    done_text_status: doneTextResult.status,
+    ...pairToResult(plannedResolved, doneTextResolved),
     model_called: true,
-    usage,
-    latency_ms,
+    usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
+    latency_ms: totalLatencyMs,
     cost_usd,
   }
 }
 
-function notAttemptedPair(planned: CapturedText, doneText: CapturedText) {
-  const p = notAttempted(planned)
-  const d = notAttempted(doneText)
-  return { planned: p.field, planned_status: p.status, done_text: d.field, done_text_status: d.status }
+function pairToResult(planned: FieldOutcome, doneText: FieldOutcome) {
+  return { planned: planned.field, planned_status: planned.status, done_text: doneText.field, done_text_status: doneText.status }
 }
 
-// Both fields fall back to raw (parse failure -- no per-field signal to
-// isolate on, since the response itself couldn't be read at all). A field
-// that was never reported in the first place stays 'not_attempted', not
-// 'fallback_raw' -- there was nothing to fall back FROM.
-function notAttemptedFallbackPair(planned: CapturedText, doneText: CapturedText, plannedRaw: string | null, doneTextRaw: string | null) {
-  return {
-    planned: planned,
-    planned_status: (plannedRaw === null ? 'not_attempted' : 'fallback_raw') as WorkTextFieldStatus,
-    done_text: doneText,
-    done_text_status: (doneTextRaw === null ? 'not_attempted' : 'fallback_raw') as WorkTextFieldStatus,
-  }
-}
-
-function resolveField(raw: CapturedText, rawValue: string | null, correctedValue: unknown): { field: CapturedText; status: WorkTextFieldStatus } {
-  if (rawValue === null) return notAttempted(raw)
+function resolveField(raw: CapturedText, rawValue: string, correctedValue: unknown): FieldOutcome {
   if (typeof correctedValue !== 'string' || correctedValue === NOT_PROVIDED) {
     return { field: raw, status: 'fallback_raw' }
   }
