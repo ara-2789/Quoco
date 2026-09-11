@@ -18,5 +18,10 @@
     "number": "039",
     "claimedBy": "docs/reviews/039_hindrance_acknowledgement.sql",
     "note": "DASH-07 Phase 2 -- hindrances gains acknowledged_at/acknowledged_by/ack_notified_at plus a project-scoped RESTRICTIVE RLS UPDATE policy. 038 is the highest applied migration on both prod and test-db as of 2026-09-08 (confirmed: `ls supabase/migrations/` tops out at 038, and no other reservation in this file or any sibling worktree's supabase/migrations/ claims 039). Held in docs/reviews/ pending Aravind's Stage 1 review (migration file + RLS policy diff) before this enters supabase/migrations/ for real, per this file's own 'migration file enters supabase/migrations/ when applied, not when written' rule."
+  },
+  {
+    "number": "040",
+    "claimedBy": "docs/reviews/040_evening_q5_tomorrow_needs.sql",
+    "note": "Evening Q5 replaced (tomorrow's extra needs, replacing the old hindrance-shaped question) + evening_schedule_miss_reason retired (new evening_tomorrow_needs column; migration-019 correction whitelist swapped, not widened). Reserved 2026-09-11: confirmed 039_hindrance_acknowledgement.sql is already present in supabase/migrations/ on origin/main (9c34be8) AND in test-db's applied ledger (`supabase migration list` against exfccwlrhoutkgrlikod, local/remote both list 039) -- the prior entry's own note describing 039 as still 'held in docs/reviews/' is stale as of this date, corrected by observation here rather than silently trusted. Also checked every sibling .claude/worktrees/*/supabase/migrations/ and */scripts/migration-number-reservations.json for anything claiming 040 or higher -- none found, highest anywhere is 039. Held in docs/reviews/ pending Aravind's Stage 1 review (this migration file + rehearsal output) before this enters supabase/migrations/ for real."
   }
 ]
