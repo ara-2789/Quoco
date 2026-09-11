@@ -360,6 +360,7 @@ export type Database = {
           evening_schedule_miss_reason: string | null
           evening_submitted_at: string | null
           evening_submitted_via: string | null
+          evening_tomorrow_needs: string | null
           evening_workers_on_site: number | null
           holiday_reason: string | null
           id: string
@@ -396,6 +397,7 @@ export type Database = {
           evening_schedule_miss_reason?: string | null
           evening_submitted_at?: string | null
           evening_submitted_via?: string | null
+          evening_tomorrow_needs?: string | null
           evening_workers_on_site?: number | null
           holiday_reason?: string | null
           id?: string
@@ -432,6 +434,7 @@ export type Database = {
           evening_schedule_miss_reason?: string | null
           evening_submitted_at?: string | null
           evening_submitted_via?: string | null
+          evening_tomorrow_needs?: string | null
           evening_workers_on_site?: number | null
           holiday_reason?: string | null
           id?: string
