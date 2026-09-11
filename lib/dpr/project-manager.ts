@@ -54,6 +54,11 @@ export async function resolveProjectManagerName(client: SupabaseClient, project_
     })
   }
 
+  // profile-lookup-guard:allow-id-eq -- rows[0].user_id is project_members.
+  // user_id, a resolved users.id FK (who the PM IS), never an auth uid --
+  // the pre-007 bug class this guard exists to catch (matching the CURRENT
+  // session's own auth uid against users.id) cannot occur here, same
+  // justification as dispatch.ts's own engineer_id lookup.
   const { data: user, error: userError } = await client.from('users').select('full_name').eq('id', rows[0].user_id as string).maybeSingle()
   if (userError) {
     Sentry.captureException(userError, {
