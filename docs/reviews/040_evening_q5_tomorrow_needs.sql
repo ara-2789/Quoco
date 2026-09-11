@@ -41,10 +41,22 @@
 -- AND correct_daily_log()'s own CASE, both DROP evening_schedule_miss_reason
 -- and ADD evening_tomorrow_needs in the same statement), and
 -- apply_evening_flow_turn's step-5 branch changes its WRITE TARGET column.
--- REVERSIBLE WITHOUT PITR: the DOWN block (bottom of this file, reference
--- only, commented out per this project's own down-section-must-be-commented
--- lint rule) restores both functions' pre-migration bodies and the
--- whitelist's pre-migration CHECK list. evening_tomorrow_needs itself is
+-- REVERSIBLE WITHOUT PITR, BUT NOT BY UNCOMMENTING AND RUNNING THE DOWN
+-- BLOCK AS-IS. The DOWN block (bottom of this file, reference only,
+-- commented out per this project's own down-section-must-be-commented
+-- lint rule) is a ROLLBACK PROCEDURE, not a runnable script: its two
+-- function bodies are deliberately left as bracketed instructions, not
+-- inlined SQL, and must be captured fresh via pg_get_functiondef from a
+-- database at the intended pre-rollback state before the rollback is
+-- executed -- see the DOWN block's own header for why (the same
+-- hand-merge-migration-files mistake this migration's own header names as
+-- the root cause of its 038 near-miss). This migration's own rehearsal did
+-- not execute this block's text; it executed a real, freshly-captured
+-- rollback built the same way this block now instructs, and that
+-- rollback's OUTCOME (both functions and the whitelist restored to their
+-- pre-migration state, evening_tomorrow_needs never dropped) is what's
+-- reversible without PITR -- the block itself is a procedure to follow,
+-- not a script to strip-and-run. evening_tomorrow_needs itself is
 -- NEVER dropped by the DOWN -- columns are never dropped by this project's
 -- convention (CLAUDE.md: "do not drop anything") -- so a rollback cannot
 -- lose data written under the new column between apply and rollback; it
@@ -341,10 +353,25 @@ GRANT  EXECUTE ON FUNCTION public.correct_daily_log(UUID, TEXT, JSONB) TO authen
 -- =============================================================================
 -- STEP 7 -- apply_evening_flow_turn(): step-5 branch's write target changes
 -- from evening_schedule_miss_reason to evening_tomorrow_needs. Body
--- otherwise BYTE-IDENTICAL to 035's live definition -- verified directly
--- against test-db's pg_get_functiondef() output (md5 ec80f6821a4bf73ada
--- dad9c172e8eaef3, 21445 chars, matching the migration-file source read
--- during this file's own authoring) before writing this statement.
+-- otherwise BYTE-IDENTICAL to the TRUE LIVE definition -- 035's
+-- restructuring PLUS migration 038's hindrance/evening flow-collision
+-- branch (see this file's own header finding: an earlier draft of this
+-- comment, and of this STEP's body, was built from 035 alone and missed
+-- 038's branch entirely) -- verified directly against test-db's
+-- pg_get_functiondef() output (md5 ec80f6821a4bf73adadb1c172e8eaef3,
+-- 21445 chars) captured immediately before this migration was authored,
+-- before writing this statement.
+--
+-- HASH CORRECTION, DATED 2026-09-11 (Aravind, Stage 1 review round 2):
+-- this comment previously read "ec80f6821a4bf73adadad9c172e8eaef3" (33
+-- hex characters -- not even a valid MD5 length, 32 required) -- a
+-- transcription slip made writing this comment by hand instead of
+-- copying the captured value, caught only because it disagreed with the
+-- companion rehearsal record's own value
+-- (docs/reviews/040-evening-q5-tomorrow-needs-rehearsal.md), which was
+-- correct throughout (pasted directly from tool output, never retyped).
+-- The value above is the corrected one -- re-verified against this
+-- migration's own rehearsal evidence, not re-derived from scratch.
 -- Signature UNCHANGED (text, uuid, uuid, uuid, text, boolean, jsonb, jsonb,
 -- timestamptz, integer) -- CREATE OR REPLACE genuinely replaces, no
 -- orphaned-overload risk. Q1-Q4 branches (steps 1-4) are untouched, pasted
@@ -836,11 +863,44 @@ GRANT EXECUTE ON FUNCTION public.apply_evening_flow_turn(
 COMMIT;
 
 -- =============================================================================
--- DOWN / ROLLBACK -- NOT applied by this file. Reference only, per this
--- project's own down-section-must-be-commented lint rule -- every line
--- below is commented out deliberately. To actually roll back, strip the
--- leading "-- " from every line below and run it as its own deliberate
--- operation, never by re-running this file.
+-- DOWN / ROLLBACK -- NOT applied by this file. This is a ROLLBACK
+-- PROCEDURE, NOT A RUNNABLE SCRIPT -- CORRECTED 2026-09-11 (Aravind,
+-- Stage 1 review round 2). An earlier version of this header claimed
+-- "strip the leading '-- ' from every line below and run it" as if that
+-- alone were sufficient. It is not: both CREATE OR REPLACE bodies below
+-- are deliberately left as bracketed instructions (see each one's own
+-- [ ... ] block), not inlined SQL -- stripping the comment markers and
+-- executing would fail immediately on malformed syntax. Every line below
+-- is still commented out, per this project's own down-section-must-be-
+-- commented lint rule -- that part was already correct and is unchanged.
+--
+-- WHY THE BODIES ARE INSTRUCTIONS, NOT INLINED SQL, DELIBERATELY: this
+-- migration's own header finding is that hand-merging migration files
+-- from memory (rather than capturing the true live state) is exactly what
+-- produced a wrong function body on this migration's own first draft. An
+-- inlined "restore to this exact text" body would repeat that same risk
+-- on the rollback side, AND would go silently stale the moment any future
+-- migration (041 or later) touches either function again -- a hazard this
+-- project's own migration-lint reservation and staleness rules exist to
+-- prevent elsewhere, applied here to a DOWN block instead of a forward
+-- migration.
+--
+-- TO ACTUALLY ROLL BACK: (1) capture
+-- pg_get_functiondef('public.apply_evening_flow_turn(...)') and
+-- pg_get_functiondef('public.correct_daily_log(...)') from a database at
+-- the intended pre-rollback state (i.e. before this migration's own
+-- forward-apply, or -- if a later migration has since touched either
+-- function -- from whatever state should be restored to); (2) apply the
+-- three edits named in the WARNING block below to the evening function's
+-- captured text (undoing this migration's own step-5 change) and the CASE
+-- edit named in correct_daily_log's own block; (3) run the resulting
+-- CREATE OR REPLACE statements, then the REVOKE/GRANT and CHECK-constraint
+-- statements below (which ARE complete, runnable SQL as written -- no
+-- capture step needed for those). THIS IS EXACTLY WHAT THIS MIGRATION'S
+-- OWN REHEARSAL DID: the rehearsed rollback was built this way, not by
+-- stripping and running this block's text -- the rollback APPROACH is
+-- proven by that rehearsal; this block's text is the reference procedure
+-- for repeating it, not a script that was itself executed.
 --
 -- Restores: STEP 7 reverted first (apply_evening_flow_turn's step-5 branch
 -- back to writing evening_schedule_miss_reason), then STEP 6
