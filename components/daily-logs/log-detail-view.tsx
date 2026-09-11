@@ -22,7 +22,10 @@ const EVENING_ROWS = [
   { column: 'evening_output', label: 'What was done' },
   { column: 'evening_workers_on_site', label: 'Workers on site' },
   { column: 'evening_schedule_met', label: 'Plan met?' },
-  { column: 'evening_schedule_miss_reason', label: "Reason plan wasn't met" },
+  // RENAMED 2026-09-11 (migration 040) -- was evening_schedule_miss_reason /
+  // "Reason plan wasn't met". Aravind approved "Dependency" as the label,
+  // matching the DPR's own render.ts label exactly.
+  { column: 'evening_tomorrow_needs', label: 'Dependency' },
 ] as const
 
 function formatLogDate(logDate: string): string {
