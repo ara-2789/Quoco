@@ -215,7 +215,7 @@ function baseEngineerFacts(): EngineerDprFacts {
       on_site: { status: 'not_captured', value: null },
     },
     idle_hours_by_trade: [],
-    equipment: { items: [] },
+    equipment: { items: [], machines_reported: { status: 'not_captured', value: null }, run_hours: { status: 'not_captured', value: null } },
     hindrances: [],
   }
 }
@@ -251,9 +251,28 @@ describe('buildEngineerFactsCorpus', () => {
     const facts = baseEngineerFacts()
     facts.equipment = {
       items: [{ type: 'JCB', daily_hire_cost: { status: 'not_captured', value: null }, actual_hours: { status: 'reported', value: 6 }, idle_cost: { status: 'not_captured', value: null }, implausible: null }],
+      machines_reported: { status: 'not_captured', value: null },
+      run_hours: { status: 'not_captured', value: null },
     }
     const corpus = buildEngineerFactsCorpus(facts, meta)
     expect(corpus.has(6)).toBe(true)
+  })
+
+  // Stage 1 (2026-09-11, docs/plans/dpr-format-redesign.md §6) — same class
+  // of hazard as the manpower case below: machines_reported/run_hours are
+  // raw engineer text, same as manpower.planned/on_site, and must not enter
+  // the citable corpus even though they can carry real digits. Not yet
+  // rendered anywhere, but the corpus function is the one place this
+  // matters for containment, so it is worth locking in now.
+  it('does NOT include a digit from raw machines_reported/run_hours text, same treatment as raw manpower text', () => {
+    const facts = baseEngineerFacts()
+    facts.equipment.machines_reported = { status: 'reported', value: '2 JCBs, 1 roller' }
+    facts.equipment.run_hours = { status: 'reported', value: 'JCB ran 9 hours, roller 5 hours' }
+    const corpus = buildEngineerFactsCorpus(facts, meta)
+    expect(corpus.has(2)).toBe(false)
+    expect(corpus.has(1)).toBe(false)
+    expect(corpus.has(9)).toBe(false)
+    expect(corpus.has(5)).toBe(false)
   })
 
   it('THE CASE THIS FUNCTION EXISTS TO FIX: does NOT include a digit from raw manpower text, even though it is real and would previously have entered the corpus via extractDigitTokens(renderedBody)', () => {

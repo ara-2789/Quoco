@@ -30,6 +30,7 @@ import { assembleEngineerDprFacts } from '../lib/dpr/assemble'
 import { fetchEngineerNarrativeContext } from '../lib/dpr/narrative-context'
 import { generateEngineerVerdict } from '../lib/dpr/generate'
 import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from '../lib/dpr/render'
+import { resolveProjectManagerName } from '../lib/dpr/project-manager'
 
 async function main() {
   const [projectId, engineerId, logDate] = process.argv.slice(2)
@@ -54,6 +55,7 @@ async function main() {
   console.log('Calling Claude...')
   const result = await generateEngineerVerdict(anthropic, facts, narrative, { project_name: project.name, log_date: logDate })
   const verdict = result.verdict_status === 'placeholder' ? CONTAINMENT_FAILURE_PLACEHOLDER : result.verdict
+  const projectManagerName = await resolveProjectManagerName(client, projectId)
 
   const rendered = renderEngineerReport(
     facts,
@@ -65,6 +67,7 @@ async function main() {
       project_name: project.name,
       engineer_name: (engineer.full_name as string | null) ?? 'Unnamed engineer',
       formatted_date: new Date(`${logDate}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' }),
+      project_manager_name: projectManagerName,
     },
   )
 

@@ -12,6 +12,7 @@ const META: EngineerReportMeta = {
   project_name: 'Emerald Heights',
   engineer_name: 'Arjun Nair',
   formatted_date: 'Mon 31 Aug',
+  project_manager_name: null,
 }
 
 const MORNING_COMPLETE: RenderedCheckInStatus = { status: 'complete' }
@@ -33,7 +34,7 @@ function makeFacts(overrides: Partial<EngineerDprFacts> = {}): EngineerDprFacts 
       on_site: { status: 'reported', value: '18 workers' },
     },
     idle_hours_by_trade: [],
-    equipment: { items: [] },
+    equipment: { items: [], machines_reported: { status: 'not_captured', value: null }, run_hours: { status: 'not_captured', value: null } },
     hindrances: [],
     ...overrides,
   }

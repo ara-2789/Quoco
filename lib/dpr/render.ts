@@ -584,6 +584,13 @@ function fmtCheckInLine(label: 'Morning' | 'Evening', s: RenderedCheckInStatus):
   return s.status === 'not_applicable' && s.reason ? `${base} — ${s.reason}` : base
 }
 
+// SINGLE SOURCE OF TRUTH (2026-09-11, Stage 1 of the DPR format redesign,
+// docs/plans/dpr-format-redesign.md §5). Previously duplicated verbatim
+// in render-email.ts as its own separate interface — the exact
+// duplicate-type trap that bit narrative-context.ts during migration
+// 040's Stage 2 (two independently-maintained copies of the same shape,
+// one silently missing a field the other gained). render-email.ts now
+// imports this type directly rather than redeclaring it.
 export interface EngineerReportMeta {
   project_name: string
   engineer_name: string
@@ -592,6 +599,10 @@ export interface EngineerReportMeta {
   // ContainmentMeta exclusion of log_date — S1/2026-08-11 decision,
   // extended here to the same header line).
   formatted_date: string
+  // NEW, Stage 1 plumbing (§5) — project_manager.ts's own resolveProjectManagerName.
+  // null when the project has no role='pm' member. Not yet rendered
+  // anywhere (Stage C/D's job) — populated on Facts and unused by design.
+  project_manager_name: string | null
 }
 
 // The BODY ONLY — four pair lines + MISSING + NEEDS ATTENTION + NOT ASKED

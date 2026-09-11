@@ -160,6 +160,7 @@ import type { Json } from '@/types/database'
 import { decideOwnerDeliveryRoute } from './owner-delivery-route'
 import { renderEmailReport, type EngineerReportMeta, type RenderedCheckInStatus } from './render-email'
 import { formatDate } from './dispatch'
+import { resolveProjectManagerName } from './project-manager'
 import type { EngineerDprFacts } from './schema'
 import {
   OWNER_NO_REPORT_TEMPLATE_SID,
@@ -379,6 +380,10 @@ export async function handleOwnerDeliverJob(
 
   const canSendReportEmail = !!owner.notification_email_verified_at
   const formattedDate = formatDate(payload.log_date)
+  // Stage 1 plumbing (2026-09-11, docs/plans/dpr-format-redesign.md §5) --
+  // one lookup per project-day (not per row — every reportRow below
+  // shares payload.project_id). Read only, not yet rendered anywhere.
+  const projectManagerName = await resolveProjectManagerName(client, payload.project_id)
 
   let reportSent = 0
   let reportFailed = 0
@@ -410,6 +415,7 @@ export async function handleOwnerDeliverJob(
           project_name: project.name as string,
           engineer_name: engineerNameById.get(row.engineer_id) ?? 'Unnamed engineer',
           formatted_date: formattedDate,
+          project_manager_name: projectManagerName,
         }
         const rendered = renderEmailReport(structured.facts, structured.verdict, structured.morning_status, structured.evening_status, meta)
         const result = await sendEmail({

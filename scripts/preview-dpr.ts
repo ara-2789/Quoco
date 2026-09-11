@@ -36,6 +36,7 @@ import { assembleEngineerDprFacts } from '../lib/dpr/assemble'
 import { fetchEngineerNarrativeContext } from '../lib/dpr/narrative-context'
 import { generateEngineerVerdict } from '../lib/dpr/generate'
 import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from '../lib/dpr/render'
+import { resolveProjectManagerName } from '../lib/dpr/project-manager'
 
 const WRITE_METHODS = ['insert', 'upsert', 'update', 'delete', 'rpc'] as const
 
@@ -117,6 +118,8 @@ async function main() {
 
   console.log(`Project ${projectId} (${project.name}), ${logDate} -- ${engineerIds.length} engineer(s):\n`)
 
+  const projectManagerName = await resolveProjectManagerName(client, projectId)
+
   for (const engineerId of engineerIds) {
     const { data: engineer, error: engineerError } = await client.from('users').select('full_name').eq('id', engineerId).single()
     if (engineerError) throw engineerError
@@ -142,6 +145,7 @@ async function main() {
         project_name: project.name,
         engineer_name: (engineer.full_name as string | null) ?? 'Unnamed engineer',
         formatted_date: new Date(`${logDate}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' }),
+        project_manager_name: projectManagerName,
       },
     )
 

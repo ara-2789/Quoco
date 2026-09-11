@@ -7,6 +7,7 @@ import { assembleEngineerDprFacts } from './assemble'
 import { fetchEngineerNarrativeContext } from './narrative-context'
 import { generateEngineerVerdict } from './generate'
 import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from './render'
+import { resolveProjectManagerName } from './project-manager'
 import type { CheckInStatus } from './schema'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
@@ -127,6 +128,13 @@ export async function handleDprGenerateJob(
       resolveCheckInStatus(client, payload, completeness),
     )
 
+    // Stage 1 plumbing (2026-09-11, docs/plans/dpr-format-redesign.md §5)
+    // -- read only, not yet rendered anywhere (renderEngineerReport does
+    // not consume meta.project_manager_name yet).
+    const projectManagerName = await timed('resolveProjectManagerName', () =>
+      resolveProjectManagerName(client, payload.project_id),
+    )
+
     // GATE, corrected (round-4 B1): the verdict sentence summarises what was
     // DONE — that only ever comes from the EVENING half (the morning half
     // is a plan, never an account of work performed). So the model is
@@ -169,6 +177,7 @@ export async function handleDprGenerateJob(
       project_name: project.name,
       engineer_name: (engineerUser.full_name as string | null) ?? 'Unnamed engineer',
       formatted_date: formatDate(payload.log_date),
+      project_manager_name: projectManagerName,
     })
 
     await timed('dprsUpsert', async () => {
@@ -264,6 +273,15 @@ type NotApplicableKind = 'holiday' | 'joined_late' | 'left_early'
 export interface CheckInStatusResult {
   morning: { status: CheckInStatus; reason?: string; kind?: NotApplicableKind }
   evening: { status: CheckInStatus; reason?: string; kind?: NotApplicableKind }
+  // Stage 1 plumbing (2026-09-11, docs/plans/dpr-format-redesign.md §8).
+  // Read straight from daily_logs.attendance (migration 030) -- null when
+  // no daily_logs row exists (a genuinely silent engineer) or the value
+  // hasn't been captured yet. Not yet consumed by anything: this field
+  // exists so it can be read and tested independently of the render
+  // change (Stage C) that will actually branch on it. `attendance ===
+  // 'absent'` is the real "not-on-site" case (§8) -- 'site_holiday'
+  // already flows into the `kind: 'holiday'` branch above via is_holiday.
+  attendance: 'present' | 'absent' | 'site_holiday' | null
 }
 
 function checkpointMinutes(hhmm: string): number {
@@ -277,18 +295,20 @@ function checkpointMinutes(hhmm: string): number {
 // project_members timing (spec Rule 7) and holiday status get read —
 // deliberately kept out of assemble.ts, which has no reason to know about
 // roster membership at all.
-async function resolveCheckInStatus(
+export async function resolveCheckInStatus(
   client: SupabaseClient,
   payload: DprGenerateJobPayload,
   completeness: { morning: CheckInStatus; evening: CheckInStatus },
 ): Promise<CheckInStatusResult> {
   const { data: log } = await client
     .from('daily_logs')
-    .select('is_holiday, holiday_reason')
+    .select('is_holiday, holiday_reason, attendance')
     .eq('project_id', payload.project_id)
     .eq('engineer_id', payload.engineer_id)
     .eq('log_date', payload.log_date)
     .maybeSingle()
+
+  const attendance = (log?.attendance as 'present' | 'absent' | 'site_holiday' | null) ?? null
 
   if (log?.is_holiday) {
     const reason = (log.holiday_reason as string | null)?.trim()
@@ -296,6 +316,7 @@ async function resolveCheckInStatus(
     return {
       morning: { status: 'not_applicable', reason: text, kind: 'holiday' },
       evening: { status: 'not_applicable', reason: text, kind: 'holiday' },
+      attendance,
     }
   }
 
@@ -336,6 +357,7 @@ async function resolveCheckInStatus(
   return {
     morning: overlayHalf(completeness.morning, CHECKIN_CHECKPOINTS.morningSend),
     evening: overlayHalf(completeness.evening, CHECKIN_CHECKPOINTS.eveningSend),
+    attendance,
   }
 }
 

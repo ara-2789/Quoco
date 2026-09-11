@@ -737,6 +737,16 @@ export interface EngineerEquipmentItemFacts {
 
 export interface EngineerEquipmentFacts {
   items: EngineerEquipmentItemFacts[]
+  // STAGE 1 PLUMBING (2026-09-11, docs/plans/dpr-format-redesign.md §6) --
+  // the redesigned MACHINE section's own two raw-text lines. Sourced
+  // straight from morning_equipment.raw_text / evening_equipment_
+  // utilisation.raw_text (both already stored on daily_logs, neither read
+  // anywhere before this) -- NOT parsed, NOT reconciled with `items` above.
+  // Not yet rendered anywhere (render.ts's per-item Equipment loop is
+  // Stage C's job, not this one's) -- these two fields exist on Facts and
+  // nothing reads them yet, by design.
+  machines_reported: CapturedText
+  run_hours: CapturedText
 }
 
 // One engineer, one project-day. Never an array of rows — the whole point

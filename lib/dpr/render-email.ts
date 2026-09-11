@@ -2,7 +2,12 @@
 // renderer off the SAME dprs.structured this migration 029's versioning
 // already stores (Facts assembled once, rendered per-surface — the WhatsApp
 // renderer, lib/dpr/render.ts, is itself evidence of exactly this pattern).
-// ADDITIVE: render.ts is not touched by this file. Reuses
+// ADDITIVE (2026-06-28 through 2026-09-05): render.ts was not touched by
+// this file over that stretch. UPDATED 2026-09-11 (Stage 1 of the DPR
+// format redesign, docs/plans/dpr-format-redesign.md §5): this file no
+// longer declares its own EngineerReportMeta — it imports render.ts's,
+// closing a duplicate-type gap of the exact shape that bit
+// narrative-context.ts during migration 040's Stage 2. Reuses
 // renderEngineerBody() directly rather than re-deriving the six-section
 // body from Facts a second time — email has no WhatsApp-shaped constraint
 // on the BODY content itself (it needs no `|`-pair-line mobile workaround),
@@ -42,20 +47,13 @@
 // to change either way.
 
 import type { EngineerDprFacts, CheckInStatus } from './schema'
-import { renderEngineerBody } from './render'
+import { renderEngineerBody, type EngineerReportMeta } from './render'
+
+export type { EngineerReportMeta }
 
 export interface RenderedCheckInStatus {
   status: CheckInStatus
   reason?: string
-}
-
-export interface EngineerReportMeta {
-  project_name: string
-  engineer_name: string
-  // Pre-formatted, code-side — same convention as render.ts's own
-  // EngineerReportMeta (never derived from a digit inside the containment
-  // corpus).
-  formatted_date: string
 }
 
 const CHECK_IN_LABEL: Record<CheckInStatus, string> = {
