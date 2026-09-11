@@ -46,11 +46,14 @@
 -- commented out per this project's own down-section-must-be-commented
 -- lint rule) is a ROLLBACK PROCEDURE, not a runnable script: its two
 -- function bodies are deliberately left as bracketed instructions, not
--- inlined SQL, and must be captured fresh via pg_get_functiondef from a
--- database at the intended pre-rollback state before the rollback is
--- executed -- see the DOWN block's own header for why (the same
--- hand-merge-migration-files mistake this migration's own header names as
--- the root cause of its 038 near-miss). This migration's own rehearsal did
+-- inlined SQL, and must be captured fresh via pg_get_functiondef from
+-- WHATEVER IS ACTUALLY LIVE at the moment the rollback is run -- never a
+-- pinned pre-apply reference -- before the rollback is executed -- see
+-- the DOWN block's own header (corrected a second time, external review
+-- round 1, FIX 2/S1) for why one single procedure, not two, is the only
+-- version that composes -- the same underlying lesson as the 038
+-- near-miss itself: trust a fresh capture, never a hand-reconstructed or
+-- ambiguously-timed reference. This migration's own rehearsal did
 -- not execute this block's text; it executed a real, freshly-captured
 -- rollback built the same way this block now instructs, and that
 -- rollback's OUTCOME (both functions and the whitelist restored to their
@@ -84,10 +87,19 @@
 -- old-Q5-shaped answer ("rain, lost an hour") gets recorded and later
 -- rendered under the NEW "Dependency" label as if it were an answer to the
 -- new question. Time-boxed to whichever sessions are mid-reply at the
--- literal moment of deploy; not zero. No code-side mitigation is built for
--- this in Stage 1 or Stage 2 -- named so the review package addresses it
--- explicitly (accept the window, or hold outbound sends briefly around
--- deploy) rather than it being discovered after the fact.
+-- literal moment of deploy; not zero.
+--
+-- DISSOLVED, NOT ACCEPTED (FIX 3, external review round 1, 2026-09-11):
+-- no code-side mitigation is built in Stage 1 or Stage 2 -- instead, the
+-- apply runbook (docs/reviews/040-apply-runbook.md) applies in the
+-- post-cutoff dead zone (after evening close, before the next 18:30 IST
+-- trigger), where no session can be mid-reply at step 5 at all, because no
+-- evening flow is active in that window. The standing pre-apply session
+-- probe is extended by one clause -- zero rows at current_flow =
+-- 'evening', re-probed immediately before BEGIN -- to confirm the
+-- assumption holds at the actual apply moment, not just in principle.
+-- Holding outbound sends stays the fallback only, for a genuine emergency
+-- in-hours apply.
 --
 -- WHAT THIS FILE DOES NOT DO: it does not touch public.hindrances, does not
 -- touch any TypeScript, does not touch the WhatsApp template (Q1 is
@@ -181,14 +193,43 @@ COMMENT ON COLUMN daily_logs.evening_tomorrow_needs IS
 -- this column after this migration + its Stage 2 companion land.
 -- =============================================================================
 COMMENT ON COLUMN daily_logs.evening_schedule_miss_reason IS
-  'RETIRED, migration 040, dated 2026-09-11. No writer as of this migration -- FROZEN, not dropped; historical data under BOTH prior meanings is preserved as-is. Meaning 1 (until 2026-08-31, migration 035): the conditional "why wasn''t the plan met" follow-up its name describes. Meaning 2 (2026-08-31 to 2026-09-11, migration 035 through 039): the unconditional evening Q5 answer, "anything that slowed execution today?" -- see 035''s own COMMENT ON COLUMN for that reasoning, verbatim, the same reuse-not-rename tradeoff this migration declines to repeat a third time. Q5''s current answer lives in evening_tomorrow_needs (STEP 1/3 above) as of this migration. Removed from migration 019''s correction whitelist by STEP 5/6 below in the SAME migration -- do not correct this column going forward; nothing reads a correction to it.';
+  'RETIRED, migration 040, dated 2026-09-11. No writer as of this migration -- FROZEN, not dropped; historical data under BOTH prior meanings is preserved as-is. Meaning 1 (until 2026-08-31, migration 035): the conditional "why wasn''t the plan met" follow-up its name describes. Meaning 2 (2026-08-31 to 2026-09-11, migration 035 through 039): the unconditional evening Q5 answer, "anything that slowed execution today?" -- see 035''s own COMMENT ON COLUMN for that reasoning, verbatim, the same reuse-not-rename tradeoff this migration declines to repeat a third time. Q5''s current answer lives in evening_tomorrow_needs (STEP 1/3 above) as of this migration. STILL a valid daily_log_edits.column_name value (STEP 5 below RETAINS it in the CHECK, deliberately -- history included, per FIX 1/B1, external review round 1, 2026-09-11) but REMOVED from correct_daily_log()''s own CASE (STEP 6 below) -- do not correct this column going forward; a correction attempt is rejected at the RPC, not by the CHECK; nothing reads a correction to it either way.';
 
 -- =============================================================================
 -- STEP 5 -- migration 019's correction whitelist: daily_log_edits.column_name
--- CHECK constraint. Swaps evening_schedule_miss_reason for
--- evening_tomorrow_needs, same position, same 'text' semantics. Constraint
--- name confirmed live against test-db before writing this statement:
--- daily_log_edits_column_name_check (pg_constraint, contype='c').
+-- CHECK constraint. ADDS evening_tomorrow_needs -- does NOT remove
+-- evening_schedule_miss_reason. Constraint name confirmed live against
+-- test-db before writing this statement: daily_log_edits_column_name_check
+-- (pg_constraint, contype='c').
+--
+-- RETAINED, NOT SWAPPED -- FIX 1 (B1, BLOCKING), EXTERNAL REVIEW ROUND 1,
+-- dated 2026-09-11. An earlier draft of this migration DROPPED
+-- evening_schedule_miss_reason from this CHECK list (a real swap, 9-for-9).
+-- That is unsafe on prod specifically: `ADD CONSTRAINT` without `NOT
+-- VALID` validates every EXISTING daily_log_edits row against the new
+-- CHECK, not just future inserts. evening_schedule_miss_reason has been
+-- correction-eligible since migration 019 and was Q5's live write target
+-- for eleven days (2026-08-31 to this migration) -- if any PM ever
+-- corrected it in that window, that historical daily_log_edits row's
+-- own column_name = 'evening_schedule_miss_reason' would violate a CHECK
+-- that no longer allows the value, and the apply fails at 23514
+-- (check_violation). Nobody had checked whether such a row exists before
+-- this finding -- see this migration's own apply runbook
+-- (docs/reviews/040-apply-runbook.md) for the pre-apply probe that answers
+-- it either way, run and recorded before STEP 5 is ever executed for
+-- real.
+--
+-- A CHECK constraint's job is to describe what rows may EXIST -- history
+-- included -- not to prevent future writes. Write-prevention for
+-- evening_schedule_miss_reason is STEP 6's job (the CASE removal there),
+-- not this constraint's: a post-040 correction attempt against the old
+-- column gets correct_daily_log()'s own "column % is not correctable in
+-- v1" rejection, which is exactly the frozen/uncorrectable semantics
+-- STEP 4's COMMENT ON COLUMN already declares for it. This CHECK simply
+-- keeps describing every column_name value that has EVER been a real,
+-- legitimately-written value in this table -- both the historical one and
+-- the new one -- which is what a CHECK constraint retroactively applied
+-- to an existing table must do to be safe.
 -- =============================================================================
 ALTER TABLE public.daily_log_edits DROP CONSTRAINT daily_log_edits_column_name_check;
 ALTER TABLE public.daily_log_edits ADD CONSTRAINT daily_log_edits_column_name_check
@@ -196,12 +237,22 @@ ALTER TABLE public.daily_log_edits ADD CONSTRAINT daily_log_edits_column_name_ch
     'is_holiday', 'holiday_reason', 'weather',
     'morning_plan', 'morning_execution_plan',
     'evening_output', 'evening_schedule_met',
+    'evening_schedule_miss_reason', -- HISTORICAL, dated 2026-09-11: retained so this
+                                     -- CHECK never invalidates a real, pre-existing
+                                     -- daily_log_edits row (see this STEP's own header
+                                     -- finding, FIX 1/B1). Write-prevention lives in
+                                     -- STEP 6's CASE removal, not here.
     'evening_tomorrow_needs', 'evening_workers_on_site'
   ));
 
 -- =============================================================================
--- STEP 6 -- correct_daily_log(): CASE whitelist updated to match STEP 5's
--- CHECK, same swap, same 'text' cast type. Body otherwise BYTE-IDENTICAL to
+-- STEP 6 -- correct_daily_log(): CASE whitelist SWAPS evening_schedule_
+-- miss_reason for evening_tomorrow_needs, same 'text' cast type -- a real
+-- removal here, UNLIKE STEP 5's CHECK, which retains the old value (FIX
+-- 1/B1, external review round 1: the CHECK describes what rows may EXIST,
+-- history included; this CASE controls what a FUTURE correction may
+-- target, which is where the old column's write-prevention actually
+-- belongs). Body otherwise BYTE-IDENTICAL to
 -- 019's live definition -- verified directly against test-db's
 -- pg_get_functiondef() output before writing this statement, not assumed
 -- from the migration file alone. Signature UNCHANGED (uuid, text, jsonb) --
@@ -864,51 +915,60 @@ COMMIT;
 
 -- =============================================================================
 -- DOWN / ROLLBACK -- NOT applied by this file. This is a ROLLBACK
--- PROCEDURE, NOT A RUNNABLE SCRIPT -- CORRECTED 2026-09-11 (Aravind,
--- Stage 1 review round 2). An earlier version of this header claimed
--- "strip the leading '-- ' from every line below and run it" as if that
--- alone were sufficient. It is not: both CREATE OR REPLACE bodies below
--- are deliberately left as bracketed instructions (see each one's own
--- [ ... ] block), not inlined SQL -- stripping the comment markers and
--- executing would fail immediately on malformed syntax. Every line below
--- is still commented out, per this project's own down-section-must-be-
--- commented lint rule -- that part was already correct and is unchanged.
+-- PROCEDURE, NOT A RUNNABLE SCRIPT.
 --
--- WHY THE BODIES ARE INSTRUCTIONS, NOT INLINED SQL, DELIBERATELY: this
--- migration's own header finding is that hand-merging migration files
--- from memory (rather than capturing the true live state) is exactly what
--- produced a wrong function body on this migration's own first draft. An
--- inlined "restore to this exact text" body would repeat that same risk
--- on the rollback side, AND would go silently stale the moment any future
--- migration (041 or later) touches either function again -- a hazard this
--- project's own migration-lint reservation and staleness rules exist to
--- prevent elsewhere, applied here to a DOWN block instead of a forward
--- migration.
+-- CORRECTED AGAIN, 2026-09-11 (external review round 1, FIX 2/S1): the
+-- prior correction (Stage 1 review round 2) fixed the "strip and run"
+-- claim but left TWO procedures implied in the same breath -- "capture
+-- from the pre-rollback state (i.e. before this migration's own
+-- forward-apply)" AND, separately, "or from whatever state should be
+-- restored to" if a later migration had touched the function. Followed
+-- literally in sequence, those don't compose: step (1) says capture the
+-- ORIGINAL pre-apply state, step (2) says apply the REVERSE edits to
+-- undo THIS migration -- doing both means reversing a body that was
+-- never forward-applied in the first place. It fails LOUD, not silently
+-- (the three exactly-once assertions refuse to match against an
+-- already-reverted body), but a rollback reference that doesn't survive
+-- being followed literally is worth fixing properly, not leaving as
+-- "well, it errors safely."
 --
--- TO ACTUALLY ROLL BACK: (1) capture
--- pg_get_functiondef('public.apply_evening_flow_turn(...)') and
--- pg_get_functiondef('public.correct_daily_log(...)') from a database at
--- the intended pre-rollback state (i.e. before this migration's own
--- forward-apply, or -- if a later migration has since touched either
--- function -- from whatever state should be restored to); (2) apply the
--- three edits named in the WARNING block below to the evening function's
--- captured text (undoing this migration's own step-5 change) and the CASE
--- edit named in correct_daily_log's own block; (3) run the resulting
--- CREATE OR REPLACE statements, then the REVOKE/GRANT and CHECK-constraint
--- statements below (which ARE complete, runnable SQL as written -- no
--- capture step needed for those). THIS IS EXACTLY WHAT THIS MIGRATION'S
--- OWN REHEARSAL DID: the rehearsed rollback was built this way, not by
--- stripping and running this block's text -- the rollback APPROACH is
--- proven by that rehearsal; this block's text is the reference procedure
--- for repeating it, not a script that was itself executed.
+-- ONE PROCEDURE ONLY, FROM HERE ON: capture the CURRENT LIVE body of
+-- both functions (via pg_get_functiondef, at whatever moment the
+-- rollback is actually being run -- NOT a pinned pre-apply reference),
+-- then apply the REVERSE of this migration's own three named edits
+-- (undoing the step-5 branch/v_col rename, the auto-skip comment, and
+-- the terminal write's target column) under the same exactly-once
+-- assertions the forward fix used. This is correct regardless of how
+-- much time has passed or whether a later migration (041+) has touched
+-- either function again since -- it always starts from what is actually
+-- live, never from a stale captured reference -- which is the entire
+-- argument for a procedure over a script in the first place (see the
+-- WARNING block below, unchanged, for why an inlined body was rejected
+-- for the identical reason).
+--
+-- VERIFICATION FOR THIS PROCEDURE, PER THE FORWARD RUNBOOK (FIX 2/S1's
+-- own second half): the FORWARD apply runbook
+-- (docs/reviews/040-apply-runbook.md) captures and hash-pins BOTH
+-- functions' pg_get_functiondef output immediately BEFORE this
+-- migration's own real apply, into the apply record. That pinned pair is
+-- the reference this procedure's result can be checked against IF no
+-- later migration has touched either function in the interim (a match
+-- confirms the reverse edits landed exactly back at the pre-040 state);
+-- if a later migration HAS touched either function since, the reverse
+-- edits still correctly undo only this migration's own change, and the
+-- result will NOT match the pinned pre-040 hash -- expected, not a
+-- failure, since the later migration's own changes are real and must
+-- survive this rollback.
 --
 -- Restores: STEP 7 reverted first (apply_evening_flow_turn's step-5 branch
 -- back to writing evening_schedule_miss_reason), then STEP 6
--- (correct_daily_log's CASE back to evening_schedule_miss_reason), then
--- STEP 5 (the CHECK constraint back to the 019 list), then the STEP 3/4
--- COMMENTs are left AS-IS (a comment revert is not meaningful -- the
--- forward comments already state the full history; reverting them would
--- erase the record of this migration itself having been attempted).
+-- (correct_daily_log's CASE back to including evening_schedule_miss_reason),
+-- then STEP 5 (evening_tomorrow_needs removed from the CHECK list --
+-- evening_schedule_miss_reason was never removed by the forward direction,
+-- per FIX 1/B1, so there is nothing to restore for it there), then the
+-- STEP 3/4 COMMENTs are left AS-IS (a comment revert is not meaningful --
+-- the forward comments already state the full history; reverting them
+-- would erase the record of this migration itself having been attempted).
 -- evening_tomorrow_needs is NEVER dropped -- this project's own
 -- convention, and because dropping it would discard any real data written
 -- under the new column between apply and rollback. STEP 2's grant list is
