@@ -547,10 +547,15 @@ function renderContent(s: RenderedDpr['structured']): string {
 // ===========================================================================
 
 // Rule 2b: verbatim, quoted, never paraphrased — the ONLY transformation
-// applied is wrapping in quotes. `not reported` (Rule 3's plain-language
-// vocabulary — "not captured" retired) for not_captured.
-function fmtText(c: CapturedText): string {
-  return c.status === 'reported' && c.value !== null ? `"${c.value}"` : 'not reported'
+// applied is wrapping in quotes. STAGE 3 (2026-09-11, docs/plans/dpr-
+// format-redesign.md §4): the not_captured fallback text is "no input
+// received", not "not reported" -- used ONLY for fields that follow the
+// inline-marker convention (a field left unanswered WITHIN an otherwise-
+// answered half). Idle hours/Machines reported/Run hours do NOT use this
+// helper -- they follow the separate "omit the whole line" convention
+// instead (§4's own explicit carve-out for those three fields).
+function fmtInline(c: CapturedText): string {
+  return c.status === 'reported' && c.value !== null ? `"${c.value}"` : 'no input received'
 }
 
 // Trade names are stored lowercase, underscore-joined for compounds
@@ -579,9 +584,17 @@ export interface RenderedCheckInStatus {
   reason?: string // spec Rule 7's exact copy, e.g. "joined this project today"
 }
 
-function fmtCheckInLine(label: 'Morning' | 'Evening', s: RenderedCheckInStatus): string {
-  const base = `${label} check-in: ${CHECK_IN_LABEL[s.status]}`
+// STAGE 3 (2026-09-11, docs/plans/dpr-format-redesign.md's own header
+// sketch): ONE combined line, "Check-in: Morning X · Evening Y" -- not
+// two separate "Morning check-in: X" / "Evening check-in: X" lines. The
+// word "check-in" appears once, in the shared prefix.
+function fmtHalf(label: 'Morning' | 'Evening', s: RenderedCheckInStatus): string {
+  const base = `${label} ${CHECK_IN_LABEL[s.status]}`
   return s.status === 'not_applicable' && s.reason ? `${base} — ${s.reason}` : base
+}
+
+function fmtCombinedCheckInLine(morning: RenderedCheckInStatus, evening: RenderedCheckInStatus): string {
+  return `Check-in: ${fmtHalf('Morning', morning)} · ${fmtHalf('Evening', evening)}`
 }
 
 // SINGLE SOURCE OF TRUTH (2026-09-11, Stage 1 of the DPR format redesign,
@@ -599,166 +612,127 @@ export interface EngineerReportMeta {
   // ContainmentMeta exclusion of log_date — S1/2026-08-11 decision,
   // extended here to the same header line).
   formatted_date: string
-  // NEW, Stage 1 plumbing (§5) — project_manager.ts's own resolveProjectManagerName.
-  // null when the project has no role='pm' member. Not yet rendered
-  // anywhere (Stage C/D's job) — populated on Facts and unused by design.
+  // project_manager.ts's own resolveProjectManagerName. null when the
+  // project has no role='pm' member -- render.ts OMITS the "Project
+  // Manager:" line entirely in that case (same "don't show data that
+  // doesn't exist" principle as every other omitted-when-empty field in
+  // this format), rather than printing a placeholder like "Not assigned".
+  // RENDERED as of Stage 3 (2026-09-11) -- Stage 1 only read and stored
+  // this value.
   project_manager_name: string | null
 }
 
-// The BODY ONLY — four pair lines + MISSING + NEEDS ATTENTION + NOT ASKED
-// YET. Deliberately excludes the header and check-in status lines (S1: the
-// containment corpus is built from exactly this string, and a header date
-// like "Thu 13 Aug" must never enter it — same reasoning the 2026-08-11
-// ContainmentMeta decision already established for the old design, applied
-// here to a different corpus). Pure — no model involvement anywhere in
-// this function (Rule 2: everything except the verdict is code-owned).
+// Pushes a section (header + its already-composed lines) onto `lines`,
+// with a blank-line separator before it UNLESS it's the first thing in
+// the body -- and is a complete no-op when `sectionLines` is empty. This
+// is the single mechanism behind "empty sections omitted entirely"
+// (decision 7): every section below is built as a plain string[] first,
+// and only reaches the page if it actually has something in it.
+function pushSection(lines: string[], header: string, sectionLines: string[]): void {
+  if (sectionLines.length === 0) return
+  if (lines.length > 0) lines.push('')
+  lines.push(header)
+  lines.push(...sectionLines)
+}
+
+// STAGE 3 REWRITE (2026-09-11, docs/plans/dpr-format-redesign.md) -- the
+// BODY ONLY: WORK, RESOURCE, MACHINE, HINDRANCE, DEPENDENCY. Excludes the
+// header, check-in line, and SUMMARY/verdict (S1: the containment corpus
+// is built from exactly this string, and nothing that isn't a Fact may
+// enter it -- unchanged reasoning from the pre-Stage-3 design, now
+// applied to a differently-shaped body). Pure — no model involvement
+// anywhere in this function (Rule 2: everything except the verdict is
+// code-owned).
+//
+// REPLACES the old four-pair-line body (Work/Manpower/Equipment lines +
+// MISSING + NEEDS ATTENTION + NOT ASKED YET) entirely. MISSING is
+// replaced by the inline "no input received" marker (decision 4);
+// NEEDS ATTENTION's framing has no surviving equivalent once idle hours
+// (its only occupant) moves into RESOURCE -- confirmed intentional,
+// docs/plans/dpr-format-redesign.md §3.
 export function renderEngineerBody(facts: EngineerDprFacts): string {
   const lines: string[] = []
 
-  // §1 Work
-  const doneParts: string[] = [fmtText(facts.work.done_text)]
-  if (facts.work.done_quantity.status === 'reported') {
-    doneParts.push(`${facts.work.done_quantity.value}${facts.work.unit ? ` ${facts.work.unit}` : ''}`)
-  }
-  const done = facts.work.done_text.status === 'reported' || facts.work.done_quantity.status === 'reported' ? doneParts.join(' — ') : 'not reported'
-  lines.push(`Work — planned: ${fmtText(facts.work.planned)} | done: ${done}`)
+  // A half's fields render (with the inline marker for a genuinely
+  // missing individual field) only when that half itself produced real
+  // data. not_received AND not_applicable both suppress -- the check-in
+  // line already states either condition once (decision 4's own
+  // reasoning: "the check-in line already says so once" applies equally
+  // to a holiday/joined-late/left-early half, not only a literal
+  // not_received one).
+  const morningAnswered = facts.morning_status.status === 'complete' || facts.morning_status.status === 'partial'
+  const eveningAnswered = facts.evening_status.status === 'complete' || facts.evening_status.status === 'partial'
 
-  // §3 Manpower — CHANGED 2026-09-05 (the "113 fabrication" incident,
-  // schema.ts's own EngineerManpowerFacts comment has the full story).
-  // Both fields are CapturedText now, rendered via fmtText (quoted
-  // verbatim, or "not reported") — never a computed number. A prior
-  // version of this line rendered `on_site` as a parser-summed total
-  // (evening_manpower.total) that a real engineer never stated as one
-  // figure; that number reached an owner. `working`/idle-as-headcount
-  // reasoning from the 2026-09-05 PR C2 pass (design-decisions-beta-
-  // feedback.md's "035 asks for fewer things, so the DPR reports fewer
-  // things") still holds unchanged — idle time is reported honestly, in
-  // its own place, as hours (see idle_hours_by_trade below).
-  //
-  // TWO LINES, NOT ONE (Aravind's correction, 2026-09-05, same day as the
-  // fix above): a single "planned: X | reported: Y" line was designed for
-  // two NUMBERS, where side-by-side invites a direct comparison. With both
-  // sides now raw prose, that comparison doesn't hold — an owner reading
-  // two long free-text strings side by side has to parse both and do the
-  // arithmetic the parser itself couldn't safely do. Side by side is worse
-  // than either alone: it implies a comparability the two strings don't
-  // have. Two labeled lines make no such implication.
-  lines.push(`Manpower planned — ${fmtText(facts.manpower.planned)}`)
-  lines.push(`Manpower reported — ${fmtText(facts.manpower.on_site)}`)
-
-  // §4 Equipment — one line per item; an empty list still gets one line,
-  // rather than a header with nothing under it, to keep the body's fixed
-  // four-category shape regardless of what was reported.
-  if (facts.equipment.items.length === 0) {
-    lines.push('Equipment — planned: not reported | used: not reported')
+  // WORK -- planned_corrected/done_text_corrected (spelling-corrected,
+  // Stage 2/3), never the raw planned/done_text (schema.ts's own comment
+  // on EngineerWorkFacts explains why both still exist).
+  const work: string[] = []
+  if (morningAnswered) {
+    work.push(`Morning plan: ${fmtInline(facts.work.planned_corrected)}`)
   }
-  // §33(c) (design-decisions-beta-feedback.md, 2026-08-25, built
-  // 2026-09-04, production incident): a rate typed from memory in free
-  // text is not factual and must not appear in an owner-facing report as
-  // if it were. daily_hire_cost stays on EngineerDprFacts (§33(e) — not
-  // dropped, for the invoice era) but is never composed into report text.
-  //
-  // implausible: 035's own attention signal (schema.ts's own comment on
-  // EngineerEquipmentItemFacts.implausible), read for the first time in
-  // PR C2. Deliberately NOT a computed idle-hours number — migration 035
-  // dropped available_hours from the question entirely, so an idle figure
-  // would be inferred, not reported, the same fabrication class §33(c)
-  // already closed for hire rates. `(check this)` on the SAME line as the
-  // hours, not a separate NEEDS ATTENTION entry — it qualifies the number
-  // that's already there, it isn't a new fact.
-  for (const item of facts.equipment.items) {
-    const used = item.actual_hours.status === 'reported' ? `${item.actual_hours.value} hours` : 'not reported'
-    const flag = item.implausible === true ? ' (check this)' : ''
-    lines.push(`Equipment — planned: ${item.type} | used: ${used}${flag}`)
-  }
-
-  // §5 Dependency — RELABELED 2026-09-11 (migration 040, Stage 2). Was
-  // "Hindrance —", reading evening_schedule_miss_reason (035's reuse of the
-  // old schedule-miss column, itself already corrected once — PR C1,
-  // 2026-09-05, full history in assemble.ts's own comment on this field).
-  // Migration 040 replaces the underlying question with a forward-looking
-  // "anything extra needed tomorrow?" — the label changes to match. This
-  // is a DIFFERENT SECTION from the real Hindrance section below: this one
-  // is what the engineer said he needs; that one is what public.hindrances
-  // actually recorded as a disruption. Conflating the two labels is
-  // exactly the false-framing defect PR C1 already fixed once for this
-  // same line — never repeat it.
-  if (facts.tomorrowNeeds.note.status === 'reported') {
-    lines.push(`Dependency — ${facts.tomorrowNeeds.note.value}`)
-  }
-
-  // Hindrance — NEW 2026-09-11 (migration 040, Stage 2). The REAL
-  // hindrance section, sourced from public.hindrances (migration 038's
-  // ad-hoc menu flow), not from any daily_logs column — see
-  // EngineerHindranceRecord's own comment (schema.ts) for the join and why
-  // dpr_included is not the mechanism. One line per matching row,
-  // chronological by created_at (the order fetchEngineerHindrances already
-  // returns them in — not re-sorted here). Content is description only —
-  // hindrance_type/impact_level/area_affected are never written by the
-  // flow (schema.ts's own comment), so rendering them would print nulls.
-  // Omitted entirely when there is nothing to report, same convention as
-  // every other empty section in this body (equipment's own "no equipment
-  // reported" line is the one exception, and it exists precisely because
-  // that section's absence would otherwise look like a rendering gap, not
-  // a real fact — a hindrance section has no equivalent ambiguity, so a
-  // clean day simply omits it).
-  if (facts.hindrances.length > 0) {
-    lines.push('')
-    lines.push('Hindrance')
-    for (const h of facts.hindrances) {
-      lines.push(h.description)
+  if (eveningAnswered) {
+    const doneParts: string[] = []
+    if (facts.work.done_text_corrected.status === 'reported' && facts.work.done_text_corrected.value !== null) {
+      doneParts.push(`"${facts.work.done_text_corrected.value}"`)
     }
+    if (facts.work.done_quantity.status === 'reported') {
+      doneParts.push(`${facts.work.done_quantity.value}${facts.work.unit ? ` ${facts.work.unit}` : ''}`)
+    }
+    work.push(`Work completed: ${doneParts.length > 0 ? doneParts.join(' — ') : 'no input received'}`)
+  }
+  pushSection(lines, 'WORK', work)
+
+  // RESOURCE -- Labour reported (morning/evening) follow the inline-
+  // marker convention (a genuinely missing answer within an answered
+  // half); Idle hours follows the SEPARATE omit-when-empty convention
+  // (decision 4's explicit carve-out -- no idle time reported is a real,
+  // common, non-missing answer, not a gap).
+  const resource: string[] = []
+  if (morningAnswered) resource.push(`Labour reported — morning: ${fmtInline(facts.manpower.planned)}`)
+  if (eveningAnswered) resource.push(`Labour reported — evening: ${fmtInline(facts.manpower.on_site)}`)
+  if (facts.idle_hours_by_trade.length > 0) {
+    const idleText = facts.idle_hours_by_trade.map((t) => `${tradeLabel(t.trade)} idle ${t.idle_hours} hours`).join(', ')
+    resource.push(`Idle hours: ${idleText}.`)
+  }
+  pushSection(lines, 'RESOURCE', resource)
+
+  // MACHINE -- raw text, verbatim, no parsing (decision 6). The
+  // `implausible` flag is DROPPED, deliberately, not stubbed: it only had
+  // meaning against a structured actual_hours value per machine, and this
+  // section no longer has one. No TODO here -- when equipment parsing
+  // returns (deferred, FAST-FOLLOW territory per CLAUDE.md §2), the
+  // implausibility check returns with it; tracked with that future work,
+  // not as dead code in this render path. Same omit-when-empty convention
+  // as Idle hours, not the inline marker (decision 4).
+  const machine: string[] = []
+  if (facts.equipment.machines_reported.status === 'reported' && facts.equipment.machines_reported.value !== null) {
+    machine.push(`Machines reported: "${facts.equipment.machines_reported.value}"`)
+  }
+  if (facts.equipment.run_hours.status === 'reported' && facts.equipment.run_hours.value !== null) {
+    machine.push(`Run hours: "${facts.equipment.run_hours.value}"`)
+  }
+  pushSection(lines, 'MACHINE', machine)
+
+  // HINDRANCE -- live, unchanged mechanism (public.hindrances, migration
+  // 038's ad-hoc menu flow; EngineerHindranceRecord's own comment,
+  // schema.ts, has the full join history). Header restyled to match this
+  // section's own new bare-caps convention -- content (description-only,
+  // chronological) is untouched.
+  if (facts.hindrances.length > 0) {
+    pushSection(
+      lines,
+      'HINDRANCE',
+      facts.hindrances.map((h) => h.description),
+    )
   }
 
-  // MISSING — what we failed to collect (Rule 5, "our problem"). Driven by
-  // check-in status: a not_received half is the primary case; a partial
-  // evening additionally names which specific facts came back empty.
-  const missing: string[] = []
-  if (facts.morning_status.status === 'not_received') missing.push('Morning check-in not received.')
-  if (facts.evening_status.status === 'not_received') missing.push('Evening check-in not received.')
-  if (facts.evening_status.status === 'partial') {
-    if (facts.work.done_text.status === 'not_captured' && facts.work.done_quantity.status === 'not_captured') missing.push('Work done: not reported.')
-    if (facts.manpower.on_site.status === 'not_captured') missing.push('Manpower on site: not reported.')
+  // DEPENDENCY -- live, unchanged mechanism (evening_tomorrow_needs,
+  // migration 040). Was rendered inline as "Dependency — <value>" on one
+  // line; now a bare "DEPENDENCY" header with the value on its own line
+  // underneath, matching every other section's shape.
+  if (facts.tomorrowNeeds.note.status === 'reported' && facts.tomorrowNeeds.note.value !== null) {
+    pushSection(lines, 'DEPENDENCY', [facts.tomorrowNeeds.note.value])
   }
-
-  // NEEDS ATTENTION — what went wrong on site (Rule 5, "the customer's
-  // problem"). Code-composed sentences splicing in raw engineer text
-  // verbatim (Rule 2b — not a paraphrase, a direct substring), never a
-  // model field. Both the Dependency line and the real Hindrance section
-  // render above, not folded in here; equipment's own attention signal
-  // (implausible) renders inline on its Equipment line above, not
-  // duplicated here.
-  //
-  // Idle hours by trade — RECONNECTED 2026-09-05 (PR C2). Read for the
-  // first time since migration 035 (2026-08-31) added evening_idle_hours;
-  // nothing consumed this column before (DPR column audit, docs/reviews/
-  // dpr-column-audit-2026-09-05.md, bucket 3b). REPORTED, not computed —
-  // the engineer answered hours directly per trade; no arithmetic here,
-  // unlike the pre-035 workers-idle line this replaces.
-  const needsAttention: string[] = []
-  for (const trade of facts.idle_hours_by_trade) {
-    needsAttention.push(`${tradeLabel(trade.trade)} idle ${trade.idle_hours} hours.`)
-  }
-
-  if (missing.length > 0) {
-    lines.push('')
-    lines.push('MISSING')
-    lines.push(...missing)
-  }
-  if (needsAttention.length > 0) {
-    lines.push('')
-    lines.push('NEEDS ATTENTION')
-    lines.push(...needsAttention)
-  }
-
-  // "NOT ASKED YET / Tomorrow's plan." REMOVED 2026-09-04 (Aravind,
-  // production incident): this was internal build-status scaffolding
-  // ("nothing captures tomorrow's plan yet, so there's nothing this
-  // section could ever say other than this one line") that shipped
-  // unconditionally into two real customer-facing DPR emails. Removed
-  // outright, not replaced -- when Q6 (tomorrow's plan capture) ships,
-  // this section is added back with real content, not restored as a
-  // placeholder.
 
   return lines.join('\n')
 }
@@ -784,6 +758,16 @@ export const CONTAINMENT_FAILURE_PLACEHOLDER = 'Summary unavailable for this rep
 // out already-decided pieces, matching Rule 2's "the model's entire output
 // is the verdict sentence" as literally as possible: nothing here can turn
 // into model output by accident.
+//
+// STAGE 3 REWRITE (2026-09-11, docs/plans/dpr-format-redesign.md) -- new
+// header shape ("Good evening." / title / Site Engineer / Project
+// Manager / Check-in / "The sections below are as reported from site.")
+// and SUMMARY (the verdict) moves from directly under the check-in line
+// to its own header at the very END, after the body -- a full reversal of
+// the old design's "verdict at top" ordering. The "Project Manager:" line
+// is omitted entirely when project_manager_name is null (no PM member for
+// this project) -- same "don't show data that doesn't exist" principle
+// every other omitted field in this format follows.
 export function renderEngineerReport(
   facts: EngineerDprFacts,
   verdict: string,
@@ -795,15 +779,24 @@ export function renderEngineerReport(
   const body = renderEngineerBody(facts)
 
   const lines: string[] = []
-  lines.push(`DAILY PROGRESS — ${meta.project_name} — ${meta.formatted_date}`)
-  lines.push(`Site engineer: ${meta.engineer_name}`)
+  lines.push('Good evening.')
+  lines.push(`Daily Progress Report — ${meta.project_name}, ${meta.formatted_date}`)
   lines.push('')
-  lines.push(fmtCheckInLine('Morning', morningStatus))
-  lines.push(fmtCheckInLine('Evening', eveningStatus))
+  lines.push(`Site Engineer: ${meta.engineer_name}`)
+  if (meta.project_manager_name !== null) {
+    lines.push(`Project Manager: ${meta.project_manager_name}`)
+  }
   lines.push('')
+  lines.push(fmtCombinedCheckInLine(morningStatus, eveningStatus))
+  lines.push('')
+  lines.push('The sections below are as reported from site.')
+  if (body.length > 0) {
+    lines.push('')
+    lines.push(body)
+  }
+  lines.push('')
+  lines.push('SUMMARY (auto-generated)')
   lines.push(verdict)
-  lines.push('')
-  lines.push(body)
 
   return {
     content: lines.join('\n'),

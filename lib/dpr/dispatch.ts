@@ -8,6 +8,7 @@ import { fetchEngineerNarrativeContext } from './narrative-context'
 import { generateEngineerVerdict } from './generate'
 import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from './render'
 import { resolveProjectManagerName } from './project-manager'
+import { correctEngineerWorkText } from './spelling-correction'
 import type { CheckInStatus } from './schema'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
@@ -117,9 +118,12 @@ export async function handleDprGenerateJob(
 
   const totalStart = Date.now()
   try {
-    const { facts, completeness } = await timed('assembleEngineerDprFacts', () =>
+    const assembled = await timed('assembleEngineerDprFacts', () =>
       assembleEngineerDprFacts(client, payload.project_id, payload.engineer_id, payload.log_date),
     )
+    const { completeness } = assembled
+    // Reassigned below once spelling correction resolves -- let, not const.
+    let facts = assembled.facts
     const narrative = await timed('fetchEngineerNarrativeContext', () =>
       fetchEngineerNarrativeContext(client, payload.project_id, payload.engineer_id, payload.log_date),
     )
@@ -129,11 +133,28 @@ export async function handleDprGenerateJob(
     )
 
     // Stage 1 plumbing (2026-09-11, docs/plans/dpr-format-redesign.md §5)
-    // -- read only, not yet rendered anywhere (renderEngineerReport does
-    // not consume meta.project_manager_name yet).
+    // -- now rendered (Stage 3): the WORK section's own "Project Manager:"
+    // header line.
     const projectManagerName = await timed('resolveProjectManagerName', () =>
       resolveProjectManagerName(client, payload.project_id),
     )
+
+    // Stage 3 (2026-09-11, docs/plans/dpr-format-redesign.md §1) -- spelling
+    // correction for WORK's two free-text fields. Runs BEFORE the verdict
+    // gate below and BEFORE generateEngineerVerdict, so both the render
+    // path and the model see the same (corrected, or raw-fallback) text --
+    // never two different versions of what the engineer said. Facts is
+    // rebuilt with a new `work` object rather than mutated in place,
+    // matching this file's existing preference for constructing new
+    // objects over mutation. correctEngineerWorkText itself no-ops (no
+    // model call) when neither field has real text.
+    const workCorrection = await timed('correctEngineerWorkText', () =>
+      correctEngineerWorkText(anthropic, facts.work.planned, facts.work.done_text),
+    )
+    facts = {
+      ...facts,
+      work: { ...facts.work, planned_corrected: workCorrection.planned, done_text_corrected: workCorrection.done_text },
+    }
 
     // GATE, corrected (round-4 B1): the verdict sentence summarises what was
     // DONE — that only ever comes from the EVENING half (the morning half

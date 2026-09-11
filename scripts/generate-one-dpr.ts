@@ -31,6 +31,7 @@ import { fetchEngineerNarrativeContext } from '../lib/dpr/narrative-context'
 import { generateEngineerVerdict } from '../lib/dpr/generate'
 import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from '../lib/dpr/render'
 import { resolveProjectManagerName } from '../lib/dpr/project-manager'
+import { correctEngineerWorkText } from '../lib/dpr/spelling-correction'
 
 async function main() {
   const [projectId, engineerId, logDate] = process.argv.slice(2)
@@ -49,8 +50,14 @@ async function main() {
   if (engineerError) throw engineerError
 
   console.log(`Assembling Facts for project ${projectId} (${project.name}), engineer ${engineerId}, ${logDate}...`)
-  const { facts, completeness } = await assembleEngineerDprFacts(client, projectId, engineerId, logDate)
+  const assembled = await assembleEngineerDprFacts(client, projectId, engineerId, logDate)
+  const { completeness } = assembled
+  let facts = assembled.facts
   const narrative = await fetchEngineerNarrativeContext(client, projectId, engineerId, logDate)
+
+  console.log('Correcting WORK spelling...')
+  const workCorrection = await correctEngineerWorkText(anthropic, facts.work.planned, facts.work.done_text)
+  facts = { ...facts, work: { ...facts.work, planned_corrected: workCorrection.planned, done_text_corrected: workCorrection.done_text } }
 
   console.log('Calling Claude...')
   const result = await generateEngineerVerdict(anthropic, facts, narrative, { project_name: project.name, log_date: logDate })

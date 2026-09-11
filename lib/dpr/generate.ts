@@ -378,8 +378,14 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
   const lines: string[] = []
   lines.push(`Project: ${meta.project_name}, ${meta.log_date}`)
   lines.push('')
-  lines.push(`Work — planned: ${fmtFactText(facts.work.planned)}`)
-  lines.push(`Work — done: ${fmtFactText(facts.work.done_text)}${facts.work.done_quantity.status === 'reported' ? `, ${facts.work.done_quantity.value} ${facts.work.unit}` : ''}`)
+  // STAGE 3 (2026-09-11, docs/plans/dpr-format-redesign.md §1) -- reads
+  // planned_corrected/done_text_corrected, not the raw planned/done_text.
+  // The verdict must summarise the SAME text the report actually shows an
+  // owner, not a second, uncorrected version of it. Digit-identical to the
+  // raw fields by the spelling guard's own rule 2 (a digit can never
+  // change), so this has no containment implication of its own.
+  lines.push(`Work — planned: ${fmtFactText(facts.work.planned_corrected)}`)
+  lines.push(`Work — done: ${fmtFactText(facts.work.done_text_corrected)}${facts.work.done_quantity.status === 'reported' ? `, ${facts.work.done_quantity.value} ${facts.work.unit}` : ''}`)
   // RENAMED 2026-09-11 (migration 040, Stage 2) -- was `Hindrance:`, reading
   // facts.hindrance.note. Same field, same rename as schema.ts/render.ts's
   // own moves -- see EngineerTomorrowNeedsFacts's own comment for the full

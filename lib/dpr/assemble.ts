@@ -557,7 +557,7 @@ export function mergeEngineerDprFacts(
     return {
       morning_status: checkInStatus.morning,
       evening_status: checkInStatus.evening,
-      work: { planned: notCapturedText, done_text: notCapturedText, done_quantity: notCapturedNumber, unit: '' },
+      work: { planned: notCapturedText, done_text: notCapturedText, done_quantity: notCapturedNumber, unit: '', planned_corrected: notCapturedText, done_text_corrected: notCapturedText },
       tomorrowNeeds: { note: notCapturedText },
       manpower: { planned: notCapturedText, on_site: notCapturedText },
       idle_hours_by_trade: [],
@@ -577,11 +577,19 @@ export function mergeEngineerDprFacts(
   // named, not solved, here (see the plan document's own open question on
   // this pairing for a future multi-activity day).
   const firstQuantity = row.evening_output_quantities?.items[0] ?? null
+  const workPlanned = wrapText(row.morning_plan)
+  const workDoneText = wrapText(row.evening_output)
+  // planned_corrected/done_text_corrected default to a COPY of the raw
+  // value (schema.ts's own comment on EngineerWorkFacts) -- this function
+  // has no model access, so it cannot correct anything itself.
+  // dispatch.ts overwrites both after calling correctEngineerWorkText.
   const work: EngineerDprFacts['work'] = {
-    planned: wrapText(row.morning_plan),
-    done_text: wrapText(row.evening_output),
+    planned: workPlanned,
+    done_text: workDoneText,
     done_quantity: firstQuantity ? wrapNumber(firstQuantity.quantity) : notCapturedNumber,
     unit: firstQuantity?.unit ?? '',
+    planned_corrected: workPlanned,
+    done_text_corrected: workDoneText,
   }
 
   // §5 Tomorrow's needs — REPLACED AGAIN 2026-09-11 (migration 040, Stage

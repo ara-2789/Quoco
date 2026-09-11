@@ -208,6 +208,8 @@ function baseEngineerFacts(): EngineerDprFacts {
       done_text: { status: 'not_captured', value: null },
       done_quantity: { status: 'not_captured', value: null },
       unit: '',
+      planned_corrected: { status: 'not_captured', value: null },
+      done_text_corrected: { status: 'not_captured', value: null },
     },
     tomorrowNeeds: { note: { status: 'not_captured', value: null } },
     manpower: {
@@ -223,10 +225,16 @@ function baseEngineerFacts(): EngineerDprFacts {
 describe('buildEngineerFactsCorpus', () => {
   const meta = { project_name: 'Speed Mechatronics' }
 
-  it('includes digits embedded in verbatim-quoted work text (the 2026-08-14 decision: quoted free text is deliberately citable)', () => {
+  it('includes digits embedded in verbatim-quoted work text (the 2026-08-14 decision: quoted free text is deliberately citable) -- reads the CORRECTED field (Stage 3)', () => {
     const facts = baseEngineerFacts()
-    facts.work.planned = { status: 'reported', value: 'Continue Tower 2, 3rd floor slab' }
-    facts.work.done_text = { status: 'reported', value: 'Poured M25 concrete' }
+    // Raw left deliberately different (uncorrected) to prove the corpus is
+    // built from planned_corrected/done_text_corrected, not the raw
+    // planned/done_text -- see this file's own Stage 3 comment on
+    // buildEngineerFactsCorpus.
+    facts.work.planned = { status: 'reported', value: 'raw text, ignored by the corpus' }
+    facts.work.done_text = { status: 'reported', value: 'raw text, ignored by the corpus' }
+    facts.work.planned_corrected = { status: 'reported', value: 'Continue Tower 2, 3rd floor slab' }
+    facts.work.done_text_corrected = { status: 'reported', value: 'Poured M25 concrete' }
     const corpus = buildEngineerFactsCorpus(facts, meta)
     expect(corpus.has(2)).toBe(true) // "Tower 2" / "3rd"
     expect(corpus.has(3)).toBe(true) // "3rd"

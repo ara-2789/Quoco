@@ -244,11 +244,18 @@ export function buildEngineerFactsCorpus(facts: EngineerDprFacts, meta: { projec
 
   for (const token of extractDigitTokens(meta.project_name)) corpus.add(token)
 
-  if (facts.work.planned.status === 'reported' && facts.work.planned.value !== null) {
-    for (const token of extractDigitTokens(facts.work.planned.value)) corpus.add(token)
+  // STAGE 3 (2026-09-11, docs/plans/dpr-format-redesign.md §1) -- reads
+  // planned_corrected/done_text_corrected, not the raw planned/done_text.
+  // These are provably digit-identical to the raw fields (the spelling
+  // guard's own rule 2 forbids a digit token from ever changing), so this
+  // is not a behavior change today -- but the corpus should track what is
+  // actually RENDERED and citable, not what was originally captured, as
+  // defense in depth if that guard invariant is ever weakened later.
+  if (facts.work.planned_corrected.status === 'reported' && facts.work.planned_corrected.value !== null) {
+    for (const token of extractDigitTokens(facts.work.planned_corrected.value)) corpus.add(token)
   }
-  if (facts.work.done_text.status === 'reported' && facts.work.done_text.value !== null) {
-    for (const token of extractDigitTokens(facts.work.done_text.value)) corpus.add(token)
+  if (facts.work.done_text_corrected.status === 'reported' && facts.work.done_text_corrected.value !== null) {
+    for (const token of extractDigitTokens(facts.work.done_text_corrected.value)) corpus.add(token)
   }
   if (facts.work.done_quantity.status === 'reported' && facts.work.done_quantity.value !== null) {
     corpus.add(facts.work.done_quantity.value)

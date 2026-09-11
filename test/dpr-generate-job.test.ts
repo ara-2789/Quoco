@@ -31,14 +31,28 @@ function mockAnthropicClient(verdicts: string[]): Anthropic {
   } as unknown as Anthropic
 }
 
-// B1 (round 4) — proves a code-templated day makes ZERO model calls, not
-// by asserting a call counter, but by making a call fail the test outright
-// if it ever happens at all.
-function mockAnthropicClientThatMustNotBeCalled(): Anthropic {
+// Stage 3 (2026-09-11, docs/plans/dpr-format-redesign.md) — B1's own
+// "ZERO Anthropic calls" premise no longer holds: correctEngineerWorkText
+// (spelling correction) now legitimately calls the model whenever WORK has
+// real text, INDEPENDENT of the eveningNeedsModel verdict gate B1 actually
+// tests. This mock lets a spelling-correction-shaped call through (a
+// distinct output_config schema, `planned_corrected`/`done_text_corrected`
+// vs. `verdict`) but still fails the test outright if a VERDICT-shaped
+// call is ever made -- preserving B1's real intent (the verdict gate
+// skips the model) without asserting a premise Stage 3 made untrue.
+function mockAnthropicClientVerdictMustNotBeCalled(): Anthropic {
   return {
     messages: {
-      create: async () => {
-        throw new Error('Anthropic client called when it must not be — this day should be fully code-templated')
+      create: async (params: { output_config?: { format?: { schema?: { properties?: Record<string, unknown> } } } }) => {
+        const isVerdictCall = !!params?.output_config?.format?.schema?.properties?.verdict
+        if (isVerdictCall) {
+          throw new Error('Anthropic client called for VERDICT generation when it must not be — this day should be fully code-templated')
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ planned_corrected: 'Excavation of footing', done_text_corrected: '(not provided)' }) }],
+          usage: { input_tokens: 40, output_tokens: 20 },
+          stop_reason: 'end_turn',
+        }
       },
     },
   } as unknown as Anthropic
@@ -268,14 +282,15 @@ describe('handleDprGenerateJob', () => {
         .single()
 
       expect(dpr?.generation_status).toBe('idle')
-      expect(dpr?.content).toContain('Morning check-in: not received')
-      expect(dpr?.content).toContain('Evening check-in: not received')
+      // Stage 3 (2026-09-11) -- the combined check-in line, not the old
+      // two-line "Morning check-in: X" / "Evening check-in: X" format.
+      expect(dpr?.content).toContain('Check-in: Morning not received · Evening not received')
     } finally {
       await cleanupProject(projectId)
     }
   })
 
-  it('B1 — morning-only day (morning real, evening not received) is fully code-templated: ZERO Anthropic calls, verdict is the spec\'s exact sentence, verdict_status: code_templated', async () => {
+  it('B1 — morning-only day (morning real, evening not received) is fully code-templated for the VERDICT: ZERO verdict-generation calls (spelling correction may still call the model), verdict is the spec\'s exact sentence, verdict_status: code_templated', async () => {
     const db = testClient()
     const projectId = await makeProject('morning-only')
     const engineerId = testEngineerId()
@@ -283,9 +298,12 @@ describe('handleDprGenerateJob', () => {
       await addToProject(projectId, engineerId)
       // Morning real, evening genuinely absent — the ONLY day shape prod
       // has generated so far, since the evening flow cannot yet be
-      // triggered. mockAnthropicClientThatMustNotBeCalled() makes this
-      // test fail outright if the model is ever invoked — that failure IS
-      // the proof of zero calls, not a counted assertion.
+      // triggered. mockAnthropicClientVerdictMustNotBeCalled() lets a
+      // spelling-correction call through (WORK's morning plan is real
+      // text, correctEngineerWorkText runs regardless of the verdict
+      // gate) but fails the test outright if the VERDICT call ever
+      // happens — that failure IS the proof the gate held, not a counted
+      // assertion.
       await db.from('daily_logs').insert({
         project_id: projectId,
         tenant_id: TEST_TENANT_ID,
@@ -298,7 +316,7 @@ describe('handleDprGenerateJob', () => {
       await handleDprGenerateJob(
         { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
         FAKE_JOB_ID,
-        { supabaseClient: db, anthropicClient: mockAnthropicClientThatMustNotBeCalled() },
+        { supabaseClient: db, anthropicClient: mockAnthropicClientVerdictMustNotBeCalled() },
       )
 
       const { data: dpr } = await db

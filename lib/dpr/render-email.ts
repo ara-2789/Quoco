@@ -63,9 +63,18 @@ const CHECK_IN_LABEL: Record<CheckInStatus, string> = {
   not_applicable: 'not applicable',
 }
 
-function checkInLine(label: 'Morning' | 'Evening', s: RenderedCheckInStatus): string {
-  const base = `${label} check-in: ${CHECK_IN_LABEL[s.status]}`
+// STAGE 3 (2026-09-11, docs/plans/dpr-format-redesign.md) -- ONE combined
+// line ("Check-in: Morning X · Evening Y"), same reasoning and shape as
+// render.ts's own fmtHalf/fmtCombinedCheckInLine. Kept as a separate copy
+// here (not imported from render.ts) since neither is exported there --
+// same pre-existing pattern this file already used for CHECK_IN_LABEL.
+function fmtHalf(label: 'Morning' | 'Evening', s: RenderedCheckInStatus): string {
+  const base = `${label} ${CHECK_IN_LABEL[s.status]}`
   return s.status === 'not_applicable' && s.reason ? `${base} — ${s.reason}` : base
+}
+
+function fmtCombinedCheckInLine(morning: RenderedCheckInStatus, evening: RenderedCheckInStatus): string {
+  return `Check-in: ${fmtHalf('Morning', morning)} · ${fmtHalf('Evening', evening)}`
 }
 
 function escapeHtml(s: string): string {
@@ -94,6 +103,12 @@ export interface RenderedEmailReport {
  * HTML) of the SAME content — no network call, no DB read, no model call.
  * Pure function of its arguments.
  */
+// STAGE 3 REWRITE (2026-09-11, docs/plans/dpr-format-redesign.md) -- same
+// header shape and SUMMARY-at-the-end ordering as render.ts's own
+// renderEngineerReport (see that function's own header comment for the
+// full reasoning); subject line is unchanged, an email subject was never
+// part of the body-shaped target format. "Project Manager:" omitted when
+// null, same as the WhatsApp surface.
 export function renderEmailReport(
   facts: EngineerDprFacts,
   verdict: string,
@@ -104,25 +119,30 @@ export function renderEmailReport(
   const body = renderEngineerBody(facts)
   const subject = `Daily Progress — ${meta.project_name} — ${meta.formatted_date}`
 
-  const textLines: string[] = []
-  textLines.push(`Daily Progress — ${meta.project_name} — ${meta.formatted_date}`)
-  textLines.push(`Site engineer: ${meta.engineer_name}`)
-  textLines.push('')
-  textLines.push(checkInLine('Morning', morningStatus))
-  textLines.push(checkInLine('Evening', eveningStatus))
-  textLines.push('')
-  textLines.push(verdict)
-  textLines.push('')
-  textLines.push(body)
+  const textLines: string[] = ['Good evening.', `Daily Progress Report — ${meta.project_name}, ${meta.formatted_date}`, '', `Site Engineer: ${meta.engineer_name}`]
+  if (meta.project_manager_name !== null) textLines.push(`Project Manager: ${meta.project_manager_name}`)
+  textLines.push('', fmtCombinedCheckInLine(morningStatus, eveningStatus), '', 'The sections below are as reported from site.')
+  if (body.length > 0) textLines.push('', body)
+  textLines.push('', 'SUMMARY (auto-generated)', verdict)
   const text = textLines.join('\n')
+
+  const htmlMeta = [
+    `<p style="margin-top: 4px; color: #555;">Site Engineer: ${escapeHtml(meta.engineer_name)}</p>`,
+    meta.project_manager_name !== null ? `<p style="margin-top: 0; color: #555;">Project Manager: ${escapeHtml(meta.project_manager_name)}</p>` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   const html = [
     `<div style="font-family: sans-serif; max-width: 640px;">`,
-    `<h2 style="margin-bottom: 0;">${escapeHtml(meta.project_name)}</h2>`,
-    `<p style="margin-top: 4px; color: #555;">${escapeHtml(meta.formatted_date)} — Site engineer: ${escapeHtml(meta.engineer_name)}</p>`,
-    `<p>${escapeHtml(checkInLine('Morning', morningStatus))}<br>${escapeHtml(checkInLine('Evening', eveningStatus))}</p>`,
-    `<p><strong>${escapeHtml(verdict)}</strong></p>`,
+    `<p>Good evening.</p>`,
+    `<h2 style="margin-bottom: 0;">Daily Progress Report — ${escapeHtml(meta.project_name)}, ${escapeHtml(meta.formatted_date)}</h2>`,
+    htmlMeta,
+    `<p>${escapeHtml(fmtCombinedCheckInLine(morningStatus, eveningStatus))}</p>`,
+    `<p style="color: #555;">The sections below are as reported from site.</p>`,
     `<pre style="white-space: pre-wrap; font-family: sans-serif;">${escapeHtml(body)}</pre>`,
+    `<h3 style="margin-bottom: 4px;">SUMMARY (auto-generated)</h3>`,
+    `<p><strong>${escapeHtml(verdict)}</strong></p>`,
     `</div>`,
   ].join('\n')
 
