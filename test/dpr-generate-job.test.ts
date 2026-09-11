@@ -340,6 +340,65 @@ describe('handleDprGenerateJob', () => {
     }
   })
 
+  it('STAGE 4 — not-on-site day (attendance: absent, evening not received) is fully code-templated for the VERDICT: ZERO verdict-generation calls, verdict is the proposed not-on-site sentence, verdict_status: code_templated', async () => {
+    const db = testClient()
+    const projectId = await makeProject('not-on-site')
+    const engineerId = testEngineerId()
+    try {
+      await addToProject(projectId, engineerId)
+      // Real shape (lib/whatsapp/flows/morning.ts): the morning flow
+      // completes at Q1 when attendance resolves to 'absent' --
+      // morning_submitted_at IS set, but morning_plan/morning_manpower/
+      // morning_equipment are never asked, all stay null. Without the
+      // Stage 4 fix, deriveHalfCompleteness would read this as an
+      // ordinary 'complete' morning and codeTemplatedVerdict would wrongly
+      // fall into its generic "No evening check-in..." branch.
+      await db.from('daily_logs').insert({
+        project_id: projectId,
+        tenant_id: TEST_TENANT_ID,
+        engineer_id: engineerId,
+        log_date: LOG_DATE,
+        morning_submitted_at: '2026-05-02T04:00:00Z',
+        attendance: 'absent',
+        is_holiday: false,
+      })
+
+      await handleDprGenerateJob(
+        { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
+        FAKE_JOB_ID,
+        { supabaseClient: db, anthropicClient: mockAnthropicClientVerdictMustNotBeCalled() },
+      )
+
+      const { data: dpr } = await db
+        .from('dprs')
+        .select('generation_status, delivery_status, content, structured')
+        .eq('project_id', projectId)
+        .eq('engineer_id', engineerId)
+        .eq('log_date', LOG_DATE)
+        .single()
+
+      expect(dpr?.generation_status).toBe('idle')
+      expect(dpr?.content).toContain('Engineer not on site today.')
+      expect(dpr?.content).toContain('Check-in: Morning not applicable — not on site today · Evening not received')
+      // NOT asserting WORK is omitted here -- it is NOT, today. render.ts's
+      // per-field gating (morningAnswered) reads facts.morning_status
+      // (assembleEngineerDprFacts's own completeness, deriveHalfCompleteness
+      // -- 'complete', unaware of attendance), not resolveCheckInStatus's
+      // richer not_applicable/kind classification this test's fix adds --
+      // two independent signals, only one of which this Stage 4 change
+      // threads through. So WORK still shows "Morning plan: no input
+      // received" / RESOURCE shows "Labour reported — morning: no input
+      // received" here -- a real, separate finding, reported to Aravind,
+      // not fixed in this narrower round (scoped to the SUMMARY/verdict
+      // gate only, per the instruction that added this test).
+      const structured = dpr?.structured as { verdict?: string; verdict_status?: string } | null
+      expect(structured?.verdict).toBe('Engineer not on site today.')
+      expect(structured?.verdict_status).toBe('code_templated')
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
   it('S1 — malformed model response (unparseable JSON) on both attempts degrades to the placeholder exactly like a containment failure; report ships, job succeeds', async () => {
     const db = testClient()
     const projectId = await makeProject('malformed-response')

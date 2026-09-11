@@ -261,6 +261,17 @@ function codeTemplatedVerdict(morning: CheckInStatusResult['morning'], evening: 
   if (morning.kind === 'holiday' || evening.kind === 'holiday') {
     return 'Site closed today.'
   }
+  // Not-on-site (Stage 4, 2026-09-11, docs/plans/dpr-format-redesign.md
+  // §9). Checked structurally, same discipline as the holiday branch
+  // above — never a substring match on `reason`. Only reached when
+  // eveningNeedsModel is false (this function's own caller-gate), i.e.
+  // evening has nothing real either — "no real reported content," exactly
+  // the condition Aravind's instruction names. PROPOSED TEXT, not yet
+  // confirmed copy — flagged for approval in the same review round that
+  // added this branch, not invented-and-shipped silently.
+  if (morning.kind === 'not_on_site') {
+    return 'Engineer not on site today.'
+  }
   if (morning.status === 'not_applicable' && evening.status === 'not_applicable') {
     return `${morning.reason ?? evening.reason ?? 'Added to this project after today\'s check-in window'} — first report covers the next check-in.`
   }
@@ -289,7 +300,10 @@ export function formatDate(logDate: string): string {
 // Exists so codeTemplatedVerdict (and any future reader) branches on a
 // stable code, not on substring-matching the plain-language `reason` text,
 // which the spec explicitly expects to be edited over time.
-type NotApplicableKind = 'holiday' | 'joined_late' | 'left_early'
+// 'not_on_site' ADDED Stage 4 (2026-09-11, docs/plans/dpr-format-redesign.md
+// §8/§9) — see resolveCheckInStatus's own comment on the attendance='absent'
+// branch for why this exists and what it fixes.
+type NotApplicableKind = 'holiday' | 'joined_late' | 'left_early' | 'not_on_site'
 
 export interface CheckInStatusResult {
   morning: { status: CheckInStatus; reason?: string; kind?: NotApplicableKind }
@@ -373,6 +387,30 @@ export async function resolveCheckInStatus(
     }
 
     return { status: half }
+  }
+
+  // Not-on-site (Stage 4, 2026-09-11, docs/plans/dpr-format-redesign.md
+  // §8). MORNING ONLY — overrides whatever overlayHalf/deriveHalfCompleteness
+  // would otherwise say. Real bug this fixes: the morning flow's own
+  // attendance='absent' path (lib/whatsapp/flows/morning.ts) completes at
+  // Q1, setting morning_submitted_at with morning_plan/morning_manpower/
+  // morning_equipment all still null — deriveHalfCompleteness
+  // (assemble.ts) reads "morning_submitted_at set" alone as 'complete',
+  // with no way to know WHY nothing was captured. Left as 'complete',
+  // codeTemplatedVerdict's own "morning.status === 'complete'" branch
+  // would print "No evening check-in, so we do not know what was done
+  // today" — implying the engineer worked and the OUTCOME is merely
+  // unknown, when nothing was worked on at all. Evening is UNAFFECTED —
+  // independent of morning attendance (MORNING_ABSENT_REPLY's own copy:
+  // "We'll still check in this evening") — still goes through the
+  // ordinary overlay below, so a real evening check-in still reaches the
+  // real verdict model exactly as today.
+  if (attendance === 'absent') {
+    return {
+      morning: { status: 'not_applicable', reason: 'not on site today', kind: 'not_on_site' },
+      evening: overlayHalf(completeness.evening, CHECKIN_CHECKPOINTS.eveningSend),
+      attendance,
+    }
   }
 
   return {

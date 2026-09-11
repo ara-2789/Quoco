@@ -437,11 +437,19 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
 // retrospective: the third time this session a safeguard turned out to
 // live only in code that doesn't run (isHireRateTrusted on the deferred
 // project-level assembler; the buildBodyCorpus comment; now this prompt).
+// STAGE 4 (2026-09-11, docs/plans/dpr-format-redesign.md §9) -- added the
+// idle-hours sentence below. The summary may NAME a reported fact ("2
+// masons idle 2 hours") but must NEVER assess or judge it ("productivity
+// was poor") -- Aravind's own distinction. This is the PROMPT half of a
+// two-layer guard; a denylist backstop is proposed, not yet built, per
+// the same review round (word list + fallback behavior awaiting
+// approval before it ships).
 const ENGINEER_SYSTEM_PROMPT =
   'You write ONE sentence summarising a construction site engineer\'s day, from Facts already computed elsewhere. ' +
   'Every digit you write must be traceable to a number shown in the Facts you were given — never invent, round, or recompute a figure. ' +
   'You may cite a digit ONLY if it appears in a line stated as a Fact above — never a number from a line marked "context only" (dependency, manpower planned, manpower reported, manpower idle reason, or equipment idle reason), even if that number is real elsewhere in this report. ' +
   'Never attribute anything to a named person, crew, or contractor — describe only what was done, where, and how much. ' +
+  'You may state that idle hours were reported (e.g. "2 masons idle 2 hours") — you may NEVER assess, judge, or characterise them (e.g. "productivity was poor", "this is a concern"). State what was reported; do not add what it means. ' +
   'If the Facts are mostly empty, say so plainly in one short sentence rather than padding.'
 
 export interface EngineerVerdictResult {

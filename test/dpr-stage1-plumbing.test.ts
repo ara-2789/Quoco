@@ -87,9 +87,41 @@ describe('resolveCheckInStatus — attendance read (Stage 1)', () => {
     }
   })
 
-  it("returns attendance: 'absent' -- the real not-on-site case (§8) -- without changing morning/evening status shape (Stage A makes no render/status change)", async () => {
+  it("returns attendance: 'absent' -- and, as of Stage 4, classifies morning as not_applicable/kind:'not_on_site', regardless of morning's own completeness value", async () => {
     const db = testClient()
     const projectId = await makeProject('attendance-absent')
+    const engineerId = testEngineerId()
+    try {
+      await addToProject(projectId, engineerId, 'engineer')
+      await db.from('daily_logs').insert({
+        project_id: projectId,
+        tenant_id: TEST_TENANT_ID,
+        engineer_id: engineerId,
+        log_date: LOG_DATE,
+        attendance: 'absent',
+        is_holiday: false,
+      })
+      // Stage 4 (2026-09-11, docs/plans/dpr-format-redesign.md §8/§9):
+      // deliberately pass morning: 'complete' here -- the real shape a
+      // genuinely absent day produces (morning_submitted_at is set,
+      // deriveHalfCompleteness reads that alone as 'complete') -- to prove
+      // the attendance='absent' override ignores morning's own
+      // completeness value entirely and still classifies not_on_site.
+      const result = await resolveCheckInStatus(
+        db,
+        { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
+        { morning: 'complete', evening: 'not_received' },
+      )
+      expect(result.attendance).toBe('absent')
+      expect(result.morning).toEqual({ status: 'not_applicable', reason: 'not on site today', kind: 'not_on_site' })
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('attendance: \'absent\' does NOT affect evening -- a real evening check-in still resolves normally, independent of morning', async () => {
+    const db = testClient()
+    const projectId = await makeProject('attendance-absent-evening-real')
     const engineerId = testEngineerId()
     try {
       await addToProject(projectId, engineerId, 'engineer')
@@ -104,12 +136,10 @@ describe('resolveCheckInStatus — attendance read (Stage 1)', () => {
       const result = await resolveCheckInStatus(
         db,
         { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
-        { morning: 'not_received', evening: 'not_received' },
+        { morning: 'complete', evening: 'complete' },
       )
-      expect(result.attendance).toBe('absent')
-      // Stage A is plumbing only -- attendance='absent' must not yet flip
-      // morning/evening into a new kind. That is Stage C's job.
-      expect(result.morning.kind).not.toBe('not_on_site')
+      expect(result.morning.kind).toBe('not_on_site')
+      expect(result.evening).toEqual({ status: 'complete' })
     } finally {
       await cleanupProject(projectId)
     }
