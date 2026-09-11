@@ -60,10 +60,10 @@ describe('renderEngineerBody — section omission', () => {
     })
     const body = renderEngineerBody(facts)
     // manpower.planned was never set in baseFacts -- morning being
-    // answered surfaces "Labour reported — morning" too, with the marker,
+    // answered surfaces "Morning labour reported" too, with the marker,
     // independent of WORK. This is correct, intentional per-field
     // behavior, not a WORK-only special case.
-    expect(body).toBe('WORK\nMorning plan: "Continue slab work"\n\nRESOURCE\nLabour reported — morning: no input received')
+    expect(body).toBe('WORK\nMorning plan: "Continue slab work"\n\nRESOURCE\nMorning labour reported: no input received')
     expect(body.startsWith('WORK\n')).toBe(true)
   })
 
@@ -100,12 +100,12 @@ describe('renderEngineerBody — section omission', () => {
         'Work completed: "Done A"',
         '',
         'RESOURCE',
-        'Labour reported — morning: "10 masons"',
-        'Labour reported — evening: "9 masons"',
+        'Morning labour reported: "10 masons"',
+        'Evening labour reported: "9 masons"',
         '',
         'MACHINE',
         'Machines reported: "1 JCB"',
-        'Run hours: "JCB ran 5 hours"',
+        'Machine usage: "JCB ran 5 hours"',
         '',
         'HINDRANCE',
         'Cement delivery delayed',
@@ -151,8 +151,8 @@ describe('renderEngineerBody — WORK', () => {
       },
     })
     const body = renderEngineerBody(facts)
-    // Scoped to the WORK line itself -- RESOURCE's own "Labour reported
-    // — evening" label legitimately contains an em dash of its own.
+    // Scoped to the WORK line itself, not a blanket "no em dash anywhere"
+    // check.
     expect(body).toContain('Work completed: "Excavation done"\n')
     expect(body).not.toContain('850')
     expect(body).not.toContain('sq m')
@@ -220,11 +220,18 @@ describe('renderEngineerBody — RESOURCE', () => {
 })
 
 describe('renderEngineerBody — MACHINE', () => {
-  it('renders machines_reported/run_hours as raw text, verbatim, quoted', () => {
+  it('renders machines_reported/run_hours as raw text, verbatim, quoted, under the "Machine usage:" label (renamed from "Run hours:")', () => {
     const facts = baseFacts({ equipment: { items: [], machines_reported: reported('roller, 2 JCBs'), run_hours: reported('JCB1 ran 6h, JCB2 ran 4h') } })
     const body = renderEngineerBody(facts)
     expect(body).toContain('Machines reported: "roller, 2 JCBs"')
-    expect(body).toContain('Run hours: "JCB1 ran 6h, JCB2 ran 4h"')
+    expect(body).toContain('Machine usage: "JCB1 ran 6h, JCB2 ran 4h"')
+  })
+
+  it('the label change does not imply run time -- a raw fault/status note (e.g. "Pump breakdown 1 hr") renders verbatim under "Machine usage:", never reworded', () => {
+    const facts = baseFacts({ equipment: { items: [], machines_reported: notCaptured, run_hours: reported('Pump breakdown 1 hr') } })
+    const body = renderEngineerBody(facts)
+    expect(body).toContain('Machine usage: "Pump breakdown 1 hr"')
+    expect(body).not.toContain('Run hours')
   })
 
   it('MACHINE is omitted entirely when both fields are not_captured, even if `items` has entries -- items[] is never read by this section', () => {
@@ -306,8 +313,8 @@ describe('renderEngineerReport — header/footer', () => {
         'Work completed: "Done A"',
         '',
         'RESOURCE',
-        'Labour reported — morning: "10 masons"',
-        'Labour reported — evening: "9 masons"',
+        'Morning labour reported: "10 masons"',
+        'Evening labour reported: "9 masons"',
         '',
         'SUMMARY (auto-generated)',
         'A day of steady progress.',

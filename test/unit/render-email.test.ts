@@ -71,8 +71,8 @@ describe('renderEmailReport', () => {
     expect(result.text).toContain('Work completed: "Slab concrete poured"')
     expect(result.text).not.toContain('120 sqm')
     expect(result.text).toContain('RESOURCE')
-    expect(result.text).toContain('Labour reported — morning: "20 workers"')
-    expect(result.text).toContain('Labour reported — evening: "18 workers"')
+    expect(result.text).toContain('Morning labour reported: "20 workers"')
+    expect(result.text).toContain('Evening labour reported: "18 workers"')
     expect(result.text).toContain('DEPENDENCY')
     expect(result.text).toContain('Rain for 1 hour')
     expect(result.text).toContain('SUMMARY (auto-generated)')
@@ -126,10 +126,10 @@ describe('renderEmailReport', () => {
     expect(result.text).toContain('Check-in: Morning complete · Evening not received')
     expect(result.text).not.toContain('MISSING')
     expect(result.text).not.toContain('Work completed')
-    expect(result.text).not.toContain('Labour reported — evening')
+    expect(result.text).not.toContain('Evening labour reported')
     // Morning-derived lines are unaffected by the evening half's status.
     expect(result.text).toContain('Morning plan:')
-    expect(result.text).toContain('Labour reported — morning:')
+    expect(result.text).toContain('Morning labour reported:')
   })
 
   it('a field left unanswered within an otherwise-answered half shows the inline "no input received" marker', () => {
@@ -140,7 +140,7 @@ describe('renderEmailReport', () => {
       },
     })
     const result = renderEmailReport(facts, 'V.', MORNING_COMPLETE, EVENING_COMPLETE, META)
-    expect(result.text).toContain('Labour reported — evening: no input received')
+    expect(result.text).toContain('Evening labour reported: no input received')
   })
 
   it('WORK is omitted entirely when both halves are unanswered -- empty sections are not printed with an empty header', () => {

@@ -327,6 +327,21 @@ stated reasoning that it implies no number. Both `Machines reported` and
 `Run hours` render raw text verbatim; parsing stays deferred (FAST-FOLLOW
 territory, matching decision 2's equipment-parsing note).
 
+**`"Run hours:"` RENAMED to `"Machine usage:"` (2026-09-11, review round,
+Aravind's approval).** The field's own raw text is often a fault/status
+note ("Pump breakdown 1 hr"), not a run duration — "Run hours" implied
+the machine ran, which is not always what was reported. Field content
+unchanged, still raw text verbatim; only the label changed. This is also
+the render-layer half of the "Pump breakdown" risk named in the SUMMARY
+prompt discussion below — the label itself no longer pre-judges the
+content, but the model summarising this section could still invert it
+(see "Summary prompt vs. reported fault/status notes," further down).
+
+**`"Labour reported — morning/evening:"` RENAMED to `"Morning/Evening
+labour reported:"` (2026-09-11, review round, Aravind's approval).** Half
+prefix moved to the front, matching the check-in line's own
+"Morning/Evening" ordering convention. Content unchanged.
+
 **Field-map detail (full table is in §Field map below):** this is the
 largest genuine gap in the whole redesign. `morning_equipment.raw_text`
 exists at the DB/JSONB level but is **not even declared** in
