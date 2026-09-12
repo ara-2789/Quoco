@@ -777,12 +777,22 @@ export interface RenderedEngineerReport {
   structured: {
     facts: EngineerDprFacts
     verdict: string
-    verdict_status: 'model' | 'placeholder' | 'code_templated'
+    // 'disabled' ADDED 2026-09-12 -- the AI summary is off (dispatch.ts's
+    // eveningNeedsModel-true branch is the single place that sets this;
+    // see that branch's own comment). Distinct from 'code_templated' on
+    // purpose: that value means real templated text exists (holiday/
+    // not-on-site/etc); 'disabled' means verdict is '' and SUMMARY does
+    // not render at all. Conflating the two would make future analytics
+    // on this field lie.
+    verdict_status: 'model' | 'placeholder' | 'code_templated' | 'disabled'
     morning_status: RenderedCheckInStatus
     evening_status: RenderedCheckInStatus
   }
 }
 
+// DORMANT (2026-09-12, AI summary disabled) -- only consumer was
+// lib/dpr/dispatch.ts's (now-dormant) placeholder branch. Re-enable point:
+// dispatch.ts's eveningNeedsModel-true branch.
 export const CONTAINMENT_FAILURE_PLACEHOLDER = 'Summary unavailable for this report.'
 
 // Composes the final report. `verdict` is whatever the caller already
@@ -836,9 +846,17 @@ export function renderEngineerReport(
     lines.push('')
     lines.push(body)
   }
-  lines.push('')
-  lines.push('SUMMARY (auto-generated)')
-  lines.push(verdict)
+  // OMIT WHEN EMPTY, 2026-09-12 -- same rule every other section in this
+  // format already follows (pushSection's own convention). `verdict` is ''
+  // whenever dispatch.ts's AI-summary disable fires (verdict_status ===
+  // 'disabled'); on those days there is nothing to show here, so nothing
+  // renders -- not an empty header, not a blank line. A holiday/not-on-site/
+  // etc. day still has real templated text in `verdict` and is unaffected.
+  if (verdict.length > 0) {
+    lines.push('')
+    lines.push('SUMMARY (auto-generated)')
+    lines.push(verdict)
+  }
 
   return {
     content: lines.join('\n'),

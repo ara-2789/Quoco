@@ -358,10 +358,14 @@ export async function callDprModel(client: Anthropic, promptText: string, facts:
 // UNCHANGED and stay live for the deferred project-level report.
 // ===========================================================================
 
+// DORMANT (2026-09-12, AI summary disabled) -- only caller is
+// formatEngineerFacts below, only caller of THAT is generateEngineerVerdict.
+// Re-enable point: lib/dpr/dispatch.ts's eveningNeedsModel-true branch.
 function fmtFactNumber(c: { status: string; value: number | null }): string {
   return c.status === 'reported' || c.status === 'zero' ? String(c.value) : 'not reported'
 }
 
+// DORMANT (2026-09-12, AI summary disabled) -- see fmtFactNumber above.
 function fmtFactText(c: { status: string; value: string | null }): string {
   return c.status === 'reported' && c.value !== null ? c.value : 'not reported'
 }
@@ -374,6 +378,9 @@ function fmtFactText(c: { status: string; value: string | null }): string {
 // boundary, not this function). Raw text is what lets the verdict say
 // something like the spec's own sample, "3 workers were idle waiting for
 // material" — "waiting for material" exists nowhere in Facts.
+// DORMANT (2026-09-12, AI summary disabled) -- only caller is
+// generateEngineerVerdict below. Re-enable point: lib/dpr/dispatch.ts's
+// eveningNeedsModel-true branch.
 function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrativeContext | null, meta: { project_name: string; log_date: string }): string {
   const lines: string[] = []
   lines.push(`Project: ${meta.project_name}, ${meta.log_date}`)
@@ -454,6 +461,9 @@ function formatEngineerFacts(facts: EngineerDprFacts, narrative: EngineerNarrati
 // prompt-level guard only; it has no code-level backstop the way the
 // digit/judgment checks do; a broader inference-detection mechanism, if
 // one is ever built, is its own separate piece of work.
+// DORMANT (2026-09-12, AI summary disabled) -- only caller is
+// generateEngineerVerdict below. Re-enable point: lib/dpr/dispatch.ts's
+// eveningNeedsModel-true branch.
 const ENGINEER_SYSTEM_PROMPT =
   'You write ONE sentence summarising a construction site engineer\'s day, from Facts already computed elsewhere. ' +
   'Every digit you write must be traceable to a number shown in the Facts you were given — never invent, round, or recompute a figure. ' +
@@ -463,6 +473,10 @@ const ENGINEER_SYSTEM_PROMPT =
   'Restate only what a Fact literally says — never infer, characterise, or reword its meaning (e.g. a status note like "pump breakdown" must not become "pump was used"). If a Fact is ambiguous or incomplete, name it as reported rather than resolving the ambiguity yourself. ' +
   'If the Facts are mostly empty, say so plainly in one short sentence rather than padding.'
 
+// DORMANT (2026-09-12, AI summary disabled) -- only produced by
+// generateEngineerVerdict below, only consumed by lib/dpr/dispatch.ts's
+// (now-dormant) result-handling branch. Re-enable point: dispatch.ts's
+// eveningNeedsModel-true branch.
 export interface EngineerVerdictResult {
   verdict: string
   // 'judgment_denylist' ADDED 2026-09-11 (docs/plans/dpr-format-redesign.md
@@ -495,6 +509,13 @@ export interface EngineerVerdictResult {
 // source is known before it enters the corpus, never inferred from a
 // flattened string. `renderedBody` is no longer a parameter of this
 // function; nothing else here ever used it.
+// DORMANT (2026-09-12, AI summary disabled -- Aravind's decision: it
+// produced one factually inverted sentence and otherwise restated the
+// sections above it). No longer called from lib/dpr/dispatch.ts. Left
+// fully intact and exported, still compiling, its own tests
+// (test/unit/generate-engineer-verdict.test.ts) still running -- they
+// document behaviour that may return. Re-enable point: dispatch.ts's
+// eveningNeedsModel-true branch (restore the call + its result branching).
 export async function generateEngineerVerdict(
   client: Anthropic,
   facts: EngineerDprFacts,
