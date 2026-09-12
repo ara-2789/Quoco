@@ -88,9 +88,87 @@ const IDLE_HOURS_FILLER_WORDS: ReadonlySet<string> = new Set([
   'today',
 ])
 
+// ANCHOR-WORD GUARD — ported from productivity.ts's anchor-word pairing
+// (2026-08-10 fix + 2026-08-12 external-review round, 32 tests), Option C
+// of the 2026-09-12 parser review (docs/reviews/parser-digit-
+// misattribution-inventory.md), PRIORITY 1 (this parser was named the most
+// exposed of the four: same "first digit wins" skeleton, no discard flag
+// at all, reaches both the rendered RESOURCE body and the SUMMARY prompt
+// as a citable Fact). Aravind's own ruling on WHY this pattern and not a
+// stop-word list: "a stop-word list narrows the class without closing it
+// -- 'Pump conked out 1 hr' would pass a list containing 'breakdown'."
+//
+// THE LESSON CARRIED ACROSS, stated once so it doesn't need re-deriving:
+// productivity.ts's own root-cause finding (2026-08-10, "15 productive, 3
+// idle waiting for material" inverted into productive_count=3) was that a
+// parser trusting ANY nearby digit, with no positive confirmation that the
+// digit answers the question actually being asked, will eventually attach
+// a real number to the wrong thing. The fix there was never "reject known
+// bad words" -- it was "require a real anchor before trusting a digit."
+// Applied here: `idle_hours` is trusted ONLY when the literal word "idle"
+// -- the ONE anchor this question's own vocabulary revolves around --
+// appears somewhere in the chunk. "Mason left early 2 hours" has a trade
+// word and a digit, exactly like "mason idle 2 hours" does, and the
+// pre-port code could not tell them apart; requiring "idle" to be present
+// is what tells them apart, the same way productivity.ts's anchor
+// requirement told "15 productive" apart from an unrelated "2" sitting
+// nearby in the same message.
+//
+// WHY THIS IS AN ADAPTATION, NOT A LITERAL COPY, NAMED SO THE DIFFERENCE
+// ISN'T MISTAKEN FOR AN INCOMPLETE PORT:
+//   1. NO BEFORE/AFTER POSITIONAL SCAN. productivity.ts distinguishes a
+//      confident BEFORE match ("15 productive") from a weak AFTER match
+//      ("productive 15") because its input is ONE undivided message that
+//      can contain TWO competing anchors ('idle' AND 'productive') plus
+//      multiple numbers, and word ORDER is the only signal separating a
+//      real pairing from an unrelated one ("all productive, 2 left
+//      early"). This parser already splits the raw answer into short,
+//      comma/and/plus-delimited CHUNKS before this function ever runs
+//      (parseIdleHoursByTrade, below) — each chunk realistically carries
+//      at most one trade, one digit, and one candidate anchor ('idle').
+//      The ambiguity BEFORE/AFTER exists to resolve does not arise at
+//      chunk scope: there is only one anchor to check for, so "is 'idle'
+//      present in this chunk at all" is the faithful equivalent, not a
+//      simplification that drops coverage.
+//   2. NO "SINGLE UNANCHORED NUMBER DEFAULTS TO IDLE" FALLBACK.
+//      productivity.ts's own PASS 2 deliberately defaults a lone
+//      unanchored number to idle_count, reasoning that its question is
+//      single-topic (idle vs. productive) so an unanchored number is
+//      still almost certainly about idleness. Porting that same default
+//      HERE would silently readmit the exact bug this port exists to
+//      close: "Mason left early 2 hours" IS a lone unanchored number, and
+//      defaulting it to idle_hours is precisely the wrong call this
+//      change is making. The fallback is deliberately NOT carried across.
+//   3. WEAK MATCHES COLLAPSE INTO "UNKNOWN," NOT A SEPARATE FLAG.
+//      productivity.ts keeps "claimed via a weak match" distinct from
+//      "never found a candidate at all" (both set numbers_discarded, but
+//      only because a caller elsewhere downgrades confidence on that
+//      signal). This parser has no equivalent per-item confidence field,
+//      and the outer three-state result (real data / all_working /
+//      unknown) already gives "no confident chunk survived" a home —
+//      adding a second signal with no consumer would be complexity this
+//      question's design doesn't need. If a future caller needs to
+//      distinguish "no anchor anywhere" from "an ambiguous anchor
+//      position" for THIS parser, that is new scope, not implied by this
+//      fix.
+//
+// GATING-BEHAVIOUR CHANGE, NAMED EXPLICITLY (2026-09-12 review round's own
+// WATCH FOR): a chunk with a trade word and a digit but NO literal "idle"
+// anywhere — e.g. a bare "mason 2" with no anchor at all — now returns
+// null instead of a confident item. If EVERY chunk in an answer lacks the
+// anchor, `isIdleHoursAnswered` flips from true to false, which crosses
+// into evening.ts's `p_parse_ok['3']` and changes the RPC's reask-vs-
+// advance decision for that turn (a previously-silent, possibly-wrong
+// accept becomes an explicit reask instead). No existing test in this file
+// or in test/evening-flow.test.ts exercises a bare "trade digit" answer
+// with no anchor word, so none regress — but this is a real behaviour
+// change, not merely an internal parsing fix, and is called out as such
+// rather than left to be discovered later.
+//
 // Parse one comma/"and"-separated chunk into a trade+hours pair, or null
-// when the chunk carries no usable number (garbled — contributes to the
-// unknown/reask path, never stored as a fabricated zero).
+// when the chunk carries no usable, anchored number (garbled OR unanchored
+// — both contribute to the unknown/reask path, never stored as a
+// fabricated zero or an unconfirmed guess).
 function parseChunk(chunk: string): IdleHoursTrade | null {
   const tokens = splitDigitBoundaries(chunk)
     .split(/\s+/)
@@ -99,10 +177,16 @@ function parseChunk(chunk: string): IdleHoursTrade | null {
   let idle_hours: number | null = null
   let matchedTrade: string | null = null
   let firstWord: string | null = null // original case, for the unmatched fallback
+  let hasIdleAnchor = false
 
   for (const t of tokens) {
     if (/^\d+$/.test(t)) {
       if (idle_hours === null) idle_hours = parseInt(t, 10)
+      continue
+    }
+    const lower = t.toLowerCase()
+    if (lower === 'idle') {
+      hasIdleAnchor = true
       continue
     }
     const kw = canonicalTrade(t) // lowercases internally
@@ -110,13 +194,17 @@ function parseChunk(chunk: string): IdleHoursTrade | null {
       matchedTrade = kw
       continue
     }
-    const lower = t.toLowerCase()
     if (firstWord === null && /\p{L}/u.test(t) && !IDLE_HOURS_FILLER_WORDS.has(lower)) {
       firstWord = t
     }
   }
 
   if (idle_hours === null) return null
+  // ANCHOR-WORD GUARD (see this function's own header comment above): a
+  // digit with no "idle" anchor anywhere in the chunk is never trusted,
+  // regardless of whether a trade word matched — a matched trade word only
+  // says WHO the number might be about, never WHAT the number means.
+  if (!hasIdleAnchor) return null
 
   if (matchedTrade) {
     return { trade: matchedTrade, idle_hours, matched: true }
