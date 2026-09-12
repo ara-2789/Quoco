@@ -1,12 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
-import * as Sentry from '@sentry/nextjs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Json } from '@/types/database'
 import { assembleEngineerDprFacts } from './assemble'
-import { fetchEngineerNarrativeContext } from './narrative-context'
-import { generateEngineerVerdict } from './generate'
-import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from './render'
+import { renderEngineerReport } from './render'
 import { resolveProjectManagerName } from './project-manager'
 import { correctEngineerWorkText } from './spelling-correction'
 import type { CheckInStatus } from './schema'
@@ -124,9 +121,11 @@ export async function handleDprGenerateJob(
     const { completeness } = assembled
     // Reassigned below once spelling correction resolves -- let, not const.
     let facts = assembled.facts
-    const narrative = await timed('fetchEngineerNarrativeContext', () =>
-      fetchEngineerNarrativeContext(client, payload.project_id, payload.engineer_id, payload.log_date),
-    )
+    // fetchEngineerNarrativeContext (lib/dpr/narrative-context.ts) removed
+    // from this sequence, 2026-09-12 -- its only consumer was
+    // generateEngineerVerdict below, now dormant. See that branch's own
+    // comment for the full reasoning; this is the same disable, same date,
+    // same single re-enable point.
 
     const { morning, evening } = await timed('resolveCheckInStatus', () =>
       resolveCheckInStatus(client, payload, completeness),
@@ -195,38 +194,25 @@ export async function handleDprGenerateJob(
     const eveningNeedsModel = evening.status === 'complete' || evening.status === 'partial'
 
     let verdict: string
-    let verdictStatus: 'model' | 'placeholder' | 'code_templated'
+    let verdictStatus: 'model' | 'placeholder' | 'code_templated' | 'disabled'
     if (!eveningNeedsModel) {
       verdict = codeTemplatedVerdict(morning, evening)
       verdictStatus = 'code_templated'
     } else {
-      const result = await timed('generateEngineerVerdict', () =>
-        generateEngineerVerdict(anthropic, facts, narrative, { project_name: project.name, log_date: payload.log_date }),
-      )
-      if (result.verdict_status === 'judgment_denylist') {
-        // 2026-09-11, docs/plans/dpr-format-redesign.md §9, Aravind's
-        // explicit fallback choice: option 1 (retry, already exhausted
-        // inside generateEngineerVerdict) then option 2 (codeTemplatedVerdict's
-        // line) -- never option 3 (stripping the word out of a model
-        // sentence, which leaves a worse fragment than either alternative).
-        Sentry.captureMessage('DPR verdict hit the judgment-language denylist twice, falling back to a code-templated line', {
-          level: 'warning',
-          tags: { feature: 'dpr-generate', failure_class: 'dpr_validation' },
-          extra: { project_id: payload.project_id, engineer_id: payload.engineer_id, log_date: payload.log_date },
-        })
-        verdict = codeTemplatedVerdict(morning, evening)
-        verdictStatus = 'code_templated'
-      } else if (result.verdict_status === 'placeholder') {
-        Sentry.captureException(new Error('DPR verdict containment failed twice, falling back to placeholder'), {
-          tags: { feature: 'dpr-generate', failure_class: 'dpr_validation' },
-          extra: { project_id: payload.project_id, engineer_id: payload.engineer_id, log_date: payload.log_date },
-        })
-        verdict = CONTAINMENT_FAILURE_PLACEHOLDER
-        verdictStatus = 'placeholder'
-      } else {
-        verdict = result.verdict
-        verdictStatus = 'model'
-      }
+      // AI SUMMARY DISABLED, 2026-09-12 (Aravind's decision): it produced
+      // one factually inverted sentence -- "Pump breakdown 1 hr" restated
+      // as "concrete pump used for 1 hour," because the Facts it summarised
+      // were already wrong before the model saw them -- and on every other
+      // day it only restated the WORK/RESOURCE/MACHINE sections above it.
+      // generateEngineerVerdict and its whole apparatus (ENGINEER_SYSTEM_
+      // PROMPT, formatEngineerFacts, buildEngineerFactsCorpus,
+      // checkJudgmentLanguage, the retry-then-fallback logic that used to
+      // live in this branch) are left fully intact where they live, still
+      // compiling, their own tests still running -- see each item's own
+      // dormant-marker comment. THIS is the single place that turns them
+      // back on: restore the call + its result branching here.
+      verdict = ''
+      verdictStatus = 'disabled'
     }
 
     const rendered = renderEngineerReport(facts, verdict, verdictStatus, morning, evening, {

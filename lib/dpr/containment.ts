@@ -239,6 +239,9 @@ export function buildExecutionCorpus(execution: ExecutionOutputFacts, meta: Cont
 // manpower.on_site -- all three are raw engineer text, all three are also
 // fed to the model as explicit "context only" lines (formatEngineerFacts),
 // and none of the three is a quantity the DPR is meant to state as fact.
+// DORMANT (2026-09-12, AI summary disabled) -- only caller is
+// lib/dpr/generate.ts's generateEngineerVerdict. Re-enable point:
+// lib/dpr/dispatch.ts's eveningNeedsModel-true branch.
 export function buildEngineerFactsCorpus(facts: EngineerDprFacts, meta: { project_name: string }): Set<number> {
   const corpus = new Set<number>()
 
@@ -303,6 +306,9 @@ export interface JudgmentLanguageResult {
   matched?: string // the specific denylisted word found, for logs only
 }
 
+// DORMANT (2026-09-12, AI summary disabled) -- only caller was
+// lib/dpr/generate.ts's generateEngineerVerdict. Re-enable point:
+// lib/dpr/dispatch.ts's eveningNeedsModel-true branch.
 export function checkJudgmentLanguage(outputText: string): JudgmentLanguageResult {
   for (const word of JUDGMENT_WORDS) {
     if (new RegExp(`\\b${word}\\b`, 'i').test(outputText)) {

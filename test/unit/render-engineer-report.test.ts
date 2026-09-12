@@ -327,6 +327,53 @@ describe('renderEngineerReport — header/footer', () => {
     expect(result.content).toContain('Site Engineer: Vikram Rao\nProject Manager: Priya Singh\n\nCheck-in:')
   })
 
+  // AI SUMMARY DISABLED, 2026-09-12 (Aravind's decision, dispatch.ts's
+  // eveningNeedsModel-true branch) -- verdict is '' and verdict_status is
+  // 'disabled' on an ordinary day; SUMMARY must not render at all, same
+  // omit-when-empty rule every other section already follows. A
+  // code-templated day (real templated text, e.g. holiday/not-on-site) is
+  // unaffected -- covered by this file's other tests, all of which pass a
+  // non-empty verdict.
+  it('SUMMARY is omitted entirely when verdict is "" (verdict_status: disabled) -- no header, no blank line, nothing', () => {
+    const facts = baseFacts({
+      morning_status: { status: 'complete' },
+      evening_status: { status: 'complete' },
+      work: {
+        planned: reported('Plan A'),
+        done_text: reported('Done A'),
+        done_quantity: { status: 'not_captured', value: null },
+        unit: '',
+        planned_corrected: reported('Plan A'),
+        done_text_corrected: reported('Done A'),
+      },
+      manpower: { planned: reported('10 masons'), on_site: reported('9 masons') },
+    })
+    const result = renderEngineerReport(facts, '', 'disabled', morning, evening, META)
+    expect(result.content).not.toContain('SUMMARY')
+    expect(result.content).toBe(
+      [
+        'Good evening.',
+        'Daily Progress Report — Speed Mechatronics, Thu 11 Sep',
+        '',
+        'Site Engineer: Vikram Rao',
+        '',
+        'Check-in: Morning complete · Evening complete',
+        '',
+        'The sections below are as reported from site.',
+        '',
+        'WORK',
+        'Morning plan: "Plan A"',
+        'Work completed: "Done A"',
+        '',
+        'RESOURCE',
+        'Morning labour reported: "10 masons"',
+        'Evening labour reported: "9 masons"',
+      ].join('\n'),
+    )
+    expect(result.structured.verdict).toBe('')
+    expect(result.structured.verdict_status).toBe('disabled')
+  })
+
   it('not-on-site day (attendance: absent -- morning not_applicable/kind:not_on_site, evening not_received): "The sections below are as reported from site." is suppressed, matching the real dispatch.ts shape', () => {
     const result = renderEngineerReport(
       baseFacts(),

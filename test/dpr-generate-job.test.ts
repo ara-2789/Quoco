@@ -58,23 +58,6 @@ function mockAnthropicClientVerdictMustNotBeCalled(): Anthropic {
   } as unknown as Anthropic
 }
 
-// S1 (round 4) — a MODEL-OUTPUT problem, not a transport failure: valid
-// HTTP response, valid usage/stop_reason, but the text block is not
-// parseable JSON (the truncation shape max_tokens: 512 makes reachable).
-// Returns the same malformed text on every call, so both S10 attempts fail
-// the same way.
-function mockAnthropicClientMalformed(): Anthropic {
-  return {
-    messages: {
-      create: async () => ({
-        content: [{ type: 'text', text: '{not valid json' }],
-        usage: { input_tokens: 50, output_tokens: 20 },
-        stop_reason: 'max_tokens',
-      }),
-    },
-  } as unknown as Anthropic
-}
-
 async function makeProject(nameSuffix: string): Promise<string> {
   const db = testClient()
   const { data, error } = await db
@@ -121,7 +104,7 @@ describe('handleDprGenerateJob', () => {
     ).rejects.toThrow(/pre-028 payload shape/)
   })
 
-  it('SUCCESS — writes structured/content keyed by engineer_id, generation_status ends idle, delivery_status untouched', async () => {
+  it('SUCCESS — writes structured/content keyed by engineer_id, generation_status ends idle, delivery_status untouched; AI summary disabled (2026-09-12) means ZERO verdict-generation calls even on an ordinary, both-halves-real day', async () => {
     const db = testClient()
     const projectId = await makeProject('success')
     const engineerId = testEngineerId()
@@ -130,9 +113,7 @@ describe('handleDprGenerateJob', () => {
       // Real data on BOTH halves — a blank row (no fields set) resolves
       // both halves to not_received, which is a genuinely different,
       // correct code path (the code-templated skip-the-model verdict,
-      // Rule 2) that this test is not the one exercising. Caught by this
-      // test itself on first run: the mock was never called because the
-      // real logic correctly skipped it.
+      // Rule 2) that this test is not the one exercising.
       await db.from('daily_logs').insert({
         project_id: projectId,
         tenant_id: TEST_TENANT_ID,
@@ -144,10 +125,17 @@ describe('handleDprGenerateJob', () => {
         evening_schedule_met: true,
       })
 
+      // mockAnthropicClientVerdictMustNotBeCalled(), not mockAnthropicClient
+      // -- this is the ordinary, real-data day that used to reach the model
+      // (eveningNeedsModel: true). 2026-09-12: dispatch.ts's else-branch no
+      // longer calls generateEngineerVerdict at all. A spelling-correction
+      // call (WORK has real text) is still expected and let through; a
+      // VERDICT-shaped call would fail this test outright, same mechanism
+      // the B1/STAGE-4 tests below already use for the code-templated days.
       await handleDprGenerateJob(
         { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
         FAKE_JOB_ID,
-        { supabaseClient: db, anthropicClient: mockAnthropicClient(['A day of steady progress.']) },
+        { supabaseClient: db, anthropicClient: mockAnthropicClientVerdictMustNotBeCalled() },
       )
 
       const { data: dpr } = await db
@@ -161,103 +149,32 @@ describe('handleDprGenerateJob', () => {
       expect(dpr?.generation_status).toBe('idle')
       expect(dpr?.delivery_status).toBe('pending') // untouched — this handler never sets it on success
       expect(dpr?.engineer_id).toBe(engineerId)
-      expect(dpr?.content).toContain('A day of steady progress.')
+      // No SUMMARY section at all -- verdict is '', render.ts's own
+      // omit-when-empty guard drops the header and the line together.
+      expect(dpr?.content).not.toContain('SUMMARY (auto-generated)')
       expect(dpr?.structured).toBeTruthy()
+      const structured = dpr?.structured as { verdict?: string; verdict_status?: string } | null
+      expect(structured?.verdict).toBe('')
+      expect(structured?.verdict_status).toBe('disabled')
       expect(dpr?.generator_job_id).toBe(FAKE_JOB_ID)
     } finally {
       await cleanupProject(projectId)
     }
   })
 
-  it('S10 — containment failure on both attempts degrades to the placeholder; report STILL writes, no throw', async () => {
-    const db = testClient()
-    const projectId = await makeProject('containment-both-fail')
-    const engineerId = testEngineerId()
-    try {
-      await addToProject(projectId, engineerId)
-      // Evening must be complete/partial (B1's corrected gate) for the
-      // model path to be reached at all — a morning-only day is now fully
-      // code-templated and never calls the model (see the B1 test below).
-      await db.from('daily_logs').insert({
-        project_id: projectId,
-        tenant_id: TEST_TENANT_ID,
-        engineer_id: engineerId,
-        log_date: LOG_DATE,
-        morning_plan: 'Excavation',
-        evening_submitted_at: '2026-05-02T14:00:00Z',
-        evening_schedule_met: true,
-      })
-
-      // "999" traces to nothing in Facts or the rendered body — fails
-      // containment on both the first and the retried attempt.
-      await handleDprGenerateJob(
-        { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
-        FAKE_JOB_ID,
-        {
-          supabaseClient: db,
-          anthropicClient: mockAnthropicClient(['Completed 999 uncontained units.', 'Completed 999 uncontained units again.']),
-        },
-      )
-
-      const { data: dpr } = await db
-        .from('dprs')
-        .select('generation_status, delivery_status, content, structured')
-        .eq('project_id', projectId)
-        .eq('engineer_id', engineerId)
-        .eq('log_date', LOG_DATE)
-        .single()
-
-      expect(dpr?.generation_status).toBe('idle') // succeeded — a real report, just without a model verdict
-      expect(dpr?.delivery_status).toBe('pending') // NOT 'failed' — markDprGenerationFailed must never fire for this
-      expect(dpr?.content).toContain('Summary unavailable for this report.')
-      expect(dpr?.content).not.toContain('999')
-      const structured = dpr?.structured as { verdict_status?: string } | null
-      expect(structured?.verdict_status).toBe('placeholder')
-    } finally {
-      await cleanupProject(projectId)
-    }
-  })
-
-  it('S10 — containment fails once, succeeds on the immediate retry; the REAL verdict ships, not the placeholder', async () => {
-    const db = testClient()
-    const projectId = await makeProject('containment-retry-succeeds')
-    const engineerId = testEngineerId()
-    try {
-      await addToProject(projectId, engineerId)
-      // Evening must be complete/partial (B1's corrected gate) — same note
-      // as the sibling test above.
-      await db.from('daily_logs').insert({
-        project_id: projectId,
-        tenant_id: TEST_TENANT_ID,
-        engineer_id: engineerId,
-        log_date: LOG_DATE,
-        morning_plan: 'Excavation',
-        evening_submitted_at: '2026-05-02T14:00:00Z',
-        evening_schedule_met: true,
-      })
-
-      await handleDprGenerateJob(
-        { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
-        FAKE_JOB_ID,
-        { supabaseClient: db, anthropicClient: mockAnthropicClient(['Completed 999 uncontained units.', 'A clean day of work.']) },
-      )
-
-      const { data: dpr } = await db
-        .from('dprs')
-        .select('content, structured')
-        .eq('project_id', projectId)
-        .eq('engineer_id', engineerId)
-        .eq('log_date', LOG_DATE)
-        .single()
-
-      expect(dpr?.content).toContain('A clean day of work.')
-      expect(dpr?.content).not.toContain('Summary unavailable')
-      const structured = dpr?.structured as { verdict_status?: string } | null
-      expect(structured?.verdict_status).toBe('model')
-    } finally {
-      await cleanupProject(projectId)
-    }
-  })
+  // REMOVED, 2026-09-12 (AI summary disabled) -- the two "S10" tests that
+  // used to live here (containment failure -> placeholder; containment
+  // fails once, succeeds on retry -> real verdict) exercised
+  // dispatch.ts's own call into generateEngineerVerdict on an
+  // eveningNeedsModel:true day. That call site no longer exists (see the
+  // SUCCESS test above) -- dispatch.ts cannot reach containment logic at
+  // all anymore, so there is no dispatch-level scenario left to assert on.
+  // generateEngineerVerdict itself is untouched and still contains this
+  // exact containment-retry-then-placeholder behaviour; it is still
+  // directly tested by test/unit/generate-engineer-verdict.test.ts, which
+  // this change does not touch. Re-enable point: lib/dpr/dispatch.ts's
+  // eveningNeedsModel-true branch -- restoring the call there would make
+  // these two scenarios reachable again.
 
   it('SILENT ENGINEER — no daily_logs row at all still produces a full report reading not received, no throw', async () => {
     const db = testClient()
@@ -404,47 +321,12 @@ describe('handleDprGenerateJob', () => {
     }
   })
 
-  it('S1 — malformed model response (unparseable JSON) on both attempts degrades to the placeholder exactly like a containment failure; report ships, job succeeds', async () => {
-    const db = testClient()
-    const projectId = await makeProject('malformed-response')
-    const engineerId = testEngineerId()
-    try {
-      await addToProject(projectId, engineerId)
-      // Evening complete/partial — reaches the model path at all (B1's
-      // corrected gate).
-      await db.from('daily_logs').insert({
-        project_id: projectId,
-        tenant_id: TEST_TENANT_ID,
-        engineer_id: engineerId,
-        log_date: LOG_DATE,
-        morning_plan: 'Excavation',
-        evening_submitted_at: '2026-05-02T14:00:00Z',
-        evening_schedule_met: true,
-      })
-
-      await handleDprGenerateJob(
-        { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
-        FAKE_JOB_ID,
-        { supabaseClient: db, anthropicClient: mockAnthropicClientMalformed() },
-      )
-
-      const { data: dpr } = await db
-        .from('dprs')
-        .select('generation_status, delivery_status, content, structured')
-        .eq('project_id', projectId)
-        .eq('engineer_id', engineerId)
-        .eq('log_date', LOG_DATE)
-        .single()
-
-      expect(dpr?.generation_status).toBe('idle') // succeeded — the job did not throw
-      expect(dpr?.delivery_status).toBe('pending') // markDprGenerationFailed never fired — S1's whole point
-      expect(dpr?.content).toContain('Summary unavailable for this report.')
-      const structured = dpr?.structured as { verdict_status?: string } | null
-      expect(structured?.verdict_status).toBe('placeholder')
-    } finally {
-      await cleanupProject(projectId)
-    }
-  })
+  // REMOVED, 2026-09-12 (AI summary disabled) -- "S1 — malformed model
+  // response" exercised dispatch.ts's own call into generateEngineerVerdict
+  // on an eveningNeedsModel:true day; that call site is gone (same
+  // reasoning as the two "S10" tests removed above). The malformed-JSON
+  // parse-failure path itself is untouched and still directly tested by
+  // test/unit/generate-engineer-verdict.test.ts.
 })
 
 describe('markDprGenerationFailed', () => {
