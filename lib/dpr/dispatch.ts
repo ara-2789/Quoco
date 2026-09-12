@@ -6,6 +6,7 @@ import { assembleEngineerDprFacts } from './assemble'
 import { renderEngineerReport } from './render'
 import { resolveProjectManagerName } from './project-manager'
 import { correctEngineerWorkText } from './spelling-correction'
+import { writeDprVersion } from './write-version'
 import type { CheckInStatus } from './schema'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
@@ -90,18 +91,27 @@ export async function handleDprGenerateJob(
 
   // Claim the row BEFORE the Claude call — B2 key widening: onConflict now
   // includes engineer_id, matching the migration's own widened UNIQUE key.
-  const { error: claimError } = await client.from('dprs').upsert(
-    {
-      project_id: payload.project_id,
-      engineer_id: payload.engineer_id,
-      tenant_id: project.tenant_id,
-      log_date: payload.log_date,
-      generation_status: 'running',
-      generator_job_id: jobId,
-    },
-    { onConflict: 'project_id,engineer_id,log_date' },
-  )
+  // .select('id') added for Part A (docs/plans/dpr-owner-pass-
+  // regeneration.md) — this upsert already ensures the row exists, so the
+  // final write below reuses this id via write_dpr_version's `dprId`
+  // param instead of doing a second, redundant shell upsert of its own.
+  const { data: claimedRow, error: claimError } = await client
+    .from('dprs')
+    .upsert(
+      {
+        project_id: payload.project_id,
+        engineer_id: payload.engineer_id,
+        tenant_id: project.tenant_id,
+        log_date: payload.log_date,
+        generation_status: 'running',
+        generator_job_id: jobId,
+      },
+      { onConflict: 'project_id,engineer_id,log_date' },
+    )
+    .select('id')
+    .single()
   if (claimError) throw claimError
+  const dprId = claimedRow.id as string
 
   const timings: Record<string, number> = {}
   async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
@@ -222,22 +232,25 @@ export async function handleDprGenerateJob(
       project_manager_name: projectManagerName,
     })
 
-    await timed('dprsUpsert', async () => {
-      const { error } = await client.from('dprs').upsert(
-        {
-          project_id: payload.project_id,
-          engineer_id: payload.engineer_id,
-          tenant_id: project.tenant_id,
-          log_date: payload.log_date,
-          structured: rendered.structured as unknown as Json,
-          content: rendered.content,
-          generated_at: new Date().toISOString(),
-          generation_status: 'idle',
-        },
-        { onConflict: 'project_id,engineer_id,log_date' },
-      )
-      if (error) throw error
-    })
+    // Part A (docs/plans/dpr-owner-pass-regeneration.md) — routes through
+    // write_dpr_version (migration 029) instead of a raw upsert, so every
+    // generation appends a dpr_versions row rather than silently
+    // overwriting the prior render. See write-version.ts's own header for
+    // what it handles that the RPC alone cannot (row creation, the
+    // phantom-first-version gap, generation_status). dprId reuses the
+    // claim upsert's own id above — no second shell upsert needed here.
+    await timed('writeDprVersion', () =>
+      writeDprVersion({
+        client,
+        dprId,
+        projectId: payload.project_id,
+        engineerId: payload.engineer_id,
+        tenantId: project.tenant_id as string,
+        logDate: payload.log_date,
+        content: rendered.content,
+        structured: rendered.structured as unknown as Json,
+      }),
+    )
 
     console.log(
       JSON.stringify({
