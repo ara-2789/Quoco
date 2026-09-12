@@ -87,4 +87,28 @@ describe('parseEquipmentHours', () => {
     const p = parseEquipmentHours('  JCB 6 hours  ')
     expect(p.raw_text).toBe('JCB 6 hours')
   })
+
+  // KNOWN DEFECT (2026-09-12 review round,
+  // docs/reviews/parser-digit-misattribution-inventory.md,
+  // docs/reviews/equipment-hours-parser-fault-note-gap.md), PRIORITY 2 of
+  // the port. Confirmed live on a real prod row, 2026-09-11 (Speed
+  // Mechatronics, Vikram Rao): "Pump breakdown 1 hr" -> hours_used: 1,
+  // reaching the SUMMARY prompt as a cited Fact ("Equipment concrete_pump
+  // — used 1h"). FAILING ON PURPOSE, NOT YET FIXED: this documents the
+  // desired post-fix behaviour (Option C, porting productivity.ts's
+  // anchor-word pairing, Aravind's decision) so the eventual fix is
+  // demonstrably a fix, not an assertion. Do not "fix" this test to match
+  // current behaviour -- fix the parser.
+  describe('KNOWN DEFECT, FAILING UNTIL THE ANCHOR-WORD PORT LANDS -- a fault/status word must not let its adjacent number be claimed as hours_used', () => {
+    it('"Pump breakdown 1 hr" -- "breakdown" reports DOWNTIME, not USAGE; the current parser confidently (and wrongly) reads this as the pump having been used for 1 hour', () => {
+      const p = parseEquipmentHours('Pump breakdown 1 hr')
+      // CURRENT (buggy) behaviour: { items: [{ type: 'concrete_pump', hours_used: 1, matched: true, raw: 'Pump breakdown 1 hr' }] }
+      // DESIRED (post anchor-word-port) behaviour: no genuine usage anchor
+      // pairs with "1" here -- "breakdown" is a status/fault word, not a
+      // usage indicator -- so this must not be stored as a confident
+      // hours_used claim, and must not count as an answered item.
+      expect(p.items).toEqual([])
+      expect(isEquipmentHoursAnswered(p)).toBe(false)
+    })
+  })
 })

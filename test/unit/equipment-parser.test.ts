@@ -110,4 +110,29 @@ describe('parseEquipment', () => {
     expect(p.raw_text).toBe('JCB 2')
     expect(p.items[0].raw).toBe('JCB 2')
   })
+
+  // KNOWN DEFECT (2026-09-12 review round,
+  // docs/reviews/parser-digit-misattribution-inventory.md), PRIORITY 4 of
+  // the port -- narrower current exposure (assemble.ts's DPR pipeline
+  // doesn't read `.count` today; this doc's own equipment-parser-count-gap
+  // review already dissolved the SPECIFIC rate/count ambiguity this file
+  // used to have), but the same "first digit wins, ignore the governing
+  // word" mechanism as equipment-hours.ts/idle-hours.ts still lives here
+  // unguarded. FAILING ON PURPOSE, NOT YET FIXED: this documents the
+  // desired post-fix behaviour (Option C, porting productivity.ts's
+  // anchor-word pairing, Aravind's decision) so the eventual fix is
+  // demonstrably a fix, not an assertion. Do not "fix" this test to match
+  // current behaviour -- fix the parser.
+  describe('KNOWN DEFECT, FAILING UNTIL THE ANCHOR-WORD PORT LANDS -- a status/fault word must not let its adjacent number be claimed as a machine count', () => {
+    it('"JCB down for 2 days" -- "down" reports a fault duration, not a unit count; the current parser confidently (and wrongly) reads this as two JCBs on site', () => {
+      const p = parseEquipment('JCB down for 2 days')
+      // CURRENT (buggy) behaviour: { type: 'jcb', count: 2, ... }
+      // DESIRED (post anchor-word-port) behaviour: the equipment keyword
+      // ("jcb") is still recognised, but "2" must not be confidently
+      // claimed as its count -- "down"/"for ... days" disqualifies it.
+      expect(p.items).toHaveLength(1)
+      expect(p.items[0].type).toBe('jcb')
+      expect(p.items[0].count).toBeNull()
+    })
+  })
 })

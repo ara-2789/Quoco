@@ -127,3 +127,33 @@ describe('parseQuantities — numbers_discarded (2026-08-10, found alongside the
     expect(p.items[0]).toMatchObject({ numbers_discarded: false })
   })
 })
+
+// KNOWN DEFECT (2026-09-12 review round,
+// docs/reviews/parser-digit-misattribution-inventory.md,
+// docs/reviews/quantities-parser-m2-m3-unit-gap.md), PRIORITY 3 of the
+// port. Confirmed live on a real prod row, 2026-09-05 (Speed Mechatronics):
+// "Security Room - 100 m2" -> unit: "m" (bare metres, wrong), the "2" that
+// would have made it "sqm" flagged numbers_discarded but never surfaced
+// anywhere downstream. splitDigitBoundaries splits "m2" into "m"/"2" BEFORE
+// canonicalUnit ever sees the compound token -- same root cause as "M25"
+// (this file's own numbers_discarded doc comment). FAILING ON PURPOSE, NOT
+// YET FIXED: this documents the desired post-fix behaviour (Option C,
+// porting productivity.ts's anchor-word pairing -- here, treating a
+// digit-adjacent unit-suffix like "m2"/"m3" as ONE compound token rather
+// than a number to grab and a unit to match separately) so the eventual
+// fix is demonstrably a fix, not an assertion. Do not "fix" this test to
+// match current behaviour -- fix the parser.
+describe('KNOWN DEFECT, FAILING UNTIL THE m2/m3 COMPOUND-UNIT FIX LANDS -- "m2"/"m3" must resolve to square/cubic metres, not bare metres with the disambiguating digit silently dropped', () => {
+  it('"100 m2" -- standard Indian site shorthand for square metres, not "100 metres"', () => {
+    const p = parseQuantities('100 m2')
+    // CURRENT (buggy) behaviour: { quantity: 100, unit: 'm', numbers_discarded: true }
+    // DESIRED (post-fix) behaviour: "m2" recognised as ONE compound unit
+    // token (square metres), quantity intact, nothing discarded.
+    expect(p.items[0]).toMatchObject({ quantity: 100, unit: 'sqm', numbers_discarded: false })
+  })
+
+  it('"Security Room - 100 m2" -- the exact real prod row', () => {
+    const p = parseQuantities('Security Room - 100 m2')
+    expect(p.items[0]).toMatchObject({ quantity: 100, unit: 'sqm', numbers_discarded: false })
+  })
+})

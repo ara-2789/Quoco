@@ -115,4 +115,30 @@ describe('parseIdleHoursByTrade — tri-state (by_trade / all_working / unknown)
       expect(tradesFound).not.toContain('the')
     })
   })
+
+  // KNOWN DEFECT (2026-09-12 review round,
+  // docs/reviews/parser-digit-misattribution-inventory.md), PRIORITY 1 of
+  // the port (most exposed of the four affected parsers -- reaches BOTH the
+  // rendered RESOURCE body and the summary prompt as a citable Fact, with
+  // NO discard/confidence mechanism at all). Same "first digit wins, first
+  // trade-keyword wins, everything else ignored" skeleton as
+  // equipment-hours.ts -- see that file's own parseChunk. FAILING ON
+  // PURPOSE, NOT YET FIXED: this documents the desired post-fix behaviour
+  // (Option C, porting productivity.ts's anchor-word pairing, Aravind's
+  // decision) so the eventual fix is demonstrably a fix, not an assertion.
+  // Do not "fix" this test to match current behaviour -- fix the parser.
+  describe('KNOWN DEFECT, FAILING UNTIL THE ANCHOR-WORD PORT LANDS -- a status/departure word must not let an unrelated number be claimed as idle_hours', () => {
+    it('"Mason left early 2 hours" -- "left early" describes a departure, not idleness, and nothing anchors "2" to the word "idle" at all; the current parser confidently (and wrongly) reads this identically to a real idle report', () => {
+      const p = parseIdleHoursByTrade('Mason left early 2 hours')
+      // CURRENT (buggy) behaviour: { by_trade: [{ trade: 'mason', idle_hours: 2, matched: true }], all_working: false, unknown: false }
+      // DESIRED (post anchor-word-port) behaviour: no "idle" anchor is
+      // present anywhere in the message, so "2" must not be confidently
+      // claimed as idle_hours for mason -- this must resolve UNKNOWN
+      // (idle-hours.ts's own existing tri-state for "nothing recognisable
+      // enough to trust"), never a confident, matched:true entry
+      // indistinguishable from "mason idle 2 hours".
+      expect(p.by_trade).toEqual([])
+      expect(p.unknown).toBe(true)
+    })
+  })
 })
