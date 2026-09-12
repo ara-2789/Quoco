@@ -69,6 +69,23 @@
 //   it is inert when the file is applied normally, which a regex can
 //   genuinely guarantee.
 //
+// function-redefinition-requires-capture (NEW, rule 10, added 2026-09-12 —
+//   migration 041's external review round 1, item 3). Origin: 041's own
+//   first DOWN draft hand-retyped write_dpr_version's pre-041 body from an
+//   earlier read instead of a fresh capture, and did not restore byte-
+//   identical — caught only by an actual rehearsal, after the fact. Any
+//   migration containing CREATE (OR REPLACE) FUNCTION for a name already
+//   defined in an EARLIER migration (applied or held, true chronological
+//   order) must itself textually contain, per such redefinition, a
+//   `body_md5 (pre-<nnn>):` baseline line and the capture command that
+//   produced it (`pg_get_functiondef`) — proof a live capture was taken,
+//   not retyped from memory or file text. Enforces only that a capture WAS
+//   TAKEN and recorded — never that the hash is correct or still matches
+//   live, which stays procedural (CLAUDE.md §7's own rehearsal discipline;
+//   a text-only regex has no database to check the hash against). A
+//   function's own FIRST-EVER definition needs no baseline — there is
+//   nothing prior to have captured.
+//
 // Held-directory files are identified in every violation by their path
 // RELATIVE TO THE REPO ROOT (e.g. "docs/reviews/026_dpr_generation_
 // stale.sql"), never a bare filename — applied-directory files keep their
@@ -552,6 +569,61 @@ function ruleDownSectionCommented(file, raw) {
 }
 
 // ---------------------------------------------------------------------------
+// Rule 10 — function-redefinition-requires-capture (2026-09-12, migration
+// 041's external review round 1, item 3). Origin: 041's OWN first DOWN draft
+// hand-retyped write_dpr_version's pre-041 body from an earlier read instead
+// of a fresh capture, and did not restore byte-identical -- caught only by
+// an actual rehearsal, after the fact. Mechanical, textual half of the fix:
+// any migration that contains CREATE (OR REPLACE) FUNCTION for a name
+// ALREADY DEFINED in an earlier migration (applied or held, in true
+// chronological order -- every applied file, in order, then every held
+// file, in order) must itself textually contain, for that redefinition, a
+// `body_md5 (pre-<nnn>):` baseline line AND the capture command that
+// produced it (`pg_get_functiondef`). Enforces only that a capture WAS
+// TAKEN and recorded -- never that the hash is correct or still matches
+// live, which stays procedural (CLAUDE.md §7's own rehearsal discipline; a
+// text-only regex has no database to check against). A function's OWN
+// FIRST-EVER definition needs no baseline -- there is nothing prior to have
+// captured. Detects redefinitions from the comment-STRIPPED sql (a bare
+// mention of a function's name in prose is never a definition) but checks
+// for the baseline/capture evidence in the RAW text, since that evidence
+// lives in comments by construction.
+// ---------------------------------------------------------------------------
+function extractDefinedFunctionNames(strippedSql) {
+  const names = new Set()
+  const re = /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?(\w+)\s*\(/gi
+  let m
+  while ((m = re.exec(strippedSql))) names.add(m[1].toLowerCase())
+  return names
+}
+
+function ruleFunctionRedefinitionRequiresCapture(orderedEntries) {
+  const violations = []
+  const firstDefinedIn = new Map() // lowercase function name -> file that first defined it
+  for (const { qualified, raw, sql } of orderedEntries) {
+    const namesHere = extractDefinedFunctionNames(sql)
+    if (namesHere.size > 0) {
+      const redefined = [...namesHere].filter((n) => firstDefinedIn.has(n))
+      if (redefined.length > 0) {
+        const md5Count = (raw.match(/body_md5\s*\(pre-\d+\)\s*:/gi) ?? []).length
+        const hasCaptureCommand = /pg_get_functiondef/i.test(raw)
+        if (md5Count < redefined.length || !hasCaptureCommand) {
+          violations.push({
+            file: qualified,
+            object: `uncaptured-redefinition-${redefined.join(',')}`,
+            rule: 'function-redefinition-requires-capture',
+          })
+        }
+      }
+      for (const n of namesHere) {
+        if (!firstDefinedIn.has(n)) firstDefinedIn.set(n, qualified)
+      }
+    }
+  }
+  return violations
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 function loadExceptions() {
@@ -611,12 +683,18 @@ function main() {
 
   const violations = []
   const fkCoverageViolations = []
+  // True chronological order for Rule 10: every applied file in order, then
+  // every held file in order -- matches the outer loop's own iteration
+  // order below exactly, so simply pushing as we go is correct with no
+  // separate sort needed.
+  const orderedForFunctionCapture = []
   for (const [dir, entries] of [[MIGDIR, appliedEntries], [HELDDIR, heldEntries]]) {
     for (const { name, qualified } of entries) {
       const raw = readFileSync(join(dir, name), 'utf8')
       const sql = stripComments(raw)
       const blocks = findCreateTableBlocks(sql)
       const alterColumns = findAlterAddColumns(sql)
+      orderedForFunctionCapture.push({ qualified, raw, sql })
 
       violations.push(...ruleOrphanSecurityDefiner(qualified, sql))
       violations.push(...ruleTenantIdRequired(qualified, blocks))
@@ -629,6 +707,7 @@ function main() {
     }
   }
   violations.push(...ruleUniqueMigrationPrefix([...appliedEntries, ...heldEntries]))
+  violations.push(...ruleFunctionRedefinitionRequiresCapture(orderedForFunctionCapture))
   violations.push(...ruleHeldMigrationReservationRequired(heldEntries, reservations))
 
   // --json: dump every RAW violation (pre-exceptions-filter) as JSON, for

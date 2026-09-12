@@ -514,5 +514,71 @@
     "object": "unreserved-028",
     "rule": "held-migration-reservation-required",
     "reason": "Not a pending migration -- see this same file's unique-migration-prefix exception above for why it will never be independently promoted or need a reservation."
+  },
+  {
+    "file": "007_auth_surgery.sql",
+    "object": "uncaptured-redefinition-get_user_tenant_id,handle_new_user,complete_onboarding",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Historical, already applied, predates this rule (added 2026-09-12, migration 041's own external review round 1). Retroactively demanding a live capture for a redefinition that shipped years before this rule existed is neither possible (the pre-apply live state is gone) nor useful -- this rule exists to catch a NEW instance of the retyped-from-memory defect going forward, same grandfather-the-history-enforce-going-forward shape as this project's other rules (see the file header's own P2-CI-gates note)."
+  },
+  {
+    "file": "013_session_transition_test_lock_probe.sql",
+    "object": "uncaptured-redefinition-acquire_and_transition_session",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Historical, already applied, predates this rule (added 2026-09-12, migration 041's own external review round 1) -- see 007_auth_surgery.sql's own exception entry above for the full reasoning, not repeated per file."
+  },
+  {
+    "file": "016_corrections.sql",
+    "object": "uncaptured-redefinition-complete_onboarding",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Historical, already applied, predates this rule (added 2026-09-12, migration 041's own external review round 1) -- see 007_auth_surgery.sql's own exception entry above for the full reasoning, not repeated per file."
+  },
+  {
+    "file": "018_morning_flow_parsers.sql",
+    "object": "uncaptured-redefinition-apply_morning_flow_turn",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Historical, already applied, predates this rule (added 2026-09-12, migration 041's own external review round 1) -- see 007_auth_surgery.sql's own exception entry above for the full reasoning, not repeated per file."
+  },
+  {
+    "file": "022_evening_flow_apply_turn.sql",
+    "object": "uncaptured-redefinition-apply_morning_flow_turn",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Historical, already applied, predates this rule (added 2026-09-12, migration 041's own external review round 1) -- see 007_auth_surgery.sql's own exception entry above for the full reasoning, not repeated per file."
+  },
+  {
+    "file": "024_evening_flow_q4_q5.sql",
+    "object": "uncaptured-redefinition-apply_evening_flow_turn",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Historical, already applied, predates this rule (added 2026-09-12, migration 041's own external review round 1) -- see 007_auth_surgery.sql's own exception entry above for the full reasoning, not repeated per file."
+  },
+  {
+    "file": "025_evening_productivity_reconciliation.sql",
+    "object": "uncaptured-redefinition-apply_evening_flow_turn",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Historical, already applied, predates this rule (added 2026-09-12, migration 041's own external review round 1) -- see 007_auth_surgery.sql's own exception entry above for the full reasoning, not repeated per file."
+  },
+  {
+    "file": "030_morning_flow_attendance.sql",
+    "object": "uncaptured-redefinition-apply_morning_flow_turn",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Historical, already applied, predates this rule (added 2026-09-12, migration 041's own external review round 1) -- see 007_auth_surgery.sql's own exception entry above for the full reasoning, not repeated per file."
+  },
+  {
+    "file": "035_evening_flow_restructuring.sql",
+    "object": "uncaptured-redefinition-apply_morning_flow_turn,apply_evening_flow_turn",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Historical, already applied, predates this rule (added 2026-09-12, migration 041's own external review round 1) -- see 007_auth_surgery.sql's own exception entry above for the full reasoning, not repeated per file."
+  },
+  {
+    "file": "038_hindrance_flow_and_collision_fix.sql",
+    "object": "uncaptured-redefinition-apply_morning_flow_turn,apply_evening_flow_turn",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Historical, already applied, predates this rule (added 2026-09-12, migration 041's own external review round 1) -- see 007_auth_surgery.sql's own exception entry above for the full reasoning, not repeated per file."
+  },
+  {
+    "file": "040_evening_q5_tomorrow_needs.sql",
+    "object": "uncaptured-redefinition-correct_daily_log,apply_evening_flow_turn",
+    "rule": "function-redefinition-requires-capture",
+    "reason": "Confirms the rule correctly goes RED here, as external review round 1 required before shipping it. Different reason than the other historical exceptions above, stated precisely rather than reused: 040 did not skip verification -- its own DOWN section deliberately chose 'always recapture live at rollback time, never inline a baseline' (see its own header, FIX 2/S1) specifically because apply_evening_flow_turn had been touched by multiple prior migrations (035, then 038) and a hand-reconstructed inline body had already been shown wrong once. That is a real, valid strategy this rule cannot recognise as equivalent to a body_md5 baseline -- it is textually invisible to a regex. Exempted as historical/predates-this-rule like the others, not because 040 actually lacked verification."
   }
 ]

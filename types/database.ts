@@ -2119,10 +2119,6 @@ export type Database = {
       get_user_tenant_id: { Args: never; Returns: string }
       quoco_classify_yes_no: { Args: { p_text: string }; Returns: Json }
       quoco_same_ist_day: { Args: { a: string; b: string }; Returns: boolean }
-      quoco_test_row_is_locked: {
-        Args: { p_phone_number: string }
-        Returns: boolean
-      }
       sweep_stale_morning_sessions: { Args: { p_now?: string }; Returns: Json }
       write_dpr_version: {
         Args: {
