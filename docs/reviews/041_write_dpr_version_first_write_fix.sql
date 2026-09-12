@@ -112,10 +112,12 @@
 
 BEGIN;
 
--- CREATE OR REPLACE, never DROP+CREATE -- signature byte-identical to the
--- live capture above. Body built from that live capture, with exactly one
--- logic change (marked FIX (migration 041) below) and the REVOKE/GRANT
+-- =============================================================================
+-- STEP 1 -- CREATE OR REPLACE, never DROP+CREATE -- signature byte-identical
+-- to the live capture above. Body built from that live capture, with exactly
+-- one logic change (marked FIX (migration 041) below) and the REVOKE/GRANT
 -- re-asserted, unchanged, per this project's own convention.
+-- =============================================================================
 CREATE OR REPLACE FUNCTION public.write_dpr_version(
   p_dpr_id UUID,
   p_content TEXT,
@@ -245,6 +247,59 @@ $$;
 REVOKE ALL ON FUNCTION public.write_dpr_version(UUID, TEXT, JSONB, TEXT, UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.write_dpr_version(UUID, TEXT, JSONB, TEXT, UUID) TO authenticated, service_role;
 
+-- =============================================================================
+-- STEP 2 -- COMMENT ON TABLE dpr_versions: dated supersession of 029's own
+-- comment (B1, external review round 1, 2026-09-12). 029's own review
+-- REQUIRED exactly this kind of note in the first place -- the reviewer
+-- demanded the numbering semantics be written down so "history begins at
+-- version 2" would be read as documented design, never rediscovered as a
+-- bug. After 041, that statement is no longer true for a row created from
+-- 041 onward -- left as-is, the catalog's own authoritative note would
+-- contradict the live function. Superseded in place, dated, three eras kept
+-- rather than overwritten -- migration 040's STEP 4 (retiring
+-- evening_schedule_miss_reason) is the model for this shape, one column
+-- comment over. The original 029 text is fully preserved inside era (2)
+-- below, not deleted -- it correctly describes every row created between
+-- 029's apply (2026-08-20) and 041's.
+-- =============================================================================
+COMMENT ON TABLE public.dpr_versions IS
+  'Append-only DPR generation history. One row per regeneration (system or PM-'
+  'triggered). dprs.content/structured/current_version stay a denormalized '
+  '"latest" projection for fast reads; this table is the source of truth for '
+  'history. "Which version was delivered to the owner" is answered by whichever '
+  'row has delivered_to_owner_at set. Written ONLY via write_dpr_version() — '
+  'never a direct INSERT from application code, EXCEPT migration 029''s own '
+  'one-time backfill for rows that already carried real content before this '
+  'table existed. '
+  'THREE ERAS, dated, none silently overwritten: '
+  '(1) BEFORE 2026-08-20 (pre-029): dpr_versions did not exist. dprs itself '
+  'was the plain UPSERT target for regeneration — "silent replace, never a '
+  'new version row per bot-flows.md" (023_dpr_reports.sql''s own original '
+  'COMMENT ON TABLE dprs, quoted verbatim). Every regeneration destroyed the '
+  'prior render with no history anywhere, for every row. '
+  '(2) 2026-08-20 through 2026-09-12 (029, before 041): write_dpr_version() '
+  'existed but was DESIGNED to be called only from a row''s SECOND '
+  'generation onward. A genuinely new row''s version 1 was the initial '
+  'system-generated report, written DIRECTLY by the generation job''s own '
+  'upsert into dprs — never through this RPC, never recorded here. This '
+  'table''s history for such a row began at version 2, on its first '
+  'regeneration. 029''s own external review REQUIRED this stated '
+  'explicitly, naming the alternative ("calling write_dpr_version() for the '
+  'very first generation too") as "a separate, later change to the '
+  'generation job itself, out of this migration''s scope" — deliberate, not '
+  'a gap, for the scope 029 shipped. A row that ALREADY had real content '
+  'when 029 applied got its own version 1 backfilled once, at apply time '
+  '(029''s own section 2b) — those pre-existing rows never had this gap. '
+  '(3) FROM 2026-09-12 (041 onward): 029''s own named alternative shipped. '
+  'The generation job (Part A, docs/plans/dpr-owner-pass-regeneration.md, '
+  'PR #256) now calls write_dpr_version() for EVERY generation, including '
+  'the first. write_dpr_version() itself was fixed in this same migration '
+  'to match: when no dpr_versions row exists yet for the target, the new '
+  'version is current_version itself (1), not current_version + 1. A '
+  'genuinely new row''s version 1 is now written THROUGH this function and '
+  'IS recorded here, from its very first generation onward — era (2)''s gap '
+  'does not apply to any row created from 041 onward.';
+
 COMMIT;
 
 -- DOWN (rehearsal only -- inert when this file is applied normally; every
@@ -274,6 +329,21 @@ COMMIT;
 --   SELECT md5(pg_get_functiondef(
 --     'public.write_dpr_version(uuid,text,jsonb,text,uuid)'::regprocedure
 --   ));
+--
+-- STALENESS, STATED EXPLICITLY (external review round 1, item 2,
+-- 2026-09-12): this DOWN inlines a captured baseline body, which 040's own
+-- DOWN deliberately did NOT do for the function it touched -- not a
+-- contradiction, one rule with two cases. Inlining is safe HERE because the
+-- embedded md5 (c132d8f2e1897fbe7296824e1dc31a2d) makes a stale DOWN fail
+-- LOUDLY: if this file is ever run as a rollback after some LATER migration
+-- has already touched write_dpr_version again, the restored body will not
+-- match a NEWER expected baseline and the mismatch is immediately
+-- detectable by the same hash check this rehearsal already used -- it does
+-- not silently restore the wrong thing. This inlined block is valid ONLY
+-- while 041 is the LATEST migration to have touched write_dpr_version. If
+-- any later migration has modified this function, do not trust or run this
+-- block -- recapture a fresh baseline instead, per 040's own DOWN procedure
+-- (pg_get_functiondef against the then-current live state, not this file).
 --
 -- BEGIN;
 -- CREATE OR REPLACE FUNCTION public.write_dpr_version(p_dpr_id uuid, p_content text, p_structured jsonb, p_generated_by text, p_generated_by_user uuid DEFAULT NULL::uuid)
@@ -414,4 +484,31 @@ COMMIT;
 --
 -- REVOKE ALL ON FUNCTION public.write_dpr_version(UUID, TEXT, JSONB, TEXT, UUID) FROM PUBLIC, anon;
 -- GRANT EXECUTE ON FUNCTION public.write_dpr_version(UUID, TEXT, JSONB, TEXT, UUID) TO authenticated, service_role;
+--
+-- -- Restores 029's own COMMENT ON TABLE verbatim, so a rollback of THIS
+-- -- migration also undoes STEP 2's dated supersession, not just the
+-- -- function -- per CLAUDE.md's own "a teardown verifies comments too"
+-- -- rule, added after test-db was once found carrying a stale COMMENT
+-- -- from a prior rehearsal round whose schema-level DOWN had otherwise run
+-- -- correctly. Not added by external review round 1 -- added alongside it,
+-- -- as the direct, same-shape consequence of STEP 2 existing at all.
+-- COMMENT ON TABLE public.dpr_versions IS
+--   'Append-only DPR generation history. One row per regeneration (system or PM-'
+--   'triggered). dprs.content/structured/current_version stay a denormalized '
+--   '"latest" projection for fast reads; this table is the source of truth for '
+--   'history. "Which version was delivered to the owner" is answered by whichever '
+--   'row has delivered_to_owner_at set. Written ONLY via write_dpr_version() — '
+--   'never a direct INSERT from application code, EXCEPT this migration''s own '
+--   'one-time backfill (section 3b, below) for rows that already carried real '
+--   'content before this table existed. STATED DESIGN FACT (B3, external review): '
+--   'for a genuinely NEW dprs row (created after this migration), version 1 is '
+--   'the initial system-generated report, written directly by the generation '
+--   'job''s upsert into dprs — NOT through write_dpr_version() and NOT recorded '
+--   'here. This table''s history for such a row begins at version 2, on its '
+--   'first regeneration. This is deliberate, not a gap: the alternative (calling '
+--   'write_dpr_version() for the very first generation too) is a separate, '
+--   'later change to the generation job itself, out of this migration''s scope. '
+--   'For a row that ALREADY had content when this migration ran, its version 1 '
+--   'IS recorded here (via the section 3b backfill) — those rows do not have '
+--   'this gap.';
 -- COMMIT;
