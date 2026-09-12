@@ -87,4 +87,33 @@ describe('parseEquipmentHours', () => {
     const p = parseEquipmentHours('  JCB 6 hours  ')
     expect(p.raw_text).toBe('JCB 6 hours')
   })
+
+  // CHUNK-BOUNDARY / CROSS-ITEM KEYWORD COLLISION -- the evening-side sibling
+  // of the morning equipment.ts fix (docs/reviews/equipment-chunk-boundary-
+  // poclain-dumper-gap.md). Same split regex (line 111-114 below), same
+  // "first keyword in the chunk wins, a later keyword is discarded" defect,
+  // just not the one that fired in the real 2026-09-12 incident (the
+  // evening reply that night only ever named two machines). A chunk with
+  // two recognised keywords and no separating comma must yield two items,
+  // each with the digit that follows it.
+  it('two recognised keywords in one comma-less chunk -> two items, not one', () => {
+    const p = parseEquipmentHours('JCB 6 hours Poclain 4 hours')
+    expect(p.items).toEqual([
+      { type: 'jcb', hours_used: 6, matched: true, raw: 'JCB 6 hours' },
+      { type: 'excavator', hours_used: 4, matched: true, raw: 'Poclain 4 hours' },
+    ])
+  })
+
+  it('single-keyword chunks are unaffected by the multi-item split (regression guard: "2 JCB 8")', () => {
+    // MUST stay exactly as the 2026-08-31-incident fix intends: one
+    // keyword in the chunk means one segment, first number in the chunk
+    // wins regardless of its position relative to the keyword.
+    const p = parseEquipmentHours('2 JCB 8')
+    expect(p.items).toEqual([{ type: 'jcb', hours_used: 2, matched: true, raw: '2 JCB 8' }])
+  })
+
+  it('zero-keyword chunks are unaffected by the multi-item split (regression guard: "4 hours per day")', () => {
+    const p = parseEquipmentHours('4 hours per day')
+    expect(p.items).toEqual([{ type: 'equipment', hours_used: 4, matched: false, raw: '4 hours per day' }])
+  })
 })
