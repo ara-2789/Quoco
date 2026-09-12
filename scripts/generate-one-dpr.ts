@@ -32,6 +32,7 @@ import { generateEngineerVerdict } from '../lib/dpr/generate'
 import { renderEngineerReport, CONTAINMENT_FAILURE_PLACEHOLDER } from '../lib/dpr/render'
 import { resolveProjectManagerName } from '../lib/dpr/project-manager'
 import { correctEngineerWorkText } from '../lib/dpr/spelling-correction'
+import { writeDprVersion } from '../lib/dpr/write-version'
 
 async function main() {
   const [projectId, engineerId, logDate] = process.argv.slice(2)
@@ -85,20 +86,21 @@ async function main() {
     },
   )
 
-  const { error: upsertError } = await client.from('dprs').upsert(
-    {
-      project_id: projectId,
-      engineer_id: engineerId,
-      tenant_id: project.tenant_id,
-      log_date: logDate,
-      structured: rendered.structured as unknown as Json,
-      content: rendered.content,
-      generated_at: new Date().toISOString(),
-      generation_status: 'idle',
-    },
-    { onConflict: 'project_id,engineer_id,log_date' },
-  )
-  if (upsertError) throw upsertError
+  // Part A (docs/plans/dpr-owner-pass-regeneration.md) — same write path
+  // as dispatch.ts now uses: write_dpr_version instead of a raw upsert, so
+  // a hand-re-run of this script against an already-generated day appends
+  // a version instead of silently overwriting it with no history. No
+  // dprId known here (this script has no earlier claim step of its own),
+  // so writeDprVersion ensures the row via its own shell upsert.
+  await writeDprVersion({
+    client,
+    projectId,
+    engineerId,
+    tenantId: project.tenant_id as string,
+    logDate,
+    content: rendered.content,
+    structured: rendered.structured as unknown as Json,
+  })
 
   console.log('\n=== USAGE / COST ===')
   console.log(`Input tokens:  ${result.usage.input_tokens}`)
