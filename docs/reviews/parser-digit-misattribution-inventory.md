@@ -224,3 +224,34 @@ affected parser, before any parser code changes — see
 `test/unit/quantities-parser.test.ts`, `test/unit/equipment-parser.test.ts`
 for the new cases demonstrating each defect against the current
 (unfixed) implementation.
+
+## Port progress
+
+**1. `idle-hours.ts` — DONE (commit `7c643b0`, 2026-09-12).** Anchor-word
+guard: a digit is trusted as `idle_hours` only when the literal word
+"idle" appears in the same chunk. Adapted, not copied verbatim — no
+BEFORE/AFTER positional scan (this parser already chunks the input, so
+"is the anchor present in this chunk" is the faithful equivalent at that
+scope) and, more importantly, NO port of productivity.ts's "lone
+unanchored number defaults to idle" fallback — porting that specific piece
+would have silently readmitted the exact bug this fix closes, since
+"Mason left early 2 hours" is itself a lone unanchored number.
+
+**DELIBERATE COMPLETION-RATE COST, recorded per Aravind's own instruction
+(2026-09-12, approving this port).** A bare "mason 2" (trade + digit, no
+"idle" anchor anywhere) now returns `null` instead of a confident item.
+When every chunk in an answer lacks the anchor, `isIdleHoursAnswered()`
+flips from `true` to `false`, which crosses into `evening.ts`'s
+`p_parse_ok['3']` and changes the RPC's reask-vs-advance decision for that
+turn — a previously-silent (and possibly wrong) accept becomes an explicit
+reask instead. **This is an accepted trade, not an incidental side effect:
+a guess recorded as fact is worse than one more question.** Worth stating
+plainly because completion rate is the binding constraint this product's
+own six-question ceiling exists to protect (CLAUDE.md's own domain-reality
+framing across these parsers' headers) — every parser in this port, not
+only this one, may trade a small amount of completion rate for the
+guarantee that what IS recorded is trustworthy. Track this cost across all
+four ports, not just this one, as the port continues.
+
+**2–4 remaining:** `equipment-hours.ts`, `quantities.ts`, `equipment.ts` —
+in progress.
