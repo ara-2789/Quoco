@@ -128,7 +128,11 @@ export function renderEmailReport(
   if (meta.project_manager_name !== null) textLines.push(`Project Manager: ${meta.project_manager_name}`)
   textLines.push('', fmtCombinedCheckInLine(morningStatus, eveningStatus))
   if (body.length > 0) textLines.push('', 'The sections below are as reported from site.', '', body)
-  textLines.push('', 'SUMMARY (auto-generated)', verdict)
+  // OMIT WHEN EMPTY, 2026-09-12 -- same rule as render.ts's own
+  // renderEngineerReport (see that function's own comment): `verdict` is
+  // '' whenever the AI summary is disabled (dispatch.ts), and on those
+  // days there is nothing to show here at all.
+  if (verdict.length > 0) textLines.push('', 'SUMMARY (auto-generated)', verdict)
   const text = textLines.join('\n')
 
   const htmlMeta = [
@@ -146,6 +150,15 @@ export function renderEmailReport(
         ].join('\n')
       : ''
 
+  // OMIT WHEN EMPTY, 2026-09-12 -- same rule as htmlBody above and as
+  // render.ts's own renderEngineerReport: '' whenever the AI summary is
+  // disabled, filtered out of the array below like every other empty
+  // optional block already is.
+  const htmlSummary =
+    verdict.length > 0
+      ? [`<h3 style="margin-bottom: 4px;">SUMMARY (auto-generated)</h3>`, `<p><strong>${escapeHtml(verdict)}</strong></p>`].join('\n')
+      : ''
+
   const html = [
     `<div style="font-family: sans-serif; max-width: 640px;">`,
     `<p>Good evening.</p>`,
@@ -153,8 +166,7 @@ export function renderEmailReport(
     htmlMeta,
     `<p>${escapeHtml(fmtCombinedCheckInLine(morningStatus, eveningStatus))}</p>`,
     htmlBody,
-    `<h3 style="margin-bottom: 4px;">SUMMARY (auto-generated)</h3>`,
-    `<p><strong>${escapeHtml(verdict)}</strong></p>`,
+    htmlSummary,
     `</div>`,
   ]
     .filter(Boolean)

@@ -102,6 +102,17 @@ describe('renderEmailReport', () => {
     expect(result.html).toContain('SUMMARY (auto-generated)')
   })
 
+  // AI SUMMARY DISABLED, 2026-09-12 -- same rule as render.ts's own
+  // renderEngineerReport (see that file's test of the same name): verdict
+  // '' means no SUMMARY section at all, in both the text and HTML output.
+  it('SUMMARY is omitted entirely (text and HTML) when verdict is ""', () => {
+    const result = renderEmailReport(makeFacts(), '', MORNING_COMPLETE, EVENING_COMPLETE, META)
+    expect(result.text).not.toContain('SUMMARY')
+    expect(result.html).not.toContain('SUMMARY')
+    expect(result.text).toContain('WORK')
+    expect(result.html).toContain('WORK')
+  })
+
   it('escapes HTML-significant characters in free-text fields — no raw markup injection from engineer input', () => {
     const facts = makeFacts({
       work: {

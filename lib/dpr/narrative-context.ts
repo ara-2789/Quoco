@@ -135,6 +135,10 @@ export async function fetchNarrativeContext(
 // the model may OUTPUT (never fabricate a number), never what it may READ.
 // -----------------------------------------------------------------------
 
+// DORMANT (2026-09-12, AI summary disabled) -- only consumer was
+// lib/dpr/generate.ts's generateEngineerVerdict (via lib/dpr/dispatch.ts's
+// now-removed fetch). Re-enable point: dispatch.ts's eveningNeedsModel-true
+// branch.
 export async function fetchEngineerNarrativeContext(
   client: SupabaseClient,
   project_id: string,
