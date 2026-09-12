@@ -253,5 +253,102 @@ only this one, may trade a small amount of completion rate for the
 guarantee that what IS recorded is trustworthy. Track this cost across all
 four ports, not just this one, as the port continues.
 
-**2–4 remaining:** `equipment-hours.ts`, `quantities.ts`, `equipment.ts` —
-in progress.
+**2. `equipment-hours.ts` — PAUSED, needs a genuinely different approach,
+not a straight port.** Investigated 2026-09-12. Unlike `idle-hours.ts`,
+this parser's own existing test suite already treats bare, anchor-less
+digit+equipment answers as CORRECTLY confident, by design — most directly,
+`"2 JCB 8"` (the exact 2026-08-31 incident input the current design was
+built to accept) has no unit word, no usage verb, nothing but two bare
+digits and an equipment name, and is deliberately trusted. No candidate
+positive anchor (a unit word like "hours"/"hr", a usage verb like
+"used"/"ran"/"run", or the equipment keyword itself) both (a) rejects
+"Pump breakdown 1 hr" and (b) preserves every existing confident-answer
+test — the closest candidate that rejects the bug (requiring a usage verb)
+also rejects 5 of 8 existing confident-answer tests. This file's own
+header additionally states an already-decided, post-incident architectural
+principle directly opposed to a refuse-to-store gate: "NO ARITHMETIC
+GUARD, ON PURPOSE... Whatever number is reported is stored, exactly as
+given... Implausibility is now a SQL-side FLAG... never a TS-side
+rejection." Options reported to Aravind, not decided at time of writing:
+(A) extend the anchor to usage verbs only, accepting a larger
+completion-rate cost than idle-hours.ts's port; (B) don't gate at all —
+add a confidence signal to `EquipmentHoursItem` instead (matching this
+pipeline's own existing "flag, not gate" precedent, e.g. the `implausible`
+field) and let a downstream consumer decide citability; (C) a scoped
+blocklist for this file alone (Aravind's own earlier critique of stop-word
+lists still applies). **SUPERSEDED by the 2026-09-12 AI-summary-removal
+decision below before a choice was made** — see that section for why this
+investigation, while still technically correct, no longer needs resolving
+as a live bug.
+
+**3–4, `quantities.ts` / `equipment.ts` — not yet reached** (paused at #2
+per Aravind's own instruction to stop at the first parser needing a
+different approach, before improvising).
+
+## 2026-09-12 — the AI summary itself is being removed; re-derived exposure picture
+
+Aravind's decision, made while #2 above was paused: remove the model-
+generated SUMMARY sentence from the DPR entirely (separate work,
+`lib/dpr/{generate,dispatch,render,render-email}.ts` — full disable-point
+proposal reported separately, not yet applied). Rationale given: the
+summary produced one factually inverted sentence (this exact "Pump
+breakdown 1 hr" → "concrete pump used for 1 hour" case) and otherwise
+restates the WORK/RESOURCE/MACHINE sections above it — a real reason to
+question the whole apparatus, not only the parser bug that fed it a bad
+Fact.
+
+**This changes what "reaches the DPR" means for every parser in this
+document, and was checked directly against the current render/prompt
+code, not assumed:**
+
+Once `generateEngineerVerdict`/`formatEngineerFacts` (the ONLY consumer of
+`equipment.items[].actual_hours` and `work.done_quantity`/`.unit` as
+citable Facts) stops being called at all, the sole remaining path from any
+parsed number to anything an owner sees is `renderEngineerBody` (render.ts)
+— traced section by section:
+
+- **WORK** — `Morning plan`/`Work completed` read `planned_corrected`/
+  `done_text_corrected` (free text). `done_quantity`/`.unit`
+  (quantities.ts's parsed output) were already dropped from the render
+  line in Stage 3 of the format redesign — confirmed, not re-derived.
+  **quantities.ts's parsed numbers now reach NOTHING an owner sees.**
+- **RESOURCE** — `Morning/Evening labour reported` read `.raw_text`
+  (labour.ts), not `.total`/`.by_trade` — unaffected either way, already
+  the case since the 113-incident fix. `Idle hours: ...` reads
+  `facts.idle_hours_by_trade`, populated directly from
+  `evening_idle_hours.by_trade` (idle-hours.ts's parsed output, filtered
+  to `idle_hours > 0`) — **the ONE parsed-number path that still reaches
+  the rendered report**, unaffected by the summary's removal.
+- **MACHINE** — `Machines reported`/`Machine usage` read
+  `machines_reported`/`run_hours` (raw text), never
+  `equipment.items[].actual_hours`/`hours_used` (equipment-hours.ts's
+  parsed output). **equipment-hours.ts's parsed numbers now reach NOTHING
+  an owner sees** — their only live consumer was the prompt.
+- `equipment.ts`'s `count` field already reached nothing (confirmed
+  earlier in this document, unaffected either way — `assemble.ts`'s own
+  narrowed type for `morning_equipment.items` never declares `count`).
+
+**Confirms Aravind's own read exactly: `idle_hours_by_trade` (idle-hours.ts)
+is the only one of the four parsers' structured numeric outputs left with
+any real exposure once the summary is gone.** Consequence for this
+document's own priority list:
+
+- `idle-hours.ts` (already shipped, commit `7c643b0`) — **the fix that
+  mattered.** Unaffected by the summary's removal; still the only parser
+  whose output an owner still sees as a number, not just as raw text.
+- `equipment-hours.ts` — drops from "confirmed live bug" to "cleanup,
+  whenever." The paused #2 investigation above remains technically
+  correct and worth finishing eventually (the parser still stores a wrong
+  `hours_used` internally, in the DB), but it no longer reaches any
+  owner-facing surface, so it no longer needs the same urgency the
+  original review gave it.
+- `quantities.ts` — same demotion. The m2/m3 bug is still real at the
+  storage layer; it no longer reaches an owner-facing surface either way
+  (Stage 3 already cut its render-layer path; the summary was its only
+  other consumer).
+- `equipment.ts` — unaffected, already lowest-priority, already zero DPR
+  exposure before and after.
+
+Not closed, not deleted from scope — recorded here as a re-prioritisation,
+so whoever picks up #2/#3/#4 later starts from the right urgency, not the
+2026-09-12 pre-summary-removal one.
