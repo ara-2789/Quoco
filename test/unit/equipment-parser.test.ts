@@ -110,4 +110,49 @@ describe('parseEquipment', () => {
     expect(p.raw_text).toBe('JCB 2')
     expect(p.items[0].raw).toBe('JCB 2')
   })
+
+  // CHUNK-BOUNDARY / CROSS-ITEM KEYWORD COLLISION (2026-09-12, real prod
+  // incident: Speed Mechatronics/Vikram Rao, daily_logs.id
+  // 8e06a1f1-3481-45b8-9f8b-410fc6548948 — see docs/reviews/equipment-
+  // chunk-boundary-poclain-dumper-gap.md). The engineer typed two machines
+  // in one chunk with no separating comma ("Poclain 1 Dumper 3") — the
+  // chunk-split regex only breaks on comma/and/plus, so this used to
+  // collapse into ONE item (type: excavator, count: 1), silently
+  // discarding the "Dumper 3" keyword+digit entirely. A chunk containing
+  // more than one recognised equipment keyword must now yield one item
+  // per keyword, each paired with the digit that follows it.
+  it('two recognised keywords in one comma-less chunk -> two items, not one', () => {
+    const p = parseEquipment('Poclain 1 Dumper 3')
+    expect(p.items).toEqual([
+      { type: 'excavator', count: 1, owned_or_hired: null, daily_hire_cost: null, raw: 'Poclain 1' },
+      { type: 'dumper', count: 3, owned_or_hired: null, daily_hire_cost: null, raw: 'Dumper 3' },
+    ])
+  })
+
+  it('the real incident input end-to-end: "JCB 2, Poclain 1 Dumper 3" -> three items', () => {
+    const p = parseEquipment('JCB 2, Poclain 1 Dumper 3')
+    expect(p.items).toEqual([
+      { type: 'jcb', count: 2, owned_or_hired: null, daily_hire_cost: null, raw: 'JCB 2' },
+      { type: 'excavator', count: 1, owned_or_hired: null, daily_hire_cost: null, raw: 'Poclain 1' },
+      { type: 'dumper', count: 3, owned_or_hired: null, daily_hire_cost: null, raw: 'Dumper 3' },
+    ])
+  })
+
+  it('a single-keyword chunk is completely unaffected by the multi-item split (regression guard)', () => {
+    // Must stay byte-identical to the pre-fix behaviour: one keyword in
+    // the chunk means one segment, same as before this change existed.
+    const p = parseEquipment('mixer 3 units')
+    expect(p.items).toEqual([
+      { type: 'concrete_mixer', count: 3, owned_or_hired: null, daily_hire_cost: null, raw: 'mixer 3 units' },
+    ])
+  })
+
+  it('three recognised keywords in one chunk -> three items', () => {
+    const p = parseEquipment('JCB 2 Poclain 1 Dumper 3')
+    expect(p.items).toEqual([
+      { type: 'jcb', count: 2, owned_or_hired: null, daily_hire_cost: null, raw: 'JCB 2' },
+      { type: 'excavator', count: 1, owned_or_hired: null, daily_hire_cost: null, raw: 'Poclain 1' },
+      { type: 'dumper', count: 3, owned_or_hired: null, daily_hire_cost: null, raw: 'Dumper 3' },
+    ])
+  })
 })
