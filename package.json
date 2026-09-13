@@ -8,6 +8,7 @@
     "check:profile-lookups": "node scripts/check-profile-lookups.mjs",
     "lint:migrations": "node scripts/lint-migrations.mjs",
     "lint:filesize": "node scripts/check-file-sizes.mjs",
+    "lint:fixture-literals": "node scripts/lint-retired-fixture-literals.mjs",
     "prebuild": "npm run check:profile-lookups",
     "build": "next build",
     "start": "next start",
