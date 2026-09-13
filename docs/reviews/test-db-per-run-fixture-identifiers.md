@@ -578,6 +578,110 @@ migration can point to.
   `session-transition.test.ts` lock-wait flake, identical error text to
   every prior batch and the pre-batch-1 baseline.
 
+## Batch 5 — CANCELLED, 2026-09-13 (not deferred — see below for why that distinction matters)
+
+**Scope as planned:** a live check of sustained concurrent *write* load
+(batch 1's read-only probe explicitly didn't cover this), then flipping
+`fileParallelism: true` if it passed. **Part 1 ran; its result cancels Part
+2 outright, not just postpones it.** Recorded here in full so the next
+person who wonders "why isn't `fileParallelism` on" finds the reason
+immediately, not a probe result buried in a chat transcript.
+
+### Part 1 — sustained concurrent write probe, raw results
+
+Two scenarios, both run against real test-db, both cleaned up after (checked
+directly — zero leftover rows under either probe's own tenant/user prefix).
+
+**Scenario A — independent concurrent lifecycles** (N workers, each running
+its own full seed → two real `apply_morning_flow_turn` RPC calls → readback
+→ teardown, against disjoint throwaway identities):
+
+```
+N=10:  {"successCount":10,"failureCount":0,"overallWallClockMs":16629,"sumOfIndividualLatenciesMs":164326}
+N=20:  {"successCount":20,"failureCount":0,"overallWallClockMs":29035,"sumOfIndividualLatenciesMs":575221}
+N=30:  {"successCount":30,"failureCount":0,"overallWallClockMs":41581,"sumOfIndividualLatenciesMs":1227427}
+```
+
+Zero failures at every N. **But latency grows roughly linearly with
+concurrency, not flat**: median per-session time went 16.4s → 28.8s → 40.9s
+as N went 10 → 20 → 30. N independent workers running "in parallel" each
+took roughly N times as long as one worker alone would — the database's own
+throughput ceiling (most likely a bounded connection pool; nothing errored
+to name the exact mechanism, so this is the shape of the data, not a
+confirmed cause) eats most of the parallel win before it reaches the test
+suite. Graceful degradation, not failure — but not free capacity either.
+
+**Scenario B — shared-identity lock contention** (one shared engineer/
+session, N concurrent `apply_morning_flow_turn` calls all trying to start a
+flow against the *same* phone number):
+
+```
+N=10: {"errorCount":0,"outcomeCounts":{"start":1,"reask":9},"overallWallClockMs":3889,"sumOfIndividualLatenciesMs":21140}
+N=20: {"errorCount":0,"outcomeCounts":{"start":1,"reask":19},"overallWallClockMs":5580,"sumOfIndividualLatenciesMs":59478}
+```
+
+Per-caller latencies form a clean staircase (N=10: 398, 710, 1086, 1491,
+1900, 2339, 2704, 3057, 3567, 3888ms) — `acquire_and_transition_session`'s
+row lock serialises every concurrent caller into a strict queue. Zero
+errors, zero deadlocks — this is graceful, correct locking behaviour, not a
+bug in that RPC. It is, however, the decisive result for this batch.
+
+### The finding, stated plainly: this is a correctness gap, not a speed gap
+
+Batches 2-4 randomised **per RUN, not per FILE** — a deliberate, load-bearing
+design choice (§ "The five decisions" above, and every batch's own "same
+value across every file in the run" reasoning): all 20 morning-fixture files
+within one run still share one derived engineer and one session row,
+exactly as they did before this migration, so their existing cross-file
+coordination stays intact. Sequentially (`fileParallelism: false`, today's
+setting) that is entirely correct — one file's turn always fully commits
+before the next file's `beforeAll` runs.
+
+**Under `fileParallelism: true`, those 20 files become genuinely concurrent
+OS processes that can interleave real RPC calls against that identical
+session row.** Scenario B proves the row lock serialises rather than
+corrupts that interleaving — no data gets silently mixed up. But
+serialisation is not the same as isolation: two files whose calls happen to
+overlap in time will each observe `current_step`/`current_flow` values that
+reflect the *other* file's in-flight turn, not just their own. A test
+asserting "after my own call, `current_step` is 2" can start failing (or
+worse, start passing for the wrong reason) depending on unrelated timing
+from a completely different file — **tests would pass or fail for reasons
+unrelated to what they assert, which is exactly the green-but-meaningless
+outcome this entire migration's two guards were built to catch.** Guard (a)
+and guard (b) both operate on *identifier* correctness (is this run's value
+actually this run's own); neither one, nor anything else built in batches
+1-4, detects or prevents *inter-file* interleaving on a *shared* identity
+within one run — that was never in scope, because `fileParallelism: false`
+made it structurally impossible until this probe considered turning it on.
+
+**The prerequisite this reveals, named for whoever revisits this:**
+`fileParallelism: true` is only safe once every fixture family gives each
+*file* — not each *run* — its own engineer/session identity. That is a
+different, larger design than per-run randomisation: it means the 20
+morning-fixture files can no longer coordinate through one shared row at
+all, which several of them currently rely on intentionally (the very
+"shared fixture" pattern this whole workstream started from). Scoping that
+properly — which files actually need a shared identity versus which merely
+inherited one because the registry was global, and what a per-file identity
+scheme would need to preserve — is real, separate design work. **Not
+attempted here, per explicit instruction**, and not something batches 1-4's
+own guards were ever positioned to catch, since they weren't asked to.
+
+### What batches 1-4 delivered, and what still stands
+
+The primary goal was: two agents, or an agent and CI, can run the suite
+simultaneously without collision or coordination. **That goal is met and is
+unaffected by batch 5's cancellation.** Every fixture identifier that used
+to be a single fixed literal shared forever now derives from a per-run id;
+guard (a) proved it catches a straggler literal before it ships; guard (b)
+proved it catches a broken derivation at fixture-setup time, twice, on real
+integration tests, not just in unit tests. `fileParallelism` was always the
+*second*, secondary win this workstream might unlock — cross-run isolation
+was the first and the one actually asked for. Batch 5's cancellation costs
+the speed win this document's own earlier sections flagged as "not yet
+proven"; it does not undo anything batches 1-4 actually shipped.
+
 ## Known limit, recorded plainly, not overlooked
 
 Four production queries scan every `status = 'active'` project with **no
@@ -624,16 +728,70 @@ Recorded there as dated notes, cross-referenced here:
   (intra-run/intra-codebase slot coordination) is untouched by per-run
   randomisation; only the cross-run axis closes.
 
-## Acceptance test — not run here, deliberately
+## Acceptance test — attempted, blocked for a real structural reason, not run as a local approximation
 
-Two real, simultaneous `vitest run` invocations against the same test-db,
-with an explicit post-hoc check that neither run's data appears in the
-other's counts. This is the actual proof the whole migration exists to
-deliver, and it belongs in CI, not this sandbox — `docs/reviews/sandbox-
-cannot-test-concurrency.md` already established, directly and empirically,
-that this sandbox cannot sustain genuinely concurrent RPC dispatch against
-test-db (by the time one probe request reaches Postgres, a second one fired
-"at the same time" has often already finished). A local claim of having
-verified concurrency here would not be evidence; this document does not make
-one. Scheduled for after batch 4, once every migrating fixture family is
-actually using run-scoped identifiers.
+**What it now proves, post-batch-5-cancellation:** cross-run isolation
+specifically — two independent `vitest run` invocations, each getting its
+own randomised identifiers, neither one's data appearing in the other's
+counts. This is exactly the claim batches 1-4 actually make (§ "What
+batches 1-4 delivered," above) — it does not, and was never going to, touch
+the batch-5 finding (that's an *intra-run*, cross-*file* question, and this
+test is about *inter-run* isolation).
+
+**Per this project's own standing rule, this cannot be verified locally, and
+this document does not pretend otherwise.** `docs/reviews/sandbox-cannot-
+test-concurrency.md` already established, directly and empirically, that
+this sandbox cannot sustain genuinely concurrent RPC dispatch against
+test-db — by the time one probe request reaches Postgres, a second one fired
+"at the same time" has often already finished. This needs two real,
+independent CI runners.
+
+**Investigated how to actually trigger two simultaneous CI runs — and found
+a real, structural reason today's CI configuration cannot do it, checked
+directly against the current workflow file, not assumed.**
+`.github/workflows/ci.yml`'s `test` job carries:
+
+```yaml
+concurrency:
+  group: ci-test-db-suite
+  cancel-in-progress: false
+```
+
+The group's own comment states its reasoning explicitly and deliberately:
+*"DO NOT add `${{ github.ref }}` ... to the group below ... The fixed
+literal name below is what makes every run of this job, from every branch
+and every trigger, queue behind whichever is already running,
+project-wide."* This is not an accident or an oversight to route around —
+it is a hardcoded, project-wide, trigger-agnostic serialisation, and it does
+exactly what it says: two pushes, two PRs, any two triggers of this job at
+the same moment queue, they do not overlap. **As currently configured,
+GitHub Actions itself will never let two `Test (real test-db)` jobs run at
+the same instant, regardless of what identifiers this migration uses.**
+
+**This comment's own stated justification is now partly stale — worth
+naming precisely, not silently acted on.** It cites "the fixtures this suite
+writes to (`TEST_TENANT_ID`, `TEST_PROJECT_ID`, `TEST_ENGINEER_PHONE` —
+fixed, deterministic UUIDs ... shared PROJECT-WIDE)" as the reason two
+concurrent runs would collide — that description is no longer accurate;
+those are exactly the identifiers batches 2 and 4 made per-run. But the
+group has a second, independent justification that batches 1-4 don't touch
+at all: `cancel-in-progress: false`'s own comment — *"queuing costs CI
+minutes; cancelling costs test-db integrity"* — and, newly relevant, **Part
+1's own probe result above**: sustained concurrent write load against this
+same test-db shows real, roughly-linear latency growth even with zero
+identifier collisions possible. Loosening this group wouldn't just enable
+the acceptance test — it would let every future PR's CI run degrade every
+other concurrent one's runtime, the exact cost Part 1 just measured
+directly. The group is doing at least one job this migration didn't
+obsolete.
+
+**Not changed here.** Actually running two concurrent CI jobs would require
+either a scoped, temporary override of this group (e.g., a one-off
+differently-keyed group for exactly this test) or a second, separate
+workflow definition outside this concurrency domain — either way, a real
+change to shared CI infrastructure, which is exactly the kind of action this
+project's own standing practice reserves for an explicit go-ahead, not a
+default I should reach for while writing this section. **Reported, not
+executed:** if a one-off unblock is wanted, say so and name which of the two
+shapes above to use; until then, this is the plain structural reason the
+acceptance test has not been run, in CI or otherwise.
