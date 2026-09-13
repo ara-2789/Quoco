@@ -101,6 +101,34 @@ export function equipmentLabel(type: string): string {
   return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 
+// Read back the engineer's OWN word for an equipment item, not its
+// canonicalized type — 2026-09-12 real incident: "Poclain" -> canonical
+// 'excavator' -> the evening Q4 echo showed "Excavator", a word the
+// engineer never typed (docs/reviews/equipment-chunk-boundary-poclain-
+// dumper-gap.md). Decision: "raw word only" — extract the bare name token
+// from the item's stored `raw` text (e.g. "Poclain 1" -> "Poclain"),
+// exactly as heard, no canonical form shown alongside it.
+//
+// `raw` is OPTIONAL and this falls back to `equipmentLabel(canonicalType)`
+// whenever it's missing/empty or every token in it turns out to be a bare
+// digit or a RATE_STOPWORDS filler — never renders an empty name, and
+// costs nothing for a caller/row that predates this field (equipmentLabel
+// was the ENTIRE echo before this fix; that path stays exactly as it was).
+export function rawEquipmentName(raw: string | null | undefined, canonicalType: string): string {
+  if (!raw) return equipmentLabel(canonicalType)
+  const tokens = raw
+    .replace(/(\d)(\D)/g, '$1 $2')
+    .replace(/(\D)(\d)/g, '$1 $2')
+    .split(/\s+/)
+    .filter(Boolean)
+  for (const t of tokens) {
+    if (/^\d+$/.test(t)) continue
+    if (RATE_STOPWORDS.has(t.toLowerCase())) continue
+    return t
+  }
+  return equipmentLabel(canonicalType)
+}
+
 // ---------------------------------------------------------------------------
 // "No equipment" sentinels (Q3 only). A terse negative that must normalise to a
 // clean answered-empty state (none:true), NOT a reask. Covers English + common

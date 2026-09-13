@@ -46,28 +46,36 @@ function splitDigitBoundaries(s: string): string {
   return s.replace(/(\d)(\D)/g, '$1 $2').replace(/(\D)(\d)/g, '$1 $2')
 }
 
-// Parse one comma/"and"-separated chunk into an item, or null when the chunk
-// carries neither a known machine keyword nor a number (i.e. not a confident
-// item — contributes to the garbled/reask path).
-function parseChunk(chunk: string): EquipmentItem | null {
-  const tokens = splitDigitBoundaries(chunk.toLowerCase())
-    .split(/\s+/)
-    .filter(Boolean)
+// Tokenize on ORIGINAL-CASE text (LOWERCASING FIX, matching equipment-hours.ts/
+// labour.ts/idle-hours.ts's own convention) — needed so a split-out
+// sub-segment's `raw` (below) can preserve the engineer's own casing, not a
+// force-lowercased copy. Digit/keyword matching stays case-insensitive
+// throughout (canonicalEquipment lowercases internally; every other
+// comparison below lowercases the individual token first).
+function tokenize(chunk: string): string[] {
+  return splitDigitBoundaries(chunk).split(/\s+/).filter(Boolean)
+}
 
+// Parse one token run (a whole chunk, or a keyword-bounded sub-segment of
+// one — see parseChunk below) into an item, or null when it carries neither
+// a known machine keyword nor a number (i.e. not a confident item —
+// contributes to the garbled/reask path).
+function parseTokens(tokens: readonly string[], raw: string): EquipmentItem | null {
   let keyword: string | null = null
   let count: number | null = null
   let firstNameWord: string | null = null
 
   for (const t of tokens) {
     if (/^\d+$/.test(t)) {
-      // First number in the chunk is the unit count (§33(a)) — the field
+      // First number in this run is the unit count (§33(a)) — the field
       // gives counts ("JCB 2"), not rates. daily_hire_cost stays null.
       if (count === null) count = parseInt(t, 10)
       continue
     }
-    const kw = canonicalEquipment(t)
+    const lower = t.toLowerCase()
+    const kw = canonicalEquipment(lower)
     if (kw && keyword === null) keyword = kw
-    if (firstNameWord === null && !RATE_STOPWORDS.has(t)) firstNameWord = t
+    if (firstNameWord === null && !RATE_STOPWORDS.has(lower)) firstNameWord = lower
   }
 
   const hasNumber = count !== null
@@ -78,10 +86,54 @@ function parseChunk(chunk: string): EquipmentItem | null {
   return {
     type,
     count,
-    owned_or_hired: detectTenure(tokens),
+    owned_or_hired: detectTenure(tokens.map((t) => t.toLowerCase())),
     daily_hire_cost: null,
-    raw: chunk.trim(),
+    raw,
   }
+}
+
+// A chunk carrying MORE THAN ONE recognised equipment keyword is really
+// several machines the engineer ran together with no separating comma —
+// missing punctuation is normal on a phone (2026-09-12 real incident,
+// "Poclain 1 Dumper 3" silently collapsing into one "excavator" item and
+// discarding "Dumper 3" outright: docs/reviews/equipment-chunk-boundary-
+// poclain-dumper-gap.md). Split at each keyword boundary so every keyword
+// gets its OWN item, paired with the digit that follows it, instead of the
+// first keyword's item silently absorbing every later keyword+digit into
+// its own `raw`.
+//
+// A chunk with 0 or 1 keyword is exactly ONE segment — the whole chunk —
+// which reproduces the pre-fix single-item behaviour byte-for-byte
+// (including `raw` staying the untouched, trimmed original chunk text).
+// This is a superset of the old logic, not a parallel path: every existing
+// single-keyword/no-keyword test is exercising the same code as before,
+// unchanged.
+function parseChunk(chunk: string): EquipmentItem[] {
+  const tokens = tokenize(chunk)
+
+  const keywordIndices: number[] = []
+  for (let i = 0; i < tokens.length; i++) {
+    if (!/^\d+$/.test(tokens[i]) && canonicalEquipment(tokens[i])) keywordIndices.push(i)
+  }
+
+  if (keywordIndices.length < 2) {
+    const item = parseTokens(tokens, chunk.trim())
+    return item ? [item] : []
+  }
+
+  const items: EquipmentItem[] = []
+  for (let i = 0; i < keywordIndices.length; i++) {
+    // Segment i runs from its own keyword up to (not including) the next
+    // keyword. Any tokens before the FIRST keyword (a leading bare number,
+    // say) are folded into segment 0 — the same tokens that segment would
+    // have owned when there was only one keyword in the whole chunk.
+    const start = i === 0 ? 0 : keywordIndices[i]
+    const end = i === keywordIndices.length - 1 ? tokens.length : keywordIndices[i + 1]
+    const segment = tokens.slice(start, end)
+    const item = parseTokens(segment, segment.join(' '))
+    if (item) items.push(item)
+  }
+  return items
 }
 
 export function parseEquipment(raw: string): EquipmentParse {
@@ -100,8 +152,7 @@ export function parseEquipment(raw: string): EquipmentParse {
 
   const items: EquipmentItem[] = []
   for (const chunk of chunks) {
-    const item = parseChunk(chunk)
-    if (item) items.push(item)
+    items.push(...parseChunk(chunk))
   }
 
   return { items, none: false, raw_text }

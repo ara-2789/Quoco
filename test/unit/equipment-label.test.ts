@@ -66,4 +66,45 @@ describe('buildEquipmentHoursPrompt', () => {
       'Equipment you listed this morning: JCB. How many *hours* was each used today? e.g. "JCB 6 hours, mixer 4 hours".',
     )
   })
+
+  // ECHO SHOWS THE ENGINEER'S OWN WORD, NOT THE CANONICAL SYNONYM
+  // (2026-09-12, real incident: "Poclain" -> canonical 'excavator' ->
+  // engineer read back "Excavator", a word he never typed. Decision:
+  // "raw word only" — docs/reviews/equipment-chunk-boundary-poclain-
+  // dumper-gap.md. rawEquipmentName (lexicon.ts) extracts the bare name
+  // token from the item's stored `raw` text; `raw` is OPTIONAL on
+  // EquipmentEchoItem so a row with no raw (older shape, or the two tests
+  // above/dispatch.test.ts's own seed helper) falls back to the humanized
+  // canonical label exactly as before — no regression for existing data.
+  it('a synonym-mapped item echoes the raw word the engineer typed, not the canonical type', () => {
+    const prompt = buildEquipmentHoursPrompt([{ type: 'excavator', raw: 'Poclain 1' }])
+    expect(prompt).toBe(
+      'Equipment you listed this morning: Poclain. How many *hours* was each used today? e.g. "JCB 6 hours, mixer 4 hours".',
+    )
+  })
+
+  it('the real incident\'s three items end-to-end: JCB, Poclain, Dumper — not JCB, Excavator', () => {
+    const prompt = buildEquipmentHoursPrompt([
+      { type: 'jcb', raw: 'JCB 2' },
+      { type: 'excavator', raw: 'Poclain 1' },
+      { type: 'dumper', raw: 'Dumper 3' },
+    ])
+    expect(prompt).toBe(
+      'Equipment you listed this morning: JCB, Poclain, Dumper. How many *hours* was each used today? e.g. "JCB 6 hours, mixer 4 hours".',
+    )
+  })
+
+  it('no raw provided -> falls back to the humanized canonical label (regression guard)', () => {
+    const prompt = buildEquipmentHoursPrompt([{ type: 'concrete_mixer' }])
+    expect(prompt).toBe(
+      'Equipment you listed this morning: Concrete Mixer. How many *hours* was each used today? e.g. "JCB 6 hours, mixer 4 hours".',
+    )
+  })
+
+  it('raw glued to its digit ("JCB2") still extracts the clean name', () => {
+    const prompt = buildEquipmentHoursPrompt([{ type: 'jcb', raw: 'JCB2' }])
+    expect(prompt).toBe(
+      'Equipment you listed this morning: JCB. How many *hours* was each used today? e.g. "JCB 6 hours, mixer 4 hours".',
+    )
+  })
 })

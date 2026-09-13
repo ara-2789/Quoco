@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Json } from '@/types/database'
 import type { SessionFlow } from '@/lib/whatsapp/session'
-import { equipmentLabel } from './parsers/lexicon'
+import { rawEquipmentName } from './parsers/lexicon'
 import { parseQuantities } from './parsers/quantities'
 import { parseLabourCount, isLabourAnswered } from './parsers/labour'
 import { parseIdleHoursByTrade, isIdleHoursAnswered } from './parsers/idle-hours'
@@ -153,10 +153,15 @@ export const EVENING_WRONG_FLOW_REPLY = ''
 // trusting the RPC's (permanently null) equipment_echo field.
 export interface EquipmentEchoItem {
   type: string
+  // The engineer's own typed text for this item (e.g. "Poclain 1"), when
+  // known. OPTIONAL — a row from before this field existed, or a caller
+  // that only has the canonical type, still echoes correctly via
+  // rawEquipmentName's own fallback to the humanized canonical label.
+  raw?: string | null
 }
 
 function formatEquipmentEcho(items: readonly EquipmentEchoItem[]): string {
-  return items.map((item) => equipmentLabel(item.type)).join(', ')
+  return items.map((item) => rawEquipmentName(item.raw, item.type)).join(', ')
 }
 
 // Q4's prompt. NO POSITIONAL NUMBERING, deliberately — unlike the old Q5
@@ -251,8 +256,10 @@ async function fetchMorningEquipmentEcho(
     throw new Error(`fetchMorningEquipmentEcho failed for project ${params.projectId}: ${error.message}`)
   }
 
-  const morningEquipment = data?.morning_equipment as { items?: Array<{ type: string }> } | null
-  return (morningEquipment?.items ?? []).map((item) => ({ type: item.type }))
+  const morningEquipment = data?.morning_equipment as {
+    items?: Array<{ type: string; raw?: string | null }>
+  } | null
+  return (morningEquipment?.items ?? []).map((item) => ({ type: item.type, raw: item.raw ?? null }))
 }
 
 export async function applyEveningFlowTurn(params: {
