@@ -462,3 +462,19 @@ shipped further than either of the first two before being caught -- named
 here as the pattern predicted, not a coincidence, and as the concrete
 argument for actually building the standing check the second instance
 deferred, rather than deferring it again.
+
+**DATED CORRECTION (2026-09-13, docs-rescue pass):** "never existed, at any
+point in `adhoc-menu-spec.md`'s git history" was checked against too narrow
+a scope -- it verified this file's history on the branch(es) already
+reachable from `main`, not every branch that existed. A `§g` section with
+exactly this content DID exist, written the same day as 037 itself
+(2026-09-03), on `worktree-adhoc-menu-spec-corrections` -- a branch nobody
+checked before writing this line, and one that then sat unmerged for ten
+more days after this entry was written. Rescued into
+`docs/plans/adhoc-menu-spec.md` as `§h` on this date; see that section's own
+header for the full provenance and `§g`'s own dated correction there for the
+pointer from `037`'s literal citation to where the content actually lives
+now. This doesn't undo the finding above -- it sharpens it: "checked
+directly: 3 commits total" was itself an instance of trusting a reference
+(the file's history on the branch at hand) without checking a sibling that
+held the real answer, the exact failure shape this whole entry is about.
