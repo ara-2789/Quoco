@@ -59,14 +59,29 @@ the two non-negotiable guards, and batch-by-batch progress/results.
    pattern (`test/helpers/outbound-fixtures.ts`) only works because
    `users.whatsapp_number` carries a real `UNIQUE` constraint (confirmed,
    `001_core_schema.sql:44`) that raises Postgres `23505` on a genuine
-   collision — `whatsapp_sessions.phone_number` has **no** unique constraint
-   at all (confirmed, same file), so a random collision there would not
-   error, it would silently corrupt another test's session state. Full
-   per-mint randomisation would need a new constraint or a different
-   detection mechanism to be safe for the many slots used for bare session
-   rows with no backing `users` insert; nesting under a run-scoped prefix
-   avoids that problem entirely by keeping the existing, already-safe,
-   manually-coordinated intra-run scheme.
+   collision.
+
+   **Correction, 2026-09-13, found live during batch 2.** This decision
+   originally claimed `whatsapp_sessions.phone_number` "has no unique
+   constraint at all," checked only against `001_core_schema.sql`'s original
+   `CREATE TABLE`. **That check was incomplete, not wrong about what it
+   looked at** — a later migration adds one: `uq_whatsapp_sessions_phone_
+   number`, an unconditional `CREATE UNIQUE INDEX` on `phone_number` with no
+   `WHERE` clause (`012_whatsapp_session_transition.sql:33-34`, added
+   specifically so `ON CONFLICT (phone_number)` has an arbiter to satisfy).
+   Found the hard way, not by re-auditing: batch 2's own
+   `cleanupTestSessions()` fix (see that batch's own section below) exposed
+   `test/webhook.test.ts` hitting this exact constraint on a re-seed attempt.
+   **Consequence for this decision:** a genuine random collision on
+   `phone_number` WOULD now error (a real `23505`, not silent corruption) —
+   the collision-detection argument against full per-mint randomisation is
+   weaker than originally stated. The decision to nest under a run-scoped
+   prefix rather than fully randomise still stands, but for a narrower
+   reason than "no way to detect a collision at all": the registry's real,
+   permanent job (intra-run/intra-codebase slot coordination, not detection)
+   is the actual reason it stays, argued correctly elsewhere in this same
+   decision; the detection-gap argument should not have been load-bearing
+   and is retracted as stated.
 
 4. **Skip Vitest's `projects`/workspace partial-parallelism idea.**
    Unverified in this exact setup, and the migration (4 batches) is short
@@ -193,6 +208,139 @@ inserts/updates/deletes per file, held connections across a whole test's
 lifetime, not one-shot reads) is a different load shape this probe does not
 exercise. Recorded as a real result, not a substitute for re-checking before
 batch 5 flips `fileParallelism: true`.
+
+## Batch 2 — morning-fixture family (closed, 2026-09-13)
+
+**Scope:** `TEST_TENANT_ID`, `TEST_PROJECT_ID`, and `TEST_ENGINEER_PHONE`
+(`test/helpers/db.ts`) migrated to per-run derived values, using batch 1's
+mechanism. Every file that merely *imports* these constants (rather than
+hardcoding a literal) needed zero code changes — the moment `db.ts` changed,
+every importer picked up the new derived value automatically. Actual edits
+landed only in `test/helpers/db.ts`, `test/helpers/run-scoped-fixtures.ts`
+(a new `deriveRunScopedPhone()`, and a signature change to
+`assertExactRowCount()` — see below), and the one straggler the lint found.
+
+**`TEST_ENGINEER_PHONE` was included, deliberately, beyond the letter of
+"migrate the tenant and project."** Read as "the shared engineer... derived
+from that fixture," not as part of the general phone-slot registry deferred
+to batch 4 — because leaving it as a fixed literal would have silently
+defeated the whole point of randomising the tenant/project: `users.
+whatsapp_number` is `UNIQUE`, so a second run's `ensureMorningEngineer()`
+would find and reuse the FIRST run's still-existing engineer row (and its
+now-stale `tenant_id`) instead of creating its own — the exact collision
+this migration exists to remove, just moved from the tenant/project axis to
+the engineer-identity axis. Given a dedicated, disjoint prefix
+(`+19995552NNNNNN`, `deriveRunScopedPhone()`) so it can never collide with
+the batch-4 registry (`+19995550NNN`) or the outbound suite's own range
+(`+19995551NNNNNN`) — reserved in `test/helpers/db.ts`'s own comment block
+alongside the outbound suite's reservation.
+
+**The full red list, before the fix, exactly as requested — 2 hits, one
+file:**
+```
+lint-retired-fixture-literals: 2 retired literal(s) still referenced under test/:
+
+  test/unit/morning-dispatch.test.ts: "00000000-0000-4000-a000-00000000d013" (TEST_TENANT_ID ...)
+  test/unit/morning-dispatch.test.ts: "+19995550200" (TEST_ENGINEER_PHONE ...)
+```
+Exactly the file batch 1's own sensitivity check had already flagged as a
+non-obvious catch. Confirmed harmless on inspection: a pure-function test for
+`dispatchMorningFlow` (no `testClient()`, no database), building a fake
+`WhatsAppSession` mock object that happened to embed the same literal
+strings as real fixture values, coincidentally, not by dependency. Fixed by
+swapping both to arbitrary, clearly-non-colliding placeholder values (a
+comment now explains why) — not derived from a run id, because this file
+never touches a database for that to matter. Lint went green afterward: `3
+retired literal(s) checked, 0 stragglers under test/`.
+
+**Guard (b), first real use — confirmed to fire, not just built.**
+`assertExactRowCount()` needed a signature change during this wiring:
+passing the real `SupabaseClient` against the batch-1 `CountableClient`
+interface triggered TypeScript's "Type instantiation is excessively deep and
+possibly infinite" against Supabase's own generic query-builder chain.
+Fixed by having the function take a pre-built `query: () => PromiseLike<...>`
+callback instead of `{client, table, column}` pieces — the caller builds the
+actual (correctly-typed) query itself, keeping Supabase's client type
+entirely out of the guard's own signature. Wired into `ensureMorningFixtures()`
+twice: once for the engineer (`users.whatsapp_number = TEST_ENGINEER_PHONE`,
+expected 1) and once for the project (`projects.tenant_id = TEST_TENANT_ID`,
+expected 1). **Proven to actually fire against real test-db**, the same
+"break it on purpose, observe the failure, revert" discipline used for the
+lint's own sensitivity check: temporarily set the project check's
+`expected` to `999`, ran `test/morning-flow.test.ts`, and got —
+
+```
+Error: assertExactRowCount FAILED (ensureMorningFixtures, run e3040e61-53af-4610-be2c-84cd586a4e88):
+expected exactly 999 row(s) in projects where tenant_id = 0fe6dbd2-00e5-4fe6-8e70-301152f82fd0, found 1.
+This means the identifier is not actually isolated -- either it collided with another run's data, or a
+stale/leftover row already exists under this exact value. Investigate before re-running; do not treat
+this as flaky.
+```
+
+All 19 tests in that file were skipped — `beforeAll` aborted before any test
+body ran, rather than letting 19 tests execute against a fixture the guard
+had just proven was not what it claimed to be. Reverted to `expected: 1`
+immediately after; re-ran clean. **What it would do if a real straggler
+survived:** exactly this — a specific, named, immediate failure at fixture
+setup, naming the run id, the exact identifier, and the expected-vs-found
+counts, instead of 19 tests quietly passing or failing for reasons unrelated
+to what they claim to test.
+
+**Two real bugs found and fixed, both direct, unavoidable consequences of
+`TEST_TENANT_ID` becoming genuinely different every run instead of one
+eternal literal — not found by inspection, found by the full suite actually
+failing:**
+
+1. **`cleanupTestSessions()` stopped clearing the engineer's own session
+   rows.** It deletes by `.like('phone_number', TEST_PHONE_PREFIX + '%')`
+   — but `TEST_ENGINEER_PHONE` now lives under a *different* prefix
+   (`+19995552...`, deliberately disjoint from `TEST_PHONE_PREFIX`'s
+   `+19995550...`). Surfaced as `test/webhook.test.ts` hitting
+   `uq_whatsapp_sessions_phone_number` (a real UNIQUE index — see the
+   correction to decision 3, above) on a re-seed attempt within the same
+   file. Fixed: the delete now also matches `TEST_ENGINEER_PHONE` exactly,
+   via `.or(...)`, alongside the existing LIKE pattern.
+2. **`ensureTestTenant()`'s `slug` column was still one fixed literal.**
+   `tenants.slug` carries its own independent `UNIQUE` constraint
+   (`tenants_slug_key`). Before this batch, `TEST_TENANT_ID` was one fixed
+   literal, so this `upsert`'s `onConflict: 'id'` always matched the same
+   existing row and was an UPDATE, never a fresh INSERT — the fixed slug
+   never had a chance to collide with itself. The moment `TEST_TENANT_ID`
+   became per-run, every run's first call became a genuine INSERT (that id
+   has never existed before), and a fixed slug string meant every run after
+   the first would collide on `tenants_slug_key` the instant any earlier
+   run's row survived its own teardown — concretely, how this was actually
+   found: a tenant row orphaned by this batch's OWN guard-(b) sensitivity
+   check above, which deliberately threw before `removeTestTenant()` could
+   run. Fixed: the slug is now `zz-test-session-transition-${getRunId()}`,
+   varying with the run for the same reason the id does. The orphaned row
+   this incident itself created (`id 07c8eff1-e44b-4e58-af7b-0b1ec90d6181`,
+   confirmed zero references from any table with a non-cascading FK into
+   `tenants` before deleting) was cleaned up directly, pinned to its exact
+   id and slug.
+
+**Flagged for batch 3, not fixed now — out of scope, but the identical shape
+of bug 2 above already exists there too, waiting:** `ensureTwoTenantFixtures()`
+(`test/helpers/db.ts`) upserts `tenants` with hardcoded `slug` values
+(`'zz-007-tenant-a'`/`'zz-007-tenant-b'`) the same way `ensureTestTenant()`
+used to. It is not a live bug today, because `TEST_TENANT_A_ID`/`B_ID` are
+still fixed literals — but the moment batch 3 migrates those to per-run
+values, this will need the identical fix (a run-scoped slug) or it will fail
+the same way, on the first run after the first.
+
+**Verified — full raw results:**
+- `tsc --noEmit`, `lint-migrations`, `check-file-sizes`, `eslint`: all clean.
+- `lint-retired-fixture-literals`: **RED** (2 hits, listed above) before the
+  `morning-dispatch.test.ts` fix, **GREEN** (`3 retired literal(s) checked, 0
+  stragglers`) after.
+- Targeted re-run of all 20 morning-fixture files (after both bug fixes):
+  **20/20 files, 218/218 tests green.**
+- Full suite: **1117 passed / 1 failed (93 files)** — the +4 tests over
+  batch 1's 1113 is exactly `deriveRunScopedPhone()`'s own unit tests; every
+  pre-existing test's outcome unchanged, including the one failure (the same
+  pre-existing, already-documented `session-transition.test.ts` lock-wait
+  flake, unrelated, identical error text to batches 1 and the pre-batch-1
+  baseline).
 
 ## Known limit, recorded plainly, not overlooked
 

@@ -23,13 +23,24 @@ import { parseEquipment } from '@/lib/whatsapp/flows/parsers/equipment'
 
 const FIXED_NOW = '2026-03-16T06:30:00.000Z'
 
+// tenant_id/phone_number below are arbitrary mock values, same as id/user_id
+// -- this is a pure-function test (dispatchMorningFlow, no DB, no testClient())
+// and dispatchMorningFlow never inspects either field. They used to
+// coincidentally match test/helpers/db.ts's real TEST_TENANT_ID/
+// TEST_ENGINEER_PHONE literals (retired in batch 2 of the per-run
+// fixture-identifier migration, docs/reviews/test-db-per-run-fixture-
+// identifiers.md) -- caught by scripts/lint-retired-fixture-literals.mjs,
+// which does not distinguish "a real fixture row" from "an unrelated mock
+// object that happens to contain the same string." Changed to values that
+// don't collide with anything real, not derived from a run id, because
+// this file never touches a database for that derivation to matter.
 function makeSession(overrides: Partial<WhatsAppSession> = {}): WhatsAppSession {
   return {
     id: '00000000-0000-4000-a000-000000000001',
     created_at: FIXED_NOW,
-    tenant_id: '00000000-0000-4000-a000-00000000d013',
+    tenant_id: '00000000-0000-4000-a000-000000000003',
     user_id: '00000000-0000-4000-a000-00000000e014',
-    phone_number: '+19995550200',
+    phone_number: '+19995559999',
     current_flow: null,
     current_step: 0,
     context: {},

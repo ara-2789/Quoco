@@ -1,2 +1,15 @@
-[]
+[
+  {
+    "literal": "00000000-0000-4000-a000-00000000d013",
+    "label": "TEST_TENANT_ID (morning fixture) -- retired batch 2, per-run fixture identifiers, docs/reviews/test-db-per-run-fixture-identifiers.md"
+  },
+  {
+    "literal": "00000000-0000-4000-a000-00000000f014",
+    "label": "TEST_PROJECT_ID (morning fixture) -- retired batch 2, per-run fixture identifiers, docs/reviews/test-db-per-run-fixture-identifiers.md"
+  },
+  {
+    "literal": "+19995550200",
+    "label": "TEST_ENGINEER_PHONE (morning fixture) -- retired batch 2, alongside TEST_TENANT_ID/TEST_PROJECT_ID: this is 'the shared engineer... derived from that fixture', not part of the general phone-slot registry deferred to batch 4, so it moved in the same commit for the same collision reason (see test/helpers/db.ts's own comment on this constant)."
+  }
+]
 

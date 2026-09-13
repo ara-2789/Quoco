@@ -3,7 +3,7 @@
 // tests -- no real test-db needed for getRunId/deriveRunScopedUuid; a fake
 // minimal client for assertExactRowCount, per its own CountableClient shape.
 import { describe, it, expect } from 'vitest'
-import { getRunId, deriveRunScopedUuid, assertExactRowCount } from '../helpers/run-scoped-fixtures'
+import { getRunId, deriveRunScopedUuid, deriveRunScopedPhone, assertExactRowCount } from '../helpers/run-scoped-fixtures'
 
 describe('getRunId', () => {
   it('returns the run id provided by globalSetup (this run really has one)', () => {
@@ -45,30 +45,49 @@ describe('deriveRunScopedUuid', () => {
   })
 })
 
+describe('deriveRunScopedPhone', () => {
+  it('is deterministic: same (runId, label) always produces the same value', () => {
+    const a = deriveRunScopedPhone('run-1', 'TEST_ENGINEER_PHONE')
+    const b = deriveRunScopedPhone('run-1', 'TEST_ENGINEER_PHONE')
+    expect(a).toBe(b)
+  })
+
+  it('produces a different value for a different run under the same label', () => {
+    const runA = deriveRunScopedPhone('run-A', 'TEST_ENGINEER_PHONE')
+    const runB = deriveRunScopedPhone('run-B', 'TEST_ENGINEER_PHONE')
+    expect(runA).not.toBe(runB)
+  })
+
+  it('is shaped like a phone number in the +19995552NNNNNN space -- disjoint from the registry (+19995550NNN) and the outbound suite (+19995551NNNNNN)', () => {
+    const phone = deriveRunScopedPhone('run-1', 'TEST_ENGINEER_PHONE')
+    expect(phone).toMatch(/^\+19995552\d{6}$/)
+  })
+
+  it('does not produce the same raw digest as deriveRunScopedUuid for the same (runId, label) -- independent hash input', () => {
+    const uuid = deriveRunScopedUuid('run-1', 'TEST_ENGINEER_PHONE')
+    const phone = deriveRunScopedPhone('run-1', 'TEST_ENGINEER_PHONE')
+    // Different shapes entirely, but assert on substance, not just shape:
+    // the phone's digits should not simply be a substring of the uuid's hex.
+    expect(uuid.replace(/-/g, '')).not.toContain(phone.replace('+19995552', ''))
+  })
+})
+
 describe('assertExactRowCount', () => {
-  // Deliberately ignores every argument -- this fake only needs to return a
-  // canned {count, error} response; it never has to inspect what it was
-  // called with. Fewer params than CountableClient declares is fine here:
-  // TS allows a function to be assigned where one accepting MORE arguments
-  // is expected, since callers passing extra arguments than a function
-  // reads is always safe.
-  function fakeClient(count: number | null, errorMessage?: string) {
-    return {
-      from: () => ({
-        select: () => ({
-          eq: async () => ({
-            count,
-            error: errorMessage ? { message: errorMessage } : null,
-          }),
-        }),
-      }),
-    }
+  // A fake QUERY, not a fake client -- assertExactRowCount takes a callback
+  // returning the awaitable result, deliberately keeping Supabase's own
+  // client type out of its signature (see the function's own header for
+  // why: structurally typing against a real SupabaseClient triggered a
+  // "Type instantiation is excessively deep" TS error when this was wired
+  // into ensureMorningFixtures()). So the fake here is trivial: a function
+  // that resolves to canned data, nothing to construct a chain for.
+  function fakeQuery(count: number | null, errorMessage?: string) {
+    return async () => ({ count, error: errorMessage ? { message: errorMessage } : null })
   }
 
   it('resolves silently when the count matches exactly', async () => {
     await expect(
       assertExactRowCount({
-        client: fakeClient(1),
+        query: fakeQuery(1),
         table: 'projects',
         column: 'tenant_id',
         value: 'some-uuid',
@@ -81,7 +100,7 @@ describe('assertExactRowCount', () => {
   it('throws when the count is higher than expected (a collision or leftover row)', async () => {
     await expect(
       assertExactRowCount({
-        client: fakeClient(2),
+        query: fakeQuery(2),
         table: 'projects',
         column: 'tenant_id',
         value: 'some-uuid',
@@ -94,7 +113,7 @@ describe('assertExactRowCount', () => {
   it('throws when the count is lower than expected (this run\'s own row is missing)', async () => {
     await expect(
       assertExactRowCount({
-        client: fakeClient(0),
+        query: fakeQuery(0),
         table: 'projects',
         column: 'tenant_id',
         value: 'some-uuid',
@@ -107,7 +126,7 @@ describe('assertExactRowCount', () => {
   it('throws on a query error rather than silently treating it as zero', async () => {
     await expect(
       assertExactRowCount({
-        client: fakeClient(null, 'connection reset'),
+        query: fakeQuery(null, 'connection reset'),
         table: 'projects',
         column: 'tenant_id',
         value: 'some-uuid',

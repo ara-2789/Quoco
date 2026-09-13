@@ -265,8 +265,13 @@ randomisation) and cross-run collision (two separate process invocations both ha
 the same fixed value — the one thing randomisation actually closes). The registry stays;
 only the cross-run axis closes, via a run-scoped prefix nested on top of the existing
 scheme, not full replacement. Full detail and the reasoning against fully randomising
-every mint independently (no `UNIQUE` constraint exists on `whatsapp_sessions.
-phone_number` to detect a collision): the design doc's decision 3.
+every mint independently: the design doc's decision 3 — **corrected there, 2026-09-13,
+during batch 2: `whatsapp_sessions.phone_number` DOES carry a `UNIQUE` index
+(`uq_whatsapp_sessions_phone_number`, migration 012), found live; this document's
+original "no UNIQUE constraint exists" claim (checked only against 001's original
+`CREATE TABLE`) was incomplete. The registry still stays for the reason argued
+correctly elsewhere in that decision (intra-run coordination, not collision detection)
+— only the detection-gap argument is retracted.**
 
 **Also recorded there, not reproduced in full here:** a structural limit on option (a)
 found during the design pass — four production queries scan every active project with
