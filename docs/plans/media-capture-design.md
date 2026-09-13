@@ -7,6 +7,14 @@ RESOLVED or carried forward as STILL OPEN. Companion edit: this round amends
 `docs/design-principles.md` §0's corollary in place (dated note, not a
 silent rewrite) — see RESOLVED 1 below for why.
 
+DATED NOTE (2026-09-13, round 3): items 6, 7, and 8 from round 2's STILL OPEN
+list are now DECIDED — see "RESOLVED — ROUND 3" below, inserted after the
+original RESOLVED section rather than renumbered in place, so every existing
+cross-reference to items 1-10 by number still resolves correctly. Items 9 and
+10 remain open; STILL OPEN below now carries only those two. Still a design
+pass — no code, no migration, no migration number reserved by this round
+either.
+
 ---
 
 ## RESOLVED
@@ -190,64 +198,152 @@ conclusion, not a permanent one.
 
 ---
 
+## RESOLVED — ROUND 3 (2026-09-13)
+
+### 6. Off-step photo handling — DECIDED
+
+Not any of the three options round 2 weighed (silent attach /
+answer-substitution / reject-and-nudge) — the question is narrower than it
+looked, once each ad-hoc menu item is given its own capture:
+
+- Each ad-hoc menu item (hindrance now; safety and invoice when they land)
+  carries its own photo capture. A photo belonging to one of those is not an
+  off-step photo — it is captured inside that flow. This follows §41(c)
+  (`design-decisions-beta-feedback.md`): a photo's purpose derives from the
+  flow that captured it.
+- The only true off-step case left is a bare photo with no check-in flow
+  active and no menu item chosen. Such a photo is NOT stored, NOT held, NOT
+  parked. The bot replies with a nudge pointing at the menu; the engineer
+  re-sends inside the flow he picks.
+- **Rationale:** every stored photo enters through a flow that defines its
+  purpose, its parent row, and its retention class. No orphan storage, no
+  store-before-consent problem, no unclaimed-photo expiry semantics.
+
+**Draft copy — NOT APPROVED, English only, pending Tamil pairs and
+confirmation of the live menu numbering (per `inbound-start.ts`'s current
+`ACTION_LINE`, hindrance is item "1" today):**
+
+> Photo not saved — please choose a menu option and send it there.
+> Reply 1 to report a hindrance, then send the photo again.
+> Progress photos: send them during the evening check-in.
+
+### 7. Photo parents: polymorphic vs. per-parent tables — DECIDED, per-parent
+
+Resolved in favour of **per-parent tables**, extending
+`design-decisions-beta-feedback.md` §6's existing pattern rather than
+reopening it. §6 already specified `daily_log_photos` (keyed to
+`daily_logs`, with a `phase` column) — that decision stands, unchanged.
+
+What's new: hindrance photos need a **different** parent (`hindrances`),
+which §6 never contemplated. A second per-parent table (e.g.
+`hindrance_photos`, keyed to `hindrances`) is added alongside
+`daily_log_photos` — not folded into it, and no polymorphic `photos` table
+is introduced.
+
+This keeps the real-FK guarantee round 2 flagged as the deciding factor
+(`hindrances_project_id_fkey`-style referential integrity, enforced by the
+database rather than application code) for both parents, at the accepted
+cost: retention-by-type logic (7d attendance / 45d evening progress / 45d
+hindrance) has to be either duplicated across the two tables or centralized
+behind a shared function/view — not a single table scan.
+
+### 8. `hindrances.photo_url` — DECIDED, left as dead schema
+
+Closed as a direct consequence of item 7 above, per this doc's own
+round-2 conditional ("per-parent tables make it unambiguously obsolete" —
+the degraded single-photo-via-polymorphic-table path that would have kept
+this column live as an option no longer exists once per-parent is chosen).
+Option (b) from round 2 stands: the column is **left in place, documented
+as dead**, matching this project's general "don't drop what becomes
+unread" convention (§28(p) in `design-decisions-beta-feedback.md`).
+
+Re-confirmed this round (2026-09-13): `grep -rn "photo_url" lib/ app/
+supabase/migrations/*.sql` returns only the column's own definition
+(`001_core_schema.sql:189`) and a comment in `039_hindrance_
+acknowledgement.sql` listing it among hindrances' "long-unpopulated,
+intentionally provisioned fields" — zero writes. `lib/whatsapp/flows/
+hindrance.ts` and `038_hindrance_flow_and_collision_fix.sql`
+(`apply_hindrance_flow_turn`) have zero references to "photo" at all.
+
+### 11. Photo window — DECIDED, supersedes the Q2-only design in item 4
+
+Photos are accepted across **all** questions of the evening check-in, not
+only at Q2. Same for **all** questions of the morning check-in.
+
+- Evening photos → evening progress class, 45-day retention (per item 5's
+  existing retention table).
+- Morning photos → attendance class, 7-day retention. A photo sent at any
+  point in the morning flow is classified as attendance and expires in 7
+  days; the hindrance flow (item 7's `hindrance_photos`) is the durable
+  channel for anything that needs to survive longer.
+- A "none" reply at evening Q2 is not final: a photo sent later in the same
+  flow still attaches, and the completion message reports the real stored
+  count.
+- Photos arriving inside an active check-in are stored silently — no
+  per-photo acknowledgement. The count surfaces once, in the completion
+  message.
+
+This widens item 4's own flagged consequence — "the media-interception
+check itself has to move... it needs to know whether the currently active
+step expects a photo" — from **step-aware** to **flow-aware**: the
+interception now needs to know only whether morning or evening is active at
+all, not which specific step, since every step of both now accepts a
+photo. The relocation item 4 already flagged (out of the unconditional
+`media-reply.ts` intercept) is unchanged; only the acceptance window
+widens.
+
+### 12. Caption handling — DECIDED
+
+Text accompanying a photo is never dropped. The caption is passed to the
+normal answer parser for whichever question is currently open. If it
+parses, it is recorded as that question's answer **and** stored in the
+photo's existing `caption` field (item 7's `daily_log_photos` /
+`hindrance_photos` shape). If it fails validation, the standard re-prompt
+fires (Rule 3.5) and the text is still stored on the photo.
+
+### 13. Burst handling — DECIDED
+
+Twilio delivers each image in a burst as a separate message with its own
+SID, so SID idempotency (`processed_messages`) does not dedupe a burst —
+a fact about delivery, not a defect to fix.
+
+- In-flow bursts generate no replies at all (item 11: photos stored
+  silently), so no dedupe is needed there.
+- Out-of-flow bursts: at most **one** nudge per session per 10 minutes,
+  suppressed via a `last_media_nudge_at` timestamp on the `whatsapp_
+  sessions` row. No new table. (No existing column serves this today — see
+  the TASK 4 finding below; one new column is required.)
+
+### 14. 10-photo cap — DECIDED
+
+The cap of 10 photos per daily log stands (the same number item 3 and
+§41(d)'s own cap already fixed for DPR embeds). **What's new:** the cap now
+also applies at **intake**, not only at DPR-render time — photo 11 is
+rejected outright, never accepted-and-truncated later. This moots §41(e)'s
+own "OPEN, decide before build: what happens at an eleventh work-completed
+photo" truncation-display question for photos entering through the
+compulsory check-in flow specifically: since a daily log can never hold an
+11th `daily_log_photos` row in the first place, there is nothing left for
+the DPR to truncate at render time for that source. (Ad-hoc-menu photos —
+hindrance now, invoice/material-received later — live in their own
+per-parent tables per item 7 and are outside this specific cap.)
+
+- Photo 11 triggers one over-cap message, once per check-in, suppressed by
+  the same `last_media_nudge_at` mechanism (item 13).
+- Photos 12+ are silent — no repeated over-cap messages.
+- Over-cap photos are **rejected, not accepted-and-truncated**: the
+  engineer is told; the system never silently discards something he sent.
+- 10 is a **product promise, not a storage constraint**: define it as a
+  single named constant so raising it is a one-line change.
+
+**Draft copy — NOT APPROVED, English only, pending Tamil pairs:**
+
+> That's 10 photos for today — the most I can attach. Send any others
+> tomorrow, or report them as a hindrance.
+
+---
+
 ## STILL OPEN — options reported, nothing decided
-
-### 6. Off-step photo handling
-
-A photo arriving on a step that doesn't expect one (e.g. sent during Q4
-instead of Q2). Three options, trade-offs restated concisely:
-
-| Option | What happens | Pro | Con |
-|---|---|---|---|
-| **Silent attach** | Store against the day, don't advance the step, nudge back to the pending text question | Matches Rule 3.5's existing "never punish, never dead-end" mechanic; closest to how an unparseable text answer is already handled | §41(c) says a photo's purpose derives from which flow captured it — an off-step photo has no determinable purpose (attendance? progress? evidence?); risks silent misclassification |
-| **Answer-substitution** | Treat it as an early/late answer to whichever step actually asks for a photo, skip re-asking that step when reached | Best experience for the engineer; no redundant question | Requires the state machine to track "photo satisfied" independent of `current_step` position — a real addition, not free |
-| **Reject-and-nudge** | "That's for a later question — please answer: `<current question>`" | Simplest to build | Closest to "punish" of the three; cuts against Rule 3.5's spirit more than the others |
-
-My prior lean was silent attach, restated here for the trade-off, not as a
-recommendation to adopt without a decision — this is explicitly Aravind's
-call per the brief.
-
-### 7. One polymorphic `photos` table vs. per-parent tables
-
-- **Polymorphic** (`parent_type`, `parent_id`, `purpose`, `photo_url`, …):
-  one table, one RLS policy set, one place to enforce retention-by-type.
-  **Real cost, specific to this project**: no `REFERENCES` constraint is
-  possible across two different parent tables from one polymorphic FK
-  column — Postgres FKs point at exactly one table. This project leans
-  hard on real composite/simple FKs everywhere else it links rows
-  (`hindrances_project_id_fkey`, `hindrances_reported_by_fkey`, the whole
-  `daily_log_edits`/`daily_logs` relationship) specifically so referential
-  integrity is enforced by the database, not by application code — a
-  polymorphic `parent_id` gives up that guarantee entirely for this one
-  table. A stale or mistyped `parent_id` pointing at a deleted `hindrances`
-  row would fail silently (no FK to catch it), which is a different and
-  arguably worse failure mode than anything this project currently has to
-  reason about.
-- **Per-parent tables** (`daily_log_photos` → `daily_logs`, a new
-  `hindrance_photos` → `hindrances`): real FKs, real cascade behavior,
-  consistent with how every other relationship in this schema is built.
-  Cost: retention-by-type logic (7d/45d/45d) has to be either duplicated
-  across two tables or centralized behind a shared function/view instead of
-  a single table scan.
-
-Not deciding this — it's a real fork with a real integrity cost on one
-side and a real duplication cost on the other, and it's the kind of call
-that should go through review before a migration number gets reserved.
-
-### 8. `hindrances.photo_url` — supersede or leave as dead schema
-
-Confirmed again this round: single TEXT column, CHECK-constrained, zero
-rows have ever written to it (`grep` against `038_hindrance_flow_and_
-collision_fix.sql` and `lib/hindrance/*.ts` — no hits). Two options: (a)
-a future migration formally supersedes it (drops it, once whatever
-replaces it — per item 7 above — is live), or (b) it's left in place,
-documented as dead, matching this project's own general "don't drop what
-becomes unread" convention (§28(p) in `design-decisions-beta-feedback.md`
-uses exactly this treatment for other now-unread columns). Leaning toward
-(b) for consistency with that precedent, but not deciding it — it depends
-on the outcome of item 7, since a polymorphic table could theoretically
-still write through it in a degraded single-photo mode, while per-parent
-tables make it unambiguously obsolete.
 
 ### 9. "Expired" semantics per type
 
