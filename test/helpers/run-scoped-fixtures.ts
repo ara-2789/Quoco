@@ -85,6 +85,25 @@ export function deriveRunScopedEmail(runId: string, label: string): string {
   return `zz-test-${hex}@quoco.test`
 }
 
+// Batch 4 (docs/reviews/test-db-per-run-fixture-identifiers.md, decision 3):
+// ONE 5-digit block, shared by every testPhone() slot within a run -- NOT
+// one call per label like the functions above, because there is only one
+// conceptual "run-scoped phone space" to nest the existing ~98-slot registry
+// under, not one per slot. test/helpers/db.ts's testPhone() inserts this
+// between the existing TEST_PHONE_PREFIX and the caller's own slot:
+// `${TEST_PHONE_PREFIX}${block}${slot}`. Two different runs get two
+// different, disjoint 5-digit blocks (100,000 possible values) -- closing
+// the CROSS-RUN collision axis this decision names -- while every file
+// within ONE run still computes the identical block (same runId in, same
+// block out) and the existing hand-registered slots keep doing their real,
+// permanent job: telling two files in the SAME run apart. Does NOT replace
+// the registry -- see decision 3's own "does not disappear" correction.
+export function deriveRunScopedPhoneBlock(runId: string): string {
+  const digest = createHash('sha256').update(`${runId}:phone-block`).digest()
+  const n = digest.readUInt32BE(0) % 100_000
+  return n.toString().padStart(5, '0')
+}
+
 // The result shape any count-style PostgREST query resolves to -- what
 // `.select('*', {count:'exact', head:true})...` always returns, regardless
 // of which table/column/filter built it.

@@ -5,6 +5,7 @@ import {
   deriveRunScopedUuid,
   deriveRunScopedPhone,
   deriveRunScopedEmail,
+  deriveRunScopedPhoneBlock,
   assertExactRowCount,
 } from './run-scoped-fixtures'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
@@ -211,8 +212,25 @@ export function testClient(): SupabaseClient {
 
 // A unique fake number per test. `slot` is a 3-digit string that lands inside
 // the fictional +1 999 555-0XXX block.
+//
+// BATCH 4 (docs/reviews/test-db-per-run-fixture-identifiers.md, decision 3):
+// nests a run-scoped 5-digit block between TEST_PHONE_PREFIX and the
+// caller's own slot -- `${TEST_PHONE_PREFIX}${RUN_SCOPED_PHONE_BLOCK}${slot}`
+// -- rather than fully randomising every call independently. Two different
+// `vitest run` invocations get two different, disjoint blocks (100,000
+// possible values), closing the CROSS-RUN collision axis; every file within
+// ONE run still computes the identical block (same run id in, same block
+// out, via deriveRunScopedPhoneBlock()), so the existing hand-registered
+// slots below keep doing their real, permanent job of keeping two files in
+// the SAME run apart -- this does NOT retire that registry, deliberately
+// (see decision 3's own "does not disappear" correction). Every slot number
+// already claimed below (301, 999, etc.) still means the same thing it
+// always did; only the run-scoped block sits between the fixed prefix and
+// that number now, not the number itself.
+const RUN_SCOPED_PHONE_BLOCK = deriveRunScopedPhoneBlock(getRunId())
+
 export function testPhone(slot: string): string {
-  return `${TEST_PHONE_PREFIX}${slot}`
+  return `${TEST_PHONE_PREFIX}${RUN_SCOPED_PHONE_BLOCK}${slot}`
 }
 
 // The engineer fixture's WhatsApp number. PER-RUN, same batch-2 migration as
