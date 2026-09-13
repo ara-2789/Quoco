@@ -955,6 +955,36 @@
   WhatsApp (and, by the same reasoning, email — Resend's own send response
   carries the same queued-not-delivered gap) send a Claude Code session
   reports on, not only diagnostics.
+- EVERY BRANCH IS PUSHED TO GITHUB, ALWAYS (Aravind, standing rule since
+  2026-09-13). A branch is pushed as soon as it has a commit — finished,
+  exploratory, paused, abandoned, or research, it makes no difference.
+  "Not ready" is not a reason to hold a branch locally. Claude Code pushes
+  branches it creates as a matter of course, no separate instruction
+  needed each time; Aravind still merges by hand — this changes nothing
+  about merging, only about a branch's existence being visible past one
+  laptop. EVIDENCE: the 2026-09-13 worktree audit found 34 worktrees, 13
+  holding work not on `main`, FOUR with commits existing only on this
+  machine (`docs/dpr-regeneration-decision-and-spec`,
+  `feat/dash-01-pm-exceptions-home`,
+  `fix/test-fixture-teardown-engineer-scope`,
+  `worktree-per-run-fixture-batch4`).
+  `worktree-adhoc-menu-spec-corrections` held the only surviving copy of
+  decisions migration 037's own applied `COMMENT ON COLUMN` cites as
+  authority, live on prod. `worktree-evening-q5-tomorrow-needs` still
+  holds an idle-hours parser fix never rescued to `main`, while `main`
+  carries its own KNOWN DEFECT test for that same bug, unfixed. Recurring
+  shape: work is done in a worktree, partially rescued onto a different
+  branch that merges, and whatever didn't make that trip stays behind —
+  unpushed, unprotected, and invisible to anyone who isn't looking at this
+  exact laptop's local branch list.
+- THE MIGRATION-NUMBER-RESERVATIONS FILE IS UPDATED AT APPLY TIME, AS PART
+  OF THE APPLY — NOT AFTERWARDS (standing rule since 2026-09-13). Full
+  step: `docs/migration-runbook-template.md`'s own Step H. EVIDENCE: the
+  2026-09-13 reservations audit found FOUR entries (034, 039, 040, 041)
+  still reading "held" / "pending review" while those migrations were
+  already live on prod — the same drop-shape as the post-apply types-regen
+  step this file's own Step G already exists to close, one bookkeeping
+  artifact over.
 
 ---
 
