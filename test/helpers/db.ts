@@ -373,6 +373,21 @@ export async function removeMorningFixtures(): Promise<void> {
 
   await cleanupTestSessions()
 
+  // 4c's morning-fixture twin, closed same-PR (2026-09-13,
+  // docs/reviews/test-db-fixture-collision-inventory.md): cleanupTestDailyLogs()
+  // above only ever covered daily_logs.project_id -- hindrances/invoices/
+  // safety_incidents/dprs/daily_log_edits carry the identical non-cascading FK
+  // into projects(id) and were NOT swept before this delete, protected only by
+  // every current file seeding them under TEST_PROJECT_ID (migration-016.test.ts,
+  // dpr-generate-trigger.test.ts and siblings) cleaning up by hand first -- the
+  // same convention-only protection that let 4c go unfixed on the A/B fixture.
+  // sweepSharedFixtureReferences('projects', ...) closes it here the same way it
+  // now closes it for removeTwoTenantFixtures(). cleanupTestDailyLogs() stays --
+  // redundant with the new sweep's own daily_logs.project_id entry, not replaced
+  // by it, matching removeTwoTenantFixtures' own belt-and-braces treatment of the
+  // six test files' manual cleanup there.
+  await sweepSharedFixtureReferences('projects', TEST_PROJECT_ID)
+
   const { error: projErr } = await db.from('projects').delete().eq('id', TEST_PROJECT_ID)
   if (projErr) throw new Error(`removeMorningFixtures project failed: ${projErr.message}`)
 

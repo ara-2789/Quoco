@@ -13,12 +13,14 @@ doc — **the 4c finding**: `removeTwoTenantFixtures()` has no FK-sweep coverage
 the same shape of bug that caused the 2026-09-05 16-file cascade, just for a different
 parent object.
 
-**Status as of this doc: 4c has since been fixed** — see
+**Status as of this doc: 4c AND its morning-fixture twin are both closed** — see
 `scripts/shared-fixture-fk-coverage.json`, the widened Rule 9 in
-`scripts/lint-migrations.mjs`, and `removeTwoTenantFixtures()` in
-`test/helpers/db.ts`, all changed in the same commit as this document. Sections 4a–4c
-below describe the state as found, before that fix; the "4c — closed" note at the end
-of §4 records what changed.
+`scripts/lint-migrations.mjs`, `removeTwoTenantFixtures()` in `test/helpers/db.ts`
+(same commit as this document's first version), and `removeMorningFixtures()` in the
+same file (added same-PR, 2026-09-13, once the identical latent gap was named rather
+than left as a fast-follow — see the closing note at the end of §4). Sections 4a–4c
+below describe the state as found, before either fix; the two "closed" notes at the
+end of §4 record what changed, on both fixtures.
 
 ## 1. The full inventory of shared fixed identifiers
 
@@ -70,6 +72,18 @@ Grepped every `test/*.test.ts` for each constant/lifecycle call above:
 (32 happens to match today's failure count — noted as a coincidence worth flagging, not
 asserted as the same 32 files, since this document doesn't have today's actual failure
 list to compare against.)
+
+**Correction, 2026-09-13, same day, during the morning-fixture twin fix.** The "18
+files" above was wrong twice over, checked directly rather than re-guessed. The
+original grep for this document actually returned 19 files, not 18 — a plain
+miscounting of that list when it was first written down here, not a missed file. Since
+then, a 20th file (`test/dpr-stage1-plumbing.test.ts`, added 2026-09-11 — before this
+document existed, so genuinely missed by the original grep, not new churn) also matched
+when the same grep was re-run to scope the twin fix below. **Current, re-verified
+count: 20 files.** The total 32/84 and the other three category counts above were not
+re-checked against this same drift and may also be off — this correction covers only
+the number actually re-verified, per this project's own "verify a number before writing
+it down" convention, not a claim the rest are still accurate.
 
 Full file list (any shared identifier):
 ```
@@ -203,16 +217,27 @@ manual cleanup was left in place deliberately — belt and braces, per the same
 convention `removeMorningFixtures()` already relies on for `daily_logs` via
 `cleanupTestDailyLogs()`.
 
-**Not fixed here, found while implementing, recorded so it isn't lost:**
-`removeMorningFixtures()` itself has the *identical* latent gap for `TEST_PROJECT_ID` —
-its own `projects` delete (`db.ts:370`) is preceded only by `cleanupTestDailyLogs()`
-(which covers `daily_logs` alone), not by any sweep of `hindrances`/`invoices`/
-`safety_incidents`/`dprs`/`daily_log_edits`. It hasn't bitten yet only because every
-current file seeding those tables under `TEST_PROJECT_ID` (`migration-016.test.ts`,
-`dpr-generate-trigger.test.ts`, and siblings) happens to clean up by hand first — the
-same convention-only protection as 4c, just never triggered. This was intentionally
-left untouched in the 4c fix, which was scoped to `removeTwoTenantFixtures()` only —
-flagged here as a fast-follow, not bundled into this change.
+**The morning-fixture twin — also closed, same PR, 2026-09-13.** `removeMorningFixtures()`
+had the *identical* latent gap for `TEST_PROJECT_ID` — its own `projects` delete
+(`db.ts:391`) was preceded only by `cleanupTestDailyLogs()` (which covers `daily_logs`
+alone), not by any sweep of `hindrances`/`invoices`/`safety_incidents`/`dprs`/
+`daily_log_edits`. It hadn't bitten yet only because every current file seeding those
+tables under `TEST_PROJECT_ID` (`migration-016.test.ts`, `dpr-generate-trigger.test.ts`,
+and siblings) happens to clean up by hand first — the same convention-only protection
+as 4c, just never triggered, on the *more* heavily used fixture (20 files vs. 10, per
+the corrected count in §2). Initially left as a fast-follow when 4c shipped; closed in
+the same PR before merge rather than shipped as documented, un-owned debt — exactly the
+"recorded, judged non-urgent, eventually surfaces live" pattern this document's own
+cost-curve section quotes. `sweepSharedFixtureReferences('projects', TEST_PROJECT_ID)`
+now runs before the `projects` delete in `removeMorningFixtures()` too, using the same
+coverage entries 4c already added (fixture-agnostic — no new entries were needed).
+`cleanupTestDailyLogs()` and every affected file's own manual cleanup are left in place,
+unchanged, same belt-and-braces treatment as 4c.
+
+Verified: full suite re-run clean (1103 passed / 1 failed — the same pre-existing
+`session-transition.test.ts` lock-wait flake, unrelated, reproduces identically to the
+4c run). Targeted re-run of all 20 morning-fixture files: 20/20 files, 218/218 tests
+green.
 
 ## 5. Options, with costs
 
