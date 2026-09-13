@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import sharedFixtureFkCoverage from '../../scripts/shared-fixture-fk-coverage.json'
+import { getRunId, deriveRunScopedUuid, deriveRunScopedPhone, assertExactRowCount } from './run-scoped-fixtures'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
 import type { MorningOutcome } from '@/lib/whatsapp/flows/morning'
 import type { EveningOutcome } from '@/lib/whatsapp/flows/evening'
@@ -24,8 +25,14 @@ import type { EquipmentEchoItem } from '@/lib/whatsapp/flows/evening'
 
 // Recognisable, obviously-fake phone space: +1 (999) 555-0XXX.
 // 999 is a non-assignable NANP area code and 555-01XX is the fictional range,
-// so these can never collide with a real WhatsApp number. Every session row
-// this suite creates carries this prefix; cleanup keys on it.
+// so these can never collide with a real WhatsApp number. cleanupTestSessions()
+// keys its deletion on this prefix -- CORRECTED, batch 2 (docs/reviews/
+// test-db-per-run-fixture-identifiers.md): NOT every session row this suite
+// creates carries it any more, as this comment used to claim. TEST_ENGINEER_
+// PHONE (below) moved to its own dedicated +19995552 prefix; cleanupTestSessions()
+// was found, live, to have silently stopped clearing that one identity's
+// session rows until it was widened to also match TEST_ENGINEER_PHONE
+// exactly, not just this LIKE pattern.
 export const TEST_PHONE_PREFIX = '+19995550'
 
 // ---------------------------------------------------------------------------
@@ -114,6 +121,18 @@ export const TEST_PHONE_PREFIX = '+19995550'
 //   anywhere else -- the whole prefix belongs to this one suite by
 //   construction, not by convention.
 //
+// A THIRD PREFIX, RESERVED WHOLESALE, DIFFERENT FROM BOTH ABOVE:
+//   +19995552NNNNNN (6-digit derived suffix) -- reserved to
+//   deriveRunScopedPhone() (test/helpers/run-scoped-fixtures.ts), which
+//   TEST_ENGINEER_PHONE below now uses. NOT part of the TEST_PHONE_PREFIX
+//   registry above (that registry, and every hand-picked slot in it, is
+//   deferred to a later migration batch -- docs/reviews/test-db-per-run-
+//   fixture-identifiers.md, decision 3) and NOT the outbound suite's own
+//   +19995551 range either. Do not hand-pick a slot under this prefix for
+//   any new fixture -- same reasoning as the outbound suite's own
+//   reservation above: the whole prefix belongs to this one derivation by
+//   construction, not by convention.
+//
 // RESERVED DATE RANGE, SAME SUITE, ONE RANGE PER FILE -- against the same
 // shared tenant/project (test/helpers/outbound-fixtures.ts), only matters
 // within each file's own (tenant_id, recipient_user_id) pair, so this
@@ -138,17 +157,30 @@ export const TEST_PHONE_PREFIX = '+19995550'
 // new fixture.
 // ---------------------------------------------------------------------------
 
-// Fixed, recognisable tenant the sessions hang off (whatsapp_sessions.tenant_id
-// is NOT NULL). Deterministic UUID so cleanup/re-runs are idempotent.
-export const TEST_TENANT_ID = '00000000-0000-4000-a000-00000000d013'
+// The tenant the morning-flow sessions hang off (whatsapp_sessions.tenant_id
+// is NOT NULL). PER-RUN, not a fixed literal, since batch 2 of the per-run
+// fixture-identifier migration (docs/reviews/test-db-per-run-fixture-
+// identifiers.md): deriveRunScopedUuid() is a pure function of this run's
+// injected id (test/setup/run-id.ts) plus this label, so every file in ONE
+// `vitest run` invocation independently computes the SAME value (same
+// coordination the old literal gave for free), while two SEPARATE
+// invocations (two agents, or an agent and CI) get two DIFFERENT, disjoint
+// values and can never collide on this row's identity. Was
+// '00000000-0000-4000-a000-00000000d013' (retired,
+// scripts/retired-fixture-literals.json).
+export const TEST_TENANT_ID = deriveRunScopedUuid(getRunId(), 'TEST_TENANT_ID')
 
-// Morning-flow fixtures. The project uses a fixed UUID; the ENGINEER id is the
-// generated public.users id, captured at insert time. Post-007 the engineer is
-// created the REAL ENG-01 way — a plain users INSERT with auth_id = NULL, a
-// generated id, and NO auth.users entry (a WhatsApp user simply is not an auth
-// user). The pre-007 auth.admin.createUser() crutch is GONE: 007 dropped
-// users_id_fkey, so a users row no longer needs a backing auth.users row.
-export const TEST_PROJECT_ID = '00000000-0000-4000-a000-00000000f014'
+// Morning-flow fixtures. The project id is PER-RUN, same reasoning as
+// TEST_TENANT_ID above. The ENGINEER id is the generated public.users id,
+// captured at insert time (unaffected by this migration -- it was never a
+// literal). Post-007 the engineer is created the REAL ENG-01 way — a plain
+// users INSERT with auth_id = NULL, a generated id, and NO auth.users entry
+// (a WhatsApp user simply is not an auth user). The pre-007
+// auth.admin.createUser() crutch is GONE: 007 dropped users_id_fkey, so a
+// users row no longer needs a backing auth.users row. Was
+// '00000000-0000-4000-a000-00000000f014' (retired,
+// scripts/retired-fixture-literals.json).
+export const TEST_PROJECT_ID = deriveRunScopedUuid(getRunId(), 'TEST_PROJECT_ID')
 
 // Set by ensureMorningFixtures once the engineer row exists; read via testEngineerId().
 let engineerId: string | null = null
@@ -177,20 +209,49 @@ export function testPhone(slot: string): string {
   return `${TEST_PHONE_PREFIX}${slot}`
 }
 
-// The engineer fixture's WhatsApp number (also in the fake phone space).
-export const TEST_ENGINEER_PHONE = testPhone('200')
+// The engineer fixture's WhatsApp number. PER-RUN, same batch-2 migration as
+// TEST_TENANT_ID/TEST_PROJECT_ID above -- NOT a testPhone() slot from the
+// general registry (that registry is unrelated, still fully fixed, and
+// deferred to a later batch). Treated as "derived from" the tenant/project
+// fixture, not as one of the ~98 ad hoc per-test slots, because reusing a
+// FIXED phone number across runs would silently defeat the whole point of
+// randomising the tenant/project: users.whatsapp_number is UNIQUE, so a
+// second run's ensureMorningEngineer() would find and reuse the FIRST run's
+// already-existing engineer row (and its stale tenant_id) instead of
+// creating its own -- the exact collision this migration exists to remove,
+// just moved from the tenant/project axis to the engineer-identity axis.
+// Uses a dedicated, disjoint prefix (see the RESERVED PHONE/PREFIX BLOCKS
+// comment above) specifically so this never collides with the registry's
+// own slots or the outbound suite's own range. Was '+19995550200' (retired,
+// scripts/retired-fixture-literals.json).
+export const TEST_ENGINEER_PHONE = deriveRunScopedPhone(getRunId(), 'TEST_ENGINEER_PHONE')
 
 // ---------------------------------------------------------------------------
 // Fixture lifecycle
 // ---------------------------------------------------------------------------
 
+// slug is run-scoped too, not just id -- found live, batch 2 (docs/reviews/
+// test-db-per-run-fixture-identifiers.md): tenants.slug carries its OWN
+// UNIQUE constraint (tenants_slug_key), independent of id. Before this
+// batch, TEST_TENANT_ID was one fixed literal, so this upsert's
+// `onConflict: 'id'` always matched the SAME existing row and this was an
+// UPDATE, never a fresh INSERT -- the fixed slug never had a chance to
+// collide with itself. Once TEST_TENANT_ID became per-run, every run's
+// first call is a genuine INSERT (that id has never existed before), and a
+// fixed slug string means every run after the very first would collide on
+// tenants_slug_key the moment any earlier run's row survives (its own
+// teardown skipped or failed, an interrupted run, or -- concretely, how
+// this was actually found -- a deliberate mid-run failure during this
+// batch's own guard-b sensitivity check, which never reached
+// removeTestTenant()). The slug must vary with the run for the exact same
+// reason the id does.
 export async function ensureTestTenant(): Promise<void> {
   const db = testClient()
   const { error } = await db.from('tenants').upsert(
     {
       id: TEST_TENANT_ID,
       name: 'ZZ Test Tenant (session-transition suite)',
-      slug: 'zz-test-session-transition',
+      slug: `zz-test-session-transition-${getRunId()}`,
     },
     { onConflict: 'id' },
   )
@@ -201,10 +262,21 @@ export async function ensureTestTenant(): Promise<void> {
 // branch never accumulates test rows across repeated runs.
 export async function cleanupTestSessions(): Promise<void> {
   const db = testClient()
+  // Also matches TEST_ENGINEER_PHONE exactly, not just the TEST_PHONE_PREFIX
+  // LIKE pattern -- found live, batch 2 (docs/reviews/test-db-per-run-
+  // fixture-identifiers.md): TEST_ENGINEER_PHONE moved to its own dedicated
+  // `+19995552...` prefix (a DIFFERENT prefix from TEST_PHONE_PREFIX,
+  // `+19995550`, deliberately, per that constant's own comment), which this
+  // function's original LIKE-only match never anticipated -- it silently
+  // stopped clearing the engineer's own session rows between tests the
+  // moment that constant changed, surfaced by test/webhook.test.ts hitting
+  // `uq_whatsapp_sessions_phone_number` (a real UNIQUE index, migration 012)
+  // on a re-seed attempt for a row this function should have already
+  // deleted.
   const { error } = await db
     .from('whatsapp_sessions')
     .delete()
-    .like('phone_number', `${TEST_PHONE_PREFIX}%`)
+    .or(`phone_number.like.${TEST_PHONE_PREFIX}%,phone_number.eq.${TEST_ENGINEER_PHONE}`)
   if (error) throw new Error(`cleanupTestSessions failed: ${error.message}`)
 }
 
@@ -315,6 +387,25 @@ export async function ensureMorningFixtures(): Promise<void> {
 
   engineerId = await ensureMorningEngineer(db)
 
+  // Guard (b), batch 2's first real use (docs/reviews/test-db-per-run-
+  // fixture-identifiers.md). Not a check on the RPC/business logic under
+  // test -- a check on the fixture's own isolation. If some straggler call
+  // site anywhere still resolved to a shared/stale TEST_ENGINEER_PHONE
+  // (the retired literal, or any value other than this run's own derived
+  // one), users.whatsapp_number's UNIQUE constraint means
+  // ensureMorningEngineer() above would have silently found and reused a
+  // DIFFERENT run's leftover engineer row instead of creating this run's
+  // own -- this assertion is what turns that into a loud, specific failure
+  // instead of a fixture that quietly tests the wrong row.
+  await assertExactRowCount({
+    query: () => db.from('users').select('*', { count: 'exact', head: true }).eq('whatsapp_number', TEST_ENGINEER_PHONE),
+    table: 'users',
+    column: 'whatsapp_number',
+    value: TEST_ENGINEER_PHONE,
+    expected: 1,
+    context: `ensureMorningFixtures, run ${getRunId()}`,
+  })
+
   const { error: projErr } = await db.from('projects').upsert(
     {
       id: TEST_PROJECT_ID,
@@ -324,6 +415,20 @@ export async function ensureMorningFixtures(): Promise<void> {
     { onConflict: 'id' },
   )
   if (projErr) throw new Error(`ensureMorningFixtures project failed: ${projErr.message}`)
+
+  // Same reasoning as the engineer check above, for the tenant/project axis:
+  // if TEST_TENANT_ID ever resolved to a value this run doesn't actually
+  // own (a straggler literal, a broken derivation), this catches it
+  // immediately rather than letting every downstream assertion in this run
+  // silently operate against the wrong tenant's data.
+  await assertExactRowCount({
+    query: () => db.from('projects').select('*', { count: 'exact', head: true }).eq('tenant_id', TEST_TENANT_ID),
+    table: 'projects',
+    column: 'tenant_id',
+    value: TEST_TENANT_ID,
+    expected: 1,
+    context: `ensureMorningFixtures, run ${getRunId()}`,
+  })
 
   const { error: memberErr } = await db.from('project_members').upsert(
     {

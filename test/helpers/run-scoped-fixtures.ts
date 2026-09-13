@@ -1,13 +1,9 @@
-// Batch 1 of the per-run fixture-identifier migration
-// (docs/reviews/test-db-per-run-fixture-identifiers.md). Pure derivation +
+// Built in batch 1 of the per-run fixture-identifier migration
+// (docs/reviews/test-db-per-run-fixture-identifiers.md): pure derivation +
 // the one guard that catches a straggler call site silently sharing state
-// with another run instead of being genuinely isolated -- built here,
-// wired into a real fixture family starting batch 2, not before.
-//
-// NOT YET WIRED INTO ANY FIXTURE. test/helpers/db.ts's TEST_TENANT_ID and
-// friends keep their current literal values through this batch -- zero
-// behaviour change, per the design doc's batch 1 scope. This file exists,
-// is exported, and is unit-tested on its own; nothing calls it yet.
+// with another run instead of being genuinely isolated. Wired into the
+// morning-fixture family (TEST_TENANT_ID/TEST_PROJECT_ID/TEST_ENGINEER_PHONE,
+// test/helpers/db.ts) starting batch 2.
 
 import { createHash } from 'node:crypto'
 import { inject } from 'vitest'
@@ -47,20 +43,38 @@ export function deriveRunScopedUuid(runId: string, label: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
 }
 
-// Minimal shape this needs from a Supabase client -- narrower than the real
-// SupabaseClient type so a unit test can pass a plain object implementing
-// just this chain, without constructing (or mocking the internals of) a
-// real client. Mirrors this table's actual PostgREST call shape exactly:
-// .from(table).select('*', {count:'exact', head:true}).eq(column, value).
-interface CountableClient {
-  from(table: string): {
-    select(
-      columns: string,
-      opts: { count: 'exact'; head: true },
-    ): {
-      eq(column: string, value: string): Promise<{ count: number | null; error: { message: string } | null }>
-    }
-  }
+// Same derivation as deriveRunScopedUuid, formatted as a phone number instead
+// of a UUID -- for the ONE fixture identity that needs a phone-shaped value:
+// the single shared morning-flow engineer's own WhatsApp number
+// (TEST_ENGINEER_PHONE, test/helpers/db.ts), which batch 2 treats as
+// "derived from" the tenant/project it belongs to, not as part of the
+// general per-test phone-slot registry (TEST_PHONE_PREFIX + ~98 hand-
+// registered slots, deferred to batch 4 -- see the design doc's decision 3).
+//
+// DELIBERATELY A DIFFERENT, DISJOINT PREFIX DIGIT from both existing phone
+// spaces, so this can never collide with either mechanism it is NOT part of:
+// `+19995550NNN` (the batch-4 registry, 3-digit slots) and `+19995551NNNNNN`
+// (the outbound suite's own wholesale-random range). This one is
+// `+19995552NNNNNN` -- reserved here, and in test/helpers/db.ts's own
+// RESERVED PHONE/PREFIX BLOCKS comment, so a future author doesn't hand-pick
+// a slot under it by mistake the same way the `03XX` incident happened once
+// already (db.ts's own comment on that incident).
+export function deriveRunScopedPhone(runId: string, label: string): string {
+  const digest = createHash('sha256').update(`${runId}:${label}:phone`).digest()
+  // 4 bytes -> a uint32 -> mod 1_000_000 gives 6 decimal digits, zero-padded.
+  // Independent hash input (":phone" suffix) from deriveRunScopedUuid's, so
+  // the same (runId, label) pair used for both never coincidentally produces
+  // related-looking values.
+  const n = digest.readUInt32BE(0) % 1_000_000
+  return `+19995552${n.toString().padStart(6, '0')}`
+}
+
+// The result shape any count-style PostgREST query resolves to -- what
+// `.select('*', {count:'exact', head:true})...` always returns, regardless
+// of which table/column/filter built it.
+interface CountResult {
+  count: number | null
+  error: { message: string } | null
 }
 
 // Guard (b): the check that catches silent isolation failure, not just a
@@ -72,21 +86,31 @@ interface CountableClient {
 // rather than the suite passing because its own assertions are scoped by
 // that same wrong identifier and can't tell the difference on their own.
 //
+// Takes a QUERY, not a client/table/column triple: the caller builds the
+// actual Supabase query itself (using the real, fully-typed SupabaseClient)
+// and passes only the resulting awaitable. This deliberately keeps
+// Supabase's own client type entirely out of this function's signature --
+// structurally typing against SupabaseClient's real generic query-builder
+// chain here triggered "Type instantiation is excessively deep" from
+// TypeScript (confirmed while wiring this into ensureMorningFixtures()) --
+// and it makes unit-testing trivial: a fake `query` is just a function
+// returning canned data, no fake client chain to construct at all.
+//
 // Never treat a failure here as flaky and re-run -- per this project's own
 // standing rule on exactly this shape of check (CLAUDE.md's REHEARSAL
 // REQUIREMENT / shared-fixture entries), a mismatch here means either a
 // genuine collision with another run or a leftover row nobody cleaned up,
 // and both need investigating, not retrying.
 export async function assertExactRowCount(params: {
-  client: CountableClient
+  query: () => PromiseLike<CountResult>
   table: string
   column: string
   value: string
   expected: number
   context: string
 }): Promise<void> {
-  const { client, table, column, value, expected, context } = params
-  const { count, error } = await client.from(table).select('*', { count: 'exact', head: true }).eq(column, value)
+  const { query, table, column, value, expected, context } = params
+  const { count, error } = await query()
   if (error) {
     throw new Error(`assertExactRowCount(${table}.${column}) query failed: ${error.message}`)
   }
