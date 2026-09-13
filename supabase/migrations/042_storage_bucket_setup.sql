@@ -7,7 +7,7 @@
 -- migration, stage 1+; this file creates no table, no daily_log_photos row,
 -- no ingestion).
 --
--- HELD, NOT APPLIED ANYWHERE (2026-09-13). Per CLAUDE.md's own "a migration
+-- ~~HELD, NOT APPLIED ANYWHERE (2026-09-13). Per CLAUDE.md's own "a migration
 -- file enters supabase/migrations/ when it is being applied, not when it is
 -- written" rule, this file lives in docs/reviews/ until an apply is
 -- genuinely happening. NOT rehearsed against a real database this pass --
@@ -18,7 +18,19 @@
 -- dry-run" rule, is still owed before this is ever applied for real -- see
 -- docs/plans/stage0-storage-setup-plan.md §9 for the exact open question
 -- (whether the project's approved apply path even has sufficient privilege
--- to write storage.buckets, never independently confirmed).
+-- to write storage.buckets, never independently confirmed).~~
+-- DATED CORRECTION (2026-09-13): APPLIED TO PROD (jvxwqignooseazzmwhvl) AND
+-- test-db, ledger repaired on both (`supabase migration repair --status
+-- applied 042 --linked`; `supabase migration list --linked` shows Local and
+-- Remote matching through 042). This file now lives in supabase/migrations/
+-- because it is applied, not merely written -- struck through above, not
+-- rewritten, per this project's own correction discipline (matching 039's
+-- own precedent for this exact transition). Full apply sequence (pre-apply
+-- probe, apply command, post-apply readback, ledger repair) recorded in
+-- docs/reviews/042-apply-record.md -- not repeated here. THE OPEN QUESTION
+-- IS ANSWERED: the normal CLI apply path (`supabase db query --linked -f
+-- <file>`) DOES have privilege to write storage.buckets -- no dashboard
+-- exception was needed, for this migration or for future Storage work.
 --
 -- NUMBER RESERVED 2026-09-13 in scripts/migration-number-reservations.json.
 -- Confirmed against origin/main at reservation time: highest applied
