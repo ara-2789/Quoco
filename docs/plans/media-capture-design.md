@@ -15,6 +15,13 @@ cross-reference to items 1-10 by number still resolves correctly. Items 9 and
 pass — no code, no migration, no migration number reserved by this round
 either.
 
+DATED NOTE (2026-09-13, round 4 — later the same day): round 3's item 14 is
+REVERSED (struck through in place, not silently rewritten), items 9 and 10 are
+now DECIDED, item 5's retention windows change for two of the three classes,
+and item 6's draft copy is replaced. See "ROUND 4" below. STILL OPEN is now
+empty — every numbered item in this doc is decided as of this round. Still a
+design pass — no code, no migration, no migration number reserved.
+
 ---
 
 ## RESOLVED
@@ -219,13 +226,26 @@ looked, once each ad-hoc menu item is given its own capture:
   purpose, its parent row, and its retention class. No orphan storage, no
   store-before-consent problem, no unclaimed-photo expiry semantics.
 
-**Draft copy — NOT APPROVED, English only, pending Tamil pairs and
+~~**Draft copy — NOT APPROVED, English only, pending Tamil pairs and
 confirmation of the live menu numbering (per `inbound-start.ts`'s current
 `ACTION_LINE`, hindrance is item "1" today):**
 
 > Photo not saved — please choose a menu option and send it there.
 > Reply 1 to report a hindrance, then send the photo again.
-> Progress photos: send them during the evening check-in.
+> Progress photos: send them during the evening check-in.~~
+
+**REVISED, 2026-09-13 (round 4).** Struck through, not deleted, per this
+project's correction discipline. Why it changed: there is no enumerated
+numbered menu in the product — `inbound-start.ts`'s `ACTION_LINE` advertises
+only "reply 1"; the struck-through draft's "choose a menu option" pointed at
+a menu the engineer has never seen. The revision also now covers both
+check-ins, since morning accepts photos too (item 11).
+
+**Draft copy — NOT APPROVED, English only, Tamil pair pending:**
+
+> Photo not saved — a photo has to go inside a report.
+> To report a site hindrance, reply 1 — then send the photo again.
+> Progress photos: send them during your morning or evening check-in.
 
 ### 7. Photo parents: polymorphic vs. per-parent tables — DECIDED, per-parent
 
@@ -248,6 +268,17 @@ hindrance) has to be either duplicated across the two tables or centralized
 behind a shared function/view — not a single table scan.
 
 ### 8. `hindrances.photo_url` — DECIDED, left as dead schema
+
+**PROVENANCE FLAG, added 2026-09-13 (round 4), on request:** this closure was
+**Claude's own inference**, chaining item 7's supplied decision through this
+doc's own pre-written round-2 conditional, backed by a fresh grep — it was
+**not** a decision Aravind supplied directly, unlike items 6, 7, 11-14 below,
+which were. The reasoning is sound and the grep evidence is real, but per this
+project's own standing distrust of inference-presented-as-decision, this
+item's "DECIDED" label should be read as "mechanically follows from a
+decision Aravind did make," not as something Aravind separately confirmed.
+Flagging rather than silently downgrading it — Aravind can confirm or
+override on sight.
 
 Closed as a direct consequence of item 7 above, per this doc's own
 round-2 conditional ("per-parent tables make it unambiguously obsolete" —
@@ -311,12 +342,20 @@ a fact about delivery, not a defect to fix.
   silently), so no dedupe is needed there.
 - Out-of-flow bursts: at most **one** nudge per session per 10 minutes,
   suppressed via a `last_media_nudge_at` timestamp on the `whatsapp_
-  sessions` row. No new table. (No existing column serves this today — see
-  the TASK 4 finding below; one new column is required.)
+  sessions` row. No new table.
 
-### 14. 10-photo cap — DECIDED
+**STORAGE LOCATION, DECIDED 2026-09-13 (round 4) — supersedes "one new column
+is required" above.** `last_media_nudge_at` is stored as a key inside
+`whatsapp_sessions.context` (JSONB, already exists) — **not** a new column.
+Rationale: this is throttle state, not a record anything else depends on or
+queries against, and does not justify a migration. The prior pass's finding
+that no existing *column* serves this purpose still stands and is not
+contradicted — `context` was always there; it just wasn't counted as an
+option until now.
 
-The cap of 10 photos per daily log stands (the same number item 3 and
+### 14. 10-photo cap — ~~DECIDED~~ REVERSED THE SAME DAY (2026-09-13, round 4)
+
+~~The cap of 10 photos per daily log stands (the same number item 3 and
 §41(d)'s own cap already fixed for DPR embeds). **What's new:** the cap now
 also applies at **intake**, not only at DPR-render time — photo 11 is
 rejected outright, never accepted-and-truncated later. This moots §41(e)'s
@@ -339,58 +378,137 @@ per-parent tables per item 7 and are outside this specific cap.)
 **Draft copy — NOT APPROVED, English only, pending Tamil pairs:**
 
 > That's 10 photos for today — the most I can attach. Send any others
-> tomorrow, or report them as a hindrance.
+> tomorrow, or report them as a hindrance.~~
+
+**DATED CORRECTION (2026-09-13, round 4) — a reversal, not a refinement.**
+Kept struck through above rather than deleted, per this project's correction
+discipline. New decision:
+
+- **Intake is UNCAPPED.** The engineer sends as many photos as he wants; all
+  are stored. There is no photo 11 rejection, no over-cap message, no
+  `last_media_nudge_at`-suppressed over-cap nudge — that entire mechanism is
+  withdrawn along with the cap it enforced. The over-cap draft string struck
+  through above is **withdrawn**, not carried forward.
+- **The DPR email embeds the first 10 photos by arrival order.** Photos 11+
+  appear as **links to the web dashboard** (and the mobile app, once it
+  exists) — never as raw storage URLs, and never as signed public links.
+  This preserves PM-only access and does not reopen the deferred owner-login
+  work (round 2's item 3).
+- **Known consequence, accepted, not overlooked:** the durable copy is the
+  10 embedded images only. Overflow photos exist solely in Supabase Storage
+  and are unrecoverable once retention fires on them. Embedding order is
+  **arrival order**, not importance — which photos survive past the
+  retention window is determined by upload sequence, not by which ones
+  mattered most.
+- **The removed ceiling:** uncapped intake means photos now have no upper
+  bound on object storage, in a product where photos were already the
+  identified largest storage consumer (§6, `design-decisions-beta-
+  feedback.md`; item 5 above). Item 5's pricing arithmetic assumed a bounded
+  per-day photo count; it should be re-checked once real engineer behavior
+  under an uncapped intake is observed, not re-derived speculatively here.
 
 ---
 
-## STILL OPEN — options reported, nothing decided
+## RESOLVED — ROUND 4 (2026-09-13, later the same day)
 
-### 9. "Expired" semantics per type
+### 9. "Expired" semantics per type — DECIDED, tombstone
 
-What retention's scheduled job (item 5) actually does to a row once its
-window passes:
+Same treatment for **all three classes** (attendance, evening progress,
+hindrance) — not different per type, contrary to round 2's own lean toward
+splitting them.
 
-- **Delete file + delete row.** Cleanest, but loses all audit trail — not
-  even "a photo existed and was reviewed on date X" survives.
-- **Delete file, keep row as tombstone** (`photo_url` set NULL,
-  `caption`/`purpose`/timestamps retained). Preserves audit value — matters
-  specifically for hindrance photos given §41(f)'s already-recorded note
-  that this becomes a statutory-retention financial record the moment
-  invoices/delivery-note photos exist alongside them.
-- **Keep both indefinitely.** Not real retention — listed for completeness,
-  not as a live option.
+- When a photo's retention period elapses, the **stored object is deleted**
+  but the **metadata row is retained** (a tombstone: `photo_url` set NULL,
+  `caption`/`purpose`/timestamps kept — the shape round 2 already sketched
+  under "Delete file, keep row as tombstone").
+- The DPR and dashboard show a tombstone stating **how many photos existed
+  and when they expired**.
+- **Rationale:** "no photos were sent that day" and "photos existed and were
+  deleted" are opposite facts on a disputed claim, and a blank section
+  cannot distinguish them.
+- **No advance expiry warning.** The embedded-10 email (item 14 above)
+  already gives the PM a copy he retains, which is what a warning would
+  have protected.
 
-Not decided, and plausibly **different per type** — attendance is pure
-personal data with no dispute-evidence value once its purpose (proof of
-presence that day) has passed, so full deletion may be the honest answer
-there, while hindrance's compliance angle argues for a tombstone. This is
-squarely a product/compliance call, not an engineering one.
+**User-facing string: NEEDED, NOT DRAFTED, pending approval.** No wording is
+invented here — whoever builds the tombstone display writes and clears the
+copy separately.
 
-### 10. Email image delivery — signed URL vs. inline embedding
+### 10. Email image delivery — DECIDED
 
-- **Remote `<img src>` pointing at a Supabase Storage signed URL**: simplest
-  to build, but the signed URL's expiry has to outlive however long the
-  email might realistically be opened — which for a 45-day-retention photo
-  means either a long-lived signed URL (verify Supabase's current max
-  `expiresIn` before assuming one is available) or a proxy endpoint that
-  mints a fresh signed URL per view. This is also exactly where §41(g)'s
-  already-recorded, unresolved concern lives: Resend's click-tracking is
-  enabled on `quoco.co.in` and cannot be disabled from the dashboard;
-  §41(g) flagged this for `<a href>` links specifically and left open
-  whether it also touches `<img src>` — worth re-confirming, since image
-  tags are not typically rewritten by link-tracking the way anchor tags
-  are, but "typically" is not the same as verified against this specific
-  Resend configuration.
-- **Inline/CID embedding** (photo bytes attached to the email itself, not
-  fetched from a URL): avoids both the signed-URL-expiry question and the
-  click-tracking question entirely, at the cost of a heavier email payload
-  and no lazy-loading — every recipient downloads every embedded photo
-  whether or not they open the email fully.
-- Neither is decided. Both interact with the "nothing empty, nothing
-  stale" rule for owner-facing content (`design-principles.md` Rule 5.6) —
-  a broken image in a report the owner never re-requests is a silent
-  failure mode worth designing against explicitly, whichever path is
-  chosen.
+- **DPR email:** first 10 photos **embedded**, by arrival order. Overflow as
+  **dashboard links** (per item 14's reversal above).
+- **Hindrance email:** photos **embedded, not linked**. This email is the
+  durable archive that justifies the 60-day hindrance retention (item 15
+  below) — a link would die with retention, and the archive claim would
+  collapse the moment the linked object is gone.
+- **Delivery detail flagged for build time, not decided now:** Resend
+  click-tracking (§41(g), already recorded as unresolved for `<a href>`) must
+  not rewrite or wrap embedded image content. Verify this against a real
+  send before shipping either embed path — not asserted here either way.
+
+### 15. Retention clock — extended for two of three classes
+
+- **Hindrance and evening progress retention: 45 days → 60 days.**
+- **Attendance stays at 7 days** — unchanged.
+- **Rationale:** hindrance photos are evidence for delay and payment
+  disputes, which run in months, not weeks. 60 days plus the embedded email
+  copy (item 10 above) covers the common cases; the policy may extend
+  further later, based on real customer experience — not decided in advance
+  of having any.
+- **Retention is FORWARD-ONLY.** Photos deleted under a 60-day rule cannot
+  be recovered if the policy is later extended — a longer future window
+  does not retroactively restore what a shorter past window already
+  deleted.
+- **Open operational question, not a decision to make now:** whether the
+  deletion job should stay switched off until a real customer is running,
+  preserving the option to revise the clock before anything is
+  irreversibly lost to it. Named here so it isn't decided by default the
+  moment the job is built.
+- **The retention policy must be visible to the PM in-product**, not only
+  in onboarding — where and how is not decided here, only that onboarding
+  alone is not sufficient.
+
+This amends item 5's retention table (7d attendance / 45d hindrance / 45d
+evening progress) and its downstream pricing arithmetic, which assumed the
+now-superseded 45-day hindrance/evening-progress windows and a capped daily
+intake (also superseded — item 14). Not re-derived here; flagged for
+whoever next touches item 5's numbers.
+
+### 16. Hindrance photo capture — ordering constraint
+
+- Hindrance photos are captured **inside the hindrance flow**. That capture
+  **does not exist today**: confirmed this pass (see TASK 9 evidence below)
+  that `hindrances.photo_url` has zero writers, and `lib/whatsapp/flows/
+  hindrance.ts` and migration 038 contain no photo handling at all.
+- **HARD ORDERING CONSTRAINT:** hindrance photo capture must ship **before**
+  the off-step nudge (item 6). Until capture exists, the nudge instructs the
+  engineer to reply 1 and re-send a photo into a flow that will reject it via
+  the same `media-reply.ts` interceptor that intercepts everywhere else
+  today — a **second** failed upload on poor signal, which is worse than
+  today's honest "photos aren't used yet" reply. Shipping the nudge ahead of
+  the capture it points at would make the product actively worse for exactly
+  the engineer it's trying to help.
+- The existing hindrance email (`lib/hindrance/pm-notify.ts`; confirmed live
+  this pass, fires immediately on report, reaches the PM — see TASK 9
+  evidence below) is **extended** to carry the photos. This is not a new
+  trigger, a new recipient rule, or a new template — the same email, same
+  send path, same recipients, with photos added to its body.
+
+### 17. Correction to the review record — hindrance email already exists
+
+**DATED CORRECTION (2026-09-13).** Earlier today, the design-review layer
+stated that no hindrance email exists and that hindrance notification would
+be a new build. **That was wrong.** `lib/hindrance/pm-notify.ts` is live,
+fires on every completed hindrance report via `enqueueHindrancePmNotify`
+(called from the hindrance flow's completion branch) and
+`handleHindrancePmNotifyJob` (the queue job that actually sends it), and was
+demonstrated working end to end on 2026-09-07 (Phase A, a real delivered
+send from `reports@quoco.co.in`, per that file's own header). Recorded here,
+in the same style as item 2's earlier correction, so this doc does not carry
+the false claim forward. Item 16 above is written against the real,
+already-live email — it is an extension of existing infrastructure, not new
+notification plumbing.
 
 ---
 
