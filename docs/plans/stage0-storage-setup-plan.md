@@ -1,16 +1,21 @@
 # Stage 0 — Storage setup — implementation plan
 
-STATUS: PLAN REVISED AND BUILT THIS PASS (2026-09-13). This is stage 0 of
-`docs/plans/media-capture-design.md` item 20's build sequence — inserted
-ahead of stage 1 (photo intake); stages 1–6 keep their existing numbers
-unchanged (see the renumbering note near the end of this doc for why).
-Scope is **storage setup only**: bucket, path convention, access rules. No
-ingestion, no webhook changes, no flow changes, no
-`daily_log_photos`/`hindrance_photos` rows — those are stage 1
-(`docs/plans/stage1-photo-intake-plan.md`), which depends on this stage
-existing first. The migration is written and held (not applied to
-production or test-db in this pass); the read helper and its test are
-real code, described in §4a/§6 and reported in full at build time.
+STATUS: APPLIED (2026-09-13). This is stage 0 of `docs/plans/media-capture-
+design.md` item 20's build sequence — inserted ahead of stage 1 (photo
+intake); stages 1–6 keep their existing numbers unchanged (see the
+renumbering note near the end of this doc for why). Scope is **storage
+setup only**: bucket, path convention, access rules. No ingestion, no
+webhook changes, no flow changes, no `daily_log_photos`/`hindrance_photos`
+rows — those are stage 1 (`docs/plans/stage1-photo-intake-plan.md`), which
+depends on this stage existing first (and now can — this stage is live).
+
+**DATED NOTE (2026-09-13): migration 042 is applied to prod
+(`jvxwqignooseazzmwhvl`) and test-db, ledger repaired on both.** Full
+sequence: `docs/reviews/042-apply-record.md`. The read helper
+(`lib/storage/photo-access.ts`) and its cross-tenant isolation test
+(`test/storage-photo-access.test.ts`) are real code with a real 5/5 pass
+against test-db — see §9 item 1 below for the previously-open apply-path
+privilege question, now resolved.
 
 Split out from stage 1's own plan per Aravind's 2026-09-13 decision: stage
 1 found that no Supabase Storage bucket has ever existed in this project —
@@ -530,14 +535,18 @@ real strings rather than a paraphrase.
 
 ## 9. Dependencies I could not verify — named, not assumed
 
-1. **Whether `supabase db query --linked -f <file>` (this project's
+1. ~~Whether `supabase db query --linked -f <file>` (this project's
    approved apply path) has sufficient Postgres privilege to `INSERT INTO
-   storage.buckets`.** Lives in Supabase's managed `storage` schema, not
-   this project's own `public` schema — I have not tested this against a
-   real database this pass (no database credentials in this planning
-   environment). Needs a real dry-run/rehearsal before assuming it applies
-   cleanly. (No `CREATE POLICY` concern any more — §4's "no Storage RLS"
-   correction means this migration creates no policies at all.)
+   storage.buckets`.~~ **RESOLVED (2026-09-13): it does.** Migration 042
+   applied to prod (`jvxwqignooseazzmwhvl`) and test-db via exactly this
+   command, no error — see `docs/reviews/042-apply-record.md` for the full
+   sequence. No dashboard exception was needed, for this migration or for
+   future Storage work. This also answers the pre-apply fact worth
+   recording on its own: `SELECT count(*) FROM storage.buckets` on prod
+   returned **0** immediately before the apply — this product had never had
+   a Storage bucket before migration 042. It is the first object storage
+   this product has ever built, confirmed directly, not inferred from "no
+   migration creates one."
 2. ~~Whether Supabase's Storage layer has a `service_role`-default-ACL
    surprise analogous to the one already found twice on `public`-schema
    tables (`dpr_versions`, `outbound_sends`)~~ — **MOOT, per §4's "no
