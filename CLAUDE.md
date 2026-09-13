@@ -557,7 +557,7 @@
   already mis-cited "design-decisions §11" for §10 before this ambiguity
   even existed (docs/build-status.md's `morning.ts:188` entry), so a bare
   section number was already fragile on its own. Always cite the filename
-  with the section, e.g. `design-decisions-beta-feedback.md §10`, never
+  with the section, e.g. `design-decisions/check-in-flow-decisions.md §10`, never
   just "§10". Full reasoning: docs/build-status.md's 2026-08-23 entry.
 - `CREATE OR REPLACE FUNCTION` ONLY PRESERVES GRANTS WHEN THE ARGUMENT
   SIGNATURE IS UNCHANGED — QUALIFIER TO THE EXISTING "NEVER DROP+CREATE,
@@ -1077,7 +1077,7 @@ their FLOWS and dashboard views are not built in the Spine.
       still a reply, triggered by an inbound message, answered the same way
       every other reply already is. No new capability needed. **BUILT
       2026-08-20 (`lib/whatsapp/inbound-start.ts`), and, per PP2
-      (design-decisions-beta-feedback.md §27, same day): SCAFFOLDING, not
+      (design-decisions/check-in-architecture-and-triggers.md §27, same day): SCAFFOLDING, not
       the permanent design.** The permanent design is cron-triggered
       check-ins, inbound message never starts a flow — this build exists
       only because, until the item below ships, there is no cron capable of
@@ -1086,7 +1086,7 @@ their FLOWS and dashboard views are not built in the Spine.
       **RETIRED, 2026-08-28** — the scaffolding described above is gone.
       `routeInboundMessage`'s no-active-session branch no longer starts a
       flow at all; it returns one of four static acknowledgement replies
-      (`design-decisions-beta-feedback.md` §38). See that file's own
+      (`design-decisions/check-in-architecture-and-triggers.md` §38). See that file's own
       header for the current design in full.
     * THE TRIGGER CRON IS NOT "ADD A CRON JOB" — was true, kept for the
       reasoning, no longer describes the current state. A cron deciding

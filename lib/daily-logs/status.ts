@@ -111,7 +111,7 @@ export function deriveHalfStatus(
   // reachable for — historical block-state is UNKNOWABLE until a block-history
   // mechanism exists. So this branch is scoped to TODAY only; past dates fall
   // through to the clock logic regardless of the current flag. Documented in
-  // docs/design-decisions-beta-feedback.md §3.1. (Contrast is_holiday above,
+  // docs/design-decisions/check-in-flow-decisions.md §3.1. (Contrast is_holiday above,
   // which is stored ON the daily_logs row and so is historically accurate.)
   if (messagingBlocked && logDate === ist.date) {
     return {

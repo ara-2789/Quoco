@@ -131,7 +131,7 @@ unchanged** — those two replies were already fully replaced, nothing about tha
 here.
 
 **THE HEADER MUST BE COMPUTED FROM STATE, NOT FROM THE CLOCK — this is the whole point,
-not a refinement.** `design-decisions-beta-feedback.md` §39 (2026-08-30) recorded why:
+not a refinement.** `design-decisions/check-in-architecture-and-triggers.md` §39 (2026-08-30) recorded why:
 `EVENING_AWAITING_TRIGGER_REPLY` promised an evening check-in that would never arrive on
 a site-holiday day, because the reply inferred "a check-in is coming" from the clock
 (morning submitted, evening not, past `eveningSend`) rather than from whether one
@@ -497,7 +497,7 @@ items, not just the three with existing tables.
 pieces of code already navigate, in opposite directions, for reasons that do not
 automatically transfer here.** `project_members` permits multiple rows per `user_id`
 today; "one engineer belongs to exactly one project" is a DECIDED product rule
-(`design-decisions-beta-feedback.md` §36, 2026-08-26) but not a database-enforced one — no
+(`design-decisions/outbound-infra-and-auth.md` §36, 2026-08-26) but not a database-enforced one — no
 UNIQUE index exists yet.
 
 - **Migration 033's sweep** (`sweep_stale_morning_sessions`) COUNTS an engineer's
@@ -529,7 +529,7 @@ count != 1 → no write, count it, alert), not a new mechanism to invent. What t
 actually sees when this happens, and whether it differs per item, is not designed here —
 only the required BEHAVIOR is being named, per this section's own scope.
 
-**This closes permanently, not just for the menu, once `design-decisions-beta-feedback.md`
+**This closes permanently, not just for the menu, once `design-decisions/outbound-infra-and-auth.md`
 §36's proposed `UNIQUE INDEX ON project_members(user_id)` ships** — DECIDED IN PRINCIPLE,
 NOT SCHEDULED as of 2026-08-26, still true as of this spec (2026-08-28). Until then, every
 one of the seven menu items inherits the same unresolved ambiguity 033 and 031 already each

@@ -340,7 +340,7 @@ export const QUANTITY_STOPWORDS: ReadonlySet<string> = new Set([
 // stretched across a second, different question — this is that same risk
 // almost recurring a third time, caught before it shipped rather than
 // after. CITATION CHECKED: an earlier draft of this comment cited
-// design-decisions-beta-feedback.md §32, which turned out to be about the
+// design-decisions/parsing-and-data-capture.md §32, which turned out to be about the
 // parse-attempt corpus, not this — corrected in place before commit, not
 // left as a dangling reference for the next reader to trip on.
 //

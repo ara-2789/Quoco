@@ -1,6 +1,6 @@
 // The owner_deliver job handler -- stage 2 of docs/dpr-delivery-versioning-
 // plan.md's two-stage owner delivery (§2a/§2e), gated by §37(c)/(d) of
-// design-decisions-beta-feedback.md. Built 2026-09-02, application code
+// design-decisions/dpr-generation-and-reporting.md. Built 2026-09-02, application code
 // only -- migration 034 (already live on production) is the schema this
 // handler reads and writes; no migration, no apply, nothing here touches a
 // database beyond reads until a real send happens.

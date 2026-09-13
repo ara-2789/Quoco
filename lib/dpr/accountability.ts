@@ -6,7 +6,7 @@ import type { AccountabilityEntry } from './schema'
 // no model call, no Judgment counterpart (schema.ts's AccountabilityEntry
 // says why). Ships PER-DAY status only — the 7-day pattern is deliberately
 // suppressed; see ACCOUNTABILITY_PATTERN_SUPPRESSED (schema.ts) and
-// docs/design-decisions-beta-feedback.md §13 for the full reasoning.
+// docs/design-decisions/dpr-generation-and-reporting.md §13 for the full reasoning.
 //
 // DIFFERENT FETCH SHAPE FROM lib/dpr/assemble.ts — DELIBERATELY, DO NOT
 // LATER "SIMPLIFY" THIS INTO THE SAME QUERY. mergeDprFacts asks "what did

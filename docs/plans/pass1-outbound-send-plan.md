@@ -5,7 +5,7 @@
 Source materials read: `/tmp/outbound-send-primitive-plan.md` (PR #69's plan — its
 prose/reasoning is reused below where sound; its accompanying file DIFF, 47 commits
 stale, is NOT reused anywhere), `/tmp/031.sql`, `/tmp/031-review-package.md`,
-`docs/design-decisions-beta-feedback.md` §28 (l)/(w)/(x)/(z)/(bb) on `main`,
+`docs/design-decisions/check-in-architecture-and-triggers.md` §28 (l)/(w)/(x)/(z)/(bb) on `main`,
 `docs/whatsapp-templates.md`'s GATE 1 / GATE 2 on `main`.
 
 ## Scope recap
@@ -58,7 +58,7 @@ shipped: migration 033 (`sweep_stale_morning_sessions`), applied to production
 route.ts`, calling `sweepStaleMorningSessions` unconditionally every tick — verified
 directly against `origin/main`, not assumed). It closes any `current_flow='morning'`
 session past `morningCutoff`, live or parked, with no minimum-age check — see
-`design-decisions-beta-feedback.md` §35b. The force-switch backstop at `eveningSend`
+`design-decisions/check-in-flow-decisions.md` §35b. The force-switch backstop at `eveningSend`
 named above was never separately built and is now moot: with `routeInboundMessage`'s
 own morning-window refusal (§35a/b, also 2026-08-26) preventing a morning session
 from ever starting past `morningCutoff` in the first place, there is no longer a
@@ -169,7 +169,7 @@ build the menu").
    **CORRECTED, 2026-08-28 — `REPORT_READY_REPLY`-style text must NOT be used for the
    morning-before-cutoff or evening-after-send branches specifically (it states the
    opposite of the truth while that half's window is still open); see the DECIDED note
-   below and `design-decisions-beta-feedback.md` §38 for the actual approved copy for
+   below and `design-decisions/check-in-architecture-and-triggers.md` §38 for the actual approved copy for
    those two.**
 3. **Consequence, stated plainly:** for the length of Pass 1, an engineer who messages
    in unprompted at idle gets an acknowledgement, never a flow, never a menu. This is
@@ -188,7 +188,7 @@ decision, unchanged since 2026-08-22. Corrected on read, not left standing.
 **OPEN, 2026-08-26 — recorded, NOT decided, must be answered before the
 `vercel.json` cron entries ship, not at cron-enable time.** Item 1 above
 instructs retiring `routeInboundMessage`'s `startFlow: true` call on an
-idle inbound once Pass 1's cron exists. `design-decisions-beta-feedback.md`
+idle inbound once Pass 1's cron exists. `design-decisions/check-in-flow-decisions.md`
 §35's two window guards (morning refuses at/after `morningCutoff`, evening
 refuses before `eveningSend`, added 2026-08-26 — after this section was
 written, hence the gap) live INSIDE that exact branch, immediately before
@@ -220,7 +220,7 @@ proposal, above, must NOT be used for these two** — "Today's report is
 ready" states the opposite of the truth while that half's window is still
 open. Approved copy for these two branches, full reasoning, the accepted
 "shortly" imprecision, and the note that all four branches are temporary
-pending §28(x)'s menu: `design-decisions-beta-feedback.md` §38. Retirement
+pending §28(x)'s menu: `design-decisions/check-in-architecture-and-triggers.md` §38. Retirement
 itself remains unbuilt — this is the copy decision that unblocks it, not
 the build.
 
@@ -552,7 +552,7 @@ one half of that precondition. `jobs/tick`'s own one-poller-not-per-job-type
 convention (already an accepted deviation elsewhere in this codebase, per CLAUDE.md's
 NFR-16 note) is reused here, not a new pattern.
 
-**Widened scope, per §29(d) (see `design-decisions-beta-feedback.md`):** the sweep's
+**Widened scope, per §29(d) (see `design-decisions/outbound-infra-and-auth.md`):** the sweep's
 job is no longer only "reset `current_flow`/`current_step` to idle" (the original B3
 decision) — it must also STAMP the session's partial answers as submitted, keeping
 whatever was actually recorded as real data, not discarding it. This is a real,
@@ -563,7 +563,7 @@ substantive widening of what "B3's fix" has to do, not a cosmetic rename — ite
 
 **The evening trigger's roster (item E) must ALSO exclude any engineer whose
 `daily_logs` row for that date has `attendance = 'site_holiday'`, not only those with
-`messaging_blocked=true`.** Per §30(b)/(d) (`design-decisions-beta-feedback.md`), a
+`messaging_blocked=true`.** Per §30(b)/(d) (`design-decisions/check-in-architecture-and-triggers.md`), a
 site-holiday engineer's evening trigger must never fire — the site was closed, there
 is nothing to ask. §5's failure-mode table above (the `messaging_blocked` roster-filter
 row) is amended by this addition, not superseded: both exclusions apply to the same
@@ -581,7 +581,7 @@ column it reads exists.
 ### (f) Roster filter — the evening trigger must NOT gate on morning submission (2026-08-27, §37(a))
 
 **The evening trigger's roster (item E) must NOT inherit `routeInboundMessage`'s
-`morningSubmitted` gate.** Per §37(a) (`design-decisions-beta-feedback.md`), confirmed
+`morningSubmitted` gate.** Per §37(a) (`design-decisions/dpr-generation-and-reporting.md`), confirmed
 against §30(b)/(d) above: an engineer who missed the morning window entirely may have
 been on site all day, and the evening trigger asking what happened does not depend on
 whether he already answered a different, earlier question. The roster's only two
@@ -593,7 +593,7 @@ state.
 `routeInboundMessage` (`lib/whatsapp/inbound-start.ts`), the INBOUND path already built
 and live, nests its own evening-start branch inside `else(morningSubmitted)` — an
 engineer who never touches morning cannot self-start evening via that path, for the rest
-of the day (full trace: `design-decisions-beta-feedback.md` §37(b)). That gate is specific to the inbound code path and was
+of the day (full trace: `design-decisions/dpr-generation-and-reporting.md` §37(b)). That gate is specific to the inbound code path and was
 never a decided requirement for the roster query this item describes. Named here so the
 same gate is not accidentally carried into the OUTBOUND roster query by a future
 implementer reasoning from `routeInboundMessage`'s existing shape as precedent — it is
@@ -745,7 +745,7 @@ a broken CI assertion, not a checklist line to remember.
 
 ## Two hard preconditions for enabling Pass 1's cron entries (`vercel.json` item E)
 
-Stated once, plainly, here and in `design-decisions-beta-feedback.md` §29:
+Stated once, plainly, here and in `design-decisions/outbound-infra-and-auth.md` §29:
 
 1. **GATE 1** — the flow migration (§28(l), attendance-as-Q1) shipped and verified
    live (template 1's approved copy and the RPC's actual Q1 agree).
@@ -765,10 +765,10 @@ question each `current_step` value means to correctly preserve partial answers, 
 the morning flow migration (§30(a)/(b)) changes that exact mapping. **Corrected
 order: morning flow migration ships first, then B3's sweep is written once against
 its final shape, then Pass 1's two `vercel.json` cron entries may be added.** Full
-reasoning in `design-decisions-beta-feedback.md` §29's own corresponding correction
+reasoning in `design-decisions/outbound-infra-and-auth.md` §29's own corresponding correction
 and §30(i).
 
-**ADDED, 2026-08-26 (`design-decisions-beta-feedback.md` §35f) — not a
+**ADDED, 2026-08-26 (`design-decisions/check-in-flow-decisions.md` §35f) — not a
 precondition to enabling the crons, a required VERIFICATION at the moment
 they're enabled.** `routeInboundMessage`'s two check-in-window refusal
 strings (morning after `morningCutoff`, evening before `eveningSend`)

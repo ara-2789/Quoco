@@ -8,7 +8,7 @@
 // this file's own SECTION 6 IS ENTIRELY CODE decision (below) explicitly
 // forbids; do not resurrect that shape from the spike's git history without
 // re-reading why it was rejected. Built per
-// docs/design-decisions-beta-feedback.md §11 and bot-flows.md's DPR
+// docs/design-decisions/dpr-generation-and-reporting.md §11 and bot-flows.md's DPR
 // GENERATION section.
 //
 // TWO DISJOINT POOLS, per section:
@@ -92,7 +92,7 @@ export interface CapturedNumber {
 // does: nobody ever reported it, OR the §12 rollup rule deliberately
 // withheld a value that MULTIPLE engineers reported (project-day rollup:
 // daily_logs is per-engineer, dprs is per-project — see
-// docs/design-decisions-beta-feedback.md §12). SuppressionNote is present
+// docs/design-decisions/dpr-generation-and-reporting.md §12). SuppressionNote is present
 // only in the second case.
 export type SuppressionReason =
   | 'multi_engineer_manpower'
@@ -144,7 +144,7 @@ export interface ScheduleFacts {
   // engineer by nature." That reasoning doesn't hold here — schedule_met
   // is exactly as per-engineer as headcount is (one boolean per engineer,
   // one field to hold it), and suppresses the same way manpower does.
-  // §12 in design-decisions-beta-feedback.md carries the dated correction;
+  // §12 in design-decisions/dpr-generation-and-reporting.md carries the dated correction;
   // this is where the actual behavior lives.
   //
   // Present whenever MORE THAN ONE engineer submitted for this project-day
@@ -290,7 +290,7 @@ export interface AccountabilityEntry {
 //      saw the message and ignored it. A 7-day count built on that
 //      evidence isn't a measurement, it's a guess wearing a number.
 //   2. BLOCK HISTORY — messaging_blocked has no per-day record (bot-flows.md's
-//      own CROSS-DATE CONSTRAINT; design-decisions-beta-feedback.md §3.1).
+//      own CROSS-DATE CONSTRAINT; design-decisions/check-in-flow-decisions.md §3.1).
 //      MOOT AS OF 2026-08-10 IN PRACTICE (CLAUDE.md §10: no code path
 //      anywhere ever sets messaging_blocked=true, so no historical block
 //      data exists to contaminate a pattern today) — but a real
@@ -307,7 +307,7 @@ export interface AccountabilityEntry {
 // harder to argue with than an honest absence of one — same shape as idle
 // cost suppressed on an untrusted hire rate, or productive_count left
 // not_captured rather than fabricated. Full reasoning + the two blockers as
-// tracked items: docs/design-decisions-beta-feedback.md §13.
+// tracked items: docs/design-decisions/dpr-generation-and-reporting.md §13.
 export const ACCOUNTABILITY_PATTERN_SUPPRESSED = true
 
 // The fact assembler's output — one project-day's worth of Facts, code-owned,
@@ -368,7 +368,7 @@ export interface DprFacts {
 //   third category; consistency with the existing rule, not a compromise.
 //   Specificity is lost ("delayed by 3 hours" becomes "delayed") — recorded,
 //   with the accepted recovery path, in
-//   docs/design-decisions-beta-feedback.md §18.
+//   docs/design-decisions/dpr-generation-and-reporting.md §18.
 // ---------------------------------------------------------------------------
 
 export type DataStatus = 'complete' | 'partial' | 'not_captured'
@@ -714,7 +714,7 @@ export interface EngineerIdleHoursByTrade {
 
 // §4 Equipment. planned is `type` alone (render-layer composition) — was
 // `type` + `daily_hire_cost` per the spec's original round-1 resolution;
-// CORRECTED by §33(c) (design-decisions-beta-feedback.md, 2026-08-25,
+// CORRECTED by §33(c) (design-decisions/parsing-and-data-capture.md, 2026-08-25,
 // built 2026-09-04 — production incident): a rate typed from memory is
 // not factual and must not render as if it were, so render.ts
 // (renderEngineerBody) composes `type` only. actual = actual_hours alone

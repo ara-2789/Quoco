@@ -245,7 +245,7 @@ CREATED (0) — dprs was the sole entry in this bucket; nothing remains in it.]
   transaction, never alone — see that entry below for why.
 - evening_productive_manpower JSONB — migration 024 (LIVE — see the
   dated correction below). AGGREGATE-ONLY v1
-  (design-decisions-beta-feedback.md §9, 2026-07-28 — DECIDED before 024 was
+  (design-decisions/check-in-flow-decisions.md §9, 2026-07-28 — DECIDED before 024 was
   written) — no trade-level breakdown, ever; see that decision for the three
   reasons it's deferred. Shape, object-wrapped per the same convention as
   every other parsed column in this table (never the bare array an earlier
@@ -1057,7 +1057,7 @@ rate_catalog and rate_catalog_history have NO tenant_id (Quoco-owned, shared).
        SURVIVES that restart (previously it didn't) — strictly better, but a
        genuine behaviour change nothing has decided should be allowed at all.
        DECIDE-BEFORE-CRON-PR, recorded in
-       docs/design-decisions-beta-feedback.md §10 (RESTART SEMANTICS).
+       docs/design-decisions/check-in-flow-decisions.md §10 (RESTART SEMANTICS).
 
        APPLIED TO PRODUCTION VIA SQL EDITOR on 2026-08-05, from the PINNED
        commit 6bbbc59 (git show 6bbbc59:supabase/migrations/022_evening_flow_apply_turn.sql;

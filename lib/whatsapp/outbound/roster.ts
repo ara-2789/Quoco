@@ -212,7 +212,7 @@ export interface EveningTodayLogRow {
  * Pure filter -- testable without a client, same split as
  * lib/checkin-escalations/roster.ts's own filterDueRoster.
  *
- * HARD REQUIREMENT (design-decisions-beta-feedback.md §37(a), confirmed
+ * HARD REQUIREMENT (design-decisions/dpr-generation-and-reporting.md §37(a), confirmed
  * against §30(b)/(d)): this roster must NOT gate on morning submission.
  * An engineer who missed the morning window entirely may have been on
  * site all day -- the evening trigger asking what happened does not

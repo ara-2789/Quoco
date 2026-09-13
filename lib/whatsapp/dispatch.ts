@@ -16,7 +16,7 @@ import type { HindranceOutcome } from './flows/hindrance'
 // sentinel (route.ts, morning-only, deterministic smoke seeding) and, as of
 // the II3 build, lib/whatsapp/inbound-start.ts's routeInboundMessage (both
 // flows, real production traffic, no flag -- see that file's own header).
-// design-decisions-beta-feedback.md §10 (corrected cross-reference — was
+// design-decisions/check-in-flow-decisions.md §10 (corrected cross-reference — was
 // mis-cited as §11) is the restart-semantics record this build's (b)
 // submitted-check mitigates around, not fixes.
 //

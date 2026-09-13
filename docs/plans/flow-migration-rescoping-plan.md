@@ -2,12 +2,12 @@
 
 **PLAN ONLY. No code, no migration file, no branch.**
 
-Target state: `docs/design-decisions-beta-feedback.md` §28(l) on `main`. The earlier
+Target state: `docs/design-decisions/check-in-architecture-and-triggers.md` §28(l) on `main`. The earlier
 Q4-removal scope (§28(b)'s original framing) does NOT cover this — attendance-as-Q1
 renumbers every morning step, and evening's own question set is more than renumbered
 (two questions deleted, two restructured into by-trade pairs, one moved, one added).
 
-**SUPERSEDED IN PART, 2026-08-22 (`design-decisions-beta-feedback.md` §30):** this
+**SUPERSEDED IN PART, 2026-08-22 (`design-decisions/check-in-architecture-and-triggers.md` §30):** this
 plan predates §30's attendance-follow-up decision. Section (b) below scopes morning
 as a straightforward 4-question flow on a single YES/NO Q1, with no branch on the NO
 answer — §30(b) replaces that with a real branch: Q1 NO leads to a second question
@@ -314,7 +314,7 @@ separate check).
 
 ## h. B3 interaction — which parts depend on this migration's final step numbering
 
-§29(d) (`design-decisions-beta-feedback.md`) widened B3's fix: the 15:00 sweep must
+§29(d) (`design-decisions/outbound-infra-and-auth.md`) widened B3's fix: the 15:00 sweep must
 both close a stuck `current_flow='morning'` session AND stamp whatever partial
 answers exist as submitted real data (not merely reset state, per the original B3
 decision in `outbound-send-primitive-plan.md` §"B3").
@@ -342,7 +342,7 @@ agreement) and B3's build are NOT independent, parallelizable workstreams as Pas
 plan implicitly assumed by listing them as two separate preconditions — B3 has a real
 ordering dependency on THIS migration landing first.
 
-**CONFIRMED AS DECIDED, 2026-08-22 (`design-decisions-beta-feedback.md` §30(i) /
+**CONFIRMED AS DECIDED, 2026-08-22 (`design-decisions/check-in-architecture-and-triggers.md` §30(i) /
 §29's own corrected close):** the recommendation above is no longer just a
 recommendation — it's the decided order: morning flow migration ships first, then
 B3's sweep is written once against the final shape, then Pass 1's two `vercel.json`
@@ -505,7 +505,7 @@ $ sed -n '8,19p' lib/whatsapp/dispatch.ts
 // sentinel (route.ts, morning-only, deterministic smoke seeding) and, as of
 // the II3 build, lib/whatsapp/inbound-start.ts's routeInboundMessage (both
 // flows, real production traffic, no flag -- see that file's own header).
-// design-decisions-beta-feedback.md §10 (corrected cross-reference — was
+// design-decisions/check-in-flow-decisions.md §10 (corrected cross-reference — was
 // mis-cited as §11) is the restart-semantics record this build's (b)
 // submitted-check mitigates around, not fixes.
 ```

@@ -971,7 +971,8 @@ A revision to this plan's Evening Q4 handling was drafted, proposing an
 "idle-hours-by-type, cumulative" capture for equipment — mirroring
 labour's idle-hours-by-trade question (Evening Q3). Before folding it in,
 it was checked against the record rather than argued on its own merits.
-§33(b) (2026-08-25, `design-decisions-beta-feedback.md:2502-2512`) had
+§33(b) (2026-08-25, `design-decisions/parsing-and-data-capture.md`, moved from the
+original file's lines 2502-2512) had
 already decided this, and decided it differently: Evening Q4 stays a
 RUN-HOURS question, type-level, aggregated as sums, with idle DERIVED
 (`available − actual`) rather than separately captured — itself since
@@ -1232,7 +1233,7 @@ rule, it would DELIBERATELY MANUFACTURE the exact finding that rule exists
 to prevent, at flow level instead of file level. Full reasoning below,
 predating this carve-out's formal statement:
 
-§30(a) (`design-decisions-beta-feedback.md`,
+§30(a) (`design-decisions/check-in-architecture-and-triggers.md`,
 2026-08-22) split morning and evening into separate migrations specifically
 so a bug found in evening's restructuring could never block morning's
 already-scoped, simpler change from shipping — "Bundled, a bug found in the

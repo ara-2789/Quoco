@@ -328,7 +328,7 @@ check-ins, since morning accepts photos too (item 11).
 ### 7. Photo parents: polymorphic vs. per-parent tables — DECIDED, per-parent
 
 Resolved in favour of **per-parent tables**, extending
-`design-decisions-beta-feedback.md` §6's existing pattern rather than
+`design-decisions/parsing-and-data-capture.md` §6's existing pattern rather than
 reopening it. §6 already specified `daily_log_photos` (keyed to
 `daily_logs`, with a `phase` column) — that decision stands, unchanged.
 
@@ -371,7 +371,7 @@ the degraded single-photo-via-polymorphic-table path that would have kept
 this column live as an option no longer exists once per-parent is chosen).
 Option (b) from round 2 stands: the column is **left in place, documented
 as dead**, matching this project's general "don't drop what becomes
-unread" convention (§28(p) in `design-decisions-beta-feedback.md`).
+unread" convention (§28(p) in `design-decisions/check-in-architecture-and-triggers.md`).
 
 Re-confirmed this round (2026-09-13): `grep -rn "photo_url" lib/ app/
 supabase/migrations/*.sql` returns only the column's own definition
