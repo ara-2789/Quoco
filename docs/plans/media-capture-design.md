@@ -32,6 +32,23 @@ strings in one place. Item 8's provenance flag is updated to reflect
 Aravind's confirmation. See "ROUND 5" below. Still a design pass — no code,
 no migration, no migration number reserved.
 
+DATED NOTE (2026-09-13, round 6 — a fourth pass the same day): item 3's own
+fix, once applied, surfaced a real access gap in items 10/14 — the DPR email
+goes to the owner (no web login), but item 14's overflow photos are PM-only
+dashboard links, and item 10's durable attached copy would land in the
+owner's inbox while the PM is who needs the evidence. New item 22 decides
+the DPR email now also goes to the project's PM(s). Items 4 and 5 also had
+stale, unflagged numbers/cross-references left over from round 4's cap
+reversal and retention extension — corrected in place below (struck through,
+not rewritten), not new decisions. See "ROUND 6" below.
+
+Same round, continued: a full audit of every item found six more of the same
+class — stale 45-day retention figures (items 5's pricing arithmetic, 7, 11)
+and stale "embed(ded)" terminology left over from before item 10's round-5
+attachment correction (items 14, 9) — all corrected in place below, struck
+through, not rewritten. Still a design pass — no code, no migration, no
+migration number reserved.
+
 ---
 
 ## RESOLVED
@@ -82,9 +99,9 @@ and item 20 for where it ships.
 
 **Decided: media ingestion runs through the jobs table, the same pattern
 this project already uses for Claude API calls (NFR-16) and DPR
-generation.** Up to 10 Twilio downloads + Storage uploads cannot fit inside
-the webhook's 15-second response budget (CLAUDE.md §6) alongside everything
-else the webhook already does.
+generation.** ~~Up to 10~~ An **uncapped number of** Twilio downloads +
+Storage uploads cannot fit inside the webhook's 15-second response budget
+(CLAUDE.md §6) alongside everything else the webhook already does.
 
 **The turn-taking shape:**
 
@@ -158,12 +175,21 @@ Consequences of splitting them, each a real design point:
 - **Cron placement**: `bot-flows.md`'s own ASYNC QUEUE section already
   establishes "separate cron entries per job type to avoid head-of-line
   blocking" (the reason `dpr-generate` and `owner-deliver` are separate
-  crons from the generic `jobs/tick`). Ten downloads+uploads per engineer,
-  potentially several engineers finishing evening around the same trigger
-  window, is enough I/O that `media_ingest` likely wants its own cron
-  entry rather than competing for `jobs/tick`'s existing 3-jobs-per-tick
-  budget against DPR generation and everything else already polling there.
-  Not decided — flagged for whoever scopes the actual job handler.
+  crons from the generic `jobs/tick`). ~~Ten~~ An **uncapped number of**
+  downloads+uploads per engineer, potentially several engineers finishing
+  evening around the same trigger window, is enough I/O that `media_ingest`
+  likely wants its own cron entry rather than competing for `jobs/tick`'s
+  existing 3-jobs-per-tick budget against DPR generation and everything else
+  already polling there. Not decided — flagged for whoever scopes the
+  actual job handler.
+
+**DATED CORRECTION (2026-09-13, round 6).** Both "10"/"Ten" quantifiers
+above are struck through, not silently rewritten. They assumed the intake
+cap round 3's item 14 later reversed to uncapped intake (round 4). Neither
+correction changes the decision either quantifier supported — queueing was
+already required to handle 10 downloads inside a 15-second webhook budget,
+and an uncapped count only makes that argument stronger, never weaker. See
+item 14 for the cap reversal itself.
 - **The media-interception check itself has to move.** Today,
   `lib/whatsapp/media-reply.ts` rejects ALL media unconditionally, upstream
   of `routeInboundMessage`/`dispatchInboundTurn` — that only worked because
@@ -200,11 +226,21 @@ one.
 
 The job (mechanism, not yet built): runs on the existing cron pattern, scans
 the photos table for rows past their type-specific retention window (7d
-attendance / 45d hindrance / 45d evening progress), deletes the Storage
-object via the `service_role` Storage client (Postgres has no native way to
-delete an S3-backed object — this has to run from the app layer, same
-reason media ingestion itself can't be pure SQL), and updates the row.
-What "updates the row" means exactly is STILL OPEN — see item 9 below.
+attendance / ~~45d hindrance / 45d evening progress~~ **60d hindrance / 60d
+evening progress — see item 15**), deletes the Storage object via the
+`service_role` Storage client (Postgres has no native way to delete an
+S3-backed object — this has to run from the app layer, same reason media
+ingestion itself can't be pure SQL), and updates the row. What "updates the
+row" means exactly is ~~STILL OPEN — see item 9 below~~ **DECIDED — a
+tombstone; see item 9**.
+
+**DATED CORRECTION (2026-09-13, round 6).** Both corrections above are
+struck through, not silently rewritten. The 45-day figures were superseded
+by item 15's 2026-09-13 (round 4) extension to 60 days for hindrance and
+evening progress (attendance stays at 7 days, unchanged). The "STILL OPEN"
+cross-reference to item 9 was factually wrong as written by the time this
+was read back — item 9 was decided (tombstone) the same round item 15
+extended the clock, and this sentence was simply never updated to match.
 
 **Pricing, verified against `supabase.com/pricing` directly (fetched
 2026-09-12, not from training):**
@@ -213,7 +249,7 @@ What "updates the row" means exactly is STILL OPEN — see item 9 below.
 - Egress: 250 GB included on the Pro plan; $0.09/GB beyond that
   (uncached), $0.03/GB for cached egress.
 
-Against the prior pass's rough volume estimate (~1–1.5 GB resident storage
+~~Against the prior pass's rough volume estimate (~1–1.5 GB resident storage
 at ~50 engineers, low single-digit GB/month of egress from DPR embeds and
 dashboard views): **this sits entirely inside the Pro plan's included
 100 GB storage and 250 GB egress — effectively zero incremental cost at
@@ -221,7 +257,17 @@ this scale.** It stops being free only if engineer count or photo-per-day
 volume grows by roughly two orders of magnitude, or if attendance/evening
 retention windows are lengthened well past 7d/45d. Re-check this arithmetic
 if either of those changes materially — this is a scale-dependent
-conclusion, not a permanent one.
+conclusion, not a permanent one.~~
+
+**DATED CORRECTION (2026-09-13, round 6).** Struck through, not deleted.
+This conclusion was built on two assumptions round 4 later superseded: a
+**capped** daily photo count (item 14 reversed this to uncapped intake) and
+**45-day** hindrance/evening-progress retention (item 15 extended both to
+60 days; the "7d/45d" figure above is itself stale on that count alone).
+**Not re-derived here** — items 14 and 15 both already flagged this
+arithmetic as needing a redo once real engineer behavior under uncapped
+intake is observed, and that flag stands; this entry marks the conclusion
+itself superseded rather than silently leaving it to read as still current.
 
 ---
 
@@ -283,9 +329,14 @@ is introduced.
 This keeps the real-FK guarantee round 2 flagged as the deciding factor
 (`hindrances_project_id_fkey`-style referential integrity, enforced by the
 database rather than application code) for both parents, at the accepted
-cost: retention-by-type logic (7d attendance / 45d evening progress / 45d
-hindrance) has to be either duplicated across the two tables or centralized
-behind a shared function/view — not a single table scan.
+cost: retention-by-type logic (7d attendance / ~~45d evening progress / 45d
+hindrance~~ **60d evening progress / 60d hindrance — see item 15**) has to
+be either duplicated across the two tables or centralized behind a shared
+function/view — not a single table scan.
+
+**DATED CORRECTION (2026-09-13, round 6).** The 45-day figures above were
+superseded by item 15's 60-day extension for both non-attendance classes;
+struck through in place, not silently rewritten.
 
 ### 8. `hindrances.photo_url` — DECIDED, left as dead schema
 
@@ -323,8 +374,11 @@ hindrance.ts` and `038_hindrance_flow_and_collision_fix.sql`
 Photos are accepted across **all** questions of the evening check-in, not
 only at Q2. Same for **all** questions of the morning check-in.
 
-- Evening photos → evening progress class, 45-day retention (per item 5's
-  existing retention table).
+- Evening photos → evening progress class, ~~45-day retention (per item 5's
+  existing retention table)~~ **60-day retention — see item 15**.
+  **DATED CORRECTION (2026-09-13, round 6):** superseded by item 15's
+  extension; the cross-reference now points at item 15, not item 5's
+  original (now-stale) table.
 - Morning photos → attendance class, 7-day retention. A photo sent at any
   point in the morning flow is classified as attendance and expires in 7
   days; the hindrance flow (item 7's `hindrance_photos`) is the durable
@@ -411,23 +465,32 @@ discipline. New decision:
   `last_media_nudge_at`-suppressed over-cap nudge — that entire mechanism is
   withdrawn along with the cap it enforced. The over-cap draft string struck
   through above is **withdrawn**, not carried forward.
-- **The DPR email embeds the first 10 photos by arrival order.** Photos 11+
-  appear as **links to the web dashboard** (and the mobile app, once it
-  exists) — never as raw storage URLs, and never as signed public links.
-  This preserves PM-only access and does not reopen the deferred owner-login
-  work (round 2's item 3).
+- **The DPR email ~~embeds~~ attaches the first 10 photos by arrival order.**
+  Photos 11+ appear as **links to the web dashboard** (and the mobile app,
+  once it exists) — never as raw storage URLs, and never as signed public
+  links. This preserves PM-only access and does not reopen the deferred
+  owner-login work (round 2's item 3).
 - **Known consequence, accepted, not overlooked:** the durable copy is the
-  10 embedded images only. Overflow photos exist solely in Supabase Storage
-  and are unrecoverable once retention fires on them. Embedding order is
-  **arrival order**, not importance — which photos survive past the
-  retention window is determined by upload sequence, not by which ones
-  mattered most.
+  10 ~~embedded~~ **attached** images only. Overflow photos exist solely in
+  Supabase Storage and are unrecoverable once retention fires on them.
+  ~~Embedding~~ **Attachment** order is **arrival order**, not importance —
+  which photos survive past the retention window is determined by upload
+  sequence, not by which ones mattered most.
 - **The removed ceiling:** uncapped intake means photos now have no upper
   bound on object storage, in a product where photos were already the
   identified largest storage consumer (§6, `design-decisions-beta-
   feedback.md`; item 5 above). Item 5's pricing arithmetic assumed a bounded
   per-day photo count; it should be re-checked once real engineer behavior
   under an uncapped intake is observed, not re-derived speculatively here.
+
+**DATED CORRECTION (2026-09-13, round 6).** The three "embed(s)"/"embedded"/
+"Embedding" strike-throughs above correct terminology only, not the
+decision itself: item 10's round-5 correction changed the DPR email's
+delivery mechanism from a hotlinked `<img>` embed to a real email
+attachment, but this item's own text — written in round 4, before that
+correction existed — was never updated to match. First 10 by arrival order,
+overflow as dashboard links: unchanged. How the first 10 arrive: attached,
+not embedded.
 
 ---
 
@@ -448,9 +511,17 @@ splitting them.
 - **Rationale:** "no photos were sent that day" and "photos existed and were
   deleted" are opposite facts on a disputed claim, and a blank section
   cannot distinguish them.
-- **No advance expiry warning.** The embedded-10 email (item 14 above)
-  already gives the PM a copy he retains, which is what a warning would
-  have protected.
+- **No advance expiry warning.** ~~The embedded-10 email (item 14 above)
+  already gives the PM a copy he retains~~ **The attached-10 email (item 10's
+  attachment mechanism, item 22's PM recipient) already gives the PM a copy
+  he retains**, which is what a warning would have protected.
+
+**DATED CORRECTION (2026-09-13, round 6).** Struck through, not deleted.
+"Embedded" corrected to "attached," per item 10's round-5 mechanism change.
+The citation is repointed to item 10 (the attachment decision itself, not
+item 14, which only decided the 10-vs-overflow split) and to item 22 (the
+reason the PM specifically receives a copy at all — until item 22 ships,
+the DPR email's only recipient is the owner, per CLAUDE.md §5).
 
 **User-facing string: NEEDED, NOT DRAFTED, pending approval.** No wording is
 invented here — whoever builds the tombstone display writes and clears the
@@ -655,6 +726,11 @@ top of items 1-19 — it sequences work those items already describe.
    email via `users.auth_id -> auth.users` (`lib/hindrance/pm-notify.ts`,
    `resolveProjectPMEmails`) — the same auth-identity coupling migration 007
    is surgery on. **Do not begin stage 4 while 007 is mid-apply.**
+   **ADDED 2026-09-13 (round 6):** this stage now also includes item 22 —
+   the DPR email's recipient list gains the project's PM(s), via the same
+   `resolveProjectPMEmails` lookup and therefore the same 007 sequencing
+   constraint already stated above, now doubly applicable since both emails
+   this stage touches share the identical resolution path.
 5. **PM surfaces** — photos in dashboard and DPR, overflow links (item 14),
    retention policy visible in-product (item 15).
 6. **Retention deletion job.** **LAST**, and the **only irreversible
@@ -679,6 +755,48 @@ by this entry.
 - **DPR email copy, overflow-links section** — NEEDED, NOT DRAFTED. No
   existing copy names or explains the dashboard-link overflow path (item
   14); one is owed before that section ships.
+
+---
+
+## RESOLVED — ROUND 6 (2026-09-13, a fourth pass the same day)
+
+### 22. DPR email recipients — now includes the PM
+
+**Finding that forced this** (surfaced auditing item 3's own fix): the DPR
+email goes to the **owner** per CLAUDE.md §5, and the owner has no web
+login. Item 14's overflow photos (11+) are **PM-only dashboard links** — the
+owner receives links he cannot open, the exact dead-link problem item 3
+originally raised, relocated rather than solved by round 4's fix. Worse:
+item 10's durable copy (the attached first-10 photos) lands in the
+**owner's** inbox, while the **PM** is the person who actually needs that
+evidence day to day.
+
+**DECIDED:** the DPR email is delivered to the project's **PM(s) as well as
+the owner** — not a replacement recipient, an addition. This resolves the
+access gap above **and** fixes a separate, standing gap: the PM currently
+receives **no daily record at all** — DPR review today happens only via the
+PM web dashboard's Daily Logs/DPR Archive views (CLAUDE.md §1), never
+pushed to the PM proactively the way it already is to the owner.
+
+- **PM resolution reuses the existing pattern**, not a new one:
+  `resolveProjectPMEmails` (`lib/hindrance/pm-notify.ts`) — `project_members`
+  filtered on `role='pm'` for that project, notify **all** PMs on the
+  project, same "notify all, not skip-and-surface" policy that function
+  already implements for hindrance notifications.
+- **007 coupling, recorded explicitly:** that lookup resolves each PM's
+  email via `users.auth_id -> auth.users` — the same auth-identity seam
+  migration 007 is surgery on. The same sequencing constraint item 20's
+  stage 4 already states for the hindrance email's recipient lookup applies
+  here too, now that the DPR email uses the identical resolution path:
+  **do not begin stage 4 while 007 is mid-apply.**
+- **Open question, NOT decided:** whether the **owner's** copy should keep
+  the overflow dashboard links at all, or instead state the overflow count
+  without a link he cannot use — now that the PM's copy of the same email
+  carries a link he genuinely can open. Left open; not resolved by this
+  entry.
+
+This is added to item 20's build sequence as part of **stage 4** (email
+attachments), since both changes touch the same email — see item 20 below.
 
 ---
 
