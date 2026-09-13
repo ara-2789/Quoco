@@ -1601,6 +1601,19 @@ compare the TOTAL count against a known baseline, and confirm a specific
 file directly (`npx vitest run <path>`) when its line is unexpectedly
 missing, before assuming either the best or the worst.
 
+SECOND MANIFESTATION (2026-09-13, `test/storage-photo-access.test.ts`,
+stage 0 of the media capability): this time within a SINGLE file, not
+across two — the default reporter printed only 4 of 5 individual test-name
+lines on one run and 3 of 5 on a re-run (a different pair missing each
+time), while the header's own `(5 tests)` count and the summary's
+`5 passed (5)` stayed correct and consistent both times. Same underlying
+class, no basename collision this time (one file, one suite) —
+disambiguated the same way: `--reporter=json` returns every
+`assertionResults[].status`/`fullName` explicitly, with no printed-line
+omission possible, and confirmed all 5 genuinely passed. Use the JSON
+reporter, not a re-run of the default one, to settle a missing-line
+question going forward.
+
 ---
 
 ## 8. ENVIRONMENT VARIABLES

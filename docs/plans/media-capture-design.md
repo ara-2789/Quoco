@@ -49,6 +49,18 @@ attachment correction (items 14, 9) — all corrected in place below, struck
 through, not rewritten. Still a design pass — no code, no migration, no
 migration number reserved.
 
+DATED NOTE (2026-09-13, stage 1 planning pass, new branch off main
+post-merge): item 19 is upgraded from UNVERIFIED to VERIFIED for the
+captioned-photo case — a captioned photo confirmed to populate `Body`,
+confirmed live against Twilio's own inbound log. The uncaptioned case
+remains genuinely unknown; this pass could not determine it (no Twilio
+credentials in the planning environment) and does not assume an answer.
+`media-reply.ts`'s own header comment is now known-wrong for the captioned
+case; the correction is recorded in item 19 for whoever lands the
+interceptor move (item 18) in code — not fixed in the source file by this
+pass, which is plan-only. Full stage-1 build plan: `docs/plans/
+stage1-photo-intake-plan.md`.
+
 ---
 
 ## RESOLVED
@@ -684,37 +696,91 @@ hazard must be **re-checked once the check moves downstream**, not assumed
 solved by the move. Not resolved here; flagged for whoever implements item
 20's stage 1.
 
-### 19. Caption arrival — payload-agnostic by design
+### 19. Caption arrival — ~~payload-agnostic by design~~ VERIFIED for captions, PARTIALLY (2026-09-13, stage 1 planning)
 
-**UNVERIFIED FACT, named as such, both sources on record:** whether Twilio
+~~**UNVERIFIED FACT, named as such, both sources on record:** whether Twilio
 co-populates `Body` on an inbound photo with a caption. `media-reply.ts`'s
 own header asserts a mid-flow photo arrives with an **empty** `Body`; this
 design pass's own earlier Twilio research could not confirm either answer
 from current public docs. Neither source wins by default — this is recorded
-as **UNVERIFIED**, not resolved by picking one.
+as **UNVERIFIED**, not resolved by picking one.~~
 
-**DECIDED design, which holds under either answer:** the photo is handled
-on its own path (per item 12), and any accompanying text is passed to the
-normal answer parser for the currently open question. If captions never
-arrive (Body stays empty, as `media-reply.ts`'s header claims), that path
-simply never fires and nothing breaks. If they do arrive, the text is
+**DATED CORRECTION (2026-09-13).** Struck through, not deleted. The fact is
+now **settled for the captioned case, confirmed live**: a captioned photo
+**does** populate `Body`. Confirmed 2026-09-13 from Twilio's own inbound
+message log — SID `MM1b568a6b25d047a6c302851d36102784`, message body "This
+is a fan" delivered alongside the media. `media-reply.ts`'s header comment
+— "a media reply sent mid-flow... would reach `dispatchInboundTurn` with an
+**empty** Body" — is **WRONG** for the captioned case, as written today.
+This is a correction owed to that file's own comment when the interceptor
+move (item 18) actually lands in code; not fixed here, since this pass is
+plan-only, but recorded here so the correction isn't lost before then.
+
+**STILL UNKNOWN, not assumed:** what `Body` contains for an **uncaptioned**
+photo — empty string, or the key absent entirely. Checked this pass against
+Twilio's inbound log for the uncaptioned photo received at approximately
+10:20 the same morning, from the same number — **undetermined**: this
+session has no Twilio credentials available to query the message log
+directly (`TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` are not present in this
+sandboxed environment, and `.env.local` lives outside this worktree's
+isolation boundary). Not assumed either way. Whoever builds stage 1 needs
+this confirmed directly against the log before relying on it.
+
+**DECIDED design, which holds under either answer for the uncaptioned
+case:** the photo is handled on its own path (per item 12), and any
+accompanying text is passed to the normal answer parser for the currently
+open question. If an uncaptioned photo's `Body` is empty (or absent, which
+today's flows already treat as empty), that path simply never fires and
+nothing breaks — the flow's existing empty-answer handling (Rule 3.5,
+unlimited reask) governs, unchanged. If it carries text, the text is
 captured exactly as item 12 already describes. The design does not need the
-unverified fact resolved to be correct either way — that is the point of
-building it payload-agnostic.
+still-open uncaptioned-`Body` question resolved to be correct either
+way — that remains the point of building it payload-agnostic on that half.
 
-**Verification step owed, not a design blocker:** send a captioned photo to
-the test number and read the raw inbound webhook payload directly. This
-must be done **before** any caption-dependent behaviour is built (item 20's
-stage 1), but it does not block finishing this design.
+**Verification step still owed, not a design blocker:** confirm what
+`Body` contains for an uncaptioned photo directly against Twilio's inbound
+log (or a live test send), from an environment with real Twilio
+credentials. This must be done **before** stage 1 ships, but it does not
+block finishing stage 1's plan.
+
+**UPDATED 2026-09-13 (item 23, this same pass):** item 23's "a photo is
+never an answer" decision means this uncaptioned-`Body` question is now
+**doubly** not a blocker — not only does the design already hold under
+either answer (as this item already said), but the specific failure mode
+that made it feel urgent (a blank answer silently recorded) is now closed
+categorically by item 23, regardless of what `Body` turns out to contain.
+The verification step immediately above still stands and is still owed —
+it's needed for the code to correctly detect "no accompanying text" either
+way — it just no longer carries the weight of "if we get this wrong, a
+real answer goes blank."
 
 ### 20. Build sequence — the implementation plan
 
-Six stages, each **separately shippable**, in this order, with the stated
-gates. This is the doc's implementation plan, not a new design decision on
-top of items 1-19 — it sequences work those items already describe.
+Seven stages (renumbered 2026-09-13 — stage 0 inserted below; stages 1–6
+**keep their existing numbers**, deliberately, so none of this item's own
+internal cross-references by number — e.g. stage 2's "must ship before
+stage 3" — need auditing and rewriting one by one), each **separately
+shippable**, in this order, with the stated gates. This is the doc's
+implementation plan, not a new design decision on top of items 1-19 — it
+sequences work those items already describe.
 
+0. **Storage setup.** Bucket creation, path convention, access rules
+   (~~Storage RLS~~ **service_role only, no Storage RLS at all** —
+   corrected 2026-09-13, same day, after the plan below was first written;
+   see `docs/plans/stage0-storage-setup-plan.md`'s own dated correction).
+   **NEW, 2026-09-13, split out from what was originally
+   scoped as part of stage 1** — stage 1's own planning found that no
+   Supabase Storage bucket has ever existed in this project (this would be
+   the first object write in the product's history), and a mistake in
+   access rules exposes one tenant's photos to another — a risk profile
+   that earns its own review, separate from ingestion mechanics. Full plan:
+   `docs/plans/stage0-storage-setup-plan.md`. **Gates every other stage
+   below** — none of them can write or read a real object until this
+   exists.
 1. **Photo intake during check-ins.** Requires item 18's interceptor move
-   (downstream, flow-aware).
+   (downstream, flow-aware) **and stage 0 complete** (added 2026-09-13 —
+   intake cannot store anything without a bucket to store it in). Full
+   plan: `docs/plans/stage1-photo-intake-plan.md`.
 2. **Hindrance photo capture.** **HARD GATE: must ship before stage 3** —
    per item 16's own ordering constraint (the nudge must not point at a
    capture path that doesn't exist yet).
@@ -797,6 +863,50 @@ pushed to the PM proactively the way it already is to the owner.
 
 This is added to item 20's build sequence as part of **stage 4** (email
 attachments), since both changes touch the same email — see item 20 below.
+
+---
+
+## RESOLVED — ROUND 7 (2026-09-13, stage 0/1 planning pass)
+
+### 23. A photo is never an answer
+
+**DECIDED (Aravind, 2026-09-13).** If a photo arrives during a check-in
+with **no accompanying text**, the photo is stored and the **current
+question stays open and is re-asked**. Only non-empty typed text is ever
+passed to the answer parser.
+
+**What this closes:** stage 1's own planning found a real, live gap —
+both `apply_morning_flow_turn` (step 2, "Plan of action") and
+`apply_evening_flow_turn` (step 1, "Work completed + quantity") accept
+**any** `Body`, including an empty string, and unconditionally advance,
+writing the empty string verbatim into `morning_plan` / `evening_output`.
+An uncaptioned photo landing on one of these ungated free-text steps would
+have silently recorded a blank answer and advanced — degrading DPR content
+with no re-ask and no error, ever surfacing it. **Confirmed directly
+against the live SQL** (not inferred from TypeScript comments) as part of
+this same planning pass — see `docs/plans/stage0-storage-setup-plan.md`
+§8.2 for both functions' relevant bodies, pasted verbatim. This decision
+closes that gap at the design level, for **every** step, not just the two
+confirmed ungated ones — a photo alone is categorically never sufficient
+to satisfy any question, gated or not.
+
+**Consequence for item 19:** the still-unresolved uncaptioned-`Body`
+question (empty string vs. key entirely absent — item 19) is **no longer a
+blocker for stage 1**. Whichever it turns out to be, this decision already
+says: if there's no non-empty typed text, the question re-asks — the
+implementation does not need to distinguish "empty string" from "absent"
+to behave correctly, since both are treated as "no accompanying text"
+either way. **It should still be resolved** (item 19's own verification
+step stands, restated there), since exactly *how* "no accompanying text"
+is detected in code depends on knowing which shape Twilio actually sends —
+but the design no longer depends on the answer to be correct.
+
+**Implementation note, not a new decision:** this likely means the
+existing per-question reask mechanic (Rule 3.5) is what fires — a photo
+with no text is treated the same way an empty/whitespace text message
+already is at that step, not a new, third re-ask pathway. Confirming that
+reuse (rather than building a parallel mechanism) is stage 1's own job, not
+decided here.
 
 ---
 
