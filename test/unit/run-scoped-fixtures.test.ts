@@ -3,7 +3,13 @@
 // tests -- no real test-db needed for getRunId/deriveRunScopedUuid; a fake
 // minimal client for assertExactRowCount, per its own CountableClient shape.
 import { describe, it, expect } from 'vitest'
-import { getRunId, deriveRunScopedUuid, deriveRunScopedPhone, assertExactRowCount } from '../helpers/run-scoped-fixtures'
+import {
+  getRunId,
+  deriveRunScopedUuid,
+  deriveRunScopedPhone,
+  deriveRunScopedEmail,
+  assertExactRowCount,
+} from '../helpers/run-scoped-fixtures'
 
 describe('getRunId', () => {
   it('returns the run id provided by globalSetup (this run really has one)', () => {
@@ -69,6 +75,31 @@ describe('deriveRunScopedPhone', () => {
     // Different shapes entirely, but assert on substance, not just shape:
     // the phone's digits should not simply be a substring of the uuid's hex.
     expect(uuid.replace(/-/g, '')).not.toContain(phone.replace('+19995552', ''))
+  })
+})
+
+describe('deriveRunScopedEmail', () => {
+  it('is deterministic: same (runId, label) always produces the same value', () => {
+    const a = deriveRunScopedEmail('run-1', 'TEST_007_USER_A_EMAIL')
+    const b = deriveRunScopedEmail('run-1', 'TEST_007_USER_A_EMAIL')
+    expect(a).toBe(b)
+  })
+
+  it('produces a different value for a different label under the same run (A vs B)', () => {
+    const a = deriveRunScopedEmail('run-1', 'TEST_007_USER_A_EMAIL')
+    const b = deriveRunScopedEmail('run-1', 'TEST_007_USER_B_EMAIL')
+    expect(a).not.toBe(b)
+  })
+
+  it('produces a different value for a different run under the same label', () => {
+    const runA = deriveRunScopedEmail('run-A', 'TEST_007_USER_A_EMAIL')
+    const runB = deriveRunScopedEmail('run-B', 'TEST_007_USER_A_EMAIL')
+    expect(runA).not.toBe(runB)
+  })
+
+  it('is a syntactically valid email at the fixed, obviously-fake quoco.test domain', () => {
+    const email = deriveRunScopedEmail('run-1', 'TEST_007_USER_A_EMAIL')
+    expect(email).toMatch(/^zz-test-[0-9a-f]{12}@quoco\.test$/)
   })
 })
 

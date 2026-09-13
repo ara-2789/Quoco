@@ -69,6 +69,22 @@ export function deriveRunScopedPhone(runId: string, label: string): string {
   return `+19995552${n.toString().padStart(6, '0')}`
 }
 
+// Same derivation again, formatted as an email address -- for the
+// migration-007 two-tenant fixture's throwaway auth users
+// (TEST_007_USER_A_EMAIL/B_EMAIL, test/helpers/db.ts), batch 3. auth.users
+// has its own UNIQUE constraint on email; leaving these fixed would let a
+// second run's ensureAuthUser() find and reuse the first run's already-
+// existing auth user (and the public.users profile claimed under ITS
+// tenant) instead of creating its own -- the identical collision shape
+// batch 2 already found and fixed for TEST_ENGINEER_PHONE, one identity
+// axis over. Domain stays the fixed, obviously-fake `quoco.test` (never a
+// real domain this project owns) -- only the local part varies per run.
+export function deriveRunScopedEmail(runId: string, label: string): string {
+  const digest = createHash('sha256').update(`${runId}:${label}:email`).digest()
+  const hex = digest.subarray(0, 6).toString('hex')
+  return `zz-test-${hex}@quoco.test`
+}
+
 // The result shape any count-style PostgREST query resolves to -- what
 // `.select('*', {count:'exact', head:true})...` always returns, regardless
 // of which table/column/filter built it.

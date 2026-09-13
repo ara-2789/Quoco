@@ -1,6 +1,12 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import sharedFixtureFkCoverage from '../../scripts/shared-fixture-fk-coverage.json'
-import { getRunId, deriveRunScopedUuid, deriveRunScopedPhone, assertExactRowCount } from './run-scoped-fixtures'
+import {
+  getRunId,
+  deriveRunScopedUuid,
+  deriveRunScopedPhone,
+  deriveRunScopedEmail,
+  assertExactRowCount,
+} from './run-scoped-fixtures'
 import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
 import type { MorningOutcome } from '@/lib/whatsapp/flows/morning'
 import type { EveningOutcome } from '@/lib/whatsapp/flows/evening'
@@ -856,16 +862,31 @@ export function lockAcquiredAt(session: WhatsAppSession): number {
 // ===========================================================================
 
 // Two tenants for the isolation test. Distinct from TEST_TENANT_ID so the 007
-// suite never collides with the morning/session fixtures.
-export const TEST_TENANT_A_ID = '00000000-0000-4000-a000-0000000007a0'
-export const TEST_TENANT_B_ID = '00000000-0000-4000-a000-0000000007b0'
-export const TEST_PROJECT_A_ID = '00000000-0000-4000-a000-0000000007a1'
-export const TEST_PROJECT_B_ID = '00000000-0000-4000-a000-0000000007b1'
+// suite never collides with the morning/session fixtures. PER-RUN, batch 3
+// of the per-run fixture-identifier migration (docs/reviews/test-db-per-run-
+// fixture-identifiers.md) -- same reasoning as TEST_TENANT_ID/TEST_PROJECT_ID
+// in batch 2. Were '00000000-0000-4000-a000-0000000007a0' / '...07b0' /
+// '...07a1' / '...07b1' respectively (all four retired,
+// scripts/retired-fixture-literals.json).
+export const TEST_TENANT_A_ID = deriveRunScopedUuid(getRunId(), 'TEST_TENANT_A_ID')
+export const TEST_TENANT_B_ID = deriveRunScopedUuid(getRunId(), 'TEST_TENANT_B_ID')
+export const TEST_PROJECT_A_ID = deriveRunScopedUuid(getRunId(), 'TEST_PROJECT_A_ID')
+export const TEST_PROJECT_B_ID = deriveRunScopedUuid(getRunId(), 'TEST_PROJECT_B_ID')
 
-export const TEST_007_USER_A_EMAIL = 'zz-007-user-a@quoco.test'
-export const TEST_007_USER_B_EMAIL = 'zz-007-user-b@quoco.test'
+// PER-RUN, batch 3, same reasoning as TEST_ENGINEER_PHONE in batch 2:
+// auth.users.email is UNIQUE, so a fixed literal would let a second run's
+// ensureAuthUser() silently reuse the first run's already-existing auth user
+// (and the profile claimed under ITS tenant) instead of creating its own.
+// Were 'zz-007-user-a@quoco.test' / 'zz-007-user-b@quoco.test' (both
+// retired, scripts/retired-fixture-literals.json).
+export const TEST_007_USER_A_EMAIL = deriveRunScopedEmail(getRunId(), 'TEST_007_USER_A_EMAIL')
+export const TEST_007_USER_B_EMAIL = deriveRunScopedEmail(getRunId(), 'TEST_007_USER_B_EMAIL')
 // Throwaway password used ONLY to mint session JWTs for these branch-only test
 // users. Never a production credential; prod auth is magic-link email only.
+// NOT run-scoped, deliberately: it carries no uniqueness constraint and is
+// never looked up by value (only used to authenticate against an email that
+// IS unique per run) -- there is nothing for a shared literal to collide on
+// here, unlike every other constant in this file.
 export const TEST_007_PASSWORD = 'zz-007-Rehearsal-Pw-9f3c'
 
 export interface TwoTenantFixtures {
@@ -957,12 +978,21 @@ async function claimProfile(
 // Create two tenants, two JWT-capable users (one per tenant), and one project
 // per tenant (created_by that tenant's user) for the RLS isolation read.
 // Idempotent. Call in beforeAll.
+//
+// slug is run-scoped, not a fixed literal -- the identical bug batch 2 found
+// and fixed in ensureTestTenant() (docs/reviews/test-db-per-run-fixture-
+// identifiers.md), flagged there as latent here until TEST_TENANT_A_ID/B_ID
+// became per-run: tenants.slug carries its own independent UNIQUE constraint
+// (tenants_slug_key), so once the id is per-run, every INSERT after the
+// first would collide on a fixed slug the moment an earlier run's row
+// survived its own teardown.
 export async function ensureTwoTenantFixtures(): Promise<TwoTenantFixtures> {
   const db = testClient()
+  const runId = getRunId()
 
   for (const [id, slug, name] of [
-    [TEST_TENANT_A_ID, 'zz-007-tenant-a', 'ZZ 007 Tenant A'],
-    [TEST_TENANT_B_ID, 'zz-007-tenant-b', 'ZZ 007 Tenant B'],
+    [TEST_TENANT_A_ID, `zz-007-tenant-a-${runId}`, 'ZZ 007 Tenant A'],
+    [TEST_TENANT_B_ID, `zz-007-tenant-b-${runId}`, 'ZZ 007 Tenant B'],
   ] as const) {
     const { error } = await db.from('tenants').upsert({ id, slug, name }, { onConflict: 'id' })
     if (error) throw new Error(`ensureTwoTenantFixtures tenant ${slug} failed: ${error.message}`)
@@ -982,6 +1012,22 @@ export async function ensureTwoTenantFixtures(): Promise<TwoTenantFixtures> {
       .from('projects')
       .upsert({ id, tenant_id: tenantId, created_by: createdBy, name }, { onConflict: 'id' })
     if (error) throw new Error(`ensureTwoTenantFixtures project ${name} failed: ${error.message}`)
+  }
+
+  // Guard (b), same pattern as ensureMorningFixtures() (batch 2): if either
+  // tenant id ever resolved to a value this run doesn't actually own (a
+  // straggler literal, a broken derivation), this catches it immediately
+  // rather than letting every downstream RLS assertion in this run silently
+  // operate against the wrong tenant's project.
+  for (const tenantId of [TEST_TENANT_A_ID, TEST_TENANT_B_ID]) {
+    await assertExactRowCount({
+      query: () => db.from('projects').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId),
+      table: 'projects',
+      column: 'tenant_id',
+      value: tenantId,
+      expected: 1,
+      context: `ensureTwoTenantFixtures, run ${runId}`,
+    })
   }
 
   return { authUserAId, authUserBId, profileAId, profileBId }

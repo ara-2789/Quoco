@@ -342,6 +342,179 @@ the same way, on the first run after the first.
   flake, unrelated, identical error text to batches 1 and the pre-batch-1
   baseline).
 
+## Batch 3 — two-tenant family (closed, 2026-09-13)
+
+**Scope:** `TEST_TENANT_A_ID`, `TEST_TENANT_B_ID`, `TEST_PROJECT_A_ID`,
+`TEST_PROJECT_B_ID`, `TEST_007_USER_A_EMAIL`, `TEST_007_USER_B_EMAIL`
+(`test/helpers/db.ts`, the migration-007 two-tenant RLS harness) migrated to
+per-run derived values. `TEST_007_PASSWORD` stays a fixed literal,
+deliberately — see below.
+
+**The auth-user emails needed migrating too, and the reasoning is identical
+to `TEST_ENGINEER_PHONE` in batch 2, one identity axis over.**
+`auth.users.email` is `UNIQUE` (standard Supabase Auth schema). Before this
+batch, `TEST_007_USER_A_EMAIL`/`B_EMAIL` were fixed literals, so
+`ensureAuthUser()`'s lookup-by-email always found the same existing auth
+user and updated it — an idempotent no-op across runs. The moment
+`TEST_TENANT_A_ID`/`B_ID` became per-run while the emails stayed fixed, a
+second run would find and reuse the FIRST run's already-existing auth user
+(and the `public.users` profile `claimProfile()` had already claimed under
+that first run's tenant) instead of creating its own — the exact collision
+this migration exists to remove, just moved to the auth-identity axis.
+Added `deriveRunScopedEmail()` (same SHA-256-derivation pattern as
+`deriveRunScopedUuid()`/`deriveRunScopedPhone()`, formatted as
+`zz-test-<12 hex chars>@quoco.test`) to close it.
+
+**`TEST_007_PASSWORD` was NOT migrated, deliberately.** It carries no
+uniqueness constraint anywhere and is never looked up by value — only used
+to authenticate against an email that is now itself unique per run. There
+is nothing for a shared literal password to collide on; migrating it would
+be motion without a corresponding risk closed.
+
+**The full red list, before the fix — there wasn't one.** Registered all six
+retired literals (the four UUIDs, both emails), ran the lint, and it was
+**green immediately**: `9 retired literal(s) checked, 0 stragglers under
+test/`. Different outcome from batch 2's one straggler
+(`test/unit/morning-dispatch.test.ts`), and worth stating plainly rather
+than manufacturing a red list that didn't exist: no file in this family
+hardcodes any of these six literals as a raw string outside
+`test/helpers/db.ts` itself. Confirmed independently, not just trusting the
+lint script's own claim: a direct `grep -rl` for all six literal values
+across `test/**/*.ts`, excluding `db.ts`, returned zero matches.
+
+**`ensureTwoTenantFixtures()`'s hardcoded slugs — the bug flagged ahead of
+time in batch 2, fixed here as promised.** `tenants.slug`'s independent
+`UNIQUE` constraint (`tenants_slug_key`) applied to this function the exact
+same way it did to `ensureTestTenant()`: fixed `'zz-007-tenant-a'`/
+`'zz-007-tenant-b'` literals, safe only as long as `TEST_TENANT_A_ID`/`B_ID`
+stayed fixed (every call an UPDATE via `onConflict: 'id'`), broken the
+moment they became per-run (every call a fresh INSERT, colliding on the
+fixed slug after the first surviving row). Fixed the same way: both slugs
+now include `getRunId()`.
+
+**Guard (b) wired into `ensureTwoTenantFixtures()`, and proven to fire
+again — same discipline as batch 2, not assumed to still work just because
+it worked once.** Two `assertExactRowCount()` calls, one per tenant, both
+checking `projects.tenant_id` after the project upserts (the same check
+shape as `ensureMorningFixtures()`'s project check). Broke it the same way:
+set `expected` to `999` for both, ran a real integration test
+(`test/migration-015.test.ts`), got:
+
+```
+Error: assertExactRowCount FAILED (ensureTwoTenantFixtures, run 228b226d-4713-4df8-b4ce-f6a1f42be9ff):
+expected exactly 999 row(s) in projects where tenant_id = 7392c346-0972-413b-9c7a-a82fb3701786, found 1.
+This means the identifier is not actually isolated -- either it collided with another run's data, or a
+stale/leftover row already exists under this exact value. Investigate before re-running; do not treat
+this as flaky.
+```
+
+All 6 tests in that file skipped. Reverted immediately after.
+
+**No orphan this time — a different, informative result from batch 2's
+same check, not assumed clean.** Checked directly rather than skipped: after
+reverting, queried for any `tenants` row whose slug contained this run's id,
+and separately listed every `auth.users` row for a leftover `zz-test-`
+email from this run. Both came back empty — `removeTwoTenantFixtures()`'s
+own `afterAll` ran to completion despite the deliberate `beforeAll` throw,
+cleaning up everything the broken guard call had already created (both
+tenants, both auth users, both profiles, both projects) before the run
+ended. Batch 2's own sensitivity check left a real orphaned tenant row
+under the same shape of deliberate failure; this one didn't. Both are
+genuine, observed outcomes — recorded as different results from the same
+class of check, not reconciled into a single claim about whether `afterAll`
+always runs after a failed `beforeAll` here, since the two files' hook
+structures were not compared closely enough to explain the difference.
+
+**Auth-user cost and rate limits — researched, not assumed, per the
+explicit "do not assume either way" instruction.**
+
+- **No documented rate limit exists specifically for the Admin API's
+  `createUser`/`deleteUser`/`listUsers`.** Checked directly against
+  Supabase's own current rate-limits documentation
+  (`supabase.com/docs/guides/auth/rate-limits`, fetched 2026-09-13): every
+  limit listed there is for the *public* auth endpoints (`/auth/v1/signup`,
+  `/auth/v1/token`, `/auth/v1/otp`, etc.) — service-role-authenticated Admin
+  API calls are a different surface and none of the documented limits apply
+  to them by name. This is not the same claim as "unlimited" — no capacity
+  ceiling being documented is different from one being confirmed absent —
+  but there is nothing on record today that would throttle this batch's new
+  behaviour (2 `createUser` + 2 `deleteUser` calls per run, versus the old
+  behaviour of 2 total, ever, across the project's whole history).
+- **A real, documented ceiling exists one level up: the project's MAU quota.**
+  Checked against Supabase's current billing docs
+  (`supabase.com/docs/guides/platform/billing-on-supabase`): Free plan
+  includes 50,000 MAU/month, Pro/Team 100,000 before per-MAU overage
+  charges begin. `jwtClient()` calls `signInWithPassword()` for both
+  fixture users every run, which plausibly counts toward MAU if Supabase
+  defines it by authentication activity (the standard industry definition)
+  — the fetched page did not state its own counting methodology explicitly,
+  so this is a plausible mechanism, not a confirmed one. **Not a blocking
+  concern at today's scale** (even several hundred suite runs a day stays
+  two orders of magnitude under the free-tier quota) but a real, monitorable
+  cost this batch introduces where none existed before — worth a periodic
+  glance at the project's own Auth usage dashboard, not something to assume
+  is fine indefinitely as run volume grows.
+- **The steady-state row count on `auth.users` should stay low** in the
+  normal case (every run creates 2, deletes 2), but is now subject to the
+  identical orphan-on-failure risk as every other fixture identity this
+  migration touches — an interrupted run leaves 2 auth users behind instead
+  of 0, the same shape as the tenant-slug orphan risk above, just not
+  triggered this particular time.
+
+## Batch-4 reassessment — requested explicitly, answered directly
+
+**The corrected fact (batch 2): `whatsapp_sessions.phone_number` DOES carry
+a real `UNIQUE` index (`uq_whatsapp_sessions_phone_number`, migration 012),
+contradicting both design docs' original claim that no such constraint
+existed.** Re-examined here, specifically for whether it changes what batch
+4 should actually do, not just whether the earlier prose needed a footnote.
+
+**The nest-under-a-run-scoped-prefix recommendation still holds.** Its
+primary justification was never the (wrongly claimed) absence of a
+constraint — it was that the phone-slot registry solves a *different*
+problem than cross-run collision: two files in the *same* checkout picking
+the same 3-digit slot, a coordination problem a per-mint `UNIQUE` constraint
+does nothing to prevent, corrected fact or not. Two files in one run sharing
+a slot would collide via the constraint too now (a real `23505` on the
+second `seedSession()`/insert) — which is arguably an *improvement* on the
+original silent-corruption framing for that failure mode, not a reason to
+prefer a different design.
+
+**What the correction genuinely does change: "fully randomise every phone
+mint independently, discard the registry" is now a safer alternative than
+originally assessed, if anyone wants to revisit it later.** The original
+rejection leaned on "a random collision would corrupt silently, not error"
+— that argument is retracted; a real collision now raises a real,
+detectable error. But detectability alone doesn't make full randomisation
+free: every phone-minting call site would still need explicit
+retry-on-`23505` logic (the exact pattern `mintOutboundEngineer()` already
+uses for `users.whatsapp_number`) to turn a now-detected collision into a
+handled one rather than a hard test failure — that's real, non-trivial work
+across roughly a dozen call sites, not a consequence of the corrected fact
+either way.
+
+**Recommendation for batch 4, unchanged:** nest the existing registry under
+a run-scoped prefix. The corrected constraint fact removes one (weak, as it
+turns out) argument that happened to point the same direction as the
+recommendation already reached for a stronger, still-valid reason. Full
+independent randomisation remains a legitimate future alternative — now
+genuinely safer than this document previously implied — but is a larger
+change than batch 4's current scope, not something this correction obliges
+anyone to switch to.
+
+**Verified — full raw results:**
+- `tsc --noEmit`, `eslint`: clean.
+- `lint-retired-fixture-literals`: green immediately (`9 retired literal(s)
+  checked, 0 stragglers`) — no red-to-green fix cycle needed this batch,
+  confirmed independently via direct grep.
+- Targeted re-run of all 10 two-tenant files: **10/10 files, 68/68 tests
+  green** (first attempt, no fixes needed after the guard-b revert).
+- Full suite: **1121 passed / 1 failed (93 files)** — the +4 over batch 2's
+  1117 is exactly `deriveRunScopedEmail()`'s own unit tests; the one failure
+  is the same pre-existing, already-documented `session-transition.test.ts`
+  lock-wait flake, identical error text to every prior batch and the
+  pre-batch-1 baseline.
+
 ## Known limit, recorded plainly, not overlooked
 
 Four production queries scan every `status = 'active'` project with **no

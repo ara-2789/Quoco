@@ -10,6 +10,30 @@
   {
     "literal": "+19995550200",
     "label": "TEST_ENGINEER_PHONE (morning fixture) -- retired batch 2, alongside TEST_TENANT_ID/TEST_PROJECT_ID: this is 'the shared engineer... derived from that fixture', not part of the general phone-slot registry deferred to batch 4, so it moved in the same commit for the same collision reason (see test/helpers/db.ts's own comment on this constant)."
+  },
+  {
+    "literal": "00000000-0000-4000-a000-0000000007a0",
+    "label": "TEST_TENANT_A_ID (migration-007 two-tenant fixture) -- retired batch 3, per-run fixture identifiers, docs/reviews/test-db-per-run-fixture-identifiers.md"
+  },
+  {
+    "literal": "00000000-0000-4000-a000-0000000007b0",
+    "label": "TEST_TENANT_B_ID (migration-007 two-tenant fixture) -- retired batch 3, per-run fixture identifiers, docs/reviews/test-db-per-run-fixture-identifiers.md"
+  },
+  {
+    "literal": "00000000-0000-4000-a000-0000000007a1",
+    "label": "TEST_PROJECT_A_ID (migration-007 two-tenant fixture) -- retired batch 3, per-run fixture identifiers, docs/reviews/test-db-per-run-fixture-identifiers.md"
+  },
+  {
+    "literal": "00000000-0000-4000-a000-0000000007b1",
+    "label": "TEST_PROJECT_B_ID (migration-007 two-tenant fixture) -- retired batch 3, per-run fixture identifiers, docs/reviews/test-db-per-run-fixture-identifiers.md"
+  },
+  {
+    "literal": "zz-007-user-a@quoco.test",
+    "label": "TEST_007_USER_A_EMAIL (migration-007 two-tenant fixture) -- retired batch 3: auth.users.email is UNIQUE, same collision reason as TEST_ENGINEER_PHONE in batch 2 (see test/helpers/db.ts's own comment on this constant)."
+  },
+  {
+    "literal": "zz-007-user-b@quoco.test",
+    "label": "TEST_007_USER_B_EMAIL (migration-007 two-tenant fixture) -- retired batch 3, same reasoning as TEST_007_USER_A_EMAIL above."
   }
 ]
 
