@@ -22,6 +22,16 @@ and item 6's draft copy is replaced. See "ROUND 4" below. STILL OPEN is now
 empty — every numbered item in this doc is decided as of this round. Still a
 design pass — no code, no migration, no migration number reserved.
 
+DATED NOTE (2026-09-13, round 5 — later still): item 10's "embedded" language
+is SUPERSEDED (struck through in place) — an `<img src>` is a hotlink, not a
+copy, and does not survive retention or stay PM-only; photos are now decided
+as real email attachments instead. New items 18-21 record the media-
+interceptor placement reversal, the payload-agnostic caption design, the
+6-stage build sequence with its gates, and the outstanding user-facing
+strings in one place. Item 8's provenance flag is updated to reflect
+Aravind's confirmation. See "ROUND 5" below. Still a design pass — no code,
+no migration, no migration number reserved.
+
 ---
 
 ## RESOLVED
@@ -269,16 +279,18 @@ behind a shared function/view — not a single table scan.
 
 ### 8. `hindrances.photo_url` — DECIDED, left as dead schema
 
-**PROVENANCE FLAG, added 2026-09-13 (round 4), on request:** this closure was
-**Claude's own inference**, chaining item 7's supplied decision through this
-doc's own pre-written round-2 conditional, backed by a fresh grep — it was
-**not** a decision Aravind supplied directly, unlike items 6, 7, 11-14 below,
-which were. The reasoning is sound and the grep evidence is real, but per this
-project's own standing distrust of inference-presented-as-decision, this
-item's "DECIDED" label should be read as "mechanically follows from a
-decision Aravind did make," not as something Aravind separately confirmed.
-Flagging rather than silently downgrading it — Aravind can confirm or
-override on sight.
+**PROVENANCE FLAG, added 2026-09-13 (round 4), UPDATED 2026-09-13 (round 5):
+inferred by Claude, confirmed by Aravind 2026-09-13.** This closure
+**began as Claude's own inference** — chaining item 7's supplied decision
+through this doc's own pre-written round-2 conditional, backed by a fresh
+grep — and was **not** a decision Aravind supplied directly when it was
+first written, unlike items 6, 7, 11-14, which were. That history is kept
+here, not erased, per this project's own correction discipline: the column
+stays in place, documented dead, per §28(p) — the inference turned out
+correct, and Aravind has now confirmed it directly, but the record of how
+this item reached "DECIDED" (mechanical inference first, explicit
+confirmation second) is preserved rather than rewritten as if it had always
+been a direct decision.
 
 Closed as a direct consequence of item 7 above, per this doc's own
 round-2 conditional ("per-parent tables make it unambiguously obsolete" —
@@ -434,9 +446,9 @@ splitting them.
 invented here — whoever builds the tombstone display writes and clears the
 copy separately.
 
-### 10. Email image delivery — DECIDED
+### 10. Email image delivery — ~~DECIDED~~ SUPERSEDED (2026-09-13, round 5)
 
-- **DPR email:** first 10 photos **embedded**, by arrival order. Overflow as
+~~- **DPR email:** first 10 photos **embedded**, by arrival order. Overflow as
   **dashboard links** (per item 14's reversal above).
 - **Hindrance email:** photos **embedded, not linked**. This email is the
   durable archive that justifies the 60-day hindrance retention (item 15
@@ -445,17 +457,58 @@ copy separately.
 - **Delivery detail flagged for build time, not decided now:** Resend
   click-tracking (§41(g), already recorded as unresolved for `<a href>`) must
   not rewrite or wrap embedded image content. Verify this against a real
-  send before shipping either embed path — not asserted here either way.
+  send before shipping either embed path — not asserted here either way.~~
+
+**DATED CORRECTION (2026-09-13, round 5) — this supersedes the "embedded"
+language above; it assumed embedding meant a durable copy, which is wrong.**
+Struck through, not deleted, per this project's correction discipline.
+
+**Finding that forced this:** `SendEmailParams` (`lib/email/send.ts`) carries
+only `{to, subject, text, html}`. An `<img src>` in the `html` field is a
+**hotlink** to Supabase Storage, not a copy — it breaks the moment retention
+deletes the object, and it is fetched by the mail client **without
+authentication**, so it is neither durable nor PM-only. Everything the
+struck-through text above said about "embedded" photos being the archive
+copy was built on that wrong assumption.
+
+**DECIDED:** photos are delivered as **email attachments**. `sendEmail`
+gains an attachment capability (Resend supports attachments; the current
+wrapper does not — this is real, if small, new work, not a config flip).
+Applies to both the DPR email (first 10 photos) and the hindrance email
+(its photos).
+
+- **This is what makes the email a real archive**, and is the **sole basis**
+  on which the 60-day retention clock (item 15) is defensible. Dependency
+  recorded explicitly: **if attachments are not built, the 60-day clock must
+  be revisited** — a hotlinked photo dying at 60 days with no durable copy
+  anywhere is a materially worse position than the 45-day window item 15
+  replaced.
+- **Risk, recorded plainly:** 10 site photos is roughly 3–8MB. Large emails
+  get clipped by Gmail, delayed by corporate mail filters, and can bounce
+  outright. A real-world size and deliverability test against actual
+  provider limits is a **REQUIRED gate** before this is promised to a
+  customer, not a nice-to-have (carried into item 20's build sequence as
+  stage 4's gate).
+- **Overflow photos (11+) remain dashboard links, unchanged** — not
+  attached, not durable, exactly as item 14 already decided. Item 14's own
+  "This preserves PM-only access" claim is unaffected by this correction and
+  is, if anything, strengthened: a real attachment has no external link at
+  all, so nobody without inbox access can reach it.
+- Resend click-tracking (§41(g)) is no longer a live concern for the
+  attached-10 — click-tracking rewrites links, not attachment content — but
+  remains a build-time detail for the overflow dashboard links, unchanged
+  from item 14's own treatment.
 
 ### 15. Retention clock — extended for two of three classes
 
 - **Hindrance and evening progress retention: 45 days → 60 days.**
 - **Attendance stays at 7 days** — unchanged.
 - **Rationale:** hindrance photos are evidence for delay and payment
-  disputes, which run in months, not weeks. 60 days plus the embedded email
-  copy (item 10 above) covers the common cases; the policy may extend
-  further later, based on real customer experience — not decided in advance
-  of having any.
+  disputes, which run in months, not weeks. 60 days plus the email copy —
+  now a real **attachment**, per item 10's round-5 correction, not the
+  hotlinked "embed" this rationale originally assumed — covers the common
+  cases; the policy may extend further later, based on real customer
+  experience — not decided in advance of having any.
 - **Retention is FORWARD-ONLY.** Photos deleted under a 60-day rule cannot
   be recovered if the policy is later extended — a longer future window
   does not retroactively restore what a shorter past window already
@@ -509,6 +562,113 @@ in the same style as item 2's earlier correction, so this doc does not carry
 the false claim forward. Item 16 above is written against the real,
 already-live email — it is an extension of existing infrastructure, not new
 notification plumbing.
+
+---
+
+## RESOLVED — ROUND 5 (2026-09-13, later still)
+
+### 18. Media interceptor placement — reversal of the 2026-09-06 decision
+
+**REVERSED, dated, original reasoning kept intact.** `lib/whatsapp/
+media-reply.ts`'s own header records a 2026-09-06 decision: the media check
+sits **upstream** of all flow logic (ahead of both `isTestStartTrigger` and
+`routeInboundMessage`) and **deliberately does not branch on active-flow
+state** — one fixed reply per media kind, regardless of whether a flow
+question is pending, specifically to avoid a second `readCurrentFlow` lookup
+duplicating a fact `routeInboundMessage`/`dispatchInboundTurn` already
+resolve (the `buildBodyCorpus`/`isHireRateTrusted` "two places decide one
+thing" shape, per the 2026-09-05 admin-merge retrospective).
+
+**Reason for reversal:** the photo-window decision (item 11) requires
+distinguishing a photo sent **inside an active check-in** (store silently)
+from a **bare off-step photo** (nudge, do not store — item 6). That
+distinction cannot be made upstream of flow state by construction — the
+2026-09-06 design's whole point was to avoid needing flow state at all,
+which is exactly the information this now depends on.
+
+**DECIDED approach:** move the media decision **downstream**, to the point
+that already reads current flow state (`routeInboundMessage`/
+`dispatchInboundTurn`), rather than adding a second `readCurrentFlow` lookup
+upstream. This **preserves the principle** behind the original 2026-09-06
+decision — no two places deciding the same fact — even though the placement
+changes: the fact "is a flow active, and does it want a photo" is still
+decided in exactly one place, it's just no longer the upstream interceptor.
+
+**OPEN IMPLEMENTATION QUESTION, not a decision:** the original header's own
+mid-flow empty-Body hazard — "a media reply sent mid-flow... would reach
+`dispatchInboundTurn` with an empty Body and be parsed as an invalid text
+answer if this check lived inside `routeInboundMessage` alone" — was the
+original justification for the upstream placement in the first place. That
+hazard must be **re-checked once the check moves downstream**, not assumed
+solved by the move. Not resolved here; flagged for whoever implements item
+20's stage 1.
+
+### 19. Caption arrival — payload-agnostic by design
+
+**UNVERIFIED FACT, named as such, both sources on record:** whether Twilio
+co-populates `Body` on an inbound photo with a caption. `media-reply.ts`'s
+own header asserts a mid-flow photo arrives with an **empty** `Body`; this
+design pass's own earlier Twilio research could not confirm either answer
+from current public docs. Neither source wins by default — this is recorded
+as **UNVERIFIED**, not resolved by picking one.
+
+**DECIDED design, which holds under either answer:** the photo is handled
+on its own path (per item 12), and any accompanying text is passed to the
+normal answer parser for the currently open question. If captions never
+arrive (Body stays empty, as `media-reply.ts`'s header claims), that path
+simply never fires and nothing breaks. If they do arrive, the text is
+captured exactly as item 12 already describes. The design does not need the
+unverified fact resolved to be correct either way — that is the point of
+building it payload-agnostic.
+
+**Verification step owed, not a design blocker:** send a captioned photo to
+the test number and read the raw inbound webhook payload directly. This
+must be done **before** any caption-dependent behaviour is built (item 20's
+stage 1), but it does not block finishing this design.
+
+### 20. Build sequence — the implementation plan
+
+Six stages, each **separately shippable**, in this order, with the stated
+gates. This is the doc's implementation plan, not a new design decision on
+top of items 1-19 — it sequences work those items already describe.
+
+1. **Photo intake during check-ins.** Requires item 18's interceptor move
+   (downstream, flow-aware).
+2. **Hindrance photo capture.** **HARD GATE: must ship before stage 3** —
+   per item 16's own ordering constraint (the nudge must not point at a
+   capture path that doesn't exist yet).
+3. **Off-step nudge** (item 6). Gated on approved copy + the Tamil pair
+   (item 21).
+4. **Email attachments** (DPR + hindrance, item 10's round-5 correction).
+   Gated on the size/deliverability test (item 10's own required gate).
+   **SEQUENCING:** the hindrance email's recipient lookup resolves the PM's
+   email via `users.auth_id -> auth.users` (`lib/hindrance/pm-notify.ts`,
+   `resolveProjectPMEmails`) — the same auth-identity coupling migration 007
+   is surgery on. **Do not begin stage 4 while 007 is mid-apply.**
+5. **PM surfaces** — photos in dashboard and DPR, overflow links (item 14),
+   retention policy visible in-product (item 15).
+6. **Retention deletion job.** **LAST**, and the **only irreversible
+   mechanism** in the feature. Recommendation, restated from item 15: build
+   it, but leave it **switched OFF until a real customer is running**,
+   preserving the option to revise the clock — retention is forward-only
+   (item 15) and deleted photos cannot be recovered if the policy is later
+   extended.
+
+### 21. Outstanding user-facing strings — all NOT APPROVED
+
+Every string this design pass still owes, collected in one place. None are
+drafted here beyond what already exists in the doc; nothing new is invented
+by this entry.
+
+- **Tombstone string** (item 9) — NEEDED, NOT DRAFTED.
+- **Off-step nudge** (item 6) — English draft exists; **Tamil pair owed.**
+- **Hindrance email copy** — NEEDED, NOT DRAFTED. The existing copy
+  (`buildHindrancePmNotifyEmail`, per item 17's evidence) has no language
+  for attached photos; it needs revision once item 10's attachment decision
+  ships.
+- **DPR email copy, overflow-links section** — NEEDED, NOT DRAFTED. No
+  existing copy names or explains the dashboard-link overflow path (item
+  14); one is owed before that section ships.
 
 ---
 
