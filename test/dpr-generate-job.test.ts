@@ -157,6 +157,119 @@ describe('handleDprGenerateJob', () => {
       expect(structured?.verdict).toBe('')
       expect(structured?.verdict_status).toBe('disabled')
       expect(dpr?.generator_job_id).toBe(FAKE_JOB_ID)
+
+      // PART A (docs/plans/dpr-owner-pass-regeneration.md) -- the write now
+      // goes through write_dpr_version, not a raw upsert. A brand-new row
+      // (this is the first-ever generation for this project/engineer/day)
+      // should land as version 1, with the dprs row's own current_version/
+      // generated_by/generated_by_user in agreement with it -- proving the
+      // RPC's own service_role auth guard passed (a rejection would have
+      // thrown inside handleDprGenerateJob and failed this test above,
+      // before this assertion is ever reached).
+      const { data: fullDpr } = await db
+        .from('dprs')
+        .select('id, current_version, generated_by, generated_by_user, generated_at')
+        .eq('project_id', projectId)
+        .eq('engineer_id', engineerId)
+        .eq('log_date', LOG_DATE)
+        .single()
+      expect(fullDpr?.current_version).toBe(1)
+      expect(fullDpr?.generated_by).toBe('system')
+      expect(fullDpr?.generated_by_user).toBeNull()
+      // write_dpr_version's own UPDATE does not touch generated_at (it has
+      // no DB default -- 023_dpr_reports.sql:129) -- write-version.ts must
+      // set it separately, or every row this path ever creates would carry
+      // a permanently NULL generated_at. Asserted directly, not assumed.
+      expect(fullDpr?.generated_at).toBeTruthy()
+      expect(new Date(fullDpr?.generated_at as string).getTime()).toBeGreaterThan(Date.now() - 60_000)
+
+      const { data: versions } = await db.from('dpr_versions').select('version, content, structured, generated_by, generated_by_user').eq('dpr_id', fullDpr?.id)
+      expect(versions).toHaveLength(1)
+      expect(versions?.[0].version).toBe(1)
+      expect(versions?.[0].generated_by).toBe('system')
+      expect(versions?.[0].generated_by_user).toBeNull()
+      // Byte-identical to what dprs itself now holds -- proves the RPC
+      // wrote the SAME content the old raw upsert would have, not a
+      // different render (this change only alters how it's persisted).
+      expect(versions?.[0].content).toBe(dpr?.content)
+      expect(versions?.[0].structured).toEqual(dpr?.structured)
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('PART A — PHANTOM FIRST VERSION: a row already carrying content from the OLD raw-upsert path (current_version=1, zero dpr_versions rows) gets a synthesized v1 backfill before the real regeneration writes v2, so nothing is silently lost on first touch', async () => {
+    const db = testClient()
+    const projectId = await makeProject('phantom-first-version')
+    const engineerId = testEngineerId()
+    try {
+      await addToProject(projectId, engineerId)
+      await db.from('daily_logs').insert({
+        project_id: projectId,
+        tenant_id: TEST_TENANT_ID,
+        engineer_id: engineerId,
+        log_date: LOG_DATE,
+        morning_submitted_at: '2026-05-02T04:00:00Z',
+        morning_plan: 'Excavation of footing',
+        evening_submitted_at: '2026-05-02T14:00:00Z',
+        evening_schedule_met: true,
+      })
+
+      // Simulate exactly what every dprs row created before this PR looks
+      // like: real content written by the OLD raw upsert (current_version
+      // defaults to 1, generated_by defaults to 'system' -- migration 029's
+      // own column defaults, never touched by write_dpr_version because
+      // nothing has ever called it), and genuinely zero dpr_versions rows.
+      const OLD_CONTENT = 'OLD CONTENT -- written by the pre-Part-A raw upsert path, never versioned'
+      const OLD_STRUCTURED = { verdict: '', verdict_status: 'disabled', note: 'old' }
+      const { data: preExisting } = await db
+        .from('dprs')
+        .upsert(
+          {
+            project_id: projectId,
+            engineer_id: engineerId,
+            tenant_id: TEST_TENANT_ID,
+            log_date: LOG_DATE,
+            content: OLD_CONTENT,
+            structured: OLD_STRUCTURED,
+            generated_at: '2026-05-02T15:00:00Z',
+            generation_status: 'idle',
+          },
+          { onConflict: 'project_id,engineer_id,log_date' },
+        )
+        .select('id, current_version')
+        .single()
+      expect(preExisting?.current_version).toBe(1) // the column default -- confirms this row is in the exact pre-Part-A shape
+      const { count: preCount } = await db.from('dpr_versions').select('id', { count: 'exact', head: true }).eq('dpr_id', preExisting?.id)
+      expect(preCount).toBe(0) // confirms genuinely zero history, matching every real row today
+
+      // The real regeneration -- same call shape as the SUCCESS test.
+      await handleDprGenerateJob(
+        { project_id: projectId, engineer_id: engineerId, log_date: LOG_DATE },
+        FAKE_JOB_ID,
+        { supabaseClient: db, anthropicClient: mockAnthropicClientVerdictMustNotBeCalled() },
+      )
+
+      const { data: dpr } = await db.from('dprs').select('id, content, structured, current_version').eq('project_id', projectId).eq('engineer_id', engineerId).eq('log_date', LOG_DATE).single()
+      // The NEW render is what's live now -- current, not the stale old text.
+      expect(dpr?.current_version).toBe(2)
+      expect(dpr?.content).not.toBe(OLD_CONTENT)
+
+      const { data: versions } = await db
+        .from('dpr_versions')
+        .select('version, content, structured')
+        .eq('dpr_id', dpr?.id)
+        .order('version', { ascending: true })
+      expect(versions).toHaveLength(2)
+      // v1 is the SYNTHESIZED backfill of the pre-existing content -- proof
+      // the old render was preserved, not silently overwritten.
+      expect(versions?.[0].version).toBe(1)
+      expect(versions?.[0].content).toBe(OLD_CONTENT)
+      expect(versions?.[0].structured).toEqual(OLD_STRUCTURED)
+      // v2 is the real new regeneration, matching what dprs now holds.
+      expect(versions?.[1].version).toBe(2)
+      expect(versions?.[1].content).toBe(dpr?.content)
+      expect(versions?.[1].structured).toEqual(dpr?.structured)
     } finally {
       await cleanupProject(projectId)
     }
