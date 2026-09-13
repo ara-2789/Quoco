@@ -349,6 +349,114 @@ project's own correction discipline.
 
 ---
 
+# Phase 3 — the DASH-01 hindrance tile (added 2026-09-08)
+
+**RESCUED (2026-09-13, docs-rescue pass) — DECIDED AND SHIPPED, not pending.** This
+section was written 2026-09-08 but existed only as an untracked local file, never
+committed to `main`, until now. The decision it records below (Option B) was built
+exactly as decided, the day after it was made: commit `65d9baa`
+("feat(dash-01): active-hindrances tile on the PM home dashboard", 2026-09-09) ships
+the DASH-01 tile together with Acknowledge, wired to migration 039's
+`acknowledged_at`/`acknowledged_by` columns — confirmed live in
+`app/(dashboard)/dashboard/page.tsx` (`active-hindrance` tile kind, ranked 0, chip
+`blocked`/"Blocking now" → `muted`/"Seen", inline `TileAcknowledgeButton` reusing
+`acknowledgeHindrance` from `app/(dashboard)/hindrances/actions.ts`, no WhatsApp/Call,
+"Open project" once acknowledged) and matching this section's tile-shape spec below
+point for point. The original text is kept as written, including the "DECIDE BEFORE
+BUILDING" framing and the struck-through Recommendation A, as the record of the
+reasoning that produced the decision — not rewritten to read as though it were always
+settled.
+
+Discovered in use: `/hindrances` showed a site stopped for missing flooring
+material while the DASH-01 home screen said *"2 things need you"* — and that was
+not one of the two. `design-principles.md` Rule 4.1 makes home the exceptions
+queue; a blocked site is the most exception-shaped fact the product holds.
+
+DASH-01 excluded hindrances because, when it was designed, the flow did not
+exist and nothing wrote to the table. **That reason has expired.**
+`app/(dashboard)/dashboard/page.tsx` on `origin/main` has four tile kinds
+(`evening-missing`, `morning-missing`, `nobody-on-site`, `stopped-messages`) and
+imports nothing from `lib/hindrance/`.
+
+## Decided 2026-09-08
+
+**`active` only.** `potential` and `unspecified` stay on `/hindrances`. Home
+answers "what needs you **now**"; putting all three there grows the count
+without the urgency being real.
+
+**Highest rank — above `evening-missing`.** `evening-missing` currently ranks 0
+because the owner's report goes out at 20:30. **A stopped site outranks a
+missing report about a site that is working.** New `TILE_RANK` puts
+`hindrance-active` at 0 and shifts the rest down.
+
+**The action is Acknowledge, and only Acknowledge.** Not WhatsApp, not Call.
+Rationale, from Aravind: **resolution almost always happens outside the app** —
+the PM rings the supplier, changes the sequence, sends someone to collect. The
+product's job here is *awareness and acknowledgement*, not workflow. Adding
+WhatsApp/Call would imply the fix lives in Quoco. It does not.
+
+**This is the argument for DASH-10 being lightweight.** If resolution happens
+outside the product, DASH-10's resolve is a *mark-it-done*, not a workflow
+engine with assignees and due dates. Recorded here so DASH-10 is not
+over-designed later.
+
+## The sequencing problem this creates — DECIDE BEFORE BUILDING
+
+*(Resolved 2026-09-09, kept as written below — this is the reasoning that produced
+the decision, not an open question.)*
+
+Acknowledge is **Phase 2**, blocked on the other track's `acknowledged_at` /
+`acknowledged_by` columns. So if the tile's only action is Acknowledge, the tile
+has **no action at all** until those land.
+
+**Option A — ship the tile now, action arrives in Phase 2.** Precedent exists
+and is close: the `nobody-on-site` tile already ships with no real action, says
+so honestly (*"Adding engineers isn't in the dashboard yet"*), and offers only
+"Open project". A hindrance tile would mirror that exactly — surface the fact,
+name that acknowledgement is not here yet, offer "Open hindrances". The PM
+learns from home that a site is stopped, which he cannot today.
+
+**Option B — ship tile and Acknowledge together when the columns land.** One
+design, one PR, no interim copy to write and then delete.
+
+~~**Recommendation: A.** A stopped site missing from the home screen costs more
+than a button arriving a week later, and the honest-actionless-tile pattern is
+already established on this screen rather than being invented for it.~~
+
+**DECIDED 2026-09-08: OPTION B.** Recommendation A was not taken. **DASH-07
+Phase 1 stays pure awareness — the `/hindrances` page only, no DASH-01 tile.**
+The tile ships together with Acknowledge, in Phase 2, when the columns land.
+
+Consequence: **the DASH-01 hindrance tile is now blocked on the other track's
+migration**, not merely improved by it. Until `acknowledged_at` /
+`acknowledged_by` exist, a PM learns a site is stopped only by opening
+`/hindrances` — home will not tell him. That is accepted deliberately: a tile
+whose only action is Acknowledge is not worth shipping without Acknowledge, and
+no interim copy gets written and then deleted.
+
+**The acknowledgement columns are therefore the critical path for two pieces of
+work, not one** — Phase 2 and this tile.
+
+## Tile shape — ships in Phase 2, with Acknowledge
+
+- Chip: `blocked` (red), label **Blocking now** — same as `/hindrances`.
+- Title: the engineer's `description`, verbatim.
+- Supporting line: project and reporter, matching the other tiles' rhythm.
+- Action: **Acknowledge**, and only Acknowledge.
+- **No interim advisory line.** Option B was chosen precisely so that no
+  placeholder copy is written and then deleted.
+
+## Cost to accept, stated plainly
+
+An `active` hindrance never ages out (§The window) and **nothing resolves it**
+(§DECISION — resolution is deferred). So this tile is **permanent until DASH-10
+ships**. One is fine. Three unresolved hindrances means home permanently reads
+"5 things need you" with several unactionable — which is real pressure to build
+DASH-10 sooner than the deferral assumed. That pressure is the intended
+consequence, not a surprise.
+
+---
+
 ## RLS findings — recorded 2026-09-07, NOT blockers for Phase 1
 
 Verified directly from `supabase/migrations/002_rls_policies.sql:249-268`, under
