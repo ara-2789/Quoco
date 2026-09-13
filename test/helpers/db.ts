@@ -219,13 +219,19 @@ export async function cleanupTestSessions(): Promise<void> {
 // which tables need clearing, and scripts/lint-migrations.mjs's
 // shared-fixture-fk-coverage rule (no exceptions mechanism, unlike every
 // other lint rule) fails the build the moment a migration adds a
-// non-CASCADE FK to users(id)/tenants(id) that isn't listed here — so this
-// list cannot silently go stale the way the project_id-only scope of
-// cleanupTestDailyLogs() did. Called ONLY with the shared fixture's own id
-// (never a wildcard), against testClient() (test-db only, gated by test/
-// setup/guard.ts's hard allowlist abort before any test runs) — this can
-// only ever touch rows that reference that exact fixture id.
-async function sweepSharedFixtureReferences(parent: 'users' | 'tenants', id: string): Promise<void> {
+// non-CASCADE FK to users(id)/tenants(id)/projects(id) that isn't listed
+// here — so this list cannot silently go stale the way the project_id-only
+// scope of cleanupTestDailyLogs() did. Called ONLY with the shared
+// fixture's own id (never a wildcard), against testClient() (test-db only,
+// gated by test/setup/guard.ts's hard allowlist abort before any test
+// runs) — this can only ever touch rows that reference that exact fixture id.
+//
+// EXTENDED to the 'projects' parent, 2026-09-13 (the 4c finding,
+// docs/reviews/test-db-fixture-collision-inventory.md): removeTwoTenantFixtures()
+// below used to delete TEST_PROJECT_A_ID/TEST_PROJECT_B_ID with no sweep at
+// all — the identical shape of bug this function was built to close for
+// users/tenants, just for a different parent, caught before it fired.
+async function sweepSharedFixtureReferences(parent: 'users' | 'tenants' | 'projects', id: string): Promise<void> {
   const db = testClient()
   for (const entry of sharedFixtureFkCoverage as Array<{
     table: string
@@ -865,12 +871,27 @@ export async function ensureTwoTenantFixtures(): Promise<TwoTenantFixtures> {
 // RESTRICT, so public.users rows must go before their auth.users rows; and
 // projects.created_by is NO ACTION, so projects must go before their users.
 // Call in afterAll.
+//
+// 4c fix (2026-09-13, docs/reviews/test-db-fixture-collision-inventory.md):
+// this function used to delete the projects rows below with NO FK sweep at
+// all -- the same shape of bug as the 2026-09-05 daily_logs/users incident
+// (see sweepSharedFixtureReferences()'s own header), just for the projects(id)
+// parent instead of users(id)/tenants(id). Six test files (daily-log-
+// correction-rpc, daily-log-detail-query, dash-03-board, dpr-detail,
+// migration-017, migration-019, migration-023) already clean up their own
+// daily_logs/daily_log_edits/dprs rows by hand before calling this function --
+// that manual cleanup stays (belt and braces), the sweep below is what makes
+// it unnecessary rather than load-bearing.
 export async function removeTwoTenantFixtures(): Promise<void> {
   const db = testClient()
   const tenantIds = [TEST_TENANT_A_ID, TEST_TENANT_B_ID]
 
   const { error: pmErr } = await db.from('project_members').delete().in('tenant_id', tenantIds)
   if (pmErr) throw new Error(`removeTwoTenantFixtures project_members failed: ${pmErr.message}`)
+
+  for (const projectId of [TEST_PROJECT_A_ID, TEST_PROJECT_B_ID]) {
+    await sweepSharedFixtureReferences('projects', projectId)
+  }
 
   const { error: projErr } = await db.from('projects').delete().in('tenant_id', tenantIds)
   if (projErr) throw new Error(`removeTwoTenantFixtures projects failed: ${projErr.message}`)

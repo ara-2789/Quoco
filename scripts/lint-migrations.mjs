@@ -387,13 +387,24 @@ function ruleServiceRoleGrantRequired(file, sql, blocks) {
 // daily_logs row (a table nobody had widened cleanup for) blocked the users
 // delete and cascaded into 16 failing test files in one CI run.
 //
+// EXTENDED to the projects(id) parent, 2026-09-13 (the 4c finding,
+// docs/reviews/test-db-fixture-collision-inventory.md): removeTwoTenantFixtures()
+// deleted the shared TEST_PROJECT_A_ID/TEST_PROJECT_B_ID rows with zero FK-sweep
+// coverage at all -- the identical shape of bug as the 2026-09-05 incident, just
+// for a different parent, caught before it fired rather than after (six test
+// files were relying on their own by-hand cleanup, one with a comment admitting
+// it: "daily_logs is not swept by removeTwoTenantFixtures -- clear it first
+// (FK)"). Same rule, same coverage file, same sweep function -- just a third
+// parent value.
+//
 // The fix is an explicit, hand-maintained coverage list
 // (scripts/shared-fixture-fk-coverage.json) that test/helpers/db.ts's
-// sweepSharedFixtureReferences() reads and acts on before either delete.
-// THIS RULE is what keeps that list honest: it scans every migration file
-// for a foreign key referencing users(id) or tenants(id) that does NOT
-// carry ON DELETE CASCADE (a cascading FK self-cleans — nothing to sweep)
-// and requires a matching entry in the coverage file.
+// sweepSharedFixtureReferences() reads and acts on before any of the three
+// deletes (users, tenants, projects). THIS RULE is what keeps that list
+// honest: it scans every migration file for a foreign key referencing
+// users(id), tenants(id), or projects(id) that does NOT carry ON DELETE
+// CASCADE (a cascading FK self-cleans — nothing to sweep) and requires a
+// matching entry in the coverage file.
 //
 // UNLIKE EVERY OTHER RULE IN THIS FILE, THIS ONE HAS NO EXCEPTIONS
 // MECHANISM — deliberately. migration-lint-exceptions.json exists for
@@ -438,7 +449,7 @@ function ruleSharedFixtureFkCoverage(file, sql, coverage) {
   // statement; not anchored to line-start since ADD COLUMN precedes the
   // column name on the same line.
   const colFkRe =
-    /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+UUID\b[^,;\n]*?REFERENCES\s+(?:public\.)?"?(users|tenants)"?\s*\(\s*id\s*\)([^,;\n]*)/gi
+    /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+UUID\b[^,;\n]*?REFERENCES\s+(?:public\.)?"?(users|tenants|projects)"?\s*\(\s*id\s*\)([^,;\n]*)/gi
   let m
   while ((m = colFkRe.exec(sql))) {
     const [, column, parent, trailing] = m
@@ -454,7 +465,7 @@ function ruleSharedFixtureFkCoverage(file, sql, coverage) {
   // the list, by this codebase's own composite-FK convention (id is always
   // listed first on the parent side too).
   const fkClauseRe =
-    /FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+(?:public\.)?"?(users|tenants)"?\s*\(([^)]+)\)([^;,)]*)/gi
+    /FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+(?:public\.)?"?(users|tenants|projects)"?\s*\(([^)]+)\)([^;,)]*)/gi
   while ((m = fkClauseRe.exec(sql))) {
     const [, localCols, parent, , trailing] = m
     if (/ON\s+DELETE\s+CASCADE/i.test(trailing)) continue
@@ -724,7 +735,7 @@ function main() {
   if (fkCoverageViolations.length > 0) {
     console.error(
       `migration-lint: ${fkCoverageViolations.length} table(s) with a non-CASCADE FK to ` +
-        `users(id)/tenants(id) missing from scripts/shared-fixture-fk-coverage.json:\n`,
+        `users(id)/tenants(id)/projects(id) missing from scripts/shared-fixture-fk-coverage.json:\n`,
     )
     for (const v of fkCoverageViolations) {
       console.error(`  ${v.file}: ${v.object}  [${v.rule}]`)
