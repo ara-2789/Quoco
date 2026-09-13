@@ -985,6 +985,24 @@
   already live on prod — the same drop-shape as the post-apply types-regen
   step this file's own Step G already exists to close, one bookkeeping
   artifact over.
+- A DOCS FILE THAT PASSES THE WARN THRESHOLD GETS SPLIT, NOT APPENDED TO
+  (standing rule since 2026-09-13). EVIDENCE:
+  `design-decisions-beta-feedback.md` reached 224,410 chars against the
+  120,000-char warn threshold — 87% over — before this rule. Oversized
+  files get partially read, and the `§g` collision (`adhoc-menu-spec.md`'s
+  section letter independently reused on 2026-09-06 while the original
+  `§g` sat unmerged on a branch nobody was reading) is what partial
+  reading produces. Fixed same-day by splitting `design-decisions-beta-
+  feedback.md` by theme into `docs/design-decisions/*.md`, each file well
+  under threshold; the original path stays as an INDEX (section number →
+  file), so no existing citation — including migration 037's own applied
+  `COMMENT ON COLUMN`, unrewritable on prod — ever breaks. **Section
+  numbers never move when a file like this is split** — a split that
+  renumbers anything is the `§g` failure again, at scale, self-inflicted
+  this time instead of merely inherited. When any docs file crosses
+  120,000 chars, split it the same way — by theme, into a subdirectory,
+  with the original path kept as an index — rather than continuing to
+  append and letting a future reader shoulder another partial read.
 
 ---
 
