@@ -56,9 +56,9 @@ the repo. There was nothing to find. If it's ever batched into a template
 submission, it gets its own write-up first — not inferred from this design
 pass.
 
-### 3. Overflow link (>10 photos) — deferred, not designed
+### 3. Overflow link (>10 photos) — ~~deferred, not designed~~ SUPERSEDED (2026-09-13, round 4)
 
-Ship ≤10 embeds only, per §41(e)'s existing cap. No link-to-dashboard for
+~~Ship ≤10 embeds only, per §41(e)'s existing cap. No link-to-dashboard for
 photo 11+ in this pass — the owner has no web login yet (CLAUDE.md §5,
 `design-principles.md` Rule 1.2), and owner web login is queued as the same
 piece of work as employee onboarding, separately. Building a link today
@@ -66,7 +66,17 @@ would be a dead link for the owner and a half-designed one for the PM
 (conflict #2 from the prior round — PM-only access vs. a dashboard surface
 that doesn't exist yet either). When owner login ships, the overflow link
 becomes a small, well-scoped enhancement on top of a real destination —
-not built ahead of that.
+not built ahead of that.~~
+
+**DATED CORRECTION (2026-09-13, round 4, surfaced round 5).** Struck through,
+not deleted, per this project's correction discipline. This conclusion no
+longer holds: round 4's item 14 decided overflow photos (11+) **are**
+delivered as links to the web dashboard (and the mobile app, once it
+exists) — never storage URLs, never signed public links — reversing the
+"deferred, not designed" call above outright rather than refining it. Round
+5's item 20 (build sequence), stage 5, includes actually building them,
+alongside the rest of the PM-facing surfaces. See item 14 for the decision
+and item 20 for where it ships.
 
 ### 4. Ingestion architecture — queued job, not inline in the webhook
 
