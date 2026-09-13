@@ -195,12 +195,24 @@ corrections migration), NOT 007.**
 - **Compulsory photos (DECIDED — required-but-finalizable):** morning =
   team/site/machinery photos, evening = work-completed photos. New
   **`daily_log_photos`** table (`{daily_log_id, phase, photo_url, caption,
-  received_at}`), **Supabase Storage only, never Twilio URLs**. The flow **will
-  not stamp `submitted_at` without the photo** (keeps asking), but the **cutoff
-  cron still finalizes** photo-less check-ins as **"finalized, photo missing"** —
-  the gap surfaces on the PM dashboard and weekly review. **Compliance through
-  visibility, not hard blocks.** Storage-cost note: this becomes the product's
-  **largest object-storage consumer.**
+  received_at}`), **Supabase Storage only, never Twilio URLs**. ~~The flow
+  **will not stamp `submitted_at` without the photo** (keeps asking)~~, but the
+  **cutoff cron still finalizes** photo-less check-ins as **"finalized, photo
+  missing"** — the gap surfaces on the PM dashboard and weekly review.
+  **Compliance through visibility, not hard blocks.** Storage-cost note: this
+  becomes the product's **largest object-storage consumer.**
+
+  **DATED CORRECTION (2026-09-13) — deliberate reversal, not a refinement.**
+  Photos are now **optional**: the question offers a "none" reply. Reason:
+  blocking a check-in over a missing photo costs the whole day's data to
+  enforce one field, and engineers on poor signal would be stuck. The
+  struck-through sentence above is kept, not rewritten, per this project's
+  own correction discipline — the "keeps asking" behaviour it described is
+  no longer how the flow works.
+  Because "photo missing" is now a valid answer rather than a compliance
+  gap, the **"none" reply must be stored explicitly** so the PM dashboard can
+  distinguish "engineer reported no photos" from a blank that reads as a
+  system failure.
 
 - **Explicitly NOT adding:**
   - percent-complete self-assessments (unreliable);
