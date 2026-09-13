@@ -8,6 +8,7 @@ import {
   deriveRunScopedUuid,
   deriveRunScopedPhone,
   deriveRunScopedEmail,
+  deriveRunScopedPhoneBlock,
   assertExactRowCount,
 } from '../helpers/run-scoped-fixtures'
 
@@ -100,6 +101,25 @@ describe('deriveRunScopedEmail', () => {
   it('is a syntactically valid email at the fixed, obviously-fake quoco.test domain', () => {
     const email = deriveRunScopedEmail('run-1', 'TEST_007_USER_A_EMAIL')
     expect(email).toMatch(/^zz-test-[0-9a-f]{12}@quoco\.test$/)
+  })
+})
+
+describe('deriveRunScopedPhoneBlock', () => {
+  it('is deterministic: same runId always produces the same block', () => {
+    const a = deriveRunScopedPhoneBlock('run-1')
+    const b = deriveRunScopedPhoneBlock('run-1')
+    expect(a).toBe(b)
+  })
+
+  it('produces a different block for a different run', () => {
+    const runA = deriveRunScopedPhoneBlock('run-A')
+    const runB = deriveRunScopedPhoneBlock('run-B')
+    expect(runA).not.toBe(runB)
+  })
+
+  it('is a 5-digit, zero-padded decimal string -- no label argument, one block per run', () => {
+    const block = deriveRunScopedPhoneBlock('run-1')
+    expect(block).toMatch(/^\d{5}$/)
   })
 })
 

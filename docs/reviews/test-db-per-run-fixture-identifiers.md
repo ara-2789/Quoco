@@ -461,6 +461,19 @@ explicit "do not assume either way" instruction.**
   of 0, the same shape as the tenant-slug orphan risk above, just not
   triggered this particular time.
 
+**Verified — full raw results, batch 3:**
+- `tsc --noEmit`, `eslint`: clean.
+- `lint-retired-fixture-literals`: green immediately (`9 retired literal(s)
+  checked, 0 stragglers`) — no red-to-green fix cycle needed this batch,
+  confirmed independently via direct grep.
+- Targeted re-run of all 10 two-tenant files: **10/10 files, 68/68 tests
+  green** (first attempt, no fixes needed after the guard-b revert).
+- Full suite: **1121 passed / 1 failed (93 files)** — the +4 over batch 2's
+  1117 is exactly `deriveRunScopedEmail()`'s own unit tests; the one failure
+  is the same pre-existing, already-documented `session-transition.test.ts`
+  lock-wait flake, identical error text to every prior batch and the
+  pre-batch-1 baseline.
+
 ## Batch-4 reassessment — requested explicitly, answered directly
 
 **The corrected fact (batch 2): `whatsapp_sessions.phone_number` DOES carry
@@ -502,18 +515,68 @@ genuinely safer than this document previously implied — but is a larger
 change than batch 4's current scope, not something this correction obliges
 anyone to switch to.
 
+## Batch 4 — phone registry, nested under a run-scoped prefix (closed, 2026-09-13)
+
+**Scope:** `testPhone()` (`test/helpers/db.ts`) now inserts a run-scoped
+5-digit block between the existing `TEST_PHONE_PREFIX` and the caller's own
+3-digit slot — `${TEST_PHONE_PREFIX}${RUN_SCOPED_PHONE_BLOCK}${slot}` — via
+a new `deriveRunScopedPhoneBlock(runId)`. Exactly the shape the batch-4
+reassessment above confirmed: the ~98 hand-registered slots keep their
+existing numbers and their existing job (telling two files in the *same*
+run apart); only a run-scoped block gets nested in front of them, closing
+the *cross-run* axis. Unlike every other constant this migration has
+touched, there is no single named literal to "retire" here —
+`TEST_PHONE_PREFIX` itself (`+19995550`) is unchanged and stays fixed
+(it's the shared, recognisable, obviously-fake NANP space, not an
+identity), and every one of the ~98 slot *numbers* (`'301'`, `'999'`, etc.)
+is unchanged too. Nothing was added to `scripts/retired-fixture-
+literals.json` this batch for that reason — there is no old literal value
+that stops being valid; the function that combines the pieces changed, not
+any of the pieces themselves.
+
+**`TEST_ENGINEER_PHONE` (batch 2) is untouched by this change** — it never
+went through `testPhone()`/`TEST_PHONE_PREFIX` at all, using its own
+dedicated `+19995552` prefix via `deriveRunScopedPhone()` directly. The two
+mechanisms remain independent, as designed since batch 2.
+
+**Confirmed safe to lengthen the phone string before making the change, not
+assumed:** checked `lib/whatsapp/normalise.ts` (the only place inbound
+phone numbers get parsed) — it returns any string already starting with
+`+` completely unchanged, no length or format validation that would reject
+a longer value. Checked every `test/**/*.ts` file for code that slices or
+measures a `testPhone()`-produced string expecting an exact length —
+none found. Checked `cleanupTestSessions()`'s own `TEST_PHONE_PREFIX`
+`LIKE` pattern (the batch-2 fix) — a trailing `%` matches any suffix length,
+so it keeps correctly clearing the new, longer values with no changes
+needed.
+
+**No guard (b) wiring this batch, and that's a difference from batches 2/3
+worth naming, not an oversight.** The phone registry has no single
+fixture-seeding function the way `ensureMorningFixtures()`/
+`ensureTwoTenantFixtures()` do — `testPhone()` is called ad hoc, per test,
+across 13 files, each constructing its own session/user rows independently.
+There is no one place to assert "this run's phone identity is exactly
+right" the way there was a single tenant or a single engineer to check.
+Verification here is necessarily behavioural (does the whole suite still
+pass with the new, longer values) rather than a single assertion this
+migration can point to.
+
 **Verified — full raw results:**
 - `tsc --noEmit`, `eslint`: clean.
-- `lint-retired-fixture-literals`: green immediately (`9 retired literal(s)
-  checked, 0 stragglers`) — no red-to-green fix cycle needed this batch,
-  confirmed independently via direct grep.
-- Targeted re-run of all 10 two-tenant files: **10/10 files, 68/68 tests
-  green** (first attempt, no fixes needed after the guard-b revert).
-- Full suite: **1121 passed / 1 failed (93 files)** — the +4 over batch 2's
-  1117 is exactly `deriveRunScopedEmail()`'s own unit tests; the one failure
-  is the same pre-existing, already-documented `session-transition.test.ts`
-  lock-wait flake, identical error text to every prior batch and the
-  pre-batch-1 baseline.
+- Targeted re-run of all 13 `testPhone()`-using files (re-verified fresh via
+  `grep`, not the earlier research pass's count, since that list has drifted
+  before — 001-count files this time): **12/13 files, 161/162 tests green.**
+  The one failure is `test/session-transition.test.ts`'s pre-existing,
+  already-documented lock-wait flake — the same flake every prior batch's
+  *full-suite* run has hit, appearing here for the first time in a
+  *targeted* run only because this is the first batch where that file is
+  legitimately part of the target set (it calls `testPhone()`), not a new
+  failure this batch introduced.
+- Full suite: **1124 passed / 1 failed (93 files)** — the +3 over batch 3's
+  1121 is exactly `deriveRunScopedPhoneBlock()`'s own unit tests; the one
+  failure is the same pre-existing, already-documented
+  `session-transition.test.ts` lock-wait flake, identical error text to
+  every prior batch and the pre-batch-1 baseline.
 
 ## Known limit, recorded plainly, not overlooked
 
