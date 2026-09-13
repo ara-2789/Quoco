@@ -10,6 +10,22 @@ Decided 2026-09-05. Settles **what** and **why**. The **how** lives in
 >    `lib/dpr/` is required before the button can work at all.
 > 3. The staleness query must be scoped **per engineer**, not per project.
 
+> **DATED CORRECTION (2026-09-13, docs-rescue pass) — status against `main` today.**
+> **Part A (the wiring PR item 2 above calls for) has shipped**: `lib/dpr/dispatch.ts`
+> now writes through `write_dpr_version` instead of a raw upsert (commit `483541c`,
+> 2026-09-12), matching the build spec's own Part A exactly. Along the way, migration
+> 041 fixed a real bug in `write_dpr_version` found by that work — a row's very first
+> call was landing at `current_version = 2`, not `1` — unrelated to anything decided
+> here, noted only so "VERIFIED behaviour on a second call" below isn't mistaken for
+> "first-call behaviour was also checked" (it wasn't, and didn't need to be — the bug
+> and its fix are a schema/RPC concern, not a decision this doc makes). **Part B (the
+> button itself) has NOT shipped** — no regenerate action exists under
+> `app/(dashboard)/daily-logs/` as of this date. **The 20:30 send-time backstop is
+> also still unbuilt** — a second, later design doc,
+> `docs/plans/dpr-owner-pass-regeneration.md` (2026-09-12, "Second rewrite"), picked
+> up specifically the piece this doc's own "Deliberately left open" section deferred;
+> read that doc for the backstop's current state, not this one.
+
 ---
 
 ## The problem this closes
@@ -139,8 +155,11 @@ application wiring is — see the build spec's Part A.** Every column below is
 confirmed present in `types/database.ts`, not merely asserted from a migration
 file.
 
-- `dprs.last_regenerated_at` — **exists and is unused.** Its only writer
-  anywhere is `write_dpr_version`'s own UPDATE, and nothing calls that RPC yet.
+- `dprs.last_regenerated_at` — ~~**exists and is unused.** Its only writer
+  anywhere is `write_dpr_version`'s own UPDATE, and nothing calls that RPC yet.~~
+  **DATED CORRECTION (2026-09-13):** no longer unused — Part A shipped (2026-09-12,
+  `483541c`), `lib/dpr/dispatch.ts` now calls `write_dpr_version` on every generation,
+  so this column is stamped for real on `main` today.
 - `dprs.generated_at`, `dprs.delivery_status`, `dprs.delivered_owner_at`
 - `dprs.generation_status` — `running` / `idle`, set by `handleDprGenerateJob`.
 - `daily_log_edits` full Row: `column_name`, `comment`, `created_at`,

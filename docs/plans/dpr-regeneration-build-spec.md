@@ -8,6 +8,18 @@ Written after recon against `origin/main` (`a918350`).
 from source on 2026-09-07. Everything marked DESIGN is a ruling made here.
 Everything under Open is genuinely undecided and must not be guessed.
 
+> **DATED CORRECTION (2026-09-13, docs-rescue pass).** **Part A below has
+> shipped** — commit `483541c` (2026-09-12), `lib/dpr/dispatch.ts` writes through
+> `write_dpr_version` on every generation now, matching this section as written.
+> Migration 041 (found and fixed along the way, unrelated to this spec's own
+> content) corrected a separate `write_dpr_version` bug on a row's first-ever
+> call. **Part B (the button) has NOT shipped** — no regenerate action exists
+> under `app/(dashboard)/daily-logs/` as of this date; everything in that section
+> below is still an accurate description of unbuilt work. The backstop named
+> under "Not in this work" is being designed, separately, in
+> `docs/plans/dpr-owner-pass-regeneration.md` (2026-09-12) — read that doc for
+> its current state.
+
 ---
 
 # Part A — Wiring PR (DPR track, not dashboard)
