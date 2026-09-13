@@ -19,8 +19,12 @@ export default defineConfig({
     environment: 'node',
     include: ['test/**/*.test.ts'],
     // Hard allowlist guard runs ONCE, before any test file, and aborts the
-    // whole run unless the resolved target is the test-db branch.
-    globalSetup: ['./test/setup/guard.ts'],
+    // whole run unless the resolved target is the test-db branch. run-id.ts
+    // mints this run's shared random id and provide()s it to every file --
+    // see that file's own header for why this is not a plain module
+    // constant. Order doesn't matter between these two; each does its own
+    // independent job.
+    globalSetup: ['./test/setup/guard.ts', './test/setup/run-id.ts'],
     // Test B holds a row lock across an 800ms injected sleep; give headroom.
     testTimeout: 30000,
     hookTimeout: 30000,

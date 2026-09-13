@@ -31,7 +31,7 @@ From `test/helpers/db.ts`:
 | `TEST_TENANT_ID` | `00000000-0000-4000-a000-00000000d013` | morning/evening/session-transition shared tenant |
 | `TEST_PROJECT_ID` | `00000000-0000-4000-a000-00000000f014` | shared project under that tenant |
 | `TEST_ENGINEER_PHONE` | `+19995550200` | shared engineer's WhatsApp number (drives the generated `users.id`) |
-| `TEST_PHONE_PREFIX` | `+19995550` | shared fake-NANP phone space; ~40 sub-slots hand-registered in `db.ts`'s own comment block (`101–105, 190, 200–299, 301–327, 401–432, 501–506, 600, 690–694, 701, 801–816, 900–901, 999`) |
+| `TEST_PHONE_PREFIX` | `+19995550` | shared fake-NANP phone space; sub-slots hand-registered in `db.ts`'s own comment block (`101–105, 190, 200–299, 301–327, 401–432, 501–506, 600, 690–694, 701, 801–816, 900–901, 999`) — **corrected 2026-09-13, during the per-run-identifier design pass: 98 distinct `testPhone('NNN')` values are actually in live use, checked directly (`grep -rohE "testPhone\('[0-9]+'\)" test/ | sort -u | wc -l`), not "~40" as this line originally said. That "~40" was the compressed *range* list in the comment block, never a literal count of distinct slot values — a different question, answered wrong here.** |
 | `TEST_TENANT_A_ID` / `TEST_TENANT_B_ID` | `...0007a0` / `...0007b0` | migration-007 two-tenant RLS harness |
 | `TEST_PROJECT_A_ID` / `TEST_PROJECT_B_ID` | `...0007a1` / `...0007b1` | projects under those tenants |
 | `TEST_007_USER_A_EMAIL` / `_B_EMAIL` / `TEST_007_PASSWORD` | fixed strings | throwaway auth users signed in for JWT-scoped RLS tests |
@@ -247,14 +247,35 @@ branching (blocked: `403` + the unresolved fresh-branch `auth_id` defect,
 own Option 1:
 
 **(a) Per-run randomised UUIDs for the fixed identifiers.** Bounded effort — 18–19
-files touch the constants directly, plus the ~40-slot phone registry (which exists
-*because* IDs are fixed and hand-coordinated; random-per-run removes the need for the
-registry entirely, a genuine simplification). Fixes CI-vs-CI and CI-vs-local collisions
-on *row identity*. Does not fix connection/lock-level contention (the still-unexplained
-"TEST-DB INCIDENT #4" `ensureMorningEngineer` "no row returned" symptom is
-session/connection-level per the existing docs). Does not fix 4c on its own — a
-projects-parent coverage gap is still a gap even with random IDs, unless the fix is
+files touch the constants directly, plus the 98-slot phone registry. Fixes CI-vs-CI and
+CI-vs-local collisions on *row identity*. Does not fix connection/lock-level contention
+(the still-unexplained "TEST-DB INCIDENT #4" `ensureMorningEngineer` "no row returned"
+symptom is session/connection-level per the existing docs). Does not fix 4c on its own —
+a projects-parent coverage gap is still a gap even with random IDs, unless the fix is
 symmetric.
+
+**Correction, 2026-09-13, from the follow-on design pass
+(`docs/reviews/test-db-per-run-fixture-identifiers.md`).** The line above originally
+claimed random-per-run "removes the need for the [phone] registry entirely, a genuine
+simplification." **That is wrong, checked directly rather than re-asserted.** The
+registry protects against two different things this claim conflated: intra-run/
+intra-codebase slot coordination (two files in the same checkout picking the same
+3-digit slot — the registry's actual, permanent job, untouched by per-run
+randomisation) and cross-run collision (two separate process invocations both hardcoding
+the same fixed value — the one thing randomisation actually closes). The registry stays;
+only the cross-run axis closes, via a run-scoped prefix nested on top of the existing
+scheme, not full replacement. Full detail and the reasoning against fully randomising
+every mint independently (no `UNIQUE` constraint exists on `whatsapp_sessions.
+phone_number` to detect a collision): the design doc's decision 3.
+
+**Also recorded there, not reproduced in full here:** a structural limit on option (a)
+found during the design pass — four production queries scan every active project with
+no tenant filter at all (`runDprGenerateTrigger`, `runOwnerSendTrigger`,
+`runCheckinEscalationTickSweep`, `fetchActiveProjects`), and three test files exercise
+them against real test-db. Randomising identifiers cannot isolate those three files,
+because the scans have no tenant boundary to randomise against — only full database
+isolation (option (b)) removes the shared table. Accepted as a known, permanent limit
+of this option, not something the per-run-identifier migration will fix.
 
 **(b) Per-run database/schema isolation (ephemeral Postgres from the structure-only
 dump).** Already scoped as J7b's own Option 1 and recommended there. Reuses the §7
