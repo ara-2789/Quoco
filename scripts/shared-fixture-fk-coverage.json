@@ -152,5 +152,75 @@
     "parent": "users",
     "action": "not-applicable",
     "note": "031_outbound_send_ledger.sql -- same reasoning as outbound_sends.tenant_id above: always the outbound suite's own dedicated fixture engineer, never the shared testEngineerId(), and no DELETE grant exists on this table today regardless."
+  },
+  {
+    "table": "daily_logs",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "delete",
+    "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. This is the 4c finding (docs/reviews/test-db-fixture-collision-inventory.md, 2026-09-13): removeTwoTenantFixtures() deleted TEST_PROJECT_A_ID/TEST_PROJECT_B_ID with no sweep of this FK at all -- the same shape as the 2026-09-05 daily_logs/users incident, one parent over. Already independently cleared for the morning fixture by cleanupTestDailyLogs() (project_id-scoped), which this entry does not replace -- both now run for their respective fixtures."
+  },
+  {
+    "table": "daily_log_edits",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "delete",
+    "note": "019_daily_log_corrections.sql -- NOT NULL, no ON DELETE clause. Seeded under TEST_PROJECT_A_ID/B_ID by test/daily-log-correction-rpc.test.ts and test/daily-log-detail-query.test.ts, both of which already delete their own rows by exact id in their own afterAll before calling removeTwoTenantFixtures() -- this entry is belt-and-braces for those two and forward coverage for the next file that forgets to."
+  },
+  {
+    "table": "dprs",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "delete",
+    "note": "023_dpr_reports.sql -- NOT NULL, no ON DELETE clause. Seeded under TEST_PROJECT_A_ID/B_ID by test/dpr-detail.test.ts and test/migration-023.test.ts, both of which already delete their own rows by exact id in their own afterAll -- same belt-and-braces reasoning as daily_log_edits.project_id above. A SEPARATE column from dprs.tenant_id (users/tenants-parent entries above) -- this is the project_id FK specifically."
+  },
+  {
+    "table": "safety_incidents",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "delete",
+    "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. Seeded under TEST_PROJECT_ID (the morning fixture, not A/B) by test/migration-016.test.ts, which already deletes its own rows by project_id in its own afterEach before removeMorningFixtures() runs -- covered here for forward-safety on both fixtures, matching the existing safety_incidents.reported_by (users-parent) entry's own reasoning above."
+  },
+  {
+    "table": "invoices",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "delete",
+    "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. Seeded under TEST_PROJECT_ID by test/migration-016.test.ts, which already deletes its own rows by project_id in its own afterEach -- same forward-safety reasoning as safety_incidents.project_id above. A SEPARATE column from invoices.submitted_by/reviewed_by (users-parent entries above)."
+  },
+  {
+    "table": "hindrances",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "delete",
+    "note": "001_core_schema.sql (original plain FK) and 038_hindrance_flow_and_collision_fix.sql (composite (project_id, tenant_id) REFERENCES projects(id, tenant_id) replacing it, no ON DELETE clause either way) -- NOT NULL. Seeded under TEST_PROJECT_ID by test/migration-016.test.ts, which already deletes its own rows by project_id in its own afterEach. One entry covers both migrations' FK, same {table, column, parent} key. A SEPARATE column from hindrances.reported_by/acknowledged_by (users-parent entries above)."
+  },
+  {
+    "table": "vendor_invoices",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "delete",
+    "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. Phase 2 (pre-contract), not currently seeded by any Spine test -- covered anyway per this rule's forward-safety intent, same as the other Phase-2 entries above."
+  },
+  {
+    "table": "ra_bills",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "delete",
+    "note": "001_core_schema.sql -- NOT NULL, no ON DELETE clause. Phase 2, not currently seeded."
+  },
+  {
+    "table": "boq_sessions",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "null",
+    "note": "001_core_schema.sql -- nullable, no ON DELETE clause. Phase 2, not currently seeded. action=null (not delete): a BOQ session is independent of which project it was scoped to, same reasoning as projects.owner_user_id/created_by (users-parent entries above)."
+  },
+  {
+    "table": "outbound_sends",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "not-applicable",
+    "note": "031_outbound_send_ledger.sql -- composite (project_id, tenant_id) REFERENCES projects(id, tenant_id), NOT NULL, no ON DELETE clause -- same reasoning as outbound_sends.tenant_id/recipient_user_id above: always this suite's own dedicated OUTBOUND_TEST_PROJECT_ID, never TEST_PROJECT_ID or TEST_PROJECT_A_ID/B_ID, so a sweep by any of those ids matches zero rows regardless of action chosen. not-applicable for consistency with this table's other two entries, not because the id could collide."
   }
 ]
