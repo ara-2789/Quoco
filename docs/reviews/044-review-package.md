@@ -254,7 +254,57 @@ tracked separately.
 
 ## §9 — What is NOT covered
 
-1. **The real Resend send/deliverability gate.** `scripts/verify-hindrance-email-attachments.ts` is written and ready (models `scripts/verify-email-delivery.ts`'s own send-then-poll-for-terminal-status discipline), but **could not be run this pass** — no `RESEND_API_KEY`/`RESEND_FROM_EMAIL` exist anywhere in this environment (checked directly: not in the process environment, no `.env.local` inside this worktree's isolation boundary). **The task's own required measurement — the real base64-encoded size of a multi-photo attachment set — was NOT obtained.** What the script computes instead, as a stand-in: a 3-photo set at 222 KB/photo (the one real measured sample, given) totals **666 KB raw / ~888 KB base64-encoded** — arithmetic, not a measurement, well under Resend's documented 40 MB limit, but this is not the real send the task asked for. **Owed**: run this script with real Vercel Production credentials (e.g. `vercel env pull .env.local`), to a confirmed address, before this stage's attachment path is considered proven end to end.
+1. **The real Resend send/deliverability gate — STILL NOT RUN, and its own generator was recorded as "ready" before ever being executed once, which was wrong.** Original record (previous round of this package): `scripts/verify-hindrance-email-attachments.ts` was described as "written and ready," modeled on `scripts/verify-email-delivery.ts`, blocked only by missing credentials. **That description was never tested and turned out to be false in a more basic way than "no credentials" — the script itself was broken and had never been run at all, in any mode.**
+
+   **First real execution, 2026-09-14 (a `--dry-run` invocation, no send attempted): crashed immediately.**
+   ```
+   RangeError [ERR_OUT_OF_RANGE]: value must be >= 0 and <= 65535. Received 227322
+     at Buffer.writeUInt16BE
+     at fakeJpegOfSize (scripts/verify-hindrance-email-attachments.ts:59:17)
+   ```
+   **Root cause:** a JPEG segment's length field is a 16-bit big-endian integer (max 65535, counting itself — real max payload 65533). The original `fakeJpegOfSize` tried to write a single COM segment sized for an entire 222 KB (227,328-byte) photo directly into that 2-byte field. **This is the exact same failure class already named elsewhere in this project's own history** — a test or script that passes/appears-ready only because it was never actually exercised (this project's own "a test file's own summary line can be missing" and "sandbox cannot test concurrency" entries are siblings of this shape, not this exact bug, but the same root failure mode: an unexecuted artifact's own claims about itself are unverified by construction).
+
+   **Fixed:** `fakeJpegOfSize` now chains multiple bounded COM segments (each ≤ 65000-byte payload, comfortably inside the 65533 real ceiling, with headroom reserved to fold any remainder into the last segment) instead of one oversized one. **Also corrected an overclaim in the original comment** — "opens in any image viewer" was asserted without ever having been checked and has been retracted; the generator produces a syntactically valid JPEG byte *stream* (correct markers, in-range length fields, exact target size), not a decodable photo (no real frame/scan data) — stated plainly in the script's own header now, not implied.
+
+   **A second bug was found while proving the fix**, the same way — by actually running it, not by re-reading it: the first corrected version's argument parsing swallowed the `photo-count` argument as the (unused, in dry-run) `to` address, so `--dry-run 1` and `--dry-run 10` both silently reported the default count of 3. Caught by running both side by side and noticing neither varied. Fixed; re-verified below.
+
+   **Dry-run mode added, per instruction, to prove the generator without sending anything.** `--dry-run` generates every attachment buffer, prints each one's exact size, and exits before `readCredentials()` or `sendEmail` is ever reached. **Real, pasted output — 3 separate invocations, proving the fix, the size arithmetic, and that photo-count is no longer ignored:**
+   ```
+   $ npx tsx scripts/verify-hindrance-email-attachments.ts --dry-run 1
+   Mode:         DRY RUN -- no send, no credentials read
+   Photo count:  1
+     Attachment 1: hindrance-photo-1.jpg -- 227328 raw bytes (222.0 KB), 303104 base64 bytes (296.0 KB)
+   Total raw bytes:    227328 (222.0 KB)
+   Total base64 bytes: 303104 (296.0 KB) -- this is what actually counts against Resend's 40 MB post-encoding limit
+
+   DRY RUN complete -- exiting before reading any credentials or calling Resend. No email was sent.
+
+   $ npx tsx scripts/verify-hindrance-email-attachments.ts --dry-run 10
+   Mode:         DRY RUN -- no send, no credentials read
+   Photo count:  10
+     Attachment 1: hindrance-photo-1.jpg -- 227328 raw bytes (222.0 KB), 303104 base64 bytes (296.0 KB)
+     [... attachments 2-9 identical shape ...]
+     Attachment 10: hindrance-photo-10.jpg -- 227328 raw bytes (222.0 KB), 303104 base64 bytes (296.0 KB)
+   Total raw bytes:    2273280 (2220.0 KB)
+   Total base64 bytes: 3031040 (2960.0 KB) -- this is what actually counts against Resend's 40 MB post-encoding limit
+
+   DRY RUN complete -- exiting before reading any credentials or calling Resend. No email was sent.
+
+   $ npx tsx scripts/verify-hindrance-email-attachments.ts --dry-run
+   Mode:         DRY RUN -- no send, no credentials read
+   Photo count:  3
+     Attachment 1: hindrance-photo-1.jpg -- 227328 raw bytes (222.0 KB), 303104 base64 bytes (296.0 KB)
+     Attachment 2: hindrance-photo-2.jpg -- 227328 raw bytes (222.0 KB), 303104 base64 bytes (296.0 KB)
+     Attachment 3: hindrance-photo-3.jpg -- 227328 raw bytes (222.0 KB), 303104 base64 bytes (296.0 KB)
+   Total raw bytes:    681984 (666.0 KB)
+   Total base64 bytes: 909312 (888.0 KB) -- this is what actually counts against Resend's 40 MB post-encoding limit
+
+   DRY RUN complete -- exiting before reading any credentials or calling Resend. No email was sent.
+   ```
+   This **proves** (not asserts) the generator produces exactly the requested byte count at any photo-count, that the 16-bit overflow is gone, and that dry-run mode genuinely never sends — but it is still **arithmetic on a synthetic buffer, not a real Resend send**. The task's own required measurement (a real send's actual behavior — acceptance, delivery, any provider-side clipping) is still not obtained.
+
+   **CORRECTION to the environment claim, same discipline as CLAUDE.md's own "a local git ref is not current until fetched" family of rules — checked fresh, not assumed from the prior round:** a `.env.local` file now exists in this worktree (`1,483 bytes, modified 2026-09-14 22:34`), where the prior round of this package correctly found none. **Not read, not inspected, no value printed or used** — every dry-run invocation above exits before `readCredentials()` is ever called, and no non-dry-run invocation was attempted. Whether it carries real Resend credentials is unknown and was not checked; per this task's own explicit instruction, no send was attempted regardless of what may or may not be available. **The real send remains Aravind's to run**, with a real, already-confirmed recipient address — this package's own generator is now proven ready for that; the send itself is still not done.
+
 2. **Tamil translations** for all three new/changed user-facing strings (`HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY`, the Q3 question, the two email photo-lines) — not drafted, per standing instruction not to invent them.
 3. **A PM dashboard signed-URL reader** for hindrance photos (stage 5) — out of this stage's scope; `hindrance_photos`' RLS ships correct from day one regardless, per this project's own posture.
 4. **Cross-project-same-tenant RLS isolation** for `hindrance_photos` — the cross-tenant case is tested (§8); a PM who is a member of a *different* project in the *same* tenant was not independently probed with a live fixture this pass (same open item 043's own review package carried forward, §9 item 4 there — not newly introduced here).

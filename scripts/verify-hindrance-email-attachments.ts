@@ -7,33 +7,66 @@
 // scripts/verify-email-delivery.ts already established for the
 // no-attachments case, extended here to attachments specifically.
 //
-// MUST BE RUN BY A HUMAN, WITH REAL CREDENTIALS -- this worktree has none
-// (confirmed: no RESEND_API_KEY in this shell's environment, no
-// .env.local inside this worktree's isolation boundary -- the shared
-// repo root's own .env.local, if it has real Resend credentials, is
-// outside what an isolated worktree session can read). NOT RUN as part
-// of this pass; see docs/reviews/044-review-package.md for the explicit
-// "not executed, credentials unavailable" record this produces.
+// FIRST REAL EXECUTION FAILED, 2026-09-14 -- recorded here, not erased.
+// This script was written and recorded in docs/reviews/044-review-package.md
+// as "ready-to-run" without ever having been executed. Its first real run
+// (a --dry-run invocation, no send) crashed immediately:
+//   RangeError [ERR_OUT_OF_RANGE]: value must be >= 0 and <= 65535. Received 227322
+//     at Buffer.writeUInt16BE, at fakeJpegOfSize
+// Root cause: a JPEG segment's length field is a 16-bit big-endian integer
+// (max 65535, and it counts itself, so max real payload is 65533) --
+// fakeJpegOfSize's original version tried to write a single COM segment
+// sized for an entire 222 KB (227,328-byte) photo directly into that
+// field. Never having been executed is exactly why this went unnoticed --
+// same class of gap as a test that only passes because of a hand-added
+// local env value nobody re-derives. Fixed below by chaining multiple
+// bounded COM segments, each within the 16-bit limit, instead of one
+// oversized one. See fakeJpegOfSize's own comment for the fix and its
+// honest limits.
 //
-// Run: npx tsx scripts/verify-hindrance-email-attachments.ts <to-address> [photo-count]
+// DRY-RUN MODE, ADDED THE SAME PASS. `--dry-run` generates every
+// attachment buffer, prints each one's size and the total encoded
+// payload, and exits BEFORE reading Resend credentials or calling
+// sendEmail -- this is how the fix above was proven correct without
+// sending anything (see docs/reviews/044-review-package.md for the pasted
+// output of an actual `--dry-run` run). The real send remains Aravind's
+// to run, with a real, already-confirmed recipient address.
 //
-// Requires an explicit recipient argument -- no default/guessed address,
-// same reasoning as verify-email-delivery.ts's own identical requirement
-// (this sends a REAL email; it must go exactly where a human typed).
-// photo-count defaults to 3 -- matches a typical hindrance report's real
-// photo count, per the task's own "a few photos should be comfortable"
-// framing, which this script exists to CONFIRM rather than assume.
+// STILL MUST BE RUN FOR REAL BY A HUMAN, WITH REAL CREDENTIALS -- this
+// worktree has none (confirmed: no RESEND_API_KEY in this shell's
+// environment, no .env.local inside this worktree's isolation boundary).
+// The REAL send (non-dry-run) has still never been executed as of this
+// commit -- only the dry-run generator has been proven. Do not conflate
+// "the generator works" with "a real send/deliverability gate has passed."
 //
-// WHAT "A REAL PHOTO" MEANS HERE: this script does NOT fabricate random
-// bytes -- it generates a minimal valid JPEG the same size class as the
-// one real measured sample this project already has (222 KB on prod, per
-// the task's own citation) by repeating a real JPEG's byte pattern to the
-// target size. This is deliberately NOT a downloaded real photo (no
-// Twilio/Storage credentials are needed to run this script on its own,
-// keeping its dependency surface to Resend alone) -- if a tighter,
-// byte-for-byte real-photo test is wanted later, swap the buffer-
-// generation function below for a real Storage download via
-// lib/storage's own service client.
+// Run (dry, no credentials needed, no network call):
+//   npx tsx scripts/verify-hindrance-email-attachments.ts --dry-run [photo-count]
+// Run (real, sends an actual email -- needs RESEND_API_KEY/RESEND_FROM_EMAIL):
+//   npx tsx scripts/verify-hindrance-email-attachments.ts <to-address> [photo-count]
+//
+// Requires an explicit recipient argument for a real send -- no
+// default/guessed address, same reasoning as verify-email-delivery.ts's
+// own identical requirement (this sends a REAL email; it must go exactly
+// where a human typed). photo-count defaults to 3 -- matches a typical
+// hindrance report's real photo count, per the task's own "a few photos
+// should be comfortable" framing, which this script exists to CONFIRM
+// rather than assume.
+//
+// WHAT "A REAL PHOTO" MEANS HERE, CORRECTED: this script does NOT
+// fabricate random bytes, and does NOT claim the result "opens in any
+// image viewer" (the original version asserted this without ever running
+// -- an unverified claim of the same kind this whole incident is about,
+// retracted here rather than repeated). What fakeJpegOfSize actually
+// produces is a SYNTACTICALLY VALID JPEG BYTE STREAM -- correct SOI/EOI
+// markers, and one or more COM (comment) segments whose 16-bit length
+// fields are always in range -- at an EXACT target size. It carries NO
+// real image data (no SOF/DQT/DHT/SOS frame or scan bytes), so it is NOT
+// guaranteed to render as a visible picture in a mail client's inline
+// preview. This script exists to test SIZE and DELIVERABILITY (does the
+// provider accept and deliver an email this large, with this many
+// attachments), not visual rendering -- a human checking a real sent
+// email should confirm the attachment is present and downloads without
+// corruption, not that it displays as a photo.
 
 import { config } from 'dotenv'
 config({ path: '.env.local' })
@@ -46,18 +79,76 @@ const FAILED_EVENTS = new Set(['bounced', 'complained'])
 const POLL_ATTEMPTS = 8
 const POLL_INTERVAL_MS = 5000
 
-// A valid minimal JPEG (SOI marker + comment segment padded to size + EOI)
-// -- opens in any image viewer, unlike arbitrary random bytes, so a human
-// checking the received email can confirm the attachment actually renders
-// as a photo, not just that bytes arrived.
+// A JPEG segment's length field (the 2 bytes immediately after a marker
+// like 0xFF 0xFE) is a 16-bit big-endian unsigned integer, and it counts
+// ITSELF -- so the real maximum payload a single segment can carry is
+// 65535 - 2 = 65533 bytes. MAX_SEGMENT_PAYLOAD is kept well under that
+// (65000, not 65533) deliberately, so the tail-adjustment step below
+// always has headroom to grow the LAST segment by a few extra bytes
+// without ever risking pushing its own length field out of range.
+const MAX_SEGMENT_PAYLOAD = 65000
+// Marker (2 bytes) + length field (2 bytes) + zero payload -- the
+// smallest a well-formed COM segment can be.
+const MIN_SEGMENT_WIRE = 4
+
+function comSegment(payloadLen: number): Buffer {
+  const lengthValue = payloadLen + 2 // the length field counts itself, not the marker
+  const header = Buffer.alloc(4)
+  header.writeUInt8(0xff, 0)
+  header.writeUInt8(0xfe, 1)
+  header.writeUInt16BE(lengthValue, 2)
+  return Buffer.concat([header, Buffer.alloc(payloadLen, 0x41)])
+}
+
+/**
+ * Produce a syntactically valid JPEG byte stream (SOI, one or more COM
+ * segments, EOI) of EXACTLY targetBytes -- see this file's own header for
+ * what "valid" does and does not mean here (a real byte structure, not a
+ * decodable photo). Fixes the original single-oversized-segment version's
+ * 16-bit overflow by chaining as many MAX_SEGMENT_PAYLOAD-sized segments
+ * as needed, then folding any remainder into the last one.
+ */
 function fakeJpegOfSize(targetBytes: number): Buffer {
-  const SOI = Buffer.from([0xff, 0xd8]) // Start Of Image
-  const EOI = Buffer.from([0xff, 0xd9]) // End Of Image
-  const commentMarker = Buffer.from([0xff, 0xfe]) // COM marker
-  const padding = Math.max(0, targetBytes - SOI.length - EOI.length - commentMarker.length - 2)
-  const commentLength = Buffer.alloc(2)
-  commentLength.writeUInt16BE(padding + 2, 0) // length field includes itself
-  return Buffer.concat([SOI, commentMarker, commentLength, Buffer.alloc(padding, 0x41), EOI])
+  const SOI = Buffer.from([0xff, 0xd8])
+  const EOI = Buffer.from([0xff, 0xd9])
+  const overhead = SOI.length + EOI.length
+
+  if (targetBytes < overhead) {
+    throw new Error(`fakeJpegOfSize: targetBytes (${targetBytes}) is smaller than an empty JPEG's own overhead (${overhead} bytes: SOI+EOI)`)
+  }
+
+  let remaining = targetBytes - overhead
+  const payloadLens: number[] = []
+
+  while (remaining >= MIN_SEGMENT_WIRE) {
+    const wireCost = Math.min(remaining, MAX_SEGMENT_PAYLOAD + MIN_SEGMENT_WIRE)
+    payloadLens.push(wireCost - MIN_SEGMENT_WIRE)
+    remaining -= wireCost
+  }
+
+  if (remaining > 0) {
+    if (payloadLens.length === 0) {
+      throw new Error(
+        `fakeJpegOfSize: targetBytes (${targetBytes}) leaves ${remaining} byte(s) after SOI+EOI overhead -- ` +
+          `too small to form even one minimal COM segment (needs ${MIN_SEGMENT_WIRE} more). ` +
+          `Pick a target of at least ${targetBytes - remaining + MIN_SEGMENT_WIRE} bytes.`,
+      )
+    }
+    // Fold the leftover (always < MIN_SEGMENT_WIRE = 4 bytes) into the
+    // last segment -- safe by construction, since MAX_SEGMENT_PAYLOAD
+    // (65000) leaves 533 bytes of headroom under the real 65533 ceiling.
+    payloadLens[payloadLens.length - 1] += remaining
+  }
+
+  const segments = payloadLens.map(comSegment)
+  const result = Buffer.concat([SOI, ...segments, EOI])
+  if (result.length !== targetBytes) {
+    // Defensive -- should be unreachable given the arithmetic above, but
+    // a silent off-by-N here would defeat the entire point of this
+    // function (an exact-size test fixture). Fail loudly instead.
+    throw new Error(`fakeJpegOfSize: internal error -- built ${result.length} bytes, expected exactly ${targetBytes}`)
+  }
+  return result
 }
 
 function sleep(ms: number): Promise<void> {
@@ -65,9 +156,22 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function main() {
-  const [to, photoCountArg] = process.argv.slice(2)
-  if (!to) {
-    console.error('Usage: npx tsx scripts/verify-hindrance-email-attachments.ts <to-address> [photo-count]')
+  const rawArgs = process.argv.slice(2)
+  const dryRun = rawArgs.includes('--dry-run')
+  const positional = rawArgs.filter((a) => !a.startsWith('--'))
+  // In --dry-run mode there is no <to-address> positional at all -- the
+  // one remaining positional (if any) is the photo-count. Without this
+  // branch, `[to, photoCountArg] = positional` for `--dry-run 10` would
+  // bind photoCountArg's slot to `undefined` (only one positional exists)
+  // and silently ignore the requested count -- caught by actually running
+  // `--dry-run 1` and `--dry-run 10` side by side and seeing both print
+  // "Photo count: 3" (the default), not by inspection.
+  const [to, photoCountArg] = dryRun ? [undefined, positional[0]] : positional
+
+  if (!dryRun && !to) {
+    console.error('Usage:')
+    console.error('  Dry run (no send, no credentials needed): npx tsx scripts/verify-hindrance-email-attachments.ts --dry-run [photo-count]')
+    console.error('  Real send:                                npx tsx scripts/verify-hindrance-email-attachments.ts <to-address> [photo-count]')
     process.exit(1)
   }
   const photoCount = photoCountArg ? Number(photoCountArg) : 3
@@ -76,9 +180,7 @@ async function main() {
     process.exit(1)
   }
 
-  const { fromAddress } = readCredentials()
-  console.log(`Sending from: ${fromAddress}`)
-  console.log(`Sending to:   ${to}`)
+  console.log(`Mode:         ${dryRun ? 'DRY RUN -- no send, no credentials read' : 'REAL SEND'}`)
   console.log(`Photo count:  ${photoCount}`)
 
   // 222 KB is the one real measured sample this project has on prod
@@ -94,18 +196,28 @@ async function main() {
     const base64 = bytes.toString('base64')
     totalRawBytes += bytes.length
     totalBase64Bytes += base64.length
+    console.log(`  Attachment ${i + 1}: hindrance-photo-${i + 1}.jpg -- ${bytes.length} raw bytes (${(bytes.length / 1024).toFixed(1)} KB), ${base64.length} base64 bytes (${(base64.length / 1024).toFixed(1)} KB)`)
     attachments.push({ filename: `hindrance-photo-${i + 1}.jpg`, content: base64, contentType: 'image/jpeg' })
   }
 
   console.log(`Total raw bytes:    ${totalRawBytes} (${(totalRawBytes / 1024).toFixed(1)} KB)`)
   console.log(`Total base64 bytes: ${totalBase64Bytes} (${(totalBase64Bytes / 1024).toFixed(1)} KB) -- this is what actually counts against Resend's 40 MB post-encoding limit`)
 
+  if (dryRun) {
+    console.log('\nDRY RUN complete -- exiting before reading any credentials or calling Resend. No email was sent.')
+    return
+  }
+
+  const { fromAddress } = readCredentials()
+  console.log(`Sending from: ${fromAddress}`)
+  console.log(`Sending to:   ${to}`)
+
   const stamp = new Date().toISOString()
   const sendResult = await sendEmail({
-    to,
+    to: to!,
     subject: `Quoco hindrance-attachment delivery verification — ${stamp}`,
-    text: `This is a real, one-off attachment-delivery verification test sent by scripts/verify-hindrance-email-attachments.ts at ${stamp}, carrying ${photoCount} photo(s) totalling ${(totalRawBytes / 1024).toFixed(1)} KB raw / ${(totalBase64Bytes / 1024).toFixed(1)} KB base64-encoded. If you received this WITH the attachments intact and openable, real attachment delivery is confirmed working at this size.`,
-    html: `<p>This is a real, one-off attachment-delivery verification test sent by <code>scripts/verify-hindrance-email-attachments.ts</code> at ${stamp}, carrying ${photoCount} photo(s) totalling ${(totalRawBytes / 1024).toFixed(1)} KB raw / ${(totalBase64Bytes / 1024).toFixed(1)} KB base64-encoded. If you received this WITH the attachments intact and openable, real attachment delivery is confirmed working at this size.</p>`,
+    text: `This is a real, one-off attachment-delivery verification test sent by scripts/verify-hindrance-email-attachments.ts at ${stamp}, carrying ${photoCount} photo(s) totalling ${(totalRawBytes / 1024).toFixed(1)} KB raw / ${(totalBase64Bytes / 1024).toFixed(1)} KB base64-encoded. These attachments carry NO real image data (see the script's own header) -- confirm they are present and download without corruption, not that they display as a picture.`,
+    html: `<p>This is a real, one-off attachment-delivery verification test sent by <code>scripts/verify-hindrance-email-attachments.ts</code> at ${stamp}, carrying ${photoCount} photo(s) totalling ${(totalRawBytes / 1024).toFixed(1)} KB raw / ${(totalBase64Bytes / 1024).toFixed(1)} KB base64-encoded. These attachments carry NO real image data (see the script's own header) -- confirm they are present and download without corruption, not that they display as a picture.</p>`,
     attachments,
   })
 
@@ -130,7 +242,7 @@ async function main() {
 
     if (statusResult.lastEvent && DELIVERED_EVENTS.has(statusResult.lastEvent)) {
       console.log(`\nCONFIRMED DELIVERED (last_event="${statusResult.lastEvent}"). ${photoCount} attachment(s), ${(totalBase64Bytes / 1024).toFixed(1)} KB base64-encoded, delivered from ${fromAddress} to ${to}.`)
-      console.log('MANUAL STEP STILL OWED: open the received email and confirm the attachments are present and openable -- this script confirms the provider accepted and delivered the message, not that a mail client rendered the attachments correctly.')
+      console.log('MANUAL STEP STILL OWED: open the received email and confirm the attachments are present and downloadable without corruption -- these attachments carry no real image data (this file\'s own header), so a viewer showing a broken-image icon is expected and not itself a failure signal; a missing or 0-byte/corrupted attachment is.')
       return
     }
 
