@@ -455,33 +455,54 @@ describe('handleWebhookPost — routes to whichever flow is active (dispatchInbo
   })
 })
 
-describe('handleWebhookPost — media replies (intercepted before any flow logic)', () => {
-  it('T-WH-13: a photo sent MID-FLOW is intercepted before dispatchInboundTurn — the session does not advance', async () => {
-    // The case media-reply.ts's own header exists for: routeInboundMessage's
-    // no-active-flow branch is skipped entirely when a flow IS active, so
-    // this proves the check sitting upstream in route.ts, not inside
-    // routeInboundMessage, actually covers the mid-flow path.
+describe('handleWebhookPost — media replies', () => {
+  it('T-WH-13, REWRITTEN 2026-09-13 (stage 1, item 18\'s interceptor move): a photo sent MID-FLOW with no caption is STORED, the question stays open and re-asks, nothing is written to the answer column', async () => {
+    // Was: "intercepted before dispatchInboundTurn -- the session does not
+    // advance," asserting PHOTO_REPLY and NO job/storage of any kind.
+    // REVERSED: this is now stage 1's core mechanism (item 18 moves the
+    // interceptor downstream; item 23, "a photo is never an answer,"
+    // governs what happens next). A pre-existing daily_logs row is seeded
+    // directly (bare, no submission markers) -- routeInboundMessage's own
+    // resolveDailyLogId call needs one to exist to enqueue the job at all;
+    // in a REAL flow this row already exists by the time an engineer is
+    // genuinely mid-flow (step 1's own answer already wrote it).
+    await seedDailyLogSubmission({ logDate: todayIST() })
     await seedSession({
       phone: TEST_ENGINEER_PHONE,
       currentFlow: 'morning',
-      currentStep: 2, // Q2 plan, same step T-WH-09 uses
+      currentStep: 2, // Q2 plan -- free text, UNGATED (zero gating in the live SQL), same step T-WH-09 uses
       context: {},
       updatedAt: new Date().toISOString(),
     })
+    const messageSid = sid('media-mid-flow')
     const req = buildWebhookRequest({
       From: `whatsapp:${TEST_ENGINEER_PHONE}`,
-      Body: '', // Twilio sends an empty Body on a pure-media message
+      Body: '', // no caption
       NumMedia: '1',
       MediaContentType0: 'image/jpeg',
-      MessageSid: sid('media-mid-flow'),
+      MediaUrl0: 'https://api.twilio.com/media/ZZTestMidFlow',
+      MessageSid: messageSid,
     })
     const res = await handleWebhookPost(req, { supabaseClient: testClient() })
     expect(res.status).toBe(200)
-    expect(await twimlText(res)).toBe(PHOTO_REPLY)
-    // Session step unchanged -- dispatchInboundTurn never ran, so this was
-    // never parsed as (a wrong) answer to the pending question.
+    // NOT PHOTO_REPLY any more -- the reask for step 2 (morning's reask is
+    // just the question itself, per buildMorningReply's own 'reask' case).
+    expect(await twimlText(res)).toBe(MORNING_QUESTIONS[2])
+    // Session step unchanged -- a reask, not an advance.
     expect((await readSession(TEST_ENGINEER_PHONE))?.current_step).toBe(2)
+    // Nothing written to the answer column -- this is the exact gap item
+    // 23 closes: the live RPC has zero gating on this step and would
+    // otherwise have silently recorded an empty string and advanced.
     expect((await getDailyLog(todayIST()))?.morning_plan).toBeFalsy()
+    // STORED: a media_ingest job was enqueued for this photo.
+    const db = testClient()
+    const { data: jobs, error } = await db.from('jobs').select('payload').eq('type', 'media_ingest')
+    if (error) throw new Error(`job lookup failed: ${error.message}`)
+    const matching = (jobs ?? []).filter((j) => {
+      const p = j.payload as { phase?: string; caption?: string | null }
+      return p.phase === 'morning' && p.caption === null
+    })
+    expect(matching.length).toBeGreaterThan(0)
   })
 
   it('T-WH-14: a photo sent at idle gets the photo reply, no session is created', async () => {

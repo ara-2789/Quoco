@@ -143,7 +143,15 @@ export type SendTemplateResult =
       responseShape: ResponseShape
     }
 
-function readCredentials(): { accountSid: string; authToken: string; fromNumber: string } {
+// Exported (stage 1 of the media capability, docs/plans/stage1-photo-
+// intake-plan.md) so lib/media/ingest.ts can reuse the same credential
+// path to download Twilio media -- CLAUDE.md's own standing rule against a
+// script re-deriving credentials independently rather than reusing an
+// existing reader applies here: the media_ingest job needs accountSid/
+// authToken (for Basic Auth against a Twilio media URL), never fromNumber,
+// but reads them through this same function rather than hand-rolling a
+// second env-var reader.
+export function readCredentials(): { accountSid: string; authToken: string; fromNumber: string } {
   const accountSid = process.env.TWILIO_ACCOUNT_SID
   const authToken = process.env.TWILIO_AUTH_TOKEN
   const fromNumber = process.env.TWILIO_WHATSAPP_NUMBER

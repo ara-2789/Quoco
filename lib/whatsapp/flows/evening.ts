@@ -124,8 +124,32 @@ export const EVENING_REASK_MESSAGES: Readonly<Record<number, string>> = {
   4: 'Sorry, I didn\'t catch an hours number there. For each machine, send the *hours used* — e.g. "JCB 6 hours".',
 }
 
-export const EVENING_COMPLETE_REPLY =
-  '✅ Evening check-in complete. Thanks — rest well!'
+// Prefix/suffix split so the photo-count variant (stage 1, item 4/20) can be
+// derived without retyping or risking drift from EVENING_COMPLETE_REPLY's
+// own exact, unchanged text. EVENING_COMPLETE_REPLY itself is BYTE-IDENTICAL
+// to what it always was -- used verbatim whenever no photos were received
+// this check-in, per the approved copy's own rule.
+const EVENING_COMPLETE_PREFIX = '✅ Evening check-in complete.'
+const EVENING_COMPLETE_SUFFIX = 'Thanks — rest well!'
+
+export const EVENING_COMPLETE_REPLY = `${EVENING_COMPLETE_PREFIX} ${EVENING_COMPLETE_SUFFIX}`
+
+/**
+ * The APPROVED completion reply when the evening check-in received one or
+ * more photos (docs/plans/stage1-photo-intake-plan.md TASK 3, exact copy
+ * from Aravind). Singular for exactly 1, plural otherwise. Returns
+ * EVENING_COMPLETE_REPLY unchanged when photoCount is 0 (or negative,
+ * defensively) -- "when no photos were sent the EXISTING string is used
+ * unchanged with no photo clause," per the same approved rule. This
+ * reports photos RECEIVED, not stored -- called before the async
+ * media_ingest job resolves, and structurally cannot know storage state
+ * (item 4's own design).
+ */
+export function buildEveningCompleteReply(photoCount: number): string {
+  if (photoCount <= 0) return EVENING_COMPLETE_REPLY
+  const clause = photoCount === 1 ? '1 photo received.' : `${photoCount} photos received.`
+  return `${EVENING_COMPLETE_PREFIX} ${clause} ${EVENING_COMPLETE_SUFFIX}`
+}
 
 export const EVENING_ALREADY_COMPLETE_REPLY =
   "You've already sent today's evening check-in. ✅ Nothing more needed."
@@ -240,7 +264,14 @@ export interface EveningTurnResult {
 // equipment_echo field entirely (permanently null — see EquipmentEchoItem's
 // comment). Called only when current_step === 4, so this is NOT a
 // per-turn cost — the vast majority of turns never reach here.
-async function fetchMorningEquipmentEcho(
+//
+// EXPORTED, stage 1 (docs/plans/stage1-photo-intake-plan.md): reused by
+// routeInboundMessage (lib/whatsapp/inbound-start.ts) to render an evening
+// step-4 reask directly, without calling apply_evening_flow_turn, for a
+// photo-with-no-caption landing on step 4 (item 23) — the exact same data
+// this function already supplies for a normal step-4 reask/advance, just a
+// second call site now.
+export async function fetchMorningEquipmentEcho(
   supabase: SupabaseClient,
   params: { projectId: string; userId: string; logDate: string },
 ): Promise<EquipmentEchoItem[]> {

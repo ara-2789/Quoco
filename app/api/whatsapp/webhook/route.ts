@@ -9,7 +9,7 @@ import { routeInboundMessage } from '@/lib/whatsapp/inbound-start'
 import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
 import { decideInboundGate, clearMessagingBlock } from '@/lib/whatsapp/reactivation'
 import { validateTwilioSignature } from '@/lib/whatsapp/twilio-signature'
-import { classifyMediaReply, replyForMediaKind } from '@/lib/whatsapp/media-reply'
+import { classifyMediaReply, replyForMediaKind, extractMediaItems } from '@/lib/whatsapp/media-reply'
 import { resolveEngineerProject, replyForProjectResolution } from '@/lib/whatsapp/project-resolution'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
@@ -247,18 +247,40 @@ export async function handleWebhookPost(
   }
   const projectId = resolution.projectId
 
-  // --- Media reply: intercepted BEFORE any menu/flow logic -----------------
-  // Fires ahead of isTestStartTrigger and routeInboundMessage, and therefore
-  // ahead of dispatchInboundTurn's own mid-flow path too -- routeInbound
-  // Message's no-active-flow branch is skipped whenever a flow IS already
-  // active, so a check placed only inside it would miss exactly that case
-  // (a media reply mid-check-in would otherwise reach dispatchInboundTurn
-  // with an empty Body and be parsed as an invalid text answer). See
-  // lib/whatsapp/media-reply.ts's own header.
+  // --- Voice: intercepted BEFORE any menu/flow logic, UNCHANGED -----------
+  // Stage 1 (2026-09-13, docs/plans/stage1-photo-intake-plan.md) reverses
+  // this for PHOTOS ONLY -- see lib/whatsapp/media-reply.ts's own header
+  // for the full reversal and why. Voice is untouched: nothing decided in
+  // items 1-23 changes voice handling, so it keeps the exact upstream,
+  // flow-state-blind placement it always had.
   const mediaKind = classifyMediaReply(params)
-  if (mediaKind) {
-    return twimlMessage(replyForMediaKind(mediaKind))
+  if (mediaKind === 'voice') {
+    return twimlMessage(replyForMediaKind('voice'))
   }
+  // A photo's media items are extracted here (still upstream, since
+  // NumMedia/MediaUrl{i} are raw webhook fields routeInboundMessage's own
+  // RouteParams doesn't otherwise carry) and passed THROUGH to
+  // routeInboundMessage, which decides what to do with them once flow
+  // state is known -- see that file's own header for the mechanism.
+  //
+  // FIX (2026-09-13, post-build review, T-WH-14 regression): `isPhoto` is
+  // passed SEPARATELY from `media` and is the ONLY thing the idle/hindrance
+  // canned-reply branches key on. `media` (extractMediaItems's output) can
+  // legitimately be an EMPTY array even when classifyMediaReply says
+  // 'photo' -- extractMediaItems drops any MediaUrl{i} entry that's
+  // missing, and a malformed or test-fixture webhook can declare
+  // NumMedia>0/a photo content-type with no MediaUrl0 at all (real Twilio
+  // always supplies one per its own API contract, but nothing here should
+  // assume that and silently misclassify "declared a photo, couldn't
+  // extract a storable item" as "not a photo"). Before this fix,
+  // inbound-start.ts checked `media.length > 0` for the idle/hindrance
+  // decision too -- an empty extraction meant a photo at idle silently fell
+  // through to the ad-hoc router instead of PHOTO_REPLY, exactly the
+  // regression T-WH-14 caught. `media` itself is UNCHANGED for the
+  // morning/evening active-flow storage path below -- that one genuinely
+  // needs real extractable items, not just the classification.
+  const isPhoto = mediaKind === 'photo'
+  const media = isPhoto ? extractMediaItems(params) : undefined
 
   const messageBody = params.Body ?? ''
   const startFlow = isTestStartTrigger(messageBody)
@@ -305,6 +327,8 @@ export async function handleWebhookPost(
     userId: user.id,
     projectId,
     message: messageBody,
+    isPhoto,
+    ...(media !== undefined ? { media } : {}),
     supabaseClient: supabase,
   })
   return reply === '' ? twimlEmpty() : twimlMessage(reply)

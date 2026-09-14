@@ -6,6 +6,7 @@ import { isCronRequestAuthorized } from '@/lib/cron/auth'
 import { handleDprGenerateJob, markDprGenerationFailed, type DprGenerateJobPayload } from '@/lib/dpr/dispatch'
 import { handleOwnerDeliverJob, type OwnerDeliverJobPayload } from '@/lib/dpr/owner-deliver-dispatch'
 import { handleHindrancePmNotifyJob, type HindrancePmNotifyJobPayload } from '@/lib/hindrance/pm-notify'
+import { handleMediaIngestJob, markMediaIngestFailed, type MediaIngestJobPayload } from '@/lib/media/ingest'
 import {
   sweepStaleMorningSessions,
   reportMorningSweepAnomalies,
@@ -50,6 +51,14 @@ async function dispatchJob(job: Job, client: SupabaseClient): Promise<void> {
       // PM. Enqueued today only by applyHindranceFlowTurn, which nothing
       // in production calls yet.
       await handleHindrancePmNotifyJob(job.payload as unknown as HindrancePmNotifyJobPayload, { supabaseClient: client })
+      return
+    case 'media_ingest':
+      // Stage 1 of the media capability (docs/plans/stage1-photo-intake-
+      // plan.md) -- see lib/media/ingest.ts's own header for the full
+      // failure-surface note: no PM-visible display exists yet (stage 5),
+      // this handler's own failure path (Sentry + a failed status column)
+      // is the entire interim surface.
+      await handleMediaIngestJob(job.payload as unknown as MediaIngestJobPayload, { supabaseClient: client })
       return
     // Placeholder handler — proves the claim/complete/fail loop works
     // end-to-end before these job types exist. Remove entries as their
@@ -164,6 +173,14 @@ export async function runJobsTick(client: SupabaseClient) {
             tags: { feature: 'hindrance-pm-notify' },
             extra: { jobId: job.id, payload: job.payload, lastError: message },
           })
+        }
+        // media_ingest dead-letter (stage 1) -- see lib/media/ingest.ts's
+        // own markMediaIngestFailed for the exact writes/alert. No PM-
+        // visible surface exists yet (stage 5); this is the entire interim
+        // failure surface, same posture as item 4's own design.
+        if (!willRetry && job.type === 'media_ingest') {
+          const payload = job.payload as unknown as MediaIngestJobPayload
+          await markMediaIngestFailed(client, payload, message)
         }
         return { id: job.id, status: 'failed', willRetry, error: message }
       }

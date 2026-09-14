@@ -10,6 +10,7 @@ export type JobType =
   | 'evening_trigger'
   | 'nudge'
   | 'hindrance_pm_notify'
+  | 'media_ingest'
 
 export type JobStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
