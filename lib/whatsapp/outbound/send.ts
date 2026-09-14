@@ -143,7 +143,15 @@ export type SendTemplateResult =
       responseShape: ResponseShape
     }
 
-function readCredentials(): { accountSid: string; authToken: string; fromNumber: string } {
+// Exported (stage 1 of the media capability, docs/plans/stage1-photo-
+// intake-plan.md) so lib/media/ingest.ts can reuse the same credential
+// path to download Twilio media -- CLAUDE.md's own standing rule against a
+// script re-deriving credentials independently rather than reusing an
+// existing reader applies here: the media_ingest job needs accountSid/
+// authToken (for Basic Auth against a Twilio media URL), never fromNumber,
+// but reads them through this same function rather than hand-rolling a
+// second env-var reader.
+export function readCredentials(): { accountSid: string; authToken: string; fromNumber: string } {
   const accountSid = process.env.TWILIO_ACCOUNT_SID
   const authToken = process.env.TWILIO_AUTH_TOKEN
   const fromNumber = process.env.TWILIO_WHATSAPP_NUMBER
@@ -151,8 +159,17 @@ function readCredentials(): { accountSid: string; authToken: string; fromNumber:
     // Deliberately does not name which of the three is missing beyond this --
     // naming one and not the others invites a reader to assume the others
     // are fine, which isn't checked here. Never includes a value.
+    //
+    // Does NOT name a specific caller (e.g. "sendWhatsAppTemplate:") --
+    // FIXED 2026-09-14, CI-fix round; the message previously did, and it
+    // was thrown from lib/media/ingest.ts's handleMediaIngestJob (this
+    // function's OTHER caller, per this function's own header comment
+    // above) with that same wrong function name attached, costing real
+    // review time chasing a caller that was never actually involved. This
+    // function has two callers today; hardcoding either one's name here
+    // is wrong for the other, and will be wrong again for a third.
     throw new Error(
-      'sendWhatsAppTemplate: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_WHATSAPP_NUMBER must all be set in the environment.',
+      'readCredentials: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_WHATSAPP_NUMBER must all be set in the environment.',
     )
   }
   return { accountSid, authToken, fromNumber }

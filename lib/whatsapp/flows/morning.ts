@@ -99,8 +99,32 @@ export const MORNING_QUESTIONS: Readonly<Record<number, string>> = {
   5: 'Is it a site holiday? Reply yes or no.',
 }
 
-export const MORNING_COMPLETE_REPLY =
-  '✅ Morning check-in complete. Have a productive day on site!'
+// Prefix/suffix split so the photo-count variant (stage 1, item 4/20) can be
+// derived without retyping or risking drift from MORNING_COMPLETE_REPLY's
+// own exact, unchanged text. MORNING_COMPLETE_REPLY itself is BYTE-IDENTICAL
+// to what it always was -- used verbatim whenever no photos were received
+// this check-in, per the approved copy's own rule.
+const MORNING_COMPLETE_PREFIX = '✅ Morning check-in complete.'
+const MORNING_COMPLETE_SUFFIX = 'Have a productive day on site!'
+
+export const MORNING_COMPLETE_REPLY = `${MORNING_COMPLETE_PREFIX} ${MORNING_COMPLETE_SUFFIX}`
+
+/**
+ * The APPROVED completion reply when the morning check-in received one or
+ * more photos (docs/plans/stage1-photo-intake-plan.md TASK 3, exact copy
+ * from Aravind). Singular for exactly 1, plural otherwise. Returns
+ * MORNING_COMPLETE_REPLY unchanged when photoCount is 0 (or negative,
+ * defensively) -- "when no photos were sent the EXISTING string is used
+ * unchanged with no photo clause," per the same approved rule. This
+ * reports photos RECEIVED, not stored -- called before the async
+ * media_ingest job resolves, and structurally cannot know storage state
+ * (item 4's own design).
+ */
+export function buildMorningCompleteReply(photoCount: number): string {
+  if (photoCount <= 0) return MORNING_COMPLETE_REPLY
+  const clause = photoCount === 1 ? '1 photo received.' : `${photoCount} photos received.`
+  return `${MORNING_COMPLETE_PREFIX} ${clause} ${MORNING_COMPLETE_SUFFIX}`
+}
 
 export const MORNING_ALREADY_COMPLETE_REPLY =
   "You've already sent today's morning check-in. ✅ Nothing more needed."

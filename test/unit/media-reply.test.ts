@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   classifyMediaReply,
   replyForMediaKind,
+  extractMediaItems,
   PHOTO_REPLY,
   VOICE_REPLY,
 } from '@/lib/whatsapp/media-reply'
@@ -41,5 +42,57 @@ describe('replyForMediaKind', () => {
 
   it('returns the voice reply', () => {
     expect(replyForMediaKind('voice')).toBe(VOICE_REPLY)
+  })
+})
+
+// NEW, stage 1 (docs/plans/stage1-photo-intake-plan.md, item 18's
+// interceptor move). extractMediaItems is the function that actually reads
+// MediaUrl{i}/MediaContentType{i} -- called only downstream, only for a
+// message already classified 'photo'.
+describe('extractMediaItems', () => {
+  it('returns [] when NumMedia is absent, "0", or unparseable', () => {
+    expect(extractMediaItems({})).toEqual([])
+    expect(extractMediaItems({ NumMedia: '0' })).toEqual([])
+    expect(extractMediaItems({ NumMedia: 'not-a-number' })).toEqual([])
+  })
+
+  it('extracts a single item with its content type', () => {
+    expect(
+      extractMediaItems({
+        NumMedia: '1',
+        MediaUrl0: 'https://api.twilio.com/media/ABC',
+        MediaContentType0: 'image/jpeg',
+      }),
+    ).toEqual([{ url: 'https://api.twilio.com/media/ABC', contentType: 'image/jpeg' }])
+  })
+
+  it('extracts every item for a multi-item message, in index order', () => {
+    expect(
+      extractMediaItems({
+        NumMedia: '3',
+        MediaUrl0: 'url-0',
+        MediaContentType0: 'image/jpeg',
+        MediaUrl1: 'url-1',
+        MediaContentType1: 'image/png',
+        MediaUrl2: 'url-2',
+        MediaContentType2: 'image/webp',
+      }),
+    ).toEqual([
+      { url: 'url-0', contentType: 'image/jpeg' },
+      { url: 'url-1', contentType: 'image/png' },
+      { url: 'url-2', contentType: 'image/webp' },
+    ])
+  })
+
+  it('defaults a missing content type to application/octet-stream and skips a missing URL', () => {
+    expect(
+      extractMediaItems({
+        NumMedia: '2',
+        MediaUrl0: 'url-0',
+        // MediaContentType0 deliberately absent
+        // MediaUrl1 deliberately absent -- NumMedia claims 2, only 1 real item
+        MediaContentType1: 'image/png',
+      }),
+    ).toEqual([{ url: 'url-0', contentType: 'application/octet-stream' }])
   })
 })

@@ -55,7 +55,13 @@ type Flow = 'morning' | 'evening' | 'hindrance'
 // pick the right reply — see buildMorningReply's own doc. hindrance carries
 // `wasExhausted` for the identical reason (migration 038, PR 2 step 4) —
 // see buildHindranceReply's own doc.
-type Attempt =
+// Exported ONLY so test/unit/dispatch-completion.test.ts can construct
+// fabricated attempts directly against isCompletion, proving its verdict is
+// a pure function of outcome/currentStep/attendance -- never of any reply
+// string -- without needing a real RPC round-trip per case. Not used as a
+// public API by any other module; every real caller goes through
+// dispatchInboundTurn.
+export type Attempt =
   | {
       flow: 'morning'
       outcome: MorningOutcome
@@ -125,6 +131,44 @@ export interface DispatchResult {
   reply: string
   /** null only on the double-wrong_flow fallback — no flow resolved the turn. */
   resolvedFlow: Flow | null
+  /**
+   * True exactly when this turn just finished the flow's real, "check-in
+   * complete" terminal state -- morning's YES-path Q4 completion or
+   * evening's Q5 completion, never morning's site_holiday/absent NO-path
+   * terminals (those get their own reply text, not the photo-count
+   * treatment) and never a flow that was ALREADY complete before this turn
+   * (`already_complete` is a distinct outcome, excluded by construction).
+   * FIX (2026-09-13, stage 1 post-build review): this used to be inferred
+   * by the CALLER (lib/whatsapp/inbound-start.ts) string-comparing `reply`
+   * against MORNING_COMPLETE_REPLY/EVENING_COMPLETE_REPLY -- silently wrong
+   * the moment either constant's wording changed, since the string equality
+   * would just stop matching with no error and no failing test, and the
+   * photo count would quietly stop appearing. Computed here instead, from
+   * the same outcome/currentStep/attendance triple buildMorningReply/
+   * buildEveningReply already use to CHOOSE that reply text -- never from
+   * the text itself. See isCompletion below.
+   */
+  completed: boolean
+}
+
+/**
+ * Whether this attempt just completed its flow's real "check-in complete"
+ * terminal state -- see DispatchResult.completed's own doc for what this
+ * excludes and why it is computed from outcome/currentStep/attendance, never
+ * from the rendered reply string. Mirrors buildMorningReply's/
+ * buildEveningReply's own branch conditions for MORNING_COMPLETE_REPLY/
+ * EVENING_COMPLETE_REPLY exactly -- kept as a separate function (not
+ * re-derived from `replyFor`'s output) specifically so a future copy change
+ * to either constant cannot silently affect this decision.
+ */
+export function isCompletion(a: Attempt): boolean {
+  if (a.outcome !== 'advance' || a.currentStep !== 0) return false
+  if (a.flow === 'morning') return a.attendance !== 'site_holiday' && a.attendance !== 'absent'
+  if (a.flow === 'evening') return true
+  // hindrance has no "check-in complete"/photo-count terminal -- media is
+  // never enqueued for the hindrance flow in stage 1 (see inbound-start.ts's
+  // own header), so completion here is meaningless either way.
+  return false
 }
 
 async function attempt(
@@ -224,7 +268,7 @@ export async function dispatchInboundTurn(params: DispatchParams): Promise<Dispa
 
   const first = await attempt(firstFlow, common)
   if (first.outcome !== 'wrong_flow') {
-    return { reply: replyFor(first), resolvedFlow: first.flow }
+    return { reply: replyFor(first), resolvedFlow: first.flow, completed: isCompletion(first) }
   }
 
   await onBeforeRetry?.()
@@ -236,14 +280,14 @@ export async function dispatchInboundTurn(params: DispatchParams): Promise<Dispa
   // which. Retrying blind would be a guess dressed up as a retry; FLOW_RACE_
   // REPLY is the honest answer, same as the double-wrong_flow fallback below.
   if (firstFlow === 'hindrance') {
-    return { reply: FLOW_RACE_REPLY, resolvedFlow: null }
+    return { reply: FLOW_RACE_REPLY, resolvedFlow: null, completed: false }
   }
 
   const secondFlow: Flow = firstFlow === 'morning' ? 'evening' : 'morning'
   const second = await attempt(secondFlow, common)
   if (second.outcome !== 'wrong_flow') {
-    return { reply: replyFor(second), resolvedFlow: second.flow }
+    return { reply: replyFor(second), resolvedFlow: second.flow, completed: isCompletion(second) }
   }
 
-  return { reply: FLOW_RACE_REPLY, resolvedFlow: null }
+  return { reply: FLOW_RACE_REPLY, resolvedFlow: null, completed: false }
 }

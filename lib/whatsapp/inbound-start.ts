@@ -1,10 +1,69 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Json } from '@/types/database'
 import { createServiceClient } from '@/lib/supabase/service'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
 import { readCurrentFlow } from './session'
 import { dispatchInboundTurn } from './dispatch'
 import { applyHindranceFlowTurn, buildHindranceReply } from './flows/hindrance'
+import { PHOTO_REPLY, type MediaItem } from './media-reply'
+import { buildMorningReply, buildMorningCompleteReply } from './flows/morning'
+import { buildEveningReply, buildEveningCompleteReply, fetchMorningEquipmentEcho } from './flows/evening'
+import { enqueueJob } from '@/lib/queue/jobs'
+import {
+  resolveDailyLogId,
+  resolveOrCreateDailyLogId,
+  countReceivedPhotos,
+  type MediaIngestJobPayload,
+} from '@/lib/media/ingest'
+
+// APPROVED COPY (Aravind, 2026-09-13, stage 1 post-build review) -- used
+// ONLY when a photo could not be accepted at all (resolveOrCreateDailyLogId
+// itself failed to create/find a daily_logs row for it to attach to). This
+// is a DIFFERENT failure from a background media_ingest job failing AFTER
+// acceptance (lib/media/ingest.ts's markMediaIngestFailed): that one is
+// silent to the engineer (he has moved on by the time it resolves) and
+// surfaces to the PM at stage 5 instead. This one fires immediately, in the
+// same turn, because the photo never made it into the queue at all. The two
+// must never be merged into one handler. Tamil pair is owed and NOT
+// approved -- do not invent one.
+export const PHOTO_SAVE_FAILED_REPLY = "Sorry, I couldn't save that photo. Please send it again."
+
+// STAGE 1 OF THE MEDIA CAPABILITY (2026-09-13, docs/plans/media-capture-
+// design.md item 20; full build: docs/plans/stage1-photo-intake-plan.md).
+// THIS FILE IS WHERE THE MEDIA INTERCEPTOR MOVES TO (item 18) -- previously
+// media-reply.ts intercepted a photo unconditionally, upstream, before this
+// module ever ran (see that file's own header for the full reversal). Photo
+// handling now lives here specifically because it needs flow state
+// (current_flow, and for a no-caption photo, current_step too) that the old
+// upstream placement deliberately did not have. Voice is UNCHANGED --
+// route.ts still intercepts it unconditionally, upstream, exactly as
+// before; a MediaItem[] never reaches this file for a voice note.
+//
+// THE MECHANISM, both branches below:
+//   - Idle (no active flow): a photo still gets today's unchanged
+//     PHOTO_REPLY -- the off-step nudge is stage 3 (item 6), not this
+//     stage. Checked BEFORE classifyAdhocInput, so the ad-hoc router never
+//     sees raw media params.
+//   - Active flow, morning/evening: the photo is enqueued as a
+//     `media_ingest` job (storage happens in the background, never inline
+//     -- item 4), then:
+//       - non-empty caption -> the turn proceeds exactly as an ordinary
+//         text-only turn would (item 12: the caption reaches the answer
+//         parser, no RPC changes needed);
+//       - no caption -> "a photo is never an answer" (item 23): the
+//         current question stays open and is re-asked, WITHOUT calling the
+//         RPC at all. This is not a stylistic choice -- apply_morning_
+//         flow_turn's step 2 and apply_evening_flow_turn's step 1 have
+//         ZERO gating on an empty answer and would otherwise silently
+//         record an empty string and ADVANCE (confirmed against the live
+//         SQL, docs/plans/stage0-storage-setup-plan.md §8.2) -- exactly
+//         the gap item 23 exists to close. Calling the RPC here would
+//         reopen it.
+//   - Active flow, hindrance: hindrance photo capture is stage 2, not yet
+//     built (item 16's own ordering constraint). A photo here gets the
+//     same unchanged PHOTO_REPLY as the idle case -- not silently dropped,
+//     not silently accepted into a capture path that doesn't exist yet.
 
 // RETIRED, 2026-08-28 (docs/plans/pass1-outbound-send-plan.md §2 item 1,
 // design-decisions-beta-feedback.md §38). This module used to treat an
@@ -228,6 +287,24 @@ interface RouteParams {
   projectId: string
   message: string
   now?: string
+  /**
+   * Whether route.ts's classifyMediaReply resolved this message as a
+   * PHOTO (never voice -- that's intercepted upstream, unconditionally,
+   * unchanged). This is the ONLY signal the idle/hindrance canned-reply
+   * branches use -- see media's own doc below for why `media.length > 0`
+   * is NOT an equivalent check and using it there was a real regression
+   * (T-WH-14, fixed 2026-09-13).
+   */
+  isPhoto?: boolean
+  /** Photo items EXTRACTED from this inbound message (stage 1, item 18) --
+   * populated by route.ts's extractMediaItems ONLY when isPhoto is true.
+   * Can be EMPTY even when isPhoto is true (extractMediaItems drops any
+   * MediaUrl{i} entry that's missing; real Twilio always supplies one for
+   * a real photo, but nothing here assumes that). Used ONLY by the
+   * morning/evening active-flow storage path below, which genuinely needs
+   * real extractable items -- never for the idle/hindrance classification
+   * decision, which uses isPhoto instead. */
+  media?: MediaItem[]
   /** Injected client, defaulting to createServiceClient() when omitted -- same shape as every other flow entry point. */
   supabaseClient?: SupabaseClient
 }
@@ -258,10 +335,190 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
     // know that flow at all.
     const firstFlow =
       currentFlow === 'evening' ? 'evening' : currentFlow === 'hindrance' ? 'hindrance' : 'morning'
-    return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
+
+    const media = params.media ?? []
+
+    // Hindrance photo capture is stage 2, not yet built (item 16's own
+    // ordering constraint). A photo here gets the same unchanged
+    // PHOTO_REPLY the idle branch already returns -- not silently dropped,
+    // not silently accepted into a capture path that doesn't exist yet.
+    //
+    // FIX (2026-09-13, T-WH-14 regression): keyed on params.isPhoto, NOT
+    // media.length -- see RouteParams.isPhoto's own doc for why those are
+    // different questions (extractMediaItems can legitimately return []
+    // for a message classifyMediaReply still correctly called 'photo').
+    if (params.isPhoto && firstFlow === 'hindrance') {
+      return { reply: PHOTO_REPLY, resolvedFlow: 'hindrance' }
+    }
+
+    // Deliberately keyed on the EXTRACTED media array here, not isPhoto --
+    // this gate decides whether there is anything real to STORE for the
+    // active morning/evening flow below, a different question from "was
+    // this classified as a photo." A photo with zero extractable items
+    // (isPhoto true, media empty -- the same edge case FIX above closes for
+    // idle/hindrance) falls through to an ordinary dispatchInboundTurn call
+    // here: there is genuinely nothing to enqueue, so it degrades to
+    // whatever Body contains, same as any other message. Real Twilio always
+    // supplies a MediaUrl{i} for a real photo, so this path is not expected
+    // to fire in production -- named, not assumed impossible.
+    if (firstFlow === 'hindrance' || media.length === 0) {
+      return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
+    }
+
+    // --- media present, flow is morning or evening: stage 1's real work ---
+    const now = params.now !== undefined ? new Date(params.now) : new Date()
+    const ist = istParts(now)
+
+    let dailyLogId = await resolveDailyLogId(
+      { projectId: params.projectId, engineerId: params.userId, logDate: ist.date },
+      supabase,
+    )
+
+    if (!dailyLogId) {
+      // FIX (Aravind, 2026-09-13, stage 1 post-build review): a photo on
+      // the very first turn of a flow arrives BEFORE any answer's own RPC
+      // write has materialised the daily_logs row (the row is normally
+      // created by the first ANSWER, not by the session starting) --
+      // resolveDailyLogId legitimately returns null here, not an error.
+      // Create the row so the photo has a parent to attach to; the
+      // engineer notices nothing different. See resolveOrCreateDailyLogId's
+      // own doc for why this is safe against a race with the RPC's own
+      // concurrent write.
+      dailyLogId = await resolveOrCreateDailyLogId(
+        { tenantId: params.tenantId, projectId: params.projectId, engineerId: params.userId, logDate: ist.date },
+        supabase,
+      )
+    }
+
+    if (!dailyLogId) {
+      // The row genuinely could not be created -- a real write failure, not
+      // the ordinary "no row yet" case just handled above. THIS PATH = the
+      // photo was NEVER ACCEPTED; the engineer is told immediately, with
+      // the approved copy. Deliberately NOT the same failure surface as a
+      // background media_ingest job failing AFTER acceptance (see
+      // PHOTO_SAVE_FAILED_REPLY's own doc) -- the turn stops here rather
+      // than proceeding into a dispatchInboundTurn call whose own
+      // daily_logs write would very likely hit the identical failure.
+      return { reply: PHOTO_SAVE_FAILED_REPLY, resolvedFlow: firstFlow }
+    }
+
+    const hasCaption = params.message.trim().length > 0
+
+    const jobPayload: MediaIngestJobPayload = {
+      tenant_id: params.tenantId,
+      daily_log_id: dailyLogId,
+      phase: firstFlow,
+      caption: hasCaption ? params.message : null,
+      media,
+    }
+    // Fast DB insert, well inside the webhook's 15s budget -- storage
+    // itself happens later, off this request entirely (item 4).
+    await enqueueJob('media_ingest', jobPayload as unknown as Json, supabase)
+
+    const statusColumn = firstFlow === 'morning' ? 'morning_photos_status' : 'evening_photos_status'
+    const { error: statusError } = await supabase
+      .from('daily_logs')
+      .update({ [statusColumn]: 'pending' })
+      .eq('id', dailyLogId)
+    if (statusError) {
+      throw new Error(
+        `routeInboundMessage: failed to set ${statusColumn}='pending' for daily_log ${dailyLogId}: ${statusError.message}`,
+      )
+    }
+
+    if (!hasCaption) {
+      // Item 23: a photo is never an answer. Reask WITHOUT calling the
+      // RPC -- see this file's own header for why the RPC's own lack of
+      // gating on several steps makes this the only correct option, not
+      // a style preference.
+      const { data: sessionRow, error: sessionError } = await supabase
+        .from('whatsapp_sessions')
+        .select('current_step')
+        .eq('phone_number', params.phoneNumber)
+        .maybeSingle<{ current_step: number }>()
+      if (sessionError) {
+        throw new Error(
+          `routeInboundMessage: session read failed for ${params.phoneNumber}: ${sessionError.message}`,
+        )
+      }
+
+      if (!sessionRow) {
+        // Session vanished between the currentFlow read above and here (a
+        // genuine race -- completion/expiry mid-request). Fall through to
+        // the normal dispatch path; its own re-read under the RPC's lock
+        // is authoritative regardless of what this file assumed a moment
+        // ago.
+        return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
+      }
+
+      if (firstFlow === 'morning') {
+        return { reply: buildMorningReply('reask', sessionRow.current_step), resolvedFlow: 'morning' }
+      }
+
+      const equipmentEcho =
+        sessionRow.current_step === 4
+          ? await fetchMorningEquipmentEcho(supabase, {
+              projectId: params.projectId,
+              userId: params.userId,
+              logDate: ist.date,
+            })
+          : null
+      return {
+        reply: buildEveningReply('reask', sessionRow.current_step, equipmentEcho ?? undefined),
+        resolvedFlow: 'evening',
+      }
+    }
+
+    // Caption present: ordinary turn, caption reaches the parser exactly
+    // as typed text would (item 12) -- no RPC changes needed, this falls
+    // out of not eating the message first.
+    const dispatchResult = await dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
+
+    // Completion-message photo count (TASK 3, approved copy) -- applies
+    // regardless of whether THIS turn itself carried a photo; the count
+    // reflects the whole check-in, so the completing turn may be a
+    // caption-only message with no media of its own.
+    //
+    // FIX (2026-09-13, post-build review): this used to string-compare
+    // dispatchResult.reply against MORNING_COMPLETE_REPLY/EVENING_COMPLETE_
+    // REPLY -- a wording edit to either constant would silently stop this
+    // branch from ever firing again, with no error and no failing test.
+    // dispatchResult.completed (dispatch.ts's own isCompletion) is derived
+    // from outcome/currentStep/attendance directly, the same fields
+    // buildMorningReply/buildEveningReply use to CHOOSE that reply text --
+    // never from the rendered string itself. See dispatch.ts's own doc on
+    // DispatchResult.completed.
+    if (dispatchResult.completed) {
+      // dailyLogId is guaranteed non-null here -- the two guards above
+      // (resolve, then resolveOrCreate-or-fail) already returned early if
+      // it couldn't be resolved, so no second lookup is needed.
+      const photoCount = await countReceivedPhotos(dailyLogId, firstFlow, supabase)
+      if (photoCount > 0) {
+        const reply =
+          firstFlow === 'morning' ? buildMorningCompleteReply(photoCount) : buildEveningCompleteReply(photoCount)
+        return { reply, resolvedFlow: dispatchResult.resolvedFlow }
+      }
+    }
+
+    return dispatchResult
   }
 
   // --- No active session ---------------------------------------------
+  // A bare photo at idle still gets today's unchanged PHOTO_REPLY -- the
+  // off-step nudge is stage 3 (item 6), not this stage. Checked before
+  // classifyAdhocInput, so the ad-hoc router never sees raw media params.
+  //
+  // FIX (2026-09-13, T-WH-14 regression): keyed on params.isPhoto, NOT
+  // media.length -- see RouteParams.isPhoto's own doc. Before this fix, a
+  // photo whose extraction happened to come back empty (missing MediaUrl0
+  // -- a malformed webhook, or a test fixture that only sets NumMedia/
+  // MediaContentType0) silently fell through to the ad-hoc router instead
+  // of PHOTO_REPLY, even though classifyMediaReply correctly called it a
+  // photo.
+  if (params.isPhoto) {
+    return { reply: PHOTO_REPLY, resolvedFlow: null }
+  }
+
   // PRECEDENCE, decided: a leading "1" always wins on WHETHER item 1's
   // flow starts, regardless of check-in state -- classified here, acted on
   // immediately below via an early return. Item 1's real flow (2026-09-07)
