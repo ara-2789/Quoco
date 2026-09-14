@@ -51,9 +51,16 @@ export interface MediaIngestJobPayload {
   tenant_id: string
   daily_log_id: string
   phase: 'morning' | 'evening'
-  /** The turn's Body, if any -- the same text (if non-empty) that also
-   * reached the answer parser (item 12: stored in both places). Null when
-   * the photo arrived with no accompanying text. */
+  /** The turn's Body, if any -- stored ONLY here, on the photo row. Item 12
+   * REVERSED (Aravind, 2026-09-14, first real-use finding, inbound-start.ts's
+   * own header has the full incident): a caption used to also reach the
+   * answer parser as if typed text; a real prod incident (a photo captioned
+   * "Today work" recorded as the evening Q5 answer, discarding the
+   * engineer's real "No" sent moments later) showed a caption describes the
+   * photo, not whatever question happens to be open. The caption NEVER
+   * reaches dispatchInboundTurn/the answer parser now -- this field is its
+   * only destination. Null when the photo arrived with no accompanying
+   * text. */
   caption: string | null
   media: MediaItem[]
 }

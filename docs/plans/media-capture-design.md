@@ -411,14 +411,52 @@ photo. The relocation item 4 already flagged (out of the unconditional
 `media-reply.ts` intercept) is unchanged; only the acceptance window
 widens.
 
-### 12. Caption handling — DECIDED
+### 12. Caption handling — ~~DECIDED~~ REVERSED (2026-09-14, first real-use finding)
 
-Text accompanying a photo is never dropped. The caption is passed to the
+~~Text accompanying a photo is never dropped. The caption is passed to the
 normal answer parser for whichever question is currently open. If it
 parses, it is recorded as that question's answer **and** stored in the
 photo's existing `caption` field (item 7's `daily_log_photos` /
 `hindrance_photos` shape). If it fails validation, the standard re-prompt
-fires (Rule 3.5) and the text is still stored on the photo.
+fires (Rule 3.5) and the text is still stored on the photo.~~
+
+**DATED CORRECTION (2026-09-14) — a first real-use finding, not a design
+refinement.** Kept struck through above rather than deleted, per this
+project's correction discipline. This is not a round of design iteration
+catching an edge case before build — it is stage 1 in real production use,
+producing a real bad DPR row on its very first real trigger.
+
+**What happened, prod, 2026-09-14 evening check-in.** An engineer sent a
+photo captioned "Today work" while evening Q5 ("Anything extra needed
+tomorrow?") was open, then typed "No" separately, moments later. Per this
+item as originally decided, the caption went to the answer parser and was
+recorded as the Q5 answer — the live DPR row reads
+`evening_tomorrow_needs = 'Today work'`. The engineer's actual answer,
+"No", arrived after the flow had already closed on the caption and went
+nowhere.
+
+**New decision (Aravind, 2026-09-14): ITEM 12 IS REVERSED. A CAPTION IS
+NEVER AN ANSWER.**
+- A caption is stored on the photo row, exactly as before. It is NEVER
+  passed to the answer parser.
+- The current question stays open and is re-asked — the same handling
+  item 23 already gives a bare (uncaptioned) photo. A captioned photo now
+  takes the identical path an uncaptioned one already did.
+- **Consequence, stated plainly:** with items 12 and 23 both now in force
+  the same way, ANY message carrying a photo never answers a question,
+  captioned or not. Only a text-only message can answer. Nothing carried
+  on a photo can reach a DPR field.
+- **Rationale:** a caption describes the photo, not the question that
+  happens to be open. "Today work", "east wall", "crack near column B" are
+  captions, not answers. No timing or fallback rule can distinguish a
+  caption that answers from one that describes — a fallback keyed on "no
+  answer recorded yet" would have produced this exact bad data, since the
+  field WAS empty when the caption arrived.
+- **The standalone evening photo Q2 (the original design in item 4, before
+  item 11 superseded it) does NOT remove this risk.** Item 11 accepts
+  photos at ALL questions by deliberate decision, so a captioned photo at
+  any step — not only Q2 — remains possible by design, and this reversal
+  has to hold at every one of them, not just the dedicated photo question.
 
 ### 13. Burst handling — DECIDED
 
