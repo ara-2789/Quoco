@@ -1,4 +1,4 @@
-# 043_daily_log_photos.sql — external review package (2026-09-13/14, round 1 fold-and-return 2026-09-14)
+# 043_daily_log_photos.sql — external review package (2026-09-13/14, round 1 fold-and-return 2026-09-14, round 2 GO-FOR-PROD-conditional 2026-09-14)
 
 **Status: applied to TEST-DB ONLY (`exfccwlrhoutkgrlikod`), NOT applied to
 prod.** PR #270 open (not merged). File lives in `docs/reviews/`, not
@@ -6,7 +6,10 @@ prod.** PR #270 open (not merged). File lives in `docs/reviews/`, not
 `supabase/migrations/` when it is being applied, not when it is written"
 rule — the test-db apply below does not count as "the" apply for that rule;
 it is the review-and-rehearsal apply Aravind explicitly chose in place of a
-Supabase-branch rehearsal.
+Supabase-branch rehearsal. **Round 2 returned GO FOR PROD, conditional on
+one item landing in this PR before merge — that item is done; see
+immediately below.** Migration 043 remains in `docs/reviews/` until the
+actual prod apply happens, per the same rule.
 
 ## External review round 1 — verdict and fold-and-return (2026-09-14)
 
@@ -38,6 +41,140 @@ literally specified. Full account: §5's new subsection. **This is the one
 item in this round that needs the reviewer's own re-confirmation, not just
 Aravind's** — everything else here is a direct implementation of what was
 asked.
+
+## External review round 2 — GO FOR PROD, conditional (2026-09-14)
+
+**Verdict: GO FOR PROD, conditional on one item landing in this PR before
+merge.** Both items round 1 flagged for the reviewer's own re-confirmation
+were confirmed: the substituted UTC-pinned generated expression is sound
+at the catalog level (item 2's deviation, §5), and the test-db-only grant
+divergence is accepted — the reviewer explicitly reversed his own earlier
+PR #120 ruling on this exact pattern for `outbound_sends`, extending that
+reversal to this table's identical shape.
+
+**THE ONE BLOCKER, NOW CLOSED: the no-app-DELETE invariant test.** The
+test-db grant divergence (`scripts/test-db-only-grants.sql` granting
+`service_role` DELETE on `daily_log_photos`, test-db only) is safe ONLY
+because test cleanup may DELETE while application code never does.
+Nothing enforced that boundary before this round — it was assumed, not
+mechanical. `test/unit/no-app-delete-invariant.test.ts` now makes it
+mechanical: a static source guard, built in the shape of this project's
+existing `outbound_sends` CAS-guard family (`test/unit/outbound-trigger-
+cas-invariant.test.ts`, `test/unit/jobs-claim-index.test.ts`) — it scans
+every `.ts`/`.tsx` file under `lib/` and `app/` for a DELETE (a chained
+`.from('table').delete(` call, or a raw SQL `DELETE FROM table` literal)
+against any table `scripts/test-db-only-grants.sql` grants `service_role`
+DELETE on. **The table list is read from that script, not hardcoded** —
+parsed from its own `GRANT DELETE ON public.<table> TO service_role;`
+lines — so a future third table added to the divergence automatically
+extends this guard's coverage with no edit to the test file itself.
+Test-code deletes (`test/`, `scripts/`) are explicitly out of scope — that
+is the permitted side of the boundary; the guard only walks `lib/` and
+`app/`.
+
+**PROVEN RED, then GREEN — a guard never seen to fail is not a guard.**
+A violation was hand-injected as a throwaway file
+(`lib/media/_zz_guard_violation_probe.ts`, deleted immediately after the
+RED run below was captured — never committed):
+```ts
+import { createServiceClient } from '@/lib/supabase/service'
+
+export async function zzGuardViolationProbe(dailyLogId: string): Promise<void> {
+  const supabase = createServiceClient()
+  await supabase.from('daily_log_photos').delete().eq('daily_log_id', dailyLogId)
+}
+```
+
+**RED run, raw, with the injected file present:**
+```
+$ npx vitest run test/unit/no-app-delete-invariant.test.ts
+
+ ❯ test/unit/no-app-delete-invariant.test.ts (2 tests | 1 failed) 8ms
+   ✓ no-app-delete-invariant (static source guard, outbound_sends/daily_log_photos test-db-grant family) > finds the expected test-db-only DELETE grants -- fails loudly if scripts/test-db-only-grants.sql's shape changes, rather than silently guarding zero tables 1ms
+   × no-app-delete-invariant (static source guard, outbound_sends/daily_log_photos test-db-grant family) > no application code (lib/, app/) issues a DELETE against a table where service_role DELETE exists ONLY as a test-db-only grant 7ms
+     → no-app-delete-invariant FAILED -- application code deletes against a table whose service_role DELETE grant exists ONLY for test-db cleanup (scripts/test-db-only-grants.sql). That divergence (CLAUDE.md's own "OUTBOUND_SENDS' GRANTS NOW DIFFER BETWEEN TEST-DB AND PROD" rule, and 043_daily_log_photos.sql's identical shape) is safe ONLY because application code never exercises the privilege test cleanup depends on -- prod's own migration revokes it entirely, so this exact code would 42501 in production, but on test-db it would silently SUCCEED, hard-deleting rows a table's own design says must be tombstoned, never removed. Violations:
+  /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/stage1-photo-intake-build/lib/media/_zz_guard_violation_probe.ts: table "daily_log_photos" via `.from('daily_log_photos').delete(`
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Duration  123ms
+```
+
+**Injected file removed. GREEN run, raw, immediately after:**
+```
+$ rm lib/media/_zz_guard_violation_probe.ts
+$ npx vitest run test/unit/no-app-delete-invariant.test.ts
+
+ ✓ test/unit/no-app-delete-invariant.test.ts (2 tests) 6ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Duration  121ms
+```
+`git status` confirmed clean immediately after — the probe file left no
+trace, staged or unstaged.
+
+**Two additions to the prod apply runbook, so they are not improvised at
+apply time — per `docs/migration-runbook-template.md`'s own Step D shape
+("one probe per changed object, query visible, expected value stated"):**
+
+### Prod apply runbook — Step D additions (required, not optional)
+
+**D-a. Read back the generated column's expression via `pg_get_expr` —
+the schema now IS the retention policy, so the fingerprint must record it,
+not just the column's existence.**
+```sql
+SELECT pg_get_expr(adbin, adrelid) AS expires_at_generation_expression
+FROM pg_attrdef
+WHERE adrelid = 'public.daily_log_photos'::regclass
+  AND adnum = (
+    SELECT attnum FROM pg_attribute
+    WHERE attrelid = 'public.daily_log_photos'::regclass AND attname = 'expires_at'
+  );
+```
+**Expected value** (confirmed on test-db via the equivalent
+`information_schema.columns.generation_expression` reading, §6 Step 4 —
+`pg_get_expr` against `pg_attrdef` is the lower-level, catalog-direct
+equivalent form and is what this step requires on prod):
+```
+timezone('UTC'::text, (timezone('UTC'::text, received_at) +
+CASE retention_class
+    WHEN 'attendance'::text THEN '7 days'::interval
+    ELSE '60 days'::interval
+END))
+```
+A mismatch here means prod's column does not compute the retention window
+this package reviewed and certified — treat as a STOP, not a cosmetic
+diff, precisely because this expression is now the durable definition of
+the retention policy itself, not documentation of it.
+
+**D-b. The prod four-way negative grants probe — DELETE, TRUNCATE,
+REFERENCES, TRIGGER, all four `false` — is the SOLE AUTHORITATIVE grants
+record for this migration, stated explicitly so it is never read
+alongside a test-db reading as if the two should agree.**
+```sql
+SELECT
+  has_table_privilege('service_role', 'public.daily_log_photos', 'DELETE')    AS service_role_delete,
+  has_table_privilege('service_role', 'public.daily_log_photos', 'TRUNCATE')  AS service_role_truncate,
+  has_table_privilege('service_role', 'public.daily_log_photos', 'REFERENCES') AS service_role_references,
+  has_table_privilege('service_role', 'public.daily_log_photos', 'TRIGGER')   AS service_role_trigger;
+```
+**Expected value, PROD ONLY: all four `false`.** §3 and §6 already carry a
+seven-privilege reading that shows this exact shape — captured on test-db,
+BEFORE `scripts/test-db-only-grants.sql` was extended (both places are now
+explicitly labeled with that environment and timing, so this matrix is
+never mistaken for prod's own). **Naming the script delta explicitly, per
+this round's own instruction**: `scripts/test-db-only-grants.sql` is the
+ONLY thing that makes test-db's own current live reading differ (test-db
+now correctly shows `service_role_delete = true`) — that file is never a
+migration, never scanned by any apply/lint/CI path (its own header makes
+this claim), and has no prod counterpart. A future reader of ANY grants
+matrix in this package must check which environment produced it before
+treating it as prod's shape; this D-b probe, run against prod itself after
+the real apply, is the only reading that settles the question for prod
+without that caveat.
+
+---
 
 ## Repo-state header (per this project's own standing rule)
 
@@ -220,6 +357,9 @@ CREATE TABLE public.daily_log_photos (
   expires_at      TIMESTAMPTZ  GENERATED ALWAYS AS (
                     timezone('UTC',
                       timezone('UTC', received_at) + CASE retention_class
+                        -- CHANGING EITHER LITERAL BELOW RECOMPUTES expires_at
+                        -- FOR EVERY EXISTING ROW, NOT JUST FUTURE ONES --
+                        -- READ THE COMMENT ABOVE THIS COLUMN BEFORE EDITING.
                         WHEN 'attendance' THEN INTERVAL '7 days'
                         ELSE INTERVAL '60 days'
                       END
@@ -432,8 +572,12 @@ each role needs.
 **Post-apply verification, live (not asserted from the migration text) —
 see §6 below for the exact fresh-apply methodology and raw output**: a
 FULL SEVEN-PRIVILEGE probe (SELECT, INSERT, UPDATE, DELETE, TRUNCATE,
-REFERENCES, TRIGGER), all three roles, run against test-db after tearing
-down the pre-round-1 table and re-applying this fully amended file fresh:
+REFERENCES, TRIGGER), all three roles, run against **TEST-DB
+(`exfccwlrhoutkgrlikod`), captured immediately after the round-2 fresh
+re-apply and BEFORE `scripts/test-db-only-grants.sql` was extended to
+cover this table** (§6's "A THIRD interaction" subsection) — this specific
+snapshot reflects the MIGRATION FILE'S OWN grants exactly, with no
+test-db-only divergence layered on yet:
 
 ```
 anon:          SELECT=false  INSERT=false  UPDATE=false  DELETE=false  TRUNCATE=false  REFERENCES=false  TRIGGER=false
@@ -444,6 +588,24 @@ service_role:  SELECT=true   INSERT=true   UPDATE=true   DELETE=false  TRUNCATE=
 Matches the design exactly, including the two privileges (REFERENCES,
 TRIGGER) the round-1 probe never checked — both `false` for every role now
 confirmed live, not just asserted from the `REVOKE ALL`/`GRANT` text.
+
+**THIS SNAPSHOT IS NOW STALE FOR TEST-DB, BY DESIGN — READ THIS BEFORE
+RE-PROBING TEST-DB AND CONCLUDING SOMETHING REGRESSED.** External review
+round 2 (2026-09-14) accepted a deliberate test-db-only divergence: `GRANT
+DELETE ON public.daily_log_photos TO service_role;` now lives in
+`scripts/test-db-only-grants.sql` and is applied on test-db (never a
+migration, never touching prod — full reasoning and the invariant test
+that guards the boundary: the "External review round 2" section below,
+and §6's "A THIRD interaction"). **A grants probe run against test-db
+TODAY will correctly show `service_role: DELETE=true`** — that is the
+intended, accepted state, not a regression from the table shown above.
+**PROD'S GRANTS MATRIX IS THE SOLE AUTHORITATIVE RECORD OF WHAT THIS
+MIGRATION ITSELF GRANTS** — the table above (captured on test-db, before
+the divergence script ran) is a faithful proxy for it today, but the
+prod apply runbook's own Step D probe (below, in the "External review
+round 2" section) is what actually certifies prod, and is not
+substitutable by any future test-db reading once the divergence is live
+there.
 
 ---
 
@@ -793,7 +955,13 @@ qual: ((tenant_id = get_user_tenant_id()) AND (EXISTS ( SELECT 1
 
 **Step 5 — the four-way negative grant probe item 1 asked for, widened to
 the full seven privileges (SELECT, INSERT, UPDATE, DELETE, TRUNCATE,
-REFERENCES, TRIGGER), all three roles, via `has_table_privilege(...)`:**
+REFERENCES, TRIGGER), all three roles, via `has_table_privilege(...)`.
+ENVIRONMENT: test-db (`exfccwlrhoutkgrlikod`), captured at THIS moment in
+the round-2 sequence — immediately after the fresh re-apply, BEFORE
+`scripts/test-db-only-grants.sql` was extended to grant `service_role`
+DELETE on this table (that extension is documented below, in "A THIRD
+interaction"). Read as: this is what the MIGRATION FILE ITSELF grants,
+un-diverged — the shape PROD will carry.**
 ```
 anon:          SELECT=false  INSERT=false  UPDATE=false  DELETE=false  TRUNCATE=false  REFERENCES=false  TRIGGER=false
 authenticated: SELECT=true   INSERT=false  UPDATE=false  DELETE=false  TRUNCATE=false  REFERENCES=false  TRIGGER=false
@@ -802,7 +970,11 @@ service_role:  SELECT=true   INSERT=true   UPDATE=true   DELETE=false  TRUNCATE=
 Every cell matches the design exactly, including the two privileges
 (REFERENCES, TRIGGER) round 1's probe never checked — the actual gap item
 1 found is now closed and independently re-verified, not just re-asserted
-from the new `REVOKE ALL`/`GRANT` text.
+from the new `REVOKE ALL`/`GRANT` text. **A probe against test-db run
+AFTER this point in the sequence (i.e., test-db's actual live state from
+here on) correctly shows `service_role: DELETE=true`** — see "A THIRD
+interaction" immediately below; that is the accepted divergence, not a
+second reading of this same table.
 
 **Step 6 — FK RESTRICT and the generated-column write-guard, both proven
 live in one disposable, rolled-back transaction** (a throwaway tenant/
@@ -1087,6 +1259,75 @@ cases: PM on the owning project, PM on another tenant's project, non-PM
 against both `getSignedPhotoUrl()` and the RLS-enforced SELECT in the same
 `it`).
 
+### Round 3 — after external review round 2's invariant-test fix (2026-09-14)
+
+Full suite re-run with `test/unit/no-app-delete-invariant.test.ts` added
+(98 files, up from 97 — the new guard test itself):
+```
+$ npx vitest run
+
+ Test Files  2 failed | 96 passed (98)
+      Tests  2 failed | 1155 passed | 1 todo (1158)
+   Start at  10:54:07
+   Duration  1051.65s
+```
+
+**`test/unit/no-app-delete-invariant.test.ts` itself passed** (2/2, both
+the "finds the expected test-db-only DELETE grants" sanity check and the
+actual no-DELETE-in-app-code assertion) — this is a SEPARATE, later run
+than the RED/GREEN proof captured in the "External review round 2" section
+above (that proof was a targeted single-file run with a hand-injected
+violation, deliberately isolated from the rest of the suite; this is the
+guard running for real, for the first time, as part of the full suite).
+
+**Failure 1 — `test/session-transition.test.ts`, the same known-not-ours
+sandbox limitation, same manifestation as round 2's own final run**:
+```
+FAIL test/session-transition.test.ts > acquire_and_transition_session / drain_next_pending_flow > B: caller 2 blocks on the row lock until caller 1 commits
+Error: Test B: caller 1's row lock was never observed within 3000ms via
+quoco_test_row_is_locked -- caller 1 never appeared to reach Postgres at
+all in that window. This is a different failure from an ordering
+inversion (see docs/reviews/session-transition-lock-wait-flake.md) --
+investigate caller 1's own dispatch/connection, not the lock mechanism.
+```
+Identical error text to the failure already documented above — not
+re-explained a third time; see that section for the full account.
+
+**Failure 2 — NEW, in a file this migration never touches — investigated,
+confirmed cross-file test-db pollution, not a regression**:
+```
+FAIL test/morning-flow.test.ts > apply_morning_flow_turn (morning flow, attendance-first) > Q4 garbled: reasks once via q4_reask, then accepts the raw answer and completes
+AssertionError: expected 'idle' to be 'reask' // Object.is equality
+
+Expected: "reask"
+Received: "idle"
+```
+`test/morning-flow.test.ts` has nothing to do with `daily_log_photos`,
+grants, generated columns, or FKs — this migration's own subject matter.
+Re-ran the identical file IN ISOLATION to check:
+```
+$ npx vitest run test/morning-flow.test.ts
+
+ ✓ test/morning-flow.test.ts (19 tests) 46682ms
+   ✓ apply_morning_flow_turn (morning flow, attendance-first) > Q4 garbled: reasks once via q4_reask, then accepts the raw answer and completes 2691ms
+   [... all 19 pass ...]
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Duration  46.85s
+```
+**Passes cleanly alone, including the exact case that failed in the full
+run.** This is the identical shape this package's own §7 "Known-not-ours
+fact #2" already documented for round 1 (a full-96-file run producing
+spurious failures in files unrelated to this migration's own code, which
+vanish on isolated re-run) — a known, standing property of this project's
+test suite against shared test-db under full-suite concurrency, not a
+stage-1 regression and not something introduced by this round's invariant
+test. Recorded here as a THIRD occurrence of the same documented class
+(round 1's own first full run: 20 failures → 4; round 2's grant-gap
+incident: a real regression, since fixed; this: 1 spurious failure in an
+unrelated file), not as a new open question.
+
 ---
 
 ## §8 — What is NOT covered
@@ -1120,6 +1361,19 @@ against both `getSignedPhotoUrl()` and the RLS-enforced SELECT in the same
   GRANT text, or running against a schema built from the migration files
   alone, never against live test-db state) — recorded here so the
   recommendation isn't acted on naively.
+  **PARTIALLY RESOLVED, external review round 2**:
+  `test/unit/no-app-delete-invariant.test.ts` (the "External review round
+  2" section above) is now a standing, repeatable, RED/GREEN-proven guard
+  — but it answers a DIFFERENT, narrower question than "is DELETE denied":
+  it proves no APPLICATION CODE ever exercises the privilege, by static
+  source scan, which is what actually makes the test-db divergence safe.
+  It does NOT probe a live database's grants at all (by design — a live
+  test-db probe would now correctly read `DELETE=true`, the wrong thing to
+  assert). The live-grants half of this recommendation — confirming PROD
+  itself denies DELETE — is covered by the apply runbook's own D-b probe
+  above, run once, at apply time; it is intentionally NOT a standing test,
+  since there is no safe way to run it repeatably against test-db without
+  hitting the same false-pass/false-fail trap this bullet already named.
 - **No DOWN-block rehearsal against a live in-flight session.** The DOWN
   block here is purely additive/structural (drop the table, drop two
   columns) with no function/routing-logic change, so the "confirm a live
@@ -1180,53 +1434,59 @@ against both `getSignedPhotoUrl()` and the RLS-enforced SELECT in the same
   too rather than letting 'test-db mirrors prod' silently accrue unstated
   exceptions" — that CLAUDE.md update has NOT been made as part of this
   package; it is a follow-up this round leaves open, named here so it
-  isn't lost.
+  isn't lost. **STRENGTHENED, external review round 2**: the reviewer
+  didn't just decline to block on this divergence — he explicitly
+  reversed his own earlier PR #120 ruling on the identical pattern for
+  `outbound_sends`, extending the reversal to this table. That makes the
+  CLAUDE.md follow-up more warranted, not less; it remains deferred here
+  only because CLAUDE.md is already past its own 120,000-char warn
+  threshold, not because the follow-up itself is in question.
 
 ---
 
 ## §9 — Reviewer's own checklist — what to look at hardest
 
-**Round 2 additions are listed FIRST, since they're what this fold-and-
-return round actually needs signed off on; the original round-1 items
-follow, updated where this round's evidence changed their status.**
+**Round 2 returned GO FOR PROD, conditional on the no-app-delete invariant
+test (now built, RED/GREEN-proven — the "External review round 2" section
+above). Items 0 and 2 below are the round-1 open questions THAT round 2
+resolved — kept here, marked RESOLVED, rather than deleted, so the
+resolution is traceable to what it answered. Items 1 and 3-7 are either
+still open or were never blocking, unaffected by round 2's verdict.**
 
-0. **THE ITEM THAT NEEDS THE REVIEWER'S OWN RE-CONFIRMATION, NOT JUST
-   ARAVIND'S (§5).** Item 2's literal proposed SQL does not compile on
-   real Postgres (`ERROR: 42P17: generation expression is not immutable`)
-   — the fix adopted (a UTC-pinned expression) is functionally identical
-   but is different SQL from what was specified. Confirm independently
-   that the substitution is sound: re-derive or re-check the
-   `pg_proc.provolatile` claims in §5 rather than trusting this package's
-   own lookups, and confirm the UTC-pinning approach has no edge case
-   (e.g., a `received_at` value stored with a sub-second component, a
-   leap-second boundary) that would make it diverge from the originally
-   intended "received_at + 7d/60d" semantics.
+0. **RESOLVED, external review round 2 — the item that needed the
+   reviewer's own re-confirmation, not just Aravind's (§5).** Item 2's
+   literal proposed SQL does not compile on real Postgres (`ERROR: 42P17:
+   generation expression is not immutable`) — the fix adopted (a
+   UTC-pinned expression) is functionally identical but is different SQL
+   from what was specified. **The reviewer confirmed the substitution
+   sound at the catalog level.** The prod apply runbook's own D-a step
+   (above) still requires a live `pg_get_expr` readback against prod
+   itself at apply time — this resolution is about the SUBSTITUTION being
+   the right fix, not a waiver of verifying prod's actual column matches
+   it.
 1. **The pinned tenant_id/daily_log_id argument (item 4, the "Pinned
    argument" section above) — confirm the single-writer premise actually
    holds**, by grep or by direct code review: is `lib/media/ingest.ts`'s
    `handleMediaIngestJob` genuinely the ONLY code path that ever inserts
    into `daily_log_photos`? (Confirmed once, in this package's own
    authoring — worth a reviewer's independent check, since the whole
-   argument's validity rests on this being true and staying true.)
-2. **The service_role grant story now has THREE parts, not one — trace
-   all three, don't stop at the first.** (a) The REVOKE ALL/GRANT-back
-   PROD grants (§3/§6, item 1's fix) — confirm
-   `has_table_privilege('service_role', 'public.daily_log_photos',
-   'DELETE')` returns `false` on whatever database this migration is next
-   applied to prod against, don't trust this package's own readback
-   alone. (b) The NEW test-db-only exception
-   (`scripts/test-db-only-grants.sql`, §6's "A THIRD interaction") that
-   deliberately grants that SAME privilege back on test-db only — confirm
-   this file is never scanned by any apply/lint/CI path (its own header
-   makes this claim; independently verify it, the same way `outbound_sends`'
-   equivalent claim should have been independently checked when it was
-   first added). (c) The **open CLAUDE.md follow-up** this creates (§8's
-   final bullet) — CLAUDE.md's own standing rule on the `outbound_sends`
-   precedent asks for a SECOND instance of this divergence to be named in
-   CLAUDE.md itself, which this round has NOT done (deferred, given
-   CLAUDE.md is already past its own 120,000-char warn threshold) —
-   Aravind should decide whether that CLAUDE.md update is a precondition
-   here or a tracked follow-up.
+   argument's validity rests on this being true and staying true. Not
+   addressed by round 2 — still open.)
+2. **RESOLVED, external review round 2 — the service_role grant story's
+   three parts.** (a) The REVOKE ALL/GRANT-back PROD grants (§3/§6, item
+   1's fix) — the prod apply runbook's D-b step (above) is the required
+   live confirmation at apply time; this package's own test-db reading
+   (captured before the test-db-only grant existed) is the expected
+   shape, not a substitute for D-b. (b) The NEW test-db-only exception
+   (`scripts/test-db-only-grants.sql`, §6's "A THIRD interaction") —
+   **accepted by the reviewer**, who explicitly reversed his own earlier
+   PR #120 ruling on the identical `outbound_sends` pattern to do so —
+   AND its safety boundary (application code never exercises the
+   privilege test cleanup depends on) is now mechanically enforced by
+   `test/unit/no-app-delete-invariant.test.ts` (RED/GREEN-proven, above),
+   not merely assumed. (c) The CLAUDE.md follow-up (§8's own bullet) —
+   still deferred (file-size threshold), now more clearly warranted given
+   (b)'s acceptance, but not a blocker per the reviewer's own verdict.
 3. **The boundary-agreement test (item 6, `test/photo-access-boundary-
    agreement.test.ts`) covers CROSS-TENANT, not same-tenant-different-
    project.** Its "PM on another tenant's project" case proves isolation

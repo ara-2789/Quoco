@@ -167,6 +167,9 @@ CREATE TABLE public.daily_log_photos (
   expires_at      TIMESTAMPTZ  GENERATED ALWAYS AS (
                     timezone('UTC',
                       timezone('UTC', received_at) + CASE retention_class
+                        -- CHANGING EITHER LITERAL BELOW RECOMPUTES expires_at
+                        -- FOR EVERY EXISTING ROW, NOT JUST FUTURE ONES --
+                        -- READ THE COMMENT ABOVE THIS COLUMN BEFORE EDITING.
                         WHEN 'attendance' THEN INTERVAL '7 days'
                         ELSE INTERVAL '60 days'
                       END
