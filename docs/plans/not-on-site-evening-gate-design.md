@@ -1,3 +1,11 @@
+> RESCUED 2026-09-14 from research/not-on-site-evening-gate, which is
+> retired. This is a DESIGN PASS ONLY — no implementation was ever
+> written on that branch or anywhere else. Partially superseded: morning
+> attendance capture shipped (migration 030) and the not_on_site report
+> classification shipped Stage 4 (2026-09-11, dispatch.ts). The evening
+> re-ask described here is NOT built and is parked pending WhatsApp
+> template approval.
+
 # `not_on_site` evening gate — design pass (2026-09-10)
 
 **STATUS: DESIGN PASS ONLY. No code, no SQL, no migration number reserved,
