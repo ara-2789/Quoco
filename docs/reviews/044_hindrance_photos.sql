@@ -68,6 +68,62 @@
 --   2. This TABLE gets real Postgres RLS below, per CLAUDE.md §4's
 --      standing multi-tenancy rule.
 -- =============================================================================
+--
+-- EXTERNAL REVIEW ROUND 2, FINDING S2 (fold-and-return, 2026-09-14) --
+-- RECORDED, NOT FIXED BY EDITING 038. This migration introduces two new
+-- `whatsapp_sessions.context` keys scoped to the hindrance flow --
+-- 'hindrance_unspecified' and 'hindrance_id' (STEP 2 below). FOUR sites
+-- across this project's history strip hindrance's own leftover context
+-- keys and claim (by strip-list shape, not by explicit statement) to strip
+-- ALL of them, but only ever named 'q2_reask'/'description' -- the two
+-- keys that existed before this migration:
+--   1. apply_morning_flow_turn's own force-reset branch, for a scheduled
+--      trigger colliding with a live 'hindrance' session
+--      (038_hindrance_flow_and_collision_fix.sql:508, :513-515).
+--   2. apply_evening_flow_turn's own identical branch
+--      (038_hindrance_flow_and_collision_fix.sql:813, :818-821).
+--   3. 038's own DOWN block's bulk sweep, clearing every live 'hindrance'
+--      session before dropping the function that could process it
+--      (038_hindrance_flow_and_collision_fix.sql:1979-1983).
+--   4. This migration's OWN start branch (STEP 2 below) -- FIXED directly,
+--      since it is part of what this migration itself redefines; see that
+--      branch's own comment.
+-- Sites 1-3 are NOT fixed here -- 038 is a LIVE, APPLIED migration
+-- (CLAUDE.md's own "every numbered file currently present in
+-- supabase/migrations/ is LIVE -- do not edit any of them" rule) and
+-- fixing them for real would mean redefining apply_morning_flow_turn/
+-- apply_evening_flow_turn's own logic in a NEW migration, a materially
+-- larger and differently-scoped change than a photo-capability fold-and-
+-- return. Recorded here instead, with the argument for why the gap is
+-- accepted rather than silently left unstated:
+--   * A stale 'hindrance_unspecified'/'hindrance_id' surviving one of
+--     these three sites can only ever be read back by THIS function's own
+--     step-3 branch (or step 2's own overwrite of 'hindrance_unspecified'
+--     before it's ever read) -- no other function in this codebase reads
+--     either key, today or after this migration.
+--   * Sites 1/2 force-reset a 'hindrance' session INTO 'morning'/'evening'
+--     -- a residual 'hindrance_unspecified'/'hindrance_id' left in that
+--     session's context becomes a dead key under morning/evening's own
+--     step logic, which never reads either name. Write-before-read: if
+--     that same phone number's session ever re-enters 'hindrance' later,
+--     step 2 unconditionally OVERWRITES 'hindrance_unspecified' the
+--     moment it next resolves (STEP 2 below, jsonb_build_object -- not a
+--     merge that could preserve a stale value), and 'hindrance_id' is
+--     never read at step 1 or 2 at all, only written at step 2 and read
+--     at step 3 of the SAME pass through the flow.
+--   * Site 3 (the DOWN sweep) clears `current_flow`/`current_step` to
+--     NULL/0 in the same statement that leaves the residue -- by the time
+--     any future code could read the context, the row is idle; nothing
+--     downstream of an idle session ever consults these two keys.
+-- This is the identical write-before-read argument this migration's own
+-- STEP 2 already relies on for `hindrance_unspecified` surviving from Q2
+-- to Q3 in the FIRST place -- the same reasoning, pointed at why residue
+-- elsewhere is inert rather than why the intended carry-forward is safe.
+-- If a fifth site is ever added that reads 'hindrance_id'/
+-- 'hindrance_unspecified' from a context this project cannot guarantee
+-- came from the SAME pass through the hindrance flow, this argument no
+-- longer holds and sites 1-3 need a real migration, not a comment.
+-- =============================================================================
 
 BEGIN;
 
@@ -152,9 +208,16 @@ COMMENT ON TABLE public.hindrance_photos IS
   'photos-plan.md ''DECISIONS'' item 1 -- the engineer is told and the '
   'question re-asks; no buffering, no orphaned rows, no abandonable state. '
   'retention_class is fixed to ''hindrance'' (60 days) -- a single value, '
-  'CHECK''d rather than assumed, kept as an explicit column for parity '
-  'with daily_log_photos so a future retention scan can treat both tables '
-  'uniformly. expires_at is a GENERATED STORED column (received_at + 60 '
+  'CHECK''d rather than assumed. The expires_at expression below does NOT '
+  'reference this column at all (one class, one constant interval -- '
+  'nothing to branch on) -- it is kept anyway, external review round 2''s '
+  'own S3 finding confirmed, SOLELY so stage 6''s future retention scanner '
+  'can query this table and daily_log_photos IDENTICALLY, by the same '
+  '(retention_class, expires_at) shape, without a schema-level special '
+  'case for the one table that happens to have a single class. A future '
+  'reader must not remove this column as redundant on the strength of the '
+  'generated expression alone not needing it. '
+  'expires_at is a GENERATED STORED column (received_at + 60 '
   'days, via an explicit UTC pin -- see the column''s own comment for why '
   'a bare form is rejected by Postgres), never supplied by the job -- a '
   'wrong stamp is impossible, not merely uncaught. Tombstoned (photo_url '
@@ -236,9 +299,41 @@ GRANT SELECT, INSERT, UPDATE ON public.hindrance_photos TO service_role;
 -- DROP+CREATE). Signature BYTE-IDENTICAL to 038's live one (10 args) --
 -- ONLY CHANGE is the body: Q2's resolution now advances to a new step 3
 -- (the photo question) instead of completing the flow, and the return
--- value gains `hindrance_id` (populated only at the exact turn the row is
--- inserted). Docs/plans/stage2-hindrance-photos-plan.md §0/§1 has the full
--- design reasoning; this is the mechanical diff against 038's own body.
+-- value gains `hindrance_id` (populated at the turn the row is inserted,
+-- AND at the turn the flow completes -- see the S1 finding below and the
+-- RETURN block's own comment). Docs/plans/stage2-hindrance-photos-plan.md
+-- §0/§1 has the full design reasoning; this is the mechanical diff against
+-- 038's own body.
+--
+-- EXTERNAL REVIEW ROUND 2, FINDING S1 (fold-and-return, 2026-09-14) --
+-- FOLDED IN. This round's own first draft resolved a Q3 photo's parent
+-- hindrance via a "most recent report for this reporter" lookup
+-- (resolveMostRecentHindranceId, lib/hindrance/pm-notify.ts), guarded by a
+-- comment arguing safety from THIS flow's own single-writer property. The
+-- reviewer's finding: that comment fenced only the writer that exists
+-- TODAY. It said nothing about a future one, and one is already named in
+-- this project's own artifacts -- DASH-10, the unbuilt hindrance-editing
+-- dashboard surface, cited in 039's own grant commentary. The moment any
+-- PM/dashboard path ever inserts a hindrance for the same reporter
+-- mid-session, "most recent" silently attaches that session's photos to
+-- the WRONG row -- no constraint fires, evidence photos cross-attributed
+-- on an owner-visible record. Named explicitly as the SAME failure shape
+-- as the `was_unspecified` bug this same migration already found and
+-- fixed internally, one layer up: re-deriving from adjacent state a fact
+-- this RPC already established, on an earlier turn, instead of carrying
+-- it forward. FIX: `hindrance_id` is now stamped into `whatsapp_sessions.
+-- context` at the exact turn it is inserted (moved up, see the INSERT's
+-- own new position below), read back and cleared at step 3's own
+-- completion -- the identical mechanism `hindrance_unspecified` already
+-- used for the SAME class of gap. `resolveMostRecentHindranceId` is
+-- DELETED, not fenced (lib/hindrance/pm-notify.ts) -- the heuristic class
+-- is removed, not narrowed. The photo handler (lib/whatsapp/inbound-
+-- start.ts) now reads `hindrance_id` off the SAME session row it already
+-- selects for `current_step` -- one query, not two, and FEWER queries
+-- than the version this replaces. The RETURN block's own `hindrance_id`
+-- comment ("the caller already has the id from the earlier turn") was
+-- true in intent when first written and is now true in fact, not merely
+-- aspirational -- the context key is that earlier turn's own record.
 --
 -- REDEFINITION CAPTURE (scripts/lint-migrations.mjs Rule 10, per migration
 -- 041's own external review round 1, item 3 -- a capture must be taken and
@@ -333,7 +428,19 @@ BEGIN
     IF v_session.current_flow IS NULL THEN
       v_session.current_flow := 'hindrance';
       v_session.current_step := 1;
-      v_session.context      := v_session.context - 'q2_reask' - 'description';
+      -- External review round 2, S2: 'hindrance_unspecified'/'hindrance_id'
+      -- (both new, this migration) added here alongside the pre-existing
+      -- q2_reask/description -- a genuinely fresh start subtracts every
+      -- key this flow's own context can ever carry, not a subset of them.
+      -- UNREACHABLE IN PRACTICE, stated not assumed: current_flow can only
+      -- be NULL here via the v_complete block below (which already clears
+      -- both new keys) or the BOT-07 day-reset above (which wipes context
+      -- to '{}'::jsonb entirely) -- neither path can leave either key
+      -- behind for this branch to ever see. Added anyway, for the same
+      -- reason a subtract list should name what it removes rather than
+      -- rely on an invariant elsewhere never breaking silently.
+      v_session.context      := v_session.context - 'q2_reask' - 'description'
+                                  - 'hindrance_unspecified' - 'hindrance_id';
       v_outcome := 'start';
     ELSE
       -- Unchanged from 038 -- any already-active flow re-asks its own
@@ -371,9 +478,29 @@ BEGIN
         v_col := 'hindrance_unspecified';
       END IF;
 
+      -- MOVED UP from 038's own single later insert site (external review
+      -- round 2, S1) -- the row must exist BEFORE context is stamped with
+      -- its id below, so the id carried forward is the real one this turn
+      -- just wrote, not something re-derived afterward. Text is otherwise
+      -- byte-identical to 038's own two INSERTs; only WHEN they run moved.
+      IF v_col = 'hindrance_resolved' THEN
+        INSERT INTO hindrances
+          (tenant_id, project_id, reported_by, description, timing, timing_raw, submitted_via)
+        VALUES
+          (p_tenant_id, p_project_id, p_user_id, v_description, p_timing, NULL, 'whatsapp_adhoc')
+        RETURNING id INTO v_hindrance_id;
+
+      ELSIF v_col = 'hindrance_unspecified' THEN
+        INSERT INTO hindrances
+          (tenant_id, project_id, reported_by, description, timing, timing_raw, submitted_via)
+        VALUES
+          (p_tenant_id, p_project_id, p_user_id, v_description, 'unspecified', v_text, 'whatsapp_adhoc')
+        RETURNING id INTO v_hindrance_id;
+      END IF;
+
       -- CHANGED FROM 038: Q2 resolving (either branch of v_col above) no
       -- longer completes the flow -- it advances to step 3 (the new photo
-      -- question) instead. The hindrances row is inserted below, at this
+      -- question) instead. The hindrances row is inserted above, at this
       -- exact turn, exactly as it always was -- only the step transition
       -- and outcome differ; 038's own v_complete/current_step:=0 path is
       -- what used to fire here and now fires one step later, at step 3
@@ -381,10 +508,17 @@ BEGIN
       IF v_col IS NOT NULL THEN
         v_session.current_step := 3;
         -- 'hindrance_unspecified' carries whether THIS resolution was the
-        -- unspecified/exhausted branch across the Q2->Q3 gap -- read back
-        -- and cleared at step 3's own completion, below.
+        -- unspecified/exhausted branch across the Q2->Q3 gap; 'hindrance_id'
+        -- (external review round 2, S1) carries the row's real id the same
+        -- way -- both read back and cleared at step 3's own completion,
+        -- below. This is what lets the photo handler (lib/whatsapp/
+        -- inbound-start.ts) read the id directly off the session row it
+        -- already selects, instead of re-deriving it from adjacent state.
         v_session.context := (v_session.context - 'q2_reask' - 'description')
-          || jsonb_build_object('hindrance_unspecified', v_col = 'hindrance_unspecified');
+          || jsonb_build_object(
+               'hindrance_unspecified', v_col = 'hindrance_unspecified',
+               'hindrance_id', v_hindrance_id
+             );
         v_outcome := 'advance';
       END IF;
 
@@ -409,31 +543,25 @@ BEGIN
 
   IF v_complete THEN
     v_was_unspecified := COALESCE((v_session.context->>'hindrance_unspecified')::boolean, false);
+    -- Read back from context, same as v_was_unspecified immediately above
+    -- (external review round 2, S1) -- this is the COMPLETION turn, a
+    -- separate call from the one that inserted the row, so v_hindrance_id
+    -- (the plain local variable) was never set by THIS call's own INSERT.
+    -- Without this line, the RETURN below would report hindrance_id=NULL
+    -- at the exact turn a caller (enqueueHindrancePmNotify's own call
+    -- site, lib/whatsapp/flows/hindrance.ts) most needs it -- the same
+    -- "re-derive instead of carry forward" gap S1 already closed for the
+    -- photo handler, closed here too rather than left for a second finding.
+    v_hindrance_id          := (v_session.context->>'hindrance_id')::uuid;
     v_session.current_flow := NULL;
     v_session.current_step := 0;
-    v_session.context      := v_session.context - 'hindrance_unspecified';
+    -- 'hindrance_id' cleared alongside 'hindrance_unspecified' (external
+    -- review round 2, S1) -- both are step-3-only carry-forward state with
+    -- nothing left to read once the flow genuinely completes (the value is
+    -- already captured into v_hindrance_id, above, for THIS call's own
+    -- RETURN -- clearing context does not lose it).
+    v_session.context      := v_session.context - 'hindrance_unspecified' - 'hindrance_id';
     v_outcome := 'advance';
-  END IF;
-
-  -- UNCHANGED FROM 038 IN SHAPE -- only WHEN this fires has moved (Q2's
-  -- own resolving turn, same as always; just no longer the SAME turn that
-  -- zeroes current_step, since that now happens one turn later, at step
-  -- 3's own completion). RETURNING id INTO v_hindrance_id is the one
-  -- literal addition -- everything else in this INSERT is byte-identical
-  -- to 038.
-  IF v_col = 'hindrance_resolved' THEN
-    INSERT INTO hindrances
-      (tenant_id, project_id, reported_by, description, timing, timing_raw, submitted_via)
-    VALUES
-      (p_tenant_id, p_project_id, p_user_id, v_description, p_timing, NULL, 'whatsapp_adhoc')
-    RETURNING id INTO v_hindrance_id;
-
-  ELSIF v_col = 'hindrance_unspecified' THEN
-    INSERT INTO hindrances
-      (tenant_id, project_id, reported_by, description, timing, timing_raw, submitted_via)
-    VALUES
-      (p_tenant_id, p_project_id, p_user_id, v_description, 'unspecified', v_text, 'whatsapp_adhoc')
-    RETURNING id INTO v_hindrance_id;
   END IF;
 
   UPDATE whatsapp_sessions
@@ -452,10 +580,22 @@ BEGIN
     'outcome',         v_outcome,
     'current_flow',    v_session.current_flow,
     'current_step',    v_session.current_step,
-    -- NEW field. Non-null ONLY on the exact turn that inserts the row
-    -- (Q2's resolution, either v_col branch) -- null on every other
-    -- outcome, including step 3's own completion (nothing to return by
-    -- then; the caller already has the id from the earlier turn).
+    -- NEW field. Non-null at the TWO turns this RPC has confirmed
+    -- knowledge of which hindrance a session's report is about: the turn
+    -- that inserts the row (Q2's resolution, either v_col branch -- set
+    -- directly from the fresh INSERT) and the turn that completes the
+    -- flow (Q3's own completion -- read back from context, same as
+    -- v_was_unspecified immediately above). Null on every other outcome
+    -- (start, reask at any step, idle, wrong_flow). "The caller already
+    -- has the id from the earlier turn" is now literally true, not
+    -- aspirational (external review round 2, S1): the Q2-resolution turn
+    -- also stamps the same id into whatsapp_sessions.context, which is
+    -- what the photo handler (lib/whatsapp/inbound-start.ts) reads for
+    -- step 3, and what this RETURN value itself is re-read from at
+    -- completion for enqueueHindrancePmNotify's own caller
+    -- (lib/whatsapp/flows/hindrance.ts) -- one write, read two different
+    -- ways by two different callers, never two independent sources of
+    -- truth.
     'hindrance_id',    v_hindrance_id,
     -- NEW field. Only meaningful when outcome='advance' and
     -- current_step=0 (a genuine completion) -- see this function's own

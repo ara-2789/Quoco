@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { SessionFlow } from '@/lib/whatsapp/session'
 import { enqueueHindrancePmNotify } from '@/lib/hindrance/pm-notify'
@@ -56,11 +57,29 @@ export interface HindranceTurnResult {
    */
   wasExhausted: boolean
   /**
-   * NEW, migration 044. The hindrances row's id, non-null ONLY on the
-   * exact turn that inserts it (Q2's own resolution, advancing to step 3)
-   * -- null on every other outcome. The caller (lib/whatsapp/inbound-
-   * start.ts) uses this to know a hindrance_id now exists for this
-   * session, so Q3 photos can be stored directly instead of rejected.
+   * NEW, migration 044. The hindrances row's id. Non-null at the two
+   * turns the RPC has confirmed knowledge of it: the turn that inserts
+   * the row (Q2's own resolution, advancing to step 3) and the turn that
+   * completes the flow (Q3's own completion, read back from session
+   * context by the RPC itself) -- null on every other outcome.
+   *
+   * CHANGED, external review round 2 (S1, fold-and-return, 2026-09-14).
+   * Previously only non-null at the insert turn; this file's own
+   * completion branch below used to re-derive the id for
+   * enqueueHindrancePmNotify via a separate "most recent hindrance for
+   * this reporter" lookup (resolveMostRecentHindranceId,
+   * lib/hindrance/pm-notify.ts) instead of using this field directly. That
+   * lookup's own safety argument fenced only the writer that exists
+   * TODAY (this flow) -- it said nothing about a future one, and one is
+   * already named in this project's own artifacts (DASH-10, the unbuilt
+   * hindrance-editing dashboard surface, cited in 039's own grant
+   * commentary). The SAME shape as the `wasExhausted` bug this migration
+   * already found and fixed internally, one layer up: re-deriving from
+   * adjacent state a fact the RPC already established, on an earlier
+   * turn, instead of carrying it forward. Fixed by having the RPC ALSO
+   * populate this field at completion (read back from context, exactly
+   * like `was_unspecified`) -- resolveMostRecentHindranceId is deleted
+   * entirely, not fenced.
    */
   hindranceId: string | null
 }
@@ -199,8 +218,27 @@ export async function applyHindranceFlowTurn(params: {
   // header) -- the hindrance row is already safely written by the RPC (at
   // Q2's own earlier turn) regardless of whether the notify job
   // successfully enqueues.
+  //
+  // CHANGED, external review round 2 (S1, 2026-09-14): passes
+  // result.hindrance_id DIRECTLY -- the RPC now populates it at this
+  // exact completion turn too (read back from session context, see
+  // 044's own migration comment), so there is no lookup left to perform
+  // here. A defensive Sentry alert covers the case this should never
+  // reach (a genuine completion with no hindrance_id at all), rather than
+  // silently skipping the notify.
   if (result.outcome === 'advance' && result.current_step === 0) {
-    await enqueueHindrancePmNotify({ projectId: params.projectId, userId: params.userId }, supabase)
+    if (result.hindrance_id) {
+      await enqueueHindrancePmNotify({ hindranceId: result.hindrance_id }, supabase)
+    } else {
+      Sentry.captureException(
+        new Error('applyHindranceFlowTurn: genuine completion with no hindrance_id -- cannot enqueue PM notify'),
+        {
+          fingerprint: ['hindrance-flow', 'completion_missing_hindrance_id'],
+          tags: { feature: 'hindrance-flow' },
+          extra: { phoneNumber: params.phoneNumber, projectId: params.projectId, userId: params.userId },
+        },
+      )
+    }
   }
 
   return {

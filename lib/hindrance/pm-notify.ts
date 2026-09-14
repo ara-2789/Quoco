@@ -401,6 +401,25 @@ async function fetchHindrancePhotoAttachments(
  * below entirely and sends with whatever photos exist right now (possibly
  * none), using the "still uploading" copy.
  *
+ * SHARED RETRY BUDGET, ACCEPTED AS A TRADE (external review round 2, S4,
+ * 2026-09-14) -- NOT REFINED, deliberately. This THROW and the per-PM
+ * send-failure THROW below draw on the SAME 5-attempt backoff budget
+ * (lib/queue/jobs.ts, NFR-17) -- there is no separate counter for "still
+ * waiting on photos" versus "a PM's email keeps failing." A hindrance
+ * whose photo upload is merely slow gets the same handful of attempts,
+ * spaced the same exponentially-widening way, as one whose Resend send is
+ * genuinely broken -- a dedicated hold budget for the photo-wait case
+ * (its own counter, its own backoff curve, independent of send-failure
+ * retries) is NOT built here. Reasoning: the exhaustion behavior for
+ * BOTH cases already converges on the same outcome Aravind decided above
+ * -- send anyway, without waiting further -- so a second budget would
+ * change WHEN that convergence happens, not WHAT happens at it. Worth
+ * building only if a real collision is later observed: a hindrance whose
+ * photos would have finished uploading well inside a photo-specific hold
+ * window, but whose email nonetheless went out without them because an
+ * unrelated PM-send failure on an EARLIER attempt had already spent part
+ * of the shared budget. Not decided in advance of having one.
+ *
  * ON ANY PER-PM SEND FAILURE, THIS THROWS -- deliberately unlike
  * handleOwnerDeliverJob's own terminal-failure model. Owner delivery has a
  * dedicated terminal `delivery_status` value for a rejected send
@@ -546,81 +565,52 @@ export async function handleHindrancePmNotifyJob(
 // call site, and so this file owns its own job-type's enqueue shape end to
 // end. ------------------------------------------------------------------
 
-/**
- * Resolve the most recent hindrance report for a given (project, reporter)
- * pair. EXTRACTED, migration 044 (stage 2), from enqueueHindrancePmNotify's
- * own inline query below -- reused by lib/whatsapp/inbound-start.ts's own
- * hindrance Q3 photo branch, which needs the SAME lookup for a different
- * reason.
- *
- * SAFE HERE, and in inbound-start.ts's own call site, for the SAME reason:
- * both callers run this SYNCHRONOUSLY, in the same request that already
- * confirmed (via the RPC's own outcome, or a fresh session read) that this
- * engineer's session is at a point in the hindrance flow where exactly one
- * report -- the one just written, or the one currently open at step 3 --
- * is the only candidate this query could possibly find. NOT SAFE for an
- * async, job-handler-side call at an unknown later time -- that shape was
- * considered and rejected for the Q1/Q2 photo case specifically
- * (docs/plans/stage2-hindrance-photos-plan.md §0, option C): a report
- * abandoned mid-flow, with an unbounded delay before some later async
- * caller runs this same query, could resolve to a different, unrelated,
- * later hindrance from the same engineer. Every current call site of this
- * function avoids that shape by construction; a future caller must
- * re-confirm the same synchronous-adjacency property before reusing it.
- */
-export async function resolveMostRecentHindranceId(
-  params: { projectId: string; userId: string },
-  client: SupabaseClient,
-): Promise<string | null> {
-  const { data, error } = await client
-    .from('hindrances')
-    .select('id')
-    .eq('project_id', params.projectId)
-    .eq('reported_by', params.userId)
-    .eq('submitted_via', 'whatsapp_adhoc')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<{ id: string }>()
-
-  if (error) {
-    throw new Error(
-      `resolveMostRecentHindranceId failed for project ${params.projectId}, reporter ${params.userId}: ${error.message}`,
-    )
-  }
-  return data?.id ?? null
-}
+// DELETED, external review round 2 (S1, fold-and-return, 2026-09-14):
+// resolveMostRecentHindranceId used to live here, resolving a Q3 photo's
+// (or a just-completed turn's) parent hindrance via a "most recent report
+// for this reporter" lookup. The reviewer's finding: the safety argument
+// for that heuristic fenced only the writer that exists TODAY (the
+// hindrance flow itself) -- it said nothing about a future one, and one is
+// already named in this project's own artifacts (DASH-10, the unbuilt
+// hindrance-editing dashboard surface, cited in 039's own grant
+// commentary). The moment any PM/dashboard path ever inserts a hindrance
+// for the same reporter mid-session, "most recent" would silently attach
+// that session's photos (or this function's own PM-notify email) to the
+// WRONG row -- the SAME failure shape as the `was_unspecified` bug this
+// migration already found and fixed internally, one layer up: re-deriving
+// from adjacent state a fact the system already established, on an
+// earlier turn, instead of carrying it forward. FIX: migration 044's own
+// RPC now stamps `hindrance_id` into `whatsapp_sessions.context` at the
+// turn it is inserted, and returns it again at the turn the flow
+// completes (read back from that same context key) -- both callers below
+// now receive it directly from their own caller, which already has it
+// from the RPC. The heuristic is DELETED, not fenced or narrowed.
 
 /**
- * Look up the hindrance row a just-completed turn wrote (safe: a single
- * engineer's own session lock serializes his turns, so this query can
- * never race a concurrent insert FROM THE SAME ENGINEER; a different
- * engineer's row is excluded by the reported_by filter regardless) and
- * enqueue its PM-notify job. NEVER THROWS -- the hindrance row is already
+ * Enqueue the PM-notify job for a hindrance report that has just
+ * genuinely completed. NEVER THROWS -- the hindrance row is already
  * safely written by the RPC by the time this runs; a failure here must
  * not surface as a broken engineer-facing confirmation reply. Failures
  * are Sentry-alerted instead.
+ *
+ * CHANGED, external review round 2 (S1, 2026-09-14): takes `hindranceId`
+ * directly from the caller (lib/whatsapp/flows/hindrance.ts, which now
+ * gets it straight from the RPC's own return value) instead of resolving
+ * it via a lookup -- see this file's own DELETED note immediately above
+ * for why the lookup is gone, not merely relocated. This is a pure
+ * enqueue now: no query at all before the job insert.
  */
 export async function enqueueHindrancePmNotify(
-  params: { projectId: string; userId: string },
+  params: { hindranceId: string },
   client: SupabaseClient,
 ): Promise<void> {
   try {
-    const hindranceId = await resolveMostRecentHindranceId(params, client)
-    if (!hindranceId) {
-      Sentry.captureException(new Error('enqueueHindrancePmNotify: no hindrance row found to notify for'), {
-        fingerprint: ['hindrance-flow', 'pm_notify_enqueue_lookup_failed'],
-        tags: { feature: 'hindrance-flow' },
-        extra: { projectId: params.projectId, userId: params.userId },
-      })
-      return
-    }
-
-    await enqueueJob('hindrance_pm_notify', { hindrance_id: hindranceId }, client)
+    await enqueueJob('hindrance_pm_notify', { hindrance_id: params.hindranceId }, client)
   } catch (err) {
     Sentry.captureException(err, {
       fingerprint: ['hindrance-flow', 'pm_notify_enqueue_failed'],
       tags: { feature: 'hindrance-flow' },
-      extra: { projectId: params.projectId, userId: params.userId },
+      extra: { hindranceId: params.hindranceId },
     })
   }
 }

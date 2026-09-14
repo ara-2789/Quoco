@@ -1,4 +1,4 @@
-# 044_hindrance_photos.sql — external review package (2026-09-14)
+# 044_hindrance_photos.sql — external review package (2026-09-14, round 1 fold-and-return round 2 folded in)
 
 STATUS: HELD in `docs/reviews/`, NOT promoted to `supabase/migrations/`.
 Applied to **TEST-DB ONLY** (`exfccwlrhoutkgrlikod`) this pass, per
@@ -7,8 +7,126 @@ Trips CLAUDE.md §0's external review gate on two independent grounds — see
 "Why this trips the gate" below — and needs the full review before it is
 ever applied beyond test-db.
 
+**ROUND 2 (this update): external reviewer returned a FOLD-AND-RETURN on
+round 1**, four findings (S1-S4). All four folded in. S1 (the real one --
+see below) required a genuine re-teardown/re-apply cycle against test-db,
+re-run of both RPC transcripts, a re-hash, and a re-rehearsal of the DOWN
+block. Every piece of round-1 evidence below that S1/S2 touched has been
+superseded by fresh, re-run evidence in this same file (marked ROUND 2),
+not silently replaced — round 1's own evidence is kept, struck through
+where superseded, per this project's own correction discipline.
+
 Companion plan (all design decisions, both the original plan-only pass and
 Aravind's 2026-09-14 resolutions): `docs/plans/stage2-hindrance-photos-plan.md`.
+
+---
+
+## External review round 2 — verdict and fold-and-return (2026-09-14)
+
+**Verdict: FOLD-AND-RETURN, four findings.**
+
+### S1 (the real finding) — `resolveMostRecentHindranceId` deleted; `hindrance_id` now carried in session context
+
+**This is the SAME failure shape as the `was_unspecified` bug this
+migration already found and fixed INTERNALLY, one layer up** — recorded
+here explicitly, per the reviewer's own instruction, so the pattern is
+named once rather than treated as two unrelated incidents:
+
+- **The internal bug (round 1, found before this migration ever ran
+  anywhere):** `wasExhausted` used to be re-derived by re-classifying the
+  CURRENT turn's message via `classifyHindranceTiming`. That was safe
+  under 038, where completion and Q2's resolution were the same call. It
+  became silently wrong the moment this migration split them into two
+  separate turns — re-classifying Q3's "none" would have reported every
+  completion as exhausted. Fixed by carrying the fact forward in session
+  context (`hindrance_unspecified`).
+- **The external finding (round 2, S1):** the photo handler resolved
+  which hindrance a Q3 photo belongs to via `resolveMostRecentHindranceId`
+  -- a "most recent report for this reporter" lookup. Its own safety
+  comment fenced only the writer that exists TODAY (the hindrance flow
+  itself) -- it said nothing about a non-flow writer, and one is already
+  named in this project's own artifacts: DASH-10, the unbuilt hindrance-
+  editing dashboard surface, cited in 039's own grant commentary. The
+  moment any PM/dashboard path inserts a hindrance for the same reporter
+  mid-session, "most recent" silently attaches the session's photos to the
+  WRONG row -- no constraint fires, evidence photos cross-attributed on an
+  owner-visible record.
+- **Both are the identical pattern**: re-deriving from adjacent state a
+  fact the system already established, on an earlier turn, instead of
+  carrying it forward. The cure applied to `was_unspecified` internally is
+  the exact cure the reviewer named for `hindrance_id` externally.
+
+**Fix**: `hindrance_id` is now stamped into `whatsapp_sessions.context` at
+the exact turn it is inserted (Q2's resolution), read back and cleared at
+step 3's own completion -- the identical mechanism `hindrance_unspecified`
+already used. `resolveMostRecentHindranceId` is **deleted**, not fenced,
+from `lib/hindrance/pm-notify.ts`. Both of its call sites now receive the
+id directly from their own caller instead of performing a lookup:
+- The photo handler (`lib/whatsapp/inbound-start.ts`) now selects
+  `context` alongside `current_step` in the SAME query it already ran --
+  net query count for a step-3 photo is unchanged (still one session read),
+  down from that read plus a second lookup query.
+- `enqueueHindrancePmNotify` (`lib/hindrance/pm-notify.ts`) now takes
+  `hindranceId` directly as a parameter -- its own caller
+  (`lib/whatsapp/flows/hindrance.ts`) gets it from the RPC's own return
+  value, which the RPC now populates at completion too (previously only at
+  the insert turn), read back from context the same way
+  `was_unspecified` already was.
+This is genuinely FEWER queries than round 1's own version, not merely a
+safer version of the same query count -- full diff in §1 below.
+
+### S2 — stale subtract-list completeness claims (4 sites)
+
+Four sites strip hindrance's own leftover `whatsapp_sessions.context` keys
+and, by shape, claim to strip all of them, but only ever named
+`q2_reask`/`description` -- the two keys that existed before this
+migration introduced `hindrance_unspecified`/`hindrance_id`:
+1. `apply_morning_flow_turn`'s force-reset branch for a 'hindrance'
+   collision (038, lines 508/513-515).
+2. `apply_evening_flow_turn`'s identical branch (038, lines 813/818-821).
+3. 038's own DOWN block's bulk sweep (038, lines 1979-1983).
+4. This migration's OWN start branch.
+
+**Site 4 (this migration's own, fully editable): FIXED directly** -- the
+subtract list now also names `hindrance_unspecified`/`hindrance_id`.
+**Sites 1-3 (inside 038, a LIVE, APPLIED migration): NOT edited** -- per
+CLAUDE.md's own "every numbered file currently present in
+supabase/migrations/ is LIVE -- do not edit any of them" rule, fixing them
+for real would mean redefining `apply_morning_flow_turn`/
+`apply_evening_flow_turn`'s own logic in a NEW migration, a materially
+larger and differently-scoped change than this photo-capability fold-and-
+return. **Recorded instead**, in this migration's own header (§1 below), as
+an explicit acceptance with the write-before-read argument for each site,
+and a named condition under which the acceptance stops holding (a future
+fifth site reading either key from a context this project cannot guarantee
+came from the same pass through the hindrance flow). Full text: §1.
+
+### S3 — `retention_class`'s COMMENT now states its purpose precisely
+
+The generated `expires_at` expression does not reference `retention_class`
+at all (one class, one constant interval -- nothing to branch on). The
+table's own `COMMENT` now says so explicitly, and states the actual reason
+the column is kept anyway: stage 6's future retention scanner needs to
+query `hindrance_photos` and `daily_log_photos` identically, by the same
+`(retention_class, expires_at)` shape, without a schema-level special case
+for the one table that happens to have a single class. A future reader
+must not remove this column as redundant on the strength of the generated
+expression alone not needing it -- that sentence is now in the COMMENT
+itself, not just in this review package.
+
+### S4 — the shared-retry-budget trade recorded as accepted, not built
+
+`handleHindrancePmNotifyJob`'s photo-wait retry (throws while
+`photos_status='pending'`) and its per-PM send-failure retry draw on the
+SAME 5-attempt job-queue backoff budget -- there is no dedicated hold
+budget for "still waiting on photos" separate from "a PM's email keeps
+failing." Recorded in the function's own header comment
+(`lib/hindrance/pm-notify.ts`) as an accepted trade, not refined: both
+failure classes already converge on the same exhaustion behavior (send
+anyway, per Aravind's "never withhold the email" decision), so a second
+budget would change WHEN that convergence happens, not WHAT happens at it.
+Worth building only if a real collision is later observed -- named
+explicitly, not decided in advance of having one.
 
 ---
 
@@ -53,10 +171,14 @@ Structural summary (full reasoning is in the file's own comments, not restated i
 3. `CREATE OR REPLACE FUNCTION apply_hindrance_flow_turn` — the mechanical diff against 038, itemized in `docs/plans/stage2-hindrance-photos-plan.md` §1:
    - Q2's resolution now sets `current_step := 3` (was: completes to `0`) and stamps `context.hindrance_unspecified` for the was_unspecified fix above.
    - New `current_step = 3` branch: any non-empty text completes the flow.
-   - Return value gains `hindrance_id` (non-null only at the Q2→Q3 transition) and `was_unspecified` (meaningful only at genuine completion).
+   - Return value gains `hindrance_id` and `was_unspecified`.
+   - **ROUND 2 (S1):** `hindrance_id` is now ALSO stamped into `context` at the same Q2-resolution turn (`jsonb_build_object('hindrance_unspecified', ..., 'hindrance_id', v_hindrance_id)`), read back and cleared at completion the same way `was_unspecified` already was. The RETURN value's own `hindrance_id` field is now non-null at BOTH the insert turn AND the completion turn (round 1: insert turn only) — `~~non-null only at the Q2→Q3 transition~~`, struck through, superseded.
+   - **ROUND 2 (S2):** the start branch's own subtract list now also strips `hindrance_unspecified`/`hindrance_id`, not just `q2_reask`/`description`.
    - Argument list is **byte-identical** to 038's (10 args) — `CREATE OR REPLACE`, no `DROP FUNCTION`, no overload hazard. Grants re-asserted explicitly regardless (defense against a future editor assuming they persist automatically).
 4. `REVOKE`/`GRANT` re-assertion for the function, unchanged shape from 038.
-5. DOWN block (inert, commented) — reverts the table/column and restores 038's function body **byte-for-byte**, pasted directly from `038_hindrance_flow_and_collision_fix.sql:225-388`, not retyped from memory. **A transcription error in an earlier draft of this DOWN block was caught and fixed before this package was written** — see §7's "DOWN rehearsal" subsection for the full incident (a paraphrased comment produced a body-hash mismatch; the corrected version was re-verified to match exactly).
+5. DOWN block (inert, commented) — reverts the table/column and restores 038's function body **byte-for-byte**, pasted directly from `038_hindrance_flow_and_collision_fix.sql:225-388`, not retyped from memory. **A transcription error in an earlier draft of this DOWN block was caught and fixed before this package was written** — see §7's "DOWN rehearsal" subsection for the full incident (a paraphrased comment produced a body-hash mismatch; the corrected version was re-verified to match exactly). Unaffected by round 2's S1/S2 changes (those only touch the forward function) — re-rehearsed anyway, since the forward function's own hash changes with every edit to it and the review's own instruction asked for a fresh rehearsal. See §7 (ROUND 2).
+6. **NEW, round 2 (S1):** two new header sections — "EXTERNAL REVIEW ROUND 2, FINDING S1" (directly above STEP 2) and "EXTERNAL REVIEW ROUND 2, FINDING S2" (in the file's top header, before `BEGIN;`) — record both findings' full reasoning inline in the migration file itself, not only in this review package.
+7. **NEW, round 2 (S3):** the `hindrance_photos` table's own `COMMENT` gains one paragraph stating explicitly that `retention_class` is kept solely for stage 6's uniform scanner, since the generated `expires_at` expression itself never references it.
 
 ---
 
@@ -77,6 +199,8 @@ Structural summary (full reasoning is in the file's own comments, not restated i
 
 **Verified by direct observation against test-db**, not assumed from reading the file — raw probe output, §7 below.
 
+**OPERATIONAL GOTCHA, found during round 2's own teardown/reapply cycle, recorded so it isn't rediscovered:** re-applying this migration (DOWN then forward again, as round 2's own re-verification required) re-runs the migration's own `REVOKE ALL ... service_role` / `GRANT SELECT, INSERT, UPDATE ... service_role` pair — which silently WIPES the separate, test-db-only `GRANT DELETE ON public.hindrance_photos TO service_role` (`scripts/test-db-only-grants.sql`, added the prior round so this project's own test suite can clean up rows it creates against a tombstone-only table). Found live: three test files' own `afterEach`/`afterAll` cleanup failed with `hindrance_photos_hindrance_id_fkey` violations immediately after the round-2 re-apply, before `scripts/test-db-only-grants.sql` was re-run. **Any future teardown/reapply cycle of this migration against test-db must re-run `scripts/test-db-only-grants.sql` immediately afterward** — this is now the second time this exact class of gap has been found (round 1 found it for `daily_log_photos`/`outbound_sends`; this is `hindrance_photos`' own first re-apply cycle finding it too, for the same underlying reason).
+
 ---
 
 ## §4 — Storage bucket decision and path convention
@@ -91,9 +215,11 @@ Structural summary (full reasoning is in the file's own comments, not restated i
 
 `lib/whatsapp/inbound-start.ts`'s `handleHindrancePhoto`:
 - `current_step` 1 or 2 → `HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY` ("Photo not saved yet. Answer the question, and I'll ask for photos at the end."), no storage, no RPC call, question unchanged.
-- `current_step` 3 → resolves `hindrance_id` via `resolveMostRecentHindranceId` (extracted from `lib/hindrance/pm-notify.ts`'s own `enqueueHindrancePmNotify` lookup), enqueues `hindrance_media_ingest`, sets `photos_status='pending'`, reasks (with `PHOTO_SAVED_REASK_PREFIX` if captioned) — same "a photo never answers a question" mechanism already live for morning/evening (item 23), reused, not reinvented.
+- `current_step` 3 → reads `hindrance_id` directly off the session row's own `context` (selected in the SAME query as `current_step`), enqueues `hindrance_media_ingest`, sets `photos_status='pending'`, reasks (with `PHOTO_SAVED_REASK_PREFIX` if captioned) — same "a photo never answers a question" mechanism already live for morning/evening (item 23), reused, not reinvented.
 
-**Why the "most recent hindrance" lookup is safe here but was rejected for the async job-handler case** (option C in the plan's own §0): this call runs **synchronously**, in the same request, while `current_step` is confirmed to still be 3 for this exact phone number's session — no second hindrance report from the same engineer can exist yet, since the session hasn't reached idle to allow a new "1" to start one. The rejected option ran the identical query **asynchronously**, at an unbounded later time, where an abandoned report could make it resolve to a different, unrelated hindrance. Documented in both `resolveMostRecentHindranceId`'s own doc comment and `handleHindrancePhoto`'s own doc comment, so the distinction isn't lost to a future editor.
+**~~Why the "most recent hindrance" lookup is safe here but was rejected for the async job-handler case~~ SUPERSEDED, external review round 2, finding S1.** Struck through, not deleted, per this project's own correction discipline. Round 1 resolved `hindrance_id` here via `resolveMostRecentHindranceId`, arguing safety from synchronous adjacency (this call runs in the same request that already confirmed `current_step=3`, so no second report from the same engineer could exist yet). **The reviewer's finding: that argument fenced only the writer that exists TODAY** (the hindrance flow itself) — it said nothing about a future one, and one is already named in this project's own artifacts (DASH-10, the unbuilt hindrance-editing dashboard surface, cited in 039's own grant commentary). The moment any PM/dashboard path ever inserts a hindrance for the same reporter mid-session, "most recent" would silently attach this session's photos to the WRONG row. **Named explicitly as the SAME shape as the `was_unspecified` bug this migration already found and fixed internally** (§0/External review round 2 above), one layer up: re-deriving from adjacent state a fact the system already established, on an earlier turn, instead of carrying it forward.
+
+**Fix, round 2: `resolveMostRecentHindranceId` is DELETED entirely**, not fenced or narrowed. `hindrance_id` is carried forward in session context from the exact turn it is created (mirroring `hindrance_unspecified`'s own existing mechanism) — the heuristic class is removed, not made safer. Net effect: the photo handler's own query count for a step-3 photo is UNCHANGED (still one session read) — it is the LOOKUP that is gone, not replaced by an equally-costly alternative.
 
 ---
 
@@ -111,6 +237,14 @@ Structural summary (full reasoning is in the file's own comments, not restated i
 ---
 
 ## §7 — Test-db apply evidence, pinned (raw, not paraphrased)
+
+**ROUND 1 evidence below (function body hashes `a964ccdf...`-generation and
+the original DOWN-transcription-bug incident) is SUPERSEDED by ROUND 2's
+own full re-teardown/re-apply cycle, appended at the end of this section**
+— S1/S2 changed the function's body again, so every hash below is now a
+snapshot of a body that no longer exists on test-db. Kept, not deleted,
+per this project's correction discipline; the ROUND 2 subsection is the
+current, authoritative state.
 
 **Pre-apply probe** (`to_regclass`/`to_regproc`, confirming clean slate before applying):
 ```json
@@ -190,6 +324,99 @@ Row readback confirms `timing='unspecified'`, `timing_raw='depends on the crane'
 
 All scratch fixture rows (`whatsapp_sessions`, `hindrances`) created during this manual rehearsal were deleted before this package was written; none are live on test-db as leftover state.
 
+### ROUND 2 (2026-09-14) — S1/S2 folded in, full re-teardown/re-apply cycle
+
+**Method, stated up front**: since S1/S2 change the forward function's own
+body, and the amended migration's `CREATE TABLE` is not idempotent, the
+only faithful way to re-verify was a full teardown (round 1's own,
+unchanged DOWN block) followed by a fresh forward apply of the AMENDED
+file — not a partial patch. This also re-exercises the DOWN block itself
+against the CURRENT (round-1) function one last time before it's replaced,
+which is why the teardown step below reads back the identical pre-044
+hash before the amended file is ever applied.
+
+**Pre-teardown probe** (confirms round 1's own state, immediately before
+tearing it down):
+```json
+{"current_body_md5": "a964ccdf29333b576cbe359d6497c902", "photos_status_col_count": 1, "table_exists": "hindrance_photos"}
+```
+
+**Teardown** (round 1's own unchanged DOWN block, run against round 1's own live state): no error.
+
+**Post-teardown probe** — table gone, column gone, function restored to the pre-044 (038) hash:
+```json
+{"current_body_md5": "abdac08cd997bb2e3d8d73773d807a24", "photos_status_col_count": 0, "table_exists": null}
+```
+
+**Apply the AMENDED file forward**: `supabase db query --linked -f docs/reviews/044_hindrance_photos.sql` — no error.
+
+**Post-apply structure/RLS probe** (identical shape to round 1's own, confirming no structural regression from S1/S2):
+```json
+{"expires_at_expr": "timezone('UTC'::text, (timezone('UTC'::text, received_at) + '60 days'::interval))", "photos_status_col_count": 1, "policy_count": 1, "rls_enabled": true, "table_exists": "hindrance_photos"}
+```
+
+**Post-apply four-way negative grants matrix** (identical to round 1's own — S1/S2 touch RPC/table body, not grants):
+```json
+{"anon_select": false, "authenticated_insert": false, "authenticated_select": true, "service_role_delete": false, "service_role_insert": true, "service_role_references": false, "service_role_select": true, "service_role_trigger": false, "service_role_truncate": false, "service_role_update": true}
+```
+
+**Amended function body hash** (new state, not compared against anything — recorded as the current live body):
+```
+amended_body_md5: 09b4e083638dd359b6415a71f6146bec (body_len: 11483)
+```
+
+**RPC live verification, resolved-timing path, against the AMENDED RPC** (each `SELECT apply_hindrance_flow_turn(...)` run individually):
+```json
+q1:  {"current_flow":"hindrance","current_step":2,"hindrance_id":null,"outcome":"advance","was_unspecified":false}
+q2:  {"current_flow":"hindrance","current_step":3,"hindrance_id":"67e8ea98-2246-4a1a-8166-473e9f7e9434","outcome":"advance","was_unspecified":false}
+q3:  {"current_flow":null,"current_step":0,"hindrance_id":"67e8ea98-2246-4a1a-8166-473e9f7e9434","outcome":"advance","was_unspecified":false}
+```
+**`hindrance_id` is now non-null at BOTH q2 and q3** (round 1: null at q3) — this is the S1 fix's own visible effect in the RETURN value.
+
+**RPC live verification, unspecified-timing path, against the AMENDED RPC** — this is the exact transcript S1 touches most directly (the turn that stamps `hindrance_id` into context is the same turn that already stamps `hindrance_unspecified`):
+```json
+q1:           {"current_flow":"hindrance","current_step":2,"hindrance_id":null,"outcome":"advance","was_unspecified":false}
+q2_bad1:      {"current_flow":"hindrance","current_step":2,"hindrance_id":null,"outcome":"reask","was_unspecified":false}
+q2_exhaust:   {"current_flow":"hindrance","current_step":3,"hindrance_id":"ca5f44db-2a0f-4fc6-b1bf-f3601e81a9d9","outcome":"advance","was_unspecified":false}
+q3_complete:  {"current_flow":null,"current_step":0,"hindrance_id":"ca5f44db-2a0f-4fc6-b1bf-f3601e81a9d9","outcome":"advance","was_unspecified":true}
+```
+
+**Direct proof of the S1 fix — session context inspected between q2_exhaust and q3_complete** (this is the row the photo handler now reads, in place of the deleted lookup):
+```json
+{"context": {"hindrance_id": "ca5f44db-2a0f-4fc6-b1bf-f3601e81a9d9", "hindrance_unspecified": true}, "current_flow": "hindrance", "current_step": 3}
+```
+
+**Context correctly cleared after completion**:
+```json
+{"context": {}}
+```
+Row readback confirmed `timing='unspecified'`, `timing_raw='depends on the crane'` for this report — matches round 1's own equivalent check.
+
+**DOWN block re-rehearsed against a live in-flight step-3 session, one more time, since the forward function changed again:**
+
+1. Seeded a fresh session at hindrance step 3 (real Q1→Q2→Q2-resolved turns). Session context confirmed to carry `hindrance_id` at this point:
+   ```json
+   {"context": {"hindrance_id": "6bd28cef-c34c-44c2-bb97-74ff23272621", "hindrance_unspecified": false}, "current_flow": "hindrance", "current_step": 3}
+   ```
+2. Ran the (unchanged from round 1) DOWN block for real. No SQL error.
+3. Post-DOWN probe:
+   ```json
+   {"current_body_md5": "abdac08cd997bb2e3d8d73773d807a24", "photos_status_col_count": 0, "table_exists": null}
+   ```
+   **Exact match to the pre-044 capture, byte-identical, same as round 1's own (corrected) result.** The DOWN block's own text did not change between rounds (S1/S2 only touch the forward function), so this confirms the DOWN block is stable and still correct after the forward function changed around it.
+4. **In-flight session behavior under the reverted function**, one more time:
+   ```json
+   {"current_flow": "hindrance", "current_step": 3, "outcome": "reask"}
+   ```
+   Identical to round 1's own finding — 038's reverted function reasks indefinitely on the stuck session rather than crashing.
+5. All scratch fixtures cleaned up. **The test-db-only `service_role` DELETE grant on `hindrance_photos` was re-applied** (`scripts/test-db-only-grants.sql`) after this cycle — the migration's own `REVOKE ALL`/`GRANT` pair wiped it during the forward re-apply in step 4 above (see §3's own "OPERATIONAL GOTCHA" note) — and confirmed restored:
+   ```json
+   {"service_role_delete": true}
+   ```
+6. Migration 044 (amended) **re-applied forward** one final time, for the rest of this round's test-suite work, and reconfirmed clean via the same structure/RLS probe as above.
+
+All scratch fixture rows created during this round's rehearsal were deleted before this package was updated; none are live on test-db as leftover state.
+
 ---
 
 ## §8 — Raw test-suite results against test-db (post-apply)
@@ -249,6 +476,29 @@ this package's own build can fix — it predates this stage's work and is
 tracked separately.
 
 **`no-app-delete-invariant.test.ts`** — this guard reads its table list dynamically from `scripts/test-db-only-grants.sql` (extended this pass with a third entry, `hindrance_photos`, for the identical reason `daily_log_photos` needed one: `service_role` has no `DELETE` on this table by design, and this project's own test cleanup needs it — found live when `test/hindrance-photos-rls.test.ts`'s own `afterAll` failed with `hindrance_photos_hindrance_id_fkey` blocking a shared-fixture teardown). Coverage extends automatically; no edit to that test file itself was needed.
+
+### ROUND 2 (2026-09-14) — S1/S2 re-tested
+
+**Migration lint, re-run after S1/S2's edits**: `migration-lint: clean. 97 known violation(s), all exempted.` (unaffected by S1/S2 — no new function redefinition, no new held-migration entry needed).
+
+**`tsc --noEmit`**: clean, after every TS-side S1 change (`lib/whatsapp/inbound-start.ts`'s `handleHindrancePhoto`, `lib/hindrance/pm-notify.ts`'s `enqueueHindrancePmNotify` signature change and `resolveMostRecentHindranceId` deletion, `lib/whatsapp/flows/hindrance.ts`'s completion branch).
+
+**Hindrance-touching test files, run as a subset first** (9 files) — first pass found a real regression from the round-2 teardown/reapply cycle itself, not from S1/S2's own logic:
+```
+Test Files  3 failed | 6 passed (9)
+     Tests  98 passed (98)
+```
+**All 98 individual assertions passed** — the "3 failed" were SUITE-level `afterEach`/`afterAll` teardown failures (`hindrance_photos_hindrance_id_fkey` violation), caused by the operational gotcha already named in §3/§7 above (the teardown/reapply cycle wiped `scripts/test-db-only-grants.sql`'s own `service_role` DELETE grant on `hindrance_photos`). **Fixed by re-running `scripts/test-db-only-grants.sql`** — confirmed (`service_role_delete: true`, §7 ROUND 2) — then re-run clean:
+```
+Test Files  3 passed (3)
+     Tests  16 passed (16)
+```
+Combined hindrance-subset total: **9/9 files, 114/114 tests passed.**
+
+**Full suite (`npx vitest run`), pinned to commit `<PENDING — this round's own commit SHA, filled in post-commit>`, `git status --porcelain` empty at the moment this run started:**
+```
+<PENDING — filled in once this round's changes are committed and the full suite is re-run against that clean, pinned state>
+```
 
 ---
 
@@ -317,6 +567,7 @@ tracked separately.
 
 1. **The DOWN-block transcription bug (§7)** — confirm the fix (byte-for-byte paste from 038, hash-verified) is itself correct, not just that a bug was found. This is exactly the failure class CLAUDE.md's Rule 10 exists to prevent; verify the rule's own text (`scripts/lint-migrations.mjs`) still catches a similar mistake in a future migration, not just this one.
 2. **The Q1/Q2 "no buffering" decision's downstream consequence**: an engineer who sends a photo before Q1/Q2 resolve loses that photo entirely (told, not stored) — confirm this reading of Aravind's decision is what was actually intended, not a narrower "just don't process it yet" reading.
-3. **`resolveMostRecentHindranceId`'s safety argument (§5)** — confirm the synchronous-adjacency reasoning holds under every real call site, now and in any future one; this is a "most recent row" lookup, a pattern this project has already rejected once for a different case in the same design pass.
-4. **The `photos_status` retry-then-force-send design (§6)** — confirm reusing the job queue's own backoff (rather than a dedicated timer, unlike DPR-24's own hold) is an acceptable trade given the two failure classes (a slow photo upload vs. a repeatedly-failing PM email send) share one retry budget.
-5. **Whether `retention_class` being kept as a fixed-value column (rather than omitted, since there is only one value) on `hindrance_photos` is the right call** — a judgment call made in the plan-only pass, not one of Aravind's own explicit decisions, carried forward unchanged into the build.
+3. ~~`resolveMostRecentHindranceId`'s safety argument (§5)~~ — **RESOLVED, external review round 2 (S1)**: this WAS the reviewer's own finding — the heuristic is now deleted entirely, not merely re-confirmed. Confirm the REPLACEMENT (context-carried `hindrance_id`, §1/§5/§7 ROUND 2) is itself correct: that the RPC clears both `hindrance_id` and `hindrance_unspecified` on every genuine completion path, and that no third call site of the deleted function was missed (grepped, confirmed zero remaining references outside comments — worth a reviewer's own independent grep, not just trusting this package's own claim).
+4. **The `photos_status` retry-then-force-send design (§6), and S4's own acceptance of the shared retry budget** — confirm reusing the job queue's own backoff (rather than a dedicated timer, unlike DPR-24's own hold) is an acceptable trade given the two failure classes (a slow photo upload vs. a repeatedly-failing PM email send) share one retry budget, and that S4's own named re-opening condition (a real observed collision) is the right bar, not too low or too high.
+5. **Whether `retention_class` being kept as a fixed-value column (rather than omitted, since there is only one value) on `hindrance_photos` is the right call** — a judgment call made in the plan-only pass, not one of Aravind's own explicit decisions, carried forward unchanged into the build. S3 makes the reasoning explicit in the table's own COMMENT; confirm the reasoning itself, not just that it's now written down.
+6. **NEW, external review round 2**: S2's own acceptance of stale subtract-list residue at three FROZEN 038 sites (morning/evening force-reset, DOWN sweep) — confirm the write-before-read argument (migration file's own new header section, "EXTERNAL REVIEW ROUND 2, FINDING S2") actually holds for all three sites, and that the named re-opening condition (a future fifth site reading either key from a context this project cannot guarantee came from the same pass) is precise enough to catch the next real instance.

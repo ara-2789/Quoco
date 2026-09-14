@@ -17,7 +17,6 @@ import {
   type MediaIngestJobPayload,
 } from '@/lib/media/ingest'
 import type { HindranceMediaIngestJobPayload } from '@/lib/media/hindrance-ingest'
-import { resolveMostRecentHindranceId } from '@/lib/hindrance/pm-notify'
 
 // APPROVED COPY (Aravind, 2026-09-13, stage 1 post-build review) -- used
 // ONLY when a photo could not be accepted at all (resolveOrCreateDailyLogId
@@ -381,11 +380,18 @@ async function handleHindrancePhoto(
   params: RouteParams & { media: MediaItem[] },
   supabase: SupabaseClient,
 ): Promise<InboundRouteResult> {
+  // CHANGED, external review round 2 (S1, fold-and-return, 2026-09-14):
+  // selects `context` alongside `current_step` now, in the SAME query --
+  // this is what lets hindrance_id be read directly off the session row
+  // instead of resolved via a separate lookup. Net queries this function
+  // issues for a step-3 photo: ONE session read, same as before this
+  // fix -- resolveMostRecentHindranceId's own query is gone entirely, not
+  // replaced by a different one.
   const { data: sessionRow, error: sessionError } = await supabase
     .from('whatsapp_sessions')
-    .select('current_step')
+    .select('current_step, context')
     .eq('phone_number', params.phoneNumber)
-    .maybeSingle<{ current_step: number }>()
+    .maybeSingle<{ current_step: number; context: Record<string, unknown> | null }>()
   if (sessionError) {
     throw new Error(`handleHindrancePhoto: session read failed for ${params.phoneNumber}: ${sessionError.message}`)
   }
@@ -408,25 +414,35 @@ async function handleHindrancePhoto(
     return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow: 'hindrance' })
   }
 
-  // Step 3: the hindrances row exists (inserted at Q2's own resolution,
-  // an earlier, separate webhook request). Resolved via the "most recent
-  // for this reporter" lookup -- SAFE here specifically because this runs
-  // synchronously, in the same request, while current_step is confirmed
-  // to still be 3 for THIS phone number's session right now: no second
-  // hindrance report from the same engineer can exist yet, since this
-  // session has not reached idle (step 0) to allow a new "1" to start one.
-  // See resolveMostRecentHindranceId's own doc for why the async,
-  // job-handler-side version of this same lookup was rejected for the
-  // Q1/Q2 case instead of reused here.
-  const hindranceId = await resolveMostRecentHindranceId(
-    { projectId: params.projectId, userId: params.userId },
-    supabase,
-  )
+  // Step 3: the hindrances row exists, and its id was stamped into this
+  // SAME session's context at the exact turn it was created (migration
+  // 044's own apply_hindrance_flow_turn, Q2's resolution). Read directly,
+  // no lookup.
+  //
+  // DELETED, external review round 2 (S1, 2026-09-14): this used to
+  // resolve hindranceId via a "most recent hindrance for this reporter"
+  // lookup (resolveMostRecentHindranceId, lib/hindrance/pm-notify.ts).
+  // The reviewer's finding: that lookup's own safety argument fenced only
+  // the writer that exists TODAY (this flow) -- it said nothing about a
+  // future one, and one is already named in this project's own artifacts
+  // (DASH-10, the unbuilt hindrance-editing dashboard surface, cited in
+  // 039's own grant commentary). The moment any PM/dashboard path ever
+  // inserts a hindrance for the same reporter mid-session, "most recent"
+  // would silently attach this session's photos to the WRONG row -- no
+  // constraint fires, evidence photos cross-attributed on an owner-visible
+  // record. The SAME shape as the `wasExhausted` bug this migration
+  // already found and fixed internally, one layer up: re-deriving from
+  // adjacent state a fact the system already established, on an earlier
+  // turn, instead of carrying it forward. The heuristic is deleted, not
+  // fenced -- carrying the id forward removes the whole class of risk
+  // rather than narrowing when it can fire.
+  const hindranceId =
+    typeof sessionRow.context?.hindrance_id === 'string' ? sessionRow.context.hindrance_id : null
   if (!hindranceId) {
-    // Genuinely unreachable if current_step===3 (the row is inserted in
-    // the same transaction that advances to step 3) -- treated the same
-    // as PHOTO_SAVE_FAILED_REPLY's own "never accepted" case rather than
-    // asserting.
+    // Genuinely unreachable if current_step===3 (the row is inserted, and
+    // its id stamped into context, in the same RPC call that advances to
+    // step 3) -- treated the same as PHOTO_SAVE_FAILED_REPLY's own "never
+    // accepted" case rather than asserting.
     return { reply: PHOTO_SAVE_FAILED_REPLY, resolvedFlow: 'hindrance' }
   }
 
