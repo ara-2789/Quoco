@@ -340,6 +340,28 @@ buckets this package already tracks (the session-transition concurrency
 flake; cross-file test-db pollution under full-suite concurrency) — none
 is a new, unexplained failure.
 
+### CI itself, green — confirmed against the actual commit, not a stale run
+
+Pushed as `a8a3d76`. Per CLAUDE.md's own "A GREEN CI CHECK CERTIFIES A SHA,
+NOT A BRANCH" standing rule, checked before treating this as settled —
+`gh pr view 270 --json headRefOid` returned `a8a3d76c8c868d5d166edd5c24f32d304a0682c1`,
+identical to the SHA the checks below ran against, not an earlier,
+already-superseded push:
+```
+$ gh pr checks 270
+Detect docs-only change   pass    4s
+File Size Lint            pass    25s
+Fixture Literal Lint      pass    24s
+Lint                      pass    37s
+Migration Lint            pass    23s
+Test (real test-db)       pass    12m48s
+Typecheck                 pass    29s
+Vercel                    pass    (Deployment has completed)
+Vercel Preview Comments   pass
+```
+Every check green, including the one that was failing when this round
+started. PR remains OPEN, `mergeable: MERGEABLE` — not merged.
+
 ---
 
 ## Repo-state header (per this project's own standing rule)
