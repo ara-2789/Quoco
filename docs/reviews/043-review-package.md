@@ -1,4 +1,4 @@
-# 043_daily_log_photos.sql — external review package (2026-09-13/14, round 1 fold-and-return 2026-09-14, round 2 GO-FOR-PROD-conditional 2026-09-14)
+# 043_daily_log_photos.sql — external review package (2026-09-13/14, round 1 fold-and-return 2026-09-14, round 2 GO-FOR-PROD-conditional 2026-09-14, CI fix 2026-09-14)
 
 **Status: applied to TEST-DB ONLY (`exfccwlrhoutkgrlikod`), NOT applied to
 prod.** PR #270 open (not merged). File lives in `docs/reviews/`, not
@@ -8,7 +8,10 @@ rule — the test-db apply below does not count as "the" apply for that rule;
 it is the review-and-rehearsal apply Aravind explicitly chose in place of a
 Supabase-branch rehearsal. **Round 2 returned GO FOR PROD, conditional on
 one item landing in this PR before merge — that item is done; see
-immediately below.** Migration 043 remains in `docs/reviews/` until the
+immediately below.** **CI's "Test (real test-db)" job then failed on a
+pre-existing test-harness gap unrelated to either review round (a hand-
+added local `.env.test` value CI never had) — fixed, see the "CI fix
+round" section below.** Migration 043 remains in `docs/reviews/` until the
 actual prod apply happens, per the same rule.
 
 ## External review round 1 — verdict and fold-and-return (2026-09-14)
@@ -173,6 +176,169 @@ matrix in this package must check which environment produced it before
 treating it as prod's shape; this D-b probe, run against prod itself after
 the real apply, is the only reading that settles the question for prod
 without that caveat.
+
+---
+
+## CI fix round — no Twilio secrets in CI, test-harness fix only (2026-09-14)
+
+CI's "Test (real test-db)" job FAILED on PR #270 (head `ff7cfea`) — 3
+failures in `test/media-ingest.test.ts`, all:
+```
+Error: sendWhatsAppTemplate: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and
+TWILIO_WHATSAPP_NUMBER must all be set in the environment.
+  at readCredentials lib/whatsapp/outbound/send.ts:162:11
+  at handleMediaIngestJob lib/media/ingest.ts:95:37
+```
+
+**Root cause, confirmed by comparing `.env.test` against `.github/
+workflows/ci.yml`'s own `test` job `env:` block, not assumed**: CI
+provisions `SUPABASE_TEST_URL`, `SUPABASE_TEST_SERVICE_ROLE_KEY`,
+`SUPABASE_TEST_ANON_KEY`, `SUPABASE_TEST_PROJECT_REF`, `TWILIO_AUTH_TOKEN`,
+`NEXT_PUBLIC_APP_URL`, `DOTENV_CONFIG_QUIET` — as GitHub Actions secrets.
+It does NOT provision `TWILIO_ACCOUNT_SID` or `TWILIO_WHATSAPP_NUMBER`.
+Both of those had been added BY HAND to this worktree's own `.env.test`
+(never committed — `.env.test` is gitignored) purely for local
+convenience while building stage 1, and were never added to CI secrets.
+`handleMediaIngestJob` (`lib/media/ingest.ts:95`) calls `readCredentials()`
+unconditionally, before ever reaching the test's own mocked `fetchFn` — so
+even though every success-path test in this file already mocks the
+Twilio download and never makes a real network call, the credential check
+fires first and threw in CI, where two of the three required vars were
+genuinely absent. **Decision (Aravind, 2026-09-14): do NOT add Twilio
+credentials to CI secrets — make the tests not need them.**
+
+### TASK 1 — fixed: dummy credentials injected in the test harness, not production code
+
+`test/media-ingest.test.ts`'s top-level `beforeAll`/`afterAll` now
+`vi.stubEnv`s the three vars to obviously-fake literals and
+`vi.unstubAllEnvs()`s them afterward — the identical shape and identical
+literal values `test/unit/outbound-send.test.ts` and `test/outbound-
+trigger.test.ts` already use for the same purpose, so all three files in
+this suite that ever reach `readCredentials()` for real now handle it the
+same way. Production code (`lib/media/ingest.ts`, `lib/whatsapp/outbound/
+send.ts`) is UNCHANGED — the credential requirement itself is correct at
+runtime; only the test harness needed a fix.
+
+### TASK 2 — proven the way CI will see it: vars genuinely ABSENT, not merely present-and-mocked
+
+A pass with the vars still in `.env.test` proves nothing (they were
+present locally the whole time this bug existed). Proof required removing
+them from the actual loading mechanism vitest uses, not just trusting the
+stub:
+1. Backed up `.env.test` (`cp .env.test .env.test.bak-before-twilio-strip`
+   — gitignored, confirmed via `git check-ignore -v`, never committed).
+2. Commented out the three `TWILIO_*` lines in `.env.test`.
+3. Confirmed via a standalone `node -e` script running the EXACT dotenv
+   call vitest's own config uses (`require('dotenv').config({ path:
+   '.env.test' })`) that all three vars resolved to `undefined` — not
+   inferred, directly observed:
+```
+TWILIO_ACCOUNT_SID: undefined (absent)
+TWILIO_AUTH_TOKEN: undefined (absent)
+TWILIO_WHATSAPP_NUMBER: undefined (absent)
+```
+4. Ran the file with the vars genuinely absent:
+```
+$ npx vitest run test/media-ingest.test.ts
+
+ ✓ test/media-ingest.test.ts (6 tests) 27893ms
+   ✓ routeInboundMessage — captioned photo (item 12) > a caption that parses as a valid answer reaches the parser AND is stored on the job payload 3499ms
+   ✓ routeInboundMessage — burst of several photos in one turn (item 13) > all photos in one inbound message are stored as a single job, with the turn's own natural reply and no per-photo acknowledgement 2920ms
+   ✓ handleMediaIngestJob — retention class stamped at insert, expires_at generated (item 15) > morning: retention_class="attendance", expires_at = received_at + 7 days 3447ms
+   ✓ handleMediaIngestJob — retention class stamped at insert, expires_at generated (item 15) > evening: retention_class="evening_progress", expires_at = received_at + 60 days 3539ms
+   ✓ media_ingest — failed ingest recorded as failed > handleMediaIngestJob throws on a Twilio download failure, before touching Storage or daily_log_photos 568ms
+   ✓ media_ingest — failed ingest recorded as failed > markMediaIngestFailed records daily_logs.{phase}_photos_status = failed 1507ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Duration  28.25s
+```
+5. Restored `.env.test` from the backup (`diff` confirmed byte-identical
+   to the pre-strip copy), deleted the backup file. `git status` showed
+   `.env.test` untracked throughout, as expected — no trace left in
+   version control either way.
+
+### TASK 3 — the misleading error message, reworded; checked for test dependence first
+
+`readCredentials()`'s thrown error hardcoded `'sendWhatsAppTemplate: ...'`
+even though this function has TWO callers (`sendWhatsAppTemplate` in the
+same file, and `handleMediaIngestJob` in `lib/media/ingest.ts` — the
+latter reuse was deliberate, per the function's own header comment, added
+for stage 1). The CI failure above named the wrong function, costing real
+review time chasing a caller that was never involved. **Checked before
+changing it**: `grep -rn "sendWhatsAppTemplate:" test/` and a search for
+any `toThrow` assertion on the old string returned nothing except
+`test/unit/outbound-send.test.ts:32`'s `.rejects.toThrow(/TWILIO_ACCOUNT_SID/)`
+— a regex on the variable name, not the caller prefix, so it survives the
+reword unchanged (re-confirmed green in the full run below). Reworded to
+name the function that actually owns the check instead of either caller:
+```
+readCredentials: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and
+TWILIO_WHATSAPP_NUMBER must all be set in the environment.
+```
+
+### TASK 4 — audited for the same shape elsewhere; none found beyond the one already fixed
+
+Compared every var in `.env.test` against CI's `test` job `env:` block
+(both listed above) — the ONLY vars present locally and absent from CI
+are `TWILIO_ACCOUNT_SID` and `TWILIO_WHATSAPP_NUMBER`. Traced every
+consumer: `grep`-confirmed `readCredentials()` (`lib/whatsapp/outbound/
+send.ts`) is the ONLY reader of either var in `lib/` or `app/`, and its
+only two REAL (non-injected) callers across the entire test suite are
+`test/outbound-trigger.test.ts` (already correctly `vi.stubEnv`s all
+three — confirmed, no gap) and `test/media-ingest.test.ts` (the one just
+fixed). Every OTHER test file that touches the `lib/whatsapp/outbound/`
+tree either imports something else entirely (`coverage-sweep`,
+`templates`, `status-callback`, `roster`) or injects the trigger function
+itself as a test double (`test/unit/outbound-checkpoint-trigger.test.ts`'s
+own header: "the trigger function... [is] injected... without a real
+Twilio call") — neither shape ever reaches `readCredentials()` for real.
+**No other same-shape gap found**; nothing beyond the three tests and the
+one error message needed fixing.
+
+### Final full-suite run (2026-09-14, after all four tasks)
+
+```
+$ npx vitest run
+
+ Test Files  3 failed | 95 passed (98)
+      Tests  4 failed | 1153 passed | 1 todo (1158)
+   Duration  1009.50s
+```
+
+**All 4 failures investigated; all 4 confirmed known-not-ours, none a
+regression from this round's changes:**
+
+1. `test/media-ingest.test.ts > routeInboundMessage — captioned photo
+   (item 12)` — `reply` came back `''` instead of the expected question
+   text (a session-state symptom, not a wrong-but-real answer).
+2. `test/media-ingest.test.ts > routeInboundMessage — burst of several
+   photos in one turn (item 13)` — same symptom, `reply` came back `''`.
+   **Both re-ran in isolation immediately after**: `npx vitest run
+   test/media-ingest.test.ts` → **6/6 pass**, including both cases above
+   — confirms cross-file test-db pollution under full-suite concurrency
+   (this package's own already-documented, standing property of this
+   suite — §7's "Known-not-ours fact #2"), not anything this round's
+   `vi.stubEnv` change caused. (`vi.stubEnv`/`unstubAllEnvs` only ever
+   touch the three Twilio vars, which `routeInboundMessage` itself never
+   reads — traced in TASK 4 above — so there is no plausible mechanism by
+   which this fix could have produced either failure.)
+3. `test/session-transition.test.ts > ... > B: caller 2 blocks on the row
+   lock until caller 1 commits` — identical error text to the
+   already-documented pre-existing sandbox concurrency limitation (session-
+   transition-lock-wait-flake.md); not re-explained a third time.
+4. `test/unit/morning-flow-mirror.test.ts > ... > Q1 unclassifiable ->
+   reask, step unchanged > SQL (apply_morning_flow_turn) matches the
+   expected outcome` — `outcome` came back `'idle'` instead of `'reask'`.
+   **Re-ran in isolation**: `npx vitest run test/unit/morning-flow-
+   mirror.test.ts` → **20/20 pass**, including this exact case — same
+   cross-file-pollution class as 1-2 above, in a file this migration does
+   not touch at all.
+
+Every failure in this run falls into one of the two known-not-ours
+buckets this package already tracks (the session-transition concurrency
+flake; cross-file test-db pollution under full-suite concurrency) — none
+is a new, unexplained failure.
 
 ---
 

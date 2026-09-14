@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterEach, afterAll, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { routeInboundMessage } from '@/lib/whatsapp/inbound-start'
 import { handleMediaIngestJob, markMediaIngestFailed, RETENTION_DAYS } from '@/lib/media/ingest'
@@ -63,7 +63,23 @@ async function mediaIngestJobsFor(dailyLogId: string, phase: 'morning' | 'evenin
   return data ?? []
 }
 
+// handleMediaIngestJob (via readCredentials(), lib/whatsapp/outbound/
+// send.ts) requires TWILIO_ACCOUNT_SID/AUTH_TOKEN/WHATSAPP_NUMBER to be
+// SET before it ever reaches the mocked fetchFn below -- the credential
+// check runs first, unconditionally, regardless of whether the download
+// itself is real or mocked (see ingest.ts:95's own call site). This suite
+// never makes a real Twilio call (every case injects fetchFn), so dummy,
+// obviously-fake values are sufficient and correct here -- CI has no
+// Twilio secret of any kind, by deliberate decision (2026-09-14: "do NOT
+// add Twilio credentials to CI secrets. Make the tests not need them."),
+// and never should for a suite that never dials out for real. Same
+// literal values and vi.stubEnv/unstubAllEnvs shape as test/unit/
+// outbound-send.test.ts and test/outbound-trigger.test.ts, for
+// consistency across the suite.
 beforeAll(async () => {
+  vi.stubEnv('TWILIO_ACCOUNT_SID', 'ACzztest0000000000000000000000000')
+  vi.stubEnv('TWILIO_AUTH_TOKEN', 'zz-test-auth-token')
+  vi.stubEnv('TWILIO_WHATSAPP_NUMBER', '+14155238886')
   await ensureMorningFixtures()
   await cleanupTestSessions()
   await cleanupTestDailyLogs()
@@ -76,6 +92,7 @@ afterEach(async () => {
 
 afterAll(async () => {
   await removeMorningFixtures()
+  vi.unstubAllEnvs()
 })
 
 describe('routeInboundMessage — captioned photo (item 12)', () => {
