@@ -42,9 +42,9 @@ Three options for a pre-row photo were evaluated in the plan-only pass (buffer-a
 
 ## §1 — The migration file
 
-Full text: `git show <SHA>:docs/reviews/044_hindrance_photos.sql` once committed (this package is written before that commit — the SHA is filled in immediately below once it exists, per this project's own provenance-pinning rule; do not trust a pasted copy over the pinned `git show`).
+Full text, pinned: `git show 1ef9b0de2b62ad2eaca7557ded06c73244d04594:docs/reviews/044_hindrance_photos.sql` — confirmed byte-identical to the working-tree copy this package was written against before committing.
 
-**COMMIT SHA (filled in post-commit):** `<PENDING>`
+**COMMIT SHA:** `1ef9b0de2b62ad2eaca7557ded06c73244d04594` (branch `worktree-evening-q5-caption-reversal`, pushed to `origin`).
 
 Structural summary (full reasoning is in the file's own comments, not restated in prose here per this project's own no-duplication convention):
 
@@ -204,11 +204,49 @@ All scratch fixture rows (`whatsapp_sessions`, `hindrances`) created during this
 - `test/hindrance-pm-notify-photos.test.ts` — 6/6 passed (retry-on-pending, real attachment fetch + count line, no-photos case, forced-exhaustion "still uploading" copy for both `pending` and `failed`, idempotency guard).
 - `test/unit/hindrance-flow.test.ts` (extended) — existing 11 + 2 new step-3 cases, all passed.
 
-**Full suite (`npx vitest run`), commit `<PENDING SHA>`, `git status --porcelain` at capture time:**
+**Full suite (`npx vitest run`), run TWICE, deliberately — once pre-commit
+(functional check, dirty tree, not citable as provenance) and once
+post-commit at the pinned SHA with a clean tree (the citable evidence,
+per this project's own "SHA echo + empty `git status --porcelain`" rule):**
+
+**Run 1 (pre-commit, functional check only):** 101/102 files, 1184/1186
+tests passed, 1 todo. Duration 1188.6s.
+
+**Run 2 — commit `1ef9b0de2b62ad2eaca7557ded06c73244d04594`, `git status
+--porcelain` empty at the moment this run started (confirmed immediately
+before invoking `npx vitest run`, same shell pipeline, no edit in
+between). Raw output, top and bottom:**
 ```
-<PENDING — filled in after the full run completes and the working tree is
-committed; see the note immediately below>
+1ef9b0de2b62ad2eaca7557ded06c73244d04594
+PORCELAIN-EMPTY-CONFIRMED
+...
+ Test Files  1 failed | 101 passed (102)
+      Tests  1 failed | 1184 passed | 1 todo (1186)
+   Start at  21:58:35
+   Duration  1162.08s (transform 645ms, setup 0ms, collect 3.84s, tests 1149.17s, environment 5ms, prepare 1.80s)
 ```
+**Identical result to Run 1** (same 101/102 files, 1184/1186 tests, same
+single failure below) — reproducible, not a one-off fluke of either run.
+
+**The one failure, both runs — pre-existing, unrelated, documented:**
+`test/session-transition.test.ts` — "B: caller 2 blocks on the row lock
+until caller 1 commits" — `acquire_and_transition_session`/
+`drain_next_pending_flow` (migrations 012/013), the morning/evening
+session-locking state machine. **Confirmed by reading this test file's own
+import list**: zero imports from any file this package touches
+(`lib/whatsapp/flows/hindrance.ts`, `lib/whatsapp/inbound-start.ts`,
+`lib/hindrance/pm-notify.ts`, `lib/media/hindrance-ingest.ts`,
+`lib/queue/jobs.ts`, `lib/email/send.ts`, `app/api/jobs/tick/route.ts` —
+none appear). This is the exact failure class CLAUDE.md's own standing
+rule already names as CI-only and sandbox-unreliable
+(`docs/reviews/sandbox-cannot-test-concurrency.md`,
+`docs/reviews/session-transition-lock-wait-flake.md`): "caller 1's row
+lock was never observed within 3000ms... caller 1 never appeared to reach
+Postgres at all in that window" is a sandbox concurrency-dispatch timing
+artifact, not an assertion failure on the mechanism under test. **Not
+caused by this migration or this stage's own code**, and not something
+this package's own build can fix — it predates this stage's work and is
+tracked separately.
 
 **`no-app-delete-invariant.test.ts`** — this guard reads its table list dynamically from `scripts/test-db-only-grants.sql` (extended this pass with a third entry, `hindrance_photos`, for the identical reason `daily_log_photos` needed one: `service_role` has no `DELETE` on this table by design, and this project's own test cleanup needs it — found live when `test/hindrance-photos-rls.test.ts`'s own `afterAll` failed with `hindrance_photos_hindrance_id_fkey` blocking a shared-fixture teardown). Coverage extends automatically; no edit to that test file itself was needed.
 
