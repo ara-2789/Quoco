@@ -340,6 +340,60 @@ export type Database = {
           },
         ]
       }
+      daily_log_photos: {
+        Row: {
+          caption: string | null
+          created_at: string | null
+          daily_log_id: string
+          expires_at: string | null
+          id: string
+          phase: string
+          photo_url: string | null
+          received_at: string
+          retention_class: string
+          tenant_id: string
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string | null
+          daily_log_id: string
+          expires_at?: string | null
+          id?: string
+          phase: string
+          photo_url?: string | null
+          received_at?: string
+          retention_class: string
+          tenant_id: string
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string | null
+          daily_log_id?: string
+          expires_at?: string | null
+          id?: string
+          phase?: string
+          photo_url?: string | null
+          received_at?: string
+          retention_class?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_log_photos_daily_log_id_fkey"
+            columns: ["daily_log_id"]
+            isOneToOne: false
+            referencedRelation: "daily_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_log_photos_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_logs: {
         Row: {
           attendance: string | null
@@ -355,6 +409,7 @@ export type Database = {
           evening_manpower: Json | null
           evening_output: string | null
           evening_output_quantities: Json | null
+          evening_photos_status: string | null
           evening_productive_manpower: Json | null
           evening_schedule_met: boolean | null
           evening_schedule_miss_reason: string | null
@@ -371,6 +426,7 @@ export type Database = {
           morning_execution_plan: string | null
           morning_hindrances: Json | null
           morning_manpower: Json | null
+          morning_photos_status: string | null
           morning_plan: string | null
           morning_submitted_at: string | null
           morning_submitted_via: string | null
@@ -392,6 +448,7 @@ export type Database = {
           evening_manpower?: Json | null
           evening_output?: string | null
           evening_output_quantities?: Json | null
+          evening_photos_status?: string | null
           evening_productive_manpower?: Json | null
           evening_schedule_met?: boolean | null
           evening_schedule_miss_reason?: string | null
@@ -408,6 +465,7 @@ export type Database = {
           morning_execution_plan?: string | null
           morning_hindrances?: Json | null
           morning_manpower?: Json | null
+          morning_photos_status?: string | null
           morning_plan?: string | null
           morning_submitted_at?: string | null
           morning_submitted_via?: string | null
@@ -429,6 +487,7 @@ export type Database = {
           evening_manpower?: Json | null
           evening_output?: string | null
           evening_output_quantities?: Json | null
+          evening_photos_status?: string | null
           evening_productive_manpower?: Json | null
           evening_schedule_met?: boolean | null
           evening_schedule_miss_reason?: string | null
@@ -445,6 +504,7 @@ export type Database = {
           morning_execution_plan?: string | null
           morning_hindrances?: Json | null
           morning_manpower?: Json | null
+          morning_photos_status?: string | null
           morning_plan?: string | null
           morning_submitted_at?: string | null
           morning_submitted_via?: string | null
@@ -2119,6 +2179,10 @@ export type Database = {
       get_user_tenant_id: { Args: never; Returns: string }
       quoco_classify_yes_no: { Args: { p_text: string }; Returns: Json }
       quoco_same_ist_day: { Args: { a: string; b: string }; Returns: boolean }
+      quoco_test_row_is_locked: {
+        Args: { p_phone_number: string }
+        Returns: boolean
+      }
       sweep_stale_morning_sessions: { Args: { p_now?: string }; Returns: Json }
       write_dpr_version: {
         Args: {

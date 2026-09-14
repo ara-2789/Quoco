@@ -21,10 +21,32 @@
 -- in the authoring pass) still holds as history, only the current-status
 -- claim is superseded.
 --
--- HELD, NOT APPLIED ANYWHERE. Per CLAUDE.md's own "a migration file enters
--- supabase/migrations/ when it is being applied, not when it is written"
--- rule, and per this pass's own explicit instruction not to apply anything
--- to production. ~~NOT rehearsed against a real database this pass -- this
+-- DATED CORRECTION (2026-09-14): APPLIED TO PROD (jvxwqignooseazzmwhvl).
+-- PITR confirmed live in the Supabase dashboard before applying (restore
+-- window 07 Sep 2026 22:02:59 to 14 Sep 2026 10:33:02 IST, observed, not
+-- assumed). `supabase db query --linked -f
+-- supabase/migrations/043_daily_log_photos.sql` -- no error. Post-apply
+-- readback confirmed by observation: table_exists=daily_log_photos,
+-- status_cols=2, rls_enabled=true, policy_count=1; the generated
+-- `expires_at` column's own expression re-confirmed via `pg_get_expr`;
+-- the four-way negative grants matrix (DELETE/TRUNCATE/REFERENCES/
+-- TRIGGER, all false) is PROD's own -- the sole authoritative grants
+-- record, since test-db's own matrix now deliberately reads DELETE=true
+-- (scripts/test-db-only-grants.sql). Ledger repaired: `supabase migration
+-- repair --status applied 043 --linked` succeeded ("Repaired migration
+-- history: [043] => applied"); `supabase migration list --linked` shows
+-- Local and Remote matching through 043, no gaps. Struck through below,
+-- not rewritten, per this project's own correction discipline
+-- (migrations 036/039/042's own precedent) -- the ORIGINAL not-yet-
+-- applied posture was true when written and stays true as history; only
+-- the current-status claim is superseded. Full apply sequence, both
+-- external review rounds, the Step D-a/D-b fingerprints, and the owed
+-- manual end-to-end proof (still open): docs/reviews/043-apply-record.md.
+--
+-- ~~HELD, NOT APPLIED ANYWHERE.~~ Per CLAUDE.md's own "a migration file
+-- enters supabase/migrations/ when it is being applied, not when it is
+-- written" rule, and per this pass's own explicit instruction not to apply
+-- anything to production. ~~NOT rehearsed against a real database this pass -- this
 -- build environment has no Supabase credentials of any kind (no .env.test
 -- in this worktree, no SUPABASE_TEST_* vars in the shell). A real
 -- dry-run/rehearsal against test-db, per CLAUDE.md §7's own standing
@@ -37,9 +59,9 @@
 -- table with wrong RLS from day one... is at least as dangerous as a bad
 -- change to an existing one"). Needs the full review package before it
 -- applies, same as every other schema change in this project's recent
--- history (029, 031, 038, 039, ...). ~~NOT reviewed yet.~~ Still NOT
+-- history (029, 031, 038, 039, ...). ~~NOT reviewed yet.~~ ~~Still NOT
 -- applied to PROD -- that half of the original posture is unchanged by
--- this addendum; only "not rehearsed" and "not reviewed" are superseded.
+-- this addendum; only "not rehearsed" and "not reviewed" are superseded.~~
 --
 -- SHAPE: retention_class is STAMPED AT INSERT TIME by the media_ingest job
 -- handler (lib/media/ingest.ts) -- stage 6's retention job scans expires_at
