@@ -29,6 +29,19 @@ import {
 // approved -- do not invent one.
 export const PHOTO_SAVE_FAILED_REPLY = "Sorry, I couldn't save that photo. Please send it again."
 
+// APPROVED COPY (Aravind, 2026-09-14, item 12 reversal) -- prepended to the
+// re-asked question ONLY when the photo carried a caption. A captioned
+// photo now takes the exact same "reask, don't call the RPC" path an
+// uncaptioned one already did (item 23) -- but the two are NOT given
+// identical reply text: an engineer who typed something needs to be told
+// his text was saved as a caption, not recorded as an answer, or he may
+// reasonably assume it already counted. An uncaptioned photo has no text
+// to explain away, so it keeps item 23's own unchanged bare reask (locked
+// in by test/webhook.test.ts's T-WH-13) -- this prefix is additive to the
+// captioned case specifically, not a rewrite of the existing one. Tamil
+// pair is owed and NOT approved -- do not invent one.
+export const PHOTO_SAVED_REASK_PREFIX = 'Photo saved. Type your reply for this question.'
+
 // STAGE 1 OF THE MEDIA CAPABILITY (2026-09-13, docs/plans/media-capture-
 // design.md item 20; full build: docs/plans/stage1-photo-intake-plan.md).
 // THIS FILE IS WHERE THE MEDIA INTERCEPTOR MOVES TO (item 18) -- previously
@@ -47,19 +60,37 @@ export const PHOTO_SAVE_FAILED_REPLY = "Sorry, I couldn't save that photo. Pleas
 //     sees raw media params.
 //   - Active flow, morning/evening: the photo is enqueued as a
 //     `media_ingest` job (storage happens in the background, never inline
-//     -- item 4), then:
-//       - non-empty caption -> the turn proceeds exactly as an ordinary
-//         text-only turn would (item 12: the caption reaches the answer
-//         parser, no RPC changes needed);
-//       - no caption -> "a photo is never an answer" (item 23): the
-//         current question stays open and is re-asked, WITHOUT calling the
-//         RPC at all. This is not a stylistic choice -- apply_morning_
-//         flow_turn's step 2 and apply_evening_flow_turn's step 1 have
-//         ZERO gating on an empty answer and would otherwise silently
-//         record an empty string and ADVANCE (confirmed against the live
-//         SQL, docs/plans/stage0-storage-setup-plan.md §8.2) -- exactly
-//         the gap item 23 exists to close. Calling the RPC here would
-//         reopen it.
+//     -- item 4, caption included on the payload either way), then the
+//     current question stays open and is re-asked, WITHOUT calling the RPC
+//     at all -- REGARDLESS of whether a caption was present. This is not a
+//     stylistic choice -- apply_morning_flow_turn's step 2 and
+//     apply_evening_flow_turn's step 1 have ZERO gating on an empty answer
+//     and would otherwise silently record an empty string and ADVANCE
+//     (confirmed against the live SQL, docs/plans/stage0-storage-setup-
+//     plan.md §8.2) -- exactly the gap item 23 exists to close. Calling the
+//     RPC here would reopen it.
+//
+//     ITEM 12 REVERSED (Aravind, 2026-09-14, first real-use finding, not a
+//     design refinement -- see docs/plans/media-capture-design.md's own
+//     struck-through item 12 for the full incident). Item 12 ORIGINALLY let
+//     a non-empty caption reach the answer parser as if typed text -- a
+//     real prod incident showed this was wrong: an engineer captioned a
+//     photo "Today work" while evening Q5 ("anything extra needed
+//     tomorrow?") was open, and that caption was recorded as the Q5
+//     answer, silently discarding the engineer's real answer ("No"), sent
+//     moments later after the flow had already closed. A CAPTION IS NEVER
+//     AN ANSWER: it describes the photo, not whatever question happens to
+//     be open -- "Today work", "east wall", "crack near column B" are
+//     captions, not answers, and no timing or fallback rule can tell a
+//     caption-that-answers apart from a caption-that-describes (a fallback
+//     keyed on "no answer recorded yet" would have produced this exact bad
+//     data, since the field WAS empty). CONSEQUENCE, stated plainly: with
+//     items 12 and 23 both now in force the SAME way, ANY message carrying
+//     a photo never answers a question, captioned or not -- only a
+//     text-only message can. Nothing carried on a photo can reach a DPR
+//     field. The standalone evening photo Q2 does NOT remove this risk:
+//     item 11 accepts photos at ALL questions by deliberate decision, so a
+//     captioned photo at any step remains possible by design.
 //   - Active flow, hindrance: hindrance photo capture is stage 2, not yet
 //     built (item 16's own ordering constraint). A photo here gets the
 //     same unchanged PHOTO_REPLY as the idle case -- not silently dropped,
@@ -362,7 +393,40 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
     // supplies a MediaUrl{i} for a real photo, so this path is not expected
     // to fire in production -- named, not assumed impossible.
     if (firstFlow === 'hindrance' || media.length === 0) {
-      return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
+      const dispatchResult = await dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
+
+      // Completion-message photo count (approved copy, TASK 3 of stage 1's
+      // own build) -- MOVED HERE, 2026-09-14, item 12's reversal. Before
+      // this, the count was only ever attached when THIS turn itself was a
+      // captioned photo that completed the flow on dispatch -- the ONLY
+      // path that ever reached dispatchInboundTurn carrying a photo. Item
+      // 12's reversal removes that path entirely: a photo (captioned or
+      // not) now ALWAYS reasks, never dispatches, so it can never again be
+      // the turn that completes a flow. This plain-text/no-media branch is
+      // therefore now the ONLY turn that can ever complete morning/evening
+      // -- the accumulated photo count from earlier in the check-in has to
+      // be attached here instead, or the completion message never shows a
+      // count again, silently. `firstFlow !== 'hindrance'` narrows the
+      // ternary below to 'morning' | 'evening', matching the type both
+      // builders require.
+      if (firstFlow !== 'hindrance' && dispatchResult.completed) {
+        const now = params.now !== undefined ? new Date(params.now) : new Date()
+        const ist = istParts(now)
+        const dailyLogId = await resolveDailyLogId(
+          { projectId: params.projectId, engineerId: params.userId, logDate: ist.date },
+          supabase,
+        )
+        if (dailyLogId) {
+          const photoCount = await countReceivedPhotos(dailyLogId, firstFlow, supabase)
+          if (photoCount > 0) {
+            const reply =
+              firstFlow === 'morning' ? buildMorningCompleteReply(photoCount) : buildEveningCompleteReply(photoCount)
+            return { reply, resolvedFlow: dispatchResult.resolvedFlow }
+          }
+        }
+      }
+
+      return dispatchResult
     }
 
     // --- media present, flow is morning or evening: stage 1's real work ---
@@ -412,7 +476,10 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
       media,
     }
     // Fast DB insert, well inside the webhook's 15s budget -- storage
-    // itself happens later, off this request entirely (item 4).
+    // itself happens later, off this request entirely (item 4). The
+    // caption (if any) is stored HERE, on the photo's own job payload --
+    // this is the ONLY place it is ever written down. It is never passed
+    // to dispatchInboundTurn/the answer parser, below or anywhere else.
     await enqueueJob('media_ingest', jobPayload as unknown as Json, supabase)
 
     const statusColumn = firstFlow === 'morning' ? 'morning_photos_status' : 'evening_photos_status'
@@ -426,81 +493,62 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
       )
     }
 
-    if (!hasCaption) {
-      // Item 23: a photo is never an answer. Reask WITHOUT calling the
-      // RPC -- see this file's own header for why the RPC's own lack of
-      // gating on several steps makes this the only correct option, not
-      // a style preference.
-      const { data: sessionRow, error: sessionError } = await supabase
-        .from('whatsapp_sessions')
-        .select('current_step')
-        .eq('phone_number', params.phoneNumber)
-        .maybeSingle<{ current_step: number }>()
-      if (sessionError) {
-        throw new Error(
-          `routeInboundMessage: session read failed for ${params.phoneNumber}: ${sessionError.message}`,
-        )
-      }
+    // Item 12 REVERSED, item 23 unchanged and now the ONLY rule: a photo is
+    // never an answer, captioned or not (see this file's own header for the
+    // full incident and rationale). Reask WITHOUT calling the RPC, in every
+    // case -- the RPC's own lack of gating on several steps makes this the
+    // only correct option, not a style preference (unchanged reasoning from
+    // item 23's original build).
+    const { data: sessionRow, error: sessionError } = await supabase
+      .from('whatsapp_sessions')
+      .select('current_step')
+      .eq('phone_number', params.phoneNumber)
+      .maybeSingle<{ current_step: number }>()
+    if (sessionError) {
+      throw new Error(
+        `routeInboundMessage: session read failed for ${params.phoneNumber}: ${sessionError.message}`,
+      )
+    }
 
-      if (!sessionRow) {
-        // Session vanished between the currentFlow read above and here (a
-        // genuine race -- completion/expiry mid-request). Fall through to
-        // the normal dispatch path; its own re-read under the RPC's lock
-        // is authoritative regardless of what this file assumed a moment
-        // ago.
-        return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
-      }
+    if (!sessionRow) {
+      // Session vanished between the currentFlow read above and here (a
+      // genuine race -- completion/expiry mid-request). Fall through to
+      // the normal dispatch path; its own re-read under the RPC's lock
+      // is authoritative regardless of what this file assumed a moment
+      // ago.
+      return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
+    }
 
-      if (firstFlow === 'morning') {
-        return { reply: buildMorningReply('reask', sessionRow.current_step), resolvedFlow: 'morning' }
-      }
-
-      const equipmentEcho =
-        sessionRow.current_step === 4
-          ? await fetchMorningEquipmentEcho(supabase, {
-              projectId: params.projectId,
-              userId: params.userId,
-              logDate: ist.date,
-            })
-          : null
+    if (firstFlow === 'morning') {
+      const reaskText = buildMorningReply('reask', sessionRow.current_step)
       return {
-        reply: buildEveningReply('reask', sessionRow.current_step, equipmentEcho ?? undefined),
-        resolvedFlow: 'evening',
+        // PHOTO_SAVED_REASK_PREFIX only when a caption was actually sent --
+        // an uncaptioned photo (hasCaption false) keeps item 23's own
+        // unchanged bare reask exactly as it already was (T-WH-13 locks
+        // this in: no prefix when there was never any text to clarify).
+        // The prefix exists specifically to tell an engineer who DID type
+        // something that his text was saved as a caption, not an answer --
+        // there is nothing to clarify when he typed nothing at all.
+        reply: hasCaption ? `${PHOTO_SAVED_REASK_PREFIX}\n${reaskText}` : reaskText,
+        resolvedFlow: 'morning',
       }
     }
 
-    // Caption present: ordinary turn, caption reaches the parser exactly
-    // as typed text would (item 12) -- no RPC changes needed, this falls
-    // out of not eating the message first.
-    const dispatchResult = await dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow })
-
-    // Completion-message photo count (TASK 3, approved copy) -- applies
-    // regardless of whether THIS turn itself carried a photo; the count
-    // reflects the whole check-in, so the completing turn may be a
-    // caption-only message with no media of its own.
-    //
-    // FIX (2026-09-13, post-build review): this used to string-compare
-    // dispatchResult.reply against MORNING_COMPLETE_REPLY/EVENING_COMPLETE_
-    // REPLY -- a wording edit to either constant would silently stop this
-    // branch from ever firing again, with no error and no failing test.
-    // dispatchResult.completed (dispatch.ts's own isCompletion) is derived
-    // from outcome/currentStep/attendance directly, the same fields
-    // buildMorningReply/buildEveningReply use to CHOOSE that reply text --
-    // never from the rendered string itself. See dispatch.ts's own doc on
-    // DispatchResult.completed.
-    if (dispatchResult.completed) {
-      // dailyLogId is guaranteed non-null here -- the two guards above
-      // (resolve, then resolveOrCreate-or-fail) already returned early if
-      // it couldn't be resolved, so no second lookup is needed.
-      const photoCount = await countReceivedPhotos(dailyLogId, firstFlow, supabase)
-      if (photoCount > 0) {
-        const reply =
-          firstFlow === 'morning' ? buildMorningCompleteReply(photoCount) : buildEveningCompleteReply(photoCount)
-        return { reply, resolvedFlow: dispatchResult.resolvedFlow }
-      }
+    const equipmentEcho =
+      sessionRow.current_step === 4
+        ? await fetchMorningEquipmentEcho(supabase, {
+            projectId: params.projectId,
+            userId: params.userId,
+            logDate: ist.date,
+          })
+        : null
+    // Same hasCaption gate as the morning branch above -- PHOTO_SAVED_
+    // REASK_PREFIX only when a caption was actually sent.
+    const eveningReaskText = buildEveningReply('reask', sessionRow.current_step, equipmentEcho ?? undefined)
+    return {
+      reply: hasCaption ? `${PHOTO_SAVED_REASK_PREFIX}\n${eveningReaskText}` : eveningReaskText,
+      resolvedFlow: 'evening',
     }
-
-    return dispatchResult
   }
 
   // --- No active session ---------------------------------------------

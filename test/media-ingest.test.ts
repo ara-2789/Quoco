@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { routeInboundMessage } from '@/lib/whatsapp/inbound-start'
+import { routeInboundMessage, PHOTO_SAVED_REASK_PREFIX } from '@/lib/whatsapp/inbound-start'
 import { handleMediaIngestJob, markMediaIngestFailed, RETENTION_DAYS } from '@/lib/media/ingest'
 import { PHOTO_BUCKET } from '@/lib/storage/photo-access'
 import { MORNING_QUESTIONS } from '@/lib/whatsapp/flows/morning'
-import { EVENING_QUESTIONS } from '@/lib/whatsapp/flows/evening'
+import { EVENING_REASK_MESSAGES } from '@/lib/whatsapp/flows/evening'
 import {
   testClient,
   ensureMorningFixtures,
@@ -23,8 +23,9 @@ import {
 // Stage 1 of the media capability (docs/plans/media-capture-design.md item
 // 20; full plan: docs/plans/stage1-photo-intake-plan.md). Covers the three
 // cases the T-WH-13 rewrite (test/webhook.test.ts) does not:
-//   - a captioned photo (caption reaches the parser AND is stored on the
-//     photo's own job payload -- item 12)
+//   - a captioned photo (caption stored on the photo's own job payload,
+//     NEVER reaches the answer parser -- item 12, REVERSED 2026-09-14 after
+//     a real prod incident; see this describe block's own header)
 //   - a burst of several photos in ONE turn (all stored, one reply -- item 13)
 //   - retention class / expires_at, stamped at insert time (item 15) --
 //     REQUIRES migration 043 (daily_log_photos) actually applied. If that
@@ -95,14 +96,22 @@ afterAll(async () => {
   vi.unstubAllEnvs()
 })
 
-describe('routeInboundMessage — captioned photo (item 12)', () => {
-  it('a caption that parses as a valid answer reaches the parser AND is stored on the job payload', async () => {
+describe('routeInboundMessage — captioned photo, item 12 REVERSED (2026-09-14)', () => {
+  // A caption is NEVER an answer, same as an uncaptioned photo (item 23) --
+  // this is the exact behaviour change from the prod incident: a photo
+  // captioned "Today work" while evening Q5 was open used to be recorded
+  // as the Q5 answer (evening_tomorrow_needs = 'Today work'), discarding
+  // the engineer's real "No" sent moments later. The caption here ("8
+  // masons") is deliberately a WELL-FORMED, PARSEABLE answer to the open
+  // question -- proving the rule holds even for a caption that would have
+  // parsed successfully, not only for a garbled one.
+  it('the caption is stored on the photo row; the question is re-asked with the approved copy; NOTHING is written to the answer column', async () => {
     const phone = testPhone('828')
     await seedDailyLogSubmission({ logDate: LOG_DATE })
     await seedSession({
       phone,
       currentFlow: 'evening',
-      currentStep: 2, // workers by trade -- parsed, gated
+      currentStep: 2, // workers by trade -- would parse and advance if this were plain text
       context: {},
       updatedAt: NOW,
     })
@@ -114,13 +123,17 @@ describe('routeInboundMessage — captioned photo (item 12)', () => {
     )
 
     expect(resolvedFlow).toBe('evening')
-    // The caption parsed as a valid answer -- the step ADVANCES, exactly as
-    // an ordinary text-only "8 masons" reply would (item 12: no RPC changes
-    // needed, this falls out of not eating the message first).
-    expect(reply).toBe(EVENING_QUESTIONS[3])
+    // The RPC was never called -- step 2 stays open and is re-asked, with
+    // the approved "Photo saved" notice prepended, exactly as an
+    // uncaptioned photo at this step already would (item 23's own path,
+    // now shared).
+    expect(reply).toBe(`${PHOTO_SAVED_REASK_PREFIX}\n${EVENING_REASK_MESSAGES[2]}`)
 
+    // NOTHING was written to the answer column the caption would have
+    // parsed into -- the exact class of bug the prod incident produced
+    // (evening_tomorrow_needs = 'Today work').
     const log = await getDailyLog(LOG_DATE)
-    expect(log?.evening_manpower).toBeTruthy()
+    expect(log?.evening_manpower).toBeNull()
 
     const dailyLog = await getDailyLog(LOG_DATE)
     expect(dailyLog).not.toBeNull()
@@ -133,6 +146,18 @@ describe('routeInboundMessage — captioned photo (item 12)', () => {
       .eq('engineer_id', testEngineerId())
       .eq('log_date', LOG_DATE)
       .single<{ id: string }>()
+
+    // The current question stays open -- current_step is UNCHANGED, not
+    // advanced, confirming the RPC's own step-advance logic never ran.
+    const { data: sessionRow } = await db
+      .from('whatsapp_sessions')
+      .select('current_step')
+      .eq('phone_number', phone)
+      .single<{ current_step: number }>()
+    expect(sessionRow?.current_step).toBe(2)
+
+    // The caption is still stored -- on the photo's own job payload, its
+    // ONLY destination now (never the answer column above).
     const jobs = await mediaIngestJobsFor(row!.id, 'evening')
     expect(jobs.length).toBe(1)
     const payload = jobs[0].payload as { caption: string | null; media: unknown[] }
@@ -142,13 +167,13 @@ describe('routeInboundMessage — captioned photo (item 12)', () => {
 })
 
 describe('routeInboundMessage — burst of several photos in one turn (item 13)', () => {
-  it('all photos in one inbound message are stored as a single job, with the turn\'s own natural reply and no per-photo acknowledgement', async () => {
+  it('all photos in one inbound message are stored as a single job, with the turn\'s own reask reply (item 12 reversed) and no per-photo acknowledgement', async () => {
     const phone = testPhone('829')
     await seedDailyLogSubmission({ logDate: LOG_DATE })
     await seedSession({
       phone,
       currentFlow: 'morning',
-      currentStep: 3, // workers by trade -- parsed, gated
+      currentStep: 3, // workers by trade -- would parse and advance if this were plain text
       context: {},
       updatedAt: NOW,
     })
@@ -161,10 +186,13 @@ describe('routeInboundMessage — burst of several photos in one turn (item 13)'
     const { reply, resolvedFlow } = await routeInboundMessage(baseParams(phone, '12 mason 8 helper', media))
 
     expect(resolvedFlow).toBe('morning')
-    // The turn's own natural reply -- caption parsed as a valid labour
-    // answer, step advances. No photo-specific text anywhere in it.
-    expect(reply).toBe(MORNING_QUESTIONS[4])
-    expect(reply).not.toContain('photo')
+    // Item 12 reversed: the caption ("12 mason 8 helper", a well-formed
+    // labour answer) never reaches the parser -- step 3 stays open and is
+    // re-asked, with the approved "Photo saved" notice prepended, exactly
+    // as ONE photo with a caption already does (this file's own item-12
+    // test above). A burst doesn't change the rule -- one job, one reask,
+    // regardless of how many photos arrived in it.
+    expect(reply).toBe(`${PHOTO_SAVED_REASK_PREFIX}\n${MORNING_QUESTIONS[3]}`)
 
     const db = testClient()
     const { data: row } = await db
@@ -174,11 +202,21 @@ describe('routeInboundMessage — burst of several photos in one turn (item 13)'
       .eq('engineer_id', testEngineerId())
       .eq('log_date', LOG_DATE)
       .single<{ id: string }>()
+
+    // The current question stays open -- current_step is UNCHANGED.
+    const { data: sessionRow } = await db
+      .from('whatsapp_sessions')
+      .select('current_step')
+      .eq('phone_number', phone)
+      .single<{ current_step: number }>()
+    expect(sessionRow?.current_step).toBe(3)
+
     const jobs = await mediaIngestJobsFor(row!.id, 'morning')
     // ONE job for this one turn, carrying all three media items -- not
     // three separate jobs.
     expect(jobs.length).toBe(1)
-    const payload = jobs[0].payload as { media: unknown[] }
+    const payload = jobs[0].payload as { caption: string | null; media: unknown[] }
+    expect(payload.caption).toBe('12 mason 8 helper')
     expect(payload.media).toHaveLength(3)
   })
 })
