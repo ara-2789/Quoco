@@ -29,6 +29,24 @@
 -- ("outbound_sends' schema now differs between test-db and prod") for why
 -- this divergence is deliberate and documented, not an inconsistency.
 --
+-- SECOND ENTRY, SAME MECHANISM (2026-09-14, migration 043's external review
+-- round 1, item 1/item 3 interaction). daily_log_photos is the identical
+-- shape: 043_daily_log_photos.sql deliberately revokes DELETE/TRUNCATE from
+-- service_role (a tombstone-only, never-hard-deleted table by design,
+-- COMMENT ON TABLE says so explicitly), and the review round that added
+-- that revoke also changed daily_log_id's FK from CASCADE to RESTRICT
+-- (item 3) -- so a leftover daily_log_photos row, which test cleanup could
+-- no longer DELETE once the revoke landed, started blocking every OTHER
+-- test file's routine cleanup of its own daily_logs rows under the same
+-- shared fixture project, across roughly a dozen unrelated test files, the
+-- moment the revoke and the RESTRICT FK combined. Found live: a full
+-- 97-file suite run went from the previous round's clean baseline to 18
+-- failed test files the moment both changes were applied together. Same
+-- fix, same reasoning as outbound_sends above: test-db needs DELETE here
+-- so its own suite can clean up rows it creates; prod's migration is
+-- unaffected and keeps the revoke exactly as reviewed.
+--
 -- Run once. Idempotent (GRANT is a no-op if already held).
 
 GRANT DELETE ON public.outbound_sends TO service_role;
+GRANT DELETE ON public.daily_log_photos TO service_role;

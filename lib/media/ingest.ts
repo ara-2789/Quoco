@@ -10,8 +10,12 @@ import type { MediaItem } from '@/lib/whatsapp/media-reply'
 // 20; full plan: docs/plans/stage1-photo-intake-plan.md). The `media_ingest`
 // job handler -- downloads each Twilio media item, uploads it to the
 // `daily-log-photos` bucket (stage 0), and inserts one `daily_log_photos`
-// row per photo with `retention_class`/`expires_at` STAMPED AT INSERT TIME,
-// never recomputed later (stage 6's own retention job depends on this).
+// row per photo with `retention_class` STAMPED AT INSERT TIME by this job.
+// `expires_at` is NOT stamped here (external review round 1, item 2) -- it
+// is a GENERATED STORED column on the table itself, computed from
+// `received_at`/`retention_class`; this job supplies neither directly and
+// Postgres would reject an INSERT that tried. Stage 6's own retention job
+// still scans `expires_at` directly, unaffected by which side computes it.
 //
 // NO PM-VISIBLE FAILURE SURFACE EXISTS YET -- STATED PLAINLY, NOT IMPLIED
 // OTHERWISE. On exhaustion this writes `daily_logs.{phase}_photos_status =
@@ -24,6 +28,15 @@ import type { MediaItem } from '@/lib/whatsapp/media-reply'
 // monitors Sentry might see" -- not a claim that the PM sees anything in
 // the product itself.
 
+// Mirrors the CASE expression in daily_log_photos.expires_at's own
+// GENERATED ALWAYS AS clause (043_daily_log_photos.sql, external review
+// round 1, item 2) -- kept here ONLY as the expected reference tests
+// compare the database-computed value against; this job no longer computes
+// or writes expires_at itself. If the schema's durations ever change, this
+// map must change with them or the tests silently compare against a stale
+// expectation -- there is no single source both read from, by design (the
+// migration's own comment records why: a schema-side change here becomes a
+// migration to the generated expression, not an edit to this file).
 export const RETENTION_DAYS: Readonly<Record<'morning' | 'evening', number>> = {
   morning: 7,
   evening: 60,
@@ -82,10 +95,8 @@ export async function handleMediaIngestJob(
   const { accountSid, authToken } = readCredentials()
   const basicAuth = Buffer.from(`${accountSid}:${authToken}`).toString('base64')
 
-  const retentionDays = RETENTION_DAYS[payload.phase]
   const retentionClass = RETENTION_CLASS[payload.phase]
   const receivedAt = new Date()
-  const expiresAt = new Date(receivedAt.getTime() + retentionDays * 24 * 60 * 60 * 1000)
 
   let inserted = 0
   for (const item of payload.media) {
@@ -111,6 +122,9 @@ export async function handleMediaIngestJob(
       )
     }
 
+    // expires_at is NOT supplied here -- it is a GENERATED STORED column
+    // (043_daily_log_photos.sql, external review round 1, item 2); Postgres
+    // rejects an INSERT that tries to set it directly.
     const { error: insertError } = await supabase.from('daily_log_photos').insert({
       tenant_id: payload.tenant_id,
       daily_log_id: payload.daily_log_id,
@@ -118,7 +132,6 @@ export async function handleMediaIngestJob(
       photo_url: objectPath,
       caption: payload.caption,
       retention_class: retentionClass,
-      expires_at: expiresAt.toISOString(),
       received_at: receivedAt.toISOString(),
     })
     if (insertError) {

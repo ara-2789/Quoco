@@ -166,11 +166,19 @@ describe('routeInboundMessage — burst of several photos in one turn (item 13)'
   })
 })
 
-describe('handleMediaIngestJob — retention class / expires_at stamped at insert (item 15)', () => {
+describe('handleMediaIngestJob — retention class stamped at insert, expires_at generated (item 15)', () => {
   // REQUIRES migration 043 (daily_log_photos) applied on the target
   // database. If it is not, the INSERT below fails with a real Postgres
   // error ("relation does not exist") and these tests report that failure
   // directly -- not silently skipped.
+  //
+  // expires_at is a GENERATED STORED column (external review round 1, item
+  // 2) -- handleMediaIngestJob no longer computes or supplies it (see
+  // ingest.ts's own insert call). The two cases below therefore assert the
+  // DATABASE's own computed value, read back after insert, not a value this
+  // job constructed -- RETENTION_DAYS here is only the expected reference
+  // the readback is checked against, mirroring the migration's CASE
+  // expression by convention, not a shared source of truth with it.
   async function seedDailyLog(logDate: string): Promise<string> {
     await seedDailyLogSubmission({ logDate })
     const db = testClient()
