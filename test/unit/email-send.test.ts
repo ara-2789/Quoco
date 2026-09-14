@@ -110,3 +110,75 @@ describe('sendEmail', () => {
     }
   })
 })
+
+// Stage 2 of the media capability (docs/plans/media-capture-design.md item
+// 20; docs/plans/stage2-hindrance-photos-plan.md §5). Attachments API
+// shape verified live against Resend's own current documentation,
+// 2026-09-14 (see lib/email/send.ts's own EmailAttachment header for the
+// URLs/date) -- these tests assert the WIRE shape this codebase actually
+// sends matches that verified shape, not a re-verification of Resend's
+// docs themselves.
+describe('sendEmail — attachments (stage 2)', () => {
+  const fetchMock = vi.fn()
+
+  beforeEach(() => {
+    vi.stubEnv('RESEND_API_KEY', 'zz-test-resend-key')
+    vi.stubEnv('RESEND_FROM_EMAIL', 'noreply@quoco.co.in')
+    fetchMock.mockReset()
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('omits the attachments key entirely when none are given -- no empty array sent to Resend', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { id: 'em_noattach' }))
+    await sendEmail({ to: 'pm@example.com', subject: 'x', text: 'x', html: '<p>x</p>' }, fetchMock)
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
+    expect(body).not.toHaveProperty('attachments')
+  })
+
+  it('omits the attachments key when given an empty array -- same as omitted entirely', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { id: 'em_emptyattach' }))
+    await sendEmail({ to: 'pm@example.com', subject: 'x', text: 'x', html: '<p>x</p>', attachments: [] }, fetchMock)
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
+    expect(body).not.toHaveProperty('attachments')
+  })
+
+  it('serializes attachments with filename/content verbatim and contentType mapped to snake_case content_type on the wire', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { id: 'em_withattach' }))
+    const base64Bytes = Buffer.from([0xff, 0xd8, 0xff]).toString('base64')
+    await sendEmail(
+      {
+        to: 'pm@example.com',
+        subject: 'Hindrance reported',
+        text: 'x',
+        html: '<p>x</p>',
+        attachments: [
+          { filename: 'photo1.jpg', content: base64Bytes, contentType: 'image/jpeg' },
+          { filename: 'photo2.png', content: base64Bytes, contentType: 'image/png' },
+        ],
+      },
+      fetchMock,
+    )
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
+    expect(body.attachments).toEqual([
+      { filename: 'photo1.jpg', content: base64Bytes, content_type: 'image/jpeg' },
+      { filename: 'photo2.png', content: base64Bytes, content_type: 'image/png' },
+    ])
+    // Verified live against Resend's own docs (this file's own header):
+    // `path` is never used -- this codebase always sends bytes directly.
+    expect(JSON.stringify(body.attachments)).not.toContain('"path"')
+  })
+
+  it('an attachment with no contentType omits content_type entirely -- Resend derives it from filename, per its own documented default', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { id: 'em_nocontenttype' }))
+    await sendEmail(
+      { to: 'pm@example.com', subject: 'x', text: 'x', html: '<p>x</p>', attachments: [{ filename: 'photo.jpg', content: 'aGVsbG8=' }] },
+      fetchMock,
+    )
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
+    expect(body.attachments).toEqual([{ filename: 'photo.jpg', content: 'aGVsbG8=' }])
+    expect(body.attachments[0]).not.toHaveProperty('content_type')
+  })
+})

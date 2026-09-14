@@ -1,9 +1,10 @@
 import * as Sentry from '@sentry/nextjs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
-import { sendEmail as sendEmailReal, type SendEmailParams, type SendEmailResult } from '@/lib/email/send'
+import { sendEmail as sendEmailReal, type SendEmailParams, type SendEmailResult, type EmailAttachment } from '@/lib/email/send'
 import { enqueueJob } from '@/lib/queue/jobs'
 import { istDateString } from '@/lib/daily-logs/date'
+import { PHOTO_BUCKET } from '@/lib/storage/photo-access'
 
 // Ad-hoc menu PR 2, step 5 (docs/plans/adhoc-menu-spec.md). PM lookup + the
 // egress email that makes "your Project Manager will see it" true.
@@ -245,6 +246,23 @@ export interface HindrancePmNotifyEmailParams {
   timing: 'active' | 'potential' | 'unspecified' | null
   timingRaw: string | null
   createdAt: string
+  /**
+   * NEW, migration 044 (stage 2). Governs the one optional line appended
+   * after timingLine -- APPROVED COPY (Aravind, 2026-09-14), all three
+   * cases exact, Tamil pairs owed and NOT invented:
+   *   - `{ kind: 'none' }` -- no photos were ever sent for this hindrance.
+   *     Line omitted entirely (matches this function's existing posture
+   *     of only ever stating true things).
+   *   - `{ kind: 'attached', count }` -- photos fetched and attached to
+   *     THIS send. "1 photo attached." (singular) / "N photos attached."
+   *   - `{ kind: 'still_uploading' }` -- photos exist but retries
+   *     exhausted before they finished uploading; the email sends anyway
+   *     (Aravind, 2026-09-14: "never withhold the email"), without them.
+   *     "Photos are still uploading — they'll be in the dashboard
+   *     shortly." No count -- the exact number isn't the point once none
+   *     of them made it in time.
+   */
+  photos: { kind: 'none' } | { kind: 'attached'; count: number } | { kind: 'still_uploading' }
 }
 
 /**
@@ -258,7 +276,7 @@ export interface HindrancePmNotifyEmailParams {
  * statement, never a fabricated claim about timing nobody has fabricated.
  */
 export function buildHindrancePmNotifyEmail(params: HindrancePmNotifyEmailParams): RenderedHindrancePmEmail {
-  const { projectName, engineerName, description, timing, timingRaw, createdAt } = params
+  const { projectName, engineerName, description, timing, timingRaw, createdAt, photos } = params
 
   let timingLine: string
   if (timing === 'active') {
@@ -271,12 +289,21 @@ export function buildHindrancePmNotifyEmail(params: HindrancePmNotifyEmailParams
     timingLine = 'Timing not confirmed.'
   }
 
+  let photoLine: string | null = null
+  if (photos.kind === 'attached') {
+    photoLine = photos.count === 1 ? '1 photo attached.' : `${photos.count} photos attached.`
+  } else if (photos.kind === 'still_uploading') {
+    photoLine = "Photos are still uploading — they'll be in the dashboard shortly."
+  }
+
   // WITH the date -- a PM with several hindrances across days can't tell
   // them apart in a subject list otherwise. Decided 2026-09-07 (Aravind).
   const subject = `Hindrance reported — ${projectName} — ${formatHindranceReportDate(createdAt)}`
   const openLine = `${engineerName} reported a hindrance on ${projectName}: "${description}".`
-  const text = `${openLine}\n\n${timingLine}`
-  const html = `<p>${escapeHtml(openLine)}</p><p>${escapeHtml(timingLine)}</p>`
+  const text = photoLine ? `${openLine}\n\n${timingLine}\n\n${photoLine}` : `${openLine}\n\n${timingLine}`
+  const html = photoLine
+    ? `<p>${escapeHtml(openLine)}</p><p>${escapeHtml(timingLine)}</p><p>${escapeHtml(photoLine)}</p>`
+    : `<p>${escapeHtml(openLine)}</p><p>${escapeHtml(timingLine)}</p>`
 
   return { subject, text, html }
 }
@@ -304,6 +331,53 @@ interface HindranceRow {
   timing_raw: string | null
   pm_notified_at: string | null
   created_at: string
+  // NEW, migration 044. NULL = no photos ever sent for this hindrance;
+  // 'pending' = a hindrance_media_ingest job is enqueued/running;
+  // 'complete'/'failed' = the job resolved (all uploaded, or exhausted).
+  photos_status: 'pending' | 'complete' | 'failed' | null
+}
+
+interface HindrancePhotoRow {
+  photo_url: string | null
+}
+
+/**
+ * Fetch every stored photo's bytes for a hindrance, via service_role,
+ * directly -- NEVER a signed URL (docs/plans/stage0-storage-setup-plan.md
+ * §5's own already-decided split: dashboard reads use getSignedPhotoUrl,
+ * email attachments read bytes directly, since the job already knows which
+ * hindrance it's attaching for from its own query). Tombstoned rows
+ * (`photo_url IS NULL`, item 9 -- not reachable in practice this soon
+ * after a report, since stage 6's retention job doesn't exist yet, but
+ * excluded defensively) are skipped, not treated as a failure.
+ */
+async function fetchHindrancePhotoAttachments(
+  hindranceId: string,
+  client: SupabaseClient,
+): Promise<EmailAttachment[]> {
+  const { data: photoRows, error: photosError } = await client
+    .from('hindrance_photos')
+    .select('photo_url')
+    .eq('hindrance_id', hindranceId)
+    .order('created_at', { ascending: true })
+  if (photosError) throw photosError
+
+  const attachments: EmailAttachment[] = []
+  for (const row of (photoRows ?? []) as HindrancePhotoRow[]) {
+    if (!row.photo_url) continue
+    const { data: blob, error: downloadError } = await client.storage.from(PHOTO_BUCKET).download(row.photo_url)
+    if (downloadError || !blob) {
+      throw new Error(`fetchHindrancePhotoAttachments: download failed for ${row.photo_url}: ${downloadError?.message}`)
+    }
+    const bytes = Buffer.from(await blob.arrayBuffer())
+    const filename = row.photo_url.split('/').pop() ?? 'photo.jpg'
+    attachments.push({
+      filename,
+      content: bytes.toString('base64'),
+      contentType: blob.type || undefined,
+    })
+  }
+  return attachments
 }
 
 /**
@@ -312,6 +386,20 @@ interface HindranceRow {
  * comment names this exact check-then-send-then-set race and accepts it --
  * "duplicate-over-silence," matching the trade this handler makes on
  * partial failure below).
+ *
+ * PHOTO WAIT, NEW (migration 044). If `photos_status === 'pending'` and
+ * `deps.forceSendWithoutPhotos` is not set, this THROWS a distinctly-
+ * tagged error -- reusing lib/queue/jobs.ts's own exponential-backoff
+ * retry (NFR-17, up to 5 attempts) as the "wait for the async
+ * hindrance_media_ingest job to finish" mechanism, rather than building a
+ * dedicated hold-timer the way DPR-24's own hold logic does. If retries
+ * exhaust while STILL pending (or the job failed outright), app/api/jobs/
+ * tick/route.ts's own dead-letter branch calls this function AGAIN with
+ * `forceSendWithoutPhotos: true` -- Aravind's 2026-09-14 decision: "a
+ * blocker the PM learns about late is worse than one without a picture,"
+ * the email is NEVER withheld. That forced call skips the pending-check
+ * below entirely and sends with whatever photos exist right now (possibly
+ * none), using the "still uploading" copy.
  *
  * ON ANY PER-PM SEND FAILURE, THIS THROWS -- deliberately unlike
  * handleOwnerDeliverJob's own terminal-failure model. Owner delivery has a
@@ -331,6 +419,7 @@ export async function handleHindrancePmNotifyJob(
   deps: {
     supabaseClient?: SupabaseClient
     sendEmailFn?: (params: SendEmailParams) => Promise<SendEmailResult>
+    forceSendWithoutPhotos?: boolean
   } = {},
 ): Promise<HindrancePmNotifyResult> {
   const client = deps.supabaseClient ?? createServiceClient()
@@ -338,7 +427,7 @@ export async function handleHindrancePmNotifyJob(
 
   const { data: hindrance, error: hindranceError } = await client
     .from('hindrances')
-    .select('id, project_id, reported_by, description, timing, timing_raw, pm_notified_at, created_at')
+    .select('id, project_id, reported_by, description, timing, timing_raw, pm_notified_at, created_at, photos_status')
     .eq('id', payload.hindrance_id)
     .single()
   if (hindranceError) throw hindranceError
@@ -346,6 +435,12 @@ export async function handleHindrancePmNotifyJob(
 
   if (row.pm_notified_at) {
     return { outcome: 'already_notified', sentCount: 0, failedCount: 0 }
+  }
+
+  if (row.photos_status === 'pending' && !deps.forceSendWithoutPhotos) {
+    throw new Error(
+      `handleHindrancePmNotifyJob: hindrance ${payload.hindrance_id} has photos still uploading (photos_status='pending') -- will retry`,
+    )
   }
 
   const { data: project, error: projectError } = await client.from('projects').select('name').eq('id', row.project_id).single()
@@ -364,6 +459,23 @@ export async function handleHindrancePmNotifyJob(
     return { outcome: 'zero_pms', sentCount: 0, failedCount: 0 }
   }
 
+  // Photos: fetched and attached whenever photos_status is NOT 'pending'
+  // (i.e. NULL -- none ever sent -- or 'complete') on the NORMAL path.
+  // On the FORCED path (retries exhausted), photos_status is still
+  // 'pending' or is 'failed' -- attach nothing, use the "still uploading"
+  // copy instead, per Aravind's own decision.
+  let attachments: EmailAttachment[] = []
+  let photos: HindrancePmNotifyEmailParams['photos']
+  if (row.photos_status === null) {
+    photos = { kind: 'none' }
+  } else if (row.photos_status === 'complete') {
+    attachments = await fetchHindrancePhotoAttachments(row.id, client)
+    photos = attachments.length > 0 ? { kind: 'attached', count: attachments.length } : { kind: 'none' }
+  } else {
+    // 'pending' (forced path only, by the guard above) or 'failed'.
+    photos = { kind: 'still_uploading' }
+  }
+
   const rendered = buildHindrancePmNotifyEmail({
     projectName: project.name as string,
     engineerName: (reporter.full_name as string | null) ?? 'An engineer',
@@ -371,12 +483,19 @@ export async function handleHindrancePmNotifyJob(
     timing: row.timing,
     timingRaw: row.timing_raw,
     createdAt: row.created_at,
+    photos,
   })
 
   let sentCount = 0
   let failedCount = 0
   for (const target of resolution.targets) {
-    const result = await sendEmail({ to: target.email, subject: rendered.subject, text: rendered.text, html: rendered.html })
+    const result = await sendEmail({
+      to: target.email,
+      subject: rendered.subject,
+      text: rendered.text,
+      html: rendered.html,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    })
     if (result.ok) {
       sentCount++
     } else {
@@ -428,6 +547,50 @@ export async function handleHindrancePmNotifyJob(
 // end. ------------------------------------------------------------------
 
 /**
+ * Resolve the most recent hindrance report for a given (project, reporter)
+ * pair. EXTRACTED, migration 044 (stage 2), from enqueueHindrancePmNotify's
+ * own inline query below -- reused by lib/whatsapp/inbound-start.ts's own
+ * hindrance Q3 photo branch, which needs the SAME lookup for a different
+ * reason.
+ *
+ * SAFE HERE, and in inbound-start.ts's own call site, for the SAME reason:
+ * both callers run this SYNCHRONOUSLY, in the same request that already
+ * confirmed (via the RPC's own outcome, or a fresh session read) that this
+ * engineer's session is at a point in the hindrance flow where exactly one
+ * report -- the one just written, or the one currently open at step 3 --
+ * is the only candidate this query could possibly find. NOT SAFE for an
+ * async, job-handler-side call at an unknown later time -- that shape was
+ * considered and rejected for the Q1/Q2 photo case specifically
+ * (docs/plans/stage2-hindrance-photos-plan.md §0, option C): a report
+ * abandoned mid-flow, with an unbounded delay before some later async
+ * caller runs this same query, could resolve to a different, unrelated,
+ * later hindrance from the same engineer. Every current call site of this
+ * function avoids that shape by construction; a future caller must
+ * re-confirm the same synchronous-adjacency property before reusing it.
+ */
+export async function resolveMostRecentHindranceId(
+  params: { projectId: string; userId: string },
+  client: SupabaseClient,
+): Promise<string | null> {
+  const { data, error } = await client
+    .from('hindrances')
+    .select('id')
+    .eq('project_id', params.projectId)
+    .eq('reported_by', params.userId)
+    .eq('submitted_via', 'whatsapp_adhoc')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>()
+
+  if (error) {
+    throw new Error(
+      `resolveMostRecentHindranceId failed for project ${params.projectId}, reporter ${params.userId}: ${error.message}`,
+    )
+  }
+  return data?.id ?? null
+}
+
+/**
  * Look up the hindrance row a just-completed turn wrote (safe: a single
  * engineer's own session lock serializes his turns, so this query can
  * never race a concurrent insert FROM THE SAME ENGINEER; a different
@@ -442,18 +605,9 @@ export async function enqueueHindrancePmNotify(
   client: SupabaseClient,
 ): Promise<void> {
   try {
-    const { data: newRow, error: selectError } = await client
-      .from('hindrances')
-      .select('id')
-      .eq('project_id', params.projectId)
-      .eq('reported_by', params.userId)
-      .eq('submitted_via', 'whatsapp_adhoc')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    if (selectError) {
-      Sentry.captureException(selectError, {
+    const hindranceId = await resolveMostRecentHindranceId(params, client)
+    if (!hindranceId) {
+      Sentry.captureException(new Error('enqueueHindrancePmNotify: no hindrance row found to notify for'), {
         fingerprint: ['hindrance-flow', 'pm_notify_enqueue_lookup_failed'],
         tags: { feature: 'hindrance-flow' },
         extra: { projectId: params.projectId, userId: params.userId },
@@ -461,7 +615,7 @@ export async function enqueueHindrancePmNotify(
       return
     }
 
-    await enqueueJob('hindrance_pm_notify', { hindrance_id: newRow.id }, client)
+    await enqueueJob('hindrance_pm_notify', { hindrance_id: hindranceId }, client)
   } catch (err) {
     Sentry.captureException(err, {
       fingerprint: ['hindrance-flow', 'pm_notify_enqueue_failed'],

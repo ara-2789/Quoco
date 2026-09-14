@@ -50,6 +50,17 @@ describe('buildHindranceReply', () => {
     expect(buildHindranceReply('reask', 2)).toBe(HINDRANCE_QUESTIONS[2])
   })
 
+  // Stage 2 (migration 044) -- Q2's resolution now advances to step 3
+  // (the new photo question) instead of completing the flow.
+  it('advance to step 3 returns the new Q3 photo question, exact approved copy', () => {
+    expect(buildHindranceReply('advance', 3)).toBe(HINDRANCE_QUESTIONS[3])
+    expect(HINDRANCE_QUESTIONS[3]).toBe('Send photos of the issue. Reply none to skip.')
+  })
+
+  it('reask at step 3 returns Q3 verbatim, same convention as steps 1/2', () => {
+    expect(buildHindranceReply('reask', 3)).toBe(HINDRANCE_QUESTIONS[3])
+  })
+
   it('a resolved completion (advance, step 0, wasExhausted=false) returns the plain confirmation', () => {
     expect(buildHindranceReply('advance', 0, false)).toBe(HINDRANCE_RESOLVED_REPLY)
   })

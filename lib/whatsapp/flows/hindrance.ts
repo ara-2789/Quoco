@@ -41,12 +41,28 @@ export interface HindranceTurnResult {
    * completion) -- disambiguates HINDRANCE_RESOLVED_REPLY from
    * HINDRANCE_UNSPECIFIED_REPLY, same role buildMorningReply's own
    * `attendance` parameter plays for morning's three completions.
-   * Computed by THIS wrapper from the same classification it already
-   * computed to call the RPC, not returned by the RPC itself -- the RPC
-   * has no need to know why the caller wants this, only what timing/
-   * timing_ok to act on.
+   *
+   * CHANGED, migration 044 (stage 2). Under 038, completion and Q2's own
+   * resolution were the SAME turn, so this was computed here from the
+   * classification THIS call already computed. They are no longer the
+   * same turn -- completion now happens on Q3's turn (a separate call,
+   * whose message is "none" or free text, not a timing answer at all).
+   * Re-classifying Q3's message via classifyHindranceTiming would have
+   * silently misreported every real completion as exhausted (caught while
+   * writing this wrapper, before it ever ran -- see 044's own migration
+   * comment for the fix). Now read directly from the RPC's own
+   * `was_unspecified` field, which the RPC itself carries across the
+   * Q2->Q3 gap in session context.
    */
   wasExhausted: boolean
+  /**
+   * NEW, migration 044. The hindrances row's id, non-null ONLY on the
+   * exact turn that inserts it (Q2's own resolution, advancing to step 3)
+   * -- null on every other outcome. The caller (lib/whatsapp/inbound-
+   * start.ts) uses this to know a hindrance_id now exists for this
+   * session, so Q3 photos can be stored directly instead of rejected.
+   */
+  hindranceId: string | null
 }
 
 // --- Q2 classification -----------------------------------------------------
@@ -81,6 +97,15 @@ export function classifyHindranceTiming(message: string): HindranceTimingClassif
 export const HINDRANCE_QUESTIONS: Readonly<Record<number, string>> = {
   1: "What's the hindrance? Describe it in your own words.",
   2: 'Is it blocking work right now, or could it block work later?\nReply 1 for blocking now\nReply 2 for may block later',
+  // Stage 2 (docs/plans/media-capture-design.md item 20; docs/plans/
+  // stage2-hindrance-photos-plan.md). New, 2026-09-14 (migration 044,
+  // docs/reviews/044_hindrance_photos.sql). Asked AFTER the hindrances row
+  // is already written (Q2's resolution) -- a hindrance_id exists by the
+  // time this question is ever shown, so a photo sent here can be stored
+  // immediately (see lib/whatsapp/inbound-start.ts's own hindrance photo
+  // branch). Approved copy, exact (Aravind, 2026-09-14) -- Tamil pair
+  // owed, not invented.
+  3: 'Send photos of the issue. Reply none to skip.',
 }
 
 export const HINDRANCE_RESOLVED_REPLY = '✅ Hindrance recorded. Your Project Manager will see it.'
@@ -161,16 +186,19 @@ export async function applyHindranceFlowTurn(params: {
     outcome: HindranceOutcome
     current_flow: SessionFlow | null
     current_step: number
+    hindrance_id: string | null
+    was_unspecified: boolean
   }
 
-  // A genuine completion -- both wasExhausted:true (unresolved Q2) and
-  // wasExhausted:false (resolved Q2) cases -- enqueues the PM-notify job
-  // (lib/hindrance/pm-notify.ts, step 5). Fired here, not by the caller,
-  // so no future call site of this function can forget it. NEVER blocks
-  // or fails the engineer-facing reply: enqueueHindrancePmNotify itself
-  // never throws (see its own header) -- the hindrance row is already
-  // safely written by the RPC by this point regardless of whether the
-  // notify job successfully enqueues.
+  // A genuine completion (now Q3's own completion, per migration 044 --
+  // was Q2's, under 038) -- both wasExhausted:true and wasExhausted:false
+  // cases -- enqueues the PM-notify job (lib/hindrance/pm-notify.ts, step
+  // 5). Fired here, not by the caller, so no future call site of this
+  // function can forget it. NEVER blocks or fails the engineer-facing
+  // reply: enqueueHindrancePmNotify itself never throws (see its own
+  // header) -- the hindrance row is already safely written by the RPC (at
+  // Q2's own earlier turn) regardless of whether the notify job
+  // successfully enqueues.
   if (result.outcome === 'advance' && result.current_step === 0) {
     await enqueueHindrancePmNotify({ projectId: params.projectId, userId: params.userId }, supabase)
   }
@@ -179,11 +207,11 @@ export async function applyHindranceFlowTurn(params: {
     outcome: result.outcome,
     currentFlow: result.current_flow,
     currentStep: result.current_step,
-    // Only actually exhausted on the turn that COMPLETES unresolved --
-    // an unparseable answer that merely triggers a reask (outcome='reask')
-    // must not be reported as exhausted, or the caller could show the
-    // wrong confirmation on a later, genuinely resolved turn that happens
-    // to reuse a stale flag.
-    wasExhausted: result.outcome === 'advance' && result.current_step === 0 && !classification.ok,
+    // Read directly from the RPC, not re-derived from `classification`
+    // (this turn's message, at completion time, is Q3's answer -- "none"
+    // or free text -- not a timing digit). See this file's own
+    // HindranceTurnResult.wasExhausted doc for the bug this replaces.
+    wasExhausted: result.outcome === 'advance' && result.current_step === 0 && result.was_unspecified,
+    hindranceId: result.hindrance_id,
   }
 }

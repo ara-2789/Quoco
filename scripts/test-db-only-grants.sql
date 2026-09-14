@@ -46,7 +46,21 @@
 -- so its own suite can clean up rows it creates; prod's migration is
 -- unaffected and keeps the revoke exactly as reviewed.
 --
+-- THIRD ENTRY, SAME MECHANISM (2026-09-14, migration 044/stage 2's own
+-- test-writing pass). hindrance_photos is the identical shape to
+-- daily_log_photos above: 044_hindrance_photos.sql deliberately revokes
+-- DELETE/TRUNCATE from service_role (tombstone-only, never hard-deleted,
+-- per its own COMMENT ON TABLE) and its hindrance_id FK is ON DELETE
+-- RESTRICT -- found live, the same way daily_log_photos' own gap was
+-- found: test/hindrance-photos-rls.test.ts's own afterAll could not
+-- delete a leftover hindrance_photos row, which then blocked
+-- removeTwoTenantFixtures' later attempt to delete the hindrances row
+-- referencing it ("violates foreign key constraint
+-- hindrance_photos_hindrance_id_fkey"). Same fix: test-db needs DELETE
+-- here so its own suite can clean up; prod's migration is unaffected.
+--
 -- Run once. Idempotent (GRANT is a no-op if already held).
 
 GRANT DELETE ON public.outbound_sends TO service_role;
 GRANT DELETE ON public.daily_log_photos TO service_role;
+GRANT DELETE ON public.hindrance_photos TO service_role;
