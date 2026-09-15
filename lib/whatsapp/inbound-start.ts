@@ -1,12 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Json } from '@/types/database'
+import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase/service'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
-import { readCurrentFlow } from './session'
+import { readCurrentFlow, claimMediaNudge } from './session'
 import { dispatchInboundTurn } from './dispatch'
 import { applyHindranceFlowTurn, buildHindranceReply } from './flows/hindrance'
-import { PHOTO_REPLY, type MediaItem } from './media-reply'
+import { MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, MEDIA_NUDGE_WINDOW_SECONDS, type MediaItem } from './media-reply'
 import { buildMorningReply, buildMorningCompleteReply } from './flows/morning'
 import { buildEveningReply, buildEveningCompleteReply, fetchMorningEquipmentEcho } from './flows/evening'
 import { enqueueJob } from '@/lib/queue/jobs'
@@ -81,10 +82,17 @@ export const HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY =
 // before; a MediaItem[] never reaches this file for a voice note.
 //
 // THE MECHANISM, both branches below:
-//   - Idle (no active flow): a photo still gets today's unchanged
-//     PHOTO_REPLY -- the off-step nudge is stage 3 (item 6), not this
-//     stage. Checked BEFORE classifyAdhocInput, so the ad-hoc router never
-//     sees raw media params.
+//   - Idle (no active flow): STALE ABOVE, CORRECTED HERE (stage 3 shipped) --
+//     see handleIdlePhoto's own doc, below, for the real mechanism: a photo
+//     at idle no longer gets a reply on every arrival. claim_media_nudge
+//     (migration 045, HELD -- not applied to any database yet; see
+//     docs/reviews/045-review-brief.md) throttles it to one nudge+menu reply
+//     per MEDIA_NUDGE_WINDOW_SECONDS-second window per phone number; any
+//     further idle photo inside that window gets NO reply at all (empty
+//     TwiML, via route.ts's own `reply === '' ? twimlEmpty() : ...`).
+//     Checked BEFORE classifyAdhocInput, so the ad-hoc router never sees raw
+//     media params -- unchanged from before stage 3, only what happens once
+//     isPhoto is true has changed.
 //   - Active flow, morning/evening: the photo is enqueued as a
 //     `media_ingest` job (storage happens in the background, never inline
 //     -- item 4, caption included on the payload either way), then the
@@ -121,8 +129,9 @@ export const HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY =
 //   - Active flow, hindrance: STALE ABOVE, CORRECTED HERE (stage 2 shipped,
 //     migration 044) -- see handleHindrancePhoto's own doc, below, for the
 //     real mechanism: a photo at Q1/Q2 (no hindrance_id yet) is rejected
-//     with HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY, not the generic PHOTO_REPLY
-//     above; a photo at Q3 (hindrance_id already known) is stored, same as
+//     with HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY, not the generic idle nudge
+//     above (unchanged by stage 3 -- this reply is unaffected); a photo at
+//     Q3 (hindrance_id already known) is stored, same as
 //     morning/evening -- but STALE AGAIN, CORRECTED 2026-09-15: the REPLY
 //     text at Q3 is NOT "same as morning/evening" any more. A live prod
 //     finding showed Q3 is the one question whose answer IS photos, so
@@ -340,9 +349,21 @@ const CORRECTION_LINE: Record<Exclude<AdhocInputKind, 'item1'>, string> = {
     'Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.',
 }
 
-export function buildIdleReply(kind: Exclude<AdhocInputKind, 'item1'>, headerState: IdleHeaderState): string {
-  const lines = [CORRECTION_LINE[kind], HEADER_LINE[headerState], ACTION_LINE[headerState]]
+// Extracted, stage 3 -- the "live idle menu" (header line + action line,
+// with no correction line) that both the ordinary idle reply below AND the
+// new idle-photo nudge (handleIdlePhoto) compose their reply from. A photo
+// has no AdhocInputKind (its caption is never classified -- item 12), so it
+// cannot use buildIdleReply's own CORRECTION_LINE lookup; this is exactly
+// the subset it needs. buildIdleReply itself is rewritten below, in terms of
+// this function, to guarantee the two never drift -- same HEADER_LINE/
+// ACTION_LINE values compose identically in both places.
+export function buildIdleMenu(headerState: IdleHeaderState): string {
+  const lines = [HEADER_LINE[headerState], ACTION_LINE[headerState]]
   return lines.filter((line): line is string => line !== undefined).join('\n')
+}
+
+export function buildIdleReply(kind: Exclude<AdhocInputKind, 'item1'>, headerState: IdleHeaderState): string {
+  return [CORRECTION_LINE[kind], buildIdleMenu(headerState)].join('\n')
 }
 
 export interface InboundRouteResult {
@@ -525,6 +546,119 @@ async function handleHindrancePhoto(
   return {
     reply: buildHindrancePhotoAck(photoCount),
     resolvedFlow: 'hindrance',
+  }
+}
+
+/**
+ * Extracted, stage 3 -- the SAME daily_logs lookup + computeIdleHeaderState
+ * call that routeInboundMessage's own bottom section (the ordinary idle
+ * reply) already did inline, pulled out so handleIdlePhoto (below) can reuse
+ * it without duplicating the query. Behaviour is byte-identical to what
+ * routeInboundMessage did inline before this extraction -- same fields
+ * selected, same computeIdleHeaderState call, same error message shape.
+ */
+async function resolveIdleHeaderState(
+  params: Pick<RouteParams, 'projectId' | 'userId' | 'phoneNumber' | 'now'>,
+  supabase: SupabaseClient,
+): Promise<IdleHeaderState> {
+  const now = params.now !== undefined ? new Date(params.now) : new Date()
+  const ist = istParts(now)
+
+  const { data: log, error } = await supabase
+    .from('daily_logs')
+    .select('morning_submitted_at, evening_submitted_at, attendance')
+    .eq('project_id', params.projectId)
+    .eq('engineer_id', params.userId)
+    .eq('log_date', ist.date)
+    .maybeSingle<{
+      morning_submitted_at: string | null
+      evening_submitted_at: string | null
+      attendance: 'present' | 'absent' | 'site_holiday' | null
+    }>()
+
+  if (error) {
+    throw new Error(
+      `routeInboundMessage daily_logs lookup failed for ${params.phoneNumber}: ${error.message}`,
+    )
+  }
+
+  const morningSubmitted = log?.morning_submitted_at != null
+  const eveningSubmitted = log?.evening_submitted_at != null
+
+  return computeIdleHeaderState({
+    morningSubmitted,
+    eveningSubmitted,
+    attendance: log?.attendance ?? null,
+    istMinutes: ist.minutes,
+  })
+}
+
+/**
+ * Handle a photo arriving at idle (no active flow) -- stage 3
+ * (docs/plans/media-capture-design.md's stage 3 entry; migration 045, HELD,
+ * not applied to any database yet -- see docs/reviews/045-review-brief.md).
+ * Called only when params.isPhoto is true and readCurrentFlow returned null;
+ * the caption, if any, is IGNORED ENTIRELY here (item 12's own "a photo is
+ * never an answer" extends to "a photo's caption never drives idle routing
+ * either" -- classifyAdhocInput is never called for a photo, so a photo
+ * captioned "1" never starts the hindrance flow the way a bare text "1"
+ * would).
+ *
+ * The photo itself is NEVER STORED and NEVER PARKED for later (item 6,
+ * unchanged) -- there is no active flow's daily_log_id or hindrance_id for
+ * it to attach to, and stage 3 does not introduce one. This function's only
+ * job is deciding whether to SPEAK.
+ *
+ * claim_media_nudge (migration 045) throttles the reply to once per
+ * MEDIA_NUDGE_WINDOW_SECONDS-second window per phone number:
+ *   - true  (first photo in the window): reply is MEDIA_NUDGE_REPLY, then
+ *     MEDIA_NUDGE_PROGRESS_LINE, then the live idle menu (buildIdleMenu) --
+ *     three lines, always in that order.
+ *   - false (any further photo inside the window): NO reply at all -- an
+ *     empty string, which route.ts's own `reply === '' ? twimlEmpty() : ...`
+ *     turns into `<Response></Response>`, so Twilio delivers nothing.
+ *
+ * FAIL OPEN, deliberately (Aravind's own instruction, this stage): if the
+ * RPC call itself throws (claimMediaNudge wraps a Postgres/network error
+ * into a thrown Error), this is logged to Sentry and the function falls
+ * back to the SAME three-line nudge+menu reply the `true` case sends --
+ * never to silence. An engineer who gets one extra nudge message he didn't
+ * strictly need is a minor annoyance; an engineer who gets NO reply at all
+ * because the throttle check happened to fail looks, from his side,
+ * identical to a broken bot. Silence is the worse failure mode of the two,
+ * so a throttle-check failure always resolves to "speak."
+ */
+async function handleIdlePhoto(params: RouteParams, supabase: SupabaseClient): Promise<InboundRouteResult> {
+  let claimed: boolean
+  try {
+    claimed = await claimMediaNudge({
+      phoneNumber: params.phoneNumber,
+      tenantId: params.tenantId,
+      userId: params.userId,
+      windowSeconds: MEDIA_NUDGE_WINDOW_SECONDS,
+      ...(params.now !== undefined ? { now: params.now } : {}),
+      supabaseClient: supabase,
+    })
+  } catch (err) {
+    Sentry.captureException(err, {
+      fingerprint: ['media-nudge-throttle', 'claim_media_nudge_failed'],
+      tags: { feature: 'media-nudge-throttle' },
+      extra: { phoneNumber: params.phoneNumber, tenantId: params.tenantId, projectId: params.projectId },
+    })
+    // Fail open -- see this function's own header for why silence is the
+    // worse failure mode here. Falls straight through to the same
+    // nudge+progress+menu composition the `true` branch below returns.
+    claimed = true
+  }
+
+  if (!claimed) {
+    return { reply: '', resolvedFlow: null }
+  }
+
+  const headerState = await resolveIdleHeaderState(params, supabase)
+  return {
+    reply: [MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, buildIdleMenu(headerState)].join('\n'),
+    resolvedFlow: null,
   }
 }
 
@@ -738,19 +872,24 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
   }
 
   // --- No active session ---------------------------------------------
-  // A bare photo at idle still gets today's unchanged PHOTO_REPLY -- the
-  // off-step nudge is stage 3 (item 6), not this stage. Checked before
-  // classifyAdhocInput, so the ad-hoc router never sees raw media params.
+  // A bare photo at idle: STALE COMMENT REMOVED, stage 3 -- see
+  // handleIdlePhoto's own doc, above, for the real mechanism (throttled
+  // nudge+menu, not an unconditional PHOTO_REPLY on every arrival). Checked
+  // before classifyAdhocInput, so the ad-hoc router never sees raw media
+  // params, and a photo's caption never drives idle routing (item 12) --
+  // unchanged from before stage 3.
   //
   // FIX (2026-09-13, T-WH-14 regression): keyed on params.isPhoto, NOT
   // media.length -- see RouteParams.isPhoto's own doc. Before this fix, a
   // photo whose extraction happened to come back empty (missing MediaUrl0
   // -- a malformed webhook, or a test fixture that only sets NumMedia/
   // MediaContentType0) silently fell through to the ad-hoc router instead
-  // of PHOTO_REPLY, even though classifyMediaReply correctly called it a
-  // photo.
+  // of getting a photo-specific reply, even though classifyMediaReply
+  // correctly called it a photo. Still true under stage 3: handleIdlePhoto
+  // is reached (and the ad-hoc router is skipped) purely on isPhoto, not on
+  // whether any media items were actually extractable.
   if (params.isPhoto) {
-    return { reply: PHOTO_REPLY, resolvedFlow: null }
+    return handleIdlePhoto(params, supabase)
   }
 
   // PRECEDENCE, decided: a leading "1" always wins on WHETHER item 1's
@@ -782,30 +921,6 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
     }
   }
 
-  const now = params.now !== undefined ? new Date(params.now) : new Date()
-  const ist = istParts(now)
-
-  const { data: log, error } = await supabase
-    .from('daily_logs')
-    .select('morning_submitted_at, evening_submitted_at, attendance')
-    .eq('project_id', params.projectId)
-    .eq('engineer_id', params.userId)
-    .eq('log_date', ist.date)
-    .maybeSingle<{
-      morning_submitted_at: string | null
-      evening_submitted_at: string | null
-      attendance: 'present' | 'absent' | 'site_holiday' | null
-    }>()
-
-  if (error) {
-    throw new Error(
-      `routeInboundMessage daily_logs lookup failed for ${params.phoneNumber}: ${error.message}`,
-    )
-  }
-
-  const morningSubmitted = log?.morning_submitted_at != null
-  const eveningSubmitted = log?.evening_submitted_at != null
-
   // "Both submitted" is NOT special-cased to a bare static string here --
   // computeIdleHeaderState already maps it to 'complete', and it goes
   // through the SAME three-line composition as every other state (the
@@ -813,12 +928,12 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
   // case). dispatchInboundTurn/evening.ts's own EVENING_ALREADY_COMPLETE_
   // REPLY constant is a DIFFERENT call site (a real completed-evening-turn
   // RPC outcome) and is deliberately not reused here.
-  const headerState = computeIdleHeaderState({
-    morningSubmitted,
-    eveningSubmitted,
-    attendance: log?.attendance ?? null,
-    istMinutes: ist.minutes,
-  })
+  //
+  // EXTRACTED, stage 3: this used to be an inline daily_logs lookup +
+  // computeIdleHeaderState call here -- pulled into resolveIdleHeaderState
+  // (above) so handleIdlePhoto's own idle-photo nudge could reuse the exact
+  // same computation without duplicating the query. No behaviour change.
+  const headerState = await resolveIdleHeaderState(params, supabase)
 
   // adhocKind is never 'item1' here -- that case already returned above --
   // so this is exactly buildIdleReply's own declared domain, no cast

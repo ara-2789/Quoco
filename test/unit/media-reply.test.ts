@@ -3,7 +3,9 @@ import {
   classifyMediaReply,
   replyForMediaKind,
   extractMediaItems,
-  PHOTO_REPLY,
+  MEDIA_NUDGE_REPLY,
+  MEDIA_NUDGE_PROGRESS_LINE,
+  MEDIA_NUDGE_WINDOW_SECONDS,
   VOICE_REPLY,
 } from '@/lib/whatsapp/media-reply'
 
@@ -36,12 +38,33 @@ describe('classifyMediaReply', () => {
 })
 
 describe('replyForMediaKind', () => {
-  it('returns the photo reply', () => {
-    expect(replyForMediaKind('photo')).toBe(PHOTO_REPLY)
-  })
-
+  // Narrowed to 'voice' only, stage 3 -- PHOTO_REPLY is retired (see
+  // media-reply.ts's own header for the full reversal); the idle-photo
+  // nudge is now RPC-throttled (claim_media_nudge, migration 045) and
+  // composed in lib/whatsapp/inbound-start.ts's own handleIdlePhoto, not
+  // returned synchronously by this function any more.
   it('returns the voice reply', () => {
     expect(replyForMediaKind('voice')).toBe(VOICE_REPLY)
+  })
+})
+
+// NEW, stage 3 (docs/plans/media-capture-design.md's stage 3 entry). Copy
+// constants only -- the throttle mechanism itself (claim_media_nudge) is a
+// DB test-db integration concern (test/inbound-start.test.ts and the
+// standalone RPC test file, per docs/reviews/045-review-brief.md), not
+// something a pure unit test can exercise.
+describe('media nudge copy constants (stage 3)', () => {
+  it('MEDIA_NUDGE_REPLY is the approved copy', () => {
+    expect(MEDIA_NUDGE_REPLY).toBe('Photo not saved. Please send it through the right option in the menu below.')
+  })
+
+  it('MEDIA_NUDGE_PROGRESS_LINE names morning or evening check-in, not just evening', () => {
+    expect(MEDIA_NUDGE_PROGRESS_LINE).toBe('Progress photos: send them during your morning or evening check-in.')
+    expect(MEDIA_NUDGE_PROGRESS_LINE).not.toContain('during your evening check-in')
+  })
+
+  it('MEDIA_NUDGE_WINDOW_SECONDS is 5 minutes', () => {
+    expect(MEDIA_NUDGE_WINDOW_SECONDS).toBe(300)
   })
 })
 

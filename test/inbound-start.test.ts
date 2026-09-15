@@ -4,7 +4,9 @@ import {
   classifyAdhocInput,
   computeIdleHeaderState,
   buildIdleReply,
+  buildIdleMenu,
 } from '@/lib/whatsapp/inbound-start'
+import { MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE } from '@/lib/whatsapp/media-reply'
 import { HINDRANCE_QUESTIONS, buildHindranceReply } from '@/lib/whatsapp/flows/hindrance'
 import {
   testClient,
@@ -500,5 +502,77 @@ describe('routeInboundMessage — ad-hoc precedence and fallback dispatch', () =
     expect(reply).not.toBe(HINDRANCE_QUESTIONS[1])
     expect(resolvedFlow).toBeNull()
     expect(await readSession(phone)).toBeNull()
+  })
+})
+
+// NEW, stage 3 (docs/plans/media-capture-design.md's stage 3 entry; migration
+// 045's claim_media_nudge, HELD -- NOT applied to any database yet, per
+// docs/reviews/045-review-brief.md). WRITTEN BUT NOT RUN in the session that
+// authored it: this project's own vitest globalSetup guard
+// (test/setup/guard.ts) aborts the ENTIRE run -- every file, unit tests
+// included -- whenever SUPABASE_TEST_URL/SUPABASE_TEST_SERVICE_ROLE_KEY/
+// SUPABASE_TEST_ANON_KEY/SUPABASE_TEST_PROJECT_REF are missing, and this
+// environment has none of them (no .env.test at all). Even if it did,
+// claim_media_nudge does not exist on test-db until migration 045 is
+// actually applied there. These cases exercise `now` injection (this file's
+// own baseParams already supports it, unlike webhook.test.ts's real-time-only
+// end-to-end path), which is what makes the throttle window deterministic
+// enough to assert on at all.
+describe('routeInboundMessage — idle photo nudge (stage 3, migration 045)', () => {
+  function photoParams(phone: string, now: string) {
+    return { ...baseParams(phone, now, ''), isPhoto: true }
+  }
+
+  it('first idle photo in the window gets nudge + progress line + live menu, and materialises an idle session row', async () => {
+    const phone = testPhone('830')
+    const { reply, resolvedFlow } = await routeInboundMessage(photoParams(phone, BEFORE_MORNING_SEND))
+    expect(reply).toBe(
+      [MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, buildIdleMenu('awaiting_morning')].join('\n'),
+    )
+    expect(resolvedFlow).toBeNull()
+    const session = await readSession(phone)
+    expect(session).not.toBeNull()
+    expect(session?.current_flow).toBeNull()
+    expect((session?.context as Record<string, unknown> | null)?.['last_media_nudge_at']).toBeTruthy()
+  })
+
+  it('a second idle photo 60s later (within the 300s window) gets NO reply at all', async () => {
+    const phone = testPhone('831')
+    const first = await routeInboundMessage(photoParams(phone, BEFORE_MORNING_SEND))
+    expect(first.reply).not.toBe('')
+    const sixtySecondsLater = new Date(new Date(BEFORE_MORNING_SEND).getTime() + 60_000).toISOString()
+    const second = await routeInboundMessage(photoParams(phone, sixtySecondsLater))
+    expect(second.reply).toBe('')
+    expect(second.resolvedFlow).toBeNull()
+  })
+
+  it('a third idle photo after the window (301s later) gets the nudge again', async () => {
+    const phone = testPhone('832')
+    await routeInboundMessage(photoParams(phone, BEFORE_MORNING_SEND))
+    const withinWindow = new Date(new Date(BEFORE_MORNING_SEND).getTime() + 60_000).toISOString()
+    const throttled = await routeInboundMessage(photoParams(phone, withinWindow))
+    expect(throttled.reply).toBe('')
+    const afterWindow = new Date(new Date(BEFORE_MORNING_SEND).getTime() + 301_000).toISOString()
+    const third = await routeInboundMessage(photoParams(phone, afterWindow))
+    expect(third.reply).toBe(
+      [MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, buildIdleMenu('awaiting_morning')].join('\n'),
+    )
+  })
+
+  it('a photo captioned "1" at idle gets the nudge, NOT the hindrance flow — a photo\'s caption never drives idle routing (item 12)', async () => {
+    const phone = testPhone('833')
+    const { reply, resolvedFlow } = await routeInboundMessage({
+      ...baseParams(phone, BEFORE_MORNING_SEND, '1'),
+      isPhoto: true,
+    })
+    expect(reply).toBe(
+      [MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, buildIdleMenu('awaiting_morning')].join('\n'),
+    )
+    expect(resolvedFlow).toBeNull()
+    expect(reply).not.toBe(HINDRANCE_QUESTIONS[1])
+    // No hindrance row created either -- classifyAdhocInput was never
+    // reached for this message at all.
+    const session = await readSession(phone)
+    expect(session?.current_flow).toBeNull()
   })
 })

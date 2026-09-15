@@ -52,12 +52,34 @@ export type MediaKind = 'photo' | 'voice'
 // itself is unaffected by this reversal.
 export const VOICE_REPLY = "Voice messages aren't supported yet. Please send your message as text."
 
-// PHOTO_REPLY is UNCHANGED TEXT, but its USAGE narrows with this reversal:
-// it now fires only from the idle branch (no active flow) and the
-// hindrance branch (active flow, but hindrance photo capture is stage 2,
-// not yet built) -- never for an active morning/evening flow, where a
-// photo is now stored instead. See routeInboundMessage's own header.
-export const PHOTO_REPLY = "Photos aren't used yet. Please send your message as text."
+// RETIRED, stage 3 (docs/plans/media-capture-design.md's stage 3 entry).
+// PHOTO_REPLY used to fire from the idle branch (no active flow) on EVERY
+// photo -- stage 3 replaces that with a once-per-window nudge
+// (MEDIA_NUDGE_REPLY below) so a burst of idle photos doesn't burst-reply.
+// Removed outright, not kept as an unreached fallback -- this project's own
+// standing lesson from isHireRateTrusted: dead code left "for protection" in
+// a path nothing routes to just reads as protection later, when it is not.
+
+// APPROVED COPY (Aravind, stage 3). Sent at most once per
+// MEDIA_NUDGE_WINDOW_SECONDS-second window per phone number, from the idle
+// branch only (no active flow) -- see routeInboundMessage's own header for
+// the throttle mechanism (claim_media_nudge, migration 045). Followed
+// immediately by MEDIA_NUDGE_PROGRESS_LINE and then the live idle menu in
+// the same reply; never sent alone. Tamil pair is owed and NOT approved --
+// do not invent one.
+export const MEDIA_NUDGE_REPLY = 'Photo not saved. Please send it through the right option in the menu below.'
+
+// APPROVED COPY (Aravind, stage 3). TEMPORARY -- remove when the menu gains
+// a progress-photo item; naming morning/evening check-in as the only real
+// place a progress photo can go today is only true until the ad-hoc menu
+// gets its own progress-photo option. Tamil pair is owed and NOT approved --
+// do not invent one.
+export const MEDIA_NUDGE_PROGRESS_LINE = 'Progress photos: send them during your morning or evening check-in.'
+
+// Throttle window for the idle-photo nudge (stage 3, migration 045's
+// claim_media_nudge). One named constant, passed explicitly on every call --
+// never a bare literal at the call site or a function default relied upon.
+export const MEDIA_NUDGE_WINDOW_SECONDS = 300
 
 /**
  * Classify an inbound Twilio request's media fields. Returns null when no
@@ -80,8 +102,15 @@ export function classifyMediaReply(params: {
   return params.MediaContentType0?.startsWith('audio/') ? 'voice' : 'photo'
 }
 
-export function replyForMediaKind(kind: MediaKind): string {
-  return kind === 'voice' ? VOICE_REPLY : PHOTO_REPLY
+// Narrowed to 'voice' only, stage 3: the only real call site
+// (app/api/whatsapp/webhook/route.ts) already calls this with the literal
+// 'voice' -- photo handling now needs the RPC-throttled nudge, which this
+// synchronous string-returning function cannot express, and PHOTO_REPLY
+// (the old always-string 'photo' reply) is retired. See this file's own
+// header for the full reversal.
+export function replyForMediaKind(kind: 'voice'): string {
+  void kind
+  return VOICE_REPLY
 }
 
 export interface MediaItem {
