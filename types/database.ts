@@ -689,6 +689,57 @@ export type Database = {
           },
         ]
       }
+      hindrance_photos: {
+        Row: {
+          caption: string | null
+          created_at: string | null
+          expires_at: string | null
+          hindrance_id: string
+          id: string
+          photo_url: string | null
+          received_at: string
+          retention_class: string
+          tenant_id: string
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string | null
+          expires_at?: string | null
+          hindrance_id: string
+          id?: string
+          photo_url?: string | null
+          received_at?: string
+          retention_class?: string
+          tenant_id: string
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string | null
+          expires_at?: string | null
+          hindrance_id?: string
+          id?: string
+          photo_url?: string | null
+          received_at?: string
+          retention_class?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hindrance_photos_hindrance_id_fkey"
+            columns: ["hindrance_id"]
+            isOneToOne: false
+            referencedRelation: "hindrances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hindrance_photos_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hindrances: {
         Row: {
           ack_notified_at: string | null
@@ -702,6 +753,7 @@ export type Database = {
           id: string
           impact_level: string | null
           photo_url: string | null
+          photos_status: string | null
           pm_notified_at: string | null
           project_id: string
           reported_by: string
@@ -725,6 +777,7 @@ export type Database = {
           id?: string
           impact_level?: string | null
           photo_url?: string | null
+          photos_status?: string | null
           pm_notified_at?: string | null
           project_id: string
           reported_by: string
@@ -748,6 +801,7 @@ export type Database = {
           id?: string
           impact_level?: string | null
           photo_url?: string | null
+          photos_status?: string | null
           pm_notified_at?: string | null
           project_id?: string
           reported_by?: string

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   testClient,
@@ -125,7 +125,23 @@ describe('hindrance_photos — RLS policy (CLAUDE.md §7 cross-tenant isolation)
 // this project has now found violated twice (dpr_versions, outbound_sends
 // round 1).
 describe('hindrance_photos — grant statements (static guard on the migration file itself)', () => {
-  const migrationPath = join(__dirname, '..', 'docs', 'reviews', '044_hindrance_photos.sql')
+  // A migration file lives in docs/reviews/ while held, then moves into
+  // supabase/migrations/ at apply time (CLAUDE.md's "a migration file enters
+  // supabase/migrations/ when it is being applied, not when it is written"
+  // rule) -- 044 made exactly that move once it was applied to prod. A path
+  // hardcoded to either location breaks the moment the file crosses from one
+  // to the other; check both so this test survives the promotion instead of
+  // needing its own follow-up fix.
+  const CANDIDATE_PATHS = [
+    join(__dirname, '..', 'supabase', 'migrations', '044_hindrance_photos.sql'),
+    join(__dirname, '..', 'docs', 'reviews', '044_hindrance_photos.sql'),
+  ]
+  const migrationPath = CANDIDATE_PATHS.find((p) => existsSync(p))
+  if (!migrationPath) {
+    throw new Error(
+      `044_hindrance_photos.sql not found in any expected location: ${CANDIDATE_PATHS.join(', ')}`
+    )
+  }
   const sql = readFileSync(migrationPath, 'utf8')
 
   it('REVOKEs ALL from authenticated/anon/service_role before granting anything back -- no privilege can leak by omission', () => {

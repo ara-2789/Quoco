@@ -5,17 +5,54 @@
 -- `hindrance_photos`, per item 7's per-parent shape, and adds the third
 -- (photo) question to the hindrance flow via apply_hindrance_flow_turn.
 --
--- HELD, NOT APPLIED TO PROD. Per CLAUDE.md's own "a migration file enters
+-- DATED CORRECTION (2026-09-15): APPLIED TO PROD (jvxwqignooseazzmwhvl).
+-- External review returned a fold-and-return round first (four findings,
+-- S1-S4; principal finding S1: resolveMostRecentHindranceId -- the same
+-- failure shape as the was_unspecified bug this migration already found
+-- and fixed internally, one layer up -- resolved by carrying hindrance_id
+-- through session context and deleting the resolver entirely, not
+-- fencing it). Folded in, re-verified against test-db (full re-teardown/
+-- re-apply cycle, both RPC transcripts re-run, DOWN block re-rehearsed),
+-- PR #275 went CI-green (all 9 checks, including a real `Test (real
+-- test-db)` run) and was merged. PITR confirmed live in the Supabase
+-- dashboard before applying (restore window 08 Sep 2026 22:00:34 to 15
+-- Sep 2026 00:03:53 IST, observed, not assumed). Pre-apply function hash
+-- abdac08cd997bb2e3d8d73773d807a24 (038's own body, unchanged since).
+-- `supabase db query --linked -f
+-- supabase/migrations/044_hindrance_photos.sql` -- no error. Post-apply
+-- readback confirmed by observation: table_exists=hindrance_photos,
+-- status_col=1, rls_enabled=true, policy_count=1,
+-- post_044_hash=09b4e083638dd359b6415a71f6146bec -- the hash pair
+-- (abdac08c...->09b4e083...) is the record the RPC rewrite landed. The
+-- generated `expires_at` expression re-confirmed via `pg_get_expr`. The
+-- four-way negative grants matrix is PROD's own, the sole authoritative
+-- record now that test-db's own matrix deliberately reads
+-- service_role DELETE=true (scripts/test-db-only-grants.sql). Ledger
+-- repaired: `supabase migration repair --status applied 044 --linked`
+-- succeeded ("Repaired migration history: [044] => applied");
+-- `supabase migration list --linked` shows Local and Remote matching
+-- through 044, no gaps. Struck through below, not rewritten, per this
+-- project's own correction discipline (migrations 036/039/042/043's own
+-- precedent) -- the ORIGINAL not-yet-applied posture was true when
+-- written and stays true as history; only the current-status claim is
+-- superseded. Full apply sequence, the external review outcome, the
+-- CI-never-actually-ran incident found on PR #275, the real-send size
+-- gate, and the still-owed first-real-report closing artifact:
+-- docs/reviews/044-apply-record.md.
+--
+-- ~~HELD, NOT APPLIED TO PROD.~~ Per CLAUDE.md's own "a migration file enters
 -- supabase/migrations/ when it is being applied, not when it is written"
 -- rule, and per this pass's own explicit instruction: apply to TEST-DB
--- ONLY, this file stays in docs/reviews/ until a real prod apply happens.
--- Full apply sequence + evidence: docs/reviews/044-review-package.md.
+-- ONLY, ~~this file stays in docs/reviews/ until a real prod apply happens~~.
+-- Full apply sequence + evidence: docs/reviews/044-review-package.md
+-- (round 1/2), docs/reviews/044-apply-record.md (the prod apply itself).
 --
 -- EXTERNAL REVIEW GATE: trips CLAUDE.md §0's conditions (a) and (b) --
 -- apply_hindrance_flow_turn's LOGIC changes (a new step, a new completion
 -- point, a new return field) AND a brand-new table with its own RLS and
--- grants from day one (b). Needs the full review package before it applies
--- anywhere beyond test-db, same tier as 038/039/043.
+-- grants from day one (b). ~~Needs the full review package before it applies
+-- anywhere beyond test-db~~ -- reviewed (fold-and-return, S1-S4 folded in)
+-- and applied, same tier as 038/039/043.
 --
 -- SHAPE, DEVIATING FROM 043 (043_daily_log_photos.sql) WHERE STATED, PER
 -- docs/plans/stage2-hindrance-photos-plan.md §3:
