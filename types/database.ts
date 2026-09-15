@@ -2200,6 +2200,17 @@ export type Database = {
         }
         Returns: Json
       }
+      claim_media_nudge: {
+        Args: {
+          p_now?: string
+          p_phone_number: string
+          p_tenant_id: string
+          p_test_sleep_ms?: number
+          p_user_id?: string
+          p_window_seconds?: number
+        }
+        Returns: boolean
+      }
       complete_onboarding: {
         Args: { p_company_name: string; p_full_name: string; p_slug: string }
         Returns: string
