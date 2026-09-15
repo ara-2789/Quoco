@@ -186,7 +186,7 @@ hindrance on a real handset, sending real photos through Q3, the
 `handleHindrancePmNotifyJob` actually attaching and delivering them to a
 real PM's mailbox — has ever run once, for real, on production.
 
-**MARKED OWED, EXPLICITLY, NOT COMPLETE**: a manual, post-deploy check —
+~~**MARKED OWED, EXPLICITLY, NOT COMPLETE**: a manual, post-deploy check —
 one real hindrance report, with at least one real photo, from a real
 engineer on a real handset, against production — then confirm by direct
 observation that the PM notification email actually arrived with the
@@ -194,7 +194,10 @@ photo attached and openable. This is the last piece of end-to-end proof
 this feature needs before the whole path can be trusted on prod, and it
 has NOT been performed. Whoever performs it should record the result as a
 dated addendum to this file, in the same "struck through, not rewritten"
-discipline the rest of this record follows.
+discipline the rest of this record follows.~~
+
+**DATED (2026-09-15): Done — verified on prod earlier (real hindrance,
+real photos, delivered to PM inbox).**
 
 ## What this apply does NOT include
 
