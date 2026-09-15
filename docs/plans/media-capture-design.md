@@ -831,8 +831,20 @@ sequences work those items already describe.
 2. **Hindrance photo capture.** **HARD GATE: must ship before stage 3** —
    per item 16's own ordering constraint (the nudge must not point at a
    capture path that doesn't exist yet).
-3. **Off-step nudge** (item 6). Gated on approved copy + the Tamil pair
-   (item 21).
+3. ~~**Off-step nudge** (item 6). Gated on approved copy + the Tamil pair
+   (item 21).~~ **STATUS (2026-09-15): LIVE ON PROD, E2E PROOF OWED.**
+   `claim_media_nudge` (migration 045) applied to prod
+   (`jvxwqignooseazzmwhvl`) — see `docs/reviews/045-prod-apply-record.md`
+   for the full apply transcript (PITR observed, CI proof pinned to the
+   merged SHA, all grants/hash/lock verification by observation). Stage 3
+   app code was already live on prod (Vercel `main @ 3fb18c7`) calling this
+   function before the apply — see that record's own opening line.
+   Struck through above, not deleted, per this project's own correction
+   discipline: the original "gated on approved copy + Tamil pair" framing
+   is now stale — the English copy shipped (Tamil pair remains separately
+   owed, item 21, unchanged by this status). Real-world WhatsApp
+   end-to-end proof (burst of 3 idle photos → exactly 1 reply, against a
+   live number) is OWED, tracked in that same apply record's own section.
 4. **Email attachments** (DPR + hindrance, item 10's round-5 correction).
    Gated on the size/deliverability test (item 10's own required gate).
    **SEQUENCING:** the hindrance email's recipient lookup resolves the PM's
@@ -1023,7 +1035,16 @@ what this one gets wrong rather than silently rewrite it:
   this round; item 21's own list is the tracker, not restated here as a
   second copy.
 
-**Migration 045 is HELD, not applied anywhere** (not test-db, not prod) —
+~~**Migration 045 is HELD, not applied anywhere** (not test-db, not prod) —
 this build's own instruction was explicit: no apply to any database this
 round. Full review package: `docs/reviews/045-review-brief.md` and
-`docs/reviews/045_media_nudge_throttle.sql`.
+`docs/reviews/045_media_nudge_throttle.sql`.~~
+
+**SUPERSEDED (2026-09-15): APPLIED — test-db, then prod.** Struck through
+above, not deleted, per this project's own correction discipline. Test-db
+apply: `docs/reviews/045-test-db-apply-record.md`. Prod apply (PITR
+observed, CI proof pinned to the merged SHA): `docs/reviews/045-prod-
+apply-record.md`. File now lives at `supabase/migrations/
+045_media_nudge_throttle.sql`, not `docs/reviews/`. Stage 3 status: live
+on prod, WhatsApp end-to-end proof owed (see item 20's own stage 3 line,
+above, for the same status stated at the build-sequence level).
