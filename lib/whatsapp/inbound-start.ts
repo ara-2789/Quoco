@@ -106,10 +106,12 @@ export const HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY =
 //     field. The standalone evening photo Q2 does NOT remove this risk:
 //     item 11 accepts photos at ALL questions by deliberate decision, so a
 //     captioned photo at any step remains possible by design.
-//   - Active flow, hindrance: hindrance photo capture is stage 2, not yet
-//     built (item 16's own ordering constraint). A photo here gets the
-//     same unchanged PHOTO_REPLY as the idle case -- not silently dropped,
-//     not silently accepted into a capture path that doesn't exist yet.
+//   - Active flow, hindrance: STALE ABOVE, CORRECTED HERE (stage 2 shipped,
+//     migration 044) -- see handleHindrancePhoto's own doc, below, for the
+//     real mechanism: a photo at Q1/Q2 (no hindrance_id yet) is rejected
+//     with HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY, not the generic PHOTO_REPLY
+//     above; a photo at Q3+ (hindrance_id already known) is stored, same
+//     as morning/evening.
 
 // RETIRED, 2026-08-28 (docs/plans/pass1-outbound-send-plan.md §2 item 1,
 // design-decisions-beta-feedback.md §38). This module used to treat an
