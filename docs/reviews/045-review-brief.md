@@ -49,9 +49,7 @@ Five folds, closing five items from that review round:
    reached. New boundary-mocked test:
    `test/inbound-start.test.ts`'s `'routeInboundMessage — idle photo,
    header-lookup-fails-before-throttle (stage 3, migration 045 fold)'`
-   describe block. Closed by: `PENDING_SHA` (filled in by the follow-up
-   commit immediately after this one — a commit cannot cite its own hash;
-   see that follow-up's own commit message).
+   describe block. Closed by: `7869b74`.
 2. **Pinned argument, no tenant check on an existing row.** Added to
    `docs/reviews/045_media_nudge_throttle.sql`'s own header: `p_tenant_id`
    is materialization-only, the throttle's identity is the phone number, a
@@ -59,13 +57,13 @@ Five folds, closing five items from that review round:
    (not created or fixable here alone), the blast radius is one suppressed
    nudge, and a guard added here alone would diverge from the identical
    acquires in 012/044 — closes together with those, if ever. Closed by:
-   `PENDING_SHA`.
+   `7869b74`.
 3. **`RAISE LOG` in the malformed-timestamp handler.** Added to
    `docs/reviews/045_media_nudge_throttle.sql`'s `EXCEPTION WHEN OTHERS`
    block — logs the phone number and the raw malformed value, behaviour
    otherwise unchanged, with a comment naming the self-healing property (a
    successful claim overwrites the bad value, bounding corruption to one
-   window). Closed by: `PENDING_SHA`.
+   window). Closed by: `7869b74`.
 4. **`p_test_sleep_ms` parameter, mirroring `apply_hindrance_flow_turn`
    (044) exactly.** Same placement (immediately after the acquire, lock
    already held), same guard (`IF p_test_sleep_ms IS NOT NULL THEN PERFORM
@@ -81,7 +79,7 @@ Five folds, closing five items from that review round:
    test/session-transition.test.ts's own Test B uses (`p_test_sleep_ms` +
    polling `quoco_test_row_is_locked`, migration 032, already applied and
    directly reusable — it is a generic per-row probe, not specific to any
-   one function). Closed by: `PENDING_SHA`.
+   one function). Closed by: `7869b74`.
 5. **Context-write inventory entry.** Added `### 9.2 Extension — migration
    045's own site` to `docs/reviews/022-review-package.md` (the canonical,
    living "CONTEXT DISCIPLINE" inventory — already extended once before, by
@@ -89,7 +87,7 @@ Five folds, closing five items from that review round:
    that `last_media_nudge_at` is the first flow-independent context
    resident, and that it is left untouched by every subtract-only strip
    list and wiped only by the BOT-07 daily reset, harmlessly. Closed by:
-   `PENDING_SHA`.
+   `7869b74`.
 
 **Release-order addition** (not yet applicable, recorded for when it is):
 once this PR's CI actually runs and goes green, the run URL and the
