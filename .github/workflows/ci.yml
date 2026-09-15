@@ -68,6 +68,15 @@ jobs:
     name: Detect docs-only change
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    # ADDED 2026-09-15, per-job, ref-scoped, safe to cancel: this job is a
+    # stateless read of the PR's own file list -- no shared mutable
+    # resource, no cleanup step, nothing a cancelled run could strand. See
+    # the `test` job's own concurrency block below for the DIFFERENT case
+    # (a job that MUST NOT be given cancel-in-progress) and why the two
+    # are not treated the same way.
+    concurrency:
+      group: ci-changes-${{ github.ref }}
+      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: read
@@ -110,6 +119,14 @@ jobs:
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
+    # ADDED 2026-09-15, per-job, ref-scoped, safe to cancel: a pure
+    # `tsc --noEmit` run against the checked-out code, no shared mutable
+    # resource, no cleanup step to strand. Own group, separate from every
+    # other job's, so a new Typecheck run only supersedes an older
+    # Typecheck run, never a different job.
+    concurrency:
+      group: ci-typecheck-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -127,6 +144,11 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    # ADDED 2026-09-15 -- see `typecheck`'s own comment above for the
+    # reasoning (stateless, nothing to strand, own group).
+    concurrency:
+      group: ci-lint-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -139,6 +161,11 @@ jobs:
   migration-lint:
     name: Migration Lint
     runs-on: ubuntu-latest
+    # ADDED 2026-09-15 -- see `typecheck`'s own comment above for the
+    # reasoning (stateless, nothing to strand, own group).
+    concurrency:
+      group: ci-migration-lint-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -151,6 +178,11 @@ jobs:
   file-size-lint:
     name: File Size Lint
     runs-on: ubuntu-latest
+    # ADDED 2026-09-15 -- see `typecheck`'s own comment above for the
+    # reasoning (stateless, nothing to strand, own group).
+    concurrency:
+      group: ci-file-size-lint-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -163,6 +195,11 @@ jobs:
   fixture-literal-lint:
     name: Fixture Literal Lint
     runs-on: ubuntu-latest
+    # ADDED 2026-09-15 -- see `typecheck`'s own comment above for the
+    # reasoning (stateless, nothing to strand, own group).
+    concurrency:
+      group: ci-fixture-literal-lint-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -200,6 +237,35 @@ jobs:
       # NEVER true. Cancelling a run mid-suite skips afterEach/afterAll
       # cleanup (test/helpers/db.ts) and strands fixture rows in test-db —
       # queuing costs CI minutes; cancelling costs test-db integrity.
+      #
+      # DELIBERATELY LEFT UNTOUCHED, 2026-09-15, when cancel-in-progress
+      # was added to every OTHER job in this file (each its own, ref-scoped
+      # group -- see `typecheck`'s own comment above). This job cannot
+      # safely get the same treatment, on EITHER axis: (1) scoping this
+      # job's own GROUP by ref (rather than the fixed literal above) would
+      # let two DIFFERENT PRs' test jobs run concurrently again -- the
+      # exact bug this whole block exists to prevent, restated in the
+      # comment two lines up; ref-scoping is not a smaller, safer version
+      # of that fix, it IS that bug. (2) Flipping cancel-in-progress to
+      # true, even leaving the group project-wide, would let a NEWER
+      # trigger cancel an OLDER run mid-suite -- and because the fixtures
+      # this suite writes are fixed, NON-ref-scoped literals (same UUIDs
+      # regardless of which branch or run), a cancelled run's stranded rows
+      # are not confined to its own branch either; a LATER run (on ANY
+      # ref) can trip over them. Both failure modes are the same shape:
+      # this job's own shared resource has no ref boundary, so no
+      # ref-scoped concurrency policy is sound for it, in either direction.
+      #
+      # CONSEQUENCE, NAMED PLAINLY: the incident that prompted this pass
+      # (two full runs at the identical head SHA, 23 minutes apart, on PR
+      # #275) is NOT fixed by anything in this file. If both runs were
+      # genuinely independent workflow runs for the same commit (a
+      # duplicate `pull_request` webhook delivery, not a newer commit
+      # superseding an older one), the safe fix is deduplicating at the
+      # TRIGGER level -- e.g., skip re-running if this exact SHA already
+      # has a completed, successful run -- not a concurrency/cancellation
+      # policy on this job. That is a different kind of change (workflow
+      # logic, not a concurrency block) and is not made here.
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
