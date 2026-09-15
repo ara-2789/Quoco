@@ -122,9 +122,21 @@ export const HINDRANCE_QUESTIONS: Readonly<Record<number, string>> = {
   // is already written (Q2's resolution) -- a hindrance_id exists by the
   // time this question is ever shown, so a photo sent here can be stored
   // immediately (see lib/whatsapp/inbound-start.ts's own hindrance photo
-  // branch). Approved copy, exact (Aravind, 2026-09-14) -- Tamil pair
-  // owed, not invented.
-  3: 'Send photos of the issue. Reply none to skip.',
+  // branch).
+  //
+  // COPY CHANGED, 2026-09-15 -- LIVE PROD FINDING, not a refinement. The
+  // original copy ("...Reply none to skip.") gave the engineer no way to
+  // signal he was DONE sending photos -- items 12/23 ("a photo never
+  // answers a question") meant every photo he sent just re-asked the same
+  // question, with no acknowledgement at all for an uncaptioned photo, and
+  // a captioned one produced "Photo saved. Type your reply for this
+  // question" -- copy that reads as "type an answer," when the only text
+  // that closes this question ("none") reads as DISCARDING the photos he
+  // just sent. See lib/whatsapp/inbound-start.ts's handleHindrancePhoto
+  // for the full mechanism this copy change pairs with (a running
+  // photo-count acknowledgement, "done" to finish). Approved copy, exact
+  // (Aravind, 2026-09-15) -- Tamil pair owed, not invented.
+  3: 'Send photos of the issue. Reply none to skip, or done when finished.',
 }
 
 export const HINDRANCE_RESOLVED_REPLY = '✅ Hindrance recorded. Your Project Manager will see it.'

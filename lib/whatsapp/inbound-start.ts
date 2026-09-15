@@ -16,7 +16,7 @@ import {
   countReceivedPhotos,
   type MediaIngestJobPayload,
 } from '@/lib/media/ingest'
-import type { HindranceMediaIngestJobPayload } from '@/lib/media/hindrance-ingest'
+import { countReceivedHindrancePhotos, type HindranceMediaIngestJobPayload } from '@/lib/media/hindrance-ingest'
 
 // APPROVED COPY (Aravind, 2026-09-13, stage 1 post-build review) -- used
 // ONLY when a photo could not be accepted at all (resolveOrCreateDailyLogId
@@ -41,6 +41,18 @@ export const PHOTO_SAVE_FAILED_REPLY = "Sorry, I couldn't save that photo. Pleas
 // in by test/webhook.test.ts's T-WH-13) -- this prefix is additive to the
 // captioned case specifically, not a rewrite of the existing one. Tamil
 // pair is owed and NOT approved -- do not invent one.
+//
+// SCOPED EXCEPTION, 2026-09-15 (live prod finding): this prefix does NOT
+// fire at the hindrance flow's Q3 photo question. That question's own
+// answer IS photos -- "type your reply" reads as "your photos didn't
+// count," which is backwards for the one question where sending photos IS
+// the expected action. handleHindrancePhoto below replies with a running
+// photo-count acknowledgement instead (buildHindrancePhotoAck) -- items 12
+// and 23 ("a caption/photo is never an answer") are UNCHANGED even here: a
+// caption at Q3 is still stored on the photo row, still never parsed as an
+// answer. Only the REPLY TEXT for this one question is different; morning,
+// evening, and every other hindrance step keep this prefix exactly as
+// before (locked in by test/media-ingest.test.ts).
 export const PHOTO_SAVED_REASK_PREFIX = 'Photo saved. Type your reply for this question.'
 
 // APPROVED COPY (Aravind, 2026-09-14, stage 2). Used ONLY for a photo
@@ -110,8 +122,19 @@ export const HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY =
 //     migration 044) -- see handleHindrancePhoto's own doc, below, for the
 //     real mechanism: a photo at Q1/Q2 (no hindrance_id yet) is rejected
 //     with HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY, not the generic PHOTO_REPLY
-//     above; a photo at Q3+ (hindrance_id already known) is stored, same
-//     as morning/evening.
+//     above; a photo at Q3 (hindrance_id already known) is stored, same as
+//     morning/evening -- but STALE AGAIN, CORRECTED 2026-09-15: the REPLY
+//     text at Q3 is NOT "same as morning/evening" any more. A live prod
+//     finding showed Q3 is the one question whose answer IS photos, so
+//     re-asking the question (or morning/evening's own PHOTO_SAVED_REASK_
+//     PREFIX, which reads as "type an answer") both read as "that didn't
+//     work" to an engineer who just sent exactly what was asked for. Q3
+//     now replies with a running photo-count acknowledgement instead
+//     (buildHindrancePhotoAck) and is closed by the engineer himself
+//     ("done", or "none" if he sent nothing) -- see handleHindrancePhoto's
+//     own doc for the full mechanism. This is a SCOPED EXCEPTION at this
+//     one question: items 12/23 ("a caption/photo is never an answer")
+//     are UNCHANGED, everywhere, including here.
 
 // RETIRED, 2026-08-28 (docs/plans/pass1-outbound-send-plan.md §2 item 1,
 // design-decisions-beta-feedback.md §38). This module used to treat an
@@ -357,6 +380,20 @@ interface RouteParams {
   supabaseClient?: SupabaseClient
 }
 
+// APPROVED COPY (Aravind, 2026-09-15, live prod finding -- see this
+// module's own header, the "Active flow, hindrance" section, and
+// handleHindrancePhoto's own doc below for the full incident). The reply
+// to EVERY photo received at the hindrance flow's Q3, captioned or not --
+// replaces both the bare re-ask and PHOTO_SAVED_REASK_PREFIX at this one
+// question, which is a SCOPED EXCEPTION, not a general reversal (see
+// PHOTO_SAVED_REASK_PREFIX's own header). `count` is cumulative for this
+// hindrance, THIS photo included. Singular/plural must stay correct --
+// "1 photo saved", never "1 photos saved". Tamil pair is owed and NOT
+// approved -- do not invent one.
+export function buildHindrancePhotoAck(count: number): string {
+  return `${count} photo${count === 1 ? '' : 's'} saved. Send more, or reply done.`
+}
+
 /**
  * Handle a photo arriving during an active hindrance flow (stage 2,
  * migration 044) -- called only when `media.length > 0`, from
@@ -373,10 +410,20 @@ interface RouteParams {
  *   item 1) -- no buffering. The photo is NOT stored. The engineer is
  *   told (HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY) and the question re-asks.
  * - Step 3 (the row exists): the photo is enqueued as a
- *   `hindrance_media_ingest` job and the question re-asks, exactly like
- *   morning/evening's own active-flow photo handling -- a photo is never
- *   an answer here either, "none" or any other typed text is what
- *   completes Q3, never a photo.
+ *   `hindrance_media_ingest` job -- a photo is still never an answer here
+ *   (items 12/23 unchanged): the caption, if any, is stored on the photo
+ *   row only, never parsed. What CHANGED, 2026-09-15 (live prod finding,
+ *   docs/reviews/hindrance-q3-photo-ack-fix.md): the REPLY is no longer
+ *   the re-asked question (with or without PHOTO_SAVED_REASK_PREFIX for a
+ *   caption) -- both read as "that didn't work" for the one question
+ *   whose actual answer IS photos. It is now a running photo-count
+ *   acknowledgement (buildHindrancePhotoAck), cumulative for this
+ *   hindrance across however many photo turns arrive. The engineer closes
+ *   the question himself: "done" completes it; "none" completes it too,
+ *   identically, whether zero photos or several have already been sent --
+ *   this handler never deletes a `hindrance_photos` row or its ingest
+ *   job, so there is no discard path to accidentally reintroduce by
+ *   changing which word ends up meaning what.
  */
 async function handleHindrancePhoto(
   params: RouteParams & { media: MediaItem[] },
@@ -468,9 +515,15 @@ async function handleHindrancePhoto(
     )
   }
 
-  const reaskText = buildHindranceReply('reask', 3)
+  // 2026-09-15 fix: no longer buildHindranceReply('reask', 3) (with or
+  // without PHOTO_SAVED_REASK_PREFIX) -- see this function's own header
+  // and PHOTO_SAVED_REASK_PREFIX's own header for why that read as failure
+  // to an engineer sending exactly what Q3 asked for. The count is
+  // cumulative across every hindrance_media_ingest job enqueued for this
+  // hindrance so far, THIS one included (it was just enqueued above).
+  const photoCount = await countReceivedHindrancePhotos(hindranceId, supabase)
   return {
-    reply: hasCaption ? `${PHOTO_SAVED_REASK_PREFIX}\n${reaskText}` : reaskText,
+    reply: buildHindrancePhotoAck(photoCount),
     resolvedFlow: 'hindrance',
   }
 }
