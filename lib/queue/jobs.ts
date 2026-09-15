@@ -11,6 +11,13 @@ export type JobType =
   | 'nudge'
   | 'hindrance_pm_notify'
   | 'media_ingest'
+  // Stage 2 (docs/plans/stage2-hindrance-photos-plan.md §4) -- a sibling
+  // of 'media_ingest', not a shape reused inside it: different target
+  // table (hindrance_photos, not daily_log_photos), no `phase` concept,
+  // one fixed retention class. Same reasoning `hindrance_pm_notify`
+  // already established as its own type beside `dpr_generate`/
+  // `owner_deliver` rather than a generalized "notify" job.
+  | 'hindrance_media_ingest'
 
 export type JobStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 

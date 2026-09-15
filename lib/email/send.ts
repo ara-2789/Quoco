@@ -27,11 +27,40 @@
 
 import { createHash } from 'crypto'
 
+// NEW, stage 2 (docs/plans/media-capture-design.md item 20; docs/plans/
+// stage2-hindrance-photos-plan.md §5). VERIFIED against Resend's own
+// current documentation, live, 2026-09-14 (WebFetch against
+// resend.com/docs/api-reference/emails/send-email and resend.com/docs/
+// dashboard/emails/attachments -- not recalled from training). Wire shape:
+// `attachments: [{ content, filename, content_type? }]`. `content` is a
+// Base64-encoded string (Resend also accepts a raw buffer; this codebase
+// sends JSON over `fetch`, so a Base64 string is what's actually used).
+// `content_type` is snake_case ON THE WIRE and optional -- Resend derives
+// it from `filename` if omitted; supplied explicitly here whenever the
+// caller already knows it (e.g. from a Storage download's own response),
+// since deriving it from an extension is one more thing that could drift.
+// Resend also documents a `path` field (a remote URL) as an alternative to
+// `content` -- DELIBERATELY NEVER USED by any caller in this codebase:
+// stage0-storage-setup-plan.md §5 already decided email attachments are
+// fetched as bytes via service_role, never a URL, so there is a durable
+// copy independent of Storage retention. Size limit, documented directly:
+// 40 MB per email, after Base64 encoding -- several orders of magnitude
+// above anything this codebase's own real-send gate has measured.
+export interface EmailAttachment {
+  filename: string
+  /** Base64-encoded file bytes. */
+  content: string
+  /** Mapped to the wire's `content_type` (snake_case) at serialization --
+   * kept camelCase here to match this codebase's usual TS-interface style. */
+  contentType?: string
+}
+
 export interface SendEmailParams {
   to: string
   subject: string
   text: string
   html: string
+  attachments?: EmailAttachment[]
 }
 
 /**
@@ -136,6 +165,15 @@ export async function sendEmail(params: SendEmailParams, fetchFn: typeof fetch =
       subject: params.subject,
       text: params.text,
       html: params.html,
+      ...(params.attachments && params.attachments.length > 0
+        ? {
+            attachments: params.attachments.map((a) => ({
+              filename: a.filename,
+              content: a.content,
+              ...(a.contentType ? { content_type: a.contentType } : {}),
+            })),
+          }
+        : {}),
     }),
   })
   // Nothing below this line ever reads `apiKey` again -- only the RESPONSE

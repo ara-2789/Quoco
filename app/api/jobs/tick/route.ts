@@ -8,6 +8,11 @@ import { handleOwnerDeliverJob, type OwnerDeliverJobPayload } from '@/lib/dpr/ow
 import { handleHindrancePmNotifyJob, type HindrancePmNotifyJobPayload } from '@/lib/hindrance/pm-notify'
 import { handleMediaIngestJob, markMediaIngestFailed, type MediaIngestJobPayload } from '@/lib/media/ingest'
 import {
+  handleHindranceMediaIngestJob,
+  markHindranceMediaIngestFailed,
+  type HindranceMediaIngestJobPayload,
+} from '@/lib/media/hindrance-ingest'
+import {
   sweepStaleMorningSessions,
   reportMorningSweepAnomalies,
   reportMorningSweepError,
@@ -59,6 +64,14 @@ async function dispatchJob(job: Job, client: SupabaseClient): Promise<void> {
       // this handler's own failure path (Sentry + a failed status column)
       // is the entire interim surface.
       await handleMediaIngestJob(job.payload as unknown as MediaIngestJobPayload, { supabaseClient: client })
+      return
+    case 'hindrance_media_ingest':
+      // Stage 2 of the media capability (docs/plans/stage2-hindrance-
+      // photos-plan.md) -- see lib/media/hindrance-ingest.ts's own header.
+      // A sibling of media_ingest, not a branch inside it.
+      await handleHindranceMediaIngestJob(job.payload as unknown as HindranceMediaIngestJobPayload, {
+        supabaseClient: client,
+      })
       return
     // Placeholder handler — proves the claim/complete/fail loop works
     // end-to-end before these job types exist. Remove entries as their
@@ -166,13 +179,31 @@ export async function runJobsTick(client: SupabaseClient) {
         // human"), retry exhaustion gets an explicit, loud alert here
         // rather than inheriting the silent-dead-row gap every OTHER job
         // type in this switch still has.
+        //
+        // CHANGED, migration 044 (stage 2). This job's own retry budget is
+        // now ALSO how handleHindrancePmNotifyJob waits for its
+        // hindrance's photos to finish uploading (it throws a retryable
+        // error while photos_status='pending' -- see that function's own
+        // header). On exhaustion, retrying blindly again would never send
+        // the email at all if photos never finish -- Aravind's 2026-09-14
+        // decision is the email is NEVER withheld, so exhaustion here
+        // means ONE FINAL forced send, without waiting for photos any
+        // longer. Only if THAT also fails does this fall back to the
+        // original "PM never notified" alert -- a genuinely last resort
+        // (e.g. Resend itself is down), not the common case.
         if (!willRetry && job.type === 'hindrance_pm_notify') {
-          Sentry.captureMessage('hindrance_pm_notify: job exhausted all retries -- PM never notified', {
-            level: 'error',
-            fingerprint: ['hindrance-pm-notify', 'dead_letter', job.id],
-            tags: { feature: 'hindrance-pm-notify' },
-            extra: { jobId: job.id, payload: job.payload, lastError: message },
-          })
+          const payload = job.payload as unknown as HindrancePmNotifyJobPayload
+          try {
+            await handleHindrancePmNotifyJob(payload, { supabaseClient: client, forceSendWithoutPhotos: true })
+          } catch (forcedErr) {
+            const forcedMessage = forcedErr instanceof Error ? forcedErr.message : String(forcedErr)
+            Sentry.captureMessage('hindrance_pm_notify: job exhausted all retries -- PM never notified', {
+              level: 'error',
+              fingerprint: ['hindrance-pm-notify', 'dead_letter', job.id],
+              tags: { feature: 'hindrance-pm-notify' },
+              extra: { jobId: job.id, payload: job.payload, lastError: message, forcedSendError: forcedMessage },
+            })
+          }
         }
         // media_ingest dead-letter (stage 1) -- see lib/media/ingest.ts's
         // own markMediaIngestFailed for the exact writes/alert. No PM-
@@ -181,6 +212,16 @@ export async function runJobsTick(client: SupabaseClient) {
         if (!willRetry && job.type === 'media_ingest') {
           const payload = job.payload as unknown as MediaIngestJobPayload
           await markMediaIngestFailed(client, payload, message)
+        }
+        // hindrance_media_ingest dead-letter (stage 2) -- see
+        // lib/media/hindrance-ingest.ts's own markHindranceMediaIngestFailed.
+        // UNLIKE media_ingest's dead-letter, this one has a real, live
+        // downstream consumer today: it moves photos_status to 'failed',
+        // which is exactly what unblocks handleHindrancePmNotifyJob's own
+        // retry-until-ready check above from waiting forever.
+        if (!willRetry && job.type === 'hindrance_media_ingest') {
+          const payload = job.payload as unknown as HindranceMediaIngestJobPayload
+          await markHindranceMediaIngestFailed(client, payload, message)
         }
         return { id: job.id, status: 'failed', willRetry, error: message }
       }

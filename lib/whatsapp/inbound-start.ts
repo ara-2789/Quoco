@@ -16,6 +16,7 @@ import {
   countReceivedPhotos,
   type MediaIngestJobPayload,
 } from '@/lib/media/ingest'
+import type { HindranceMediaIngestJobPayload } from '@/lib/media/hindrance-ingest'
 
 // APPROVED COPY (Aravind, 2026-09-13, stage 1 post-build review) -- used
 // ONLY when a photo could not be accepted at all (resolveOrCreateDailyLogId
@@ -41,6 +42,20 @@ export const PHOTO_SAVE_FAILED_REPLY = "Sorry, I couldn't save that photo. Pleas
 // captioned case specifically, not a rewrite of the existing one. Tamil
 // pair is owed and NOT approved -- do not invent one.
 export const PHOTO_SAVED_REASK_PREFIX = 'Photo saved. Type your reply for this question.'
+
+// APPROVED COPY (Aravind, 2026-09-14, stage 2). Used ONLY for a photo
+// arriving during the hindrance flow's Q1 or Q2 -- before the hindrances
+// row exists (migration 044's own row-creation timing, unchanged from
+// 038: the row is inserted atomically at Q2's resolution, not before).
+// DECIDED: no session buffering (docs/plans/stage2-hindrance-photos-
+// plan.md "DECISIONS" item 1) -- such a photo is NOT stored at all, the
+// engineer is told, and the question re-asks. This narrows item 11
+// ("photos at any question") for the hindrance flow specifically -- a
+// scoped exception, not a general reversal; Q3 and later still store
+// normally (PHOTO_SAVED_REASK_PREFIX above). Tamil pair is owed and NOT
+// approved -- do not invent one.
+export const HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY =
+  "Photo not saved yet. Answer the question, and I'll ask for photos at the end."
 
 // STAGE 1 OF THE MEDIA CAPABILITY (2026-09-13, docs/plans/media-capture-
 // design.md item 20; full build: docs/plans/stage1-photo-intake-plan.md).
@@ -91,10 +106,12 @@ export const PHOTO_SAVED_REASK_PREFIX = 'Photo saved. Type your reply for this q
 //     field. The standalone evening photo Q2 does NOT remove this risk:
 //     item 11 accepts photos at ALL questions by deliberate decision, so a
 //     captioned photo at any step remains possible by design.
-//   - Active flow, hindrance: hindrance photo capture is stage 2, not yet
-//     built (item 16's own ordering constraint). A photo here gets the
-//     same unchanged PHOTO_REPLY as the idle case -- not silently dropped,
-//     not silently accepted into a capture path that doesn't exist yet.
+//   - Active flow, hindrance: STALE ABOVE, CORRECTED HERE (stage 2 shipped,
+//     migration 044) -- see handleHindrancePhoto's own doc, below, for the
+//     real mechanism: a photo at Q1/Q2 (no hindrance_id yet) is rejected
+//     with HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY, not the generic PHOTO_REPLY
+//     above; a photo at Q3+ (hindrance_id already known) is stored, same
+//     as morning/evening.
 
 // RETIRED, 2026-08-28 (docs/plans/pass1-outbound-send-plan.md §2 item 1,
 // design-decisions-beta-feedback.md §38). This module used to treat an
@@ -341,6 +358,124 @@ interface RouteParams {
 }
 
 /**
+ * Handle a photo arriving during an active hindrance flow (stage 2,
+ * migration 044) -- called only when `media.length > 0`, from
+ * routeInboundMessage's own active-flow branch below.
+ *
+ * Reads the session's `current_step` directly, WITHOUT calling
+ * apply_hindrance_flow_turn -- same "a photo never reaches the RPC"
+ * mechanism already live for morning/evening (item 23): the RPC has zero
+ * gating on several of its own steps, and a photo's caption must never be
+ * treated as a typed answer regardless.
+ *
+ * - Step 1 or 2 (the hindrances row does not exist yet): DECIDED,
+ *   2026-09-14 (docs/plans/stage2-hindrance-photos-plan.md "DECISIONS"
+ *   item 1) -- no buffering. The photo is NOT stored. The engineer is
+ *   told (HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY) and the question re-asks.
+ * - Step 3 (the row exists): the photo is enqueued as a
+ *   `hindrance_media_ingest` job and the question re-asks, exactly like
+ *   morning/evening's own active-flow photo handling -- a photo is never
+ *   an answer here either, "none" or any other typed text is what
+ *   completes Q3, never a photo.
+ */
+async function handleHindrancePhoto(
+  params: RouteParams & { media: MediaItem[] },
+  supabase: SupabaseClient,
+): Promise<InboundRouteResult> {
+  // CHANGED, external review round 2 (S1, fold-and-return, 2026-09-14):
+  // selects `context` alongside `current_step` now, in the SAME query --
+  // this is what lets hindrance_id be read directly off the session row
+  // instead of resolved via a separate lookup. Net queries this function
+  // issues for a step-3 photo: ONE session read, same as before this
+  // fix -- resolveMostRecentHindranceId's own query is gone entirely, not
+  // replaced by a different one.
+  const { data: sessionRow, error: sessionError } = await supabase
+    .from('whatsapp_sessions')
+    .select('current_step, context')
+    .eq('phone_number', params.phoneNumber)
+    .maybeSingle<{ current_step: number; context: Record<string, unknown> | null }>()
+  if (sessionError) {
+    throw new Error(`handleHindrancePhoto: session read failed for ${params.phoneNumber}: ${sessionError.message}`)
+  }
+
+  if (!sessionRow) {
+    // Session vanished between the currentFlow read above and here (a
+    // genuine race -- completion/expiry mid-request), same fallback
+    // morning/evening's own identical branch already uses.
+    return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow: 'hindrance' })
+  }
+
+  if (sessionRow.current_step === 1 || sessionRow.current_step === 2) {
+    return { reply: HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY, resolvedFlow: 'hindrance' }
+  }
+
+  if (sessionRow.current_step !== 3) {
+    // Genuinely unreachable in production for an active hindrance session
+    // -- falls through to ordinary dispatch rather than asserting, same
+    // defensive posture as the rest of this file.
+    return dispatchInboundTurn({ ...params, supabaseClient: supabase, firstFlow: 'hindrance' })
+  }
+
+  // Step 3: the hindrances row exists, and its id was stamped into this
+  // SAME session's context at the exact turn it was created (migration
+  // 044's own apply_hindrance_flow_turn, Q2's resolution). Read directly,
+  // no lookup.
+  //
+  // DELETED, external review round 2 (S1, 2026-09-14): this used to
+  // resolve hindranceId via a "most recent hindrance for this reporter"
+  // lookup (resolveMostRecentHindranceId, lib/hindrance/pm-notify.ts).
+  // The reviewer's finding: that lookup's own safety argument fenced only
+  // the writer that exists TODAY (this flow) -- it said nothing about a
+  // future one, and one is already named in this project's own artifacts
+  // (DASH-10, the unbuilt hindrance-editing dashboard surface, cited in
+  // 039's own grant commentary). The moment any PM/dashboard path ever
+  // inserts a hindrance for the same reporter mid-session, "most recent"
+  // would silently attach this session's photos to the WRONG row -- no
+  // constraint fires, evidence photos cross-attributed on an owner-visible
+  // record. The SAME shape as the `wasExhausted` bug this migration
+  // already found and fixed internally, one layer up: re-deriving from
+  // adjacent state a fact the system already established, on an earlier
+  // turn, instead of carrying it forward. The heuristic is deleted, not
+  // fenced -- carrying the id forward removes the whole class of risk
+  // rather than narrowing when it can fire.
+  const hindranceId =
+    typeof sessionRow.context?.hindrance_id === 'string' ? sessionRow.context.hindrance_id : null
+  if (!hindranceId) {
+    // Genuinely unreachable if current_step===3 (the row is inserted, and
+    // its id stamped into context, in the same RPC call that advances to
+    // step 3) -- treated the same as PHOTO_SAVE_FAILED_REPLY's own "never
+    // accepted" case rather than asserting.
+    return { reply: PHOTO_SAVE_FAILED_REPLY, resolvedFlow: 'hindrance' }
+  }
+
+  const hasCaption = params.message.trim().length > 0
+
+  const jobPayload: HindranceMediaIngestJobPayload = {
+    tenant_id: params.tenantId,
+    hindrance_id: hindranceId,
+    caption: hasCaption ? params.message : null,
+    media: params.media,
+  }
+  await enqueueJob('hindrance_media_ingest', jobPayload as unknown as Json, supabase)
+
+  const { error: statusError } = await supabase
+    .from('hindrances')
+    .update({ photos_status: 'pending' })
+    .eq('id', hindranceId)
+  if (statusError) {
+    throw new Error(
+      `handleHindrancePhoto: failed to set photos_status='pending' for hindrance ${hindranceId}: ${statusError.message}`,
+    )
+  }
+
+  const reaskText = buildHindranceReply('reask', 3)
+  return {
+    reply: hasCaption ? `${PHOTO_SAVED_REASK_PREFIX}\n${reaskText}` : reaskText,
+    resolvedFlow: 'hindrance',
+  }
+}
+
+/**
  * Route an inbound message: delegate to dispatchInboundTurn if a flow is
  * already active, otherwise dispatch a leading "1" into item 1's flow, or
  * return the composed idle reply for everything else. See this file's own
@@ -369,17 +504,15 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
 
     const media = params.media ?? []
 
-    // Hindrance photo capture is stage 2, not yet built (item 16's own
-    // ordering constraint). A photo here gets the same unchanged
-    // PHOTO_REPLY the idle branch already returns -- not silently dropped,
-    // not silently accepted into a capture path that doesn't exist yet.
-    //
-    // FIX (2026-09-13, T-WH-14 regression): keyed on params.isPhoto, NOT
-    // media.length -- see RouteParams.isPhoto's own doc for why those are
-    // different questions (extractMediaItems can legitimately return []
-    // for a message classifyMediaReply still correctly called 'photo').
-    if (params.isPhoto && firstFlow === 'hindrance') {
-      return { reply: PHOTO_REPLY, resolvedFlow: 'hindrance' }
+    // Hindrance photo capture, stage 2 (migration 044). Needs session
+    // state (current_step) to decide accept vs. reject, so it is its own
+    // branch -- see handleHindrancePhoto's own doc. Only when there is
+    // real media to store; the isPhoto-but-extraction-came-back-empty
+    // edge case falls through to the `media.length === 0` branch below,
+    // exactly like morning/evening's own identical edge case (not
+    // expected to fire against real Twilio traffic).
+    if (params.isPhoto && firstFlow === 'hindrance' && media.length > 0) {
+      return handleHindrancePhoto({ ...params, media }, supabase)
     }
 
     // Deliberately keyed on the EXTRACTED media array here, not isPhoto --

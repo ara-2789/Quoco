@@ -11,6 +11,7 @@ describe('buildHindrancePmNotifyEmail', () => {
     // IST-boundary or month-name behaviour themselves (those get their own
     // fixtures below).
     createdAt: '2026-08-13T10:00:00Z',
+    photos: { kind: 'none' } as const,
   }
 
   it('active timing renders "Blocking work now."', () => {
@@ -72,6 +73,7 @@ describe('buildHindrancePmNotifyEmail', () => {
       timing: 'active',
       timingRaw: null,
       createdAt: base.createdAt,
+      photos: { kind: 'none' },
     })
     expect(rendered.html).toContain('Rao &amp; Sons')
     expect(rendered.html).toContain('&lt;panel&gt;')
