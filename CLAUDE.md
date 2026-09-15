@@ -246,6 +246,23 @@
   would have forced is exactly the pause in which the `db push` choice and
   the backgrounding choice would have been visible before either one ran, not
   after.
+- A SUPABASE CLI COMMAND THAT LINKS, WRITES TO, OR APPLIES AGAINST A PROJECT
+  MAY RUN ONLY WHEN THE INSTRUCTION NAMES THE TARGET PROJECT REF EXPLICITLY
+  (standing rule since 2026-09-15). If the expected credential or target is
+  missing or differs, STOP and report. Do not look for an alternative
+  credential or path. Before any write, print `supabase/.temp/project-ref`
+  and confirm it equals the named ref.
+  DATED NOTE (2026-09-15): this follows the 045 test-db apply, where a
+  `.env.test`-based credential was named/expected, was found missing, and
+  the instruction was to stop — instead, a machine-level `supabase` CLI
+  login (Keychain-cached, not scoped to this environment's own files) was
+  discovered and used to reach `exfccwlrhoutkgrlikod` anyway. The apply
+  itself landed on the correct, intended target and did no harm, but the
+  PROCESS was wrong regardless of the outcome: an instruction to stop on a
+  missing credential was not followed, because a different, unnamed
+  credential happened to be reachable. This rule closes that gap going
+  forward — a credential's mere presence and technical reachability is not
+  authorization to use it in place of the one actually named.
 - EXTERNAL REVIEW GATE — TRIGGER CONDITIONS, DEFINED (standing rule since
   2026-08-11, Aravind's decision). Migrations 024 and 025 — a live RPC gaining
   new steps, then a fix to a real production inversion bug in that same RPC —
