@@ -3,6 +3,7 @@ import {
   routeInboundMessage,
   PHOTO_SAVED_REASK_PREFIX,
   HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY,
+  buildHindrancePhotoAck,
 } from '@/lib/whatsapp/inbound-start'
 import { HINDRANCE_QUESTIONS, HINDRANCE_RESOLVED_REPLY, HINDRANCE_UNSPECIFIED_REPLY } from '@/lib/whatsapp/flows/hindrance'
 import { testClient, cleanupTestSessions, testPhone, TEST_TENANT_ID, TEST_PROJECT_ID, testEngineerId, ensureMorningFixtures, removeMorningFixtures } from './helpers/db'
@@ -167,8 +168,20 @@ describe('a photo before the hindrances row exists (Q1/Q2) is NOT stored -- Arav
   })
 })
 
-describe('a photo at Q3 (after the row exists) IS stored', () => {
-  it('uncaptioned photo: enqueues hindrance_media_ingest, sets photos_status=pending, reasks Q3 with no prefix', async () => {
+// Live prod finding, 2026-09-15 (Aravind): with items 12/23 in force ("a
+// photo never answers a question"), Q3's own original copy ("...Reply none
+// to skip.") left an engineer sending photos with no acknowledgement at
+// all (uncaptioned) or a "type your reply" prompt that read as discarding
+// his photos (captioned) -- because the only text that closed the
+// question was "none". Fixed: every photo gets a running count
+// acknowledgement; the engineer closes the question himself with "done"
+// or "none" (both complete identically once the question has been
+// reached; the wording only tells the engineer which one to use). Photos
+// are never discarded regardless of which word is typed -- this handler
+// has no delete path for hindrance_photos or its ingest jobs at all, so
+// "none after photos" already can't discard them, by construction.
+describe('a photo at Q3 (after the row exists) IS stored, acknowledged with a running count', () => {
+  it('first photo: acknowledged with singular count "1 photo saved...", enqueues hindrance_media_ingest, sets photos_status=pending', async () => {
     const phone = testPhone('872')
     await routeInboundMessage(baseParams(phone, '1', undefined))
     await routeInboundMessage(baseParams(phone, 'photo-at-q3 test description', undefined))
@@ -183,7 +196,9 @@ describe('a photo at Q3 (after the row exists) IS stored', () => {
     )
 
     expect(resolvedFlow).toBe('hindrance')
-    expect(reply).toBe(HINDRANCE_QUESTIONS[3]) // no caption -> bare reask, item 23's own unchanged path
+    expect(reply).toBe(buildHindrancePhotoAck(1))
+    expect(reply).toBe('1 photo saved. Send more, or reply done.') // exact approved copy, singular
+    expect(reply).not.toContain(PHOTO_SAVED_REASK_PREFIX) // scoped exception -- never fires at Q3
     expect((await readSessionStep(phone))?.current_step).toBe(3) // stays open -- a photo never answers
 
     const hindrance = await getHindrance('photo-at-q3 test description')
@@ -198,7 +213,29 @@ describe('a photo at Q3 (after the row exists) IS stored', () => {
     expect(payload.tenant_id).toBe(TEST_TENANT_ID)
   })
 
-  it('captioned photo: caption stored on the job payload only, PHOTO_SAVED_REASK_PREFIX prepended, never treated as an answer (items 12/23)', async () => {
+  it('second photo: count increments to plural "2 photos saved..." -- cumulative for this hindrance', async () => {
+    const phone = testPhone('876')
+    await routeInboundMessage(baseParams(phone, '1', undefined))
+    await routeInboundMessage(baseParams(phone, 'photo-at-q3 test description', undefined))
+    await routeInboundMessage(baseParams(phone, '1', undefined))
+
+    const { reply: first } = await routeInboundMessage(
+      baseParams(phone, '', [{ url: 'https://api.twilio.com/media/ZZQ3First', contentType: 'image/jpeg' }]),
+    )
+    expect(first).toBe(buildHindrancePhotoAck(1))
+
+    const { reply: second } = await routeInboundMessage(
+      baseParams(phone, '', [{ url: 'https://api.twilio.com/media/ZZQ3Second', contentType: 'image/jpeg' }]),
+    )
+    expect(second).toBe(buildHindrancePhotoAck(2))
+    expect(second).toBe('2 photos saved. Send more, or reply done.') // exact approved copy, plural
+
+    const hindranceId = await findHindranceId('photo-at-q3 test description')
+    const jobs = await hindranceMediaIngestJobsFor(hindranceId!)
+    expect(jobs.length).toBe(2)
+  })
+
+  it('captioned photo: acknowledged the same as uncaptioned (no PHOTO_SAVED_REASK_PREFIX at Q3), caption stored on the job payload only, never treated as an answer (items 12/23)', async () => {
     const phone = testPhone('873')
     await routeInboundMessage(baseParams(phone, '1', undefined))
     await routeInboundMessage(baseParams(phone, 'photo-at-q3 test description', undefined))
@@ -210,7 +247,8 @@ describe('a photo at Q3 (after the row exists) IS stored', () => {
       baseParams(phone, 'crack near column B', [{ url: 'https://api.twilio.com/media/ZZQ3Captioned', contentType: 'image/jpeg' }]),
     )
 
-    expect(reply).toBe(`${PHOTO_SAVED_REASK_PREFIX}\n${HINDRANCE_QUESTIONS[3]}`)
+    expect(reply).toBe(buildHindrancePhotoAck(1))
+    expect(reply).not.toContain(PHOTO_SAVED_REASK_PREFIX)
     expect((await readSessionStep(phone))?.current_step).toBe(3)
 
     const jobs = await hindranceMediaIngestJobsFor(hindranceId!)
@@ -223,6 +261,64 @@ describe('a photo at Q3 (after the row exists) IS stored', () => {
     const { reply: completionReply } = await routeInboundMessage(baseParams(phone, 'none', undefined))
     expect(completionReply).toBe(HINDRANCE_RESOLVED_REPLY)
     expect((await readSessionStep(phone))?.current_flow).toBeNull()
+  })
+
+  it('"done" completes the flow after photos have been sent', async () => {
+    const phone = testPhone('877')
+    await routeInboundMessage(baseParams(phone, '1', undefined))
+    await routeInboundMessage(baseParams(phone, 'photo-at-q3 test description', undefined))
+    await routeInboundMessage(baseParams(phone, '1', undefined))
+
+    await routeInboundMessage(
+      baseParams(phone, '', [{ url: 'https://api.twilio.com/media/ZZQ3Done', contentType: 'image/jpeg' }]),
+    )
+
+    const { reply } = await routeInboundMessage(baseParams(phone, 'done', undefined))
+    expect(reply).toBe(HINDRANCE_RESOLVED_REPLY)
+    expect((await readSessionStep(phone))?.current_flow).toBeNull()
+  })
+
+  it('"none" with ZERO photos sent skips normally -- unchanged behavior', async () => {
+    const phone = testPhone('878')
+    await routeInboundMessage(baseParams(phone, '1', undefined))
+    await routeInboundMessage(baseParams(phone, 'photo-at-q3 test description', undefined))
+    await routeInboundMessage(baseParams(phone, '1', undefined))
+
+    const hindranceId = await findHindranceId('photo-at-q3 test description')
+    expect((await hindranceMediaIngestJobsFor(hindranceId!)).length).toBe(0)
+
+    const { reply } = await routeInboundMessage(baseParams(phone, 'none', undefined))
+    expect(reply).toBe(HINDRANCE_RESOLVED_REPLY)
+    expect((await readSessionStep(phone))?.current_flow).toBeNull()
+  })
+
+  it('"none" AFTER photos already exist behaves exactly like "done" -- flow completes and photos are KEPT, never discarded', async () => {
+    const phone = testPhone('879')
+    await routeInboundMessage(baseParams(phone, '1', undefined))
+    await routeInboundMessage(baseParams(phone, 'photo-at-q3 test description', undefined))
+    await routeInboundMessage(baseParams(phone, '1', undefined))
+
+    const hindranceId = await findHindranceId('photo-at-q3 test description')
+
+    await routeInboundMessage(
+      baseParams(phone, '', [{ url: 'https://api.twilio.com/media/ZZQ3KeepA', contentType: 'image/jpeg' }]),
+    )
+    await routeInboundMessage(
+      baseParams(phone, '', [{ url: 'https://api.twilio.com/media/ZZQ3KeepB', contentType: 'image/jpeg' }]),
+    )
+    expect((await hindranceMediaIngestJobsFor(hindranceId!)).length).toBe(2)
+
+    const { reply } = await routeInboundMessage(baseParams(phone, 'none', undefined))
+    expect(reply).toBe(HINDRANCE_RESOLVED_REPLY)
+    expect((await readSessionStep(phone))?.current_flow).toBeNull()
+
+    // The two photo jobs enqueued before "none" are STILL there -- "none"
+    // never triggers a discard, by construction (this handler has no
+    // delete path for hindrance_photos or its ingest jobs at all).
+    const jobsAfter = await hindranceMediaIngestJobsFor(hindranceId!)
+    expect(jobsAfter.length).toBe(2)
+    const hindrance = await getHindrance('photo-at-q3 test description')
+    expect(hindrance?.photos_status).toBe('pending')
   })
 })
 

@@ -54,7 +54,9 @@ describe('buildHindranceReply', () => {
   // (the new photo question) instead of completing the flow.
   it('advance to step 3 returns the new Q3 photo question, exact approved copy', () => {
     expect(buildHindranceReply('advance', 3)).toBe(HINDRANCE_QUESTIONS[3])
-    expect(HINDRANCE_QUESTIONS[3]).toBe('Send photos of the issue. Reply none to skip.')
+    // 2026-09-15 live prod finding: copy now names "done" as the explicit
+    // way to close the question, alongside "none" to skip.
+    expect(HINDRANCE_QUESTIONS[3]).toBe('Send photos of the issue. Reply none to skip, or done when finished.')
   })
 
   it('reask at step 3 returns Q3 verbatim, same convention as steps 1/2', () => {

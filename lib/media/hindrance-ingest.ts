@@ -47,6 +47,32 @@ export interface HindranceMediaIngestJobPayload {
 }
 
 /**
+ * Count photos RECEIVED so far for this hindrance's Q3 photo question, for
+ * the running-count acknowledgement (Aravind, 2026-09-15, live prod
+ * finding -- lib/whatsapp/inbound-start.ts's handleHindrancePhoto carries
+ * the full incident and decision). Same "count enqueued jobs' own media
+ * arrays, not table rows" reasoning as lib/media/ingest.ts's own
+ * countReceivedPhotos, one table over: this is read synchronously, inside
+ * the same webhook request that just enqueued the CURRENT job, well before
+ * the async hindrance_media_ingest job has necessarily run -- a
+ * hindrance_photos row only exists once Storage upload actually completes.
+ */
+export async function countReceivedHindrancePhotos(hindranceId: string, supabase: SupabaseClient): Promise<number> {
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('payload')
+    .eq('type', 'hindrance_media_ingest')
+    .contains('payload', { hindrance_id: hindranceId })
+  if (error) {
+    throw new Error(`countReceivedHindrancePhotos failed for hindrance ${hindranceId}: ${error.message}`)
+  }
+  return (data ?? []).reduce((total, row) => {
+    const payload = row.payload as unknown as HindranceMediaIngestJobPayload
+    return total + (payload.media?.length ?? 0)
+  }, 0)
+}
+
+/**
  * Process one hindrance_media_ingest job: download every item from
  * Twilio, upload each to Storage, insert one hindrance_photos row per
  * item. Same retry/partial-success posture as handleMediaIngestJob
