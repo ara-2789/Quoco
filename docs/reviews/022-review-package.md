@@ -615,6 +615,56 @@ does.
 Full trace, the SQL fix, and the RED→GREEN reproduction (Scenario 5):
 `docs/reviews/038-hindrance-flow-review-package.md`.
 
+### 9.2 Extension — migration 045's own site (2026-09-15, stage 3 external review fold, item 5)
+
+**Same rule, one new site, correct by design from its first line.**
+`claim_media_nudge` (migration 045, HELD -- not applied to any database
+yet, see `docs/reviews/045-review-brief.md`) is a new, flow-INDEPENDENT
+context write -- it runs only when NO flow is active (`current_flow IS
+NULL`), unlike every site in §9/§9.1 above, which write context from
+inside a specific flow's own turn.
+
+| Site | Behaviour | Status |
+|---|---|---|
+| Idle photo nudge throttle (`claim_media_nudge`) | `context := COALESCE(context, '{}'::jsonb) \|\| jsonb_build_object('last_media_nudge_at', p_now)` | Correct by design |
+
+The write is merge-only on exactly one key (`\|\|`, never a bare replace),
+matching §9's own rule exactly. Three properties worth stating explicitly,
+since this is the first site the rule applies to that ISN'T scoped to a
+single flow's own lifecycle:
+
+- **`last_media_nudge_at` is the first FLOW-INDEPENDENT context resident.**
+  Every key named in §9/§9.1's own tables above (`q1_reask`...`q5_reask`,
+  `description`, `q2_reask`, `hindrance_unspecified`, `hindrance_id`,
+  `morning_submitted`, `evening_submitted`) is written and read by exactly
+  one flow's own RPC, while that flow is active. `last_media_nudge_at` is
+  written and read only while NO flow is active -- the two kinds of key can
+  never collide (a flow starting clears its own subtract-list, never this
+  one; this key is never read by any flow RPC).
+- **Left untouched by every subtract-only strip list.** None of §9/§9.1's
+  own subtract expressions (morning's `- 'q2_reask' - 'q3_reask'`,
+  hindrance's `- 'q2_reask' - 'description'`, the 033 sweep's five reask
+  keys, etc.) name `last_media_nudge_at` -- each one only ever strips its
+  own flow's named keys via `-`, so `last_media_nudge_at` survives every
+  single one of them, exactly as intended (a flow starting or completing
+  should not reset the idle-photo throttle any more than the throttle
+  should touch flow state).
+- **Wiped only by the BOT-07 daily reset, harmlessly.** The only place
+  context is ever wiped to `'{}'::jsonb` wholesale is the cross-day reset
+  inside a flow-starting RPC (`acquire_and_transition_session`,
+  `apply_morning_flow_turn`, `apply_hindrance_flow_turn`, etc., all guarded
+  on `quoco_same_ist_day(p_now, updated_at)` being false) -- `claim_media_
+  nudge` itself performs NO such reset (see `045-review-brief.md`'s own
+  §2). A stale `last_media_nudge_at` surviving until that next flow-starting
+  call is harmless by construction: the throttle window (300s) is many
+  orders of magnitude shorter than the gap to any realistic next flow-start,
+  so a surviving stale value is already "older than `p_window_seconds`" the
+  moment it would next be checked, behaving identically to an absent key
+  either way.
+
+Full design, the `updated_at` constraint this site is equally careful
+about, and the row-lock mechanism: `docs/reviews/045-review-brief.md`.
+
 ---
 
 ## 10. Explicitly out of scope / known follow-ups

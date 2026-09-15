@@ -114,6 +114,46 @@ export async function acquireAndTransition(params: {
 }
 
 /**
+ * Stage 3 (migration 045, HELD -- see docs/reviews/045-review-brief.md --
+ * not applied to any database yet). Throttle for the idle-photo nudge: true
+ * the first time this is called for a phone number within
+ * windowSeconds, or the first time again after that window has elapsed;
+ * false for every call inside it. Same acquire-and-lock shape as
+ * acquireAndTransition above -- one RPC call, one transaction, so a burst of
+ * concurrent photos from the same phone number cannot both observe "no nudge
+ * yet" and both claim it.
+ */
+export async function claimMediaNudge(params: {
+  phoneNumber: string
+  tenantId: string
+  userId: string | null
+  windowSeconds: number
+  now?: string
+  supabaseClient?: SupabaseClient
+}): Promise<boolean> {
+  const supabase = params.supabaseClient ?? createServiceClient()
+
+  const { data, error } = await supabase.rpc('claim_media_nudge', {
+    p_phone_number: params.phoneNumber,
+    p_tenant_id: params.tenantId,
+    // gen types would mark this non-null; the DB function accepts NULL by
+    // design (an unregistered sender never reaches this path today, but the
+    // acquire step mirrors acquire_and_transition_session's own nullable
+    // p_user_id regardless). Cast until RPC arg typing is migrated -- same
+    // pattern as p_requested_flow above.
+    p_user_id: params.userId as string,
+    p_window_seconds: params.windowSeconds,
+    ...(params.now !== undefined ? { p_now: params.now } : {}),
+  })
+
+  if (error) {
+    throw new Error(`claim_media_nudge failed for ${params.phoneNumber}: ${error.message}`)
+  }
+
+  return data as unknown as boolean
+}
+
+/**
  * Promote the next queued flow when the active flow completes (BOT-26). Drain
  * order is (priority, queued_at) ascending. Draining an empty queue is a safe
  * no-op that returns the row unchanged. Returns null if no session row exists.

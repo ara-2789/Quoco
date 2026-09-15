@@ -319,11 +319,20 @@ only "reply 1"; the struck-through draft's "choose a menu option" pointed at
 a menu the engineer has never seen. The revision also now covers both
 check-ins, since morning accepts photos too (item 11).
 
-**Draft copy — NOT APPROVED, English only, Tamil pair pending:**
+~~**Draft copy — NOT APPROVED, English only, Tamil pair pending:**
 
 > Photo not saved — a photo has to go inside a report.
 > To report a site hindrance, reply 1 — then send the photo again.
-> Progress photos: send them during your morning or evening check-in.
+> Progress photos: send them during your morning or evening check-in.~~
+
+**SUPERSEDED, 2026-09-15 (stage 3 build) — struck through, not deleted, per
+this project's own correction discipline. See "RESOLVED — ROUND 8" at the
+end of this doc for the copy actually approved and shipped**, which differs
+from the draft above in two ways: it points at "the menu below" (composed
+live, not a static numbered list) rather than naming "reply 1" directly in
+the nudge itself, and it throttles to one reply per 5-minute window per
+phone number rather than replying to every off-step photo — this doc's own
+earlier text above never specified a throttle at all.
 
 ### 7. Photo parents: polymorphic vs. per-parent tables — DECIDED, per-parent
 
@@ -959,3 +968,62 @@ part of this pass; naming it again here so it isn't lost between rounds.
 
 - [Expiring objects (Storage) · supabase discussion #20171](https://github.com/orgs/supabase/discussions/20171) — lifecycle expiration confirmed not yet a native feature.
 - [Supabase Pricing](https://supabase.com/pricing) — fetched directly, 2026-09-12: 100 GB storage / 250 GB egress included on Pro; $0.0213/GB storage, $0.09/GB egress ($0.03/GB cached) beyond that.
+
+## RESOLVED — ROUND 8 (2026-09-15, stage 3 build)
+
+Stage 3 (item 20's build sequence, "Off-step nudge," item 6) built on branch
+`feat/stage3-media-nudge`. Item 6's own earlier draft copy (struck through
+above, not deleted) is SUPERSEDED by the copy actually approved and shipped
+this round. Decisions, stated plainly so a later round can strike through
+what this one gets wrong rather than silently rewrite it:
+
+- **5-minute throttle window, not "reply to every off-step photo."** Item
+  6's original text never specified a throttle at all — a burst of several
+  idle photos in a row (an engineer sending progress shots one at a time,
+  not realising none of them are being saved) would have produced one nudge
+  reply PER photo. `claim_media_nudge` (migration 045, HELD — not applied to
+  any database yet, see `docs/reviews/045-review-brief.md`) throttles this
+  to at most one reply per phone number per `MEDIA_NUDGE_WINDOW_SECONDS`
+  (300s) window, using the same per-phone-number row-lock acquire pattern
+  every other session RPC in this project already uses (012/044).
+- **No reply at all on a throttled photo, not a shorter/quieter reply.**
+  The first photo in a window gets the full nudge+menu; every further photo
+  inside that same window gets NOTHING — an empty TwiML response
+  (`<Response></Response>`), which Twilio delivers as no message at all.
+  Considered and rejected: a shorter acknowledgement ("still not saved") for
+  the throttled case — rejected because it re-introduces the exact
+  one-reply-per-photo burst problem the window exists to prevent, just with
+  shorter text.
+- **Nudge + the LIVE idle menu, composed, not a static numbered list.** Item
+  6's own struck-through draft named "reply 1" directly inside the nudge
+  text — this shipped version instead appends the SAME live menu (header
+  line + action line, via `buildIdleMenu`) every other idle reply already
+  composes, so the nudge never goes stale relative to whatever the ad-hoc
+  menu's real state is (a site-holiday header, a morning-closed header,
+  etc.) the way a hardcoded "reply 1" line could. Reply order, always:
+  `MEDIA_NUDGE_REPLY`, then `MEDIA_NUDGE_PROGRESS_LINE`, then the live menu
+  — three lines, in that order, every time a nudge is sent.
+- **`MEDIA_NUDGE_PROGRESS_LINE` is TEMPORARY, named as such in code.**
+  "Progress photos: send them during your morning or evening check-in." is
+  only true because the ad-hoc menu has no progress-photo item of its own
+  yet — the moment it gains one, this line's own claim (morning/evening
+  check-in is the only place a progress photo can go) becomes false, and
+  the line should be removed, not reworded. Flagged in
+  `lib/whatsapp/media-reply.ts`'s own comment on this constant so the
+  removal isn't missed when that menu item ships.
+- **A photo's caption never drives idle routing (item 12, extended).** A
+  photo captioned "1" at idle gets the nudge, never the hindrance flow —
+  `classifyAdhocInput` is never called for a photo at all. This is the same
+  "a photo/caption is never an answer" principle items 12/23 already
+  established for in-flow photos, extended to the idle router.
+- **Tamil pair still owed, unchanged from item 21's own list.** Both
+  `MEDIA_NUDGE_REPLY` and `MEDIA_NUDGE_PROGRESS_LINE` carry the same "Tamil
+  pair is owed and NOT approved — do not invent one" comment convention
+  every other stage-1/stage-2 copy constant already uses. Not resolved by
+  this round; item 21's own list is the tracker, not restated here as a
+  second copy.
+
+**Migration 045 is HELD, not applied anywhere** (not test-db, not prod) —
+this build's own instruction was explicit: no apply to any database this
+round. Full review package: `docs/reviews/045-review-brief.md` and
+`docs/reviews/045_media_nudge_throttle.sql`.

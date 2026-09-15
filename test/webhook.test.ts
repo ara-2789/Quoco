@@ -20,7 +20,7 @@ import {
 import { MORNING_QUESTIONS } from '@/lib/whatsapp/flows/morning'
 import { EVENING_QUESTIONS } from '@/lib/whatsapp/flows/evening'
 import { buildIdleReply } from '@/lib/whatsapp/inbound-start'
-import { PHOTO_REPLY, VOICE_REPLY } from '@/lib/whatsapp/media-reply'
+import { MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, VOICE_REPLY } from '@/lib/whatsapp/media-reply'
 import { ZERO_MEMBERSHIPS_REPLY, MULTIPLE_MEMBERSHIPS_REPLY } from '@/lib/whatsapp/project-resolution'
 
 // T-WH: the HTTP-level webhook harness named in CLAUDE.md's TESTING DEBT entry
@@ -505,7 +505,20 @@ describe('handleWebhookPost — media replies', () => {
     expect(matching.length).toBeGreaterThan(0)
   })
 
-  it('T-WH-14: a photo sent at idle gets the photo reply, no session is created', async () => {
+  it('T-WH-14, REWRITTEN stage 3 (migration 045, HELD -- not applied to any database yet): a photo sent at idle gets the nudge+progress-line+menu reply, and a session row IS now created (claim_media_nudge materialises it -- see docs/reviews/045-review-brief.md)', async () => {
+    // Was: asserts PHOTO_REPLY exactly and NO session row at all. REVERSED:
+    // stage 3's claim_media_nudge takes the same INSERT ... ON CONFLICT
+    // acquire-and-lock pattern every other session RPC uses (012/044), so it
+    // now materialises an idle whatsapp_sessions row (current_flow NULL,
+    // context.last_media_nudge_at set) exactly like every other first-ever
+    // inbound from a phone number already does. No `now` injection point
+    // exists on this end-to-end path (matching production -- see this
+    // file's own header vs. test/inbound-start.test.ts's), so the reply's
+    // trailing menu lines are real-time-dependent (computeIdleHeaderState);
+    // only the fixed NUDGE+PROGRESS-LINE prefix is asserted exactly here.
+    // The throttle-window behaviour itself (second photo -> no reply, after
+    // the window -> nudge again) is covered with `now` injected in
+    // test/inbound-start.test.ts instead, where it can be deterministic.
     const req = buildWebhookRequest({
       From: `whatsapp:${TEST_ENGINEER_PHONE}`,
       Body: '',
@@ -515,8 +528,13 @@ describe('handleWebhookPost — media replies', () => {
     })
     const res = await handleWebhookPost(req, { supabaseClient: testClient() })
     expect(res.status).toBe(200)
-    expect(await twimlText(res)).toBe(PHOTO_REPLY)
-    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
+    const reply = await twimlText(res)
+    expect(reply).not.toBeNull()
+    expect(reply!.startsWith(`${MEDIA_NUDGE_REPLY}\n${MEDIA_NUDGE_PROGRESS_LINE}\n`)).toBe(true)
+    const session = await readSession(TEST_ENGINEER_PHONE)
+    expect(session).not.toBeNull()
+    expect(session?.current_flow).toBeNull()
+    expect((session?.context as Record<string, unknown> | null)?.['last_media_nudge_at']).toBeTruthy()
   })
 
   it('T-WH-15: a voice note sent at idle gets the distinct voice reply', async () => {
