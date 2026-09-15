@@ -1889,3 +1889,13 @@ problem on first hang.
 ### [2026-09-05] `submitted_via` channel vocabulary — three tables now disagree, recorded not fixed
 
 Migration 036's reviewer round added `NOT NULL` to `hindrances.submitted_via` (three allowed values: `whatsapp_scheduled`/`whatsapp_adhoc`/`web_app`, migration 001's own CHECK). The two sibling `submitted_via` columns — `safety_incidents` (~line 148 of its own migration) and `invoices` (~line 169) — both still carry `DEFAULT 'whatsapp'` and **no CHECK constraint at all**, unlike `hindrances`. No live bug today (no writer exists for either sibling column, same as `hindrances` before 036/037's own work), but three tables now disagree on the channel vocabulary for what is conceptually the same fact ("how did this row arrive"), and the same question — what values are legal, is a default honest, should it be NOT NULL — will land on each column the moment it gets a real writer. Recorded here as a ledger line, not resolved: no scope change to 036/037, no migration filed for the siblings.
+
+### [2026-09-15] Sentry "Consecutive HTTP" N+1 pattern on GET /api/jobs/tick — low priority, unrelated to stage 3
+
+Sentry has been flagging a "Consecutive HTTP" N+1-style pattern on `GET
+/api/jobs/tick` (the `projects` and `project_members` queries) for
+roughly 6-7 days as of this entry. Not investigated or fixed here — noted
+as a backlog item, low priority, unrelated to stage 3 (the idle-photo
+nudge work this entry rides alongside). Whoever picks it up should
+confirm current status in Sentry first, since "roughly 6-7 days" is an
+observation at write time, not a fixed window.

@@ -241,13 +241,37 @@ CLI left pointed at test-db, not prod, at the end of this session.
 
 ## WhatsApp end-to-end proof
 
-**OWED (Aravind — burst of 3 idle photos → 1 reply).** Everything above
+~~**OWED (Aravind — burst of 3 idle photos → 1 reply).** Everything above
 verifies the function and its grants/hash/lock behavior directly against
 the database; it does not exercise the real webhook → `handleIdlePhoto` →
 `claimMediaNudge` path against a real WhatsApp number. That live
 end-to-end check — sending three idle photos in a burst and confirming
 exactly one nudge reply arrives — is Aravind's own next step, not
-performed in this session.
+performed in this session.~~
+
+**DONE (2026-09-15).** Struck through above, not deleted, per this
+project's own correction discipline. Aravind's own observations,
+recorded verbatim:
+
+- **2026-09-15 23:40 IST**: burst of 3 photos from `+919176865600` at
+  idle (evening check-in already complete) → exactly ONE reply:
+  `MEDIA_NUDGE_REPLY`, `MEDIA_NUDGE_PROGRESS_LINE`, then the live idle
+  menu ("Today's check-in is complete." / "You can still report a site
+  hindrance — reply 1.").
+- **Prod query** (`WHERE context ? 'last_media_nudge_at'`): exactly one
+  row, that phone, `current_flow` null, `last_media_nudge_at
+  2026-09-15T18:10:17.394166+00:00`.
+- **One photo after the 5-minute window** → nudge received again;
+  `last_media_nudge_at` moved to `2026-09-15T18:19:21.373523+00:00`
+  (still one row).
+- **Sentry**: zero `claim_media_nudge_failed` events.
+- The test ran near the IST day boundary (23:40–23:49 IST, i.e. roughly
+  10-20 minutes before midnight IST) — the exact case the `updated_at`
+  constraint (§2 of `docs/reviews/045-review-brief.md`) exists to
+  protect: had `claim_media_nudge` bumped `updated_at` on either photo, a
+  flow-starting RPC called for this same phone number on the other side
+  of midnight IST could have seen a same-day `updated_at` and silently
+  skipped its own BOT-07 cross-day reset.
 
 ## Summary
 
@@ -260,4 +284,6 @@ performed in this session.
 - Ledger repaired: `045` now `local=045`/`remote=045`, prod gapless 001-045.
 - CLI relinked to test-db (`exfccwlrhoutkgrlikod`) at session end.
 - PITR observed live before this apply (§ top); CI proof pinned to the exact merged SHA (§ top).
-- WhatsApp end-to-end proof: **OWED** (Aravind).
+- ~~WhatsApp end-to-end proof: **OWED** (Aravind).~~ **DONE (2026-09-15)**
+  — see "WhatsApp end-to-end proof" above for Aravind's recorded
+  observations.
