@@ -16,6 +16,8 @@ superseded by fresh, re-run evidence in this same file (marked ROUND 2),
 not silently replaced — round 1's own evidence is kept, struck through
 where superseded, per this project's own correction discipline.
 
+**CI STATUS: GREEN.** PR #275, merge commit `82f4b61e0dfe7be67fb763a3c0fe20356275939a` — all 9 checks passing, including `Test (real test-db)` (21m23s). Full job list and the real-CI-vs-local-sandbox concurrency-flake discrepancy: §8 (ROUND 2). This required merging `origin/main` into this feature branch first, to resolve a genuine content conflict that was silently blocking GitHub Actions from ever triggering on this PR at all — same class of finding as the standing "REGULAR MERGE COMMITS, NOT SQUASH" rule's own PR #244 precedent. Not a merge of the PR itself; nothing was merged into `main`, and prod was never touched.
+
 Companion plan (all design decisions, both the original plan-only pass and
 Aravind's 2026-09-14 resolutions): `docs/plans/stage2-hindrance-photos-plan.md`.
 
@@ -495,10 +497,51 @@ Test Files  3 passed (3)
 ```
 Combined hindrance-subset total: **9/9 files, 114/114 tests passed.**
 
-**Full suite (`npx vitest run`), pinned to commit `<PENDING — this round's own commit SHA, filled in post-commit>`, `git status --porcelain` empty at the moment this run started:**
+**Full suite, run locally TWICE, pinned to commit `2e236d0` (S1-S4's own
+commit, pre-merge), `git status --porcelain` empty both times:** identical
+result both runs — `101/102 files, 1184/1186 tests passed, 1 todo`, same
+single pre-existing `session-transition.test.ts` concurrency flake as
+round 1 (durations 1155.80s / 1162.08s).
+
+**Then `origin/main` was merged into this branch** (merge commit `82f4b61`)
+— a REAL, ordinary content conflict on `lib/whatsapp/inbound-start.ts`
+(this branch's own new `HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY` constant
+landed adjacent to lines origin/main's separately-merged item-12 fix
+touched) was blocking GitHub Actions from ever triggering `pull_request`
+CI on this PR at all — the SAME symptom CLAUDE.md's own standing rule
+already names for PR #244 ("a DIRTY/CONFLICTING mergeable status blocks
+GitHub from computing the merge ref some workflow trigger paths depend
+on"), here from a genuine conflict rather than squash-broken ancestry.
+Resolved by keeping this branch's own addition (origin/main had nothing
+on its own side of the conflict) and correcting one now-stale comment
+nearby ("hindrance photo capture is stage 2, not yet built" — it now is).
+A 7-file, 75-test hindrance/media-ingest sanity subset was re-run
+post-merge and passed clean before pushing.
+
+**Full suite via REAL CI (GitHub Actions, not this sandbox), pinned to the
+merge commit `82f4b61e0dfe7be67fb763a3c0fe20356275939a`, PR #275 — all 9
+checks green:**
 ```
-<PENDING — filled in once this round's changes are committed and the full suite is re-run against that clean, pinned state>
+Detect docs-only change    pass   4s      https://github.com/ara-2789/Quoco/actions/runs/34917847289/job/104219252645
+File Size Lint             pass   26s     https://github.com/ara-2789/Quoco/actions/runs/34917847289/job/104219252582
+Fixture Literal Lint       pass   26s     https://github.com/ara-2789/Quoco/actions/runs/34917847289/job/104219252636
+Lint                       pass   37s     https://github.com/ara-2789/Quoco/actions/runs/34917847289/job/104219252432
+Migration Lint             pass   22s     https://github.com/ara-2789/Quoco/actions/runs/34917847289/job/104219252612
+Test (real test-db)        pass   21m23s  https://github.com/ara-2789/Quoco/actions/runs/34917847289/job/104219275615
+Typecheck                  pass   29s     https://github.com/ara-2789/Quoco/actions/runs/34917847289/job/104219252574
+Vercel                     pass   0       Deployment has completed
+Vercel Preview Comments    pass   0
 ```
+**`Test (real test-db)` passed clean in CI — the `session-transition.
+test.ts` concurrency flake that failed in BOTH local sandbox runs above
+did NOT reproduce in real CI.** This is not a discrepancy to explain away;
+it is exactly what CLAUDE.md's own standing rule already predicts
+(`docs/reviews/sandbox-cannot-test-concurrency.md`: "this Claude Code
+sandbox cannot sustain two genuinely concurrent RPC calls against test-db
+... CI is the only environment that has ever genuinely tested it"). The
+local failures above were correctly reported as sandbox artifacts, not
+silently treated as passing — this CI run is the actual, load-bearing
+confirmation for that one test, not the two local runs.
 
 ---
 
