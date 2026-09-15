@@ -55,6 +55,33 @@
 --     just factual correctness" discipline -- flagging a deviation from the
 --     instruction as given, not presenting it as though it were asked for
 --     verbatim.
+--
+-- WHY THERE IS NO TENANT CHECK ON AN EXISTING ROW (pinned, external review
+-- fold, 2026-09-15). p_tenant_id is a MATERIALIZATION-ONLY parameter -- it
+-- exists solely to satisfy whatsapp_sessions.tenant_id's NOT NULL
+-- constraint on the acquire INSERT's first-ever-row branch (see above). It
+-- is NEVER compared against the row's own stored tenant_id when the row
+-- ALREADY EXISTS -- the acquire's own `ON CONFLICT DO UPDATE SET
+-- phone_number = s.phone_number` leaves tenant_id untouched either way, and
+-- nothing downstream re-reads p_tenant_id to check it against v_session's.
+-- THE THROTTLE'S IDENTITY IS THE PHONE NUMBER, not the tenant -- deliberate,
+-- not an oversight: a row-vs-parameter tenant divergence (this call site
+-- believes phone X belongs to tenant A, the stored row says tenant B) is
+-- the SAME cross-tenant phone-routing debt this project already carries
+-- upstream of every session RPC (a phone number is looked up against
+-- `users.whatsapp_number`, tenant-unscoped, before any of 012/044/045 ever
+-- runs) -- it is not created by this function and this function is not
+-- where it would be fixed. THE BLAST RADIUS of leaving it unchecked here is
+-- exactly one suppressed nudge -- a false negative on whether to send a
+-- reply, nothing written to any tenant-scoped table, no cross-tenant data
+-- read or exposed. A guard added HERE ALONE would diverge from the
+-- IDENTICAL acquire pattern already live in 012 and 044, both of which have
+-- the same COALESCE-driven "first writer wins, never re-validated" shape on
+-- tenant_id/user_id (012:166-173's own comment names this explicitly: "this
+-- function is not the place to re-home a number between tenants; that must
+-- be an explicit, separate operation") -- if that upstream debt is ever
+-- closed with an explicit tenant-match check, it closes for all three
+-- acquire sites TOGETHER, in one pass, not piecemeal starting here.
 -- =============================================================================
 
 BEGIN;
@@ -122,7 +149,8 @@ CREATE OR REPLACE FUNCTION claim_media_nudge(
   p_tenant_id      UUID,
   p_user_id        UUID        DEFAULT NULL,
   p_now            TIMESTAMPTZ DEFAULT now(),
-  p_window_seconds INTEGER     DEFAULT 300
+  p_window_seconds INTEGER     DEFAULT 300,
+  p_test_sleep_ms  INTEGER     DEFAULT NULL
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -145,6 +173,18 @@ BEGIN
     SET phone_number = s.phone_number
   RETURNING * INTO v_session;
 
+  -- TEST-ONLY, mirrors apply_hindrance_flow_turn (044_hindrance_photos.sql:
+  -- 449-451) line-for-line: same placement (immediately after the acquire,
+  -- lock already held), same guard, same semantics. Forces a mid-transaction
+  -- pause so a second concurrent caller on the same phone number is
+  -- provably blocked on the acquire until this call commits -- the same
+  -- forced-interleaving lock proof 012/013's own Test B and 044's rehearsal
+  -- both rely on. NULL/no-op in production; never passed by claimMediaNudge
+  -- (lib/whatsapp/session.ts), which has no parameter for it.
+  IF p_test_sleep_ms IS NOT NULL THEN
+    PERFORM pg_sleep(p_test_sleep_ms / 1000.0);
+  END IF;
+
   -- Read the last-claimed timestamp, treating a missing key, a NULL, or an
   -- unparseable value identically as "absent" -- none of them should ever
   -- block a nudge. `->>'key'` on a genuinely absent key returns SQL NULL
@@ -158,7 +198,20 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN
     -- Malformed timestamp string -- treated as absent, per this function's
     -- own contract ("If absent, unparseable, or older than
-    -- p_window_seconds -> claim it").
+    -- p_window_seconds -> claim it"). RAISE LOG'd, external review fold
+    -- (2026-09-15) -- a malformed value should never have gotten into this
+    -- column at all (nothing but this function's own `p_now` write ever
+    -- sets last_media_nudge_at), so a real occurrence is worth a server-log
+    -- trace with the actual bad value, even though behaviour does not
+    -- change. SELF-HEALING, stated so a future reader does not treat a
+    -- logged occurrence as an open incident needing a manual fix: the very
+    -- claim this exception handler lets through OVERWRITES the malformed
+    -- value with a well-formed p_now (the merge-only UPDATE below, keyed on
+    -- v_claimed=true) -- corruption in this one key is bounded to exactly
+    -- ONE throttle window, self-correcting on the next successful claim,
+    -- never requiring intervention.
+    RAISE LOG 'claim_media_nudge: malformed last_media_nudge_at for phone % -- raw value: %',
+      p_phone_number, v_last_raw;
     v_last := NULL;
   END;
 
@@ -187,10 +240,10 @@ $fn$;
 -- so a future editor never has to wonder whether an omission here was
 -- deliberate.
 REVOKE EXECUTE ON FUNCTION public.claim_media_nudge(
-  text, uuid, uuid, timestamptz, integer
+  text, uuid, uuid, timestamptz, integer, integer
 ) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_media_nudge(
-  text, uuid, uuid, timestamptz, integer
+  text, uuid, uuid, timestamptz, integer, integer
 ) TO service_role;
 
 COMMIT;
@@ -201,6 +254,6 @@ COMMIT;
 --
 -- BEGIN;
 --
--- DROP FUNCTION IF EXISTS public.claim_media_nudge(text, uuid, uuid, timestamptz, integer);
+-- DROP FUNCTION IF EXISTS public.claim_media_nudge(text, uuid, uuid, timestamptz, integer, integer);
 --
 -- COMMIT;

@@ -609,8 +609,28 @@ async function resolveIdleHeaderState(
  * it to attach to, and stage 3 does not introduce one. This function's only
  * job is deciding whether to SPEAK.
  *
+ * ORDER, REVIEWED AND FIXED (external review, migration 045, folded
+ * 2026-09-15): resolveIdleHeaderState runs FIRST, claimMediaNudge SECOND --
+ * not the reverse. If resolveIdleHeaderState throws, the error propagates
+ * exactly as it already does for the ordinary (non-photo) idle reply
+ * (routeInboundMessage's own bottom section calls the same helper with no
+ * try/catch of its own) -- claimMediaNudge is NEVER CALLED in that case, so
+ * NO NUDGE SLOT IS CONSUMED. Doing it the other way around -- claim first,
+ * look up the header second -- would mean a header-lookup failure silences
+ * the engineer for a full MEDIA_NUDGE_WINDOW_SECONDS: the throttle would
+ * already have recorded a successful nudge (the RPC call itself did not
+ * fail) even though no reply ever went out, and every FURTHER idle photo in
+ * that window would be throttled into silence on top of the first one that
+ * already got nothing. That is FAIL-CLOSED SILENCE -- the reviewer's own
+ * finding was that this is the wrong direction, for the identical reason
+ * the RPC-error case below fails OPEN rather than silent: an engineer
+ * getting no reply at all is indistinguishable, from his side, from a
+ * broken bot, and is strictly worse than one extra message or one
+ * legitimately-thrown error surfacing.
+ *
  * claim_media_nudge (migration 045) throttles the reply to once per
- * MEDIA_NUDGE_WINDOW_SECONDS-second window per phone number:
+ * MEDIA_NUDGE_WINDOW_SECONDS-second window per phone number, called only
+ * once the header is already known to be resolvable:
  *   - true  (first photo in the window): reply is MEDIA_NUDGE_REPLY, then
  *     MEDIA_NUDGE_PROGRESS_LINE, then the live idle menu (buildIdleMenu) --
  *     three lines, always in that order.
@@ -618,17 +638,25 @@ async function resolveIdleHeaderState(
  *     empty string, which route.ts's own `reply === '' ? twimlEmpty() : ...`
  *     turns into `<Response></Response>`, so Twilio delivers nothing.
  *
- * FAIL OPEN, deliberately (Aravind's own instruction, this stage): if the
- * RPC call itself throws (claimMediaNudge wraps a Postgres/network error
- * into a thrown Error), this is logged to Sentry and the function falls
- * back to the SAME three-line nudge+menu reply the `true` case sends --
- * never to silence. An engineer who gets one extra nudge message he didn't
- * strictly need is a minor annoyance; an engineer who gets NO reply at all
- * because the throttle check happened to fail looks, from his side,
- * identical to a broken bot. Silence is the worse failure mode of the two,
- * so a throttle-check failure always resolves to "speak."
+ * FAIL OPEN on the RPC call itself, deliberately (Aravind's own
+ * instruction, this stage, unchanged by the reorder above): if
+ * claimMediaNudge throws (a Postgres/network error), this is logged to
+ * Sentry and the function falls back to the SAME three-line nudge+menu
+ * reply the `true` case sends -- never to silence. Same reasoning as the
+ * ordering fix above, applied to a different failure point: an engineer who
+ * gets one extra nudge message he didn't strictly need is a minor
+ * annoyance; an engineer who gets no reply at all because the throttle
+ * check happened to fail looks, from his side, identical to a broken bot.
  */
 async function handleIdlePhoto(params: RouteParams, supabase: SupabaseClient): Promise<InboundRouteResult> {
+  // FIRST: resolve the header. Uncaught on purpose -- a failure here
+  // propagates exactly like the ordinary idle reply's own unguarded call to
+  // the same helper, and claimMediaNudge below is never reached, so no
+  // throttle slot is consumed by a turn that never spoke.
+  const headerState = await resolveIdleHeaderState(params, supabase)
+
+  // SECOND: the throttle check. Only reached once the header is already
+  // known to be resolvable.
   let claimed: boolean
   try {
     claimed = await claimMediaNudge({
@@ -655,7 +683,6 @@ async function handleIdlePhoto(params: RouteParams, supabase: SupabaseClient): P
     return { reply: '', resolvedFlow: null }
   }
 
-  const headerState = await resolveIdleHeaderState(params, supabase)
   return {
     reply: [MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, buildIdleMenu(headerState)].join('\n'),
     resolvedFlow: null,

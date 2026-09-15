@@ -26,6 +26,81 @@ with a repo-state header" rule):
 
 ---
 
+## 0. Review outcome
+
+**DESIGN CLEARED at head `6cae54a3`** (the commit this package originally
+described — "Stage 3: idle-photo nudge with burst throttle (migration 045,
+HELD)"). Still HELD, not applied anywhere — clearance is of the design, not
+an apply authorization; §8's own "what is still owed" list is unchanged by
+this round.
+
+Five folds, closing five items from that review round:
+
+1. **Reorder: `resolveIdleHeaderState` before `claimMediaNudge` in
+   `handleIdlePhoto`.** The reviewer's finding: calling `claimMediaNudge`
+   FIRST meant a header-lookup failure AFTER a successful claim consumed the
+   throttle window without ever sending a reply — fail-CLOSED silence, the
+   wrong direction (this brief never previously named this as a known
+   issue in its own text — there is nothing here to strike through; the
+   ordering was simply wrong in the code, not flagged and deferred).
+   `lib/whatsapp/inbound-start.ts`'s `handleIdlePhoto` now resolves the
+   header first, uncaught, so a failure there propagates exactly like the
+   ordinary idle reply's own unguarded call and `claimMediaNudge` is never
+   reached. New boundary-mocked test:
+   `test/inbound-start.test.ts`'s `'routeInboundMessage — idle photo,
+   header-lookup-fails-before-throttle (stage 3, migration 045 fold)'`
+   describe block. Closed by: `PENDING_SHA` (filled in by the follow-up
+   commit immediately after this one — a commit cannot cite its own hash;
+   see that follow-up's own commit message).
+2. **Pinned argument, no tenant check on an existing row.** Added to
+   `docs/reviews/045_media_nudge_throttle.sql`'s own header: `p_tenant_id`
+   is materialization-only, the throttle's identity is the phone number, a
+   row-vs-parameter divergence is upstream cross-tenant phone-routing debt
+   (not created or fixable here alone), the blast radius is one suppressed
+   nudge, and a guard added here alone would diverge from the identical
+   acquires in 012/044 — closes together with those, if ever. Closed by:
+   `PENDING_SHA`.
+3. **`RAISE LOG` in the malformed-timestamp handler.** Added to
+   `docs/reviews/045_media_nudge_throttle.sql`'s `EXCEPTION WHEN OTHERS`
+   block — logs the phone number and the raw malformed value, behaviour
+   otherwise unchanged, with a comment naming the self-healing property (a
+   successful claim overwrites the bad value, bounding corruption to one
+   window). Closed by: `PENDING_SHA`.
+4. **`p_test_sleep_ms` parameter, mirroring `apply_hindrance_flow_turn`
+   (044) exactly.** Same placement (immediately after the acquire, lock
+   already held), same guard (`IF p_test_sleep_ms IS NOT NULL THEN PERFORM
+   pg_sleep(p_test_sleep_ms / 1000.0); END IF;`), same semantics — see the
+   report accompanying this fold for the exact 044 lines mirrored.
+   `REVOKE`/`GRANT` full-signature lines and the commented DOWN section's
+   `DROP FUNCTION` signature all updated to the new 6-argument signature.
+   `claimMediaNudge` (`lib/whatsapp/session.ts`) gained an optional
+   `testSleepMs` parameter, mirroring `acquireAndTransition`'s own identical
+   parameter in the same file — never set by the one production call site
+   (`handleIdlePhoto`). `test/media-nudge-throttle.test.ts`'s concurrency
+   test rewritten to use the same forced-interleaving mechanism
+   test/session-transition.test.ts's own Test B uses (`p_test_sleep_ms` +
+   polling `quoco_test_row_is_locked`, migration 032, already applied and
+   directly reusable — it is a generic per-row probe, not specific to any
+   one function). Closed by: `PENDING_SHA`.
+5. **Context-write inventory entry.** Added `### 9.2 Extension — migration
+   045's own site` to `docs/reviews/022-review-package.md` (the canonical,
+   living "CONTEXT DISCIPLINE" inventory — already extended once before, by
+   migration 038's own §9.1) — states the write is merge-only on one key,
+   that `last_media_nudge_at` is the first flow-independent context
+   resident, and that it is left untouched by every subtract-only strip
+   list and wiped only by the BOT-07 daily reset, harmlessly. Closed by:
+   `PENDING_SHA`.
+
+**Release-order addition** (not yet applicable, recorded for when it is):
+once this PR's CI actually runs and goes green, the run URL and the
+merged SHA it corresponds to should be recorded in this section — per
+CLAUDE.md's own "A GREEN CI CHECK CERTIFIES A SHA, NOT A BRANCH" rule, a
+green check is only meaningful pinned to the exact commit it ran against.
+Not done this round: CI was not monitored (per this round's own explicit
+instruction), and this PR has not merged.
+
+---
+
 ## 1. What the function does
 
 `claim_media_nudge(p_phone_number, p_tenant_id, p_user_id, p_now,
