@@ -129,13 +129,6 @@ export async function claimMediaNudge(params: {
   userId: string | null
   windowSeconds: number
   now?: string
-  /** TEST-ONLY: forces a mid-transaction pause to prove the row lock holds --
-   * same shape as acquireAndTransition's own testSleepMs above. Never passed
-   * by any production call site (handleIdlePhoto, lib/whatsapp/inbound-
-   * start.ts, does not set this); exists only so a concurrency test can
-   * force a genuine interleave, the same way test/session-transition.test.ts's
-   * own Test B uses acquireAndTransition's testSleepMs. */
-  testSleepMs?: number
   supabaseClient?: SupabaseClient
 }): Promise<boolean> {
   const supabase = params.supabaseClient ?? createServiceClient()
@@ -151,7 +144,6 @@ export async function claimMediaNudge(params: {
     p_user_id: params.userId as string,
     p_window_seconds: params.windowSeconds,
     ...(params.now !== undefined ? { p_now: params.now } : {}),
-    ...(params.testSleepMs !== undefined ? { p_test_sleep_ms: params.testSleepMs } : {}),
   })
 
   if (error) {
