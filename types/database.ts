@@ -756,6 +756,7 @@ export type Database = {
           photos_status: string | null
           pm_notified_at: string | null
           project_id: string
+          report_date: string | null
           reported_by: string
           resolved_at: string | null
           resolved_by: string | null
@@ -780,6 +781,7 @@ export type Database = {
           photos_status?: string | null
           pm_notified_at?: string | null
           project_id: string
+          report_date?: string | null
           reported_by: string
           resolved_at?: string | null
           resolved_by?: string | null
@@ -804,6 +806,7 @@ export type Database = {
           photos_status?: string | null
           pm_notified_at?: string | null
           project_id?: string
+          report_date?: string | null
           reported_by?: string
           resolved_at?: string | null
           resolved_by?: string | null
