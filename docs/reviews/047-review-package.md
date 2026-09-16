@@ -236,7 +236,85 @@ where n.nspname = 'public' and c.relkind = 'r'
 group by 1, 2 order by 1, 2;
 ```
 
-**282 rows returned.** Every row for `anon` reads `MAINTAIN, REFERENCES,
+~~**282 rows returned.**~~
+
+**DATED CORRECTION (2026-09-16): the query returns 55 rows on test-db
+(re-run, raw output below) and 55 on prod. "282" was wrong.** That number
+was the raw JSON output's *line count* (`wc -l` on the pretty-printed
+`supabase db query` response — each row spans ~6 lines of JSON), not the
+SQL row count. The actual row count, confirmed via a wrapping `SELECT
+count(*)`, is 55 — matching prod's own 55-row capture exactly (anon 27
+tables, authenticated 28 tables; authenticated DELETE on 23 tables), and
+matching the DOWN block's GRANT list table for table (27 `anon` GRANT
+lines + 28 `authenticated` GRANT lines = 55).
+
+Re-run, raw output (`supabase db query --linked -f <the same §1e query>`):
+
+```json
+{
+  "rows": [
+    {"relname": "boq_items", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "boq_items", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "boq_sessions", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "boq_sessions", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "checkin_escalations", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "checkin_escalations", "role": "authenticated", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "daily_log_edits", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "daily_log_edits", "role": "authenticated", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "daily_logs", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "daily_logs", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "dpr_versions", "role": "authenticated", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "dprs", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "dprs", "role": "authenticated", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "hindrances", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "hindrances", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "invoices", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "invoices", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "jobs", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "jobs", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "processed_messages", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "processed_messages", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "project_members", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "project_members", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "projects", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "projects", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "ra_bill_payments", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "ra_bill_payments", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "ra_bills", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "ra_bills", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "rate_catalog", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "rate_catalog", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "rate_catalog_history", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "rate_catalog_history", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "safety_incidents", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "safety_incidents", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tenants", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tenants", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tender_chat_messages", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tender_chat_messages", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tender_chat_sessions", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tender_chat_sessions", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tender_document_chunks", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tender_document_chunks", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tender_documents", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tender_documents", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tenders", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "tenders", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "users", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "users", "role": "authenticated", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "vendor_invoices", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "vendor_invoices", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "vendors", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "vendors", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "whatsapp_sessions", "role": "anon", "privs": "MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"},
+    {"relname": "whatsapp_sessions", "role": "authenticated", "privs": "DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE"}
+  ]
+}
+```
+
+`SELECT count(*)` wrapping the same query → `row_count: 55`.
+
+Every row for `anon` reads `MAINTAIN, REFERENCES,
 TRIGGER, TRUNCATE`; every row for `authenticated` reads either `MAINTAIN,
 REFERENCES, TRIGGER, TRUNCATE` or, on the 23 tables with a live DELETE
 grant, `DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE`. MAINTAIN
@@ -398,7 +476,7 @@ Named as a limit, not fixed here.
 
 ## D4 design — why a static guard, not a live query
 
-`test/migration-047.test.ts` is a **static source guard** parsing
+~~`test/migration-047.test.ts` is a **static source guard** parsing
 `047_revoke_unused_table_rights.sql`'s own text — not a live
 `information_schema`/`pg_catalog` query. This follows the exact,
 already-established precedent in this codebase
@@ -414,7 +492,55 @@ is ever applied anywhere; (2) this migration's own future rehearsal pass
 `has_table_privilege`/`pg_policy` probes this package's own step 1 used,
 via `supabase db query --linked`, the CLI-level path vitest cannot reach.
 `test/migration-047.test.ts` was NOT run in this pass (no `.env.test` in
-this environment) — `npx tsc --noEmit` was run instead and is clean.
+this environment) — `npx tsc --noEmit` was run instead and is clean.~~
+
+**DATED CORRECTION (2026-09-16): D4 is now a live test, not a static
+guard.** Aravind's own decision, same day. `test/migration-047.test.ts`
+was rewritten to call a new, dedicated, test-db-only SQL helper —
+`quoco_test_047_unused_rights_check()`, `docs/reviews/
+048_test_047_unused_rights_check.sql` — via `testClient()` (`db.rpc(...)`),
+the exact live-query pattern `test/session-transition.test.ts` already
+uses for `quoco_test_row_is_locked` (migration 032). The helper is
+`SECURITY DEFINER`, `service_role`-only (`REVOKE EXECUTE ... FROM PUBLIC,
+anon, authenticated; GRANT EXECUTE ... TO service_role`), and returns one
+row: the live `pg_class.relacl`/`aclexplode()` grant count (DELETE/
+TRUNCATE/TRIGGER/REFERENCES/MAINTAIN, anon/authenticated, public tables)
+and the `polcmd 'd'` policy count in public — the exact same two counts
+migration 047's own final `DO` block checks. The test asserts both are
+zero, and throws a clear, named error (never skips) if the helper call
+itself fails — e.g. because the helper hasn't been applied to test-db
+yet.
+
+**The prior static-guard rationale above (struck through) is retained,
+not deleted, per this project's own correction discipline** — it was an
+accurate account of the codebase's PostgREST-access limitation at the
+time it was written, and remains true as a general fact (PostgREST still
+does not expose `information_schema`/`pg_catalog` directly); it just no
+longer describes what `test/migration-047.test.ts` itself does, now that
+a dedicated `SECURITY DEFINER` helper gives the test a live, credentialed
+path around that limitation — the same workaround `quoco_test_row_is_locked`
+already established for a different test.
+
+**CI on this PR will fail on `test/migration-047.test.ts` until 047 and
+the helper (048) are both applied to test-db.** Expected, per order:
+review → test-db → CI. The helper is HELD, not yet applied anywhere (see
+its own file header) — this pass writes it, applies nothing.
+
+**Prod-exclusion status, per the task's own instruction to confirm or
+state otherwise: NOT CONFIRMED, stated plainly rather than assumed.**
+`quoco_test_047_unused_rights_check()` is a brand-new function that has
+never been applied anywhere yet, so it cannot appear in any type
+generation run today — there is nothing to diff. Whether it will be
+excluded from a FUTURE prod type-generation run the same way
+`quoco_test_row_is_locked` currently is depends on whether it is ever
+applied to prod at all, which is not planned (it has no production call
+site, same reasoning as 032's own function) — but this project's own
+`docs/reviews/032-ledger-repair-record.md` shows that "never applied to
+prod" and "prod's ledger says applied" can diverge for this exact class
+of object (see `048_test_047_unused_rights_check.sql`'s own header for
+the full account) — so this migration does not claim a mechanism
+guarantees prod-exclusion; it only observes that no one currently has a
+reason to apply it there, the same footing 032 was on.
 
 ## Open questions / flagged for reviewer attention
 
