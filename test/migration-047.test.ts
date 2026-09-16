@@ -9,13 +9,13 @@ import { testClient } from './helpers/db'
 // for quoco_test_row_is_locked).
 //
 // THE HELPER THIS TEST DEPENDS ON: quoco_test_047_unused_rights_check(),
-// docs/reviews/048_test_047_unused_rights_check.sql -- HELD, NOT YET
+// scripts/test-db-only-047-rights-check.sql -- HELD, NOT YET
 // APPLIED anywhere, per that file's own header. Must be applied to
 // TEST-DB ONLY, alongside migration 047's own test-db rehearsal (a later
 // pass), before this test can pass. Until then, this test is EXPECTED TO
 // FAIL with a clear, named error -- never skipped, never silently green.
 //
-// CI ON THIS PR WILL FAIL on this file until 047 and 048 are both applied
+// CI ON THIS PR WILL FAIL on this file until 047 and the test-db-only helper script are both applied
 // to test-db. Expected, per this project's own stated order: external
 // review -> test-db -> CI -> merge -> PITR -> prod (D6). A red check here,
 // before that apply happens, is not a bug in this test.
@@ -28,7 +28,7 @@ describe('migration 047 — live D4 check (no unused table rights remain)', () =
     if (error) {
       throw new Error(
         `migration-047 D4 check FAILED to call quoco_test_047_unused_rights_check() -- ` +
-          `either the helper (docs/reviews/048_test_047_unused_rights_check.sql) has not ` +
+          `either the helper (scripts/test-db-only-047-rights-check.sql) has not ` +
           `been applied to test-db yet, or migration 047 itself has not been applied yet. ` +
           `This must fail loudly, never be skipped: Postgres error ${error.code ?? '(no code)'} -- ${error.message}`,
       )

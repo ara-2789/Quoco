@@ -497,8 +497,8 @@ this environment) — `npx tsc --noEmit` was run instead and is clean.~~
 **DATED CORRECTION (2026-09-16): D4 is now a live test, not a static
 guard.** Aravind's own decision, same day. `test/migration-047.test.ts`
 was rewritten to call a new, dedicated, test-db-only SQL helper —
-`quoco_test_047_unused_rights_check()`, `docs/reviews/
-048_test_047_unused_rights_check.sql` — via `testClient()` (`db.rpc(...)`),
+`quoco_test_047_unused_rights_check()`, ~~`docs/reviews/
+048_test_047_unused_rights_check.sql`~~ — via `testClient()` (`db.rpc(...)`),
 the exact live-query pattern `test/session-transition.test.ts` already
 uses for `quoco_test_row_is_locked` (migration 032). The helper is
 `SECURITY DEFINER`, `service_role`-only (`REVOKE EXECUTE ... FROM PUBLIC,
@@ -522,9 +522,10 @@ path around that limitation — the same workaround `quoco_test_row_is_locked`
 already established for a different test.
 
 **CI on this PR will fail on `test/migration-047.test.ts` until 047 and
-the helper (048) are both applied to test-db.** Expected, per order:
-review → test-db → CI. The helper is HELD, not yet applied anywhere (see
-its own file header) — this pass writes it, applies nothing.
+~~the helper (048)~~ the test-db-only helper script are both applied to
+test-db.** Expected, per order: review → test-db → CI. The helper is
+HELD, not yet applied anywhere (see its own file header) — this pass
+writes it, applies nothing.
 
 **Prod-exclusion status, per the task's own instruction to confirm or
 state otherwise: NOT CONFIRMED, stated plainly rather than assumed.**
@@ -537,10 +538,59 @@ applied to prod at all, which is not planned (it has no production call
 site, same reasoning as 032's own function) — but this project's own
 `docs/reviews/032-ledger-repair-record.md` shows that "never applied to
 prod" and "prod's ledger says applied" can diverge for this exact class
-of object (see `048_test_047_unused_rights_check.sql`'s own header for
+of object (see ~~`048_test_047_unused_rights_check.sql`~~'s own header for
 the full account) — so this migration does not claim a mechanism
 guarantees prod-exclusion; it only observes that no one currently has a
 reason to apply it there, the same footing 032 was on.
+
+**DATED CORRECTION (2026-09-16), covering all three strikes above:** the
+D4 helper was given NO migration number and moved to
+`scripts/test-db-only-047-rights-check.sql` — Aravind's decision, same
+day. Test-only objects get no migration number at all, so prod's ledger
+stays truthful; see "Backlog: 032 ledger mismatch" below for the PROD
+FACT that motivated this. `docs/reviews/048_test_047_unused_rights_check.
+sql` never existed as an applied artifact and no longer exists as a file
+— every reference to it above described a design that was corrected
+before ever being applied anywhere.
+
+## Backlog: 032 ledger mismatch
+
+**PROD FACT (Aravind, 2026-09-16, recorded verbatim):** "on prod, no
+public function matches `'quoco_test%'`, and `supabase_migrations.
+schema_migrations` lists version 032. So prod's ledger records 032 as
+applied while its test-only function is absent. 048 and 047 are not in
+prod's ledger."
+
+This confirms, directly from prod, the tension `docs/reviews/032-ledger-
+repair-record.md` (2026-08-31) and this session's own earlier
+type-generation diff (migration 046's prod apply, 2026-09-16) had already
+each pointed at from different angles: migration 032's `schema_migrations`
+row says "applied," but `quoco_test_row_is_locked` — the one object that
+migration actually creates — does not exist on prod. `supabase migration
+repair` writes the ledger row only; it never executes or verifies the
+underlying SQL, so a ledger "applied" entry and a live object's actual
+existence are two independently-fallible facts, not one.
+
+**Why 048 was not used, and why this pattern is the reason.** Migration
+032 is exactly the shape this session decided NOT to repeat: a
+test-only object (no production call site at all) given a real migration
+number, which implies to every future reader and every apply tool that it
+belongs in every database's ledger — a claim that was never true for its
+own contents. `quoco_test_047_unused_rights_check()` avoids that shape
+entirely by never being a numbered migration in the first place (see
+`scripts/test-db-only-047-rights-check.sql`'s own header) — there is
+nothing for a future ledger-repair action to mistakenly reconcile,
+because there is no ledger entry to reconcile it against.
+
+**Nothing on prod changes as a result of this backlog item.** 047 and
+the (former) 048 were never in prod's ledger to begin with (confirmed in
+the PROD FACT above) — this is a naming/process correction for future
+migrations, not a prod remediation. Whether migration 032's own
+ledger/reality mismatch itself should ever be corrected on prod (e.g. by
+either actually applying its SQL there, or repairing the ledger row back
+out) is a separate decision, not addressed or actioned by this migration
+— named here as backlog because 047's own correction pass is what
+surfaced it clearly enough to record.
 
 ## Open questions / flagged for reviewer attention
 
