@@ -5,12 +5,17 @@
 -- GENERATED STORED column computing the IST calendar date of created_at,
 -- plus an index over (project_id, reported_by, report_date).
 --
--- HELD, NOT APPLIED. Per CLAUDE.md's own "a migration file enters
+-- DATED CORRECTION (2026-09-16): APPLIED TO TEST-DB ONLY
+-- (exfccwlrhoutkgrlikod). NOT applied to prod. Prod apply is a separate
+-- later step (PITR, pre-probe including a created_at IS NULL count on
+-- prod, apply, verify, ledger repair, types).
+--
+-- ~~HELD, NOT APPLIED.~~ Per CLAUDE.md's own "a migration file enters
 -- supabase/migrations/ when it is being applied, not when it is written"
--- rule, this file stays in docs/reviews/ until the test-db apply this pass
--- performs actually happens -- see that step's own record for the apply
--- sequence and evidence. This pass's own explicit instruction: TEST-DB ONLY
--- (exfccwlrhoutkgrlikod), never prod.
+-- rule, ~~this file stays in docs/reviews/ until the test-db apply this
+-- pass performs actually happens~~ -- see that step's own record for the
+-- apply sequence and evidence. This pass's own explicit instruction:
+-- TEST-DB ONLY (exfccwlrhoutkgrlikod), never prod.
 --
 -- PURPOSE. Stage 4 needs to match a DPR to the hindrance(s) reported on the
 -- same project-day by the same engineer, so an owner's DPR email can carry

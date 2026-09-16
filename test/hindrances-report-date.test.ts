@@ -30,7 +30,10 @@ async function seedHindrance(createdAt: string | null): Promise<string> {
 
 async function cleanupHindrance(hindranceId: string) {
   const db = testClient()
-  await db.from('hindrances').delete().eq('id', hindranceId)
+  const { error } = await db.from('hindrances').delete().eq('id', hindranceId)
+  if (error) {
+    throw new Error(`cleanupHindrance failed for hindrance ${hindranceId}: ${error.message}`)
+  }
 }
 
 beforeAll(async () => {
