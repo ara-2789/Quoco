@@ -238,11 +238,21 @@ DECLARE
   v_grant_count INT;
   v_policy_count INT;
 BEGIN
+  -- information_schema.role_table_grants does NOT report MAINTAIN (found
+  -- live, this migration's own review-package correction pass, 2026-09-16
+  -- -- relacl showed MAINTAIN held on 27 anon / 28 authenticated tables
+  -- that information_schema's own view reported as zero) -- this check
+  -- reads pg_class.relacl directly via aclexplode(), the same source the
+  -- migration's own review package now uses throughout, so it can never
+  -- silently miss a privilege information_schema doesn't surface.
   SELECT count(*) INTO v_grant_count
-  FROM information_schema.role_table_grants
-  WHERE table_schema = 'public'
-    AND grantee IN ('anon', 'authenticated')
-    AND privilege_type IN ('DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES', 'MAINTAIN');
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  CROSS JOIN LATERAL aclexplode(c.relacl) a
+  WHERE n.nspname = 'public'
+    AND c.relkind = 'r'
+    AND pg_get_userbyid(a.grantee) IN ('anon', 'authenticated')
+    AND a.privilege_type IN ('DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES', 'MAINTAIN');
 
   IF v_grant_count > 0 THEN
     RAISE EXCEPTION 'migration 047: % grant(s) of DELETE/TRUNCATE/TRIGGER/REFERENCES/MAINTAIN to anon/authenticated remain in schema public after revoke -- aborting', v_grant_count;
@@ -272,78 +282,87 @@ COMMIT;
 -- -- would otherwise still lack these grants while the DOWN re-grants
 -- -- existing tables back to their pre-047 state).
 -- ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
---   GRANT TRUNCATE, TRIGGER, REFERENCES, DELETE ON TABLES TO anon, authenticated;
--- -- MAINTAIN intentionally NOT re-granted by default privileges here --
--- -- step 1's live capture found MAINTAIN granted to neither role on any
--- -- table before this migration ran (0 rows, confirmed by grep on the
--- -- captured output) -- re-adding it to the default would create a grant
--- -- that never existed pre-047, not restore one.
+--   GRANT TRUNCATE, TRIGGER, REFERENCES, MAINTAIN, DELETE ON TABLES TO anon, authenticated;
+-- -- MAINTAIN IS re-granted here -- CORRECTED 2026-09-16, review-package
+-- -- correction pass: the original comment here claimed MAINTAIN was never
+-- -- granted pre-047, based on an information_schema.role_table_grants
+-- -- capture that does not report MAINTAIN at all. Rebuilt from
+-- -- pg_class.relacl via aclexplode(): MAINTAIN is held by anon on 27
+-- -- tables and authenticated on 28 tables on test-db, matching prod's own
+-- -- relacl capture exactly (anon 27, authenticated 28, per Aravind,
+-- -- 2026-09-16) -- co-occurring, table-for-table, with TRUNCATE/TRIGGER/
+-- -- REFERENCES in every case (never granted alone). Prod's own default
+-- -- ACL confirms the 'm' (MAINTAIN) privilege letter is present for
+-- -- anon/authenticated alongside the others, so the default-privilege
+-- -- reversal restores it too.
 --
--- -- Re-GRANT the exact privileges step 1 captured, per table and role.
--- -- Tables already at zero for all five (daily_log_photos, hindrance_photos,
--- -- outbound_sends, owner_email_verifications) get NOTHING re-granted --
--- -- their own prior migrations' REVOKE ALL is what this DOWN restores by
--- -- doing nothing.
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.boq_items TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.boq_items TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.boq_sessions TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.boq_sessions TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.checkin_escalations TO anon;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.checkin_escalations TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.daily_log_edits TO anon;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.daily_log_edits TO authenticated;
+-- -- Re-GRANT the exact privileges step 1 captured, per table and role --
+-- -- rebuilt from pg_class.relacl via aclexplode(), not information_schema
+-- -- (which does not report MAINTAIN at all -- see the header's own DATED
+-- -- CORRECTION). Tables already at zero for all five (daily_log_photos,
+-- -- hindrance_photos, outbound_sends, owner_email_verifications) get
+-- -- NOTHING re-granted -- their own prior migrations' REVOKE ALL is what
+-- -- this DOWN restores by doing nothing.
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.boq_items TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.boq_items TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.boq_sessions TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.boq_sessions TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.checkin_escalations TO anon;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.checkin_escalations TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.daily_log_edits TO anon;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.daily_log_edits TO authenticated;
 -- -- daily_log_photos: nothing (pre-047 state was zero grants).
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.daily_logs TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.daily_logs TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.daily_logs TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.daily_logs TO authenticated;
 -- -- dpr_versions: anon gets nothing (pre-047 state was zero for anon).
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.dpr_versions TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.dprs TO anon;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.dprs TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.dpr_versions TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.dprs TO anon;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.dprs TO authenticated;
 -- -- hindrance_photos: nothing (pre-047 state was zero grants).
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.hindrances TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.hindrances TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.invoices TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.invoices TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.jobs TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.jobs TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.hindrances TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.hindrances TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.invoices TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.invoices TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.jobs TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.jobs TO authenticated;
 -- -- outbound_sends: nothing (pre-047 state was zero grants).
 -- -- owner_email_verifications: nothing (pre-047 state was zero grants).
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.processed_messages TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.processed_messages TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.project_members TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.project_members TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.projects TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.projects TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.ra_bill_payments TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.ra_bill_payments TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.ra_bills TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.ra_bills TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.rate_catalog TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.rate_catalog TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.rate_catalog_history TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.rate_catalog_history TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.safety_incidents TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.safety_incidents TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.tenants TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.tenants TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.tender_chat_messages TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.tender_chat_messages TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.tender_chat_sessions TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.tender_chat_sessions TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.tender_document_chunks TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.tender_document_chunks TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.tender_documents TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.tender_documents TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.tenders TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.tenders TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.users TO anon;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.users TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.vendor_invoices TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.vendor_invoices TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.vendors TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.vendors TO authenticated;
--- GRANT TRUNCATE, TRIGGER, REFERENCES ON public.whatsapp_sessions TO anon;
--- GRANT DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.whatsapp_sessions TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.processed_messages TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.processed_messages TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.project_members TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.project_members TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.projects TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.projects TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.ra_bill_payments TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.ra_bill_payments TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.ra_bills TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.ra_bills TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.rate_catalog TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.rate_catalog TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.rate_catalog_history TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.rate_catalog_history TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.safety_incidents TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.safety_incidents TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tenants TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tenants TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tender_chat_messages TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tender_chat_messages TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tender_chat_sessions TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tender_chat_sessions TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tender_document_chunks TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tender_document_chunks TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tender_documents TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tender_documents TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tenders TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.tenders TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.users TO anon;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.users TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.vendor_invoices TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.vendor_invoices TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.vendors TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.vendors TO authenticated;
+-- GRANT MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.whatsapp_sessions TO anon;
+-- GRANT DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON public.whatsapp_sessions TO authenticated;
 --
 -- -- Recreate all 17 policies verbatim (USING expression captured live,
 -- -- step 1 -- pg_get_expr output pasted exactly, not retyped from memory).

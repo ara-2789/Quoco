@@ -134,11 +134,19 @@ Summary counts (distinct tables per privilege/role):
 | TRIGGER | 27 | 28 |
 | REFERENCES | 27 | 28 |
 
-`MAINTAIN`: **0 rows for either role, on any table** — confirmed via
+~~`MAINTAIN`: **0 rows for either role, on any table** — confirmed via
 `grep -c "MAINTAIN" <output file>` → `0`. Postgres 17's newest privilege is
 not currently granted to `anon`/`authenticated` on test-db at all; D1's
 REVOKE for it is a no-op today, included for defense-in-depth and to close
-D3's default-privilege gap for it too.
+D3's default-privilege gap for it too.~~
+
+**DATED CORRECTION (2026-09-16): MAINTAIN IS held** (relacl: anon 27,
+authenticated 28 on prod; test-db per step 1e below, matching exactly).
+`information_schema.role_table_grants` does not report `MAINTAIN` — the
+`grep -c "MAINTAIN" <output file>` result above was checking the wrong
+source, not the wrong database. Rebuilt from `pg_class.relacl` via
+`aclexplode()`; see §1e for the full re-capture. D1's REVOKE for MAINTAIN
+is therefore a real, live revoke on 27–28 tables, not a no-op.
 
 Full per-table matrix (32 tables; `postgres` is the single distinct owner
 of every one — confirmed via `pg_class`/`pg_roles` join):
@@ -209,6 +217,77 @@ superuser, and is not a member of `supabase_admin`. It can only run
 created under `supabase_admin` today (confirmed: single owner `postgres`
 on both test-db and prod), so this gap has no live consequence today —
 named as a limit for the future, not a current exposure.
+
+### 1e. `pg_class.relacl` re-capture (2026-09-16 correction pass — MAINTAIN)
+
+`information_schema.role_table_grants` does not report `MAINTAIN` — found
+live, this correction pass: the original §1b capture (above, now struck
+through) read `information_schema` and reported zero `MAINTAIN` grants,
+which was wrong about the *source*, not the database. Rebuilt from
+`pg_class.relacl` via `aclexplode()`, all five privileges:
+
+```sql
+select c.relname, pg_get_userbyid(a.grantee) as role, string_agg(a.privilege_type, ', ' order by a.privilege_type) as privs
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+cross join lateral aclexplode(c.relacl) a
+where n.nspname = 'public' and c.relkind = 'r'
+  and pg_get_userbyid(a.grantee) in ('anon','authenticated')
+  and a.privilege_type in ('DELETE','TRUNCATE','TRIGGER','REFERENCES','MAINTAIN')
+group by 1, 2 order by 1, 2;
+```
+
+**282 rows returned.** Every row for `anon` reads `MAINTAIN, REFERENCES,
+TRIGGER, TRUNCATE`; every row for `authenticated` reads either `MAINTAIN,
+REFERENCES, TRIGGER, TRUNCATE` or, on the 23 tables with a live DELETE
+grant, `DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE`. MAINTAIN
+co-occurs with TRUNCATE/TRIGGER/REFERENCES table-for-table, in every row,
+for both roles — never granted alone, never missing where the other three
+are present.
+
+Per-role table counts, cross-checked programmatically (not by eye):
+
+```sql
+select pg_get_userbyid(a.grantee) as role, count(distinct c.relname) as table_count
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+cross join lateral aclexplode(c.relacl) a
+where n.nspname = 'public' and c.relkind = 'r'
+  and pg_get_userbyid(a.grantee) in ('anon','authenticated')
+  and a.privilege_type = 'MAINTAIN'
+group by 1 order by 1;
+```
+→ `anon: 27, authenticated: 28`
+
+**Matches prod exactly** (Aravind, 2026-09-16: "`aclexplode(pg_class.
+relacl)` on public tables, privilege MAINTAIN: anon 27 tables,
+authenticated 28 tables"). No STOP condition triggered.
+
+**Cross-check against the other four privileges** — confirms `relacl` and
+`information_schema` agree everywhere EXCEPT `MAINTAIN` (i.e., the
+original §1b capture's DELETE/TRUNCATE/TRIGGER/REFERENCES counts were
+already correct; only `MAINTAIN` was blind):
+
+| privilege | anon (relacl) | authenticated (relacl) | matches §1b (information_schema)? |
+|---|---|---|---|
+| DELETE | 0 | 23 | yes |
+| TRUNCATE | 27 | 28 | yes |
+| TRIGGER | 27 | 28 | yes |
+| REFERENCES | 27 | 28 | yes |
+| MAINTAIN | 27 | 28 | **no — information_schema reported 0** |
+
+**Reviewer note: this migration's grant captures and checks now use
+`pg_class.relacl` throughout, not `information_schema`** — the migration
+file's own final `DO` block (the live abort-on-failure check) and every
+per-table `REVOKE`/`GRANT` capture in this package are `relacl`-sourced as
+of this correction pass. The 32 explicit `REVOKE` statements in the
+migration file itself, and the 17 `DROP POLICY` statements, are
+unchanged — `relacl` and `information_schema` already agreed on every
+table/privilege pair those statements cover (DELETE/TRUNCATE/TRIGGER/
+REFERENCES); only `MAINTAIN`'s omission from `information_schema` was
+ever wrong, and the `REVOKE` statements already included `MAINTAIN`
+explicitly (it is a safe no-op to revoke something a table doesn't hold,
+so the forward migration's own correctness never depended on knowing
+`MAINTAIN`'s true count) — only the DOWN block's re-grants and the
+header's own narrative claims needed correcting.
 
 ---
 
@@ -290,14 +369,17 @@ to `anon`/`authenticated`, or any `polcmd 'd'` policy remains → `COMMIT`
 Fully commented (every line blank or `--`-prefixed, confirmed via
 `scripts/lint-migrations.mjs`'s `down-section-must-be-commented` rule,
 clean). Reverses in this order: (1) `ALTER DEFAULT PRIVILEGES ... GRANT
-TRUNCATE, TRIGGER, REFERENCES, DELETE ... TO anon, authenticated` (D3
-reversed first, so tables created after 047 during a rollback window
-don't end up permanently missing these grants) — **MAINTAIN deliberately
-NOT re-granted by the default-privilege reversal**, since step 1 found it
-granted to neither role on any table before this migration (re-adding it
-to the default would create a grant that never existed pre-047, not
-restore one); (2) per-table `GRANT` statements restoring the EXACT
-privilege set step 1 captured for each table/role pair (the 4 already-clean
+TRUNCATE, TRIGGER, REFERENCES, MAINTAIN, DELETE ... TO anon, authenticated`
+(D3 reversed first, so tables created after 047 during a rollback window
+don't end up permanently missing these grants) — **CORRECTED 2026-09-16:
+MAINTAIN IS re-granted here.** The prior version of this DOWN block
+deliberately omitted MAINTAIN from this reversal on the belief (from an
+`information_schema`-based capture) that it was never granted pre-047;
+§1e's `relacl` re-capture found that belief wrong — MAINTAIN is held by
+`anon` on 27 tables and `authenticated` on 28, matching prod's own default
+ACL (`'m'` present for both roles); (2) per-table `GRANT` statements
+restoring the EXACT privilege set §1e's `relacl` capture found for each
+table/role pair, now including MAINTAIN wherever held (the 4 already-clean
 tables get nothing re-granted; `dpr_versions` gets nothing for `anon`);
 (3) all 17 `CREATE POLICY` statements, USING expressions pasted verbatim
 from step 1's `pg_get_expr` output, not retyped from memory.
