@@ -1899,3 +1899,18 @@ as a backlog item, low priority, unrelated to stage 3 (the idle-photo
 nudge work this entry rides alongside). Whoever picks it up should
 confirm current status in Sentry first, since "roughly 6-7 days" is an
 observation at write time, not a fixed window.
+
+### [2026-09-16] Backlog: function EXECUTE default for new public-schema functions
+
+Future migration (reuse released 048 when built): `ALTER DEFAULT
+PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS
+FROM anon, authenticated.` External reviewer fold 5, 2026-09-16 (migration
+047's own external review round, `docs/reviews/047-review-package.md`).
+Every new function in `public` is still EXECUTE-able by `anon`/
+`authenticated` by default (Postgres's own `postgres`-role default ACL);
+every migration since 020 has revoked this by hand, per-function, at
+CREATE time. 047 closed the equivalent gap for tables (`docs/reviews/047-
+review-package.md`) but deliberately left functions out of scope. Number
+048 was reserved for 047's own test-only D4 helper, then released (never
+used, no migration number — test-only objects get none, per that
+decision's own reasoning) and is free for this future migration to claim.

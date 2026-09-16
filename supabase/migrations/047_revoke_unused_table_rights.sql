@@ -1,13 +1,21 @@
 -- =============================================================================
 -- 047_revoke_unused_table_rights.sql
 --
--- HELD, NOT APPLIED. Per CLAUDE.md's own "a migration file enters
+-- DATED CORRECTION (2026-09-16): APPLIED TO TEST-DB ONLY
+-- (exfccwlrhoutkgrlikod). External review verdict GO, folds 1-5 folded in
+-- (docs/reviews/047-review-package.md). Applied, DOWN-rehearsed (full
+-- diff against pre-state, empty apart from the per-query boundary
+-- token), and re-applied -- verified by observation via pg_class.relacl
+-- throughout, never information_schema. NOT applied to prod. Full
+-- sequence: docs/reviews/047-test-db-apply-record.md.
+--
+-- ~~HELD, NOT APPLIED.~~ Per CLAUDE.md's own "a migration file enters
 -- supabase/migrations/ when it is being applied, not when it is written"
--- rule, this file stays in docs/reviews/ until an apply actually happens.
--- Per Aravind's explicit instruction (D6): external review -> test-db ->
--- CI -> merge -> PITR -> prod. This pass writes the migration and its
--- review package (docs/reviews/047-review-package.md) only -- no apply to
--- any database, test-db included.
+-- rule, ~~this file stays in docs/reviews/ until an apply actually
+-- happens.~~ Per Aravind's explicit instruction (D6): external review ->
+-- test-db -> CI -> merge -> PITR -> prod. ~~This pass writes the
+-- migration and its review package (docs/reviews/047-review-package.md)
+-- only -- no apply to any database, test-db included.~~
 --
 -- TRIPS CLAUDE.md's own external review gate on condition (b): grants and
 -- RLS policy changes on existing objects.

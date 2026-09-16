@@ -617,3 +617,62 @@ surfaced it clearly enough to record.
    by default; every migration since 020 revokes this by hand. Changing
    the default is out of 047's scope but named here as the natural next
    piece of the same "unused default privilege" family.
+
+## Fold 1 capture — no non-SECURITY-DEFINER function contains DELETE
+
+```sql
+SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS args
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public'
+  AND p.prosecdef = false
+  AND p.prosrc ILIKE '%DELETE%';
+```
+**0 rows** on test-db, confirmed live before the apply (2026-09-16 — see
+`docs/reviews/047-test-db-apply-record.md` §1 for the full transcript).
+
+**SECURITY DEFINER functions' internal DELETEs run as owner and are
+unaffected by 047.** The REVOKE/DROP POLICY statements in this migration
+remove `anon`/`authenticated`'s own table-level privileges and RLS
+policies — they do not, and cannot, touch what a `SECURITY DEFINER`
+function does internally once called, because such a function executes
+with the privileges of its *owner* (`postgres`), not its caller. Any
+function in `public` that legitimately performs a `DELETE` as part of its
+own logic (none currently do, per the fold-1 capture above, but this is
+the reason a future one safely could) is unaffected by this migration
+either way.
+
+## External review 2026-09-16: GO, folds 1-5
+
+External reviewer verdict: **GO**. Five folds required before/alongside
+apply, each listed with where it is handled:
+
+1. **Fold 1** — confirm no non-`SECURITY DEFINER` function in `public`
+   contains `DELETE` in its body (a function bypassing the RLS/grant
+   removal via caller-privilege execution would be a real gap). **0
+   rows**, confirmed live before the test-db apply. Handled: this
+   section above; full transcript `docs/reviews/047-test-db-apply-
+   record.md` §1.
+2. **Fold 2** — extend the project's standing post-apply verification
+   template with an `aclexplode`-based rights assertion (expect 0 rows
+   for `anon`/`authenticated` on DELETE/TRUNCATE/TRIGGER/REFERENCES/
+   MAINTAIN in `public`), so future migrations re-check this invariant by
+   default rather than relying on 047 being remembered as a one-off. The
+   template DOES already exist — `docs/migration-runbook-template.md`,
+   Step D ("Post-apply probes"). Handled: that step now carries a new
+   "STANDING CHECK, ANY MIGRATION THAT TOUCHES TABLE GRANTS" paragraph
+   with the exact query, added in this same round.
+3. **Fold 3** — the DOWN block must be rehearsed for real, not merely
+   written, with a full before/after diff proving restoration. Handled:
+   `docs/reviews/047-test-db-apply-record.md` §4 (DOWN rehearsal, all
+   three pre-state captures re-diffed, empty apart from the named
+   per-query boundary token).
+4. **Fold 4** — pin the CI run URL for the post-apply SHA once it exists.
+   Handled: `docs/reviews/047-test-db-apply-record.md`'s own "Fold 4"
+   section — placeholder recorded, to be pinned by Aravind once CI has
+   run against the pushed commit.
+5. **Fold 5** — record the function-EXECUTE-default gap (open question
+   #4 above) as an explicit backlog item, naming the released migration
+   number 048 as available for reuse when that future migration is
+   built. Handled: `docs/build-status.md`'s own backlog line, added
+   alongside this apply.
