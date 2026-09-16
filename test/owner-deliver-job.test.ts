@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { testClient, TEST_TENANT_ID, ensureMorningFixtures, removeMorningFixtures, testEngineerId, testPhone } from './helpers/db'
 import { handleOwnerDeliverJob } from '@/lib/dpr/owner-deliver-dispatch'
 import { OWNER_NO_REPORT_TEMPLATE_SID } from '@/lib/dpr/owner-no-report'
@@ -7,6 +8,47 @@ import { PHOTO_BUCKET } from '@/lib/storage/photo-access'
 import type { EngineerDprFacts } from '@/lib/dpr/schema'
 import type { SendEmailResult } from '@/lib/email/send'
 import type { SendTemplateResult } from '@/lib/whatsapp/outbound/send'
+
+// F1/F2 (2026-09-16): same @sentry/nextjs mocking convention as
+// test/unit/project-manager.test.ts and test/dpr-photo-selection.test.ts
+// (vi.hoisted + importOriginal, only capture* replaced) -- named-export
+// mutation under ESM requires this shape, vi.spyOn cannot redefine it.
+const { captureMessageMock } = vi.hoisted(() => ({ captureMessageMock: vi.fn() }))
+vi.mock('@sentry/nextjs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sentry/nextjs')>()
+  return { ...actual, captureMessage: captureMessageMock }
+})
+
+// F1 -- same monkey-patch-the-shared-client spy as test/dpr-photo-
+// selection.test.ts's own withDownloadSpy; duplicated rather than shared
+// because these two files deliberately test at different layers
+// (selectDprPhotos directly vs. the full handleOwnerDeliverJob pipeline)
+// and neither imports the other's helpers.
+function withDownloadSpy(db: SupabaseClient) {
+  let calls = 0
+  const originalFrom = db.storage.from.bind(db.storage)
+  db.storage.from = ((bucket: string) => {
+    const api = originalFrom(bucket)
+    const originalDownload = api.download.bind(api)
+    api.download = ((...args: Parameters<typeof api.download>) => {
+      calls++
+      return originalDownload(...args)
+    }) as typeof api.download
+    return api
+  }) as typeof db.storage.from
+  return {
+    getCalls: () => calls,
+    restore: () => {
+      db.storage.from = originalFrom
+    },
+  }
+}
+
+async function breakPhoto(objectPath: string): Promise<void> {
+  const db = testClient()
+  const { error } = await db.storage.from(PHOTO_BUCKET).remove([objectPath])
+  if (error) throw new Error(`breakPhoto failed: ${error.message}`)
+}
 
 // Integration tests for handleOwnerDeliverJob against REAL test-db (this
 // project's own standing practice) -- ONLY the two send functions are
@@ -299,6 +341,10 @@ afterAll(async () => {
     await testClient().storage.from(PHOTO_BUCKET).remove(uploadedTestPhotoPaths)
   }
   await removeMorningFixtures()
+})
+
+beforeEach(() => {
+  captureMessageMock.mockClear()
 })
 
 describe('handleOwnerDeliverJob', () => {
@@ -790,4 +836,182 @@ describe('handleOwnerDeliverJob', () => {
       await cleanupProject(projectId)
     }
   })
+
+  // --- F1/F2, whole-pipeline coverage (Aravind, 2026-09-16) -------------
+
+  it('STAGE 4 (F1): evening_photos_status="pending", not forced -> ZERO Storage download calls, job throws for retry', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: OWNER_PHONE, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'photos-pending-zero-dl')
+    const logDate = '2026-09-26'
+    const spy = withDownloadSpy(db)
+    try {
+      await addToProject(projectId, engineerId)
+      await seedDailyLog(projectId, engineerId, logDate, true)
+      const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
+      // A real photo row exists -- if the readiness-before-download gate
+      // didn't hold, this would be downloaded.
+      await seedEveningPhoto(dailyLogId)
+      await setEveningPhotosStatus(dailyLogId, 'pending')
+      await seedDprRow(projectId, engineerId, logDate, 'pending', true)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_should_not_be_used' })
+      await expect(
+        handleOwnerDeliverJob({ project_id: projectId, log_date: logDate }, { supabaseClient: db, sendEmailFn: email.fn }),
+      ).rejects.toThrow(/photos still uploading/)
+      expect(email.calls).toHaveLength(0)
+      expect(spy.getCalls()).toBe(0)
+    } finally {
+      spy.restore()
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('STAGE 4 (F1): pending + forced -> downloads happen, email sent', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: OWNER_PHONE, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'photos-pending-forced-dl')
+    const logDate = '2026-09-27'
+    const spy = withDownloadSpy(db)
+    try {
+      await addToProject(projectId, engineerId)
+      await seedDailyLog(projectId, engineerId, logDate, true)
+      const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
+      await seedEveningPhoto(dailyLogId)
+      await setEveningPhotosStatus(dailyLogId, 'pending')
+      await seedDprRow(projectId, engineerId, logDate, 'pending', true)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_forced_dl1' })
+      const result = await handleOwnerDeliverJob(
+        { project_id: projectId, log_date: logDate },
+        { supabaseClient: db, sendEmailFn: email.fn, forceSendWithoutPhotos: true },
+      )
+
+      expect(result.reportSent).toBe(1)
+      expect(email.calls).toHaveLength(1)
+      expect(spy.getCalls()).toBeGreaterThan(0)
+    } finally {
+      spy.restore()
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('STAGE 4 (F2): one broken photo among valid ones -> email sent, broken skipped, overflow counts it, Sentry called with the fingerprint', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: OWNER_PHONE, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'photos-one-broken')
+    const logDate = '2026-09-28'
+    try {
+      await addToProject(projectId, engineerId)
+      await seedDailyLog(projectId, engineerId, logDate, true)
+      const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
+      await setEveningPhotosStatus(dailyLogId, 'complete')
+      const brokenPath = await seedEveningPhoto(dailyLogId)
+      const validPath = await seedEveningPhoto(dailyLogId)
+      await breakPhoto(brokenPath)
+      const dprId = await seedDprRow(projectId, engineerId, logDate, 'pending', true)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_one_broken1' })
+      const result = await handleOwnerDeliverJob({ project_id: projectId, log_date: logDate }, { supabaseClient: db, sendEmailFn: email.fn })
+
+      expect(result.reportSent).toBe(1)
+      expect(email.calls).toHaveLength(1)
+      const call = email.calls[0] as { attachments?: { filename: string }[]; text: string; html: string }
+      expect(call.attachments).toHaveLength(1)
+      expect(call.attachments![0]!.filename).toBe(validPath.split('/').pop())
+      expect(call.text).toContain('1 more photo(s) from today were not attached.')
+      expect(call.html).toContain('1 more photo(s) from today were not attached.')
+
+      expect(captureMessageMock).toHaveBeenCalledTimes(1)
+      const [message, options] = captureMessageMock.mock.calls[0]
+      expect(message).toBe('dpr-photo-attach: download failed')
+      expect(options.fingerprint).toEqual(['dpr-photo-attach', 'download_failed', brokenPath])
+      expect(options.tags).toEqual({ feature: 'owner-deliver' })
+
+      const row = await readDpr(dprId)
+      expect(row.delivery_status).toBe('delivered')
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('STAGE 4 (F2): forced send where EVERY photo fails -> email still sent, no attachments, overflow shows the full count', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: OWNER_PHONE, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'photos-all-broken-forced')
+    const logDate = '2026-09-29'
+    try {
+      await addToProject(projectId, engineerId)
+      await seedDailyLog(projectId, engineerId, logDate, true)
+      const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
+      const brokenPathA = await seedEveningPhoto(dailyLogId)
+      const brokenPathB = await seedEveningPhoto(dailyLogId)
+      await breakPhoto(brokenPathA)
+      await breakPhoto(brokenPathB)
+      // Still pending overall -- forced, same shape as the existing
+      // forceSendWithoutPhotos test above, but every candidate also fails
+      // its download once selection proceeds.
+      await setEveningPhotosStatus(dailyLogId, 'pending')
+      const dprId = await seedDprRow(projectId, engineerId, logDate, 'pending', true)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_all_broken_forced1' })
+      const result = await handleOwnerDeliverJob(
+        { project_id: projectId, log_date: logDate },
+        { supabaseClient: db, sendEmailFn: email.fn, forceSendWithoutPhotos: true },
+      )
+
+      expect(result.reportSent).toBe(1)
+      expect(email.calls).toHaveLength(1)
+      const call = email.calls[0] as { attachments?: { filename: string }[]; text: string; html: string }
+      expect(call.attachments).toBeUndefined()
+      expect(call.text).toContain('2 more photo(s) from today were not attached.')
+      expect(call.html).toContain('2 more photo(s) from today were not attached.')
+      expect(captureMessageMock).toHaveBeenCalledTimes(2)
+
+      const row = await readDpr(dprId)
+      expect(row.delivery_status).toBe('delivered')
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('STAGE 4 (F2): a failed photo does not consume the 10-photo cap -- the next valid photo is attached', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: OWNER_PHONE, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'photos-broken-cap')
+    const logDate = '2026-09-30'
+    try {
+      await addToProject(projectId, engineerId)
+      await seedDailyLog(projectId, engineerId, logDate, true)
+      const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
+      await setEveningPhotosStatus(dailyLogId, 'complete')
+      const brokenPath = await seedEveningPhoto(dailyLogId)
+      await breakPhoto(brokenPath)
+      const validPaths: string[] = []
+      for (let i = 0; i < 10; i++) {
+        validPaths.push(await seedEveningPhoto(dailyLogId))
+      }
+      const dprId = await seedDprRow(projectId, engineerId, logDate, 'pending', true)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_broken_cap1' })
+      const result = await handleOwnerDeliverJob({ project_id: projectId, log_date: logDate }, { supabaseClient: db, sendEmailFn: email.fn })
+
+      expect(result.reportSent).toBe(1)
+      const call = email.calls[0] as { attachments?: { filename: string }[]; text: string }
+      expect(call.attachments).toHaveLength(10)
+      expect(call.attachments!.map((a) => a.filename)).toEqual(validPaths.map((p) => p.split('/').pop()))
+      expect(call.text).toContain('1 more photo(s) from today were not attached.')
+      expect(captureMessageMock).toHaveBeenCalledTimes(1)
+
+      const row = await readDpr(dprId)
+      expect(row.delivery_status).toBe('delivered')
+    } finally {
+      await cleanupProject(projectId)
+    }
+  }, 30000)
 })

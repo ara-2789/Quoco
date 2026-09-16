@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import { PHOTO_BUCKET } from '@/lib/storage/photo-access'
@@ -55,6 +56,26 @@ import type { EmailAttachment } from '@/lib/email/send'
 // tried before hindrance candidates (S2's own ordering), so overflow always
 // falls on hindrance photos first once evening photos alone are already at
 // a cap boundary.
+//
+// F1 -- READINESS BEFORE DOWNLOAD (Aravind, 2026-09-16). Readiness
+// (daily_logs.evening_photos_status, hindrances.photos_status) is
+// determined FIRST, from status columns alone -- no candidate-row query,
+// no Storage download. When options.requireReady is true and photos are
+// not ready, this function returns immediately (photosReady=false, no
+// attachments) having made NO Storage download calls at all. The caller
+// (owner-deliver-dispatch.ts) still owns the throw-for-retry decision --
+// this function only refuses to touch Storage early, it has no opinion on
+// what the caller does with photosReady=false.
+//
+// F2 -- FAILED DOWNLOAD = SKIP + ALERT, NEVER BLOCK (Aravind, 2026-09-16).
+// A download error for one candidate photo does not throw and does not
+// stop the loop -- it is skipped, a Sentry error is raised (fingerprinted,
+// never the bytes), and the loop continues with the next candidate. A
+// failed photo consumes neither the count cap nor the byte cap (it never
+// reaches the cap checks below at all), and is counted in overflowCount
+// via the existing eligible-minus-attached definition -- no separate
+// failure counter needed. Applies identically whether the send is forced
+// or not.
 
 export const MAX_ATTACHMENTS = 10
 export const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024 // 15 MB, wire (base64) bytes
@@ -66,23 +87,35 @@ export interface SelectDprPhotosParams {
   logDate: string
 }
 
+export interface SelectDprPhotosOptions {
+  /**
+   * F1. When true and photos are not ready (see SelectDprPhotosResult.
+   * photosReady's own comment for the exact readiness definition), this
+   * function returns immediately -- photosReady=false, attachments=[],
+   * eligibleCount=0, attachedCount=0, overflowCount=0 -- without querying
+   * a single candidate-photo row or making a single Storage download call.
+   * owner-deliver-dispatch.ts passes `requireReady: !forceSendWithoutPhotos`.
+   */
+  requireReady: boolean
+}
+
 export interface SelectDprPhotosResult {
   attachments: EmailAttachment[]
   eligibleCount: number
   attachedCount: number
-  /** eligible - attached, per S3's own definition. */
+  /** eligible - attached, per S3's own definition. Also covers F2 failures. */
   overflowCount: number
   /**
-   * S5 readiness gate. false when daily_logs.evening_photos_status is
+   * F1/S5 readiness gate. false when daily_logs.evening_photos_status is
    * 'pending' for this (project, engineer, log_date), OR any matching
    * hindrances.photos_status (report_date = log_date) is 'pending'.
-   * PURELY INFORMATIONAL -- this function always selects and attaches
-   * whatever photo_url rows exist right now, regardless of this flag.
-   * The caller (owner-deliver-dispatch.ts) decides whether to throw for a
-   * job retry (photosReady === false, not yet forced) or proceed anyway
-   * (photosReady === true, or the caller has exhausted retries and is
-   * forcing a send) -- this function has no opinion on that decision, it
-   * only reports the fact.
+   * When options.requireReady is false, this function still selects and
+   * attaches whatever photo_url rows exist right now regardless of this
+   * flag -- the caller (owner-deliver-dispatch.ts) decides whether to
+   * throw for a job retry (photosReady === false, not yet forced) or
+   * proceed anyway (photosReady === true, or the caller is forcing a
+   * send) -- this function has no opinion on that decision beyond F1's own
+   * early-return short-circuit, it only reports the fact.
    */
   photosReady: boolean
 }
@@ -100,14 +133,23 @@ async function fetchAttachment(client: SupabaseClient, photoUrl: string): Promis
   return { content: bytes.toString('base64'), contentType: blob.type || undefined }
 }
 
+const EMPTY_NOT_READY_RESULT: SelectDprPhotosResult = {
+  attachments: [],
+  eligibleCount: 0,
+  attachedCount: 0,
+  overflowCount: 0,
+  photosReady: false,
+}
+
 export async function selectDprPhotos(
   params: SelectDprPhotosParams,
+  options: SelectDprPhotosOptions,
   client?: SupabaseClient,
 ): Promise<SelectDprPhotosResult> {
   const supabase = client ?? createServiceClient()
   const { tenantId, projectId, engineerId, logDate } = params
 
-  // --- S2a: evening photos, via the one daily_logs row for this key. ---
+  // --- F1: readiness first -- status columns only, no candidate rows. ---
   const { data: dailyLog, error: dailyLogError } = await supabase
     .from('daily_logs')
     .select('id, evening_photos_status')
@@ -117,12 +159,29 @@ export async function selectDprPhotos(
     .eq('log_date', logDate)
     .maybeSingle<{ id: string; evening_photos_status: 'pending' | 'complete' | 'failed' | null }>()
   if (dailyLogError) throw dailyLogError
+  const eveningPending = dailyLog?.evening_photos_status === 'pending'
 
+  const { data: hindranceRows, error: hindranceError } = await supabase
+    .from('hindrances')
+    .select('id, photos_status')
+    .eq('tenant_id', tenantId)
+    .eq('project_id', projectId)
+    .eq('reported_by', engineerId)
+    .eq('report_date', logDate)
+  if (hindranceError) throw hindranceError
+
+  const hindranceRowsTyped = (hindranceRows ?? []) as { id: string; photos_status: 'pending' | 'complete' | 'failed' | null }[]
+  const anyHindrancePending = hindranceRowsTyped.some((r) => r.photos_status === 'pending')
+
+  const photosReady = !eveningPending && !anyHindrancePending
+
+  if (options.requireReady && !photosReady) {
+    return EMPTY_NOT_READY_RESULT
+  }
+
+  // --- S2a: evening photos, via the one daily_logs row for this key. ---
   const eveningCandidates: PhotoCandidate[] = []
-  let eveningPending = false
   if (dailyLog) {
-    eveningPending = dailyLog.evening_photos_status === 'pending'
-
     const { data: eveningPhotos, error: eveningError } = await supabase
       .from('daily_log_photos')
       .select('photo_url')
@@ -138,19 +197,7 @@ export async function selectDprPhotos(
   }
 
   // --- S2b: hindrance photos, via every hindrance matching this key. ---
-  const { data: hindranceRows, error: hindranceError } = await supabase
-    .from('hindrances')
-    .select('id, photos_status')
-    .eq('tenant_id', tenantId)
-    .eq('project_id', projectId)
-    .eq('reported_by', engineerId)
-    .eq('report_date', logDate)
-  if (hindranceError) throw hindranceError
-
-  const hindranceRowsTyped = (hindranceRows ?? []) as { id: string; photos_status: 'pending' | 'complete' | 'failed' | null }[]
   const hindranceIds = hindranceRowsTyped.map((r) => r.id)
-  const anyHindrancePending = hindranceRowsTyped.some((r) => r.photos_status === 'pending')
-
   const hindranceCandidates: PhotoCandidate[] = []
   if (hindranceIds.length > 0) {
     const { data: hindrancePhotos, error: hpError } = await supabase
@@ -173,7 +220,29 @@ export async function selectDprPhotos(
   let totalBytes = 0
   for (const candidate of eligible) {
     if (attachments.length >= MAX_ATTACHMENTS) break
-    const { content, contentType } = await fetchAttachment(supabase, candidate.photoUrl)
+
+    let fetched: { content: string; contentType?: string }
+    try {
+      fetched = await fetchAttachment(supabase, candidate.photoUrl)
+    } catch (err) {
+      // F2 -- skip + alert, never block. Never throw; never log the bytes.
+      Sentry.captureMessage('dpr-photo-attach: download failed', {
+        level: 'error',
+        fingerprint: ['dpr-photo-attach', 'download_failed', candidate.photoUrl],
+        tags: { feature: 'owner-deliver' },
+        extra: {
+          photoUrl: candidate.photoUrl,
+          tenantId,
+          projectId,
+          engineerId,
+          logDate,
+          errorMessage: err instanceof Error ? err.message : String(err),
+        },
+      })
+      continue
+    }
+
+    const { content, contentType } = fetched
     const attachmentBytes = Buffer.byteLength(content, 'utf8')
     if (totalBytes + attachmentBytes > MAX_ATTACHMENT_BYTES) break
     const filename = candidate.photoUrl.split('/').pop() ?? 'photo.jpg'
@@ -186,16 +255,15 @@ export async function selectDprPhotos(
     eligibleCount: eligible.length,
     attachedCount: attachments.length,
     overflowCount: eligible.length - attachments.length,
-    photosReady: !eveningPending && !anyHindrancePending,
+    photosReady,
   }
 }
 
-// S4 -- overflow line. PROPOSED COPY (Aravind's own exact wording, given
-// verbatim in this feature's own task -- shown in this feature's own PR
-// for approval, not yet confirmed). Tamil pair is owed and NOT approved --
-// do not invent one. Rendered only when overflowCount > 0 (owner-deliver-
-// dispatch.ts's own call site); no link of any kind, per S4's own explicit
-// instruction -- the template below has none.
+// S4 -- overflow line. Aravind's own exact wording, APPROVED 2026-09-16.
+// Tamil pair is owed and NOT approved -- do not invent one. Rendered only
+// when overflowCount > 0 (owner-deliver-dispatch.ts's own call site); no
+// link of any kind, per S4's own explicit instruction -- the template
+// below has none.
 export function buildDprPhotoOverflowLine(overflowCount: number): string {
   return `${overflowCount} more photo(s) from today were not attached.`
 }

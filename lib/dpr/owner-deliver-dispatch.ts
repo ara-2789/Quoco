@@ -184,6 +184,13 @@ import { selectDprPhotos, buildDprPhotoOverflowLine } from './select-photos'
 // readiness-gate-then-retry decision (S5) and threading the result into
 // the email. lib/storage/photo-access.ts and lib/dpr/assemble.ts are
 // neither used nor changed (S7).
+//
+// F1, ADDED 2026-09-16 (Aravind): `requireReady: !forceSendWithoutPhotos`
+// is passed into selectDprPhotos on every call below -- select-photos.ts
+// itself now refuses to make a single Storage download call when photos
+// are pending and the send isn't forced (its own early-return). The throw
+// below still happens exactly as before; select-photos.ts has no opinion
+// on retry, only on whether it's allowed to touch Storage yet.
 
 export interface OwnerDeliverJobPayload {
   project_id: string
@@ -438,6 +445,7 @@ export async function handleOwnerDeliverJob(
         // re-attempts rows still eligible, including this one.
         const photoSelection = await selectDprPhotos(
           { tenantId: project.tenant_id as string, projectId: payload.project_id, engineerId: row.engineer_id, logDate: payload.log_date },
+          { requireReady: !deps.forceSendWithoutPhotos },
           client,
         )
         if (!photoSelection.photosReady && !deps.forceSendWithoutPhotos) {

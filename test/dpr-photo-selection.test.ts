@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { PHOTO_BUCKET } from '@/lib/storage/photo-access'
 import { selectDprPhotos, buildDprPhotoOverflowLine, MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '@/lib/dpr/select-photos'
 import {
@@ -20,6 +21,47 @@ import { getRunId, deriveRunScopedUuid } from './helpers/run-scoped-fixtures'
 // one consumer over). Kept in its own file, separate from test/
 // owner-deliver-job.test.ts, because selectDprPhotos is deliberately one
 // small, independently-testable function (Aravind's own instruction).
+//
+// F1/F2 (2026-09-16): same @sentry/nextjs mocking convention as
+// test/unit/project-manager.test.ts (vi.hoisted + importOriginal, only
+// capture* replaced) -- named-export mutation under ESM requires this
+// shape, vi.spyOn cannot redefine it. Real test-db/Storage calls are
+// otherwise untouched by this mock.
+const { captureMessageMock } = vi.hoisted(() => ({ captureMessageMock: vi.fn() }))
+vi.mock('@sentry/nextjs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sentry/nextjs')>()
+  return { ...actual, captureMessage: captureMessageMock }
+})
+
+beforeEach(() => {
+  captureMessageMock.mockClear()
+})
+
+// F1 -- proves "no Storage download call" directly rather than only
+// inferring it from an empty result: monkey-patches the real (cached,
+// shared) testClient()'s own storage.from() to count download() calls,
+// restored in a `finally` immediately after the one test that uses it, so
+// no other test in this file (or a concurrently-running one, if any) sees
+// the wrapped client for longer than that single await.
+function withDownloadSpy(db: SupabaseClient) {
+  let calls = 0
+  const originalFrom = db.storage.from.bind(db.storage)
+  db.storage.from = ((bucket: string) => {
+    const api = originalFrom(bucket)
+    const originalDownload = api.download.bind(api)
+    api.download = ((...args: Parameters<typeof api.download>) => {
+      calls++
+      return originalDownload(...args)
+    }) as typeof api.download
+    return api
+  }) as typeof db.storage.from
+  return {
+    getCalls: () => calls,
+    restore: () => {
+      db.storage.from = originalFrom
+    },
+  }
+}
 
 const SIBLING_PROJECT_ID = deriveRunScopedUuid(getRunId(), 'ZZ_DPR_PHOTO_SIBLING_PROJECT')
 const LOG_DATE = '2026-09-20'
@@ -140,6 +182,18 @@ async function seedHindrancePhoto(hindranceId: string, tenantId: string, sizeByt
   return objectPath
 }
 
+// F2 fixture helper -- the daily_log_photos/hindrance_photos row keeps
+// pointing at objectPath (a real, already-inserted row), but the
+// underlying Storage object is gone, so a real download attempt fails
+// exactly the way an orphaned/corrupted upload would. Removing an
+// already-broken path a second time in afterAll's cleanup is harmless
+// (Supabase Storage's remove() is a no-op for a missing object).
+async function breakPhoto(objectPath: string): Promise<void> {
+  const db = testClient()
+  const { error } = await db.storage.from(PHOTO_BUCKET).remove([objectPath])
+  if (error) throw new Error(`breakPhoto failed: ${error.message}`)
+}
+
 describe('selectDprPhotos', () => {
   it('cross-project isolation (SAME tenant): a sibling project with evening + hindrance photos on the same date contributes nothing', async () => {
     const logDate = LOG_DATE
@@ -148,7 +202,7 @@ describe('selectDprPhotos', () => {
     const siblingHindrance = await seedHindrance(TEST_TENANT_A_ID, SIBLING_PROJECT_ID, engineerAId, `${logDate}T10:00:00+05:30`)
     await seedHindrancePhoto(siblingHindrance, TEST_TENANT_A_ID)
 
-    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, testClient())
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
     expect(result.eligibleCount).toBe(0)
     expect(result.attachments).toHaveLength(0)
@@ -161,7 +215,7 @@ describe('selectDprPhotos', () => {
     const otherTenantHindrance = await seedHindrance(TEST_TENANT_B_ID, TEST_PROJECT_B_ID, engineerBId, `${logDate}T10:00:00+05:30`)
     await seedHindrancePhoto(otherTenantHindrance, TEST_TENANT_B_ID)
 
-    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, testClient())
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
     expect(result.eligibleCount).toBe(0)
     expect(result.attachments).toHaveLength(0)
@@ -173,7 +227,7 @@ describe('selectDprPhotos', () => {
     await seedMorningPhoto(dailyLog, TEST_TENANT_A_ID)
     await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
 
-    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, testClient())
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
     expect(result.eligibleCount).toBe(1)
     expect(result.attachedCount).toBe(1)
@@ -186,7 +240,7 @@ describe('selectDprPhotos', () => {
     const hindrance = await seedHindrance(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, `${logDate}T10:00:00+05:30`)
     const hindrancePath = await seedHindrancePhoto(hindrance, TEST_TENANT_A_ID)
 
-    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, testClient())
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
     expect(result.attachedCount).toBe(2)
     expect(result.attachments[0]!.filename).toBe(eveningPath.split('/').pop())
@@ -200,7 +254,7 @@ describe('selectDprPhotos', () => {
       await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
     }
 
-    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, testClient())
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
     expect(result.eligibleCount).toBe(12)
     expect(result.attachedCount).toBe(MAX_ATTACHMENTS)
@@ -215,7 +269,7 @@ describe('selectDprPhotos', () => {
     await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID, EIGHT_MB)
     await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID, EIGHT_MB)
 
-    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, testClient())
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
     expect(result.eligibleCount).toBe(2)
     expect(result.attachedCount).toBe(1)
@@ -229,7 +283,7 @@ describe('selectDprPhotos', () => {
     const laterDayHindrance = await seedHindrance(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, '2026-09-26T10:00:00+05:30')
     await seedHindrancePhoto(laterDayHindrance, TEST_TENANT_A_ID)
 
-    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, testClient())
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
     expect(result.eligibleCount).toBe(0)
   })
@@ -238,7 +292,7 @@ describe('selectDprPhotos', () => {
     const logDate = '2026-09-27'
     await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate, 'pending')
 
-    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, testClient())
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
     expect(result.photosReady).toBe(false)
   })
@@ -248,7 +302,7 @@ describe('selectDprPhotos', () => {
     await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate, 'complete')
     await seedHindrance(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, `${logDate}T10:00:00+05:30`, 'pending')
 
-    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, testClient())
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
     expect(result.photosReady).toBe(false)
   })
@@ -258,9 +312,124 @@ describe('selectDprPhotos', () => {
     await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate, 'complete')
     await seedHindrance(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, `${logDate}T10:00:00+05:30`, 'complete')
 
-    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, testClient())
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
     expect(result.photosReady).toBe(true)
+  })
+
+  // --- F1: readiness before download (Aravind, 2026-09-16) -------------
+
+  it('F1: requireReady=true + evening_photos_status="pending" -> returns immediately, ZERO Storage download calls', async () => {
+    const logDate = '2026-09-30'
+    const dailyLog = await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate, 'pending')
+    // A real photo row exists -- if the gate didn't hold, this would be
+    // downloaded. Its presence is what makes "zero download calls" a real
+    // assertion rather than a vacuous one.
+    await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
+
+    const db = testClient()
+    const spy = withDownloadSpy(db)
+    try {
+      const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: true }, db)
+
+      expect(result.photosReady).toBe(false)
+      expect(result.attachments).toHaveLength(0)
+      expect(result.eligibleCount).toBe(0)
+      expect(result.attachedCount).toBe(0)
+      expect(result.overflowCount).toBe(0)
+      expect(spy.getCalls()).toBe(0)
+    } finally {
+      spy.restore()
+    }
+  })
+
+  it('F1: requireReady=true + ready -> proceeds and downloads normally', async () => {
+    const logDate = '2026-10-01'
+    const dailyLog = await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate, 'complete')
+    const eveningPath = await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
+
+    const db = testClient()
+    const spy = withDownloadSpy(db)
+    try {
+      const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: true }, db)
+
+      expect(result.photosReady).toBe(true)
+      expect(result.attachedCount).toBe(1)
+      expect(result.attachments[0]!.filename).toBe(eveningPath.split('/').pop())
+      expect(spy.getCalls()).toBe(1)
+    } finally {
+      spy.restore()
+    }
+  })
+
+  // --- F2: failed download = skip + alert, never block (Aravind, 2026-09-16) ---
+
+  it('F2: one broken photo among valid ones is skipped, alerted via Sentry with the exact fingerprint, and does not block the rest', async () => {
+    const logDate = '2026-10-02'
+    const dailyLog = await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate, 'complete')
+    const brokenPath = await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
+    const validPath = await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
+    await breakPhoto(brokenPath)
+
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
+
+    expect(result.eligibleCount).toBe(2)
+    expect(result.attachedCount).toBe(1)
+    expect(result.attachments[0]!.filename).toBe(validPath.split('/').pop())
+    expect(result.overflowCount).toBe(1)
+
+    expect(captureMessageMock).toHaveBeenCalledTimes(1)
+    const [message, options] = captureMessageMock.mock.calls[0]
+    expect(message).toBe('dpr-photo-attach: download failed')
+    expect(options.level).toBe('error')
+    expect(options.fingerprint).toEqual(['dpr-photo-attach', 'download_failed', brokenPath])
+    expect(options.tags).toEqual({ feature: 'owner-deliver' })
+    expect(options.extra).toMatchObject({
+      photoUrl: brokenPath,
+      tenantId: TEST_TENANT_A_ID,
+      projectId: TEST_PROJECT_A_ID,
+      engineerId: engineerAId,
+      logDate,
+    })
+    expect(options.extra).toHaveProperty('errorMessage')
+    expect(JSON.stringify(options.extra)).not.toContain('base64')
+    expect(Object.keys(options.extra)).not.toContain('content')
+  })
+
+  it('F2: a failed photo does not consume the 10-photo cap -- the next valid photo is attached', async () => {
+    const logDate = '2026-10-03'
+    const dailyLog = await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate, 'complete')
+    const brokenPath = await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
+    await breakPhoto(brokenPath)
+    const validPaths: string[] = []
+    for (let i = 0; i < 10; i++) {
+      validPaths.push(await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID))
+    }
+
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
+
+    expect(result.eligibleCount).toBe(11)
+    expect(result.attachedCount).toBe(10)
+    expect(result.attachments.map((a) => a.filename)).toEqual(validPaths.map((p) => p.split('/').pop()))
+    expect(result.overflowCount).toBe(1)
+    expect(captureMessageMock).toHaveBeenCalledTimes(1)
+  }, 30000)
+
+  it('F2: forced send where EVERY photo fails -> attachments empty, overflow = full eligible count', async () => {
+    const logDate = '2026-10-04'
+    const dailyLog = await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate, 'complete')
+    const brokenPathA = await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
+    const brokenPathB = await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
+    await breakPhoto(brokenPathA)
+    await breakPhoto(brokenPathB)
+
+    const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
+
+    expect(result.eligibleCount).toBe(2)
+    expect(result.attachments).toHaveLength(0)
+    expect(result.attachedCount).toBe(0)
+    expect(result.overflowCount).toBe(2)
+    expect(captureMessageMock).toHaveBeenCalledTimes(2)
   })
 })
 
