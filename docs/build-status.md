@@ -363,7 +363,7 @@ consuming parsed data (DPR generation, dashboard, the §6 efficiency calculation
 MUST assume no confidence signal exists and treat every parsed value as equally
 trusted, because that is the current reality. Do not design a consumer that reads
 a confidence field expecting it to be populated. Origin + full reasoning:
-docs/design-decisions-beta-feedback.md §9 (evening Q4 v1 scope), where this was
+docs/design-decisions/check-in-flow-decisions.md §9 (evening Q4 v1 scope), where this was
 first written down before being promoted here as cross-cutting debt.
 
 HIGH-1 (users_update self-privilege-escalation) — CLOSED by migration 015,
@@ -388,7 +388,7 @@ daily hire RATE, never a count, by design ("the field gives rates ('JCB
 1500'), not counts" — equipment.ts:50-54). A terse answer that leads with a
 count rather than a rate ("2 mixers", "1 JCB") lands that count directly in a
 field two future consumers will read as money:
-  * design-decisions-beta-feedback.md §6 — "Machinery wastage ₹ = idle hours
+  * design-decisions/parsing-and-data-capture.md §6 — "Machinery wastage ₹ = idle hours
     × hire rate," a weekly-review costing calculation.
   * bot-flows.md's DPR generation job — "Idle cost per machine = daily_hire_
     cost × (1 − actual_hours/available_hours)," computed IN CODE and injected
@@ -959,7 +959,7 @@ complete pre/post-apply evidence).
   (022-review-package.md §10) — nothing on prod can reach evening's RPC via
   the real webhook until a cron or the webhook itself is wired to call it,
   which 022 does not do. Restart-semantics decision also stays OPEN
-  (design-decisions-beta-feedback.md §10, DECIDE-BEFORE-CRON-PR) — whoever
+  (design-decisions/check-in-flow-decisions.md §10, DECIDE-BEFORE-CRON-PR) — whoever
   builds that wiring inherits both.
 
 019's CORRECTABLE-COLUMN SET DOESN'T COVER WHAT IT NEEDS TO — TWO INSTANCES
@@ -1326,7 +1326,7 @@ workstream is not a feature on the roadmap; it is the precondition for the produ
 functioning at all" (above) remains true for the scheduled-send half; it is no longer
 true for the reply-only half, which now functions for any engineer willing to message
 first.
-  FURTHER DATED UPDATE (2026-08-20, PP2, design-decisions-beta-feedback.md §27): the
+  FURTHER DATED UPDATE (2026-08-20, PP2, design-decisions/check-in-architecture-and-triggers.md §27): the
   paragraph above is still an accurate description of what runs today, but "closed for
   the reply-only half" is not the permanent state — PP2 decides check-ins are
   cron-triggered, never inbound-triggered, and names `routeInboundMessage`'s
@@ -1590,7 +1590,7 @@ mis-citing "design-decisions §11" for what should have been §10, before this
 second-file ambiguity even existed: a bare section number was already fragile on its
 own, and now two live documents each have their own §9, §10, etc. **Standing
 guidance: cite the FILENAME plus section, never a bare "§N"** — e.g.
-`design-decisions-beta-feedback.md §10`, never just "§10". Promoted to a one-line
+`design-decisions/check-in-flow-decisions.md §10`, never just "§10". Promoted to a one-line
 standing rule in CLAUDE.md §0 (see that section) since this is a citation convention
 to follow every session, not a one-off historical note.
 

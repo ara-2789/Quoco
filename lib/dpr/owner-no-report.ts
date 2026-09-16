@@ -1,4 +1,4 @@
-// §37(d) of design-decisions-beta-feedback.md -- the owner-facing "no
+// §37(d) of design-decisions/dpr-generation-and-reporting.md -- the owner-facing "no
 // report today" notice, WhatsApp template 14 (quoco_dpr_owner_no_report,
 // HX20e017592136f4fa6fdaf6cb200bf377) and its email fallback (§37(d)/034
 // review package §12b -- WhatsApp is optional for owners).

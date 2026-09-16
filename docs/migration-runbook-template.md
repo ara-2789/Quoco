@@ -121,6 +121,26 @@ shared-fixture teardown broke. Fixed same-session, no separate incident
 record needed — regeneration is idempotent and read-only (introspects the
 now-permanent post-F schema), unlike E/F's own write-shaped steps.
 
+- **H. Flip `scripts/migration-number-reservations.json`'s own entry for this
+  migration from "held" / "reserved, pending review" to APPLIED — in the same
+  commit/session as C, not left for a later audit to find stale.** Same
+  discipline as E, F, G: a tracking artifact that describes apply status is
+  itself an apply-time write, not a follow-up.
+
+**Step H exists because this exact gap recurred FOUR times, not once** — found
+2026-09-13, auditing the reservations file for a fifth entry (042) and
+noticing the pattern: 034, 039, 040, and 041's own entries all still read
+"held, pending review" / "blocked" while every one of those migrations was
+already live on prod, in one case for over a month (034). Each was eventually
+caught and dated-corrected, but only by someone auditing the file itself, not
+by anything in the apply flow — the same drop-shape as the F gap (migration
+039's test-db apply) and the G gap (039's types regen) one step earlier: a
+bookkeeping file that isn't part of the write path silently goes stale the
+moment "apply" is treated as finished before every artifact describing it is
+updated. See `scripts/migration-number-reservations.json`'s own 034/039/040/041
+entries for the dated corrections this step exists to make unnecessary going
+forward.
+
 ## After apply
 
 - schema.md `<nnn>` entry — written **only after E AND F confirm**, so no

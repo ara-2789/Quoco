@@ -1,4 +1,4 @@
-// §37(c) of design-decisions-beta-feedback.md — the owner-send routing
+// §37(c) of design-decisions/dpr-generation-and-reporting.md — the owner-send routing
 // decision, extracted as a pure function so the rule has exactly one place
 // it's evaluated, not re-derived inline wherever the ownerSend handler
 // (unbuilt) eventually needs it.

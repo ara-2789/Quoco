@@ -54,7 +54,7 @@ being merged and deployed — this is what makes Step 3 below ("message the numb
 real reply") work at all. Before this build, an inbound to an idle engineer got silence
 (CLAUDE.md's "BOT-07 SILENCE" entry); the live run below assumes that's fixed.~~
 **CORRECTED, 2026-08-30: the II3 build this depended on has since been RETIRED**
-(`design-decisions-beta-feedback.md` §38, 2026-08-28) — inbound can no longer start a
+(`design-decisions/check-in-architecture-and-triggers.md` §38, 2026-08-28) — inbound can no longer start a
 flow at all, idle or otherwise. **Depends on now:** item E's two trigger crons
 (`app/api/cron/morning-trigger`, `app/api/cron/evening-trigger`), live since PR #129 and
 scheduled in `vercel.json` — these are the sole flow-starter this runbook's own §4 (as
@@ -95,7 +95,7 @@ rewritten, 2026-08-30) actually relies on.
 - [ ] **NEW, 2026-08-30.** If the supervised live run (§4) targets a specific engineer,
       confirm that engineer's `daily_logs.attendance` for the run's date is not
       `'site_holiday'` — `filterEveningRoster` excludes that engineer from the evening
-      roster entirely (`design-decisions-beta-feedback.md` §30(b)), so the evening leg
+      roster entirely (`design-decisions/check-in-architecture-and-triggers.md` §30(b)), so the evening leg
       of §4 will simply never fire for him. Observed for real, 2026-08-30 — not a
       hypothetical caveat.
 
@@ -252,7 +252,7 @@ not the thing itself). Verify each of these as an observed outcome:
       IST — not silence. This is the first time this build's production behaviour and
       the real production sender are proven together, not separately.~~
       **CORRECTED, 2026-08-30 — this described the II3 inbound-start-trigger
-      mechanism, which retirement removed (`design-decisions-beta-feedback.md` §38).
+      mechanism, which retirement removed (`design-decisions/check-in-architecture-and-triggers.md` §38).
       Messaging an idle engineer can no longer produce the morning Q1 prompt at all —
       no idle inbound starts a flow anymore.** Message the number as that engineer and
       expect ONE of the four static acknowledgement strings instead (§38), depending on
@@ -270,7 +270,7 @@ Do not proceed to §4 until every box above is checked by direct observation.
 ## 4. The supervised live run
 
 **REPLACED, 2026-08-30, not amended — the original procedure below assumed the II3
-inbound-start-trigger mechanism, which `design-decisions-beta-feedback.md` §38's
+inbound-start-trigger mechanism, which `design-decisions/check-in-architecture-and-triggers.md` §38's
 retirement removed entirely (2026-08-28). Struck through and kept for the record, per
 this project's own correction discipline, not because it still applies.**
 

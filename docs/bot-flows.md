@@ -219,7 +219,7 @@ design, not current behaviour.
 
 ## MORNING CHECK-IN (6 questions, one at a time)
 
-**SUPERSEDED (2026-08-21, §28(l), `design-decisions-beta-feedback.md`) — struck
+**SUPERSEDED (2026-08-21, §28(l), `design-decisions/check-in-architecture-and-triggers.md`) — struck
 through, not deleted or rewritten, per this project's own correction discipline. The
 question list below is no longer the design; §28(l) is the current one: attendance is
 now Q1, morning is 4 questions not 6, and the old Q4 (execution plan) is removed from
@@ -259,7 +259,7 @@ likely gap in that list, not decided or added to it here.
 
 ## EVENING CHECK-IN (6 questions, one at a time)
 
-**SUPERSEDED (2026-08-21, §28(l), `design-decisions-beta-feedback.md`) — struck
+**SUPERSEDED (2026-08-21, §28(l), `design-decisions/check-in-architecture-and-triggers.md`) — struck
 through, not deleted or rewritten. The question list below is no longer the design;
 §28(l) is current: 5 questions, fires regardless of attendance, plan-met (old Q2) is
 DELETED entirely (§28(m) — nothing is compared against a plan anymore), old Q3 (miss
@@ -342,7 +342,7 @@ cleanly onto §28(l)'s question order.**
     instructional ONLY: the component holds NO write surface (no supabase client,
     no server action, no fetch), enforced by a static source guard. See
     app/(dashboard)/daily-logs/reactivate-cta.tsx + lib/daily-logs/reactivate-copy.ts,
-    and design-decisions-beta-feedback.md §3.2.
+    and design-decisions/check-in-flow-decisions.md §3.2.
   - SAFETY INVARIANT — the clear-half reactivates ONLY an engineer whose sole
     gate is the block (status still 'active'). A non-active status
     (pending / deactivated) stays gated regardless of the flag: a deactivated
@@ -459,7 +459,7 @@ owner NEVER receives empty content.
    so a numeric "planned vs done vs outstanding" figure is not computable from
    real data. e.g. "Slab pour incomplete — JCB breakdown, vendor callout
    pending." Emits "not captured" until Q6 ships. Decision + full reasoning:
-   design-decisions-beta-feedback.md §11.
+   design-decisions/dpr-generation-and-reporting.md §11.
 6. Accountability — MISSING SUBMISSIONS ONLY:
    - Engineer name + morning/evening status + 7-day pattern.
    - Pattern EXCLUDES holiday days (is_holiday=true) AND messaging_blocked
@@ -479,7 +479,7 @@ owner NEVER receives empty content.
      IS safe to use historically because it is stored ON the `daily_logs` row (a
      per-day fact). This constraint currently lives only as a code gate in
      `lib/daily-logs/status.ts` (the DASH-03 board applies `messaging_blocked`
-     to TODAY only) — see it and `design-decisions-beta-feedback.md` §3.1 first.
+     to TODAY only) — see it and `design-decisions/check-in-flow-decisions.md` §3.1 first.
 
 Sections Hindrances / Dependencies / Red Flags / Recommendations are
 FAST-FOLLOW — they ship with the accountability engine, not the Spine.

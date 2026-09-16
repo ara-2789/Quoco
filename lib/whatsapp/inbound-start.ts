@@ -146,7 +146,7 @@ export const HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY =
 //     are UNCHANGED, everywhere, including here.
 
 // RETIRED, 2026-08-28 (docs/plans/pass1-outbound-send-plan.md §2 item 1,
-// design-decisions-beta-feedback.md §38). This module used to treat an
+// design-decisions/check-in-architecture-and-triggers.md §38). This module used to treat an
 // idle inbound as a flow-start trigger (II3 build, calling
 // apply_morning_flow_turn/apply_evening_flow_turn with startFlow:true).
 // It no longer does. Pass 1's outbound send primitive (items B-F, PR #120,
@@ -218,7 +218,7 @@ export const HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY =
 //
 // SCOPE BOUNDARY (unchanged from the original build, restated): this
 // covers ONLY the case readCurrentFlow returns null. The refuse-when-
-// submitted RPC fix (design-decisions-beta-feedback.md §10, decided
+// submitted RPC fix (design-decisions/check-in-flow-decisions.md §10, decided
 // 2026-08-15) is NOT bundled here -- it trips CLAUDE.md §0(a) and ships
 // separately, on its own timeline, through the full external-review path.
 //

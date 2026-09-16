@@ -1,6 +1,6 @@
 # Inbound-as-start-trigger — TS-only plan (II3)
 
-**SUPERSEDED-BY-DESIGN (2026-08-20, PP2 — design-decisions-beta-feedback.md §27), NOT BY
+**SUPERSEDED-BY-DESIGN (2026-08-20, PP2 — design-decisions/check-in-architecture-and-triggers.md §27), NOT BY
 BUG. Everything below still describes what is actually running in production today and
 remains accurate as a description of it — but the permanent design decided in §27 is
 that check-ins are CRON-triggered, never inbound-triggered. `routeInboundMessage`'s
@@ -20,7 +20,7 @@ reasoning. Tests: `test/inbound-start.test.ts` (the full (a) window matrix,
 already-submitted-then-messages-again, flow-active delegation) and
 `test/webhook.test.ts` T-WH-11/T-WH-12 (end-to-end wiring proof). No env flag — decided
 and justified in `inbound-start.ts`'s own header comment. The refuse-when-submitted RPC
-fix (design-decisions-beta-feedback.md §10, decided 2026-08-15) remains NOT bundled here
+fix (design-decisions/check-in-flow-decisions.md §10, decided 2026-08-15) remains NOT bundled here
 — it trips §0(a) and needs the full external-review path. Ships separately, on its own
 timeline; this build's (b) mitigation exists specifically to hold that gap closed until
 it does.**
@@ -30,7 +30,7 @@ it does.**
 morning_flow_turn`/`apply_evening_flow_turn` with `startFlow: true` for
 anything. It now returns one of four static replies (the two window-guard
 refusals this plan's own §35a work added later, plus two new acknowledgement
-strings, `design-decisions-beta-feedback.md` §38) -- never starts a flow.
+strings, `design-decisions/check-in-architecture-and-triggers.md` §38) -- never starts a flow.
 The cron (Pass 1 items B-F) is the sole flow-starter now, per §27's own
 decision this file already anticipated. `lib/whatsapp/inbound-start.ts`'s
 own header carries the current design in full; this plan document is a
@@ -97,7 +97,7 @@ would restart it from Q1 (harmless to already-saved data, confusing UX). This pl
 ever making that call in the first place by checking `daily_logs` first and branching to a
 static reply instead (the "both done" row in (a)'s table). **The RPC migration that adds
 `refuse-when-submitted` directly to the start branch — the actual fix, per
-design-decisions-beta-feedback.md §10 — remains this gap's real closer.** Once it ships,
+design-decisions/check-in-flow-decisions.md §10 — remains this gap's real closer.** Once it ships,
 this TS-side check becomes redundant defense-in-depth, not something to remove
 immediately, but no longer load-bearing on its own.
 

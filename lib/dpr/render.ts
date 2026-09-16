@@ -312,7 +312,7 @@ function renderEquipmentItem(item: EquipmentItemFacts, judgment: DprJudgment): R
 // still didn't say WHY it's blank.
 //
 // SMALL VERSION, undifferentiated cause (2026-08-11, Aravind's decision —
-// docs/design-decisions-beta-feedback.md §22 has the full investigation).
+// docs/design-decisions/dpr-generation-and-reporting.md §22 has the full investigation).
 // Of the four possible causes a blank field can have — never asked, asked-
 // with-no-usable-answer, withheld by §12 policy, or a system fault that
 // silently lost a real answer — this covers ONLY the first two:

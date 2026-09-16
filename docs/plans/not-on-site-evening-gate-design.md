@@ -91,7 +91,7 @@ who gets messaged.
 
 **`docs/bot-flows.md` is stale, two layers deep.** Its own MORNING/EVENING
 sections are already struck through, pointing to
-`design-decisions-beta-feedback.md` §28(l) as "the live spec" — but §28(l)
+`design-decisions/check-in-architecture-and-triggers.md` §28(l) as "the live spec" — but §28(l)
 predates migration 035's own restructuring (the by-trade/idle-hours/
 equipment-hours shape above). Even the doc's own "corrected" pointer is
 now one layer behind the actual code. The only current source of truth is

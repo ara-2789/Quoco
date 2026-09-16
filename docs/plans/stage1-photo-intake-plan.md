@@ -277,7 +277,7 @@ changes there — not decided here.
 any SQL exists.
 
 **New table, per item 7's already-decided per-parent shape** (extends
-`design-decisions-beta-feedback.md` §6's `daily_log_photos`, which was
+`design-decisions/parsing-and-data-capture.md` §6's `daily_log_photos`, which was
 specified but — confirmed by grep this pass — never actually built:
 zero hits for `daily_log_photos` anywhere in `supabase/migrations/*.sql`,
 `lib/`, `types/database.ts`):

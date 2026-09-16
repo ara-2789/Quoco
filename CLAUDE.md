@@ -574,7 +574,7 @@
   already mis-cited "design-decisions §11" for §10 before this ambiguity
   even existed (docs/build-status.md's `morning.ts:188` entry), so a bare
   section number was already fragile on its own. Always cite the filename
-  with the section, e.g. `design-decisions-beta-feedback.md §10`, never
+  with the section, e.g. `design-decisions/check-in-flow-decisions.md §10`, never
   just "§10". Full reasoning: docs/build-status.md's 2026-08-23 entry.
 - `CREATE OR REPLACE FUNCTION` ONLY PRESERVES GRANTS WHEN THE ARGUMENT
   SIGNATURE IS UNCHANGED — QUALIFIER TO THE EXISTING "NEVER DROP+CREATE,
@@ -972,6 +972,54 @@
   WhatsApp (and, by the same reasoning, email — Resend's own send response
   carries the same queued-not-delivered gap) send a Claude Code session
   reports on, not only diagnostics.
+- EVERY BRANCH IS PUSHED TO GITHUB, ALWAYS (Aravind, standing rule since
+  2026-09-13). A branch is pushed as soon as it has a commit — finished,
+  exploratory, paused, abandoned, or research, it makes no difference.
+  "Not ready" is not a reason to hold a branch locally. Claude Code pushes
+  branches it creates as a matter of course, no separate instruction
+  needed each time; Aravind still merges by hand — this changes nothing
+  about merging, only about a branch's existence being visible past one
+  laptop. EVIDENCE: the 2026-09-13 worktree audit found 34 worktrees, 13
+  holding work not on `main`, FOUR with commits existing only on this
+  machine (`docs/dpr-regeneration-decision-and-spec`,
+  `feat/dash-01-pm-exceptions-home`,
+  `fix/test-fixture-teardown-engineer-scope`,
+  `worktree-per-run-fixture-batch4`).
+  `worktree-adhoc-menu-spec-corrections` held the only surviving copy of
+  decisions migration 037's own applied `COMMENT ON COLUMN` cites as
+  authority, live on prod. `worktree-evening-q5-tomorrow-needs` still
+  holds an idle-hours parser fix never rescued to `main`, while `main`
+  carries its own KNOWN DEFECT test for that same bug, unfixed. Recurring
+  shape: work is done in a worktree, partially rescued onto a different
+  branch that merges, and whatever didn't make that trip stays behind —
+  unpushed, unprotected, and invisible to anyone who isn't looking at this
+  exact laptop's local branch list.
+- THE MIGRATION-NUMBER-RESERVATIONS FILE IS UPDATED AT APPLY TIME, AS PART
+  OF THE APPLY — NOT AFTERWARDS (standing rule since 2026-09-13). Full
+  step: `docs/migration-runbook-template.md`'s own Step H. EVIDENCE: the
+  2026-09-13 reservations audit found FOUR entries (034, 039, 040, 041)
+  still reading "held" / "pending review" while those migrations were
+  already live on prod — the same drop-shape as the post-apply types-regen
+  step this file's own Step G already exists to close, one bookkeeping
+  artifact over.
+- A DOCS FILE THAT PASSES THE WARN THRESHOLD GETS SPLIT, NOT APPENDED TO
+  (standing rule since 2026-09-13). EVIDENCE:
+  `design-decisions-beta-feedback.md` reached 224,410 chars against the
+  120,000-char warn threshold — 87% over — before this rule. Oversized
+  files get partially read, and the `§g` collision (`adhoc-menu-spec.md`'s
+  section letter independently reused on 2026-09-06 while the original
+  `§g` sat unmerged on a branch nobody was reading) is what partial
+  reading produces. Fixed same-day by splitting `design-decisions-beta-
+  feedback.md` by theme into `docs/design-decisions/*.md`, each file well
+  under threshold; the original path stays as an INDEX (section number →
+  file), so no existing citation — including migration 037's own applied
+  `COMMENT ON COLUMN`, unrewritable on prod — ever breaks. **Section
+  numbers never move when a file like this is split** — a split that
+  renumbers anything is the `§g` failure again, at scale, self-inflicted
+  this time instead of merely inherited. When any docs file crosses
+  120,000 chars, split it the same way — by theme, into a subdirectory,
+  with the original path kept as an index — rather than continuing to
+  append and letting a future reader shoulder another partial read.
 
 ---
 
@@ -1064,7 +1112,7 @@ their FLOWS and dashboard views are not built in the Spine.
       still a reply, triggered by an inbound message, answered the same way
       every other reply already is. No new capability needed. **BUILT
       2026-08-20 (`lib/whatsapp/inbound-start.ts`), and, per PP2
-      (design-decisions-beta-feedback.md §27, same day): SCAFFOLDING, not
+      (design-decisions/check-in-architecture-and-triggers.md §27, same day): SCAFFOLDING, not
       the permanent design.** The permanent design is cron-triggered
       check-ins, inbound message never starts a flow — this build exists
       only because, until the item below ships, there is no cron capable of
@@ -1073,7 +1121,7 @@ their FLOWS and dashboard views are not built in the Spine.
       **RETIRED, 2026-08-28** — the scaffolding described above is gone.
       `routeInboundMessage`'s no-active-session branch no longer starts a
       flow at all; it returns one of four static acknowledgement replies
-      (`design-decisions-beta-feedback.md` §38). See that file's own
+      (`design-decisions/check-in-architecture-and-triggers.md` §38). See that file's own
       header for the current design in full.
     * THE TRIGGER CRON IS NOT "ADD A CRON JOB" — was true, kept for the
       reasoning, no longer describes the current state. A cron deciding

@@ -129,7 +129,7 @@ export function buildMorningCompleteReply(photoCount: number): string {
 export const MORNING_ALREADY_COMPLETE_REPLY =
   "You've already sent today's morning check-in. ✅ Nothing more needed."
 
-// The two NO-path completion replies (design-decisions-beta-feedback.md §30(b),
+// The two NO-path completion replies (design-decisions/check-in-architecture-and-triggers.md §30(b),
 // copy DECIDED 2026-08-23 -- docs/reviews/morning-flow-migration-review-package.md
 // §2.1). Deliberately does NOT promise PM notification on the absent path --
 // nothing can notify a PM until Pass 2's escalation send exists (§30(e)); that

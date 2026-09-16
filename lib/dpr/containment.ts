@@ -176,7 +176,7 @@ export interface ContainmentMeta {
 // (e.g. requiring the digit's surrounding words to overlap with the source
 // phrase it came from), which is real design work, not a tweak — recovery
 // path if beta shows this matters, not built now. Full writeup:
-// docs/design-decisions-beta-feedback.md §19.
+// docs/design-decisions/dpr-generation-and-reporting.md §19.
 export function buildExecutionCorpus(execution: ExecutionOutputFacts, meta: ContainmentMeta): Set<number> {
   const corpus = new Set<number>()
 

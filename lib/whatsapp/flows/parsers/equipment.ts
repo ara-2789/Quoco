@@ -16,7 +16,7 @@ import { canonicalEquipment, detectTenure, isNoneSentinel, RATE_STOPWORDS } from
 //     the RPC / mirror reasks ONCE, then accepts the raw text and advances so a
 //     field engineer is never trapped. raw_text preserves what they sent.
 //
-// COUNT, NOT RATE (design-decisions-beta-feedback.md §33(a), 2026-08-25,
+// COUNT, NOT RATE (design-decisions/parsing-and-data-capture.md §33(a), 2026-08-25,
 // built 2026-09-04 as part of the production hire-rate-removal fix): Q4 now
 // asks for unit count ("JCB 2" = two JCBs), not a hire rate. The engineer's
 // number maps directly to `count` — the exact number he already types,

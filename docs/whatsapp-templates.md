@@ -45,7 +45,7 @@ doc:**
   removed the first reason. The second — migration 030 unapplied — is now the SOLE
   remaining barrier, and unlike Meta's review, nothing external enforces it; it holds
   only as long as this document (and whoever ships the outbound-send primitive) reads
-  it and checks. Cite: `design-decisions-beta-feedback.md` §28(l) (the decided flow)
+  it and checks. Cite: `design-decisions/check-in-architecture-and-triggers.md` §28(l) (the decided flow)
   against the currently built one. This gate lifts only when migration 030 ships to
   prod and is verified live (the review package's own §3 GATE 1 verification plan),
   not when Meta approves the copy — approval already happened and did not lift it.
@@ -226,7 +226,7 @@ Meta's reviewers, which is its own rejection risk):
 > Are you on site today? Reply yes or no.
 
 **RE-CUT (2026-08-21, §28(a)/(j)):** was a bare "reply to start" invite with no embedded
-question. Per §28(a) (`design-decisions-beta-feedback.md`), the cron now sends ONE
+question. Per §28(a) (`design-decisions/check-in-architecture-and-triggers.md`), the cron now sends ONE
 message that already carries Q1 directly — no separate handshake. Q1 is attendance
 (§28(c)), not the old plan question. §28(j) records this precisely as a BEHAVIOUR
 CHANGE, not a confirmation of prior copy — an earlier review round quoted this
@@ -629,7 +629,7 @@ longer than usual to generate. We will notify you when it is ready.~~)*
 
 ### 14. `quoco_dpr_owner_no_report`
 **Category: Utility.** **Audience: Owner — the first owner-facing WhatsApp template in
-this product** (`design-decisions-beta-feedback.md` §37(d)). Sent only when
+this product** (`design-decisions/dpr-generation-and-reporting.md` §37(d)). Sent only when
 `evening_submitted_at IS NULL` for the day (§37(c)'s gate) **and** the owner has a
 WhatsApp number on file; email is the fallback when he does not (Decision 2,
 2026-08-31, same session — WhatsApp is optional for owners, not required).
@@ -787,7 +787,7 @@ verified).
 > concrete 120 sqm" or "brickwork 8 m3".
 
 **`{{3}}` (the morning-plan echo) is REMOVED — decided in full, with reasoning, in
-`design-decisions-beta-feedback.md` §40 (2026-08-31), which also supersedes §28(s)
+`design-decisions/check-in-architecture-and-triggers.md` §40 (2026-08-31), which also supersedes §28(s)
 without rewriting it.** One evening template replaces the template-2/template-2b split;
 `quoco_evening_checkin_no_plan` (2b) is retired going forward (its own `SID` stays wired
 and unchanged in `templates.ts` until the repoint — see the section intro above).
@@ -896,7 +896,7 @@ for the full reasoning; this section only records the checklist consequences.
    `HX8fb39a251eee9bfb2ec075086cd7800a` (2v3), which came back UTILITY as submitted —
    none of item 1's risk applies here.
 3. **`EVENING_CHECKIN_NO_PLAN_SID` and its whole branch — REMOVED, DONE, 2026-09-02.**
-   §40 (`design-decisions-beta-feedback.md`) decided one evening template, no `{{3}}`.
+   §40 (`design-decisions/check-in-architecture-and-triggers.md`) decided one evening template, no `{{3}}`.
    `selectEveningTemplate` no longer branches at all — collapsed to the same
    two-variable shape as `buildMorningTemplate`. Deleted: `EVENING_CHECKIN_NO_PLAN_SID`,
    the branching + `truncateMorningPlan` call inside `selectEveningTemplate`, and

@@ -10,7 +10,7 @@
 // istParts, or lib/checkin-escalations' reuse of it).
 //
 // DATED CORRECTION (2026-08-13): morning was '10:30', sourced from
-// design-decisions-beta-feedback.md §3's "TBD from customer... roughly 10:30" —
+// design-decisions/check-in-flow-decisions.md §3's "TBD from customer... roughly 10:30" —
 // that figure was never finalized and has since been superseded. The recorded
 // decision (docs/bot-flows.md TRIGGER TIMES, 2026-08-12) sets the morning
 // cutoff at 15:00 — chosen specifically to clear the check-in queue before the

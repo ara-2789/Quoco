@@ -26,7 +26,7 @@
 
 /** HX Content SID for quoco_morning_checkin_v3 -- {{1}} name, {{2}} project. UTILITY, approved. Repoints from template 1 (MARKETING-capped) 2026-09-05. */
 export const MORNING_CHECKIN_SID = 'HXbb534f41c814a2c3a32b5682713579df'
-/** HX Content SID for quoco_evening_checkin_v3 -- {{1}} name, {{2}} project, no {{3}}. Approved UTILITY, 2026-09-02. Repoints from template 2 (which carried a {{3}} morning-plan echo) per design-decisions-beta-feedback.md §40 -- one evening template, no plan echo, no branching. */
+/** HX Content SID for quoco_evening_checkin_v3 -- {{1}} name, {{2}} project, no {{3}}. Approved UTILITY, 2026-09-02. Repoints from template 2 (which carried a {{3}} morning-plan echo) per design-decisions/check-in-architecture-and-triggers.md §40 -- one evening template, no plan echo, no branching. */
 export const EVENING_CHECKIN_SID = 'HX8fb39a251eee9bfb2ec075086cd7800a'
 
 export interface EveningTemplateSelection {
