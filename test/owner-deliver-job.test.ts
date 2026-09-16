@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { testClient, TEST_TENANT_ID, ensureMorningFixtures, removeMorningFixtures, testEngineerId, testPhone } from './helpers/db'
 import { handleOwnerDeliverJob } from '@/lib/dpr/owner-deliver-dispatch'
 import { OWNER_NO_REPORT_TEMPLATE_SID } from '@/lib/dpr/owner-no-report'
+import { PHOTO_BUCKET } from '@/lib/storage/photo-access'
 import type { EngineerDprFacts } from '@/lib/dpr/schema'
 import type { SendEmailResult } from '@/lib/email/send'
 import type { SendTemplateResult } from '@/lib/whatsapp/outbound/send'
@@ -96,6 +98,87 @@ async function seedDailyLog(projectId: string, engineerId: string, logDate: stri
     { onConflict: 'project_id,engineer_id,log_date' },
   )
   if (error) throw new Error(`seedDailyLog failed: ${error.message}`)
+}
+
+// --- Stage 4 (DPR photo attachments, S1-S7) fixture helpers ----------
+
+const uploadedTestPhotoPaths: string[] = []
+
+async function getDailyLogId(projectId: string, engineerId: string, logDate: string): Promise<string> {
+  const db = testClient()
+  const { data, error } = await db
+    .from('daily_logs')
+    .select('id')
+    .eq('project_id', projectId)
+    .eq('engineer_id', engineerId)
+    .eq('log_date', logDate)
+    .single<{ id: string }>()
+  if (error || !data) throw new Error(`getDailyLogId failed: ${error?.message ?? 'no row'}`)
+  return data.id
+}
+
+async function setEveningPhotosStatus(dailyLogId: string, status: 'pending' | 'complete' | 'failed' | null): Promise<void> {
+  const db = testClient()
+  const { error } = await db.from('daily_logs').update({ evening_photos_status: status }).eq('id', dailyLogId)
+  if (error) throw new Error(`setEveningPhotosStatus failed: ${error.message}`)
+}
+
+async function seedEveningPhoto(dailyLogId: string, sizeBytes = 16): Promise<string> {
+  const db = testClient()
+  const objectPath = `${TEST_TENANT_ID}/owner-deliver-test/${randomUUID()}.jpg`
+  const { error: uploadError } = await db.storage
+    .from(PHOTO_BUCKET)
+    .upload(objectPath, Buffer.from(new Uint8Array(sizeBytes).fill(1)), { contentType: 'image/jpeg' })
+  if (uploadError) throw new Error(`seedEveningPhoto upload failed: ${uploadError.message}`)
+  uploadedTestPhotoPaths.push(objectPath)
+  const { error } = await db
+    .from('daily_log_photos')
+    .insert({ tenant_id: TEST_TENANT_ID, daily_log_id: dailyLogId, phase: 'evening', photo_url: objectPath, retention_class: 'evening_progress' })
+  if (error) throw new Error(`seedEveningPhoto insert failed: ${error.message}`)
+  return objectPath
+}
+
+async function seedHindranceWithPhoto(
+  projectId: string,
+  reportedBy: string,
+  logDate: string,
+  photosStatus: 'pending' | 'complete' | 'failed' | null = 'complete',
+): Promise<{ hindranceId: string; photoPath: string }> {
+  const db = testClient()
+  const { data: hindrance, error: hErr } = await db
+    .from('hindrances')
+    .insert({
+      tenant_id: TEST_TENANT_ID,
+      project_id: projectId,
+      reported_by: reportedBy,
+      description: 'ZZ owner-deliver-job photo test hindrance',
+      timing: 'active',
+      submitted_via: 'whatsapp_adhoc',
+      created_at: `${logDate}T10:00:00+05:30`,
+      photos_status: photosStatus,
+    })
+    .select('id')
+    .single<{ id: string }>()
+  if (hErr || !hindrance) throw new Error(`seedHindranceWithPhoto insert failed: ${hErr?.message ?? 'no row'}`)
+
+  const objectPath = `${TEST_TENANT_ID}/owner-deliver-test/${randomUUID()}.jpg`
+  const { error: uploadError } = await db.storage
+    .from(PHOTO_BUCKET)
+    .upload(objectPath, Buffer.from(new Uint8Array(16).fill(2)), { contentType: 'image/jpeg' })
+  if (uploadError) throw new Error(`seedHindranceWithPhoto upload failed: ${uploadError.message}`)
+  uploadedTestPhotoPaths.push(objectPath)
+  const { error: photoError } = await db
+    .from('hindrance_photos')
+    .insert({ tenant_id: TEST_TENANT_ID, hindrance_id: hindrance.id, photo_url: objectPath, retention_class: 'hindrance' })
+  if (photoError) throw new Error(`seedHindranceWithPhoto photo insert failed: ${photoError.message}`)
+
+  return { hindranceId: hindrance.id, photoPath: objectPath }
+}
+
+async function cleanupHindrance(hindranceId: string): Promise<void> {
+  const db = testClient()
+  await db.from('hindrance_photos').delete().eq('hindrance_id', hindranceId)
+  await db.from('hindrances').delete().eq('id', hindranceId)
 }
 
 async function seedDprRow(
@@ -212,6 +295,9 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  if (uploadedTestPhotoPaths.length > 0) {
+    await testClient().storage.from(PHOTO_BUCKET).remove(uploadedTestPhotoPaths)
+  }
   await removeMorningFixtures()
 })
 
@@ -513,6 +599,193 @@ describe('handleOwnerDeliverJob', () => {
       const noticeRow = await readDpr(noticeDprId)
       expect(reportRow.delivery_status).toBe('delivered')
       expect(noticeRow.delivery_status).toBe('no_report_sent')
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
+  // --- Stage 4: photo attachments on the report email (S1-S7) ---------
+
+  it('STAGE 4: report email attaches evening then hindrance photos, no links anywhere in text or html', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: OWNER_PHONE, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'photos-attached')
+    const logDate = '2026-09-20'
+    let hindranceId: string | undefined
+    try {
+      await addToProject(projectId, engineerId)
+      await seedDailyLog(projectId, engineerId, logDate, true)
+      const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
+      await setEveningPhotosStatus(dailyLogId, 'complete')
+      const eveningPath = await seedEveningPhoto(dailyLogId)
+      const { hindranceId: hId, photoPath: hindrancePath } = await seedHindranceWithPhoto(projectId, engineerId, logDate, 'complete')
+      hindranceId = hId
+      const dprId = await seedDprRow(projectId, engineerId, logDate, 'pending', true)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_photos1' })
+      const result = await handleOwnerDeliverJob({ project_id: projectId, log_date: logDate }, { supabaseClient: db, sendEmailFn: email.fn })
+
+      expect(result.reportSent).toBe(1)
+      expect(email.calls).toHaveLength(1)
+      const call = email.calls[0] as { attachments?: { filename: string }[]; text: string; html: string }
+      expect(call.attachments).toHaveLength(2)
+      expect(call.attachments![0]!.filename).toBe(eveningPath.split('/').pop())
+      expect(call.attachments![1]!.filename).toBe(hindrancePath.split('/').pop())
+      expect(call.text).not.toMatch(/https?:\/\//)
+      expect(call.html).not.toMatch(/https?:\/\//)
+
+      const row = await readDpr(dprId)
+      expect(row.delivery_status).toBe('delivered')
+    } finally {
+      if (hindranceId) await cleanupHindrance(hindranceId)
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('STAGE 4: overflow line appears only when overflowCount > 0, matching the exact approved-pending wording', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: OWNER_PHONE, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'photos-overflow')
+    const logDate = '2026-09-21'
+    try {
+      await addToProject(projectId, engineerId)
+      await seedDailyLog(projectId, engineerId, logDate, true)
+      const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
+      await setEveningPhotosStatus(dailyLogId, 'complete')
+      for (let i = 0; i < 11; i++) {
+        await seedEveningPhoto(dailyLogId)
+      }
+      const dprId = await seedDprRow(projectId, engineerId, logDate, 'pending', true)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_overflow1' })
+      const result = await handleOwnerDeliverJob({ project_id: projectId, log_date: logDate }, { supabaseClient: db, sendEmailFn: email.fn })
+
+      expect(result.reportSent).toBe(1)
+      const call = email.calls[0] as { attachments?: unknown[]; text: string; html: string }
+      expect(call.attachments).toHaveLength(10)
+      expect(call.text).toContain('1 more photo(s) from today were not attached.')
+      expect(call.html).toContain('1 more photo(s) from today were not attached.')
+
+      const row = await readDpr(dprId)
+      expect(row.delivery_status).toBe('delivered')
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('STAGE 4: no overflow (all photos fit) -- overflow line is absent', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: OWNER_PHONE, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'photos-no-overflow')
+    const logDate = '2026-09-22'
+    try {
+      await addToProject(projectId, engineerId)
+      await seedDailyLog(projectId, engineerId, logDate, true)
+      const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
+      await setEveningPhotosStatus(dailyLogId, 'complete')
+      await seedEveningPhoto(dailyLogId)
+      const dprId = await seedDprRow(projectId, engineerId, logDate, 'pending', true)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_no_overflow1' })
+      await handleOwnerDeliverJob({ project_id: projectId, log_date: logDate }, { supabaseClient: db, sendEmailFn: email.fn })
+
+      const call = email.calls[0] as { text: string; html: string }
+      expect(call.text).not.toContain('not attached')
+      expect(call.html).not.toContain('not attached')
+
+      const row = await readDpr(dprId)
+      expect(row.delivery_status).toBe('delivered')
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('STAGE 4: the no-report notice email NEVER gets attachments, even when photos exist for that project-day', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: null, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'notice-with-photos')
+    const logDate = '2026-09-23'
+    let hindranceId: string | undefined
+    try {
+      await addToProject(projectId, engineerId)
+      // Evening NOT submitted -> routes to 'notice', but photos may still
+      // exist (e.g. a morning-only day that also had a hindrance report).
+      await seedDailyLog(projectId, engineerId, logDate, false)
+      const { hindranceId: hId } = await seedHindranceWithPhoto(projectId, engineerId, logDate, 'complete')
+      hindranceId = hId
+      const dprId = await seedDprRow(projectId, engineerId, logDate, 'pending', false)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_notice_photos1' })
+      const result = await handleOwnerDeliverJob({ project_id: projectId, log_date: logDate }, { supabaseClient: db, sendEmailFn: email.fn })
+
+      expect(result.noticeSent).toBe(true)
+      expect(email.calls).toHaveLength(1)
+      const call = email.calls[0] as { attachments?: unknown[] }
+      expect(call.attachments).toBeUndefined()
+
+      const row = await readDpr(dprId)
+      expect(row.delivery_status).toBe('no_report_sent')
+    } finally {
+      if (hindranceId) await cleanupHindrance(hindranceId)
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('STAGE 4: evening_photos_status="pending" -> throws a retryable error, no send attempted', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: OWNER_PHONE, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'photos-pending')
+    const logDate = '2026-09-24'
+    try {
+      await addToProject(projectId, engineerId)
+      await seedDailyLog(projectId, engineerId, logDate, true)
+      const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
+      await setEveningPhotosStatus(dailyLogId, 'pending')
+      await seedDprRow(projectId, engineerId, logDate, 'pending', true)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_should_not_be_used' })
+      await expect(
+        handleOwnerDeliverJob({ project_id: projectId, log_date: logDate }, { supabaseClient: db, sendEmailFn: email.fn }),
+      ).rejects.toThrow(/photos still uploading/)
+      expect(email.calls).toHaveLength(0)
+    } finally {
+      await cleanupProject(projectId)
+    }
+  })
+
+  it('STAGE 4: forceSendWithoutPhotos on a pending evening batch -- sends WITHOUT waiting, attaching whatever already has a row (never withholds the email)', async () => {
+    const db = testClient()
+    await configureOwner(ownerId, { whatsappNumber: OWNER_PHONE, verifiedEmail: true })
+    const engineerId = testEngineerId()
+    const projectId = await makeProject(ownerId, 'photos-forced')
+    const logDate = '2026-09-25'
+    try {
+      await addToProject(projectId, engineerId)
+      await seedDailyLog(projectId, engineerId, logDate, true)
+      const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
+      // Still pending overall, but one photo row already landed before the
+      // batch finished -- "send without the MISSING photos" (S5), not
+      // "send with none at all."
+      const eveningPath = await seedEveningPhoto(dailyLogId)
+      await setEveningPhotosStatus(dailyLogId, 'pending')
+      await seedDprRow(projectId, engineerId, logDate, 'pending', true)
+
+      const email = mockSendEmail({ ok: true, status: 200, id: 'em_forced1' })
+      const result = await handleOwnerDeliverJob(
+        { project_id: projectId, log_date: logDate },
+        { supabaseClient: db, sendEmailFn: email.fn, forceSendWithoutPhotos: true },
+      )
+
+      expect(result.reportSent).toBe(1)
+      expect(email.calls).toHaveLength(1)
+      const call = email.calls[0] as { attachments?: { filename: string }[] }
+      expect(call.attachments).toHaveLength(1)
+      expect(call.attachments![0]!.filename).toBe(eveningPath.split('/').pop())
     } finally {
       await cleanupProject(projectId)
     }

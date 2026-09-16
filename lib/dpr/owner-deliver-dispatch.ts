@@ -173,6 +173,17 @@ import {
   type SendTemplateParams,
   type SendTemplateResult,
 } from '@/lib/whatsapp/outbound/send'
+import { selectDprPhotos, buildDprPhotoOverflowLine } from './select-photos'
+
+// STAGE 4 -- PHOTO ATTACHMENTS ON THE REPORT EMAIL ONLY (S1, Aravind,
+// 2026-09-16). Owner only, via THIS file's own report sendEmail call
+// (~421-426 below) -- never the no-report notice (~474-479), which is
+// left completely untouched by this addition. Selection/caps/readiness
+// live in ./select-photos.ts, kept as one small, independently-testable
+// function per Aravind's own instruction; this file owns only the
+// readiness-gate-then-retry decision (S5) and threading the result into
+// the email. lib/storage/photo-access.ts and lib/dpr/assemble.ts are
+// neither used nor changed (S7).
 
 export interface OwnerDeliverJobPayload {
   project_id: string
@@ -295,6 +306,13 @@ export async function handleOwnerDeliverJob(
     // for two different providers.
     sendEmailFn?: (params: SendEmailParams) => Promise<SendEmailResult>
     sendWhatsAppFn?: (params: SendTemplateParams) => Promise<SendTemplateResult>
+    // S5, same shape as lib/hindrance/pm-notify.ts's own
+    // forceSendWithoutPhotos: set only by app/api/jobs/tick/route.ts's own
+    // owner_deliver dead-letter branch, once retries are exhausted. Skips
+    // the pending-photos retry-throw below entirely and sends with
+    // whatever photos exist right now (possibly none) -- the email is
+    // NEVER withheld.
+    forceSendWithoutPhotos?: boolean
   } = {},
 ): Promise<OwnerDeliverResult> {
   const client = deps.supabaseClient ?? createServiceClient()
@@ -410,6 +428,24 @@ export async function handleOwnerDeliverJob(
           reportFailed++
           continue
         }
+        // S5 -- readiness gate, checked BEFORE any send or state write for
+        // THIS row, same placement as pm-notify.ts's own pending-check.
+        // Throws to trigger a job-level retry (lib/queue/jobs.ts's
+        // exponential backoff) exactly like pm-notify.ts's own throw --
+        // any EARLIER row in this same loop that already sent successfully
+        // already has a STAGE_2_TERMINAL delivery_status by this point, so
+        // a retry's own classifyDprRowForStage2 skips it and only
+        // re-attempts rows still eligible, including this one.
+        const photoSelection = await selectDprPhotos(
+          { tenantId: project.tenant_id as string, projectId: payload.project_id, engineerId: row.engineer_id, logDate: payload.log_date },
+          client,
+        )
+        if (!photoSelection.photosReady && !deps.forceSendWithoutPhotos) {
+          throw new Error(
+            `handleOwnerDeliverJob: photos still uploading for dpr ${row.id} (project ${payload.project_id}, engineer ${row.engineer_id}, log_date ${payload.log_date}) -- will retry`,
+          )
+        }
+
         const structured = row.structured as unknown as StructuredReportShape
         const meta: EngineerReportMeta = {
           project_name: project.name as string,
@@ -418,11 +454,17 @@ export async function handleOwnerDeliverJob(
           project_manager_name: projectManagerName,
         }
         const rendered = renderEmailReport(structured.facts, structured.verdict, structured.morning_status, structured.evening_status, meta)
+        // S4 -- overflow line, appended only when overflowCount > 0, never
+        // touching render-email.ts's own output otherwise.
+        const overflowLine = photoSelection.overflowCount > 0 ? buildDprPhotoOverflowLine(photoSelection.overflowCount) : null
+        const text = overflowLine ? `${rendered.text}\n\n${overflowLine}` : rendered.text
+        const html = overflowLine ? `${rendered.html}\n<p>${overflowLine}</p>` : rendered.html
         const result = await sendEmail({
           to: owner.notification_email as string,
           subject: rendered.subject,
-          text: rendered.text,
-          html: rendered.html,
+          text,
+          html,
+          ...(photoSelection.attachments.length > 0 ? { attachments: photoSelection.attachments } : {}),
         })
         if (result.ok) {
           await batchWriteDeliveryStatus(client, [row.id], 'delivered', { delivered_owner_at: new Date().toISOString() })
