@@ -261,5 +261,11 @@ Test-db (`exfccwlrhoutkgrlikod`) DOWN rehearsed 2026-09-16; re-apply
 verified by observation (generation expression, index_count=1, total=5,
 report_date_null=0). The removal-step output (column/index confirmed gone
 immediately after the DOWN ran) was not re-captured in this prod-apply
-session — it was captured and verified in the prior test-db rehearsal
-session, not repeated here.
+session — ~~it was captured and verified in the prior test-db rehearsal
+session, not repeated here.~~
+
+DATED CORRECTION (2026-09-16): the removal-step output (column/index gone
+after DOWN) was NOT captured in any session. The DOWN re-run reported 0
+rows for both checks, but its raw output was collapsed and never pasted.
+Only the re-apply was verified by observation (expr, index_count=1,
+total=5, report_date_null=0). Removal is taken on the session's report.
