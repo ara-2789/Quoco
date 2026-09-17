@@ -845,15 +845,23 @@ tenant, "Ara con co" (`tenant_id`
 the B1 photo route URL for a photo belonging to a DIFFERENT tenant
 (`adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0`) directly on prod
 (`app.quoco.co.in`) and got HTTP 404 — the same identical failure
-response as every other denial case in §7/§10. This is the D5 tenant
-check itself verified on prod by observation, not merely inferred from
-test-db coverage; it does not change the same-tenant non-PM finding
+response as every other denial case in §7/§10. ~~This is the D5 tenant~~
+~~check itself verified on prod by observation, not merely inferred from~~
+~~test-db coverage;~~ it does not change the same-tenant non-PM finding
 above (that case still has no real prod identity to exercise it and
 remains test-db-only, per §7's own coverage). This package did not find
 any existing wording elsewhere stating a cross-tenant prod check is
 impossible — the only related struck passage, above, was scoped to the
 non-PM-login case (D3/D6), not the cross-tenant (D5) one, so nothing
 further is struck here; this revision is additive.
+
+**CORRECTION 2026-09-17 (per Aravind):** Check D is per Aravind (no
+screenshot captured; see `docs/reviews/stage5a-b1-b2-record.md`). It
+shows a PM from another tenant is refused on prod. It does not isolate
+the D5 tenant comparison: that PM is also not a member of the photo's
+project, so the project-PM check alone would refuse them too. D5
+specifically is proven on test-db only (the photo row stamped with
+another tenant while the caller is PM on the parent project).
 
 ---
 
