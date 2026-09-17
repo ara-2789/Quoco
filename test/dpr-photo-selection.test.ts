@@ -128,12 +128,23 @@ async function seedDailyLog(
   return data.id
 }
 
-async function seedEveningPhoto(dailyLogId: string, tenantId: string, sizeBytes = 16): Promise<string> {
+// `receivedAt` (added 2026-09-17, timeout fix): optional explicit override
+// for `received_at`, the column selectDprPhotos orders candidates by --
+// same reasoning and shape as test/owner-deliver-job.test.ts's own
+// seedEveningPhoto. Needed so callers can seed multiple photos in PARALLEL
+// (Promise.all) while still controlling their relative order
+// deterministically.
+async function seedEveningPhoto(dailyLogId: string, tenantId: string, sizeBytes = 16, receivedAt?: string): Promise<string> {
   const db = testClient()
   const objectPath = await uploadPhoto(tenantId, sizeBytes)
-  const { error } = await db
-    .from('daily_log_photos')
-    .insert({ tenant_id: tenantId, daily_log_id: dailyLogId, phase: 'evening', photo_url: objectPath, retention_class: 'evening_progress' })
+  const { error } = await db.from('daily_log_photos').insert({
+    tenant_id: tenantId,
+    daily_log_id: dailyLogId,
+    phase: 'evening',
+    photo_url: objectPath,
+    retention_class: 'evening_progress',
+    ...(receivedAt ? { received_at: receivedAt } : {}),
+  })
   if (error) throw new Error(`seedEveningPhoto failed: ${error.message}`)
   return objectPath
 }
@@ -250,9 +261,11 @@ describe('selectDprPhotos', () => {
   it('10-photo cap: 12 eligible evening photos attach exactly 10, overflow = 2', async () => {
     const logDate = '2026-09-23'
     const dailyLog = await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate)
-    for (let i = 0; i < 12; i++) {
-      await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
-    }
+    // 12 photos seeded in PARALLEL (2026-09-17 timeout fix) -- order
+    // doesn't matter for this test's own assertions (counts only), but
+    // each still gets an explicit, distinct received_at for determinism.
+    const baseTime = Date.now()
+    await Promise.all(Array.from({ length: 12 }, (_, i) => seedEveningPhoto(dailyLog, TEST_TENANT_A_ID, 16, new Date(baseTime + i).toISOString())))
 
     const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
@@ -260,7 +273,7 @@ describe('selectDprPhotos', () => {
     expect(result.attachedCount).toBe(MAX_ATTACHMENTS)
     expect(result.attachments).toHaveLength(10)
     expect(result.overflowCount).toBe(2)
-  })
+  }, 90_000)
 
   it('15 MB cap: two ~8 MB photos -- only the first fits, the second overflows on bytes alone (well under the 10-count cap)', async () => {
     const logDate = '2026-09-24'
@@ -399,12 +412,21 @@ describe('selectDprPhotos', () => {
   it('F2: a failed photo does not consume the 10-photo cap -- the next valid photo is attached', async () => {
     const logDate = '2026-10-03'
     const dailyLog = await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate, 'complete')
-    const brokenPath = await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
+    // Broken photo seeded first, with an explicit received_at a full
+    // minute earlier than the parallel batch below -- guarantees it sorts
+    // first regardless of network completion order, so it's the one hit
+    // (and skipped) before the cap, matching
+    // test/owner-deliver-job.test.ts's own identical fix.
+    const brokenPath = await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID, 16, new Date(Date.now() - 60_000).toISOString())
     await breakPhoto(brokenPath)
-    const validPaths: string[] = []
-    for (let i = 0; i < 10; i++) {
-      validPaths.push(await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID))
-    }
+    // 10 valid photos seeded in PARALLEL -- received_at explicit and
+    // strictly increasing per index so Promise.all's own order-preserving
+    // result array still matches selectDprPhotos' received_at-ascending
+    // ordering, regardless of which upload actually completes first.
+    const baseTime = Date.now()
+    const validPaths = await Promise.all(
+      Array.from({ length: 10 }, (_, i) => seedEveningPhoto(dailyLog, TEST_TENANT_A_ID, 16, new Date(baseTime + i).toISOString())),
+    )
 
     const result = await selectDprPhotos({ tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }, { requireReady: false }, testClient())
 
@@ -413,7 +435,7 @@ describe('selectDprPhotos', () => {
     expect(result.attachments.map((a) => a.filename)).toEqual(validPaths.map((p) => p.split('/').pop()))
     expect(result.overflowCount).toBe(1)
     expect(captureMessageMock).toHaveBeenCalledTimes(1)
-  }, 30000)
+  }, 90_000)
 
   it('F2: forced send where EVERY photo fails -> attachments empty, overflow = full eligible count', async () => {
     const logDate = '2026-10-04'
