@@ -35,6 +35,8 @@ below to find which file it now lives in.
 | [2026-09-17] CI double-run fix shipped | stays in this file, below |
 | [2026-09-17] Supabase Auth "Allow new users to sign up" disabled | stays in this file, below |
 | [2026-09-17] Backlog: Label Owner DPR email photo attachments by type | stays in this file, below |
+| [2026-09-17] Backlog (investigation): DPR verdict containment fallback reached an Owner | stays in this file, below |
+| [2026-09-17] Backlog (investigation): unreadable Sentry error message | stays in this file, below |
 
 If a cited date isn't obviously one of the headings above, it's embedded
 prose inside whichever file's date range brackets it — open that file and
@@ -311,6 +313,8 @@ nudge work this entry rides alongside). Whoever picks it up should
 confirm current status in Sentry first, since "roughly 6-7 days" is an
 observation at write time, not a fixed window.
 
+Sentry issue ids covering this pattern (added 2026-09-17): JAVASCRIPT-NEXTJS-V, JAVASCRIPT-NEXTJS-N, JAVASCRIPT-NEXTJS-W, JAVASCRIPT-NEXTJS-S.
+
 ### [2026-09-16] Backlog: function EXECUTE default for new public-schema functions
 
 Future migration (reuse released 048 when built): `ALTER DEFAULT
@@ -374,3 +378,18 @@ photos being numbered 1..M).
 Considered and rejected: watermarking (alters site evidence, adds image
 processing cost). Backlog, not scheduled: embedding photos inline under
 each report section instead of as attachments.
+
+### [2026-09-17] Backlog (investigation, not scheduled): DPR verdict containment fallback reached an Owner
+
+LIGHT tier. Sentry issue `JAVASCRIPT-NEXTJS-4`, "DPR verdict containment
+failed twice, falling back to placeholder", 1 event, ~1 week before
+2026-09-17, via `/api/jobs/tick`. Not investigated here. Whoever picks
+this up: identify which DPR triggered it and what placeholder text the
+Owner actually received.
+
+### [2026-09-17] Backlog (investigation, not scheduled): unreadable Sentry error message
+
+LIGHT tier. Sentry issue `JAVASCRIPT-NEXTJS-7`, message `[object
+Object]`, 1 event, ~1 week before 2026-09-17, via `/api/jobs/tick`. Not
+investigated here. Whoever picks this up: find the capture site passing
+a non-`Error` object and make it report a readable message.

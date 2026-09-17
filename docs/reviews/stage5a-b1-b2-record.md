@@ -67,5 +67,11 @@ The Owner DPR email for Speed Mechatronics, Thu 17 Sept (engineer Vikram
 Rao) arrived with 3 photo attachments and no overflow line. Per Aravind
 (screenshot).
 
-Attachment order (evening before hindrance) and Sentry `dpr-photo-attach`
-alerts: pending confirmation.
+- Attachment order evening before hindrance: confirmed per Aravind (the
+  hindrance photo was last).
+- Sentry: no `dpr-photo-attach` events in the last 24h. Observed (search,
+  2026-09-17).
+- The email's "Morning not applicable — not on site today" is correct:
+  Vikram reported not on site that morning (per Aravind).
+
+This closes the handover's Stage 4 "still to verify" item.
