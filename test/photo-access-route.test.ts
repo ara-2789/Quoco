@@ -72,12 +72,19 @@ describe('app/api/photos/[kind]/[photoId] — route (stage 5a, D6/C5/C6)', () =>
   let clientA: SupabaseClient
   let clientB: SupabaseClient
   let clientQsA: SupabaseClient
+  let clientNullTenant: SupabaseClient
+  let nullTenantUserId: string
   let dailyLogAId: string
+  let hindranceAId: string
   let dlPhotoId: string
   let dlObjectPath: string
   let dlTombstonedPhotoId: string
+  let dlNoObjectPhotoId: string
+  let hPhotoId: string
+  let hObjectPath: string
   const nonexistentPhotoId = randomUUID()
   const qsAEmail = deriveRunScopedEmail(getRunId(), 'PHOTO_ROUTE_QS_A')
+  const nullTenantEmail = deriveRunScopedEmail(getRunId(), 'PHOTO_ROUTE_NULL_TENANT')
 
   async function ensureAuthUserLocal(db: SupabaseClient, email: string, password: string): Promise<string> {
     const { data: list, error: listErr } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 })
@@ -143,6 +150,33 @@ describe('app/api/photos/[kind]/[photoId] — route (stage 5a, D6/C5/C6)', () =>
     )
     if (qsMemberErr) throw new Error(`seed qsA membership failed: ${qsMemberErr.message}`)
 
+    // A caller whose own users.tenant_id is NULL -- the +smoke020 prod
+    // shape (docs/build-status.md:253-255). Same construction as
+    // test/photo-access-boundary-agreement.test.ts's own null-tenant
+    // fixture (not exported from that file, so replicated locally, same
+    // convention as ensureAuthUserLocal/claimQsProfile above): deliberately
+    // NOT claimed via claimProfile, so handle_new_user()'s trigger-created
+    // stub (id, auth_id only) is left with tenant_id NULL.
+    const nullTenantAuthId = await ensureAuthUserLocal(db, nullTenantEmail, TEST_007_PASSWORD)
+    const { data: nullTenantStub, error: nullTenantErr } = await db
+      .from('users')
+      .select('id, tenant_id')
+      .eq('auth_id', nullTenantAuthId)
+      .maybeSingle<{ id: string; tenant_id: string | null }>()
+    if (nullTenantErr || !nullTenantStub) {
+      throw new Error(
+        `null-tenant fixture: expected handle_new_user() to have created a public.users stub for ` +
+          `auth_id ${nullTenantAuthId}, found none (${nullTenantErr?.message ?? 'no row'})`,
+      )
+    }
+    if (nullTenantStub.tenant_id !== null) {
+      throw new Error(
+        `null-tenant fixture: expected the trigger-created stub's tenant_id to be NULL, got ` +
+          `${nullTenantStub.tenant_id} -- handle_new_user()'s own insert shape may have changed`,
+      )
+    }
+    nullTenantUserId = nullTenantStub.id
+
     const { data: log, error: logErr } = await db
       .from('daily_logs')
       .insert({
@@ -192,9 +226,65 @@ describe('app/api/photos/[kind]/[photoId] — route (stage 5a, D6/C5/C6)', () =>
     if (tombstonedErr || !tombstoned) throw new Error(`seed tombstoned row failed: ${tombstonedErr?.message ?? 'no row'}`)
     dlTombstonedPhotoId = tombstoned.id
 
+    // A row with a correctly-shaped photo_url that was NEVER uploaded to
+    // Storage -- getAuthorizedPhotoPath has no way to know this (it only
+    // checks the DB row, never Storage itself), so this exercises the
+    // route's OWN createSignedUrl error branch, not the authorization
+    // function's. Achieved entirely through fixture construction, no
+    // custom/broken serviceClient needed.
+    const { data: noObject, error: noObjectErr } = await db
+      .from('daily_log_photos')
+      .insert({
+        tenant_id: TEST_TENANT_A_ID,
+        daily_log_id: dailyLogAId,
+        phase: 'morning',
+        photo_url: `${TEST_TENANT_A_ID}/${dailyLogAId}/${randomUUID()}.jpg`,
+        caption: null,
+        retention_class: 'attendance',
+      })
+      .select('id')
+      .single<{ id: string }>()
+    if (noObjectErr || !noObject) throw new Error(`seed no-object row failed: ${noObjectErr?.message ?? 'no row'}`)
+    dlNoObjectPhotoId = noObject.id
+
+    const { data: hindrance, error: hindranceErr } = await db
+      .from('hindrances')
+      .insert({
+        tenant_id: TEST_TENANT_A_ID,
+        project_id: TEST_PROJECT_A_ID,
+        reported_by: pmAId,
+        description: 'ZZ photo-route test hindrance',
+        timing: 'active',
+        submitted_via: 'whatsapp_adhoc',
+      })
+      .select('id')
+      .single<{ id: string }>()
+    if (hindranceErr || !hindrance) throw new Error(`seed hindrance failed: ${hindranceErr?.message ?? 'no row'}`)
+    hindranceAId = hindrance.id
+
+    hObjectPath = `${TEST_TENANT_A_ID}/hindrance/${hindranceAId}/${randomUUID()}.jpg`
+    const { error: hUploadErr } = await db.storage
+      .from(PHOTO_BUCKET)
+      .upload(hObjectPath, Buffer.from('test'), { contentType: 'image/jpeg', upsert: true })
+    if (hUploadErr) throw new Error(`seed hindrance object upload failed: ${hUploadErr.message}`)
+
+    const { data: hPhoto, error: hPhotoErr } = await db
+      .from('hindrance_photos')
+      .insert({
+        tenant_id: TEST_TENANT_A_ID,
+        hindrance_id: hindranceAId,
+        photo_url: hObjectPath,
+        retention_class: 'hindrance',
+      })
+      .select('id')
+      .single<{ id: string }>()
+    if (hPhotoErr || !hPhoto) throw new Error(`seed hindrance_photos row failed: ${hPhotoErr?.message ?? 'no row'}`)
+    hPhotoId = hPhoto.id
+
     clientA = await jwtClient(TEST_007_USER_A_EMAIL, TEST_007_PASSWORD)
     clientB = await jwtClient(TEST_007_USER_B_EMAIL, TEST_007_PASSWORD)
     clientQsA = await jwtClient(qsAEmail, TEST_007_PASSWORD)
+    clientNullTenant = await jwtClient(nullTenantEmail, TEST_007_PASSWORD)
   })
 
   afterAll(async () => {
@@ -202,13 +292,21 @@ describe('app/api/photos/[kind]/[photoId] — route (stage 5a, D6/C5/C6)', () =>
     await clientA?.auth.signOut()
     await clientB?.auth.signOut()
     await clientQsA?.auth.signOut()
+    await clientNullTenant?.auth.signOut()
     if (dlPhotoId) await db.from('daily_log_photos').delete().eq('id', dlPhotoId)
     if (dlTombstonedPhotoId) await db.from('daily_log_photos').delete().eq('id', dlTombstonedPhotoId)
+    if (dlNoObjectPhotoId) await db.from('daily_log_photos').delete().eq('id', dlNoObjectPhotoId)
     if (dlObjectPath) await db.storage.from(PHOTO_BUCKET).remove([dlObjectPath])
+    if (hPhotoId) await db.from('hindrance_photos').delete().eq('id', hPhotoId)
+    if (hObjectPath) await db.storage.from(PHOTO_BUCKET).remove([hObjectPath])
+    if (hindranceAId) await db.from('hindrances').delete().eq('id', hindranceAId)
     if (dailyLogAId) await db.from('daily_logs').delete().eq('id', dailyLogAId)
     if (qsAId) {
       await db.from('project_members').delete().eq('user_id', qsAId)
       await db.from('users').delete().eq('id', qsAId)
+    }
+    if (nullTenantUserId) {
+      await db.from('users').delete().eq('id', nullTenantUserId)
     }
     await db.from('project_members').delete().in('project_id', [TEST_PROJECT_A_ID, TEST_PROJECT_B_ID])
     await removeTwoTenantFixtures()
@@ -226,22 +324,51 @@ describe('app/api/photos/[kind]/[photoId] — route (stage 5a, D6/C5/C6)', () =>
   })
 
   it('every refusal case returns the identical status, body, and headers', async () => {
-    const cases: { name: string; kind: string; photoId: string; client: SupabaseClient }[] = [
+    // Simple, single-call cases -- one handlePhotoGet call each, all
+    // independent, safe to run concurrently (each gets its own fresh
+    // rateLimit.store via baseDeps()).
+    const simpleCases: { name: string; kind: string; photoId: string; client: SupabaseClient }[] = [
       { name: 'cross-tenant PM', kind: 'daily_log', photoId: dlPhotoId, client: clientB },
       { name: 'same-tenant non-PM', kind: 'daily_log', photoId: dlPhotoId, client: clientQsA },
       { name: 'logged-out', kind: 'daily_log', photoId: dlPhotoId, client: anonSignedOutClient() },
+      { name: 'NULL-tenant caller (+smoke020 shape)', kind: 'daily_log', photoId: dlPhotoId, client: clientNullTenant },
       { name: 'nonexistent photo id', kind: 'daily_log', photoId: nonexistentPhotoId, client: clientA },
       { name: 'wrong kind for a real id', kind: 'hindrance', photoId: dlPhotoId, client: clientA },
       { name: 'tombstoned row', kind: 'daily_log', photoId: dlTombstonedPhotoId, client: clientA },
       { name: 'malformed photo id (not a UUID)', kind: 'daily_log', photoId: 'not-a-real-id', client: clientA },
       { name: 'bad kind segment', kind: 'invoice', photoId: dlPhotoId, client: clientA },
+      // Storage signing failure: the row's own photo_url is correctly
+      // shaped and passes every authorization check, but no object was
+      // ever uploaded to that path -- getAuthorizedPhotoPath cannot see
+      // this (it never touches Storage), so this exercises the ROUTE's
+      // own createSignedUrl error branch specifically, achieved entirely
+      // through fixture construction against the real service client
+      // (testClient()), no broken/mocked client required.
+      { name: 'storage signing error (no object at path)', kind: 'daily_log', photoId: dlNoObjectPhotoId, client: clientA },
     ]
 
-    const responses = await Promise.all(
-      cases.map((c) =>
+    const simpleResponses = await Promise.all(
+      simpleCases.map((c) =>
         handlePhotoGet(buildRequest(), { kind: c.kind, photoId: c.photoId }, baseDeps({ supabaseClient: c.client })),
       ),
     )
+
+    // Rate-limited case: a SEPARATE fresh store with maxRequests: 1. The
+    // first call (primed, discarded here) succeeds; the SECOND call on
+    // the SAME store is refused BECAUSE of the limiter specifically --
+    // nothing else about the request differs -- and it is that second
+    // response that joins the compared set below.
+    const rateLimitStore = new Map()
+    const rateLimitDeps = baseDeps({
+      supabaseClient: clientA,
+      rateLimit: { maxRequests: 1, windowMs: 60_000, store: rateLimitStore },
+    })
+    const primingResponse = await handlePhotoGet(buildRequest(), { kind: 'daily_log', photoId: dlPhotoId }, rateLimitDeps)
+    expect(primingResponse.status, 'priming call for the rate-limit case must itself succeed').toBe(302)
+    const rateLimitedResponse = await handlePhotoGet(buildRequest(), { kind: 'daily_log', photoId: dlPhotoId }, rateLimitDeps)
+
+    const cases = [...simpleCases, { name: 'rate limited (max=1, second call)' }]
+    const responses = [...simpleResponses, rateLimitedResponse]
 
     for (const [i, res] of responses.entries()) {
       expect(res.status, `status for case "${cases[i].name}"`).toBe(404)
@@ -253,6 +380,17 @@ describe('app/api/photos/[kind]/[photoId] — route (stage 5a, D6/C5/C6)', () =>
     for (const [i, fp] of fingerprints.entries()) {
       expect(fp, `headers for case "${cases[i].name}" vs. case "${cases[0].name}"`).toBe(fingerprints[0])
     }
+  })
+
+  it('a real PM (admin-shaped) requesting the real hindrance photo via kind="hindrance" gets 302 with Cache-Control: no-store', async () => {
+    const res = await handlePhotoGet(
+      buildRequest(),
+      { kind: 'hindrance', photoId: hPhotoId },
+      baseDeps({ supabaseClient: clientA }),
+    )
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBeTruthy()
+    expect(res.headers.get('cache-control')).toBe('no-store')
   })
 
   it('exported rate-limit defaults are 120 requests per 60_000 ms', () => {
