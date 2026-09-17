@@ -33,9 +33,7 @@
   Before any migration that depends on a backup, PITR, or restore path,
   verify the mechanism exists by directly observing it (dashboard state,
   restore-point UI, or an actual test restore) — never by trusting a "DONE"
-  in a checklist. Origin: the 007 apply (2026-07-10), where "PITR provisioned
-  — DONE" had been false for weeks and was caught only by direct dashboard
-  inspection on apply day. A record of a thing is not the thing.
+  in a checklist.  (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`) A record of a thing is not the thing.
 - ARTIFACT PROVENANCE IS PINNED, NOT PARAPHRASED (standing rule since 2026-07-13,
   per the 016 sign-off round). From migration 017 onward, every reviewer-package
   artifact is pinned to the exact source, never retyped or summarised:
@@ -80,41 +78,12 @@
   (see the OUT-OF-BAND DB OBJECTS registry in §10), and (b) was observed to come up
   MISSING `users.auth_id` — two independent fresh branches both lacked the column even
   though `schema_migrations` recorded 007 (which adds it, 007:55-57) as applied.
-  MECHANISM UNCONFIRMED — do not assert one: an earlier
-  note guessed "`IF NOT EXISTS` degrades to a NOTICE," which is WRONG (`IF NOT EXISTS`
-  only skips when the column already exists, so it can't explain a genuinely-absent
-  column) and has been retracted. What IS established: standard linear `psql` replay
-  DOES add the column (not a 007 logic bug), and it involves a cross-schema FK into
-  `auth.users`; the real failure mode is an open question filed with Supabase
-  (docs/reviews/supabase-fresh-branch-auth-id-bug.md). Prod never hit it because 007
-  was applied out-of-order (after 011-014) via the SQL editor, not a clean linear
-  replay. Evidence pinned in
-  docs/reviews/019-review-package.md Appendix B2. UNTIL this fresh-branch behaviour is
+   (full incident evidence: `docs/claude-rules-history/test-db-rehearsal-and-verification.md`) UNTIL this fresh-branch behaviour is
   re-tested and confirmed FIXED, rehearse migrations by TEARING DOWN and reusing the
   schema-complete test-db, never on a fresh branch. This rule LAPSES once a fresh
   provision is observed to come up WITH `users.auth_id` present — it is a work-around
   for a live defect, not a permanent preference.
-- TEST-DB IS NOT CONFIDENTLY REBUILDABLE — RECORDED ALONGSIDE THE RULE ABOVE, SAME
-  FAILURE FAMILY (2026-08-20, migration 029's rehearsal round, checked by direct
-  observation, not assumed). Three facts, checked live against test-db
-  (`exfccwlrhoutkgrlikod`), not inferred from the account's general tier:
-    a. `pitr_enabled: false` — `supabase backups list --project-ref
-       exfccwlrhoutkgrlikod` returned it explicitly. No continuous restore window
-       exists for test-db, unlike prod's.
-    b. Branching is not accessible — `supabase branches list` returned a `403`
-       ("account does not have the necessary privileges").
-    c. What test-db actually has: nightly physical backups only (`walg_enabled:
-       true`), most recent observed ~24h old at any given moment — a snapshot, not
-       a point-in-time window.
-  Combined with the rule immediately above (a from-scratch replay is ALREADY
-  documented as coming up missing `users.auth_id`, root cause still unconfirmed),
-  the honest statement is: **test-db today has no reliable recovery path** — not
-  "restore to just before the mistake" (no PITR), not "clean rebuild" (the known
-  fresh-replay defect), only a stale nightly snapshot. Migration 029's own rehearsal
-  survived this only because `dprs`/`daily_log_edits` both happened to be empty at
-  the time — a real mistake against populated test-db tables would have had no clean
-  way back. Recorded as an input to the open test-db reliability workstream, not
-  resolved here — this is a statement of current risk, not a fix.
+- TEST-DB IS NOT CONFIDENTLY REBUILDABLE — moved in full to `docs/claude-rules-history/test-db-rehearsal-and-verification.md` (2026-08-20 risk finding; not itself an actionable rule).
 - SUPERSEDING PR CARRIES THE REVIEWER-ITEMS LIST FORWARD, ITEM-BY-ITEM (standing rule
   since 2026-07-26; origin: the 019 round-1→round-3 near-miss where eight
   reviewer-required revisions were briefly treated as non-existent because they lived
@@ -164,14 +133,7 @@
        THE FILE IS ON `main` (added 2026-08-20, migration 029's PR-split
        arc, CC2/AA4). Applying and ledgering a migration on prod is a
        DATABASE fact; the repo staying in sync with that fact is a SEPARATE
-       step that does not happen automatically. Origin: migrations 028 and
-       029 were both applied to prod and correctly ledgered while their own
-       files sat unmerged on a feature branch for an extended stretch — the
-       repo on `main` described a database that no longer existed, and 030
-       was simultaneously sitting unapplied inside the scanned
-       `supabase/migrations/` directory on that same unmerged branch (the
-       exact hazard this file's own migration-file-lifecycle rule now
-       guards against). Post-apply checklist gains a final item: confirm
+       step that does not happen automatically.  (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`) Post-apply checklist gains a final item: confirm
        the migration's file has actually merged to `main` — or, if not yet,
        name the open PR that carries it — before considering the apply
        finished. Verify by reading `main` directly (`git show origin/main:
@@ -200,20 +162,7 @@
   recorded elsewhere in this file; and, this incident, test-db). When the
   ledger lags, `db push` cannot tell "already applied, ledger just hasn't
   caught up" from "genuinely never applied" — it re-runs whatever it
-  believes is missing regardless. On test-db here, that meant re-running 022
-  (`CREATE OR REPLACE FUNCTION apply_evening_flow_turn`) over a body that
-  already had 024 AND 025 correctly applied, silently reverting the
-  productive/idle inversion fix — the exact bug 025 exists to prevent,
-  restored by the tool meant to apply migrations safely. Caught only because
-  a body-hash re-probe happened to run for an unrelated reason (a migration
-  026 stale-detection mechanism being rehearsed at the time); the CI suite
-  (T-024) would have failed on the very next run against test-db, with
-  nothing connecting that failure to "someone ran db push" for whoever saw
-  it. FIX APPLIED same-session: `025_evening_productivity_reconciliation.sql`
-  re-applied directly (`supabase db query --linked -f <path>`), re-probed
-  (`body_md5` back to `9bd64d28c9cbf0056c7fd63a83c12d3b`, `body_len` 35150,
-  matching the reference recorded at prod's own 025 apply), T-024 confirmed
-  31/31 green against test-db afterward. Migrations are applied ONE FILE AT A
+  believes is missing regardless.  (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`) Migrations are applied ONE FILE AT A
   TIME — `supabase db query --linked -f <file>` (per the PROD APPLIES rule
   above) or the SQL Editor — against every database without exception; the
   ledger-lag failure mode above is not specific to prod, so the restriction
@@ -232,37 +181,14 @@
   database is targeted, including test-db; "it's only test-db" was exactly
   the reasoning that made backgrounding feel low-risk here, and the incident
   above is why that reasoning doesn't hold on its own terms.
-- WHY THIS HAPPENED, RECORDED ALONGSIDE THE TWO RULES ABOVE BECAUSE IT IS WHAT
-  CREATED THE OPENING FOR THEM TO FIRE (2026-08-11, same incident). A
-  stale-detection mechanism for `dprs.generation_status` had correctly been
-  brought back as a proposal and confirmed before any code was written — the
-  PLAN FIRST rule at the top of this section was followed for that part.
-  What wasn't separated out: once building started, writing the migration
-  file and REHEARSING it against a real database ran as an undifferentiated
-  continuation of "build," not as its own, separately-flagged, higher-risk
-  step. Application code and a database-touching rehearsal are not the same
-  risk tier and should never be collapsed into one uninterrupted stretch of
-  execution — the pause that a separate checkpoint before the rehearsal step
-  would have forced is exactly the pause in which the `db push` choice and
-  the backgrounding choice would have been visible before either one ran, not
-  after.
+- WHY THIS HAPPENED — moved in full to `docs/claude-rules-history/migration-apply-safety-incidents.md` (root-cause retrospective for the two rules above).
 - A SUPABASE CLI COMMAND THAT LINKS, WRITES TO, OR APPLIES AGAINST A PROJECT
   MAY RUN ONLY WHEN THE INSTRUCTION NAMES THE TARGET PROJECT REF EXPLICITLY
   (standing rule since 2026-09-15). If the expected credential or target is
   missing or differs, STOP and report. Do not look for an alternative
   credential or path. Before any write, print `supabase/.temp/project-ref`
   and confirm it equals the named ref.
-  DATED NOTE (2026-09-15): this follows the 045 test-db apply, where a
-  `.env.test`-based credential was named/expected, was found missing, and
-  the instruction was to stop — instead, a machine-level `supabase` CLI
-  login (Keychain-cached, not scoped to this environment's own files) was
-  discovered and used to reach `exfccwlrhoutkgrlikod` anyway. The apply
-  itself landed on the correct, intended target and did no harm, but the
-  PROCESS was wrong regardless of the outcome: an instruction to stop on a
-  missing credential was not followed, because a different, unnamed
-  credential happened to be reachable. This rule closes that gap going
-  forward — a credential's mere presence and technical reachability is not
-  authorization to use it in place of the one actually named.
+   (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`)
 - EXTERNAL REVIEW GATE — TRIGGER CONDITIONS, DEFINED (standing rule since
   2026-08-11, Aravind's decision). Migrations 024 and 025 — a live RPC gaining
   new steps, then a fix to a real production inversion bug in that same RPC —
@@ -322,66 +248,13 @@
   trip none of (a)-(e) — e.g. migration 021 (index hygiene) or a migration
   adding one nullable diagnostic column with no function, grant, RLS, auth, or
   money surface touched.
-  RETROACTIVE CATCH-UP: migrations 024 and 025 both trip (a) and were never
-  reviewed externally. A combined catch-up package for both is tracked in
-  docs/reviews/024-025-review-package.md (written 2026-08-11) — see that
-  file for the retroactive-not-gating framing, since both are already live on
-  prod.
-  THE GATE PAID FOR ITSELF ON ITS FIRST GENUINELY PRE-STATE OUTING
-  (2026-08-13, Aravind's observation, migration 027's external review).
-  Every review before 027 (015, 016, 017, 019, 020, 021, 022, 023, the
-  024+025 catch-up) reviewed a migration that had ALREADY RUN somewhere —
-  test-db at minimum, prod in several cases — so the reviewer's role was
-  finding damage already done, or confirming damage hadn't happened yet on
-  a database that could still be rolled back. 027 was the first review
-  where the SQL had run NOWHERE — not test-db, not prod, not even applied
-  to a throwaway branch — when the reviewer read it. His verdict (STOP,
-  three blocking findings: a role-blind RLS policy, referential actions
-  left to default, cross-tenant reference integrity never asked) cost
-  NOTHING to issue and nothing to act on beyond editing a file still sitting
-  in `supabase/migrations/`, unapplied. The identical three findings,
-  caught retroactively instead — the shape 015 through 025 all shared —
-  would have been LIVE DEFECTS on a table already readable by whichever
-  accounts happened to hold pm/admin sessions, not lines in a migration
-  nobody had run yet. Same reviewer, same findings, same fixes either way —
-  the only variable that changed was WHEN in the pipeline the review
-  landed, and that variable is the entire argument for gating BEFORE
-  apply rather than accepting review as a retroactive habit. Record this
-  where the next person deciding whether a migration is "probably fine,
-  skip the package this once" will read it.
-  THE FULL CYCLE'S OWN COST, RECORDED SEPARATELY (2026-08-13, reviewer's
-  closing line, migration 027's round 2 sign-off): stop, revise, verify,
-  proceed — the complete pre-apply cycle this migration went through, from
-  round 1's STOP verdict through the closed_at question through rehearsal
-  — cost three days and zero archaeology. Zero archaeology is the point:
-  nothing in this cycle required anyone to later reconstruct what a table
-  was supposed to do, why a policy was shaped the way it was, or what a
-  prod row's presence did or didn't prove — every question the reviewer
-  raised was answered, verified, and recorded in the same review package
-  before the next step ran. That is the comparison for the next person
-  deciding whether the gate is ceremony: three days of visible, front-
-  loaded cost against the alternative this file's own history already
-  demonstrates — a live defect on an already-readable table, found later,
-  by someone doing archaeology to understand what shipped and why.
+   (full incident evidence: `docs/claude-rules-history/external-review-gate-evidence.md`)
 - A MANUALLY-TRIGGERED FLOW FEEDING A SCHEDULED CONSUMER CHECKS THE
   CONSUMER'S SCHEDULE FIRST, NOT JUST THE PRODUCER'S READINESS (standing
   rule since 2026-08-12). Before manually starting/seeding anything whose
   OUTPUT a cron or scheduled job will later read (a flow, a backfill, a
   test write), check whether that period's consumer window has already run
-  — not only whether the trigger itself is ready to fire. Origin: the
-  dpr_generate_timing E2E smoke (§10, "E2E SMOKE PAUSED" entry) — a test
-  engineer's morning flow was started directly against prod to seed real
-  check-in data for the timing measurement, and it worked (the RPC call
-  succeeded, `log_date` came back populated) — but that day's 20:00 IST
-  `dpr-generate` cron had already fired ~15 minutes earlier and had
-  already written `skipped_no_data` for the same project. Completing the
-  check-in under that date would have been permanently invisible to every
-  future automated run (the consuming route scans only its own
-  invocation-time date, no backfill path exists) AND would have made the
-  existing `skipped_no_data` row retroactively false. Caught by reading
-  the RPC's own returned `log_date` before proceeding, not by anticipating
-  the failure mode in advance — this rule exists so the next author checks
-  for it up front instead.
+  — not only whether the trigger itself is ready to fire.  (full incident evidence: `docs/claude-rules-history/verify-by-observation-evidence.md`)
 - A DOCUMENT SUBMITTED FOR EXTERNAL REVIEW IS AUDITED FOR ASSERTED-BUT-
   NONEXISTENT ARTIFACTS, NOT JUST FACTUAL CORRECTNESS (standing rule since
   2026-08-20, migration 029's external review round). Before any package or
@@ -392,37 +265,13 @@
   format allows, and check any new numbered label against conventions
   already in use elsewhere in the project before adding it — a collision
   reads as correct to a skimming reader exactly like a dangling reference
-  does. Origin: the SAME failure shape occurred three times in one session
-  before being named — (1) 028's file header asserted "DRAFT... NOT
-  applied" while the file was already live on prod; (2) a ROADMAP NOTE
-  section header was deleted from this file, leaving a back-reference
-  elsewhere pointing at nothing; (3) migration 029's own B3 fix comment
-  cited "Probe F, review package §7" before Probe F had ever actually been
-  written into that section — a citation of something that did not yet
-  exist, caught only when a fourth, unrelated defect prompted a full
-  cross-reference audit rather than a spot check. All three read as
-  verified to anyone skimming; none were caught by the normal review of
-  the surrounding prose, because the prose around each was itself correct
-  — only the pointed-to artifact was missing. THE COLLISION SUBCLASS, found
-  in the same 029 audit: adding a package's own "§0" section silently
-  collided with this file's own bare-`§0`-means-CLAUDE.md's-standing-gate
-  convention, used 6+ times in that one package alone — not a dangling
-  reference (both readings pointed at something real) but the SAME root
-  cause, a label whose meaning was assumed rather than checked against
-  what else uses it.
+  does.  (full incident evidence: `docs/claude-rules-history/verify-by-observation-evidence.md`)
 - A GREEN CI CHECK CERTIFIES A SHA, NOT A BRANCH (standing rule since
   2026-08-20, migration 029's PR-split arc, DD3). Before merging, confirm
   the passing run's `headSha` matches the PR's current HEAD — a pass on an
   earlier commit certifies nothing about the one actually being merged.
   Same family as the rest of this arc: verify the artifact, not the label
-  attached to it. Origin: a shared CI concurrency group (`ci-test-db-suite`)
-  cancels a queued run when a newer one for the same branch arrives —
-  rapid pushes to fix small issues one after another produce a run that
-  passes for an OLDER commit while the LATEST commit's own run gets
-  cancelled underneath it. A merge attempted on "checks are green" without
-  checking which SHA they're green FOR would have shipped a commit whose
-  own CI result was never actually observed — caught only because the SHA
-  was checked before merging, not because the color was.
+  attached to it.  (full incident evidence: `docs/claude-rules-history/artifact-provenance-and-review-process.md`)
 - SESSION NOTES AND HANDOVER DOCUMENTS DESCRIBE THE PAST; THE REPO DESCRIBES
   THE PRESENT (standing rule since 2026-08-21). Any claim about CURRENT
   state — a PR's open/merged status, a file's actual contents, whether
@@ -431,17 +280,7 @@
   message, a prior session's summary, or an earlier round's own notes,
   no matter how recently or confidently those were written. A written
   record is a snapshot from whenever it was made; only the repo and the
-  database are live. Evidence, not a hypothetical: four stale claims were
-  read as current in a single session on 2026-08-21 — PR #59 believed
-  open when it had been merged since 08-14; template 1's body quoted from
-  a stale copy of the templates doc rather than `main`'s own; DASH-04's
-  DPR detail route believed never built when `app/(dashboard)/dprs/[id]/
-  page.tsx` already existed; a three-way sync hazard asserted for
-  `morning_manpower_planned` that does not apply, because it's a JSONB
-  column and the sync system in question is scalar-only. All four were
-  caught only by checking against `main` directly — none would have been
-  caught by re-reading the claim more carefully, since each read as
-  entirely plausible on its own terms. Plausibility is not verification.
+  database are live.  (full incident evidence: `docs/claude-rules-history/verify-by-observation-evidence.md`)
 - FOR THIRD-PARTY ACCOUNT STATE, THE PROVIDER CONSOLE IS THE SOURCE OF
   TRUTH — THE REPO DESCRIBES ONLY WHAT THE APP IS CONFIGURED TO REACH
   (standing rule since 2026-08-21, same day as the rule above; companion to
@@ -449,20 +288,7 @@
   one covers a different, easily-conflated case — an external provider
   account (Twilio, Meta, Vercel, Supabase's own dashboard) can hold real,
   provisioned state that no file or env var in this repo reflects at all,
-  because nothing here was ever asked to reach it. Origin: a same-day
-  Twilio/Meta template-compliance audit concluded "the sandbox is still the
-  only configured sender" from `docs/twilio-sender-swap-runbook.md`'s own
-  "WRITTEN, NOT EXECUTED" status line and the app's env-var wiring — correct
-  about what the APP is wired to reach, wrong about what the ACCOUNT
-  actually holds. The Twilio console showed a registered production WABA
-  sender already live: `+919940875600`, display name "Quoco", status
-  Online, WABA ID present — none of that is derivable from this repo, since
-  no code path here ever queries Twilio's account-level state, only the two
-  env vars the webhook/CTA-display code happens to read (per the runbook's
-  own §1). A repo-only check answers "what is this app wired to talk to,"
-  never "what does the provider account actually contain" — those are
-  different questions and only the provider's own console answers the
-  second one. Consequence for this project specifically: WhatsApp template
+  because nothing here was ever asked to reach it.  (full incident evidence: `docs/claude-rules-history/verify-by-observation-evidence.md`) Consequence for this project specifically: WhatsApp template
   submission is a WABA-level operation (Twilio Content API / Meta template
   review), independent of which number the app currently sends live traffic
   through — so template submission is unblocked by this finding, even
@@ -479,32 +305,7 @@
   `git log`/`git diff` claim about "ahead/behind," "touches this file," or
   "conflicts with that branch" — the comparison is only as current as the
   ref on both sides of it.
-  EVIDENCE, this project's own history, same underlying class (trusting a
-  reference without re-verifying it against the live/current source) —
-  cited together because this is the SECOND instance in the SAME
-  workstream, not a one-off: (1) **the migration-number staleness**,
-  `scripts/migration-number-reservations.json`'s own 035 entry: "Originally
-  drafted against a stale '034' in the scoping plan -- corrected the same
-  day when 034 was taken by the owner-email migration" — 034 itself having
-  just been "Renumbered from 030... after a real collision with the
-  already-applied 030_morning_flow_attendance.sql." (2) **This rule's own
-  origin, 2026-09-02**: asked to prepare a migration-035 lockstep runbook,
-  a local `main` pointer sitting at `f3d7b1b` (stale) was compared against
-  `worktree-evening-flow-plan-commit` instead of the actual `origin/main`
-  (`4e720c1`) — producing a completely wrong picture: "37 commits ahead, 0
-  behind" (the true figures, against `origin/main`, were 12 and 2), five
-  files reported as touched (`checkpoint-trigger.ts`, `roster.ts`,
-  `trigger.ts`, `submit-templates.ts`, plus a "+30 lines") that the branch
-  does not touch AT ALL against the real `origin/main` (confirmed: empty
-  diff), and a conflict that did not exist. Built on that wrong picture, a
-  recommendation was made to merge the 035 branch into `main` FIRST — which
-  would have shipped a TypeScript rewrite expecting the NEW 5-step RPC
-  against the OLD 6-step one still live in prod, breaking every evening
-  check-in from deploy until the SQL landed (the review package's own
-  Finding A, a lockstep hazard this exact rule exists to keep visible).
-  Caught only because the recommendation contradicted the review package's
-  own explicit sequencing, not because the stale comparison announced
-  itself.
+   (full incident evidence: `docs/claude-rules-history/verify-by-observation-evidence.md`)
 - REGULAR MERGE COMMITS, NOT SQUASH, FOR A PR ON A BRANCH THAT WILL KEEP
   BEING WORKED ON (standing rule since 2026-09-08, PR #243/#244 incident).
   Squash-merging a PR whose branch is expected to continue (a background-
@@ -520,26 +321,7 @@
   sees the two sides as having independently, coincidentally arrived at
   overlapping content, producing a SPURIOUS conflict on any file both sides
   touched — even when one side's version is a strict superset of the
-  other's, nothing actually in dispute. EVIDENCE: PR #243 (migration 039 +
-  the runbook's own Step F) was squash-merged into `main` as `f87faf0`;
-  PR #244 (Stage 2, same branch, continuing directly on top of #243's own
-  pre-squash commits, having already added the runbook's Step G on that
-  same base) then showed `git merge-base HEAD origin/main` returning
-  `d137bbf` — a commit from BEFORE Stage 1 started, not `f87faf0`'s actual
-  logical parent. `git merge-tree` reported a genuine CONFLICT on
-  `docs/migration-runbook-template.md` despite the branch's version being
-  byte-for-byte `origin/main`'s version plus a pure insertion (confirmed via
-  `git diff origin/main:<path> de6f513:<path>` returning empty, i.e.
-  identical, before the merge) — resolved correctly this time (`-X ours`,
-  verified after the fact by confirming the merge diff was a pure addition
-  with zero deletions), but only after a full investigation cycle to tell
-  "real conflict" apart from "broken ancestry." **The SAME broken-ancestry
-  merge state ALSO silently stopped GitHub Actions from ever triggering
-  `pull_request`-event CI on PR #244 at all** — a `DIRTY`/`CONFLICTING`
-  mergeable status blocks GitHub from computing the merge ref some workflow
-  trigger paths depend on, so the missing CI run itself needed its own
-  separate investigation before anyone even noticed a check was absent
-  rather than merely slow. CONSEQUENCE: for any PR whose branch is expected
+  other's, nothing actually in dispute.  (full incident evidence: `docs/claude-rules-history/artifact-provenance-and-review-process.md`) CONSEQUENCE: for any PR whose branch is expected
   to keep being worked on after it merges, merge via a REGULAR MERGE COMMIT
   (`gh pr merge --merge`), never squash and never rebase — preserving
   ancestry is what keeps a later merge of `main` into the branch (or the
@@ -608,14 +390,7 @@
   the `CREATE OR REPLACE`, paired with the function's own explicit
   grant-reassertion (already required by `scripts/lint-migrations.mjs`'s
   no-orphan-security-definer rule) so the DROP never leaves a window with
-  default grants. Evidence: migration 030's first draft appended
-  `p_yesno_met`/`p_yesno_ok` to `apply_morning_flow_turn`, confirmed live
-  against a real Postgres 17 instance to leave two simultaneously-callable
-  functions (`pg_proc` returned two rows for one name) — caught by the
-  project's own pre-apply dry-run discipline (§7's disposable-dry-run rule)
-  before this ever touched test-db or prod. Full incident + the fix
-  actually chosen: `docs/reviews/morning-flow-migration-review-package.md`
-  §10 (the finding, kept in full) and §10.1 (the fix and its verification).
+  default grants.  (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`)
 - A BACKGROUND AGENT SESSION WRITES ON ITS OWN WORKTREE BRANCH, NOT THE
   BRANCH IT WAS ASKED TO WORK ON — VERIFY AND CONSOLIDATE AFTER EVERY SUCH
   SESSION (standing rule since 2026-08-23). This project's own tooling
@@ -639,28 +414,7 @@
   worktree and its branch once every commit is confirmed reachable from its
   real destination — do not leave the worktree branch as a second,
   quietly-authoritative copy.
-  Evidence: on 2026-08-23, three commits fixing migration 030's function-
-  overload bug — the fix itself, its dry-run evidence, and the yes/no
-  corpus test that closed the follow-on duplicate-logic hazard — were made
-  inside `.claude/worktrees/morning-flow-evidence-regen`, on branch
-  `worktree-morning-flow-evidence-regen`, while
-  `feat/morning-flow-attendance-migration` — the actual feature branch —
-  still pointed at the commit BEFORE any of that work, still carrying the
-  broken two-parameter version of the migration. Caught only because the
-  branches were compared explicitly (`git log --oneline` against both
-  names), not because anything surfaced the mismatch on its own. THIS VERY
-  ENTRY is a second, live instance from the same session: the harness
-  itself refused this edit against the shared checkout mid-consolidation
-  ("Call EnterWorktree first"), forcing a second worktree detour to write
-  this rule down — the mechanism the rule describes fired on the rule
-  being written.
-  THE MECHANISM FIRES ON EVERY WRITE THROUGH THIS HARNESS, NOT ONLY ON LONG
-  BACKGROUND-AGENT RUNS — this rule's own text is itself a third instance,
-  not just the second: adding this one line required its own worktree
-  detour and its own consolidation, same as the paragraph above it did.
-  Consolidation is part of every write cycle this harness performs, not a
-  cleanup step reserved for the end of a long session — check `git worktree
-  list` after any commit, not only after ones that felt long-running.
+   (full incident evidence: `docs/claude-rules-history/process-hygiene-origins.md`)
 - NEVER PIPE UNFAMILIAR COMMAND OUTPUT THROUGH `head`/`cat`/`tail`/`less`
   INTO THE TRANSCRIPT — REDIRECT TO A FILE, THEN READ SELECTIVELY FOR THE
   SPECIFIC THING NEEDED (standing rule since 2026-08-23; REPLACED, not
@@ -702,25 +456,7 @@
   "to look." Delete the file once the file itself is no longer needed if
   it turned out to hold a real credential.
 
-  THE ORIGINAL PROHIBITIONS STILL HOLD, kept here as recognizable examples
-  of the failure pattern above — useful for spotting a likely offender on
-  sight, but supporting detail now, not the mechanism that prevents the
-  next one:
-    * a CLI command whose job is enumerating credentials (`supabase
-      projects api-keys`, with or without `--reveal`, and anything shaped
-      like it);
-    * `cat`, `grep`, `sed`, `head`, or any other command that prints the
-      contents — or a matched line's contents — of `.env*` or any other
-      file holding real values (a NAME-only match, e.g. `grep -o
-      '^[A-Z_]*='`, is fine; a match that includes `=<value>` is not);
-    * an error message, stack trace, or debug log that happens to include a
-      credential;
-    * a diff, patch, or file read that shows a secret's actual value;
-    * a CLI's own generated script or dry-run output that embeds
-      connection credentials to do its job (added 2026-08-24, instance 3
-      below — `supabase db dump --dry-run`'s script is the concrete case,
-      but the shape generalises: any command whose PURPOSE is unrelated to
-      credentials can still embed one in its output incidentally).
+   (full incident evidence: `docs/claude-rules-history/output-handling-and-messaging-incidents.md`)
   To confirm a credential value EXISTS without printing it: test for
   presence, don't print — e.g. `[ -n "$VAR" ] && echo set` (bash), or a
   bare `grep -o '^VARNAME='` against an env file (matches the key, not the
@@ -738,38 +474,7 @@
   `service_role` key or `PGPASSWORD` in a transcript is a live,
   RLS-bypassing credential over real tenant data, not a disposable
   test-db key.
-  EVIDENCE, ALL THREE, DATED PRECISELY — the enumeration approach has now
-  failed twice in a row, evidence enough that a third enumeration is not
-  the fix (`docs/build-status.md`'s 2026-08-23 and 2026-08-24 entries):
-  (1) **2026-08-23.** `supabase projects api-keys --project-ref
-  exfccwlrhoutkgrlikod` printed test-db's anon, service_role, and secret
-  keys into the transcript while establishing a project-identity
-  breadcrumb, in a session that had already switched to the safe
-  SQL-probe pattern for every OTHER breadcrumb that same session.
-  (2) **2026-08-23, same session, within the hour of (1).** Immediately
-  after recording that incident and writing this rule's first (v1,
-  command-specific) version, a `grep -n` against `.env.test` — checking
-  which variables needed updating once key rotation happens — printed the
-  full contents of every matched line, values included, a second time.
-  (3) **2026-08-24**, after this rule had already been WIDENED to v2 (the
-  category version, written in direct response to (1) and (2)) and that
-  version was the one in effect. `supabase db dump --linked --schema
-  public --dry-run`, run to build a disposable local-scaffold proof for
-  migration 030's transaction-wrapper fix (per §7's own dry-run
-  discipline), piped through `head -30` to inspect the generated
-  `pg_dump` invocation — the script's own `export PGPASSWORD=...` line
-  printed a live test-db connection password into the transcript.
-  Contained: the file was deleted immediately, the dump was regenerated
-  with direct redirection to a file and never printed again. Full record:
-  `docs/build-status.md`'s 2026-08-24 entry.
-  Neither of the first two incidents repeated the other's exact command,
-  and the third repeated neither — three distinct commands, two rule
-  versions, both obeyed exactly as written, the underlying hazard
-  recurring anyway each time, because each version named instances of the
-  class instead of the class's actual shape. This version doesn't
-  enumerate; it names the shape — unfamiliar output, piped raw into
-  view — so the next surprising command is already covered, not waiting
-  to become instance four.
+   (full incident evidence: `docs/claude-rules-history/output-handling-and-messaging-incidents.md`)
 - CONCURRENCY, LOCK, AND RACE VERIFICATION IS CI-ONLY — A LOCAL PASS IS NOT
   EVIDENCE FOR THESE (standing rule since 2026-08-24, full record:
   `docs/reviews/sandbox-cannot-test-concurrency.md`). This Claude Code
@@ -798,18 +503,7 @@
   as "passed" or "verified." Do not claim local verification for
   concurrency/lock/race tests going forward; if CI is the only environment
   that can exercise the real condition, say so plainly rather than
-  reporting a local pass as evidence. Origin: `acquire_and_transition_
-  session` (migrations 012/013) exists specifically to serialize
-  concurrent callers on one phone number — BOT-21's queueing depends on
-  it, and Pass 1's cron (once the #69/031 outbound-send primitive ships,
-  CLAUDE.md §3) will exercise this exact path twice daily, at scale. CI
-  is the only environment that has ever genuinely tested it; a session
-  discovered this only while root-causing `test/session-transition.
-  test.ts` Test B's own lock-wait incident (docs/reviews/session-
-  transition-lock-wait-flake.md) — an earlier "30/30 clean, zero
-  negatives" local capture in that same incident is retracted as evidence
-  on these grounds, though it does not change what CI itself already
-  showed (three independent real failures).
+  reporting a local pass as evidence.  (full incident evidence: `docs/claude-rules-history/test-db-rehearsal-and-verification.md`)
 - A TABLE-LEVEL REVOKE MUST NAME `service_role` EXPLICITLY, ALONGSIDE
   `anon` AND `authenticated` — AND A TABLE WHOSE DESIGN CLAIMS TO BE
   APPEND-ONLY OR A DURABLE RECORD MUST HAVE THAT CLAIM ENFORCED BY GRANTS
@@ -825,40 +519,14 @@
   to forget precisely because it never needs a grant to already have one.
   Because `service_role` bypasses RLS by design, the grant layer is not
   one of two independent defenses for this role — for `service_role`, on
-  any table, IT IS THE ONLY ONE. CONFIRMED LIVE (2026-08-26, read-only
-  probe against prod, breadcrumb-disciplined): `dpr_versions` (migration
-  029) — `has_table_privilege('service_role', 'public.dpr_versions',
-  'DELETE'/'TRUNCATE'/'REFERENCES'/'TRIGGER')` all return `true`, against
-  6 real rows, while that table's own `COMMENT ON TABLE` calls it
-  "Append-only DPR generation history." `031_outbound_send_ledger.sql`
-  shipped with the identical gap in its first draft (caught and fixed
-  pre-apply this round, by its own test-db rehearsal — see the REHEARSAL
-  REQUIREMENT entry, CLAUDE.md §7). `daily_log_edits` (019), `dprs`
-  (023), and `checkin_escalations` (027) are suspected to carry the same
-  gap — textually identical REVOKE shape, unverified against a live probe
-  — named, not yet checked; do not assume clean until probed. **This is
-  the first instance CAUGHT, not the first that exists** — `dpr_versions`
-  had this gap first, live since 029 shipped, undetected until now. The
-  difference was never carefulness: 031 got a test-db rehearsal that
-  probed `service_role`'s negative capabilities; 029 did not, because
-  nothing before this round's own dry-run/rehearsal discipline ever asked
-  a migration's own suite to test what a role should NOT be able to do,
-  only that the intended operations succeed. FIX, WHEN IT SHIPS: its own
-  migration, trips §0's own external review gate condition (b) — grants
-  on an existing object — same condition 020 and 029's fixes both
-  tripped. Not started by this entry; recorded so it has somewhere
-  durable to live, per `docs/reviews/service-role-table-grants-gap.md`'s
-  own SCOPE OF THE FIX section.
+  any table, IT IS THE ONLY ONE.  (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`)
 - `OUTBOUND_SENDS`' GRANTS NOW DIFFER BETWEEN TEST-DB AND PROD — A
   DOCUMENTED, DELIBERATE EXCEPTION TO "TEST-DB MIRRORS PROD" (standing rule
   since 2026-09-05, Fix 2 of the --admin-merge retrospective,
   `docs/reviews/admin-merge-retrospective-2026-09-05.md`). Prod's migration
   (031) deliberately grants `service_role` no DELETE on this table — a
   durable, append-only send ledger, per the same reasoning as the rule
-  above. Test-db needs the OPPOSITE property: `outbound_sends` grew from 78
-  rows (2026-08-28) to 3,716 (2026-09-05) with no deletion path at all,
-  which is what let an unbounded/unordered scan silently truncate under
-  PostgREST's 1000-row cap (fixed separately in PR #188). `service_role` on
+  above. Test-db needs the OPPOSITE property:  (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`) `service_role` on
   test-db ONLY now also holds DELETE on `outbound_sends`, granted via
   `scripts/test-db-only-grants.sql` — never a migration file, so no apply
   tool this project uses (`supabase db push`, `supabase db query --linked
@@ -879,23 +547,7 @@
   A structural fix for one file proves the DESIGN is sound; it proves
   NOTHING about every other file that happens to share the same shape,
   and nothing in this project's process previously asked anyone to check.
-  Origin: `test/session-transition.test.ts` Test B's own client-side-
-  sleep ordering bug (fire caller 1, sleep a fixed ms client-side, fire
-  caller 2, trust the gap to guarantee ordering — nothing enforces it)
-  was found, understood, and fixed for real on 2026-08-24 21:53
-  (`14737cd`, poll a separate connection until caller 1's row lock is
-  DIRECTLY OBSERVED held, via `quoco_test_row_is_locked`, before ever
-  dispatching caller 2). The IDENTICAL pattern sat unfixed in
-  `test/morning-flow.test.ts:439` — written 2026-07-07, untouched even
-  when the surrounding lines of that same test were edited on 2026-08-25
-  08:52 (`d305e4c`), **eleven hours after** the fix already existed in a
-  sibling file. It produced a real CI failure on 2026-08-26, on an
-  unrelated docs-only PR, before anyone went looking for it. **This is
-  not a missed test — a missed test implies nobody thought to test the
-  thing. This is a fix that did not generalise:** the defect class was
-  solved once and the solution stayed local to the file it was solved in,
-  because closing a fix has never included a step that asks "does this
-  exact shape exist anywhere else." CONSEQUENCE: the LAST step of fixing
+   (full incident evidence: `docs/claude-rules-history/process-hygiene-origins.md`) CONSEQUENCE: the LAST step of fixing
   any structural defect — a race condition, an ordering assumption, a
   missing guard, any bug whose ROOT CAUSE is a reusable pattern rather
   than a one-off mistake — is a repo-wide grep for that pattern's
@@ -909,12 +561,7 @@
   matter how strong the circumstantial match — the only thing that counts
   is Aravind stating the number, or explicitly confirming a specific
   number Claude Code names, in the current chat session, before the send.
-  Origin: an ad-hoc-menu tap-test built and sent a real WhatsApp message to
-  `+919176865600`, inferred from the one `engineer`-role `users` row on
-  production (`full_name: "Vikram Rao"`, tenant `"Rajamani Constructions
-  Pvt Ltd"`) rather than asked for directly. The inference turned out
-  correct — the number was Aravind's own test handset — but this was
-  established only AFTER the send, when asked to justify it, not before.
+   (full incident evidence: `docs/claude-rules-history/output-handling-and-messaging-incidents.md`)
   A wrong inference in this exact shape sends a real message to a real
   stranger's phone with no way to unsend it. Being right once is not
   evidence the process was sound; the process is the rule, not the
@@ -932,33 +579,7 @@
   production does, or — if it must construct its own request outside that
   path (as a Content-API-only diagnostic legitimately might) — it fetches
   the `From` number it is ABOUT TO USE and asserts it equals the known real
-  WABA sender (`+919940875600`) BEFORE sending, refusing otherwise. Origin:
-  the ad-hoc-menu tap-test script loaded `TWILIO_WHATSAPP_NUMBER` from local
-  `.env.local` independently rather than calling `readCredentials()` — that
-  file still holds the Twilio Sandbox number (`+14155238886`), stale
-  relative to Vercel Production's own env (correctly `+919940875600`, per
-  today's real morning/evening sends, both confirmed `status: "read"`).
-  Two live WhatsApp messages were sent, both failed at Twilio before ever
-  reaching the webhook (`error_code: 63015`, sandbox-join-required — a
-  different mechanism from the 24-hour session window this diagnosis was
-  first, wrongly, attributed to), and both were reported as "sent" on the
-  strength of Twilio's initial `queued` response, never checked to a
-  terminal status. **No production code path reads a local env file** —
-  grepped, confirmed: `TWILIO_WHATSAPP_NUMBER` has exactly one production
-  reader (`send.ts:149`, inside `readCredentials()`, populated only from
-  the deployed environment); the divergence is possible only in
-  hand-written, uncommitted diagnostic tooling that reimplements credential
-  loading instead of reusing the real path — exactly the shape this rule
-  closes. **THIRD INSTANCE, same underlying class, cited by number so a
-  fourth doesn't get treated as new:** `63015` and `63027` both recurred
-  during Morning Flow Pass 1's own first cron fire
-  (`docs/reviews/first-successful-delivery-record.md`,
-  `docs/reviews/first-cron-fire-record.md`) — this project has now hit
-  "code silently talks to the sandbox instead of production" three
-  separate times, in three different scripts, none of which shared a root
-  cause with each other beyond the same broad failure shape. A fourth
-  enumerated fix is not the answer; reusing the one already-correct
-  credential path is.
+  WABA sender (`+919940875600`) BEFORE sending, refusing otherwise.  (full incident evidence: `docs/claude-rules-history/output-handling-and-messaging-incidents.md`)
 - A MESSAGE'S STATUS IS NOT ITS TERMINAL STATUS UNTIL FETCHED — "QUEUED" OR
   "ACCEPTED" IS NEVER REPORTED AS "SENT" (standing rule since 2026-09-03,
   same incident). Twilio's synchronous API response to a send call reports
@@ -979,29 +600,10 @@
   branches it creates as a matter of course, no separate instruction
   needed each time; Aravind still merges by hand — this changes nothing
   about merging, only about a branch's existence being visible past one
-  laptop. EVIDENCE: the 2026-09-13 worktree audit found 34 worktrees, 13
-  holding work not on `main`, FOUR with commits existing only on this
-  machine (`docs/dpr-regeneration-decision-and-spec`,
-  `feat/dash-01-pm-exceptions-home`,
-  `fix/test-fixture-teardown-engineer-scope`,
-  `worktree-per-run-fixture-batch4`).
-  `worktree-adhoc-menu-spec-corrections` held the only surviving copy of
-  decisions migration 037's own applied `COMMENT ON COLUMN` cites as
-  authority, live on prod. `worktree-evening-q5-tomorrow-needs` still
-  holds an idle-hours parser fix never rescued to `main`, while `main`
-  carries its own KNOWN DEFECT test for that same bug, unfixed. Recurring
-  shape: work is done in a worktree, partially rescued onto a different
-  branch that merges, and whatever didn't make that trip stays behind —
-  unpushed, unprotected, and invisible to anyone who isn't looking at this
-  exact laptop's local branch list.
+  laptop.  (full incident evidence: `docs/claude-rules-history/process-hygiene-origins.md`)
 - THE MIGRATION-NUMBER-RESERVATIONS FILE IS UPDATED AT APPLY TIME, AS PART
   OF THE APPLY — NOT AFTERWARDS (standing rule since 2026-09-13). Full
-  step: `docs/migration-runbook-template.md`'s own Step H. EVIDENCE: the
-  2026-09-13 reservations audit found FOUR entries (034, 039, 040, 041)
-  still reading "held" / "pending review" while those migrations were
-  already live on prod — the same drop-shape as the post-apply types-regen
-  step this file's own Step G already exists to close, one bookkeeping
-  artifact over.
+  step: `docs/migration-runbook-template.md`'s own Step H.  (full incident evidence: `docs/claude-rules-history/process-hygiene-origins.md`)
 - A DOCS FILE THAT PASSES THE WARN THRESHOLD GETS SPLIT, NOT APPENDED TO
   (standing rule since 2026-09-13). EVIDENCE:
   `design-decisions-beta-feedback.md` reached 224,410 chars against the
@@ -1163,31 +765,7 @@ their FLOWS and dashboard views are not built in the Spine.
 - Billing: Razorpay payment links — NOT Stripe (Stripe paused India onboarding)
 - Deployment: Vercel Pro — required for 6 IST cron times + 60s function timeout
 - Email: Resend — DPR delivery to owner
-  DATED NOTE (2026-09-03) — RESEND IS NOW DECIDED, NOT INHERITED, STATED
-  PLAINLY. It has named Resend since the very first commit to touch this
-  file (`c9fbc85`, 2026-06-28, day one — a 687-line bulk paste, no
-  rationale given). The one round that ever engaged with the email channel
-  (`61a7974`, "#67 revision 3 — owner receives DPR by email, not
-  WhatsApp," 2026-08-15) explicitly declined to re-litigate the provider —
-  its own words: "Resend, per the stack doc's own existing naming — not
-  re-litigated here, just noted as already the project's stated intent,
-  not a new choice." Honest, but it meant no comparison against an
-  alternative (SES, SendGrid, Postmark) ever actually happened, at any
-  point in this project's history, until now.
-  DECIDED, 2026-09-03, on these grounds: `lib/email/send.ts` (PR #159) is
-  already a raw `fetch`, no SDK — the entire provider-specific surface is
-  one URL, one Bearer auth header, one JSON payload shape, one response
-  shape, roughly 50 lines total. A swap to any other bearer-token JSON
-  provider would stay a same-size diff, so the switching cost this
-  decision forecloses is genuinely small, not a lock-in. Checked against
-  Resend's own current docs (not memory): a new account can send TODAY,
-  with zero DNS/domain-verification lead time, from the shared
-  `onboarding@resend.dev` test domain. Revisiting the provider choice now
-  costs more (an unforced comparison exercise) than it saves (a marginal
-  chance a different bearer-token JSON provider would have been slightly
-  better). Account created under `ar.rcpl@gmail.com`; `RESEND_API_KEY` and
-  `RESEND_FROM_EMAIL=onboarding@resend.dev` added to Vercel Production as
-  Secret type, same session.
+   (full incident evidence: `docs/claude-rules-history/env-and-stack-decisions.md`)
   THE CONSTRAINT THIS CARRIES, recorded so it isn't rediscovered as a
   surprise: Resend's free-tier test domain (`onboarding@resend.dev`) can
   only send `to` the email address the Resend account itself was signed
@@ -1267,12 +845,7 @@ email-invite auth flow. Do NOT create auth.users entries for them.
 TypeScript
 - Always TypeScript. No `any` under any circumstances.
 - Generate DB types from the schema — do not hand-write them.
-  DATED NOTE (2026-07-13, per 016 round-3 review) — SUPERSEDED 2026-07-13 by the
-  generated-types PR (feat/generated-db-types), see the ACTIVE note below. The
-  original note recorded the interim state: the pipeline did NOT yet exist,
-  clients were untyped, no `types/database.ts` existed, and adoption was DEFERRED
-  to the named milestone (a dedicated PR after 016 merges, before Morning Flow
-  Pass 2 merges).
+   (full incident evidence: `docs/claude-rules-history/process-hygiene-origins.md`)
   DATED NOTE — ACTIVE (2026-07-13, feat/generated-db-types PR): the generated-types
   pipeline is now STOOD UP. `types/database.ts` exists, generated via
   `npx supabase gen types typescript --linked --schema public` against prod
@@ -1315,13 +888,7 @@ Database
       — extensionally pinned to the specific known id(s), never a general
       `WHERE`. A stale pin fails toward DATA LOSS if reality has drifted
       since the migration was written, which is the safer failure direction
-      for something that can't be undone without PITR. Precedent: 023's
-      `35a2f41c` DELETE. Concrete case where the pin itself had to move:
-      028's own DELETE was pinned to one id, then had to be WIDENED when a
-      second marker row (`3c14243f`) appeared before apply — re-pinned
-      immediately pre-apply, not left as the original single-id list (full
-      record: `docs/reviews/028-dpr-engineer-report-review-package.md`
-      §21.6; `028_dprs_engineer_id_option_a.sql:211`). The pin is re-derived
+      for something that can't be undone without PITR.  (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`) The pin is re-derived
       at apply time, every time — it is not a write-once artifact.
     * ADDITIVE IDEMPOTENT statements (INSERT-only backfills, anything that
       can only add rows, never remove or overwrite) take a GENERAL
@@ -1333,8 +900,7 @@ Database
       destructive case — omission, not overwrite), while a general
       predicate absorbs the drift and the in-transaction assertion converts
       any residual surprise into a full-transaction abort instead of a
-      silent gap. Precedent: migration 029's `dpr_versions` backfill
-      (`docs/reviews/029-dpr-versioning-review-package.md` §12, B3).
+      silent gap.  (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`)
       EXTENSIONALITY IS NOT ABANDONED IN THIS CASE, IT MOVES: a human still
       confirms the expected extension immediately pre-apply, via a named
       probe with an explicit PROCEED/STOP condition (029's Probe F) — the
@@ -1356,25 +922,7 @@ Database
   over-broad table-level grant (RLS and the grant are two independent
   layers — a correct RLS policy does not make an unnecessary anon grant
   harmless, it just means nothing has exploited it yet).
-    Origin: migration 020 (2026-07-25) found and fixed this EXACT behaviour
-  for seven pre-existing functions, explicitly naming `anon` as a separate
-  revoke target in its own text (`020_function_execute_hardening.sql:94`:
-  `REVOKE EXECUTE ON FUNCTION public.get_user_tenant_id() FROM PUBLIC,
-  anon;`). That fix was never generalised into a standing rule for functions
-  created AFTERWARD — a point fix, not a rule — so the first new SECURITY
-  DEFINER function to ship since 020 (`write_dpr_version`, migration 029)
-  silently reintroduced the identical hole: `anon` held live EXECUTE on a
-  function whose one caller-trusting branch (`p_generated_by='system'`)
-  keys its only guard on `auth.uid() IS NOT NULL` — and an anon PostgREST
-  call carries no JWT, so it satisfies that guard exactly like the
-  legitimate `service_role` caller does. The anon key is public by design
-  (ships in client code), so this was a live, internet-facing exposure on
-  production, caught only by the post-apply ACL fingerprint below, not by
-  anything earlier in the pipeline — the dry-run scaffold has no Supabase
-  default ACLs to reproduce this, the test-db rehearsal never tested an
-  anon caller, and §12-style behavioural evidence authenticated as real
-  users throughout, never as anon. Full incident record:
-  `docs/reviews/029-dpr-versioning-review-package.md`'s U1-U5 section.
+     (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`)
     VERIFICATION, now standing: the post-apply catalog readback for any
   migration creating a new function or table must fingerprint the ACL of
   every new object, not just its definition (constraints, policy text,
@@ -1405,11 +953,7 @@ Database
   sitting unapplied, on no ledger row, in the scanned directory is a live
   hazard on ANY branch that has it checked out, whether or not that branch
   has reached `main` — a stray `supabase db push` on that branch applies it
-  regardless. Origin: migration 028's own file genuinely followed this
-  pattern already (moved into `supabase/migrations/` at apply time, not
-  before) without it ever being written down as a rule — 030 sat in the
-  scanned directory, unapplied, for the length of an entire review-and-hold
-  cycle before this was named and fixed. Move a migration INTO
+  regardless.  (full incident evidence: `docs/claude-rules-history/migration-apply-safety-incidents.md`) Move a migration INTO
   `supabase/migrations/` as part of the same commit/session that applies
   it, never earlier — matches the CANDIDATE CI CHECK entry's own spirit
   (catch a class of hazard at write time, not after it's rediscovered).
@@ -1475,16 +1019,7 @@ Tests are required, not optional
 
 EVERY NEW MIGRATION GETS A DISPOSABLE DRY-RUN BEFORE IT ENTERS A REVIEW PACKAGE
 (standing rule since 2026-08-20, migration 029's rehearsal round; AMENDED
-same day, G1, before the rule finished hardening). Origin: 029, 030, and 031
-were written, packaged, and declared review-ready in the same session, by
-the same process, and none of them had ever been executed against a real
-Postgres. 029 turned out to have a real ordering defect (an inline FK
-referencing a parent unique constraint the file didn't create until 15 lines
-later — Postgres 42830) that a careful read — including a correct, thorough
-§0 security/atomicity read that had no reason to catch this class of bug —
-did not surface, and that only running the file against Postgres did. The
-systemic finding was never the ordering bug itself; it was that a review
-package whose SQL has never been past a parser is a proposal, not a package.
+same day, G1, before the rule finished hardening).  (full incident evidence: `docs/claude-rules-history/test-db-rehearsal-and-verification.md`)
 
 THE SCAFFOLD MUST COME FROM THE REAL SCHEMA, NOT BE HAND-BUILT (G1
 correction — the first version of this rule was circular). A scaffold typed
@@ -1552,25 +1087,7 @@ REHEARSAL REQUIREMENT — A NEW TABLE'S TEST-DB REHEARSAL MUST PROBE
 `service_role`'S NEGATIVE CAPABILITIES, NOT ONLY THAT THE INTENDED
 OPERATIONS SUCCEED (added 2026-08-26; full record:
 `docs/reviews/service-role-table-grants-gap.md`, standing rule also
-recorded at CLAUDE.md §0). Round 1's own dry-run suite for migration 031
-tested exactly one thing about `service_role`: that it could SELECT (T10).
-It never tested whether `service_role` could ALSO still DELETE, TRUNCATE,
-REFERENCES, or TRIGGER — and the bug this round found (`dpr_versions`,
-CLAUDE.md §0) lived in exactly that untested space. **The bug was in a
-test never written, not a test that ran and returned wrong** — worth
-stating precisely, because the fix is not "distrust the dry-run scaffold
-more," it's "test the negative space too." And this specific negative
-space cannot be verified by the disposable local scaffold above at
-all — see this rule's own "this is NOT the test-db rehearsal" paragraph
-and the NAMED STUBS list: vanilla Postgres has no analog to Supabase's
-project-level default ACL, so a `service_role DELETE, expect denied` test
-would pass CLEANLY on the local stub regardless of whether the real
-REVOKE statement is complete, a false negative on exactly this class of
-bug. This is real evidence for the scaffold's stated limit, not evidence
-against the scaffold's value elsewhere — the scaffold remains fully
-authoritative for constraint/index mechanics (CHECK, UNIQUE, NOT NULL,
-FK behavior, partial-index usage), none of which depend on Supabase's own
-account-level configuration. **CONSEQUENCE:** any test-db rehearsal for a
+recorded at CLAUDE.md §0).  (full incident evidence: `docs/claude-rules-history/test-db-rehearsal-and-verification.md`) **CONSEQUENCE:** any test-db rehearsal for a
 migration that creates a new table (or grants on an existing one) must
 include an explicit `service_role` DELETE (and, where relevant, TRUNCATE)
 denial probe, run against the real database, alongside the existing
@@ -1584,12 +1101,7 @@ A TEARDOWN VERIFIES COMMENTS TOO, NOT ONLY STRUCTURE AND CONSTRAINTS
 (standing rule since 2026-09-05, migrations 036/037's reviewer-round
 rehearsal). "Baseline restored, byte-identical" has meant "same columns,
 same constraints, same defaults/nullability" every time this project has
-said it — never "same `COMMENT ON COLUMN` text." Found live, not assumed:
-test-db's `hindrances.submitted_via` carried a stale comment from an
-EARLIER rehearsal round whose schema-level DOWN had run correctly (the
-DEFAULT was back, the column was nullable again) while its own comment
-text was never reset alongside it — a teardown that reported clean while
-leaving real residue behind. SAME FAILURE SHAPE AS THE
+said it — never "same `COMMENT ON COLUMN` text."  (full incident evidence: `docs/claude-rules-history/test-db-rehearsal-and-verification.md`) SAME FAILURE SHAPE AS THE
 `REHEARSAL REQUIREMENT` ABOVE, one layer over: that rule is "the dry-run
 scaffold verifies structure but not grants, so grants need their own
 explicit check"; this one is "a teardown verifies structure but not
@@ -1610,25 +1122,7 @@ ANY MIGRATION THAT CHANGES ROUTING LOGIC OR A FUNCTION'S EXISTENCE, THE
 REHEARSAL MUST CONFIRM A LIVE IN-FLIGHT SESSION IS STILL PROCESSABLE
 AFTER THE DOWN RUNS, NOT JUST THAT THE SCHEMA REVERTED (added 2026-09-07 —
 two DOWN-block rehearsal failures in three migrations, not one, full
-record: `docs/reviews/038-hindrance-flow-review-package.md`). Migration
-036's own DOWN failed on first rehearsal for a cascade-ordering reason (an
-early draft's `DROP CONSTRAINT` for the pairing CHECK failed because an
-earlier `DROP COLUMN` in the same statement had already cascaded it away)
-— caught by actually running the DOWN against real Postgres, not by
-inspection. Migration 038's DOWN was worse, and "did the schema revert
-cleanly" would not have caught it: a first draft dropped the new
-`apply_hindrance_flow_turn` and reverted the two modified functions with
-zero SQL errors — but rehearsed against a session actively in-flight in
-the very flow being removed, it left that session PERMANENTLY STUCK. No
-remaining RPC could process it, and the reverted functions no longer
-force-reset it either (their own force-reset branch is exactly what the
-DOWN just removed). Worse than merely stuck: if the TypeScript routing
-layer that dispatches to the now-gone function is still deployed when the
-DOWN runs on the database — a real possibility, since a DB rollback and an
-app rollback are not the same operation, not a contrived edge case — every
-future inbound for that session's phone number hits a hard, uncaught
-`function does not exist` error, not a graceful reply, not silence, an
-actual crash for that specific phone number. **CONSEQUENCE:** every
+record: `docs/reviews/038-hindrance-flow-review-package.md`).  (full incident evidence: `docs/claude-rules-history/test-db-rehearsal-and-verification.md`) **CONSEQUENCE:** every
 migration rehearsal executes the DOWN block against the disposable
 scaffold, not only the forward migration — "the forward migration applied
 cleanly" has never been sufficient evidence for a DOWN nobody has run. For
@@ -1639,12 +1133,7 @@ DOWN runs, that a subsequent turn against that session either completes
 cleanly or is explicitly, safely reset to idle — never left calling
 something that no longer exists.
 
-A SEPARATE, MECHANICAL LESSON FROM THE SAME INCIDENT: migration 038's
-first DOWN draft was also left as LIVE, UNCOMMENTED SQL rather than the
-inert reference text 036/037 already used — applying the file via
-`psql -f` ran the forward migration AND immediately reverted it in the
-same batch, caught only by re-running the whole file and noticing the new
-function was gone afterward. `scripts/lint-migrations.mjs`'s new
+A SEPARATE, MECHANICAL LESSON FROM THE SAME INCIDENT:  (full incident evidence: `docs/claude-rules-history/test-db-rehearsal-and-verification.md`) `scripts/lint-migrations.mjs`'s new
 `down-section-must-be-commented` rule (added the same day) checks this
 mechanically now — every line from a file's `-- DOWN (...`/`-- DOWN /...`
 marker to EOF must be blank or itself start with `--`. Text-only, cheap,
@@ -1665,24 +1154,7 @@ decide whether to accept it. Do not quietly skip the test.
 
 A TEST FILE'S OWN SUMMARY LINE CAN BE MISSING FROM A FULL `vitest run`'S
 PRINTED OUTPUT WITHOUT ITS TESTS ACTUALLY FAILING TO RUN — MECHANISM NOT
-CONFIRMED, DO NOT ASSUME BASENAME (found 2026-09-02, building the
-owner_deliver handler; corrected same day after the first write-up's own
-leading theory was tested and disconfirmed). `test/owner-deliver-
-dispatch.test.ts` (integration, ~45s) and `test/unit/owner-deliver-
-dispatch.test.ts` (unit, ~1ms) shared an identical basename — the
-integration file's own line was absent from two consecutive full-suite
-runs (not failed, not errored, simply not printed), both landing on an
-identical total test count. **The first write-up here asserted the shared
-basename as the cause — tested directly with two trivial same-named
-scratch files (one deliberately failing) added to the same 75-file suite,
-and the collision did NOT reproduce: both lines printed correctly, the
-failure was reported.** So basename alone is disconfirmed, not confirmed.
-The identical totals across all three real runs (including the one where
-the line printed) suggest the tests were likely counted throughout regardless
-of whether the line printed — a reporter-display quirk, not a
-non-execution one, most likely correlated with the file's own long
-runtime, but that specific confound was never isolated either. Full
-account: `docs/reviews/vitest-basename-collision.md`. CONSEQUENCE: don't
+CONFIRMED, DO NOT ASSUME BASENAME  (full incident evidence: `docs/claude-rules-history/test-db-rehearsal-and-verification.md`) CONSEQUENCE: don't
 conclude a test file "isn't covered" from a full run's file list alone —
 compare the TOTAL count against a known baseline, and confirm a specific
 file directly (`npx vitest run <path>`) when its line is unexpectedly
@@ -1726,115 +1198,7 @@ CRON_SECRET=                     ← server-side only, secures /api/jobs/tick
 
 All non-NEXT_PUBLIC_ keys are used ONLY in server-side API routes.
 
-CRON_SECRET — ADDED 2026-08-12, MANUAL STEP STILL OUTSTANDING (this
-environment has no Vercel dashboard/authenticated-CLI access to complete
-it; `vercel env ls` requires a login this session cannot provide). Both
-`/api/jobs/tick` and `/api/cron/dpr-generate` now check
-`Authorization: Bearer <CRON_SECRET>` on every request and fail closed
-(401) if `CRON_SECRET` is unset — see lib/cron/auth.ts for the incident
-this closes (jobs/tick previously had NO auth at all, live in
-production) and lib/cron/auth.ts's own header comment for the exact
-mechanism, verified directly against Vercel's current "Securing cron
-jobs" docs, not assumed from training. TO FINISH THIS: (1) generate a
-random string of at least 16 characters (a password generator is fine —
-this is Vercel's own recommendation); (2) add it to `.env.local` as
-`CRON_SECRET=<value>` for local testing; (3) add the SAME value to the
-Vercel project's Environment Variables (Production AND Preview) via the
-dashboard or an authenticated `vercel env add CRON_SECRET` — Vercel
-automatically attaches it as the `Authorization` header on every
-cron-triggered request once it's set there, no other configuration
-needed. ~~Until step 3 is done, BOTH routes will 401 every real cron
-invocation in production, not just unauthorized requests — this is a
-deliberate fail-closed default, not a bug, but it means these routes
-will not actually run until the secret is provisioned.~~
-
-RESOLVED (observed 2026-08-12, ~22:15 IST, not asserted from a dashboard
-check — §0's observation rule). Step 3 has been done: `CRON_SECRET` is
-provisioned in Vercel Production and a deploy has happened since PR #55
-merged (2026-08-11). Evidence: `public.dprs` — confirmed EMPTY at 13:44 IST
-today (see §10's `DATED UPDATE` under the JOBS TABLE HAS NO CLAIMED-AT
-entry) — had exactly one new row by 22:15 IST, for `log_date = 2026-08-12`,
-with `delivery_status = 'skipped_no_data'`. That value has exactly ONE
-writer in this codebase (grepped, confirmed, not assumed):
-`runDprGenerateTrigger` in `app/api/cron/dpr-generate/route.ts` (line ~70),
-the 8:00 PM cron route's own DPR-17 zero-data check — it is written
-directly by the TRIGGER route, before any job is enqueued, never by
-`handleDprGenerateJob` (the job handler) or `scripts/generate-one-dpr.ts`
-(neither writes it — grepped, zero hits in either file). Reaching that
-write path requires `isCronRequestAuthorized` to have passed first (route.ts
-line 106) — the exact check this CRON_SECRET section describes — so this
-row could not exist unless the secret check succeeded. Distinguished from
-stale/leftover test data deliberately, not assumed: the row's `project_id`
-matches a project used in earlier manual smoke-testing, which could look
-like a false signal on its face, but `log_date = 2026-08-12` (today, not an
-old test date) plus the single-writer trace above rules out any other
-origin — a leftover test row could not carry today's date with this exact
-value written by this exact code path.
-
-**INFERENCE TRAP, recorded for the next reader**: on the zero-data path, an
-ABSENT `dpr_generate` job in `public.jobs` is the SUCCESS signal, not a
-failure signal — the whole point of the DPR-17 check running before
-enqueueing (see the route's own header comment) is that nothing gets queued
-for a project with no data that day. Checking `jobs` alone and seeing zero
-rows is not evidence the cron never ran; check `dprs` for a
-`skipped_no_data` row (or a real `generated_at`) first. This mistake was
-made once already this session — recorded here so it isn't made again.
-
-~~KNOWN VERCEL CONFIG GAP (2026-07-21, non-urgent, track + fix separately): the
-Preview-scoped NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (and related
-Supabase vars) are pinned to ONE branch — feat/migration-007-auth-surgery (a
-leftover from that migration's review) — instead of "All Preview branches." So
-every OTHER branch's preview deploy gets NO Supabase config, and proxy.ts's
-middleware (createServerClient + getUser on every request) throws → "Internal
-Server Error" on EVERY route of that preview, even though the build is green.
-This bit the feat/bot-27-reactivation-clear preview and is easy to misread as a
-code bug. FIX: in Vercel → Project → Settings → Environment Variables, re-scope
-those Preview vars to "All Preview branches." (Build-time is unaffected — these
-vars are only read at request time.)~~
-
-RESOLVED (2026-07-24): confirmed in Vercel → Settings → Environment Variables
-that NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (Preview) are both
-scoped to "All Preview Branches," not a single branch. Gap was apparently
-fixed same-day as discovery (2026-07-21) but never marked resolved here.
-
-KNOWN SUPABASE AUTH CONFIG GAP (2026-07-25): magic-link signup emails baked a
-redirect_to pointing at the DEAD feat/migration-007-auth-surgery branch preview
-URL (quoco-git-feat-migration-007-auth-surgery-quoco.vercel.app → 404). NOT a
-code bug — login/page.tsx + auth/callback/route.ts derive the domain dynamically
-from request headers (origin/host) and are correct. The dead URL comes from
-Supabase Auth's dashboard SITE URL, still pinned to that 007 branch: Supabase
-falls back to the Site URL whenever the code-supplied emailRedirectTo is NOT in
-the Redirect URLs allowlist, and branch-preview URLs weren't allowlisted — so
-every preview's magic link fell back to the stale Site URL. FIX (Supabase
-Dashboard → Authentication → URL Configuration): Site URL → the real prod domain
-(https://quoco-six.vercel.app — confirm this is the canonical/custom domain);
-Redirect URLs → add https://quoco-six.vercel.app/** AND a preview wildcard
-https://quoco-git-*-quoco.vercel.app/** (+ http://localhost:3000/** for local) so
-each preview's dynamic emailRedirectTo is honored instead of falling back. VERIFY
-BY OBSERVATION (§0), not dashboard-said-so: request a magic link from a preview
-and confirm the email's redirect_to is that preview, not the Site URL.
-RESOLVED (observed 2026-07-25): after the Site URL fix, the magic-link redirect
-from the test-db signup landed correctly (no 404) — the same signup that produced
-the 020 review package's §6 evidence. Observed on test-db; the PROD-side
-confirmation rides with the real prod magic-link signup on the 020 runsheet
-(020-review-package.md §7 item 5).
-
-SAME DEAD BRANCH, BITTEN TWICE: feat/migration-007-auth-surgery has now been the
-stale pin behind TWO real bugs this session — the Vercel Preview Supabase env
-vars (note above) and this Auth Site URL — both leftovers from that migration's
-review era. Assume more may be lurking: grep every prod config surface (Vercel
-env scopes, Supabase Auth URLs, any dashboard setting or hardcoded string) for
-that branch name and purge it wholesale, rather than fixing one surface at a time
-as each bug surfaces.
-
-SWEEP COMPLETE (2026-07-25): a full Vercel + Supabase dashboard sweep for that
-branch name was done and is CLEAN — no additional stale references beyond the two
-above. Checked: Vercel Environment Variables (all envs), Deployment Protection,
-Domains; Supabase (BOTH main AND test-db) Auth email templates (Magic Link uses
-{{ .ConfirmationURL }}, no hardcoded URLs), Database Webhooks (none configured),
-Edge Functions (none deployed — empty "deploy your first function" screen). Repo
-code/config is also grep-clean. So the pattern is closed at two instances; the
-standing rule above still holds if a THIRD surface ever appears.
+CRON_SECRET, Vercel Preview-env, and Supabase Auth Site URL incident history (all RESOLVED) moved in full to `docs/claude-rules-history/env-and-stack-decisions.md`.
 
 ---
 
