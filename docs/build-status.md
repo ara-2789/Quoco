@@ -33,6 +33,7 @@ below to find which file it now lives in.
 | [2026-09-15] Sentry "Consecutive HTTP" N+1 pattern | stays in this file, below |
 | [2026-09-16] Backlog: function EXECUTE default | stays in this file, below |
 | [2026-09-17] CI double-run fix shipped | stays in this file, below |
+| [2026-09-17] Supabase Auth "Allow new users to sign up" disabled | stays in this file, below |
 
 If a cited date isn't obviously one of the headings above, it's embedded
 prose inside whichever file's date range brackets it — open that file and
@@ -56,6 +57,12 @@ determinations)
   CLAUDE.md two-tier SWITCH TRIGGER fires (first beta tester, customer, or
   RCPL project data on prod). Onboarding anyone other than Aravind is
   blocked until BOT-27 is live.
+  ADDED 2026-09-17 (per Aravind): BOT-27 is not the only blocker on this
+  same switch trigger — the **onboarding re-entry guard** (a sub-item of
+  the new **"How people log in"** entry, below) and that entry as a whole
+  are also HARD BLOCKERS. All three (BOT-27, the re-entry guard, and "How
+  people log in") must close before the trigger fires; none supersedes or
+  weakens the others.
 - **`docs/reviews/handle-new-user-id-drift.md`** — "prod not yet checked"
   whether a function's live behavior still matches any migration file's
   documented version, after an out-of-band change. (carried forward from
@@ -120,6 +127,48 @@ determinations)
   independent real failures — this may already be resolved; verify against
   the flake doc's current status line before treating it as still open.
   (carried forward from `docs/build-status/2026-08-late.md`)
+- **"How people log in"** — NEW, added 2026-09-17 per Aravind. **FULL
+  tier** (CLAUDE.md §0's PRE-LAUNCH TWO-TIER CHANGE PROCESS), and a HARD
+  BLOCKER for the switch trigger alongside BOT-27 (above). Scope:
+  - WhatsApp OTP replaces the email magic link (decided 2026-09-17).
+  - Owner dashboard login — Owners currently have `auth_id = NULL` and
+    `whatsapp_number = NULL` (neither the web-login path nor the WhatsApp
+    path can reach them today).
+  - Onboarding redesign and a self-serve signup policy.
+  - **Onboarding re-entry guard — a HARD BLOCKER for the switch trigger on
+    its own, independent of the rest of this item.** Current state:
+    `complete_onboarding` (prod definition checked 2026-09-17,
+    `supabase/migrations/016_corrections.sql:160-191`) always `INSERT`s a
+    new `tenants` row and then sets the caller's own `users` row to that
+    new `tenant_id` with `role = 'admin'` — with no check for an existing
+    `tenant_id` on the caller first. `app/(onboarding)/onboarding/page.tsx`
+    has no check either; it only redirects to `/login` when the caller has
+    no Supabase Auth session at all. A logged-in PM who submits
+    `/onboarding` is moved into a new, empty tenant.
+  - Design questions, not decided:
+    - One phone number = one `users` row —
+      `get_user_tenant_id()` (`SELECT tenant_id FROM users WHERE auth_id =
+      auth.uid()`) has no `LIMIT 1` (see `scripts/provision-beta-owner.ts`'s
+      own header for the full failure mode a second row sharing an
+      identity creates).
+    - Meta authentication-template approval lead time.
+    - Fallback path if WhatsApp/Twilio is down.
+    - Recycled or changed phone numbers.
+    - Per-login OTP cost — take the actual rate from Twilio at build time;
+      do not estimate here.
+    - BOT-27's STOP users must still be able to receive login codes.
+    - The dashboard layout (`app/(dashboard)/layout.tsx`) has no role gate
+      today, only an auth check (`if (!user) redirect('/login')`) — this
+      item adds a new auth surface on top of a layout that already lets
+      any authenticated user reach every nav link.
+  - Parked, not designed:
+    - `/login`'s Supabase Auth error is shown to the user raw —
+      `app/(auth)/login/page.tsx`'s `sendMagicLink` redirects with
+      `error.message` verbatim (e.g. "Signups not allowed for this
+      instance").
+    - `/onboarding` shows raw DB errors the same way
+      (`app/(onboarding)/onboarding/page.tsx`'s `createCompany`, except the
+      one hand-matched "unique" case).
 
 Also carried forward (backlog housekeeping, added 2026-09-17 per this
 split's own paperwork step):
@@ -190,3 +239,17 @@ checks Typecheck, Lint, Test (real test-db), Migration Lint.
 DATED NOTE (2026-09-17): PR #287 was squash-merged in error; CLAUDE.md's
 "regular merge commits, not squash" rule applies. No functional impact (CI
 skip verified). Future merges use merge commits.
+
+### [2026-09-17] Supabase Auth "Allow new users to sign up" disabled
+
+Disabled per Aravind, 2026-09-17.
+
+- **Prod** (`jvxwqignooseazzmwhvl`): verified by observation — a new,
+  unregistered email submitted at `/login` received "Signups not allowed
+  for this instance"; an already-registered email still received and used
+  its magic link successfully.
+- **Test** (`exfccwlrhoutkgrlikod`): disabled per Aravind; not
+  independently observed in this pass.
+- The 2 prod `users` rows with `role IS NULL` / `tenant_id IS NULL` are
+  Aravind's own accounts (his Gmail address and a `+smoke020` test
+  address). Leave as is — not a data-integrity gap.
