@@ -344,8 +344,11 @@ interface HindrancePhotoRow {
 /**
  * Fetch every stored photo's bytes for a hindrance, via service_role,
  * directly -- NEVER a signed URL (docs/plans/stage0-storage-setup-plan.md
- * §5's own already-decided split: dashboard reads use getSignedPhotoUrl,
- * email attachments read bytes directly, since the job already knows which
+ * §5's own already-decided split: dashboard reads use the photo route's
+ * authorization function (lib/storage/photo-access.ts's
+ * getAuthorizedPhotoPath, via app/api/photos/[kind]/[photoId]/route.ts --
+ * stage 5a's replacement for the original getSignedPhotoUrl this comment
+ * used to name), email attachments read bytes directly, since the job already knows which
  * hindrance it's attaching for from its own query). Tombstoned rows
  * (`photo_url IS NULL`, item 9 -- not reachable in practice this soon
  * after a report, since stage 6's retention job doesn't exist yet, but
