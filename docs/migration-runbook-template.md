@@ -35,6 +35,28 @@ branch) before any write step.
   Run. Paste result. → confirm before D.
 - **D. Post-apply probes (read-only).** One probe per changed object, query
   visible, expected value stated. Paste each. → confirm before E.
+
+  **STANDING CHECK, ANY MIGRATION THAT TOUCHES TABLE GRANTS (added
+  2026-09-16, migration 047's external review, fold 2).** Use
+  `pg_class.relacl` via `aclexplode()` for every rights capture in this
+  step — never `information_schema.role_table_grants`, which does not
+  report the `MAINTAIN` privilege at all (found live during 047's own
+  correction pass — a real capture read zero `MAINTAIN` grants where
+  `relacl` showed dozens; the *source*, not the database, was wrong). For
+  a migration whose own purpose is revoking/confirming the absence of
+  unused rights (047's own shape), the standing assertion is:
+  ```sql
+  select c.relname, pg_get_userbyid(a.grantee) as role, string_agg(a.privilege_type, ', ' order by a.privilege_type) as privs
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  cross join lateral aclexplode(c.relacl) a
+  where n.nspname = 'public' and c.relkind = 'r'
+    and pg_get_userbyid(a.grantee) in ('anon','authenticated')
+    and a.privilege_type in ('DELETE','TRUNCATE','TRIGGER','REFERENCES','MAINTAIN')
+  group by 1, 2 order by 1, 2;
+  ```
+  Expect 0 rows for `anon`/`authenticated` on DELETE/TRUNCATE/TRIGGER/
+  REFERENCES/MAINTAIN in `public`, post-047. Full worked example: `docs/
+  reviews/047-test-db-apply-record.md`.
 - **E. Ledger repair (write) + verify.** `supabase migration repair --status
   applied <nnn> --linked`, breadcrumb confirmed first — CORRECTED
   2026-08-25: this is the working, preferred method. (An earlier version of
