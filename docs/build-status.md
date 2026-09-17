@@ -34,6 +34,7 @@ below to find which file it now lives in.
 | [2026-09-16] Backlog: function EXECUTE default | stays in this file, below |
 | [2026-09-17] CI double-run fix shipped | stays in this file, below |
 | [2026-09-17] Supabase Auth "Allow new users to sign up" disabled | stays in this file, below |
+| [2026-09-17] Backlog: Label Owner DPR email photo attachments by type | stays in this file, below |
 
 If a cited date isn't obviously one of the headings above, it's embedded
 prose inside whichever file's date range brackets it — open that file and
@@ -152,6 +153,17 @@ determinations)
     has no check either; it only redirects to `/login` when the caller has
     no Supabase Auth session at all. A logged-in PM who submits
     `/onboarding` is moved into a new, empty tenant.
+  - Login must complete on the official host. 2026-09-17: a magic link
+    requested from a vercel.app deployment URL was consumed by Supabase
+    (auth log: /verify "Login: request completed" 21:22:26 IST) but the
+    browser landed on app.quoco.co.in/ (not /auth/callback) one second
+    later and was sent back to /login; later clicks failed with "One-time
+    token not found". Cause: app/(auth)/login/page.tsx builds
+    emailRedirectTo from the request origin, and the vercel.app origin is
+    not an allowed redirect URL. Not fixed now (magic link is being
+    replaced). Requirement for the new login: always complete on
+    app.quoco.co.in, and redirect non-official hosts there first.
+    Operating rule until then: use app.quoco.co.in only.
   - Design questions, not decided:
     - One phone number = one `users` row —
       `get_user_tenant_id()` (`SELECT tenant_id FROM users WHERE auth_id =
@@ -344,3 +356,21 @@ Disabled per Aravind, 2026-09-17.
 - The 2 prod `users` rows with `role IS NULL` / `tenant_id IS NULL` are
   Aravind's own accounts (his Gmail address and a `+smoke020` test
   address). Leave as is — not a data-integrity gap.
+
+### [2026-09-17] Backlog: Label Owner DPR email photo attachments by type
+
+LIGHT tier. Scheduled after Stage 5a B3 (not scheduled now). Reason: the
+Owner cannot tell progress photos from hindrance photos in the DPR email
+today — observed 2026-09-17 (Speed Mechatronics DPR, engineer Vikram Rao;
+full record `docs/reviews/stage5a-b1-b2-record.md`). Every attachment
+currently keeps its raw Storage filename.
+
+Approved filenames (English only; Tamil owed, NOT approved): `Progress
+photo {n}.{ext}` for evening photos and `Hindrance photo {n}.{ext}` for
+hindrance photos; `{ext}` from the real file type; numbering restarts per
+group (i.e. evening photos are numbered 1..N independently of hindrance
+photos being numbered 1..M).
+
+Considered and rejected: watermarking (alters site evidence, adds image
+processing cost). Backlog, not scheduled: embedding photos inline under
+each report section instead of as attachments.
