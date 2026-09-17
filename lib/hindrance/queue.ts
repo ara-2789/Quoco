@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/nextjs'
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { istDateString } from '@/lib/daily-logs/date'
+import { isProjectPm } from '@/lib/auth/is-project-pm'
 
 // DASH-07 — PM hindrance queue (docs/plans/dash-07-hindrance-queue.md).
 // Phase 2 adds the acknowledgement fields below (migration 039) as a
@@ -334,4 +335,76 @@ export async function getActiveHindranceTiles(
     }))
 
   return { status: 'ok', items }
+}
+
+// Stage 5a, build slice B3 (docs/reviews/stage5a-review-package.md §6,
+// hindrances queue). New exports below -- nothing above this line is
+// changed.
+
+export interface HindrancePhotoItem {
+  id: string
+  kind: 'hindrance'
+  expiresAt: string
+}
+
+interface HindrancePhotoRow {
+  id: string
+  hindrance_id: string
+  photo_url: string | null
+  expires_at: string
+}
+
+/**
+ * One batched query for every hindrance card on the page -- not one query
+ * per card. Grouped client-side into a Map keyed by hindrance_id. Mirrors
+ * lib/dpr/select-photo-candidates.ts's own S2b query shape (that file is
+ * IMPORT ONLY elsewhere in this stage; this is a new, separate query
+ * against the same table, not an edit to that file).
+ */
+export async function getHindrancePhotosByHindranceIds(
+  hindranceIds: string[],
+  tenantId: string,
+  client: SupabaseClient<Database>,
+): Promise<Map<string, HindrancePhotoItem[]>> {
+  const result = new Map<string, HindrancePhotoItem[]>()
+  if (hindranceIds.length === 0) return result
+
+  const { data, error } = await client
+    .from('hindrance_photos')
+    .select('id, hindrance_id, photo_url, expires_at')
+    .eq('tenant_id', tenantId)
+    .in('hindrance_id', hindranceIds)
+    .not('photo_url', 'is', null)
+    .order('received_at', { ascending: true })
+  if (error) throw error
+
+  for (const row of (data ?? []) as unknown as HindrancePhotoRow[]) {
+    if (!row.photo_url) continue
+    const list = result.get(row.hindrance_id) ?? []
+    list.push({ id: row.id, kind: 'hindrance', expiresAt: row.expires_at })
+    result.set(row.hindrance_id, list)
+  }
+  return result
+}
+
+/**
+ * D3's per-card gate (task item 5; Aravind, 2026-09-17, unknown #5):
+ * checked per card via the shared isProjectPm, NOT inherited from this
+ * file's own getHindranceQueue scoping above -- that scoping's
+ * equivalence to hindrance_photos_select's RLS join is an open question
+ * (docs/reviews/stage5a-review-package.md, Open Questions, "Whether
+ * getHindranceQueue's existing PM-scoping is provably identical..."). A
+ * synthetic item naming a project the viewer is NOT a PM on must resolve
+ * isPm:false and photos:[] here with no database row needing to exist for
+ * that project at all -- isProjectPm's own query simply finds no matching
+ * project_members row.
+ */
+export async function resolveHindranceCardPmAndPhotos(
+  client: SupabaseClient<Database>,
+  viewerId: string,
+  item: { id: string; projectId: string },
+  photosByHindrance: Map<string, HindrancePhotoItem[]>,
+): Promise<{ isPm: boolean; photos: HindrancePhotoItem[] }> {
+  const isPm = await isProjectPm(client, viewerId, item.projectId)
+  return { isPm, photos: isPm ? (photosByHindrance.get(item.id) ?? []) : [] }
 }

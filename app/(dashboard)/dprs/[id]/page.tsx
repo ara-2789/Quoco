@@ -1,12 +1,17 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { profileForAuthId } from '@/lib/auth/profile-query'
+import { resolveDprPhotoSections } from '@/lib/dpr/photo-sections'
+import { DprPhotoSections } from '@/components/dprs/dpr-photo-sections'
 
 type DprDetail = {
   id: string
   log_date: string
   content: string | null
   engineer_id: string
+  project_id: string
+  tenant_id: string
   projects: { name: string } | null
 }
 
@@ -34,7 +39,7 @@ function formatDate(date: string) {
 export async function getDprDetail(client: SupabaseClient, id: string): Promise<DprDetail | null> {
   const { data, error } = await client
     .from('dprs')
-    .select('id, log_date, content, engineer_id, projects(name)')
+    .select('id, log_date, content, engineer_id, project_id, tenant_id, projects(name)')
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
@@ -47,6 +52,24 @@ export default async function DprDetailPage({ params }: { params: Promise<{ id: 
   const dpr = await getDprDetail(supabase, id)
 
   if (!dpr) notFound()
+
+  // profileForAuthId, not getProfile (lib/auth/profile.ts) -- DELIBERATE,
+  // same reasoning as the photo route (app/api/photos/[kind]/[photoId]/
+  // route.ts): getDprDetail/resolveDprPhotoSections below are imported
+  // directly by tests, and getProfile's module pulls in 'server-only',
+  // which this repo does not install as a real dependency (it only ever
+  // resolves inside Next.js's own build). app/(dashboard)/layout.tsx
+  // already redirects an unauthenticated viewer before this page runs, so
+  // `user` is guaranteed non-null here in the real app; the explicit
+  // redirect below is belt-and-braces, matching getProfile's own contract.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+  const profile = await profileForAuthId(supabase, user.id)
+
+  const now = new Date()
+  const photoSections = await resolveDprPhotoSections(supabase, profile.id, dpr)
 
   // Engineer name — fetched separately, not embedded (same reasoning as
   // dprs/page.tsx: no verified PostgREST support for embedding through a
@@ -96,6 +119,8 @@ export default async function DprDetailPage({ params }: { params: Promise<{ id: 
           {dpr.content}
         </pre>
       )}
+
+      <DprPhotoSections photoSections={photoSections} now={now} />
     </div>
   )
 }

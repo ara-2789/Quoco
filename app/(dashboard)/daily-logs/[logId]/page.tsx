@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
 import { getDailyLogDetail } from '@/lib/daily-logs/query'
 import { getDprDeliveryState, deriveDprDeliveryCopy } from '@/lib/daily-logs/dpr-delivery-note'
+import { resolveDailyLogPhotoSections } from '@/lib/daily-logs/photos'
 import { LogDetailView } from '@/components/daily-logs/log-detail-view'
 
 // DASH-03 Rule 4.3 inline correction — detail route. Drill-down from the
@@ -35,12 +36,27 @@ export default async function DailyLogDetailPage({
   )
   const dprDeliveryCopy = deriveDprDeliveryCopy(dprState)
 
+  // Stage 5a, build slice B3 (docs/reviews/stage5a-review-package.md, D1/
+  // D3). Gated on project_members.role='pm' for THIS project via the
+  // shared isProjectPm (inside resolveDailyLogPhotoSections) -- deliberately
+  // NOT profile.role (that stays wired to canEditLog only, below,
+  // unchanged). null means "not a PM" -- LogDetailView renders no photo
+  // markup at all in that case.
+  const photoSections = await resolveDailyLogPhotoSections(
+    supabase,
+    profile.id,
+    profile.tenant_id,
+    result.data.projectId,
+    result.data.id,
+  )
+
   return (
     <LogDetailView
       data={result.data}
       dprDeliveryCopy={dprDeliveryCopy}
       viewerRole={profile.role}
       now={new Date()}
+      photoSections={photoSections}
     />
   )
 }

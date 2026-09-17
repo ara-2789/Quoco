@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "test/photo-sections-render.test.tsx"
+        ],
+        "createdAt": "2026-09-17T17:33:18.882Z",
+        "reason": "false positive: regex literal parsing rendered HTML strings in a test helper, not a real <img> element"
+      }
+    ]
+  }
+}
