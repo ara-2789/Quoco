@@ -862,6 +862,10 @@ sequences work those items already describe.
    this stage touches share the identical resolution path.
 5. **PM surfaces** — photos in dashboard and DPR, overflow links (item 14),
    retention policy visible in-product (item 15).
+   **ADDED 2026-09-16 (Stage 4's own PR, #283, S3/S4):** "view all photos
+   from today" dashboard link + Owner access to the photo page (full tier;
+   touches `lib/storage/photo-access.ts`) — the counterpart to Stage 4's
+   own overflow line, which deliberately ships with no link at all.
 6. **Retention deletion job.** **LAST**, and the **only irreversible
    mechanism** in the feature. Recommendation, restated from item 15: build
    it, but leave it **switched OFF until a real customer is running**,
