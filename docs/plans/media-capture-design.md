@@ -862,10 +862,43 @@ sequences work those items already describe.
    this stage touches share the identical resolution path.
 5. **PM surfaces** — photos in dashboard and DPR, overflow links (item 14),
    retention policy visible in-product (item 15).
-   **ADDED 2026-09-16 (Stage 4's own PR, #283, S3/S4):** "view all photos
+   ~~**ADDED 2026-09-16 (Stage 4's own PR, #283, S3/S4):** "view all photos
    from today" dashboard link + Owner access to the photo page (full tier;
    touches `lib/storage/photo-access.ts`) — the counterpart to Stage 4's
-   own overflow line, which deliberately ships with no link at all.
+   own overflow line, which deliberately ships with no link at all.~~
+
+   **CORRECTION 2026-09-17 (per Aravind):** the Owner-access line above is
+   struck, not deleted, per this project's own correction discipline —
+   moved out of stage 5 into the new "How people log in" backlog item
+   (`docs/build-status.md`). Owners have no dashboard login by design
+   (`scripts/provision-beta-owner.ts` hardcodes the new owner row's
+   `auth_id` to `NULL`, with an assertion before the INSERT specifically to
+   keep this unparameterisable), so the link would have had nowhere to go.
+   This also resolves the standing conflict with item 14's own "This
+   preserves PM-only access and does not reopen the deferred owner-login
+   work" — that claim stands, unqualified, again. Stage 4's overflow line
+   stays link-free, unchanged.
+
+   **Stage 5a scope (decided 2026-09-17):** PM-only photos on the daily
+   log, DPR, and hindrance dashboard pages, reusing the existing
+   `project_members` `role = 'pm'` rule — the same rule `getSignedPhotoUrl`
+   (`lib/storage/photo-access.ts`) and the `daily_log_photos`/
+   `hindrance_photos` RLS SELECT policies (043/044) already enforce. Needs
+   a hindrance-path (4-segment) access check: today's `getSignedPhotoUrl`/
+   `extractDailyLogId` only parses the 3-segment `daily_log_photos` path
+   convention (`{tenant_id}/{daily_log_id}/{photo_id}.{ext}`), not
+   hindrance photos' 4-segment one
+   (`{tenant_id}/hindrance/{hindrance_id}/{photo_id}.{ext}`). Show the
+   retention date. No tombstone UI until stage 6 (the deletion job) exists
+   — nothing expires before that job runs, so there is nothing to render a
+   tombstone for yet. No Owner access. No email link. **Full tier**
+   (CLAUDE.md §0's PRE-LAUNCH TWO-TIER CHANGE PROCESS), with its own
+   external review.
+
+   **Approved user-facing strings** (English only; Tamil owed, NOT
+   approved):
+   - "Kept until {date}"
+   - "No photos for this log."
 6. **Retention deletion job.** **LAST**, and the **only irreversible
    mechanism** in the feature. Recommendation, restated from item 15: build
    it, but leave it **switched OFF until a real customer is running**,
