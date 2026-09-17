@@ -229,11 +229,37 @@ determinations)
     `afterAll`, line 162, commented `// restore shared fixture state` —
     `'admin'` is the shared fixture's real baseline, per
     `test/helpers/db.ts:1055-1056`'s own `claimProfile(..., 'admin', ...)`
-    call). Recorded here, not changed — do not "fix" these tests by
+    call). Recorded here, not changed — ~~do not "fix" these tests by
     leaving them on `'pm'`; that would delete the only place this gap is
-    currently exercisable at all. Do not work around the live bug by
-    setting a real account's `users.role` to `'pm'` either — that hides
-    the bug from testing rather than fixing it.
+    currently exercisable at all.~~
+
+    **REVISION 2026-09-17 (per Aravind):** these fixtures HIDE the bug: by
+    setting `users.role = 'pm'` they let the tests pass in a state
+    production never produces, which is why review missed it. When the
+    fix is built, these tests must use the real production shape
+    (`users.role = 'admin'`, `project_members.role = 'pm'`), and add a
+    case proving a `users.role = 'admin'` PM CAN correct and a non-PM
+    project member CANNOT.
+
+    Do not work around the live bug by setting a real account's
+    `users.role` to `'pm'` either — that hides the bug from testing
+    rather than fixing it.
+  - 019's membership check
+    (`supabase/migrations/019_daily_log_corrections.sql:237-243`) accepts
+    any `project_members` role, so the fix must add `role = 'pm'` there,
+    not only replace the `users.role` check.
+  - Fix scope: every check that treats `users.role`/`profile.role` as "is
+    a PM", not only corrections. Known candidate: DPR regeneration, whose
+    plans reuse the same gate (`docs/plans/dpr-regeneration-decision.md:104`,
+    `docs/plans/dpr-regeneration-build-spec.md:113`). Run a repo-wide
+    search (`app`, `lib`, `components`, `supabase/migrations`) for
+    `role === 'pm'` / `role <> 'pm'` / `canEditLog` when the fix is
+    scheduled.
+  - History: first found 2026-08-29 during a manual walkthrough of PR #137
+    and recorded in Aravind's project notes
+    (`correction-gate-role-mismatch`), with the interim `users.role =
+    'pm'` workaround. That record never reached the repo, so the bug
+    stayed open.
 
 Also carried forward (backlog housekeeping, added 2026-09-17 per this
 split's own paperwork step):
