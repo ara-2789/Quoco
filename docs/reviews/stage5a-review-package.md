@@ -659,6 +659,15 @@ every PM check below is pinned to the R1 rule (§4 D3 revision) —
   from D3 working exactly as designed for a genuine non-PM. This is the
   single highest-value thing to get right in review, precisely because it
   fails silently and looks correct.
+- **REVISION 2026-09-17 (per Aravind):** now confirmed on prod, not just a
+  risk (see the Open Questions revision above and `docs/build-status.md`'s
+  new backlog item, same date) — `canEditLog` gating the daily-log
+  correction RPC on `users.role` really does hide edit controls from a
+  real PM today. 5a's shared "is this viewer a PM on this project" check
+  (`project_members.role = 'pm'`, §4 D3/D6) is intended to be reused by
+  that later correction-gate fix — it should therefore live in one `lib`
+  function, not be written inline per page, so the fix has one place to
+  call into rather than a second copy of the same logic.
 
 ---
 
@@ -717,6 +726,9 @@ every PM check below is pinned to the R1 rule (§4 D3 revision) —
    position (§1) is no — confirm or dispute that conclusion, and if a
    migration is needed, name exactly what and why (this package
    deliberately does not design one).
+7. **NEW 2026-09-17 (per Aravind):** Is the proposed shared project-PM
+   check an appropriate single source for both 5a and the later
+   correction-gate fix?
 
 ---
 
@@ -791,7 +803,7 @@ and that it does not propose creating one either way. See UNVERIFIED.
   prod-verification steps (a)/(b)/(c) above, which use Aravind's own
   existing PM login and the existing `+smoke020` login instead of
   minting anything new.
-- **Existing edit controls may never render for real PMs.**
+~~- **Existing edit controls may never render for real PMs.**
   `canEditLog` (`lib/daily-logs/correction.ts:131-133`) compares `role ===
   'pm'` against `viewerRole`/`profile.role`, which is sourced from
   `users.role` (`lib/auth/profile-query.ts:17,35-39`) — and a real PM's
@@ -804,7 +816,15 @@ and that it does not propose creating one either way. See UNVERIFIED.
   fixed as part of Stage 5a (out of scope — Stage 5a's own PM checks are
   pinned to `project_members.role`, per the R1 revision, §4 D3, precisely
   to avoid repeating this); to be verified and, if confirmed, fixed
-  separately.
+  separately.~~
+
+  **REVISION 2026-09-17 (per Aravind):** CONFIRMED ON PROD BY OBSERVATION,
+  2026-09-17 (Aravind): logged in as a real PM (`users.role = 'admin'`,
+  `project_members.role = 'pm'`), the daily log detail page shows no
+  edit/correction controls. Aravind could edit earlier only while his
+  `users.role` was temporarily set to `'pm'` as a manual-walkthrough
+  workaround; that has since been reverted. Out of scope for 5a; tracked
+  in `docs/build-status.md` (new backlog item, this same revision).
 - **If a migration turns out to be needed after all** (§1's own
   conclusion is that none is), that determination and its reasoning
   belongs here, not designed inline in this package.

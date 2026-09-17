@@ -60,9 +60,16 @@ determinations)
   ADDED 2026-09-17 (per Aravind): BOT-27 is not the only blocker on this
   same switch trigger — the **onboarding re-entry guard** (a sub-item of
   the new **"How people log in"** entry, below) and that entry as a whole
-  are also HARD BLOCKERS. All three (BOT-27, the re-entry guard, and "How
+  are also HARD BLOCKERS. ~~All three (BOT-27, the re-entry guard, and "How
   people log in") must close before the trigger fires; none supersedes or
-  weakens the others.
+  weakens the others.~~
+
+  **REVISION 2026-09-17 (per Aravind):** a fourth item joins this same
+  switch-trigger blocker set, same day, confirmed on prod: **"Daily-log
+  correction gate checks the wrong role"** (below). All four (BOT-27, the
+  re-entry guard, "How people log in", and the correction-gate role fix)
+  must close before the trigger fires; none supersedes or weakens the
+  others.
 - **`docs/reviews/handle-new-user-id-drift.md`** — "prod not yet checked"
   whether a function's live behavior still matches any migration file's
   documented version, after an out-of-band change. (carried forward from
@@ -169,6 +176,64 @@ determinations)
     - `/onboarding` shows raw DB errors the same way
       (`app/(onboarding)/onboarding/page.tsx`'s `createCompany`, except the
       one hand-matched "unique" case).
+- **"Daily-log correction gate checks the wrong role"** — NEW, added
+  2026-09-17 per Aravind (found during the Stage 5a review package,
+  `docs/reviews/stage5a-review-package.md`). **FULL tier** (CLAUDE.md §0's
+  PRE-LAUNCH TWO-TIER CHANGE PROCESS) — this is a `SECURITY DEFINER`
+  function's own authorization logic changing, per CLAUDE.md §0's EXTERNAL
+  REVIEW GATE condition (b). **HARD BLOCKER for the switch trigger**,
+  alongside BOT-27, the onboarding re-entry guard, and "How people log in"
+  (above).
+  - `canEditLog` (`lib/daily-logs/correction.ts:131-133`) compares
+    `role === 'pm'` against `viewerRole`, which is `profile.role` —
+    `users.role` — passed in from
+    `app/(dashboard)/daily-logs/[logId]/page.tsx:42`
+    (`viewerRole={profile.role}`).
+  - `complete_onboarding` (`supabase/migrations/016_corrections.sql:180`)
+    sets `users.role = 'admin'` for every self-serve account, on every
+    tenant-creation pass — while creating a project
+    (`app/(dashboard)/projects/new/page.tsx:49-54`) makes that SAME person
+    `project_members.role = 'pm'` on that project. The two columns
+    disagree for every real PM, by construction.
+  - Migration 019's own correction RPC guard checks the identical
+    account-level column: `correct_daily_log`
+    (`supabase/migrations/019_daily_log_corrections.sql:170-171`) resolves
+    `v_editor_role` via `SELECT id, role INTO v_editor_id, v_editor_role
+    FROM public.users WHERE auth_id = auth.uid()`, then
+    (`supabase/migrations/019_daily_log_corrections.sql:178-181`) `RAISE
+    EXCEPTION` if `v_editor_role <> 'pm'` — the same `users.role` gate as
+    `canEditLog`, at the database layer, not just the UI. (This RPC
+    separately checks project membership at
+    `supabase/migrations/019_daily_log_corrections.sql:237-243`, but that
+    check accepts ANY `project_members` row for the project — it does not
+    itself filter on `role = 'pm'`; the actual PM-authorization is carried
+    entirely by the `users.role` check above.)
+  - CONFIRMED ON PROD BY OBSERVATION, 2026-09-17 (Aravind): logged in as a
+    real PM (`users.role = 'admin'`, `project_members.role = 'pm'`), the
+    daily log detail page shows no edit/correction controls. Aravind could
+    edit earlier only while his `users.role` was temporarily set to
+    `'pm'` as a manual-walkthrough workaround; that has since been
+    reverted.
+  - Fix direction, NOT designed here: gate on `project_members.role =
+    'pm'` for the log's own project, in both the UI (`canEditLog`'s
+    caller) and the RPC (`correct_daily_log`'s guard), reusing the shared
+    project-PM check Stage 5a is introducing for its own photo access
+    control (`docs/reviews/stage5a-review-package.md` §4 D3/D6, §8, §9 Q7).
+    Scheduled after Stage 5a.
+  - Existing test fixtures manufacture the state production never
+    produces, by directly setting `users.role = 'pm'` — a shape
+    `complete_onboarding` never creates (it always writes `'admin'`,
+    above): `test/daily-log-correction-rpc.test.ts:87` (restored to
+    `'admin'` in its own `afterAll`, line 103) and
+    `test/migration-019.test.ts:123` (restored to `'admin'` in its own
+    `afterAll`, line 162, commented `// restore shared fixture state` —
+    `'admin'` is the shared fixture's real baseline, per
+    `test/helpers/db.ts:1055-1056`'s own `claimProfile(..., 'admin', ...)`
+    call). Recorded here, not changed — do not "fix" these tests by
+    leaving them on `'pm'`; that would delete the only place this gap is
+    currently exercisable at all. Do not work around the live bug by
+    setting a real account's `users.role` to `'pm'` either — that hides
+    the bug from testing rather than fixing it.
 
 Also carried forward (backlog housekeeping, added 2026-09-17 per this
 split's own paperwork step):
