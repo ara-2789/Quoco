@@ -1020,6 +1020,28 @@
   120,000 chars, split it the same way — by theme, into a subdirectory,
   with the original path kept as an index — rather than continuing to
   append and letting a future reader shoulder another partial read.
+- PRE-LAUNCH TWO-TIER CHANGE PROCESS (Aravind's decision, 2026-09-16).
+  Context: prod holds no customer or beta data (only Aravind's own test
+  data). Prod is effectively staging.
+    * FULL TIER (unchanged, every gate): anything touching auth/identity,
+      RLS, grants, policies, SECURITY DEFINER functions, tenant isolation,
+      destructive or irreversible actions (e.g. the retention deletion
+      job), or money. Order: external review → test-db apply → DOWN
+      rehearsal with captured output → CI green with pinned run URL →
+      merge → PITR observed → prod apply → verify by observation → ledger
+      → apply record.
+    * LIGHT TIER: additive columns/indexes and app code with none of the
+      above. Order: test-db apply (if a migration) → CI green → merge →
+      PITR glance → prod apply → one verify query → short apply record.
+      No DOWN rehearsal required.
+    * Unchanged in both tiers: user-facing strings need Aravind's
+      approval; migration ledger must stay truthful; test-only objects
+      never get a migration number; CLI target-ref rule; dated
+      corrections, never silent rewrites.
+    * SWITCH TRIGGER: the moment any beta tester's, customer's, or RCPL
+      project's data lands on prod, ALL changes use the full tier. Record
+      the date the trigger fires.
+    * If unsure which tier applies, use the full tier and ask Aravind.
 
 ---
 
