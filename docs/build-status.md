@@ -52,6 +52,10 @@ determinations)
   with the current STOP-line template: needs a Twilio status-callback
   endpoint, or inbound-STOP-text detection, whichever this integration
   actually surfaces. (carried forward from `docs/build-status/2026-q3-weeks-1-2.md`)
+  DATED NOTE (2026-09-17, Aravind): deferred. MUST ship before the
+  CLAUDE.md two-tier SWITCH TRIGGER fires (first beta tester, customer, or
+  RCPL project data on prod). Onboarding anyone other than Aravind is
+  blocked until BOT-27 is live.
 - **`docs/reviews/handle-new-user-id-drift.md`** — "prod not yet checked"
   whether a function's live behavior still matches any migration file's
   documented version, after an out-of-band change. (carried forward from
@@ -121,9 +125,17 @@ Also carried forward (backlog housekeeping, added 2026-09-17 per this
 split's own paperwork step):
 - `docs/reviews/morning-flow-migration-review-package.md` is at 141,180
   chars (over the 120,000-char warn threshold); split later.
+  DATED CORRECTION (2026-09-17): KEEP, do not split or delete. It is the
+  cited spec for live migrations 030/031/033 (which cannot be edited),
+  lib/whatsapp/flows/morning.ts, and three test files. File-size lint only
+  warns for it. Revisit only if the warning becomes a hard fail.
 - `scripts/migration-lint-exceptions.json` reason strings cite "CLAUDE.md"
   for content that actually now lives in `docs/build-status.md`
   (pre-existing drift, predates this split); fix later.
+- (2026-09-17) Clean up ~20 stale `.claude/worktrees/` copies. First
+  confirm each worktree's branch is pushed to GitHub (CLAUDE.md "every
+  branch pushed" rule) and has no uncommitted changes; remove only those
+  that pass. Aravind approves the list before removal.
 
 ---
 

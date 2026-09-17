@@ -199,6 +199,12 @@ discipline the rest of this record follows.~~
 **DATED (2026-09-15): Done — verified on prod earlier (real hindrance,
 real photos, delivered to PM inbox).**
 
+DATED CORRECTION (2026-09-17): the hindrance-photo E2E proof on prod was
+performed on 15 Sep 2026, per Aravind. The date is not provable from the
+repo (searched git log and docs/ on 2026-09-17); recorded on Aravind's
+statement. Consistent with 044's prod apply (after the PITR point ending
+15 Sep 2026 00:03:53 IST).
+
 ## What this apply does NOT include
 
 **No application code changed in this pass.** This is documentation and
