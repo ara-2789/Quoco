@@ -753,9 +753,13 @@ describe('handleOwnerDeliverJob', () => {
       await seedDailyLog(projectId, engineerId, logDate, true)
       const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
       await setEveningPhotosStatus(dailyLogId, 'complete')
-      for (let i = 0; i < 11; i++) {
-        await seedEveningPhoto(dailyLogId)
-      }
+      // 11 photos seeded in PARALLEL (2026-09-17 timeout fix) -- order
+      // doesn't matter for this test's own assertions (count + overflow
+      // text only, no filename/ordering checks), but each still gets an
+      // explicit, distinct received_at for determinism, matching the
+      // pattern established for the order-sensitive cap tests.
+      const baseTime = Date.now()
+      await Promise.all(Array.from({ length: 11 }, (_, i) => seedEveningPhoto(dailyLogId, 16, new Date(baseTime + i).toISOString())))
       const dprId = await seedDprRow(projectId, engineerId, logDate, 'pending', true)
 
       const email = mockSendEmail({ ok: true, status: 200, id: 'em_overflow1' })
@@ -772,7 +776,7 @@ describe('handleOwnerDeliverJob', () => {
     } finally {
       await cleanupProject(projectId)
     }
-  })
+  }, 90_000)
 
   it('STAGE 4: no overflow (all photos fit) -- overflow line is absent', async () => {
     const db = testClient()
