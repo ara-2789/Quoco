@@ -222,5 +222,19 @@
     "parent": "projects",
     "action": "not-applicable",
     "note": "031_outbound_send_ledger.sql -- composite (project_id, tenant_id) REFERENCES projects(id, tenant_id), NOT NULL, no ON DELETE clause -- same reasoning as outbound_sends.tenant_id/recipient_user_id above: always this suite's own dedicated OUTBOUND_TEST_PROJECT_ID, never TEST_PROJECT_ID or TEST_PROJECT_A_ID/B_ID, so a sweep by any of those ids matches zero rows regardless of action chosen. not-applicable for consistency with this table's other two entries, not because the id could collide."
+  },
+  {
+    "table": "daily_log_photos",
+    "column": "daily_log_id",
+    "parent": "daily_logs",
+    "action": "delete",
+    "note": "043_daily_log_photos.sql -- NOT NULL, ON DELETE RESTRICT explicit (043's own review round deliberately tightened this from CASCADE, per scripts/test-db-only-grants.sql's own SECOND ENTRY comment). Registered as a child of 'daily_logs' (not 'projects'/'users' directly -- this table has no project_id/engineer_id column of its own, only tenant_id + daily_log_id) so sweepSharedFixtureReferences()'s own child-first cascade sweeps it before deleting the daily_logs row that references it, regardless of which parent (projects, users, tenants) triggered that daily_logs delete. Found live: CI run 35132707054 (2026-09-16) -- Stage 4's own photo-seeding tests left 9 daily_logs rows undeletable via this exact FK, which test/owner-deliver-job.test.ts's own cleanupProject() (fixed separately, same PR) also now covers directly for its own project-scoped case; this entry is the shared-sweep half of that same fix, per this file's own belt-and-braces convention. service_role holds DELETE on this table on test-db only (scripts/test-db-only-grants.sql's SECOND ENTRY), so this action can be 'delete' here even though prod's own migration revokes it -- this file only ever runs against test-db."
+  },
+  {
+    "table": "hindrance_photos",
+    "column": "hindrance_id",
+    "parent": "hindrances",
+    "action": "delete",
+    "note": "044_hindrance_photos.sql -- NOT NULL, ON DELETE RESTRICT explicit, identical shape to daily_log_photos above one table over (per scripts/test-db-only-grants.sql's own THIRD ENTRY). Registered as a child of 'hindrances' (not 'projects'/'users' directly -- no project_id/reported_by column of its own, only tenant_id + hindrance_id) for the same child-first-cascade reason as daily_log_photos above. service_role holds DELETE on this table on test-db only (same file's THIRD ENTRY); prod's own migration revokes it, unaffected since this file only ever runs against test-db."
   }
 ]

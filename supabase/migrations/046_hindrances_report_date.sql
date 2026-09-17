@@ -5,8 +5,14 @@
 -- GENERATED STORED column computing the IST calendar date of created_at,
 -- plus an index over (project_id, reported_by, report_date).
 --
+-- DATED CORRECTION (2026-09-16): APPLIED TO PROD (jvxwqignooseazzmwhvl).
+-- PITR confirmed live in the dashboard before applying (restore window
+-- 09 Sep 2026 22:00:59 to 16 Sep 2026 20:38:08 IST, observed by Aravind,
+-- not assumed). Full apply sequence, verification, and evidence:
+-- docs/reviews/046-apply-record.md.
+--
 -- DATED CORRECTION (2026-09-16): APPLIED TO TEST-DB ONLY
--- (exfccwlrhoutkgrlikod). NOT applied to prod. Prod apply is a separate
+-- (exfccwlrhoutkgrlikod). ~~NOT applied to prod.~~ Prod apply is a separate
 -- later step (PITR, pre-probe including a created_at IS NULL count on
 -- prod, apply, verify, ledger repair, types).
 --

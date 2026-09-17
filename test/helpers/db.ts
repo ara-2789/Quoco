@@ -327,18 +327,51 @@ export async function cleanupTestSessions(): Promise<void> {
 // below used to delete TEST_PROJECT_A_ID/TEST_PROJECT_B_ID with no sweep at
 // all — the identical shape of bug this function was built to close for
 // users/tenants, just for a different parent, caught before it fired.
-async function sweepSharedFixtureReferences(parent: 'users' | 'tenants' | 'projects', id: string): Promise<void> {
+type SweepParent = 'users' | 'tenants' | 'projects' | 'daily_logs' | 'hindrances'
+
+// CHILD-FIRST, RECURSIVE (2026-09-17, CI run 35132707054's own diagnosis;
+// full trace: PR #283). Before this fix, an entry like {table: 'daily_logs',
+// parent: 'projects'} deleted daily_logs rows directly -- if daily_log_photos
+// (or hindrance_photos, one level over on hindrances) still held a live
+// daily_log_id/hindrance_id reference, that delete failed on an FK violation,
+// and the registry had NO entry for either photo table at all, under ANY
+// parent, so nothing upstream of this function could have swept them first
+// either. `daily_logs` and `hindrances` are now themselves registered AS
+// PARENTS below (parent: 'daily_logs' / parent: 'hindrances') -- so before
+// this loop deletes any table's rows, it checks whether that table is
+// ITSELF a registered parent elsewhere in the same file; if so, it fetches
+// the ids about to be deleted and recurses into a sweep for each one FIRST.
+// This makes every existing call site (projects, users, tenants) cascade
+// through daily_log_photos/hindrance_photos automatically, with no special
+// casing per call site -- registering the grandchild relationship once, in
+// the data, is what makes it apply everywhere the parent chain already runs.
+async function sweepSharedFixtureReferences(parent: SweepParent, id: string): Promise<void> {
   const db = testClient()
-  for (const entry of sharedFixtureFkCoverage as Array<{
+  const entries = sharedFixtureFkCoverage as Array<{
     table: string
     column: string
     parent: string
     action: string
-  }>) {
+  }>
+
+  for (const entry of entries) {
     if (entry.parent !== parent) continue
     if (entry.action === 'not-applicable') continue // see the entry's own note in the JSON file
 
     if (entry.action === 'delete') {
+      const hasRegisteredChildren = entries.some((e) => e.parent === entry.table)
+      if (hasRegisteredChildren) {
+        const { data: childRows, error: selErr } = await db.from(entry.table).select('id').eq(entry.column, id)
+        if (selErr) {
+          throw new Error(
+            `sweepSharedFixtureReferences: ${entry.table} select (child-first cascade before delete) failed: ${selErr.message}`,
+          )
+        }
+        for (const row of (childRows ?? []) as { id: string }[]) {
+          await sweepSharedFixtureReferences(entry.table as SweepParent, row.id)
+        }
+      }
+
       const { error } = await db.from(entry.table).delete().eq(entry.column, id)
       if (error) {
         throw new Error(

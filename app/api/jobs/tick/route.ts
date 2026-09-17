@@ -205,6 +205,29 @@ export async function runJobsTick(client: SupabaseClient) {
             })
           }
         }
+        // owner_deliver dead-letter (Stage 4, S5, 2026-09-16) -- same
+        // shape as hindrance_pm_notify's own branch immediately above.
+        // handleOwnerDeliverJob's own report-email loop throws a retryable
+        // error while any row's photos are still 'pending' (S5, lib/dpr/
+        // owner-deliver-dispatch.ts's own selectDprPhotos readiness gate).
+        // On exhaustion, Aravind's 2026-09-16 decision is the same as
+        // hindrance's own (2026-09-14): the email is NEVER withheld -- one
+        // final forced send, without waiting for photos any longer. Only
+        // if THAT also fails does this fall back to an explicit alert.
+        if (!willRetry && job.type === 'owner_deliver') {
+          const payload = job.payload as unknown as OwnerDeliverJobPayload
+          try {
+            await handleOwnerDeliverJob(payload, { supabaseClient: client, forceSendWithoutPhotos: true })
+          } catch (forcedErr) {
+            const forcedMessage = forcedErr instanceof Error ? forcedErr.message : String(forcedErr)
+            Sentry.captureMessage('owner_deliver: job exhausted all retries -- owner report send never completed', {
+              level: 'error',
+              fingerprint: ['owner-deliver', 'dead_letter', job.id],
+              tags: { feature: 'owner-deliver' },
+              extra: { jobId: job.id, payload: job.payload, lastError: message, forcedSendError: forcedMessage },
+            })
+          }
+        }
         // media_ingest dead-letter (stage 1) -- see lib/media/ingest.ts's
         // own markMediaIngestFailed for the exact writes/alert. No PM-
         // visible surface exists yet (stage 5); this is the entire interim
