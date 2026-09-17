@@ -256,6 +256,25 @@ describe('selectDprPhotoCandidates', () => {
     }
   })
 
+  it('T3b: positive control — when ready, the same spy DOES count daily_log_photos queries (proves T3\'s zero is not vacuous)', async () => {
+    const logDate = '2026-11-08'
+    const dailyLog = await seedDailyLog(TEST_TENANT_A_ID, TEST_PROJECT_A_ID, engineerAId, logDate, 'complete')
+    await seedEveningPhoto(dailyLog, TEST_TENANT_A_ID)
+
+    const db = testClient()
+    const spy = withFromSpy(db, ['daily_log_photos', 'hindrance_photos'])
+    try {
+      const params = { tenantId: TEST_TENANT_A_ID, projectId: TEST_PROJECT_A_ID, engineerId: engineerAId, logDate }
+      const result = await selectDprPhotos(params, { requireReady: true }, db)
+
+      expect(result.photosReady).toBe(true)
+      expect(result.eligibleCount).toBeGreaterThanOrEqual(1)
+      expect(spy.calls['daily_log_photos']).toBeGreaterThanOrEqual(1)
+    } finally {
+      spy.restore()
+    }
+  })
+
   // --- T4: isolation, tombstones, kind/expiresAt correctness ----------
   it('T4: cross-project (same tenant) isolation contributes nothing', async () => {
     const logDate = '2026-11-04'
