@@ -1,5 +1,48 @@
 # Stage 5a review package — PM photos in the dashboard
 
+## Review status (2026-09-17)
+
+**Verdict: GO (design tier).** Full text: `docs/reviews/stage5a-review-verdict.md`.
+
+Build conditions, each citing the verdict paragraph it comes from:
+
+- **C1.** One shared `lib` function, `isProjectPm(userId, projectId)`
+  (`project_members.role = 'pm'`), used by D3, D6, and the later
+  correction-gate fix. A test fixture shaped like a real prod PM
+  (`users.role = 'admin'`, `project_members.role = 'pm'`) MUST see photos.
+  (Verdict Q7.)
+- **C2.** Extend `test/photo-access-boundary-agreement.test.ts` to
+  hindrance photos and re-target its TS side at the route's authorization
+  function (not `getSignedPhotoUrl`). First artifact: this run, green on
+  real test-db, before any UI. (Verdict Q4, closing paragraph.)
+- **C3.** D7: the email wrapper checks readiness BEFORE calling the
+  shared selector; the selector itself has no readiness logic. (Verdict
+  Q3.)
+- **C4.** Retire `getSignedPhotoUrl` (delete or reduce to an internal
+  helper of the route). Its isolation tests move onto the route; they are
+  not deleted. (Verdict Q4.)
+- **C5.** Per-user fixed-window rate limit (order of 100+/min), reusing
+  the confirm-email in-memory pattern and its stated per-instance
+  limitation. No batch signing. A rate-limited image shows the approved
+  "Photo unavailable. Refresh to try again." string. (Verdict Q5.)
+- **C6.** Every failure response identical in status, body, AND headers
+  (including `cache-control`). Timing need not be uniform. (Verdict Q2.)
+- **C7.** D3's "no photo section" asserted on all three pages. (Verdict,
+  "Asserted-vs-verified flags" paragraph.)
+- **C8.** No new user-facing strings beyond the six approved. (Verdict,
+  "Asserted-vs-verified flags" paragraph.)
+
+**Build split (approved by Aravind, 2026-09-17):**
+- **B1** = `isProjectPm` + the photo route (D6) + retire
+  `getSignedPhotoUrl` (C4) + extended boundary matrix (C2). No UI.
+- **B2** = the D7 selector split.
+- **B3** = the three pages (daily log detail, DPR detail, hindrances
+  queue).
+
+B1's test-db run goes to the external reviewer before B2 starts.
+
+---
+
 Every factual claim in this package was verified by reading the cited file
 on `origin/main` in a fresh worktree branched directly from it (no local
 edits between fetch and read). Anything not independently confirmed this
@@ -320,8 +363,8 @@ the repo; where one already appears elsewhere, that is cited above in §2/§3).
   `users` row (the codebase's existing pattern for this is `getProfile`,
   `lib/auth/profile.ts:21`); loads the photo row by id via `service_role`;
   checks tenant match, PM on the owning project (via `daily_logs` for
-  daily-log photos, via `hindrances` for hindrance photos — the exact join
-  shapes already proven correct by the RLS policies in §3), and
+  daily-log photos, via `hindrances` for hindrance photos — ~~the exact join
+  shapes already proven correct by the RLS policies in §3~~), and
   `photo_url` not null; mints a 5-minute signed URL (reusing
   `SIGNED_URL_TTL_SECONDS`, already defined at
   `lib/storage/photo-access.ts:25`); redirects to it. Every failure
@@ -332,6 +375,14 @@ the repo; where one already appears elsewhere, that is cited above in §2/§3).
   never throws for an authorization failure"). No-store caching. Signed
   URLs never appear in page HTML or email. Pages render `<img>` pointing
   at this route.
+
+  **REVISION 2026-09-17 (external review, Q4):** the RLS joins cited in §3
+  are proven for RLS-as-user only. D6 re-implements those same joins in
+  TS, under `service_role`, where RLS is bypassed entirely — that is a NEW
+  copy of the join logic, not a reuse of the proven one, and it is proven
+  only by the extended boundary-agreement matrix (C2, below), never by
+  citing the RLS policy text. See `docs/reviews/stage5a-review-verdict.md`,
+  Q4.
 - **D7.** Split `selectDprPhotos` into (a) a shared "which photos"
   selector used by both the DPR page and the email, and (b) email-only
   download/cap/overflow logic. **HARD CONDITION:**
