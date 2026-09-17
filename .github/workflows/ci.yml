@@ -209,15 +209,151 @@ jobs:
       - run: npm ci
       - run: npm run lint:fixture-literals
 
+  # SKIP THE test-db JOB ON A push TO main WHEN THE PUSHED COMMIT IS A MERGE
+  # OF A PR ALREADY PROVEN GREEN AT THE SAME SHA (2026-09-17, Aravind). The
+  # `test` job's own concurrency comment above (the PR #275 incident) names
+  # the real fix as deduplication at the trigger level, not a concurrency
+  # policy -- this job is that fix. A `push` to main that is exactly a
+  # "Require branches to be up to date before merging" merge commit re-runs
+  # the identical tree that the merged PR's own `pull_request` run already
+  # tested; re-running the full test-db suite a second time for that same
+  # tree buys nothing and re-queues behind `ci-test-db-suite` for no reason.
+  # This relies on that branch-protection setting being ON for main -- it is
+  # what guarantees a merge commit's tree matches its PR head's tree in the
+  # common case this job is built to catch (see the tree-check step below,
+  # which verifies this directly rather than trusting the setting alone).
+  #
+  # Conservative by construction, fails toward RUNNING the suite: any of
+  # (a) no exactly-one merged PR at this merge commit, (b) that PR's head
+  # tree differs from this commit's tree, (c) no run of this workflow at
+  # that PR head concluded success with `Test (real test-db)` itself
+  # concluding success (not skipped), or any command error/unexpected API
+  # response along the way, leaves `skip=false` and the full suite runs.
+  # Only applies to `push`; `pull_request` runs are untouched (the `test`
+  # job's own `if:` below only consults this job's output on non-PR events).
+  skip-duplicate-main-run:
+    name: Detect already-green PR head
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for identical, already-green PR head
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set +e
+
+          finish() {
+            echo "$2"
+            echo "skip=$1" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          # a. PR lookup: the merged PR whose merge_commit_sha == this push's sha.
+          PR_JSON=$(gh api "repos/${REPO}/commits/${SHA}/pulls" 2>&1)
+          if [ $? -ne 0 ]; then
+            finish false "gh api commits/${SHA}/pulls failed: $PR_JSON"
+          fi
+
+          MATCHING=$(echo "$PR_JSON" | jq -c --arg sha "$SHA" '[.[] | select(.merge_commit_sha == $sha and .merged_at != null)]' 2>&1)
+          if [ $? -ne 0 ]; then
+            finish false "jq filter on PR list failed: $MATCHING"
+          fi
+
+          COUNT=$(echo "$MATCHING" | jq 'length' 2>&1)
+          if [ "$COUNT" != "1" ]; then
+            finish false "Expected exactly one merged PR with merge_commit_sha == ${SHA}, found ${COUNT}."
+          fi
+
+          PR_NUMBER=$(echo "$MATCHING" | jq -r '.[0].number')
+          PR_HEAD_SHA=$(echo "$MATCHING" | jq -r '.[0].head.sha')
+
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" == "null" ] || [ -z "$PR_HEAD_SHA" ] || [ "$PR_HEAD_SHA" == "null" ]; then
+            finish false "Could not extract PR number/head sha from matched PR object: $MATCHING"
+          fi
+
+          echo "Found merged PR #${PR_NUMBER}, head ${PR_HEAD_SHA}, merge commit ${SHA}."
+
+          # b. Tree check.
+          if ! git cat-file -e "${PR_HEAD_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$PR_HEAD_SHA" 2>&1
+          fi
+          if ! git cat-file -e "${PR_HEAD_SHA}^{commit}" 2>/dev/null; then
+            finish false "Could not resolve PR #${PR_NUMBER} head commit ${PR_HEAD_SHA} locally after fetch attempt."
+          fi
+
+          MAIN_TREE=$(git rev-parse "${SHA}^{tree}" 2>&1)
+          if [ $? -ne 0 ]; then
+            finish false "git rev-parse on main sha ${SHA} tree failed: $MAIN_TREE"
+          fi
+
+          PR_TREE=$(git rev-parse "${PR_HEAD_SHA}^{tree}" 2>&1)
+          if [ $? -ne 0 ]; then
+            finish false "git rev-parse on PR head ${PR_HEAD_SHA} tree failed: $PR_TREE"
+          fi
+
+          if [ "$MAIN_TREE" != "$PR_TREE" ]; then
+            finish false "Tree mismatch: main ${SHA} tree ${MAIN_TREE} != PR #${PR_NUMBER} head ${PR_HEAD_SHA} tree ${PR_TREE}."
+          fi
+
+          echo "Tree identical (${MAIN_TREE}) between main ${SHA} and PR #${PR_NUMBER} head ${PR_HEAD_SHA}."
+
+          # c. Prior pass: a run of THIS workflow at the PR head that concluded
+          # success, with the "Test (real test-db)" job itself concluding
+          # success (not skipped).
+          RUNS_JSON=$(gh api "repos/${REPO}/actions/runs?head_sha=${PR_HEAD_SHA}&event=pull_request" --paginate 2>&1)
+          if [ $? -ne 0 ]; then
+            finish false "gh api actions/runs lookup failed: $RUNS_JSON"
+          fi
+
+          SUCCESS_RUN_IDS=$(echo "$RUNS_JSON" | jq -r '.workflow_runs[]? | select(.name == "CI" and .conclusion == "success") | .id' 2>&1)
+          if [ -z "$SUCCESS_RUN_IDS" ]; then
+            finish false "No successful CI workflow run found for PR #${PR_NUMBER} head ${PR_HEAD_SHA}."
+          fi
+
+          found_run_url=""
+          for run_id in $SUCCESS_RUN_IDS; do
+            JOBS_JSON=$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs" --paginate 2>&1)
+            if [ $? -ne 0 ]; then
+              continue
+            fi
+            TEST_JOB_CONCLUSION=$(echo "$JOBS_JSON" | jq -r '[.jobs[]? | select(.name == "Test (real test-db)")][0].conclusion // empty')
+            if [ "$TEST_JOB_CONCLUSION" == "success" ]; then
+              found_run_url="https://github.com/${REPO}/actions/runs/${run_id}"
+              break
+            fi
+          done
+
+          if [ -z "$found_run_url" ]; then
+            finish false "No run found where Test (real test-db) concluded success (not skipped) for PR #${PR_NUMBER} head ${PR_HEAD_SHA}."
+          fi
+
+          finish true "Skipping test-db on main: tree ${MAIN_TREE} identical to PR #${PR_NUMBER} head ${PR_HEAD_SHA}, already green in run ${found_run_url}."
+
   test:
     name: Test (real test-db)
-    needs: [changes]
+    needs: [changes, skip-duplicate-main-run]
     # `always()` overrides the default "skip if a needed job was skipped"
     # behavior -- `changes` itself is skipped (by its own `if:`) on a push
-    # event, and without `always()` here that would cascade into skipping
-    # this job's condition evaluation entirely rather than reaching the
-    # `github.event_name != 'pull_request'` branch below.
-    if: always() && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true')
+    # event, and `skip-duplicate-main-run` itself is skipped on a
+    # pull_request event, and without `always()` here that would cascade
+    # into skipping this job's condition evaluation entirely rather than
+    # reaching the branches below.
+    if: >-
+      always() &&
+      ((github.event_name == 'pull_request' && needs.changes.outputs.docs_only != 'true') ||
+      (github.event_name != 'pull_request' && needs.skip-duplicate-main-run.outputs.skip != 'true'))
     runs-on: ubuntu-latest
     # DO NOT add ${{ github.ref }} (or anything branch/PR-scoped) to the
     # group below. That is the standard GitHub Actions idiom elsewhere, and
