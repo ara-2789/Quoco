@@ -165,7 +165,15 @@ async function setEveningPhotosStatus(dailyLogId: string, status: 'pending' | 'c
   if (error) throw new Error(`setEveningPhotosStatus failed: ${error.message}`)
 }
 
-async function seedEveningPhoto(dailyLogId: string, sizeBytes = 16): Promise<string> {
+// `receivedAt` (added 2026-09-17, the cap-test timeout fix): optional
+// explicit override for `received_at`, the column selectDprPhotos orders
+// candidates by. Needed so callers can seed multiple photos in PARALLEL
+// (Promise.all) while still controlling their relative order deterministically
+// -- without it, parallel inserts would all land within the same DB-default
+// `now()` millisecond in no guaranteed order, and any test asserting
+// attachment order (or which photo is hit first in a capped/broken-photo
+// loop) would become flaky.
+async function seedEveningPhoto(dailyLogId: string, sizeBytes = 16, receivedAt?: string): Promise<string> {
   const db = testClient()
   const objectPath = `${TEST_TENANT_ID}/owner-deliver-test/${randomUUID()}.jpg`
   const { error: uploadError } = await db.storage
@@ -173,9 +181,14 @@ async function seedEveningPhoto(dailyLogId: string, sizeBytes = 16): Promise<str
     .upload(objectPath, Buffer.from(new Uint8Array(sizeBytes).fill(1)), { contentType: 'image/jpeg' })
   if (uploadError) throw new Error(`seedEveningPhoto upload failed: ${uploadError.message}`)
   uploadedTestPhotoPaths.push(objectPath)
-  const { error } = await db
-    .from('daily_log_photos')
-    .insert({ tenant_id: TEST_TENANT_ID, daily_log_id: dailyLogId, phase: 'evening', photo_url: objectPath, retention_class: 'evening_progress' })
+  const { error } = await db.from('daily_log_photos').insert({
+    tenant_id: TEST_TENANT_ID,
+    daily_log_id: dailyLogId,
+    phase: 'evening',
+    photo_url: objectPath,
+    retention_class: 'evening_progress',
+    ...(receivedAt ? { received_at: receivedAt } : {}),
+  })
   if (error) throw new Error(`seedEveningPhoto insert failed: ${error.message}`)
   return objectPath
 }
@@ -1030,12 +1043,22 @@ describe('handleOwnerDeliverJob', () => {
       await seedDailyLog(projectId, engineerId, logDate, true)
       const dailyLogId = await getDailyLogId(projectId, engineerId, logDate)
       await setEveningPhotosStatus(dailyLogId, 'complete')
-      const brokenPath = await seedEveningPhoto(dailyLogId)
+      // Broken photo seeded first, with an explicit received_at a full
+      // minute earlier than the parallel batch below -- guarantees it sorts
+      // first regardless of network completion order, so it's the one hit
+      // (and skipped) before the cap, not the 11th candidate the cap would
+      // otherwise block from ever being reached at all.
+      const brokenPath = await seedEveningPhoto(dailyLogId, 16, new Date(Date.now() - 60_000).toISOString())
       await breakPhoto(brokenPath)
-      const validPaths: string[] = []
-      for (let i = 0; i < 10; i++) {
-        validPaths.push(await seedEveningPhoto(dailyLogId))
-      }
+      // 10 valid photos seeded in PARALLEL -- the 2026-09-17 timeout fix.
+      // received_at is explicit and strictly increasing per index so
+      // Promise.all's own order-preserving result array still matches
+      // selectDprPhotos' received_at-ascending ordering, regardless of which
+      // upload actually completes first over the network.
+      const baseTime = Date.now()
+      const validPaths = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => seedEveningPhoto(dailyLogId, 16, new Date(baseTime + i).toISOString())),
+      )
       const dprId = await seedDprRow(projectId, engineerId, logDate, 'pending', true)
 
       const email = mockSendEmail({ ok: true, status: 200, id: 'em_broken_cap1' })
@@ -1053,5 +1076,5 @@ describe('handleOwnerDeliverJob', () => {
     } finally {
       await cleanupProject(projectId)
     }
-  }, 30000)
+  }, 90_000)
 })
