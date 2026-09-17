@@ -193,9 +193,27 @@ auth only.**
   gating itself happens client-side in the component, via
   `canEditLog(viewerRole)` (`components/daily-logs/log-detail-view.tsx:41`,
   `viewerRole` passed in from `profile.role` at
-  `app/(dashboard)/daily-logs/[logId]/page.tsx:42`). `LogDetailView`
+  `app/(dashboard)/daily-logs/[logId]/page.tsx:42`
+  (`viewerRole={profile.role}`)). `LogDetailView`
   (`components/daily-logs/log-detail-view.tsx`) currently renders only
   Day/Morning/Evening scalar-field sections — no photo section exists yet.
+
+  **REVISION 2026-09-17 (per Aravind):** `canEditLog`
+  (`lib/daily-logs/correction.ts:131-133`) reads exactly:
+  ```
+  export function canEditLog(role: string | null): boolean {
+    return role === 'pm'
+  }
+  ```
+  — a direct `=== 'pm'` comparison against whatever `role` string it's
+  given, which today is `viewerRole` = `profile.role` = `users.role`
+  (`app/(dashboard)/daily-logs/[logId]/page.tsx:42`,
+  `lib/auth/profile-query.ts:17,35-39`) — **never**
+  `project_members.role`. Per the D3 revision above, a real PM's
+  `users.role` is `'admin'` on prod, not `'pm'`. This package makes no
+  claim about whether that has actually broken edit affordances in
+  production — only that the code, read as written, compares the wrong
+  column for that purpose. See Open Questions.
 - `app/(dashboard)/dprs/[id]/page.tsx:24-33`: relies entirely on the
   `dprs_select` RLS policy for access control — a `null` return from
   `getDprDetail` (no row, or a row RLS denies) renders the identical
@@ -268,6 +286,30 @@ the repo; where one already appears elsewhere, that is cited above in §2/§3).
   at all** (not an empty state). Note the divergence from the existing
   hindrances-page convention (§3, §8): that page shows a visible "You're
   not the PM..." message for a non-PM; D3 is stricter — nothing renders.
+
+  **REVISION 2026-09-17 (per Aravind):** the "is this viewer a PM" check
+  for every photo decision in this package MUST use
+  `project_members.role = 'pm'` **for the photo's own project** — it must
+  **NEVER** use `users.role` / `profile.role`. This matters concretely:
+  for a real PM on prod, `users.role` is `'admin'`, not `'pm'`. Chain of
+  citations:
+  - `app/(dashboard)/projects/new/page.tsx:49-54` — creating a project
+    always inserts a `project_members` row with `role: 'pm'` for the
+    creating user, regardless of that user's own `users.role`.
+  - `supabase/migrations/016_corrections.sql:177-181` —
+    `complete_onboarding` sets the caller's own `users.role` to
+    `'admin'` on tenant creation (`role = 'admin'` at line 180).
+  - So the person who actually manages a project day-to-day (creates it,
+    is its `project_members.role = 'pm'`) is, on prod, the same person
+    whose `users.role` is `'admin'` — the two columns disagree by
+    construction, not by accident.
+  - `profile.role` (the value a page would reach for instead) is sourced
+    directly from `users.role`: `lib/auth/profile-query.ts:17` (`select
+    'id, tenant_id, full_name, role'` against `.from('users')`) and
+    `lib/auth/profile-query.ts:35-39`. It is never `project_members.role`.
+  - The one existing consumer of a role value on these pages already gets
+    this wrong in exactly this way — see the `canEditLog` finding below
+    and the Open Questions entry it produces.
 - **D4.** "Kept until {date}" shown per photo from `expires_at`, as an IST
   date; hidden once the date has passed (nothing deletes until stage 6).
 - **D5.** Add a tenant check to the photo access check (defence in depth;
@@ -311,6 +353,26 @@ the repo; where one already appears elsewhere, that is cited above in §2/§3).
   (b) internally. The email's order, 10-photo/15 MB caps, overflow line,
   readiness gate, and Sentry fingerprint are unchanged.
 
+**NEW 2026-09-17 (per Aravind):**
+
+- **D8. Empty states.** "No photos for this log." appears **only** on the
+  daily log detail page (PM viewer, zero morning AND zero evening photos).
+  DPR detail with zero photos: no photo section at all — no string, no
+  placeholder. A hindrance card with zero photos: nothing rendered — no
+  string, no placeholder. No new strings beyond the six in §5.
+- **D9. Uploads in progress.** Dashboard pages (daily log detail, DPR
+  detail, hindrances queue) show whatever photos exist right now — they
+  never wait, and never hide the photo section because an upload is still
+  pending. **Only the Owner email keeps its readiness gate**
+  (`requireReady`, `lib/dpr/select-photos.ts:152-180`). The D7 shared
+  selector must let the page-side consumer skip the readiness gate
+  entirely while the email path's `selectDprPhotos` behaves exactly as it
+  does today (`requireReady: !deps.forceSendWithoutPhotos`,
+  `lib/dpr/owner-deliver-dispatch.ts:448`) — i.e. the shared "which
+  photos" function itself should not hard-code F1's early-return; that
+  gate belongs to the email-only wrapper, not the shared core, so the page
+  consumer can call the shared core directly without it.
+
 ---
 
 ## 5. Approved user-facing strings
@@ -318,13 +380,19 @@ the repo; where one already appears elsewhere, that is cited above in §2/§3).
 English only; each a named constant with the comment "Tamil owed, NOT
 approved."
 
+**REVISION 2026-09-17 (per Aravind):** per-page sections revised (R2, §6) —
+the hindrance section is removed from the daily log detail page entirely,
+and the hindrances queue gets no section heading at all. Changed cells
+below show ~~the superseded value~~ followed by the current one; unchanged
+rows are unmarked.
+
 | String | Appears |
 |---|---|
-| "Kept until {date}" | Daily log detail (per-photo, D4); DPR detail (per-photo, D4) |
-| "No photos for this log." | Daily log detail, empty state (no photos for that engineer/date) |
+| "Kept until {date}" | ~~Daily log detail (per-photo, D4); DPR detail (per-photo, D4)~~ Daily log detail (per-photo, D4); DPR detail (per-photo, D4); hindrances queue (per-photo, D4) |
+| "No photos for this log." | Daily log detail ONLY, empty state (PM viewer, zero morning AND zero evening photos for that engineer/date) — see D8 |
 | "Morning photos" | Daily log detail, section heading (D1) |
-| "Evening photos" | Daily log detail, section heading |
-| "Hindrance photos" | Daily log detail, section heading (if any hindrance that day); hindrances queue, per-card heading if grouped |
+| "Evening photos" | ~~Daily log detail, section heading~~ Daily log detail, section heading; DPR detail, section heading (D2) |
+| "Hindrance photos" | ~~Daily log detail, section heading (if any hindrance that day); hindrances queue, per-card heading if grouped~~ DPR detail ONLY, section heading (D2, same set/order as the Owner email) — no longer appears on the daily log detail page, and never appears as a heading on the hindrances queue (cards show photos with no heading) |
 | "Photo unavailable. Refresh to try again." | Any page rendering a photo, on a broken/failed `<img>` load |
 
 Two of these six are already independently recorded as approved:
@@ -340,7 +408,7 @@ user-facing text may be added without approval.
 
 ## 6. Per-page behaviour
 
-- **Daily log detail** (`app/(dashboard)/daily-logs/[logId]/page.tsx`,
+~~- **Daily log detail** (`app/(dashboard)/daily-logs/[logId]/page.tsx`,
   rendering via `components/daily-logs/log-detail-view.tsx`): morning +
   evening photo sections (D1), each under its own heading ("Morning
   photos" / "Evening photos"); a hindrance-photos section when the day has
@@ -369,10 +437,59 @@ user-facing text may be added without approval.
   viewing a project they DO manage, no additional per-card check should be
   needed beyond what `getHindranceQueue` already scopes, provided that
   query is itself PM-scoped identically to the RLS policy (worth an
-  explicit confirmation in review, not assumed here).
-- **Broken/failed image**: the "Photo unavailable. Refresh to try again."
-  string, on any page, wherever an `<img>` pointed at the new route
-  (D6) fails to load.
+  explicit confirmation in review, not assumed here).~~
+
+**REVISION 2026-09-17 (per Aravind):** per-page sections narrowed (R2), and
+every PM check below is pinned to the R1 rule (§4 D3 revision) —
+`project_members.role = 'pm'` for the photo's own project, never
+`users.role`/`profile.role`.
+
+- **Daily log detail** (`app/(dashboard)/daily-logs/[logId]/page.tsx`,
+  rendering via `components/daily-logs/log-detail-view.tsx`): **"Morning
+  photos" and "Evening photos" sections ONLY — no hindrance section on
+  this page.** "No photos for this log." when the PM has zero morning AND
+  zero evening photos for this log (D8); per-photo retention line (D4);
+  D9 applies — whatever photos exist now render immediately, the page
+  never waits on `evening_photos_status`/`photos_status` being anything
+  other than what it currently is. Same PM-only rule as every other
+  section on this page today — except D3 requires the *entire photo
+  section* to be absent for a non-PM viewer (checked via
+  `project_members.role = 'pm'` on this project, per the R1 revision —
+  **not** `viewerRole`/`profile.role`, which is what this page currently
+  threads through for the *edit* gate only,
+  `app/(dashboard)/daily-logs/[logId]/page.tsx:42`,
+  `components/daily-logs/log-detail-view.tsx:41`) — a stricter rule than
+  this page's existing "read access is preserved for every
+  project_members role" convention
+  (`app/(dashboard)/daily-logs/[logId]/page.tsx:9-13`) — see §8's risk on
+  this.
+- **DPR detail** (`app/(dashboard)/dprs/[id]/page.tsx`): **"Evening
+  photos" then "Hindrance photos" sections — the same set and order as
+  the Owner email (D2), with "Kept until {date}" per photo (D4).** Zero
+  photos: no photo section at all, no empty-state string (D8). D9
+  applies — the page never adopts the email's `requireReady` gate; it
+  shows whatever the shared selector currently returns. Same PM-only rule
+  (D3), checked the same `project_members.role = 'pm'` way as above. This
+  page's *existing* access model is RLS-only, project-members-scoped, not
+  PM-only (§3) — D3's photo-section gate is an *additional*, stricter
+  check this page does not otherwise have anywhere in it today (no role
+  check exists in `app/(dashboard)/dprs/[id]/page.tsx` at all, verified by
+  reading the full 101-line file).
+- **Hindrances queue** (`app/(dashboard)/hindrances/page.tsx`): **photos
+  shown on each card, with NO section heading, and "Kept until {date}"
+  per photo (D4).** Zero photos on a card: nothing rendered — no string,
+  no placeholder (D8). No detail page exists for a hindrance today
+  (confirmed: no `app/(dashboard)/hindrances/[...]` route found in the
+  file tree this package inspected). Same PM-only rule, checked via
+  `project_members.role = 'pm'`; this page already computes PM-or-not
+  today (`lib/hindrance/queue.ts:171,176`, itself filtered on
+  `role = 'pm'`, not `users.role`) so D3's stricter "no section" behaviour
+  composes naturally with the existing `not-a-pm` branch
+  (`app/(dashboard)/hindrances/page.tsx:47-48`) — for a genuine PM viewing
+  a project they DO manage, no additional per-card check should be needed
+  beyond what `getHindranceQueue` already scopes, provided that query is
+  itself PM-scoped identically to the RLS policy (worth an explicit
+  confirmation in review, not assumed here).
 
 ---
 
@@ -450,6 +567,43 @@ user-facing text may be added without approval.
   explicitly: `git diff origin/main -- test/dpr-photo-selection.test.ts
   test/owner-deliver-job.test.ts` must be empty after the split.
 
+**NEW 2026-09-17 (per Aravind):**
+
+- **R1: the real-PM shape sees photos.** A caller whose `users.role` is
+  `'admin'` (per the R1 revision, §4 D3) and whose `project_members.role`
+  is `'pm'` on the photo's own project — the actual shape a real PM has on
+  prod, per `supabase/migrations/016_corrections.sql:177-181` and
+  `app/(dashboard)/projects/new/page.tsx:49-54` — **DOES** see photos on
+  every page in scope. Note this is, precisely, the shape the *existing*
+  `pmAId`/`pmBId` fixtures already have: `ensureTwoTenantFixtures` claims
+  both via `claimProfile(..., 'admin', ...)`
+  (`test/helpers/db.ts:1055-1056`, `claimProfile`'s 4th parameter being
+  `role`, `test/helpers/db.ts:997-1001`) — `users.role = 'admin'` — and
+  only gains `project_members.role = 'pm'` from a separate, later insert
+  (`test/photo-access-boundary-agreement.test.ts:122-132`). So the
+  existing "PM on the owning project" positive case in
+  `test/photo-access-boundary-agreement.test.ts:239-246` already
+  incidentally exercises this exact shape against `getSignedPhotoUrl` —
+  this test-plan entry is about making that coverage **explicit and
+  deliberate** for the new route (D6), not merely inherited by fixture
+  accident, and about covering every page in §6, not just the one
+  function this package's existing fixtures already touch.
+- **D9: pending hindrance does not hide the DPR page's other photos.**
+  Seed a DPR-page key where the evening photos are complete but a same-day
+  hindrance's `photos_status` is `'pending'`
+  (`supabase/migrations/044_hindrance_photos.sql:167-180`). The DPR
+  detail page (via the shared, non-gated selector) must show the completed
+  evening photos now, not wait for the hindrance. The email path
+  (`selectDprPhotos` with `requireReady: true`) must still report
+  `photosReady: false` and take its existing throw-for-retry branch
+  (`lib/dpr/owner-deliver-dispatch.ts:451-455`) for the same key,
+  unchanged from today.
+- **NULL-tenant caller refused.** The route must refuse a caller whose own
+  `users.tenant_id` is `NULL` — the `+smoke020` prod shape
+  (`docs/build-status.md:253-255`) — with the same identical failure
+  response as every other denial case above, not a crash or a different
+  status from a null-vs-null tenant comparison.
+
 ---
 
 ## 8. Risks and what breaks (product terms)
@@ -489,6 +643,22 @@ user-facing text may be added without approval.
   specifically asks for as a *stricter* behaviour — a real, new behaviour
   to build and verify, not something inherited for free from an existing
   pattern.
+- **NEW 2026-09-17 (per Aravind): wrong-column PM check would hide photos
+  from real PMs, silently.** Because `canEditLog`
+  (`lib/daily-logs/correction.ts:131-133`) already compares `role ===
+  'pm'` against a value sourced from `users.role`
+  (`app/(dashboard)/daily-logs/[logId]/page.tsx:42`,
+  `lib/auth/profile-query.ts:17,35-39`) — and a real PM's `users.role` is
+  `'admin'` (`supabase/migrations/016_corrections.sql:177-181`) — there is
+  a proven-in-code precedent, one function over, for reaching for the
+  wrong column when implementing "is this viewer a PM." If D3/D6's own PM
+  check is written the same way (`profile.role === 'pm'` instead of
+  `project_members.role === 'pm'` for the specific project), the failure
+  mode is not a security hole but its mirror image: a real PM would see
+  **no photos at all**, on every page, with no error — indistinguishable
+  from D3 working exactly as designed for a genuine non-PM. This is the
+  single highest-value thing to get right in review, precisely because it
+  fails silently and looks correct.
 
 ---
 
@@ -503,7 +673,7 @@ user-facing text may be added without approval.
    *timing* (a fast DB-miss vs. a slower tenant/role check could be a
    timing side-channel), matching the spirit of
    `lib/storage/photo-access.ts:75-83`'s own "one failure shape" design?
-3. Is D7's split of `selectDprPhotos` safe given
+~~3. Is D7's split of `selectDprPhotos` safe given
    `owner-deliver-dispatch.ts`'s own readiness/retry coupling (F1: a
    `requireReady=true` early return with zero Storage calls,
    `lib/dpr/select-photos.ts:152-180`, feeding a job-level retry-by-throw
@@ -511,7 +681,25 @@ user-facing text may be added without approval.
    "which photos" selector need to preserve the exact readiness-gate
    short-circuit for the DPR-page consumer too, or does the page need
    different readiness semantics than the email (e.g. showing photos that
-   exist even while others are still uploading)?
+   exist even while others are still uploading)?~~
+
+   **REVISION 2026-09-17 (per Aravind):** the page's own readiness
+   semantics are no longer an open question — D9 (§4) decides it: the
+   page never adopts the readiness gate; it always shows whatever the
+   shared selector currently returns. Q3 narrows to only the mechanical
+   half:
+
+3. Is D7's split of `selectDprPhotos` safe given
+   `owner-deliver-dispatch.ts`'s own readiness/retry coupling (F1: a
+   `requireReady=true` early return with zero Storage calls,
+   `lib/dpr/select-photos.ts:152-180`, feeding a job-level retry-by-throw
+   at `lib/dpr/owner-deliver-dispatch.ts:451-455`)? Specifically: can the
+   shared "which photos" core be factored out with the F1 gate living
+   only in the email-only wrapper (per D9's own requirement, §4), without
+   changing the email wrapper's own observable behaviour at all — i.e. is
+   there any part of F1's current early-return (zero Storage calls, zero
+   candidate-row queries) that is actually load-bearing *inside* the
+   shared core itself, rather than cleanly separable into the wrapper?
 4. Should the new route (D6) share code with `getSignedPhotoUrl`
    (`lib/storage/photo-access.ts:85-115`), or replace it outright? Today
    `getSignedPhotoUrl` has zero production callers (§3) — is there any
@@ -543,20 +731,51 @@ review (this package) → CI green → merge → prod deploy → verify by
 observation → a short apply record (naming what shipped and how it was
 verified, not a migration ledger entry, since there is none).
 
-**Verify on prod by observation**: a PM sees their own photo; a second,
+~~**Verify on prod by observation**: a PM sees their own photo; a second,
 non-PM login cannot fetch it. This second part currently cannot be built
 the normal way: Supabase Auth's "Allow new users to sign up" was disabled
 on prod on 2026-09-17, verified by observation at the time — a new,
 unregistered email at `/login` received "Signups not allowed for this
 instance" (`docs/build-status.md:243-250`). There is no self-serve way to
 create a second prod login to test D3/D6's non-PM denial today. See Open
-Questions below for how to test this without re-enabling signups.
+Questions below for how to test this without re-enabling signups.~~
+
+**REVISION 2026-09-17 (per Aravind): NO user creation on prod for 5a.**
+The Admin-API disposable-user option below is struck, not pursued. Prod
+verification by observation is instead:
+
+  (a) Aravind's own PM login sees a real photo on each of the three pages
+      in scope (daily log detail, DPR detail, hindrances queue).
+  (b) A logged-out browser opening that photo's route URL (D6) directly
+      gets the identical failure response (same status, same body) as
+      every other denial case in §7.
+  (c) Aravind's `+smoke020` login — which already exists on prod, has a
+      login, `tenant_id` `NULL`, `role` `NULL` (`docs/build-status.md:253-255`)
+      — opening that SAME photo route URL directly also gets the
+      identical failure response.
+
+  **Warning to include verbatim wherever this verification step is
+  executed:** "Open the photo URL directly. Do not submit the
+  /onboarding form this account lands on; it creates a new tenant." (The
+  `+smoke020` login has `tenant_id IS NULL`, so `app/(auth)/auth/callback/route.ts:37`
+  routes it to `/onboarding` on sign-in; submitting that form calls
+  `complete_onboarding`, which unconditionally `INSERT`s a brand-new
+  `tenants` row, per `supabase/migrations/016_corrections.sql:172-181` —
+  this is exactly the "no check for an existing tenant_id" hazard already
+  recorded at `docs/build-status.md:138-147`.)
+
+The same-tenant non-PM case (a real `qs`/non-PM project member denied)
+is proven on test-db only (§7). This package did not enumerate prod's
+full user roster (out of scope, no Supabase commands run) and so does
+not claim there is no existing non-PM prod identity that could serve
+this case too — only that none was identified in what this package read,
+and that it does not propose creating one either way. See UNVERIFIED.
 
 ---
 
 ## Open Questions
 
-- **Testing the non-PM-login case on prod without re-enabling signups.**
+~~- **Testing the non-PM-login case on prod without re-enabling signups.**
   One option, not yet approved: mint a disposable test user directly via
   the Supabase Admin API (`auth.admin.createUser`, `service_role`),
   bypassing the public self-serve `/login` signup path entirely — this is
@@ -566,7 +785,26 @@ Questions below for how to test this without re-enabling signups.
   write, and prod already carries two special-case `NULL`-role rows
   (`docs/build-status.md:253-255`) — worth deciding whether to mint a new
   disposable account or reuse an existing prod identity instead. Not
-  decided here; flagged for Aravind's decision.
+  decided here; flagged for Aravind's decision.~~
+
+  **REVISION 2026-09-17 (per Aravind):** decided — no. See §10's revised
+  prod-verification steps (a)/(b)/(c) above, which use Aravind's own
+  existing PM login and the existing `+smoke020` login instead of
+  minting anything new.
+- **Existing edit controls may never render for real PMs.**
+  `canEditLog` (`lib/daily-logs/correction.ts:131-133`) compares `role ===
+  'pm'` against `viewerRole`/`profile.role`, which is sourced from
+  `users.role` (`lib/auth/profile-query.ts:17,35-39`) — and a real PM's
+  `users.role` is `'admin'` (`supabase/migrations/016_corrections.sql:177-181`).
+  Read as written, this means the daily-log-detail edit affordances this
+  function gates may never render for an actual PM on prod. **This
+  package does not confirm that bug is live in production** — only that
+  the code, read as written, compares `users.role` where the decision it
+  gates (project-level PM-ness) is a `project_members`-scoped fact. Not
+  fixed as part of Stage 5a (out of scope — Stage 5a's own PM checks are
+  pinned to `project_members.role`, per the R1 revision, §4 D3, precisely
+  to avoid repeating this); to be verified and, if confirmed, fixed
+  separately.
 - **If a migration turns out to be needed after all** (§1's own
   conclusion is that none is), that determination and its reasoning
   belongs here, not designed inline in this package.
@@ -600,3 +838,10 @@ Questions below for how to test this without re-enabling signups.
   current state — this package did not run `supabase migration list
   --linked` or any other live probe (out of scope); see the repo-state
   header at the top of this document.
+- Prod's full user roster beyond the two `NULL`-role rows named in
+  `docs/build-status.md:253-255` (Aravind's Gmail address and
+  `+smoke020`) — this package did not enumerate prod users (no Supabase
+  commands run) and cannot confirm whether any other existing prod
+  identity is a non-PM member of a real project, which would matter for
+  §10's own note that the same-tenant non-PM case is proven on test-db
+  only.
