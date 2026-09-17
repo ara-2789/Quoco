@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
 import { PHOTO_BUCKET } from '@/lib/storage/photo-access'
 import type { EmailAttachment } from '@/lib/email/send'
+import { selectDprPhotoCandidates, type DprPhotoCandidate } from '@/lib/dpr/select-photo-candidates'
 
 // Stage 4 (DPR photo attachments). Selects, downloads, and caps the photos
 // attached to an owner's per-engineer DPR report email (lib/dpr/owner-
@@ -12,6 +13,46 @@ import type { EmailAttachment } from '@/lib/email/send'
 // dispatch.ts owns the readiness-gate/retry decision and the send call;
 // this file owns only "what photos, in what order, within what caps."
 //
+// STAGE 5a, BUILD SLICE B2 (docs/reviews/stage5a-review-package.md, D7;
+// verdict Q3): selectDprPhotos below is now a thin, gate-first WRAPPER, not
+// the selection logic itself. The "which photos" query (S2 below) moved to
+// lib/dpr/select-photo-candidates.ts's own selectDprPhotoCandidates -- a
+// separate, email-agnostic module with no Sentry/Storage/EmailAttachment
+// imports, so a future dashboard page (B3, not yet built; D9) can call it
+// directly without pulling any of this file's email-only baggage in. This
+// file's own selectDprPhotos KEEPS its exact name, signature, and return
+// shape (D7's own hard condition: test/dpr-photo-selection.test.ts and
+// test/owner-deliver-job.test.ts get zero edits) -- it now does exactly
+// three things, strictly in order: (1) check readiness (fetchPhotoReadiness
+// below, unchanged queries/logic from before the split), (2) return early,
+// with ZERO calls into selectDprPhotoCandidates, if requireReady and not
+// ready (F1, preserved by the early `return` itself -- nothing after it in
+// this function body can run), (3) only otherwise, call
+// selectDprPhotoCandidates and run the unchanged download/cap/Sentry loop
+// over its result.
+//
+// KNOWN BEHAVIOUR CHANGE, ACCEPTED BY ARAVIND 2026-09-17: before this
+// split, the readiness check (fetchPhotoReadiness) and the hindrance
+// candidate query shared ONE `hindrances` fetch -- the same rows were read
+// once, used both to decide `anyHindrancePending` and to build the
+// candidate hindrance_photos query. After the split, those are TWO
+// separate `hindrances` queries (one inside fetchPhotoReadiness, one
+// inside selectDprPhotoCandidates), a moment apart, not one atomic read.
+// Consequence: a hindrance INSERTed in the gap between those two queries
+// (report_date = today, with a photo already attached) can now be picked
+// up by the second query and contribute a photo to this send, even though
+// the readiness check a moment earlier never saw it and could not have
+// gated on its photos_status. Before this split, that was impossible --
+// one fetch, one snapshot, no gap. This is a real, if narrow, race,
+// accepted as a cost of the split rather than closed (closing it would
+// mean threading the readiness query's own hindrance ids into
+// selectDprPhotoCandidates as an override, which breaks that function's
+// clean "given just the 4 key fields" contract B3's page consumer needs --
+// see lib/dpr/select-photo-candidates.ts's own header). Also costs 2 extra
+// reads (daily_logs, hindrances) per ready-path call, for the same reason
+// -- selectDprPhotoCandidates re-resolves both ids independently rather
+// than reusing fetchPhotoReadiness's own fetch.
+//
 // SAME BYTE-FETCH PATH AS lib/hindrance/pm-notify.ts's own
 // fetchHindrancePhotoAttachments (S7, Aravind's explicit instruction):
 // service_role, direct Storage download, never a signed URL
@@ -19,30 +60,17 @@ import type { EmailAttachment } from '@/lib/email/send'
 // is the PM-dashboard-facing signed-URL path, a different consumer of the
 // same bucket).
 //
-// S2 -- SELECTION, PER DPR ROW (project_id, engineer_id, log_date), ALWAYS
-// ALSO FILTERED BY tenant_id:
-//   a. Evening photos: daily_log_photos for the daily_logs row matching
-//      (project_id, engineer_id, log_date), phase='evening', photo_url NOT
-//      NULL, ordered by received_at. Morning (attendance) photos are NEVER
-//      attached -- the phase='evening' filter is the entire mechanism; no
-//      separate morning-exclusion code exists because there is nothing to
-//      exclude once the phase filter is in place.
-//   b. THEN hindrance photos: hindrance_photos joined to hindrances where
-//      hindrances.project_id = project_id AND hindrances.reported_by =
-//      engineer_id AND hindrances.report_date = log_date (migration 046,
-//      already live on prod), photo_url NOT NULL, ordered by received_at.
-//   Never select by date or tenant alone -- every query below carries the
-//   full (tenant_id, project_id, engineer_id/reported_by, log_date/
-//   report_date) key, per S2's own explicit instruction, so a same-tenant
-//   sibling project or a same-date row in a different tenant can never
-//   contribute a photo.
+// S2 -- SELECTION. Moved to lib/dpr/select-photo-candidates.ts (see that
+// file's own header for the full per-row/tenant filtering rules, unchanged
+// in substance from before this split) -- selectDprPhotos below consumes
+// its ordered DprPhotoCandidate[] result without re-deriving any of it.
 //
 // S6, EMERGENT, NOT SEPARATELY CODED: a hindrance created after its day's
 // DPR was already sent has a report_date that does not equal the log_date
 // this function is called with (report_date is generated from the
 // hindrance's own created_at, migration 046) -- the report_date = log_date
-// filter in (b) above already excludes it. No roll-forward code exists;
-// none is needed.
+// filter in select-photo-candidates.ts's own (b) already excludes it. No
+// roll-forward code exists; none is needed.
 //
 // S3 -- CAPS. At most MAX_ATTACHMENTS photos AND at most MAX_ATTACHMENT_
 // BYTES total, measured on the base64-encoded `content` string actually
@@ -62,10 +90,12 @@ import type { EmailAttachment } from '@/lib/email/send'
 // determined FIRST, from status columns alone -- no candidate-row query,
 // no Storage download. When options.requireReady is true and photos are
 // not ready, this function returns immediately (photosReady=false, no
-// attachments) having made NO Storage download calls at all. The caller
-// (owner-deliver-dispatch.ts) still owns the throw-for-retry decision --
-// this function only refuses to touch Storage early, it has no opinion on
-// what the caller does with photosReady=false.
+// attachments) having made NO Storage download calls at all, and (since
+// the B2 split) NO call into selectDprPhotoCandidates at all either -- so
+// no daily_log_photos/hindrance_photos query either. The caller (owner-
+// deliver-dispatch.ts) still owns the throw-for-retry decision -- this
+// function only refuses to touch Storage/candidates early, it has no
+// opinion on what the caller does with photosReady=false.
 //
 // F2 -- FAILED DOWNLOAD = SKIP + ALERT, NEVER BLOCK (Aravind, 2026-09-16).
 // A download error for one candidate photo does not throw and does not
@@ -120,10 +150,6 @@ export interface SelectDprPhotosResult {
   photosReady: boolean
 }
 
-interface PhotoCandidate {
-  photoUrl: string
-}
-
 async function fetchAttachment(client: SupabaseClient, photoUrl: string): Promise<{ content: string; contentType?: string }> {
   const { data: blob, error: downloadError } = await client.storage.from(PHOTO_BUCKET).download(photoUrl)
   if (downloadError || !blob) {
@@ -141,6 +167,46 @@ const EMPTY_NOT_READY_RESULT: SelectDprPhotosResult = {
   photosReady: false,
 }
 
+interface PhotoReadiness {
+  photosReady: boolean
+}
+
+// F1's own readiness query, unchanged in logic from before the B2 split --
+// only its OWN, single-purpose function now, called by selectDprPhotos
+// BEFORE selectDprPhotoCandidates is ever reached (see this file's own
+// header for why that ordering is what preserves F1's "zero candidate-row
+// queries when not ready" guarantee). Private -- not exported, not used by
+// any dashboard/page consumer (D9: the page never adopts this gate).
+async function fetchPhotoReadiness(params: SelectDprPhotosParams, client: SupabaseClient): Promise<PhotoReadiness> {
+  const { tenantId, projectId, engineerId, logDate } = params
+
+  const { data: dailyLog, error: dailyLogError } = await client
+    .from('daily_logs')
+    .select('evening_photos_status')
+    .eq('tenant_id', tenantId)
+    .eq('project_id', projectId)
+    .eq('engineer_id', engineerId)
+    .eq('log_date', logDate)
+    .maybeSingle<{ evening_photos_status: 'pending' | 'complete' | 'failed' | null }>()
+  if (dailyLogError) throw dailyLogError
+  const eveningPending = dailyLog?.evening_photos_status === 'pending'
+
+  const { data: hindranceRows, error: hindranceError } = await client
+    .from('hindrances')
+    .select('photos_status')
+    .eq('tenant_id', tenantId)
+    .eq('project_id', projectId)
+    .eq('reported_by', engineerId)
+    .eq('report_date', logDate)
+  if (hindranceError) throw hindranceError
+
+  const anyHindrancePending = ((hindranceRows ?? []) as { photos_status: 'pending' | 'complete' | 'failed' | null }[]).some(
+    (r) => r.photos_status === 'pending',
+  )
+
+  return { photosReady: !eveningPending && !anyHindrancePending }
+}
+
 export async function selectDprPhotos(
   params: SelectDprPhotosParams,
   options: SelectDprPhotosOptions,
@@ -149,76 +215,20 @@ export async function selectDprPhotos(
   const supabase = client ?? createServiceClient()
   const { tenantId, projectId, engineerId, logDate } = params
 
-  // --- F1: readiness first -- status columns only, no candidate rows. ---
-  const { data: dailyLog, error: dailyLogError } = await supabase
-    .from('daily_logs')
-    .select('id, evening_photos_status')
-    .eq('tenant_id', tenantId)
-    .eq('project_id', projectId)
-    .eq('engineer_id', engineerId)
-    .eq('log_date', logDate)
-    .maybeSingle<{ id: string; evening_photos_status: 'pending' | 'complete' | 'failed' | null }>()
-  if (dailyLogError) throw dailyLogError
-  const eveningPending = dailyLog?.evening_photos_status === 'pending'
-
-  const { data: hindranceRows, error: hindranceError } = await supabase
-    .from('hindrances')
-    .select('id, photos_status')
-    .eq('tenant_id', tenantId)
-    .eq('project_id', projectId)
-    .eq('reported_by', engineerId)
-    .eq('report_date', logDate)
-  if (hindranceError) throw hindranceError
-
-  const hindranceRowsTyped = (hindranceRows ?? []) as { id: string; photos_status: 'pending' | 'complete' | 'failed' | null }[]
-  const anyHindrancePending = hindranceRowsTyped.some((r) => r.photos_status === 'pending')
-
-  const photosReady = !eveningPending && !anyHindrancePending
+  // --- F1: readiness first -- gate BEFORE selectDprPhotoCandidates is
+  // ever called, so a not-ready return makes zero candidate-row queries
+  // and zero Storage calls (see this file's own header). ---
+  const { photosReady } = await fetchPhotoReadiness(params, supabase)
 
   if (options.requireReady && !photosReady) {
     return EMPTY_NOT_READY_RESULT
   }
 
-  // --- S2a: evening photos, via the one daily_logs row for this key. ---
-  const eveningCandidates: PhotoCandidate[] = []
-  if (dailyLog) {
-    const { data: eveningPhotos, error: eveningError } = await supabase
-      .from('daily_log_photos')
-      .select('photo_url')
-      .eq('tenant_id', tenantId)
-      .eq('daily_log_id', dailyLog.id)
-      .eq('phase', 'evening')
-      .not('photo_url', 'is', null)
-      .order('received_at', { ascending: true })
-    if (eveningError) throw eveningError
-    for (const row of (eveningPhotos ?? []) as { photo_url: string | null }[]) {
-      if (row.photo_url) eveningCandidates.push({ photoUrl: row.photo_url })
-    }
-  }
-
-  // --- S2b: hindrance photos, via every hindrance matching this key. ---
-  const hindranceIds = hindranceRowsTyped.map((r) => r.id)
-  const hindranceCandidates: PhotoCandidate[] = []
-  if (hindranceIds.length > 0) {
-    const { data: hindrancePhotos, error: hpError } = await supabase
-      .from('hindrance_photos')
-      .select('photo_url')
-      .eq('tenant_id', tenantId)
-      .in('hindrance_id', hindranceIds)
-      .not('photo_url', 'is', null)
-      .order('received_at', { ascending: true })
-    if (hpError) throw hpError
-    for (const row of (hindrancePhotos ?? []) as { photo_url: string | null }[]) {
-      if (row.photo_url) hindranceCandidates.push({ photoUrl: row.photo_url })
-    }
-  }
-
-  // S2's own ordering: evening before hindrance.
-  const eligible = [...eveningCandidates, ...hindranceCandidates]
+  const candidates: DprPhotoCandidate[] = await selectDprPhotoCandidates(params, supabase)
 
   const attachments: EmailAttachment[] = []
   let totalBytes = 0
-  for (const candidate of eligible) {
+  for (const candidate of candidates) {
     if (attachments.length >= MAX_ATTACHMENTS) break
 
     let fetched: { content: string; contentType?: string }
@@ -257,9 +267,9 @@ export async function selectDprPhotos(
 
   return {
     attachments,
-    eligibleCount: eligible.length,
+    eligibleCount: candidates.length,
     attachedCount: attachments.length,
-    overflowCount: eligible.length - attachments.length,
+    overflowCount: candidates.length - attachments.length,
     photosReady,
   }
 }
