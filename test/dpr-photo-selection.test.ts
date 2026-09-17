@@ -382,7 +382,7 @@ describe('selectDprPhotos', () => {
     const [message, options] = captureMessageMock.mock.calls[0]
     expect(message).toBe('dpr-photo-attach: download failed')
     expect(options.level).toBe('error')
-    expect(options.fingerprint).toEqual(['dpr-photo-attach', 'download_failed', brokenPath])
+    expect(options.fingerprint).toEqual(['dpr-photo-attach', 'download_failed'])
     expect(options.tags).toEqual({ feature: 'owner-deliver' })
     expect(options.extra).toMatchObject({
       photoUrl: brokenPath,

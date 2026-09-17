@@ -226,9 +226,14 @@ export async function selectDprPhotos(
       fetched = await fetchAttachment(supabase, candidate.photoUrl)
     } catch (err) {
       // F2 -- skip + alert, never block. Never throw; never log the bytes.
+      // Fingerprint is grouped (no photo path), amended 2026-09-17 (Aravind):
+      // one photo path per fingerprint would open a distinct Sentry issue
+      // per failing photo, which fans out unboundedly under any real
+      // Storage-wide outage instead of surfacing as one alertable issue.
+      // The path stays in `extra` only, not in the fingerprint.
       Sentry.captureMessage('dpr-photo-attach: download failed', {
         level: 'error',
-        fingerprint: ['dpr-photo-attach', 'download_failed', candidate.photoUrl],
+        fingerprint: ['dpr-photo-attach', 'download_failed'],
         tags: { feature: 'owner-deliver' },
         extra: {
           photoUrl: candidate.photoUrl,

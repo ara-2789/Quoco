@@ -273,12 +273,52 @@ async function configureOwner(ownerId: string, opts: { whatsappNumber: string | 
   if (error) throw new Error(`configureOwner failed: ${error.message}`)
 }
 
+// CHILD-FIRST, EVERY DELETE CHECKED (2026-09-17, CI run 35132707054's own
+// diagnosis: this function used to delete dprs -> daily_logs ->
+// project_members -> projects with no {error} check at all. daily_logs has
+// no preceding daily_log_photos delete, so once Stage 4's own photo-seeding
+// tests started calling this, the daily_logs delete silently failed on
+// daily_log_photos_daily_log_id_fkey, then the projects delete silently
+// failed too (blocked by the now-undeletable daily_logs row) -- both
+// orphaned, forever, for that CI run, going undetected until a LATER test
+// file's own ensureMorningFixtures() invariant tripped on the accumulated
+// leftover project count. Full diagnosis: PR #283's own thread. Order here
+// matches the actual FK graph: hindrance_photos -> hindrances,
+// daily_log_photos -> daily_logs, then hindrances/dprs/daily_logs (all
+// project_id children) -> project_members -> projects.
 async function cleanupProject(projectId: string): Promise<void> {
   const db = testClient()
-  await db.from('dprs').delete().eq('project_id', projectId)
-  await db.from('daily_logs').delete().eq('project_id', projectId)
-  await db.from('project_members').delete().eq('project_id', projectId)
-  await db.from('projects').delete().eq('id', projectId)
+
+  const { data: hindranceRows, error: hindranceSelectErr } = await db.from('hindrances').select('id').eq('project_id', projectId)
+  if (hindranceSelectErr) throw new Error(`cleanupProject: hindrances select failed for project ${projectId}: ${hindranceSelectErr.message}`)
+  const hindranceIds = (hindranceRows ?? []).map((r) => r.id as string)
+  if (hindranceIds.length > 0) {
+    const { error: hpErr } = await db.from('hindrance_photos').delete().in('hindrance_id', hindranceIds)
+    if (hpErr) throw new Error(`cleanupProject: hindrance_photos delete failed for project ${projectId}: ${hpErr.message}`)
+  }
+
+  const { data: dailyLogRows, error: dailyLogSelectErr } = await db.from('daily_logs').select('id').eq('project_id', projectId)
+  if (dailyLogSelectErr) throw new Error(`cleanupProject: daily_logs select failed for project ${projectId}: ${dailyLogSelectErr.message}`)
+  const dailyLogIds = (dailyLogRows ?? []).map((r) => r.id as string)
+  if (dailyLogIds.length > 0) {
+    const { error: dlpErr } = await db.from('daily_log_photos').delete().in('daily_log_id', dailyLogIds)
+    if (dlpErr) throw new Error(`cleanupProject: daily_log_photos delete failed for project ${projectId}: ${dlpErr.message}`)
+  }
+
+  const { error: hindrancesErr } = await db.from('hindrances').delete().eq('project_id', projectId)
+  if (hindrancesErr) throw new Error(`cleanupProject: hindrances delete failed for project ${projectId}: ${hindrancesErr.message}`)
+
+  const { error: dprsErr } = await db.from('dprs').delete().eq('project_id', projectId)
+  if (dprsErr) throw new Error(`cleanupProject: dprs delete failed for project ${projectId}: ${dprsErr.message}`)
+
+  const { error: dailyLogsErr } = await db.from('daily_logs').delete().eq('project_id', projectId)
+  if (dailyLogsErr) throw new Error(`cleanupProject: daily_logs delete failed for project ${projectId}: ${dailyLogsErr.message}`)
+
+  const { error: memberErr } = await db.from('project_members').delete().eq('project_id', projectId)
+  if (memberErr) throw new Error(`cleanupProject: project_members delete failed for project ${projectId}: ${memberErr.message}`)
+
+  const { error: projectErr } = await db.from('projects').delete().eq('id', projectId)
+  if (projectErr) throw new Error(`cleanupProject: projects delete failed for project ${projectId}: ${projectErr.message}`)
 }
 
 function mockSendEmail(result: SendEmailResult) {
@@ -928,7 +968,7 @@ describe('handleOwnerDeliverJob', () => {
       expect(captureMessageMock).toHaveBeenCalledTimes(1)
       const [message, options] = captureMessageMock.mock.calls[0]
       expect(message).toBe('dpr-photo-attach: download failed')
-      expect(options.fingerprint).toEqual(['dpr-photo-attach', 'download_failed', brokenPath])
+      expect(options.fingerprint).toEqual(['dpr-photo-attach', 'download_failed'])
       expect(options.tags).toEqual({ feature: 'owner-deliver' })
 
       const row = await readDpr(dprId)
