@@ -6,8 +6,25 @@
 -- (docs/reviews/047-review-package.md). Applied, DOWN-rehearsed (full
 -- diff against pre-state, empty apart from the per-query boundary
 -- token), and re-applied -- verified by observation via pg_class.relacl
--- throughout, never information_schema. NOT applied to prod. Full
+-- throughout, never information_schema. ~~NOT applied to prod.~~ Full
 -- sequence: docs/reviews/047-test-db-apply-record.md.
+--
+-- DATED CORRECTION (2026-09-17): APPLIED TO PROD (jvxwqignooseazzmwhvl).
+-- PITR observed by Aravind in the dashboard before applying (restore
+-- window 10 Sep 2026 22:02:00 to 17 Sep 2026 09:40:02 IST, recorded as
+-- supplied). CI: run 35179571418 at 1371f905acb9b59a752170e224c1e10c8766fd28,
+-- attempt 2 green (attempt 1 failed on unrelated network errors),
+-- test/migration-047.test.ts passed, 106/106 files; PR #282 merged as
+-- 65da7367e0fe685310a6b261ccaa967cb893d43c. Applied via `supabase db
+-- query --linked -f`, no error -- the final DO block (aborts on any
+-- leftover, checked via pg_class.relacl/aclexplode) passed silently.
+-- Post-apply readback confirmed by observation: relacl 55->0 rows,
+-- polcmd='d' 17->0 rows, default ACL for postgres/public/r now
+-- anon=arw/authenticated=arw (was arwdDxtm), service_role's own grants
+-- re-captured and diffed byte-identical. scripts/test-db-only-047-rights-
+-- check.sql was never applied to prod, confirmed by its continued
+-- absence. Ledger repaired (supabase migration repair --status applied
+-- 047 --linked). Full sequence: docs/reviews/047-prod-apply-record.md.
 --
 -- ~~HELD, NOT APPLIED.~~ Per CLAUDE.md's own "a migration file enters
 -- supabase/migrations/ when it is being applied, not when it is written"
