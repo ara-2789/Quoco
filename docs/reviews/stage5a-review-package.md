@@ -834,6 +834,27 @@ not claim there is no existing non-PM prod identity that could serve
 this case too — only that none was identified in what this package read,
 and that it does not propose creating one either way. See UNVERIFIED.
 
+**REVISION 2026-09-17 (per Aravind): prod DOES have a second tenant with
+a real login, and the cross-tenant (D5) prod check was run.** Not
+identified when this package was first written (the (a)/(b)/(c) list
+above and the UNVERIFIED "full user roster" note both predate this):
+`aravindanenator@gmail.com` is a real prod login, PM in a separate
+tenant, "Ara con co" (`tenant_id`
+`708c34a9-5139-4fb7-954a-5ad1992f2baa`). Full record:
+`docs/reviews/stage5a-b1-b2-record.md`. Using that login, Aravind opened
+the B1 photo route URL for a photo belonging to a DIFFERENT tenant
+(`adaa7c70-aec8-43c3-ab4d-b47dd4c7cbd0`) directly on prod
+(`app.quoco.co.in`) and got HTTP 404 — the same identical failure
+response as every other denial case in §7/§10. This is the D5 tenant
+check itself verified on prod by observation, not merely inferred from
+test-db coverage; it does not change the same-tenant non-PM finding
+above (that case still has no real prod identity to exercise it and
+remains test-db-only, per §7's own coverage). This package did not find
+any existing wording elsewhere stating a cross-tenant prod check is
+impossible — the only related struck passage, above, was scoped to the
+non-PM-login case (D3/D6), not the cross-tenant (D5) one, so nothing
+further is struck here; this revision is additive.
+
 ---
 
 ## Open Questions
