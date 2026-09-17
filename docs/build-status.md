@@ -1914,3 +1914,10 @@ review-package.md`) but deliberately left functions out of scope. Number
 048 was reserved for 047's own test-only D4 helper, then released (never
 used, no migration number — test-only objects get none, per that
 decision's own reasoning) and is free for this future migration to claim.
+
+### [2026-09-17] CI double-run fix shipped — backlog: verify on first merge
+
+CI double-run fix shipped (2026-09-17); verify on the first merge after
+this PR that main's test-db job is skipped with the log line. Aravind to
+enable "Require branches to be up to date before merging" + required
+check "Test (real test-db)" on main.
