@@ -1,8 +1,16 @@
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
 import { StatusChip, type StatusVariant } from '@/components/ui/status-chip'
-import { getHindranceQueue, type HindranceCard, type HindranceTiming } from '@/lib/hindrance/queue'
+import {
+  getHindranceQueue,
+  getHindrancePhotosByHindranceIds,
+  resolveHindranceCardPmAndPhotos,
+  type HindranceCard,
+  type HindranceTiming,
+  type HindrancePhotoItem,
+} from '@/lib/hindrance/queue'
 import { formatHindranceAge } from '@/lib/hindrance/relative-time'
+import { HindranceCardPhotos } from '@/components/hindrances/hindrance-card-photos'
 import { HindranceAckControls } from './ack-controls'
 
 // DASH-07 — PM hindrance queue (docs/plans/dash-07-hindrance-queue.md).
@@ -31,6 +39,37 @@ export default async function HindrancesPage() {
 
   const result = await getHindranceQueue(supabase, profile.id, now)
 
+  // Stage 5a, build slice B3 (docs/reviews/stage5a-review-package.md §5/§6
+  // revision, D3). One batched photo query for every card on the page,
+  // but the PM check itself runs per card via resolveHindranceCardPmAndPhotos
+  // -- getHindranceQueue's own PM-scoping above is NOT trusted as
+  // equivalent to hindrance_photos_select's RLS (open question, package
+  // lines 911-916).
+  //
+  // RATE LIMIT NOTE: the photo route (app/api/photos/[kind]/[photoId]/
+  // route.ts) allows DEFAULT_PHOTO_RATE_LIMIT_MAX_REQUESTS = 120
+  // requests/min per user (route.ts:47-48). A queue with many photos
+  // rendered above the fold in one page load could approach that limit
+  // for a PM with a lot of open hindrances in a single render — thumbnails
+  // (smaller, cheaper renders, fewer route calls) are a backlog item, not
+  // built here.
+  const photosByHindrance =
+    result.status === 'ok'
+      ? await getHindrancePhotosByHindranceIds(result.items.map((item) => item.id), profile.tenant_id ?? '', supabase)
+      : new Map<string, HindrancePhotoItem[]>()
+
+  const cardPhotoDataById =
+    result.status === 'ok'
+      ? new Map(
+          await Promise.all(
+            result.items.map(
+              async (item) =>
+                [item.id, await resolveHindranceCardPmAndPhotos(supabase, profile.id, item, photosByHindrance)] as const,
+            ),
+          ),
+        )
+      : new Map<string, { isPm: boolean; photos: HindrancePhotoItem[] }>()
+
   return (
     <div className="p-4 sm:p-8">
       <div className="mb-6 max-w-3xl">
@@ -57,7 +96,12 @@ export default async function HindrancesPage() {
       ) : (
         <div className="flex max-w-3xl flex-col gap-3">
           {result.items.map((item) => (
-            <HindranceRow key={item.id} item={item} now={now} />
+            <HindranceRow
+              key={item.id}
+              item={item}
+              now={now}
+              photoData={cardPhotoDataById.get(item.id) ?? { isPm: false, photos: [] }}
+            />
           ))}
         </div>
       )}
@@ -91,7 +135,15 @@ function ErrorState() {
 // attribution and action. Acknowledged rows add a second attribution/action
 // line (Seen by ..., Undo) below the reporter line -- they don't replace it
 // (§Row anatomy's own "Acknowledged:" mockup keeps both lines).
-function HindranceRow({ item, now }: { item: HindranceCard; now: Date }) {
+function HindranceRow({
+  item,
+  now,
+  photoData,
+}: {
+  item: HindranceCard
+  now: Date
+  photoData: { isPm: boolean; photos: HindrancePhotoItem[] }
+}) {
   const isAcknowledged = item.acknowledgedAt !== null
   const chip = isAcknowledged ? { variant: 'muted' as const, label: 'Seen' } : CHIP[item.timing]
   const rawAnswer = item.timingRaw?.trim()
@@ -115,6 +167,7 @@ function HindranceRow({ item, now }: { item: HindranceCard; now: Date }) {
       <p className="mt-2 text-xs text-gray-500">
         {item.reporterName} · {formatHindranceAge(item.createdAt, now)}
       </p>
+      <HindranceCardPhotos isPm={photoData.isPm} photos={photoData.photos} now={now} />
       <HindranceAckControls
         hindranceId={item.id}
         isAcknowledged={isAcknowledged}

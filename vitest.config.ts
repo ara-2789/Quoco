@@ -17,7 +17,11 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['test/**/*.test.ts'],
+    // Stage 5a, build slice B3 (decision C, 2026-09-17): .tsx added so
+    // presentational-component rendered-output tests (react-dom/server's
+    // renderToStaticMarkup, no new dependency) can live alongside the
+    // existing real-test-db .ts files, same node environment, same guard.
+    include: ['test/**/*.test.ts', 'test/**/*.test.tsx'],
     // Hard allowlist guard runs ONCE, before any test file, and aborts the
     // whole run unless the resolved target is the test-db branch. run-id.ts
     // mints this run's shared random id and provide()s it to every file --

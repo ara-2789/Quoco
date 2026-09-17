@@ -3,6 +3,8 @@ import { deriveHalfStatus } from '@/lib/daily-logs/status'
 import { DEFAULT_CUTOFFS } from '@/lib/daily-logs/cutoffs'
 import { canEditLog } from '@/lib/daily-logs/correction'
 import type { LogDetail } from '@/lib/daily-logs/query'
+import type { DailyLogPhotoSectionsData } from '@/lib/daily-logs/photos'
+import { DailyLogPhotoSections } from './photo-sections'
 import { ScalarFieldRow } from './scalar-field-row'
 import { HolidayField } from './holiday-field'
 
@@ -11,6 +13,11 @@ export type LogDetailViewProps = {
   dprDeliveryCopy: string
   viewerRole: string | null
   now: Date
+  // Stage 5a, build slice B3 -- null means "not a PM on this project"
+  // (D3), never rendered as an empty section. Deliberately independent of
+  // `viewerRole` above, which stays wired to canEditLog only (R1
+  // revision).
+  photoSections: DailyLogPhotoSectionsData | null
 }
 
 const MORNING_ROWS = [
@@ -37,7 +44,7 @@ function formatLogDate(logDate: string): string {
   })
 }
 
-export function LogDetailView({ data, dprDeliveryCopy, viewerRole, now }: LogDetailViewProps) {
+export function LogDetailView({ data, dprDeliveryCopy, viewerRole, now, photoSections }: LogDetailViewProps) {
   const canEdit = canEditLog(viewerRole)
 
   const halfInput = {
@@ -140,6 +147,8 @@ export function LogDetailView({ data, dprDeliveryCopy, viewerRole, now }: LogDet
           ))}
         </section>
       </div>
+
+      <DailyLogPhotoSections photoSections={photoSections} now={now} />
     </div>
   )
 }
