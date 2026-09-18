@@ -35,6 +35,31 @@ function imgSrcs(html: string): string[] {
   return [...html.matchAll(/<img[^>]*\ssrc="([^"]*)"/g)].map((m) => m[1])
 }
 
+// Stage 5a, build slice B4: each thumbnail's anchor -- href, target, rel.
+// Captures all three from the SAME <a> tag so a test can assert on the
+// literal attribute values, not just their presence.
+function anchors(html: string): { href: string; target: string; rel: string }[] {
+  return [...html.matchAll(/<a href="([^"]*)" target="([^"]*)" rel="([^"]*)"/g)].map((m) => ({
+    href: m[1],
+    target: m[2],
+    rel: m[3],
+  }))
+}
+
+// Every anchor's href must be the SAME path the corresponding <img>'s src
+// already uses (task item 3) -- asserted as array equality against
+// imgSrcs' own output, in the same document order, rather than merely
+// matching the same regex independently (which would miss a bug where an
+// anchor pointed at a DIFFERENT id than its own image).
+function assertAnchorsMatchImgSrcs(html: string) {
+  const hrefs = anchors(html).map((a) => a.href)
+  expect(hrefs).toEqual(imgSrcs(html))
+  for (const a of anchors(html)) {
+    expect(a.target).toBe('_blank')
+    expect(a.rel).toBe('noopener noreferrer')
+  }
+}
+
 function assertNeverLeaksStorage(html: string) {
   expect(html).not.toContain('supabase.co')
   expect(html).not.toContain('/storage/')
@@ -63,6 +88,7 @@ describe('DailyLogPhotoSections (rendered output, C7)', () => {
     expect(srcs).toHaveLength(2)
     for (const src of srcs) expect(src).toMatch(IMG_SRC_RE)
     assertNeverLeaksStorage(html)
+    assertAnchorsMatchImgSrcs(html)
   })
 
   it('both empty for a PM: "No photos for this log.", no headings, no img', () => {
@@ -104,6 +130,7 @@ describe('DprPhotoSections (rendered output, C7)', () => {
     expect(srcs).toHaveLength(2)
     for (const src of srcs) expect(src).toMatch(IMG_SRC_RE)
     assertNeverLeaksStorage(html)
+    assertAnchorsMatchImgSrcs(html)
   })
 
   it('non-PM input (null): output is the empty string', () => {
@@ -151,6 +178,7 @@ describe('HindranceCardPhotos (rendered output, C7)', () => {
     expect(srcs).toHaveLength(1)
     expect(srcs[0]).toMatch(IMG_SRC_RE)
     assertNeverLeaksStorage(html)
+    assertAnchorsMatchImgSrcs(html)
   })
 
   it('non-PM input (isPm false): output is the empty string, even with photos present', () => {
