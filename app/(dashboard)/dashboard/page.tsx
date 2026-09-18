@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
-import { getDailyLogsBoard } from '@/lib/daily-logs/query'
+import { getDailyLogsBoard, getNeededTomorrowItems, type NeededTomorrowItem } from '@/lib/daily-logs/query'
 import { deriveHalfStatus } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS, type CutoffConfig } from '@/lib/daily-logs/cutoffs'
 import { istDateString } from '@/lib/daily-logs/date'
@@ -9,6 +9,7 @@ import { StatusChip, type StatusVariant } from '@/components/ui/status-chip'
 import { Card } from '@/components/ui/card'
 import { getHindranceQueue, type HindranceCard } from '@/lib/hindrance/queue'
 import { formatHindranceAge, formatHindranceReportedDate } from '@/lib/hindrance/relative-time'
+import { NEEDED_TOMORROW_HEADING } from '@/components/daily-logs/log-detail-view'
 import { CHIP } from '../hindrances/page'
 
 // UI slice 5 (Aravind, 2026-09-18): DASH-01 rebuilt as a single "needs
@@ -32,15 +33,28 @@ import { CHIP } from '../hindrances/page'
 // library functions is a separate decision from this page's own
 // rebuild (flagged in this slice's own report, not acted on here).
 //
-// NO NEW QUERY: built entirely from getDailyLogsBoard (already called
-// here) and getHindranceQueue (lib/hindrance/queue.ts, the SAME module
-// the Hindrances page itself uses) -- no query this page didn't already
-// have access to.
+// NO NEW QUERY for the first two groups: built entirely from
+// getDailyLogsBoard (already called here) and getHindranceQueue
+// (lib/hindrance/queue.ts, the SAME module the Hindrances page itself
+// uses) -- no query this page didn't already have access to.
 //
 // TODAY ONLY (Aravind's own correction, 2026-09-05, unchanged by this
 // rebuild): getDailyLogsBoard is called ONCE, for today's IST date. A
 // missing evening half from YESTERDAY already went out in last night's
 // 8:30pm report — it is history, not an exception.
+//
+// UI slice 6 (Aravind, 2026-09-18): a THIRD group, "Needed tomorrow" --
+// per-engineer dependency text from the evening check-in, visible the
+// day reported plus the following day (IST). getDailyLogsBoard's own
+// single-date, one-log-per-engineer contract cannot cover a two-day
+// window without breaking its OTHER caller (the Daily Logs page) --
+// see getNeededTomorrowItems' own header comment (lib/daily-logs/
+// query.ts) for why this is a new, narrow function instead of an
+// extension of that one. Notice only: no action, no acknowledge, no
+// link beyond the existing daily-log-for-that-date link. Not folded
+// into totalCount/"Needs your attention" -- a genuinely different
+// urgency tier, shown independently of whether the first two groups
+// have anything at all.
 
 // English only -- Tamil owed, NOT approved.
 const NEEDS_ATTENTION_HEADING = 'Needs your attention'
@@ -95,12 +109,13 @@ export default async function DashboardPage() {
     evening: CHECKIN_CHECKPOINTS.eveningNudge,
   }
 
-  // Parallel -- the two reads are independent of each other. getDailyLogsBoard
+  // Parallel -- all three reads are independent of each other. getDailyLogsBoard
   // is called with NO photoOptions (this page never renders photos, unlike
   // the Daily Logs page's own call -- see that query's own comment).
-  const [board, hindranceResult] = await Promise.all([
+  const [board, hindranceResult, neededTomorrowResult] = await Promise.all([
     getDailyLogsBoard(supabase, profile.id, today),
     getHindranceQueue(supabase, profile.id, now),
+    getNeededTomorrowItems(supabase, profile.id, now),
   ])
 
   // A failed read must NEVER render as "nothing needs you" — that's the exact
@@ -110,9 +125,12 @@ export default async function DashboardPage() {
   // PM-role project_members row, same as getActiveHindranceTiles' own old
   // 'ok, items: []' behaviour for that case; this page has never role-gated
   // itself, and a non-PM viewer still sees their missing-check-in items.
-  if (board.status === 'error' || hindranceResult.status === 'error') {
+  if (board.status === 'error' || hindranceResult.status === 'error' || neededTomorrowResult.status === 'error') {
     return <DashboardErrorState />
   }
+
+  const neededTomorrowItems: NeededTomorrowItem[] =
+    neededTomorrowResult.status === 'ok' ? neededTomorrowResult.items : []
 
   const hindranceItems: HindranceCard[] =
     hindranceResult.status === 'ok' ? hindranceResult.items.filter((h) => h.acknowledgedAt === null) : []
@@ -230,6 +248,22 @@ export default async function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* UI slice 6: third group, independent of totalCount above -- shows
+          whenever there's a dependency in its own two-day window,
+          regardless of whether "Needs your attention" is empty or not.
+          Renders nothing at all (no heading, no empty-state text) when
+          the list itself is empty. */}
+      {neededTomorrowItems.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-4 text-sm font-semibold text-gray-700">{NEEDED_TOMORROW_HEADING}</h2>
+          <div className="flex flex-col gap-3">
+            {neededTomorrowItems.map((item) => (
+              <NeededTomorrowCard key={item.id} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -286,6 +320,40 @@ function MissingCheckinNeedsAttentionCard({ item, today }: { item: MissingChecki
         </div>
         <p className="text-sm font-medium leading-snug text-gray-900">
           {missingCheckinTitle(item.half, item.engineerName)}
+        </p>
+      </Card>
+    </Link>
+  )
+}
+
+// item.logDate is a 'YYYY-MM-DD' date, not a timestamp -- parsed at UTC
+// midnight before formatting, same convention log-detail-view.tsx's own
+// formatLogDate already uses, so a late-evening IST render never rolls
+// the date back a day the way parsing the bare string directly (implicit
+// local-time midnight) can.
+function formatIstDate(logDate: string): string {
+  return new Date(`${logDate}T00:00:00Z`).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+// Card contents per this slice's own spec: project, engineer name, the
+// reported date (IST), and the dependency text -- notice only, no chip,
+// no action. Links to that engineer's daily log for the date it was
+// actually reported on ("the existing daily-log link, if one fits
+// naturally") -- not always today, since a dependency reported
+// yesterday still shows here today.
+function NeededTomorrowCard({ item }: { item: NeededTomorrowItem }) {
+  return (
+    <Link href={`/daily-logs?date=${item.logDate}`} className="block hover:opacity-80">
+      <Card className="p-4 sm:p-5">
+        <p className="text-xs text-gray-700">{item.projectName}</p>
+        <p className="mt-1 text-sm font-medium leading-snug text-gray-900">{item.dependencyText}</p>
+        <p className="mt-2 text-xs text-gray-700">
+          {item.engineerName} · {formatIstDate(item.logDate)}
         </p>
       </Card>
     </Link>

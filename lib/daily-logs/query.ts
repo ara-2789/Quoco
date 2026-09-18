@@ -6,6 +6,7 @@ import type { LogHalfInput } from './status'
 import { UI_VISIBLE_COLUMNS, type UiVisibleColumn } from './correction'
 import { isProjectPm } from '@/lib/auth/is-project-pm'
 import type { DailyLogPhotoItem, DailyLogPhotoSectionsData } from './photos'
+import { istDateString } from './date'
 
 // Data layer for the Daily Logs board (DASH-03).
 //
@@ -437,4 +438,130 @@ export async function getDailyLogDetail(
       edits,
     },
   }
+}
+
+// -----------------------------------------------------------------------------
+// UI slice 6 -- Today page "Needed tomorrow" feed
+// -----------------------------------------------------------------------------
+//
+// NOT an extension of getDailyLogsBoard above, deliberately. That function's
+// return shape is exactly one log-or-null PER ENGINEER, for exactly ONE
+// log_date, and the Daily Logs list page (its other caller) genuinely needs
+// that single-date, full-roster shape unchanged. This feed needs a DIFFERENT
+// shape from the same table: a flat list of the (at most two) daily_logs rows
+// per engineer whose evening_tomorrow_needs is non-null, across a TWO-DAY
+// log_date window -- widening getDailyLogsBoard's own `.eq('log_date', ...)`
+// to `.in(...)` would make its logByKey merge (keyed on project_id:engineer_id
+// only) silently DROP one of the two dates per engineer (Map.set overwrites),
+// which would break the very feed this function exists to build, while also
+// changing behaviour for the Daily Logs page's completely unrelated single-
+// date call. A second, narrow function in the same file/module -- not a
+// second copy of the whole board -- is what "extend that one existing query"
+// means here: evening_tomorrow_needs itself was already added to this file's
+// own daily_logs select in UI slice 5; only the DATE WINDOW needed something
+// getDailyLogsBoard's own contract cannot safely stretch to cover.
+
+export type NeededTomorrowItem = {
+  id: string
+  projectId: string
+  projectName: string
+  engineerId: string
+  engineerName: string
+  dependencyText: string
+  /** 'YYYY-MM-DD' -- the log's own log_date, IST calendar day. */
+  logDate: string
+}
+
+export type NeededTomorrowResult =
+  | { status: 'ok'; items: NeededTomorrowItem[] }
+  | { status: 'error' }
+
+type NeededTomorrowRow = {
+  id: string
+  project_id: string
+  engineer_id: string
+  log_date: string
+  evening_tomorrow_needs: string | null
+}
+
+/**
+ * Visibility window (Aravind, 2026-09-18): the day a dependency was reported
+ * PLUS the following day, in IST -- reported on day N's evening, visible
+ * through the end of day N+1, gone from day N+2 onward. Implemented as the
+ * query's own `log_date IN (today, yesterday)` filter (both IST calendar-date
+ * strings, computed once from `now`), not a broader read filtered down
+ * client-side -- IST has no DST, so a flat 24h subtraction before converting
+ * to an IST calendar-date string is exact, no edge case near IST midnight.
+ */
+export async function getNeededTomorrowItems(
+  supabase: SupabaseClient<Database>,
+  pmUserId: string,
+  now: Date,
+): Promise<NeededTomorrowResult> {
+  const todayIst = istDateString(now)
+  const yesterdayIst = istDateString(new Date(now.getTime() - 24 * 60 * 60 * 1000))
+
+  const { data: memberData, error: memberErr } = await supabase
+    .from('project_members')
+    .select('project_id, projects(id, name)')
+    .eq('user_id', pmUserId)
+
+  if (memberErr) return reportReadFailure('needed-tomorrow-projects', memberErr)
+
+  const projects = ((memberData ?? []) as unknown as MemberProject[]).filter(
+    (m): m is MemberProject & { projects: { id: string; name: string } } => m.projects !== null,
+  )
+  if (projects.length === 0) return { status: 'ok', items: [] }
+
+  const projectNameById = new Map(projects.map((p) => [p.project_id, p.projects.name]))
+  const projectIds = projects.map((p) => p.project_id)
+
+  const { data: rowData, error: rowErr } = await supabase
+    .from('daily_logs')
+    .select('id, project_id, engineer_id, log_date, evening_tomorrow_needs')
+    .in('project_id', projectIds)
+    .in('log_date', [todayIst, yesterdayIst])
+    .not('evening_tomorrow_needs', 'is', null)
+
+  if (rowErr) return reportReadFailure('needed-tomorrow-logs', rowErr)
+
+  const rows = (rowData ?? []) as unknown as NeededTomorrowRow[]
+  if (rows.length === 0) return { status: 'ok', items: [] }
+
+  const engineerIds = [...new Set(rows.map((r) => r.engineer_id))]
+  const { data: engineerData, error: engineerErr } = await supabase
+    .from('users')
+    .select('id, full_name')
+    .in('id', engineerIds)
+
+  if (engineerErr) return reportReadFailure('needed-tomorrow-engineers', engineerErr)
+
+  const engineerNameById = new Map(
+    ((engineerData ?? []) as unknown as { id: string; full_name: string | null }[]).map((u) => [
+      u.id,
+      u.full_name ?? 'Unnamed engineer',
+    ]),
+  )
+
+  const items: NeededTomorrowItem[] = rows
+    .filter((r) => r.evening_tomorrow_needs !== null)
+    .map((r) => ({
+      id: r.id,
+      projectId: r.project_id,
+      projectName: projectNameById.get(r.project_id) ?? '—',
+      engineerId: r.engineer_id,
+      engineerName: engineerNameById.get(r.engineer_id) ?? 'Unnamed engineer',
+      dependencyText: r.evening_tomorrow_needs as string,
+      logDate: r.log_date,
+    }))
+    // Most recently reported first (today's before yesterday's); engineer
+    // name as a stable tiebreak. Not specified explicitly by the task --
+    // a reasonable default for a notice-only feed, flagged as a judgment
+    // call in this slice's own report.
+    .sort((a, b) => {
+      if (a.logDate !== b.logDate) return a.logDate < b.logDate ? 1 : -1
+      return a.engineerName.localeCompare(b.engineerName)
+    })
+
+  return { status: 'ok', items }
 }
