@@ -44,7 +44,10 @@ export default async function ProjectsPage() {
     // UI slice 4 (Aravind, 2026-09-18): padding/max-width moved to the
     // shared layout wrapper (app/(dashboard)/layout.tsx).
     <div>
-      <div className="flex items-center justify-between mb-6">
+      {/* UI slice 5 (Aravind, 2026-09-18): mb-6 -> mb-8, matching Hindrances'
+          and Today's own header margin now, for consistent vertical rhythm
+          across the dashboard pages (Part C). */}
+      <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Projects</h1>
           <p className="text-gray-700 text-sm mt-1">All construction projects in your workspace.</p>

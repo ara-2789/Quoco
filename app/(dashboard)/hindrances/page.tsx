@@ -27,7 +27,11 @@ import { HindranceAckControls } from './ack-controls'
 // empty state below, not a silent lie ("Nothing reported" would otherwise be
 // indistinguishable from "you can't see it").
 
-const CHIP: Record<HindranceTiming, { variant: StatusVariant; label: string }> = {
+// UI slice 5 (Aravind, 2026-09-18): exported so the Today page's own
+// "Needs your attention" hindrance cards reuse this EXACT mapping ("its
+// existing status chip... matching the hindrances page") rather than a
+// second, driftable copy of the same three labels.
+export const CHIP: Record<HindranceTiming, { variant: StatusVariant; label: string }> = {
   active: { variant: 'blocked', label: 'Blocking now' },
   unspecified: { variant: 'risk', label: 'Timing unclear' },
   potential: { variant: 'risk', label: 'Could block' },
@@ -73,15 +77,17 @@ export default async function HindrancesPage() {
 
   return (
     // UI slice 4 (Aravind, 2026-09-18): padding/max-width moved to the
-    // shared layout wrapper (app/(dashboard)/layout.tsx). The inner
-    // max-w-3xl on the header/list below is UNCHANGED, deliberately --
-    // the task's own "cards use the available width" example was
-    // specifically the Daily Logs grid; this page's cards are a single
-    // stacked column of short alert-style rows, not named for widening,
-    // so kept at their existing readable width rather than stretched to
-    // the new ~1250px container on a judgment call nobody asked for.
+    // shared layout wrapper (app/(dashboard)/layout.tsx).
+    //
+    // UI slice 5 (Aravind, 2026-09-18): the inner max-w-3xl this file's own
+    // slice-4 comment kept "deliberately" is REMOVED here, on this slice's
+    // own explicit instruction ("cards stretch to the column width instead
+    // of sitting narrow on the left") and the reference screenshot
+    // (docs/design/reference/hindrances.png), which shows hindrance cards
+    // spanning the full content column -- superseding that earlier,
+    // narrower reading of "cards use the available width", not overlooked.
     <div>
-      <div className="mb-6 max-w-3xl">
+      <div className="mb-8">
         <h1 className="text-2xl font-semibold text-gray-900">Hindrances</h1>
         {result.status === 'ok' && result.items.length > 0 && (
           <p className="mt-1 text-sm text-gray-700">
@@ -103,7 +109,7 @@ export default async function HindrancesPage() {
           }
         />
       ) : (
-        <div className="flex max-w-3xl flex-col gap-3">
+        <div className="flex flex-col gap-3">
           {result.items.map((item) => (
             <HindranceRow
               key={item.id}
@@ -120,7 +126,7 @@ export default async function HindrancesPage() {
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <Card className="max-w-3xl p-12 text-center">
+    <Card className="p-12 text-center">
       <p className="mx-auto max-w-md text-sm text-gray-700">{text}</p>
     </Card>
   )
@@ -131,7 +137,7 @@ function EmptyState({ text }: { text: string }) {
 // the "Nothing reported" empty state.
 function ErrorState() {
   return (
-    <div className="max-w-3xl rounded-lg border border-red-200 bg-red-50 p-12 text-center">
+    <div className="rounded-lg border border-red-200 bg-red-50 p-12 text-center">
       <p className="text-sm font-semibold text-red-700">Couldn&apos;t load hindrances.</p>
       <p className="mx-auto mt-2 max-w-md text-sm text-red-600">
         Something went wrong loading this list. This has been reported — try refreshing.

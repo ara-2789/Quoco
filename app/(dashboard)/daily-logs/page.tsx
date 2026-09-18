@@ -40,7 +40,14 @@ export default async function DailyLogsPage({
   let date = params.date && isValidCalendarDate(params.date) ? params.date : today
   if (date > today) date = today
 
-  const result = await getDailyLogsBoard(supabase, profile.id, date)
+  // UI slice 5 (Aravind, 2026-09-18): photoOptions requested here (and only
+  // here -- the Today page's own getDailyLogsBoard call omits it entirely)
+  // so the expanded card can show each half's photos, gated by isProjectPm
+  // exactly as the detail page is. profile.tenant_id ?? '' matches the
+  // existing fallback convention already used for this same purpose one
+  // page over (app/(dashboard)/hindrances/page.tsx's own
+  // getHindrancePhotosByHindranceIds call).
+  const result = await getDailyLogsBoard(supabase, profile.id, date, { tenantId: profile.tenant_id ?? '' })
   const boards = result.status === 'ok' ? result.boards : []
   const hasAnyEngineer = boards.some((b) => b.engineers.length > 0)
 
@@ -77,7 +84,10 @@ export default async function DailyLogsPage({
     // UI slice 4 (Aravind, 2026-09-18): padding/max-width moved to the
     // shared layout wrapper (app/(dashboard)/layout.tsx).
     <div>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* UI slice 5 (Aravind, 2026-09-18): mb-6 -> mb-8, matching Hindrances'
+          and Today's own header margin now, for consistent vertical rhythm
+          across the dashboard pages (Part C). */}
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Daily Logs</h1>
           <p className="mt-1 text-sm text-gray-700">
@@ -106,7 +116,10 @@ export default async function DailyLogsPage({
         <div className="space-y-8">
           {boards.map((board) => (
             <section key={board.projectId}>
-              <h2 className="mb-3 text-sm font-semibold text-gray-700">{board.projectName}</h2>
+              {/* UI slice 5: mb-3 -> mb-4, matching the reference's own
+                  .section-title{margin-bottom:16px} exactly, and Today's
+                  new "Needs your attention" heading below. */}
+              <h2 className="mb-4 text-sm font-semibold text-gray-700">{board.projectName}</h2>
               {/* UI slice 4 (Aravind, 2026-09-18): 1 column on small,
                   2 at lg and above -- was sm:2/lg:3. */}
               {board.engineers.length === 0 ? (

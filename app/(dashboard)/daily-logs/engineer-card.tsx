@@ -3,8 +3,15 @@ import { StatusChip } from '@/components/ui/status-chip'
 import { Card } from '@/components/ui/card'
 import { deriveHalfStatus, type Half, type HalfStatus } from '@/lib/daily-logs/status'
 import { DEFAULT_CUTOFFS } from '@/lib/daily-logs/cutoffs'
-import { ScalarFieldRow } from '@/components/daily-logs/scalar-field-row'
-import { MORNING_HEADLINE_ROW, EVENING_HEADLINE_ROW, VIEW_REPORTED_DETAILS_LABEL } from '@/components/daily-logs/log-detail-view'
+import {
+  HalfColumn,
+  MORNING_HEADLINE_ROW,
+  MORNING_SECONDARY_ROWS,
+  EVENING_HEADLINE_ROW,
+  EVENING_SECONDARY_ROWS,
+  VIEW_REPORTED_DETAILS_LABEL,
+} from '@/components/daily-logs/log-detail-view'
+import type { UiVisibleColumn } from '@/lib/daily-logs/correction'
 import type { EngineerCard as EngineerCardData } from '@/lib/daily-logs/query'
 import { ReactivateCta } from './reactivate-cta'
 
@@ -17,17 +24,38 @@ import { ReactivateCta } from './reactivate-cta'
 // changed. The ONLY addition is the closed-by-default <details> beneath
 // the chips.
 //
-// NO NEW QUERY: getDailyLogsBoard (lib/daily-logs/query.ts) already
-// selects morning_plan and evening_output on the SAME daily_logs read
-// this page always ran -- both headline fields the expansion needs were
-// already sitting on `eng.log`, unused, before this slice. The
-// "As reported by {engineer}, {time}" provenance line comes from
-// ScalarFieldRow's own existing logic (engineerName + submittedAt, no
-// `edit` prop passed -- this board never fetched daily_log_edits, and
-// the task's own wording only asks for the "As reported by" case, never
-// "Corrected by"), reusing that exact component in read-only mode
-// (canEdit={false} hides its [Edit] affordance entirely, not disabled --
-// same convention canEdit already follows everywhere else it's used).
+// UI slice 5 (Aravind, 2026-09-18): the expansion now shows the WHOLE
+// check-in (every reported field + photos), not just the two headline
+// fields -- see the comment inside the <details> block below. This
+// extended getDailyLogsBoard's own daily_logs select (lib/daily-logs/
+// query.ts) to also read morning_execution_plan/evening_workers_on_site/
+// evening_schedule_met/evening_tomorrow_needs, and, for THIS page only
+// (via photoOptions), a batched daily_log_photos read + the isProjectPm
+// gate -- both on the SAME board query, no per-card queries. The "As
+// reported by {engineer}, {time}" provenance line is still ScalarFieldRow's
+// own existing logic (via HalfColumn), unchanged; this board still never
+// fetches daily_log_edits, so every field renders as "As reported by",
+// never "Corrected by" -- canEdit is still hard false throughout.
+
+// Builds the Record<UiVisibleColumn, unknown> HalfColumn's own `columns`
+// prop expects, off the board's (smaller) per-log shape. is_holiday/
+// holiday_reason are included only because the type requires every
+// UiVisibleColumn key to be present -- HalfColumn never actually reads
+// them for morning/evening rows (those two belong to the detail page's
+// separate "Day" section, deliberately not reproduced on this card, per
+// this slice's own "no correction controls, no holiday field" scope).
+function logColumns(log: NonNullable<EngineerCardData['log']>): Record<UiVisibleColumn, unknown> {
+  return {
+    is_holiday: log.is_holiday,
+    holiday_reason: log.holiday_reason,
+    morning_plan: log.morning_plan,
+    morning_execution_plan: log.morning_execution_plan,
+    evening_output: log.evening_output,
+    evening_workers_on_site: log.evening_workers_on_site,
+    evening_schedule_met: log.evening_schedule_met,
+    evening_tomorrow_needs: log.evening_tomorrow_needs,
+  }
+}
 
 function formatTime(iso: string | null): string {
   if (!iso) return ''
@@ -109,59 +137,59 @@ export function EngineerCardView({
           <summary className="cursor-pointer text-brand-muted hover:text-brand-strong-muted">
             {VIEW_REPORTED_DETAILS_LABEL}
           </summary>
+          {/* UI slice 5 (Aravind, 2026-09-18): the whole check-in, read-only --
+              was just the two headline fields (morning_plan/evening_output)
+              via bare ScalarFieldRow; now reuses HalfColumn, the exact
+              component the detail page itself renders each half with, so
+              every reported field, its label, and its "As reported by"
+              line match the detail page byte-for-byte, including the
+              secondary fields behind their own nested "View reported
+              details" disclosure and each half's photos (DailyLogPhotoColumn,
+              gated by eng.photoSections -- null for a non-PM, renders
+              nothing at all; see getDailyLogsBoard's own photoOptions
+              gate). No correction controls, no holiday field, no "Report
+              sent to owner" link -- canEdit is hard false and edits is an
+              empty object, same as before this slice (this board never
+              fetches daily_log_edits). The UI-slice-4 fix (keying each
+              ScalarFieldRow on dailyLogsId, so a soft ?date= navigation
+              remounts instead of reconciling stale state) lives INSIDE
+              HalfColumn itself now, unchanged -- nothing extra is needed
+              at this call site for that. */}
           <div className="mt-2 grid grid-cols-1 divide-y divide-brand-border md:grid-cols-2 md:divide-x md:divide-y-0">
             <div className="py-2 first:pt-0 md:py-0 md:pr-4">
-              {/* UI slice 4 (Aravind, 2026-09-18): key={eng.log.id} is the
-                  actual bug fix, not decoration. ScalarFieldRow is a
-                  Client Component whose displayed text comes from
-                  useFieldCorrection's useReducer(fieldRowReducer,
-                  initialFieldRowState(initialValue)) -- React evaluates
-                  that initializer ONLY on this component instance's
-                  FIRST mount (lib/daily-logs/use-field-correction.ts:30,
-                  lib/daily-logs/field-row-state.ts:44-45). Navigating
-                  via DateNav's prev/next/Today/date-input
-                  (./date-nav.tsx) changes only the ?date= search param
-                  on the SAME /daily-logs route -- a soft client
-                  navigation. getDailyLogsBoard (lib/daily-logs/
-                  query.ts) correctly re-fetches and passes the new
-                  date's morning_plan/evening_output as fresh props, but
-                  without a key that changes too, React RECONCILES this
-                  same component instance instead of remounting it, so
-                  the reducer's own state.currentValue -- seeded once,
-                  from whichever date was first viewed in this browser
-                  tab -- never resyncs to the new prop, and the card
-                  keeps showing that first-viewed date's text forever
-                  after. eng.log.id is a distinct id per (project,
-                  engineer, log_date) row by construction, so keying on
-                  it forces a genuine remount exactly when the
-                  underlying row actually changes -- never on an
-                  in-place edit/save, which intentionally updates this
-                  same instance's state instead (SAVE_SUCCESS,
-                  use-field-correction.ts:59). HalfRow above was never
-                  affected -- it holds no state of its own, rendering
-                  directly from fresh status/submittedAt props every
-                  render. */}
-              <ScalarFieldRow
-                key={eng.log.id}
+              <HalfColumn
+                heading={`Morning${eng.log.morning_submitted_at ? '' : ' — not yet submitted'}`}
+                chipVariant={morningStatus.variant}
+                chipLabel={`Morning: ${morningStatus.label}`}
+                headlineRow={MORNING_HEADLINE_ROW}
+                secondaryRows={MORNING_SECONDARY_ROWS}
                 dailyLogsId={eng.log.id}
-                column={MORNING_HEADLINE_ROW.column}
-                label={MORNING_HEADLINE_ROW.label}
-                currentValue={eng.log.morning_plan}
+                columns={logColumns(eng.log)}
+                edits={{}}
                 submittedAt={eng.log.morning_submitted_at}
                 engineerName={eng.engineerName}
                 canEdit={false}
+                photoSections={eng.photoSections ?? null}
+                half="morning"
+                now={now}
               />
             </div>
             <div className="py-2 last:pb-0 md:py-0 md:pl-4">
-              <ScalarFieldRow
-                key={eng.log.id}
+              <HalfColumn
+                heading={`Evening${eng.log.evening_submitted_at ? '' : ' — not yet submitted'}`}
+                chipVariant={eveningStatus.variant}
+                chipLabel={`Evening: ${eveningStatus.label}`}
+                headlineRow={EVENING_HEADLINE_ROW}
+                secondaryRows={EVENING_SECONDARY_ROWS}
                 dailyLogsId={eng.log.id}
-                column={EVENING_HEADLINE_ROW.column}
-                label={EVENING_HEADLINE_ROW.label}
-                currentValue={eng.log.evening_output}
+                columns={logColumns(eng.log)}
+                edits={{}}
                 submittedAt={eng.log.evening_submitted_at}
                 engineerName={eng.engineerName}
                 canEdit={false}
+                photoSections={eng.photoSections ?? null}
+                half="evening"
+                now={now}
               />
             </div>
           </div>
