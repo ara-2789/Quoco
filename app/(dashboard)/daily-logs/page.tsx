@@ -4,6 +4,7 @@ import { CircleAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
 import { StatusChip } from '@/components/ui/status-chip'
+import { Card } from '@/components/ui/card'
 import { deriveHalfStatus, type Half, type HalfStatus } from '@/lib/daily-logs/status'
 import { DEFAULT_CUTOFFS } from '@/lib/daily-logs/cutoffs'
 import { getDailyLogsBoard } from '@/lib/daily-logs/query'
@@ -159,7 +160,7 @@ export default async function DailyLogsPage({
                     // trigger card navigation. Only the name+halves region is
                     // the link target.
                     return (
-                      <div key={eng.engineerId} className="rounded-lg border border-gray-200 bg-white p-4">
+                      <Card key={eng.engineerId} className="p-4">
                         {eng.log ? (
                           <Link href={`/daily-logs/${eng.log.id}`} className="block hover:opacity-80">
                             {cardHeaderAndHalves}
@@ -183,7 +184,7 @@ export default async function DailyLogsPage({
                             Nothing to correct yet — check-ins for this day haven&apos;t come in.
                           </p>
                         )}
-                      </div>
+                      </Card>
                     )
                   })}
                 </div>
@@ -206,13 +207,13 @@ function EmptyState({
   action: { href: string; label: string }
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-12 text-center">
+    <Card className="p-12 text-center">
       <p className="text-sm font-medium text-gray-900">{title}</p>
       <p className="mx-auto mt-1 max-w-md text-sm text-gray-700">{body}</p>
       <a href={action.href} className="mt-3 inline-block text-sm text-blue-600 hover:underline">
         {action.label}
       </a>
-    </div>
+    </Card>
   )
 }
 

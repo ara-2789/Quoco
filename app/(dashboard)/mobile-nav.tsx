@@ -62,9 +62,9 @@ export function MobileNav({
   }
 
   return (
-    <div className="md:hidden border-b border-gray-200 bg-white">
+    <div className="md:hidden bg-brand-ink">
       <div className="flex items-center justify-between px-4 py-3">
-        <span className="text-lg font-semibold text-gray-900 tracking-tight">Quoco</span>
+        <span className="text-lg font-semibold text-white tracking-tight">QUOCO</span>
         <button
           type="button"
           aria-expanded={open}
@@ -76,30 +76,43 @@ export function MobileNav({
           // and aria-controls is dropped rather than switching to
           // render-and-hide just to keep the attribute valid.
           onClick={() => setOpen((o) => !o)}
-          className="rounded-md px-3 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+          className="rounded-md px-3 py-3 text-sm font-medium text-brand-soft hover:bg-brand-panel hover:text-white transition-colors"
         >
           {open ? 'Close menu' : 'Menu'}
         </button>
       </div>
 
+      {/* UI SHELL RESTYLE, SLICE 1 (Aravind, 2026-09-18): selected item
+          takes a BOTTOM border here (border-b-brand-orange), not the
+          desktop <aside>'s left border — same colours, same "selected"
+          rule (exact match or a "/segment/..." prefix, mirroring sidebar-
+          nav.tsx one file up), different edge per Aravind's own spec for
+          small screens. */}
       {open && (
-        <nav id="mobile-dashboard-nav" className="border-t border-gray-200 px-3 py-3 space-y-0.5">
-          {navLinks.map(({ label, href }) => (
-            <Link
-              key={href}
-              href={href}
-              // Covers the same-route tap the pathname watcher above can't
-              // (see that comment) — both stay, different triggers.
-              onClick={() => setOpen(false)}
-              className="flex items-center px-3 py-3 text-base text-gray-700 rounded-md hover:bg-gray-100 hover:text-gray-900 transition-colors"
-            >
-              {label}
-            </Link>
-          ))}
-          <form action={signOutAction} className="pt-2 mt-2 border-t border-gray-200">
+        <nav id="mobile-dashboard-nav" className="px-3 py-3 space-y-0.5">
+          {navLinks.map(({ label, href }) => {
+            const selected = pathname === href || pathname.startsWith(`${href}/`)
+            return (
+              <Link
+                key={href}
+                href={href}
+                // Covers the same-route tap the pathname watcher above can't
+                // (see that comment) — both stay, different triggers.
+                onClick={() => setOpen(false)}
+                className={
+                  selected
+                    ? 'flex items-center border-b-[3px] border-brand-orange bg-[#332C24] px-3 py-3 text-base text-brand-orange-light rounded-t-md transition-colors'
+                    : 'flex items-center border-b-[3px] border-transparent px-3 py-3 text-base text-brand-soft rounded-md hover:bg-brand-panel hover:text-white transition-colors'
+                }
+              >
+                {label}
+              </Link>
+            )
+          })}
+          <form action={signOutAction} className="pt-2 mt-2 border-t border-brand-panel">
             <button
               type="submit"
-              className="w-full text-left px-3 py-3 text-base text-gray-600 rounded-md hover:bg-gray-100 hover:text-gray-900 transition-colors"
+              className="w-full text-left px-3 py-3 text-base text-brand-soft rounded-md hover:bg-brand-panel hover:text-white transition-colors"
             >
               Sign out
             </button>

@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
 import { StatusChip } from '@/components/ui/status-chip'
+import { Card } from '@/components/ui/card'
 import { deriveDprArchiveStatus } from '@/lib/dpr/archive-status'
 
 type DprRow = {
@@ -100,14 +101,14 @@ export default async function DprsPage() {
           </p>
         </div>
       ) : dprs.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+        <Card className="p-12 text-center">
           <p className="text-gray-700 font-medium">No DPRs generated yet.</p>
           <p className="text-gray-700 text-sm mt-2">
             DPRs are created automatically each evening after the WhatsApp check-in.
           </p>
-        </div>
+        </Card>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <Card className="overflow-hidden">
           {/* overflow-hidden above clips the rounded corners, not scrolling
               — it must stay for that. Horizontal scroll lives on this INNER
               wrapper instead, so a narrow viewport scrolls the table without
@@ -158,7 +159,7 @@ export default async function DprsPage() {
             </tbody>
           </table>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   )

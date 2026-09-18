@@ -18,6 +18,24 @@
   --color-status-risk: var(--color-amber-800);
   --color-status-ok: var(--color-green-800);
   --color-status-info: var(--color-blue-800);
+
+  /* UI shell restyle, slice 1 (Aravind, 2026-09-18; design reference: his
+     prototype, not copied into this repo — values only). Named
+     "--color-brand-NAME" so Tailwind v4 auto-generates the matching
+     bg-, text-, and border- utilities from these, the same mechanism the
+     status- aliases above already rely on. Presentation-only tokens —
+     no data model, no new page. */
+  --color-brand-ink: #14120F;
+  --color-brand-panel: #26221C;
+  --color-brand-orange: #D9641E;
+  --color-brand-orange-light: #E4823B;
+  --color-brand-paper: #FDFCFA;
+  --color-brand-canvas: #F7F4EF;
+  --color-brand-border: #E5DED3;
+  --color-brand-muted: #6E6558;
+  --color-brand-strong-muted: #443C32;
+  --color-brand-soft: #D0C7BA;
+  --color-brand-dim: #B0A79A;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,5 +48,10 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* UI shell restyle, slice 1: Geist (next/font/google, app/layout.tsx) was
+     already loaded and wired into --font-sans above, but this rule
+     hardcoded Arial/Helvetica over it, so Geist never actually rendered
+     anywhere. Fixed to use it, with a system fallback stack for the
+     window before the self-hosted font file loads. */
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
