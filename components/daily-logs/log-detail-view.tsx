@@ -2,7 +2,9 @@ import { StatusChip, type StatusVariant } from '@/components/ui/status-chip'
 import { deriveHalfStatus } from '@/lib/daily-logs/status'
 import { DEFAULT_CUTOFFS } from '@/lib/daily-logs/cutoffs'
 import { canEditLog, type UiVisibleColumn } from '@/lib/daily-logs/correction'
-import type { LogDetail, LatestEdit } from '@/lib/daily-logs/query'
+import { formatIstTime } from '@/lib/daily-logs/date'
+import type { LogDetail, LatestEdit, RawTextColumn } from '@/lib/daily-logs/query'
+import { isMeaningfulDependencyText } from '@/lib/daily-logs/query'
 import type { DailyLogPhotoSectionsData } from '@/lib/daily-logs/photos'
 import { DailyLogPhotoColumn, DailyLogNoPhotosMessage } from './photo-sections'
 import { ScalarFieldRow } from './scalar-field-row'
@@ -24,6 +26,74 @@ const REPORT_SENT_TO_OWNER_LABEL = 'Report sent to owner'
 // its heading too -- "same constant file and comment".
 export const NEEDED_TOMORROW_LABEL = 'Needed tomorrow'
 export const NEEDED_TOMORROW_HEADING = 'Needed tomorrow'
+
+// fix/daily-log-fields (Aravind, 2026-09-18). English only -- Tamil owed,
+// NOT approved. Taken verbatim from the Owner DPR's own render.ts labels
+// (lib/dpr/render.ts) so PM and Owner share wording for the same
+// underlying data, per this fix's own instruction -- read there for
+// wording only, nothing imported from lib/dpr. WORK_COMPLETED_LABEL
+// REPLACES the old "What was done" label on evening_output (same column,
+// same ScalarFieldRow, only the label text changes). The other five
+// replace morning_execution_plan/evening_workers_on_site/
+// evening_schedule_met, which nothing writes (verified by repo-wide grep,
+// see this PR's own report) -- these five read the columns that actually
+// hold the engineer's real answers instead.
+export const WORK_COMPLETED_LABEL = 'Work completed'
+export const MORNING_LABOUR_LABEL = 'Morning labour reported'
+export const MACHINES_REPORTED_LABEL = 'Machines reported'
+export const EVENING_LABOUR_LABEL = 'Evening labour reported'
+export const MACHINE_USAGE_LABEL = 'Machine usage'
+export const IDLE_HOURS_LABEL = 'Idle hours'
+
+// RawTextColumn (the five jsonb columns above, each shaped
+// { raw_text: string | null, ... } -- parsed breakdown fields alongside
+// raw_text never rendered here, per this fix's own "not the parsed
+// breakdown" instruction) is defined in lib/daily-logs/query.ts, the
+// data layer, and imported below -- not redefined here, so the query's
+// own select and this component's own row list can never drift apart on
+// which five columns they mean. Not part of UiVisibleColumn/
+// CorrectableColumn (lib/daily-logs/correction.ts) -- these were never
+// in the correction whitelist and stay that way; no Edit affordance is
+// possible for them (RawTextFieldRow below has none).
+
+/** { raw_text: string | null } -- anything else (wrong shape, blank string) reads as absent. */
+function extractRawText(value: unknown): string | null {
+  if (value === null || typeof value !== 'object') return null
+  const raw = (value as { raw_text?: unknown }).raw_text
+  return typeof raw === 'string' && raw.trim() !== '' ? raw : null
+}
+
+// Presentational only -- no useFieldCorrection, no Edit button, ever
+// (these columns are not correctable; see RawTextColumn's own comment).
+// Visually identical to ScalarFieldRow's own view-mode row (same
+// label/value/provenance layout, same "Not set" treatment) so the two
+// kinds of rows line up in the same list without looking like two
+// different components glued together.
+function RawTextFieldRow({
+  label,
+  value,
+  submittedAt,
+  engineerName,
+}: {
+  label: string
+  value: string | null
+  submittedAt: string | null
+  engineerName: string
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-medium text-gray-700">{label}</div>
+        <div className="mt-0.5 text-sm text-gray-900 whitespace-pre-wrap break-words">{value ?? 'Not set'}</div>
+        {submittedAt && (
+          <div className="mt-0.5 text-xs text-gray-700">
+            As reported by {engineerName}, {formatIstTime(submittedAt)}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export type LogDetailViewProps = {
   data: LogDetail
@@ -54,28 +124,43 @@ export type LogDetailViewProps = {
 // headline rows -- "reusing the same components and wording the detail
 // page already uses," not a second, independently-typed copy of either
 // label that could drift from this one.
-export const MORNING_HEADLINE_ROW = { column: 'morning_plan', label: 'Morning plan' } as const
-// UI slice 5 (Aravind, 2026-09-18): exported, same reasoning as the
-// headline rows above -- the Daily Logs list card's expanded view now
-// shows the whole check-in (not just the headline), via the exported
-// HalfColumn below, and needs these exact (column, label) pairs too.
-export const MORNING_SECONDARY_ROWS = [{ column: 'morning_execution_plan', label: 'Execution plan' }] as const
+export const MORNING_HEADLINE_ROW: Row = { kind: 'scalar', column: 'morning_plan', label: 'Morning plan' }
+// fix/daily-log-fields (Aravind, 2026-09-18): morning_execution_plan
+// REMOVED -- confirmed by repo-wide grep (lib/**, app/**, supabase/
+// migrations/**) that no live code path writes it; the LIVE
+// apply_morning_flow_turn (migration 038, the latest CREATE OR REPLACE)
+// never sets it, and lib/whatsapp/flows/morning.ts:18 says so directly
+// ("the OLD step 4... retired -- no longer written"). It read as
+// permanently "Not set" on every real row. Replaced with the two fields
+// that actually hold the engineer's morning answers -- 'kind: text' rows
+// read straight off the jsonb columns' own raw_text (extractRawText
+// above), never the parsed breakdown, matching the Owner DPR's own
+// render.ts wording exactly (read there for labels only).
+export const MORNING_SECONDARY_ROWS: readonly Row[] = [
+  { kind: 'text', column: 'morning_manpower', label: MORNING_LABOUR_LABEL },
+  { kind: 'text', column: 'morning_equipment', label: MACHINES_REPORTED_LABEL },
+]
 
-export const EVENING_HEADLINE_ROW = { column: 'evening_output', label: 'What was done' } as const
-// UI slice 6 (Aravind, 2026-09-18): evening_tomorrow_needs REMOVED from
-// this list -- it no longer renders inside the evening column at all.
-// It used to be labelled "Dependency" here (RENAMED 2026-09-11, migration
-// 040, from evening_schedule_miss_reason); it now renders as its own
-// full-width line beneath both columns (DependencyLine below), labelled
-// NEEDED_TOMORROW_LABEL instead, "in both the list card and the detail
-// view" -- moving it out of this array is what does that everywhere
-// this array is used, without touching either call site separately.
-export const EVENING_SECONDARY_ROWS = [
-  { column: 'evening_workers_on_site', label: 'Workers on site' },
-  { column: 'evening_schedule_met', label: 'Plan met?' },
-] as const
+// fix/daily-log-fields: label changed from "What was done" to
+// WORK_COMPLETED_LABEL ("Work completed") -- same column
+// (evening_output), same ScalarFieldRow, same correctability. Matches
+// the Owner DPR's own wording for the identical data.
+export const EVENING_HEADLINE_ROW: Row = { kind: 'scalar', column: 'evening_output', label: WORK_COMPLETED_LABEL }
+// fix/daily-log-fields: evening_workers_on_site/evening_schedule_met
+// REMOVED -- same grep finding as morning_execution_plan above; the LIVE
+// apply_evening_flow_turn (migration 040, the latest CREATE OR REPLACE)
+// never sets either. Replaced with the three fields that actually hold
+// the engineer's evening answers, read the same raw_text way as the
+// morning ones above. evening_tomorrow_needs stays removed from this
+// list (UI slice 6, DependencyLine below) -- unrelated to this change,
+// not reverted.
+export const EVENING_SECONDARY_ROWS: readonly Row[] = [
+  { kind: 'text', column: 'evening_manpower', label: EVENING_LABOUR_LABEL },
+  { kind: 'text', column: 'evening_equipment_utilisation', label: MACHINE_USAGE_LABEL },
+  { kind: 'text', column: 'evening_idle_hours', label: IDLE_HOURS_LABEL },
+]
 
-const DEPENDENCY_ROW = { column: 'evening_tomorrow_needs', label: NEEDED_TOMORROW_LABEL } as const
+const DEPENDENCY_ROW = { kind: 'scalar', column: 'evening_tomorrow_needs', label: NEEDED_TOMORROW_LABEL } as const
 
 function formatLogDate(logDate: string): string {
   return new Date(`${logDate}T00:00:00Z`).toLocaleDateString('en-IN', {
@@ -86,7 +171,67 @@ function formatLogDate(logDate: string): string {
   })
 }
 
-type Row = { column: UiVisibleColumn; label: string }
+// fix/daily-log-fields (Aravind, 2026-09-18): widened to a discriminated
+// union -- 'scalar' rows are real, correctable daily_logs columns
+// (ScalarFieldRow, as before); 'text' rows are the five raw_text-bearing
+// jsonb columns (RawTextFieldRow above, never correctable, no Edit
+// affordance). Both kinds share the same label/value/"As reported by"
+// visual shape so a half's field list looks like ONE list, not two
+// glued-together component types.
+type Row =
+  | { kind: 'scalar'; column: UiVisibleColumn; label: string }
+  | { kind: 'text'; column: RawTextColumn; label: string }
+
+// fix/daily-log-fields: Partial, not a strict Record -- the detail
+// page's own LogDetail.columns genuinely carries every UiVisibleColumn +
+// RawTextColumn key (getDailyLogDetail selects and populates all of
+// them), but the Daily Logs list card's own logColumns() helper
+// (engineer-card.tsx) deliberately does NOT provide morning_execution_
+// plan/evening_workers_on_site/evening_schedule_met any more -- the
+// board query no longer selects them (nothing writes them; see this
+// PR's own report), so there is nothing real to put there. A strict
+// Record would force fabricating fake null values just to satisfy the
+// type; Partial lets a caller supply only the keys it actually has --
+// ScalarFieldRow/extractRawText already treat a missing/undefined value
+// exactly like an explicit null (both read as "Not set"/absent).
+type HalfColumns = Partial<Record<UiVisibleColumn, unknown>> & Partial<Record<RawTextColumn, unknown>>
+
+function renderRow(
+  row: Row,
+  ctx: {
+    dailyLogsId: string
+    columns: HalfColumns
+    edits: Partial<Record<UiVisibleColumn, LatestEdit>>
+    submittedAt: string | null
+    engineerName: string
+    canEdit: boolean
+  },
+) {
+  if (row.kind === 'scalar') {
+    return (
+      <ScalarFieldRow
+        key={`${ctx.dailyLogsId}-${row.column}`}
+        dailyLogsId={ctx.dailyLogsId}
+        column={row.column}
+        label={row.label}
+        currentValue={ctx.columns[row.column]}
+        edit={ctx.edits[row.column]}
+        submittedAt={ctx.submittedAt}
+        engineerName={ctx.engineerName}
+        canEdit={ctx.canEdit}
+      />
+    )
+  }
+  return (
+    <RawTextFieldRow
+      key={`${ctx.dailyLogsId}-${row.column}`}
+      label={row.label}
+      value={extractRawText(ctx.columns[row.column])}
+      submittedAt={ctx.submittedAt}
+      engineerName={ctx.engineerName}
+    />
+  )
+}
 
 // UI slice 2: one half's column -- heading + its own status chip (task 1:
 // "each column keeps its own status chip"), the headline field always
@@ -123,7 +268,7 @@ export function HalfColumn({
   headlineRow: Row
   secondaryRows: readonly Row[]
   dailyLogsId: string
-  columns: Record<UiVisibleColumn, unknown>
+  columns: HalfColumns
   edits: Partial<Record<UiVisibleColumn, LatestEdit>>
   submittedAt: string | null
   engineerName: string
@@ -132,6 +277,7 @@ export function HalfColumn({
   half: 'morning' | 'evening'
   now: Date
 }) {
+  const ctx = { dailyLogsId, columns, edits, submittedAt, engineerName, canEdit }
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -148,46 +294,14 @@ export function HalfColumn({
           fixed one level up (engineer-card.tsx). dailyLogsId changes on a
           real log change and stays fixed across an in-place edit/save
           (SAVE_SUCCESS), so it forces a remount only when it should. */}
-      <ScalarFieldRow
-        key={dailyLogsId}
-        dailyLogsId={dailyLogsId}
-        column={headlineRow.column}
-        label={headlineRow.label}
-        currentValue={columns[headlineRow.column]}
-        edit={edits[headlineRow.column]}
-        submittedAt={submittedAt}
-        engineerName={engineerName}
-        canEdit={canEdit}
-      />
+      {renderRow(headlineRow, ctx)}
 
       {secondaryRows.length > 0 && (
         <details className="mt-2 text-xs">
           <summary className="cursor-pointer text-brand-muted hover:text-brand-strong-muted">
             {VIEW_REPORTED_DETAILS_LABEL}
           </summary>
-          <div className="mt-1 divide-y divide-gray-100">
-            {secondaryRows.map((row) => (
-              // UI slice 4 follow-up (Aravind, 2026-09-18): key was
-              // row.column alone -- unique enough for React's list-key
-              // requirement, but NOT scoped to dailyLogsId, so navigating
-              // between two logs whose secondary rows share the same
-              // column set (every log's does) reconciled this instance in
-              // place instead of remounting it -- the same stale-state
-              // bug as the headline row above, just easier to miss because
-              // a key was already present. Now scoped to both.
-              <ScalarFieldRow
-                key={`${dailyLogsId}-${row.column}`}
-                dailyLogsId={dailyLogsId}
-                column={row.column}
-                label={row.label}
-                currentValue={columns[row.column]}
-                edit={edits[row.column]}
-                submittedAt={submittedAt}
-                engineerName={engineerName}
-                canEdit={canEdit}
-              />
-            ))}
-          </div>
+          <div className="mt-1 divide-y divide-gray-100">{secondaryRows.map((row) => renderRow(row, ctx))}</div>
         </details>
       )}
 
@@ -228,7 +342,7 @@ export function HalfFields({
 }: {
   rows: readonly Row[]
   dailyLogsId: string
-  columns: Record<UiVisibleColumn, unknown>
+  columns: HalfColumns
   edits: Partial<Record<UiVisibleColumn, LatestEdit>>
   submittedAt: string | null
   engineerName: string
@@ -237,23 +351,10 @@ export function HalfFields({
   half: 'morning' | 'evening'
   now: Date
 }) {
+  const ctx = { dailyLogsId, columns, edits, submittedAt, engineerName, canEdit }
   return (
     <div>
-      <div className="divide-y divide-gray-100">
-        {rows.map((row) => (
-          <ScalarFieldRow
-            key={`${dailyLogsId}-${row.column}`}
-            dailyLogsId={dailyLogsId}
-            column={row.column}
-            label={row.label}
-            currentValue={columns[row.column]}
-            edit={edits[row.column]}
-            submittedAt={submittedAt}
-            engineerName={engineerName}
-            canEdit={canEdit}
-          />
-        ))}
-      </div>
+      <div className="divide-y divide-gray-100">{rows.map((row) => renderRow(row, ctx))}</div>
 
       <div className="mt-4">
         <DailyLogPhotoColumn photoSections={photoSections} half={half} now={now} />
@@ -280,14 +381,20 @@ export function DependencyLine({
   canEdit,
 }: {
   dailyLogsId: string
-  columns: Record<UiVisibleColumn, unknown>
+  columns: Partial<Record<UiVisibleColumn, unknown>>
   edits: Partial<Record<UiVisibleColumn, LatestEdit>>
   submittedAt: string | null
   engineerName: string
   canEdit: boolean
 }) {
+  // fix/daily-log-fields (Aravind, 2026-09-18): was a bare null/blank
+  // check; now shares isMeaningfulDependencyText with getNeededTomorrow
+  // Items' own selector (lib/daily-logs/query.ts) -- ONE "None"-answers-
+  // aren't-notices rule, not two copies that could drift apart. A
+  // non-string value (shouldn't happen for this column, but the prop
+  // type is `unknown`) still reads as absent.
   const value = columns[DEPENDENCY_ROW.column]
-  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null
+  if (typeof value !== 'string' || !isMeaningfulDependencyText(value)) return null
   return (
     <div className="mt-4">
       <ScalarFieldRow

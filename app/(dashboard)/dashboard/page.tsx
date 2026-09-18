@@ -136,9 +136,6 @@ export default async function DashboardPage() {
     hindranceResult.status === 'ok' ? hindranceResult.items.filter((h) => h.acknowledgedAt === null) : []
 
   const missingCheckins: MissingCheckinCard[] = []
-  // Proof-of-life for the empty state — which sites checked in this morning,
-  // and when, regardless of whether anything needs attention today.
-  const morningSubmissions: { projectName: string; engineerName: string; at: string }[] = []
 
   for (const b of board.boards) {
     for (const e of b.engineers) {
@@ -173,18 +170,18 @@ export default async function DashboardPage() {
           chipLabel: 'Morning check-in missing',
         })
       }
-
-      if (e.log?.morning_submitted_at) {
-        morningSubmissions.push({
-          projectName: b.projectName,
-          engineerName: e.engineerName,
-          at: e.log.morning_submitted_at,
-        })
-      }
     }
   }
 
   const totalCount = hindranceItems.length + missingCheckins.length
+  // fix/daily-log-fields (Aravind, 2026-09-18): the page heading now
+  // reflects ALL THREE sections, not just the first two -- "Nothing
+  // needs you right now" only when hindrances, missing check-ins, AND
+  // needed-tomorrow (after the "None"-answers filter) are all empty.
+  // grandTotal is used ONLY for the heading's own condition/count; each
+  // section below still renders (or doesn't) off its own count, exactly
+  // as before.
+  const grandTotal = totalCount + neededTomorrowItems.length
 
   return (
     // UI slice 4 (Aravind, 2026-09-18): padding/max-width moved to the
@@ -199,43 +196,24 @@ export default async function DashboardPage() {
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-gray-900">
-          {totalCount === 0
+          {grandTotal === 0
             ? 'Nothing needs you right now'
-            : `${totalCount} thing${totalCount === 1 ? '' : 's'} need${totalCount === 1 ? 's' : ''} you`}
+            : `${grandTotal} thing${grandTotal === 1 ? '' : 's'} need${grandTotal === 1 ? 's' : ''} you`}
         </h1>
         <p className="text-gray-700 mt-1 text-sm">
           {now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })} — {formatTime(now.toISOString())}
         </p>
       </div>
 
-      {totalCount === 0 ? (
-        // Unchanged from before this rebuild -- "When both groups are
-        // empty, keep the page's existing empty state unchanged." A blank
-        // page on a good day reads as broken — show that the system ran,
-        // not just that nothing is wrong.
-        <Card className="p-6">
-          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">
-            This morning
-          </h2>
-          {morningSubmissions.length === 0 ? (
-            <p className="text-sm text-gray-700">No morning check-ins recorded yet today.</p>
-          ) : (
-            <ul className="space-y-2">
-              {morningSubmissions.map((s) => (
-                <li
-                  key={`${s.projectName}-${s.engineerName}`}
-                  className="flex items-center justify-between text-sm gap-3"
-                >
-                  <span className="text-gray-900">
-                    {s.projectName} — {s.engineerName}
-                  </span>
-                  <span className="text-gray-700 flex-shrink-0">{formatTime(s.at)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      ) : (
+      {/* fix/daily-log-fields (Aravind, 2026-09-18): the old "This
+          morning" tile block (rendered when totalCount === 0) is REMOVED
+          -- Aravind, 2026-09-18, not wanted. Its only data source
+          (morningSubmissions, built in the loop above) was deleted with
+          it, since this was its only caller. "Needs your attention" now
+          renders only when it genuinely has something, independent of
+          the other two groups -- no empty-state placeholder takes its
+          place when it doesn't. */}
+      {totalCount > 0 && (
         <div>
           <h2 className="mb-4 text-sm font-semibold text-gray-700">{NEEDS_ATTENTION_HEADING}</h2>
           <div className="flex flex-col gap-3">
@@ -255,7 +233,7 @@ export default async function DashboardPage() {
           Renders nothing at all (no heading, no empty-state text) when
           the list itself is empty. */}
       {neededTomorrowItems.length > 0 && (
-        <div className="mt-8">
+        <div className={totalCount > 0 ? 'mt-8' : ''}>
           <h2 className="mb-4 text-sm font-semibold text-gray-700">{NEEDED_TOMORROW_HEADING}</h2>
           <div className="flex flex-col gap-3">
             {neededTomorrowItems.map((item) => (

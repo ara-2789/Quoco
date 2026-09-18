@@ -26,22 +26,31 @@ export type EngineerCard = {
    *  reactivation "Forward to" wa.me link; never displayed directly. */
   engineerWhatsappNumber: string | null
   /** The daily_logs row for this engineer on this date, or null if none exists.
-   *  UI slice 5 (Aravind, 2026-09-18): extended with the four secondary-field
-   *  columns (morning_execution_plan, evening_workers_on_site,
-   *  evening_schedule_met, evening_tomorrow_needs) so the Daily Logs list
+   *  UI slice 5 (Aravind, 2026-09-18): extended so the Daily Logs list
    *  card's expansion can show the WHOLE check-in, not just the two headline
-   *  fields -- same columns HalfColumn's own secondaryRows already read on
-   *  the detail page (components/daily-logs/log-detail-view.tsx). */
+   *  fields -- same columns HalfFields/HalfColumn read on both pages
+   *  (components/daily-logs/log-detail-view.tsx).
+   *  fix/daily-log-fields (Aravind, 2026-09-18): morning_execution_plan/
+   *  evening_workers_on_site/evening_schedule_met REMOVED -- confirmed by
+   *  repo-wide grep that no live code path writes any of the three (see
+   *  this PR's own report); they read as permanently "Not set" on every
+   *  real row. Replaced with the five jsonb columns (each `{ raw_text:
+   *  string | null, ... }`) that actually hold the engineer's answers --
+   *  morning_manpower/morning_equipment/evening_manpower/
+   *  evening_equipment_utilisation/evening_idle_hours. evening_tomorrow_needs
+   *  stays (UI slice 6, unrelated to this change). */
   log:
     | (LogHalfInput & {
         /** daily_logs.id — links the board card to the DASH-03 correction detail route. */
         id: string
         evening_output: string | null
         morning_plan: string | null
-        morning_execution_plan: string | null
-        evening_workers_on_site: number | null
-        evening_schedule_met: boolean | null
         evening_tomorrow_needs: string | null
+        morning_manpower: unknown
+        morning_equipment: unknown
+        evening_manpower: unknown
+        evening_equipment_utilisation: unknown
+        evening_idle_hours: unknown
       })
     | null
   /** UI slice 5: present only when getDailyLogsBoard was called with
@@ -95,10 +104,12 @@ type LogRow = LogHalfInput & {
   engineer_id: string
   evening_output: string | null
   morning_plan: string | null
-  morning_execution_plan: string | null
-  evening_workers_on_site: number | null
-  evening_schedule_met: boolean | null
   evening_tomorrow_needs: string | null
+  morning_manpower: unknown
+  morning_equipment: unknown
+  evening_manpower: unknown
+  evening_equipment_utilisation: unknown
+  evening_idle_hours: unknown
 }
 
 type PhotoRow = {
@@ -153,7 +164,7 @@ export async function getDailyLogsBoard(
     supabase
       .from('daily_logs')
       .select(
-        'id, project_id, engineer_id, morning_submitted_at, evening_submitted_at, is_holiday, holiday_reason, evening_output, morning_plan, morning_execution_plan, evening_workers_on_site, evening_schedule_met, evening_tomorrow_needs',
+        'id, project_id, engineer_id, morning_submitted_at, evening_submitted_at, is_holiday, holiday_reason, evening_output, morning_plan, evening_tomorrow_needs, morning_manpower, morning_equipment, evening_manpower, evening_equipment_utilisation, evening_idle_hours',
       )
       .in('project_id', projectIds)
       .eq('log_date', logDate),
@@ -230,10 +241,12 @@ export async function getDailyLogsBoard(
             holiday_reason: log.holiday_reason,
             evening_output: log.evening_output,
             morning_plan: log.morning_plan,
-            morning_execution_plan: log.morning_execution_plan,
-            evening_workers_on_site: log.evening_workers_on_site,
-            evening_schedule_met: log.evening_schedule_met,
             evening_tomorrow_needs: log.evening_tomorrow_needs,
+            morning_manpower: log.morning_manpower,
+            morning_equipment: log.morning_equipment,
+            evening_manpower: log.evening_manpower,
+            evening_equipment_utilisation: log.evening_equipment_utilisation,
+            evening_idle_hours: log.evening_idle_hours,
           }
         : null,
       photoSections: !photoOptions
@@ -266,6 +279,21 @@ export type LatestEdit = {
   editedAt: string
 }
 
+// fix/daily-log-fields (Aravind, 2026-09-18): the five jsonb columns that
+// hold the engineer's real morning/evening answers, each shaped
+// `{ raw_text: string | null, ... }`. Never part of UI_VISIBLE_COLUMNS/
+// CorrectableColumn (lib/daily-logs/correction.ts) -- these were never in
+// the correction whitelist and this fix does not add correction controls
+// for them, so they stay a SEPARATE list, read but never written here.
+export const RAW_TEXT_COLUMNS = [
+  'morning_manpower',
+  'morning_equipment',
+  'evening_manpower',
+  'evening_equipment_utilisation',
+  'evening_idle_hours',
+] as const
+export type RawTextColumn = (typeof RAW_TEXT_COLUMNS)[number]
+
 export type LogDetail = {
   id: string
   projectId: string
@@ -275,8 +303,10 @@ export type LogDetail = {
   logDate: string
   morningSubmittedAt: string | null
   eveningSubmittedAt: string | null
-  /** Current value of every UI-visible correctable column (§ correction.ts), keyed by column name. */
-  columns: Record<UiVisibleColumn, unknown>
+  /** Current value of every UI-visible correctable column (§ correction.ts)
+   *  PLUS the five raw-text jsonb columns above (read-only, never
+   *  correctable), keyed by column name. */
+  columns: Record<UiVisibleColumn, unknown> & Record<RawTextColumn, unknown>
   /** attendance_defaulted / attendance_raw (030) — is_holiday's defaulted-provenance case. NOTE:
    *  types/database.ts has not been regenerated since 030 landed these columns (see the
    *  prerequisite-PR note in the detail page) — this select is correct against the LIVE schema;
@@ -302,6 +332,7 @@ const DETAIL_COLUMNS = [
   'attendance_defaulted',
   'attendance_raw',
   ...UI_VISIBLE_COLUMNS,
+  ...RAW_TEXT_COLUMNS,
 ] as const
 
 type DetailRow = {
@@ -313,7 +344,8 @@ type DetailRow = {
   evening_submitted_at: string | null
   attendance_defaulted: boolean | null
   attendance_raw: string | null
-} & Record<UiVisibleColumn, unknown>
+} & Record<UiVisibleColumn, unknown> &
+  Record<RawTextColumn, unknown>
 
 type EditRow = {
   column_name: string
@@ -418,8 +450,9 @@ export async function getDailyLogDetail(
     }
   }
 
-  const columns = {} as Record<UiVisibleColumn, unknown>
+  const columns = {} as Record<UiVisibleColumn, unknown> & Record<RawTextColumn, unknown>
   for (const column of UI_VISIBLE_COLUMNS) columns[column] = row[column]
+  for (const column of RAW_TEXT_COLUMNS) columns[column] = row[column]
 
   return {
     status: 'ok',
@@ -484,6 +517,26 @@ type NeededTomorrowRow = {
   evening_tomorrow_needs: string | null
 }
 
+// fix/daily-log-fields (Aravind, 2026-09-18): "None" answers must not
+// appear as notices, on the Today "Needed tomorrow" section OR the
+// daily-log "Needed tomorrow" line (components/daily-logs/log-detail-
+// view.tsx's own DependencyLine imports this same predicate -- ONE rule,
+// not two independently-maintained copies). Case-insensitive, trimmed;
+// PostgREST has no clean single-clause way to express "not one of these
+// literal strings, case-insensitively, after trimming" as a WHERE
+// clause, so this runs as a JS predicate INSIDE this query module --
+// the same shape lib/hindrance/queue.ts's own withinHindranceWindow
+// already uses for its window filter, a real precedent in this codebase
+// for "filter logic lives in the query function, not the page."
+const ABSENT_DEPENDENCY_TEXTS = new Set(['-', 'none', 'nil', 'no', 'nothing', 'na', 'n/a'])
+
+export function isMeaningfulDependencyText(value: string | null | undefined): value is string {
+  if (value === null || value === undefined) return false
+  const trimmed = value.trim()
+  if (trimmed === '') return false
+  return !ABSENT_DEPENDENCY_TEXTS.has(trimmed.toLowerCase())
+}
+
 /**
  * Visibility window (Aravind, 2026-09-18): the day a dependency was reported
  * PLUS the following day, in IST -- reported on day N's evening, visible
@@ -525,7 +578,12 @@ export async function getNeededTomorrowItems(
 
   if (rowErr) return reportReadFailure('needed-tomorrow-logs', rowErr)
 
-  const rows = (rowData ?? []) as unknown as NeededTomorrowRow[]
+  // "None" answers (and their variants) are filtered out HERE, in the
+  // selector -- not client-side by the Today page -- so a "-"/"none"/
+  // "nil" reply never becomes a notice regardless of caller.
+  const rows = ((rowData ?? []) as unknown as NeededTomorrowRow[]).filter((r) =>
+    isMeaningfulDependencyText(r.evening_tomorrow_needs),
+  )
   if (rows.length === 0) return { status: 'ok', items: [] }
 
   const engineerIds = [...new Set(rows.map((r) => r.engineer_id))]
@@ -543,17 +601,19 @@ export async function getNeededTomorrowItems(
     ]),
   )
 
-  const items: NeededTomorrowItem[] = rows
-    .filter((r) => r.evening_tomorrow_needs !== null)
-    .map((r) => ({
-      id: r.id,
-      projectId: r.project_id,
-      projectName: projectNameById.get(r.project_id) ?? '—',
-      engineerId: r.engineer_id,
-      engineerName: engineerNameById.get(r.engineer_id) ?? 'Unnamed engineer',
-      dependencyText: r.evening_tomorrow_needs as string,
-      logDate: r.log_date,
-    }))
+  // `rows` was already filtered to isMeaningfulDependencyText above, so
+  // every element here genuinely has a non-empty, non-"none" string --
+  // the `as string` is just satisfying NeededTomorrowRow's own nullable
+  // field type, not re-checking anything.
+  const items: NeededTomorrowItem[] = rows.map((r) => ({
+    id: r.id,
+    projectId: r.project_id,
+    projectName: projectNameById.get(r.project_id) ?? '—',
+    engineerId: r.engineer_id,
+    engineerName: engineerNameById.get(r.engineer_id) ?? 'Unnamed engineer',
+    dependencyText: r.evening_tomorrow_needs as string,
+    logDate: r.log_date,
+  }))
     // Most recently reported first (today's before yesterday's); engineer
     // name as a stable tiebreak. Not specified explicitly by the task --
     // a reasonable default for a notice-only feed, flagged as a judgment

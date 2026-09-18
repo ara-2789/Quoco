@@ -13,7 +13,7 @@ import {
   VIEW_REPORTED_DETAILS_LABEL,
 } from '@/components/daily-logs/log-detail-view'
 import type { UiVisibleColumn } from '@/lib/daily-logs/correction'
-import type { EngineerCard as EngineerCardData } from '@/lib/daily-logs/query'
+import type { EngineerCard as EngineerCardData, RawTextColumn } from '@/lib/daily-logs/query'
 import { ReactivateCta } from './reactivate-cta'
 
 // UI slice 3 (Aravind, 2026-09-18): the Daily Logs board's own per-
@@ -27,37 +27,45 @@ import { ReactivateCta } from './reactivate-cta'
 //
 // UI slice 5 (Aravind, 2026-09-18): the expansion now shows the WHOLE
 // check-in (every reported field + photos), not just the two headline
-// fields. This extended getDailyLogsBoard's own daily_logs select
-// (lib/daily-logs/query.ts) to also read morning_execution_plan/
-// evening_workers_on_site/evening_schedule_met/evening_tomorrow_needs,
-// and, for THIS page only (via photoOptions), a batched daily_log_photos
-// read + the isProjectPm gate -- both on the SAME board query, no
-// per-card queries. The "As reported by {engineer}, {time}" provenance
-// line is still ScalarFieldRow's own existing logic, unchanged; this
-// board still never fetches daily_log_edits, so every field renders as
-// "As reported by", never "Corrected by" -- canEdit is still hard false
-// throughout.
+// fields, and, for THIS page only (via photoOptions), a batched
+// daily_log_photos read + the isProjectPm gate -- both on the SAME board
+// query, no per-card queries. The "As reported by {engineer}, {time}"
+// provenance line is still ScalarFieldRow's own existing logic,
+// unchanged; this board still never fetches daily_log_edits, so every
+// field renders as "As reported by", never "Corrected by" -- canEdit is
+// still hard false throughout.
 //
 // UI slice 6 (Aravind, 2026-09-18): the expansion now uses HalfFields
 // (not HalfColumn) -- see the comment inside the <details> block below.
+//
+// fix/daily-log-fields (Aravind, 2026-09-18): getDailyLogsBoard's own
+// daily_logs select now reads morning_manpower/morning_equipment/
+// evening_manpower/evening_equipment_utilisation/evening_idle_hours
+// instead of morning_execution_plan/evening_workers_on_site/
+// evening_schedule_met -- confirmed by repo-wide grep that nothing writes
+// the latter three (see this PR's own report).
 
-// Builds the Record<UiVisibleColumn, unknown> HalfFields' own `columns`
-// prop expects, off the board's (smaller) per-log shape. is_holiday/
-// holiday_reason are included only because the type requires every
-// UiVisibleColumn key to be present -- HalfFields never actually reads
-// them for morning/evening rows (those two belong to the detail page's
-// separate "Day" section, deliberately not reproduced on this card, per
-// this slice's own "no correction controls, no holiday field" scope).
-function logColumns(log: NonNullable<EngineerCardData['log']>): Record<UiVisibleColumn, unknown> {
+// Builds the HalfColumns record HalfFields' own `columns` prop expects,
+// off the board's (smaller) per-log shape. is_holiday/holiday_reason are
+// included only because the type requires every UiVisibleColumn key to
+// be present -- HalfFields never actually reads them for morning/evening
+// rows (those two belong to the detail page's separate "Day" section,
+// deliberately not reproduced on this card, per this slice's own "no
+// correction controls, no holiday field" scope).
+function logColumns(
+  log: NonNullable<EngineerCardData['log']>,
+): Partial<Record<UiVisibleColumn, unknown>> & Partial<Record<RawTextColumn, unknown>> {
   return {
     is_holiday: log.is_holiday,
     holiday_reason: log.holiday_reason,
     morning_plan: log.morning_plan,
-    morning_execution_plan: log.morning_execution_plan,
     evening_output: log.evening_output,
-    evening_workers_on_site: log.evening_workers_on_site,
-    evening_schedule_met: log.evening_schedule_met,
     evening_tomorrow_needs: log.evening_tomorrow_needs,
+    morning_manpower: log.morning_manpower,
+    morning_equipment: log.morning_equipment,
+    evening_manpower: log.evening_manpower,
+    evening_equipment_utilisation: log.evening_equipment_utilisation,
+    evening_idle_hours: log.evening_idle_hours,
   }
 }
 

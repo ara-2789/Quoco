@@ -49,22 +49,31 @@ const { HalfColumn } = await import('@/components/daily-logs/log-detail-view')
 const NOW = new Date('2026-09-18T12:00:00.000Z')
 const FUTURE_EXPIRES_AT = '2099-01-01T00:00:00.000Z'
 
+// fix/daily-log-fields (Aravind, 2026-09-18): headlineRow/secondaryRows
+// and columns updated to the current shape -- 'kind: scalar'/'kind:
+// text' discriminated rows, and the five raw_text jsonb columns
+// (morning_manpower/morning_equipment/evening_manpower/
+// evening_equipment_utilisation/evening_idle_hours) replacing
+// morning_execution_plan/evening_workers_on_site/evening_schedule_met,
+// which nothing writes (see this PR's own report).
 const BASE_PROPS = {
   heading: 'Morning',
   chipVariant: 'ok' as const,
   chipLabel: 'Morning: Submitted 7:18 am',
-  headlineRow: { column: 'morning_plan' as const, label: 'Morning plan' },
-  secondaryRows: [{ column: 'morning_execution_plan' as const, label: 'Execution plan' }],
+  headlineRow: { kind: 'scalar' as const, column: 'morning_plan' as const, label: 'Morning plan' },
+  secondaryRows: [{ kind: 'text' as const, column: 'morning_manpower' as const, label: 'Morning labour reported' }],
   dailyLogsId: 'zz-fixture-daily-log-id',
   columns: {
     is_holiday: null,
     holiday_reason: null,
     morning_plan: 'Slab preparation and shuttering.',
-    morning_execution_plan: 'Team A on shuttering, Team B on rebar.',
     evening_output: null,
-    evening_workers_on_site: null,
-    evening_schedule_met: null,
     evening_tomorrow_needs: null,
+    morning_manpower: { raw_text: '8 masn 12 helper' },
+    morning_equipment: null,
+    evening_manpower: null,
+    evening_equipment_utilisation: null,
+    evening_idle_hours: null,
   },
   edits: {},
   submittedAt: '2026-09-18T01:48:00.000Z',
