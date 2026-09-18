@@ -19,6 +19,14 @@ import type { DailyLogPhotoSectionsData } from '@/lib/daily-logs/photos'
 // unknowns #1/#2 resolved); "No photos for this log." appears ONLY when
 // BOTH morning and evening are empty, for a PM (D8, literal for this
 // page).
+//
+// Stage 5a, build slice B4 (Aravind, 2026-09-17): headings/grid
+// readability fix. HEADING_CLASSES below is copied VERBATIM from this
+// page's own existing section headings -- components/daily-logs/log-
+// detail-view.tsx:97,113,132 ("Day"/"Morning"/"Evening" <h2>s) -- not a
+// new style. The thumbnail grid uses gap-2, matching this same page's own
+// nearby gap usage (log-detail-view.tsx:85, the StatusChip row).
+const HEADING_CLASSES = 'text-xs font-semibold uppercase tracking-wide text-gray-400'
 
 export interface DailyLogPhotoSectionsProps {
   photoSections: DailyLogPhotoSectionsData | null
@@ -37,18 +45,22 @@ export function DailyLogPhotoSections({ photoSections, now }: DailyLogPhotoSecti
     <>
       {morning.length > 0 && (
         <section>
-          <h2>{MORNING_PHOTOS_HEADING}</h2>
-          {morning.map((p) => (
-            <PhotoImg key={p.id} kind={p.kind} id={p.id} alt={MORNING_PHOTO_ALT} expiresAt={p.expiresAt} now={now} />
-          ))}
+          <h2 className={HEADING_CLASSES}>{MORNING_PHOTOS_HEADING}</h2>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {morning.map((p) => (
+              <PhotoImg key={p.id} kind={p.kind} id={p.id} alt={MORNING_PHOTO_ALT} expiresAt={p.expiresAt} now={now} />
+            ))}
+          </div>
         </section>
       )}
       {evening.length > 0 && (
         <section>
-          <h2>{EVENING_PHOTOS_HEADING}</h2>
-          {evening.map((p) => (
-            <PhotoImg key={p.id} kind={p.kind} id={p.id} alt={EVENING_PHOTO_ALT} expiresAt={p.expiresAt} now={now} />
-          ))}
+          <h2 className={HEADING_CLASSES}>{EVENING_PHOTOS_HEADING}</h2>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {evening.map((p) => (
+              <PhotoImg key={p.id} kind={p.kind} id={p.id} alt={EVENING_PHOTO_ALT} expiresAt={p.expiresAt} now={now} />
+            ))}
+          </div>
         </section>
       )}
     </>

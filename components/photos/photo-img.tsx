@@ -15,6 +15,16 @@ import { PHOTO_UNAVAILABLE_TEXT, formatKeptUntilLine } from '@/lib/photos/copy'
 // 'use client' because the "Photo unavailable..." fallback needs onError,
 // which Server Components can't run. This is a leaf component -- no data
 // fetching, no Supabase import.
+//
+// Stage 5a, build slice B4 (Aravind, 2026-09-17): thumbnail presentation.
+// The <a> wraps the SAME path the <img> already points at -- never
+// photoUrl, never a signed URL -- so tapping a thumbnail opens the exact
+// route this component already trusts, under its own tenant/PM check, not
+// a second, independently-derived link. "Kept until" reuses the caption
+// class already established for provenance captions elsewhere in this
+// codebase (components/daily-logs/scalar-field-row.tsx:59, "As reported
+// by ..."; independently corroborated by app/(dashboard)/hindrances/
+// page.tsx:156,167's own captions) -- copied verbatim, not invented here.
 
 export interface PhotoImgProps {
   kind: PhotoKind
@@ -27,20 +37,28 @@ export interface PhotoImgProps {
 export function PhotoImg({ kind, id, alt, expiresAt, now }: PhotoImgProps) {
   const [failed, setFailed] = useState(false)
   const keptUntil = formatKeptUntilLine(expiresAt, now)
+  const href = `/api/photos/${kind}/${id}`
 
   return (
     <figure>
-      {failed ? (
-        <p>{PHOTO_UNAVAILABLE_TEXT}</p>
-      ) : (
-        <img
-          src={`/api/photos/${kind}/${id}`}
-          alt={alt}
-          loading="lazy"
-          onError={() => setFailed(true)}
-        />
-      )}
-      {keptUntil !== null && <figcaption>{keptUntil}</figcaption>}
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        <div className="aspect-square overflow-hidden rounded-md bg-gray-100">
+          {failed ? (
+            <div className="flex h-full w-full items-center justify-center p-2 text-center">
+              <p className="text-xs text-gray-500">{PHOTO_UNAVAILABLE_TEXT}</p>
+            </div>
+          ) : (
+            <img
+              src={href}
+              alt={alt}
+              loading="lazy"
+              onError={() => setFailed(true)}
+              className="h-full w-full object-cover"
+            />
+          )}
+        </div>
+      </a>
+      {keptUntil !== null && <figcaption className="text-xs text-gray-500">{keptUntil}</figcaption>}
     </figure>
   )
 }
