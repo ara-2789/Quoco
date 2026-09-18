@@ -242,7 +242,11 @@ export default async function DashboardPage() {
   tiles.sort((a, b) => TILE_RANK[a.kind] - TILE_RANK[b.kind])
 
   return (
-    <div className="p-4 sm:p-8 max-w-3xl">
+    // UI slice 4 (Aravind, 2026-09-18): padding/max-width moved to the
+    // shared layout wrapper (app/(dashboard)/layout.tsx) so every
+    // dashboard page centres in the same ~1250px container instead of
+    // each setting its own narrower one.
+    <div>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">
           {tiles.length === 0
@@ -292,7 +296,7 @@ export default async function DashboardPage() {
 
 function DashboardErrorState() {
   return (
-    <div className="p-4 sm:p-8 max-w-3xl">
+    <div>
       <div className="bg-red-50 border border-red-200 rounded-lg p-6">
         <h1 className="text-lg font-semibold text-red-900">Couldn&apos;t load your dashboard</h1>
         <p className="text-sm text-red-700 mt-1">

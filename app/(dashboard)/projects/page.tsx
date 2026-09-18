@@ -41,7 +41,9 @@ export default async function ProjectsPage() {
   )
 
   return (
-    <div className="p-8">
+    // UI slice 4 (Aravind, 2026-09-18): padding/max-width moved to the
+    // shared layout wrapper (app/(dashboard)/layout.tsx).
+    <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Projects</h1>
