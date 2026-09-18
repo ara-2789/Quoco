@@ -235,6 +235,7 @@ export function LogDetailView({
         <section>
           <h2 className="pt-3 text-xs font-semibold uppercase tracking-wide text-gray-600">Day</h2>
           <HolidayField
+            key={data.id}
             dailyLogsId={data.id}
             currentIsHoliday={data.columns.is_holiday as boolean | null}
             currentHolidayReason={data.columns.holiday_reason as string | null}
