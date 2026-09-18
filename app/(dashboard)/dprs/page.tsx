@@ -86,7 +86,7 @@ export default async function DprsPage() {
     <div className="p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Daily Progress Reports</h1>
-        <p className="text-gray-500 text-sm mt-1">
+        <p className="text-gray-700 text-sm mt-1">
           AI-generated DPRs from WhatsApp check-ins across your projects.
         </p>
       </div>
@@ -102,7 +102,7 @@ export default async function DprsPage() {
       ) : dprs.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
           <p className="text-gray-700 font-medium">No DPRs generated yet.</p>
-          <p className="text-gray-500 text-sm mt-2">
+          <p className="text-gray-700 text-sm mt-2">
             DPRs are created automatically each evening after the WhatsApp check-in.
           </p>
         </div>

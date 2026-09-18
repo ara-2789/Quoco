@@ -84,7 +84,7 @@ export default async function DprDetailPage({ params }: { params: Promise<{ id: 
     <div className="p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">{dpr.projects?.name ?? '—'}</h1>
-        <p className="text-gray-500 text-sm mt-1">
+        <p className="text-gray-700 text-sm mt-1">
           {engineer?.full_name ?? 'Unnamed engineer'} — {formatDate(dpr.log_date)}
         </p>
       </div>
@@ -92,7 +92,7 @@ export default async function DprDetailPage({ params }: { params: Promise<{ id: 
       {dpr.content === null ? (
         <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
           <p className="text-gray-700 font-medium">Not generated yet.</p>
-          <p className="text-gray-500 text-sm mt-2">
+          <p className="text-gray-700 text-sm mt-2">
             This report hasn&apos;t finished generating. Check back shortly, or
             look for it on the archive page.
           </p>

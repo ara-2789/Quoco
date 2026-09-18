@@ -248,7 +248,7 @@ export default async function DashboardPage() {
             ? 'Nothing needs you right now'
             : `${tiles.length} thing${tiles.length === 1 ? '' : 's'} need${tiles.length === 1 ? 's' : ''} you`}
         </h1>
-        <p className="text-gray-500 mt-1 text-sm">
+        <p className="text-gray-700 mt-1 text-sm">
           {now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })} — {formatTime(now.toISOString())}
         </p>
       </div>
@@ -261,7 +261,7 @@ export default async function DashboardPage() {
             This morning
           </h2>
           {morningSubmissions.length === 0 ? (
-            <p className="text-sm text-gray-500">No morning check-ins recorded yet today.</p>
+            <p className="text-sm text-gray-700">No morning check-ins recorded yet today.</p>
           ) : (
             <ul className="space-y-2">
               {morningSubmissions.map((s) => (
@@ -272,7 +272,7 @@ export default async function DashboardPage() {
                   <span className="text-gray-900">
                     {s.projectName} — {s.engineerName}
                   </span>
-                  <span className="text-gray-500 flex-shrink-0">{formatTime(s.at)}</span>
+                  <span className="text-gray-700 flex-shrink-0">{formatTime(s.at)}</span>
                 </li>
               ))}
             </ul>
@@ -312,7 +312,7 @@ function TileCard({ tile }: { tile: Tile }) {
     <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3 mb-1">
         <div>
-          <p className="text-xs text-gray-500 mb-1">{tile.projectName}</p>
+          <p className="text-xs text-gray-700 mb-1">{tile.projectName}</p>
           {tile.kind === 'active-hindrance' ? (
             <h3 className="font-medium text-gray-900 text-sm leading-snug line-clamp-2">
               {tile.description}

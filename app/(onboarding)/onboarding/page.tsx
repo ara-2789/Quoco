@@ -50,7 +50,7 @@ export default async function OnboardingPage({
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
       <h2 className="text-xl font-semibold text-gray-900 mb-1">Create your company</h2>
-      <p className="text-gray-500 text-sm mb-6">
+      <p className="text-gray-700 text-sm mb-6">
         This sets up your workspace. You can add team members after.
       </p>
 
@@ -71,9 +71,9 @@ export default async function OnboardingPage({
             type="text"
             required
             placeholder="Rajamani Constructions Pvt Ltd"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
-          <p className="text-xs text-gray-400 mt-1">Used as your workspace name and URL slug.</p>
+          <p className="text-xs text-gray-600 mt-1">Used as your workspace name and URL slug.</p>
         </div>
         <div>
           <label htmlFor="full_name" className="block text-sm font-medium text-gray-700 mb-1">
@@ -86,7 +86,7 @@ export default async function OnboardingPage({
             required
             autoComplete="name"
             placeholder="Aravindan Rajamani"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
         <button

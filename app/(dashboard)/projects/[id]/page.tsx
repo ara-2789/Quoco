@@ -67,7 +67,7 @@ export default async function ProjectDetailPage({
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-2">
-        <Link href="/projects" className="text-sm text-gray-500 hover:text-gray-700">
+        <Link href="/projects" className="text-sm text-gray-700 hover:text-gray-700">
           ← Projects
         </Link>
       </div>
@@ -75,7 +75,7 @@ export default async function ProjectDetailPage({
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">{project.name}</h1>
-          <p className="text-gray-500 text-sm mt-1">
+          <p className="text-gray-700 text-sm mt-1">
             Created {formatDate(project.created_at.split('T')[0])}
           </p>
         </div>
@@ -88,7 +88,7 @@ export default async function ProjectDetailPage({
         </h2>
         <dl className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
           <div>
-            <dt className="text-gray-500">Contract Value</dt>
+            <dt className="text-gray-700">Contract Value</dt>
             <dd className="font-medium text-gray-900 mt-0.5">
               {project.contract_value !== null
                 ? `₹${Number(project.contract_value).toLocaleString('en-IN')}`
@@ -96,11 +96,11 @@ export default async function ProjectDetailPage({
             </dd>
           </div>
           <div>
-            <dt className="text-gray-500">Start Date</dt>
+            <dt className="text-gray-700">Start Date</dt>
             <dd className="font-medium text-gray-900 mt-0.5">{formatDate(project.start_date)}</dd>
           </div>
           <div>
-            <dt className="text-gray-500">Expected End Date</dt>
+            <dt className="text-gray-700">Expected End Date</dt>
             <dd className="font-medium text-gray-900 mt-0.5">
               {formatDate(project.expected_end_date)}
             </dd>
@@ -115,7 +115,7 @@ export default async function ProjectDetailPage({
           </h2>
         </div>
         {teamMembers.length === 0 ? (
-          <p className="px-6 py-4 text-sm text-gray-500">No members found.</p>
+          <p className="px-6 py-4 text-sm text-gray-700">No members found.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>

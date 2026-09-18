@@ -52,11 +52,11 @@ export function ScalarFieldRow({
       : formatValue(column, state.currentValue)
 
   const provenance = edit ? (
-    <span className="text-xs text-gray-500">
+    <span className="text-xs text-gray-700">
       Corrected by {edit.editedByName}, {formatIstTime(edit.editedAt)} · was: {formatValue(column, edit.oldValue)}
     </span>
   ) : submittedAt ? (
-    <span className="text-xs text-gray-500">
+    <span className="text-xs text-gray-700">
       As reported by {engineerName}, {formatIstTime(submittedAt)}
     </span>
   ) : null
@@ -65,18 +65,18 @@ export function ScalarFieldRow({
     return (
       <div className="flex items-start justify-between gap-3 py-3">
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-gray-500">{label}</div>
+          <div className="text-xs font-medium text-gray-700">{label}</div>
           <div className="mt-0.5 text-sm text-gray-900 whitespace-pre-wrap break-words">{displayValue}</div>
           <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
             {provenance}
-            {state.noChange && <span className="text-xs text-gray-400">No change.</span>}
+            {state.noChange && <span className="text-xs text-gray-600">No change.</span>}
           </div>
         </div>
         {canEdit && (
           <button
             type="button"
             onClick={startEdit}
-            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-700"
           >
             <Pencil className="h-3 w-3" aria-hidden="true" />
             Edit
@@ -93,14 +93,14 @@ export function ScalarFieldRow({
   return (
     <div className="py-3">
       <div className="mb-1 flex items-center justify-between">
-        <label htmlFor={inputId} className="text-xs font-medium text-gray-500">
+        <label htmlFor={inputId} className="text-xs font-medium text-gray-700">
           {label}
         </label>
         <button
           type="button"
           onClick={cancel}
           disabled={saving}
-          className="text-xs font-medium text-gray-500 hover:text-gray-700 disabled:opacity-50"
+          className="text-xs font-medium text-gray-700 hover:text-gray-700 disabled:opacity-50"
         >
           Cancel
         </button>

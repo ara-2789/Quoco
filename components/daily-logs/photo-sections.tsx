@@ -26,7 +26,7 @@ import type { DailyLogPhotoSectionsData } from '@/lib/daily-logs/photos'
 // detail-view.tsx:97,113,132 ("Day"/"Morning"/"Evening" <h2>s) -- not a
 // new style. The thumbnail grid uses gap-2, matching this same page's own
 // nearby gap usage (log-detail-view.tsx:85, the StatusChip row).
-const HEADING_CLASSES = 'text-xs font-semibold uppercase tracking-wide text-gray-400'
+const HEADING_CLASSES = 'text-xs font-semibold uppercase tracking-wide text-gray-600'
 
 export interface DailyLogPhotoSectionsProps {
   photoSections: DailyLogPhotoSectionsData | null
