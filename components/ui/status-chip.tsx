@@ -17,7 +17,7 @@ const VARIANTS: Record<StatusVariant, { text: string; bg: string; border: string
   risk: { text: 'text-(--color-status-risk)', bg: 'bg-amber-50', border: 'border-amber-200', Icon: TriangleAlert },
   ok: { text: 'text-(--color-status-ok)', bg: 'bg-green-50', border: 'border-green-200', Icon: CircleCheck },
   info: { text: 'text-(--color-status-info)', bg: 'bg-blue-50', border: 'border-blue-200', Icon: Info },
-  muted: { text: 'text-gray-500', bg: 'bg-gray-50', border: 'border-gray-200', Icon: Clock },
+  muted: { text: 'text-gray-700', bg: 'bg-gray-50', border: 'border-gray-200', Icon: Clock },
 }
 
 const SIZES = {

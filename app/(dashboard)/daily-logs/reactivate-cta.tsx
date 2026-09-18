@@ -43,7 +43,7 @@ export function ReactivateCta({
 
   return (
     <details className="mt-2 text-xs">
-      <summary className="cursor-pointer text-gray-500 hover:text-gray-700">How to reactivate</summary>
+      <summary className="cursor-pointer text-gray-700 hover:text-gray-700">How to reactivate</summary>
       <div className="mt-2 space-y-2 rounded-md bg-gray-50 p-2.5 text-gray-600">
         <p>{instruction}</p>
         <div className="flex flex-wrap items-center gap-2">

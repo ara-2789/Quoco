@@ -71,7 +71,7 @@ export default async function NewProjectPage({
     <div className="p-8 max-w-lg">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">New Project</h1>
-        <p className="text-gray-500 text-sm mt-1">Create a new construction project.</p>
+        <p className="text-gray-700 text-sm mt-1">Create a new construction project.</p>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg p-6">

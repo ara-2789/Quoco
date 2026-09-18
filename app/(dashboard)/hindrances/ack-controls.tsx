@@ -100,7 +100,7 @@ export function HindranceAckControls({
     return (
       <>
         <div className="mt-2 flex items-center justify-between gap-3">
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-700">
             Seen by {attribution}, {formatIstTime(acknowledgedAt)}
           </p>
           <div className="flex items-center gap-3">

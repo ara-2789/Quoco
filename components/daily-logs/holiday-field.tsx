@@ -176,23 +176,23 @@ export function HolidayField({
   }
 
   const isHolidayProvenance = isHolidayEdit ? (
-    <span className="text-xs text-gray-500">
+    <span className="text-xs text-gray-700">
       Corrected by {isHolidayEdit.editedByName}, {formatIstTime(isHolidayEdit.editedAt)} · was:{' '}
       {formatValue('is_holiday', isHolidayEdit.oldValue)}
     </span>
   ) : attendanceDefaulted === true ? (
-    <span className="text-xs text-gray-500">
+    <span className="text-xs text-gray-700">
       {engineerName} replied &ldquo;{truncate(attendanceRaw ?? '')}&rdquo; — recorded as{' '}
       {currentIsHoliday ? 'holiday' : 'not a holiday'}.
     </span>
   ) : morningSubmittedAt ? (
-    <span className="text-xs text-gray-500">
+    <span className="text-xs text-gray-700">
       As reported by {engineerName}, {formatIstTime(morningSubmittedAt)}
     </span>
   ) : null
 
   const reasonProvenance = holidayReasonEdit ? (
-    <span className="text-xs text-gray-500">
+    <span className="text-xs text-gray-700">
       Added by {holidayReasonEdit.editedByName}, {formatIstTime(holidayReasonEdit.editedAt)}
       {holidayReasonEdit.oldValue ? ` · was: ${formatValue('holiday_reason', holidayReasonEdit.oldValue)}` : ''}
     </span>
@@ -205,7 +205,7 @@ export function HolidayField({
       <div className="flex items-start justify-between gap-3 py-3">
         <div className="min-w-0 flex-1 space-y-2">
           <div>
-            <div className="text-xs font-medium text-gray-500">Holiday?</div>
+            <div className="text-xs font-medium text-gray-700">Holiday?</div>
             <div className="mt-0.5 text-sm text-gray-900">
               {holidayState.currentValue === null
                 ? 'Not set'
@@ -215,17 +215,17 @@ export function HolidayField({
             </div>
             <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
               {isHolidayProvenance}
-              {holidayState.noChange && <span className="text-xs text-gray-400">No change.</span>}
+              {holidayState.noChange && <span className="text-xs text-gray-600">No change.</span>}
             </div>
           </div>
           <div>
-            <div className="text-xs font-medium text-gray-500">Reason</div>
+            <div className="text-xs font-medium text-gray-700">Reason</div>
             <div className="mt-0.5 text-sm text-gray-900 whitespace-pre-wrap break-words">
               {reasonState.currentValue ?? 'Not set'}
             </div>
             <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
               {reasonProvenance}
-              {reasonState.noChange && <span className="text-xs text-gray-400">No change.</span>}
+              {reasonState.noChange && <span className="text-xs text-gray-600">No change.</span>}
             </div>
           </div>
         </div>
@@ -233,7 +233,7 @@ export function HolidayField({
           <button
             type="button"
             onClick={startEdit}
-            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-700"
           >
             <Pencil className="h-3 w-3" aria-hidden="true" />
             Edit
@@ -248,12 +248,12 @@ export function HolidayField({
   return (
     <div className="py-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium text-gray-500">Holiday?</span>
+        <span className="text-xs font-medium text-gray-700">Holiday?</span>
         <button
           type="button"
           onClick={cancel}
           disabled={saving}
-          className="text-xs font-medium text-gray-500 hover:text-gray-700 disabled:opacity-50"
+          className="text-xs font-medium text-gray-700 hover:text-gray-700 disabled:opacity-50"
         >
           Cancel
         </button>
@@ -294,7 +294,7 @@ export function HolidayField({
       )}
 
       <div className="mt-3">
-        <label htmlFor={`${dailyLogsId}-holiday_reason`} className="text-xs font-medium text-gray-500">
+        <label htmlFor={`${dailyLogsId}-holiday_reason`} className="text-xs font-medium text-gray-700">
           Reason
         </label>
         <textarea
@@ -306,7 +306,7 @@ export function HolidayField({
           className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-base text-gray-900 disabled:opacity-50"
         />
         {turningOn && !hasReason && (
-          <p className="mt-1 text-xs text-gray-400">Add a reason to mark this as a holiday.</p>
+          <p className="mt-1 text-xs text-gray-600">Add a reason to mark this as a holiday.</p>
         )}
       </div>
 

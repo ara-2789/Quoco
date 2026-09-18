@@ -81,7 +81,7 @@ export function LogDetailView({ data, dprDeliveryCopy, viewerRole, now, photoSec
 
       <div className="mt-3">
         <h1 className="text-xl font-semibold text-gray-900">{data.engineerName}</h1>
-        <p className="mt-1 text-sm text-gray-500">{formatLogDate(data.logDate)}</p>
+        <p className="mt-1 text-sm text-gray-700">{formatLogDate(data.logDate)}</p>
         <div className="mt-2 flex gap-2">
           <StatusChip variant={morningStatus.variant} label={`Morning: ${morningStatus.label}`} />
           <StatusChip variant={eveningStatus.variant} label={`Evening: ${eveningStatus.label}`} />
@@ -94,7 +94,7 @@ export function LogDetailView({ data, dprDeliveryCopy, viewerRole, now, photoSec
 
       <div className="mt-6 divide-y divide-gray-100">
         <section>
-          <h2 className="pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Day</h2>
+          <h2 className="pt-3 text-xs font-semibold uppercase tracking-wide text-gray-600">Day</h2>
           <HolidayField
             dailyLogsId={data.id}
             currentIsHoliday={data.columns.is_holiday as boolean | null}
@@ -110,7 +110,7 @@ export function LogDetailView({ data, dprDeliveryCopy, viewerRole, now, photoSec
         </section>
 
         <section>
-          <h2 className="pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          <h2 className="pt-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
             Morning{data.morningSubmittedAt ? '' : ' — not yet submitted'}
           </h2>
           {MORNING_ROWS.map(({ column, label }) => (
@@ -129,7 +129,7 @@ export function LogDetailView({ data, dprDeliveryCopy, viewerRole, now, photoSec
         </section>
 
         <section>
-          <h2 className="pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          <h2 className="pt-3 text-xs font-semibold uppercase tracking-wide text-gray-600">
             Evening{data.eveningSubmittedAt ? '' : ' — not yet submitted'}
           </h2>
           {EVENING_ROWS.map(({ column, label }) => (

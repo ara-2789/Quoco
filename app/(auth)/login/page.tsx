@@ -32,11 +32,11 @@ export default async function LoginPage({
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
         <h2 className="text-xl font-semibold text-gray-900 mb-1">Check your email</h2>
-        <p className="text-gray-500 text-sm mb-6">
+        <p className="text-gray-700 text-sm mb-6">
           We sent a sign-in link to <strong>{email}</strong>. Click it to continue — the link
           expires in 1 hour.
         </p>
-        <p className="text-center text-sm text-gray-500">
+        <p className="text-center text-sm text-gray-700">
           Wrong email?{' '}
           <a href="/login" className="text-blue-600 hover:underline">
             Start over
@@ -49,7 +49,7 @@ export default async function LoginPage({
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
       <h2 className="text-xl font-semibold text-gray-900 mb-1">Sign in</h2>
-      <p className="text-gray-500 text-sm mb-6">
+      <p className="text-gray-700 text-sm mb-6">
         Enter your work email to receive a sign-in link.
       </p>
 
@@ -71,7 +71,7 @@ export default async function LoginPage({
             required
             autoComplete="email"
             placeholder="you@company.com"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
         <button

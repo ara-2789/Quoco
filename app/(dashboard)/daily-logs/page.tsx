@@ -39,7 +39,7 @@ function labelFor(status: HalfStatus, submittedAt: string | null): string {
 function HalfRow({ half, status, submittedAt }: { half: Half; status: HalfStatus; submittedAt: string | null }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1">
-      <span className="text-xs text-gray-500">{half === 'morning' ? 'Morning' : 'Evening'}</span>
+      <span className="text-xs text-gray-700">{half === 'morning' ? 'Morning' : 'Evening'}</span>
       <StatusChip variant={status.variant} label={labelFor(status, submittedAt)} />
     </div>
   )
@@ -101,7 +101,7 @@ export default async function DailyLogsPage({
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Daily Logs</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-gray-700">
             Morning &amp; evening check-ins per engineer. Missing halves are flagged amber; holidays and
             unreachable engineers are shown separately.
           </p>
@@ -129,7 +129,7 @@ export default async function DailyLogsPage({
             <section key={board.projectId}>
               <h2 className="mb-3 text-sm font-semibold text-gray-700">{board.projectName}</h2>
               {board.engineers.length === 0 ? (
-                <p className="text-sm text-gray-400">No engineers assigned to this project.</p>
+                <p className="text-sm text-gray-600">No engineers assigned to this project.</p>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {board.engineers.map((eng) => {
@@ -179,7 +179,7 @@ export default async function DailyLogsPage({
                           // correct (the correction RPC takes a
                           // daily_logs_id; there is no insert path) — no
                           // link, one line explaining why.
-                          <p className="mt-2 text-xs text-gray-400">
+                          <p className="mt-2 text-xs text-gray-600">
                             Nothing to correct yet — check-ins for this day haven&apos;t come in.
                           </p>
                         )}
@@ -208,7 +208,7 @@ function EmptyState({
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-12 text-center">
       <p className="text-sm font-medium text-gray-900">{title}</p>
-      <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">{body}</p>
+      <p className="mx-auto mt-1 max-w-md text-sm text-gray-700">{body}</p>
       <a href={action.href} className="mt-3 inline-block text-sm text-blue-600 hover:underline">
         {action.label}
       </a>

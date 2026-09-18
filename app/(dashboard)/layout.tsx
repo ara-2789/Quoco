@@ -53,7 +53,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <aside className="hidden md:flex md:w-60 md:flex-shrink-0 bg-white border-r border-gray-200 flex-col">
         <div className="px-5 py-4 border-b border-gray-200">
           <span className="text-xl font-semibold text-gray-900 tracking-tight">Quoco</span>
-          <p className="text-xs text-gray-500 mt-0.5">Construction Management</p>
+          <p className="text-xs text-gray-700 mt-0.5">Construction Management</p>
         </div>
 
         <nav className="flex-1 px-3 py-3 space-y-0.5">

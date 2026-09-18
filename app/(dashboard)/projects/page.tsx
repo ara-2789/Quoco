@@ -44,7 +44,7 @@ export default async function ProjectsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Projects</h1>
-          <p className="text-gray-500 text-sm mt-1">All construction projects in your workspace.</p>
+          <p className="text-gray-700 text-sm mt-1">All construction projects in your workspace.</p>
         </div>
         <Link
           href="/projects/new"
@@ -56,7 +56,7 @@ export default async function ProjectsPage() {
 
       {rows.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-          <p className="text-gray-500 text-sm">No projects yet.</p>
+          <p className="text-gray-700 text-sm">No projects yet.</p>
           <Link
             href="/projects/new"
             className="mt-3 inline-block text-sm text-blue-600 hover:underline"

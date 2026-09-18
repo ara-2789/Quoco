@@ -4,7 +4,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <span className="text-3xl font-semibold text-gray-900 tracking-tight">Quoco</span>
-          <p className="text-sm text-gray-500 mt-1">Construction Management</p>
+          <p className="text-sm text-gray-700 mt-1">Construction Management</p>
         </div>
         {children}
       </div>
