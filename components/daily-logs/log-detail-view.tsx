@@ -14,6 +14,16 @@ import { HolidayField } from './holiday-field'
 // string, not a second copy of the same wording.
 export const VIEW_REPORTED_DETAILS_LABEL = 'View reported details'
 const REPORT_SENT_TO_OWNER_LABEL = 'Report sent to owner'
+// UI slice 6 (Aravind, 2026-09-18). English only -- Tamil owed, NOT
+// approved. Replaces the "Dependency" label the evening_tomorrow_needs
+// field used while it lived inside the evening column's own secondary
+// rows -- now that it renders as its own full-width line (see
+// DependencyLine below), it gets this new, approved label instead.
+// Exported so the Today page's own third "Needed tomorrow" section
+// (app/(dashboard)/dashboard/page.tsx) can reuse this EXACT string for
+// its heading too -- "same constant file and comment".
+export const NEEDED_TOMORROW_LABEL = 'Needed tomorrow'
+export const NEEDED_TOMORROW_HEADING = 'Needed tomorrow'
 
 export type LogDetailViewProps = {
   data: LogDetail
@@ -52,14 +62,20 @@ export const MORNING_HEADLINE_ROW = { column: 'morning_plan', label: 'Morning pl
 export const MORNING_SECONDARY_ROWS = [{ column: 'morning_execution_plan', label: 'Execution plan' }] as const
 
 export const EVENING_HEADLINE_ROW = { column: 'evening_output', label: 'What was done' } as const
+// UI slice 6 (Aravind, 2026-09-18): evening_tomorrow_needs REMOVED from
+// this list -- it no longer renders inside the evening column at all.
+// It used to be labelled "Dependency" here (RENAMED 2026-09-11, migration
+// 040, from evening_schedule_miss_reason); it now renders as its own
+// full-width line beneath both columns (DependencyLine below), labelled
+// NEEDED_TOMORROW_LABEL instead, "in both the list card and the detail
+// view" -- moving it out of this array is what does that everywhere
+// this array is used, without touching either call site separately.
 export const EVENING_SECONDARY_ROWS = [
   { column: 'evening_workers_on_site', label: 'Workers on site' },
   { column: 'evening_schedule_met', label: 'Plan met?' },
-  // RENAMED 2026-09-11 (migration 040) -- was evening_schedule_miss_reason /
-  // "Reason plan wasn't met". Aravind approved "Dependency" as the label,
-  // matching the DPR's own render.ts label exactly.
-  { column: 'evening_tomorrow_needs', label: 'Dependency' },
 ] as const
+
+const DEPENDENCY_ROW = { column: 'evening_tomorrow_needs', label: NEEDED_TOMORROW_LABEL } as const
 
 function formatLogDate(logDate: string): string {
   return new Date(`${logDate}T00:00:00Z`).toLocaleDateString('en-IN', {
@@ -178,6 +194,113 @@ export function HalfColumn({
       <div className="mt-4">
         <DailyLogPhotoColumn photoSections={photoSections} half={half} now={now} />
       </div>
+    </div>
+  )
+}
+
+// UI slice 6 (Aravind, 2026-09-18): the Daily Logs list card's own
+// expansion (app/(dashboard)/daily-logs/engineer-card.tsx). Was: HalfColumn
+// above, which nests a SECOND "View reported details" disclosure around
+// secondaryRows -- fine on the detail page (its only collapsible), but on
+// the list card that stacked on top of the card's OWN outer "View
+// reported details" summary, two clicks to read one half. HalfFields
+// drops the inner disclosure entirely (every field in `rows` renders
+// directly, flat, in order) AND drops the heading+status-chip HalfColumn
+// renders at its own top -- the list card's collapsed rows already show
+// "Morning -- Submitted 10:53 am" etc., so repeating "Morning"/
+// "Evening: Submitted" inside the expansion once more said nothing new.
+// `rows` is the full ordered field list for one half (headline +
+// secondary, e.g. [MORNING_HEADLINE_ROW, ...MORNING_SECONDARY_ROWS]) --
+// this is genuinely all that half HAS; a shorter half simply renders
+// fewer rows (no invented filler field), and each field's own null value
+// still gets ScalarFieldRow's existing "Not set" text, unchanged.
+export function HalfFields({
+  rows,
+  dailyLogsId,
+  columns,
+  edits,
+  submittedAt,
+  engineerName,
+  canEdit,
+  photoSections,
+  half,
+  now,
+}: {
+  rows: readonly Row[]
+  dailyLogsId: string
+  columns: Record<UiVisibleColumn, unknown>
+  edits: Partial<Record<UiVisibleColumn, LatestEdit>>
+  submittedAt: string | null
+  engineerName: string
+  canEdit: boolean
+  photoSections: DailyLogPhotoSectionsData | null
+  half: 'morning' | 'evening'
+  now: Date
+}) {
+  return (
+    <div>
+      <div className="divide-y divide-gray-100">
+        {rows.map((row) => (
+          <ScalarFieldRow
+            key={`${dailyLogsId}-${row.column}`}
+            dailyLogsId={dailyLogsId}
+            column={row.column}
+            label={row.label}
+            currentValue={columns[row.column]}
+            edit={edits[row.column]}
+            submittedAt={submittedAt}
+            engineerName={engineerName}
+            canEdit={canEdit}
+          />
+        ))}
+      </div>
+
+      <div className="mt-4">
+        <DailyLogPhotoColumn photoSections={photoSections} half={half} now={now} />
+      </div>
+    </div>
+  )
+}
+
+// UI slice 6: evening_tomorrow_needs, moved out of the evening column
+// entirely ("in both the list card and the detail view") -- its own
+// full-width line beneath both columns, labelled NEEDED_TOMORROW_LABEL,
+// keeping ScalarFieldRow's own existing "As reported by ..." line
+// unchanged. Renders nothing at all when the field has no value ("Show
+// the line only when the field has a value") -- unlike HalfFields'
+// aligned rows above, which always render (even a "Not set" row); this
+// is a genuinely different rule for a genuinely different field, not an
+// inconsistency.
+export function DependencyLine({
+  dailyLogsId,
+  columns,
+  edits,
+  submittedAt,
+  engineerName,
+  canEdit,
+}: {
+  dailyLogsId: string
+  columns: Record<UiVisibleColumn, unknown>
+  edits: Partial<Record<UiVisibleColumn, LatestEdit>>
+  submittedAt: string | null
+  engineerName: string
+  canEdit: boolean
+}) {
+  const value = columns[DEPENDENCY_ROW.column]
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null
+  return (
+    <div className="mt-4">
+      <ScalarFieldRow
+        key={dailyLogsId}
+        dailyLogsId={dailyLogsId}
+        column={DEPENDENCY_ROW.column}
+        label={DEPENDENCY_ROW.label}
+        currentValue={value}
+        edit={edits[DEPENDENCY_ROW.column]}
+        submittedAt={submittedAt}
+        engineerName={engineerName}
+        canEdit={canEdit}
+      />
     </div>
   )
 }
@@ -304,6 +427,18 @@ export function LogDetailView({
           />
         </div>
       </div>
+
+      {/* UI slice 6 (Aravind, 2026-09-18): the dependency line, moved out
+          of the evening column above -- full width, beneath both
+          columns, own "Needed tomorrow" label. */}
+      <DependencyLine
+        dailyLogsId={data.id}
+        columns={data.columns}
+        edits={data.edits}
+        submittedAt={data.eveningSubmittedAt}
+        engineerName={data.engineerName}
+        canEdit={canEdit}
+      />
 
       <div className="mt-4">
         <DailyLogNoPhotosMessage photoSections={photoSections} />
