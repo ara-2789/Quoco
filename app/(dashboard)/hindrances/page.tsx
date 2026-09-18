@@ -72,7 +72,15 @@ export default async function HindrancesPage() {
       : new Map<string, { isPm: boolean; photos: HindrancePhotoItem[] }>()
 
   return (
-    <div className="p-4 sm:p-8">
+    // UI slice 4 (Aravind, 2026-09-18): padding/max-width moved to the
+    // shared layout wrapper (app/(dashboard)/layout.tsx). The inner
+    // max-w-3xl on the header/list below is UNCHANGED, deliberately --
+    // the task's own "cards use the available width" example was
+    // specifically the Daily Logs grid; this page's cards are a single
+    // stacked column of short alert-style rows, not named for widening,
+    // so kept at their existing readable width rather than stretched to
+    // the new ~1250px container on a judgment call nobody asked for.
+    <div>
       <div className="mb-6 max-w-3xl">
         <h1 className="text-2xl font-semibold text-gray-900">Hindrances</h1>
         {result.status === 'ok' && result.items.length > 0 && (

@@ -74,7 +74,9 @@ export default async function DailyLogsPage({
   }
 
   return (
-    <div className="p-8">
+    // UI slice 4 (Aravind, 2026-09-18): padding/max-width moved to the
+    // shared layout wrapper (app/(dashboard)/layout.tsx).
+    <div>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Daily Logs</h1>
@@ -105,10 +107,12 @@ export default async function DailyLogsPage({
           {boards.map((board) => (
             <section key={board.projectId}>
               <h2 className="mb-3 text-sm font-semibold text-gray-700">{board.projectName}</h2>
+              {/* UI slice 4 (Aravind, 2026-09-18): 1 column on small,
+                  2 at lg and above -- was sm:2/lg:3. */}
               {board.engineers.length === 0 ? (
                 <p className="text-sm text-gray-600">No engineers assigned to this project.</p>
               ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   {board.engineers.map((eng) => (
                     <EngineerCardView key={eng.engineerId} eng={eng} date={date} now={now} quocoNumber={quocoNumber} />
                   ))}

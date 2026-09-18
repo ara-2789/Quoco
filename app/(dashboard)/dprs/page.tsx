@@ -84,7 +84,9 @@ export default async function DprsPage() {
   }
 
   return (
-    <div className="p-8">
+    // UI slice 4 (Aravind, 2026-09-18): padding/max-width moved to the
+    // shared layout wrapper (app/(dashboard)/layout.tsx).
+    <div>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Daily Progress Reports</h1>
         <p className="text-gray-700 text-sm mt-1">

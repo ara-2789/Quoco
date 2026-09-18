@@ -155,7 +155,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <span className="text-sm text-brand-muted">{formatIstNow(now)}</span>
         </div>
 
-        <main className="flex-1 min-w-0 overflow-auto">{children}</main>
+        {/* UI slice 4 (Aravind, 2026-09-18): shared centering container --
+            every dashboard page's content sits INSIDE this, so the "wide
+            screens leave the right half empty" fix lives in ONE place,
+            not five. Pages themselves each dropped their own p-8/
+            max-w-3xl wrapper (see each page's own comment) so this is the
+            only place setting page-level width/padding now. */}
+        <main className="flex-1 min-w-0 overflow-auto">
+          <div className="mx-auto max-w-[1250px] p-4 sm:p-8">{children}</div>
+        </main>
       </div>
     </div>
   )

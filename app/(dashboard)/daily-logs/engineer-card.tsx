@@ -111,7 +111,38 @@ export function EngineerCardView({
           </summary>
           <div className="mt-2 grid grid-cols-1 divide-y divide-brand-border md:grid-cols-2 md:divide-x md:divide-y-0">
             <div className="py-2 first:pt-0 md:py-0 md:pr-4">
+              {/* UI slice 4 (Aravind, 2026-09-18): key={eng.log.id} is the
+                  actual bug fix, not decoration. ScalarFieldRow is a
+                  Client Component whose displayed text comes from
+                  useFieldCorrection's useReducer(fieldRowReducer,
+                  initialFieldRowState(initialValue)) -- React evaluates
+                  that initializer ONLY on this component instance's
+                  FIRST mount (lib/daily-logs/use-field-correction.ts:30,
+                  lib/daily-logs/field-row-state.ts:44-45). Navigating
+                  via DateNav's prev/next/Today/date-input
+                  (./date-nav.tsx) changes only the ?date= search param
+                  on the SAME /daily-logs route -- a soft client
+                  navigation. getDailyLogsBoard (lib/daily-logs/
+                  query.ts) correctly re-fetches and passes the new
+                  date's morning_plan/evening_output as fresh props, but
+                  without a key that changes too, React RECONCILES this
+                  same component instance instead of remounting it, so
+                  the reducer's own state.currentValue -- seeded once,
+                  from whichever date was first viewed in this browser
+                  tab -- never resyncs to the new prop, and the card
+                  keeps showing that first-viewed date's text forever
+                  after. eng.log.id is a distinct id per (project,
+                  engineer, log_date) row by construction, so keying on
+                  it forces a genuine remount exactly when the
+                  underlying row actually changes -- never on an
+                  in-place edit/save, which intentionally updates this
+                  same instance's state instead (SAVE_SUCCESS,
+                  use-field-correction.ts:59). HalfRow above was never
+                  affected -- it holds no state of its own, rendering
+                  directly from fresh status/submittedAt props every
+                  render. */}
               <ScalarFieldRow
+                key={eng.log.id}
                 dailyLogsId={eng.log.id}
                 column={MORNING_HEADLINE_ROW.column}
                 label={MORNING_HEADLINE_ROW.label}
@@ -123,6 +154,7 @@ export function EngineerCardView({
             </div>
             <div className="py-2 last:pb-0 md:py-0 md:pl-4">
               <ScalarFieldRow
+                key={eng.log.id}
                 dailyLogsId={eng.log.id}
                 column={EVENING_HEADLINE_ROW.column}
                 label={EVENING_HEADLINE_ROW.label}
