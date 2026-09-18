@@ -120,12 +120,17 @@ export default async function DailyLogsPage({
                   .section-title{margin-bottom:16px} exactly, and Today's
                   new "Needs your attention" heading below. */}
               <h2 className="mb-4 text-sm font-semibold text-gray-700">{board.projectName}</h2>
-              {/* UI slice 4 (Aravind, 2026-09-18): 1 column on small,
-                  2 at lg and above -- was sm:2/lg:3. */}
+              {/* fix/daily-log-fields (Aravind, 2026-09-18): grid REMOVED
+                  -- was grid-cols-1 lg:grid-cols-2 (UI slice 4), which
+                  left a half-width card and an empty right half for any
+                  project with one engineer. The reference
+                  (docs/design/reference/*.png) has no such grid: cards
+                  stack full width, one column, each half living INSIDE
+                  the card. */}
               {board.engineers.length === 0 ? (
                 <p className="text-sm text-gray-600">No engineers assigned to this project.</p>
               ) : (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="flex flex-col gap-4">
                   {board.engineers.map((eng) => (
                     <EngineerCardView key={eng.engineerId} eng={eng} date={date} now={now} quocoNumber={quocoNumber} />
                   ))}
