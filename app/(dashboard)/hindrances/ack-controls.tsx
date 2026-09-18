@@ -109,7 +109,7 @@ export function HindranceAckControls({
               type="button"
               onClick={handleUndo}
               disabled={isPending}
-              className="inline-flex items-center justify-center rounded-md px-4 py-3 sm:py-1 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+              className="inline-flex items-center justify-center rounded-md px-4 py-3 sm:py-1 text-sm font-medium text-brand-orange hover:bg-brand-canvas transition-colors disabled:opacity-50"
             >
               Undo
             </button>
