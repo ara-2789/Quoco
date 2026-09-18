@@ -112,7 +112,17 @@ function HalfColumn({
         <StatusChip variant={chipVariant} label={chipLabel} />
       </div>
 
+      {/* UI slice 4 follow-up (Aravind, 2026-09-18): keyed on dailyLogsId --
+          the detail route ([logId]) is a soft client-side navigation
+          between two engineers'/dates' logs, so without a key React
+          reconciles this instance in place and keeps the PREVIOUS log's
+          seeded useReducer state (initialFieldRowState runs once, on
+          first mount only) -- the same bug as the daily-logs list card,
+          fixed one level up (engineer-card.tsx). dailyLogsId changes on a
+          real log change and stays fixed across an in-place edit/save
+          (SAVE_SUCCESS), so it forces a remount only when it should. */}
       <ScalarFieldRow
+        key={dailyLogsId}
         dailyLogsId={dailyLogsId}
         column={headlineRow.column}
         label={headlineRow.label}
@@ -130,8 +140,16 @@ function HalfColumn({
           </summary>
           <div className="mt-1 divide-y divide-gray-100">
             {secondaryRows.map((row) => (
+              // UI slice 4 follow-up (Aravind, 2026-09-18): key was
+              // row.column alone -- unique enough for React's list-key
+              // requirement, but NOT scoped to dailyLogsId, so navigating
+              // between two logs whose secondary rows share the same
+              // column set (every log's does) reconciled this instance in
+              // place instead of remounting it -- the same stale-state
+              // bug as the headline row above, just easier to miss because
+              // a key was already present. Now scoped to both.
               <ScalarFieldRow
-                key={row.column}
+                key={`${dailyLogsId}-${row.column}`}
                 dailyLogsId={dailyLogsId}
                 column={row.column}
                 label={row.label}
