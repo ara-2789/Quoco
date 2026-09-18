@@ -23,7 +23,7 @@ import type { DprPhotoCandidate } from '@/lib/dpr/select-photo-candidates'
 // this page has no existing gap-utility precedent of its own either;
 // gap-3 is chosen to match the hindrances queue's own established gap-3
 // (app/(dashboard)/hindrances/page.tsx:97,155), not copied from this page.
-const HEADING_CLASSES = 'text-xs font-semibold uppercase tracking-wide text-gray-400'
+const HEADING_CLASSES = 'text-xs font-semibold uppercase tracking-wide text-gray-600'
 
 export interface DprPhotoSectionsData {
   evening: DprPhotoCandidate[]

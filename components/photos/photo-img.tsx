@@ -45,7 +45,7 @@ export function PhotoImg({ kind, id, alt, expiresAt, now }: PhotoImgProps) {
         <div className="aspect-square overflow-hidden rounded-md bg-gray-100">
           {failed ? (
             <div className="flex h-full w-full items-center justify-center p-2 text-center">
-              <p className="text-xs text-gray-500">{PHOTO_UNAVAILABLE_TEXT}</p>
+              <p className="text-xs text-gray-700">{PHOTO_UNAVAILABLE_TEXT}</p>
             </div>
           ) : (
             <img
@@ -58,7 +58,7 @@ export function PhotoImg({ kind, id, alt, expiresAt, now }: PhotoImgProps) {
           )}
         </div>
       </a>
-      {keptUntil !== null && <figcaption className="text-xs text-gray-500">{keptUntil}</figcaption>}
+      {keptUntil !== null && <figcaption className="text-xs text-gray-700">{keptUntil}</figcaption>}
     </figure>
   )
 }
