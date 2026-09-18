@@ -27,7 +27,7 @@ import { formatIstTime } from './date'
 // on a surface whose entire value is honest state.
 
 export type DprDeliveryResult =
-  | { status: 'ok'; row: DprArchiveRowInput & { delivered_owner_at: string | null } }
+  | { status: 'ok'; row: DprArchiveRowInput & { delivered_owner_at: string | null; id: string } }
   | { status: 'no-row' }
   | { status: 'error' }
 
@@ -37,9 +37,15 @@ export async function getDprDeliveryState(
   engineerId: string,
   logDate: string,
 ): Promise<DprDeliveryResult> {
+  // UI slice 2 (Aravind, 2026-09-18): `id` added to the select/return so
+  // the daily-log detail page can link to this SAME row (task 4a) without
+  // a second, redundant query against dprs for the same
+  // (project_id, engineer_id, log_date) key -- this IS "the existing dprs
+  // lookup path" the task asks to reuse. Purely additive; every existing
+  // caller/field is untouched.
   const { data, error } = await supabase
     .from('dprs')
-    .select('content, generation_status, delivery_status, delivered_owner_at')
+    .select('id, content, generation_status, delivery_status, delivered_owner_at')
     .eq('project_id', projectId)
     .eq('engineer_id', engineerId)
     .eq('log_date', logDate)
@@ -59,6 +65,7 @@ export async function getDprDeliveryState(
   return {
     status: 'ok',
     row: {
+      id: data.id,
       content: data.content,
       generation_status: data.generation_status,
       delivery_status: data.delivery_status,

@@ -10,7 +10,7 @@ import {
   type HindranceTiming,
   type HindrancePhotoItem,
 } from '@/lib/hindrance/queue'
-import { formatHindranceAge } from '@/lib/hindrance/relative-time'
+import { formatHindranceAge, formatHindranceReportedDate } from '@/lib/hindrance/relative-time'
 import { HindranceCardPhotos } from '@/components/hindrances/hindrance-card-photos'
 import { HindranceAckControls } from './ack-controls'
 
@@ -172,7 +172,7 @@ function HindranceRow({
         <p className="mt-1 text-sm italic text-gray-600">He answered: &quot;{rawAnswer}&quot;</p>
       )}
       <p className="mt-2 text-xs text-gray-700">
-        {item.reporterName} · {formatHindranceAge(item.createdAt, now)}
+        {item.reporterName} · {formatHindranceReportedDate(item.createdAt)} · {formatHindranceAge(item.createdAt, now)}
       </p>
       <HindranceCardPhotos isPm={photoData.isPm} photos={photoData.photos} now={now} />
       <HindranceAckControls
