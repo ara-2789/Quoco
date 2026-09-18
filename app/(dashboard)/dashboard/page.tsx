@@ -7,6 +7,7 @@ import { CHECKIN_CHECKPOINTS, type CutoffConfig } from '@/lib/daily-logs/cutoffs
 import { istDateString } from '@/lib/daily-logs/date'
 import { waMeHref, telHref } from '@/lib/whatsapp/links'
 import { StatusChip, type StatusVariant } from '@/components/ui/status-chip'
+import { Card } from '@/components/ui/card'
 import { getActiveHindranceTiles } from '@/lib/hindrance/queue'
 import { TileAcknowledgeButton } from './tile-acknowledge-button'
 
@@ -256,7 +257,7 @@ export default async function DashboardPage() {
       {tiles.length === 0 ? (
         // A blank page on a good day reads as broken — show that the system
         // ran, not just that nothing is wrong.
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <Card className="p-6">
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">
             This morning
           </h2>
@@ -277,7 +278,7 @@ export default async function DashboardPage() {
               ))}
             </ul>
           )}
-        </div>
+        </Card>
       ) : (
         <div className="flex flex-col gap-3">
           {tiles.map((t, i) => (
@@ -309,7 +310,7 @@ function TileCard({ tile }: { tile: Tile }) {
   const isActiveHindrance = tile.kind === 'active-hindrance'
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-5">
+    <Card className="p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3 mb-1">
         <div>
           <p className="text-xs text-gray-700 mb-1">{tile.projectName}</p>
@@ -390,6 +391,6 @@ function TileCard({ tile }: { tile: Tile }) {
           </Link>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

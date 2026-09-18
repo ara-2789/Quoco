@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
 import { StatusChip, type StatusVariant } from '@/components/ui/status-chip'
+import { Card } from '@/components/ui/card'
 import {
   getHindranceQueue,
   getHindrancePhotosByHindranceIds,
@@ -111,9 +112,9 @@ export default async function HindrancesPage() {
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="max-w-3xl rounded-lg border border-gray-200 bg-white p-12 text-center">
+    <Card className="max-w-3xl p-12 text-center">
       <p className="mx-auto max-w-md text-sm text-gray-700">{text}</p>
-    </div>
+    </Card>
   )
 }
 
@@ -148,9 +149,15 @@ function HindranceRow({
   const chip = isAcknowledged ? { variant: 'muted' as const, label: 'Seen' } : CHIP[item.timing]
   const rawAnswer = item.timingRaw?.trim()
 
+  // Not <Card>: Card's own background is fixed (bg-brand-paper); this row
+  // needs the acknowledged-state tint (bg-brand-canvas, "a quiet
+  // background tint", per this file's own header comment) to win over a
+  // hardcoded default, which a Card-plus-override className can't do
+  // reliably (both would set the same CSS property with no guaranteed
+  // ordering). Same border/radius tokens as Card, applied directly.
   return (
     <div
-      className={`rounded-lg border border-gray-200 p-4 sm:p-5 ${isAcknowledged ? 'bg-gray-50' : 'bg-white'}`}
+      className={`rounded-[9px] border border-brand-border p-4 sm:p-5 ${isAcknowledged ? 'bg-brand-canvas' : 'bg-brand-paper'}`}
     >
       <div className="mb-1 flex items-start justify-between gap-3">
         <p className="text-xs text-gray-700">{item.projectName}</p>

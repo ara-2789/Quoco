@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
 import { ProjectStatusTag } from '@/components/ui/project-status-tag'
+import { Card } from '@/components/ui/card'
 
 type ProjectRow = {
   id: string
@@ -55,7 +56,7 @@ export default async function ProjectsPage() {
       </div>
 
       {rows.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+        <Card className="p-12 text-center">
           <p className="text-gray-700 text-sm">No projects yet.</p>
           <Link
             href="/projects/new"
@@ -63,9 +64,9 @@ export default async function ProjectsPage() {
           >
             Create your first project →
           </Link>
-        </div>
+        </Card>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <Card className="overflow-hidden">
           {/* overflow-hidden above clips the rounded corners, not scrolling
               — it must stay for that. Horizontal scroll lives on this INNER
               wrapper instead, so a narrow viewport scrolls the 6-column
@@ -109,7 +110,7 @@ export default async function ProjectsPage() {
             </tbody>
           </table>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   )
