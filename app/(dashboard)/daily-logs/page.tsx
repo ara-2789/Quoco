@@ -1,17 +1,15 @@
 import * as Sentry from '@sentry/nextjs'
-import Link from 'next/link'
 import { CircleAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth/profile'
-import { StatusChip } from '@/components/ui/status-chip'
 import { Card } from '@/components/ui/card'
-import { deriveHalfStatus, type Half, type HalfStatus } from '@/lib/daily-logs/status'
+import { deriveHalfStatus } from '@/lib/daily-logs/status'
 import { DEFAULT_CUTOFFS } from '@/lib/daily-logs/cutoffs'
 import { getDailyLogsBoard } from '@/lib/daily-logs/query'
 import { istDateString, isValidCalendarDate } from '@/lib/daily-logs/date'
 import { formatQuocoNumber } from '@/lib/daily-logs/reactivate-copy'
 import { DateNav } from './date-nav'
-import { ReactivateCta } from './reactivate-cta'
+import { EngineerCardView } from './engineer-card'
 
 // DASH-03 Daily Logs — PM triage board. One card per engineer per day, morning
 // + evening halves. A card with a check-in row links through to the Rule 4.3
@@ -19,32 +17,10 @@ import { ReactivateCta } from './reactivate-cta'
 // read access is preserved for every project_members role, only the edit
 // affordances on the detail page itself are gated on role === 'pm'. Scoped to
 // the PM's projects via project_members (§4).
-
-function formatTime(iso: string | null): string {
-  if (!iso) return ''
-  return new Date(iso).toLocaleTimeString('en-IN', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'Asia/Kolkata',
-  })
-}
-
-// A submitted chip shows the real IST submission time; everything else uses the
-// derived label as-is.
-function labelFor(status: HalfStatus, submittedAt: string | null): string {
-  if (status.state === 'submitted' && submittedAt) return `Submitted ${formatTime(submittedAt)}`
-  return status.label
-}
-
-function HalfRow({ half, status, submittedAt }: { half: Half; status: HalfStatus; submittedAt: string | null }) {
-  return (
-    <div className="flex items-center justify-between gap-2 py-1">
-      <span className="text-xs text-gray-700">{half === 'morning' ? 'Morning' : 'Evening'}</span>
-      <StatusChip variant={status.variant} label={labelFor(status, submittedAt)} />
-    </div>
-  )
-}
+//
+// UI slice 3 (Aravind, 2026-09-18): each card is now collapsible (own
+// component, ./engineer-card.tsx) — formatTime/labelFor/HalfRow moved
+// there with it; nothing left here duplicates them.
 
 export default async function DailyLogsPage({
   searchParams,
@@ -133,60 +109,9 @@ export default async function DailyLogsPage({
                 <p className="text-sm text-gray-600">No engineers assigned to this project.</p>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {board.engineers.map((eng) => {
-                    const morningStatus = deriveHalfStatus(eng.log, eng.messagingBlocked, 'morning', date, now, DEFAULT_CUTOFFS)
-                    const eveningStatus = deriveHalfStatus(eng.log, eng.messagingBlocked, 'evening', date, now, DEFAULT_CUTOFFS)
-                    // Card-level, not per-half: messaging_blocked is a user-level
-                    // state, so the CTA renders ONCE. Gating on the derived state
-                    // (rather than the raw flag) keeps status.ts the single source
-                    // of the today-only rule — no past-date CTA.
-                    const isBlocked =
-                      morningStatus.state === 'messaging_blocked' || eveningStatus.state === 'messaging_blocked'
-                    const cardHeaderAndHalves = (
-                      <>
-                        <div className="mb-2 flex items-center justify-between">
-                          <span className="text-sm font-medium text-gray-900">{eng.engineerName}</span>
-                        </div>
-                        <div className="divide-y divide-gray-100">
-                          <HalfRow half="morning" status={morningStatus} submittedAt={eng.log?.morning_submitted_at ?? null} />
-                          <HalfRow half="evening" status={eveningStatus} submittedAt={eng.log?.evening_submitted_at ?? null} />
-                        </div>
-                      </>
-                    )
-                    // ReactivateCta renders its own <a>/<button> (a "Forward
-                    // to wa.me" link, a copy button) — it must stay a SIBLING
-                    // of the Link below, never a child of it, or the nested
-                    // <a> would be invalid HTML and its clicks would also
-                    // trigger card navigation. Only the name+halves region is
-                    // the link target.
-                    return (
-                      <Card key={eng.engineerId} className="p-4">
-                        {eng.log ? (
-                          <Link href={`/daily-logs/${eng.log.id}`} className="block hover:opacity-80">
-                            {cardHeaderAndHalves}
-                          </Link>
-                        ) : (
-                          cardHeaderAndHalves
-                        )}
-                        {isBlocked && (
-                          <ReactivateCta
-                            engineerName={eng.engineerName}
-                            engineerWhatsappNumber={eng.engineerWhatsappNumber}
-                            quocoNumber={quocoNumber}
-                          />
-                        )}
-                        {!eng.log && (
-                          // A card with no daily_logs row has nothing to
-                          // correct (the correction RPC takes a
-                          // daily_logs_id; there is no insert path) — no
-                          // link, one line explaining why.
-                          <p className="mt-2 text-xs text-gray-600">
-                            Nothing to correct yet — check-ins for this day haven&apos;t come in.
-                          </p>
-                        )}
-                      </Card>
-                    )
-                  })}
+                  {board.engineers.map((eng) => (
+                    <EngineerCardView key={eng.engineerId} eng={eng} date={date} now={now} quocoNumber={quocoNumber} />
+                  ))}
                 </div>
               )}
             </section>
@@ -210,7 +135,12 @@ function EmptyState({
     <Card className="p-12 text-center">
       <p className="text-sm font-medium text-gray-900">{title}</p>
       <p className="mx-auto mt-1 max-w-md text-sm text-gray-700">{body}</p>
-      <a href={action.href} className="mt-3 inline-block text-sm text-blue-600 hover:underline">
+      {/* UI slice 3 (Aravind, 2026-09-18): brand accent cleanup -- text
+          links use the brand orange, not the default blue. Base tone
+          (not -light), which is legible on this light card background;
+          -light is reserved for the dark sidebar's own selected-nav
+          text (see globals.css). */}
+      <a href={action.href} className="mt-3 inline-block text-sm text-brand-orange hover:underline">
         {action.label}
       </a>
     </Card>

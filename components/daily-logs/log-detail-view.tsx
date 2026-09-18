@@ -9,8 +9,10 @@ import { ScalarFieldRow } from './scalar-field-row'
 import { HolidayField } from './holiday-field'
 
 // UI slice 2 (Aravind, 2026-09-18). Both English only -- Tamil owed, NOT
-// approved.
-const VIEW_REPORTED_DETAILS_LABEL = 'View reported details'
+// approved. VIEW_REPORTED_DETAILS_LABEL exported (UI slice 3) so the
+// Daily Logs list page's own per-card expansion reuses this EXACT
+// string, not a second copy of the same wording.
+export const VIEW_REPORTED_DETAILS_LABEL = 'View reported details'
 const REPORT_SENT_TO_OWNER_LABEL = 'Report sent to owner'
 
 export type LogDetailViewProps = {
@@ -36,10 +38,16 @@ export type LogDetailViewProps = {
 // one flat list. The first row of each half's ORIGINAL list is the
 // headline (Aravind did not name one explicitly; this is the most
 // legible read of "the headline entry" -- flagged, not assumed silently).
-const MORNING_HEADLINE_ROW = { column: 'morning_plan', label: 'Morning plan' } as const
+// UI slice 3 (Aravind, 2026-09-18): exported so the Daily Logs list
+// page's own per-card expansion (app/(dashboard)/daily-logs/engineer-
+// card.tsx) can reuse these EXACT SAME (column, label) pairs for its own
+// headline rows -- "reusing the same components and wording the detail
+// page already uses," not a second, independently-typed copy of either
+// label that could drift from this one.
+export const MORNING_HEADLINE_ROW = { column: 'morning_plan', label: 'Morning plan' } as const
 const MORNING_SECONDARY_ROWS = [{ column: 'morning_execution_plan', label: 'Execution plan' }] as const
 
-const EVENING_HEADLINE_ROW = { column: 'evening_output', label: 'What was done' } as const
+export const EVENING_HEADLINE_ROW = { column: 'evening_output', label: 'What was done' } as const
 const EVENING_SECONDARY_ROWS = [
   { column: 'evening_workers_on_site', label: 'Workers on site' },
   { column: 'evening_schedule_met', label: 'Plan met?' },
@@ -182,7 +190,7 @@ export function LogDetailView({
     <div className="mx-auto max-w-3xl p-6">
       <a
         href={`/daily-logs?date=${data.logDate}`}
-        className="text-sm text-blue-600 hover:underline"
+        className="text-sm text-brand-orange hover:underline"
       >
         ← Back to Daily Logs
       </a>
@@ -200,7 +208,7 @@ export function LogDetailView({
           lookup found a visible row for this exact key -- null renders
           nothing at all, never a disabled placeholder. */}
       {dprLinkHref && (
-        <a href={dprLinkHref} className="mt-2 inline-block text-sm text-blue-600 hover:underline">
+        <a href={dprLinkHref} className="mt-2 inline-block text-sm text-brand-orange hover:underline">
           {REPORT_SENT_TO_OWNER_LABEL}
         </a>
       )}

@@ -47,23 +47,20 @@ export default async function ProjectsPage() {
           <h1 className="text-2xl font-semibold text-gray-900">Projects</h1>
           <p className="text-gray-700 text-sm mt-1">All construction projects in your workspace.</p>
         </div>
-        {/* UI slice 2 (Aravind, 2026-09-18): DPRs reachable again without a
-            sidebar link (#299 removed it from nav, route/code untouched).
-            Text is exactly "DPRs" -- no other wording was needed, so this
-            page's own existing plain-text link style (identical to the
-            "Create your first project ->" link a few lines down) is
-            reused as-is, not the filled-button style "New Project" uses. */}
-        <div className="flex items-center gap-4">
-          <Link href="/dprs" className="text-sm text-blue-600 hover:underline">
-            DPRs
-          </Link>
-          <Link
-            href="/projects/new"
-            className="bg-blue-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-blue-700 transition-colors"
-          >
-            New Project
-          </Link>
-        </div>
+        {/* UI slice 3: the "DPRs" link added here in #300 is removed per
+            Aravind, 2026-09-18 -- /dprs and every DPR code path still
+            exist, untouched; the daily-log detail page's own "Report
+            sent to owner" link (also #300) stays. */}
+        {/* UI slice 3 (Aravind, 2026-09-18): brand accent cleanup --
+            hover:opacity-90 rather than a darker orange shade, since no
+            "brand-orange-dark" token exists and the task's own
+            constraint is "add no new colours." */}
+        <Link
+          href="/projects/new"
+          className="bg-brand-orange text-white rounded-md px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity"
+        >
+          New Project
+        </Link>
       </div>
 
       {rows.length === 0 ? (
@@ -71,7 +68,7 @@ export default async function ProjectsPage() {
           <p className="text-gray-700 text-sm">No projects yet.</p>
           <Link
             href="/projects/new"
-            className="mt-3 inline-block text-sm text-blue-600 hover:underline"
+            className="mt-3 inline-block text-sm text-brand-orange hover:underline"
           >
             Create your first project →
           </Link>
@@ -100,7 +97,7 @@ export default async function ProjectsPage() {
                   <td className="px-4 py-3">
                     <Link
                       href={`/projects/${p.id}`}
-                      className="font-medium text-gray-900 hover:text-blue-600"
+                      className="font-medium text-gray-900 hover:text-brand-orange"
                     >
                       {p.name}
                     </Link>
