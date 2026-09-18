@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-09-17T17:33:18.882Z",
         "reason": "false positive: regex literal parsing rendered HTML strings in a test helper, not a real <img> element"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "test/daily-log-card-photo-gate-render.test.ts"
+        ],
+        "createdAt": "2026-09-18T12:35:28.633Z",
+        "reason": "false positive: regex literal matching <img> tags inside a test helper function, not a rendered element"
       }
     ]
   }

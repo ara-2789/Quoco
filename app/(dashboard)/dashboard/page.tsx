@@ -5,62 +5,54 @@ import { getDailyLogsBoard } from '@/lib/daily-logs/query'
 import { deriveHalfStatus } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS, type CutoffConfig } from '@/lib/daily-logs/cutoffs'
 import { istDateString } from '@/lib/daily-logs/date'
-import { waMeHref, telHref } from '@/lib/whatsapp/links'
 import { StatusChip, type StatusVariant } from '@/components/ui/status-chip'
 import { Card } from '@/components/ui/card'
-import { getActiveHindranceTiles } from '@/lib/hindrance/queue'
-import { TileAcknowledgeButton } from './tile-acknowledge-button'
+import { getHindranceQueue, type HindranceCard } from '@/lib/hindrance/queue'
+import { formatHindranceAge, formatHindranceReportedDate } from '@/lib/hindrance/relative-time'
+import { CHIP } from '../hindrances/page'
 
-// DASH-01 — the PM's exceptions home (design-principles.md Rule 4.1). This
-// screen stops being a welcome page and becomes the list of things that need
-// the PM, most-urgent first. Five tile kinds; 'awaiting' is never a tile —
-// the half is not yet due, so there is nothing to act on yet.
+// UI slice 5 (Aravind, 2026-09-18): DASH-01 rebuilt as a single "needs
+// attention" list -- unacknowledged hindrances first (blocking ones
+// first, oldest first within each group -- getHindranceQueue's own
+// existing order, unchanged), then engineers with a missing morning or
+// evening check-in for today. Replaces the previous five-tile-kind
+// system (active-hindrance/evening-missing/morning-missing/nobody-on-
+// site/stopped-messages) and its inline Acknowledge/WhatsApp/Call
+// actions -- this rebuild's own spec names exactly two groups and "no
+// acknowledge action here", so 'nobody-on-site' and 'stopped-messages'
+// (and every inline action) are deliberately dropped from THIS page,
+// not overlooked. Both are still visible elsewhere, unchanged: a
+// project with zero engineers is still obvious from the Daily Logs
+// page, and a messaging-blocked engineer still gets the ReactivateCta
+// on their own Daily Logs card.
 //
-// TODAY ONLY (Aravind's own correction, 2026-09-05): getDailyLogsBoard is
-// called ONCE, for today's IST date. A missing evening half from YESTERDAY
-// already went out in last night's 8:30pm report — it is history, not an
-// exception. There is no second call for a prior date here.
+// getActiveHindranceTiles/DASHBOARD_TILE_WINDOW_DAYS/
+// withinDashboardTileWindow (lib/hindrance/queue.ts) are now unused by
+// this rebuild -- left in place, not deleted, since removing exported
+// library functions is a separate decision from this page's own
+// rebuild (flagged in this slice's own report, not acted on here).
 //
-// ACTIVE-HINDRANCES TILE (added, design pass 2026-09-08): timing='active'
-// ONLY -- potential/unspecified stay on /hindrances, never appear here.
-// Ranked above every other tile kind. Inline Acknowledge, no WhatsApp/Call
-// (resolution happens outside the app -- those buttons would imply the fix
-// lives in Quoco). Drops off THIS TILE after DASHBOARD_TILE_WINDOW_DAYS
-// (lib/hindrance/queue.ts) -- a display rule only, the hindrance stays on
-// /hindrances indefinitely regardless. "Resolved" has no rendering here at
-// all: nothing writes hindrances.status/resolved_at yet (DASH-10), so this
-// tile only ever shows two states, unacknowledged or acknowledged.
+// NO NEW QUERY: built entirely from getDailyLogsBoard (already called
+// here) and getHindranceQueue (lib/hindrance/queue.ts, the SAME module
+// the Hindrances page itself uses) -- no query this page didn't already
+// have access to.
+//
+// TODAY ONLY (Aravind's own correction, 2026-09-05, unchanged by this
+// rebuild): getDailyLogsBoard is called ONCE, for today's IST date. A
+// missing evening half from YESTERDAY already went out in last night's
+// 8:30pm report — it is history, not an exception.
 
-type TileKind =
-  | 'active-hindrance'
-  | 'evening-missing'
-  | 'morning-missing'
-  | 'nobody-on-site'
-  | 'stopped-messages'
+// English only -- Tamil owed, NOT approved.
+const NEEDS_ATTENTION_HEADING = 'Needs your attention'
 
-type Tile = {
-  kind: TileKind
-  variant: StatusVariant
-  chipLabel: string
+type MissingCheckinCard = {
+  half: 'morning' | 'evening'
   projectId: string
   projectName: string
-  engineerId: string | null
-  engineerName: string | null
-  whatsappNumber: string | null
-  // active-hindrance only; null for every other kind.
-  hindranceId: string | null
-  description: string | null
-  isAcknowledged: boolean
-}
-
-// Urgency order — the whole point of this screen. Rendered as full-width
-// stacked cards, never a grid: a grid has no reading order.
-const TILE_RANK: Record<TileKind, number> = {
-  'active-hindrance': 0,
-  'evening-missing': 1,
-  'morning-missing': 2,
-  'nobody-on-site': 3,
-  'stopped-messages': 4,
+  engineerId: string
+  engineerName: string
+  variant: StatusVariant
+  chipLabel: string
 }
 
 function formatTime(iso: string): string {
@@ -72,22 +64,12 @@ function formatTime(iso: string): string {
   })
 }
 
-// Excludes 'active-hindrance' deliberately -- that kind's title is
-// description reused verbatim, never an authored template (design pass
-// decision), so this function is never called for it. Narrowing the
-// parameter type (rather than adding a dead case to the switch below)
-// makes that enforced at compile time, not just by convention.
-function tileTitle(kind: Exclude<TileKind, 'active-hindrance'>, engineerName: string | null): string {
-  switch (kind) {
-    case 'evening-missing':
-      return `${engineerName} hasn't sent an evening check-in`
-    case 'morning-missing':
-      return `${engineerName} hasn't sent a morning check-in`
-    case 'nobody-on-site':
-      return 'No engineer set up on this project'
-    case 'stopped-messages':
-      return `${engineerName} has stopped receiving messages`
-  }
+// Reused verbatim from the previous tile system -- "reuse every other
+// existing string".
+function missingCheckinTitle(half: 'morning' | 'evening', engineerName: string): string {
+  return half === 'evening'
+    ? `${engineerName} hasn't sent an evening check-in`
+    : `${engineerName} hasn't sent a morning check-in`
 }
 
 export default async function DashboardPage() {
@@ -106,106 +88,71 @@ export default async function DashboardPage() {
   // Evening DOES match DEFAULT_CUTOFFS.evening (eveningNudge, 19:15) — same
   // boundary as the DASH-03 board, deliberately. This is the single easiest
   // thing to get wrong in this file — do not "simplify" it to
-  // DEFAULT_CUTOFFS, and do not invent a third constant.
+  // DEFAULT_CUTOFFS, and do not invent a third constant. Unchanged by this
+  // slice's rebuild.
   const cutoffs: CutoffConfig = {
     morning: CHECKIN_CHECKPOINTS.morningEscalate,
     evening: CHECKIN_CHECKPOINTS.eveningNudge,
   }
 
-  // Parallel -- the two reads are independent of each other.
-  const [board, hindranceTilesResult] = await Promise.all([
+  // Parallel -- the two reads are independent of each other. getDailyLogsBoard
+  // is called with NO photoOptions (this page never renders photos, unlike
+  // the Daily Logs page's own call -- see that query's own comment).
+  const [board, hindranceResult] = await Promise.all([
     getDailyLogsBoard(supabase, profile.id, today),
-    getActiveHindranceTiles(supabase, profile.id, now),
+    getHindranceQueue(supabase, profile.id, now),
   ])
 
   // A failed read must NEVER render as "nothing needs you" — that's the exact
   // all-amber lie query.ts's own B1 comment bans, one level up (an all-clear
   // lie instead of an all-gap one). Explicit error state, not a blank/happy
-  // screen. Extended to hindranceTilesResult on the same reasoning: an empty
-  // hindrance-tile list must never be indistinguishable from a failed read
-  // for that feed either.
-  if (board.status === 'error' || hindranceTilesResult.status === 'error') {
+  // screen. 'not-a-pm' is NOT an error -- it means this viewer simply has no
+  // PM-role project_members row, same as getActiveHindranceTiles' own old
+  // 'ok, items: []' behaviour for that case; this page has never role-gated
+  // itself, and a non-PM viewer still sees their missing-check-in items.
+  if (board.status === 'error' || hindranceResult.status === 'error') {
     return <DashboardErrorState />
   }
 
-  const tiles: Tile[] = []
+  const hindranceItems: HindranceCard[] =
+    hindranceResult.status === 'ok' ? hindranceResult.items.filter((h) => h.acknowledgedAt === null) : []
+
+  const missingCheckins: MissingCheckinCard[] = []
   // Proof-of-life for the empty state — which sites checked in this morning,
-  // and when, regardless of whether any tile fires today.
+  // and when, regardless of whether anything needs attention today.
   const morningSubmissions: { projectName: string; engineerName: string; at: string }[] = []
 
   for (const b of board.boards) {
-    if (b.engineers.length === 0) {
-      tiles.push({
-        kind: 'nobody-on-site',
-        variant: 'risk',
-        chipLabel: 'Nobody on site',
-        projectId: b.projectId,
-        projectName: b.projectName,
-        engineerId: null,
-        engineerName: null,
-        whatsappNumber: null,
-        hindranceId: null,
-        description: null,
-        isAcknowledged: false,
-      })
-      continue
-    }
-
     for (const e of b.engineers) {
       // Reuse the SAME judgment DASH-03 uses — never re-decide whether a
       // check-in is late here. Only .variant/.state are read; DASH-01 does
-      // not pick a chip colour itself.
+      // not pick a chip colour itself. A messaging_blocked engineer's own
+      // missing half for TODAY already resolves to 'messaging_blocked'
+      // here (not 'missing'), so it never produces a card on this page —
+      // deriveHalfStatus's own existing branch, not new logic.
       const eveningStatus = deriveHalfStatus(e.log, e.messagingBlocked, 'evening', today, now, cutoffs)
       const morningStatus = deriveHalfStatus(e.log, e.messagingBlocked, 'morning', today, now, cutoffs)
 
       if (eveningStatus.state === 'missing') {
-        tiles.push({
-          kind: 'evening-missing',
-          variant: eveningStatus.variant,
-          chipLabel: 'Evening check-in missing',
+        missingCheckins.push({
+          half: 'evening',
           projectId: b.projectId,
           projectName: b.projectName,
           engineerId: e.engineerId,
           engineerName: e.engineerName,
-          whatsappNumber: e.engineerWhatsappNumber,
-          hindranceId: null,
-          description: null,
-          isAcknowledged: false,
+          variant: eveningStatus.variant,
+          chipLabel: 'Evening check-in missing',
         })
       }
       if (morningStatus.state === 'missing') {
-        tiles.push({
-          kind: 'morning-missing',
+        missingCheckins.push({
+          half: 'morning',
+          projectId: b.projectId,
+          projectName: b.projectName,
+          engineerId: e.engineerId,
+          engineerName: e.engineerName,
           variant: morningStatus.variant,
           chipLabel: 'Morning check-in missing',
-          projectId: b.projectId,
-          projectName: b.projectName,
-          engineerId: e.engineerId,
-          engineerName: e.engineerName,
-          whatsappNumber: e.engineerWhatsappNumber,
-          hindranceId: null,
-          description: null,
-          isAcknowledged: false,
-        })
-      }
-      // Independent of the halves above — a blocked engineer's own missing
-      // half for TODAY is already excluded by deriveHalfStatus's own
-      // messaging_blocked branch (info, not risk), so this never
-      // double-fires as both "missing" (amber) and "stopped messages"
-      // (blue) for the same half.
-      if (e.messagingBlocked) {
-        tiles.push({
-          kind: 'stopped-messages',
-          variant: 'info',
-          chipLabel: 'Stopped messages',
-          projectId: b.projectId,
-          projectName: b.projectName,
-          engineerId: e.engineerId,
-          engineerName: e.engineerName,
-          whatsappNumber: e.engineerWhatsappNumber,
-          hindranceId: null,
-          description: null,
-          isAcknowledged: false,
         })
       }
 
@@ -219,48 +166,35 @@ export default async function DashboardPage() {
     }
   }
 
-  // One tile per hindrance, matching the pattern above -- not an aggregated
-  // rollup. A site with several active hindrances produces several cards.
-  for (const h of hindranceTilesResult.items) {
-    tiles.push({
-      kind: 'active-hindrance',
-      // Reuses /hindrances' own precedent exactly (page.tsx's CHIP map +
-      // the acknowledged-state swap) -- no new chip copy for this tile.
-      variant: h.acknowledgedAt ? 'muted' : 'blocked',
-      chipLabel: h.acknowledgedAt ? 'Seen' : 'Blocking now',
-      projectId: h.projectId,
-      projectName: h.projectName,
-      engineerId: null,
-      engineerName: null,
-      whatsappNumber: null,
-      hindranceId: h.id,
-      description: h.description,
-      isAcknowledged: h.acknowledgedAt !== null,
-    })
-  }
-
-  tiles.sort((a, b) => TILE_RANK[a.kind] - TILE_RANK[b.kind])
+  const totalCount = hindranceItems.length + missingCheckins.length
 
   return (
     // UI slice 4 (Aravind, 2026-09-18): padding/max-width moved to the
     // shared layout wrapper (app/(dashboard)/layout.tsx) so every
     // dashboard page centres in the same ~1250px container instead of
     // each setting its own narrower one.
+    //
+    // UI slice 5: mb-6 -> mb-8, matching Hindrances/Daily Logs/Projects'
+    // own header margin now, for consistent vertical rhythm (Part C). The
+    // dynamic title/subtitle text below is UNCHANGED from before this
+    // rebuild -- reused, not reworded.
     <div>
-      <div className="mb-6">
+      <div className="mb-8">
         <h1 className="text-2xl font-semibold text-gray-900">
-          {tiles.length === 0
+          {totalCount === 0
             ? 'Nothing needs you right now'
-            : `${tiles.length} thing${tiles.length === 1 ? '' : 's'} need${tiles.length === 1 ? 's' : ''} you`}
+            : `${totalCount} thing${totalCount === 1 ? '' : 's'} need${totalCount === 1 ? 's' : ''} you`}
         </h1>
         <p className="text-gray-700 mt-1 text-sm">
           {now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })} — {formatTime(now.toISOString())}
         </p>
       </div>
 
-      {tiles.length === 0 ? (
-        // A blank page on a good day reads as broken — show that the system
-        // ran, not just that nothing is wrong.
+      {totalCount === 0 ? (
+        // Unchanged from before this rebuild -- "When both groups are
+        // empty, keep the page's existing empty state unchanged." A blank
+        // page on a good day reads as broken — show that the system ran,
+        // not just that nothing is wrong.
         <Card className="p-6">
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">
             This morning
@@ -284,10 +218,16 @@ export default async function DashboardPage() {
           )}
         </Card>
       ) : (
-        <div className="flex flex-col gap-3">
-          {tiles.map((t, i) => (
-            <TileCard key={`${t.kind}-${t.projectId}-${t.engineerId ?? 'none'}-${i}`} tile={t} />
-          ))}
+        <div>
+          <h2 className="mb-4 text-sm font-semibold text-gray-700">{NEEDS_ATTENTION_HEADING}</h2>
+          <div className="flex flex-col gap-3">
+            {hindranceItems.map((h) => (
+              <HindranceNeedsAttentionCard key={h.id} item={h} now={now} />
+            ))}
+            {missingCheckins.map((m, i) => (
+              <MissingCheckinNeedsAttentionCard key={`${m.half}-${m.engineerId}-${i}`} item={m} today={today} />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -308,93 +248,46 @@ function DashboardErrorState() {
   )
 }
 
-function TileCard({ tile }: { tile: Tile }) {
-  const wa = waMeHref(tile.whatsappNumber)
-  const call = telHref(tile.whatsappNumber)
-  const isActiveHindrance = tile.kind === 'active-hindrance'
-
+// Card contents per this slice's own spec: project name, reported text,
+// its existing status chip, and the reporter line -- "matching the
+// hindrances page". No acknowledge action, no photos, no "He answered"
+// raw-timing line -- this is a glanceable pointer INTO /hindrances, not a
+// second place to manage a hindrance from.
+function HindranceNeedsAttentionCard({ item, now }: { item: HindranceCard; now: Date }) {
+  const chip = CHIP[item.timing]
   return (
-    <Card className="p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-3 mb-1">
-        <div>
-          <p className="text-xs text-gray-700 mb-1">{tile.projectName}</p>
-          {tile.kind === 'active-hindrance' ? (
-            <h3 className="font-medium text-gray-900 text-sm leading-snug line-clamp-2">
-              {tile.description}
-            </h3>
-          ) : (
-            <h3 className="font-medium text-gray-900 text-sm leading-snug">
-              {tileTitle(tile.kind, tile.engineerName)}
-            </h3>
-          )}
+    <Link href="/hindrances" className="block hover:opacity-80">
+      <Card className="p-4 sm:p-5">
+        <div className="mb-1 flex items-start justify-between gap-3">
+          <p className="text-xs text-gray-700">{item.projectName}</p>
+          <StatusChip variant={chip.variant} label={chip.label} />
         </div>
-        <StatusChip variant={tile.variant} label={tile.chipLabel} />
-      </div>
-
-      {tile.kind === 'nobody-on-site' && (
-        <p className="text-sm text-amber-700 mt-2">
-          Adding engineers isn&apos;t in the dashboard yet. Ask Aravind to set one up.
+        <p className="text-sm font-medium leading-snug text-gray-900">{item.description}</p>
+        <p className="mt-2 text-xs text-gray-700">
+          {item.reporterName} · {formatHindranceReportedDate(item.createdAt)} · {formatHindranceAge(item.createdAt, now)}
         </p>
-      )}
+      </Card>
+    </Link>
+  )
+}
 
-      {isActiveHindrance ? (
-        tile.isAcknowledged ? (
-          // Acknowledged: nothing left to action inline -- the chip above
-          // already says Seen -- so this offers a way INTO the project
-          // instead of a second action, not Undo. Deliberately asymmetric
-          // with the unacknowledged branch below, not an inconsistency:
-          // Undo lives on /hindrances only, where state actually gets
-          // managed; this tile is a glanceable surface, not a place to
-          // manage it from. No WhatsApp/Call on this state either.
-          <div className="mt-4">
-            <Link
-              href={`/projects/${tile.projectId}`}
-              className="inline-flex items-center justify-center rounded-md px-4 py-3 sm:py-1 text-sm font-medium text-brand-orange hover:bg-brand-canvas transition-colors"
-            >
-              Open project
-            </Link>
-          </div>
-        ) : (
-          // Unacknowledged: exactly one job, acknowledge it. No
-          // WhatsApp/Call (resolution happens outside the app), no link
-          // elsewhere -- this state has one thing to do, not a menu of
-          // options.
-          tile.hindranceId && <TileAcknowledgeButton hindranceId={tile.hindranceId} />
-        )
-      ) : (
-        <div
-          className={`flex flex-col sm:flex-row gap-2 ${tile.kind === 'nobody-on-site' ? 'mt-3' : 'mt-4'}`}
-        >
-          {wa && (
-            <a
-              href={wa}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-            >
-              WhatsApp
-            </a>
-          )}
-          {call && (
-            <a
-              href={call}
-              className="inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Call
-            </a>
-          )}
-          <Link
-            href={`/projects/${tile.projectId}`}
-            className={
-              !wa && !call
-                ? 'inline-flex items-center justify-center rounded-md px-4 py-3 text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors'
-                : 'inline-flex items-center justify-center rounded-md px-4 py-3 sm:py-1 text-sm font-medium text-brand-orange hover:bg-brand-canvas transition-colors'
-            }
-          >
-            Open project
-          </Link>
+// Card contents per this slice's own spec: project, engineer, which half
+// is missing, linking to that engineer's daily log for today -- the Daily
+// Logs list page itself, filtered to today, which is the only always-
+// valid target (a missing half can mean NO daily_logs row exists yet at
+// all, so there is no per-row detail page to link to in that case).
+function MissingCheckinNeedsAttentionCard({ item, today }: { item: MissingCheckinCard; today: string }) {
+  return (
+    <Link href={`/daily-logs?date=${today}`} className="block hover:opacity-80">
+      <Card className="p-4 sm:p-5">
+        <div className="mb-1 flex items-start justify-between gap-3">
+          <p className="text-xs text-gray-700">{item.projectName}</p>
+          <StatusChip variant={item.variant} label={item.chipLabel} />
         </div>
-      )}
-    </Card>
+        <p className="text-sm font-medium leading-snug text-gray-900">
+          {missingCheckinTitle(item.half, item.engineerName)}
+        </p>
+      </Card>
+    </Link>
   )
 }

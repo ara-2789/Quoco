@@ -4,6 +4,8 @@ import type { PostgrestError } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import type { LogHalfInput } from './status'
 import { UI_VISIBLE_COLUMNS, type UiVisibleColumn } from './correction'
+import { isProjectPm } from '@/lib/auth/is-project-pm'
+import type { DailyLogPhotoItem, DailyLogPhotoSectionsData } from './photos'
 
 // Data layer for the Daily Logs board (DASH-03).
 //
@@ -22,15 +24,36 @@ export type EngineerCard = {
   /** E.164 (with +) or null — the column is nullable. Used only to build the
    *  reactivation "Forward to" wa.me link; never displayed directly. */
   engineerWhatsappNumber: string | null
-  /** The daily_logs row for this engineer on this date, or null if none exists. */
+  /** The daily_logs row for this engineer on this date, or null if none exists.
+   *  UI slice 5 (Aravind, 2026-09-18): extended with the four secondary-field
+   *  columns (morning_execution_plan, evening_workers_on_site,
+   *  evening_schedule_met, evening_tomorrow_needs) so the Daily Logs list
+   *  card's expansion can show the WHOLE check-in, not just the two headline
+   *  fields -- same columns HalfColumn's own secondaryRows already read on
+   *  the detail page (components/daily-logs/log-detail-view.tsx). */
   log:
     | (LogHalfInput & {
         /** daily_logs.id — links the board card to the DASH-03 correction detail route. */
         id: string
         evening_output: string | null
         morning_plan: string | null
+        morning_execution_plan: string | null
+        evening_workers_on_site: number | null
+        evening_schedule_met: boolean | null
+        evening_tomorrow_needs: string | null
       })
     | null
+  /** UI slice 5: present only when getDailyLogsBoard was called with
+   *  photoOptions (the Daily Logs page; the Today page never requests this,
+   *  it doesn't render photos, and paying for the extra query/PM-check on
+   *  every Today render would be pure waste). undefined = not requested;
+   *  null = requested but this viewer is not a PM on this engineer's
+   *  project (isProjectPm gate, same as the detail page — must render NO
+   *  photo markup at all, never an empty section); otherwise the real
+   *  per-half photo lists (possibly both empty, which IS rendered as
+   *  "no photos" for an actual PM, matching the detail page's own D8
+   *  convention). */
+  photoSections?: DailyLogPhotoSectionsData | null
 }
 
 export type ProjectBoard = {
@@ -71,12 +94,35 @@ type LogRow = LogHalfInput & {
   engineer_id: string
   evening_output: string | null
   morning_plan: string | null
+  morning_execution_plan: string | null
+  evening_workers_on_site: number | null
+  evening_schedule_met: boolean | null
+  evening_tomorrow_needs: string | null
 }
 
+type PhotoRow = {
+  id: string
+  daily_log_id: string
+  phase: 'morning' | 'evening'
+  photo_url: string | null
+  expires_at: string
+}
+
+/**
+ * UI slice 5: pass tenantId to also fetch each engineer's photoSections on
+ * this SAME board read — one extra batched photo query (IN over every
+ * daily_logs.id already fetched, never per-card) plus one isProjectPm call
+ * per DISTINCT project on the board (never per-card/per-engineer — bounded
+ * by how many projects the PM manages, the same granularity the roster/
+ * logs queries above already use, not by row count). Omit it entirely
+ * (the Today page's own call) and this read costs exactly what it always
+ * did.
+ */
 export async function getDailyLogsBoard(
   supabase: SupabaseClient<Database>,
   pmUserId: string,
   logDate: string,
+  photoOptions?: { tenantId: string },
 ): Promise<BoardResult> {
   // 1. The PM's projects (scope). A read error here is fatal to the board — do
   // NOT discard it and proceed with an empty project set (B1).
@@ -106,7 +152,7 @@ export async function getDailyLogsBoard(
     supabase
       .from('daily_logs')
       .select(
-        'id, project_id, engineer_id, morning_submitted_at, evening_submitted_at, is_holiday, holiday_reason, evening_output, morning_plan',
+        'id, project_id, engineer_id, morning_submitted_at, evening_submitted_at, is_holiday, holiday_reason, evening_output, morning_plan, morning_execution_plan, evening_workers_on_site, evening_schedule_met, evening_tomorrow_needs',
       )
       .in('project_id', projectIds)
       .eq('log_date', logDate),
@@ -121,6 +167,40 @@ export async function getDailyLogsBoard(
   // 4. Merge, keyed by (project_id, engineer_id).
   const logByKey = new Map<string, LogRow>()
   for (const l of logs) logByKey.set(`${l.project_id}:${l.engineer_id}`, l)
+
+  // 5. Photos + the PM gate — ONLY when the caller asked for photoOptions
+  // (the Daily Logs page; Today never does). Both are batched: one photo
+  // query across every daily_logs.id already fetched above (never one per
+  // card), and one isProjectPm call per DISTINCT project on this board
+  // (never one per engineer/card) — the exact same gate the detail page
+  // uses (lib/daily-logs/photos.ts's resolveDailyLogPhotoSections), just
+  // amortised across the whole board instead of one log at a time.
+  const photosByLogId = new Map<string, DailyLogPhotoSectionsData>()
+  const isPmByProject = new Map<string, boolean>()
+  if (photoOptions && logs.length > 0) {
+    const logIds = logs.map((l) => l.id)
+    const [photosRes, pmChecks] = await Promise.all([
+      supabase
+        .from('daily_log_photos')
+        .select('id, daily_log_id, phase, photo_url, expires_at')
+        .eq('tenant_id', photoOptions.tenantId)
+        .in('daily_log_id', logIds)
+        .not('photo_url', 'is', null)
+        .order('received_at', { ascending: true }),
+      Promise.all(projectIds.map(async (pid) => [pid, await isProjectPm(supabase, pmUserId, pid)] as const)),
+    ])
+
+    if (photosRes.error) return reportReadFailure('photos', photosRes.error)
+    for (const [pid, isPm] of pmChecks) isPmByProject.set(pid, isPm)
+
+    for (const row of (photosRes.data ?? []) as unknown as PhotoRow[]) {
+      if (!row.photo_url) continue
+      const sections = photosByLogId.get(row.daily_log_id) ?? { morning: [], evening: [] }
+      const item: DailyLogPhotoItem = { id: row.id, kind: 'daily_log', expiresAt: row.expires_at }
+      sections[row.phase].push(item)
+      photosByLogId.set(row.daily_log_id, sections)
+    }
+  }
 
   const boardByProject = new Map<string, ProjectBoard>()
   for (const p of projects) {
@@ -149,8 +229,19 @@ export async function getDailyLogsBoard(
             holiday_reason: log.holiday_reason,
             evening_output: log.evening_output,
             morning_plan: log.morning_plan,
+            morning_execution_plan: log.morning_execution_plan,
+            evening_workers_on_site: log.evening_workers_on_site,
+            evening_schedule_met: log.evening_schedule_met,
+            evening_tomorrow_needs: log.evening_tomorrow_needs,
           }
         : null,
+      photoSections: !photoOptions
+        ? undefined
+        : !log
+          ? undefined
+          : isPmByProject.get(r.project_id)
+            ? (photosByLogId.get(log.id) ?? { morning: [], evening: [] })
+            : null,
     })
   }
 

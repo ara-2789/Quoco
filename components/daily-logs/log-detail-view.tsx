@@ -45,10 +45,14 @@ export type LogDetailViewProps = {
 // page already uses," not a second, independently-typed copy of either
 // label that could drift from this one.
 export const MORNING_HEADLINE_ROW = { column: 'morning_plan', label: 'Morning plan' } as const
-const MORNING_SECONDARY_ROWS = [{ column: 'morning_execution_plan', label: 'Execution plan' }] as const
+// UI slice 5 (Aravind, 2026-09-18): exported, same reasoning as the
+// headline rows above -- the Daily Logs list card's expanded view now
+// shows the whole check-in (not just the headline), via the exported
+// HalfColumn below, and needs these exact (column, label) pairs too.
+export const MORNING_SECONDARY_ROWS = [{ column: 'morning_execution_plan', label: 'Execution plan' }] as const
 
 export const EVENING_HEADLINE_ROW = { column: 'evening_output', label: 'What was done' } as const
-const EVENING_SECONDARY_ROWS = [
+export const EVENING_SECONDARY_ROWS = [
   { column: 'evening_workers_on_site', label: 'Workers on site' },
   { column: 'evening_schedule_met', label: 'Plan met?' },
   // RENAMED 2026-09-11 (migration 040) -- was evening_schedule_miss_reason /
@@ -74,7 +78,14 @@ type Row = { column: UiVisibleColumn; label: string }
 // <details> (native disclosure, same choice already made for the
 // reactivate CTA one file over -- no shadcn, per CLAUDE.md §3), then that
 // half's own photos, always visible (never collapsed).
-function HalfColumn({
+//
+// UI slice 5 (Aravind, 2026-09-18): exported so the Daily Logs list
+// card's own expansion (app/(dashboard)/daily-logs/engineer-card.tsx) can
+// reuse this EXACT rendering -- "every reported field... with its
+// existing label and its As reported by line... presented as the detail
+// page presents it" -- rather than a second, drifting copy of the same
+// layout. Nothing about this function's own body changed for that reuse.
+export function HalfColumn({
   heading,
   chipVariant,
   chipLabel,
