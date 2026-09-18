@@ -12,6 +12,12 @@ function row(overrides: Partial<{
   return {
     status: 'ok',
     row: {
+      // UI slice 2 (Aravind, 2026-09-18): `id` is now part of the 'ok'
+      // shape (getDprDeliveryState added it for the daily-log detail
+      // page's DPR link). This test exercises deriveDprDeliveryCopy only,
+      // which never reads `id` -- a fixed placeholder satisfies the type,
+      // nothing here asserts on its value.
+      id: 'zz-dpr-delivery-copy-test-id',
       content: null,
       generation_status: 'idle',
       delivery_status: 'pending',

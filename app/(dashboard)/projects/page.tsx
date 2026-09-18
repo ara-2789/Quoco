@@ -47,12 +47,23 @@ export default async function ProjectsPage() {
           <h1 className="text-2xl font-semibold text-gray-900">Projects</h1>
           <p className="text-gray-700 text-sm mt-1">All construction projects in your workspace.</p>
         </div>
-        <Link
-          href="/projects/new"
-          className="bg-blue-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-blue-700 transition-colors"
-        >
-          New Project
-        </Link>
+        {/* UI slice 2 (Aravind, 2026-09-18): DPRs reachable again without a
+            sidebar link (#299 removed it from nav, route/code untouched).
+            Text is exactly "DPRs" -- no other wording was needed, so this
+            page's own existing plain-text link style (identical to the
+            "Create your first project ->" link a few lines down) is
+            reused as-is, not the filled-button style "New Project" uses. */}
+        <div className="flex items-center gap-4">
+          <Link href="/dprs" className="text-sm text-blue-600 hover:underline">
+            DPRs
+          </Link>
+          <Link
+            href="/projects/new"
+            className="bg-blue-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            New Project
+          </Link>
+        </div>
       </div>
 
       {rows.length === 0 ? (

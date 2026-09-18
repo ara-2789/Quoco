@@ -36,6 +36,19 @@ export default async function DailyLogDetailPage({
   )
   const dprDeliveryCopy = deriveDprDeliveryCopy(dprState)
 
+  // UI slice 2, task 4a (Aravind, 2026-09-18): the SAME dprs lookup
+  // above (project_id/engineer_id/log_date), not a second query.
+  // dprState.status === 'ok' already means EITHER a real row was found
+  // AND dprs_select's RLS (project-members-scoped, migration 023) let
+  // this SSR-scoped read see it -- 'no-row' and RLS-denied are the same
+  // 'no-row' outcome here, same collapse dprs/[id]/page.tsx's own
+  // getDprDetail relies on. This page's own read access is NOT PM-gated
+  // (any project_members role, per this file's own header comment above)
+  // -- so no additional isProjectPm/role check is added here either; the
+  // link's visibility is exactly as permissive as the rest of this page
+  // already is, no more and no less.
+  const dprLinkHref = dprState.status === 'ok' ? `/dprs/${dprState.row.id}` : null
+
   // Stage 5a, build slice B3 (docs/reviews/stage5a-review-package.md, D1/
   // D3). Gated on project_members.role='pm' for THIS project via the
   // shared isProjectPm (inside resolveDailyLogPhotoSections) -- deliberately
@@ -54,6 +67,7 @@ export default async function DailyLogDetailPage({
     <LogDetailView
       data={result.data}
       dprDeliveryCopy={dprDeliveryCopy}
+      dprLinkHref={dprLinkHref}
       viewerRole={profile.role}
       now={new Date()}
       photoSections={photoSections}

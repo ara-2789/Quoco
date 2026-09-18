@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { DailyLogPhotoSections } from '@/components/daily-logs/photo-sections'
+import { DailyLogPhotoColumn, DailyLogNoPhotosMessage } from '@/components/daily-logs/photo-sections'
 import { DprPhotoSections } from '@/components/dprs/dpr-photo-sections'
 import { HindranceCardPhotos } from '@/components/hindrances/hindrance-card-photos'
 import {
@@ -66,41 +66,104 @@ function assertNeverLeaksStorage(html: string) {
   expect(html).not.toContain(SEEDED_PHOTO_URL)
 }
 
-describe('DailyLogPhotoSections (rendered output, C7)', () => {
-  it('PM input: both headings, correct alt text, /api/photos/{kind}/{id} src only, and "Kept until"', () => {
+// UI slice 2 (Aravind, 2026-09-18): the daily-log page now renders
+// Morning/Evening in two separate columns (log-detail-view.tsx), so the
+// combined DailyLogPhotoSections component this block used to test was
+// replaced by two smaller pieces -- DailyLogPhotoColumn (one half's own
+// grid) and DailyLogNoPhotosMessage (the combined D8 empty-state text,
+// which still depends on BOTH halves being empty together). This is a
+// real prop-shape change, not a colour-only edit -- updating these tests
+// to match is the correct response, per that file's own header comment.
+describe('DailyLogPhotoColumn (rendered output, C7)', () => {
+  it('morning half, PM input: heading, correct alt text, /api/photos/{kind}/{id} src only, and "Kept until"', () => {
     const html = renderToStaticMarkup(
-      <DailyLogPhotoSections
+      <DailyLogPhotoColumn
         photoSections={{
           morning: [{ id: 'aaaaaaaa-0000-0000-0000-000000000001', kind: 'daily_log', expiresAt: FUTURE_EXPIRES_AT }],
-          evening: [{ id: 'aaaaaaaa-0000-0000-0000-000000000002', kind: 'daily_log', expiresAt: FUTURE_EXPIRES_AT }],
+          evening: [],
         }}
+        half="morning"
         now={NOW}
       />,
     )
     expect(html).toContain(MORNING_PHOTOS_HEADING)
-    expect(html).toContain(EVENING_PHOTOS_HEADING)
+    expect(html).not.toContain(EVENING_PHOTOS_HEADING)
     expect(html).toContain(MORNING_PHOTO_ALT)
-    expect(html).toContain(EVENING_PHOTO_ALT)
     expect(html).toContain('Kept until')
     expect(html).not.toContain(NO_PHOTOS_FOR_LOG_TEXT)
 
     const srcs = imgSrcs(html)
-    expect(srcs).toHaveLength(2)
+    expect(srcs).toHaveLength(1)
     for (const src of srcs) expect(src).toMatch(IMG_SRC_RE)
     assertNeverLeaksStorage(html)
     assertAnchorsMatchImgSrcs(html)
   })
 
-  it('both empty for a PM: "No photos for this log.", no headings, no img', () => {
-    const html = renderToStaticMarkup(<DailyLogPhotoSections photoSections={{ morning: [], evening: [] }} now={NOW} />)
-    expect(html).toContain(NO_PHOTOS_FOR_LOG_TEXT)
+  it('evening half, PM input: heading, correct alt text, /api/photos/{kind}/{id} src only, and "Kept until"', () => {
+    const html = renderToStaticMarkup(
+      <DailyLogPhotoColumn
+        photoSections={{
+          morning: [],
+          evening: [{ id: 'aaaaaaaa-0000-0000-0000-000000000002', kind: 'daily_log', expiresAt: FUTURE_EXPIRES_AT }],
+        }}
+        half="evening"
+        now={NOW}
+      />,
+    )
+    expect(html).toContain(EVENING_PHOTOS_HEADING)
     expect(html).not.toContain(MORNING_PHOTOS_HEADING)
-    expect(html).not.toContain(EVENING_PHOTOS_HEADING)
-    expect(imgSrcs(html)).toHaveLength(0)
+    expect(html).toContain(EVENING_PHOTO_ALT)
+    expect(html).toContain('Kept until')
+
+    const srcs = imgSrcs(html)
+    expect(srcs).toHaveLength(1)
+    for (const src of srcs) expect(src).toMatch(IMG_SRC_RE)
+    assertNeverLeaksStorage(html)
+    assertAnchorsMatchImgSrcs(html)
+  })
+
+  it('this half empty: output is the empty string (no heading), even if the OTHER half has photos', () => {
+    const html = renderToStaticMarkup(
+      <DailyLogPhotoColumn
+        photoSections={{
+          morning: [],
+          evening: [{ id: 'aaaaaaaa-0000-0000-0000-000000000003', kind: 'daily_log', expiresAt: FUTURE_EXPIRES_AT }],
+        }}
+        half="morning"
+        now={NOW}
+      />,
+    )
+    expect(html).toBe('')
   })
 
   it('non-PM input (null): output is the empty string', () => {
-    const html = renderToStaticMarkup(<DailyLogPhotoSections photoSections={null} now={NOW} />)
+    const html = renderToStaticMarkup(<DailyLogPhotoColumn photoSections={null} half="morning" now={NOW} />)
+    expect(html).toBe('')
+  })
+})
+
+describe('DailyLogNoPhotosMessage (rendered output, D8/C7)', () => {
+  it('both halves empty for a PM: "No photos for this log."', () => {
+    const html = renderToStaticMarkup(
+      <DailyLogNoPhotosMessage photoSections={{ morning: [], evening: [] }} />,
+    )
+    expect(html).toContain(NO_PHOTOS_FOR_LOG_TEXT)
+  })
+
+  it('one half non-empty: output is the empty string (no message)', () => {
+    const html = renderToStaticMarkup(
+      <DailyLogNoPhotosMessage
+        photoSections={{
+          morning: [{ id: 'aaaaaaaa-0000-0000-0000-000000000004', kind: 'daily_log', expiresAt: FUTURE_EXPIRES_AT }],
+          evening: [],
+        }}
+      />,
+    )
+    expect(html).toBe('')
+  })
+
+  it('non-PM input (null): output is the empty string', () => {
+    const html = renderToStaticMarkup(<DailyLogNoPhotosMessage photoSections={null} />)
     expect(html).toBe('')
   })
 })

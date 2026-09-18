@@ -16,3 +16,16 @@ export function formatHindranceAge(createdAt: string, now: Date): string {
   const days = Math.floor(hours / 24)
   return `${days} day${days === 1 ? '' : 's'} ago`
 }
+
+// UI slice 2 (Aravind, 2026-09-18): the reported date, IST, "{d MMM
+// yyyy}" (e.g. "18 Sep 2026") -- for the row anatomy's own "{name} ·
+// {date} · {age}" line, SAME timestamp formatHindranceAge above already
+// uses (createdAt), not a second read of anything.
+export function formatHindranceReportedDate(createdAt: string): string {
+  return new Date(createdAt).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  })
+}

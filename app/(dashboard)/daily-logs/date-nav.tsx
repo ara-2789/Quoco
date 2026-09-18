@@ -63,6 +63,21 @@ export function DateNav({ date, today }: { date: string; today: string }) {
           Today
         </button>
       )}
+      {/* UI slice 2 (Aravind, 2026-09-18): native date input alongside the
+          existing prev/next/Today controls, which keep working exactly as
+          above -- this is additive, not a replacement. `date`/`today` are
+          already IST calendar-date strings ('YYYY-MM-DD', istDateString
+          upstream), the exact format <input type="date"> itself uses, so
+          no new date library or timezone conversion is needed. No visible
+          label (no new user-facing text) -- aria-label only. */}
+      <input
+        type="date"
+        aria-label="Choose date"
+        value={date}
+        max={today}
+        onChange={(e) => e.target.value && go(e.target.value)}
+        className="ml-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm text-gray-900 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
     </div>
   )
 }

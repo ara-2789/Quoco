@@ -6,11 +6,11 @@ import {
   MORNING_PHOTO_ALT,
   EVENING_PHOTO_ALT,
 } from '@/lib/photos/copy'
-import type { DailyLogPhotoSectionsData } from '@/lib/daily-logs/photos'
+import type { DailyLogPhotoSectionsData, DailyLogPhotoItem } from '@/lib/daily-logs/photos'
 
 // Stage 5a, build slice B3 (docs/reviews/stage5a-review-package.md, D1/
-// D3/D8). Pure presentational component -- synchronous, no data fetching
-// -- so it is directly renderable in isolation (react-dom/server's
+// D3/D8). Pure presentational -- synchronous, no data fetching -- so it
+// is directly renderable in isolation (react-dom/server's
 // renderToStaticMarkup, C7's rendered-output proof).
 //
 // photoSections === null means "not a PM on this project" (R1 revision,
@@ -23,46 +23,53 @@ import type { DailyLogPhotoSectionsData } from '@/lib/daily-logs/photos'
 // Stage 5a, build slice B4 (Aravind, 2026-09-17): headings/grid
 // readability fix. HEADING_CLASSES below is copied VERBATIM from this
 // page's own existing section headings -- components/daily-logs/log-
-// detail-view.tsx:97,113,132 ("Day"/"Morning"/"Evening" <h2>s) -- not a
-// new style. The thumbnail grid uses gap-2, matching this same page's own
-// nearby gap usage (log-detail-view.tsx:85, the StatusChip row).
+// detail-view.tsx's own "Day"/"Morning"/"Evening" <h2>s -- not a new
+// style. The thumbnail grid uses gap-2, matching this same page's own
+// nearby gap usage (the StatusChip row).
 const HEADING_CLASSES = 'text-xs font-semibold uppercase tracking-wide text-gray-600'
 
-export interface DailyLogPhotoSectionsProps {
+// UI slice 2 (Aravind, 2026-09-18): morning/evening now render inside
+// TWO SEPARATE columns (log-detail-view.tsx's own split), not one
+// combined block -- so the combined DailyLogPhotoSections component from
+// B3/B4 is REPLACED here by two smaller pieces the column layout can
+// place independently: one photo grid for a single half
+// (DailyLogPhotoColumn), and the combined empty-state message on its
+// own (DailyLogNoPhotosMessage), since D8's "No photos for this log."
+// still depends on BOTH halves being empty together, not either column
+// alone. Nothing about D1/D3/D8/D9's own rules changed, only where each
+// piece renders. test/photo-sections-render.test.tsx's own
+// "DailyLogPhotoSections" describe block is updated to match (see that
+// file) -- this is a real prop-shape change, not a colour-only edit, so
+// updating the test is the correct response, not a shortcut.
+
+export interface DailyLogPhotoColumnProps {
   photoSections: DailyLogPhotoSectionsData | null
+  half: 'morning' | 'evening'
   now: Date
 }
 
-export function DailyLogPhotoSections({ photoSections, now }: DailyLogPhotoSectionsProps) {
+export function DailyLogPhotoColumn({ photoSections, half, now }: DailyLogPhotoColumnProps) {
   if (!photoSections) return null
-  const { morning, evening } = photoSections
+  const items: DailyLogPhotoItem[] = photoSections[half]
+  if (items.length === 0) return null
 
-  if (morning.length === 0 && evening.length === 0) {
-    return <p>{NO_PHOTOS_FOR_LOG_TEXT}</p>
-  }
+  const heading = half === 'morning' ? MORNING_PHOTOS_HEADING : EVENING_PHOTOS_HEADING
+  const alt = half === 'morning' ? MORNING_PHOTO_ALT : EVENING_PHOTO_ALT
 
   return (
-    <>
-      {morning.length > 0 && (
-        <section>
-          <h2 className={HEADING_CLASSES}>{MORNING_PHOTOS_HEADING}</h2>
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {morning.map((p) => (
-              <PhotoImg key={p.id} kind={p.kind} id={p.id} alt={MORNING_PHOTO_ALT} expiresAt={p.expiresAt} now={now} />
-            ))}
-          </div>
-        </section>
-      )}
-      {evening.length > 0 && (
-        <section>
-          <h2 className={HEADING_CLASSES}>{EVENING_PHOTOS_HEADING}</h2>
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {evening.map((p) => (
-              <PhotoImg key={p.id} kind={p.kind} id={p.id} alt={EVENING_PHOTO_ALT} expiresAt={p.expiresAt} now={now} />
-            ))}
-          </div>
-        </section>
-      )}
-    </>
+    <section>
+      <h2 className={HEADING_CLASSES}>{heading}</h2>
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {items.map((p) => (
+          <PhotoImg key={p.id} kind={p.kind} id={p.id} alt={alt} expiresAt={p.expiresAt} now={now} />
+        ))}
+      </div>
+    </section>
   )
+}
+
+export function DailyLogNoPhotosMessage({ photoSections }: { photoSections: DailyLogPhotoSectionsData | null }) {
+  if (!photoSections) return null
+  if (photoSections.morning.length > 0 || photoSections.evening.length > 0) return null
+  return <p>{NO_PHOTOS_FOR_LOG_TEXT}</p>
 }
