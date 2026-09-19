@@ -1,642 +1,465 @@
-# Add-engineer screen — build plan (rev3)
+# Add-engineer screen — build plan (rev4)
 
-> PLAN ONLY. rev1 at `c86c5b6`, rev2 at `e67e297` (each pinned: `git show <sha>:docs/plans/add-engineer-plan.md`
-> returns the exact text). rev3 written on `feat/add-engineer-plan`, base `origin/main` @ `0744110`
-> (re-fetched this pass; unchanged). No application code, no migration file, no SQL intended to ship.
-> Tier: FULL (identity, tenant isolation, new migration).
+> PLAN ONLY. rev1 `c86c5b6` (2026-09-18 23:06 IST), rev2 `e67e297` (2026-09-18 23:41 IST), rev3 `9b9187c`
+> (2026-09-19 00:15 IST) — each pinned (`git show <sha>:docs/plans/add-engineer-plan.md`). rev4 written 2026-09-19 (IST)
+> on `feat/add-engineer-plan`, base `origin/main` @ `0744110` (re-fetched; unchanged). No application code, no migration
+> file, no SQL intended to ship. Tier: FULL (identity, tenant isolation, new migration).
 >
-> **Evidence rule.** Every claim cites source printed in `~/Desktop/add-engineer-plan-rev3.txt` ("the log").
-> Citations are `path:line`; database claims cite `probe <letter>` (SQL and result both in the log); two
-> throwaway analysis scripts (not in the repo, not shipping) are printed with their output. Anything not
-> printed is **ASSUMED** or under UNKNOWNS. Anything Aravind must decide is **DECISION**.
+> **Evidence rule.** Every claim cites source printed in `~/Desktop/add-engineer-plan-rev4.txt` ("the log"). Citations are
+> `path:line`; database claims cite `probe <letter>`; four throwaway scripts (not in the repo, not shipping) are printed with
+> their output. Anything not printed is **ASSUMED** or under UNKNOWNS. The log begins (Section 0) by restating four sentences of my
+> rev3 report that reached Aravind truncated, with what each cut hid.
 >
-> **Correction discipline.** Retracted claims stay visible as ~~strikethrough~~ with a dated correction, in the
-> two blocks below and inline. Nothing is silently rewritten.
+> **Correction discipline.** Retracted claims stay visible as ~~strikethrough~~ with a dated correction, in the blocks below and inline.
 >
-> **Settled by Aravind, applied here without re-raising:** D1 `status='active'` plus `registered_by` /
-> `registered_at`; D2/D5 a SECURITY DEFINER function, not a service client; D3 India-mobile only; D4 caps
-> stand (100-character names, 50 lines); D6 the role gate is the intersection stated in §1; D7 the dry-run flag.
+> **Settled by Aravind, applied without re-raising:** D1 `status='active'` plus attribution; D2/D5 SECURITY DEFINER function;
+> D3 India-mobile only (TypeScript); D4 caps (100-char names, 50 lines); D6 role-gate intersection; D7 dry-run flag; **D8** CHECK on
+> `project_members.role` in the same migration; **D9** consent attestation *recorded, not enforced*; **D10** record who deactivated and when.
 
 ## Scope
 
-**In scope:** paste → preview (dry-run) → confirm → apply for adding site engineers to ONE project; a
-**deactivate** control (new in rev3); attribution columns; the partial unique index.
-**Deferred, named:** file upload/extraction; reassigning an existing number to another project;
-**removing** an engineer or freeing a number (deactivate does neither, §2.9); editing an engineer;
-duplicate-name detection; reactivating a deactivated engineer from the dashboard; the ENG-01 opt-in flow;
-rate limiting across calls; recording who deactivated (D10).
-~~rev1 listed "removing an engineer" as one deferred item.~~ **CORRECTED 18 Sep 2026 (rev3):** *deactivating* is
-now in scope by Aravind's decision; *removal* and *freeing the number* stay deferred.
+**In scope:** paste → preview (dry-run) → confirm → apply for adding site engineers to ONE project; a **deactivate** control; attribution
+columns (`registered_by`, `registered_at`, `consent_attested`, `deactivated_by`, `deactivated_at`); the partial unique index; the CHECK on
+`project_members.role`.
+**Deferred, named:** file upload/extraction; reassigning an existing number to another project; **removing** an engineer or **freeing a number**
+(deactivate does neither, §2.9); editing an engineer; duplicate-name detection; reactivating a deactivated engineer from the dashboard; the
+ENG-01 opt-in flow; rate limiting across calls; the `<>` tenant comparison at `019:230`; scoping `resolveEngineerProject` to `role='engineer'`
+(both named in §4.5); cleaning up session rows for deactivated engineers (finding F2, §2.9).
 
-## Dated corrections, 18 Sep 2026 (rev2) — kept from the previous pass
+## Dated corrections, 19 Sep 2026 (rev4) — every change in this pass
+
+| # | Earlier text (retracted) | rev4 result | Where |
+|---|---|---|---|
+| 1 | ~~rev3 heading "Dated corrections, 18 Sep 2026 (rev3)" and rev3's inline "CORRECTED 18 Sep 2026 (rev3)" in Scope~~ | **Wrong date.** The rev3 log's first line reads `started Sat Sep 19 00:01:34 IST 2026` and the rev3 commit is `2026-09-19 00:15:46 +0530` (log). rev3 was written on **19 Sep in IST**; it was still 18 Sep only in UTC (18:31–18:45 UTC). This project keeps IST (`CLAUDE.md`, cutoffs), so 19 Sep is the record. rev1 (22:55–23:06 IST) and rev2 (23:26–23:41 IST) headings, 18 Sep, are correct as written. My rev3 report even said the system date was 19 Sep and I kept 18 Sep anyway; that was the error. | rev3 block below |
+| 2 | ~~rev3 §3.6 / rev3 correction #5: "India-only in SQL is rejected because the DB fixtures are all `+1…`, so every DB test would become impossible"~~ | **The reason was wrong**, though the decision stands (India rule in TypeScript, generic E.164 in SQL). Test-fixture shape must never decide a production constraint: that is the failure that let the correction-gate bug hide (evidence in §3.6). Replacement reason and the accepted limit recorded in §3.6. | §3.6 |
+| 3 | ~~rev3 §4.5 item 1 / D8 "open — recommended"~~ | **Settled:** CHECK `role IN ('pm','engineer')` in the same migration. Underlying finding recorded (RLS policy places no restriction on the inserted row's `role`). **New conflict found and flagged:** three test sites write `role: 'qs'` into `project_members` and would fail at fixture setup (D11). | §4.5 |
+| 4 | ~~rev3 D9 "open"; rev3 §5 "the apply action … refuses if the attestation is absent"; rev3 §2.1 three-parameter signature~~ | **Record, do not enforce.** New column `consent_attested`; the function takes a fourth parameter and records it; nothing inside the function refuses. The screen's apply control is disabled until the box is ticked (UI only). | §2.1, §2.6, §5 |
+| 5 | ~~rev3 D10 "open — not specified, not added"~~ | **Settled:** `deactivated_by`, `deactivated_at`, written by `deactivate_engineer` in the same UPDATE. | §2.8, §2.9 |
+| 6 | ~~rev3 T12 / §7.1: "wrapped in vitest `it.fails`; the repo already uses this, e.g. `test/evening-flow.test.ts:128`"~~ | **Wrong.** There is **no executable `it.fails` in `test/` today**; all hits are comments recording past use (grep f2: zero non-comment lines). The practice is documented and was used (`section-42-unmatched-capture.test.ts:16-22`). Its behaviour is now **verified by running it** on the installed vitest 3.2.7 in a scratch directory (log): blank assertion → test passes; filled → wrapper fails (the flip). | §7 T12 |
+| 7 | ~~rev3 UNKNOWNS #5 "session cleanup not traced"~~ and rev3 §2.9 "silent-dropped" as the whole story | **Traced** (log). Findings F1 and F2 in §2.9: the morning sweep still writes for a deactivated engineer, and evening/hindrance session rows are left parked indefinitely. Not fixed here. | §2.9 |
+| 8 | ~~rev3 UNKNOWNS #6 / §2.7 "`pg_temp` not settled"~~ | Resolved as far as the repo goes: all 15 existing definer functions carry exactly `search_path=public` (probe n); the new functions follow. | §2.7 |
+| 9 | ~~rev3 §7.3 "the row is created `active` on test-db, where no cron runs against real Twilio (ASSUMED)"; `TEST_BOUNDARY_PHONE_LITERAL` "value owed"~~ | Literal supplied (`+919176861156`). The "assumed" is replaced by a shown/not-shown breakdown (§7.3). | §7.3 |
+| 10 | ~~rev3 R7 "same tenant with no membership → generic `number_registered`"~~ | Split: a same-tenant engineer with **no membership** now returns its own status `registered_no_project` (in-tenant only; cross-tenant stays generic). Reason: otherwise the admin has no signal and the engineer's own reply loops back to the PM (F3, §2.9). | §4 |
+| 11 | ~~rev3 §7.2 presented all matrix rows as equally real~~ | Rows 3–8 (`users.role='pm'` and similar) are **fixture-only shapes**: test-db has no `pm` user (probe t) and real PMs are `admin` + `pm` membership. Row 2 is the real shape. | §7.2 |
+| 12 | ~~rev3 §6 "**[D8]** a CHECK … optional"~~ | Now a definite item of the migration (gated on D11). | §6 |
+| 13 | ~~rev3 §3.3 evidence list and §3.2 quoted specific ten-digit values~~ | Individual digit strings removed from prose (instruction: mint no other `+91` value anywhere); the corpus is in the log. | §3 |
+| 14 | (new) | Added: residual-risk statement (D); the restated truncations (Section 0 of the log); new strings (F); new tests T19–T21; `docs/schema.md:127-130` noted stale. | throughout |
+
+## Dated corrections, ~~18 Sep 2026~~ **19 Sep 2026** (rev3) — every change in that pass (date corrected in rev4, #1)
+
+| # | rev2 said (retracted) | rev3 result |
+|---|---|---|
+| 1 | ~~§9 "`// Tamil owed, NOT approved`" citing `lib/photos/copy.ts:13-20`~~ | Mis-citation: that comment marks *approved English awaiting Tamil* (`copy.ts:3-6`). Unapproved wording uses `// Wording owed, NOT approved`, which exists nowhere yet (grep s2). |
+| 2 | ~~§2.3 step 1 explicit NULL-tenant refusal; T1 fixture a NULL-role stub~~ | One null-safe comparison; T1 fixture `role='admin'` with NULL tenant (the stub could never have gone red: the role gate refuses NULL role first). |
+| 3 | ~~§1 `isProjectPm` unused; page render via empty dry-run~~ | Advisory TypeScript gate reusing `isProjectPm`; T6 runs one matrix against both. |
+| 4 | ~~§1/§2.3 "`admin`, or `pm` + membership"~~ | Restated as D6's intersection (same outcomes). |
+| 5 | ~~§2.3/§3.7 function re-asserts the India shape; T9 two implementations agree~~ | India rule in TypeScript only; SQL asserts generic E.164. *(The reason given for this was itself retracted in rev4 #2.)* |
+| 6 | ~~§3.5 listed a `whatsapp:` prefix as accepted paste input~~ | Rejected by the paste validator (V1). |
+| 7–14 | rev2 §3.6 rejected list; §3.6 fixture claim; §9 plain constants; UNKNOWN #1; §6 migration scope; §12 file list; new dry-run/deactivate/attribution/validator/strings/tests | See the pinned rev3 text `git show 9b9187c:docs/plans/add-engineer-plan.md`. Fixture claim corrected: shapes 11-digit, 14-digit and a run-scoped nested form; probe g: 1,868 × 14 digits and 2 × 11 digits; none starts `+91`. |
+
+## Dated corrections, 18 Sep 2026 (rev2) — kept (dates verified correct, rev4 #1)
 
 | # | rev1 said (retracted) | rev2 result |
 |---|---|---|
-| 1 | ~~§1 "tighter than the DB policy `project_members_insert`"~~ | Tighter on scope, looser on role; the gate moved into the function (§1). |
-| 2 | ~~§0 "the users insert needs the service client; first dashboard use of `createServiceClient()`"~~ | Superseded by D2/D5. No service client. |
-| 3 | ~~§2 two-client split, compensating delete, Sentry orphan path~~ | One SECURITY DEFINER function, one transaction. |
-| 4 | ~~§3 "prod shapes are unread"~~ | Aravind observed prod; §3 rewritten from source. |
-| 5 | ~~§4 preview cells quoted candidate labels~~ | Drafted wording removed; constants only. |
-| 6 | ~~§4 R6 "also what the new partial index enforces"~~ | The index never fires from this screen; R6 is a lookup result. |
-| 7 | ~~§5 row-by-row partial apply~~ | All-or-nothing. |
-| 8 | ~~§6 "048 is reserved; 049 next"~~ | 048 is released and free (`migration-number-reservations.json`). |
-| 9 | ~~§7 T8 cleanup test, T10 payload spy~~ | Replaced. |
-| 10 | ~~§8 wrong-tenant residual~~ | Moot. |
-| 11 | ~~§9 `RESULT_ROW_RACE`, `RESULT_ROW_FAILED`, `RESULT_ROW_FAILED_NEEDS_SUPPORT`~~ | Removed. |
-| 12 | ~~§12 `classify.ts`~~ | Dropped. |
-
-## Dated corrections, 18 Sep 2026 (rev3) — every change in this pass
-
-| # | rev2 said (retracted) | rev3 result | Where |
-|---|---|---|---|
-| 1 | ~~§9 "comment `// Tamil owed, NOT approved` (convention: `lib/photos/copy.ts:13-20`)"~~ | **Mis-citation.** `lib/photos/copy.ts:3-6` says the strings are approved English, "Tamil is owed, not yet approved"; that comment marks *approved English awaiting Tamil*. Unapproved wording gets `// Wording owed, NOT approved`. That phrase exists nowhere in the repo yet (grep s2), so it is a new convention set by this instruction. | §9 |
-| 2 | ~~§2.3 step 1 refused a NULL-tenant caller explicitly, and §7 T1's fixture was "a pre-onboarding stub (role NULL)"~~ | One mechanism only: a null-safe tenant comparison. **T1's old fixture could never have gone red**: a stub has `role` NULL, and the role gate refuses it before the tenant comparison matters. New fixture: `role='admin'`, `tenant_id` NULL. | §2.3, §7 T1 |
-| 3 | ~~§1 "`isProjectPm` is no longer used"; page render decided by an empty dry-run~~ | A TypeScript **advisory** gate exists (UI affordance only) and reuses `isProjectPm`; the function stays authoritative; T6 runs one shared matrix against both. The empty-list dry-run probe is removed. | §1, §7 T6 |
-| 4 | ~~§1/§2.3 rule "`admin`, or `pm` + membership"~~ | Restated in D6's intersection form; identical outcomes (shown in the T6 matrix). Tenant equality now applies to both branches explicitly. | §1 |
-| 5 | ~~§2.3 / §3.7 "the function re-asserts the India shape"; §7 T9 "two implementations must agree"~~ | The India policy is enforced **in TypeScript only**. The function asserts the generic E.164 shape, exactly the one phone CHECK in the schema. Reason: the DB fixtures are all `+1…`, so an India-only SQL check would make every DB test impossible. Known limit recorded. | §3.6, §7 T9 |
-| 6 | ~~§3.5 table listed `whatsapp:+919876543210` as an accepted input~~ | Rejected by the paste validator (V1, charset). Real Twilio input still goes through `normalisePhoneNumber` untouched on the webhook side. | §3.3 |
-| 7 | ~~§3.6 rejected-input list from the rev2 probe~~ | Replaced by the rev3 validator probe (34 inputs (14 accepted, 20 rejected), 0 violations). | §3 |
-| 8 | ~~§3.6 "the test phone blocks are `+1999555…`"~~ | Corrected in detail: fixture shapes are 11-digit (`+19995550NNN`), 14-digit (`+19995551…`, `+19995552…`), and a run-scoped nested form; none starts `+91`. The instruction's "every fixture is 14 digits" is also not quite right: probe g shows 1,868 × 14 digits **and 2 × 11 digits**. Conclusion unchanged. | §7.3 |
-| 9 | ~~§9 `PREVIEW_SUMMARY`, `RESULT_SUMMARY`, `REJECT_NAME_TOO_LONG`, `ERROR_PASTE_TOO_LONG` as plain constants~~ | Formatters with named parameters, after `formatKeptUntilLine`. | §9 |
-| 10 | ~~UNKNOWNS #1 "prod phone shape unknown; the mask can't show `+91`"~~ | Aravind reports prod: one row, prefix `+91`, `+` + 12 digits. Recorded as user-supplied, the whole observed population (n=1). | §4.5 |
-| 11 | ~~§6 migration = index + one function~~ | Index + two attribution columns + a helper + **two** functions (add, deactivate); optional CHECK on `project_members.role` (D8). | §6 |
-| 12 | ~~§12 file list~~ | Updated (gate, deactivate wrapper, engineers list page, shared test matrix, blank copy file). | §12 |
-| 13 | (new) | Added: dry-run specification (A), deactivate function (B), attribution (C), validator status (D), formatters and new constants (E), test changes (F), §4.5 additions (G). | §2–§9 |
+| 1–12 | ~~§1 "tighter than the policy"; §0 service-client claim; §2 two-client design; §3 "prod unread"; §4 quoted labels; R6 "index enforces"; §5 partial apply; §6 "048 reserved, 049 next"; §7 T8/T10; §8 residual; §9 three per-row strings; §12 `classify.ts`~~ | Gate moved into the function; no service client; one transaction; drafted wording removed; R6 is a lookup; all-or-nothing; 048 is free (reservations file: "RELEASED, NEVER USED … 048 is free"); strings folded into `ERROR_BATCH_NOT_APPLIED`. Full rows: `git show e67e297:docs/plans/add-engineer-plan.md`. |
 
 ## 0. Findings that shape the plan — read first
 
-1. **`status='active'` is settled (D1), with attribution.** It still departs from ENG-01
-   (`docs/bot-flows.md:303-308`), which wanted `pending` plus an opt-in template and an audit row. Nothing in code
-   implements that flow (log greps g1–g3): the only `quoco_engineer_optin` hit is a comment (`route.ts:209`); no
-   `registered_by` anywhere (grep c1: zero hits in `app lib supabase scripts test types`; the only doc hit is the
-   ENG-06 spec line, `bot-flows.md:308`). Because `active` engineers receive the next cron send with no opt-in,
-   the plan adds an admin **consent attestation** before apply (§5, §9) and records who registered (§2.6).
-2. **The partial index cannot fire from this screen's own inserts** — every pasted row is a new `users.id`. The
-   index test (§7 T3) inserts directly.
-3. **`status` is `NOT NULL DEFAULT 'active'`** (probe d; `012_…sql:45-46`), so an omitted `status` would also read
-   as live. The gate decision is `route.ts:159` → `reactivation.ts:29-33`.
-4. **`authenticated` cannot write `users` at all** — no INSERT (probe k, `015:114`), UPDATE only on
-   `full_name, avatar_url` (`015:105`), and the only UPDATE policy is `auth_id = auth.uid()` (probe j). So *both*
-   the add and the deactivate need a definer function; no service client is involved (g4: none imported under
-   `app/(dashboard)`).
-5. **Phone chain: no mismatch, but no validator exists** (§3). `normalisePhoneNumber` never rejects.
-6. **Migration number 048** is free (log: `git ls-tree origin/main` ends at 047; reservations file ends at 048 with
-   "RELEASED, NEVER USED … 048 is free for the next real migration").
-7. **Deactivation already takes effect everywhere that matters** (§2.9, printed source).
+1. **`status='active'` (D1) departs from ENG-01** (`docs/bot-flows.md:303-308`: `pending` + opt-in template + audit row). None of that exists in code (greps g1–g3: the only
+   `quoco_engineer_optin` hit is a comment, `route.ts:209`; no `registered_by`; grep c1/c3: none of `registered_by`, `registered_at`, `consent_attest*`,
+   `deactivated_by`, `deactivated_at` exists in `app lib supabase scripts test types`; probe s: none on any table). A non-`active` user is silently dropped by the webhook
+   (`reactivation.ts:29-33`) and every roster. So `active` is the only value that works today; the missing consent step is recorded and mitigated (§2.8, §4.6), not solved.
+2. **The partial index cannot fire from this screen's own inserts** — every pasted row is a new `users.id`. T3 inserts directly.
+3. **`users.status` is `NOT NULL DEFAULT 'active'`** (probe d; `012_…sql:45-46`); the gate is `route.ts:159` → `reactivation.ts:29-33`.
+4. **`authenticated` cannot write `users`**: no INSERT (probe k, `015:114`), UPDATE only on `full_name, avatar_url` (`015:105`), only UPDATE policy is own-row (probe j). So add
+   and deactivate both need definer functions; no service client (g4: none under `app/(dashboard)`).
+5. **Phone chain: no mismatch, but no validator exists** (§3).
+6. **Migration number 048** is free (log: `origin/main` migrations end at 047; reservations end at 048, "RELEASED, NEVER USED … 048 is free").
+7. **Deactivation propagates through `users.status`** (§2.9), but two side-effects are **findings** (F1, F2) and one dead end exists for engineers with no membership (F3).
+8. **A test/production shape gap decides real bugs in this repo** (§3.6): six test sites `update({ role: 'pm' })` on a fixture profile while real PMs are `admin`.
+9. **Conflict with D8's set:** three test sites write `role: 'qs'` into `project_members` (§4.5, D11).
 
 ## 1. Authorisation
 
-**The rule (D6, settled).** A caller may add or deactivate iff, with the caller resolved as `users` row where
-`auth_id = auth.uid()`:
+**The rule (D6).** With the caller resolved as the `users` row where `auth_id = auth.uid()`: `users.role IN ('admin','pm')` **AND** the project exists **in the caller's tenant**
+**AND** (`users.role = 'admin'` **OR** a `project_members` row with `role = 'pm'` for this `(user, project)`). Identical outcomes to rev3's "admin, or pm + membership" (T6 matrix).
+It is the intersection of the DB policy's role list (`project_members_insert`, probe j) and per-project membership; `qs`/`engineer`/NULL-role users never pass, even with a `pm` membership.
 
-`users.role IN ('admin','pm')` **AND** the project exists **in the caller's tenant** **AND**
-(`users.role = 'admin'` **OR** a `project_members` row with `role = 'pm'` for this `(user, project)`).
+**Where each role column is written.** `users.role='admin'` for a self-serve account: `005:76-80`, `016:177-181`. `project_members.role='pm'` for a project's creator:
+`app/(dashboard)/projects/new/page.tsx:49-54`. So every real PM is `users.role='admin'` + `project_members.role='pm'`. grep g8: nothing writes `users.role='pm'` outside tests; probe t: test-db
+has 10 admins, 3 NULL-role stubs, 1,872 engineers, **no `pm` user**. Effective rule today is tenant-wide; the per-project narrowing only bites a `users.role='pm'` account.
 
-Equivalently: an admin of the project's tenant; or a `pm` (or an `admin`) holding a `pm` membership on this project.
-This is the *intersection* of the DB policy's role list (`project_members_insert`, probe j: `users.role IN
-('pm','admin')`) and per-project membership. Rows a `qs`/`engineer`/NULL-role user cannot pass even with a `pm`
-membership.
-
-**Where each role column is written.** `users.role='admin'` for a self-serve account: `complete_onboarding`,
-`005_auth_trigger.sql:76-80`, `016_corrections.sql:177-181`. `project_members.role='pm'` for a project's creator:
-`app/(dashboard)/projects/new/page.tsx:49-54`. So every real PM today is `users.role='admin'` + `project_members.role='pm'`.
-grep g8 finds no code or migration writing `users.role='pm'`; probe t shows test-db holds 10 admins, 3 NULL-role
-stubs, 1,872 engineers and **no** `pm` users. In practice the effective rule today is tenant-wide, which is already
-true of the RLS policy; the per-project narrowing only bites for a `users.role='pm'` account.
-
-**Two implementations, one authority.**
-- **SQL (authoritative):** the shared internal helper (§2.7) evaluates the rule for both functions.
-- **TypeScript (advisory only):** a pure `decideEngineerAdminAccess` used to decide whether to *show* the link,
-  the page, and the deactivate control. Its membership leg reuses `isProjectPm` (`lib/auth/is-project-pm.ts:20-34`;
-  `project_members.role='pm'` for the exact pair, takes `users.id`, throws on error → treat as refuse). It is never a
-  security boundary; if it and the SQL ever disagree, SQL wins. **T6 exists to catch that drift**: one fixture matrix
-  run against both.
-~~rev2: "`isProjectPm` is not used on the write path any more … whether to render the form is decided by calling the
-function in dry-run mode with an empty list."~~ **Corrected (rev3, #3).** The empty-list probe is removed; the
-function requires at least one row in both modes.
-
-**Correction carried from rev2, kept visible.**
-~~"This is *tighter* than the DB policy `project_members_insert`."~~ — rev1. It is tighter on per-project scope and
-looser on role (rev1 admitted any `pm`-membership holder regardless of `users.role`). The intersection above
-closes the role side.
+**Two implementations, one authority.** SQL (authoritative): the internal helper (§2.7) used by both functions. TypeScript (advisory only): pure `decideEngineerAdminAccess`, deciding whether to
+*show* the link, page and deactivate control; its membership leg reuses `isProjectPm` (`lib/auth/is-project-pm.ts:20-34`). If they disagree, SQL wins. T6 catches drift.
 
 ## 2. The add function — SECURITY DEFINER (`add_engineers_to_project`)
 
 ### 2.1 Contract (signature and behaviour; no body is written here)
 
-`(p_project_id uuid, p_engineers jsonb, p_dry_run boolean) → jsonb`. No parameter defaults (a later signature
-change would create a second overload, `CLAUDE.md:361-372`; brand-new function, so not tripped now).
-`p_engineers` is an array of `{ name, whatsapp_number }`. `whatsapp_number` arrives **already validated and
-normalised by TypeScript** (§3); the function asserts only the generic stored shape (§3.6).
+`(p_project_id uuid, p_engineers jsonb, p_dry_run boolean, p_consent_attested boolean) → jsonb`. No parameter defaults (`CLAUDE.md:361-372`). `p_engineers` is an array of
+`{ name, whatsapp_number }`, the number **already validated and normalised by TypeScript** (§3); the function asserts only the generic stored shape (§3.6).
+~~rev3: three parameters~~ — the fourth is new (rev4 #4). In dry-run, `p_consent_attested` is ignored. In apply it is recorded as `coalesce(p_consent_attested, false)`.
 
-Return: `{ applied: boolean, rows: [ { idx, status, … } ] }`. Row `status` values are machine identifiers, not
-wording. **Allowed fields per status — this is the whole payload, and nothing else may appear:**
+Return `{ applied: boolean, rows: [ { idx, status, … } ] }`. Status values are machine identifiers, not wording. **Allowed fields per status — the whole payload:**
 
 | status | fields | note |
 |---|---|---|
 | `ok` (dry-run: would be added) | `idx, status` | |
-| `added` (apply) | `idx, status, user_id` | the new `users.id` |
+| `added` (apply) | `idx, status, user_id` | |
 | `already_on_this_project` | `idx, status` | no name, no id |
-| `on_another_project` | `idx, status, other_project_name` | **in the caller's own tenant only** |
-| `number_registered` | `idx, status` — **exactly these two keys** | the generic outcome; never carries a project id, project name, or full name |
+| `on_another_project` | `idx, status, other_project_name` | **the caller's own tenant only** |
+| `registered_no_project` | `idx, status` | **same-tenant engineer with no membership only** (new, rev4 #10) |
+| `number_registered` | `idx, status` — **exactly these two keys** | the generic outcome; never a project id, project name, or full name |
 
-### 2.2 The dry-run flag (A)
+### 2.2 The dry-run flag (D7) — specified behaviour, both modes
 
-`p_dry_run = true`: the function performs authorisation, tenant binding, argument validation and **full
-classification**, returns the same per-row payload apply would, and **writes nothing**. The preview screen calls it
-this way. `p_dry_run = false` is apply.
+`p_dry_run = true`: authorisation, tenant binding, argument validation and **full classification**; returns the payload apply would; **writes nothing**. The preview calls it this way.
 
-**Why it exists, stated plainly.** Without it the preview cannot see a number that belongs to **another tenant**
-(under RLS a preview would read only its own tenant's `users`, probe j `users_select`). A cross-tenant collision
-would then be invisible at preview and would **abort the whole all-or-nothing batch at apply**. With the flag,
-preview and apply run the *same code path*, so they cannot drift, and the collision is caught at preview and reported
-only generically.
+**Why it exists, plainly.** Without it a cross-tenant collision is invisible at preview (a preview under RLS reads only its own tenant's `users`, probe j `users_select`) and **aborts the whole
+all-or-nothing batch at apply**. With it, preview and apply run the *same code path*, and the collision is caught at preview and reported only generically.
 
-**Specified behaviour, both modes:**
-1. **Authorisation runs BEFORE any number lookup, in both modes** (§2.3 steps 1–3 precede step 5). An unauthorised
-   caller learns nothing about which numbers exist; they get an error, not statuses.
-2. **Cross-tenant collisions are `number_registered`**: payload exactly `{idx, status}` — no project id, project
-   name, or full name (T5 asserts on the payload's key set, not on rendered text).
-3. **Apply re-runs every check** (steps 1–5) inside its own transaction. It never accepts or trusts a verdict from
-   an earlier preview; nothing from the preview is passed in except the same input rows.
-4. Dry-run holds no write and no lock beyond ordinary reads (T7 asserts row counts unchanged).
+1. **Authorisation runs BEFORE any number lookup, in both modes** (§2.3 steps 1–3 precede step 5). An unauthorised caller learns nothing about which numbers exist; they get an error.
+2. **Cross-tenant collisions are `number_registered`**: payload exactly `{idx, status}` — no project id, no project name, no full name. T5 asserts on the payload's key set.
+3. **Apply re-runs every check** in its own transaction and never trusts the preview's verdicts; nothing from the preview is passed in except the same input rows.
+4. Dry-run performs no writes (T7 asserts row counts unchanged).
 
 ### 2.3 Order of operations (one transaction)
 
-1. **Resolve the caller:** `users` row where `auth_id = auth.uid()` (`019:170-171`; live `get_user_tenant_id()`
-   body, probe p). No row → `insufficient_privilege` (`019:172-175`). `auth.uid()` is never compared to `users.id`:
-   `users.id` is decoupled since 007 (`007:127` default; `auth_id` backfilled `= id` only for pre-007 rows,
-   `007:60-67`; `uq_users_auth_id` partial unique, `007:76-78`). Engineers/owners have `auth_id` NULL
-   (`CLAUDE.md:833-840`), so they can never be callers; anon has `auth.uid()` NULL and matches nothing.
-2. **Load the project by `p_project_id`; tenant-bind, NULL-safe.** If the project is missing, **or**
-   `project.tenant_id IS DISTINCT FROM caller.tenant_id`, raise `no_data_found` — one indistinguishable error
-   (precedent `019:219-222`), so a foreign id is not an existence oracle. `projects.tenant_id` is `NOT NULL`
-   (`001_core_schema.sql:55`), so a caller whose tenant is NULL always fails this comparison. **This single
-   null-safe comparison is the only tenant-binding mechanism** (rev3 #2; T1 targets exactly it).
-3. **Role/authority gate (§1).** Else `insufficient_privilege`.
-4. **Validate the argument:** length 1..50 (D4; `program_limit_exceeded`, precedent `019:208-212`); each element an
-   object with a non-empty text `name` ≤ 100 chars and a `whatsapp_number` matching the generic stored shape;
-   duplicate numbers within the array → `invalid_parameter_value`. These are caller bugs (TypeScript already
-   filtered), not user-facing rejections.
-5. **Classify every row** against current state (R5–R7, §4). The owner can read all tenants, so the function
-   reveals only what §2.1 allows.
-6. If `p_dry_run`, or **any** row is not `ok` → write nothing, return `applied: false` with the statuses.
-7. Otherwise insert, per row, one `users` row then one `project_members` row (§2.6) and return `applied: true`.
-   Any exception rolls back the whole call. A concurrent add committing the same number between 5 and 7 loses on
-   `UNIQUE (whatsapp_number)` (`001:44`, live `users_whatsapp_number_key`, probe h) and the transaction aborts (`23505`).
+1. **Resolve the caller:** `users` where `auth_id = auth.uid()` (`019:170-171`; live `get_user_tenant_id()` body, probe p). None → `insufficient_privilege` (`019:172-175`). `auth.uid()` is never compared to `users.id`
+   (decoupled since 007: `007:127`, `007:60-67`, `uq_users_auth_id` `007:76-78`); engineers/owners have `auth_id` NULL (`CLAUDE.md:833-840`) so are never callers.
+2. **Load the project; tenant-bind NULL-safe.** Missing, **or** `project.tenant_id IS DISTINCT FROM caller.tenant_id` → `no_data_found`, one indistinguishable error (`019:219-222`). `projects.tenant_id` is
+   NOT NULL (`001:55`), so a NULL-tenant caller always fails here. **This single comparison is the only tenant-binding mechanism** (T1 targets it).
+3. **Role/authority gate (§1)**, else `insufficient_privilege`.
+4. **Validate the argument:** 1..50 rows (`program_limit_exceeded`, `019:208-212`); each element a non-empty `name` ≤ 100 chars and a `whatsapp_number` matching the generic stored shape; duplicate numbers
+   → `invalid_parameter_value` (caller bugs, TypeScript filtered them).
+5. **Classify every row** (R5–R7, §4).
+6. If `p_dry_run`, or **any** row is not `ok` → write nothing, return `applied: false`.
+7. Otherwise insert per row (§2.6) and return `applied: true`. Any exception rolls back everything; a concurrent add of the same number loses on `UNIQUE (whatsapp_number)` (`001:44`, probe h; `23505`).
 
-**The NULL trap in the precedent (deferred, §4.5).** `019:230` is `IF v_tenant_id <> get_user_tenant_id() THEN
-RAISE`; a NULL caller tenant makes it NULL, the guard passes silently, masked in 019 only by the membership check
-(its own comment, `019:224-229`). The new function does not copy it. Fixing 019 is a separate slice.
+**The NULL trap in the precedent (deferred, §4.5).** `019:230` is `IF v_tenant_id <> get_user_tenant_id()`; a NULL tenant makes it NULL and the guard passes (masked in 019 by `019:224-229`). The new function does not copy it.
 
 ### 2.4 `tenant_id` is derived from the project row, never a parameter
+(a) A parameter is caller-controlled; accepting it means validating it and a miss writes a user into the wrong tenant. (b) The function bypasses RLS; the composite FKs (`017:94-106`, probe h) validate the
+*membership* but not the `users.tenant_id` *value*. (c) It removes a class of test cases.
 
-(a) A parameter is caller-controlled; accepting it means validating it, and a missed validation writes a user into
-the wrong tenant. Read from the project row it is not an input, so no argument can name another tenant. (b) The
-function bypasses RLS, so RLS cannot catch a wrong value; the composite FKs (`017…:94-106`, probe h) validate the
-*membership* but cannot validate the `users.tenant_id` *value*. (c) It removes a class of test cases.
+### 2.5 Ownership and grants
+Precedent printed in full: `019:149-297` (`SECURITY DEFINER SET search_path = public` `:156`; `REVOKE … FROM PUBLIC, anon; GRANT … TO authenticated` `:294-295`). Live (probe n): all 15 definer functions are owned by
+`postgres`; `correct_daily_log` still holds `service_role:EXECUTE`, hence the per-role rule (`CLAUDE.md:910-918`). Tables are owned by `postgres`, RLS on, **not forced** (probe o): an owner-run function bypasses RLS.
 
-### 2.5 Ownership, search_path, grants
+### 2.6 Columns written (explicit wherever a default or NULL would hide a bug)
 
-Same posture for every new function (§2.7). Precedent printed in full: `019_daily_log_corrections.sql:149-297`
-(`SECURITY DEFINER SET search_path = public`, `:156`; `REVOKE … FROM PUBLIC, anon; GRANT … TO authenticated`,
-`:294-295`). Live inventory (probe n): all 15 existing definer functions are owned by `postgres` with
-`search_path=public`; `correct_daily_log` still holds `service_role:EXECUTE`, which `FROM PUBLIC, anon` does not
-remove, hence `CLAUDE.md:910-918`'s per-role rule. Tables are owned by `postgres`, RLS enabled and **not forced**
-(probe o), so an owner-run function bypasses RLS — that is the mechanism that lets it write `users`.
-
-### 2.6 Columns written (every one explicit where a default or NULL would hide a bug)
-
-**`users` row** (live columns, probe r; nullability/defaults, probe l):
+**`users` row** (live columns, probe r; defaults, probe l):
 
 | column | value | source |
 |---|---|---|
-| `id` | DB default, captured via `RETURNING` | `007:127` |
+| `id` | DB default, via `RETURNING` | `007:127` |
 | `tenant_id` | the **project row's** tenant — explicit | §2.4 |
-| `role` | literal `'engineer'` — explicit | `users_role_check` (probe h) |
-| `status` | literal `'active'` — explicit (D1) | probe d: default is also `active`, so explicit for intent |
-| `full_name` | the row's `name`, trimmed | argument |
-| `whatsapp_number` | the row's number, already normalised | argument |
+| `role` | `'engineer'` — explicit | `users_role_check`, probe h |
+| `status` | `'active'` — explicit (D1) | probe d |
+| `full_name` | trimmed `name` | argument |
+| `whatsapp_number` | already-normalised number | argument |
 | `messaging_blocked` | `false` — explicit | probe l |
 | `auth_id` | `NULL` — explicit | `CLAUDE.md:833-840` |
-| **`registered_by`** | the **resolved caller's `users.id`** (step 1) — never `auth.uid()`, never a parameter | new column (§2.8) |
-| **`registered_at`** | `now()` inside the function — never a parameter | new column (§2.8) |
-| not set | `avatar_url`, `hierarchy_level`, `reporting_manager_id`, `delegation_active`, `employee_id`, `notification_email`, `notification_email_verified_at`, `whatsapp_declined_at` | nullable (probe r; the last is an owner-email consent column, `034:148-153`) |
+| **`registered_by`** | the **resolved caller's `users.id`** — never `auth.uid()`, never a parameter | new (§2.8) |
+| **`registered_at`** | `now()` in the function — never a parameter | new |
+| **`consent_attested`** | `coalesce(p_consent_attested, false)` — recorded, not enforced (D9) | new; the **claim as passed** |
+| not set | `avatar_url, hierarchy_level, reporting_manager_id, delegation_active, employee_id, notification_email, notification_email_verified_at, whatsapp_declined_at, deactivated_by, deactivated_at` | nullable |
 
-**`project_members` row** (`001:72-80`; live, probe r): `id`/`created_at` defaults; `tenant_id` = same derived tenant
-(`001:75` NOT NULL; composite FKs agree); `project_id` = `p_project_id`; `user_id` = the new id; `role` = literal
-**`'engineer'`, exact string** (probe h: no CHECK on this column — see §4.5/D8).
+**`project_members` row:** `id`/`created_at` defaults; `tenant_id` = derived tenant; `project_id` = `p_project_id`; `user_id` = the new id; `role` = literal `'engineer'` (exact string — and now constrained, §4.5 D8).
 
-### 2.7 Shared internal helper, and the grant posture of all three functions
+### 2.7 Shared internal helper; search_path; grants of all three functions
+Steps 1–3 live in one **internal helper** returning `(caller id, caller tenant)` or raising; both public functions call it. The helper is **not callable from outside**: `REVOKE EXECUTE … FROM PUBLIC, anon,
+authenticated, service_role`. Public functions: `REVOKE EXECUTE … FROM PUBLIC, anon, service_role; GRANT EXECUTE … TO authenticated`.
 
-To make "the same authorisation and tenant binding" literally shared rather than copied, steps 1–3 live in one
-**internal helper** returning `(caller id, caller tenant)` or raising. Both public functions call it. The helper is
-**not** callable from outside: `REVOKE EXECUTE … FROM PUBLIC, anon, authenticated, service_role` (only its owner,
-`postgres`, retains EXECUTE, which is who a definer function runs as). Public functions: `REVOKE EXECUTE … FROM
-PUBLIC, anon, service_role; GRANT EXECUTE … TO authenticated`. `SET search_path = public`, every object
-schema-qualified, no dynamic SQL (contrast `019:246,265`). `service_role` is revoked by name because it carries no
-`auth.uid()` (step 1 would refuse it anyway); this deliberately differs from 019's ACL. **Open, not resolved from
-source:** none of the 15 append `pg_temp` to `search_path` (UNKNOWNS #6). **Alternative, one line:** duplicate the
-three steps inline in both functions — smaller ACL surface, but two copies that can drift; T6 would then be the only
-guard.
+**`search_path` — resolved from source (rev4 #8).** Live probe n: all **15** existing definer functions have `config = {search_path=public}` and nothing else; the declarations read `SECURITY DEFINER SET search_path = public`
+(`019:156`, `012:85-87`, `033:170-171`; the grep of all 71 `SECURITY DEFINER` lines is in the log). **The new functions follow exactly that: `SET search_path = public`, no `pg_temp`, every object schema-qualified, no
+dynamic SQL** (contrast `019:246,265`). I did not evaluate whether the house style is itself best; I am following it as instructed. `service_role` is revoked because it carries no `auth.uid()`.
+**Alternative, one line:** duplicate steps 1–3 inline in both functions (no helper ACL to test, but two copies that can drift).
 
-### 2.8 Attribution — `registered_by`, `registered_at` (C)
+### 2.8 Attribution — `registered_by`, `registered_at`, `consent_attested`, `deactivated_by`, `deactivated_at` (C, D9, D10)
 
-**Confirmed absent (grep and live catalog).** grep c1: no `registered_by`/`registered_at` in `app lib supabase
-scripts test types`. Probe s: no column named `registered*` or `deactivat*` on any public table except the unrelated
-`tenants.registered_address`. Probe r: `users` has no actor column at all (columns: `auth_id, avatar_url, created_at,
-delegation_active, employee_id, full_name, hierarchy_level, id, messaging_blocked, notification_email,
-notification_email_verified_at, reporting_manager_id, role, status, tenant_id, whatsapp_declined_at,
-whatsapp_number`), and `project_members` has only `created_at, id, project_id, role, tenant_id, user_id`.
+**Confirmed absent.** grep c1/c3 (code, migrations, scripts, tests, generated types) and probe s (live catalog, all tables): none of the five exists; the lone `registered*` hit is the unrelated `tenants.registered_address`.
+Probe r: `users` has no actor column (`auth_id, avatar_url, created_at, delegation_active, employee_id, full_name, hierarchy_level, id, messaging_blocked, notification_email, notification_email_verified_at,
+reporting_manager_id, role, status, tenant_id, whatsapp_declined_at, whatsapp_number`); `project_members` has only `created_at, id, project_id, role, tenant_id, user_id`.
 
-**Why it ships now and cannot be reconstructed later.** After apply nothing on either row records *who* created it
-— only `created_at`. The only other trace is request logging outside the database, which this repo does not read and
-whose retention it does not control. So a row created without the columns is permanently unattributable, and the
-1,872 existing engineer rows already are (they get NULL, not a guess).
+**Why they ship now and cannot be reconstructed later.** After apply nothing on either row records *who* created or deactivated it — only `created_at` — and the only other trace is request logging outside the
+database, which this repo does not read and whose retention it does not control. The 1,872 existing engineer rows are already unattributable (NULL, not a guess).
 
-**Column design (recommended, flagged for the reviewer):**
-- `registered_by uuid NULL`, `registered_at timestamptz NULL`, on `users`; **same migration as the partial index**.
-- A pairing CHECK, `(registered_by IS NULL) = (registered_at IS NULL)`, after the precedent in `036…:232-244`
-  (`(timing = 'unspecified') = (timing_raw IS NOT NULL)`).
-- A composite same-tenant FK `(registered_by, tenant_id) → users (id, tenant_id)` in the style of `017:94-106`
-  (`users_id_tenant_id_key` exists, probe h), so an attribution can never point across tenants; `ON DELETE` left as
-  the default so deleting a registering admin cannot silently erase the attribution (**ASSUMED**, reviewer question).
-- Both nullable: existing rows cannot be backfilled honestly.
-- New columns are readable by same-tenant users through the existing table-level SELECT + `users_select` (probe k,
-  probe j); UPDATE stays limited to `full_name, avatar_url` (`015:105`). A uuid and a timestamp; judged acceptable
-  (**ASSUMED**).
-Departure from ENG-06 (`bot-flows.md:308`: an audit *row* with name and phone): two columns on the user row instead.
-Consequence: the record is only as durable as the row; editing name/number (deferred) would overwrite what was registered.
+**D9 — recorded, not enforced, and why.** The consent attestation is written as `consent_attested` next to `registered_by`. It is **not enforced inside the function**: a direct caller can pass any value, so a
+refusal would buy nothing, while the recorded claim plus `registered_by` and `registered_at` answers "who confirmed this, and when" later. What is recorded is **the caller's claim**, not proof of consent. The screen's apply
+control is disabled until the box is ticked (UI only; ~~rev3: "the server action refuses if absent"~~ retracted).
 
-### 2.9 Deactivate — the SECOND SECURITY DEFINER function (`deactivate_engineer`) (B)
+**D10 — deactivation attribution.** Same justification: accepting one and refusing the other is inconsistent. `deactivate_engineer` writes `deactivated_by` (resolved caller's `users.id`) and `deactivated_at` (`now()`) in the same
+UPDATE as `status='deactivated'`. **Limit:** one slot per row — a future reactivation and second deactivation would overwrite; no history table.
 
-**Why a function.** `authenticated` has no UPDATE on `users` beyond `full_name, avatar_url` (`015:105`; probe k
-`upd=false`) and the only UPDATE policy is own-row (probe j), so an admin cannot update another user's row through
-RLS. Same posture as §2.7, same helper, same grants.
+**Design (recommended, reviewer-flagged):** all five columns nullable on `users`; pairing CHECKs — `(registered_by IS NULL) = (registered_at IS NULL) AND (registered_by IS NULL) = (consent_attested IS NULL)`, and
+`(deactivated_by IS NULL) = (deactivated_at IS NULL)` — after the precedent `036…:232-244`; composite same-tenant FKs `(registered_by, tenant_id)` and `(deactivated_by, tenant_id)` → `users (id, tenant_id)` in the style of
+`017:94-106` (`users_id_tenant_id_key` exists, probe h), default `ON DELETE` so deleting an admin cannot silently erase attribution (**ASSUMED**). New columns are readable to same-tenant users via the existing table-level SELECT and
+`users_select` (probes k, j); UPDATE stays limited to `full_name, avatar_url` (`015:105`) (**ASSUMED** acceptable). Departure from ENG-06 (`bot-flows.md:308`, an audit *row*): columns on the user row; editing name/number (deferred)
+would overwrite what was registered.
 
-**Contract.** `(p_project_id uuid, p_user_id uuid) → jsonb`: `{ status: 'deactivated' | 'already_deactivated' }`.
-1–3 as §2.3 (helper: caller, tenant binding, D6 gate). 4. Locate the target: the row `users u JOIN project_members pm`
-with `u.id = p_user_id`, `u.role='engineer'`, `u.tenant_id` = the derived tenant, `pm.project_id = p_project_id`,
-`pm.role='engineer'`. **Not found → `no_data_found`**, the same error as a foreign or missing project (a target in
-another tenant is indistinguishable from a nonexistent one). 5. `UPDATE users SET status='deactivated'` on exactly
-that row; already deactivated → `already_deactivated`, no write.
-`'deactivated'` is already permitted by `users_status_check` (probe h: `pending, active, deactivated`).
+### 2.9 Deactivate — the SECOND SECURITY DEFINER function (`deactivate_engineer`)
 
-**What it does NOT do.** No `DELETE`; does not touch `whatsapp_number`, `messaging_blocked`, `project_members`, or any
-other column; does not reset `whatsapp_sessions`; does not send anything; no reactivation (deferred); no dynamic SQL.
-Requires `project_id` because the authorisation is project-bound: a `pm`-role caller can deactivate only engineers of a
-project they hold a `pm` membership on. An engineer with **no** membership (an orphan) cannot be deactivated through
-this function (**limit**).
+**Contract.** `(p_project_id uuid, p_user_id uuid) → jsonb` `{ status: 'deactivated' | 'already_deactivated' }`. Same helper, gate, tenant binding and grants as §2.7. Locate the target: `users u JOIN project_members pm`
+with `u.id = p_user_id`, `u.role='engineer'`, `u.tenant_id` = derived tenant, `pm.project_id = p_project_id`, `pm.role='engineer'`; **not found → `no_data_found`** (indistinguishable from a foreign or missing project). Then one
+UPDATE: `status='deactivated'`, `deactivated_by`, `deactivated_at`. Already deactivated → `already_deactivated`, **no write, no overwrite of the first attribution.** `'deactivated'` is permitted by `users_status_check` (probe h).
+**Does NOT:** delete anything; touch `whatsapp_number`, `messaging_blocked`, `project_members`, or `whatsapp_sessions`; send anything; reactivate; use dynamic SQL.
 
-**KNOWN LIMIT — the number stays held.** Deactivation does not free `whatsapp_number`: the global
-`UNIQUE (whatsapp_number)` (`001_core_schema.sql:44`, live `users_whatsapp_number_key`, probe h) keeps the value
-reserved by the deactivated row, and the row's `project_members` entry also keeps holding the partial-index slot.
-**A mistyped number therefore cannot be corrected from the dashboard**; the only repair path is **manual SQL**
-against the database, which is a production write governed by `CLAUDE.md`'s apply rules. This is why the validator
-(§3), the preview and the confirm step matter.
+**KNOWN LIMIT — the number stays held.** Deactivation does not free `whatsapp_number`: the global `UNIQUE (whatsapp_number)` (`001:44`, probe h) keeps it reserved, and the `project_members` row keeps the partial-index slot. **A mistyped
+number cannot be corrected from the dashboard; the only repair path is manual SQL**, a production write under `CLAUDE.md`'s apply rules.
 
-**Deactivation takes effect with no further change — from printed source.**
-- Webhook: `decideInboundGate` (`lib/whatsapp/reactivation.ts:29-33`) returns `gated_noop` for any `status !==
-  'active'`; the module header states a deactivated engineer must never be reactivated by texting in
-  (`reactivation.ts:11-14`); the clear-half re-asserts `status='active'` (`:64`). The webhook calls it at `route.ts:159`.
-- Outbound cron: `fetchActiveEngineers` filters `.eq('users.status','active')` (`lib/whatsapp/outbound/roster.ts:168`);
-  both exported rosters go through it (`fetchMorningRoster` → `:203`, `fetchEveningRoster` → `:248`).
-  `fetchActiveEngineers` itself is module-private (`:150`), so tests use the exported rosters.
-- Also already filtering: escalation roster (`lib/checkin-escalations/roster.ts:65`), DPR roster
-  (`app/api/cron/dpr-generate/route.ts:80`), accountability (`lib/dpr/accountability.ts:159`), and DPR dispatch
-  (`lib/dpr/dispatch.ts:417-418`, `stillActiveMember`).
-- **Why `status`, not `messaging_blocked`:** setting the flag instead would make `decideInboundGate` return
-  `reactivate` (`:36-38`) and the engineer would clear it by texting in.
-Not verified from source: whether an in-flight `whatsapp_sessions` row for a deactivated engineer needs cleanup; the gate
-runs before session handling (`route.ts:146-162`, printed), so it is silent-dropped, but I did not trace sessions (UNKNOWNS #5).
+**Deactivation takes effect with no further change — printed source.** Webhook: `decideInboundGate` returns `gated_noop` for any `status !== 'active'` (`reactivation.ts:29-33`), the header forbids silent reactivation
+(`:11-14`), the clear-half re-asserts `status='active'` (`:64`); called at `route.ts:159`, returning `twimlEmpty()` at `route.ts:161-163`. Outbound cron: `fetchActiveEngineers` filters `.eq('users.status','active')`
+(`roster.ts:168`); both exported rosters use it (`:203`, `:248`); it is module-private (`:150`), so tests use the exported rosters. Also filtering: `lib/checkin-escalations/roster.ts:65`,
+`app/api/cron/dpr-generate/route.ts:80`, `lib/dpr/accountability.ts:159`, `lib/dpr/dispatch.ts:417-418`. Why `status` and not `messaging_blocked`: the flag would make the gate return `reactivate` (`:36-38`).
 
-**Attribution for deactivation.** Not specified by the instruction and not added. `users.status` is overwritten with
-no record of who or when. **DECISION D10** (§Decisions).
+### Session trace (E) — findings, named, not fixed
+Traced from `lib/whatsapp/session.ts`, `route.ts:146-330`, `012:60-200`, `033` and `jobs/tick`.
+- **How a deactivated engineer's inbound is handled.** Gate at `route.ts:159-163` returns `twimlEmpty()` **before** idempotency, project resolution and any session call. No session write, no reply.
+- **F1 — the morning sweep still writes for a deactivated engineer.** `sweep_stale_morning_sessions` runs inside `jobs/tick` every 60 s (`033:154-157`, `tick/route.ts:106`) after the 15:00 IST cutoff (`033:186-196`),
+  selects `whatsapp_sessions WHERE current_flow = 'morning'` (`033:199`) with **no join to `users` and no status check**, and for an engineer with exactly one membership (`033:220-233`) either stamps
+  `daily_logs.morning_submitted_at` (steps 2–4, `033:235-245`) or **inserts an `absent`, `attendance_defaulted = true` row** (step 5, `033:265-280`), then closes the session (`current_flow := NULL`, `033:96-99`). So an in-flight
+  morning session of an engineer deactivated mid-flow yields a `daily_logs` write **attributed to a deactivated engineer** the same day. Whether the PM's Daily Logs view then shows it: **not traced** (UNKNOWNS #5).
+- **F2 — evening and hindrance sessions are left parked indefinitely.** The sweep covers `'morning'` only (`033:199`). `expires_at` is written but read by nothing (grep s3: only `session.ts:31`, writes in `012:100,181`,
+  and a comment at `033:32`) and nothing deletes session rows (grep s4: zero). The only reset is the BOT-07 next-day wipe inside `acquire_and_transition_session` (`012:115-121`), reached only by an inbound past the gate
+  or a cron send — neither can happen for a deactivated engineer (`route.ts:161-163`; `roster.ts:168`). So the row keeps `current_flow`, `current_step`, `context` and `pending_flows` **indefinitely**: inert, but a stuck row.
+- **What is observed.** *The engineer:* silence — no reply to any message and no more check-ins; indistinguishable from an outage. *The PM:* deactivate result and a deactivated marker in the list; that day's evening half stays
+  incomplete, and escalation, DPR roster and accountability all skip the engineer (`checkin-escalations/roster.ts:65`, `dpr-generate/route.ts:80`, `accountability.ts:159`). Nothing alerts.
+- **F3 — the engineer with no project membership (the deactivate-scope case).** They **cannot be deactivated from the dashboard**: `deactivate_engineer` requires an engineer-role membership on the project, and the engineers list
+  is built from `project_members` (the same shape as `projects/[id]/page.tsx:49-65`), so **the admin sees nothing to click**. Before rev4 the only signal was the generic add-path rejection (no actionable meaning, and no string named
+  the situation). Meanwhile that engineer, if `active`, texts in, passes the gate, and gets `replyForProjectResolution` at `route.ts:244-247` (`ZERO_MEMBERSHIPS_REPLY`, `project-resolution.ts:71-72`: ask your Project Manager
+  to add you) — but the PM **cannot** add them (R7a) or deactivate them: a **dead end** until the deferred reassign slice or manual SQL. Test-db holds **1,870** such engineers (probe z; fixtures); prod count is unread (§11 `w`).
+  The sweep also parks such a morning session rather than closing it (`033:224-233`). rev4 gives the add path a distinct in-tenant status for this case, `registered_no_project` (§4), and a constant (§9); it does **not** fix the dead end.
 
-## 3. Phone numbers and the validator (D)
+## 3. Phone numbers and the validator
 
-### 3.1 The chain (Part A, printed in the rev2 log and re-printed here)
+### 3.1 The chain
+`route.ts:111`: `fromNumber = normalisePhoneNumber(params.From ?? '')`; `route.ts:130-133` looks up `.eq('whatsapp_number', fromNumber)`. Only helper: `normalisePhoneNumber` (`route.ts:5`). Inbound form: `+` + digits, no `whatsapp:`
+prefix, no separators (`normalise.ts:13-15,18,21-23`). Downstream passes it through verbatim (`dispatch.ts:180,199,217`; `inbound-start.ts:463,852`; `session.ts:58,91`). **No mismatch with the prod stored form** (`+` + 12 digits) provided the
+screen stores `normalisePhoneNumber(raw)` output and nothing else. That real Twilio sends `whatsapp:` + E.164 rests on a comment (`normalise.ts:4`) and fixtures (`test/webhook.test.ts:263`).
 
-`route.ts:111`: `const fromNumber = normalisePhoneNumber(params.From ?? '')`; `route.ts:130-133` looks up
-`.eq('whatsapp_number', fromNumber)`. Only helper called: `normalisePhoneNumber` (imported `route.ts:5`). Inbound
-form: `+` + digits, no `whatsapp:` prefix, no whitespace/hyphens/parentheses (`normalise.ts:13-15,18,21-23`).
-Downstream code passes it through verbatim (`dispatch.ts:180,199,217`; `inbound-start.ts:463,852`; `session.ts:58,91`,
-in the phone `git grep`). **No mismatch with the prod stored form** (`+` + 12 digits) — *provided the screen stores
-`normalisePhoneNumber(raw)` output and nothing else*. That real Twilio sends `whatsapp:+E164` is stated only by a
-comment (`normalise.ts:4`); not observable here.
-
-### 3.2 STATUS OF THE VALIDATOR (D) — the consequence, stated explicitly
-
-Printed: `lib/whatsapp/normalise.ts` **never rejects anything** (its last line, `normalise.ts:42`, prefixes `+` onto
-whatever it has; its own comment says "Caller should validate downstream", `:40-41`), and **no validator exists
-anywhere in the repo** (phone `git grep`: the only other hits are `links.ts` formatters and comments; the one schema
-CHECK is `outbound_sends_to_phone_number_check`, `031:478-479`, probe q). `links.ts:10-11` and
-`reactivate-copy.ts:48-52` both say the E.164 guarantee "lives upstream at the write paths"; grep g5 shows no engineer
-write path exists, so this screen is the first.
-
-**Consequence.** Without a validator in front of it, a mistyped line stores a well-formed-looking row that can
-never match an inbound message — the webhook compares the *normalised inbound* number for equality
-(`route.ts:133`), and a junk value is not any real number's normal form — **and permanently holds that value under the
-global unique** (`001:44`), with no removal path in this slice (§2.9). The executed probe (log) shows what
-`normalisePhoneNumber` alone would have stored: `"abc"` → `"+abc"`, `""` → `"+"`, `"98765 4321"` → `"+987654321"`,
-`"5876543210"` → `"+915876543210"`, `"+91 98765 43210 ext 4"` → `"+919876543210ext4"`, `"0091 98765 43210"` →
-`"+00919876543210"`.
-
-**A limit no validator removes.** It catches malformed numbers, not *wrong-but-valid* ones. A transposed digit or
-someone else's handset passes, is stored `active`, and will receive the next cron send with no opt-in. That is why the
-confirm step and the consent attestation exist (§5), and why the deactivate control exists (§2.9).
+### 3.2 Status of the validator — the consequence, stated explicitly
+`normalise.ts` **never rejects anything** (`normalise.ts:40-42`, "Caller should validate downstream"), and **no validator exists anywhere in the repo** (the phone `git grep`; the one schema CHECK is
+`outbound_sends_to_phone_number_check`, `031:478-479`, probe q). `links.ts:10-11` and `reactivate-copy.ts:48-52` say the guarantee "lives upstream at the write paths"; grep g5 shows no engineer write path exists, so this screen is the
+first. **Consequence:** without a validator in front of it, a mistyped line stores a well-formed-looking row that can never match an inbound message (the webhook compares the *normalised inbound* number for equality,
+`route.ts:133`) and **permanently holds that value under the global unique** (`001:44`), with no removal path in this slice (§2.9). The executed probe shows what `normalisePhoneNumber` alone would have stored for the rejected
+classes: letters gain a `+` prefix, the empty string becomes `"+"`, a too-short value gains one, a value with trailing text keeps the text, and a `00`-prefixed international form keeps its zeros.
 
 ### 3.3 Validation happens BEFORE normalisation — the exact rule
-
-Applied to each raw pasted token, in order:
-- **V1 charset.** Only ASCII digits, `+`, whitespace, `-`, `(`, `)` (the separators `normalise.ts:18` itself strips).
-  Anything else → reject. This rejects letters (including a `whatsapp:` prefix and "ext"), non-ASCII digits, and empty.
-- **V2 separators.** Remove whitespace, `-`, `(`, `)` → `t`.
-- **V3 shape.** `t` must match exactly one of four shapes, where the mobile digit is `[6-9]`:
-  `S1 ^\+91[6-9][0-9]{9}$` · `S2 ^91[6-9][0-9]{9}$` · `S3 ^0[6-9][0-9]{9}$` · `S4 ^[6-9][0-9]{9}$`.
-- Only then call `normalisePhoneNumber(raw)` and **assert** the result matches the single stored form below, and that
-  `normalisePhoneNumber(result) === result`. The assertion is a guard against the helper drifting, not a second normaliser.
-
-**The single stored form:** `^\+91[6-9][0-9]{9}$` — `+91`, a mobile digit 6–9, nine more digits; 13 characters.
-**Reuse, not reimplementation:** the screen imports `normalisePhoneNumber` (`lib/whatsapp/normalise.ts:9`) and never edits
-or copies it (the webhook depends on it). The validator is new code in front of it (`lib/engineers/parse-roster.ts`).
-
-**Evidence — the rev3 validator probe (throwaway script, printed with output):** 34 inputs (14 accepted, 20 rejected), **0 violations**. Accepted
-and stored as shown: `+919876543210`, `+91 98765 43210`, `+91-98765-43210`, `(+91) 98765-43210`, `+91 (98765) 43210`
-(S1); `919876543210`, `91 98765 43210` (S2); `09876543210`, `0 98765 43210` (S3); `98765 43210`, `9876543210`,
-`9198765432` (→ `+919198765432`), `6000000000`, `  9876543210  ` (S4). Rejected: `whatsapp:+919876543210` (V1),
-`0091 98765 43210`, `+1 415 523 8886`, `+14155238886`, `98765 4321`, `987654321012`, `98765432101`, `5876543210`,
-`+915876543210`, `+91 98765 4321`, `+91 987654 32101`, `++919876543210`, `+` (V3), and `+91abc98765`, `abc`, empty,
-whitespace, `9876543210x`, Devanagari digits, `… ext 4` (V1).
-~~rev2 §3.5 listed `whatsapp:+919876543210` as an accepted input~~ — corrected above (rev3 #6).
+On each raw pasted token, in order: **V1 charset** — only ASCII digits, `+`, whitespace, `-`, `(`, `)` (the separators `normalise.ts:18` strips); anything else rejects (letters incl. a `whatsapp:` prefix and "ext", non-ASCII digits,
+empty). **V2 separators** — remove whitespace, `-`, `(`, `)` → `t`. **V3 shape** — `t` must match exactly one of `S1 ^\+91[6-9][0-9]{9}$`, `S2 ^91[6-9][0-9]{9}$`, `S3 ^0[6-9][0-9]{9}$`, `S4 ^[6-9][0-9]{9}$`.
+Only then call `normalisePhoneNumber(raw)` and **assert** the result matches the single stored form and is a fixed point.
+**Single stored form: `^\+91[6-9][0-9]{9}$`** (13 characters). **Reuse, not reimplementation:** import `normalisePhoneNumber` (`lib/whatsapp/normalise.ts:9`); never edit or copy it.
+**Evidence (throwaway probe, printed with output, re-run in this log):** 34 inputs (14 accepted, 20 rejected), **0 violations**. Accepted: separator variants of the `+91` form, the `91`-without-plus form, the `0`-prefixed form, and
+the bare 10-digit form (including a 10-digit value that itself starts `91`). Rejected: a `whatsapp:` prefix; `00`-prefixed input; non-Indian `+` numbers; too-short and too-long values; a first digit outside 6–9; letters; empty and
+whitespace-only; a lone `+`; a doubled `+`; trailing letters; non-ASCII digits; trailing "ext".
 
 ### 3.4 What the preview shows on failure
+The row with the **raw text exactly as pasted** (never a normalised guess) and `REJECT_BAD_NUMBER`. Nothing is written for it; it is never sent to the function; other rows still preview.
 
-The rejected row with the **raw text exactly as pasted** (never a normalised guess) and `REJECT_BAD_NUMBER`. Nothing
-is written for it and it is never sent to the function. Rows with a bad number do not block the other rows from being
-previewed; only accepted rows go forward (§5).
+### 3.5 Line format (D4)
+One engineer per line; the number is the trailing run of digits, `+`, spaces, hyphens, parentheses; the name is the rest, trimmed of trailing `,` `-` `:` `|` tab and spaces. Blank lines ignored. Name ≤ 100 characters; paste ≤ 50 lines.
 
-### 3.5 Line format (D4, settled)
+### 3.6 The function's shape check is generic — ACCEPTED LIMIT, with the corrected reason (rev4 #2)
+The function asserts `^\+[1-9][0-9]{1,14}$`, the shape of `outbound_sends_to_phone_number_check` (`031:478-479`, probe q), so a stored value cannot later violate that CHECK when the cron sends. The India-only rule lives **in TypeScript only**.
 
-One engineer per line; the number is the trailing run of digits, `+`, spaces, hyphens, parentheses; the name is the
-rest, trimmed of trailing `,` `-` `:` `|` tab and spaces. Blank lines ignored. Name ≤ 100 characters; paste ≤ 50 lines
-(over the cap the whole paste is refused).
+~~**Struck reason (rev3):** "India-only in SQL is rejected because every DB fixture is `+1…`, so an India-only SQL check would make every DB test impossible."~~ **Retracted 19 Sep 2026.** Test-fixture shape must never decide a
+production constraint. This repo has already been bitten by exactly that: six test sites set a fixture profile's `users.role` to `'pm'` (`test/migration-019.test.ts:123,222`, `daily-log-detail-query.test.ts:69`,
+`dpr-detail.test.ts:97`, `migration-023.test.ts:121`, `daily-log-correction-rpc.test.ts:87`), while a real PM's `users.role` is `'admin'` on prod (`is-project-pm.ts:11-16`, `016:177-181`); the gate passed on fixtures and failed a real PM on
+2026-09-17. (That the fixtures are why it stayed hidden is Aravind's characterisation; the six sites and the source comment are what I printed.)
 
-### 3.6 The function's shape check is generic, on purpose (rev3 #5)
-
-The function asserts `^\+[1-9][0-9]{1,14}$`, the same pattern as `outbound_sends_to_phone_number_check` (`031:478-479`,
-probe q), so a stored value can never later violate that CHECK when the cron sends to it. The India-only policy lives
-**in TypeScript only**.
-~~rev2: the function "re-asserts the India shape … the two implementations must agree" (T9).~~ **Retracted.** Reason: every
-DB fixture is `+1…` (§7.3), so an India-only SQL check would make every DB-level test impossible.
-**Known limit, stated plainly:** an authorised admin/PM who calls the function directly through the API with a valid
-session can store any well-formed E.164 number, not only an Indian mobile. Bounded to authorised callers and the
-50-row cap; not closed. The alternative (India-only in SQL too) would force every DB test onto routable +91 handsets.
+**Replacement reason, recorded as an ACCEPTED LIMIT:** (1) **the screen is the only intended caller** — no code calls the function yet, and a direct API caller must be an authenticated tenant admin/PM (§2.3 steps 1–3), bounded by the 50-row cap;
+(2) **the residual risk is a stored row that never matches an inbound message, which is recoverable** (manual SQL; nothing is lost or corrupted); (3) **minting Indian test numbers is unsafe**: every `+91[6-9]…` value is a routable live handset, so a
+general Indian fixture block would put real people's numbers in a database (§7.3). **Stated plainly:** an authorised caller who bypasses the screen can store any well-formed E.164 number, not only an Indian mobile, and a foreign or mistyped
+number would be sent check-ins by the cron. **Accepted, not closed.**
 
 ## 4. Rejection cases — which are reachable where
 
-Preview = TypeScript parse (R1–R4) then the function with `p_dry_run = true` (R5–R7). Apply = parse again, then the
-function with `p_dry_run = false`, re-running R5–R7 against current state.
+Preview = TypeScript parse (R1–R4) then the function with `p_dry_run = true` (R5–R7). Apply = parse again, then the function with `p_dry_run = false`, re-running R5–R7 against current state.
 
-| # | Reason | Detected by | At preview? | At apply? | Shown by |
+| # | Reason | Detected by | Preview? | Apply? | Shown by |
 |---|---|---|---|---|---|
 | R1 | Empty name | TypeScript | yes | re-run | `REJECT_NO_NAME` |
 | R2 | Name over 100 | TypeScript | yes | re-run | `formatRejectNameTooLong` |
 | R3 | Bad number (§3.3) | TypeScript | yes | re-run | `REJECT_BAD_NUMBER` |
 | R4 | Same number twice in the paste | TypeScript, first wins | yes | re-run | `REJECT_DUPLICATE_IN_PASTE` |
-| R5 | Engineer already on **this** project | function step 5 `already_on_this_project` | yes | yes | `REJECT_ALREADY_ON_THIS_PROJECT` |
-| R6 | Engineer on **another project in the caller's own tenant** | function step 5 `on_another_project` + that project's name | **yes** | yes | `formatRejectOnAnotherProject` (in-tenant only) |
-| R7 | Number exists but fits neither R5 nor R6: **another tenant**, or same tenant but not an engineer, or an engineer with no membership | function step 5 `number_registered`; global `UNIQUE (whatsapp_number)`, `001:44` | **yes** (this is what the dry-run flag buys) | yes | `REJECT_NUMBER_REGISTERED` |
-| R8 | A concurrent add commits the same number between steps 5 and 7 | `23505`, transaction rolls back | **no** (a dry run cannot race) | **yes**, whole batch | `ERROR_BATCH_NOT_APPLIED` |
+| R5 | Engineer already on **this** project | `already_on_this_project` | yes | yes | `REJECT_ALREADY_ON_THIS_PROJECT` |
+| R6 | Engineer on **another project in the caller's own tenant** | `on_another_project` + that project's name | **yes** | yes | `formatRejectOnAnotherProject` (in-tenant only) |
+| R7a | **Same-tenant engineer with no project membership** | `registered_no_project` | yes | yes | `REJECT_REGISTERED_NO_PROJECT` |
+| R7 | Any other existing number: **another tenant**, or same tenant but not an engineer | `number_registered`; global `UNIQUE (whatsapp_number)`, `001:44` | yes (the dry-run flag) | yes | `REJECT_NUMBER_REGISTERED` (generic) |
+| R8 | A concurrent add commits the same number between steps 5 and 7 | `23505`, rollback | **no** | **yes**, whole batch | `ERROR_BATCH_NOT_APPLIED` |
 
-**R6 is never an insert failure.** Every pasted row is a new `users.id`, so `uq_project_members_one_engineer_project`
-cannot fire from this function. It is a classification result, reachable at **preview** and re-run at apply. Cross-tenant
-it is impossible to report: the function names a project only when the existing user's tenant equals the caller's, so a
-tenant-B engineer classified by a tenant-A admin is R7 with no project id, project name or full name.
-**Reachable only at apply:** R8 (and unexpected errors). **Reachable at both:** R1–R7.
-Whole-request refusals: unauthenticated (redirect); `no_data_found` (missing/foreign project, or a NULL-tenant caller) →
-`ERROR_PROJECT_NOT_FOUND`; `insufficient_privilege` → `ERROR_NOT_ALLOWED`; empty paste → `ERROR_PASTE_EMPTY`; over the
-cap → `formatErrorPasteTooLong`.
+**Reachable at preview:** R1–R7 (R7 including cross-tenant). **Reachable only at apply:** R8 (and unexpected errors). **R6 is never an insert failure** — every pasted row is a new `users.id`, so the partial index cannot fire from this function;
+it is a lookup result, and cross-tenant it cannot be reported: the function names a project only when the existing user's tenant equals the caller's. R7a is likewise in-tenant only: a tenant-B engineer with no membership, classified by
+a tenant-A admin, is R7 (generic), never R7a. Whole-request refusals: unauthenticated (redirect); `no_data_found` → `ERROR_PROJECT_NOT_FOUND`; `insufficient_privilege` → `ERROR_NOT_ALLOWED`; empty → `ERROR_PASTE_EMPTY`; over the cap → `formatErrorPasteTooLong`.
+**Number-existence oracle, bounded not closed:** authorisation precedes lookup, generic payload, 50 rows per call; **no rate limit across calls** (UNKNOWNS #7).
 
-**Number-existence oracle, bounded not closed.** Authorisation precedes lookup, the R7 payload is generic, 50 rows
-per call; **no rate limit across calls** (UNKNOWNS #7). It reveals no more than the webhook's own not-registered
-reply (`route.ts:55-62`).
+### 4.5 Findings, decisions and deferred items
 
-### 4.5 Deferred items and open decisions (G)
+1. **`project_members.role` CHECK — D8 SETTLED: add it, in the same migration.**
+   **Underlying finding.** The RLS insert policy places **no restriction on the `role` value of the row being inserted.** Live (probe j): `project_members_insert` has `with_check = ((tenant_id = get_user_tenant_id()) AND ((SELECT users.role FROM users WHERE
+   users.auth_id = auth.uid()) = ANY (ARRAY['pm','admin'])))` — the `users.role` it tests is the **caller's**, not the new row's `role`. Probe k: `authenticated` holds INSERT on `project_members`. Probe h: no CHECK on `project_members.role`. **So any tenant admin or
+   pm can write an arbitrary role string today**, and `'Engineer'`, `'engineer '` or `'ENGINEER'` would **silently escape the partial index** (whose predicate is `role = 'engineer'`). (Shown from the catalog and grants; I did not run a write, being read-only.)
+   **Allowed set: `('pm','engineer')`.** Evidence: `app`, `lib` and `scripts` write only `'pm'` and `'engineer'` (the write-site scan in the log: 24 `pm`, 20 `engineer`); Aravind reports prod holds `pm` and `engineer` only (not in this log);
+   test-db holds `engineer` only (probe t) and **0 rows** violate the CHECK (probe x). **It applies cleanly to data.**
+   **NEW CONFLICT — flagged, not resolved (D11).** Three test sites write `role: 'qs'` into `project_members`: `test/dash-03-board-photo-gate.test.ts:69-70`, `test/photo-access-route.test.ts:147-148`,
+   `test/photo-access-boundary-agreement.test.ts:137` (scan). They clean up afterwards (test-db holds none now), but with the CHECK their fixture upserts would **fail at setup**. Two ways out, neither taken here: change those three fixtures to a valid
+   non-`pm` role (they use `'qs'` only as "a non-PM member"), or add `'qs'` to the set (the `users.role` vocabulary includes `qs`, `CLAUDE.md:833-840` region). The plan states `('pm','engineer')` as instructed; the build slice must not start until D11 is answered.
+   Also: `docs/schema.md:127-130` still says the role is `NOT NULL` free text and "One active project per engineer — enforced at insert in app logic, NOT a DB constraint"; both become stale (not edited: only this file may change).
+2. **Deferred, out of scope — the `<>` tenant comparison at `019:230`.** It changes the logic of a live SECURITY DEFINER function (review-gate trigger (a), `CLAUDE.md:192-205`), so it needs its own migration, package and rehearsal; today it is masked by the
+   membership check at `019:237-243` (`019:224-229`). This plan only ensures the *new* function does not copy it.
+3. **Deferred, out of scope — scoping `resolveEngineerProject` to `role='engineer'`.** It counts every `project_members` row for the user whatever the role (`lib/whatsapp/project-resolution.ts:37`); scoping it changes bot behaviour in `lib/whatsapp/`,
+   which this slice may not touch, and belongs with the webhook work.
+4. **Prod phone-format evidence is a single row.** Reported by Aravind (not in this log): `users.whatsapp_number` on prod is `+` + 12 digits, prefix `+91`, **n=1 — the whole population observed**, consistent with `normalisePhoneNumber`'s output for an Indian mobile.
+   One row cannot show that any other stored value shares that form. Test-db holds no `+91` (probe g). Queries `g` and `r` in §11 read more.
 
-1. **`project_members.role` has no CHECK constraint — decision for Aravind, not assumed (D8).** Live: probe h lists
-   `project_members_pkey`, the two composite FKs, `project_members_tenant_id_fkey`, and `UNIQUE (project_id, user_id)` —
-   no CHECK on `role`. So the partial index predicate `role = 'engineer'` rests on unconstrained free text:
-   `'Engineer'`, `'engineer '` or `'ENGINEER'` would **escape it**. The add function writes the literal and the app writes
-   `'pm'` (`projects/new/page.tsx:53`), but the RLS insert policy accepts any role string from any tenant admin/pm
-   (probe j `project_members_insert` checks tenant and `users.role` only). Test-db holds only `engineer` (probe t, 2 rows);
-   **prod's distribution is unread** (§11 query n). **Recommendation: add a CHECK in the same migration**, with the allowed
-   set chosen *after* prod query n is read (I know two values in use, `pm` and `engineer`; adding a CHECK that omits a value
-   prod actually holds would fail the migration). Flagged; not assumed.
-2. **Deferred, out of scope — the `<>` tenant comparison at `019:230`.** It changes the logic of a live SECURITY DEFINER
-   function (review-gate trigger (a), `CLAUDE.md:192-205`), so it needs its own migration, package and rehearsal; today it is
-   masked by the membership check at `019:237-243` (`019:224-229`). This plan only ensures the *new* function does not copy it.
-3. **Deferred, out of scope — scoping `resolveEngineerProject` to `role='engineer'`.** It counts every `project_members` row
-   for the user whatever the role (`lib/whatsapp/project-resolution.ts:37`), so a user with memberships in more than one role
-   resolves as multiple; scoping it changes bot behaviour in `lib/whatsapp/`, which this slice may not touch, and belongs with the
-   webhook work.
-4. **Prod phone-format evidence is one row.** Reported by Aravind (not in this log): `users.whatsapp_number` on prod is
-   `+` + 12 digits, prefix `+91`, n=1 — **the whole population observed**. It is consistent with `normalisePhoneNumber`'s
-   output for an Indian mobile (`+91` + 10 digits). One row cannot show that other stored values share that form. Test-db
-   holds no `+91` (probe g). Queries g and r in §11 read more.
+### 4.6 Residual risk — known and accepted, NOT closed (D)
+**The validator catches malformed numbers, not wrong ones.** A correctly formatted number with one digit wrong is **a stranger's live handset**; that person will receive a check-in message from the production sender with **no opt-in**, at the next
+scheduled send (`vercel.json:12-19`: 08:30 and 18:30 IST; roster rules `roster.ts:165-168`, `checkpoint-trigger.ts:226-233`). The confirm step (§5), the consent attestation (recorded, §2.8) and the deactivate control (§2.9) are **mitigations, not a solution**:
+they slow a mistake and record who made it; none prevents it or recalls a sent message, and deactivation does not free the number. **This is a known and accepted risk, not a closed one.**
 
 ## 5. The flow, and atomicity
+**Flow:** paste → **Preview** (dry-run) → **Confirm** — a step naming the count of rows about to be created (`formatAddConfirm({ count })`) plus the admin-facing consent attestation (`ADD_CONSENT_ATTESTATION`), with the apply control **disabled until ticked** (UI only)
+→ **Apply**. The action re-parses the raw text server-side, refuses if the re-parsed accepted count differs from the confirmed count, and passes the tick state to the function as `p_consent_attested` **as recorded, not enforced** (D9).
+**Atomicity:** all-or-nothing per apply call. Rows rejected at preview are left out of the input; if any row is not `ok` at apply, or a concurrent add wins, nothing is written and the admin sees `ERROR_BATCH_NOT_APPLIED` and re-previews. Concurrency (T15) is **not verifiable locally** (`CLAUDE.md:478-486`).
 
-**Flow:** paste → **Preview** (dry-run, R1–R7 per row) → **Confirm** (a step naming the count of rows about to be created,
-`formatAddConfirm({ count })`, plus the admin-facing consent attestation, `ADD_CONSENT_ATTESTATION`) → **Apply**. The apply
-action re-parses the raw text server-side, refuses if the attestation is absent, and refuses if the re-parsed accepted-row
-count differs from the confirmed count (an edit between confirm and apply). Attestation is enforced in the server action;
-whether the DB should also require or record it is **D9**.
-
-**Atomicity.** ~~rev1: row-by-row.~~ All-or-nothing per apply call (rev2 #7): every `users` and `project_members` row is
-written or none. Rows rejected at preview are left out of the apply input by the admin's choice to proceed; if any row is not
-`ok` at apply, or a concurrent add wins, nothing is written and the admin sees `ERROR_BATCH_NOT_APPLIED` and re-previews.
-Concurrency (T15) is **not verifiable locally** (`CLAUDE.md:478-486`).
-
-## 6. The migration (index + attribution columns + helper + two functions)
-
-- **File:** `048_engineer_registration.sql` (name **ASSUMED**). **Number 048** (log: `origin/main` migrations end at 047;
-  reservations end at 048 "RELEASED, NEVER USED … free"; sibling worktrees checked in rev2, none above 048). **ASSUMED still
-  free at write time** — recheck `ls supabase/migrations/`, `supabase migration list`, the reservations file and sibling worktrees
-  (`CLAUDE.md:869-872`). Held in `docs/reviews/` until applied (`CLAUDE.md:947-952`).
-- **Contents:** (1) `ADD COLUMN registered_by, registered_at` on `users` with the pairing CHECK and composite FK (§2.8);
-  (2) the partial index; (3) **[D8]** a CHECK on `project_members.role`; (4) the internal helper; (5) `add_engineers_to_project`;
-  (6) `deactivate_engineer`; (7) ACLs (§2.7).
-- **Index:** `CREATE UNIQUE INDEX uq_project_members_one_engineer_project ON public.project_members (user_id) WHERE role = 'engineer'`.
-  Name checked against live `pg_indexes` (probe i). Not `CONCURRENTLY`: it cannot run in a transaction and the apply skeleton
-  wraps files in `BEGIN;…COMMIT;` (`docs/migration-runbook-template.md:34`); test-db table is 2 rows (probe f).
-- **`UNIQUE (project_id, user_id)` is insufficient:** it forbids the same user twice on the *same* project; `(P1,U)` and `(P2,U)` are
-  distinct pairs. **Partial, because** PMs hold `pm` memberships on many projects (`projects/new/page.tsx:49-54`).
-- **If prod has violating rows** (query e): the index fails `23505`; inside `BEGIN/COMMIT` the whole file aborts with no change; no
-  auto-dedupe (destructive statements are pinned, `CLAUDE.md`); an in-file pre-check lists the offenders. Test-db: probes a and e, **0 rows**.
-- **Review gate (`CLAUDE.md:192-205`) clearly tripped:** new SECURITY DEFINER functions (a, b), identity (c), and a `DROP COLUMN` in
-  the DOWN is destructive (d). Whole PR needs the package. Required evidence: anon-key call refused `42501` (`CLAUDE.md:934-942`);
-  `service_role` denial against the **real** database (the local scaffold has no Supabase default ACLs); ACL, `proowner`,
-  `proconfig` fingerprint for **all three** functions, including that the helper has no `authenticated` EXECUTE; disposable local dry-run
-  first (`CLAUDE.md:1020-1030`, the disposable dry-run rule); rehearsal on the cleaned existing test-db (`CLAUDE.md:74-78`), not a fresh branch.
-- **DOWN:** drop the three functions, the index, and the two columns; commented per `down-section-must-be-commented`
-  (`CLAUDE.md:1135-1139`, `scripts/lint-migrations.mjs:547-552`) and **rehearsed** (`CLAUDE.md:1120-1128`). Dropping the columns
-  **destroys the attribution data** — the DOWN is irreversible for that data. With the app deployed, a rolled-back DB makes the
-  screen's calls fail (→ `ERROR_GENERIC_SAVE`); no in-flight bot session depends on these functions (**ASSUMED**).
-- **After apply:** regenerate `types/database.ts` (`CLAUDE.md:853-858`); one file at a time via `supabase db query --linked -f`,
-  foreground, never `db push`, explicit go-ahead (`CLAUDE.md:156-160`); confirm the file is on `origin/main` and test-db carries it
-  (`CLAUDE.md:142-146`).
+## 6. The migration
+- **File:** `048_engineer_registration.sql` (name **ASSUMED**). **Number 048** (log: `origin/main` ends at 047; reservations end at 048 "RELEASED, NEVER USED … free"). **ASSUMED still free at write time** — recheck (`CLAUDE.md:869-872`). Held in `docs/reviews/` until applied (`CLAUDE.md:947-952`).
+- **Contents:** (1) five nullable columns on `users` with the pairing CHECKs and composite FKs (§2.8); (2) the partial index `uq_project_members_one_engineer_project ON public.project_members (user_id) WHERE role = 'engineer'` (name clear of live `pg_indexes`, probe i; not `CONCURRENTLY`, it cannot run
+  in a transaction and the skeleton wraps files in `BEGIN;…COMMIT;`, `docs/migration-runbook-template.md:34`); (3) **the CHECK `role IN ('pm','engineer')` on `project_members`** (D8, definite; **gated on D11**); (4) the internal helper; (5) `add_engineers_to_project`; (6) `deactivate_engineer`; (7) ACLs (§2.7).
+- **`UNIQUE (project_id, user_id)` (`001:79`) is insufficient:** it forbids the same user twice on the *same* project; `(P1,U)`,`(P2,U)` are distinct pairs. **Partial, because** PMs hold `pm` memberships on many projects (`projects/new/page.tsx:49-54`).
+- **If prod has violating rows** (query `e`): the index fails `23505`; the whole file aborts with no change; no auto-dedupe (destructive statements are pinned). Same for the CHECK if prod holds a role outside the set (query `n`). Test-db: probes a, e, x — 0 rows each.
+- **Review gate (`CLAUDE.md:192-205`) clearly tripped:** new SECURITY DEFINER functions (a, b), identity (c), a `DROP COLUMN` in the DOWN is destructive (d). Whole PR needs the package. Required evidence: anon-key call refused `42501` (`CLAUDE.md:934-942`); `service_role` denial on the **real** database;
+  ACL / `proowner` / `proconfig` fingerprint for **all three** functions; disposable local dry-run first (`CLAUDE.md:1020-1030`); rehearsal on the cleaned existing test-db (`CLAUDE.md:74-78`).
+- **DOWN:** drop the three functions, the CHECK, the index, the five columns; commented per `down-section-must-be-commented` (`CLAUDE.md:1135-1139`, `scripts/lint-migrations.mjs:547-552`) and **rehearsed** (`CLAUDE.md:1120-1128`). Dropping the columns **destroys attribution data** — irreversible for that data.
+- **After apply:** regenerate `types/database.ts` (`CLAUDE.md:853-858`); one file at a time via `supabase db query --linked -f`, foreground, never `db push` (`CLAUDE.md:156-160`); confirm the file is on `origin/main` and test-db carries it (`CLAUDE.md:142-146`).
 
 ## 7. Positive controls
-
-"Shown to fail" = a captured red run, then the fix, then green, in the PR record. Non-regression controls get a mutation or negative
-control. Red variants of the function run on the **disposable local scaffold** (`CLAUDE.md:1020-1030`, the disposable dry-run rule), never on test-db or prod.
+"Shown to fail" = a captured red run, then the fix, then green. Non-regression controls get a mutation or negative control. Red variants of the function run on the **disposable local scaffold** (`CLAUDE.md:1020-1030`), never on test-db or prod.
 
 ### 7.1 Tests
-
 | # | Asserts | How it is shown to FAIL first |
 |---|---|---|
-| **T1** | A caller with `users.tenant_id` **NULL** is refused, and nothing is written, in both modes. **Fixture: `role='admin'`, `tenant_id` NULL, a real `auth_id`** (constructed with a service-role insert, not observed; test-db's 3 NULL-role stubs, probe t, would not exercise this). Expected `no_data_found`. | **Red against a `<>` comparison first.** Scaffold variant: `IF project.tenant_id <> caller.tenant_id` (the `019:230` shape). `NULL <> uuid` is NULL, the guard does not fire, the admin gate passes, and the engineer is written into the **project's** tenant — T1 fails. Then the null-safe `IS DISTINCT FROM` → green. rev2's fixture (NULL role) would have stayed green against `<>` (role gate refuses first) — that is why it is replaced. |
-| **T2** | Authorisation matrix, SQL leg (see T6). | see T6 |
-| **T3** | A second `role='engineer'` membership for the same user on another project is rejected `23505` naming `uq_project_members_one_engineer_project` (**direct insert**, §0 #2). | Natural red: run on test-db **before** the migration → insert succeeds → fails. Capture, delete rows, apply, green. |
-| **T4** | A `users.role='admin'` user with `pm` memberships on P1 **and** P2 is unaffected; `pm` on P1 + `engineer` on P2 allowed. | Negative control on the local scaffold: wrong index `UNIQUE (user_id)` with no predicate → fails; real index → green. |
-| **T5 (extended)** | A **tenant-B engineer's number** classified by a **tenant-A admin** (dry-run) returns `number_registered`, and the returned row object has **exactly the keys `idx, status`**; the serialized payload contains **no** tenant-B project id, project name, or full name. Asserted **on the payload**, not the rendered string. Also: an in-tenant engineer on another project returns `on_another_project` with `other_project_name` and no id/full name. | Two mutations: (i) return `other_project_name`/`full_name` for cross-tenant → key-set and substring assertions fail; (ii) classify only within the caller's tenant (RLS-like) → the cross-tenant number comes back `ok` → fails. |
-| **T6 (one shared fixture matrix, run twice)** | The same matrix (§7.2) is run against the **TypeScript gate** and against the **SQL function**; both must return the same verdict on every row, and each is compared to the matrix's expected verdict. | Mutation on **each side separately**: (a) TS gate switched to rev1's membership-only rule; (b) SQL gate switched likewise — the `qs`-with-`pm`-membership row fails on the mutated side. Third: mutate only one side → the **agreement** assertion fails. |
-| **T7 (new)** | **Dry-run writes nothing.** After a dry-run call that returns **accepted (`ok`) verdicts**, row counts of `users` and `project_members` are unchanged; asserts at least one `ok` verdict returned (not vacuous). | Mutation: let dry-run fall through to step 7 → counts change → fails. |
-| **T8** | Unauthorised caller's dry-run gets an error, **not** statuses (no oracle); authorisation precedes lookup. | Mutation: move step 5 before step 3 → an unauthorised caller receives statuses → fails. |
-| **T9** | **Shape and round-trip.** TypeScript validator over the §3.3 corpus (accept/reject as listed); for every accepted input `normalisePhoneNumber(stored) === stored` and matches `^\+91[6-9][0-9]{9}$`; the function accepts the generic shape and rejects malformed values (`+abc`, empty). | Red: pin that bare `normalisePhoneNumber('abc')` returns `'+abc'` (`normalise.ts:42`), then assert the validator rejects it — fails until the validator exists. Mutation: store the raw input → round trip fails. |
-| **T10 (extended)** | **Explicit columns and attribution.** (a) DB read-back: `tenant_id` = project tenant, `role='engineer'`, `status='active'`, `messaging_blocked=false`, `auth_id IS NULL`, **`registered_by` = the caller's `users.id` (not the auth uid), `registered_at` non-null and equal across all rows of one call**; membership `role='engineer'`, same tenant. (b) **Source guard** on the migration file: the `INSERT INTO public.users` column list contains `tenant_id, role, status, messaging_blocked, auth_id, registered_by, registered_at` — needed because an omitted `status` is invisible while the default is also `active` (probe d). *"In the payload" is read as the insert payload, i.e. the inserted row plus the INSERT column list; the function's return carries only `user_id`.* | Mutations: drop `registered_by` from the INSERT → (a) and (b) fail; write `auth.uid()` instead of the resolved `users.id` → (a) fails; drop `status` → (b) fails. |
-| **T11 (new)** | **Deactivate.** (i) An admin of tenant A **cannot** deactivate a tenant-B user: same `no_data_found` as a nonexistent target, zero writes. (ii) `pm` without membership, and `qs`/NULL role with a membership: `insufficient_privilege`. (iii) Positive control first: the engineer **is** returned by `fetchMorningRoster` and `decideInboundGate` gives `proceed`; after deactivation the engineer is **excluded** from `fetchMorningRoster` (via the module-private `fetchActiveEngineers`, `roster.ts:150,203`) and `decideInboundGate` returns `gated_noop` (`reactivation.ts:29-33`); `whatsapp_number` and the membership are untouched; a second call returns `already_deactivated`. | (i) mutation dropping tenant binding → cross-tenant deactivation succeeds → fails. (iii) Red-before-fix: the function does not exist, so the call fails; mutation setting `messaging_blocked` instead of `status` → `decideInboundGate` returns `reactivate`, not `gated_noop` → fails. |
-| **T12 (new)** | **Copy is filled.** Every export of `lib/engineers/copy.ts` is non-empty: each constant `!== ''`; each formatter, called with sample parameters, returns a non-empty string. | **Expected-fail at commit** (wrapped in vitest `it.fails`; the repo already uses this, e.g. `test/evening-flow.test.ts:128`; vitest `^3.2.7`, `package.json:44`): every value is blank, so the assertion fails and `it.fails` passes; when the copy PR fills the strings the assertion passes and the `it.fails` wrapper goes red — **that flip is the signal to remove the wrapper.** |
-| **T13** | **Boundary test (§7.3):** one literal `+91` value driven through the function in apply mode; row read back in the stored form; cleaned up. | Red: before the function exists the call errors. |
-| **T14** | End state, not mechanism (`CLAUDE.md:1011-1016`, the state-loss rule): after adding one engineer, `resolveEngineerProject` (`project-resolution.ts:31-63`) returns `resolved` with that project and the morning roster includes them. | Red: before the function exists → `zero_memberships`. |
-| **T15** | Two concurrent adds of one number: exactly one wins. | **NOT VERIFIED LOCALLY, CI-ONLY** (`CLAUDE.md:478-486`). No local pass is reported as evidence. |
-| **T16** | **ACL / privilege evidence** on the real test-db for all three functions: anon-key call → `42501`; `service_role` call → denied; `authenticated` may call the two public functions and **may not** call the helper; `has_function_privilege` for `anon`, `authenticated`, `service_role`, PUBLIC; `proowner = postgres`; `proconfig` contains `search_path=public`. | Red: before the REVOKE lines exist, `service_role` and PUBLIC hold EXECUTE by default (probe n shows this for `correct_daily_log`). |
-| **T17** | Cross-tenant: tenant-A admin with a tenant-B `p_project_id` gets `no_data_found`, **identical** (errcode and message) to a nonexistent id, zero writes. | Mutation: raise `insufficient_privilege` for foreign ids → indistinguishability assertion fails. |
-| **T18** | **Atomicity.** A batch where row K fails after step 5 (second connection commits a conflicting number) leaves **zero** new `users` and `project_members` rows. | Mutation: per-row `EXCEPTION` sub-blocks that swallow the error → earlier rows persist → fails. |
+| **T1** | A caller with `users.tenant_id` **NULL** is refused, nothing written, in both modes. **Fixture: `role='admin'`, `tenant_id` NULL, a real `auth_id`** (constructed with a service-role insert; test-db's 3 NULL-role stubs, probe t, would not exercise it). Expected `no_data_found`. | **Red against a `<>` comparison first.** Scaffold variant: `IF project.tenant_id <> caller.tenant_id`. `NULL <> uuid` is NULL, the guard does not fire, the admin gate passes, and the engineer is written into the **project's** tenant — T1 fails. Then `IS DISTINCT FROM` → green. |
+| T2 | *(folded into T6; number kept so earlier references stay valid)* | |
+| **T3** | A second `role='engineer'` membership for the same user on another project is rejected `23505` naming `uq_project_members_one_engineer_project` (**direct insert**). | Natural red: run on test-db **before** the migration → succeeds → fails. Capture, delete rows, apply, green. |
+| **T4** | `admin` with `pm` memberships on P1 **and** P2 is unaffected; `pm` on P1 + `engineer` on P2 allowed. | Negative control on the scaffold: wrong index `UNIQUE (user_id)` → fails; real index → green. |
+| **T5 (extended)** | A **tenant-B engineer's number** classified by a **tenant-A admin** (dry-run) returns `number_registered`, the row has **exactly the keys `idx, status`**, and the serialised payload contains **no** tenant-B project id, project name, or full name — asserted **on the payload**, not the rendered string. A tenant-B engineer with **no membership** also returns `number_registered`, never `registered_no_project`. In-tenant cases return `on_another_project` (with `other_project_name`, no id/full name) and `registered_no_project` (`idx, status` only). | Mutations: (i) return `other_project_name`/`full_name`/a project id for cross-tenant → key-set and substring assertions fail; (ii) classify only within the caller's tenant → the cross-tenant number returns `ok` → fails; (iii) return `registered_no_project` cross-tenant → fails. |
+| **T6** | **One shared fixture matrix (§7.2), run twice:** against the **TypeScript gate** and against the **SQL function**; both must return the matrix's expected verdict on every row, and agree with each other. | Mutate each side separately (rev1's membership-only rule) → the `qs`-with-`pm`-membership row fails on that side; mutate one side only → the agreement assertion fails. |
+| **T7** | **Dry-run writes nothing.** After a dry-run that returns **accepted (`ok`) verdicts**, row counts of `users` and `project_members` are unchanged; asserts ≥1 `ok` (not vacuous). | Mutation: let dry-run fall through to step 7 → counts change → fails. |
+| **T8** | An unauthorised caller's dry-run gets an error, **not** statuses. | Mutation: move step 5 before step 3 → statuses leak → fails. |
+| **T9** | **Shape and round-trip.** The validator over the §3.3 corpus **generated from `TEST_BOUNDARY_PHONE_LITERAL` by formatting and mutation only** (so no second `+91` value exists in `test/`); every accepted input → the stored form, fixed point under `normalisePhoneNumber`; the function accepts the generic shape and rejects malformed values. | Red: pin that bare `normalisePhoneNumber('abc')` returns `'+abc'` (`normalise.ts:42`), then assert the validator rejects it — fails until it exists. Mutation: store the raw input → round trip fails. |
+| **T10** | **Explicit columns, attribution, consent.** (a) Read-back: `tenant_id` = project tenant, `role='engineer'`, `status='active'`, `messaging_blocked=false`, `auth_id IS NULL`, **`registered_by` = caller's `users.id` (not the auth uid), `registered_at` non-null and equal across the rows of one call, `consent_attested` = the value passed**; membership `role='engineer'`, same tenant. (b) **Source guard** on the migration file: the `INSERT INTO public.users` column list contains all of `tenant_id, role, status, messaging_blocked, auth_id, registered_by, registered_at, consent_attested`. *"In the payload" is read as the insert payload.* | Mutations: drop `registered_by` → (a),(b) fail; write `auth.uid()` instead of the resolved id → (a) fails; drop `status` → (b) fails. |
+| **T11** | **Deactivate.** (i) Tenant-A admin **cannot** deactivate a tenant-B user (same `no_data_found` as nonexistent), zero writes. (ii) `pm` without membership, and `qs`/NULL-role with a membership: `insufficient_privilege`. (iii) Positive control first: the engineer **is** in `fetchMorningRoster` and `decideInboundGate` gives `proceed`; after deactivation they are **excluded** (`roster.ts:150,203`) and the gate returns `gated_noop` (`reactivation.ts:29-33`); `whatsapp_number` and membership untouched. (iv) **Attribution:** `deactivated_by` = caller's `users.id`, `deactivated_at` non-null; a **second call returns `already_deactivated` and does not overwrite** either column. | (i) mutation dropping tenant binding → succeeds → fails. (iii) function absent → fails; mutation setting `messaging_blocked` instead → gate returns `reactivate` → fails. (iv) mutation that always writes → the second call changes the timestamp → fails. |
+| **T12** | **Copy is filled.** Every export of `lib/engineers/copy.ts` is non-empty: each constant `!== ''`; each formatter, called with sample parameters, returns non-empty. | **Expected-fail at commit** (`it.fails`): values are blank → the assertion fails → the test passes; when the copy PR fills them → the wrapper goes red — the flip is the signal to remove it. **Verified** (rev4 #6): run in a scratch dir on vitest 3.2.7 (log): blank → PASS, filled → FAIL, control PASS. There is **no live `it.fails` in `test/` today**, so this would be its first executable use. |
+| **T13** | **Boundary test** (§7.3): one literal through the function in apply mode; row read back in the stored form; cleaned up. | Function absent → fails. |
+| **T14** | End state: after adding one engineer, `resolveEngineerProject` (`project-resolution.ts:31-63`) returns `resolved` and the morning roster includes them. | Function absent → `zero_memberships`. |
+| **T15** | Two concurrent adds of one number: exactly one wins. | **NOT VERIFIED LOCALLY, CI-ONLY** (`CLAUDE.md:478-486`). |
+| **T16** | **ACL evidence** on the real test-db for all three functions: anon-key call → `42501`; `service_role` → denied; `authenticated` may call the two public functions and **not** the helper; `has_function_privilege` for `anon`, `authenticated`, `service_role`, PUBLIC; `proowner = postgres`; `proconfig` = `search_path=public`. | Before the REVOKEs, `service_role`/PUBLIC hold EXECUTE (probe n shows this for `correct_daily_log`). |
+| **T17** | Tenant-A admin with a tenant-B `p_project_id` gets `no_data_found` **identical** to a nonexistent id, zero writes. | Mutation raising `insufficient_privilege` for foreign ids → fails. |
+| **T18** | **Atomicity.** Row K fails after step 5 (a second connection commits a conflicting number) → **zero** new rows. | Mutation: per-row `EXCEPTION` sub-blocks → earlier rows persist → fails. |
+| **T19 (new)** | **The CHECK.** On test-db, inserting a `project_members` row with role `'Engineer'`, `'engineer '`, `'ENGINEER'` or `'owner'` is rejected `23514`; `'pm'` and `'engineer'` still succeed; and a second `'engineer'` membership is still caught by T3's index. | Natural red: **before** the migration those inserts succeed (probe h: no CHECK; probes j/k: policy and grant allow them) → fails. Delete the rows, apply, green. |
+| **T20 (new)** | **Consent is recorded, not enforced.** `p_consent_attested = false` (and NULL) does **not** block the apply; the row stores `false`; `true` stores `true`. | Mutation: make the function raise when false → the "does not block" assertion fails; mutation: skip writing the column → read-back fails. |
+| **T21 (new)** | **Boundary-literal source guard.** In `test/`, the literal `+91` followed by a digit appears **only** in `test/helpers/boundary-phone.ts`; the boundary test imports `test/helpers/db.ts` and imports **no** module under `lib/whatsapp/outbound/` or `app/api/cron/`; it creates its fixture project with `status <> 'active'`. | Mutation: add a second `+91` literal / import `send.ts` / use an `active` project → the guard fails. |
 
 ### 7.2 The shared T6 matrix (one data table, two runners)
+Columns: caller `users.role` · caller tenant vs project · membership · **expected** · whether that shape exists in prod.
+| # | role | tenant | membership | expected | shape exists in prod? |
+|---|---|---|---|---|---|
+| 1 | admin | same | none | allow | yes (an admin who is not on the project) |
+| 2 | admin | same | pm | allow | **yes — the real PM shape** (`admin` + `pm` membership) |
+| 3 | pm | same | pm | allow | **no — fixture-only** (no `users.role='pm'` exists, probe t) |
+| 4 | pm | same | none | not_permitted | fixture-only |
+| 5 | pm | same | engineer only | not_permitted | fixture-only |
+| 6 | qs | same | pm | not_permitted | fixture-only |
+| 7 | engineer | same | pm | not_permitted | fixture-only |
+| 8 | NULL | same | pm | not_permitted | pre-onboarding stub shape |
+| 9 | admin | other tenant's project | none | not_found | yes |
+| 10 | admin | caller tenant NULL | none | not_found | constructed |
+| 11 | admin | project id nonexistent | — | not_found | yes |
 
-Columns: caller `users.role` · caller tenant vs project · membership on this project · **expected verdict**
-(`allow` / `not_permitted` / `not_found`).
+Rows 3–8 are the shapes the correction-gate bug hid behind. **No conclusion may rest on rows 3–8 alone; rows 1, 2, 9 and 11 are the ones that exist for real.** The SQL runner calls dry-run with one generic-shape fixture number.
 
-| # | role | tenant | membership | expected |
-|---|---|---|---|---|
-| 1 | admin | same | none | allow |
-| 2 | admin | same | pm | allow |
-| 3 | pm | same | pm | allow |
-| 4 | pm | same | none | not_permitted |
-| 5 | pm | same | engineer only | not_permitted |
-| 6 | qs | same | pm | not_permitted |
-| 7 | engineer | same | pm | not_permitted |
-| 8 | NULL | same | pm | not_permitted |
-| 9 | admin | other tenant's project | none | not_found |
-| 10 | admin | caller tenant NULL | none | not_found |
-| 11 | admin | project id nonexistent | — | not_found |
+### 7.3 The boundary literal, and the fixture gap
+**`TEST_BOUNDARY_PHONE_LITERAL = '+919176861156'`** — one named constant in one file, `test/helpers/boundary-phone.ts`, swappable in a single edit. **No other `+91` value is minted anywhere** (T9's corpus is derived from it; T21 guards this).
+Checked in the log: it is 13 characters, matches the India stored form `^\+91[6-9][0-9]{9}$` and the generic shape, is a fixed point of `normalisePhoneNumber`, and equals what the webhook would compute from `whatsapp:` + the literal.
 
-Rows 6–8 are the rev1 looseness (a `pm` membership alone). The SQL runner calls the function in dry-run mode with one
-generic-shape fixture number (so no write, no routable handset). No-session/anon is exercised separately in T16.
+**The fixture gap (limit).** DB fixtures are `+1…` (`test/helpers/db.ts:43,112,132-134,233`; `run-scoped-fixtures.ts`): 1,868 × 14 digits and 2 × 11 digits on test-db (probe g), none `+91`. So end-to-end tests run on a shape this screen can never produce; the **one** boundary test drives the literal directly.
 
-### 7.3 Fixture gap, stated as a limit
-
-Printed: `test/helpers/run-scoped-fixtures.ts` derives `+19995552NNNNNN` (`deriveRunScopedPhone`); `test/helpers/db.ts` defines
-`TEST_PHONE_PREFIX = '+19995550'` (`:43`) with 3-digit slots, reserves `+19995551NNNNNN` wholesale to the outbound suite (`:112`) and
-`+19995552NNNNNN` (`:132-134`), and nests a run-scoped block for slotted phones (`:233`). Test-db actually holds 1,868 × `+` + 14 digits
-and 2 × `+` + 11 digits (probe g). **None starts `+91`**, so the India validator rejects every fixture: **the end-to-end tests run on a
-shape this screen can never produce.** That is a real limit of this test plan, and it is why the function's shape check is generic (§3.6).
-
-**Boundary test (T13) — exactly one.** It drives **one literal `+91` value** through the function in apply mode, reads the row
-back, and deletes it. **No general `+91` fixture block is minted**: every `+91[6-9]` value is a routable Indian handset. The literal is
-**`TEST_BOUNDARY_PHONE_LITERAL`, value owed from Aravind (his own handset)** — not chosen here — so no stranger's number is ever stored
-(`CLAUDE.md:557-564`, the outbound-send rule). The row is created `active` on test-db, where no cron runs against real Twilio (**ASSUMED**); the test never
-sends. Cleanup deletes by exact number (`service_role` DELETE on `users`, probe k; the membership cascades). Limit: concurrent CI runs of this
-one test collide on `UNIQUE (whatsapp_number)` (**ASSUMED**, tolerable: it surfaces as R7, not corruption).
+**Instruction B — the three confirmations, each from printed output:**
+1. **The boundary test targets test-db only — SHOWN at the harness level.** `test/setup/guard.ts:9-61` aborts the entire run unless the resolved ref equals `exfccwlrhoutkgrlikod`, wired as `globalSetup` (`vitest.config.ts:31`); `vitest.config.ts:9` loads only `.env.test`; `test/helpers/db.ts:205-207,953-955` builds
+   clients from `SUPABASE_TEST_*`, and `db.ts:26-28` states tests avoid the app env names because they "could resolve to production". Limit: the boundary test **does not exist yet**; the property is inherited from the harness, plus T21's guard that it uses `db.ts`.
+2. **No row with this number exists on test-db today — SHOWN.** Probe v (read-only, counts only): `users.whatsapp_number` 0, `whatsapp_sessions.phone_number` 0, `outbound_sends.to_phone_number` 0, `processed_messages` 0.
+3. **Nothing in the test path can cause a real Twilio send — SHOWN for every path in the repo and the database; NOT shown for deployed-environment configuration, and neutralised structurally.**
+   *Shown:* (a) the test path is `rpc` to the database only; **probe w:** no non-internal triggers on `users`, `project_members` or `projects`, and no `pg_net`, `pg_cron` or `http` extension (only `supabase_vault`), so nothing inside the database can call out or schedule.
+   (b) Only two modules send: `lib/whatsapp/outbound/trigger.ts:206` (engineer check-ins) and `lib/dpr/owner-deliver-dispatch.ts:503` (owner DPR); the engineer path is reached only via `runCheckpointTrigger` → `fetchActiveProjects` → per-project roster
+   (`checkpoint-trigger.ts:226-233`, `roster.ts:285-288`), started by cron routes authorised by `CRON_SECRET` (`morning-trigger/route.ts:29-36`). (c) `readCredentials` throws unless **all three** of `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` are set (`send.ts:154-176`); the real
+   `.env.test` holds the **name** `TWILIO_AUTH_TOKEN` only (names printed, values never; log), and the existing outbound tests stub fake credentials and mock `fetch` (`outbound-trigger.test.ts:173-181`). (d) Vercel's documentation, fetched into the log (page last updated 2026-09-16), says cron requests go to "your project's
+   production deployment URL". **Structural neutraliser (required, T21):** the boundary test creates its own fixture project with `status <> 'active'` (`projects.status` allows `on_hold`, probe z), and the roster only loads **active** projects, so even a mis-scheduled cron cannot reach the row; the row exists only between apply and cleanup (`afterAll` plus `finally`, plus a pre-run cleanup by exact number).
+   *Not shown:* that the deployed **Production** environment's variables do not point at test-db, and that no other scheduler calls the cron routes with the secret — the Vercel dashboard is the source of truth and is not readable from here. I do **not** treat that as blocking because the non-active-project rule removes the path regardless; **if Aravind disagrees, treat (3) as blocking.**
+   Limit: concurrent CI runs of this one test collide on `UNIQUE (whatsapp_number)`; it surfaces as R7, not corruption (**ASSUMED** tolerable).
 
 ## 8. RLS
-
-Live (probes j, k, o): `users` — `users_select` (own row or same tenant), `users_update` (own row; column grant `full_name, avatar_url`,
-`015:105`); no INSERT/DELETE policy, `authenticated` lacks INSERT/DELETE (`015:114`). `project_members` — select tenant-scoped; insert/update
-require tenant match AND `users.role IN ('pm','admin')`; no DELETE policy (`047:230`). Both tables owned by `postgres`, RLS enabled, **not forced**.
-**Both new functions bypass RLS** (definer, owner `postgres`); the policies no longer govern these paths and the functions re-state the role
-requirement themselves (§1). Still enforced regardless of RLS: composite FKs (`017:94-106`), `UNIQUE (whatsapp_number)`, `users_role_check`,
-`users_status_check`, the new partial index, and the new pairing CHECK. **Cross-tenant:** tenant is never an input (§2.4), the project lookup treats
-a foreign project as nonexistent (§2.3 step 2), and the composite FKs agree at the database.
+Live (probes j, k, o): `users` — `users_select` (own or same tenant), `users_update` (own row; column grant `full_name, avatar_url`, `015:105`); no INSERT/DELETE policy, `authenticated` lacks both (`015:114`). `project_members` — select tenant-scoped; insert/update require tenant match AND
+`users.role IN ('pm','admin')` **with no condition on the inserted row's `role`** (§4.5); no DELETE policy (`047:230`). Both tables owned by `postgres`, RLS on, **not forced**. **The three functions bypass RLS**; the gate is re-stated inside (§1). Still enforced regardless of RLS: composite FKs
+(`017:94-106`), `UNIQUE (whatsapp_number)`, `users_role_check`, `users_status_check`, the new CHECK on `project_members.role`, the new index, the new pairing CHECKs. Cross-tenant: tenant is never an input (§2.4); a foreign project is treated as nonexistent (§2.3 step 2).
 
 ## 9. Strings — every value blank; Aravind writes all wording
+No wording is drafted anywhere in this document. **Every value is blank and carries `// Wording owed, NOT approved`.** (`Tamil owed, NOT approved` means approved English awaiting Tamil, `lib/photos/copy.ts:3-6`; not these.) Home: `lib/engineers/copy.ts` (new).
 
-No wording is drafted anywhere in this document. **Every value is blank and carries `// Wording owed, NOT approved`.**
-~~rev2: `// Tamil owed, NOT approved`, citing `lib/photos/copy.ts:13-20`.~~ **Corrected (rev3 #1):** in this repo `Tamil owed, NOT approved` means
-*approved English awaiting Tamil* (`lib/photos/copy.ts:3-6`, `:13-21`; `app/(dashboard)/dashboard/page.tsx:59`), which these strings are not.
-`Wording owed, NOT approved` appears nowhere yet (grep s2).
-
-**Formatters, after `formatKeptUntilLine`.** The precedent (`lib/photos/copy.ts:33-46`) is an exported function with **named, positional**
-parameters (`expiresAt: string, now: Date`) returning `string | null`, documented by a comment naming the template slot (`:23-32`). These
-follow it; whether parameters are positional or one options object is a build-time choice (**ASSUMED positional**, matching the precedent).
-Each returns blank until the copy PR.
-
+**Formatters, after `formatKeptUntilLine`** (`lib/photos/copy.ts:23-46`: exported function, **named positional parameters**, template slot documented in a comment; **ASSUMED positional** — object-vs-positional is a build choice). Each returns blank until the copy PR.
 | Requested name | Function | Named parameters |
 |---|---|---|
-| `PREVIEW_SUMMARY` | `formatPreviewSummary` | `accepted: number`, `rejected: number` |
-| `RESULT_SUMMARY` | `formatResultSummary` | `added: number` |
-| `REJECT_NAME_TOO_LONG` | `formatRejectNameTooLong` | `max: number` |
-| `ERROR_PASTE_TOO_LONG` | `formatErrorPasteTooLong` | `max: number` |
-| *(implied by the spec: "confirm naming the row count")* `ADD_CONFIRM` | `formatAddConfirm` | `count: number` |
-| *(already had a name slot in rev2)* `REJECT_ON_ANOTHER_PROJECT` | `formatRejectOnAnotherProject` | `projectName: string` — in-tenant only |
+| `PREVIEW_SUMMARY` | `formatPreviewSummary` | `accepted`, `rejected` |
+| `RESULT_SUMMARY` | `formatResultSummary` | `added` |
+| `REJECT_NAME_TOO_LONG` | `formatRejectNameTooLong` | `max` |
+| `ERROR_PASTE_TOO_LONG` | `formatErrorPasteTooLong` | `max` |
+| `ADD_CONFIRM` *(implied: names the row count)* | `formatAddConfirm` | `count` |
+| `REJECT_ON_ANOTHER_PROJECT` *(name slot)* | `formatRejectOnAnotherProject` | `projectName` — in-tenant only |
+| **new (D9)** | `formatRegisteredLine` | `registeredByName`, `registeredAt`, `consentAttested` — engineers-list row |
+| **new (D10)** | `formatDeactivatedLine` | `deactivatedByName`, `deactivatedAt` — engineers-list row |
 
-**Constants (blank):** `ADD_ENGINEERS_PAGE_TITLE`, `ADD_ENGINEERS_PAGE_INTRO`, `ADD_ENGINEERS_FORMAT_HELP`, `ADD_ENGINEERS_TEXTAREA_LABEL`,
-`ADD_ENGINEERS_PREVIEW_BUTTON`, `ADD_ENGINEERS_APPLY_BUTTON`, `ADD_ENGINEERS_EDIT_BUTTON`, `PREVIEW_ROW_ACCEPTED`, `PREVIEW_ROW_REJECTED`,
-`REJECT_NO_NAME`, `REJECT_BAD_NUMBER`, `REJECT_DUPLICATE_IN_PASTE`, `REJECT_ALREADY_ON_THIS_PROJECT`, `REJECT_NUMBER_REGISTERED` (generic; the only rejection
-ever used for a cross-tenant number; must not identify the other party), `PREVIEW_NOTHING_TO_APPLY`, `RESULT_ROW_ADDED`, `ERROR_BATCH_NOT_APPLIED`,
-`ERROR_PROJECT_NOT_FOUND`, `ERROR_NOT_ALLOWED`, `ERROR_PASTE_EMPTY`, `ERROR_GENERIC_SAVE`, `PROJECT_PAGE_ADD_ENGINEERS_LINK`, `ENGINEERS_LIST_TITLE`,
-and, **new in rev3:**
-
-| Constant | Purpose | Where |
+**Constants (blank):** `ADD_ENGINEERS_PAGE_TITLE`, `ADD_ENGINEERS_PAGE_INTRO`, `ADD_ENGINEERS_FORMAT_HELP`, `ADD_ENGINEERS_TEXTAREA_LABEL`, `ADD_ENGINEERS_PREVIEW_BUTTON`, `ADD_ENGINEERS_APPLY_BUTTON`, `ADD_ENGINEERS_EDIT_BUTTON`, `PREVIEW_ROW_ACCEPTED`, `PREVIEW_ROW_REJECTED`,
+`REJECT_NO_NAME`, `REJECT_BAD_NUMBER`, `REJECT_DUPLICATE_IN_PASTE`, `REJECT_ALREADY_ON_THIS_PROJECT`, `REJECT_NUMBER_REGISTERED` (generic; the only rejection ever used for a cross-tenant number), `PREVIEW_NOTHING_TO_APPLY`, `RESULT_ROW_ADDED`, `ERROR_BATCH_NOT_APPLIED`, `ERROR_PROJECT_NOT_FOUND`,
+`ERROR_NOT_ALLOWED`, `ERROR_PASTE_EMPTY`, `ERROR_GENERIC_SAVE`, `PROJECT_PAGE_ADD_ENGINEERS_LINK`, `ENGINEERS_LIST_TITLE`, `DEACTIVATE_CONTROL`, `DEACTIVATE_CONFIRM`, `DEACTIVATE_RESULT`, `ADD_CONSENT_ATTESTATION`, `ENGINEER_STATUS_ACTIVE`, `ENGINEER_STATUS_DEACTIVATED`, and, **new in rev4**:
+| Constant | Purpose | Case |
 |---|---|---|
-| `DEACTIVATE_CONTROL` | the deactivate control's label | engineers list |
-| `DEACTIVATE_CONFIRM` | its confirm step | engineers list |
-| `DEACTIVATE_RESULT` | its result | engineers list |
-| `ADD_CONSENT_ATTESTATION` | admin-facing consent attestation shown before apply | confirm step |
-| `ENGINEER_STATUS_ACTIVE`, `ENGINEER_STATUS_DEACTIVATED` | status shown per engineer in the list | engineers list |
+| `REJECT_REGISTERED_NO_PROJECT` | R7a: the number belongs to an engineer in this tenant who is on no project | E, F3 — the deactivate-scope / dead-end case |
+| `DEACTIVATE_ERROR_NOT_FOUND` | the deactivate call returned `no_data_found` (target not an engineer of this project, or a stale list) — distinct from `ERROR_PROJECT_NOT_FOUND` | E |
 
-(`DEACTIVATE_CONFIRM` is a constant per the instruction; if it must name the engineer it becomes a formatter — UNKNOWNS #11.)
-
-**Removed from rev2 §9 and why (kept from rev2):** ~~`RESULT_ROW_RACE`~~, ~~`RESULT_ROW_FAILED`~~, ~~`RESULT_ROW_FAILED_NEEDS_SUPPORT`~~ — one transaction leaves no
-per-row apply failure, race outcome or orphan; folded into `ERROR_BATCH_NOT_APPLIED`. **Removed in rev3:** none further; `PREVIEW_SUMMARY`,
-`RESULT_SUMMARY`, `REJECT_NAME_TOO_LONG`, `ERROR_PASTE_TOO_LONG` and `REJECT_ON_ANOTHER_PROJECT` changed kind (constant → formatter) rather than being dropped.
-
-**Existing approved strings that already cover a case (reference, do not copy):** `route.ts:55-62` `notRegisteredResponse`;
-`project-resolution.ts:71-72` `ZERO_MEMBERSHIPS_REPLY` (a state this screen can no longer produce: no orphan can exist) and `:74-75`
-`MULTIPLE_MEMBERSHIPS_REPLY` (the index makes it unreachable for `engineer` rows); `hindrances/actions.ts:24` `SAVE_FAILURE_MESSAGE` is a
-non-exported constant outside this slice, not reusable. **No new engineer-facing WhatsApp string:** nothing is sent at add time.
+No constant is added for the orphan in the deactivate list itself: an engineer with no membership **does not appear** there (F3). (`DEACTIVATE_CONFIRM` is a constant per instruction; if it must name the engineer it becomes a formatter — UNKNOWNS #11.)
+**Removed earlier (kept):** ~~`RESULT_ROW_RACE`~~, ~~`RESULT_ROW_FAILED`~~, ~~`RESULT_ROW_FAILED_NEEDS_SUPPORT`~~ (one transaction). **Removed in rev4:** none; an attestation-required error is **not** added because the function does not enforce (D9).
+**Existing approved strings (reference, do not copy):** `route.ts:55-62` `notRegisteredResponse`; `project-resolution.ts:71-72` `ZERO_MEMBERSHIPS_REPLY` (what an orphan sees, F3) and `:74-75` `MULTIPLE_MEMBERSHIPS_REPLY`; `hindrances/actions.ts:24` `SAVE_FAILURE_MESSAGE` is a non-exported constant outside this slice. **No new engineer-facing WhatsApp string.**
+**T12** asserts every export above is non-empty (expected-fail at commit).
 
 ## 10. Pre-flight result (test-db `exfccwlrhoutkgrlikod`; full output in the log)
-
 `supabase/.temp/project-ref` printed `exfccwlrhoutkgrlikod`; the log prints `CONFIRMED: project ref reads exfccwlrhoutkgrlikod (test-db)`. All read-only.
-
 | Probe | Result |
 |---|---|
 | (a) users with >1 `project_members` row | **0 rows** |
 | (b) engineer users by status | 1,872 `active` |
 | (c) engineers missing tenant or whatsapp | **2** (tenant present, whatsapp NULL — probe m) |
 | (d) `users.status` | `text`, default `'active'::text`, NOT NULL |
-| (e) exact index-predicate violations | **0 rows** |
+| (e) index-predicate violations | **0 rows** |
 | (f) `project_members` | 2 rows, both `engineer` |
 | (g) stored phone shapes | 1,868 × `+`14 digits, 2 × `+`11 digits, zero `+91` |
 | (h–l) constraints, indexes, policies, grants, nullability | as cited |
-| (n) definer inventory | 15 functions, owner `postgres`, `search_path=public` |
-| (o) owner / RLS forced | `postgres`, on, **not forced** |
+| (n) definer inventory | 15 functions, owner `postgres`, all `search_path=public` |
+| (o) owner / RLS forced | `postgres`, on, not forced |
 | (p) `get_user_tenant_id()` | `SELECT tenant_id FROM users WHERE auth_id = auth.uid()` |
-| (q) phone CHECKs | only `outbound_sends_to_phone_number_check` `^\+[1-9]\d{1,14}$` |
-| (r) live columns, `users` and `project_members` | no `registered_*`, no actor column |
-| (s) `registered*`/`deactivat*` columns anywhere | only `tenants.registered_address` |
-| (t) role distributions | `project_members`: 2 × `engineer`. `users`: 10 `admin`, 3 NULL-role, 1,872 `engineer`, all `active`; **no `pm`, none deactivated** |
+| (q) phone CHECKs | only `outbound_sends_to_phone_number_check` |
+| (r, s) live columns; `registered*`/`deactivat*` anywhere | no actor column; only `tenants.registered_address` |
+| (t) role distributions | `project_members`: 2 × `engineer`; `users`: 10 admin, 3 NULL-role, 1,872 engineer, all `active`, no `pm` |
+| **(v) boundary literal presence** | **0** in `users`, `whatsapp_sessions`, `outbound_sends`, `processed_messages` |
+| **(w) triggers / extensions** | **no** non-internal triggers on `users`, `project_members`, `projects`; only `supabase_vault` present (no `pg_net`, `pg_cron`, `http`) |
+| **(x) rows violating `CHECK (role IN ('pm','engineer'))`** | **0** (0 NULL) |
+| **(y) `whatsapp_sessions` shape** | printed in the log |
+| **(z) orphans; projects** | **1,870** engineers with no membership vs 2 with; 14 projects, all `active`; `projects.status` CHECK allows `active, completed, on_hold, in_bidding, bids_submitted` |
 
-**Would the partial unique index apply cleanly against test-db today? YES** — (a) and (e) return 0 rows. Caveat: 2 `project_members` rows total.
+**Would the partial unique index apply cleanly on test-db today? YES** (a, e). **Would the `('pm','engineer')` CHECK? YES** on data (x) — but not on three test fixtures (D11).
 
 ## 11. For Aravind — run against PROD (not run by me)
-
-Read-only; confirm the project ref first; paste raw results back.
-
+Read-only; confirm the project ref first; paste raw results.
 ```sql
 -- (a) users with more than one project_members row
 SELECT pm.user_id, u.role AS users_role,
@@ -654,71 +477,66 @@ FROM project_members WHERE role = 'engineer' GROUP BY user_id HAVING count(*) > 
 SELECT role, regexp_replace(whatsapp_number, '[0-9]', '9', 'g') AS shape, count(*) AS n
 FROM users WHERE whatsapp_number IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2;
 
--- (n) DISTINCT project_members.role values, exact (answers D8: which CHECK set is safe; shows case variants)
+-- (n) DISTINCT project_members.role values, exact (confirms the CHECK set; shows case variants)
 SELECT role, count(*) AS n FROM project_members GROUP BY role ORDER BY role;
 
 -- (r) country-code prefix and length only; no personal digits
 SELECT left(whatsapp_number, 3) AS prefix, length(whatsapp_number) AS len, count(*) AS n
 FROM users WHERE whatsapp_number IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2;
 
--- (u) NEW: do registered_by / registered_at / deactivated_* columns already exist on prod?
+-- (u) do registered_* / consent_attest* / deactivat* columns already exist on prod?
 SELECT table_name, column_name FROM information_schema.columns
-WHERE table_schema = 'public' AND (column_name ILIKE 'registered%' OR column_name ILIKE 'deactivat%');
+WHERE table_schema = 'public' AND (column_name ILIKE 'registered%' OR column_name ILIKE 'consent_attest%' OR column_name ILIKE 'deactivat%');
 
--- (v) NEW: users by role and status (are there any pm users, or already-deactivated engineers?)
+-- (v) users by role and status (any pm users? any already-deactivated engineers?)
 SELECT coalesce(role, '<NULL>') AS role, status, count(*) AS n FROM users GROUP BY 1, 2 ORDER BY 1, 2;
+
+-- (w) NEW: engineers on prod with NO project membership (the F3 dead-end population)
+SELECT count(*) AS orphan_engineers FROM users u
+WHERE u.role = 'engineer' AND NOT EXISTS (SELECT 1 FROM project_members pm WHERE pm.user_id = u.id);
+
+-- (y) NEW: any in-flight sessions belonging to deactivated users on prod (F1/F2 population)
+SELECT s.current_flow, count(*) AS n FROM whatsapp_sessions s JOIN users u ON u.id = s.user_id
+WHERE u.status = 'deactivated' GROUP BY 1 ORDER BY 1;
 ```
 
 ## 12. File list
-
-**Created (later build slice, not by this plan):**
-- `docs/reviews/048_engineer_registration.sql` (moves to `supabase/migrations/` only at apply), `docs/reviews/048-review-package.md`
-- `app/(dashboard)/projects/[id]/engineers/new/page.tsx` and `actions.ts` (preview, confirm, apply — one user-session client, calls the function via `rpc`)
-- `app/(dashboard)/projects/[id]/engineers/page.tsx` and `actions.ts` (engineers of this project with status; the deactivate control) — routes **ASSUMED**
-- `lib/engineers/parse-roster.ts` (pure: line parser, V1–V3 validator, R1–R4; imports `normalisePhoneNumber`)
-- `lib/engineers/gate.ts` (pure advisory `decideEngineerAdminAccess`; reuses `isProjectPm`)
-- `lib/engineers/add-engineers.ts`, `lib/engineers/deactivate.ts` (thin `rpc` wrappers, SQLSTATE → constants)
-- `lib/engineers/copy.ts` (§9: all blank, `// Wording owed, NOT approved`)
-- tests per §7, the shared matrix `test/helpers/engineer-gate-matrix.ts`, `test/migration-048.test.ts`
-**Modified (build slice):** `scripts/migration-number-reservations.json` (reserve 048); `docs/build-status.md`; `types/database.ts` (regenerated after apply);
-`app/(dashboard)/projects/[id]/page.tsx` — **one link only**, optional.
-**Not touched by this plan or the slice:** anything under `app/api/whatsapp/`, `lib/whatsapp/`, `lib/daily-logs/`, `lib/auth/`, or any existing migration.
-`is-project-pm.ts` and `normalise.ts` are **imported, not edited**. **This revision's diff:** exactly one file, `docs/plans/add-engineer-plan.md`.
+**Created (later build slice, not by this plan):** `docs/reviews/048_engineer_registration.sql` (moves to `supabase/migrations/` only at apply), `docs/reviews/048-review-package.md`; `app/(dashboard)/projects/[id]/engineers/new/page.tsx` and `actions.ts`;
+`app/(dashboard)/projects/[id]/engineers/page.tsx` and `actions.ts` (list + deactivate control; routes **ASSUMED**); `lib/engineers/parse-roster.ts`, `gate.ts`, `add-engineers.ts`, `deactivate.ts`, `copy.ts`; tests per §7, `test/helpers/engineer-gate-matrix.ts`,
+**`test/helpers/boundary-phone.ts`** (the one literal), `test/migration-048.test.ts`.
+**Modified (build slice):** `scripts/migration-number-reservations.json`; `docs/build-status.md`; `docs/schema.md` (now stale at `:127-130`); `types/database.ts` (regenerated); **and, pending D11, the three test files that write `role: 'qs'`**; `app/(dashboard)/projects/[id]/page.tsx` — one optional link.
+**Not touched by this plan or the slice:** anything under `app/api/whatsapp/`, `lib/whatsapp/`, `lib/daily-logs/`, `lib/auth/`, or any existing migration; `is-project-pm.ts` and `normalise.ts` are imported, not edited. **This revision's diff:** exactly `docs/plans/add-engineer-plan.md`.
 
 ## Decisions
-
 | | Status |
 |---|---|
-| D1 `status='active'` + `registered_by`/`registered_at` | **settled** |
-| D2/D5 SECURITY DEFINER function | **settled** |
-| D3 India-mobile only (validator, TypeScript) | **settled** |
-| D4 100-char names, 50 lines | **settled** |
-| D6 role gate = intersection (§1) | **settled** |
-| D7 dry-run flag | **settled** |
-| **D8** add a CHECK on `project_members.role` in the same migration (allowed set after prod query n) | **open — recommended** |
-| **D9** should the DB also require/record the consent attestation (e.g. a fourth parameter)? Recommendation: enforce in the server action now; add DB enforcement only if you want the attestation itself to be auditable | **open** |
-| **D10** record who deactivated and when (`deactivated_by`/`deactivated_at`)? Not specified, not added; status is otherwise overwritten with no record | **open** |
+| D1, D2/D5, D3, D4, D6, D7 | **settled** |
+| D8 CHECK on `project_members.role`, set `('pm','engineer')`, same migration | **settled** |
+| D9 attestation recorded, not enforced (`consent_attested`) | **settled** |
+| D10 record who deactivated and when | **settled** |
+| **D11** the three test fixtures that write `role: 'qs'` conflict with D8's set: change those fixtures, or add `'qs'` to the set. Build cannot start until answered | **open — new, forced by source** |
 
 ## UNKNOWNS
-
 **Not determinable from printed source or the test database:**
-1. **Prod state.** Whether queries a/e return rows, `project_members` size and role values (n), whether prod already has `registered_*` columns (u), users by role (v). The prod phone evidence (n=1, prefix `+91`) is Aravind's report, not in this log.
-2. **What Twilio actually sends in `From`.** Only `normalise.ts:4` and test fixtures (`test/webhook.test.ts:263`) say `whatsapp:+E164`.
+1. **Prod state.** Whether queries a/e/n return rows; the prod role set (Aravind reports `pm` and `engineer` only — not in this log); the prod phone shapes (Aravind reports one row, `+91`, n=1 — not in this log, unverified by me); users by role; orphans (w); deactivated-user sessions (y).
+2. **What Twilio actually sends in `From`.** Only `normalise.ts:4` and fixtures (`test/webhook.test.ts:263`) say `whatsapp:` + E.164.
 3. **Prod/test-db parity for 048's target.** Probes ran on test-db only.
-4. **Whether `projects.status` should gate adding engineers.** No gate designed.
-5. **Whether a deactivated engineer's in-flight `whatsapp_sessions` row needs cleanup.** The gate runs first (`route.ts:146-162`) so inbound is dropped silently; I did not trace sessions or the sweep functions.
-6. **`pg_temp` in `search_path`.** All 15 existing definer functions use `search_path=public` only (probe n); not settled from repo source.
+4. **Whether `projects.status` should gate adding engineers.** None designed; adding to a completed project is allowed.
+5. **Whether the PM's Daily Logs view shows the `daily_logs` row that the morning sweep writes for a deactivated engineer (F1)**, and whether `checkin-escalations/reachability.ts`'s join of `users.whatsapp_number` to `whatsapp_sessions` (`:26-43`) sees a parked session: not traced beyond the roster filters.
+6. **Whether the deployed Production environment's variables point only at prod and whether any other scheduler calls the cron routes** — not printable from here; neutralised (not proven) by the non-active-project rule (§7.3, B(3)). Vercel's page (fetched, quoted in the log) says cron hits the production deployment URL and is silent on previews in the text returned.
 7. **Rate limiting across calls** — only the 50-row per-call cap bounds the R7 oracle.
-8. **Other consumers of `project_members.role = 'engineer'`.** Not resolved; the rosters I read key on `users.role`.
+8. **Other consumers of `project_members.role = 'engineer'`.** Not resolved; the rosters read key on `users.role`.
 9. **Apply-time owner.** That the apply role yields `postgres`, as all 15 existing functions.
-10. **Whether any path creates `users.role='pm'`.** g8 found none; it is a pattern search and cannot see live data (probe t is test-db only).
-11. **Whether `DEACTIVATE_CONFIRM` must name the engineer** (would make it a formatter).
-12. **My reading of instruction A's word "parsing".** I read it as strict parsing/validation of the jsonb elements and stored-shape assertion inside the function; raw-text line parsing and normalisation stay in TypeScript, because D forbids reimplementing `normalise.ts` and SQL would need a second implementation. If raw-text parsing in SQL was intended, it conflicts with D.
-13. **Whether "T10 … in the payload"** means the insert payload (read as such) or the function's return.
-14. **Attribution design details** (composite FK, default `ON DELETE`, pairing CHECK, column visibility to tenant peers) are recommendations for the reviewer, not verified against a rehearsal.
-15. **Whether vitest `it.fails` behaves as described in T12** on `^3.2.7`: the repo references it (`test/evening-flow.test.ts:128`), I did not run one.
-16. **Whether the boundary-test row is harmless on test-db** (no cron against real Twilio there) — assumed; `TEST_BOUNDARY_PHONE_LITERAL` is owed by Aravind.
+10. **Whether any path creates `users.role='pm'`.** g8 found none; a pattern search cannot see live data (probe t is test-db only).
+11. **Whether `DEACTIVATE_CONFIRM` must name the engineer** (would become a formatter).
+12. **My reading of instruction A's word "parsing"** (validating jsonb elements inside the function; raw-text parsing and normalisation stay in TypeScript because D forbids reimplementing `normalise.ts`).
+13. **Whether "in the payload" (T10)** means the insert payload (read as such) or the function's return.
+14. **Attribution design details** (composite FKs, default `ON DELETE`, pairing CHECKs, column visibility to tenant peers) are recommendations, not rehearsed.
+15. **Whether `photo-access-route.test.ts:41` and `db.ts:27-28` (comments naming the app env variables) imply anything beyond the comments** — I read only the comment lines.
+16. **Whether a later `it.fails` wrapper survives a vitest upgrade** — verified on 3.2.7 only.
+17. **Whether my reading of D9's "column alongside `registered_by`" as a boolean `consent_attested` matches intent** (a timestamp or text would also fit).
+18. **The exact digit-level content of the T9 corpus** (derived from the literal by formatting/mutation) — designed, not built.
 
-**Assumed (not verified):** migration number 048 still free at write time and the file name; routes `projects/[id]/engineers[/new]`; the function and the TypeScript gate can be kept in agreement (T6 tests this, does not prove it); `supabase-js` `rpc` distinguishes `no_data_found` from `insufficient_privilege` by code; concurrency (T15) un-testable here; the deactivate control's location; that no in-flight bot session depends on the new functions.
+**Assumed:** migration number 048 still free and the file name; routes `projects/[id]/engineers[/new]`; TypeScript gate and SQL function can be kept in agreement (T6 tests, does not prove); `supabase-js` `rpc` distinguishes `no_data_found` from `insufficient_privilege`; T15 un-testable here; no in-flight bot session depends on the new functions; that concurrent CI runs colliding on the boundary literal are tolerable; that the default `ON DELETE` on attribution FKs is right.
 
-**Decisions still open:** D8, D9, D10.
+**Decisions still open:** D11.
