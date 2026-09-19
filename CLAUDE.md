@@ -661,6 +661,22 @@
         - Verification discipline is UNCHANGED at both tiers: raw output
           over summaries, positive controls, observed versus reported,
           dated corrections. The tier decides ceremony, not rigour.
+        - Earlier documents cite this section as `CLAUDE.md:625-646` and
+          quote `CLAUDE.md:631` for the external-review step. Those line
+          numbers refer to the PRE-CORRECTION text: the section has since
+          grown well past line 646, so that range no longer bounds it, and
+          the step order they quote now sits under struck-through
+          definitions. Documents carrying the citations:
+          `docs/reviews/stage5a-review-package.md:84-89` (the only one
+          citing literal line numbers; also `:789-791`),
+          `docs/reviews/047-prod-apply-record.md`,
+          `docs/plans/media-capture-design.md:866,894`, and
+          `docs/build-status.md:141,195-196` (these three cite the section
+          by name or commit, not by line). They are NOT being corrected:
+          they record decisions made under the rule in force at the time,
+          and rewriting a historical record would be a silent rewrite.
+          Their FULL-tier assignments remain correct under the new rule,
+          since each involves tenant isolation or third-party exposure.
     * Unchanged in both tiers: user-facing strings need Aravind's
       approval; migration ledger must stay truthful; test-only objects
       never get a migration number; CLI target-ref rule; dated
