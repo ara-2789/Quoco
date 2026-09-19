@@ -625,24 +625,67 @@
 - PRE-LAUNCH TWO-TIER CHANGE PROCESS (Aravind's decision, 2026-09-16).
   Context: prod holds no customer or beta data (only Aravind's own test
   data). Prod is effectively staging.
-    * FULL TIER (unchanged, every gate): anything touching auth/identity,
+    * ~~FULL TIER (unchanged, every gate): anything touching auth/identity,
       RLS, grants, policies, SECURITY DEFINER functions, tenant isolation,
       destructive or irreversible actions (e.g. the retention deletion
-      job), or money. Order: external review → test-db apply → DOWN
+      job), or money.~~ Order: external review → test-db apply → DOWN
       rehearsal with captured output → CI green with pinned run URL →
       merge → PITR observed → prod apply → verify by observation → ledger
       → apply record.
-    * LIGHT TIER: additive columns/indexes and app code with none of the
-      above. Order: test-db apply (if a migration) → CI green → merge →
+    * ~~LIGHT TIER: additive columns/indexes and app code with none of the
+      above.~~ Order: test-db apply (if a migration) → CI green → merge →
       PITR glance → prod apply → one verify query → short apply record.
       No DOWN rehearsal required.
+    * DATED CORRECTION (2026-09-19, Aravind's decision): the two bullets
+      above chose the tier by WHAT THE CODE TOUCHES (their struck-through
+      definitions are kept, not deleted; the ORDER of steps in each is
+      unchanged). The tier is now chosen by WHAT IS AT STAKE:
+        - FULL TIER when a change can expose real customer data, another
+          person's money, or a third party's phone number — or when it is
+          destructive or irreversible against data that matters.
+        - LIGHT TIER otherwise, INCLUDING migrations, when the only data at
+          risk is Aravind's own test data.
+      Reasoning: the discipline exists because a tenant leak or a lost daily
+      log is unrecoverable; where no real data exists, the category of the
+      code (migration, auth, RLS, grants) does not by itself create that
+      risk. Per Aravind, prod currently holds 1 active engineer and 4
+      project_members rows, all Aravind's own (observed 19 Sep 2026).
+      Scope, stated so no reader mistakes it:
+        - This does NOT downgrade the 048 engineer-registration slice. That
+          slice's purpose is to put a third party's phone number into the
+          system and message it from the production sender, so third-party
+          exposure is the feature, not a side effect. It stays FULL tier.
+        - Anything touching tenant isolation stays FULL tier regardless of
+          how little data exists, because the failure is silent and the
+          proof of absence is the thing being changed.
+        - Verification discipline is UNCHANGED at both tiers: raw output
+          over summaries, positive controls, observed versus reported,
+          dated corrections. The tier decides ceremony, not rigour.
+        - Earlier documents cite this section as `CLAUDE.md:625-646` and
+          quote `CLAUDE.md:631` for the external-review step. Those line
+          numbers refer to the PRE-CORRECTION text: the section has since
+          grown well past line 646, so that range no longer bounds it, and
+          the step order they quote now sits under struck-through
+          definitions. Documents carrying the citations:
+          `docs/reviews/stage5a-review-package.md:84-89` (the only one
+          citing literal line numbers; also `:789-791`),
+          `docs/reviews/047-prod-apply-record.md`,
+          `docs/plans/media-capture-design.md:866,894`, and
+          `docs/build-status.md:141,195-196` (these three cite the section
+          by name or commit, not by line). They are NOT being corrected:
+          they record decisions made under the rule in force at the time,
+          and rewriting a historical record would be a silent rewrite.
+          Their FULL-tier assignments remain correct under the new rule,
+          since each involves tenant isolation or third-party exposure.
     * Unchanged in both tiers: user-facing strings need Aravind's
       approval; migration ledger must stay truthful; test-only objects
       never get a migration number; CLI target-ref rule; dated
       corrections, never silent rewrites.
     * SWITCH TRIGGER: the moment any beta tester's, customer's, or RCPL
       project's data lands on prod, ALL changes use the full tier. Record
-      the date the trigger fires.
+      the date the trigger fires. Unchanged by the 2026-09-19 correction
+      above, and now does more work: the first beta tester, customer or
+      RCPL data on prod makes everything FULL tier permanently.
     * If unsure which tier applies, use the full tier and ask Aravind.
 
 ---
