@@ -1,6 +1,45 @@
-# Add-engineer plan — dated corrections history, rev3–rev10 (moved verbatim)
+# Add-engineer plan — dated corrections history, rev3–rev12 (moved verbatim)
 
 > **Moved in rev12** from `docs/plans/add-engineer-plan.md` so that file stays under the 120,000-byte warn threshold (`CLAUDE.md` FILE SIZE LIMITS: split by content, keep the original as the index). **Nothing below was edited, reordered or dropped:** it is byte-identical to lines 60–144 of `git show 6455bde:docs/plans/add-engineer-plan.md` (the verification is in `~/Desktop/add-engineer-plan-rev12.txt`). References elsewhere such as 'rev6 #2' or 'rev8 S1' resolve here. The rev11 and rev12 blocks stay in the plan.
+
+## Dated corrections, 19 Sep 2026 (rev13) — this file
+
+| # | Earlier text | rev13 result |
+|---|---|---|
+| 1 | ~~header 'rev3–rev10 (moved verbatim)'~~ | The **rev12 and rev11 blocks** of `add-engineer-plan.md` were also moved here, verbatim and unedited (byte-identical to `git show 7fec452:docs/plans/add-engineer-plan.md`), and stand **above** rev10, newest first. The rev12 block's own words 'every change in this pass' and the rev11 heading 'kept' describe the pass they were written in. |
+
+## Dated corrections, 19 Sep 2026 (rev12) — every change in this pass
+
+External review of slice 1: **Design GO (conditional)**, six conditions, no blocking findings, **no apply GO implied.** Labels S1–S6 / N1–N3 are the *second* round's (rev8 S1/N1 are different items).
+
+| # | Earlier text (retracted / added) | rev12 result | Where |
+|---|---|---|---|
+| 1 | ~~§5 'refuses if the re-parsed accepted count differs from the confirmed count'~~ | **Set check** on the sorted normalised numbers carried from Confirm; mismatch refuses before the function is called, tick cleared. T46. **S3** | §5, §5.2 |
+| 2 | ~~`coalesce(p_consent_attested, false)` (§2.1, §2.6); T20 'and NULL … stores `false`'~~ | **NULL raises `invalid_parameter_value`** at step 4, both modes; pairing CHECK unaffected (confirmed). T20. **S4** | §2.1, §2.3, §2.6, §7.1 |
+| 3 | ~~'the default `ON DELETE` on attribution FKs is right' (Assumed); #14 'ON DELETE'~~ | **`ON DELETE RESTRICT ON UPDATE NO ACTION`**, argued beside `project_members`' CASCADE; fingerprint pins `confdeltype='r'`, `confupdtype='a'`; 027's record printed and its prose-only check named. T47. **S5** | §2.8a |
+| 4 | (added) | 048 apply record pins `add_engineers_to_project(uuid, jsonb, boolean, boolean)`, `pg_proc` count = 1, `md5(prosrc)`, `md5(pg_get_functiondef)`, ACL, `proconfig`. T48. **S6** | §6 |
+| 5 | ~~list page shows `ENGINEER_STATUS_ACTIVE`; #47 'not decided'~~ | Label **derived from `users.status`**, total over the CHECK's three values, no status filter, non-active rows shown in place. **#47 closed.** New constants `ENGINEER_STATUS_DEACTIVATED`, `ENGINEER_STATUS_PENDING`. T44 (iii). **S2** | §5.1, §9 |
+| 6 | ~~'or until it is fixed by manual SQL' (unspecified)~~ | **Typo-repair runbook specified** as a required 048-package artefact, rehearsed on test-db before deploy step (4). T49. **S1** | §6.2, §6.1, §4.6, header |
+| 7 | (added) | List-page gate stated: same `decideEngineerAdminAccess`, before any read. **D23** (unconfirmed). T44 (iv). **N3** | §5.1 |
+| 8 | ~~forward-only detector~~ | Both operand orders; `;`/`$$` → `L<line>` accepted, said so. T39 (5)–(7). **N1** | §4.10 |
+| 9 | ~~D16 'recommended, not required'~~ | **REQUIRED** (Aravind); `<col>_id` form; expected exceptions listed (16 lines, `002` and `005`). **N2** | §4.10, Decisions |
+| 10 | ~~#14 'ON DELETE'; 'Assumed' `ON DELETE`; #47~~ | Struck / closed; #60–#68 added. | UNKNOWNS |
+| 11 | (slice 2) `ENGINEER_STATUS_DEACTIVATED` was defined in the episodes plan; the lifecycle plan pointed there | **Defined in slice 1**; both plans re-point (rev12 blocks there). The lifecycle plan's gate-(a) section gains the S6 pointer and the NULL-raise carry-forward. | slice-2 docs |
+| 12 | header '(rev11)', 'D16 … D21', 'T39 and T44' | rev12; D23; T46–T49. | header |
+| 13 | (size) this file passed the 120,000-byte warn threshold with rev12's additions | The closed rev3–rev10 correction blocks **moved verbatim** to `add-engineer-plan-corrections-history.md` (byte-identity checked); an index paragraph replaces them here. Nothing edited or dropped. | Dated corrections |
+
+## Dated corrections, 19 Sep 2026 (rev11) — kept
+
+| # | Earlier text (retracted / added) | rev11 result | Where |
+|---|---|---|---|
+| 1 | ~~UNKNOWNS #45 "whether slice 1 includes a read-only engineers list page (placement ASSUMED)"~~ | **SETTLED (Aravind): D21, §5.1.** Read-only, in slice 1; carries no actions because slice 1 has no deactivate; exists so an admin who pastes fifty names can confirm what landed; becomes the host for slice 2's controls. **No string on it may imply a removal, edit or undo path.** One new blank constant: `ENGINEERS_LIST_EMPTY`. Test T44. | §5.1, §9, §7.1, Decisions |
+| 2 | ~~§12 "`projects/[id]/engineers/page.tsx` and `actions.ts`"~~ | Page only, read-only; no `actions.ts` in slice 1. | §12 |
+| 3 | ~~header "Dependency. Slice 1 stands alone … Slice 2 depends on slice 1"~~ | **Dependencies: NONE**, restated; the reverse dependency (slice 2 on slice 1) is listed. | header |
+| 4 | ~~header "Slice 2 is `engineer-lifecycle-plan.md`"~~ | Slice 2 is now two documents: lifecycle and episodes. Section index rebuilt for three documents. | header |
+| 5 | ~~§2.8 "and the name `engineer_episodes` is unused …"; "who created, deactivated or reactivated an engineer"; the deactivated-then-reactivated / unreachability-report rationale for `registered_*`~~ | Struck: they assume slice 2. The `users` columns' justification stands without them. | §2.8 |
+| 6 | ~~§6.1 sentences on the board reading `engineer_episodes`, the DOWN taking the boards down and destroying episode history, and the Preview "both boards' error state"~~ | Struck and replaced by slice 1's own dependency (the RPC and the three `users` columns). The struck text lives in the episodes plan §4.9. | §6.1 |
+| 7 | ~~§4.10 N1 "the new `engineer_episodes` table does not (explicit grants, §2.8)"~~; ~~§11 (w) "the F3 dead-end population"~~; ~~UNKNOWNS #1 "(y) deactivated-user sessions"~~; ~~#37 "reactivate_engineer, the classifier, the report or the episodes table was executed"~~; ~~§4.5 "(F1)"~~; ~~#33 "(§4.9)"~~; ~~§13 "engineer-lifecycle-plan.md (slice 2)"~~ | Struck or re-pointed (to §6.1, the lifecycle plan, the episodes plan). **Slice 1 now contains nothing that depends on deactivate, reactivate or episodes;** what remains are pointers and dated history. | various |
+| 8 | (added) UNKNOWNS #47 | How the list page shows a non-active row. | UNKNOWNS |
 
 ## Dated corrections, 19 Sep 2026 (rev10) — kept (`git show 2f1b098:docs/plans/add-engineer-plan.md`)
 
@@ -87,3 +126,8 @@
 | rev3 3–14 | ~~isProjectPm unused; rule wording; India re-assert; `whatsapp:` accepted; …~~ | `git show 9b9187c:docs/plans/add-engineer-plan.md`. |
 | rev2 1–12 | ~~rev1 "tighter than the policy"; service-client claim; two-client design; "prod unread"; quoted labels; R6 "index enforces"; partial apply; "048 reserved, 049 next"; §7 T8/T10; §8 residual; per-row strings; `classify.ts`~~ | `git show e67e297:docs/plans/add-engineer-plan.md`. |
 
+## Closed UNKNOWNS moved from slice 1 (rev13) — verbatim as they stood at `7fec452`
+
+44. ~~**The plan split (§13) is not done** and `file-size-lint` will keep printing the WARN until it is.~~ **DONE in rev10** — the plan is now two documents (§13); this item is closed.
+45. ~~**Whether slice 1 includes a read-only engineers list page** (`ENGINEERS_LIST_TITLE`, `ENGINEER_STATUS_ACTIVE`, `formatRegisteredLine` stayed in slice 1 §9 by content …). Placement **ASSUMED**, not decided.~~ **SETTLED (rev11): D21, §5.1** — read-only, in slice 1.
+47. ~~**How the list page shows a non-active row (UNKNOWNS #45's residue).** Slice 1 has `ENGINEER_STATUS_ACTIVE` but no `ENGINEER_STATUS_DEACTIVATED` (slice 2), and a non-active engineer can exist in slice 1 only through manual SQL; whether the page lists such rows, and how, is **not decided** (§5.1).~~ **CLOSED (rev12, round-2 S2): §5.1** — the label is derived from `users.status`, non-active rows are shown in place.
