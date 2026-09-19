@@ -6,7 +6,8 @@
 --
 -- WHAT THIS ADDS (plan §6, items (1) (2) (3) (4) (6) -- nothing beyond them)
 --   1. users.registered_by / registered_at / consent_attested -- all NULLable, with
---      a three-column PAIRING CHECK (all NULL together, or all set together).
+--      a three-column PAIRING CHECK (all NULL together, or all set together) and a
+--      NO-SELF-ATTRIBUTION CHECK (registered_by <> id; R3-N3, settled 2026-09-19).
 --   2. The attribution FK (registered_by, tenant_id) -> users (id, tenant_id),
 --      ON UPDATE NO ACTION ON DELETE RESTRICT, both actions written out (plan
 --      §2.8a: a durable record of who put a person on the production sender is
@@ -59,8 +60,10 @@
 --
 -- ASSUMED NAMES (plan §6: file name ASSUMED; the helper's name is not fixed by the
 --   plan at all): engineer_admin_gate, users_registered_pairing_chk (the name the
---   plan's observed 23514 carries), users_registered_by_fkey (027's pattern),
---   project_members_role_check (Postgres's own default name for a column CHECK).
+--   plan's observed 23514 carries), users_registered_by_not_self_chk (R3-N3; named
+--   in the pairing CHECK's own _chk style), users_registered_by_fkey (027's
+--   pattern), project_members_role_check (Postgres's own default name for a
+--   column CHECK).
 --
 -- payload contract of add_engineers_to_project: idx is the ZERO-BASED position in
 --   p_engineers. Status values are machine identifiers, never wording. Fields per
@@ -87,6 +90,16 @@ ALTER TABLE public.users
     (registered_by IS NULL) = (registered_at IS NULL)
     AND (registered_by IS NULL) = (consent_attested IS NULL)
   );
+
+-- No self-attribution: a row is never its own registrar (R3-N3, settled by Aravind
+-- 2026-09-19 -- moved here from slice 2). registered_by is NULL for every legacy
+-- row and a NULL comparison satisfies a CHECK, so those rows are untouched. The
+-- function cannot produce a self-reference; the manual typo-repair runbook writes
+-- by hand, and this is the first self-referential edge in the fixture-teardown
+-- registry, a shape the JS sweep has never run against (UNKNOWNS #69) -- so the
+-- bad state is made structurally impossible instead of relying on it not arising.
+ALTER TABLE public.users
+  ADD CONSTRAINT users_registered_by_not_self_chk CHECK (registered_by <> id);
 
 -- -----------------------------------------------------------------------------
 -- 2. The attribution FK, actions explicit (plan §2.8a). Composite same-tenant FK,
@@ -391,6 +404,7 @@ COMMIT;
 --
 -- ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_registered_by_fkey;
 -- ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_registered_pairing_chk;
+-- ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_registered_by_not_self_chk;
 -- ALTER TABLE public.users
 --   DROP COLUMN IF EXISTS consent_attested,
 --   DROP COLUMN IF EXISTS registered_at,

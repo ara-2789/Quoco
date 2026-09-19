@@ -55,7 +55,8 @@ WHERE p.pronamespace = 'public'::regnamespace
   AND p.proname IN ('add_engineers_to_project', 'engineer_admin_gate')
 ORDER BY p.proname;
 
--- F5. The attribution FK's actions (plan §2.8a) and the two new CHECKs.
+-- F5. The attribution FK's actions (plan §2.8a) and the three new CHECKs (project_members role, the pairing CHECK,
+--     and the no-self-attribution CHECK, R3-N3).
 --     Expected for users_registered_by_fkey: confdeltype 'r' (RESTRICT), confupdtype 'a' (NO ACTION),
 --     confmatchtype 's' (SIMPLE). A bare REFERENCES reads confdeltype 'a', so this pin discriminates.
 SELECT c.conrelid::regclass::text AS on_table, c.conname, c.contype,
@@ -63,7 +64,7 @@ SELECT c.conrelid::regclass::text AS on_table, c.conname, c.contype,
        c.conkey::text AS conkey, c.confkey::text AS confkey,
        pg_get_constraintdef(c.oid) AS definition
 FROM pg_constraint c
-WHERE c.conname IN ('users_registered_by_fkey', 'users_registered_pairing_chk', 'project_members_role_check')
+WHERE c.conname IN ('users_registered_by_fkey', 'users_registered_pairing_chk', 'users_registered_by_not_self_chk', 'project_members_role_check')
 ORDER BY c.conname;
 
 -- F6. The three new columns (all nullable, no default) and their comments (a teardown verifies comments too,

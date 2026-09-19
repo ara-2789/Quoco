@@ -80,6 +80,9 @@ MUTANTS = {
     # T16 -- before the REVOKEs: the default privileges grant EXECUTE to anon / authenticated / service_role.
     "no_revokes": ([("REVOKE EXECUTE ON FUNCTION public.engineer_admin_gate(uuid)\n  FROM PUBLIC, anon, authenticated, service_role;\n", ""),
                     ("REVOKE EXECUTE ON FUNCTION public.add_engineers_to_project(uuid, jsonb, boolean, boolean)\n  FROM PUBLIC, anon, service_role;\n", "")], ""),
+    # R3-N3 -- the no-self-attribution CHECK removed: a row may name itself as its own registrar. The composite FK
+    # alone accepts that (the parent row is the row being written), so only the CHECK refuses it.
+    "no_self_chk": ([("ALTER TABLE public.users\n  ADD CONSTRAINT users_registered_by_not_self_chk CHECK (registered_by <> id);\n", "")], ""),
     # T48 -- slice 2's hazard: an argument-list change via CREATE OR REPLACE makes a SECOND overload.
     "overload5": ([], """
 CREATE OR REPLACE FUNCTION public.add_engineers_to_project(

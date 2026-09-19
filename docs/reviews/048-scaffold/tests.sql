@@ -3,7 +3,7 @@
 -- stubs in stubs.sql. It never touches test-db or prod. Not a migration; no number.
 --
 -- Covers the SQL side of: T1, T5, T6 (the 11-row matrix), T7, T8, T9, T10, T16, T17, T18, T19,
--- T20, T47, T48. NOT covered here (they need code or a database this pass does not have):
+-- T20, T47, T48, and R3-N3 (the no-self-attribution CHECK, added 2026-09-19). NOT covered here (they need code or a database this pass does not have):
 -- T6's TypeScript half, T12, T13, T14, T21, T44, T46, T49; T15 is CI-only (CLAUDE.md §0).
 -- Every fixture number is a +1555 fake -- no +91 literal appears in this file.
 --
@@ -300,6 +300,22 @@ SELECT scaf.chk('pairing CHECK: registered_by set + registered_at NULL rejected 
         AND scaf.try($f$ INSERT INTO public.users (tenant_id, role, whatsapp_number) VALUES (NULL, 'engineer', '+15550300092') $f$) = 'ok' $q$);
 SELECT scaf.chk('attribution FK is same-tenant: a tenant-B row registered by a tenant-A admin rejected 23503',
   $q$ SELECT scaf.try(format($f$ INSERT INTO public.users (tenant_id, role, whatsapp_number, registered_by, registered_at, consent_attested) VALUES (%L, 'engineer', '+15550300093', %L, now(), true) $f$, scaf.id('tB'), scaf.id('adminA'))) = '23503' $q$);
+
+-- ---------------------------------------------------------------- R3-N3: no self-attribution (users_registered_by_not_self_chk)
+-- Both statements below satisfy the composite FK on their own (the parent row IS the row being written), so
+-- ONLY the CHECK can refuse them -- which is what the `no_self_chk` mutant turns off.
+SELECT scaf.chk('R3-N3 INSERT with registered_by = own id rejected 23514 (the composite FK alone would accept it), no row left',
+  $q$ SELECT scaf.try(format($f$ INSERT INTO public.users (id, tenant_id, role, whatsapp_number, registered_by, registered_at, consent_attested) VALUES (%L, %L, 'engineer', '+15550300094', %L, now(), true) $f$, 'a0a0a0a0-0000-4000-8000-000000000094'::uuid, scaf.id('tA'), 'a0a0a0a0-0000-4000-8000-000000000094'::uuid)) = '23514'
+        AND NOT EXISTS (SELECT 1 FROM public.users WHERE whatsapp_number = '+15550300094') $q$);
+SELECT scaf.chk('R3-N3 UPDATE of a registered engineer to registered_by = own id rejected 23514, row unchanged (the typo-repair runbook writes by hand)',
+  $q$ SELECT scaf.try(format('UPDATE public.users SET registered_by = id WHERE whatsapp_number = %L', '+15550300002')) = '23514'
+        AND (SELECT registered_by = scaf.id('adminA') FROM public.users WHERE whatsapp_number = '+15550300002') $q$);
+SELECT scaf.chk('R3-N3 UPDATE of a legacy all-NULL row to registered_by = own id (with the pairing columns set) rejected 23514',
+  $q$ SELECT scaf.try(format('UPDATE public.users SET registered_by = id, registered_at = now(), consent_attested = true WHERE whatsapp_number = %L', '+15550300092')) = '23514'
+        AND (SELECT registered_by IS NULL AND registered_at IS NULL AND consent_attested IS NULL FROM public.users WHERE whatsapp_number = '+15550300092') $q$);
+SELECT scaf.chk('R3-N3 catalog: users_registered_by_not_self_chk is a validated CHECK on public.users, definition (registered_by <> id)',
+  $q$ SELECT contype = 'c' AND convalidated AND pg_get_constraintdef(oid) = 'CHECK ((registered_by <> id))'
+      FROM pg_constraint WHERE conname = 'users_registered_by_not_self_chk' AND conrelid = 'public.users'::regclass $q$);
 
 -- ---------------------------------------------------------------- T18: atomicity
 \o /dev/null
