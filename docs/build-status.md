@@ -39,6 +39,8 @@ below to find which file it now lives in.
 | [2026-09-17] Backlog (investigation): unreadable Sentry error message | stays in this file, below |
 | [2026-09-19] Backlog: the one-project-per-engineer slice (D12 rider) | stays in this file, below |
 | [2026-09-19] Backlog: `anon` holds table-level SELECT on `public.users` (N1) | stays in this file, below |
+| [2026-09-19] Backlog: the Rule 9 / runtime-registry coupling is a tooling defect (R3-S1) | stays in this file, below |
+| [2026-09-19] Backlog: precedent grants — revoke `service_role` from `complete_onboarding` and `correct_daily_log` (R3-S3) | stays in this file, below |
 
 If a cited date isn't obviously one of the headings above, it's embedded
 prose inside whichever file's date range brackets it — open that file and
@@ -468,3 +470,52 @@ row or the same tenant; an `anon` request has no tenant) — a single layer, the
 shape `CLAUDE.md` §6 warns about ("RLS and the grant are two independent
 layers"). 048 widens the exposed surface by three columns and does not close
 it.
+
+### [2026-09-19] Backlog: the Rule 9 / runtime-registry coupling is a tooling defect (R3-S1)
+
+Owner: **Aravind**. Not scheduled. Tier to be confirmed by Aravind when scheduled (it edits a test helper and a lint rule — none
+of `CLAUDE.md` §0's gates (a)-(e) — but it touches the safety net the fixture teardown relies on, so ask before assuming light).
+Filed here by the 048 build (`docs/reviews/048-review-package.md` §10 F12) to close external review round 3, condition S1.
+**The defect:** Rule 9 (`scripts/lint-migrations.mjs:389-490`; its no-exceptions note at `:742-757`) scans HELD migration files
+under `docs/reviews/` and demands a `scripts/shared-fixture-fk-coverage.json` entry **in the same commit**. The runtime harness
+reads that same JSON **live**: `test/helpers/db.ts:2` imports it and `sweepSharedFixtureReferences` (`:348-397`) acts on every
+entry at teardown, its `select` throwing at `:366-368` when the column is missing. So a held migration that adds an FK to a
+shared-fixture table (`users`, `tenants`, `projects`) forces an entry the harness will execute **before the column exists on any
+database** — a **guaranteed red window** for every CI run and every shared-test-db user until the migration is applied. First
+victim: 048 (`users.registered_by`; package §8 — 21 of 22 files fail at teardown, and the failed teardowns strand rows). Every
+future FK on those tables reproduces it.
+**The narrower fix the reviewer proposed (NOT implemented here):** the entry carries `held: true`; the sweep — on a
+missing-column error **for a held entry only** — probes `information_schema.columns` and, if the column is absent, **skips with a
+logged notice**; the flag is **removed in the applying commit**. Every other error still throws, so the safety net is not
+weakened for anything but the one named window. The 048 package refused the broader option (tolerate any missing column) for
+exactly that reason (§8, "Option (B)").
+**Related, unobserved:** the same function's recursion keeps no visited set (`db.ts:371`), and 048's entry is the first
+self-referential edge in the registry (UNKNOWNS #69); the R3-N3 CHECK excludes the length-1 cycle only.
+
+### [2026-09-19] Backlog: precedent grants — revoke `service_role` by name from `complete_onboarding` and `correct_daily_log` (R3-S3)
+
+Owner: **Aravind**. Not scheduled. **FULL tier when built** (revoking a grant on a shipped SECURITY DEFINER function trips review
+gate (b)); its own migration and review package. Filed here by the 048 build (`docs/reviews/048-review-package.md` §10 F11, F13) to
+close external review round 3, condition S3. Evidence is **test-db's live ACLs only** (package §10 F11); prod is unprobed.
+**The mechanism — the point of this entry:** both functions derive the caller from `auth.uid()` inside the body
+(`correct_daily_log`: `supabase/migrations/040_evening_q5_tomorrow_needs.sql:285`, `WHERE auth_id = auth.uid()`;
+`complete_onboarding`: `supabase/migrations/016_corrections.sql:181`), and `auth.uid()` reads the request's JWT settings. **A
+`service_role` session can `set_config('request.jwt.claims', …)` and thereby become any caller**, so a write made through either
+function would carry a **FORGED attribution** — a real user recorded as the author of something they never did. **The privilege is
+not escalated** (`service_role` already bypasses RLS and can write directly); **the attribution is.** Today both functions'
+`service_role` grant is simply the Supabase default privilege nobody revoked: `040:401-402` and `020_function_execute_hardening.sql:80-85`
+revoke `FROM PUBLIC, anon` and grant `TO authenticated` — `service_role` is not named.
+**The three functions, three different answers:**
+- `complete_onboarding` and `correct_daily_log` — revoke `service_role` by name (`CLAUDE.md` §6). **Production callers checked, 2026-09-19:**
+  both are called with the SSR (signed-in) client — `app/(onboarding)/onboarding/page.tsx:18,27` and
+  `app/(dashboard)/daily-logs/actions.ts:49,68` both use `createClient` from `@/lib/supabase/server` — never the service client.
+  **But a test uses `service_role`:** `test/migration-016.test.ts:105` (T-016-02) calls `complete_onboarding` through
+  `testClient()`, so the revoke migration must rework that test in the same PR. (`migration-015.test.ts:212` and
+  `migration-016.test.ts:149` use `jwtClient`; `migration-019.test.ts` and `daily-log-correction-rpc.test.ts` were **not** checked.)
+- `get_user_tenant_id` (`supabase/migrations/002_rls_policies.sql:12`; grants `020:94-95`) — `service_role` bypasses RLS and never
+  evaluates the policies that call it, so the revoke is **safe, but needs its own line of proof**: the "Landmine 1" argument
+  (`docs/reviews/020-review-package.md:189, :294, :375` — `authenticated` must keep it, because RLS policies call it as the caller).
+- **Leave `write_dpr_version` as designed** (`029_dpr_versioning.sql:430`, `041_write_dpr_version_first_write_fix.sql:248`, both
+  `TO authenticated, service_role`): it is a **deliberate hybrid with a real `service_role` caller**, not a precedent gap.
+048's own `add_engineers_to_project` already revokes `service_role` by name, so it is the first authenticated-callable definer
+function without it — the intent of the rule, and a departure from every precedent above (package §10 F11).

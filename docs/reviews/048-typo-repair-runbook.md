@@ -26,8 +26,12 @@ than stopping the *next* send.
 `users` with `project_id = <project>`, `users.role = 'engineer'`, **`users.status = 'active'`** and
 `users.messaging_blocked = false`. No existing test pins the status filter, hence **T49** in the review package.
 
-It is **not** a hard delete: the attribution FK is `ON DELETE RESTRICT` and the record of who registered the number
-must survive.
+It is **not** a hard delete — and `RESTRICT` is **not** the reason. `ON DELETE RESTRICT` on `users_registered_by_fkey`
+protects the **registering admin** from being deleted while engineers they registered stand; it does **not** stop the
+engineer's own row from being deleted. The real reasons are (1) **the engineer row IS the attribution record**
+(`registered_by`, `registered_at`, `consent_attested` live on it — delete it and the only record of who put that number on the
+production sender is gone), and (2) **a deletion is irreversible against a sent-ledger** (`outbound_sends`) that may need to be
+answered for later. The instruction stands: deactivate, never delete.
 
 ## Rules that apply to every step
 

@@ -1,21 +1,26 @@
 # 048 — engineer registration (add-engineer slice 1): review package
 
-**FULL tier. HELD. No apply GO exists. Nothing in this package was applied to any database.** The migration lives in
+**FULL tier. HELD. Nothing in this package was applied to any database.** External review round 3 gave **PACKAGE GO for the test-db apply only** — Aravind's go-ahead in the same exchange is still required at the moment of any apply (`CLAUDE.md` §0), and **no prod apply GO exists**. The migration lives in
 `docs/reviews/`, never in `supabase/migrations/` (`CLAUDE.md` §6); it moves only in the commit that applies it.
 
 This package implements `docs/plans/add-engineer-plan.md` (rev13, `git show caab70b:docs/plans/add-engineer-plan.md`; the
 commit is on `feat/add-engineer-plan`, **not on `main`**). Where this package and the plan disagree, the disagreement is
 named in section 10, never resolved silently.
 
+**Round 3 (2026-09-19): the external review returned PACKAGE GO for the test-db apply. It gave no prod apply GO. Nothing was
+applied in this pass, and nothing in this pass touched a remote database.** This revision closes that round's conditions —
+section 2b lists each one and where it is closed. Round 3's labels (B1, S1, S2, S3, N1, N2, N3, U-2) collide with round 2's and
+with rev8's, so in this package they are written **R3-B1, R3-S1 …**.
+
 ## 0. Repo-state header (pinned inputs — a reviewer checks these, not memory)
 
 | Input | Value |
 |---|---|
-| `main` | `origin/main` @ `c0b20782f05cb4d9bf1942a5ed7fab04e8ada3de` (fetched fresh 2026-09-19) |
+| `main` | `origin/main` @ **`ae3df7f91676cf1b40741d527cccd84542906304`** (fetched fresh 2026-09-19, this pass; **re-pinned from `c0b2078`**, R3-S2). It moved by **exactly one file**, `CLAUDE.md` (PR #307, the tier-rule correction: `git diff --stat c0b2078 ae3df7f` is in `~/Desktop/048-conditions.txt`), and changes nothing this package states. **This branch was deliberately NOT updated with `main`:** it carries a certified artefact, and a merge commit would move its head for no benefit (`CLAUDE.md` §0). |
 | **S1 lint (rule 11, `no-auth-uid-as-users-id`)** | **MERGED as `c0b2078`** (PR #306); rule commit **`9887f7e`**. The package's lint captures ran with the rule live. |
 | Plan | `caab70b` (rev13) on `feat/add-engineer-plan` |
-| **Artefact commit — everything below is pinned to this** | **`faaa8d4753d775829992818f4eee6998c7c1b458`** on `feat/048-engineer-registration` |
-| `supabase migration list --linked` | target **test-db `exfccwlrhoutkgrlikod`** (ref printed from `supabase/.temp/project-ref` and compared first). Local `001`–`007`, `011`–`025`, `027`–`047`. Remote identical **except `042`, `043`, `044`, `046` have no remote row** (test-db ledger lag; unrelated to 048, not touched). **`048` is on neither side.** **Prod's ledger was not probed** (only test-db was authorised). |
+| **Artefact commit — everything below is pinned to this** | **Two pins, because a file cannot contain its own commit id.** **(1) The held SQL, the scaffold and both JSON files: `ae06082bd733419175efe09be6d01ac7e598fa71`** — the commit whose clean tree every capture in section 7 ran at. **(2) This package, the runbook, `docs/build-status.md`: `@@C2@@`**, a commit that **contains this package file** (the package at that commit differs from this text only in the two places the pin is written — this row and the section 3 heading). The earlier pin `faaa8d4` **predates the package, the runbook and `down.sh`** (the package first appears at `f26a533`), so its own `git show faaa8d4:<path>` instruction failed for them — observed, logged: `fatal: path 'docs/reviews/048-review-package.md' exists on disk, but not in 'faaa8d4…'`. (R3-S2.) **At the moment the apply record is written, re-pin to the PR head of that moment and fetch it before citing it; the pinned commit must contain the package file.** Resolution was checked locally before the push; whether GitHub serves the new pin is checked after the push and recorded in the pass log — it cannot be asserted in advance. |
+| `supabase migration list --linked` | target **test-db `exfccwlrhoutkgrlikod`** (ref printed from `supabase/.temp/project-ref` and compared first). Local `001`–`007`, `011`–`025`, `027`–`047`. Remote identical **except `042`, `043`, `044`, `046` have no remote row** (test-db ledger lag; unrelated to 048, not touched). **`048` is on neither side.** **Prod's ledger was not probed** (only test-db was authorised). **Carried from the previous pass — NOT re-probed in this one** (this pass ran no remote query at all). |
 | Last runbook executed | 047's prod apply, 2026-09-17 — `docs/reviews/047-prod-apply-record.md` |
 
 ## 1. What 048 is
@@ -24,6 +29,7 @@ named in section 10, never resolved silently.
 |---|---|---|
 | `users.registered_by`, `registered_at`, `consent_attested` | §2.8 | three nullable columns, no default |
 | `users_registered_pairing_chk` | §2.8 | all three NULL together (every legacy row) or all three set |
+| `users_registered_by_not_self_chk` | **R3-N3** — settled by Aravind 2026-09-19; **not in the plan** (section 9, item 9) | `CHECK (registered_by <> id)`: a row is never its own registrar. NULL passes, so every legacy row is untouched |
 | `users_registered_by_fkey` | §2.8a | composite `(registered_by, tenant_id) → users (id, tenant_id)`, `ON UPDATE NO ACTION ON DELETE RESTRICT`, both written out |
 | `project_members_role_check` | §4.5 | `role IN ('pm','qs','engineer','owner','subcontractor','admin')`, mirroring `users_role_check` |
 | `engineer_admin_gate(uuid)` | §2.7 | the shared authorisation helper — SECURITY DEFINER, callable by **no role but its owner** |
@@ -52,33 +58,80 @@ are different items.
 | N3 (round 2) — list page's gate | plan §5.1; **T44(iv)**; **D23 — not yet confirmed by Aravind** | App code — **not in this PR** |
 | **Condition 3** — file the D12 rider and N1 as tracked backlog | `docs/build-status.md`, two entries + two index rows, each with path:line and an owner | **Filed in this PR** (all cited lines re-verified against the tree; one of the plan's citations did not hold — section 10, F8) |
 
-## 3. Artefacts (all pinned to `faaa8d4753d775829992818f4eee6998c7c1b458`; view each with `git show faaa8d4753d775829992818f4eee6998c7c1b458:<path>`)
+### 2b. External-review conditions, round 3 ("PACKAGE GO" for the test-db apply) — where each is closed in THIS revision
+
+| Item | Where it is closed | Status |
+|---|---|---|
+| **R3-N3** — `CHECK (registered_by <> id)` now, not in slice 2 | the SQL; scaffold checks `R3-N3 …` (4); mutant `no_self_chk`; section 1, 6, 7, 9 item 9 | **In the SQL; executed on the scaffold** (61/61; the mutant goes red on exactly those four) |
+| **R3-B1** — the branch/CI coupling stated as rules | section 4.1 (rules (i), (ii)), section 8.6, section 12 | **Written as rules.** The freeze starts after this pass's one push |
+| **R3-S2** — re-pin `main`; re-pin the package artefact to a commit that contains it | section 0, section 3 | **Done**; resolution checked (section 0) |
+| **R3-S1** — the Rule 9 / runtime-registry coupling is a tooling defect | `docs/build-status.md` backlog entry, with owner and path:line | **Filed — NOT implemented** |
+| **R3-S3** — precedent grants follow-up (`service_role` on `complete_onboarding`, `correct_daily_log`) | `docs/build-status.md` backlog entry, mechanism recorded | **Filed — NOT implemented** |
+| **R3-N1** — plan §2.1 says `p_consent_attested` is IGNORED in a dry run; the file raises on NULL in both modes | section 9, item 8 | **Listed** (the TypeScript preview call must send a boolean) |
+| **R3-N2** — the runbook's "why not delete" sentence | `docs/reviews/048-typo-repair-runbook.md` | **Fixed.** The runbook is still **not rehearsed** |
+| **R3-U-2** — what the scaffold cannot show | section 6 (T16 note), section 13 U-2 | **Stated** |
+| The reviewer's apply sequence, in order | section 12 | **Recorded as the gate.** No prod apply GO exists |
+
+`docs/build-status.md` now carries **four** backlog entries from this PR (the D12 rider, N1, R3-S1, R3-S3), each with an owner and path:line.
+
+## 3. Artefacts (the SQL, the scaffold and the JSON pinned to `ae06082bd733419175efe09be6d01ac7e598fa71`; this package, the runbook and `docs/build-status.md` to `@@C2@@` — section 0; view each with `git show <pin>:<path>`)
 
 | Path | Purpose |
 |---|---|
-| `docs/reviews/048_engineer_registration.sql` | the held migration (sha256 `3b404a29b26eccf7b54a3ec1d7863ae0ce793a9f2002d80c59fbefafc762ec41`) |
+| `docs/reviews/048_engineer_registration.sql` | the held migration — **sha256 `1f20efe1716c8fb0f0d18e856bfd3125e8d1559acfd761bde27cf51cd01a9873`** (**supersedes** `3b404a29…ec41`, the hash the earlier rounds reviewed; it changed only because R3-N3 added the CHECK — the two function bodies are byte-for-byte the same, which is why F3's `md5(prosrc)` values did not move) |
 | `docs/reviews/048-review-package.md` | this file |
-| `docs/reviews/048-typo-repair-runbook.md` | review condition S1 |
+| `docs/reviews/048-typo-repair-runbook.md` | round-2 condition S1 (R3-N2's "why not delete" wording fixed in this revision) |
 | `scripts/shared-fixture-fk-coverage.json` | **+1 entry** `{table:'users', column:'registered_by', parent:'users', action:'delete'}` — **same commit as the 048 file** (Rule 9 has no exceptions mechanism and scans held files) |
 | `scripts/migration-number-reservations.json` | 048's entry re-pointed at this file, dated correction appended — **forced by Rule 8** (section 10, F1) |
-| `docs/build-status.md` | the D12 rider and N1 backlog entries (condition 3) |
-| `docs/reviews/048-scaffold/{stubs.sql,tests.sql,mutate.py,run.sh,lintvar.py,fingerprint.sql}` (commit `faaa8d4`) and `down.sh` (commit `3e5457e`) | the disposable dry-run scaffold, its 57 checks, the red-variant generator, the lint-proof script, the apply-record queries and the scaffold DOWN rehearsal. Not migrations; no number. |
+| `docs/build-status.md` | the D12 rider and N1 backlog entries (round-2 condition 3), plus R3-S1 and R3-S3 (round 3) and their four index rows |
+| `docs/reviews/048-scaffold/{stubs.sql,tests.sql,mutate.py,run.sh,lintvar.py,fingerprint.sql,down.sh}` (at `ae06082`) | the disposable dry-run scaffold, its **61** checks (57 + the 4 for R3-N3), the red-variant generator (**15** variants), the lint-proof script, the apply-record queries and the scaffold DOWN rehearsal. Not migrations; no number. |
 
 **Not touched:** anything under `app/`, `lib/`, `supabase/migrations/`. No test file was written or modified.
 
 ## 4. Deploy order — MERGE is the deploy
 
 The repo has no deploy step: **merging to `main` deploys** (plan §6.1). An app merged before 048 fails on the missing
-`add_engineers_to_project` function and the three `users` columns. Order:
+`add_engineers_to_project` function and the three `users` columns.
 
-1. **048 → test-db** — one file, foreground, `supabase db query --linked -f`, **never `db push`**, ref named and
-   `supabase/.temp/project-ref` printed and compared first. **Requires a GO no review round has given.**
-2. **CI green on the app PR against that test-db** — **pinned run URL, `headSha` = the PR's current HEAD** (a green run certifies a SHA, not a branch). **Prerequisite: the stranded test-db fixture rows from this PR's own red runs are cleaned (section 8.5)**, or `owner-deliver-job` fails for a reason unrelated to 048.
-3. **048 → prod** — Aravind's go-ahead in the same exchange; **PITR observed, not assumed**.
-4. **THEN merge** — only once the typo-repair runbook is **rehearsed** and its record cited. Use a regular merge commit, not squash, for a branch that keeps being worked on (`CLAUDE.md` §0).
-5. Verify on the **production deployment**, never a Preview (which database a Preview reads is undeterminable from the repo — plan §6.1, UNKNOWN #33).
+### 4.1 Two coupling rules (R3-B1) — RULES, not observations
 
-Steps 1–3 are safe with the old app serving: the migration is additive and its objects are unused until the app lands.
+**(i) NO further pushes to this branch until 048 is applied to test-db — or the DB-test job is skipped for it.** Every push
+starts a `Test (real test-db)` run that fails at fixture teardown (section 8) against a database that CI and other sessions
+share, and section 8.5 already proved that such runs strand rows and contaminate the next person's run.
+**Route taken: the freeze. The skip route is NOT available to this PR.** The repo's pattern is branch
+`ci-docs-only-test-skip` (`origin/ci-docs-only-test-skip`, tip `4ebe7f7`; it is already in `.github/workflows/ci.yml` on this
+branch — the comment block and the `changes` job at `ci.yml:40-117`, the gate on the `test` job at `ci.yml:355`). It skips
+`Test (real test-db)` **only when every changed file is under `docs/` or is a root-level `*.md`**; everything else "falls
+through to non-doc by construction". This PR changes `scripts/shared-fixture-fk-coverage.json` and
+`scripts/migration-number-reservations.json`, so it is **not** docs-only: the job runs on every push and the only lever is
+not pushing. **This pass needs exactly one push to update the PR** (the previous head `b6af1b1` predates every condition in
+section 2b); **the freeze starts after it.** That push will itself start a red run and can strand rows — section 8.6.
+
+**(ii) This PR's MERGE is gated on the test-db apply, even though it ships no application code.** The
+`shared-fixture-fk-coverage.json` entry is the coupling: `test/helpers/db.ts` imports it (`db.ts:2`) and acts on it at teardown
+(`db.ts:348-397`), so merged before the apply it lands on `main` and **every CI run in the repo — every PR, every push to `main`
+— fails** with `column users.registered_by does not exist`. Rule 9 forced the entry into this PR's commit (no exceptions
+mechanism, scans held files), so it cannot be split off. "Ships no application code" is not "has no coupling". The general
+defect is filed as R3-S1 (`docs/build-status.md`).
+
+### 4.2 Order
+
+1. **The freeze is in force** (rule (i)).
+2. **048 → test-db** — one file, foreground, `supabase db query --linked -f`, **never `db push`**, ref named and
+   `supabase/.temp/project-ref` printed and compared first. Round 3 gave PACKAGE GO for this apply; Aravind's
+   go-ahead in the same exchange is still required at the moment of the apply (`CLAUDE.md` §0).
+3. **DOWN rehearsed on the cleaned test-db, with captured output.**
+4. **CI on the PR head FULLY green by section 8.3's rule** — pinned run URL, `headSha` = the PR's current HEAD, and a
+   **stranded-row sweep by tenant id** before "fully green" is claimed (section 12).
+5. **The typo-repair runbook rehearsed** on test-db (with R3-N2's wording fixed), its record cited — **before the merge**.
+6. **048 → prod** — its own GO (**none exists**), **PITR observed, not assumed**, the F4 per-role EXECUTE readback from prod and
+   the `n2` / `u` pre-checks (section 12).
+7. **THEN merge** — regular merge commit, not squash, for a branch that keeps being worked on (`CLAUDE.md` §0); gated on step 2
+   by rule (ii).
+8. Verify on the **production deployment**, never a Preview (which database a Preview reads is undeterminable from the repo —
+   plan §6.1, UNKNOWN #33).
+
+Steps 2–6 are safe with the old app serving: the migration is additive and its objects are unused until the app lands.
 
 **Rollback: revert commit first (merged, deployed), THEN the DOWN.** DOWN first drops the function and columns the deployed
 app still calls, and **destroys attribution data** for every engineer added since apply — there is no other record of who
@@ -98,7 +151,7 @@ The apply record carries, **on test-db and on prod, query text printed above eac
 | F2 | `pg_proc` count per name in `public` — **1 each** |
 | F3 | `md5(prosrc)` + length; **`md5(pg_get_functiondef)`** + length (beyond the ask: `prosrc` alone misses `SECURITY DEFINER`/`search_path`); owner; SECURITY DEFINER; `proconfig`; ACL (`proacl`) |
 | F4 | `has_function_privilege` per role **by name** (`anon`, `authenticated`, `service_role`, `postgres`) and whether `PUBLIC` holds EXECUTE |
-| F5 | for `users_registered_by_fkey`: **`confdeltype = 'r'`, `confupdtype = 'a'`**, `confmatchtype`, `conkey`, `confkey`, `pg_get_constraintdef`; plus the two CHECKs |
+| F5 | for `users_registered_by_fkey`: **`confdeltype = 'r'`, `confupdtype = 'a'`**, `confmatchtype`, `conkey`, `confkey`, `pg_get_constraintdef`; plus the **three** CHECKs (role, pairing, and the R3-N3 no-self CHECK) |
 | F6 | the three columns' type / nullability / default and `col_description` (048 adds no `COMMENT ON`, so all read NULL) |
 
 The values are **captured at apply and never typed in advance**. The scaffold's own readback of the same queries is in
@@ -139,17 +192,26 @@ touch, or needs 048 on test-db, which has no apply GO. **CI-ONLY** = cannot be v
 | **Boundary test (T13)** | One literal **`+919176861156`**, held in **one named constant `TEST_BOUNDARY_PHONE_LITERAL` in one file, `test/helpers/boundary-phone.ts`** and swappable in one edit, driven through the function in **apply mode**, read back, cleaned up. Its fixture project has **`status <> 'active'`** so the roster never loads it and no message can leave. No other `+91` value is minted anywhere. | Function absent → fails (the baseline run shows `42883`). | **SPEC** — needs 048 on test-db. **This section is the only place this package states the literal.** |
 | **T14** | End state: after adding one engineer, `resolveEngineerProject` returns `resolved` and the morning roster includes them. | Function absent → `zero_memberships`. | **SPEC** — needs 048 on test-db |
 | **T15** | Two concurrent adds of one number: exactly one wins. | — | **CI-ONLY — NOT VERIFIED LOCALLY** (`CLAUDE.md` §0: this sandbox serialises concurrent RPCs, so a local pass proves nothing) |
-| **T16** | ACL evidence: `authenticated` may call the public function and **not** the helper; `anon` and `service_role` refused (`42501`) on both; PUBLIC holds nothing; owner `postgres`; `proconfig` exactly `search_path=public`; **the helper's ACL is exactly `{postgres=X/postgres}`.** | `no_revokes` — default privileges leave EXECUTE with `anon`/`authenticated`/`service_role`. **Red: 5 × T16.** | **SCAFFOLD**; the real **anon-key PostgREST** refusal and the test-db catalog readback are owed at apply (section 5) — the scaffold has no PostgREST |
+| **T16** | ACL evidence: `authenticated` may call the public function and **not** the helper; `anon` and `service_role` refused (`42501`) on both; PUBLIC holds nothing; owner `postgres`; `proconfig` exactly `search_path=public`; **the helper's ACL is exactly `{postgres=X/postgres}`.** | `no_revokes` — default privileges leave EXECUTE with `anon`/`authenticated`/`service_role`. **Red: 5 × T16.** | **SCAFFOLD**; the real **anon-key PostgREST** refusal, the test-db catalog readback **and a real `authenticated` call that succeeds** are owed at apply (section 5; R3-U-2 below) — the scaffold has no PostgREST and its `postgres` is a superuser |
 | **T17** | A tenant-A admin with a tenant-B `p_project_id` gets `no_data_found` **identical in code and message** to a nonexistent id; zero writes. | `foreign_42501`. **Red: T17, T6 rows 9–10, T1.** | **SCAFFOLD** |
 | **T18** | Atomicity: row K fails after classification → **zero** new rows. (The scaffold forces the failure with a scratch trigger on the third insert.) | `atomic_subblocks` — per-row `EXCEPTION` blocks, earlier rows persist. **Red: T18.** | **SCAFFOLD** |
 | **T19** | The CHECK: `'Engineer'`, `'engineer '`, `'ENGINEER'` and a value outside the six are rejected `23514`; each of the six valid roles succeeds. | Natural red: with no 048 the four invalid inserts **succeed**. | **SCAFFOLD** |
 | **T20** | `p_consent_attested = false` does not block apply and **stores `false`**; **NULL raises `22023` in apply AND dry-run, zero rows written**; the pairing CHECK backstops a direct `INSERT` with `registered_by` set and `consent_attested` NULL (`23514`); a source guard asserts `coalesce(p_consent_attested` appears **nowhere** in the 048 file. | `coalesce_consent` — the **natural red against the rev11 spec**: NULL is silently stored as `false`. **Red: 3 × T20.** | **SCAFFOLD**; source guard: grep in section 7 |
+| **R3-N3** | `users_registered_by_not_self_chk`: (i) an `INSERT` with `registered_by` = the row's own `id` is rejected `23514` and leaves no row; (ii) an `UPDATE` of a registered engineer to `registered_by = id` is rejected `23514`, the row unchanged; (iii) the same `UPDATE` on a legacy all-NULL row (pairing columns set) is rejected `23514`; (iv) catalog: a validated `CHECK ((registered_by <> id))`. | Variant `no_self_chk` (the CHECK removed): **red on exactly these four** and nothing else (57 / 4). The two write attempts are the discriminating ones — **both satisfy the composite FK on their own, because the parent row IS the row being written**, so only the CHECK can refuse them. Natural red on the baseline: all four fail. | **SCAFFOLD** |
 | **T21** | Boundary-literal source guard: in `test/`, `+91` followed by a digit appears only in `test/helpers/boundary-phone.ts`; the boundary test imports `test/helpers/db.ts`, imports **no** module under `lib/whatsapp/outbound/` or `app/api/cron/`, and creates its fixture project `status <> 'active'`. | Mutation: a second `+91` literal / import of `send.ts` / an `active` project. | **SPEC** |
 | **T44** | The engineers list page is read-only, shows what landed, shows non-active rows labelled from `users.status`, and is gated by `decideEngineerAdminAccess` before any read. | Per plan §7.1. | **SPEC** — `app/` barred |
 | **T46** | **Confirm → apply is a SET check, not a count.** (i) pure `sameConfirmedSet(carried, reparsed)`: `[A,B]` vs `[B,A]` equal; **`[A,B]` vs `[A,C]` — same count, one number swapped — mismatch**; `[A,B]` vs `[A]`, `[A,B,C]`, and a one-digit change mismatch. (ii) on test-db: preview a 2-row paste, apply with one number swapped for another valid unregistered number (**count unchanged, 2 = 2**) → **refused**, `add_engineers_to_project` **not called** (spy), counts unchanged. (iii) the unedited paste applies and what lands is exactly the carried list. | **A swap that preserves the count must be refused.** Natural red against the rev11 (count-only) spec: (ii) applies the swapped set. Mutations: compare lengths only → (i) swap case and (ii) fail; compare unsorted → the reorder case fails; skip the check → (ii) fails. | **SPEC** — needs `lib/engineers/confirm-set.ts` (barred) |
 | **T47** | The attribution FK: `confdeltype='r'`, `confupdtype='a'`, `confmatchtype='s'`; deleting the registering admin while an engineer they registered stands is **refused with SQLSTATE `23503`** and both rows are unchanged. | `fk_bare` (a bare `REFERENCES`: `confdeltype='a'`) — **only (i) goes red; (ii) stays green**, which is the proof that **(ii) alone cannot tell RESTRICT from NO ACTION** and (i) is the discriminating assertion. `fk_cascade` — both go red (the engineer is deleted). | **SCAFFOLD**; pinned again on test-db and prod at apply |
 | **T48** | The function's identity: `pg_proc` count for `add_engineers_to_project` in `public` **= 1**; the type list is exactly `uuid, jsonb, boolean, boolean`; `md5(prosrc)` non-null and equal to the apply record. | `overload5` — a `CREATE OR REPLACE` adding a fifth (defaulted) parameter makes a **second overload**: **count = 2**, and a four-argument call becomes **ambiguous**, so the whole suite goes red (42 fails). That is the exact `CLAUDE.md` §0 hazard slice 2 must avoid. | **SCAFFOLD**; re-run after slice 2's redefinition |
 | **T49** | **The roster status filter is pinned.** The typo-repair statement removes the engineer from **both** rosters: a fixture engineer on a **neutralised** (non-active) project appears in `fetchMorningRoster` and `fetchEveningRoster`; after the runbook's `UPDATE` (via the service client) it appears in **neither** and every other column is unchanged. No Twilio module is imported; no send. **`test/unit/outbound-roster.test.ts` has no `status` assertion today.** | Natural red: before the `UPDATE` the engineer is on both rosters. Mutation (scratch copy of `roster.ts`): remove `.eq('users.status','active')` → the row stays on both → **fails**. | **SPEC** — needs 048 on test-db to create the engineer through the function |
+
+**What the scaffold CANNOT show (R3-U-2) — the reason T16's "authenticated call succeeds" is owed at the test-db apply, not only the anon-key `42501` refusal.**
+The scaffold's `postgres` is a **superuser**, and superusers **skip `EXECUTE` checks entirely**. So the scaffold **cannot observe** that a
+**non-superuser owner** can call a helper whose ACL is `{postgres=X/postgres}`: `add_engineers_to_project` runs as its owner and calls
+`engineer_admin_gate`, and on the scaffold that call would succeed whatever the helper's ACL said. Supabase's `postgres` is not a
+superuser, so on test-db that call is governed by the ACL for real — and the explicit `GRANT … TO postgres` is what keeps it working.
+T16's scaffold "authenticated call succeeds" therefore proves the function's logic, **not** the ACL chain; the ACL chain is observed
+for the first time at the test-db apply, by a real `authenticated` call (a dry run) that returns — beside the anon-key refusal.
 
 **Four checks pass vacuously against the baseline (no 048)** and are therefore *not* claimed as red there: T7 "wrote
 nothing", T8 "error, not statuses", T5 "payload holds no tenant-B data" and T19 "six valid roles accepted" — each is a
@@ -158,26 +220,28 @@ that **does** go red on the baseline, and has its own variant above (`dry_writes
 
 ## 7. Captured evidence
 
-**Provenance.** Every capture below ran at a **clean tree**: the commit SHA and an **empty `git status --porcelain`** were
-captured at the top of the run (`fde3ffb444385357ad9dd63b504b3f186fcb6949` for the scaffold, lint and test runs;
-`3e5457e31634bd61d9cbb01cb0b8fd95b5085311` for the DOWN rehearsal and the lint-variant table), so the SHA names the commit *and* the
-working tree matched it. The artefacts under test — the 048 file, the scaffold, both JSON files — are **blob-identical**
-between the artefact commit `faaa8d4` and both run SHAs (`git rev-parse <commit>:<path>` equal for all nine paths; captured in the build log).
+**Provenance.** Every capture below was **re-run in this pass** at a **clean tree**: the commit SHA and an **empty
+`git status --porcelain`** are printed at the top of each capture in `~/Desktop/048-conditions.txt` — SHA
+**`ae06082bd733419175efe09be6d01ac7e598fa71`**, empty porcelain — for the scaffold suite, the DOWN rehearsal, the lint and the
+fingerprint. The earlier capture SHAs (`fde3ffb`, `3e5457e`) are **superseded**: the held file changed (R3-N3), so nothing in
+7.2–7.5 is carried forward from them. (Section 8, the CI characterisation, is from the earlier runs and does not depend on the new
+CHECK: the failure it records is a column that does not exist on test-db, which the CHECK does not change.)
 
-| Artefact | git blob id (identical at `faaa8d4`, `fde3ffb`, `3e5457e`) |
+| Artefact | git blob id at `ae06082` |
 |---|---|
-| `docs/reviews/048_engineer_registration.sql` | `32f7a9c87e77820f51b5580cd6d6858fd6126406` (sha256 `3b404a29b26eccf7b54a3ec1d7863ae0ce793a9f2002d80c59fbefafc762ec41`) |
-| `docs/reviews/048-scaffold/tests.sql` | `b520b8573a490296692e165b709bded0ba6b8cd1` |
-| `docs/reviews/048-scaffold/mutate.py` | `0a6870076ea2c57a34aea34f4d61a165f06483a4` |
-| `docs/reviews/048-scaffold/run.sh` | `26f24bbdc87dcda359946c899cb0a8231ff06388` |
-| `docs/reviews/048-scaffold/stubs.sql` | `bdcc657e588521530213d846e6c38839b48974e9` |
-| `docs/reviews/048-scaffold/fingerprint.sql` | `c5116637b77901c9da82af92c4585f4b6e3a24fb` |
-| `docs/reviews/048-scaffold/lintvar.py` | `ff06bdf5c00ece152dae80055557ff7ed15cc2fe` |
-| `scripts/shared-fixture-fk-coverage.json` | `74caab68eaf2e694d2045dbe990b5057972ba343` |
-| `scripts/migration-number-reservations.json` | `bdfec592d23c97f69440aaa5cb893a3fb3d0db61` |
+| `docs/reviews/048_engineer_registration.sql` | `b7fec7af1550d434b041c75a93907851a631d565` (sha256 `1f20efe1716c8fb0f0d18e856bfd3125e8d1559acfd761bde27cf51cd01a9873`; superseded `32f7a9c8…` / `3b404a29…`) |
+| `docs/reviews/048-scaffold/tests.sql` | `8e98dca1303cbe3269f39c79a406f2a65455586c` |
+| `docs/reviews/048-scaffold/mutate.py` | `84c62b36255f137031b7ce950cbf1fc71b7c2c0c` |
+| `docs/reviews/048-scaffold/run.sh` | `26f24bbdc87dcda359946c899cb0a8231ff06388` (unchanged) |
+| `docs/reviews/048-scaffold/stubs.sql` | `bdcc657e588521530213d846e6c38839b48974e9` (unchanged) |
+| `docs/reviews/048-scaffold/fingerprint.sql` | `1d27e233f23944846218a9335053bdf26acc3afd` |
+| `docs/reviews/048-scaffold/lintvar.py` | `ff06bdf5c00ece152dae80055557ff7ed15cc2fe` (unchanged) |
+| `docs/reviews/048-scaffold/down.sh` | `c5b745c553f56d655ad192f9363a8bbe7b273590` (unchanged) |
+| `scripts/shared-fixture-fk-coverage.json` | `74caab68eaf2e694d2045dbe990b5057972ba343` (unchanged) |
+| `scripts/migration-number-reservations.json` | `bdfec592d23c97f69440aaa5cb893a3fb3d0db61` (unchanged) |
 
-The full command-and-output record of this build is `~/Desktop/048-build.txt` (outside the repo). Every result below is
-reproducible from the pinned scripts; the run commands are shown.
+The full command-and-output record of **this pass** is `~/Desktop/048-conditions.txt`; the previous pass's is
+`~/Desktop/048-build.txt` (both outside the repo). Every result below is reproducible from the pinned scripts.
 
 ### 7.1 How the scaffold was built — the SQL is EXECUTED, not only linted
 
@@ -189,39 +253,45 @@ reproducible from the pinned scripts; the run commands are shown.
 | local server | PostgreSQL 17.11 (Homebrew), private unix socket, no TCP listener, in the build's temp directory; test-db and prod are 17.6 (same major, `CLAUDE.md` §7) |
 | named stubs | roles `anon`, `authenticated`, `service_role` (BYPASSRLS), `supabase_auth_admin`; schema `auth` with `auth.users(id)` and an `auth.uid()` that reads the same request JWT settings Supabase's does; `USAGE` on `public`/`auth`. **`vector(1536)` stubbed as `text`** in a local copy (three columns, all unused by 048) because pgvector is not installed locally — the exact transform is in the log. |
 | load | the dump loaded into a fresh database with **0 errors**; 32 tables, 16 functions, `users_id_tenant_id_key` present |
+| **baseline reuse (this pass)** | the baseline database `scaf_base` is the **same** schema-only dump taken by the previous pass (4,370 lines; sha256 `6d529462080dda10fc16e0fc541fe152dd46399b9efaf6b48452c91ed6ef7742`) — **not re-dumped** in this pass, so no `PGPASSWORD`-bearing command was run. Re-checked: 32 tables, 16 functions, 0 of the three 048 columns present. If test-db's `public` schema has moved since, the F1–F6 readback at the apply is the check (section 13 U-15) |
 | observation | `public` holds **14** SECURITY DEFINER functions of 16 — **which matches the plan's own recorded probe `n` (14 rows); the plan's prose "15" is the miscount (section 10, F11)** |
 
-### 7.2 The 57 checks — the committed file, and every red variant
+### 7.2 The 61 checks — the committed file, and every red variant
 
 `docs/reviews/048-scaffold/run.sh <mode>` clones the pristine pre-048 baseline database, applies the file (or a variant from
 `mutate.py`, which errors if its target text does not occur **exactly once**), and runs `tests.sql`. Every check is wrapped: an
-unexpected error is a recorded FAIL, never a silently missing test. **stderr of the real run was empty (0 bytes); 31 fixture rows built.**
+unexpected error is a recorded FAIL, never a silently missing test. **stderr of every run was empty (0 bytes); 31 fixture rows built.**
 
-**The committed file: 57 pass, 0 fail** (`real`).
+**The committed file: 61 pass, 0 fail** (`real`) — the earlier 57 plus the four `R3-N3` checks.
+
+**Variant count, corrected.** The earlier PR body said "12 red variants". The table in this section already held **14**
+(`lt_tenant` … `overload5`); with `no_self_chk` there are **15**, plus `base`. Both counts are from the file, not from memory.
 
 | Run | Variation | Targets | pass / fail | Checks that went red |
 |---|---|---|---|---|
-| `real` | the committed 048 file, unmodified | — | 57 / 0 | — |
-| `base` | **no 048 applied** (the natural red: function and columns absent) | everything that asserts a positive; 4 checks pass vacuously (section 6) | 4 / 53 | 53 of 57 (list in the build log) |
-| `lt_tenant` | `<>` instead of `IS DISTINCT FROM` in the tenant bind | T1 | 54 / 3 | `T6 row10 admin/caller tenant NULL -> P0002`; `T1 tenant-NULL admin: dry-run -> P0002`; `T1 tenant-NULL admin: apply -> P0002, nothing written` |
-| `dry_writes` | a dry run falls through to the writes | T7 | 48 / 9 | `T6 row1  admin/same/no membership -> allow`; `T6 row2  admin/same/pm membership -> allow`; `T6 row3  pm/same/pm membership -> allow`; `T7 dry-run returns ok verdicts (>=1) and applied=false`; `T7 dry-run wrote nothing (users + project_members counts unchanged)`; `T5 statuses: B-engineer, B-no-membership, on-another, no-project, already,`; `T9 generic shape accepted: +12 and a 15-digit number`; `T9 name rules: blank and 101 chars -> 22023, exactly 100 accepted`; `T16 real call as authenticated on the PUBLIC function succeeds (dry-run ok` |
-| `gate_soft` | authorisation not enforced before the number lookups | T8, T6 | 49 / 8 | `T6 row4  pm/same/no membership -> 42501`; `T6 row5  pm/same/engineer-only membership -> 42501`; `T6 row6  qs/same/pm membership -> 42501`; `T6 row7  engineer/same/pm membership -> 42501`; `T6 row8  NULL role/same/pm membership -> 42501`; `T6 extra unknown auth uid -> 42501`; `T6 extra NULL auth uid (anon-shaped) -> 42501`; `T8 unauthorised dry-run gets an error, not statuses` |
-| `atomic_subblocks` | per-row `EXCEPTION` sub-blocks around the inserts | T18 | 56 / 1 | `T18 row 3 of 3 fails after classification: error returned AND zero new use` |
-| `coalesce_consent` | NULL consent silently becomes `false` (the rev11 spec) | T20 | 54 / 3 | `T20 consent=NULL raises 22023 in APPLY mode, zero rows written`; `T20 consent=NULL raises 22023 in DRY-RUN mode too, zero rows written`; `T20 dry-run flag NULL raises 22023 (a NULL would otherwise read as not-a-d` |
-| `drop_registered_by` | `registered_by` not written | T10 | 50 / 7 | `T10 apply: applied=true, both rows added, each with a user_id`; `T10 read-back: tenant, role, status, messaging_blocked, auth_id NULL, regi`; `T10 membership: role engineer, caller's tenant, this project, user_id matc`; `T10 re-adding the same numbers now reports already_on_this_project (apply `; `T20 consent=false does not block apply and stores false (not NULL)`; `T18 row 3 of 3 fails after classification: error returned AND zero new use`; `T47(ii) deleting the registering admin while engineers stand is refused 23` |
-| `leak_name` | a cross-tenant row carries a full name | T5 (i) | 54 / 3 | `T5 cross-tenant rows carry EXACTLY {idx,status}`; `T5 payload text contains no tenant-B project name, full name, project id o`; `T5 registered_no_project / already / owner rows carry EXACTLY {idx,status}` |
-| `no_cross_tenant` | classify only within the caller's tenant | T5 (ii) | 56 / 1 | `T5 statuses: B-engineer, B-no-membership, on-another, no-project, already,` |
-| `cross_no_project` | `registered_no_project` returned cross-tenant | T5 (iii) | 56 / 1 | `T5 statuses: B-engineer, B-no-membership, on-another, no-project, already,` |
-| `foreign_42501` | a foreign project id raises a different code than a nonexistent one | T17 | 52 / 5 | `T6 row9  admin/other tenant project -> P0002`; `T6 row10 admin/caller tenant NULL -> P0002`; `T1 tenant-NULL admin: dry-run -> P0002`; `T1 tenant-NULL admin: apply -> P0002, nothing written`; `T17 tenant-A admin + tenant-B project: same code AND message as a nonexist` |
-| `fk_bare` | a bare `REFERENCES` (`confdeltype` `a`) | T47 (i) only | 56 / 1 | `T47(i) FK actions: confdeltype = r, confupdtype = a, confmatchtype = s, on` |
-| `fk_cascade` | `ON DELETE CASCADE` | T47 (i) and (ii) | 55 / 2 | `T47(i) FK actions: confdeltype = r, confupdtype = a, confmatchtype = s, on`; `T47(ii) deleting the registering admin while engineers stand is refused 23` |
-| `no_revokes` | the two `REVOKE` statements removed | T16 | 52 / 5 | `T16 catalog: add fn -- authenticated may EXECUTE; anon, service_role and P`; `T16 catalog: helper -- no role but the owner may EXECUTE (anon, authentica`; `T16 catalog: the helper's ACL is exactly {postgres=X/postgres} (the explic`; `T16 real call as service_role -> 42501, even with a valid admin auth uid`; `T16 real call to the HELPER as authenticated, anon and service_role -> 425` |
-| `overload5` | `CREATE OR REPLACE` adding a fifth defaulted parameter (a second overload) | T48 | 15 / 42 | 42 of 57 (list in the build log) |
+| `real` | the committed 048 file, unmodified | — | 61 / 0 | — |
+| `base` | **no 048 applied** (the natural red: function and columns absent) | everything that asserts a positive; 4 checks pass vacuously (section 6) | 4 / 57 | 57 of 61 (full list in the pass log) |
+| `no_self_chk` | **the R3-N3 CHECK removed** | R3-N3 | 57 / 4 | `R3-N3 INSERT with registered_by = own id rejected 23514 (the composite FK alone would accept it), no row left`; `R3-N3 UPDATE of a registered engineer to registered_by = own id rejected 23514, row unchanged (…)`; `R3-N3 UPDATE of a legacy all-NULL row to registered_by = own id (…) rejected 23514`; `R3-N3 catalog: users_registered_by_not_self_chk is a validated CHECK on public.users, definition (registered_by <> id)` |
+| `lt_tenant` | `<>` instead of `IS DISTINCT FROM` in the tenant bind | T1 | 58 / 3 | `T6 row10 admin/caller tenant NULL -> P0002`; `T1 tenant-NULL admin: dry-run -> P0002`; `T1 tenant-NULL admin: apply -> P0002, nothing written` |
+| `dry_writes` | a dry run falls through to the writes | T7 | 52 / 9 | `T6 row1  admin/same/no membership -> allow`; `T6 row2  admin/same/pm membership -> allow`; `T6 row3  pm/same/pm membership -> allow`; `T7 dry-run returns ok verdicts (>=1) and applied=false`; `T7 dry-run wrote nothing (users + project_members counts unchanged)`; `T5 statuses: B-engineer, B-no-membership, on-another, no-project, already,`; `T9 generic shape accepted: +12 and a 15-digit number`; `T9 name rules: blank and 101 chars -> 22023, exactly 100 accepted`; `T16 real call as authenticated on the PUBLIC function succeeds (dry-run ok` |
+| `gate_soft` | authorisation not enforced before the number lookups | T8, T6 | 53 / 8 | `T6 row4  pm/same/no membership -> 42501`; `T6 row5  pm/same/engineer-only membership -> 42501`; `T6 row6  qs/same/pm membership -> 42501`; `T6 row7  engineer/same/pm membership -> 42501`; `T6 row8  NULL role/same/pm membership -> 42501`; `T6 extra unknown auth uid -> 42501`; `T6 extra NULL auth uid (anon-shaped) -> 42501`; `T8 unauthorised dry-run gets an error, not statuses` |
+| `atomic_subblocks` | per-row `EXCEPTION` sub-blocks around the inserts | T18 | 60 / 1 | `T18 row 3 of 3 fails after classification: error returned AND zero new use` |
+| `coalesce_consent` | NULL consent silently becomes `false` (the rev11 spec) | T20 | 58 / 3 | `T20 consent=NULL raises 22023 in APPLY mode, zero rows written`; `T20 consent=NULL raises 22023 in DRY-RUN mode too, zero rows written`; `T20 dry-run flag NULL raises 22023 (a NULL would otherwise read as not-a-d` |
+| `drop_registered_by` | `registered_by` not written | T10 | 53 / 8 | `T10 apply: applied=true, both rows added, each with a user_id`; `T10 read-back: tenant, role, status, messaging_blocked, auth_id NULL, regi`; `T10 membership: role engineer, caller's tenant, this project, user_id matc`; `T10 re-adding the same numbers now reports already_on_this_project (apply `; `T20 consent=false does not block apply and stores false (not NULL)`; `R3-N3 UPDATE of a registered engineer … row unchanged` (no registered row exists to update); `T18 row 3 of 3 fails after classification: error returned AND zero new use`; `T47(ii) deleting the registering admin while engineers stand is refused 23` |
+| `leak_name` | a cross-tenant row carries a full name | T5 (i) | 58 / 3 | `T5 cross-tenant rows carry EXACTLY {idx,status}`; `T5 payload text contains no tenant-B project name, full name, project id o`; `T5 registered_no_project / already / owner rows carry EXACTLY {idx,status}` |
+| `no_cross_tenant` | classify only within the caller's tenant | T5 (ii) | 60 / 1 | `T5 statuses: B-engineer, B-no-membership, on-another, no-project, already,` |
+| `cross_no_project` | `registered_no_project` returned cross-tenant | T5 (iii) | 60 / 1 | `T5 statuses: B-engineer, B-no-membership, on-another, no-project, already,` |
+| `foreign_42501` | a foreign project id raises a different code than a nonexistent one | T17 | 56 / 5 | `T6 row9  admin/other tenant project -> P0002`; `T6 row10 admin/caller tenant NULL -> P0002`; `T1 tenant-NULL admin: dry-run -> P0002`; `T1 tenant-NULL admin: apply -> P0002, nothing written`; `T17 tenant-A admin + tenant-B project: same code AND message as a nonexist` |
+| `fk_bare` | a bare `REFERENCES` (`confdeltype` `a`) | T47 (i) only | 60 / 1 | `T47(i) FK actions: confdeltype = r, confupdtype = a, confmatchtype = s, on` |
+| `fk_cascade` | `ON DELETE CASCADE` | T47 (i) and (ii) | 59 / 2 | `T47(i) FK actions: confdeltype = r, confupdtype = a, confmatchtype = s, on`; `T47(ii) deleting the registering admin while engineers stand is refused 23` |
+| `no_revokes` | the two `REVOKE` statements removed | T16 | 56 / 5 | `T16 catalog: add fn -- authenticated may EXECUTE; anon, service_role and P`; `T16 catalog: helper -- no role but the owner may EXECUTE (anon, authentica`; `T16 catalog: the helper's ACL is exactly {postgres=X/postgres} (the explic`; `T16 real call as service_role -> 42501, even with a valid admin auth uid`; `T16 real call to the HELPER as authenticated, anon and service_role -> 425` |
+| `overload5` | `CREATE OR REPLACE` adding a fifth defaulted parameter (a second overload) | T48 | 18 / 43 | 43 of 61 (full list in the pass log) |
 
 **What the red runs show, beyond "it goes red":**
 
 - **`fk_bare` — only T47(i) goes red; T47(ii) stays green.** A bare `REFERENCES` still refuses the delete (`NO ACTION` refuses too), so the delete-refusal check **cannot tell RESTRICT from NO ACTION**. The catalog pin — `confdeltype = 'r'`, `confupdtype = 'a'` — is the discriminating assertion, exactly as plan §2.8a says. `fk_cascade` turns both red.
-- **`overload5` — 42 of 57 fail, not just T48.** Adding a fifth *defaulted* parameter via `CREATE OR REPLACE` does not replace: it creates a **second** function, and every four-argument call becomes **ambiguous**. This is the `CLAUDE.md` §0 signature hazard reproduced on the scaffold, and it is why T48 pins the count and the type list, and why slice 2 must re-run it.
+- **`no_self_chk` — exactly the four R3-N3 checks go red and nothing else.** The two write attempts are the ones that discriminate: a self-referential `INSERT` and `UPDATE` both **satisfy the composite FK on their own** (the parent row is the row being written), so with the CHECK removed they succeed. That is the whole case for the CHECK: the FK cannot see this shape.
+- **`overload5` — 43 of 61 fail, not just T48.** Adding a fifth *defaulted* parameter via `CREATE OR REPLACE` does not replace: it creates a **second** function, and every four-argument call becomes **ambiguous**. This is the `CLAUDE.md` §0 signature hazard reproduced on the scaffold, and it is why T48 pins the count and the type list, and why slice 2 must re-run it.
 - **`lt_tenant` — the caller with a NULL tenant is caught on the dry-run path**, where the plan's T1 shows the engineer would be written into the *project's* tenant. (On the apply path the composite attribution FK would also refuse that write, `23503`; T1 is red on the dry-run and apply checks regardless.)
 - **`gate_soft` — T8 and the matrix rows 4–8 (plus the unknown-uid and NULL-uid rows) go red together**, which is the point of T6 running the whole matrix.
 - **Four checks pass vacuously against the baseline** — listed in section 6 — and are proved by their variants, not by the baseline.
@@ -229,7 +299,7 @@ unexpected error is a recorded FAIL, never a silently missing test. **stderr of 
 
 ### 7.3 Fingerprint readback — on the SCAFFOLD (proof the queries run; not the apply record)
 
-`docs/reviews/048-scaffold/fingerprint.sql` (blob `c5116637…`), run against the scaffold database that carries the committed file:
+`docs/reviews/048-scaffold/fingerprint.sql` (blob `1d27e233…`), run at clean tree `ae06082` against the scaffold database that carries the committed file. **The block below is extracted from the pass log by script, not retyped.**
 
 ```
          proname          |         arg_type_list         |                     regprocedure                     
@@ -256,12 +326,13 @@ unexpected error is a recorded FAIL, never a silently missing test. **stderr of 
  engineer_admin_gate      | f    | f             | f            | t        | f
 (2 rows)
 
-    on_table     |           conname            | contype | confdeltype | confupdtype | confmatchtype |   conkey   | confkey |                                                         definition                                                          
------------------+------------------------------+---------+-------------+-------------+---------------+------------+---------+-----------------------------------------------------------------------------------------------------------------------------
- project_members | project_members_role_check   | c       |             |             |               | {6}        |         | CHECK ((role = ANY (ARRAY['pm'::text, 'qs'::text, 'engineer'::text, 'owner'::text, 'subcontractor'::text, 'admin'::text])))
- users           | users_registered_by_fkey     | f       | r           | a           | s             | {18,3}     | {1,3}   | FOREIGN KEY (registered_by, tenant_id) REFERENCES users(id, tenant_id) ON DELETE RESTRICT
- users           | users_registered_pairing_chk | c       |             |             |               | {18,19,20} |         | CHECK ((((registered_by IS NULL) = (registered_at IS NULL)) AND ((registered_by IS NULL) = (consent_attested IS NULL))))
-(3 rows)
+    on_table     |             conname              | contype | confdeltype | confupdtype | confmatchtype |   conkey   | confkey |                                                         definition                                                          
+-----------------+----------------------------------+---------+-------------+-------------+---------------+------------+---------+-----------------------------------------------------------------------------------------------------------------------------
+ project_members | project_members_role_check       | c       |             |             |               | {6}        |         | CHECK ((role = ANY (ARRAY['pm'::text, 'qs'::text, 'engineer'::text, 'owner'::text, 'subcontractor'::text, 'admin'::text])))
+ users           | users_registered_by_fkey         | f       | r           | a           | s             | {18,3}     | {1,3}   | FOREIGN KEY (registered_by, tenant_id) REFERENCES users(id, tenant_id) ON DELETE RESTRICT
+ users           | users_registered_by_not_self_chk | c       |             |             |               | {18,1}     |         | CHECK ((registered_by <> id))
+ users           | users_registered_pairing_chk     | c       |             |             |               | {18,19,20} |         | CHECK ((((registered_by IS NULL) = (registered_at IS NULL)) AND ((registered_by IS NULL) = (consent_attested IS NULL))))
+(4 rows)
 
      attname      |           type           | attnotnull | default_expr | comment 
 ------------------+--------------------------+------------+--------------+---------
@@ -273,26 +344,28 @@ unexpected error is a recorded FAIL, never a silently missing test. **stderr of 
 
 Read as designed: one function per name; type list `uuid, jsonb, boolean, boolean`; helper ACL exactly `{postgres=X/postgres}`;
 public function `{postgres=X/postgres,authenticated=X/postgres}`; both owned by `postgres`, SECURITY DEFINER, `proconfig`
-`{search_path=public}`; the FK reads `confdeltype = r`, `confupdtype = a`, `confmatchtype = s`; the three columns are
-nullable with no default and **no comment** (048 adds no `COMMENT ON`). `pg_get_constraintdef` omits `ON UPDATE NO ACTION`
-because it is the default — the pin is `confupdtype`, not the rendered text.
+`{search_path=public}`; **the function fingerprints are unchanged from the previous round** (`md5(prosrc)` `85ec32ab…` and `968a53c5…`,
+`md5(pg_get_functiondef)` `97dacf3c…` and `f7e9ff1f…` — the CHECK is a table constraint, the bodies did not move); the FK reads
+`confdeltype = r`, `confupdtype = a`, `confmatchtype = s`; **F5 now returns four rows — the FK and three CHECKs, the new one
+`CHECK ((registered_by <> id))`**; the three columns are nullable with no default and **no comment** (048 adds no `COMMENT ON`).
+`pg_get_constraintdef` omits `ON UPDATE NO ACTION` because it is the default — the pin is `confupdtype`, not the rendered text.
 
 ### 7.4 DOWN rehearsal — on the SCAFFOLD (the test-db rehearsal is still owed)
 
-`docs/reviews/048-scaffold/down.sh` (commit `3e5457e`): clone the baseline, apply UP, extract the commented DOWN block
+`docs/reviews/048-scaffold/down.sh` (blob `c5b745c5…`, run at clean tree `ae06082`): clone the baseline, apply UP, extract the commented DOWN block
 (`-- BEGIN;` … `-- COMMIT;`, prefix stripped), run it, and diff a **schema-only `pg_dump`** — which includes `COMMENT ON`
 statements, ACLs, constraints, defaults and functions — against the baseline; then re-apply UP.
 
 ```
 dump BEFORE (baseline, pre-048): 5666 lines
-UP applied, exit 0            → dump differs from baseline by 257 lines
+UP applied, exit 0            → dump differs from baseline by 258 lines   (was 257 before R3-N3: one added constraint line)
 DOWN applied, exit 0
 diff baseline vs after-DOWN:  exit 0 ; differing lines: 0
 UP re-applied on the reverted database, exit 0 ; functions after re-UP: 2
 ```
 
 The extracted DOWN was: two `DROP FUNCTION IF EXISTS` with the exact type lists, `DROP CONSTRAINT IF EXISTS` for the role
-CHECK, the FK and the pairing CHECK, then `DROP COLUMN IF EXISTS` for the three columns. **After DOWN the schema is
+CHECK, the FK, the pairing CHECK **and the no-self CHECK (new)**, then `DROP COLUMN IF EXISTS` for the three columns. **After DOWN the schema is
 byte-identical to the baseline, including comments and grants** (`CLAUDE.md` §7: a teardown verifies comments too).
 **Not shown here, and owed:** the same rehearsal on the cleaned test-db with captured output; and the
 "live in-flight session is still processable after DOWN" check, which is **not applicable before the merge** — no
@@ -300,7 +373,7 @@ application code calls either function until the app lands, and the deploy order
 
 ### 7.5 Lint — the real run, and each rule shown to bite
 
-The real `scripts/lint-migrations.mjs`, run at the clean pinned tree with the **S1 rule (`c0b2078`) live**:
+The real `scripts/lint-migrations.mjs`, run at the clean tree `ae06082` with the **S1 rule (`c0b2078`) live** (re-run in this pass; the keyed line numbers below **moved by +13** because R3-N3 added lines above the function bodies — `L278`→`L291`, `L143`→`L156`, `L146`→`L159`):
 
 ```
 $ node scripts/lint-migrations.mjs
@@ -317,26 +390,26 @@ Each rule below was then shown to bite by running the **same real lint** against
 | `no_reservation` | FAIL (Rule 8) | 1 | `docs/reviews/048_engineer_registration.sql: reservation-mismatch-048  [held-migration-reservation-required]` |
 | `no_coverage` | FAIL (Rule 9) | 1 | `docs/reviews/048_engineer_registration.sql: users.registered_by -> users  [shared-fixture-fk-coverage]` |
 | `no_postgres_grant` | FAIL (Rule 1) | 1 | `docs/reviews/048_engineer_registration.sql: engineer_admin_gate  [no-orphan-security-definer]` |
-| `fwd_in_second_stmt` | FAIL (Rule 11) | 1 | `docs/reviews/048_engineer_registration.sql: L278  [no-auth-uid-as-users-id]` |
-| `rev_in_second_stmt` | FAIL (Rule 11) | 1 | `docs/reviews/048_engineer_registration.sql: L278  [no-auth-uid-as-users-id]` |
-| `col_in_second_stmt` | FAIL (Rule 11) | 1 | `docs/reviews/048_engineer_registration.sql: L278  [no-auth-uid-as-users-id]` |
+| `fwd_in_second_stmt` | FAIL (Rule 11) | 1 | `docs/reviews/048_engineer_registration.sql: L291  [no-auth-uid-as-users-id]` |
+| `rev_in_second_stmt` | FAIL (Rule 11) | 1 | `docs/reviews/048_engineer_registration.sql: L291  [no-auth-uid-as-users-id]` |
+| `col_in_second_stmt` | FAIL (Rule 11) | 1 | `docs/reviews/048_engineer_registration.sql: L291  [no-auth-uid-as-users-id]` |
 | `auth_id_in_second_stmt` | clean (control) | 0 | `migration-lint: clean. 107 known violation(s), all exempted.` |
 | `block_comment_prose` | clean | 0 | `migration-lint: clean. 107 known violation(s), all exempted.` |
-| `block_comment_in_users_stmt` | FAIL (F5) | 1 | `docs/reviews/048_engineer_registration.sql: L143  [no-auth-uid-as-users-id]` |
-| `string_literal_in_users_stmt` | FAIL (F5) | 1 | `docs/reviews/048_engineer_registration.sql: L146  [no-auth-uid-as-users-id]` |
+| `block_comment_in_users_stmt` | FAIL (F5) | 1 | `docs/reviews/048_engineer_registration.sql: L156  [no-auth-uid-as-users-id]` |
+| `string_literal_in_users_stmt` | FAIL (F5) | 1 | `docs/reviews/048_engineer_registration.sql: L159  [no-auth-uid-as-users-id]` |
 
 **F3, answered.** The three Rule 11 shapes — forward, reversed and `<x>_id` — are each caught **after the first `;` inside
-the `$$` body** of `add_engineers_to_project`, and each is keyed **`L278`**, not the function's name: UNKNOWNS #4, observed. The correct
+the `$$` body** of `add_engineers_to_project`, and each is keyed **`L291`**, not the function's name: UNKNOWNS #4, observed. The correct
 column (`auth_id`) in the same position stays clean, so the rule is not simply refusing `auth.uid()`. The 048 file contains no such hit, so **no exception is
 needed** — and an exception would be line-number-fragile. **F5, shown:** block-comment and string-literal prose trips
-the rule only when the statement also mentions the `users` table (`L143`, `L146`); the same prose in a statement that does not is clean.
+the rule only when the statement also mentions the `users` table (`L156`, `L159`); the same prose in a statement that does not is clean.
 
 ### 7.6 Source guards
 
 - **T20** — `grep -c "coalesce(p_consent_attested" docs/reviews/048_engineer_registration.sql` → **`0`**.
-- **T10(b)** — the insert lists every explicit column: `INSERT INTO public.users (tenant_id, role, status, full_name, whatsapp_number, messaging_blocked, auth_id, registered_by, registered_at, consent_attested)` (`048_engineer_registration.sql:342-345`).
+- **T10(b)** — the insert lists every explicit column: `INSERT INTO public.users (tenant_id, role, status, full_name, whatsapp_number, messaging_blocked, auth_id, registered_by, registered_at, consent_attested)` (`048_engineer_registration.sql:355-358`; re-checked at `ae06082`).
 - **`+91` scan** — no `+91<digit>` literal in the 048 file, the scaffold, the runbook or the coverage JSON. The boundary literal is stated once in this package (section 6, "Boundary test").
-- **Lint rule's own unit test** — `npx vitest run test/unit/lint-no-auth-uid-as-users-id.test.ts`: **1 file, 30 tests, 30 passed** (static; no database).
+- **Lint rule's own unit test** — **NOT re-run in this pass.** `npx vitest run test/unit/lint-no-auth-uid-as-users-id.test.ts` aborts in `globalSetup` here (`[guard] ABORT: .env.test is missing SUPABASE_TEST_URL …`): the gitignored `.env.test` is absent from this worktree, and copying test-db credentials into it just to run a static test was not warranted. **`git diff --stat c0b2078 HEAD -- scripts/lint-rules test/unit/lint-no-auth-uid-as-users-id.test.ts scripts/lint-migrations.mjs` is empty** (logged), so the earlier **1 file, 30 tests, 30 passed** result stands for unchanged code.
 - **No TypeScript changed** in this pass, so `tsc --noEmit` and ESLint are unaffected and were not re-run.
 
 
@@ -484,6 +557,14 @@ Target ref must be named and `supabase/.temp/project-ref` compared first; foregr
 **A note on the first red run's 21 `owner-deliver-job` failures:** they had the same error text, but the stranded rows above were created later (16:49), so the *mechanism* for that first occurrence is **not fully traced** — only that those tests pass alone and that the failures were contamination. Nothing in the rule in 8.3 depends on it.
 
 
+### 8.6 This pass's own push (R3-B1) — expected, and the last one until the apply
+
+The previous head `b6af1b1` predates every condition in section 2b, so this pass updates the PR with **one** push. That push
+starts a `Test (real test-db)` run that **will fail at teardown for the reason in section 8** and — by section 8.5 — can strand
+fixture rows on the shared test-db. It cannot be avoided by path filter (section 4.1 (i)). It is the last push until the apply,
+and its red result is **known** only by section 8.3's rule. Whatever it strands is swept **by tenant id** before any "fully green"
+is claimed (section 12).
+
 ## 9. Additions beyond the plan text — named, so none is discovered later
 
 1. **`p_dry_run IS NULL` raises `22023`.** The plan lists the NULL-consent raise (S4) but not the dry-run flag. A NULL there
@@ -504,6 +585,16 @@ Target ref must be named and `supabase/.temp/project-ref` compared first; foregr
    chosen `ORDER BY name, id`.
 7. **No in-file assertions.** Unlike 047, the file has no closing `DO` block; verification is the fingerprint queries and
    the scaffold checks, not an in-transaction abort. (An addition beyond the plan; not made.)
+8. **R3-N1 — a departure from plan §2.1: `p_consent_attested` is NOT ignored in a dry run.** The plan says it is ignored; the file
+   **raises `22023` on NULL in both modes** (step 4 runs before the dry-run branch), and **T20 asserts it** (two checks). Correct
+   choice — S4 applied consistently — but it departs from the plan's text, so it is listed. **Consequence for the TypeScript
+   caller: the preview call must send a real boolean for `p_consent_attested`; never omit it, never `null`.** (A NULL `p_dry_run` raises too — item 1.)
+9. **R3-N3 — `CHECK (registered_by <> id)` is in slice 1, not slice 2.** Aravind's decision, 2026-09-19. Reasoning, recorded: the JS
+   sweep has **never run against a self-referential edge** (UNKNOWNS #69 — this is the first in the registry) and its cycle
+   behaviour is **inferred, not observed**. Where a mechanism is unobserved, make the bad state **structurally impossible** rather
+   than rely on it not arising. The function cannot produce a self-reference; the **manual typo-repair runbook writes by hand**.
+   Named limit, so it is not over-read: the CHECK excludes the **length-1** cycle only — a two-row cycle (A registered by B,
+   B by A) is still possible by hand (section 13 U-16).
 
 ## 10. Findings that change the plan's picture — flagged, not fixed here
 
@@ -539,6 +630,12 @@ Target ref must be named and `supabase/.temp/project-ref` compared first; foregr
   `docs/build-status.md` covers the D12 and N1 entries only) — **owed as a follow-up.**
 - **F11 — the definer count: the plan's "15" is wrong; it is 14. It does not change the grant argument (dated addition, 2026-09-19).** The plan (§2.5 "all 15 definer functions", §2.7 "all **15** existing definer functions have `config = {search_path=public}`") argues the new functions' posture from that count. Its **own recorded probe `n` has 14 rows**, and the **live test-db set today is those same 14, name for name** (`acquire_and_transition_session`, `apply_{evening,hindrance,morning}_flow_turn`, `claim_media_nudge`, `complete_onboarding`, `correct_daily_log`, `drain_next_pending_flow`, `get_user_tenant_id`, `handle_new_user`, `quoco_test_047_unused_rights_check`, `quoco_test_row_is_locked`, `sweep_stale_morning_sessions`, `write_dpr_version`). **All 14: owner `postgres`, `proconfig = {search_path=public}`, and nothing else** — so the argument as *worded* ("all existing definer functions carry exactly that") is true; only the number was wrong. What the reviewer should also see, from the live ACLs: **every function callable by `authenticated` (`complete_onboarding`, `correct_daily_log`, `get_user_tenant_id`, `write_dpr_version`) also holds `service_role` EXECUTE — none revokes it.** 048's public function does (`service_role` revoked by name, per `CLAUDE.md` §6), so it is the **first** authenticated-callable definer function without `service_role`; that is the rule's intent, not a drift from house style, but it *is* a departure from every precedent. The other ten (all `service_role`-only or platform-shaped, `handle_new_user` also `supabase_auth_admin`) are unaffected. **Two caveats:** (1) the evidence is **test-db only** — prod's set is unprobed and likely differs (`quoco_test_*` are test-db objects; the 046 apply already noted `quoco_test_row_is_locked` is absent from prod's types); (2) the live catalog also holds three platform-owned definers (`pgbouncer.get_auth`, `vault.create_secret`, `vault.update_secret`; owner `supabase_admin`, `search_path=""`) outside `public` — not ours, not in the count. **Not found: where "15" came from.**
 - **F10 — the plan is not on `main`.** `caab70b` lives on `feat/add-engineer-plan`. The plan's own status is "closed pending the build".
+- **F12 — R3-S1: the Rule 9 / runtime-registry coupling is a tooling defect, and 048 is its first victim.** A held-file lint that demands
+  a coverage entry the harness reads live guarantees a red window for every future FK on a shared-fixture table. Filed at
+  `docs/build-status.md` (entry "the Rule 9 / runtime-registry coupling is a tooling defect (R3-S1)"), with the reviewer's narrower fix. **Not implemented here.**
+- **F13 — R3-S3: the precedent grants.** F11's observation (every existing authenticated-callable definer function also holds
+  `service_role`) has a mechanism worth a follow-up, filed at `docs/build-status.md` (entry "precedent grants … (R3-S3)"): a
+  `service_role` session can forge the caller `auth.uid()` reads, so writes through those functions would carry forged attribution. **Not implemented here.**
 
 ## 11. What this package does NOT cover — the review surface is bounded
 
@@ -546,8 +643,9 @@ Target ref must be named and `supabase/.temp/project-ref` compared first; foregr
 - **No test file was written or modified**, including the boundary test, T49, T14, T13. Every DB-backed test needs 048 on test-db.
 - **No user-facing wording anywhere.** Every string constant stays named and blank, `// Wording owed, NOT approved` (plan §9). Three strings are new and need Aravind's wording: `ERROR_CONFIRMED_LIST_CHANGED`, `ENGINEER_STATUS_DEACTIVATED`, `ENGINEER_STATUS_PENDING` (plan UNKNOWN #68). **No slice-1 string may imply a removal, edit or undo path — none exists.**
 - **No apply, anywhere; no DOWN rehearsal on test-db.** The DOWN block is **written and inert**, and executed only on the scaffold's disposable database (section 7). The full-tier DOWN rehearsal on the cleaned test-db, with captured output, is **owed**.
-- **The runbook is not rehearsed** (gate on the merge).
-- **The test-db orphan cleanup (section 8.5) is proposed, not run** — a write outside this pass's authorisation. Until it is, test-db is not clean for `owner-deliver-job`.
+- **The runbook is not rehearsed** (gate on the merge); R3-N2's wording is fixed.
+- **No prod apply GO exists** (round 3 gave PACKAGE GO for the test-db apply only).
+- ~~**The test-db orphan cleanup (section 8.5) is proposed, not run** — a write outside this pass's authorisation. Until it is, test-db is not clean for `owner-deliver-job`.~~ **DATED CORRECTION (2026-09-19): this line was stale — the cleanup was RUN after approval (section 8.5's dated correction), and `owner-deliver-job` is 21/21 alone on the baseline registry.** The 13 stranded tenants remain, by decision.
 - **Concurrency (T15) is CI-only.** Nothing here claims it.
 - **Prod state:** prod's phone shapes, roles, the six-role CHECK's fit on prod data (plan §11 query `n2`), orphans and the ledger were **not probed** (UNKNOWNS #1, #3). Test-db held 0 violations of the CHECK in the plan's probe; that is weak evidence alone.
 - **Deferred, named, unchanged from the plan:** deactivate/reactivate/the episodes table (slice 2); the one-project-per-engineer index and role-scoping of the two count sites (backlog, now filed); the `<>` tenant comparison at `019:230`; rate limiting across calls; file upload; duplicate-name detection.
@@ -556,20 +654,48 @@ Target ref must be named and `supabase/.temp/project-ref` compared first; foregr
 - **The scaffold is not test-db.** It is a schema-only dump of test-db's `public` schema plus three **named stubs** (roles; an `auth` schema with `auth.users(id)` and a JWT-claims-reading `auth.uid()`; the `vector` column type stubbed as `text` because pgvector is not installed locally). Anything platform-specific beyond them is not covered. The local server is PostgreSQL 17.11; test-db and prod are 17.6 (same major).
 - **PostgREST behaviour** — that `supabase-js` `rpc` distinguishes `no_data_found` from `insufficient_privilege`, and the real anon-key refusal — is assumed here and observed at apply.
 
-## 12. Apply-record checklist (blank — filled at apply, never in advance)
+## 12. The apply gate, in order — and the blank apply-record checklist
 
-- [ ] external review of this package (round, verdict, folded items carried forward item-by-item)
+**No prod apply GO exists.** Round 3 gave PACKAGE GO for the **test-db apply only**. A prod apply needs its own GO and, on top of
+the gate below: **the F4 per-role EXECUTE readback from prod** (section 5's F4 query, run against prod, printed above its result) and
+plan §11's pre-checks **`n2`** (the six-role CHECK fits prod's `project_members` rows) and **`u`** (the three columns are absent on
+prod). None of these has been run; prod was not probed.
+
+**The gate — each step requires the one before it** (the reviewer's sequence, recorded as the gate; rules in section 4.1):
+
+1. **Push freeze in force — or the DB-test job skipped for the push.** Skip is unavailable to this PR (section 4.1 (i)); the freeze
+   is the route. No push to `feat/048-engineer-registration` after this pass's one push.
+2. **Test-db apply** — Aravind's go-ahead in the same exchange; ref named and `supabase/.temp/project-ref` printed and equal to
+   `exfccwlrhoutkgrlikod`; one file, foreground, `supabase db query --linked -f`, never `db push`; the file moves into
+   `supabase/migrations/` **in the applying commit**; pre- and post-apply hash. Captured: the **F1–F6 fingerprint** (section 5) with
+   each query's text above its result, **plus the two test-db-only observations from section 6:** **(a)** the real **anon-key**
+   call to `/rpc/add_engineers_to_project` refused `42501`, and the `service_role` call refused; **(b)** a real **`authenticated`**
+   call (a dry run) **succeeds** — a non-superuser owner calling the ACL-locked helper (R3-U-2, section 6).
+3. **DOWN rehearsal on the cleaned test-db, with captured output** — including `col_description`/`obj_description` for every
+   object the file comments on (there are none; it must read NULL), and `UP → DOWN → UP`. The "live in-flight session" check is
+   not applicable before the merge (section 7.4).
+4. **CI on the PR head FULLY green by section 8.3's rule** — a **pinned run URL whose `headSha` equals the PR head** — and,
+   **before "fully green" is claimed, a stranded-row sweep by tenant id** on test-db: the run-scoped `zz-*` tenants (the 13 known ones
+   from section 8.5, plus whatever this pass's one push strands), so a green run is not green over rows left behind.
+5. **The typo-repair runbook rehearsed on test-db** (R3-N2's wording is fixed; the runbook is otherwise unchanged), its record
+   cited — **before the merge**.
+6. **Merge** — gated on step 2 (section 4.1 (ii)); regular merge commit, not squash. *(Prod apply, when it has a GO, sits between 5 and 6 per section 4.2.)*
+
+### Apply-record checklist (blank — filled at apply, never in advance)
+
+- [ ] external review of this package: round 3 = **PACKAGE GO for the test-db apply** (folded items carried forward item-by-item: section 2b); no prod GO
+- [ ] freeze in force (no push after this pass's one push) — the PR head at apply time: `______`
 - [ ] test-db apply: ref named, `project-ref` printed and equal; pre- and post-apply hash of the affected objects
-- [ ] fingerprint F1–F6 captured on test-db (section 5)
-- [ ] **DOWN rehearsed on test-db with captured output**, and a live in-flight session confirmed still processable after DOWN (plan §7 / `CLAUDE.md` §7)
+- [ ] fingerprint F1–F6 captured on test-db (section 5), and the two test-db-only observations (a) anon-key `42501` + `service_role` refused, (b) `authenticated` call succeeds
+- [ ] **DOWN rehearsed on test-db with captured output**; `UP → DOWN → UP`
 - [ ] test-db carries 048 **for real** (`CLAUDE.md` §0(e)); ledger repaired
-- [ ] **test-db orphan cleanup (section 8.5) approved and run; `owner-deliver-job` re-run on the baseline registry = 21/21** — a prerequisite for "fully green" below
-- [ ] CI green on the PR head — **pinned run URL, `headSha` = PR HEAD**, **fully green** (section 8); every failure after apply is **new**
+- [ ] ~~test-db orphan cleanup (section 8.5) approved and run; `owner-deliver-job` re-run on the baseline registry = 21/21~~ **DONE 2026-09-19** (section 8.5's dated correction) — **replaced by:** stranded-row sweep by tenant id, done and printed **before** "fully green" is claimed
+- [ ] CI green on the PR head — **pinned run URL, `headSha` = PR HEAD**, **fully green** (section 8.3); every failure after apply is **new**
 - [ ] **typo-repair runbook rehearsed on test-db at `<path>`** — before the merge
-- [ ] PITR observed live (not assumed); prod ref named; fingerprint F1–F6 on prod
-- [ ] prod pre-apply check: `n2` (six-role CHECK fit) and `u` (columns absent) from plan §11
-- [ ] anon-key REST call refused `42501`; `service_role` refused
-- [ ] **D12 rider filed at `docs/build-status.md:399`** and N1 at `:448` (filed in this PR)
+- [ ] PITR observed live (not assumed); prod ref named; fingerprint F1–F6 **and the F4 per-role EXECUTE readback** on prod
+- [ ] prod pre-apply checks: `n2` (six-role CHECK fit) and `u` (columns absent) from plan §11
+- [ ] anon-key REST call refused `42501`; `service_role` refused (prod)
+- [ ] backlog entries filed in `docs/build-status.md` (D12 rider, N1, R3-S1, R3-S3) — **filed in this PR**; line numbers in the entries' own headings
 - [ ] the add screen is now the app logic behind `docs/schema.md:129-130` — and only that; RLS still permits a direct membership insert
 - [ ] migration file moved into `supabase/migrations/` **in the applying commit**, `types/database.ts` regenerated, file confirmed on `origin/main` (`git show origin/main:<path>`)
 - [ ] `scripts/migration-number-reservations.json` updated **as part of the apply** (Step H)
@@ -581,17 +707,24 @@ Not determinable from what this pass could read or run. Numbered `U-…` so they
 UNKNOWNS (`#1`–`#69`), which remain as recorded there.
 
 1. **U-1 — Prod.** Nothing about prod was probed: its ledger, role and phone-shape distributions, whether the six-role CHECK fits its `project_members` rows (plan §11 `n2`), whether the three columns exist (`u`), orphan engineers. Plan #1, #3, #10.
-2. **U-2 — The scaffold is not test-db.** Named stubs (roles, `auth`, `vector`→`text`); local PostgreSQL 17.11 vs 17.6; the local `postgres` role is a **superuser** (Supabase's is not), so owner-level behaviour is equivalent for RLS bypass but not for every privilege; **no PostgREST**, so the real anon-key `42501` refusal and `supabase-js`'s mapping of `P0002`/`42501` are unobserved.
+2. **U-2 — The scaffold is not test-db.** Named stubs (roles, `auth`, `vector`→`text`); local PostgreSQL 17.11 vs 17.6; **the local `postgres` role is a superuser (Supabase's is not), and superusers skip `EXECUTE` checks entirely — so the scaffold cannot observe that a non-superuser owner can call a helper whose ACL is `{postgres=X/postgres}`** (R3-U-2; section 6). That is why T16's "authenticated call succeeds" is owed at the test-db apply, not only the anon-key `42501` refusal; **no PostgREST**, so the real anon-key `42501` refusal and `supabase-js`'s mapping of `P0002`/`42501` are unobserved too.
 3. **U-3 — The apply role.** Whether `supabase db query --linked -f` yields owner `postgres` for both functions (plan #9). The fingerprint pins it at apply; this pass asserts nothing about it.
 4. ~~**U-4 — Definer-function count.** The live `public` schema has 14 SECURITY DEFINER functions; the plan says 15. Not reconciled.~~ **RESOLVED (dated correction, 2026-09-19): no function is missing — the plan's "15" is a miscount.** The plan's own recorded probe `n` (rev7 log) has **14 rows** and the live set today is those same 14, name for name; every plan revision's inventory (rev2–rev6) is also 14. The "15" appears only in prose (plan §2.5, §2.7). Not derivable from the migrations either: 13 applied definers + 1 test-only function (`quoco_test_047_unused_rights_check`, not a migration) = 14. **Finding F11, section 10.** Still unknown: where the 15 came from.
 5. **U-5 — Test-db ledger.** `042`, `043`, `044`, `046` have no remote row on test-db. Whether those migrations are physically applied there was not investigated; unrelated to 048.
 6. **U-6 — Is the 22-file set the whole affected set?** By reading `db.ts` it is exactly the callers of `removeMorningFixtures`; the baseline/changed pair shows what those 22 do. A file reaching the users sweep by a path I did not find would be missed — **CI is the gate**, and section 8 states the rule for that.
 7. **U-7 — Shared test-db.** The 22-file runs used a database other sessions and CI also use; a fixture collision would look like a failure. Failures were re-run (section 8) to separate deterministic from flaky.
-8. **U-8 — #69, still unobserved.** The JS sweep on a self-referential edge; the first observation is the first CI run after the test-db apply. A `registered_by` **cycle** (manual SQL only) would loop the sweep — inferred from reading, never run.
+8. **U-8 — #69, still unobserved.** The JS sweep on a self-referential edge; the first observation is the first CI run after the test-db apply. A `registered_by` **cycle** (manual SQL only) would loop the sweep — inferred from reading, never run. **R3-N3 closes the length-1 case only** (section 9 item 9; U-16).
 9. **U-9 — Assumed names and a base.** The helper's name, the `project_members` CHECK's name, and `idx` being zero-based are my choices; the plan fixes none of them (section 9). Aravind's confirmation is owed before the TypeScript consumer is written.
 10. **U-10 — `packed-refs.lock`.** Every commit on this branch printed `error: Unable to create '…/.git/packed-refs.lock': File exists … Another git process seems to be running` — the commits themselves landed (SHAs and `git log` confirm) but the cause (another session sharing the repository, or a stale lock) is unknown and was not investigated or removed.
 11. **U-11 — A plan citation that did not hold** (`docs/migration-runbook-template.md:34`, section 10 F8): whether the "not `CONCURRENTLY`" constraint is real is unverified.
 12. **U-12 — Stale claim left in place** (section 10 F9): the 2026-09-16 backlog entry that expects to reuse 048.
 13. ~~**U-13 — test-db is currently not clean, and I caused it.** … The cause is consistent with all observations but not confirmed by a rerun.~~ **RESOLVED (dated correction, 2026-09-19):** the two rows were deleted with approval and `owner-deliver-job` is 21/21 alone on the baseline registry (section 8.5) — cause confirmed. **Still unknown:** whether *other* users of test-db (CI on other PRs, other sessions) ran in the window and were affected — there is evidence others *are* using it (section 8.5, item 5); and the 13 stranded tenants remain, by decision.
 14. **U-14 — The plan-level items, unchanged and not mine to close here:** **D23** (the list page's gate is the plan's specification, not Aravind's decision), plan **#62** (confirm-form mechanics), **#68** (three new strings need Aravind's wording), **#46** (slice-2 timing), **#33/#34** (Vercel dashboard), **#7** (rate limiting), **#4** (`projects.status` gate).
-
+15. **U-15 — The scaffold baseline was reused, not re-dumped.** It is the 2026-09-19 dump of test-db from the previous pass (sha256 `6d529462…7742`). If another migration or a manual change has moved test-db's `public` schema since, the scaffold could diverge from it; the F1–F6 readback at the apply is the check.
+16. **U-16 — R3-N3 excludes the length-1 cycle only.** A two-row cycle (A registered by B, B registered by A) is still writable by hand (two `UPDATE`s, each satisfying the FK). The JS sweep keeps no visited set, so it would loop on it — inferred, never run. Nothing in slice 1 writes such a cycle.
+17. **U-17 — This pass's one push runs CI against the shared test-db.** Its result, and what it strands, are unknown until it runs (section 8.6). The freeze does not prevent it; it starts after it.
+18. **U-18 — Whether GitHub serves the new pin.** Resolved locally before the push; the GitHub-side fetch happens after the push and is recorded in the pass log, not asserted here.
+19. **U-19 — "the two test-db-only observations from §6".** I read them as (a) the real anon-key `42501` (and `service_role`) refusal and (b) the real `authenticated` call succeeding (R3-U-2), since those are the two section 6 assigns to the apply. If the reviewer meant others, section 12 step 2 needs editing.
+20. **U-20 — The lint rule's unit test was not re-run** (`.env.test` absent in the worktree; `globalSetup` aborts). Code and test are unchanged since `c0b2078`; the earlier 30/30 stands for unchanged code.
+21. **U-21 — The variant count.** The PR body said 12; the table held 14; there are now 15 (section 7.2).
+22. **U-22 — The `migration list` header row is carried, not re-probed** (section 0): this pass ran no remote query.
