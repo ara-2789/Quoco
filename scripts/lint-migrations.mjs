@@ -86,6 +86,14 @@
 //   function's own FIRST-EVER definition needs no baseline — there is
 //   nothing prior to have captured.
 //
+// no-auth-uid-as-users-id (NEW, rule 11, the add-engineer plan's S1 lint,
+//   docs/plans/add-engineer-plan.md §4.10). Flags `auth.uid()` compared to
+//   `id` (or any `<x>_id` other than `auth_id`) — the wrong-column identity
+//   bug that shipped in 002 and was fixed by 007. Implemented in
+//   scripts/lint-rules/no-auth-uid-as-users-id.mjs (its own module so it is
+//   unit-testable; this file's unconditional `main()` cannot be imported).
+//   The superseded 002/005 sites are exempted in the exceptions file.
+//
 // Held-directory files are identified in every violation by their path
 // RELATIVE TO THE REPO ROOT (e.g. "docs/reviews/026_dpr_generation_
 // stale.sql"), never a bare filename — applied-directory files keep their
@@ -112,6 +120,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ruleNoAuthUidAsUsersId } from './lint-rules/no-auth-uid-as-users-id.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(__dirname, '..')
@@ -714,6 +723,7 @@ function main() {
       violations.push(...ruleStatusColumnShape(qualified, sql, blocks))
       violations.push(...ruleServiceRoleGrantRequired(qualified, sql, blocks))
       violations.push(...ruleDownSectionCommented(qualified, raw))
+      violations.push(...ruleNoAuthUidAsUsersId(qualified, sql))
       fkCoverageViolations.push(...ruleSharedFixtureFkCoverage(qualified, sql, fkCoverage))
     }
   }
