@@ -236,5 +236,12 @@
     "parent": "hindrances",
     "action": "delete",
     "note": "044_hindrance_photos.sql -- NOT NULL, ON DELETE RESTRICT explicit, identical shape to daily_log_photos above one table over (per scripts/test-db-only-grants.sql's own THIRD ENTRY). Registered as a child of 'hindrances' (not 'projects'/'users' directly -- no project_id/reported_by column of its own, only tenant_id + hindrance_id) for the same child-first-cascade reason as daily_log_photos above. service_role holds DELETE on this table on test-db only (same file's THIRD ENTRY); prod's own migration revokes it, unaffected since this file only ever runs against test-db."
+  },
+  {
+    "table": "users",
+    "column": "registered_by",
+    "parent": "users",
+    "action": "delete",
+    "note": "048_engineer_registration.sql (HELD in docs/reviews/) -- composite (registered_by, tenant_id) REFERENCES users(id, tenant_id) ON UPDATE NO ACTION ON DELETE RESTRICT. The FIRST self-referential edge in this registry (table == parent): the sweep's delete action recurses child-first into the engineers an admin registered, deletes them, then the admin (docs/plans/add-engineer-plan.md section 2.8b). 'delete', not 'null': a single-column null update violates users_registered_pairing_chk (23514). The JS sweep has NOT yet been observed on this edge -- UNKNOWN #69; its SQL equivalent was observed on test-db, rolled back. THIS ENTRY LANDS WITH THE HELD FILE (this rule has no exceptions mechanism and scans held files) BUT THE SWEEP READS IT AT RUNTIME: until 048 is applied to test-db, sweepSharedFixtureReferences('users', id) selects users.registered_by, which does not exist there, and throws -- so CI is expected red until that apply (docs/reviews/048-review-package.md, section F2)."
   }
 ]
