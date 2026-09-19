@@ -1,4 +1,4 @@
-# Engineer lifecycle — build plan, LIFECYCLE ACTIONS (slice 2, part 1 of 2) (rev11)
+# Engineer lifecycle — build plan, LIFECYCLE ACTIONS (slice 2, part 1 of 2) (rev12)
 
 > **Split (rev11, 19 Sep 2026).** This document is **part 1 of slice 2**. Slice 2 was split out of the add-engineer plan at `eb8a9c2` after external review (rev10) and, in rev11, split again by content into **this document (the lifecycle actions)** and `docs/plans/engineer-episodes-plan.md` (the episodes record and everything reading from it). **Nothing was redesigned, no decision was resolved by the split, and nothing was dropped.** **The episodes design (D15) reverses D10 and has NOT been externally reviewed in this shape** — the functions in this document write it, so they inherit that status. Slice 1 is `docs/plans/add-engineer-plan.md`.
 >
@@ -10,7 +10,7 @@
 >
 > ## Review gate (a) is tripped up front — stated here so the reviewer meets it, not discovers it (rev11)
 > **This document redefines the classifier that slice 1 ships.** `add_engineers_to_project` classifies every pasted number (§2.1, R5–R7a); slice 1 ships that classification with no `deactivated_on_this_project` outcome, and this document adds it (§2.10, §4 R5b). **Changing the logic of a live SECURITY DEFINER function trips review gate (a)** (`CLAUDE.md` §0, EXTERNAL REVIEW GATE — "CREATES OR MODIFIES a live function's LOGIC"): it needs the full review package, a rehearsal and a DOWN rehearsal, even though slice 1's version of the function will already have been reviewed and shipped.
-> **Why, honestly:** it is **the unavoidable cost of the split.** The new outcome only makes sense once reactivate exists (§2.10), and reactivate is a lifecycle action; slice 1 cannot ship an outcome that offers an action it does not have. The single plan avoided this by shipping the function once; the split makes it two edits to one function. Same argument list → `CREATE OR REPLACE` preserves the function's grants (`CLAUDE.md` §0, the signature rule); a signature change would not. **The episodes plan makes a second edit to the same function** (it opens an episode on add, episodes plan §2.6) — **one redefinition, one review, one migration**, not two.
+> **Why, honestly:** it is **the unavoidable cost of the split.** The new outcome only makes sense once reactivate exists (§2.10), and reactivate is a lifecycle action; slice 1 cannot ship an outcome that offers an action it does not have. The single plan avoided this by shipping the function once; the split makes it two edits to one function. Same argument list → `CREATE OR REPLACE` preserves the function's grants (`CLAUDE.md` §0, the signature rule); a signature change would not. **The episodes plan makes a second edit to the same function** (it opens an episode on add, episodes plan §2.6) — **one redefinition, one review, one migration**, not two. **rev12 (slice 1 round-2 S6, S4):** slice 1's 048 apply record now **pins** the function's identity — the signature `add_engineers_to_project(uuid, jsonb, boolean, boolean)`, `pg_proc` count = 1, `md5(prosrc)`, `md5(pg_get_functiondef)`, ACL and `proconfig` (slice 1 §6, T48) — so this document's package can **show** signature-identical (count still 1) and the body delta, re-probing live before it redefines rather than trusting the record; and the redefinition **must carry forward** slice 1's NULL-consent raise (slice 1 §2.3 step 4, T20).
 >
 > ## Consequences of the split for slice 2 — recorded as consequences, NOT as new decisions (rev10, kept)
 > 1. **Slice 2 redefines a function slice 1 has already shipped** — stated up front above. 2. **Engineers added by slice 1 are legacy-shaped: they have no episode** — and (rev11) the episodes plan now **backfills them** as a required step of its migration (episodes plan §2.8 R1). 3. **Slice 2 is its own migration** (slice 1's is `048`; slice 2's ASSUMED `049`). 4. **The board behaves two ways** for engineers with and without episodes — accepted (D18, episodes plan), now narrowed to legacy engineers by R1.
@@ -45,7 +45,14 @@
 **In scope (lifecycle plan):** a **deactivate** control (§2.9) and a **reactivate** control (§2.10); the classifier outcome `deactivated_on_this_project` (Edge 2); the unreachability report (§2.11).
 **Deferred, named:** **freeing a number** (deactivate does not, §2.9); ~~reactivating from the dashboard~~ (rev8: **ships in this slice**, §2.10).
 
-## Dated corrections, 19 Sep 2026 (rev11) — every change in this pass
+## Dated corrections, 19 Sep 2026 (rev12) — every change in this pass
+
+| # | Earlier text | rev12 result | Where |
+|---|---|---|---|
+| 1 | ~~'`ENGINEER_STATUS_DEACTIVATED` is in the episodes plan'~~ | Defined in **slice 1** §9 (with `ENGINEER_STATUS_PENDING`). | §9 |
+| 2 | (added) | Gate-(a) section: the S6 identity pin in slice 1's 048 apply record, and the NULL-consent raise the redefinition must carry forward. | gate (a) |
+
+## Dated corrections, 19 Sep 2026 (rev11) — kept
 
 | # | Earlier text (retracted / added) | rev11 result | Where |
 |---|---|---|---|
@@ -235,7 +242,7 @@ Live (probes j, k, o): `users` — `users_select` (own or same tenant), `users_u
 **rev8 adds exactly five constants, all blank with `// Wording owed, NOT approved`, all required by §2.10:** `DEACTIVATED_ON_THIS_PROJECT` (the preview state for a deactivated same-project engineer), `REACTIVATE_CONTROL`, `REACTIVATE_CONFIRM`, `REACTIVATE_RESULT`, `REACTIVATE_ERROR_NOT_FOUND` (mirroring the `DEACTIVATE_*` set). **The unreachability report adds none** — its only text is a developer-facing Sentry title, not user copy. **`DEACTIVATE_CONFIRM` (rev8 note):** it no longer needs to state that deactivation is irreversible, because reactivate ships (§2.10); the plan never asserted irreversibility (grep: none), and what remains true for the wording author is that deactivation **does not free the number** (§2.9). Whether it must name the engineer is still UNKNOWNS #11.
 
 **Formatter (lifecycle plan):** `formatDeactivatedLine(deactivatedByName, deactivatedAt)` (the other formatters are in slice 1 §9).
-**Constants (blank, lifecycle plan):** `DEACTIVATE_CONTROL`, `DEACTIVATE_CONFIRM`, `DEACTIVATE_RESULT`, `DEACTIVATE_ERROR_NOT_FOUND`, **`DEACTIVATED_ON_THIS_PROJECT`, `REACTIVATE_CONTROL`, `REACTIVATE_CONFIRM`, `REACTIVATE_RESULT`, `REACTIVATE_ERROR_NOT_FOUND` (rev8)**. *(The add-screen and list-page constants are in slice 1 §9; `ENGINEER_STATUS_DEACTIVATED` is in the episodes plan.)* **T12** asserts every export is non-empty (expected-fail at commit).
+**Constants (blank, lifecycle plan):** `DEACTIVATE_CONTROL`, `DEACTIVATE_CONFIRM`, `DEACTIVATE_RESULT`, `DEACTIVATE_ERROR_NOT_FOUND`, **`DEACTIVATED_ON_THIS_PROJECT`, `REACTIVATE_CONTROL`, `REACTIVATE_CONFIRM`, `REACTIVATE_RESULT`, `REACTIVATE_ERROR_NOT_FOUND` (rev8)**. *(The add-screen and list-page constants are in slice 1 §9; ~~`ENGINEER_STATUS_DEACTIVATED` is in the episodes plan~~ **`ENGINEER_STATUS_DEACTIVATED` and `ENGINEER_STATUS_PENDING` are also in slice 1 §9 (rev12).**)* **T12** asserts every export is non-empty (expected-fail at commit).
 
 ## 10. Pre-flight result — lifecycle plan rows (test-db `exfccwlrhoutkgrlikod`; the `pg_*` probes are printed in `add-engineer-plan-rev7.txt`)
 

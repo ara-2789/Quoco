@@ -1,4 +1,4 @@
-# Engineer episodes — build plan, THE EPISODES RECORD AND ITS READERS (slice 2, part 2 of 2) (rev11)
+# Engineer episodes — build plan, THE EPISODES RECORD AND ITS READERS (slice 2, part 2 of 2) (rev12)
 
 > **Split (rev11, 19 Sep 2026).** This document is **part 2 of slice 2**, split (rev11) from the slice-2 document at `2f1b098`, which was itself split out of the add-engineer plan at `eb8a9c2` after external review (rev10). The other part is `docs/plans/engineer-lifecycle-plan.md`. **Nothing was redesigned, no decision was resolved by the split, and nothing was dropped.** **The episodes design (D15) reverses D10 and has NOT been externally reviewed in this shape:** external review signed off on the five-column attribution version; this table, its grants and lifecycle, the board's read of it and the backfill are new since that sign-off and **need the full review package** (§6). Slice 1 is `docs/plans/add-engineer-plan.md`.
 >
@@ -51,7 +51,14 @@
 **In scope (episodes plan):** the **`engineer_episodes` table** (rev9, §2.8; ~~`deactivated_by`, `deactivated_at`~~ are not created) and its **backfill of slice-1 engineers (R1, rev11)**; **Added in rev7 (D13, §4.9):** the dated deactivation rule in `lib/daily-logs/query.ts` (`getDailyLogsBoard`), the Today loop, a card marker, and a project-detail marker; the half-status change (Edge 1); D18–D20 and D22.
 **Deferred, named:** ~~the sweep and Daily Logs board not consulting `users.status` (F1, F4)~~ (rev7: F1 is **closed**, not deferred; F4 is **in scope**, §4.9; the DPR accountability roster's plain status filter is named as F5, deferred); the DPR-side fix for F5.
 
-## Dated corrections, 19 Sep 2026 (rev11) — every change in this pass
+## Dated corrections, 19 Sep 2026 (rev12) — every change in this pass
+
+| # | Earlier text | rev12 result | Where |
+|---|---|---|---|
+| 1 | ~~§9 'Constants (blank, episodes plan): `ENGINEER_STATUS_DEACTIVATED` — the marker …'~~; ~~'already in the list below'~~ | **Defined in slice 1** (§5.1, §9: its list page labels a non-active row from `users.status`); this plan **re-uses** it as the D13 marker. Whether one wording fits both meanings stays UNKNOWNS #41. | §9, §4.9 |
+| 2 | (added) | Slice 1's external review round 2 (S1–S6, N1–N3) changed only slice 1 and the pointers here and in the lifecycle plan; nothing in this plan's design changed. | — |
+
+## Dated corrections, 19 Sep 2026 (rev11) — kept
 
 | # | Earlier text (retracted / added) | rev11 result | Where |
 |---|---|---|---|
@@ -336,9 +343,9 @@ CHECKs: `(closed_at IS NULL) = (closed_via IS NULL)`; `closed_at IS NULL OR clos
 
 ## 9. Strings (episodes plan) — every value blank; Aravind writes all wording
 
-~~D13's Option 4 would add **one blank constant** (a "Deactivated" state label) *if chosen* — not added now.~~ **rev7 adds none:** D13 needs exactly one label, **`ENGINEER_STATUS_DEACTIVATED`, already in the list below**, used in two places (the Daily Logs card marker and the project-detail row, §4.9); `ENGINEER_STATUS_ACTIVE` is not used by D13. Its value stays blank with `// Wording owed, NOT approved`; **T12** covers it. The tests key on `data-engineer-status="deactivated"`, never on the wording.
+~~D13's Option 4 would add **one blank constant** (a "Deactivated" state label) *if chosen* — not added now.~~ **rev7 adds none:** D13 needs exactly one label, **`ENGINEER_STATUS_DEACTIVATED`, ~~already in the list below~~ defined in slice 1 (rev12) and re-used here**, used in two places (the Daily Logs card marker and the project-detail row, §4.9); `ENGINEER_STATUS_ACTIVE` is not used by D13. Its value stays blank with `// Wording owed, NOT approved`; **T12** covers it. The tests key on `data-engineer-status="deactivated"`, never on the wording.
 
-**Constants (blank, episodes plan):** `ENGINEER_STATUS_DEACTIVATED` — the marker on the Daily Logs card and the project-detail row (§4.9); the tests key on `data-engineer-status="deactivated"`, never on the wording. *(rev11 adds **no** constant to this document.)* **T12** asserts every export is non-empty (expected-fail at commit).
+**Constants (blank, episodes plan):** ~~`ENGINEER_STATUS_DEACTIVATED` — the marker on the Daily Logs card and the project-detail row (§4.9)~~ **none defined here (rev12): `ENGINEER_STATUS_DEACTIVATED` is defined in slice 1 (§5.1, §9) — its list page needs it to label a non-active row — and this plan re-uses it as the D13 marker on the Daily Logs card and the project-detail row (§4.9);** the tests key on `data-engineer-status="deactivated"`, never on the wording. *(rev11 adds **no** constant to this document.)* **T12** asserts every export is non-empty (expected-fail at commit).
 
 ## 10. Pre-flight result — episodes plan rows (test-db `exfccwlrhoutkgrlikod`; the `pg_*` probes are printed in `add-engineer-plan-rev7.txt`)
 
