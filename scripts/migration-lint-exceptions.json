@@ -580,5 +580,65 @@
     "object": "uncaptured-redefinition-correct_daily_log,apply_evening_flow_turn",
     "rule": "function-redefinition-requires-capture",
     "reason": "Confirms the rule correctly goes RED here, as external review round 1 required before shipping it. Different reason than the other historical exceptions above, stated precisely rather than reused: 040 did not skip verification -- its own DOWN section deliberately chose 'always recapture live at rollback time, never inline a baseline' (see its own header, FIX 2/S1) specifically because apply_evening_flow_turn had been touched by multiple prior migrations (035, then 038) and a hand-reconstructed inline body had already been shown wrong once. That is a real, valid strategy this rule cannot recognise as equivalent to a body_md5 baseline -- it is textually invisible to a regex. Exempted as historical/predates-this-rule like the others, not because 040 actually lacked verification."
+  },
+  {
+    "file": "002_rls_policies.sql",
+    "object": "get_user_tenant_id",
+    "rule": "no-auth-uid-as-users-id",
+    "reason": "Superseded by 007:134-142 (CREATE OR REPLACE, `WHERE auth_id = auth.uid()` at 007:141). Hit at 002:19. Live, never-edited file (CLAUDE.md §6)."
+  },
+  {
+    "file": "002_rls_policies.sql",
+    "object": "tenants_update",
+    "rule": "no-auth-uid-as-users-id",
+    "reason": "Superseded by 007:227-238 (DROP + re-CREATE, `auth_id = auth.uid()` at 007:233 and 007:237). Hits at 002:64 and 002:68. Live, never-edited file (CLAUDE.md §6)."
+  },
+  {
+    "file": "002_rls_policies.sql",
+    "object": "users_update",
+    "rule": "no-auth-uid-as-users-id",
+    "reason": "Superseded by 007:220-225 (DROP + re-CREATE, `auth_id = auth.uid()` at 007:224 and 007:225). Hits at 002:83 and 002:84. Live, never-edited file (CLAUDE.md §6)."
+  },
+  {
+    "file": "002_rls_policies.sql",
+    "object": "project_members_insert",
+    "rule": "no-auth-uid-as-users-id",
+    "reason": "Superseded by 007:240-247 (DROP + re-CREATE, `auth_id = auth.uid()` at 007:246). Hit at 002:122. Live, never-edited file (CLAUDE.md §6)."
+  },
+  {
+    "file": "002_rls_policies.sql",
+    "object": "project_members_update",
+    "rule": "no-auth-uid-as-users-id",
+    "reason": "Superseded by 007:249-260 (DROP + re-CREATE, `auth_id = auth.uid()` at 007:255 and 007:259). Hits at 002:129 and 002:133. Live, never-edited file (CLAUDE.md §6)."
+  },
+  {
+    "file": "002_rls_policies.sql",
+    "object": "project_members_delete",
+    "rule": "no-auth-uid-as-users-id",
+    "reason": "Superseded by 007:262-269 (DROP + re-CREATE, `auth_id = auth.uid()` at 007:268). Hit at 002:140. Live, never-edited file (CLAUDE.md §6)."
+  },
+  {
+    "file": "002_rls_policies.sql",
+    "object": "daily_logs_insert",
+    "rule": "no-auth-uid-as-users-id",
+    "reason": "Superseded by 007:271-278 (DROP + re-CREATE; `engineer_id = (SELECT id FROM users WHERE auth_id = auth.uid())` at 007:277). Hit at 002:180 -- the `engineer_id = auth.uid()` form (D16), not a users.id lookup. Live, never-edited file (CLAUDE.md §6)."
+  },
+  {
+    "file": "002_rls_policies.sql",
+    "object": "daily_logs_update",
+    "rule": "no-auth-uid-as-users-id",
+    "reason": "Superseded by 007:280-297 (DROP + re-CREATE; `engineer_id = (SELECT id FROM users WHERE auth_id = auth.uid())` at 007:287 and 007:294, `auth_id = auth.uid()` at 007:288 and 007:295). Hits at 002:188, 002:189, 002:195 and 002:196 -- both the `engineer_id` form (D16) and the users.id form. Live, never-edited file (CLAUDE.md §6)."
+  },
+  {
+    "file": "005_auth_trigger.sql",
+    "object": "users_select",
+    "rule": "no-auth-uid-as-users-id",
+    "reason": "Superseded by 007:214-218 (DROP + re-CREATE, `auth_id = auth.uid()` at 007:218; 007:214 itself names this as 'last defined in 005:30'). Hit at 005:32. Live, never-edited file (CLAUDE.md §6)."
+  },
+  {
+    "file": "005_auth_trigger.sql",
+    "object": "L80",
+    "rule": "no-auth-uid-as-users-id",
+    "reason": "Inside complete_onboarding() (005:60-84); keyed L80 because ';'-splitting cuts the PL/pgSQL body and this fragment has no CREATE header. Superseded by 007:172-199 (CREATE OR REPLACE, 'match the caller by auth_id', `WHERE auth_id = auth.uid()` at 007:195). Hit at 005:80. Live, never-edited file (CLAUDE.md §6)."
   }
 ]
