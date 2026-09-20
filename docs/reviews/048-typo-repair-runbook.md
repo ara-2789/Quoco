@@ -1,8 +1,13 @@
 # 048 typo-repair runbook — a REQUIRED artefact of the 048 review package (review condition S1)
 
-**Status: WRITTEN, NOT REHEARSED.** The rehearsal on test-db is owed and is a gate on deploy step (4), the merge
-(`docs/reviews/048-review-package.md`, "Deploy order"). Nothing here has been run against any database. The statement
-below is a **template**: it is filled from the pre-probe at the moment of use, never written ahead of time.
+~~**Status: WRITTEN, NOT REHEARSED.** The rehearsal on test-db is owed and is a gate on deploy step (4), the merge
+(`docs/reviews/048-review-package.md`, "Deploy order"). Nothing here has been run against any database.~~
+**DATED CORRECTION (2026-09-20): WRITTEN and REHEARSED on test-db** (`exfccwlrhoutkgrlikod`), steps 1–4 exactly as written, R1–R8, cleaned up with pinned deletes.
+Record: **`docs/reviews/048-test-db-apply-record.md`, section 12, dated 2026-09-20** — the "runbook rehearsed on test-db" checklist line of the review package's section 12 is satisfied by it.
+**Two limits, stated there and repeated here so the status is not over-read:** (1) step 3b's query is this runbook's own SQL restatement of the roster predicate, **not** the roster code, and T49 (which pins the `users.status` filter in the roster) is still unbuilt;
+(2) the rehearsal project was `on_hold`, which keeps the engineer off the roster regardless, so the rehearsal proves the statements, their pins and their evidence queries — not that the roster's status filter is what excludes a deactivated engineer.
+Step 5 (timing) is **not exercisable on test-db**. **Never run against prod** — the "written before the first real paste" intent stands, and prod use still needs Aravind's go-ahead per the rules below.
+The statement below is a **template**: it is filled from the pre-probe at the moment of use, never written ahead of time.
 
 ## Why this exists
 
@@ -119,7 +124,10 @@ concern and is **not** part of this runbook. Do not delete the row.
 - About **30 minutes** from a 08:00 paste. Steps 1–3 are three short statements; do not start them at 08:25.
 - A check-in **already sent stays sent.**
 
-## Rehearsal (OWED — not done)
+## Rehearsal (~~OWED — not done~~ — DONE 2026-09-20 on test-db; see the dated correction at the top and `docs/reviews/048-test-db-apply-record.md` section 12)
+
+*The paragraph below is the original requirement, kept as written. It was satisfied on 2026-09-20; the checklist line
+"typo-repair runbook rehearsed on test-db at `docs/reviews/048-test-db-apply-record.md` (section 12, 2026-09-20)" is filled in the package's section 12.*
 
 Written **and rehearsed on test-db before the first real paste**, not when it is needed. The rehearsal runs on a
 **neutralised** fixture — a project whose `status <> 'active'`, so the roster never loads it and no message can leave
