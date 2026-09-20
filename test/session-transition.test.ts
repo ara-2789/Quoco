@@ -9,6 +9,7 @@ import {
   testPhone,
   lockAcquiredAt,
   testClient,
+  TEST_PHONE_PREFIX,
 } from './helpers/db'
 
 // Integration tests for the WhatsApp session state machine (migrations 012 +
@@ -292,5 +293,66 @@ describe('acquire_and_transition_session / drain_next_pending_flow', () => {
     expect(s?.current_step).toBe(2)
     expect(s?.context).toEqual({ a: 1 })
     expect(s?.pending_flows).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// cleanupTestSessions() run-scoping — POSITIVE CONTROL.
+//
+// cleanupTestSessions() must delete only THIS run's whatsapp_sessions rows. A
+// row that carries the shared +19995550 prefix but a DIFFERENT run's 5-digit
+// block (test/helpers/db.ts's testPhone() layout: prefix + run block + slot)
+// belongs to another run against the same test-db — a local suite, an agent
+// session, a script — and must survive this run's cleanup.
+//
+// The foreign row is built by hand (own block + 1, mod 100000, so it is
+// guaranteed different from this run's block) rather than via testPhone(),
+// which can only ever produce THIS run's block. The test deletes the foreign
+// row itself, by exact phone number, because cleanupTestSessions() — correctly —
+// will not.
+// ---------------------------------------------------------------------------
+describe('cleanupTestSessions run-scoping', () => {
+  it('cleanupTestSessions does not delete a whatsapp_sessions row from a different run (same +19995550 prefix, different run block)', async () => {
+    const db = testClient()
+
+    const ownBlock = testPhone('').slice(TEST_PHONE_PREFIX.length)
+    expect(ownBlock).toMatch(/^\d{5}$/)
+    const foreignBlock = String((Number(ownBlock) + 1) % 100_000).padStart(5, '0')
+
+    const ownPhone = testPhone('199')
+    const foreignPhone = `${TEST_PHONE_PREFIX}${foreignBlock}199`
+    expect(foreignPhone).not.toBe(ownPhone)
+
+    const seed = { currentFlow: null, currentStep: 0, context: {}, updatedAt: new Date().toISOString() }
+
+    const removeForeign = async () => {
+      const { error } = await db.from('whatsapp_sessions').delete().eq('phone_number', foreignPhone)
+      if (error) throw new Error(`removing foreign-run probe row failed: ${error.message}`)
+    }
+    const phonesPresent = async (phone: string): Promise<string[]> => {
+      const { data, error } = await db.from('whatsapp_sessions').select('phone_number').eq('phone_number', phone)
+      if (error) throw new Error(`reading probe row failed: ${error.message}`)
+      return (data ?? []).map((r: { phone_number: string }) => r.phone_number)
+    }
+
+    await removeForeign() // a previous aborted run of this test must not break the seed
+    try {
+      await seedSession({ phone: ownPhone, ...seed })
+      await seedSession({ phone: foreignPhone, ...seed })
+
+      await cleanupTestSessions()
+
+      // THE ASSERTION UNDER TEST: the other run's row is still there.
+      expect(
+        await phonesPresent(foreignPhone),
+        'cleanupTestSessions deleted a whatsapp_sessions row belonging to a DIFFERENT run',
+      ).toEqual([foreignPhone])
+
+      // Control: cleanup still removes this run's own row, so the assertion
+      // above cannot pass merely because cleanup deleted nothing at all.
+      expect(await phonesPresent(ownPhone), "cleanupTestSessions did not delete THIS run's own row").toEqual([])
+    } finally {
+      await removeForeign()
+    }
   })
 })
