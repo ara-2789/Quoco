@@ -300,7 +300,7 @@ export async function cleanupTestSessions(): Promise<void> {
   const { error } = await db
     .from('whatsapp_sessions')
     .delete()
-    .or(`phone_number.like.${TEST_PHONE_PREFIX}%,phone_number.eq.${TEST_ENGINEER_PHONE}`)
+    .or(`phone_number.like.${TEST_PHONE_PREFIX}${RUN_SCOPED_PHONE_BLOCK}%,phone_number.eq.${TEST_ENGINEER_PHONE}`)
   if (error) throw new Error(`cleanupTestSessions failed: ${error.message}`)
 }
 
