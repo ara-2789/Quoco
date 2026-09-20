@@ -37,6 +37,10 @@ below to find which file it now lives in.
 | [2026-09-17] Backlog: Label Owner DPR email photo attachments by type | stays in this file, below |
 | [2026-09-17] Backlog (investigation): DPR verdict containment fallback reached an Owner | stays in this file, below |
 | [2026-09-17] Backlog (investigation): unreadable Sentry error message | stays in this file, below |
+| [2026-09-19] Backlog: the one-project-per-engineer slice (D12 rider) | stays in this file, below |
+| [2026-09-19] Backlog: `anon` holds table-level SELECT on `public.users` (N1) | stays in this file, below |
+| [2026-09-19] Backlog: the Rule 9 / runtime-registry coupling is a tooling defect (R3-S1) | stays in this file, below |
+| [2026-09-19] Backlog: precedent grants — revoke `service_role` from `complete_onboarding` and `correct_daily_log` (R3-S3) | stays in this file, below |
 
 If a cited date isn't obviously one of the headings above, it's embedded
 prose inside whichever file's date range brackets it — open that file and
@@ -393,3 +397,125 @@ LIGHT tier. Sentry issue `JAVASCRIPT-NEXTJS-7`, message `[object
 Object]`, 1 event, ~1 week before 2026-09-17, via `/api/jobs/tick`. Not
 investigated here. Whoever picks this up: find the capture site passing
 a non-`Error` object and make it report a readable message.
+
+### [2026-09-19] Backlog: the one-project-per-engineer slice (D12 rider)
+
+Owner: **Aravind**. Not scheduled. FULL tier when built (item 4 replaces a
+shipped SECURITY DEFINER function — review gate (a)). Filed here by the 048
+build (`docs/reviews/048-review-package.md`) to close external review
+condition 3; the plan that names it is `docs/plans/add-engineer-plan.md`
+§4.8 and §4.10 (at `caab70b`, branch `feat/add-engineer-plan`). Slice 1
+(migration 048) ships **without** any database enforcement of
+one-project-per-engineer: the add screen is the only place the rule exists,
+and it enforces it only for the paste path — RLS still lets a tenant admin or
+`pm` insert a `project_members` row for any tenant user directly.
+**`docs/schema.md:129-130` ("enforced at insert in app logic, NOT a DB
+constraint") becomes true the day 048 ships: the add screen is now that app
+logic, and only that.** Contents, complete (citations re-verified against the
+tree on 2026-09-19, not copied from the plan):
+
+1. **The index:** `CREATE UNIQUE INDEX uq_project_members_one_engineer_project
+   ON public.project_members (user_id) WHERE role = 'engineer'`. Pre-check
+   queries (a) users with more than one `project_members` row and (e) the
+   exact predicate: `git show fad98e3:docs/plans/add-engineer-plan.md`.
+   Whether it must avoid `CONCURRENTLY` is **unverified**: the plan cites
+   `docs/migration-runbook-template.md:34` for it, and that line does not say
+   so at 2026-09-19 (no `CONCURRENTLY` appears in `docs/*.md` or `CLAUDE.md`);
+   the author of this slice re-derives it.
+2. **The 7 test files that build "one user, two `engineer` memberships" as
+   ordinary setup**, to be reworked once, against the whole rule:
+   `test/unit/project-resolution.test.ts:77-81`,
+   `test/unit/morning-cutoff-sweep.test.ts:516-517`,
+   `test/webhook.test.ts:239-246`, `test/dpr-generate-job.test.ts:72-76`,
+   `test/dpr-generate-trigger.test.ts:40-44`,
+   `test/dpr-stage1-plumbing.test.ts:27-31`,
+   `test/owner-deliver-job.test.ts:121-127`. The plan's "59 tests" is
+   **derived from reading, never observed** — the first step is a real red run
+   against an index-carrying scaffold.
+3. **Role-scoping of `resolveEngineerProject`** —
+   `lib/whatsapp/project-resolution.ts:37`, `.from('project_members')
+   .select('project_id').eq('user_id', userId)`, currently role-blind.
+4. **Role-scoping of the sweep's count** —
+   `supabase/migrations/033_sweep_stale_morning_sessions.sql:220-222`,
+   `SELECT count(*), … FROM project_members WHERE user_id = v_row.user_id`,
+   role-blind.
+5. **Prerequisite, from 048:** the `project_members.role` CHECK.
+6. **The consequence it exists to remove:** `pm` on P1 + `engineer` on P2 passes
+   the index, yet that engineer still gets `MULTIPLE_MEMBERSHIPS_REPLY` while
+   the sweep parks their morning session — "allowed is not works" — until
+   items 3 and 4 land. **Until then a second `engineer` membership is loud to
+   the engineer and to Sentry, and SILENT TO THE PM:** an amber "Not checked
+   in" every day on both boards, with no explanation.
+
+### [2026-09-19] Backlog: `anon` holds table-level SELECT on `public.users` (N1)
+
+Owner: **Aravind**. Not scheduled. FULL tier when built (a revoke on `users`
+trips review gate (b)); its own migration. Filed here by the 048 build to
+close external review condition 3. **A known gap, not an accepted risk.**
+Until now it was tracked **only inside review packages**:
+`docs/reviews/047-review-package.md:35` (D5, "`anon` SELECT cleanup is OUT of
+scope (backlog)") and `:63` ("`anon`'s remaining SELECT/INSERT/UPDATE surface
+is untouched") — and was not in this file's backlog.
+
+Evidence: the plan's read-only test-db probe `pg_6` found `anon` with
+table-level `SELECT` on `public.users`, 17 of 17 columns
+(`docs/plans/add-engineer-plan.md` §4.10, N1). **Re-observed 2026-09-19 on a
+disposable scaffold built from a fresh schema-only dump of test-db plus
+migration 048** (`docs/reviews/048-scaffold/`): `has_table_privilege('anon',
+'public.users','SELECT')` is `true` and `anon` can `SELECT` **20 of 20**
+columns, including 048's three new ones (`registered_by`, `registered_at`,
+`consent_attested`) — they inherit the table-level grant. **Prod was not
+probed.** What bounds it today is RLS alone (`users_select` requires the own
+row or the same tenant; an `anon` request has no tenant) — a single layer, the
+shape `CLAUDE.md` §6 warns about ("RLS and the grant are two independent
+layers"). 048 widens the exposed surface by three columns and does not close
+it.
+
+### [2026-09-19] Backlog: the Rule 9 / runtime-registry coupling is a tooling defect (R3-S1)
+
+Owner: **Aravind**. Not scheduled. Tier to be confirmed by Aravind when scheduled (it edits a test helper and a lint rule — none
+of `CLAUDE.md` §0's gates (a)-(e) — but it touches the safety net the fixture teardown relies on, so ask before assuming light).
+Filed here by the 048 build (`docs/reviews/048-review-package.md` §10 F12) to close external review round 3, condition S1.
+**The defect:** Rule 9 (`scripts/lint-migrations.mjs:389-490`; its no-exceptions note at `:742-757`) scans HELD migration files
+under `docs/reviews/` and demands a `scripts/shared-fixture-fk-coverage.json` entry **in the same commit**. The runtime harness
+reads that same JSON **live**: `test/helpers/db.ts:2` imports it and `sweepSharedFixtureReferences` (`:348-397`) acts on every
+entry at teardown, its `select` throwing at `:366-368` when the column is missing. So a held migration that adds an FK to a
+shared-fixture table (`users`, `tenants`, `projects`) forces an entry the harness will execute **before the column exists on any
+database** — a **guaranteed red window** for every CI run and every shared-test-db user until the migration is applied. First
+victim: 048 (`users.registered_by`; package §8 — 21 of 22 files fail at teardown, and the failed teardowns strand rows). Every
+future FK on those tables reproduces it.
+**The narrower fix the reviewer proposed (NOT implemented here):** the entry carries `held: true`; the sweep — on a
+missing-column error **for a held entry only** — probes `information_schema.columns` and, if the column is absent, **skips with a
+logged notice**; the flag is **removed in the applying commit**. Every other error still throws, so the safety net is not
+weakened for anything but the one named window. The 048 package refused the broader option (tolerate any missing column) for
+exactly that reason (§8, "Option (B)").
+**Related, unobserved:** the same function's recursion keeps no visited set (`db.ts:371`), and 048's entry is the first
+self-referential edge in the registry (UNKNOWNS #69); the R3-N3 CHECK excludes the length-1 cycle only.
+
+### [2026-09-19] Backlog: precedent grants — revoke `service_role` by name from `complete_onboarding` and `correct_daily_log` (R3-S3)
+
+Owner: **Aravind**. Not scheduled. **FULL tier when built** (revoking a grant on a shipped SECURITY DEFINER function trips review
+gate (b)); its own migration and review package. Filed here by the 048 build (`docs/reviews/048-review-package.md` §10 F11, F13) to
+close external review round 3, condition S3. Evidence is **test-db's live ACLs only** (package §10 F11); prod is unprobed.
+**The mechanism — the point of this entry:** both functions derive the caller from `auth.uid()` inside the body
+(`correct_daily_log`: `supabase/migrations/040_evening_q5_tomorrow_needs.sql:285`, `WHERE auth_id = auth.uid()`;
+`complete_onboarding`: `supabase/migrations/016_corrections.sql:181`), and `auth.uid()` reads the request's JWT settings. **A
+`service_role` session can `set_config('request.jwt.claims', …)` and thereby become any caller**, so a write made through either
+function would carry a **FORGED attribution** — a real user recorded as the author of something they never did. **The privilege is
+not escalated** (`service_role` already bypasses RLS and can write directly); **the attribution is.** Today both functions'
+`service_role` grant is simply the Supabase default privilege nobody revoked: `040:401-402` and `020_function_execute_hardening.sql:80-85`
+revoke `FROM PUBLIC, anon` and grant `TO authenticated` — `service_role` is not named.
+**The three functions, three different answers:**
+- `complete_onboarding` and `correct_daily_log` — revoke `service_role` by name (`CLAUDE.md` §6). **Production callers checked, 2026-09-19:**
+  both are called with the SSR (signed-in) client — `app/(onboarding)/onboarding/page.tsx:18,27` and
+  `app/(dashboard)/daily-logs/actions.ts:49,68` both use `createClient` from `@/lib/supabase/server` — never the service client.
+  **But a test uses `service_role`:** `test/migration-016.test.ts:105` (T-016-02) calls `complete_onboarding` through
+  `testClient()`, so the revoke migration must rework that test in the same PR. (`migration-015.test.ts:212` and
+  `migration-016.test.ts:149` use `jwtClient`; `migration-019.test.ts` and `daily-log-correction-rpc.test.ts` were **not** checked.)
+- `get_user_tenant_id` (`supabase/migrations/002_rls_policies.sql:12`; grants `020:94-95`) — `service_role` bypasses RLS and never
+  evaluates the policies that call it, so the revoke is **safe, but needs its own line of proof**: the "Landmine 1" argument
+  (`docs/reviews/020-review-package.md:189, :294, :375` — `authenticated` must keep it, because RLS policies call it as the caller).
+- **Leave `write_dpr_version` as designed** (`029_dpr_versioning.sql:430`, `041_write_dpr_version_first_write_fix.sql:248`, both
+  `TO authenticated, service_role`): it is a **deliberate hybrid with a real `service_role` caller**, not a precedent gap.
+048's own `add_engineers_to_project` already revokes `service_role` by name, so it is the first authenticated-callable definer
+function without it — the intent of the rule, and a departure from every precedent above (package §10 F11).

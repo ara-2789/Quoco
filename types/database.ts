@@ -1877,6 +1877,7 @@ export type Database = {
         Row: {
           auth_id: string | null
           avatar_url: string | null
+          consent_attested: boolean | null
           created_at: string | null
           delegation_active: boolean | null
           employee_id: string | null
@@ -1886,6 +1887,8 @@ export type Database = {
           messaging_blocked: boolean
           notification_email: string | null
           notification_email_verified_at: string | null
+          registered_at: string | null
+          registered_by: string | null
           reporting_manager_id: string | null
           role: string | null
           status: string
@@ -1896,6 +1899,7 @@ export type Database = {
         Insert: {
           auth_id?: string | null
           avatar_url?: string | null
+          consent_attested?: boolean | null
           created_at?: string | null
           delegation_active?: boolean | null
           employee_id?: string | null
@@ -1905,6 +1909,8 @@ export type Database = {
           messaging_blocked?: boolean
           notification_email?: string | null
           notification_email_verified_at?: string | null
+          registered_at?: string | null
+          registered_by?: string | null
           reporting_manager_id?: string | null
           role?: string | null
           status?: string
@@ -1915,6 +1921,7 @@ export type Database = {
         Update: {
           auth_id?: string | null
           avatar_url?: string | null
+          consent_attested?: boolean | null
           created_at?: string | null
           delegation_active?: boolean | null
           employee_id?: string | null
@@ -1924,6 +1931,8 @@ export type Database = {
           messaging_blocked?: boolean
           notification_email?: string | null
           notification_email_verified_at?: string | null
+          registered_at?: string | null
+          registered_by?: string | null
           reporting_manager_id?: string | null
           role?: string | null
           status?: string
@@ -1932,6 +1941,13 @@ export type Database = {
           whatsapp_number?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "users_registered_by_fkey"
+            columns: ["registered_by", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "users_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -2156,6 +2172,15 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      add_engineers_to_project: {
+        Args: {
+          p_consent_attested: boolean
+          p_dry_run: boolean
+          p_engineers: Json
+          p_project_id: string
+        }
+        Returns: Json
+      }
       apply_evening_flow_turn: {
         Args: {
           p_message: string
@@ -2244,9 +2269,23 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      engineer_admin_gate: {
+        Args: { p_project_id: string }
+        Returns: {
+          o_caller_id: string
+          o_tenant_id: string
+        }[]
+      }
       get_user_tenant_id: { Args: never; Returns: string }
       quoco_classify_yes_no: { Args: { p_text: string }; Returns: Json }
       quoco_same_ist_day: { Args: { a: string; b: string }; Returns: boolean }
+      quoco_test_047_unused_rights_check: {
+        Args: never
+        Returns: {
+          grant_count: number
+          policy_count: number
+        }[]
+      }
       quoco_test_row_is_locked: {
         Args: { p_phone_number: string }
         Returns: boolean
