@@ -31,7 +31,7 @@ export const preview = {
 
 export const rejections = {
   noName: 'No name on this line.',
-  nameTooLong: 'Name is too long. Keep it under {n} letters.',
+  nameTooLong: 'Name is too long. Keep it to {n} letters or less.',
   badNumber: 'Not a valid Indian mobile number. Use +91 and 10 digits.',
   duplicateInPaste: 'This number is already on the list above.',
   alreadyOnThisProject: 'Already on this project.',
