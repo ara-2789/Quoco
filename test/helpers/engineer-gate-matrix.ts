@@ -36,6 +36,18 @@ export const ENGINEER_GATE_MATRIX: readonly GateMatrixRow[] = [
   { n: 11, role: 'admin', callerTenant: 'own', project: 'nonexistent', membership: 'none', expected: 'not_found', prodShape: 'yes' },
 ]
 
+// A fresh, run-unique, NON-Indian fixture number that passes the RPC's generic
+// shape check (^\+[1-9][0-9]{1,14}$, plan 3.6): '+199955' plus eight random
+// digits = 14 digits. Needed because testPhone() (test/helpers/db.ts) yields 16
+// digits, which the function rightly refuses (22023 "invalid number shape").
+// Never Indian-shaped, so never a routable handset; the +1 block matches the
+// repo's fixture convention (plan 7.3).
+export function freshFixtureNumber(): string {
+  let digits = ''
+  for (let i = 0; i < 8; i++) digits += Math.floor(Math.random() * 10)
+  return `+199955${digits}`
+}
+
 // The pure gate's input for a matrix row. `visibility` says how the project
 // reaches the gate: 'visible' passes the project row even when it belongs to
 // another tenant (so the gate's own tenant comparison is what refuses it);
