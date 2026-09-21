@@ -104,6 +104,20 @@ describe('line format (plan 3.5): name, then trailing number', () => {
     const entries = entriesOf(`Zed, ${b}\nAmy, ${a}`)
     expect(entries.map((e) => e.name)).toEqual(['Zed', 'Amy'])
   })
+
+  // The plan says only "name = the rest, trimmed"; the parser also drops a
+  // separator left at the end of the name (parse-roster.ts, splitLine) so the
+  // approved "name, number" help example parses. The comma is covered above;
+  // these two cover the other separators the regex strips.
+  it('drops a trailing semicolon from the name', () => {
+    const [e] = entriesOf(`Suresh Kumar; ${N}`)
+    expect(e).toMatchObject({ accepted: true, name: 'Suresh Kumar', number: N })
+  })
+
+  it('drops a trailing colon from the name', () => {
+    const [e] = entriesOf(`Suresh Kumar: ${N}`)
+    expect(e).toMatchObject({ accepted: true, name: 'Suresh Kumar', number: N })
+  })
 })
 
 describe('R1-R4 rejections', () => {
