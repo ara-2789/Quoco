@@ -125,3 +125,4 @@ Repaired migration history: [048] => applied
 - Per Aravind: the number ending 3902 may receive check-ins.
 - Observed (screenshot): after the #314 merge, app.quoco.co.in shows the "Add site engineers" link and the new engineer in the project's team list.
 - Not yet observed: the first 18:30 IST check-in to that number.
+- Label note (21 Sep 2026): in this addendum, "Observed" means observed by Aravind, with the raw screenshot or SQL output pasted into design review. None of it was observed by the recording session; in this record's convention it is [R], reported with raw output shown.
