@@ -222,3 +222,17 @@ describe('E6: no pluralisation or zero-suppression logic in lib/', () => {
   // NAMED LIMIT: a grep, not a proof. It catches the obvious shapes, not every
   // way a future edit could branch on a count.
 })
+
+describe('M1: the project page carries exactly one add link (decision D-A3)', () => {
+  const source = readFileSync(join(process.cwd(), 'app', '(dashboard)', 'projects', '[id]', 'page.tsx'), 'utf8')
+
+  it('links to /projects/[id]/engineers/new with copy list.addLink', () => {
+    expect(source).toContain('${project.id}/engineers/new')
+    expect(source).toMatch(/\bengineerCopy\.addLink\b/)
+  })
+
+  it('has exactly ONE route into /engineers (no list-page navigation in PR A)', () => {
+    // '}/engineers' matches only an href built from an id, not the copy import path.
+    expect(source.match(/\}\/engineers/g)).toHaveLength(1)
+  })
+})
