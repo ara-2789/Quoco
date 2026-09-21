@@ -114,3 +114,14 @@ Repaired migration history: [048] => applied
 - **Not done here:** the authenticated dry run on prod; `types/database.ts` regeneration for prod (test-db's regenerated file already exists on `main`); any change to `docs/build-status.md`; the package section 12 checklist boxes.
 - **Observed limits:** the PITR reading is Aravind's [R]; `supabase db query --linked` prints "Initialising login role..." on every run (the CLI's own temporary login role — its catalog writes were not inspected); the query files were single SELECTs each, screened by keyword and statement count and read before running.
 - Rollback, if ever needed, is the package's rule: **revert the merged app commit first, then the DOWN** — and the DOWN destroys attribution data for every engineer added since this apply.
+
+## Addendum — post-deploy manual add, 21 Sep 2026
+
+- Code: PR #314 head aac5552, run locally with `next dev` against prod (`jvxwqignooseazzmwhvl`) before merge. CI run for aac5552: https://github.com/ara-2789/Quoco/actions/runs/35563359343 (Test (real test-db) SUCCESS).
+- Observed (screenshot): the preview on prod rendered the singular confirm prompt and omitted the zero-rejected sentence (plan §9a(a), §9a(b)); apply stayed disabled until the attestation was ticked.
+- Per Aravind: the first previewed line was edited and re-previewed before apply; the saved row is the second preview.
+- Observed (prod SQL, counts): registered 1, attested 1, engineers 2.
+- Observed (prod SQL, one row): consent_attested true, registered_at 2026-09-21 06:18:57Z, number last 4 digits 3902.
+- Per Aravind: the number ending 3902 may receive check-ins.
+- Observed (screenshot): after the #314 merge, app.quoco.co.in shows the "Add site engineers" link and the new engineer in the project's team list.
+- Not yet observed: the first 18:30 IST check-in to that number.
