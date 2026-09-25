@@ -131,3 +131,22 @@ External review of slice 1: **Design GO (conditional)**, six conditions, no bloc
 44. ~~**The plan split (§13) is not done** and `file-size-lint` will keep printing the WARN until it is.~~ **DONE in rev10** — the plan is now two documents (§13); this item is closed.
 45. ~~**Whether slice 1 includes a read-only engineers list page** (`ENGINEERS_LIST_TITLE`, `ENGINEER_STATUS_ACTIVE`, `formatRegisteredLine` stayed in slice 1 §9 by content …). Placement **ASSUMED**, not decided.~~ **SETTLED (rev11): D21, §5.1** — read-only, in slice 1.
 47. ~~**How the list page shows a non-active row (UNKNOWNS #45's residue).** Slice 1 has `ENGINEER_STATUS_ACTIVE` but no `ENGINEER_STATUS_DEACTIVATED` (slice 2), and a non-active engineer can exist in slice 1 only through manual SQL; whether the page lists such rows, and how, is **not decided** (§5.1).~~ **CLOSED (rev12, round-2 S2): §5.1** — the label is derived from `users.status`, non-active rows are shown in place.
+
+## Dated decisions, 21 Sep 2026 (per Aravind) — add-engineer slice 1, PR A build
+
+Recorded by the PR A build session. **Append-only: nothing above this heading was edited.** These are decisions about how slice 1 is built and split; they change no earlier statement in `add-engineer-plan.md`, they add scope boundaries and answers to that plan's UNKNOWNS (U-numbers refer to the app-code plan of 21 Sep 2026, `~/Desktop/add-engineer-app-plan.txt`, outside the repo).
+
+| # | Decision (per Aravind, 21 Sep 2026) |
+|---|---|
+| D-A1 | **Split.** PR A = A1, A2, A3, A4, A6, A7, A8, A9, A12, A13, M1 (the add screen and its project-page link). The **list page** — A5, A10, A11, T44, I3, I4 — is **PR B** and is not built in PR A. |
+| D-A2 | U1: the extra files A8 and A9 are accepted (they hold the client form and the pure presentational component that section 9a requires); A5 and A11 move to PR B with the list page. |
+| D-A3 | U6: the project page gets **one** link, text `list.addLink` from `lib/engineers/copy.ts`, destination `/projects/[id]/engineers/new`. No list-page navigation in PR A. |
+| D-A4 | U2: `registered_no_project` renders `rejections.inUse`. **No new string.** (`copy.ts` deliberately holds exactly one "already in use" text.) |
+| D-A5 | U7: on success the result screen renders only the first sentence of `result.summary` (`{n} added.`), never "0 not added". A preview with zero acceptable rows omits "0 will be added." and renders `preview.nothingToApply`; the rejected sentence then follows the section 9a(b) rule. This logic lives **in the component**, not in `copy.ts` or `lib/`. |
+| D-A6 | U9: back navigation is the project name (data) with the existing "←" pattern from `projects/[id]/page.tsx`. No new string, no loading text, no headings. |
+| D-A7 | U8: **no zod, no new dependency.** Hand validation. `package.json` and `package-lock.json` do not change. (This resolves the conflict with `CLAUDE.md` section 6 "Validate ALL inputs with Zod" by choosing hand validation for this PR, on Aravind's decision.) |
+| D-A8 | U11: the boundary test's fixture project status is set explicitly to `'on_hold'`, never NULL (`NULL <> 'active'` is NULL). |
+| D-A9 | U15 and U16 are accepted as **coverage limits**, to be stated in the PR body: (U15) only one `+91` literal may exist in `test/`, so no test drives a multi-row apply through the validator and the database together; (U16) the Server Action wiring in `actions.ts` cannot load under vitest (`'server-only'`) and is exercised by hand only. |
+| D-A10 | U13: `test/migration-048.test.ts` is out of scope. Instead a **positive control is required** for I1, I2 and I5 (the tenant-isolation refusals). |
+| D-A11 | U2 / U4 / U5, the list-page status labels, U12 and U21 are **PR B**, not decided or built now. |
+| — | **T44(iv) deferral.** T44(iv) (the list page runs `decideEngineerAdminAccess` before any read and issues no engineer reads for a refused caller) belongs to the list page and is deferred to PR B with the rest of T44. PR A's add screen runs the same gate before any render, but PR A ships no T44 test. |

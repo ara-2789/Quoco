@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ProjectStatusTag } from '@/components/ui/project-status-tag'
+import { list as engineerCopy } from '@/lib/engineers/copy'
 
 type Project = {
   id: string
@@ -109,10 +110,16 @@ export default async function ProjectDetailPage({
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
             Team Members
           </h2>
+          <Link
+            href={`/projects/${project.id}/engineers/new`}
+            className="text-sm font-medium text-gray-900 hover:underline"
+          >
+            {engineerCopy.addLink}
+          </Link>
         </div>
         {teamMembers.length === 0 ? (
           <p className="px-6 py-4 text-sm text-gray-700">No members found.</p>
