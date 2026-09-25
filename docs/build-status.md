@@ -194,6 +194,19 @@ determinations)
     - `/onboarding` shows raw DB errors the same way
       (`app/(onboarding)/onboarding/page.tsx`'s `createCompany`, except the
       one hand-matched "unique" case).
+  - [2026-08-19] OBSERVED ON PROD, recorded 25 Sep 2026 (per Aravind; from
+    the auth decisions record, not re-observed since). Cross-device magic
+    links fail. A sign-in link requested in one browser and opened in
+    another returns: "PKCE code verifier not found in storage. This can
+    happen if the auth flow was initiated in a different browser or device,
+    or if the storage was cleared." Cause: PKCE stores a one-time verifier
+    in the browser that requested the link, so the exchange cannot complete
+    anywhere else. Requesting on a laptop and opening the email on a phone
+    is ordinary behaviour, not an edge case. This is the originating reason
+    for the email OTP decision (a typed code works on any device) and is
+    load-bearing for that plan's rollback section. Recorded here because an
+    external review of that plan (25 Sep 2026) found the observation was
+    nowhere in this repo.
 - **"Daily-log correction gate checks the wrong role"** — NEW, added
   2026-09-17 per Aravind (found during the Stage 5a review package,
   `docs/reviews/stage5a-review-package.md`). **FULL tier** (CLAUDE.md §0's
