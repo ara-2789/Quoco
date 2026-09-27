@@ -8,16 +8,18 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/login?error=Missing+auth+code`)
+    return NextResponse.redirect(`${origin}/login?error=CALLBACK_FAILED`)
   }
 
   const supabase = await createClient()
   const { error } = await supabase.auth.exchangeCodeForSession(code)
 
   if (error) {
-    return NextResponse.redirect(
-      `${origin}/login?error=${encodeURIComponent(error.message)}`,
-    )
+    // Known constant key, never error.message raw (docs/plans/
+    // email-otp-plan.md (c)'s Q2 correction) -- matches the no-raw-
+    // provider-text rule the new code-request/verify actions in
+    // app/(auth)/login/page.tsx already follow.
+    return NextResponse.redirect(`${origin}/login?error=CALLBACK_FAILED`)
   }
 
   const {
