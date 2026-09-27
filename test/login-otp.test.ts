@@ -29,9 +29,21 @@
 // wording, not a silent one -- flagged here and in the build PR body. The
 // MANUAL verification script in (h) still uses Aravind's own real address,
 // unaffected by this choice.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { getRunId, deriveRunScopedEmail } from './helpers/run-scoped-fixtures'
+import * as authCopy from '@/lib/auth/copy'
+
+// T-OTP-07 needs to render app/(auth)/login/page.tsx's default export, but
+// that file imports profileForAuthId from '@/lib/auth/profile', which pulls
+// in 'server-only' -- not even an installed package under vitest (same
+// constraint test/engineer-add-render.test.tsx's own header documents for
+// getProfile). Mocked here, not called: T-OTP-07 only renders LoginPage for
+// an unrecognised ?error= value, which never invokes profileForAuthId (that
+// only runs inside the verifyCode Server Action, never during render).
+vi.mock('@/lib/auth/profile', () => ({ profileForAuthId: vi.fn() }))
+import LoginPage from '@/app/(auth)/login/page'
 
 function serviceClient(): SupabaseClient {
   return createClient(
@@ -239,5 +251,20 @@ describe('login OTP', () => {
     const second = await anon.auth.signInWithOtp({ email: resendEmail })
     console.log(`[T-OTP-04] second call error.code=${second.error?.code} message=${second.error?.message}`)
     expect(second.error).not.toBeNull()
+  })
+
+  // ---------------------------------------------------------------------
+  // T-OTP-07: an unrecognised ?error= key renders the GENERIC approved
+  // text, never the raw key. No live Supabase call -- a render test against
+  // the login page component itself (plan (h), S4).
+  // ---------------------------------------------------------------------
+  it('T-OTP-07: unrecognised ?error= key renders the generic message, never the raw key', async () => {
+    const element = await LoginPage({
+      searchParams: Promise.resolve({ error: 'NOT_A_REAL_KEY' }),
+    })
+    const html = renderToStaticMarkup(element)
+
+    expect(html).toContain(authCopy.errors.generic)
+    expect(html).not.toContain('NOT_A_REAL_KEY')
   })
 })
