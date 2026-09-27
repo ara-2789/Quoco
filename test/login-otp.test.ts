@@ -16,19 +16,21 @@
 // Server Actions in app/(auth)/login/page.tsx wrap, not the actions
 // themselves (T-OTP-05, which does exercise the actions, is out of scope).
 //
-// ADDRESS SAFETY NOTE, FLAGGED FOR ARAVIND: the plan's (h) text requires
-// "every test address used by any test that sends a real email" to be an
-// address Aravind controls. This suite instead uses zz-test-*@quoco.test
-// (test/helpers/run-scoped-fixtures.ts's deriveRunScopedEmail) for every
-// case, including T-OTP-04 (which does send one real email via
-// signInWithOtp). `.test` is an IANA-reserved, non-resolving TLD (RFC
-// 2606) -- no real mailbox anywhere can ever receive mail sent to it, so
-// this satisfies the underlying safety goal (no real person is ever
-// messaged) by construction, for a fully-automated suite with no human
-// checking an inbox. This is a documented deviation from the plan's literal
-// wording, not a silent one -- flagged here and in the build PR body. The
-// MANUAL verification script in (h) still uses Aravind's own real address,
-// unaffected by this choice.
+// ADDRESS SAFETY NOTE (CORRECTED, follow-up to the build PR): every address
+// in this suite is zz-test-*@quoco.test (test/helpers/run-scoped-fixtures.ts's
+// deriveRunScopedEmail) -- an IANA-reserved, non-resolving TLD (RFC 2606) --
+// EXCEPT resendEmail below, the one address T-OTP-04's first signInWithOtp
+// call actually sends a real email to. A .test address there would hard-
+// bounce (it cannot resolve), and that bounce lands on the same Resend
+// account that sends the nightly owner reports from quoco.co.in -- a
+// sender-reputation risk to customer email, not merely a wasted send.
+// resendEmail is therefore Aravind's own real, explicitly-confirmed address
+// (ar.rcpl+otptest@gmail.com), matching the plan's (h) text ("every test
+// address used by any test that sends a real email must be an address
+// Aravind controls") exactly, rather than the deviation the initial build
+// PR flagged. Every other address here never reaches a send (see the table
+// in ~/Desktop/otp-test-address.txt), so changing them would put a real
+// address into paths that assert REFUSAL for no benefit.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -214,7 +216,10 @@ describe('login OTP', () => {
   // test's contribution to the hourly send cap is exactly one real email,
   // independent of test order or what else ran before it.
   // -----------------------------------------------------------------------
-  const resendEmail = deriveRunScopedEmail(runId, 'T_OTP_04_RESEND_USER')
+  // Fixed, real, Aravind-controlled address -- NOT run-scoped (see the
+  // ADDRESS SAFETY NOTE above). This is the only address in the suite whose
+  // call actually sends an email.
+  const resendEmail = 'ar.rcpl+otptest@gmail.com'
   let resendUserId: string | null = null
 
   beforeAll(async () => {
