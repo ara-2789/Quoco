@@ -107,7 +107,7 @@ describe('login OTP', () => {
 
     expect(await findAuthUserByEmail(db, email)).toBeNull()
 
-    const { data, error } = await anon.auth.signInWithOtp({ email })
+    const { error } = await anon.auth.signInWithOtp({ email })
     console.log(`[T-OTP-01b] error.code=${error?.code} message=${error?.message}`)
 
     const created = await findAuthUserByEmail(db, email)
