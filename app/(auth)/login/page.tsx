@@ -22,6 +22,21 @@ function errorMessageFor(key: string | undefined): string {
   return ERROR_MESSAGES[key] ?? errorCopy.generic
 }
 
+// The exact pattern browsers use for <input type="email">'s own constraint
+// validation (WHATWG HTML Standard, "valid e-mail address" production) --
+// the SAME rule the Screen 1 email input already relies on client-side.
+// Server-side here because Screen 2's ?email= is untrusted query-string
+// input, never re-checked against this before (found live, 1 Oct 2026: a
+// crafted ?email= value -- e.g. "Your account is suspended, call
+// 080-1234" -- was rendered verbatim into the page, both in the approved
+// LOGIN_CODE_STEP_BODY sentence and into two hidden form field values).
+const HTML5_EMAIL_RE =
+  /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+
+function isValidEmail(value: string): boolean {
+  return HTML5_EMAIL_RE.test(value)
+}
+
 // Maps a Supabase Auth error from the CODE-REQUEST call (signInWithOtp with
 // shouldCreateUser:false) to one of this page's own known error keys.
 // Observed on test-db (docs/plans/email-otp-plan.md (h), T-OTP-01/T-OTP-04):
@@ -143,6 +158,20 @@ export default async function LoginPage({
 
   if (params.step === 'code') {
     const email = params.email ?? ''
+
+    // Screen 2's ?email= is untrusted (it round-trips through the URL, not
+    // a session). Validated here with the SAME rule Screen 1's own email
+    // input uses, before it reaches LOGIN_CODE_STEP_BODY's {email}
+    // placeholder or either hidden form field below. On failure: back to
+    // Screen 1, not a blanked-out Screen 2 -- LOGIN_CODE_STEP_BODY's
+    // approved wording requires a real {email} value, and no approved
+    // string exists for "no address to show" without inventing one, which
+    // this fix does not do. Screen 1's own approved copy needs no email
+    // value at all, so it has no equivalent gap.
+    if (!isValidEmail(email)) {
+      redirect('/login')
+    }
+
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
         <h2 className="text-xl font-semibold text-gray-900 mb-1">{codeStep.heading}</h2>

@@ -298,4 +298,27 @@ describe('login OTP', () => {
     expect(html).toContain(authCopy.errors.generic)
     expect(html).not.toContain('NOT_A_REAL_KEY')
   })
+
+  // ---------------------------------------------------------------------
+  // T-OTP-08 (added 1 Oct 2026, reflected-text defect -- observed live,
+  // test-db, via a crafted ?email= query value): a non-email ?email= value
+  // must never be placed into the page. No live Supabase call.
+  // ---------------------------------------------------------------------
+  it('T-OTP-08: an invalid, non-email ?email= value is never rendered on the code screen', async () => {
+    const maliciousEmail = 'Your account is suspended, call 080-1234'
+    let html: string | null = null
+    try {
+      const element = await LoginPage({
+        searchParams: Promise.resolve({ step: 'code', email: maliciousEmail }),
+      })
+      html = renderToStaticMarkup(element)
+    } catch (err) {
+      // A redirect away from Screen 2 (next/navigation's redirect()) also
+      // satisfies "never rendered" -- no page HTML is produced at all.
+      const digest = (err as { digest?: string }).digest ?? ''
+      expect(digest).toMatch(/^NEXT_REDIRECT/)
+      return
+    }
+    expect(html).not.toContain(maliciousEmail)
+  })
 })
