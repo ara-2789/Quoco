@@ -33,6 +33,7 @@
 // address into paths that assert REFUSAL for no benefit.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createHash } from 'node:crypto'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { getRunId, deriveRunScopedEmail } from './helpers/run-scoped-fixtures'
 import * as authCopy from '@/lib/auth/copy'
@@ -216,46 +217,71 @@ describe('login OTP', () => {
   // test's contribution to the hourly send cap is exactly one real email,
   // independent of test order or what else ran before it.
   // -----------------------------------------------------------------------
-  // Fixed, real, Aravind-controlled address -- NOT run-scoped (see the
-  // ADDRESS SAFETY NOTE above). This is the only address in the suite whose
-  // call actually sends an email.
-  const resendEmail = 'ar.rcpl+otptest@gmail.com'
-  let resendUserId: string | null = null
-
-  beforeAll(async () => {
-    const db = serviceClient()
-    const { data, error } = await db.auth.admin.createUser({
-      email: resendEmail,
-      email_confirm: true,
-    })
-    if (error || !data.user) {
-      throw new Error(`seed resend user failed: ${error?.message ?? 'no user'}`)
-    }
-    resendUserId = data.user.id
-  })
-
-  afterAll(async () => {
-    if (resendUserId) {
-      const db = serviceClient()
-      await db.auth.admin.deleteUser(resendUserId)
-    }
-  })
+  // Real, Aravind-controlled address -- the only address in the suite whose
+  // call actually sends an email -- made unique PER RUN in the local part
+  // after the plus sign (Gmail ignores everything after the +, so this
+  // still reaches the real inbox). CORRECTED (CI red on 4947264): a FIXED
+  // literal here meant a local run's admin.createUser left the row behind,
+  // and CI's own createUser for the SAME address then failed with "A user
+  // with this email address has already been registered." Fixed using the
+  // SAME run-scoped derivation deriveRunScopedEmail uses (SHA-256 of
+  // `${runId}:${label}:email`, truncated to 6 bytes hex) -- reproduced here
+  // rather than called directly, since that function's own output is
+  // hardcoded to the zz-test-*@quoco.test shape, not a deliverable address.
+  const resendEmailSuffix = createHash('sha256')
+    .update(`${runId}:T_OTP_04_RESEND_USER:email`)
+    .digest()
+    .subarray(0, 6)
+    .toString('hex')
+  const resendEmail = `ar.rcpl+otptest-${resendEmailSuffix}@gmail.com`
 
   it('T-OTP-04: resend before cooldown is rate-limited (sends exactly one real email)', async () => {
+    const db = serviceClient()
     const anon = anonClient()
 
-    // First call: a real signInWithOtp for an EXISTING user (distinct from
-    // T-OTP-01's refusal case) -- this is the suite's one real email send.
-    const first = await anon.auth.signInWithOtp({ email: resendEmail })
-    console.log(`[T-OTP-04] first call error.code=${first.error?.code} message=${first.error?.message}`)
-    expect(first.error).toBeNull()
+    // Seed and delete THIS test's own user here (try/finally), not a
+    // shared beforeAll/afterAll -- the address is unique per run now, so
+    // nothing else needs it, and the delete must run whether the
+    // assertions below pass or fail.
+    let resendUserId: string | null = null
+    try {
+      const { data, error } = await db.auth.admin.createUser({
+        email: resendEmail,
+        email_confirm: true,
+      })
+      if (error || !data.user) {
+        throw new Error(`seed resend user failed: ${error?.message ?? 'no user'}`)
+      }
+      resendUserId = data.user.id
 
-    // Second call, immediately: must be refused by the resend cooldown, not
-    // succeed again -- keeps this test's own contribution to the hourly
-    // send cap at exactly one real email per run (plan (h) S2 correction).
-    const second = await anon.auth.signInWithOtp({ email: resendEmail })
-    console.log(`[T-OTP-04] second call error.code=${second.error?.code} message=${second.error?.message}`)
-    expect(second.error).not.toBeNull()
+      // First call: a real signInWithOtp for an EXISTING user (distinct from
+      // T-OTP-01's refusal case) -- this is the suite's one real email send.
+      const first = await anon.auth.signInWithOtp({ email: resendEmail })
+      console.log(`[T-OTP-04] first call error.code=${first.error?.code} message=${first.error?.message}`)
+      expect(first.error).toBeNull()
+
+      // Second call, immediately: must be refused by the resend cooldown, not
+      // succeed again -- keeps this test's own contribution to the hourly
+      // send cap at exactly one real email per run (plan (h) S2 correction).
+      const second = await anon.auth.signInWithOtp({ email: resendEmail })
+      console.log(`[T-OTP-04] second call error.code=${second.error?.code} message=${second.error?.message}`)
+      expect(second.error).not.toBeNull()
+    } finally {
+      if (resendUserId) {
+        // public.users.auth_id is a RESTRICT FK (users_auth_id_fkey) --
+        // admin.createUser's own on_auth_user_created trigger already
+        // inserted a public.users stub referencing this auth user, so
+        // admin.deleteUser alone 500s ("violates foreign key constraint")
+        // unless that stub is removed first (found live while cleaning up
+        // this same fix's own leftover row -- see otp-ci-red-fix.txt;
+        // matches test/helpers/db.ts's own established ordering for this
+        // exact constraint). A bare admin.deleteUser() with no error check,
+        // as this test used before, LOOKS like cleanup but silently never
+        // deletes anything.
+        await db.from('users').delete().eq('auth_id', resendUserId)
+        await db.auth.admin.deleteUser(resendUserId)
+      }
+    }
   })
 
   // ---------------------------------------------------------------------
