@@ -977,7 +977,26 @@ a) FLOW, SCREEN BY SCREEN
      submission, not re-verified server-side before being echoed. Neither
      option needs re-validation added for this slice; this note exists so
      a reviewer doesn't assume either path already checks the value
-     against something authoritative. A second Server Action calls:
+     against something authoritative.
+
+     CORRECTED (1 Oct 2026, manual observation on test-db, per Aravind):
+     the reflection is not merely pre-existing, it is exploitable as
+     written. Observed: /login?step=code&email=<a crafted sentence>
+     rendered that sentence inside the approved LOGIN_CODE_STEP_BODY line
+     and into BOTH hidden email form fields — three render sites. A
+     crafted link on the app's own domain therefore displays
+     attacker-chosen text under the Quoco logo. Fixed on this branch:
+     params.email is validated with the same HTML5 email pattern Screen
+     1's input uses, before Screen 2 renders; an invalid value redirects
+     to Screen 1 rather than rendering a blank address, because no
+     approved string covers "no address to show". Covered by T-OTP-08,
+     shown red on the exact observed string first.
+     Process note: this was named in external review round 1 (S4) and
+     recorded in the plan as acceptable rather than as work to do; no
+     automated test covered it until now. It was found by manual
+     observation, not by CI.
+
+     A second Server Action calls:
        const { data, error } = await supabase.auth.verifyOtp({
          email,
          token: code,
@@ -2062,6 +2081,14 @@ k) RECORDS
      4. WhatsApp OTP channel — deferred per D-O1's amendment above, not
         cancelled; §26's risk analysis remains the reference document
         for whenever it is scheduled.
+     5. ADDED (1 Oct 2026, per Aravind, same round as the S4 correction
+        above): no repo-wide sweep has been done for the same
+        unvalidated-URL/form-value-reflection pattern elsewhere in the
+        app. The onboarding page's own raw-error surfacing — (e)'s item 7,
+        `app/(onboarding)/onboarding/page.tsx`'s `createCompany`, already
+        named and tracked in docs/build-status.md as "Parked, not
+        designed" — is a known related item, not re-examined by this
+        slice's fix. Untouched by this slice.
 
 --------------------------------------------------------------------
 STEP 3 — CONFIRM NOTHING WAS WRITTEN TO THE REPO
