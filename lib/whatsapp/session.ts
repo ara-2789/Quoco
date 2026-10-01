@@ -114,8 +114,11 @@ export async function acquireAndTransition(params: {
 }
 
 /**
- * Stage 3 (migration 045, HELD -- see docs/reviews/045-review-brief.md --
- * not applied to any database yet). Throttle for the idle-photo nudge: true
+ * Stage 3 (migration 045, ~~HELD -- see docs/reviews/045-review-brief.md --
+ * not applied to any database yet~~ -- DATED CORRECTION 2026-10-01: applied
+ * to both test-db and prod 2026-09-15, see
+ * docs/reviews/045-test-db-apply-record.md and
+ * docs/reviews/045-prod-apply-record.md). Throttle for the idle-photo nudge: true
  * the first time this is called for a phone number within
  * windowSeconds, or the first time again after that window has elapsed;
  * false for every call inside it. Same acquire-and-lock shape as

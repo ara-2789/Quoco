@@ -1,7 +1,12 @@
 -- =============================================================================
 -- 045_media_nudge_throttle.sql
+-- DATED CORRECTION (2026-10-01): APPLIED to both test-db and prod on
+-- 2026-09-15 -- see docs/reviews/045-test-db-apply-record.md and
+-- docs/reviews/045-prod-apply-record.md. Struck through below, not
+-- rewritten -- only the held/not-applied/not-reviewed claims are
+-- superseded.
 --
--- HELD, NOT APPLIED ANYWHERE (not test-db, not prod). Per CLAUDE.md's own "a
+-- ~~HELD, NOT APPLIED ANYWHERE (not test-db, not prod). Per CLAUDE.md's own "a
 -- migration file enters supabase/migrations/ when it is being applied, not
 -- when it is written" rule, this file lives in docs/reviews/ alongside its
 -- review package (docs/reviews/045-review-brief.md) and stays here until an
@@ -9,7 +14,7 @@
 -- than that standing default: do not apply to prod OR any remote database
 -- (test-db included) at all this round -- verification for this file is a
 -- local disposable dry-run only (CLAUDE.md §7's own "EVERY NEW MIGRATION
--- GETS A DISPOSABLE DRY-RUN" rule), never a real Supabase project.
+-- GETS A DISPOSABLE DRY-RUN" rule), never a real Supabase project.~~
 -- ----------------------------------------------------------------------------
 -- Stage 3 of the media capability (docs/plans/media-capture-design.md item
 -- 20; full plan: docs/plans/media-capture-design.md's stage 3 entry, appended
@@ -24,10 +29,11 @@
 -- function exactly as it does to a changed one (the rule's own text: "a
 -- brand-new SECURITY DEFINER function... has no prior safe state to fall
 -- back on and is at least as dangerous as a bad change to an existing one").
--- This file and its review brief ARE that review package -- it has not yet
+-- This file and its review brief ARE that review package -- ~~it has not yet
 -- been read by Aravind, so it is NOT cleared to apply anywhere until that
 -- happens, per the gate's own wording, matching 041/042/043's own held
--- posture before their review rounds.
+-- posture before their review rounds.~~ Reviewed and applied 2026-09-15,
+-- per the DATED CORRECTION at the top of this file.
 --
 -- SHAPE, DEVIATING FROM THE ILLUSTRATIVE SIGNATURE GIVEN BY NAME:
 --   * The instruction's own signature was `claim_media_nudge(p_phone_number
