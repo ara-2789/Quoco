@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase/service'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
-import { readCurrentFlow, claimMediaNudge } from './session'
+import { readActiveFlowForRouting, claimMediaNudge } from './session'
 import { dispatchInboundTurn } from './dispatch'
 import { applyHindranceFlowTurn, buildHindranceReply } from './flows/hindrance'
 import { MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, MEDIA_NUDGE_WINDOW_SECONDS, type MediaItem } from './media-reply'
@@ -698,7 +698,8 @@ async function handleIdlePhoto(params: RouteParams, supabase: SupabaseClient): P
  */
 export async function routeInboundMessage(params: RouteParams): Promise<InboundRouteResult> {
   const supabase = params.supabaseClient ?? createServiceClient()
-  const currentFlow = await readCurrentFlow(params.phoneNumber, supabase)
+  const now = params.now !== undefined ? new Date(params.now) : new Date()
+  const currentFlow = await readActiveFlowForRouting(params.phoneNumber, now, supabase)
 
   if (currentFlow !== null) {
     // A flow is already active -- the ad-hoc router below never runs. The
