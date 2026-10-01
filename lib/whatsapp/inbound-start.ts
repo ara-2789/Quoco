@@ -85,8 +85,11 @@ export const HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY =
 //   - Idle (no active flow): STALE ABOVE, CORRECTED HERE (stage 3 shipped) --
 //     see handleIdlePhoto's own doc, below, for the real mechanism: a photo
 //     at idle no longer gets a reply on every arrival. claim_media_nudge
-//     (migration 045, HELD -- not applied to any database yet; see
-//     docs/reviews/045-review-brief.md) throttles it to one nudge+menu reply
+//     (migration 045, ~~HELD -- not applied to any database yet; see
+//     docs/reviews/045-review-brief.md~~ -- DATED CORRECTION 2026-10-01:
+//     applied to both test-db and prod 2026-09-15, see
+//     docs/reviews/045-test-db-apply-record.md and
+//     docs/reviews/045-prod-apply-record.md) throttles it to one nudge+menu reply
 //     per MEDIA_NUDGE_WINDOW_SECONDS-second window per phone number; any
 //     further idle photo inside that window gets NO reply at all (empty
 //     TwiML, via route.ts's own `reply === '' ? twimlEmpty() : ...`).
@@ -595,8 +598,11 @@ async function resolveIdleHeaderState(
 
 /**
  * Handle a photo arriving at idle (no active flow) -- stage 3
- * (docs/plans/media-capture-design.md's stage 3 entry; migration 045, HELD,
- * not applied to any database yet -- see docs/reviews/045-review-brief.md).
+ * (docs/plans/media-capture-design.md's stage 3 entry; migration 045, ~~HELD,
+ * not applied to any database yet -- see docs/reviews/045-review-brief.md~~ --
+ * DATED CORRECTION 2026-10-01: applied to both test-db and prod 2026-09-15,
+ * see docs/reviews/045-test-db-apply-record.md and
+ * docs/reviews/045-prod-apply-record.md).
  * Called only when params.isPhoto is true and readCurrentFlow returned null;
  * the caption, if any, is IGNORED ENTIRELY here (item 12's own "a photo is
  * never an answer" extends to "a photo's caption never drives idle routing
