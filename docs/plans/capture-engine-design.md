@@ -24,9 +24,7 @@ The engine is designed on paper for all three; only item 4 is implemented first.
   from the first thing the engineer sends.
 - A scheduled check-in arriving mid-report runs on time. The partial report stays saved
   and is shown to the PM as incomplete. No engineer input is ever discarded.
-- Rejected: holding the check-in until the report finishes (an abandoned report would
-  block the check-in and produce a false "not submitted" in the owner report; requires
-  rebuilding session handling).
+- Rejected: holding the check-in until the report finishes.
 - Relationship to migration 038 ("scheduled triggers always win", hindrance discarded):
   038 still governs the hindrance flow today. Making hindrance save-as-you-go is a
   separate, queued FULL-tier item, not part of this design.
@@ -39,7 +37,8 @@ The engine is designed on paper for all three; only item 4 is implemented first.
 - Handwritten documents: reading is best-effort and low-confidence; not a priority.
   The photo is the record.
 - PM sees the engineer's statement and the machine reading side by side; mismatches
-  are flagged. Only PM-confirmed values count as facts (owner report, invoice matching).
+  are flagged. Only PM-confirmed values count as facts (invoice matching; the owner report
+  only if O2 decides that deliveries appear there).
 - Phase 2, not slice 1: engineer confirms the machine reading on WhatsApp. Requires a
   job-initiated free-form WhatsApp message; none exists today (only template sends —
   probe 2026-10-01, capture-ocr-probe §E). Note: docs/design-principles.md Rule 3.9
@@ -66,8 +65,23 @@ The engine is designed on paper for all three; only item 4 is implemented first.
 - A PM-facing Deliveries page exists (photo, engineer statement, machine reading,
   confirm/correct). Same rule as adhoc-menu-spec.md point 10 (item 3 cut 2026-09-03:
   no item ships without a reader). Pending Aravind's confirmation with his cofounder.
-- The stale-session fix (branch fix/stale-flow-next-day) is merged, so an early-morning
-  challan is not swallowed or misfiled.
+- The stale-session fix (branch fix/stale-flow-next-day) is merged.
+
+## Unverified at time of writing
+The statements below came from probes or earlier documents during the 2026-10-01 design
+session. They were NOT re-checked when this record was written. Verify each against main
+before any build relies on it.
+- `invoices` table: plain single-column FKs and tenant-wide insert/update policies, at
+  001_core_schema.sql:155-177 and 002_rls_policies.sql:224-243.
+- No job-initiated free-form WhatsApp message exists today, only template sends
+  (capture-ocr-probe §E).
+- docs/design-principles.md Rule 3.9 (Fast-Follow) describes engineer confirmation.
+- inbound-start.ts classifyAdhocInput: digits '3'-'7' reply "not available yet".
+- Branch fix/stale-flow-next-day exists and contains the stale-session fix.
+- Whether the §28(aa)(1) media blocker is fully cleared.
+- adhoc-menu-spec.md §c item 3 already requires a confirmation echo of the amount.
+- Item 3 was cut on 2026-09-03 under spec point 10.
+- 038 could not save partial hindrances because of a completed-report-only constraint.
 
 ## Open — not decided
 - O1: Does a delivery record rates/amounts, or quantity only?
