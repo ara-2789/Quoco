@@ -91,7 +91,10 @@ this is the same bucket the cross-tenant isolation suite
 (`test/storage-photo-access.test.ts`) ran its real 5/5 pass against (see
 that suite's own build/fix history, `docs/plans/stage0-storage-setup-
 plan.md` and the PR that carried it, for the full test evidence — not
-repeated here). Ledger repaired the same way as prod.
+repeated here). ~~Ledger repaired the same way as prod.~~
+
+**CORRECTION 2026-10-01:** test-db ledger had no 042 row (observed
+2026-10-01); repaired, see test-db-ledger-repair-2026-10-01.md.
 
 ## types/database.ts regeneration — DELIBERATELY NOT RUN, and why
 
