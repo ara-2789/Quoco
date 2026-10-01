@@ -77,8 +77,7 @@ export async function readCurrentFlow(
  * A stale previous-day session falls through to the ordinary idle path
  * instead of being treated as active and reset by the RPC's own BOT-07
  * handling (which replies with empty TwiML on a next-day reset — see
- * docs/reviews/adhoc-probe.txt / fix/stale-flow-next-day's own plan for the
- * bug this fixes).
+ * fix/stale-flow-next-day (PR description) for the bug this fixes).
  */
 export async function readActiveFlowForRouting(
   phoneNumber: string,
