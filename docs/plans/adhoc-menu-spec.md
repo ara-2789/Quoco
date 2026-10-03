@@ -354,6 +354,10 @@ download has never been built).
 - Q2: brief free text — what/how much, supplier if visible.
 - Buildable without media: **no**. Blocked on `§28(aa)(1)`.
 
+**DATED NOTE (2026-10-01):** design for items 3/4/5 now recorded in docs/plans/capture-engine-design.md
+(save-as-you-go, engineer states contents, background reading of printed documents). Whether the
+§28(aa)(1) media blocker is fully cleared was not re-verified in this note.
+
 **5. Invoice.**
 - Q1: photo of the invoice bill (**required**, same reasoning as item 4).
 - Q2: which earlier delivery this matches — the reconciliation step, and the one part of
@@ -366,6 +370,8 @@ download has never been built).
 - Buildable without media: **no** — blocked on `§28(aa)(1)` directly (its own photo) AND
   structurally on item 4 (nothing to reconcile against until material-received capture
   exists).
+
+**DATED NOTE (2026-10-01):** see docs/plans/capture-engine-design.md D2/D3.
 
 **6. Site document.**
 - Q1: which type — structured pick (test report / permit / RFI / pour card / MOM).
@@ -1039,6 +1045,9 @@ real egress (1, 2, 7) beats four where one goes nowhere. **The menu ships items 
 only.** Item 3's row number stays permanently reserved (per point 2 above, widened to
 include it) — it returns to the list the moment it has a real reader (a PM-facing expense
 queue view), not before, and not renumbered when it does.
+
+**DATED NOTE (2026-10-01):** item 3 returns as the second kind of the capture engine
+(docs/plans/capture-engine-design.md); the no-reader rule above still applies.
 
 **STATUS CHECK (2026-09-13, docs-rescue pass) — this section's own "none built" framing is
 now stale for item 1, current for the rest.** Confirmed against `main` directly (this is a
