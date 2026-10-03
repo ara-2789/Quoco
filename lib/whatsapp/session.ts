@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
+import { istDateString } from '@/lib/daily-logs/date'
 
 // Flow types allowed on whatsapp_sessions.current_flow (migration 001 CHECK).
 export type SessionFlow = 'morning' | 'evening' | 'safety' | 'invoice' | 'hindrance'
@@ -66,6 +67,41 @@ export async function readCurrentFlow(
 }
 
 /**
+ * Like readCurrentFlow, but for ROUTING only (routeInboundMessage) — treats
+ * a session whose updated_at falls on a different IST calendar day than
+ * `now` as NOT active, even if current_flow is still set. Matches
+ * quoco_same_ist_day's own Asia/Kolkata date-cast semantics
+ * (012_whatsapp_session_transition.sql:57-63) via istDateString
+ * (lib/daily-logs/date.ts), the same comparison already used project-wide
+ * for this exact question (lib/hindrance/queue.ts, lib/daily-logs/query.ts).
+ * A stale previous-day session falls through to the ordinary idle path
+ * instead of being treated as active and reset by the RPC's own BOT-07
+ * handling (which replies with empty TwiML on a next-day reset — see
+ * fix/stale-flow-next-day (PR description) for the bug this fixes).
+ */
+export async function readActiveFlowForRouting(
+  phoneNumber: string,
+  now: Date,
+  supabaseClient?: SupabaseClient,
+): Promise<SessionFlow | null> {
+  const supabase = supabaseClient ?? createServiceClient()
+
+  const { data, error } = await supabase
+    .from('whatsapp_sessions')
+    .select('current_flow, updated_at')
+    .eq('phone_number', phoneNumber)
+    .maybeSingle<{ current_flow: SessionFlow | null; updated_at: string }>()
+
+  if (error) {
+    throw new Error(`readActiveFlowForRouting failed for ${phoneNumber}: ${error.message}`)
+  }
+
+  if (!data || data.current_flow === null) return null
+  if (istDateString(now) !== istDateString(new Date(data.updated_at))) return null
+  return data.current_flow
+}
+
+/**
  * Atomically acquire the session row for a phone number and apply the BOT-07 /
  * BOT-21 transition, all inside ONE database transaction (a single Postgres
  * function — NOT multiple client calls, which would drop the row lock between
@@ -114,8 +150,11 @@ export async function acquireAndTransition(params: {
 }
 
 /**
- * Stage 3 (migration 045, HELD -- see docs/reviews/045-review-brief.md --
- * not applied to any database yet). Throttle for the idle-photo nudge: true
+ * Stage 3 (migration 045, ~~HELD -- see docs/reviews/045-review-brief.md --
+ * not applied to any database yet~~ -- DATED CORRECTION 2026-10-01: applied
+ * to both test-db and prod 2026-09-15, see
+ * docs/reviews/045-test-db-apply-record.md and
+ * docs/reviews/045-prod-apply-record.md). Throttle for the idle-photo nudge: true
  * the first time this is called for a phone number within
  * windowSeconds, or the first time again after that window has elapsed;
  * false for every call inside it. Same acquire-and-lock shape as
