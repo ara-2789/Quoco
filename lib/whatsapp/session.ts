@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
+import { istDateString } from '@/lib/daily-logs/date'
 
 // Flow types allowed on whatsapp_sessions.current_flow (migration 001 CHECK).
 export type SessionFlow = 'morning' | 'evening' | 'safety' | 'invoice' | 'hindrance'
@@ -63,6 +64,41 @@ export async function readCurrentFlow(
   }
 
   return data?.current_flow ?? null
+}
+
+/**
+ * Like readCurrentFlow, but for ROUTING only (routeInboundMessage) — treats
+ * a session whose updated_at falls on a different IST calendar day than
+ * `now` as NOT active, even if current_flow is still set. Matches
+ * quoco_same_ist_day's own Asia/Kolkata date-cast semantics
+ * (012_whatsapp_session_transition.sql:57-63) via istDateString
+ * (lib/daily-logs/date.ts), the same comparison already used project-wide
+ * for this exact question (lib/hindrance/queue.ts, lib/daily-logs/query.ts).
+ * A stale previous-day session falls through to the ordinary idle path
+ * instead of being treated as active and reset by the RPC's own BOT-07
+ * handling (which replies with empty TwiML on a next-day reset — see
+ * fix/stale-flow-next-day (PR description) for the bug this fixes).
+ */
+export async function readActiveFlowForRouting(
+  phoneNumber: string,
+  now: Date,
+  supabaseClient?: SupabaseClient,
+): Promise<SessionFlow | null> {
+  const supabase = supabaseClient ?? createServiceClient()
+
+  const { data, error } = await supabase
+    .from('whatsapp_sessions')
+    .select('current_flow, updated_at')
+    .eq('phone_number', phoneNumber)
+    .maybeSingle<{ current_flow: SessionFlow | null; updated_at: string }>()
+
+  if (error) {
+    throw new Error(`readActiveFlowForRouting failed for ${phoneNumber}: ${error.message}`)
+  }
+
+  if (!data || data.current_flow === null) return null
+  if (istDateString(now) !== istDateString(new Date(data.updated_at))) return null
+  return data.current_flow
 }
 
 /**
