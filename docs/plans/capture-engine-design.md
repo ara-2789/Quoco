@@ -124,6 +124,36 @@ Recorded so they are not lost. None of these is a decision until Aravind confirm
 - O14: D2 calls handwritten reading "not a priority". On 2026-10-04 Aravind said machine
   reading is a must. Does that include handwritten DCs?
 
+### Confirmed later on 2026-10-04
+Per Aravind, not observed in code. These lines update the proposals and open items above.
+- P1 confirmed: one menu entry with sub-types DC / invoice / GRN, in place of items 4
+  and 5. Digit 5 retires and is never reused (O8). The wording is still not an approved
+  string. Cofounder confirmation (O3) is still open.
+- P2 confirmed in part: the delivery is the anchor in the schema. In slice 1, the
+  engineer's GRN creates the delivery. "Expected" deliveries opened by a vendor-sent DC
+  are deferred.
+- P3 rejected for now: the bot does not echo the typed rate.
+- P4 confirmed in this form: when the engineer sends a DC, the bot asks for the GRN in
+  the same flow and links that GRN to that DC. If the engineer leaves the flow, the DC is
+  saved and the PM dashboard shows it as not acknowledged. No reminder goes to the
+  engineer in slice 1.
+- O12 answered: no wait. The PM sees an unacknowledged DC immediately.
+- Invoice in slice 1: the bot does not ask for a GRN after an invoice. The invoice is
+  saved on its own. The PM links it to a delivery on the dashboard.
+- O14 answered: machine reading of DCs is in slice 1, handwritten DCs included. This
+  reverses D2's "handwritten reading is not a priority". D2 is left as written above.
+- Rule 3.9 in docs/design-principles.md is changed for capture-engine machine reading:
+  the PM checks the machine reading on the dashboard. The engineer does not see it or
+  confirm it. See the correction note under Rule 3.9.
+
+### More open items, 2026-10-04
+- O15: How does an engineer link an invoice to a delivery on WhatsApp? Deferred. In
+  slice 1 the PM links them on the dashboard.
+- O16: A reminder to the engineer for an unacknowledged DC. Needs a template decision
+  (see O10). Deferred.
+- O17: How a vendor-sent DC matches a later GRN when "expected" deliveries are built.
+  Two trucks from one vendor on one day make the match ambiguous. Deferred.
+
 ## Open — not decided
 (Kept as originally written. O1, O2, O4 and O5 were answered on 2026-10-04: see above.)
 - O1: Does a delivery record rates/amounts, or quantity only?
