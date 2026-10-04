@@ -132,7 +132,10 @@ Per Aravind, not observed in code. These lines update the proposals and open ite
 - P2 confirmed in part: the delivery is the anchor in the schema. In slice 1, the
   engineer's GRN creates the delivery. "Expected" deliveries opened by a vendor-sent DC
   are deferred.
-- P3 rejected for now: the bot does not echo the typed rate.
+- ~~P3 rejected for now: the bot does not echo the typed rate.~~
+  Corrected 2026-10-04, per Aravind: P3's forced confirmation is rejected. The bot
+  still echoes the typed rate under Rule 3.4, with confirmation by silence. The
+  engineer never has to reply "yes".
 - P4 confirmed in this form: when the engineer sends a DC, the bot asks for the GRN in
   the same flow and links that GRN to that DC. If the engineer leaves the flow, the DC is
   saved and the PM dashboard shows it as not acknowledged. No reminder goes to the
@@ -145,6 +148,9 @@ Per Aravind, not observed in code. These lines update the proposals and open ite
 - Rule 3.9 in docs/design-principles.md is changed for capture-engine machine reading:
   the PM checks the machine reading on the dashboard. The engineer does not see it or
   confirm it. See the correction note under Rule 3.9.
+- Invoices in slice 1 are machine-read. The PM checks the machine reading on the
+  dashboard. The engineer adds only a description of the values (see O18). See the
+  second correction note under Rule 3.9.
 
 ### More open items, 2026-10-04
 - O15: How does an engineer link an invoice to a delivery on WhatsApp? Deferred. In
@@ -153,6 +159,8 @@ Per Aravind, not observed in code. These lines update the proposals and open ite
   (see O10). Deferred.
 - O17: How a vendor-sent DC matches a later GRN when "expected" deliveries are built.
   Two trucks from one vendor on one day make the match ambiguous. Deferred.
+- O18: What does the engineer's description of invoice values contain: free text, or
+  specific fields such as amount and date? Wording owed.
 
 ## Open — not decided
 (Kept as originally written. O1, O2, O4 and O5 were answered on 2026-10-04: see above.)
