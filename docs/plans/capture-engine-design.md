@@ -83,7 +83,49 @@ before any build relies on it.
 - Item 3 was cut on 2026-09-03 under spec point 10.
 - 038 could not save partial hindrances because of a completed-report-only constraint.
 
+## Answers and decisions, 2026-10-04
+Recorded from a design-review session. Per Aravind, not observed in code.
+- O1 answered: the engineer reports both rates and quantities.
+- O2 answered: summaries of delivered items and site documents appear in the owner's
+  nightly report.
+- O4 answered: about 60% handwritten, 40% printed. Machine reading is a must.
+  See O14.
+- O5 answered: photos are kept for the duration of the project. See O9.
+- The DC is the vendor's document: what the vendor says was sent. The GRN (goods receipt
+  note) is the engineer's acknowledgment of what arrived. The engineer reports both.
+- The GRN is the WhatsApp record, stamped with the site engineer's name. No paper GRN.
+- A GRN becomes the record for the owner only after the PM approves it. Unapproved GRNs
+  do not count. This is consistent with D2.
+
+### Proposed, NOT agreed
+Recorded so they are not lost. None of these is a decision until Aravind confirms it.
+- P1: One menu entry, proposed wording "What are you uploading today?", with sub-types
+  DC / invoice / GRN, in place of separate items 4 and 5. Pending Aravind (O3). The
+  wording is a proposal, not an approved string. If adopted, D3's build order needs
+  revisiting.
+- P2: The delivery is the anchor. DC, GRN and invoice attach to it in any order. A DC
+  received on WhatsApp before the truck opens an "expected" delivery. The engineer's GRN
+  attaches to it on arrival.
+- P3: The bot echoes the rate back for the engineer to confirm, as item 3 does for
+  amounts.
+- P4: A DC with no GRN after a set time shows to the PM as sent but not acknowledged.
+
+### New open items
+- O8: Menu numbering if items 4 and 5 merge. The spec says row numbers are never reused
+  or renumbered. What happens to digit 5?
+- O9: What event ends "the duration of the project" for photo retention?
+- O10: Does adding deliveries to the owner's nightly report need a WhatsApp template
+  change and Meta approval? Not checked.
+- O11: Does the inbound pipeline accept PDF documents, such as a printed DC forwarded on
+  WhatsApp? Not checked.
+- O12: After how long is an unacknowledged DC flagged (if P4 is adopted)?
+- O13: Still needed: 15-20 real DC/GRN/invoice photos for the accuracy set, stored
+  outside the repo.
+- O14: D2 calls handwritten reading "not a priority". On 2026-10-04 Aravind said machine
+  reading is a must. Does that include handwritten DCs?
+
 ## Open — not decided
+(Kept as originally written. O1, O2, O4 and O5 were answered on 2026-10-04: see above.)
 - O1: Does a delivery record rates/amounts, or quantity only?
 - O2: Do confirmed deliveries appear in the owner's nightly report, or only the PM page?
 - O3: Deliveries page — confirmation with cofounder.
