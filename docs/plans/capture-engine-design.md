@@ -162,6 +162,18 @@ Per Aravind, not observed in code. These lines update the proposals and open ite
 - O18: What does the engineer's description of invoice values contain: free text, or
   specific fields such as amount and date? Wording owed.
 
+### Answered 2026-10-05
+Per Aravind, not observed in code.
+- O3 closed: Aravind and the cofounder both agree to the single menu entry (P1) and the
+  PM page. The cofounder's agreement is per Aravind, not observed.
+- The PM page is labelled "Material Inward". This is an approved English user-facing
+  string. Tamil owed, NOT approved. The label applies to the page only. This record, the
+  tables and the code keep the word "delivery".
+- O18 answered: with an invoice, the engineer enters a description, the quantity if it
+  applies, and the total amount. Machine reading extracts the individual line items.
+- For a delivery, the engineer reports rates and quantities per item (O1). For an
+  invoice, the engineer reports one total amount (O18).
+
 ## Open — not decided
 (Kept as originally written. O1, O2, O4 and O5 were answered on 2026-10-04: see above.)
 - O1: Does a delivery record rates/amounts, or quantity only?
