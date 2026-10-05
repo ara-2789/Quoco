@@ -133,7 +133,6 @@ export async function triggerWithRetryBudget(
  */
 export function reportRetryBudgetExhausted(
   engineerId: string,
-  whatsappNumber: string,
   checkpoint: Checkpoint,
   logDate: string,
 ): void {
@@ -145,11 +144,10 @@ export function reportRetryBudgetExhausted(
       tags: { feature: 'outbound-send', checkpoint },
       extra: {
         engineer_id: engineerId,
-        whatsapp_number: whatsappNumber,
         checkpoint,
         log_date: logDate,
         max_attempts: MAX_ATTEMPTS,
-        action_required: `Send the ${checkpoint} check-in template to ${whatsappNumber} manually -- this engineer's automatic send exhausted its retry budget and nothing else will retry it today.`,
+        action_required: `Send the ${checkpoint} check-in template to engineer ${engineerId} manually (look up their WhatsApp number in the database by this engineer_id) -- this engineer's automatic send exhausted its retry budget and nothing else will retry it today.`,
       },
     },
   )
@@ -177,7 +175,7 @@ async function triggerForEngineer(
   })
 
   if (outcome.outcome === 'rate_limited' && attempts >= MAX_ATTEMPTS) {
-    reportRetryBudgetExhausted(engineer.engineer_id, engineer.whatsapp_number, checkpoint, logDate)
+    reportRetryBudgetExhausted(engineer.engineer_id, checkpoint, logDate)
   }
 
   return {

@@ -677,7 +677,7 @@ async function handleIdlePhoto(params: RouteParams, supabase: SupabaseClient): P
     Sentry.captureException(err, {
       fingerprint: ['media-nudge-throttle', 'claim_media_nudge_failed'],
       tags: { feature: 'media-nudge-throttle' },
-      extra: { phoneNumber: params.phoneNumber, tenantId: params.tenantId, projectId: params.projectId },
+      extra: { tenantId: params.tenantId, projectId: params.projectId },
     })
     // Fail open -- see this function's own header for why silence is the
     // worse failure mode here. Falls straight through to the same

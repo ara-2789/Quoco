@@ -247,7 +247,7 @@ export async function applyHindranceFlowTurn(params: {
         {
           fingerprint: ['hindrance-flow', 'completion_missing_hindrance_id'],
           tags: { feature: 'hindrance-flow' },
-          extra: { phoneNumber: params.phoneNumber, projectId: params.projectId, userId: params.userId },
+          extra: { projectId: params.projectId, userId: params.userId },
         },
       )
     }
