@@ -20,7 +20,7 @@ import {
 import { MORNING_QUESTIONS } from '@/lib/whatsapp/flows/morning'
 import { EVENING_QUESTIONS } from '@/lib/whatsapp/flows/evening'
 import { buildIdleReply } from '@/lib/whatsapp/inbound-start'
-import { MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, VOICE_REPLY } from '@/lib/whatsapp/media-reply'
+import { MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, VOICE_REPLY, UNSUPPORTED_MEDIA_REPLY } from '@/lib/whatsapp/media-reply'
 import { ZERO_MEMBERSHIPS_REPLY, MULTIPLE_MEMBERSHIPS_REPLY } from '@/lib/whatsapp/project-resolution'
 
 // T-WH: the HTTP-level webhook harness named in CLAUDE.md's TESTING DEBT entry
@@ -548,6 +548,224 @@ describe('handleWebhookPost — media replies', () => {
     const res = await handleWebhookPost(req, { supabaseClient: testClient() })
     expect(res.status).toBe(200)
     expect(await twimlText(res)).toBe(VOICE_REPLY)
+    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
+  })
+
+  // --- Block E (2026-10-05): only images enter photo ingest -----------------
+  // T-WH-17..T-WH-25. Shared assertions for every unsupported-media case:
+  // 200, the exact UNSUPPORTED_MEDIA_REPLY, the SID consumed, and NO ingest
+  // job carrying this message's media URL. The idle cases additionally
+  // assert no session row was created; the active-morning cases assert the
+  // session step did not move and nothing was written to the answer column.
+  // UNSUPPORTED_MEDIA_REPLY itself is NOT approved copy (Aravind to approve).
+  async function expectUnsupportedReply(
+    res: Response,
+    messageSid: string,
+    urlMarker: string,
+  ): Promise<void> {
+    expect(res.status).toBe(200)
+    expect(await twimlText(res)).toBe(UNSUPPORTED_MEDIA_REPLY)
+    expect(await wasProcessed(messageSid)).toBe(true)
+    const { data: jobs, error } = await testClient()
+      .from('jobs')
+      .select('payload')
+      .in('type', ['media_ingest', 'hindrance_media_ingest'])
+    if (error) throw new Error(`job lookup failed: ${error.message}`)
+    const leaked = (jobs ?? []).filter((j) => JSON.stringify(j.payload).includes(urlMarker))
+    expect(leaked).toHaveLength(0)
+  }
+
+  async function seedActiveMorning(): Promise<void> {
+    await seedSession({
+      phone: TEST_ENGINEER_PHONE,
+      currentFlow: 'morning',
+      currentStep: 2,
+      context: {},
+      updatedAt: new Date().toISOString(),
+    })
+  }
+
+  async function expectActiveMorningUntouched(): Promise<void> {
+    expect((await readSession(TEST_ENGINEER_PHONE))?.current_step).toBe(2)
+    expect((await getDailyLog(todayIST()))?.morning_plan).toBeFalsy()
+  }
+
+  it('T-WH-17 (W1): a pdf at idle gets UNSUPPORTED_MEDIA_REPLY, nothing stored, no session created', async () => {
+    const messageSid = sid('media-pdf-idle')
+    const marker = `ZZTestWebhook-${RUN_TAG}-pdf-idle`
+    const res = await handleWebhookPost(
+      buildWebhookRequest({
+        From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+        Body: '',
+        NumMedia: '1',
+        MediaContentType0: 'application/pdf',
+        MediaUrl0: `https://api.twilio.com/media/${marker}`,
+        MessageSid: messageSid,
+      }),
+      { supabaseClient: testClient() },
+    )
+    await expectUnsupportedReply(res, messageSid, marker)
+    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
+  })
+
+  it('T-WH-18 (W2): a pdf sent mid-flow (active morning) gets UNSUPPORTED_MEDIA_REPLY, step stays 2, nothing stored', async () => {
+    await seedActiveMorning()
+    const messageSid = sid('media-pdf-morning')
+    const marker = `ZZTestWebhook-${RUN_TAG}-pdf-morning`
+    const res = await handleWebhookPost(
+      buildWebhookRequest({
+        From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+        Body: '',
+        NumMedia: '1',
+        MediaContentType0: 'application/pdf',
+        MediaUrl0: `https://api.twilio.com/media/${marker}`,
+        MessageSid: messageSid,
+      }),
+      { supabaseClient: testClient() },
+    )
+    await expectUnsupportedReply(res, messageSid, marker)
+    await expectActiveMorningUntouched()
+  })
+
+  it('T-WH-19 (W3): a video at idle gets UNSUPPORTED_MEDIA_REPLY, nothing stored, no session created', async () => {
+    const messageSid = sid('media-video-idle')
+    const marker = `ZZTestWebhook-${RUN_TAG}-video-idle`
+    const res = await handleWebhookPost(
+      buildWebhookRequest({
+        From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+        Body: '',
+        NumMedia: '1',
+        MediaContentType0: 'video/mp4',
+        MediaUrl0: `https://api.twilio.com/media/${marker}`,
+        MessageSid: messageSid,
+      }),
+      { supabaseClient: testClient() },
+    )
+    await expectUnsupportedReply(res, messageSid, marker)
+    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
+  })
+
+  it('T-WH-20 (W4): a video sent mid-flow (active morning) gets UNSUPPORTED_MEDIA_REPLY, step stays 2, nothing stored', async () => {
+    await seedActiveMorning()
+    const messageSid = sid('media-video-morning')
+    const marker = `ZZTestWebhook-${RUN_TAG}-video-morning`
+    const res = await handleWebhookPost(
+      buildWebhookRequest({
+        From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+        Body: '',
+        NumMedia: '1',
+        MediaContentType0: 'video/mp4',
+        MediaUrl0: `https://api.twilio.com/media/${marker}`,
+        MessageSid: messageSid,
+      }),
+      { supabaseClient: testClient() },
+    )
+    await expectUnsupportedReply(res, messageSid, marker)
+    await expectActiveMorningUntouched()
+  })
+
+  it('T-WH-21 (W5): jpeg + pdf at idle is unsupported as a whole -- the jpeg is NOT stored either', async () => {
+    const messageSid = sid('media-jpeg-pdf-idle')
+    const marker = `ZZTestWebhook-${RUN_TAG}-jpeg-pdf-idle`
+    const res = await handleWebhookPost(
+      buildWebhookRequest({
+        From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+        Body: '',
+        NumMedia: '2',
+        MediaContentType0: 'image/jpeg',
+        MediaUrl0: `https://api.twilio.com/media/${marker}-0`,
+        MediaContentType1: 'application/pdf',
+        MediaUrl1: `https://api.twilio.com/media/${marker}-1`,
+        MessageSid: messageSid,
+      }),
+      { supabaseClient: testClient() },
+    )
+    await expectUnsupportedReply(res, messageSid, marker)
+    expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
+  })
+
+  it('T-WH-22 (W6): jpeg + pdf mid-flow (active morning) is unsupported as a whole -- the jpeg is NOT stored, step stays 2', async () => {
+    await seedActiveMorning()
+    const messageSid = sid('media-jpeg-pdf-morning')
+    const marker = `ZZTestWebhook-${RUN_TAG}-jpeg-pdf-morning`
+    const res = await handleWebhookPost(
+      buildWebhookRequest({
+        From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+        Body: '',
+        NumMedia: '2',
+        MediaContentType0: 'image/jpeg',
+        MediaUrl0: `https://api.twilio.com/media/${marker}-0`,
+        MediaContentType1: 'application/pdf',
+        MediaUrl1: `https://api.twilio.com/media/${marker}-1`,
+        MessageSid: messageSid,
+      }),
+      { supabaseClient: testClient() },
+    )
+    await expectUnsupportedReply(res, messageSid, marker)
+    await expectActiveMorningUntouched()
+  })
+
+  it('T-WH-23 (W7): a jpeg WITH MediaUrl0 at idle is unchanged -- the idle nudge, not the unsupported reply', async () => {
+    const res = await handleWebhookPost(
+      buildWebhookRequest({
+        From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+        Body: '',
+        NumMedia: '1',
+        MediaContentType0: 'image/jpeg',
+        MediaUrl0: `https://api.twilio.com/media/ZZTestWebhook-${RUN_TAG}-jpeg-idle-w7`,
+        MessageSid: sid('media-jpeg-idle-w7'),
+      }),
+      { supabaseClient: testClient() },
+    )
+    expect(res.status).toBe(200)
+    const reply = await twimlText(res)
+    expect(reply).not.toBeNull()
+    expect(reply).not.toBe(UNSUPPORTED_MEDIA_REPLY)
+    expect(reply!.startsWith(`${MEDIA_NUDGE_REPLY}\n${MEDIA_NUDGE_PROGRESS_LINE}\n`)).toBe(true)
+  })
+
+  it('T-WH-24 (W10): audio sent mid-flow (active morning) still gets VOICE_REPLY, step stays 2, nothing stored', async () => {
+    await seedActiveMorning()
+    const messageSid = sid('media-audio-morning')
+    const marker = `ZZTestWebhook-${RUN_TAG}-audio-morning`
+    const res = await handleWebhookPost(
+      buildWebhookRequest({
+        From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+        Body: '',
+        NumMedia: '1',
+        MediaContentType0: 'audio/ogg; codecs=opus',
+        MediaUrl0: `https://api.twilio.com/media/${marker}`,
+        MessageSid: messageSid,
+      }),
+      { supabaseClient: testClient() },
+    )
+    expect(res.status).toBe(200)
+    expect(await twimlText(res)).toBe(VOICE_REPLY)
+    await expectActiveMorningUntouched()
+    const { data: jobs, error } = await testClient()
+      .from('jobs')
+      .select('payload')
+      .in('type', ['media_ingest', 'hindrance_media_ingest'])
+    if (error) throw new Error(`job lookup failed: ${error.message}`)
+    expect((jobs ?? []).filter((j) => JSON.stringify(j.payload).includes(marker))).toHaveLength(0)
+  })
+
+  it('T-WH-25 (W11): a pdf with a caption Body at idle gets UNSUPPORTED_MEDIA_REPLY -- the caption is not parsed as text', async () => {
+    const messageSid = sid('media-pdf-caption-idle')
+    const marker = `ZZTestWebhook-${RUN_TAG}-pdf-caption-idle`
+    const res = await handleWebhookPost(
+      buildWebhookRequest({
+        From: `whatsapp:${TEST_ENGINEER_PHONE}`,
+        Body: 'morning plan: pour slab on level 2',
+        NumMedia: '1',
+        MediaContentType0: 'application/pdf',
+        MediaUrl0: `https://api.twilio.com/media/${marker}`,
+        MessageSid: messageSid,
+      }),
+      { supabaseClient: testClient() },
+    )
+    await expectUnsupportedReply(res, messageSid, marker)
+    // Caption never reached the text path: no session, no flow started.
     expect(await readSession(TEST_ENGINEER_PHONE)).toBeNull()
   })
 })
