@@ -592,7 +592,7 @@ describe('handleWebhookPost — media replies', () => {
 
   it('T-WH-17 (W1): a pdf at idle gets UNSUPPORTED_MEDIA_REPLY, nothing stored, no session created', async () => {
     const messageSid = sid('media-pdf-idle')
-    const marker = 'ZZTestPdfIdle'
+    const marker = `ZZTestWebhook-${RUN_TAG}-pdf-idle`
     const res = await handleWebhookPost(
       buildWebhookRequest({
         From: `whatsapp:${TEST_ENGINEER_PHONE}`,
@@ -611,7 +611,7 @@ describe('handleWebhookPost — media replies', () => {
   it('T-WH-18 (W2): a pdf sent mid-flow (active morning) gets UNSUPPORTED_MEDIA_REPLY, step stays 2, nothing stored', async () => {
     await seedActiveMorning()
     const messageSid = sid('media-pdf-morning')
-    const marker = 'ZZTestPdfMorning'
+    const marker = `ZZTestWebhook-${RUN_TAG}-pdf-morning`
     const res = await handleWebhookPost(
       buildWebhookRequest({
         From: `whatsapp:${TEST_ENGINEER_PHONE}`,
@@ -629,7 +629,7 @@ describe('handleWebhookPost — media replies', () => {
 
   it('T-WH-19 (W3): a video at idle gets UNSUPPORTED_MEDIA_REPLY, nothing stored, no session created', async () => {
     const messageSid = sid('media-video-idle')
-    const marker = 'ZZTestVideoIdle'
+    const marker = `ZZTestWebhook-${RUN_TAG}-video-idle`
     const res = await handleWebhookPost(
       buildWebhookRequest({
         From: `whatsapp:${TEST_ENGINEER_PHONE}`,
@@ -648,7 +648,7 @@ describe('handleWebhookPost — media replies', () => {
   it('T-WH-20 (W4): a video sent mid-flow (active morning) gets UNSUPPORTED_MEDIA_REPLY, step stays 2, nothing stored', async () => {
     await seedActiveMorning()
     const messageSid = sid('media-video-morning')
-    const marker = 'ZZTestVideoMorning'
+    const marker = `ZZTestWebhook-${RUN_TAG}-video-morning`
     const res = await handleWebhookPost(
       buildWebhookRequest({
         From: `whatsapp:${TEST_ENGINEER_PHONE}`,
@@ -666,7 +666,7 @@ describe('handleWebhookPost — media replies', () => {
 
   it('T-WH-21 (W5): jpeg + pdf at idle is unsupported as a whole -- the jpeg is NOT stored either', async () => {
     const messageSid = sid('media-jpeg-pdf-idle')
-    const marker = 'ZZTestJpegPdfIdle'
+    const marker = `ZZTestWebhook-${RUN_TAG}-jpeg-pdf-idle`
     const res = await handleWebhookPost(
       buildWebhookRequest({
         From: `whatsapp:${TEST_ENGINEER_PHONE}`,
@@ -687,7 +687,7 @@ describe('handleWebhookPost — media replies', () => {
   it('T-WH-22 (W6): jpeg + pdf mid-flow (active morning) is unsupported as a whole -- the jpeg is NOT stored, step stays 2', async () => {
     await seedActiveMorning()
     const messageSid = sid('media-jpeg-pdf-morning')
-    const marker = 'ZZTestJpegPdfMorning'
+    const marker = `ZZTestWebhook-${RUN_TAG}-jpeg-pdf-morning`
     const res = await handleWebhookPost(
       buildWebhookRequest({
         From: `whatsapp:${TEST_ENGINEER_PHONE}`,
@@ -712,7 +712,7 @@ describe('handleWebhookPost — media replies', () => {
         Body: '',
         NumMedia: '1',
         MediaContentType0: 'image/jpeg',
-        MediaUrl0: 'https://api.twilio.com/media/ZZTestJpegIdleW7',
+        MediaUrl0: `https://api.twilio.com/media/ZZTestWebhook-${RUN_TAG}-jpeg-idle-w7`,
         MessageSid: sid('media-jpeg-idle-w7'),
       }),
       { supabaseClient: testClient() },
@@ -727,7 +727,7 @@ describe('handleWebhookPost — media replies', () => {
   it('T-WH-24 (W10): audio sent mid-flow (active morning) still gets VOICE_REPLY, step stays 2, nothing stored', async () => {
     await seedActiveMorning()
     const messageSid = sid('media-audio-morning')
-    const marker = 'ZZTestAudioMorning'
+    const marker = `ZZTestWebhook-${RUN_TAG}-audio-morning`
     const res = await handleWebhookPost(
       buildWebhookRequest({
         From: `whatsapp:${TEST_ENGINEER_PHONE}`,
@@ -752,7 +752,7 @@ describe('handleWebhookPost — media replies', () => {
 
   it('T-WH-25 (W11): a pdf with a caption Body at idle gets UNSUPPORTED_MEDIA_REPLY -- the caption is not parsed as text', async () => {
     const messageSid = sid('media-pdf-caption-idle')
-    const marker = 'ZZTestPdfCaptionIdle'
+    const marker = `ZZTestWebhook-${RUN_TAG}-pdf-caption-idle`
     const res = await handleWebhookPost(
       buildWebhookRequest({
         From: `whatsapp:${TEST_ENGINEER_PHONE}`,
