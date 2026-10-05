@@ -7,6 +7,7 @@ import {
   MEDIA_NUDGE_PROGRESS_LINE,
   MEDIA_NUDGE_WINDOW_SECONDS,
   VOICE_REPLY,
+  UNSUPPORTED_MEDIA_REPLY,
 } from '@/lib/whatsapp/media-reply'
 
 describe('classifyMediaReply', () => {
@@ -28,12 +29,79 @@ describe('classifyMediaReply', () => {
     ).toBe('voice')
   })
 
-  it('defaults to photo when NumMedia > 0 but content-type is missing', () => {
-    expect(classifyMediaReply({ NumMedia: '1' })).toBe('photo')
+  // Changed 2026-10-05, option A strict (Aravind). Was: 'defaults to photo
+  // when NumMedia > 0 but content-type is missing' -> 'photo'.
+  it('treats NumMedia > 0 with a missing content-type as unsupported (option A, strict)', () => {
+    expect(classifyMediaReply({ NumMedia: '1' })).toBe('unsupported')
   })
 
-  it('classifies a multi-item media message by the first item only', () => {
-    expect(classifyMediaReply({ NumMedia: '3', MediaContentType0: 'image/png' })).toBe('photo')
+  // Changed 2026-10-05, option A strict (Aravind). Was: 'classifies a
+  // multi-item media message by the first item only' -> 'photo'. Items 1-2
+  // carry no type here, so the message is no longer all-image.
+  it('treats a multi-item message with untyped later items as unsupported (option A, strict)', () => {
+    expect(classifyMediaReply({ NumMedia: '3', MediaContentType0: 'image/png' })).toBe('unsupported')
+  })
+
+  it('U1: a pdf alone is unsupported', () => {
+    expect(classifyMediaReply({ NumMedia: '1', MediaContentType0: 'application/pdf' })).toBe('unsupported')
+  })
+
+  it('U2: video/mp4 alone is unsupported', () => {
+    expect(classifyMediaReply({ NumMedia: '1', MediaContentType0: 'video/mp4' })).toBe('unsupported')
+  })
+
+  it('U3: image/jpeg + pdf is unsupported', () => {
+    expect(
+      classifyMediaReply({
+        NumMedia: '2',
+        MediaContentType0: 'image/jpeg',
+        MediaContentType1: 'application/pdf',
+      }),
+    ).toBe('unsupported')
+  })
+
+  it('U4: image/jpeg alone is a photo', () => {
+    expect(classifyMediaReply({ NumMedia: '1', MediaContentType0: 'image/jpeg' })).toBe('photo')
+  })
+
+  it('U5: audio/ogg alone is voice', () => {
+    expect(classifyMediaReply({ NumMedia: '1', MediaContentType0: 'audio/ogg' })).toBe('voice')
+  })
+
+  it('U6: audio on item 0 wins over a pdf on item 1 (voice)', () => {
+    expect(
+      classifyMediaReply({
+        NumMedia: '2',
+        MediaContentType0: 'audio/ogg',
+        MediaContentType1: 'application/pdf',
+      }),
+    ).toBe('voice')
+  })
+
+  it('U7: NumMedia 1 with image/png and no MediaUrl0 is still a photo (classification never reads URLs)', () => {
+    expect(classifyMediaReply({ NumMedia: '1', MediaContentType0: 'image/png' })).toBe('photo')
+  })
+
+  it('U8: image/jpeg + audio on item 1 is unsupported (audio only wins on item 0)', () => {
+    expect(
+      classifyMediaReply({
+        NumMedia: '2',
+        MediaContentType0: 'image/jpeg',
+        MediaContentType1: 'audio/ogg',
+      }),
+    ).toBe('unsupported')
+  })
+
+  it('U9: content type is trimmed and case-insensitive ("IMAGE/JPEG; q=1" is a photo)', () => {
+    expect(classifyMediaReply({ NumMedia: '1', MediaContentType0: 'IMAGE/JPEG; q=1' })).toBe('photo')
+  })
+
+  it('U12a: NumMedia 1 with no type at all is unsupported', () => {
+    expect(classifyMediaReply({ NumMedia: '1' })).toBe('unsupported')
+  })
+
+  it('U12b: NumMedia 3 with only MediaContentType0 image/png is unsupported', () => {
+    expect(classifyMediaReply({ NumMedia: '3', MediaContentType0: 'image/png' })).toBe('unsupported')
   })
 })
 
@@ -45,6 +113,18 @@ describe('replyForMediaKind', () => {
   // returned synchronously by this function any more.
   it('returns the voice reply', () => {
     expect(replyForMediaKind('voice')).toBe(VOICE_REPLY)
+  })
+
+  it('U13b: returns UNSUPPORTED_MEDIA_REPLY for unsupported', () => {
+    expect(replyForMediaKind('unsupported')).toBe(UNSUPPORTED_MEDIA_REPLY)
+  })
+})
+
+describe('UNSUPPORTED_MEDIA_REPLY copy (NOT approved -- needs Aravind\'s approval before merge)', () => {
+  it('U13a: equals the exact string', () => {
+    expect(UNSUPPORTED_MEDIA_REPLY).toBe(
+      "This file type isn't supported yet. Nothing was saved. Please send a photo instead.",
+    )
   })
 })
 
@@ -107,7 +187,11 @@ describe('extractMediaItems', () => {
     ])
   })
 
-  it('defaults a missing content type to application/octet-stream and skips a missing URL', () => {
+  // Changed 2026-10-05, option A strict (Aravind). Was: 'defaults a missing
+  // content type to application/octet-stream and skips a missing URL' ->
+  // [{ url: 'url-0', contentType: 'application/octet-stream' }]. An item with
+  // no content type is now dropped, as is an item with no URL.
+  it('drops an item with no content type and skips a missing URL (option A, strict)', () => {
     expect(
       extractMediaItems({
         NumMedia: '2',
@@ -116,6 +200,28 @@ describe('extractMediaItems', () => {
         // MediaUrl1 deliberately absent -- NumMedia claims 2, only 1 real item
         MediaContentType1: 'image/png',
       }),
-    ).toEqual([{ url: 'url-0', contentType: 'application/octet-stream' }])
+    ).toEqual([])
+  })
+
+  it('U10: keeps the jpeg item and drops the pdf item', () => {
+    expect(
+      extractMediaItems({
+        NumMedia: '2',
+        MediaUrl0: 'url-0',
+        MediaContentType0: 'image/jpeg',
+        MediaUrl1: 'url-1',
+        MediaContentType1: 'application/pdf',
+      }),
+    ).toEqual([{ url: 'url-0', contentType: 'image/jpeg' }])
+  })
+
+  it('U11: a pdf alone yields []', () => {
+    expect(
+      extractMediaItems({ NumMedia: '1', MediaUrl0: 'url-0', MediaContentType0: 'application/pdf' }),
+    ).toEqual([])
+  })
+
+  it('U12c: an item with a URL but no content type is dropped', () => {
+    expect(extractMediaItems({ NumMedia: '1', MediaUrl0: 'url-0' })).toEqual([])
   })
 })
