@@ -192,7 +192,7 @@ Source: docs/reviews/2026-10-05-capture-block-a-probes.txt, a read-only probe of
 ### Verdicts on the nine unverified claims (lines 74-84)
 1. VERIFIED (observed). Addition: migration 047:229 drops invoices_delete. The single-column FKs remain. The hardening at line 51 still applies.
 2. TRUE BY CODE (observed, send.ts:223-229 sends no Body field). The cited source "capture-ocr-probe §E" does not exist in the repo. The source cannot be checked.
-3. VERIFIED (observed, design-principles.md:37). That rule text was stale against this record. Corrected 2026-10-05 in design-principles.md.
+3. VERIFIED (observed, design-principles.md:37). Two corrections dated 2026-10-04 sit directly below that line and already carry this record's decisions. The 2026-10-05 probe printed line 37 only and missed them. design-principles.md needs no change.
 4. VERIFIED in behaviour (observed, inbound-start.ts:263 and :350). The code string is "That option isn't available yet. Nothing was recorded."
 5. VERIFIED (observed). The branch merged as #319, a81b5c3.
 6. PARTLY CLEARED (observed). The Twilio media download exists for an active morning, evening or hindrance flow. A photo sent with no active flow is discarded (inbound-start.ts:925-926). No ingest path exists for menu items 3-6. Slice 1 needs its own ingest path.
@@ -203,9 +203,10 @@ Source: docs/reviews/2026-10-05-capture-block-a-probes.txt, a read-only probe of
 ### Open items answered or added
 - O10 ANSWERED. The owner nightly report is email (observed, owner-deliver-dispatch.ts:470). Delivery items go in the email. No template or Meta approval is needed. Per Aravind 2026-10-05: email is the channel for now.
 - O19 NEW, DEFERRED (per Aravind 2026-10-05): a WhatsApp alert to the owner and PM when materials arrive. Later version. It needs a new template and Meta approval when built.
-- O11 ANSWERED (code path observed, not exercised). Every inbound media type except audio is classified as a photo (media-reply.ts:102), including PDF and video. During an active flow, the file is stored under a .jpg path and can reach the owner's email as an attachment. With no active flow, the file is discarded with "Photo not saved". Fix in progress on branch fix/media-image-only.
+- O11 ANSWERED (code path observed, not exercised). Every inbound media type except audio is classified as a photo (media-reply.ts:102), including PDF and video. During an active flow, the file is stored under a .jpg path and can reach the owner's email as an attachment. With no active flow, the file is discarded with "Photo not saved". Fix planned on branch fix/media-image-only (plan written 2026-10-05; no code yet).
 - O20 NEW, OPEN: media ingest has no size cap (ingest.ts:118 buffers the whole file). After fix/media-image-only, the remaining exposure is an image sent as an uncompressed document.
 - No code sends an image or document to the Claude API today (observed). Slice 1 builds the first such path.
+- Open tension (per Aravind 2026-10-05): slice 1 asks the engineer to type GRN quantities and rates that the DC photo already holds (Rule 3.9, media-first). The slice 1 plan must address it.
 
 ### O4 conflict, not resolved
 - Per Aravind 2026-10-04 (O4): about 60% of documents are handwritten.
