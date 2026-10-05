@@ -45,7 +45,7 @@
 // that actually reads MediaUrl{i}/MediaContentType{i} for a photo, and it
 // is called only downstream, only when a photo is going to be stored.
 
-export type MediaKind = 'photo' | 'voice'
+export type MediaKind = 'photo' | 'voice' | 'unsupported'
 
 // VOICE_REPLY is unchanged in every respect -- worded to be correct
 // regardless of flow state, exactly as it always was, since voice handling
@@ -84,36 +84,54 @@ export const MEDIA_NUDGE_PROGRESS_LINE = 'Progress photos: send them during your
 // never a bare literal at the call site or a function default relied upon.
 export const MEDIA_NUDGE_WINDOW_SECONDS = 300
 
+// Lower-cased, trimmed content type of item `i`, or '' when absent.
+function contentTypeOf(params: Record<string, string | undefined>, i: number): string {
+  return (params[`MediaContentType${i}`] ?? '').trim().toLowerCase()
+}
+
 /**
  * Classify an inbound Twilio request's media fields. Returns null when no
  * media is attached (NumMedia missing, "0", or unparseable) so the caller
- * falls through to ordinary text handling. UNCHANGED by this reversal --
- * still reads only NumMedia/MediaContentType0, still classifies by the
- * first item's content type alone (see its own comment below for why).
+ * falls through to ordinary text handling.
+ *
+ * ~~UNCHANGED by this reversal -- still reads only NumMedia/
+ * MediaContentType0, still classifies by the first item's content type
+ * alone (see its own comment below for why).~~
+ *
+ * DATED CORRECTION (2026-10-05, option A strict, Aravind): reads
+ * MediaContentType0..N-1 now. Audio on item 0 wins ('voice'). Otherwise
+ * EVERY item must be image/* for 'photo'; anything else -- a pdf, a video, an
+ * item with no content type, audio on a later item -- makes the whole
+ * message 'unsupported', so nothing in it is stored.
  */
-export function classifyMediaReply(params: {
-  NumMedia?: string
-  MediaContentType0?: string
-}): MediaKind | null {
+export function classifyMediaReply(
+  params: Record<string, string | undefined>,
+): MediaKind | null {
   const numMedia = Number(params.NumMedia ?? '0')
   if (!Number.isFinite(numMedia) || numMedia < 1) return null
-  // MediaContentType0 is the MIME type of the FIRST media item only --
+  // ~~MediaContentType0 is the MIME type of the FIRST media item only --
   // WhatsApp voice notes arrive as audio/ogg. A multi-media message (rare;
   // WhatsApp forwards one at a time in practice) is classified by that
   // first item alone, matching the "which register, not which item" job
-  // this function actually does.
-  return params.MediaContentType0?.startsWith('audio/') ? 'voice' : 'photo'
+  // this function actually does.~~ (superseded 2026-10-05, see above.)
+  // Voice is still decided by item 0 alone.
+  if (contentTypeOf(params, 0).startsWith('audio/')) return 'voice'
+  for (let i = 0; i < numMedia; i++) {
+    if (!contentTypeOf(params, i).startsWith('image/')) return 'unsupported'
+  }
+  return 'photo'
 }
 
-// Narrowed to 'voice' only, stage 3: the only real call site
+// ~~Narrowed to 'voice' only, stage 3: the only real call site
 // (app/api/whatsapp/webhook/route.ts) already calls this with the literal
 // 'voice' -- photo handling now needs the RPC-throttled nudge, which this
 // synchronous string-returning function cannot express, and PHOTO_REPLY
 // (the old always-string 'photo' reply) is retired. See this file's own
-// header for the full reversal.
-export function replyForMediaKind(kind: 'voice'): string {
-  void kind
-  return VOICE_REPLY
+// header for the full reversal.~~
+// DATED CORRECTION (2026-10-05): also accepts 'unsupported'. Photo is still
+// not handled here -- it needs the RPC-throttled nudge.
+export function replyForMediaKind(kind: 'voice' | 'unsupported'): string {
+  return kind === 'unsupported' ? UNSUPPORTED_MEDIA_REPLY : VOICE_REPLY
 }
 
 export interface MediaItem {
@@ -126,8 +144,12 @@ export interface MediaItem {
  * (MediaUrl0..N / MediaContentType0..N, N = NumMedia - 1) -- called only
  * when classifyMediaReply has already returned 'photo' for this message.
  * Returns [] when NumMedia is missing/zero/unparseable, or when every
- * indexed MediaUrl{i} is itself missing (defensive; not expected from a
- * real Twilio request that already passed classifyMediaReply).
+ * indexed item is dropped (defensive; not expected from a real Twilio
+ * request that already passed classifyMediaReply).
+ *
+ * DATED CORRECTION (2026-10-05, option A strict, Aravind): keeps ONLY items
+ * that have a URL AND an image/* content type. An item with no content type
+ * is dropped, no longer defaulted to application/octet-stream.
  *
  * Twilio's own per-message media limit (assumed up to 10, per
  * design-doc-time research into its WhatsApp media documentation) is not
@@ -143,7 +165,10 @@ export function extractMediaItems(params: Record<string, string | undefined>): M
   for (let i = 0; i < numMedia; i++) {
     const url = params[`MediaUrl${i}`]
     if (!url) continue
-    const contentType = params[`MediaContentType${i}`] ?? 'application/octet-stream'
+    // ~~params[`MediaContentType${i}`] ?? 'application/octet-stream'~~
+    // (2026-10-05: missing or non-image type -> item dropped.)
+    const contentType = params[`MediaContentType${i}`] ?? ''
+    if (!contentType.trim().toLowerCase().startsWith('image/')) continue
     items.push({ url, contentType })
   }
   return items

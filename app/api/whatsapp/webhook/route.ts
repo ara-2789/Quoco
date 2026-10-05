@@ -257,6 +257,20 @@ export async function handleWebhookPost(
   if (mediaKind === 'voice') {
     return twimlMessage(replyForMediaKind('voice'))
   }
+  // 2026-10-05 (Block E): only images enter photo ingest -- anything else (pdf, video, untyped, mixed with a non-image) gets the unsupported reply and nothing is stored.
+  if (mediaKind === 'unsupported') {
+    const numMedia = Number(params.NumMedia ?? '0')
+    const contentTypes: string[] = []
+    for (let i = 0; i < numMedia; i++) contentTypes.push(params[`MediaContentType${i}`] ?? '')
+    // Content types and counts ONLY -- no URL, phone, tenant/user id or body.
+    Sentry.captureMessage('Unsupported inbound media', {
+      level: 'warning',
+      fingerprint: ['inbound-media', 'unsupported'],
+      tags: { feature: 'inbound-media' },
+      extra: { contentTypes, numMedia },
+    })
+    return twimlMessage(replyForMediaKind('unsupported'))
+  }
   // A photo's media items are extracted here (still upstream, since
   // NumMedia/MediaUrl{i} are raw webhook fields routeInboundMessage's own
   // RouteParams doesn't otherwise carry) and passed THROUGH to
