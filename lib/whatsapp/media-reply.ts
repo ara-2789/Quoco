@@ -52,7 +52,7 @@ export type MediaKind = 'photo' | 'voice' | 'unsupported'
 // itself is unaffected by this reversal.
 export const VOICE_REPLY = "Voice messages aren't supported yet. Please send your message as text."
 
-// Tamil owed, NOT approved
+// APPROVED COPY (Aravind, 2026-10-05). English only; Tamil owed.
 export const UNSUPPORTED_MEDIA_REPLY = "This file type isn't supported yet. Nothing was saved. Please send a photo instead."
 
 // RETIRED, stage 3 (docs/plans/media-capture-design.md's stage 3 entry).
