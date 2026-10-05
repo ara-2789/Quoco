@@ -53,7 +53,7 @@ The engine is designed on paper for all three; only item 4 is implemented first.
   insert/update policies for authenticated users (001_core_schema.sql:155-177,
   002_rls_policies.sql:224-243). `vendor_invoices` is a separate table and is not used.
 - Partial reports must be valid rows from the first answer (no constraint that only a
-  completed report can satisfy — the reason 038 could not save partial hindrances).
+  completed report can satisfy ~~— the reason 038 could not save partial hindrances~~). CORRECTED 2026-10-05: the rule stands. 038 discarded partial hindrances by design (038:123-142), not because of a constraint.
 - Photos follow the existing ingest pattern to Supabase Storage; never a Twilio URL.
 - All Claude calls run in the jobs queue.
 - Accuracy test set: 15-20 real challans/invoices, stored OUTSIDE the repo (real
@@ -81,7 +81,7 @@ before any build relies on it.
 - Whether the §28(aa)(1) media blocker is fully cleared.
 - adhoc-menu-spec.md §c item 3 already requires a confirmation echo of the amount.
 - Item 3 was cut on 2026-09-03 under spec point 10.
-- 038 could not save partial hindrances because of a completed-report-only constraint.
+- ~~038 could not save partial hindrances because of a completed-report-only constraint.~~ CORRECTED 2026-10-05: cause contradicted, see "Block A findings, 2026-10-05".
 
 ## Answers and decisions, 2026-10-04
 Recorded from a design-review session. Per Aravind, not observed in code.
@@ -185,3 +185,32 @@ Per Aravind, not observed in code.
 - O6: Exact wording of every message (all TBD, to Aravind).
 - O7: Idle digit "4" becomes live; today '3'-'7' reply "not available yet"
   (inbound-start.ts classifyAdhocInput).
+
+## Block A findings, 2026-10-05
+Source: docs/reviews/2026-10-05-capture-block-a-probes.txt, a read-only probe of origin/main at ea12c89. "Observed" = shown in that file's raw output. "Per Aravind" = stated in chat, not shown.
+
+### Verdicts on the nine unverified claims (lines 74-84)
+1. VERIFIED (observed). Addition: migration 047:229 drops invoices_delete. The single-column FKs remain. The hardening at line 51 still applies.
+2. TRUE BY CODE (observed, send.ts:223-229 sends no Body field). The cited source "capture-ocr-probe §E" does not exist in the repo. The source cannot be checked.
+3. VERIFIED (observed, design-principles.md:37). Two corrections dated 2026-10-04 sit directly below that line and already carry this record's decisions. The 2026-10-05 probe printed line 37 only and missed them. design-principles.md needs no change.
+4. VERIFIED in behaviour (observed, inbound-start.ts:263 and :350). The code string is "That option isn't available yet. Nothing was recorded."
+5. VERIFIED (observed). The branch merged as #319, a81b5c3.
+6. PARTLY CLEARED (observed). The Twilio media download exists for an active morning, evening or hindrance flow. A photo sent with no active flow is discarded (inbound-start.ts:925-926). No ingest path exists for menu items 3-6. Slice 1 needs its own ingest path.
+7. VERIFIED (observed, adhoc-menu-spec.md:342-346).
+8. VERIFIED (observed, adhoc-menu-spec.md:1039-1047).
+9. CAUSE CONTRADICTED (observed, 038:123-142). 038 discarded partial hindrances by design. The pairing CHECK (036:395-396) does not require a completed report. This is deduced from SQL NULL semantics. No SQL was run.
+
+### Open items answered or added
+- O10 ANSWERED. The owner nightly report is email (observed, owner-deliver-dispatch.ts:470). Delivery items go in the email. No template or Meta approval is needed. Per Aravind 2026-10-05: email is the channel for now.
+- O19 NEW, DEFERRED (per Aravind 2026-10-05): a WhatsApp alert to the owner and PM when materials arrive. Later version. It needs a new template and Meta approval when built.
+- O11 ANSWERED (code path observed, not exercised). Every inbound media type except audio is classified as a photo (media-reply.ts:102), including PDF and video. During an active flow, the file is stored under a .jpg path and can reach the owner's email as an attachment. With no active flow, the file is discarded with "Photo not saved". Fix planned on branch fix/media-image-only (plan written 2026-10-05; no code yet).
+- O20 NEW, OPEN: media ingest has no size cap (ingest.ts:118 buffers the whole file). After fix/media-image-only, the remaining exposure is an image sent as an uncompressed document.
+- No code sends an image or document to the Claude API today (observed). Slice 1 builds the first such path.
+- Open tension (per Aravind 2026-10-05): slice 1 asks the engineer to type GRN quantities and rates that the DC photo already holds (Rule 3.9, media-first). The slice 1 plan must address it.
+
+### O4 conflict, not resolved
+- Per Aravind 2026-10-04 (O4): about 60% of documents are handwritten.
+- Per Aravind 2026-10-05, relaying the cofounder: most inward DCs and invoices are printed.
+- These two statements conflict. The O13 set settles the ratio by count. O14 (handwritten reading in slice 1) depends on the answer.
+- O13 addition: collect documents from real deliveries, not chosen examples. Include forwarded PDF DCs and invoices if vendors send them.
+- Per Aravind 2026-10-05, relaying the cofounder: the WhatsApp GRN acknowledgment can serve as the record. This agrees with line 96.
