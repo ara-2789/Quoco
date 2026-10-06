@@ -130,7 +130,8 @@ export async function sweepStaleMorningSessions(
  * underlying data stays wrong -- without dedup this alerts every minute,
  * forever. Sentry's `fingerprint` groups every event sharing the same
  * fingerprint into ONE issue instead of a new one per call; scoping it to
- * (phone_number, reason, IST calendar date) collapses same-day recurrences
+ * (reason, IST calendar date -- the phone number is deliberately NOT part of
+ * it, P0 Sentry PII) collapses same-day recurrences
  * into one growing issue -- no per-minute spam -- while a session still
  * stuck the NEXT day surfaces as a fresh issue instead of silently vanishing
  * into an old, already-triaged one.
@@ -141,10 +142,10 @@ export function reportMorningSweepAnomalies(result: MorningCutoffSweepResult, no
   for (const s of result.skippedSessions) {
     Sentry.captureMessage('morning-cutoff-sweep: session skipped, ambiguous project membership', {
       level: 'warning',
-      fingerprint: ['morning-cutoff-sweep', 'skipped', s.reason, s.phoneNumber, day],
+      fingerprint: ['morning-cutoff-sweep', 'skipped', s.reason, day],
       tags: { feature: 'morning-cutoff-sweep', reason: s.reason },
       extra: {
-        phone_number: s.phoneNumber,
+        affected_sessions: result.skippedSessions.filter((x) => x.reason === s.reason).length,
         current_step: s.currentStep,
         project_membership_count: s.projectMembershipCount,
       },
@@ -154,9 +155,12 @@ export function reportMorningSweepAnomalies(result: MorningCutoffSweepResult, no
   for (const r of result.missingDailyLogsRows) {
     Sentry.captureMessage('morning-cutoff-sweep: daily_logs row missing at sweep time', {
       level: 'warning',
-      fingerprint: ['morning-cutoff-sweep', 'missing-row', r.phoneNumber, day],
+      fingerprint: ['morning-cutoff-sweep', 'missing-row', r.reason, day],
       tags: { feature: 'morning-cutoff-sweep', reason: r.reason },
-      extra: { phone_number: r.phoneNumber, current_step: r.currentStep },
+      extra: {
+        affected_sessions: result.missingDailyLogsRows.filter((x) => x.reason === r.reason).length,
+        current_step: r.currentStep,
+      },
     })
   }
 }

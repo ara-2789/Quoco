@@ -96,14 +96,20 @@ describe('reportOutboundCoverageAnomalies', () => {
     expect(captureMessage).not.toHaveBeenCalled()
   })
 
-  it('a stuck claim is alerted, fingerprinted on the row id, naming phone/content_sid for direct investigation', () => {
+  // P0 (Sentry PII): the alert no longer carries the recipient's phone
+  // number. OLD assertion (removed): extra.to_phone_number === '+919876543210'.
+  // The claim_id (the ledger row id) is what to look the row up by.
+  it('a stuck claim is alerted, fingerprinted on the row id, naming claim_id/content_sid (never the phone number) for direct investigation', () => {
+    const RUN_TAG = crypto.randomUUID()
+    const phoneDigits = `9${RUN_TAG.replace(/\D/g, '').padEnd(9, '7').slice(0, 9)}`
     reportOutboundCoverageAnomalies(
       emptyResult({
         stuckClaims: [
-          { id: 'row-abc-123', toPhoneNumber: '+919876543210', contentSid: 'HXdeadbeef', updatedAt: '2026-09-01T10:00:00Z' },
+          { id: 'row-abc-123', toPhoneNumber: `+91${phoneDigits}`, contentSid: 'HXdeadbeef', updatedAt: '2026-09-01T10:00:00Z' },
         ],
       }),
     )
+    expect(JSON.stringify(captureMessage.mock.calls)).not.toContain(phoneDigits)
     expect(captureMessage).toHaveBeenCalledTimes(1)
     const [message, options] = captureMessage.mock.calls[0]
     expect(message).toContain('stuck')
@@ -113,7 +119,6 @@ describe('reportOutboundCoverageAnomalies', () => {
       tags: { feature: 'outbound-send' },
       extra: {
         claim_id: 'row-abc-123',
-        to_phone_number: '+919876543210',
         content_sid: 'HXdeadbeef',
         updated_at: '2026-09-01T10:00:00Z',
       },

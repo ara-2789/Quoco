@@ -20,6 +20,17 @@ const { captureMessage, captureException } = vi.hoisted(() => ({
 }))
 vi.mock('@sentry/nextjs', () => ({ captureMessage, captureException }))
 
+// RUN_TAG-derived test numbers: unique per run, so a leak can never be a
+// coincidental match with a fixture another test left behind.
+const RUN_TAG = crypto.randomUUID()
+function digitsFrom(tag: string): string {
+  return tag.replace(/\D/g, '').padEnd(10, '7').slice(0, 10)
+}
+const TEST_PHONE_A_DIGITS = `9${digitsFrom(RUN_TAG).slice(0, 9)}`
+const TEST_PHONE_B_DIGITS = `8${digitsFrom(RUN_TAG).slice(1, 10)}`
+const TEST_PHONE_A = `+91${TEST_PHONE_A_DIGITS}`
+const TEST_PHONE_B = `+91${TEST_PHONE_B_DIGITS}`
+
 function emptyResult(overrides: Partial<MorningCutoffSweepResult> = {}): MorningCutoffSweepResult {
   return {
     sweptCount: 0,
@@ -41,11 +52,16 @@ describe('reportMorningSweepAnomalies', () => {
     expect(captureMessage).not.toHaveBeenCalled()
   })
 
-  it('a skipped session emits one warning with a fingerprint scoped to phone/reason/day', () => {
+  // P0 (Sentry PII): the phone number is no longer sent anywhere -- not in
+  // the fingerprint, not in `extra`. Fingerprint is (reason, IST day);
+  // `extra.affected_sessions` carries how many sessions share that reason.
+  // OLD assertions (removed): fingerprint [..., reason, '+19995551111',
+  // '2026-09-10'] and extra { phone_number: '+19995551111', ... }.
+  it('a skipped session emits one warning with a fingerprint scoped to reason/day, and no phone number anywhere', () => {
     const result = emptyResult({
       skippedCount: 1,
       skippedSessions: [
-        { phoneNumber: '+19995551111', currentStep: 3, projectMembershipCount: 2, reason: 'multiple_project_memberships' },
+        { phoneNumber: TEST_PHONE_A, currentStep: 3, projectMembershipCount: 2, reason: 'multiple_project_memberships' },
       ],
     })
     reportMorningSweepAnomalies(result, new Date('2026-09-10T10:00:00Z'))
@@ -55,15 +71,16 @@ describe('reportMorningSweepAnomalies', () => {
     expect(message).toContain('session skipped')
     expect(options).toMatchObject({
       level: 'warning',
-      fingerprint: ['morning-cutoff-sweep', 'skipped', 'multiple_project_memberships', '+19995551111', '2026-09-10'],
+      fingerprint: ['morning-cutoff-sweep', 'skipped', 'multiple_project_memberships', '2026-09-10'],
       tags: { feature: 'morning-cutoff-sweep', reason: 'multiple_project_memberships' },
-      extra: { phone_number: '+19995551111', current_step: 3, project_membership_count: 2 },
+      extra: { affected_sessions: 1, current_step: 3, project_membership_count: 2 },
     })
+    expect(JSON.stringify(captureMessage.mock.calls)).not.toContain(TEST_PHONE_A_DIGITS)
   })
 
-  it('a missing-daily_logs-row anomaly emits its own warning with its own fingerprint shape', () => {
+  it('a missing-daily_logs-row anomaly emits its own warning with its own fingerprint shape, and no phone number anywhere', () => {
     const result = emptyResult({
-      missingDailyLogsRows: [{ phoneNumber: '+19995552222', currentStep: 3, reason: 'no_daily_logs_row_found' }],
+      missingDailyLogsRows: [{ phoneNumber: TEST_PHONE_B, currentStep: 3, reason: 'no_daily_logs_row_found' }],
     })
     reportMorningSweepAnomalies(result, new Date('2026-09-10T10:00:00Z'))
 
@@ -72,9 +89,33 @@ describe('reportMorningSweepAnomalies', () => {
     expect(message).toContain('daily_logs row missing')
     expect(options).toMatchObject({
       level: 'warning',
-      fingerprint: ['morning-cutoff-sweep', 'missing-row', '+19995552222', '2026-09-10'],
+      fingerprint: ['morning-cutoff-sweep', 'missing-row', 'no_daily_logs_row_found', '2026-09-10'],
       tags: { feature: 'morning-cutoff-sweep', reason: 'no_daily_logs_row_found' },
+      extra: { affected_sessions: 1, current_step: 3 },
     })
+    expect(JSON.stringify(captureMessage.mock.calls)).not.toContain(TEST_PHONE_B_DIGITS)
+  })
+
+  it('sessions sharing a reason on the same day share one fingerprint and report the affected count', () => {
+    const result = emptyResult({
+      skippedCount: 3,
+      skippedSessions: [
+        { phoneNumber: TEST_PHONE_A, currentStep: 3, projectMembershipCount: 0, reason: 'zero_project_memberships' },
+        { phoneNumber: TEST_PHONE_B, currentStep: 1, projectMembershipCount: 0, reason: 'zero_project_memberships' },
+        { phoneNumber: TEST_PHONE_A, currentStep: 2, projectMembershipCount: 2, reason: 'multiple_project_memberships' },
+      ],
+    })
+    reportMorningSweepAnomalies(result, new Date('2026-09-10T10:00:00Z'))
+
+    expect(captureMessage).toHaveBeenCalledTimes(3)
+    const fp = (i: number) => captureMessage.mock.calls[i][1]?.fingerprint
+    expect(fp(0)).toEqual(fp(1))
+    expect(fp(0)).not.toEqual(fp(2))
+    expect(captureMessage.mock.calls[0][1]?.extra).toMatchObject({ affected_sessions: 2 })
+    expect(captureMessage.mock.calls[2][1]?.extra).toMatchObject({ affected_sessions: 1 })
+    const serialised = JSON.stringify(captureMessage.mock.calls)
+    expect(serialised).not.toContain(TEST_PHONE_A_DIGITS)
+    expect(serialised).not.toContain(TEST_PHONE_B_DIGITS)
   })
 
   it('multiple skipped sessions in one result each get their own call, none dropped', () => {

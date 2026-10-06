@@ -3,6 +3,13 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import {
+  scrubBreadcrumb,
+  scrubErrorEvent,
+  scrubLog,
+  scrubSpan,
+  scrubTransactionEvent,
+} from "./lib/observability/scrub-pii";
 
 Sentry.init({
   dsn: "https://0ee933a1c02d1564624fb888891080f3@o4511670684483584.ingest.us.sentry.io/4511670692347904",
@@ -13,10 +20,24 @@ Sentry.init({
   // Enable logs to be sent to Sentry
   enableLogs: true,
 
+  // P0: an empty dataCollection object makes the SDK collect everything
+  // (user info, cookies, headers, query params, request/response bodies,
+  // stack-frame variables). Every field is set explicitly instead.
+  // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#dataCollection
   dataCollection: {
-    // To disable sending user data and HTTP bodies, uncomment the lines below. For more info visit:
-    // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#dataCollection
-    // userInfo: false,
-    // httpBodies: [],
+    userInfo: false,
+    cookies: false,
+    httpHeaders: { request: false, response: false },
+    httpBodies: [],
+    queryParams: false,
+    genAI: { inputs: false, outputs: false },
+    stackFrameVariables: false,
   },
+
+  // Backstop: redact phone numbers and emails from anything still sent.
+  beforeSend: scrubErrorEvent,
+  beforeBreadcrumb: scrubBreadcrumb,
+  beforeSendTransaction: scrubTransactionEvent,
+  beforeSendSpan: scrubSpan,
+  beforeSendLog: scrubLog,
 });

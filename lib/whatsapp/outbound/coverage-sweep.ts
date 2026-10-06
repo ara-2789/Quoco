@@ -412,7 +412,6 @@ export function reportOutboundCoverageAnomalies(
       tags: { feature: 'outbound-send' },
       extra: {
         claim_id: row.id,
-        to_phone_number: row.toPhoneNumber,
         content_sid: row.contentSid,
         updated_at: row.updatedAt,
       },

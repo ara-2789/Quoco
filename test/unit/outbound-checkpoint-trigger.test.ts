@@ -95,27 +95,31 @@ describe('reportRetryBudgetExhausted', () => {
     captureMessage.mockClear()
   })
 
-  it('fires a loud, error-level alert fingerprinted per (checkpoint, engineer, day), naming the phone number for a human to act on', () => {
-    reportRetryBudgetExhausted('engineer-1', '+919876543210', 'evening_send', '2026-09-01')
+  // P0 (Sentry PII): the alert no longer carries the engineer's phone number.
+  // OLD assertions (removed): extra.whatsapp_number === '+919876543210' and
+  // action_required containing '+919876543210'. The alert stays actionable:
+  // it names engineer_id and says to look the number up in the database.
+  it('fires a loud, error-level alert fingerprinted per (checkpoint, engineer, day), naming the engineer_id (never the phone number) for a human to act on', () => {
+    const RUN_TAG = crypto.randomUUID()
+    reportRetryBudgetExhausted(RUN_TAG, 'evening_send', '2026-09-01')
     expect(captureMessage).toHaveBeenCalledTimes(1)
     const [message, options] = captureMessage.mock.calls[0]
     expect(message).toContain('retry budget exhausted')
     expect(options).toMatchObject({
       level: 'error',
-      fingerprint: ['outbound-send', 'retry_budget_exhausted', 'evening_send', 'engineer-1', '2026-09-01'],
+      fingerprint: ['outbound-send', 'retry_budget_exhausted', 'evening_send', RUN_TAG, '2026-09-01'],
       tags: { feature: 'outbound-send', checkpoint: 'evening_send' },
       extra: expect.objectContaining({
-        engineer_id: 'engineer-1',
-        whatsapp_number: '+919876543210',
+        engineer_id: RUN_TAG,
         checkpoint: 'evening_send',
         log_date: '2026-09-01',
         max_attempts: MAX_ATTEMPTS,
       }),
     })
-    // The alert must be actionable on its own -- the phone number appears
-    // in the action_required text too, not only in `extra`, so a human
-    // scanning the message doesn't have to dig into structured fields.
     const extra = (options as { extra: Record<string, unknown> }).extra
-    expect(String(extra.action_required)).toContain('+919876543210')
+    expect(extra).not.toHaveProperty('whatsapp_number')
+    expect(String(extra.action_required)).toContain(RUN_TAG)
+    expect(String(extra.action_required)).toContain('look up')
   })
+
 })
