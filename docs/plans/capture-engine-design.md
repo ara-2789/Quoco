@@ -85,7 +85,8 @@ before any build relies on it.
 
 ## Answers and decisions, 2026-10-04
 Recorded from a design-review session. Per Aravind, not observed in code.
-- O1 answered: the engineer reports both rates and quantities.
+- ~~O1 answered: the engineer reports both rates and quantities.~~
+  Corrected 2026-10-06, per Aravind (session of 5–6 Oct IST): the engineer reports quantities; rates come from the document and the PM enters them. See A10.
 - O2 answered: summaries of delivered items and site documents appear in the owner's
   nightly report.
 - O4 answered: about 60% handwritten, 40% printed. Machine reading is a must.
@@ -114,6 +115,7 @@ Recorded so they are not lost. None of these is a decision until Aravind confirm
 - O8: Menu numbering if items 4 and 5 merge. The spec says row numbers are never reused
   or renumbered. What happens to digit 5?
 - O9: What event ends "the duration of the project" for photo retention?
+  Update 2026-10-06: answered, see A4.
 - O10: Does adding deliveries to the owner's nightly report need a WhatsApp template
   change and Meta approval? Not checked.
 - O11: Does the inbound pipeline accept PDF documents, such as a printed DC forwarded on
@@ -133,9 +135,10 @@ Per Aravind, not observed in code. These lines update the proposals and open ite
   engineer's GRN creates the delivery. "Expected" deliveries opened by a vendor-sent DC
   are deferred.
 - ~~P3 rejected for now: the bot does not echo the typed rate.~~
-  Corrected 2026-10-04, per Aravind: P3's forced confirmation is rejected. The bot
-  still echoes the typed rate under Rule 3.4, with confirmation by silence. The
-  engineer never has to reply "yes".
+  ~~Corrected 2026-10-04, per Aravind: P3's forced confirmation is rejected. The bot~~
+  ~~still echoes the typed rate under Rule 3.4, with confirmation by silence. The~~
+  ~~engineer never has to reply "yes".~~
+  Corrected 2026-10-06, per Aravind: the engineer no longer types a rate (A10), so no rate is echoed. Any quantity echo is not decided.
 - P4 confirmed in this form: when the engineer sends a DC, the bot asks for the GRN in
   the same flow and links that GRN to that DC. If the engineer leaves the flow, the DC is
   saved and the PM dashboard shows it as not acknowledged. No reminder goes to the
@@ -151,6 +154,7 @@ Per Aravind, not observed in code. These lines update the proposals and open ite
 - Invoices in slice 1 are machine-read. The PM checks the machine reading on the
   dashboard. The engineer adds only a description of the values (see O18). See the
   second correction note under Rule 3.9.
+  Update 2026-10-06: slice 1 is now split into 1a and 1b (A1). Machine reading of DCs and invoices is in 1b.
 
 ### More open items, 2026-10-04
 - O15: How does an engineer link an invoice to a delivery on WhatsApp? Deferred. In
@@ -171,8 +175,9 @@ Per Aravind, not observed in code.
   tables and the code keep the word "delivery".
 - O18 answered: with an invoice, the engineer enters a description, the quantity if it
   applies, and the total amount. Machine reading extracts the individual line items.
-- For a delivery, the engineer reports rates and quantities per item (O1). For an
+- ~~For a delivery, the engineer reports rates and quantities per item (O1).~~ For an
   invoice, the engineer reports one total amount (O18).
+  Corrected 2026-10-06, per Aravind: see A10.
 
 ## Open — not decided
 (Kept as originally written. O1, O2, O4 and O5 were answered on 2026-10-04: see above.)
@@ -204,13 +209,45 @@ Source: docs/reviews/2026-10-05-capture-block-a-probes.txt, a read-only probe of
 - O10 ANSWERED. The owner nightly report is email (observed, owner-deliver-dispatch.ts:470). Delivery items go in the email. No template or Meta approval is needed. Per Aravind 2026-10-05: email is the channel for now.
 - O19 NEW, DEFERRED (per Aravind 2026-10-05): a WhatsApp alert to the owner and PM when materials arrive. Later version. It needs a new template and Meta approval when built.
 - O11 ANSWERED (code path observed, not exercised). Every inbound media type except audio is classified as a photo (media-reply.ts:102), including PDF and video. During an active flow, the file is stored under a .jpg path and can reach the owner's email as an attachment. With no active flow, the file is discarded with "Photo not saved". Fix planned on branch fix/media-image-only (plan written 2026-10-05; no code yet).
+  Update 2026-10-06: fixed by PR #325 (merged; prod check recorded in docs/reviews/2026-10-06-pr325-prod-check-record.md). PDFs are to be accepted in the 1a material-inward flow, see A6.
 - O20 NEW, OPEN: media ingest has no size cap (ingest.ts:118 buffers the whole file). After fix/media-image-only, the remaining exposure is an image sent as an uncompressed document.
+  Update 2026-10-06: A11 sets a 16 MB cap for the new capture handler. The existing image handler stays uncapped until a separate LIGHT PR.
 - No code sends an image or document to the Claude API today (observed). Slice 1 builds the first such path.
 - Open tension (per Aravind 2026-10-05): slice 1 asks the engineer to type GRN quantities and rates that the DC photo already holds (Rule 3.9, media-first). The slice 1 plan must address it.
+  Update 2026-10-06: resolved by A10.
 
 ### O4 conflict, not resolved
 - Per Aravind 2026-10-04 (O4): about 60% of documents are handwritten.
 - Per Aravind 2026-10-05, relaying the cofounder: most inward DCs and invoices are printed.
 - These two statements conflict. The O13 set settles the ratio by count. O14 (handwritten reading in slice 1) depends on the answer.
+  Update 2026-10-06: O14 no longer depends on the ratio, see A2. The ratio itself is still not settled for DCs.
 - O13 addition: collect documents from real deliveries, not chosen examples. Include forwarded PDF DCs and invoices if vendors send them.
 - Per Aravind 2026-10-05, relaying the cofounder: the WhatsApp GRN acknowledgment can serve as the record. This agrees with line 96.
+
+## Decisions, session of 5–6 Oct 2026 IST (exact time per decision not recorded)
+
+All lines per Aravind unless marked.
+
+- A1. Slice 1 splits. 1a = engineer capture, storage, PM approval, owner email. 1b = machine reading, invoices table hardening, invoice-delivery links, matching.
+- A2. O14: machine reading of handwritten and printed documents are both priority. Reading is 1b. This removes O14's dependency on the handwritten ratio.
+- A3. The site receives printed DCs. Peruvalappur is the same site that sent the 58 O13 photos.
+- A4. O9: retention ends at project completion. No completion event exists, so retention is indefinite for now.
+- A5. Supplier documents may go to the Anthropic API (1b).
+- A6. PDFs are accepted and read. No information in a PDF may be lost. Design chosen by Claude under Aravind's delegation: in 1a, PDFs are accepted only inside the material-inward flow; original bytes stored unchanged, all pages; file type checked by first bytes (%PDF-); an encrypted or unparseable PDF is stored and marked not previewable; PDFs in check-ins stay rejected; a PDF with no active flow gets the idle nudge (a change from today's behaviour, planned for 1a).
+- A7. Owner email: a separate email; reads approved deliveries at send time; the deliveries section appears once per project per night; late approvals roll forward to the next night; the owner sees money for purchases, from PM values only; no invoices and no attachments in 1a; nothing is sent on an empty night.
+- A8. Delivery type: supplier or internal transfer. The PM sets it at approval. The engineer gets no extra question. An internal transfer needs no invoice and shows quantities without money in the owner email.
+- A9. New open item: equipment location (inward and outward transfers; which site holds which equipment). Not designed. Not in 1a.
+- A10. Engineer GRN: with a DC, the engineer answers "all as on the DC" or lists only the items that differ. Without a DC, the engineer sends one free-text message, stored raw; the PM itemises. The engineer types no rate; the PM enters rates from the document. Amends O1. Cofounder confirmation: not recorded.
+- A11. File size cap 16 MB for images and PDFs. An oversize file shows to the PM only; the engineer gets no message. Basis: Twilio documents a 16 MB WhatsApp media limit for messages Twilio sends; Claude found no Twilio statement for inbound media (inferred cap, not a Twilio fact).
+- A12. New storage bucket for capture documents. PDF checks stay byte-level in 1a (no PDF parser).
+- A13. The PM must enter the supplier or origin name before approval. Vehicle number, DC number, DC date optional in 1a. Invoices view-only in 1a.
+- A14. Design fixes: the engineer acknowledgement says "received", not "saved"; the owner-email send ledger needs a stuck-claim rule and a provider idempotency check; approval is final in 1a (correction design later); the IST date column follows migration 043's method, proven in rehearsal; every PM SECURITY DEFINER function gets negative tests (PM of another project, PM of another tenant).
+- A15. 1b arithmetic check: subtotal + CGST + SGST + IGST + round-off = grand total. A line-sum check alone fails on correct GST invoices.
+
+### Evidence: internal DC sample (observed by Claude from Aravind's upload; file not stored in repo)
+
+- DC No RCPL/TN/26-27/05, date 23-09-2026 (DD-MM-YYYY), vehicle TN 67 BW 0599, RCPL yard Kancheepuram to RCPL site Peruvalappur. Marked "INTERNAL TRANSFER, NOT FOR SALE".
+- 6 lines, unit Nos: 200 x 80, 300 x 60, 255 x 40, 50 x 200, 40 x 100, 3 x 500. Lines sum to 59,700. CGST 9% 5,373. SGST 9% 5,373. Grand total 70,446.00. No round-off line. Arithmetic exact (checked by Claude).
+- Header label "Details of Consigner" labels the consignee. Misspelled descriptions ("Verticle", "Leger"). The PDF has a text layer (Excel export).
+
+Open follow-ups from the 6 Oct 2026 records are listed in `docs/reviews/2026-10-06-p0-sentry-record.md` (FOLLOW-UPS).
