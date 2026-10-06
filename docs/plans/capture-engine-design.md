@@ -214,3 +214,31 @@ Source: docs/reviews/2026-10-05-capture-block-a-probes.txt, a read-only probe of
 - These two statements conflict. The O13 set settles the ratio by count. O14 (handwritten reading in slice 1) depends on the answer.
 - O13 addition: collect documents from real deliveries, not chosen examples. Include forwarded PDF DCs and invoices if vendors send them.
 - Per Aravind 2026-10-05, relaying the cofounder: the WhatsApp GRN acknowledgment can serve as the record. This agrees with line 96.
+
+## Decisions, session of 5–6 Oct 2026 IST (exact time per decision not recorded)
+
+All lines per Aravind unless marked.
+
+- A1. Slice 1 splits. 1a = engineer capture, storage, PM approval, owner email. 1b = machine reading, invoices table hardening, invoice-delivery links, matching.
+- A2. O14: machine reading of handwritten and printed documents are both priority. Reading is 1b. This removes O14's dependency on the handwritten ratio.
+- A3. The site receives printed DCs. Peruvalappur is the same site that sent the 58 O13 photos.
+- A4. O9: retention ends at project completion. No completion event exists, so retention is indefinite for now.
+- A5. Supplier documents may go to the Anthropic API (1b).
+- A6. PDFs are accepted and read. No information in a PDF may be lost. Design chosen by Claude under Aravind's delegation: in 1a, PDFs are accepted only inside the material-inward flow; original bytes stored unchanged, all pages; file type checked by first bytes (%PDF-); an encrypted or unparseable PDF is stored and marked not previewable; PDFs in check-ins stay rejected; a PDF with no active flow gets the idle nudge (a change from today's behaviour, planned for 1a).
+- A7. Owner email: a separate email; reads approved deliveries at send time; the deliveries section appears once per project per night; late approvals roll forward to the next night; the owner sees money for purchases, from PM values only; no invoices and no attachments in 1a; nothing is sent on an empty night.
+- A8. Delivery type: supplier or internal transfer. The PM sets it at approval. The engineer gets no extra question. An internal transfer needs no invoice and shows quantities without money in the owner email.
+- A9. New open item: equipment location (inward and outward transfers; which site holds which equipment). Not designed. Not in 1a.
+- A10. Engineer GRN: with a DC, the engineer answers "all as on the DC" or lists only the items that differ. Without a DC, the engineer sends one free-text message, stored raw; the PM itemises. The engineer types no rate; the PM enters rates from the document. Amends O1. Cofounder confirmation: not recorded.
+- A11. File size cap 16 MB for images and PDFs. An oversize file shows to the PM only; the engineer gets no message. Basis: Twilio documents a 16 MB WhatsApp media limit for messages Twilio sends; Claude found no Twilio statement for inbound media (inferred cap, not a Twilio fact).
+- A12. New storage bucket for capture documents. PDF checks stay byte-level in 1a (no PDF parser).
+- A13. The PM must enter the supplier or origin name before approval. Vehicle number, DC number, DC date optional in 1a. Invoices view-only in 1a.
+- A14. Design fixes: the engineer acknowledgement says "received", not "saved"; the owner-email send ledger needs a stuck-claim rule and a provider idempotency check; approval is final in 1a (correction design later); the IST date column follows migration 043's method, proven in rehearsal; every PM SECURITY DEFINER function gets negative tests (PM of another project, PM of another tenant).
+- A15. 1b arithmetic check: subtotal + CGST + SGST + IGST + round-off = grand total. A line-sum check alone fails on correct GST invoices.
+
+### Evidence: internal DC sample (observed by Claude from Aravind's upload; file not stored in repo)
+
+- DC No RCPL/TN/26-27/05, date 23-09-2026 (DD-MM-YYYY), vehicle TN 67 BW 0599, RCPL yard Kancheepuram to RCPL site Peruvalappur. Marked "INTERNAL TRANSFER, NOT FOR SALE".
+- 6 lines, unit Nos: 200 x 80, 300 x 60, 255 x 40, 50 x 200, 40 x 100, 3 x 500. Lines sum to 59,700. CGST 9% 5,373. SGST 9% 5,373. Grand total 70,446.00. No round-off line. Arithmetic exact (checked by Claude).
+- Header label "Details of Consigner" labels the consignee. Misspelled descriptions ("Verticle", "Leger"). The PDF has a text layer (Excel export).
+
+Open follow-ups from the 6 Oct 2026 records are listed in `docs/reviews/2026-10-06-p0-sentry-record.md` (FOLLOW-UPS).
