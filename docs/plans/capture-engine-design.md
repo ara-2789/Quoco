@@ -264,6 +264,7 @@ All lines per Aravind. Times are IST.
 
 Session of 6 Oct 23:03–23:40:
 - A16. Invoice rule. With an invoice, a DC is optional; the PM page never shows "DC missing". With a DC, the PM page shows "invoice expected" until the PM links an invoice. One invoice can cover one DC or several DCs. The PM links by hand in 1a; automatic matching stays in 1b. An internal transfer never expects an invoice. A day count runs until an invoice is linked. Overdue threshold: TBD.
+  Update 2026-10-10, per Aravind: 30 days. See A36.
 - A17. "Paid" status is an open item. Quoco records no payments.
 - A18. Engineer confirmation. After a DC, or after an invoice, the bot asks one question with numbered replies: 1 Yes, 2 No, 3 Partially. Replies 2 and 3 each ask for a short free-text note. The engineer types no rate and no total. Numbered replies, not buttons. Amends O18.
 - A19. The owner email shows money values only. Internal transfers do not appear in the owner email.
@@ -286,12 +287,18 @@ Session of 10 Oct 22:38–22:43:
 - A32. Site engineers send invoices that bill earlier DCs on WhatsApp. The invoice question must not ask whether goods arrived (wording owed).
 - A33. A DC has at most one invoice. The database refuses a second active invoice link on one DC.
 - Approved the same evening: re-typing a linked delivery as an internal transfer is refused ("unlink first"); the automatic delivery is a self-link row, a trigger enforces the A28 rule, and the automatic delivery returns when its last link is removed unless the PM rejected it; the PM may approve a "not acknowledged" delivery and the list shows that state; further photos of the same document attach to that document.
+  Update 2026-10-10, per Aravind: the returned automatic delivery is pending, not approved. See A34.
+- A34. When the last link is removed, the automatic delivery returns as pending, not approved. A prior approval stays recorded as "approved, then superseded by link". A rejected delivery does not return. Revisit if beta shows friction. (Per Aravind, 10 Oct.)
+- A35. The "Token No." on supplier DCs is the vendor's internal reference. 1b stores it display-only. No matching on it until a real invoice shows the same value. (Per Aravind, 10 Oct.)
+- A36. "Invoice expected" turns "overdue" 30 days after the engineer's confirmation. Display only: no reminders, no nudges, no escalation. (Per Aravind, 10 Oct.)
+- A37. Every delivery has a DC or invoice and goes through the A18 confirmation flow. A purchase with no DC or invoice is a site expense, not a delivery; the site expense flow is planned for beta, outside slice 1a. (Per Aravind, 10 Oct.)
 
 ### Evidence: first supplier DC (observed by Claude from a photo Aravind uploaded on 10 Oct; photo kept outside the repo; supplier GSTIN and vehicle number deliberately not recorded)
 - Printed form; every value handwritten. Printed serial DC number. Date written DD/MM/YY with a two-digit year.
 - Buyer name misspelled. Never match on buyer name.
 - One item, an abbreviation ("GSB"). Quantity 8.0 with no unit. Rate column blank. Amount 24,800. SGST 2.5% and CGST 2.5% rows present but blank. Total 24,800, equal to the amount.
 - A handwritten "Token No." with a value. Meaning unknown (open).
+  Update 2026-10-10, per Aravind: the vendor's internal reference; nothing to do with the contractor. See A35.
 - Consequences (inferred): supplier DCs carry the amount even with the rate blank; machine reading must store a blank tax row as "not shown", never 0; a missing unit cannot be read, so 1b needs a rule for it; date parsing must accept DD/MM/YY.
 
 ### Plan findings, slice 1a plans v2 and v3 (marks as checked by Claude in review)
@@ -311,7 +318,10 @@ Session of 10 Oct 22:38–22:43:
 
 ### Open items after 10 Oct
 - Meaning of the "Token No." on supplier DCs (ask the cofounder).
+  Update 2026-10-10: resolved by A35.
 - Overdue threshold for "invoice expected" (A16).
+  Update 2026-10-10: resolved by A36.
 - Cofounder confirmation of A10 and A18.
+  Update 2026-10-10: still open. Question reworded after A37: what will stop an engineer from following this flow for every delivery, and how do we handle it?
 - Wording of every 1a engineer and PM string, meeting Rules 3.5, 3.6 and 3.12.
 - A unit rule for documents with no unit (1b).
