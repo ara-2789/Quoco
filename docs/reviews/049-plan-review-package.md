@@ -55,6 +55,14 @@ These apply to `pra-plan-v2.md`. "v2 §" means a section of that file.
 - **D-23** (S6) Approved means locked. While status is `approved` or `cancelled`, `delivery_type`, `vehicle_number`, `dc_number` and `dc_date` are immutable (TR4c). Lands in v2 §6.
 - **D-24** (S5) Recorded from the 11 Oct fold instruction, with evidence from lookup L4. PR-A's tests use untyped clients for the four tables, with row types given at the call, as 043's tests do: `test/daily-log-photos.test.ts:106-107` and `test/media-ingest.test.ts:289,323` (`testClient()` and `jwtClient()` return a plain `SupabaseClient`, `test/helpers/db.ts:203,952`). CI therefore does not need `types/database.ts` to contain the tables. Lands in v2 §12.4, §14.
 
+### Decided by Aravind, 11 Oct, answering pra-plan-v2.md §16
+
+- **D-25** (Q-recv) `received_at` = `processed_messages.created_at` for the inbound `MessageSid` (the webhook's receipt time). Overrides the v2 §4 open question.
+- **D-26** (Q2-2) When a PM rejects a DC delivery and that removes the invoice's last active PM link, the invoice's automatic delivery is restored as pending (`incomplete` or `awaiting_pm`, re-derived from the ack), exactly as in the unlink path (v2 §6 path 2), unless the automatic delivery was rejected. Consistent with A34. Overrides the v2 §6 "reject DC" open note.
+- **D-27** (Q2-4) C-36 accepted: unlink the self-link first, then cancel; a move to `cancelled` is refused while an active link exists. Overrides v2 §16 item 3.
+- **D-28** (Q-E13) E13 reuses E6's approved string, no new string: "This delivery has a linked invoice. Unlink it first." Only reject can reach it (a PM never cancels directly).
+- **D-29** (retention) The four tables and the bucket objects are a business record (GST evidence for supplier invoices and DCs): kept indefinitely, never pruned. Overrides the [GUESS] in v2 §15.
+
 ## 4. Approved user-facing strings
 
 English approved by Aravind on 11 Oct 2026. Tamil owed, NOT approved. These replace "wording owed" in plan §10.
@@ -69,7 +77,9 @@ English approved by Aravind on 11 Oct 2026. Tamil owed, NOT approved. These repl
 
 The PR-D button label must be "Unlink", to match E6 and E8.
 
-Added 11 Oct, in `pra-plan-v2.md` §10: **E13** (a move to rejected or cancelled while an active link exists) is new. Its wording is owed from Aravind. No string was written for it.
+E13 = E6 (D-28). No new string.
+
+~~Added 11 Oct, in `pra-plan-v2.md` §10: **E13** (a move to rejected or cancelled while an active link exists) is new. Its wording is owed from Aravind. No string was written for it.~~ Superseded 11 Oct by D-28.
 
 Each string ships as a named constant with the comment "Tamil owed, NOT approved" (Tamil only).
 
@@ -170,6 +180,9 @@ Confirm each disposition in section 9. Then:
 
 - **Q2-1** Is Option Y (D-21: test-only `SECURITY DEFINER` helper functions, table grants equal to prod) acceptable? Does it leave a gap that Option X's conditions were meant to close?
 - **Q2-2** Rejecting a DC delivery that has an active PM link unlinks it with reason `delivery_rejected` (B1). If that was the invoice's last PM link, should the automatic delivery be restored, as when a PM unlinks it?
+  - Aravind decided this as D-26 (restore). Reviewer: confirm the lock path for reject-DC-with-restore, written as numbered steps.
 - **Q2-3** R3 says reject takes no other lock. B1 says the reject path locks the invoice first, then the delivery. v2 follows B1 with R3's ordering. Is that the intended reading?
 - **Q2-4** v2 unlinks the self-link first and then cancels the delivery, so the snapshot sees the pre-cancel status, and TR4c also refuses a move to `cancelled` while an active link exists. Is that sound?
+  - Accepted by Aravind as D-27. Reviewer: confirm soundness.
 - **Q2-5** Is the NULL-safe form of the R2 CHECK (v2 §2.4, §3) correct?
+- **Q2-6** D-25 reads `processed_messages.created_at` by `MessageSid` inside the RPC. `processed_messages` has no `tenant_id`. Is that read safe and sufficient, or should the webhook pass the time as an argument?
