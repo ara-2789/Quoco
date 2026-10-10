@@ -228,20 +228,26 @@ Source: docs/reviews/2026-10-05-capture-block-a-probes.txt, a read-only probe of
 
 All lines per Aravind unless marked.
 
-- A1. Slice 1 splits. 1a = engineer capture, storage, PM approval, owner email. 1b = machine reading, invoices table hardening, invoice-delivery links, matching.
+- A1. Slice 1 splits. 1a = engineer capture, storage, PM approval, ~~owner email~~. 1b = machine reading, invoices table hardening, ~~invoice-delivery links~~, matching.
+  Corrected 2026-10-10, per Aravind: the owner email moves to 1b (A24). Manual PM linking of invoices to deliveries is in 1a (A16); automatic matching stays in 1b. 1a also creates a delivery from every invoice (A28).
 - A2. O14: machine reading of handwritten and printed documents are both priority. Reading is 1b. This removes O14's dependency on the handwritten ratio.
 - A3. The site receives printed DCs. Peruvalappur is the same site that sent the 58 O13 photos.
 - A4. O9: retention ends at project completion. No completion event exists, so retention is indefinite for now.
 - A5. Supplier documents may go to the Anthropic API (1b).
 - A6. PDFs are accepted and read. No information in a PDF may be lost. Design chosen by Claude under Aravind's delegation: in 1a, PDFs are accepted only inside the material-inward flow; original bytes stored unchanged, all pages; file type checked by first bytes (%PDF-); an encrypted or unparseable PDF is stored and marked not previewable; PDFs in check-ins stay rejected; a PDF with no active flow gets the idle nudge (a change from today's behaviour, planned for 1a).
-- A7. Owner email: a separate email; reads approved deliveries at send time; the deliveries section appears once per project per night; late approvals roll forward to the next night; the owner sees money for purchases, from PM values only; no invoices and no attachments in 1a; nothing is sent on an empty night.
-- A8. Delivery type: supplier or internal transfer. The PM sets it at approval. The engineer gets no extra question. An internal transfer needs no invoice and shows quantities without money in the owner email.
+- A7. Owner email: a separate email; reads approved deliveries at send time; the deliveries section appears once per project per night; late approvals roll forward to the next night; the owner sees money for purchases, ~~from PM values only~~; no invoices and no attachments in 1a; nothing is sent on an empty night.
+  Corrected 2026-10-10, per Aravind: the whole owner email is 1b (A24). Values come from machine reading that the PM confirms or corrects (A23, A25), not from PM entry.
+- A8. Delivery type: supplier or internal transfer. The PM sets it at approval. The engineer gets no extra question. An internal transfer needs no invoice ~~and shows quantities without money in the owner email~~.
+  Corrected 2026-10-10, per Aravind: internal transfers do not appear in the owner email (A19).
 - A9. New open item: equipment location (inward and outward transfers; which site holds which equipment). Not designed. Not in 1a.
-- A10. Engineer GRN: with a DC, the engineer answers "all as on the DC" or lists only the items that differ. Without a DC, the engineer sends one free-text message, stored raw; the PM itemises. The engineer types no rate; the PM enters rates from the document. Amends O1. Cofounder confirmation: not recorded.
+- A10. Engineer GRN: with a DC, the engineer answers "all as on the DC" or lists only the items that differ. ~~Without a DC, the engineer sends one free-text message, stored raw; the PM itemises.~~ The engineer types no rate; ~~the PM enters rates from the document~~. Amends O1. Cofounder confirmation: not recorded.
+  Corrected 2026-10-10, per Aravind: every GRN is a WhatsApp message with a DC or invoice attached plus the engineer's confirmation (6 Oct 23:11). The engineer answers 1 Yes / 2 No / 3 Partially (A18). The PM types no values; machine reading captures them (A23).
 - A11. File size cap 16 MB for images and PDFs. An oversize file shows to the PM only; the engineer gets no message. Basis: Twilio documents a 16 MB WhatsApp media limit for messages Twilio sends; Claude found no Twilio statement for inbound media (inferred cap, not a Twilio fact).
 - A12. New storage bucket for capture documents. PDF checks stay byte-level in 1a (no PDF parser).
-- A13. The PM must enter the supplier or origin name before approval. Vehicle number, DC number, DC date optional in 1a. Invoices view-only in 1a.
-- A14. Design fixes: the engineer acknowledgement says "received", not "saved"; the owner-email send ledger needs a stuck-claim rule and a provider idempotency check; approval is final in 1a (correction design later); the IST date column follows migration 043's method, proven in rehearsal; every PM SECURITY DEFINER function gets negative tests (PM of another project, PM of another tenant).
+- A13. ~~The PM must enter the supplier or origin name before approval.~~ Vehicle number, DC number, DC date optional in 1a. ~~Invoices view-only in 1a.~~
+  Corrected 2026-10-10, per Aravind: in 1a the supplier name stays blank (A30). The PM may link invoices; the PM does not edit or approve invoice content (A16).
+- A14. Design fixes: the engineer acknowledgement says "received", not "saved"; the owner-email send ledger needs a stuck-claim rule and a provider idempotency check; ~~approval is final in 1a~~ (correction design later); the IST date column follows migration 043's method, proven in rehearsal; every PM SECURITY DEFINER function gets negative tests (PM of another project, PM of another tenant).
+  Corrected 2026-10-10, per Aravind: approval is final in 1a, except that linking an invoice may cancel its approved automatic delivery, recorded as approved then superseded by link (A31).
 - A15. 1b arithmetic check: subtotal + CGST + SGST + IGST + round-off = grand total. A line-sum check alone fails on correct GST invoices.
 
 ### Evidence: internal DC sample (observed by Claude from Aravind's upload; file not stored in repo)
@@ -251,3 +257,61 @@ All lines per Aravind unless marked.
 - Header label "Details of Consigner" labels the consignee. Misspelled descriptions ("Verticle", "Leger"). The PDF has a text layer (Excel export).
 
 Open follow-ups from the 6 Oct 2026 records are listed in `docs/reviews/2026-10-06-p0-sentry-record.md` (FOLLOW-UPS).
+
+## Decisions, 6–10 Oct 2026 IST
+
+All lines per Aravind. Times are IST.
+
+Session of 6 Oct 23:03–23:40:
+- A16. Invoice rule. With an invoice, a DC is optional; the PM page never shows "DC missing". With a DC, the PM page shows "invoice expected" until the PM links an invoice. One invoice can cover one DC or several DCs. The PM links by hand in 1a; automatic matching stays in 1b. An internal transfer never expects an invoice. A day count runs until an invoice is linked. Overdue threshold: TBD.
+- A17. "Paid" status is an open item. Quoco records no payments.
+- A18. Engineer confirmation. After a DC, or after an invoice, the bot asks one question with numbered replies: 1 Yes, 2 No, 3 Partially. Replies 2 and 3 each ask for a short free-text note. The engineer types no rate and no total. Numbered replies, not buttons. Amends O18.
+- A19. The owner email shows money values only. Internal transfers do not appear in the owner email.
+
+Session of 7 Oct 00:00–00:09:
+- A20. Tax is a data point. Per delivery: value before GST, tax, grand total. The owner email shows the grand total. The dashboard's commercial sections show the value before GST.
+- A21. Owner email: purchases show quantity and amount.
+- A22. An owner send with no confirmation from the email provider after 24 hours rolls forward to the next night. Accepted risk: one possible duplicate email.
+- A23. The PM types no values. Machine reading captures the value before GST and the tax. The PM confirms before the values are stored.
+- A24. 1a carries no money values. The owner email moves to 1b.
+- A25. In 1b the PM can correct a machine reading before confirming it.
+- A26. Tax is stored in separate fields: CGST, SGST, IGST, round-off (1b).
+- A27. The material-inward flow ends after 30 minutes with no reply. The partial delivery stays saved and shows "not acknowledged".
+- A28. Every invoice creates a delivery labelled "created from invoice". When the PM links that invoice to other deliveries, the same action cancels the automatic delivery; the cancelled record stays visible. A database rule refuses an invoice with both an active automatic delivery and active links to other deliveries. The system never generates a document that looks like a DC.
+
+Session of 10 Oct 22:38–22:43:
+- A29. After the 30-minute timeout, the first bare 1, 2 or 3 on the same IST day, while that engineer's last delivery is unanswered, gets one reply: the delivery question has closed, the PM will check it, plus the menu. Every other message goes down the normal idle path. Amends A27's "as if no flow were active" for bare 1, 2 and 3 only.
+- A30. In 1a the supplier name stays blank. In 1b the machine-read name is stored with the document reading and shown on the delivery; no approved delivery row changes.
+- A31. The PM may link an invoice even after approving its automatic delivery. The link cancels that delivery and records "approved, then superseded by link" with the PM and the time.
+- A32. Site engineers send invoices that bill earlier DCs on WhatsApp. The invoice question must not ask whether goods arrived (wording owed).
+- A33. A DC has at most one invoice. The database refuses a second active invoice link on one DC.
+- Approved the same evening: re-typing a linked delivery as an internal transfer is refused ("unlink first"); the automatic delivery is a self-link row, a trigger enforces the A28 rule, and the automatic delivery returns when its last link is removed unless the PM rejected it; the PM may approve a "not acknowledged" delivery and the list shows that state; further photos of the same document attach to that document.
+
+### Evidence: first supplier DC (observed by Claude from a photo Aravind uploaded on 10 Oct; photo kept outside the repo; supplier GSTIN and vehicle number deliberately not recorded)
+- Printed form; every value handwritten. Printed serial DC number. Date written DD/MM/YY with a two-digit year.
+- Buyer name misspelled. Never match on buyer name.
+- One item, an abbreviation ("GSB"). Quantity 8.0 with no unit. Rate column blank. Amount 24,800. SGST 2.5% and CGST 2.5% rows present but blank. Total 24,800, equal to the amount.
+- A handwritten "Token No." with a value. Meaning unknown (open).
+- Consequences (inferred): supplier DCs carry the amount even with the rate blank; machine reading must store a blank tax row as "not shown", never 0; a missing unit cannot be read, so 1b needs a rule for it; date parsing must accept DD/MM/YY.
+
+### Plan findings, slice 1a plans v2 and v3 (marks as checked by Claude in review)
+- N1 (observed): two places map an unknown flow to "morning": lib/whatsapp/inbound-start.ts:724 and lib/whatsapp/dispatch.ts:266.
+- N2 (observed): the live evening function (040) starts a check-in only when no flow is active (line 501) or the flow is hindrance (512); otherwise it returns reask (539). The morning function (038) is reported to do the same.
+- N3 (observed): nothing in lib/whatsapp reads whatsapp_sessions.expires_at; only a type field at session.ts:32 mentions it.
+- N4 (observed): acquire_and_transition_session is referenced only by its wrapper in session.ts; no production caller was found.
+- N5 (observed): the job queue claims only pending or failed jobs (lib/queue/jobs.ts:96); nothing reclaims a running job; the owner-send cron treats running as already queued.
+- N6 (observed): lib/email/send.ts sends no idempotency key. Resend's Idempotency-Key support is reported from a fetch tool, not verified live.
+- N7 (observed): migration 039 used a column-scoped UPDATE grant for hindrance acknowledgement (039:485-486).
+- N8: every flow function writes updated_at = p_now on each turn (observed: 038:378/696/1162, 040:884, 044:612). That the same functions write expires_at = now + 30 minutes is reported, not observed.
+- N9 (reported): the hindrance start returns reask while any other flow is active (044:464-486). The 30-minute rule must clear the session, not only ignore it.
+- N10 (observed): the vendors table exists; no app code reads it.
+- N11 (reported): the existing invoices table has single-column FKs and DECIMAL(10,2) (001:155-177).
+- N12 (observed): a storage bucket can be created by migration, as 042:74 did.
+- N13 (inferred): a scheduled check-in arriving while the delivery question is pending turns the engineer's next 1, 2 or 3 into an answer to the check-in.
+
+### Open items after 10 Oct
+- Meaning of the "Token No." on supplier DCs (ask the cofounder).
+- Overdue threshold for "invoice expected" (A16).
+- Cofounder confirmation of A10 and A18.
+- Wording of every 1a engineer and PM string, meeting Rules 3.5, 3.6 and 3.12.
+- A unit rule for documents with no unit (1b).
