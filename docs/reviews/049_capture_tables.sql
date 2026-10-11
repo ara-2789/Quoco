@@ -8,6 +8,8 @@
 -- happening (CLAUDE.md section 6: a migration file enters supabase/migrations/
 -- when it is being applied, not when it is written).
 --
+-- 11 Oct: O-1 and O-3 closed per Aravind.
+--
 -- Spec commit: 0289bcf (origin/main). Specification, in order of precedence:
 --   docs/reviews/049-plan-review-package.md  (section 3 D-1..D-33, section 4
 --     strings, section 11 round 2 table and the reviewer's SQL-package
@@ -30,92 +32,94 @@
 -- lines in this file (line numbers are of THIS file). Source ids are those of
 -- the cover file (D-n), review round 1 (R/B/S/N), review round 2 (S-A..S-F,
 -- N-1, N-2, Q2-n) and plan v2 (TR1..TR5, C-n).
---   E7: 120-141
---   E12: 120-141
---   E-codes-table: 120-141
---   N-1: 120-141
---   D-31: 120-141
---   lock-paths: 143-201
---   R3: 143-201, 431-494, 585-657, 659-695
---   D-26: 143-201
---   Q2-2: 143-201
---   Q2-3: 143-201
---   S-C: 143-201
---   D-27: 143-201, 585-657
---   S-F: 203-213
---   S-E: 203-213
---   D-4: 203-213, 253-277, 284-311
---   Q2-6: 215-226
---   D-22: 215-226, 319-368
---   D-25: 215-226, 319-368
---   B3: 228-238, 431-494, 496-583, 585-657, 659-695
---   S-B: 228-238
---   D-19: 228-238, 253-277, 319-368
---   D-1: 253-277, 319-368
---   S-2: 253-277, 284-311
---   D-5: 253-277, 284-311, 319-368, 720-733, 735-748, 750-763, 765-778
---   D-30: 253-277
---   S-A: 253-277, 319-368, 375-407
---   S4: 253-277, 319-368
---   C-29: 253-277, 284-311, 319-368, 375-407
---   D-29: 253-277, 284-311, 319-368, 375-407, 894-973
---   S-3: 284-311
---   D-9: 284-311, 822-826
---   D-10: 284-311, 822-826
---   D-18: 319-368
---   D-23: 319-368, 585-657
---   D-2: 375-407
---   D-3: 375-407, 414-419, 496-583
---   R2: 375-407, 496-583
---   Q2-5: 375-407
---   R5: 375-407
---   C-37: 375-407
---   N1: 414-419
---   A33: 414-419
---   E8: 414-419
---   C-35: 414-419
---   TR1: 431-494, 697-705
---   TR2: 431-494
---   B2: 431-494, 496-583
---   R4: 431-494, 496-583, 585-657, 659-695, 787-791, 803-807, 853-890
---   D-7: 431-494, 496-583, 585-657, 659-695, 803-807
---   E1: 431-494
---   E2: 431-494
---   E3: 431-494
---   E4: 431-494
---   E5: 431-494
---   E10: 431-494, 496-583
---   E14: 431-494, 496-583, 585-657, 659-695
---   A28: 431-494
---   A34: 431-494
---   TR3: 496-583, 697-705
---   C-36: 496-583, 585-657
---   Q2-4: 496-583
---   TR4a: 585-657, 697-705
---   TR4b: 585-657, 697-705
---   TR4c: 585-657, 697-705
---   D-6: 585-657, 659-695
---   S6: 585-657
---   B1: 585-657
---   E6: 585-657
---   E9: 585-657, 659-695
---   E11: 585-657, 659-695
---   E13: 585-657
---   TR5: 659-695, 697-705
---   D-20: 714-718, 720-733, 735-748, 750-763, 765-778
---   R7: 714-718, 720-733, 735-748, 750-763, 765-778
---   C-30: 714-718, 720-733, 735-748, 750-763, 765-778
---   D-8: 787-791, 853-890
---   D-21: 787-791
---   CLAUDE.md-s6-per-role-revoke: 787-791
---   C-27: 803-807
---   D-11: 822-826
---   042-precedent: 822-826
---   CLAUDE.md-s6-ACL-fingerprint: 853-890
---   R8: 894-973
---   S-D: 894-973
---   C-31: 894-973
---   down-order: 894-973
+--   E7: 124-147, 591-673
+--   E12: 124-147
+--   E-codes-table: 124-147
+--   N-1: 124-147
+--   D-31: 124-147
+--   lock-paths: 149-207
+--   R3: 149-207, 437-500, 591-673, 675-711
+--   D-26: 149-207
+--   Q2-2: 149-207
+--   Q2-3: 149-207
+--   S-C: 149-207
+--   D-27: 149-207, 591-673
+--   S-F: 209-219
+--   S-E: 209-219
+--   D-4: 209-219, 259-283, 290-317
+--   Q2-6: 221-232
+--   D-22: 221-232, 325-374
+--   D-25: 221-232, 325-374
+--   B3: 234-244, 437-500, 502-589, 591-673, 675-711
+--   S-B: 234-244
+--   D-19: 234-244, 259-283, 325-374
+--   D-1: 259-283, 325-374
+--   S-2: 259-283, 290-317
+--   D-5: 259-283, 290-317, 325-374, 736-749, 751-764, 766-779, 781-794
+--   D-30: 259-283
+--   S-A: 259-283, 325-374, 381-413
+--   S4: 259-283, 325-374
+--   C-29: 259-283, 290-317, 325-374, 381-413
+--   D-29: 259-283, 290-317, 325-374, 381-413, 918-997
+--   S-3: 290-317
+--   D-9: 290-317, 846-850
+--   D-10: 290-317, 846-850
+--   D-18: 325-374
+--   D-23: 325-374, 591-673
+--   D-2: 381-413
+--   D-3: 381-413, 420-425, 502-589
+--   R2: 381-413, 502-589
+--   Q2-5: 381-413
+--   R5: 381-413
+--   C-37: 381-413
+--   N1: 420-425
+--   A33: 420-425
+--   E8: 420-425
+--   C-35: 420-425
+--   TR1: 437-500, 713-721
+--   TR2: 437-500
+--   B2: 437-500, 502-589
+--   R4: 437-500, 502-589, 591-673, 675-711, 803-807, 823-831, 877-914
+--   D-7: 437-500, 502-589, 591-673, 675-711, 823-831
+--   E1: 437-500
+--   E2: 437-500
+--   E3: 437-500
+--   E4: 437-500
+--   E5: 437-500
+--   E10: 437-500, 502-589
+--   E14: 437-500, 502-589, 591-673, 675-711
+--   A28: 437-500
+--   A34: 437-500
+--   TR3: 502-589, 713-721
+--   C-36: 502-589, 591-673
+--   Q2-4: 502-589
+--   TR4a: 591-673, 713-721
+--   TR4b: 591-673, 713-721
+--   TR4c: 591-673, 713-721
+--   D-6: 591-673, 675-711
+--   S6: 591-673
+--   B1: 591-673
+--   E6: 591-673
+--   O-3: 591-673
+--   E9: 591-673, 675-711
+--   E11: 591-673, 675-711
+--   E13: 591-673
+--   TR5: 675-711, 713-721
+--   D-20: 730-734, 736-749, 751-764, 766-779, 781-794
+--   R7: 730-734, 736-749, 751-764, 766-779, 781-794
+--   C-30: 730-734, 736-749, 751-764, 766-779, 781-794
+--   D-8: 803-807, 877-914
+--   D-21: 803-807
+--   CLAUDE.md-s6-per-role-revoke: 803-807
+--   C-27: 823-831
+--   O-1: 823-831
+--   D-11: 846-850
+--   042-precedent: 846-850
+--   CLAUDE.md-s6-ACL-fingerprint: 877-914
+--   R8: 918-997
+--   S-D: 918-997
+--   C-31: 918-997
+--   down-order: 918-997
 --
 -- [src: E7, E12, E-codes-table, N-1, D-31]
 -- RAISE CODES (E-numbers of the cover file section 4). Every RAISE in this
@@ -128,7 +132,9 @@
 --   E5  QE005  TR2  PM link to a rejected/cancelled delivery; also a
 --                   self-link to a rejected delivery (A34)
 --   E6  QE006  TR4b retype to internal_transfer while an active link exists
---   E7  (not raised) CHECK deliveries_auto_not_internal_chk, SQLSTATE 23514
+--   E7  QE007  TR4 (O-3)  retype of an AUTOMATIC delivery to internal_transfer,
+--                   raised before TR4b's E6; the CHECK
+--                   deliveries_auto_not_internal_chk (23514) remains a backstop
 --   E8  (not raised) unique index uq_dil_active_per_delivery, SQLSTATE 23505
 --   E9  QE009  TR4a / TR5  immutable column changed
 --   E10 QE010  TR3 (any refused link edit) and TR1 (B2: INSERT carrying
@@ -582,7 +588,7 @@ BEGIN
 END;
 $$;
 
--- [src: TR4a, TR4b, TR4c, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E9, E11, E13, E14]
+-- [src: TR4a, TR4b, TR4c, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
 CREATE FUNCTION public.trg_deliveries_before_update()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -613,6 +619,16 @@ BEGIN
   -- immutable.
   IF NEW.created_from_invoice_id IS NOT NULL THEN
     PERFORM 1 FROM public.capture_documents d WHERE d.id = NEW.created_from_invoice_id FOR NO KEY UPDATE;
+  END IF;
+
+  -- O-3 (closed per Aravind 11 Oct): an AUTOMATIC delivery can never be an
+  -- internal transfer. Raised BEFORE the active-link check below, so a PM
+  -- retyping an automatic delivery gets E7, not E6 ("Unlink it first" -- which
+  -- cannot be done for a self-link). The CHECK deliveries_auto_not_internal_chk
+  -- stays as the backstop (it also covers an INSERT).
+  IF NEW.delivery_type = 'internal_transfer' AND OLD.delivery_type IS DISTINCT FROM 'internal_transfer'
+     AND NEW.created_from_invoice_id IS NOT NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE007', MESSAGE = 'E7';
   END IF;
 
   -- TR4b: no retype to internal_transfer while an active link exists.
@@ -795,16 +811,24 @@ GRANT SELECT ON public.capture_files TO authenticated, service_role;
 GRANT SELECT ON public.deliveries TO authenticated, service_role;
 GRANT SELECT ON public.delivery_invoice_links TO authenticated, service_role;
 
--- Functions: REVOKE ALL by name from PUBLIC and each role. NO GRANT: a trigger
--- fires without the invoking role holding EXECUTE. (scripts/lint-migrations.mjs
--- rule no-orphan-security-definer expects a GRANT EXECUTE for every SECURITY
--- DEFINER function; trigger functions have no caller to grant to. OPEN item
--- O-1 in docs/reviews/049-review-package.md -- not resolved here.)
--- [src: R4, D-7, C-27]
+-- Functions: NO role may call them (a trigger fires without the invoking role
+-- holding EXECUTE). FROM PUBLIC alone is not enough (the default privileges
+-- grant anon, authenticated, service_role individually), so all four roles are
+-- named. The GRANT to postgres below satisfies scripts/lint-migrations.mjs
+-- Rule 1 (every SECURITY DEFINER function needs a REVOKE and a GRANT) and
+-- changes the effective ACL not at all -- postgres already owns each function
+-- -- so none of these is callable by any other role. Same shape as
+-- supabase/migrations/048_engineer_registration.sql:194-203 (O-1, closed per
+-- Aravind 11 Oct).
+-- [src: R4, D-7, C-27, O-1]
 REVOKE ALL ON FUNCTION public.trg_dil_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.trg_dil_before_insert() TO postgres;
 REVOKE ALL ON FUNCTION public.trg_dil_before_update() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.trg_dil_before_update() TO postgres;
 REVOKE ALL ON FUNCTION public.trg_deliveries_before_update() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_update() TO postgres;
 REVOKE ALL ON FUNCTION public.trg_capture_documents_before_update() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_update() TO postgres;
 
 COMMENT ON TABLE public.capture_documents IS 'Capture engine slice 1a: one document (DC or invoice) per capture flow. Written only by PR-B definer functions. Business record, never pruned (D-29).';
 COMMENT ON TABLE public.capture_files IS 'Capture engine slice 1a: one row per page/photo of a capture_documents row. Bytes live in the capture-documents bucket.';
