@@ -9,6 +9,7 @@
 -- when it is being applied, not when it is written).
 --
 -- 11 Oct: O-1 and O-3 closed per Aravind.
+-- 11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2).
 --
 -- Spec commit: 0289bcf (origin/main). Specification, in order of precedence:
 --   docs/reviews/049-plan-review-package.md  (section 3 D-1..D-33, section 4
@@ -32,94 +33,98 @@
 -- lines in this file (line numbers are of THIS file). Source ids are those of
 -- the cover file (D-n), review round 1 (R/B/S/N), review round 2 (S-A..S-F,
 -- N-1, N-2, Q2-n) and plan v2 (TR1..TR5, C-n).
---   E7: 124-147, 591-673
---   E12: 124-147
---   E-codes-table: 124-147
---   N-1: 124-147
---   D-31: 124-147
---   lock-paths: 149-207
---   R3: 149-207, 437-500, 591-673, 675-711
---   D-26: 149-207
---   Q2-2: 149-207
---   Q2-3: 149-207
---   S-C: 149-207
---   D-27: 149-207, 591-673
---   S-F: 209-219
---   S-E: 209-219
---   D-4: 209-219, 259-283, 290-317
---   Q2-6: 221-232
---   D-22: 221-232, 325-374
---   D-25: 221-232, 325-374
---   B3: 234-244, 437-500, 502-589, 591-673, 675-711
---   S-B: 234-244
---   D-19: 234-244, 259-283, 325-374
---   D-1: 259-283, 325-374
---   S-2: 259-283, 290-317
---   D-5: 259-283, 290-317, 325-374, 736-749, 751-764, 766-779, 781-794
---   D-30: 259-283
---   S-A: 259-283, 325-374, 381-413
---   S4: 259-283, 325-374
---   C-29: 259-283, 290-317, 325-374, 381-413
---   D-29: 259-283, 290-317, 325-374, 381-413, 918-997
---   S-3: 290-317
---   D-9: 290-317, 846-850
---   D-10: 290-317, 846-850
---   D-18: 325-374
---   D-23: 325-374, 591-673
---   D-2: 381-413
---   D-3: 381-413, 420-425, 502-589
---   R2: 381-413, 502-589
---   Q2-5: 381-413
---   R5: 381-413
---   C-37: 381-413
---   N1: 420-425
---   A33: 420-425
---   E8: 420-425
---   C-35: 420-425
---   TR1: 437-500, 713-721
---   TR2: 437-500
---   B2: 437-500, 502-589
---   R4: 437-500, 502-589, 591-673, 675-711, 803-807, 823-831, 877-914
---   D-7: 437-500, 502-589, 591-673, 675-711, 823-831
---   E1: 437-500
---   E2: 437-500
---   E3: 437-500
---   E4: 437-500
---   E5: 437-500
---   E10: 437-500, 502-589
---   E14: 437-500, 502-589, 591-673, 675-711
---   A28: 437-500
---   A34: 437-500
---   TR3: 502-589, 713-721
---   C-36: 502-589, 591-673
---   Q2-4: 502-589
---   TR4a: 591-673, 713-721
---   TR4b: 591-673, 713-721
---   TR4c: 591-673, 713-721
---   D-6: 591-673, 675-711
---   S6: 591-673
---   B1: 591-673
---   E6: 591-673
---   O-3: 591-673
---   E9: 591-673, 675-711
---   E11: 591-673, 675-711
---   E13: 591-673
---   TR5: 675-711, 713-721
---   D-20: 730-734, 736-749, 751-764, 766-779, 781-794
---   R7: 730-734, 736-749, 751-764, 766-779, 781-794
---   C-30: 730-734, 736-749, 751-764, 766-779, 781-794
---   D-8: 803-807, 877-914
---   D-21: 803-807
---   CLAUDE.md-s6-per-role-revoke: 803-807
---   C-27: 823-831
---   O-1: 823-831
---   D-11: 846-850
---   042-precedent: 846-850
---   CLAUDE.md-s6-ACL-fingerprint: 877-914
---   R8: 918-997
---   S-D: 918-997
---   C-31: 918-997
---   down-order: 918-997
+--   E7: 129-152, 604-725
+--   E12: 129-152
+--   E-codes-table: 129-152
+--   N-1: 129-152, 932-980
+--   D-31: 129-152
+--   lock-paths: 154-212
+--   R3: 154-212, 447-513, 604-725, 727-766
+--   D-26: 154-212
+--   Q2-2: 154-212
+--   Q2-3: 154-212
+--   S-C: 154-212
+--   D-27: 154-212, 604-725
+--   S-F: 214-224
+--   S-E: 214-224
+--   D-4: 214-224, 264-288, 295-322
+--   Q2-6: 226-237
+--   D-22: 226-237, 330-379
+--   D-25: 226-237, 330-379
+--   B3: 239-249, 447-513, 515-602, 604-725, 727-766
+--   S-B: 239-249
+--   D-19: 239-249, 264-288, 330-379
+--   D-1: 264-288, 330-379
+--   S-2: 264-288, 295-322, 984-1073
+--   D-5: 264-288, 295-322, 330-379, 791-804, 806-819, 821-834, 836-849
+--   D-30: 264-288
+--   S-A: 264-288, 330-379, 386-423
+--   S4: 264-288, 330-379
+--   C-29: 264-288, 295-322, 330-379, 386-423
+--   D-29: 264-288, 295-322, 330-379, 386-423, 984-1073
+--   S-3: 295-322
+--   D-9: 295-322, 901-905
+--   D-10: 295-322, 901-905
+--   D-18: 330-379
+--   D-23: 330-379, 604-725
+--   D-2: 386-423
+--   D-3: 386-423, 430-435, 515-602
+--   R2: 386-423, 515-602
+--   Q2-5: 386-423
+--   R5: 386-423
+--   C-37: 386-423
+--   Q-1: 386-423
+--   N1: 430-435
+--   A33: 430-435
+--   E8: 430-435
+--   C-35: 430-435
+--   TR1: 447-513, 768-776
+--   TR2: 447-513
+--   B2: 447-513, 515-602
+--   B-2: 447-513
+--   R4: 447-513, 515-602, 604-725, 727-766, 858-862, 878-886, 932-980
+--   D-7: 447-513, 515-602, 604-725, 727-766, 878-886
+--   E1: 447-513
+--   E2: 447-513
+--   E3: 447-513
+--   E4: 447-513
+--   E5: 447-513
+--   E10: 447-513, 515-602
+--   E14: 447-513, 515-602, 604-725, 727-766
+--   A28: 447-513
+--   A34: 447-513
+--   TR3: 515-602, 768-776
+--   C-36: 515-602, 604-725
+--   Q2-4: 515-602
+--   TR4a: 604-725, 768-776
+--   TR4b: 604-725, 768-776
+--   TR4c: 604-725, 768-776
+--   B-1: 604-725
+--   S-1: 604-725, 727-766
+--   D-6: 604-725, 727-766
+--   S6: 604-725
+--   B1: 604-725
+--   E6: 604-725
+--   O-3: 604-725
+--   E9: 604-725, 727-766
+--   E11: 604-725, 727-766
+--   E13: 604-725
+--   TR5: 727-766, 768-776
+--   D-20: 785-789, 791-804, 806-819, 821-834, 836-849
+--   R7: 785-789, 791-804, 806-819, 821-834, 836-849
+--   C-30: 785-789, 791-804, 806-819, 821-834, 836-849
+--   D-8: 858-862, 932-980
+--   D-21: 858-862
+--   CLAUDE.md-s6-per-role-revoke: 858-862
+--   C-27: 878-886
+--   O-1: 878-886
+--   D-11: 901-905
+--   042-precedent: 901-905
+--   CLAUDE.md-s6-ACL-fingerprint: 932-980
+--   R8: 984-1073
+--   S-D: 984-1073
+--   C-31: 984-1073
+--   down-order: 984-1073
 --
 -- [src: E7, E12, E-codes-table, N-1, D-31]
 -- RAISE CODES (E-numbers of the cover file section 4). Every RAISE in this
@@ -130,7 +135,7 @@
 --   E3  QE003  TR2  PM link to an internal transfer
 --   E4  QE004  TR2  PM link to an automatic delivery
 --   E5  QE005  TR2  PM link to a rejected/cancelled delivery; also a
---                   self-link to a rejected delivery (A34)
+--                   self-link to a rejected or cancelled delivery (A34, B-2)
 --   E6  QE006  TR4b retype to internal_transfer while an active link exists
 --   E7  QE007  TR4 (O-3)  retype of an AUTOMATIC delivery to internal_transfer,
 --                   raised before TR4b's E6; the CHECK
@@ -378,7 +383,7 @@ CREATE TABLE public.deliveries (
 -- unlink (TR3). linked_by / unlinked_by / superseded_approval_by carry
 -- composite FKs to users (S-A: restored after the v2 silent drop).
 -- -----------------------------------------------------------------------------
--- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29]
+-- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29, Q-1]
 CREATE TABLE public.delivery_invoice_links (
   id                      uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   created_at              timestamptz NOT NULL DEFAULT now(),
@@ -409,7 +414,12 @@ CREATE TABLE public.delivery_invoice_links (
   CONSTRAINT dil_unlink_reason_pair_chk CHECK ((unlinked_at IS NULL) = (unlink_reason IS NULL)),
   CONSTRAINT dil_snapshot_status_chk CHECK ((superseded_from_status IS NOT NULL) = COALESCE(link_source = 'created_from_invoice' AND unlink_reason = 'superseded_by_link', false)),
   CONSTRAINT dil_snapshot_approver_chk CHECK ((superseded_approval_by IS NOT NULL) = (superseded_from_status IS NOT DISTINCT FROM 'approved')),
-  CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL))
+  CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL)),
+  -- Q-1 (SQL review r1): unlink_reason is scoped to link_source. Both are safe when unlink_reason is NULL
+  -- (IS DISTINCT FROM is then true). The second matters more: a self-link unlinked as pm_unlinked would leave
+  -- the invoice with no active link while its automatic delivery is not cancelled.
+  CONSTRAINT dil_superseded_reason_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'superseded_by_link' OR link_source = 'created_from_invoice'),
+  CONSTRAINT dil_pm_unlinked_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'pm_unlinked' OR link_source = 'pm_manual')
 );
 
 -- -----------------------------------------------------------------------------
@@ -434,7 +444,7 @@ CREATE INDEX idx_deliveries_reported_by ON public.deliveries (reported_by);
 -- get 42501 from the FOR SHARE lock in TR2 instead of the invariant verdict).
 -- -----------------------------------------------------------------------------
 
--- [src: TR1, TR2, B2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+-- [src: TR1, TR2, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
 CREATE FUNCTION public.trg_dil_before_insert()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -490,7 +500,10 @@ BEGIN
       ELSIF v_status IN ('rejected', 'cancelled') THEN
         RAISE EXCEPTION USING ERRCODE = 'QE005', MESSAGE = 'E5';
       END IF;
-    ELSIF v_status = 'rejected' THEN
+    ELSIF v_status IN ('rejected', 'cancelled') THEN
+      -- B-2 (SQL review r1): a self-link is also refused onto a CANCELLED
+      -- delivery. Paths 2 and 4 restore the delivery BEFORE inserting the
+      -- new self-link, so this turns that header rule into one the trigger enforces.
       RAISE EXCEPTION USING ERRCODE = 'QE005', MESSAGE = 'E5';
     END IF;
   END IF;
@@ -588,7 +601,7 @@ BEGIN
 END;
 $$;
 
--- [src: TR4a, TR4b, TR4c, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
+-- [src: TR4a, TR4b, TR4c, B-1, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
 CREATE FUNCTION public.trg_deliveries_before_update()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -601,8 +614,11 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
   END IF;
 
-  -- TR4a: immutable columns.
-  IF NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
+  -- TR4a: immutable columns (S-1, SQL review r1: id and created_at added --
+  -- every ordering CHECK is measured against created_at).
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+     OR NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
      OR NEW.dc_document_id IS DISTINCT FROM OLD.dc_document_id
      OR NEW.project_id IS DISTINCT FROM OLD.project_id
      OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
@@ -668,11 +684,47 @@ BEGIN
     END IF;
   END IF;
 
+  -- B-1 (SQL review r1): approval attribution cannot be rewritten after the
+  -- fact. Each group may change ONLY on its own status transition; any other
+  -- IS DISTINCT FROM on these columns raises E11.
+  -- approved_by/approved_at: NULL -> value only on a move INTO approved;
+  -- value -> NULL only on restore (cancelled -> incomplete/awaiting_pm).
+  IF NEW.approved_by IS DISTINCT FROM OLD.approved_by
+     OR NEW.approved_at IS DISTINCT FROM OLD.approved_at THEN
+    IF NOT (
+         (OLD.approved_by IS NULL AND OLD.approved_at IS NULL
+          AND NEW.status = 'approved' AND OLD.status IS DISTINCT FROM 'approved')
+      OR (NEW.approved_by IS NULL AND NEW.approved_at IS NULL
+          AND OLD.status = 'cancelled' AND NEW.status IN ('incomplete', 'awaiting_pm'))
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+  END IF;
+  -- rejected_by/rejected_at/reject_reason: set only on a move INTO rejected.
+  IF NEW.rejected_by IS DISTINCT FROM OLD.rejected_by
+     OR NEW.rejected_at IS DISTINCT FROM OLD.rejected_at
+     OR NEW.reject_reason IS DISTINCT FROM OLD.reject_reason THEN
+    IF NOT (NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected') THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+  END IF;
+  -- cancelled_at/cancel_reason: set on a move INTO cancelled; cleared on restore.
+  IF NEW.cancelled_at IS DISTINCT FROM OLD.cancelled_at
+     OR NEW.cancel_reason IS DISTINCT FROM OLD.cancel_reason THEN
+    IF NOT (
+         (NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM 'cancelled')
+      OR (NEW.cancelled_at IS NULL AND NEW.cancel_reason IS NULL
+          AND OLD.status = 'cancelled' AND NEW.status IN ('incomplete', 'awaiting_pm'))
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+  END IF;
+
   RETURN NEW;
 END;
 $$;
 
--- [src: TR5, D-6, B3, R3, R4, D-7, E9, E11, E14]
+-- [src: TR5, S-1, D-6, B3, R3, R4, D-7, E9, E11, E14]
 CREATE FUNCTION public.trg_capture_documents_before_update()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -685,7 +737,10 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
   END IF;
 
-  IF NEW.kind IS DISTINCT FROM OLD.kind
+  -- S-1 (SQL review r1): id and created_at added to the immutable set.
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+     OR NEW.kind IS DISTINCT FROM OLD.kind
      OR NEW.project_id IS DISTINCT FROM OLD.project_id
      OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
      OR NEW.sent_by IS DISTINCT FROM OLD.sent_by
@@ -874,7 +929,7 @@ $$;
 -- service_role SELECT only. Functions: nobody but the owner may EXECUTE;
 -- prosecdef = true; proconfig pins search_path to the empty string.
 -- -----------------------------------------------------------------------------
--- [src: R4, D-8, CLAUDE.md-s6-ACL-fingerprint]
+-- [src: R4, D-8, N-1, CLAUDE.md-s6-ACL-fingerprint]
 DO $$
 DECLARE
   v_t   text;
@@ -892,6 +947,16 @@ BEGIN
       END LOOP;
     END LOOP;
   END LOOP;
+  -- N-1 (SQL review r1): ownership. The GRANT ... TO postgres above is a no-op only if postgres owns the objects.
+  FOREACH v_t IN ARRAY ARRAY['capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_class c
+      WHERE c.oid = ('public.' || v_t)::regclass
+        AND c.relowner = 'postgres'::regrole
+    ) THEN
+      v_bad := v_bad || ' ' || v_t || ':owner';
+    END IF;
+  END LOOP;
   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
     FOREACH v_r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
       IF has_function_privilege(v_r, 'public.' || v_f || '()', 'EXECUTE') THEN
@@ -902,6 +967,7 @@ BEGIN
       SELECT 1 FROM pg_proc p
       WHERE p.oid = ('public.' || v_f || '()')::regprocedure
         AND p.prosecdef
+        AND p.proowner = 'postgres'::regrole
         AND p.proconfig = ARRAY['search_path=""']::text[]
     ) THEN
       v_bad := v_bad || ' ' || v_f || ':fingerprint';
@@ -915,7 +981,7 @@ $$;
 
 COMMIT;
 
--- [src: R8, S-D, D-29, C-31, down-order]
+-- [src: R8, S-D, S-2, D-29, C-31, down-order]
 -- DOWN (rehearsal only -- inert when this file is applied normally; every
 -- line below is blank or a comment, per scripts/lint-migrations.mjs's
 -- down-section-must-be-commented rule). R8 + S-D. Order per plan v2 section 11.
@@ -966,6 +1032,18 @@ COMMIT;
 -- END;
 -- $$;
 --
+-- -- S-2 (SQL review r1): the bucket DELETE is NOT in this transaction. If
+-- -- Storage refused a direct SQL delete, a delete inside this transaction
+-- -- would roll the table drops and the ledger delete back with it. The
+-- -- zero-objects assertion stays here; the delete is the separate step below.
+-- DO $$
+-- BEGIN
+--   IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
+--     RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
+--   END IF;
+-- END;
+-- $$;
+--
 -- DROP TABLE public.delivery_invoice_links;
 -- DROP TABLE public.capture_files;
 -- DROP TABLE public.deliveries;
@@ -980,18 +1058,16 @@ COMMIT;
 -- -- applied with no objects (R8).
 -- DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
 --
--- -- Bucket: zero objects, then delete. Supabase Storage may refuse a direct
--- -- SQL delete on storage.*; the disposable scaffold stubs storage and cannot
--- -- show that (block 2b executes this on test-db). If refused, remove the
--- -- bucket through the Storage API instead.
--- DO $$
--- BEGIN
---   IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
---     RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
---   END IF;
--- END;
--- $$;
--- DELETE FROM storage.buckets WHERE id = 'capture-documents';
+-- COMMIT;
 --
+-- -- BUCKET STEP: a SEPARATE step, run only AFTER the COMMIT above, by SQL.
+-- -- Supabase Storage may refuse a direct SQL delete on storage.*; the
+-- -- disposable scaffold stubs storage and cannot show that. Block 2b executes
+-- -- this step on test-db. If it is refused, the tables, functions and ledger
+-- -- row are already gone (committed above) and the bucket is removed through
+-- -- the Storage API instead (the Storage API cannot run inside a SQL
+-- -- transaction, which is why this step is separate).
+-- BEGIN;
+-- DELETE FROM storage.buckets WHERE id = 'capture-documents';
 -- COMMIT;
 -- [/src]
