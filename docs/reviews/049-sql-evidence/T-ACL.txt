@@ -1,12 +1,12 @@
 == 049-sql evidence: T-ACL ==
-generated: 2026-10-11T18:00:33Z
+generated: 2026-10-11T19:03:38Z
 $ git rev-parse HEAD
-0e2723f130145a3ef11db9ad11103caf4ccb44f5
-$ SQL artifact commit under test: 7fae0c954543aa79c06c61eb5e1d0d274815cc5a
-$ git rev-parse 7fae0c954543aa79c06c61eb5e1d0d274815cc5a:docs/reviews/049_capture_tables.sql
-2597c50ea788d5fe3b698cf97c5ba15d2acc373b
+7635bb983d768a7ca2ef176f0609b11121752c89
+$ SQL artifact commit under test: 3a0244f6cc3c93252e7457d7b78e71a1e5a90485
+$ git rev-parse 3a0244f6cc3c93252e7457d7b78e71a1e5a90485:docs/reviews/049_capture_tables.sql
+3b50f2c6c683a5ea5481d91533be4aa9991b13bc
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-2597c50ea788d5fe3b698cf97c5ba15d2acc373b
+3b50f2c6c683a5ea5481d91533be4aa9991b13bc
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,10 +15,10 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-e1f7b62c4403ebcd2fb9879b5df52dce6c1407ca05a160ca96af36b7f73467eb  docs/reviews/049_capture_tables.sql
+069fbe16f07c383d54edd3233b845de55591548815ce5e6b068e098c9dfa574b  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
 20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
-737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
+3c5207f9d91c1f2aaab24b96deebeb6e16b96bfe05e8fff448f4f27b6b5062cf  docs/reviews/049-sql-evidence/src/_fixture.sql
 
 ################ RED run 1: post:plant_grants ################
 MUTANT (named): plant_grants   (post-UP SQL applied to the real file's result)
@@ -286,11 +286,18 @@ FAIL: N-1: clean again after the rolled-back owner changes -- expected ok, got r
 
 ################ RED run 2: commit:50b929a ################
 MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file against the file under test:
-11a12,14
+11a12,15
 > -- 11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2).
 > -- 11 Oct: S-3 landed (Option A, per Aravind).
 > -- 11 Oct: F4-1 (linked_at stamped) and F4-2 (INSERT guards) landed per Aravind.
-35,122c38,132
+> -- 12 Oct: S-4 (created_at stamped) and N-4 (PM fields NULL at insert) per Aravind.
+12a17,21
+> -- TIME RULE (per Aravind, 12 Oct): Every time column recording a system event
+> -- is set by the database. Exceptions: received_at (D-25) and dc_date (document
+> -- content, as printed). dc_date is PM-entered, NULL at INSERT (N-4), locked
+> -- while approved/cancelled (D-23); it has no CHECK and no stamp.
+> --
+35,122c44,141
 < --   E7: 124-147, 591-673
 < --   E12: 124-147
 < --   E-codes-table: 124-147
@@ -380,116 +387,119 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 < --   C-31: 918-997
 < --   down-order: 918-997
 ---
-> --   E7: 134-159, 620-756
-> --   E12: 134-159, 810-832, 834-853
-> --   E-codes-table: 134-159
-> --   N-1: 134-159, 1028-1076
-> --   D-31: 134-159
-> --   lock-paths: 161-219
-> --   R3: 161-219, 454-524, 620-756, 758-804
-> --   D-26: 161-219
-> --   Q2-2: 161-219
-> --   Q2-3: 161-219
-> --   S-C: 161-219
-> --   D-27: 161-219, 620-756
-> --   S-F: 221-231
-> --   S-E: 221-231
-> --   D-4: 221-231, 271-295, 302-329
-> --   Q2-6: 233-244
-> --   D-22: 233-244, 337-386
-> --   D-25: 233-244, 337-386
-> --   B3: 246-256, 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
-> --   S-B: 246-256
-> --   D-19: 246-256, 271-295, 337-386
-> --   D-1: 271-295, 337-386
-> --   S-2: 271-295, 302-329, 1080-1172
-> --   D-5: 271-295, 302-329, 337-386, 882-895, 897-910, 912-925, 927-940
-> --   D-30: 271-295
-> --   S-A: 271-295, 337-386, 393-430
-> --   S4: 271-295, 337-386
-> --   C-29: 271-295, 302-329, 337-386, 393-430
-> --   D-29: 271-295, 302-329, 337-386, 393-430, 1080-1172
-> --   S-3: 302-329, 526-618, 620-756, 758-804
-> --   D-9: 302-329, 997-1001
-> --   D-10: 302-329, 997-1001
-> --   D-18: 337-386
-> --   D-23: 337-386, 620-756
-> --   D-2: 393-430
-> --   D-3: 393-430, 437-442, 526-618
-> --   R2: 393-430, 526-618
-> --   Q2-5: 393-430
-> --   R5: 393-430
-> --   C-37: 393-430
-> --   Q-1: 393-430
-> --   N1: 437-442
-> --   A33: 437-442
-> --   E8: 437-442
-> --   C-35: 437-442
-> --   TR1: 454-524, 855-867
-> --   TR2: 454-524
-> --   F4-1: 454-524
-> --   B2: 454-524, 526-618
-> --   B-2: 454-524
-> --   R4: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 949-953,
-> --         969-982, 1028-1076
-> --   D-7: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 969-982
-> --   E1: 454-524
-> --   E2: 454-524
-> --   E3: 454-524
-> --   E4: 454-524
-> --   E5: 454-524
-> --   E10: 454-524, 526-618
-> --   E14: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
-> --   A28: 454-524
-> --   A34: 454-524
-> --   TR3: 526-618, 855-867
-> --   C-36: 526-618, 620-756
-> --   Q2-4: 526-618
-> --   TR4a: 620-756, 855-867
-> --   TR4b: 620-756, 855-867
-> --   TR4c: 620-756, 855-867
-> --   B-1: 620-756
-> --   S-1: 620-756, 758-804
-> --   D-6: 620-756, 758-804
-> --   S6: 620-756
-> --   B1: 620-756
-> --   E6: 620-756
-> --   O-3: 620-756
-> --   E9: 620-756, 758-804
-> --   E11: 620-756, 758-804
-> --   E13: 620-756
-> --   TR5: 758-804, 855-867
-> --   F4-2: 810-832, 834-853, 855-867
-> --   D-20: 876-880, 882-895, 897-910, 912-925, 927-940
-> --   R7: 876-880, 882-895, 897-910, 912-925, 927-940
-> --   C-30: 876-880, 882-895, 897-910, 912-925, 927-940
-> --   D-8: 949-953, 1028-1076
-> --   D-21: 949-953
-> --   CLAUDE.md-s6-per-role-revoke: 949-953
-> --   C-27: 969-982
-> --   O-1: 969-982
-> --   D-11: 997-1001
-> --   042-precedent: 997-1001
-> --   CLAUDE.md-s6-ACL-fingerprint: 1028-1076
-> --   R8: 1080-1172
-> --   S-D: 1080-1172
-> --   C-31: 1080-1172
-> --   down-order: 1080-1172
-133c143
+> --   E7: 143-168, 631-767
+> --   E12: 143-168, 821-852, 854-876
+> --   E-codes-table: 143-168
+> --   N-1: 143-168, 1051-1099
+> --   D-31: 143-168
+> --   lock-paths: 170-228
+> --   R3: 170-228, 463-535, 631-767, 769-815
+> --   D-26: 170-228
+> --   Q2-2: 170-228
+> --   Q2-3: 170-228
+> --   S-C: 170-228
+> --   D-27: 170-228, 631-767
+> --   S-F: 230-240
+> --   S-E: 230-240
+> --   D-4: 230-240, 280-304, 311-338
+> --   Q2-6: 242-253
+> --   D-22: 242-253, 346-395
+> --   D-25: 242-253, 346-395
+> --   B3: 255-265, 463-535, 537-629, 631-767, 769-815, 821-852, 854-876
+> --   S-B: 255-265
+> --   D-19: 255-265, 280-304, 346-395
+> --   D-1: 280-304, 346-395
+> --   S-2: 280-304, 311-338, 1103-1195
+> --   D-5: 280-304, 311-338, 346-395, 905-918, 920-933, 935-948, 950-963
+> --   D-30: 280-304
+> --   S-A: 280-304, 346-395, 402-439
+> --   S4: 280-304, 346-395
+> --   C-29: 280-304, 311-338, 346-395, 402-439
+> --   D-29: 280-304, 311-338, 346-395, 402-439, 1103-1195
+> --   S-3: 311-338, 537-629, 631-767, 769-815
+> --   D-9: 311-338, 1020-1024
+> --   D-10: 311-338, 1020-1024
+> --   D-18: 346-395
+> --   D-23: 346-395, 631-767
+> --   D-2: 402-439
+> --   D-3: 402-439, 446-451, 537-629
+> --   R2: 402-439, 537-629
+> --   Q2-5: 402-439
+> --   R5: 402-439
+> --   C-37: 402-439
+> --   Q-1: 402-439
+> --   N1: 446-451
+> --   A33: 446-451
+> --   E8: 446-451
+> --   C-35: 446-451
+> --   TR1: 463-535, 878-890
+> --   TR2: 463-535
+> --   F4-1: 463-535
+> --   S-4: 463-535, 821-852, 854-876
+> --   TIME-RULE: 463-535, 821-852, 854-876
+> --   B2: 463-535, 537-629
+> --   B-2: 463-535
+> --   R4: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876, 972-976,
+> --         992-1005, 1051-1099
+> --   D-7: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876, 992-1005
+> --   E1: 463-535
+> --   E2: 463-535
+> --   E3: 463-535
+> --   E4: 463-535
+> --   E5: 463-535
+> --   E10: 463-535, 537-629
+> --   E14: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876
+> --   A28: 463-535
+> --   A34: 463-535
+> --   TR3: 537-629, 878-890
+> --   C-36: 537-629, 631-767
+> --   Q2-4: 537-629
+> --   TR4a: 631-767, 878-890
+> --   TR4b: 631-767, 878-890
+> --   TR4c: 631-767, 878-890
+> --   B-1: 631-767
+> --   S-1: 631-767, 769-815
+> --   D-6: 631-767, 769-815
+> --   S6: 631-767
+> --   B1: 631-767
+> --   E6: 631-767
+> --   O-3: 631-767
+> --   E9: 631-767, 769-815
+> --   E11: 631-767, 769-815
+> --   E13: 631-767
+> --   TR5: 769-815, 878-890
+> --   F4-2: 821-852, 854-876, 878-890
+> --   N-4: 821-852
+> --   D-20: 899-903, 905-918, 920-933, 935-948, 950-963
+> --   R7: 899-903, 905-918, 920-933, 935-948, 950-963
+> --   C-30: 899-903, 905-918, 920-933, 935-948, 950-963
+> --   D-8: 972-976, 1051-1099
+> --   D-21: 972-976
+> --   CLAUDE.md-s6-per-role-revoke: 972-976
+> --   C-27: 992-1005
+> --   O-1: 992-1005
+> --   D-11: 1020-1024
+> --   042-precedent: 1020-1024
+> --   CLAUDE.md-s6-ACL-fingerprint: 1051-1099
+> --   R8: 1103-1195
+> --   S-D: 1103-1195
+> --   C-31: 1103-1195
+> --   down-order: 1103-1195
+133c152
 < --                   self-link to a rejected delivery (A34)
 ---
 > --                   self-link to a rejected or cancelled delivery (A34, B-2)
-143c153,155
+143c162,164
 < --   E12 (not raised) CHECK/FK, SQLSTATE 23514 / 23503
 ---
 > --   E12 QE012  F4-2  INSERT guards (deliveries not 'incomplete' or carrying
 > --                   attribution/stamp/reason values; capture_documents
 > --                   carrying ack values); also raised by CHECK/FK, SQLSTATE 23514 / 23503
-381c393
+381c402
 < -- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29]
 ---
 > -- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29, Q-1]
-412c424,429
+412c433,438
 <   CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL))
 ---
 >   CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL)),
@@ -498,37 +508,39 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >   -- the invoice with no active link while its automatic delivery is not cancelled.
 >   CONSTRAINT dil_superseded_reason_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'superseded_by_link' OR link_source = 'created_from_invoice'),
 >   CONSTRAINT dil_pm_unlinked_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'pm_unlinked' OR link_source = 'pm_manual')
-437c454
+437c463
 < -- [src: TR1, TR2, B2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
 ---
-> -- [src: TR1, TR2, F4-1, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
-460a478,481
+> -- [src: TR1, TR2, F4-1, S-4, TIME-RULE, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+459a486,491
+> 
 >   -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
 >   -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
 >   NEW.linked_at := now();
-> 
-493c514,517
+>   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at stamped by the database too.
+>   NEW.created_at := now();
+493c525,528
 <     ELSIF v_status = 'rejected' THEN
 ---
 >     ELSIF v_status IN ('rejected', 'cancelled') THEN
 >       -- B-2 (SQL review r1): a self-link is also refused onto a CANCELLED
 >       -- delivery. Paths 2 and 4 restore the delivery BEFORE inserting the
 >       -- new self-link, so this turns that header rule into one the trigger enforces.
-502c526
+502c537
 < -- [src: TR3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
 ---
 > -- [src: TR3, S-3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
-562a587,591
+562a598,602
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the unlink time is
 >   -- stamped by the database; the caller's value only signals the unlink and is
 >   -- overwritten. (linked_at is NOT touched here: see the package, OPEN item.)
 >   NEW.unlinked_at := now();
 > 
-591c620
+591c631
 < -- [src: TR4a, TR4b, TR4c, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
 ---
 > -- [src: TR4a, TR4b, TR4c, B-1, S-3, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
-604,605c633,637
+604,605c644,648
 <   -- TR4a: immutable columns.
 <   IF NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
 ---
@@ -537,11 +549,7 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >   IF NEW.id IS DISTINCT FROM OLD.id
 >      OR NEW.created_at IS DISTINCT FROM OLD.created_at
 >      OR NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
-666a699,734
->       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
->     END IF;
->   END IF;
-> 
+670a714,764
 >   -- B-1 (SQL review r1): approval attribution cannot be rewritten after the
 >   -- fact. Each group may change ONLY on its own status transition; any other
 >   -- IS DISTINCT FROM on these columns raises E11.
@@ -574,7 +582,10 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >       OR (NEW.cancelled_at IS NULL AND NEW.cancel_reason IS NULL
 >           AND OLD.status = 'cancelled' AND NEW.status IN ('incomplete', 'awaiting_pm'))
 >     ) THEN
-670a739,753
+>       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+>     END IF;
+>   END IF;
+> 
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the DATABASE stamps the
 >   -- time at each allowed transition; any caller-supplied value is overwritten
 >   -- (the same "wrong stamp impossible, not merely uncaught" rule as 043's
@@ -590,18 +601,18 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >     NEW.cancelled_at := now();
 >   END IF;
 > 
-675c758
+675c769
 < -- [src: TR5, D-6, B3, R3, R4, D-7, E9, E11, E14]
 ---
 > -- [src: TR5, S-1, S-3, D-6, B3, R3, R4, D-7, E9, E11, E14]
-688c771,774
+688c782,785
 <   IF NEW.kind IS DISTINCT FROM OLD.kind
 ---
 >   -- S-1 (SQL review r1): id and created_at added to the immutable set.
 >   IF NEW.id IS DISTINCT FROM OLD.id
 >      OR NEW.created_at IS DISTINCT FROM OLD.created_at
 >      OR NEW.kind IS DISTINCT FROM OLD.kind
-708a795,801
+708a806,812
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the acknowledgement time
 >   -- is stamped by the database when the ack is first set; a caller-supplied
 >   -- value is overwritten. It drives the D-12 clock.
@@ -609,14 +620,14 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >     NEW.engineer_ack_at := now();
 >   END IF;
 > 
-713c806,859
+713c817,882
 < -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5]
 ---
 > -- F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values. A delivery is CREATED
 > -- 'incomplete' (D1; plan v3 line 105: it becomes 'awaiting_pm' inside the engineer RPC when the ack is stored,
 > -- i.e. by UPDATE), so exactly 'incomplete' is allowed; every other status and every attribution/stamp/reason
 > -- column must be NULL at INSERT. These fields are set only through the guarded UPDATE path.
-> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> -- [src: F4-2, S-4, N-4, TIME-RULE, B3, R4, D-7, E12, E14]
 > CREATE FUNCTION public.trg_deliveries_before_insert()
 > RETURNS trigger
 > LANGUAGE plpgsql
@@ -632,15 +643,24 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >   IF NEW.status IS DISTINCT FROM 'incomplete'
 >      OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
 >      OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
->      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL THEN
+>      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL
+>      OR NEW.delivery_type IS NOT NULL OR NEW.vehicle_number IS NOT NULL
+>      OR NEW.dc_number IS NOT NULL OR NEW.dc_date IS NOT NULL THEN
+>     -- N-4 (SQL review r3, Option A per Aravind 12 Oct): the PM-owned fields
+>     -- (delivery_type, vehicle_number, dc_number, dc_date) are also NULL at
+>     -- INSERT; the engineer path cannot pre-fill them. Set only through UPDATE.
 >     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
 >   END IF;
+> 
+>   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at is the anchor every
+>   -- ordering CHECK is measured against; the database stamps it, never NEW.
+>   NEW.created_at := now();
 > 
 >   RETURN NEW;
 > END;
 > $$;
 > 
-> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> -- [src: F4-2, S-4, TIME-RULE, B3, R4, D-7, E12, E14]
 > CREATE FUNCTION public.trg_capture_documents_before_insert()
 > RETURNS trigger
 > LANGUAGE plpgsql
@@ -657,6 +677,9 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
 >   END IF;
 > 
+>   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at stamped by the database.
+>   NEW.created_at := now();
+> 
 >   RETURN NEW;
 > END;
 > $$;
@@ -666,17 +689,17 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >   FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_insert();
 > CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents
 >   FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_insert();
-831a978,982
+831a1001,1005
 > -- F4-2: the two INSERT-guard functions, same shape (O-1).
 > REVOKE ALL ON FUNCTION public.trg_deliveries_before_insert() FROM PUBLIC, anon, authenticated, service_role;
 > GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_insert() TO postgres;
 > REVOKE ALL ON FUNCTION public.trg_capture_documents_before_insert() FROM PUBLIC, anon, authenticated, service_role;
 > GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_insert() TO postgres;
-877c1028
+877c1051
 < -- [src: R4, D-8, CLAUDE.md-s6-ACL-fingerprint]
 ---
 > -- [src: R4, D-8, N-1, CLAUDE.md-s6-ACL-fingerprint]
-895c1046,1056
+895c1069,1079
 <   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
 ---
 >   -- N-1 (SQL review r1): ownership. The GRANT ... TO postgres above is a no-op only if postgres owns the objects.
@@ -690,18 +713,18 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >     END IF;
 >   END LOOP;
 >   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
-904a1066
+904a1089
 >         AND p.proowner = 'postgres'::regrole
-918c1080
+918c1103
 < -- [src: R8, S-D, D-29, C-31, down-order]
 ---
 > -- [src: R8, S-D, S-2, D-29, C-31, down-order]
-962c1124,1125
+962c1147,1148
 < --            'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
 ---
 > --            'trg_deliveries_before_update', 'trg_capture_documents_before_update',
 > --            'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
-968a1132,1143
+968a1155,1166
 > -- -- S-2 (SQL review r1): the bucket DELETE is NOT in this transaction. If
 > -- -- Storage refused a direct SQL delete, a delete inside this transaction
 > -- -- would roll the table drops and the ledger delete back with it. The
@@ -714,10 +737,10 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 > -- END;
 > -- $$;
 > --
-977a1153,1154
+977a1176,1177
 > -- DROP FUNCTION public.trg_deliveries_before_insert();
 > -- DROP FUNCTION public.trg_capture_documents_before_insert();
-983,994c1160
+983,994c1183
 < -- -- Bucket: zero objects, then delete. Supabase Storage may refuse a direct
 < -- -- SQL delete on storage.*; the disposable scaffold stubs storage and cannot
 < -- -- show that (block 2b executes this on test-db). If refused, remove the
@@ -732,7 +755,7 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 < -- DELETE FROM storage.buckets WHERE id = 'capture-documents';
 ---
 > -- COMMIT;
-995a1162,1170
+995a1185,1193
 > -- -- BUCKET STEP: a SEPARATE step, run only AFTER the COMMIT above, by SQL.
 > -- -- Supabase Storage may refuse a direct SQL delete on storage.*; the
 > -- -- disposable scaffold stubs storage and cannot show that. Block 2b executes
@@ -997,9 +1020,16 @@ PASS: N-1: clean again after the rolled-back owner changes -- succeeded as expec
 
 ################ RED run 3: commit:ecc8e1e ################
 MUTANT (named): the REVIEWED file at commit ecc8e1e   -- diff of that file against the file under test:
-13a14
+13a14,15
 > -- 11 Oct: F4-1 (linked_at stamped) and F4-2 (INSERT guards) landed per Aravind.
-37,128c38,132
+> -- 12 Oct: S-4 (created_at stamped) and N-4 (PM fields NULL at insert) per Aravind.
+14a17,21
+> -- TIME RULE (per Aravind, 12 Oct): Every time column recording a system event
+> -- is set by the database. Exceptions: received_at (D-25) and dc_date (document
+> -- content, as printed). dc_date is PM-entered, NULL at INSERT (N-4), locked
+> -- while approved/cancelled (D-23); it has no CHECK and no stamp.
+> --
+37,128c44,141
 < --   E7: 130-153, 610-746
 < --   E12: 130-153
 < --   E-codes-table: 130-153
@@ -1093,124 +1123,129 @@ MUTANT (named): the REVIEWED file at commit ecc8e1e   -- diff of that file again
 < --   C-31: 1012-1101
 < --   down-order: 1012-1101
 ---
-> --   E7: 134-159, 620-756
-> --   E12: 134-159, 810-832, 834-853
-> --   E-codes-table: 134-159
-> --   N-1: 134-159, 1028-1076
-> --   D-31: 134-159
-> --   lock-paths: 161-219
-> --   R3: 161-219, 454-524, 620-756, 758-804
-> --   D-26: 161-219
-> --   Q2-2: 161-219
-> --   Q2-3: 161-219
-> --   S-C: 161-219
-> --   D-27: 161-219, 620-756
-> --   S-F: 221-231
-> --   S-E: 221-231
-> --   D-4: 221-231, 271-295, 302-329
-> --   Q2-6: 233-244
-> --   D-22: 233-244, 337-386
-> --   D-25: 233-244, 337-386
-> --   B3: 246-256, 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
-> --   S-B: 246-256
-> --   D-19: 246-256, 271-295, 337-386
-> --   D-1: 271-295, 337-386
-> --   S-2: 271-295, 302-329, 1080-1172
-> --   D-5: 271-295, 302-329, 337-386, 882-895, 897-910, 912-925, 927-940
-> --   D-30: 271-295
-> --   S-A: 271-295, 337-386, 393-430
-> --   S4: 271-295, 337-386
-> --   C-29: 271-295, 302-329, 337-386, 393-430
-> --   D-29: 271-295, 302-329, 337-386, 393-430, 1080-1172
-> --   S-3: 302-329, 526-618, 620-756, 758-804
-> --   D-9: 302-329, 997-1001
-> --   D-10: 302-329, 997-1001
-> --   D-18: 337-386
-> --   D-23: 337-386, 620-756
-> --   D-2: 393-430
-> --   D-3: 393-430, 437-442, 526-618
-> --   R2: 393-430, 526-618
-> --   Q2-5: 393-430
-> --   R5: 393-430
-> --   C-37: 393-430
-> --   Q-1: 393-430
-> --   N1: 437-442
-> --   A33: 437-442
-> --   E8: 437-442
-> --   C-35: 437-442
-> --   TR1: 454-524, 855-867
-> --   TR2: 454-524
-> --   F4-1: 454-524
-> --   B2: 454-524, 526-618
-> --   B-2: 454-524
-> --   R4: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 949-953,
-> --         969-982, 1028-1076
-> --   D-7: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 969-982
-> --   E1: 454-524
-> --   E2: 454-524
-> --   E3: 454-524
-> --   E4: 454-524
-> --   E5: 454-524
-> --   E10: 454-524, 526-618
-> --   E14: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
-> --   A28: 454-524
-> --   A34: 454-524
-> --   TR3: 526-618, 855-867
-> --   C-36: 526-618, 620-756
-> --   Q2-4: 526-618
-> --   TR4a: 620-756, 855-867
-> --   TR4b: 620-756, 855-867
-> --   TR4c: 620-756, 855-867
-> --   B-1: 620-756
-> --   S-1: 620-756, 758-804
-> --   D-6: 620-756, 758-804
-> --   S6: 620-756
-> --   B1: 620-756
-> --   E6: 620-756
-> --   O-3: 620-756
-> --   E9: 620-756, 758-804
-> --   E11: 620-756, 758-804
-> --   E13: 620-756
-> --   TR5: 758-804, 855-867
-> --   F4-2: 810-832, 834-853, 855-867
-> --   D-20: 876-880, 882-895, 897-910, 912-925, 927-940
-> --   R7: 876-880, 882-895, 897-910, 912-925, 927-940
-> --   C-30: 876-880, 882-895, 897-910, 912-925, 927-940
-> --   D-8: 949-953, 1028-1076
-> --   D-21: 949-953
-> --   CLAUDE.md-s6-per-role-revoke: 949-953
-> --   C-27: 969-982
-> --   O-1: 969-982
-> --   D-11: 997-1001
-> --   042-precedent: 997-1001
-> --   CLAUDE.md-s6-ACL-fingerprint: 1028-1076
-> --   R8: 1080-1172
-> --   S-D: 1080-1172
-> --   C-31: 1080-1172
-> --   down-order: 1080-1172
-149c153,155
+> --   E7: 143-168, 631-767
+> --   E12: 143-168, 821-852, 854-876
+> --   E-codes-table: 143-168
+> --   N-1: 143-168, 1051-1099
+> --   D-31: 143-168
+> --   lock-paths: 170-228
+> --   R3: 170-228, 463-535, 631-767, 769-815
+> --   D-26: 170-228
+> --   Q2-2: 170-228
+> --   Q2-3: 170-228
+> --   S-C: 170-228
+> --   D-27: 170-228, 631-767
+> --   S-F: 230-240
+> --   S-E: 230-240
+> --   D-4: 230-240, 280-304, 311-338
+> --   Q2-6: 242-253
+> --   D-22: 242-253, 346-395
+> --   D-25: 242-253, 346-395
+> --   B3: 255-265, 463-535, 537-629, 631-767, 769-815, 821-852, 854-876
+> --   S-B: 255-265
+> --   D-19: 255-265, 280-304, 346-395
+> --   D-1: 280-304, 346-395
+> --   S-2: 280-304, 311-338, 1103-1195
+> --   D-5: 280-304, 311-338, 346-395, 905-918, 920-933, 935-948, 950-963
+> --   D-30: 280-304
+> --   S-A: 280-304, 346-395, 402-439
+> --   S4: 280-304, 346-395
+> --   C-29: 280-304, 311-338, 346-395, 402-439
+> --   D-29: 280-304, 311-338, 346-395, 402-439, 1103-1195
+> --   S-3: 311-338, 537-629, 631-767, 769-815
+> --   D-9: 311-338, 1020-1024
+> --   D-10: 311-338, 1020-1024
+> --   D-18: 346-395
+> --   D-23: 346-395, 631-767
+> --   D-2: 402-439
+> --   D-3: 402-439, 446-451, 537-629
+> --   R2: 402-439, 537-629
+> --   Q2-5: 402-439
+> --   R5: 402-439
+> --   C-37: 402-439
+> --   Q-1: 402-439
+> --   N1: 446-451
+> --   A33: 446-451
+> --   E8: 446-451
+> --   C-35: 446-451
+> --   TR1: 463-535, 878-890
+> --   TR2: 463-535
+> --   F4-1: 463-535
+> --   S-4: 463-535, 821-852, 854-876
+> --   TIME-RULE: 463-535, 821-852, 854-876
+> --   B2: 463-535, 537-629
+> --   B-2: 463-535
+> --   R4: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876, 972-976,
+> --         992-1005, 1051-1099
+> --   D-7: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876, 992-1005
+> --   E1: 463-535
+> --   E2: 463-535
+> --   E3: 463-535
+> --   E4: 463-535
+> --   E5: 463-535
+> --   E10: 463-535, 537-629
+> --   E14: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876
+> --   A28: 463-535
+> --   A34: 463-535
+> --   TR3: 537-629, 878-890
+> --   C-36: 537-629, 631-767
+> --   Q2-4: 537-629
+> --   TR4a: 631-767, 878-890
+> --   TR4b: 631-767, 878-890
+> --   TR4c: 631-767, 878-890
+> --   B-1: 631-767
+> --   S-1: 631-767, 769-815
+> --   D-6: 631-767, 769-815
+> --   S6: 631-767
+> --   B1: 631-767
+> --   E6: 631-767
+> --   O-3: 631-767
+> --   E9: 631-767, 769-815
+> --   E11: 631-767, 769-815
+> --   E13: 631-767
+> --   TR5: 769-815, 878-890
+> --   F4-2: 821-852, 854-876, 878-890
+> --   N-4: 821-852
+> --   D-20: 899-903, 905-918, 920-933, 935-948, 950-963
+> --   R7: 899-903, 905-918, 920-933, 935-948, 950-963
+> --   C-30: 899-903, 905-918, 920-933, 935-948, 950-963
+> --   D-8: 972-976, 1051-1099
+> --   D-21: 972-976
+> --   CLAUDE.md-s6-per-role-revoke: 972-976
+> --   C-27: 992-1005
+> --   O-1: 992-1005
+> --   D-11: 1020-1024
+> --   042-precedent: 1020-1024
+> --   CLAUDE.md-s6-ACL-fingerprint: 1051-1099
+> --   R8: 1103-1195
+> --   S-D: 1103-1195
+> --   C-31: 1103-1195
+> --   down-order: 1103-1195
+149c162,164
 < --   E12 (not raised) CHECK/FK, SQLSTATE 23514 / 23503
 ---
 > --   E12 QE012  F4-2  INSERT guards (deliveries not 'incomplete' or carrying
 > --                   attribution/stamp/reason values; capture_documents
 > --                   carrying ack values); also raised by CHECK/FK, SQLSTATE 23514 / 23503
-448c454
+448c463
 < -- [src: TR1, TR2, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
 ---
-> -- [src: TR1, TR2, F4-1, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
-471a478,481
+> -- [src: TR1, TR2, F4-1, S-4, TIME-RULE, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+471a487,492
 >   -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
 >   -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
 >   NEW.linked_at := now();
+>   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at stamped by the database too.
+>   NEW.created_at := now();
 > 
-796c806,859
+796c817,882
 < -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5]
 ---
 > -- F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values. A delivery is CREATED
 > -- 'incomplete' (D1; plan v3 line 105: it becomes 'awaiting_pm' inside the engineer RPC when the ack is stored,
 > -- i.e. by UPDATE), so exactly 'incomplete' is allowed; every other status and every attribution/stamp/reason
 > -- column must be NULL at INSERT. These fields are set only through the guarded UPDATE path.
-> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> -- [src: F4-2, S-4, N-4, TIME-RULE, B3, R4, D-7, E12, E14]
 > CREATE FUNCTION public.trg_deliveries_before_insert()
 > RETURNS trigger
 > LANGUAGE plpgsql
@@ -1226,15 +1261,24 @@ MUTANT (named): the REVIEWED file at commit ecc8e1e   -- diff of that file again
 >   IF NEW.status IS DISTINCT FROM 'incomplete'
 >      OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
 >      OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
->      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL THEN
+>      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL
+>      OR NEW.delivery_type IS NOT NULL OR NEW.vehicle_number IS NOT NULL
+>      OR NEW.dc_number IS NOT NULL OR NEW.dc_date IS NOT NULL THEN
+>     -- N-4 (SQL review r3, Option A per Aravind 12 Oct): the PM-owned fields
+>     -- (delivery_type, vehicle_number, dc_number, dc_date) are also NULL at
+>     -- INSERT; the engineer path cannot pre-fill them. Set only through UPDATE.
 >     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
 >   END IF;
+> 
+>   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at is the anchor every
+>   -- ordering CHECK is measured against; the database stamps it, never NEW.
+>   NEW.created_at := now();
 > 
 >   RETURN NEW;
 > END;
 > $$;
 > 
-> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> -- [src: F4-2, S-4, TIME-RULE, B3, R4, D-7, E12, E14]
 > CREATE FUNCTION public.trg_capture_documents_before_insert()
 > RETURNS trigger
 > LANGUAGE plpgsql
@@ -1251,6 +1295,9 @@ MUTANT (named): the REVIEWED file at commit ecc8e1e   -- diff of that file again
 >     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
 >   END IF;
 > 
+>   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at stamped by the database.
+>   NEW.created_at := now();
+> 
 >   RETURN NEW;
 > END;
 > $$;
@@ -1260,22 +1307,22 @@ MUTANT (named): the REVIEWED file at commit ecc8e1e   -- diff of that file again
 >   FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_insert();
 > CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents
 >   FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_insert();
-914a978,982
+914a1001,1005
 > -- F4-2: the two INSERT-guard functions, same shape (O-1).
 > REVOKE ALL ON FUNCTION public.trg_deliveries_before_insert() FROM PUBLIC, anon, authenticated, service_role;
 > GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_insert() TO postgres;
 > REVOKE ALL ON FUNCTION public.trg_capture_documents_before_insert() FROM PUBLIC, anon, authenticated, service_role;
 > GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_insert() TO postgres;
-988c1056
+988c1079
 <   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
 ---
 >   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
-1056c1124,1125
+1056c1147,1148
 < --            'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
 ---
 > --            'trg_deliveries_before_update', 'trg_capture_documents_before_update',
 > --            'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
-1083a1153,1154
+1083a1176,1177
 > -- DROP FUNCTION public.trg_deliveries_before_insert();
 > -- DROP FUNCTION public.trg_capture_documents_before_insert();
 $ psql -d t_T_ACL_red3 -v ON_ERROR_STOP=1 -f old-ecc8e1e.sql   (049 UP)

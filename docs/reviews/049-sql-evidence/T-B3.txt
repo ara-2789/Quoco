@@ -1,12 +1,12 @@
 == 049-sql evidence: T-B3 ==
-generated: 2026-10-11T18:00:03Z
+generated: 2026-10-11T19:03:08Z
 $ git rev-parse HEAD
-0e2723f130145a3ef11db9ad11103caf4ccb44f5
-$ SQL artifact commit under test: 7fae0c954543aa79c06c61eb5e1d0d274815cc5a
-$ git rev-parse 7fae0c954543aa79c06c61eb5e1d0d274815cc5a:docs/reviews/049_capture_tables.sql
-2597c50ea788d5fe3b698cf97c5ba15d2acc373b
+7635bb983d768a7ca2ef176f0609b11121752c89
+$ SQL artifact commit under test: 3a0244f6cc3c93252e7457d7b78e71a1e5a90485
+$ git rev-parse 3a0244f6cc3c93252e7457d7b78e71a1e5a90485:docs/reviews/049_capture_tables.sql
+3b50f2c6c683a5ea5481d91533be4aa9991b13bc
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-2597c50ea788d5fe3b698cf97c5ba15d2acc373b
+3b50f2c6c683a5ea5481d91533be4aa9991b13bc
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,16 +15,16 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-e1f7b62c4403ebcd2fb9879b5df52dce6c1407ca05a160ca96af36b7f73467eb  docs/reviews/049_capture_tables.sql
+069fbe16f07c383d54edd3233b845de55591548815ce5e6b068e098c9dfa574b  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
 20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
-737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
+3c5207f9d91c1f2aaab24b96deebeb6e16b96bfe05e8fff448f4f27b6b5062cf  docs/reviews/049-sql-evidence/src/_fixture.sql
 
 NOTE: three races, each RED (named mutant) then GREEN (real file). Two writers are separate psql processes, genuinely
 concurrent on a local PG 17 cluster; 'LINK' = pm_manual link INSERT (TR1/TR2), 'RETYPE' = UPDATE delivery_type (TR4b).
 ################ RED race rc_link_first: MUTANT (named) no_tr4b ################
 MUTANT (named): no_tr4b   -- diff of the real file against the mutated copy:
-667c667
+678c678
 <   IF NEW.delivery_type = 'internal_transfer' AND OLD.delivery_type IS DISTINCT FROM 'internal_transfer' THEN
 ---
 >   IF false THEN
@@ -45,14 +45,14 @@ Output format is aligned.
 -- OBSERVER session (a third connection) while both writers are open: proves the sessions really overlap
   pid  | state  | wait_event_type |  wait_event   |                                      query                                       
 -------+--------+-----------------+---------------+----------------------------------------------------------------------------------
- 55375 | active | Timeout         | PgSleep       | SELECT pg_sleep(4);
- 55380 | active | Lock            | transactionid | SELECT t.expect('RETYPE of V1 to internal_transfer is refused E6 once the LINK c
+ 59623 | active | Timeout         | PgSleep       | SELECT pg_sleep(4);
+ 59627 | active | Lock            | transactionid | SELECT t.expect('RETYPE of V1 to internal_transfer is refused E6 once the LINK c
 (2 rows)
 
 ----- session 1 output (B3a-link) -----
 Output format is unaligned.
 SELECT 'LINK session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-LINK session pid=55375 start 23:30:03.957
+LINK session pid=59623 start 00:33:08.478
 BEGIN;
 BEGIN
 SELECT current_setting('transaction_isolation') AS isolation;
@@ -60,23 +60,23 @@ read committed
 INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001');
 INSERT 0 1
 SELECT 'LINK inserted (TR2 holds FOR SHARE on V1), sleeping 4s ' || clock_timestamp()::time(3);
-LINK inserted (TR2 holds FOR SHARE on V1), sleeping 4s 23:30:03.959
+LINK inserted (TR2 holds FOR SHARE on V1), sleeping 4s 00:33:08.48
 SELECT pg_sleep(4);
 
 COMMIT;
 COMMIT
 SELECT 'LINK committed ' || clock_timestamp()::time(3);
-LINK committed 23:30:07.963
+LINK committed 00:33:12.482
 ----- session 2 output (B3a-retype) -----
 Output format is unaligned.
 SELECT 'RETYPE session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-RETYPE session pid=55380 start 23:30:05.485
+RETYPE session pid=59627 start 00:33:09.999
 SELECT current_setting('transaction_isolation') AS isolation;
 read committed
 SELECT t.expect('RETYPE of V1 to internal_transfer is refused E6 once the LINK commits', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'E6');
 FAIL: RETYPE of V1 to internal_transfer is refused E6 once the LINK commits -- expected refusal E6 but the statement SUCCEEDED
 SELECT 'RETYPE finished ' || clock_timestamp()::time(3);
-RETYPE finished 23:30:07.965
+RETYPE finished 00:33:12.485
 $ psql -X -e -d t_b3_rc_link_first_red -v exp_type=supplier -v exp_links=1 -f B3-end.sql
 Output format is unaligned.
 -- END STATE after both sessions finished
@@ -105,14 +105,14 @@ Output format is aligned.
 -- OBSERVER session (a third connection) while both writers are open: proves the sessions really overlap
   pid  | state  | wait_event_type |  wait_event   |                                      query                                       
 -------+--------+-----------------+---------------+----------------------------------------------------------------------------------
- 55416 | active | Timeout         | PgSleep       | SELECT pg_sleep(4);
- 55420 | active | Lock            | transactionid | SELECT t.expect('RETYPE of V1 to internal_transfer is refused E6 once the LINK c
+ 59664 | active | Timeout         | PgSleep       | SELECT pg_sleep(4);
+ 59669 | active | Lock            | transactionid | SELECT t.expect('RETYPE of V1 to internal_transfer is refused E6 once the LINK c
 (2 rows)
 
 ----- session 1 output (B3a-link) -----
 Output format is unaligned.
 SELECT 'LINK session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-LINK session pid=55416 start 23:30:08.387
+LINK session pid=59664 start 00:33:12.945
 BEGIN;
 BEGIN
 SELECT current_setting('transaction_isolation') AS isolation;
@@ -120,23 +120,23 @@ read committed
 INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001');
 INSERT 0 1
 SELECT 'LINK inserted (TR2 holds FOR SHARE on V1), sleeping 4s ' || clock_timestamp()::time(3);
-LINK inserted (TR2 holds FOR SHARE on V1), sleeping 4s 23:30:08.388
+LINK inserted (TR2 holds FOR SHARE on V1), sleeping 4s 00:33:12.946
 SELECT pg_sleep(4);
 
 COMMIT;
 COMMIT
 SELECT 'LINK committed ' || clock_timestamp()::time(3);
-LINK committed 23:30:12.391
+LINK committed 00:33:16.949
 ----- session 2 output (B3a-retype) -----
 Output format is unaligned.
 SELECT 'RETYPE session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-RETYPE session pid=55420 start 23:30:09.908
+RETYPE session pid=59669 start 00:33:14.466
 SELECT current_setting('transaction_isolation') AS isolation;
 read committed
 SELECT t.expect('RETYPE of V1 to internal_transfer is refused E6 once the LINK commits', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'E6');
 PASS: RETYPE of V1 to internal_transfer is refused E6 once the LINK commits -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT 'RETYPE finished ' || clock_timestamp()::time(3);
-RETYPE finished 23:30:12.392
+RETYPE finished 00:33:16.95
 $ psql -X -e -d t_b3_rc_link_first_green -v exp_type=supplier -v exp_links=1 -f B3-end.sql
 Output format is unaligned.
 -- END STATE after both sessions finished
@@ -149,7 +149,7 @@ PASS: INVARIANT: no active link points at an internal_transfer delivery -- value
 >>> RESULT race rc_link_first (GREEN): PASS=4 FAIL=0
 ################ RED race rc_retype_first: MUTANT (named) no_for_share ################
 MUTANT (named): no_for_share   -- diff of the real file against the mutated copy:
-504c504
+515c515
 <      FOR SHARE;
 ---
 >      ;
@@ -170,13 +170,13 @@ Output format is aligned.
 -- OBSERVER session (a third connection) while both writers are open: proves the sessions really overlap
   pid  | state  | wait_event_type | wait_event |        query        
 -------+--------+-----------------+------------+---------------------
- 55458 | active | Timeout         | PgSleep    | SELECT pg_sleep(4);
+ 59707 | active | Timeout         | PgSleep    | SELECT pg_sleep(4);
 (1 row)
 
 ----- session 1 output (B3b-retype) -----
 Output format is unaligned.
 SELECT 'RETYPE session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-RETYPE session pid=55458 start 23:30:12.809
+RETYPE session pid=59707 start 00:33:17.368
 BEGIN;
 BEGIN
 SELECT current_setting('transaction_isolation') AS isolation;
@@ -184,23 +184,23 @@ read committed
 UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000001';
 UPDATE 1
 SELECT 'RETYPE updated (uncommitted), sleeping 4s ' || clock_timestamp()::time(3);
-RETYPE updated (uncommitted), sleeping 4s 23:30:12.81
+RETYPE updated (uncommitted), sleeping 4s 00:33:17.369
 SELECT pg_sleep(4);
 
 COMMIT;
 COMMIT
 SELECT 'RETYPE committed ' || clock_timestamp()::time(3);
-RETYPE committed 23:30:16.812
+RETYPE committed 00:33:21.372
 ----- session 2 output (B3b-link) -----
 Output format is unaligned.
 SELECT 'LINK session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-LINK session pid=55462 start 23:30:14.327
+LINK session pid=59711 start 00:33:18.887
 SELECT current_setting('transaction_isolation') AS isolation;
 read committed
 SELECT t.expect('LINK of D2 to V1 is refused E3 once the RETYPE commits', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'E3');
 FAIL: LINK of D2 to V1 is refused E3 once the RETYPE commits -- expected refusal E3 but the statement SUCCEEDED
 SELECT 'LINK finished ' || clock_timestamp()::time(3);
-LINK finished 23:30:14.331
+LINK finished 00:33:18.892
 $ psql -X -e -d t_b3_rc_retype_first_red -v exp_type=internal_transfer -v exp_links=0 -f B3-end.sql
 Output format is unaligned.
 -- END STATE after both sessions finished
@@ -229,14 +229,14 @@ Output format is aligned.
 -- OBSERVER session (a third connection) while both writers are open: proves the sessions really overlap
   pid  | state  | wait_event_type |  wait_event   |                                      query                                       
 -------+--------+-----------------+---------------+----------------------------------------------------------------------------------
- 55498 | active | Timeout         | PgSleep       | SELECT pg_sleep(4);
- 55502 | active | Lock            | transactionid | SELECT t.expect('LINK of D2 to V1 is refused E3 once the RETYPE commits', $$INSE
+ 59748 | active | Timeout         | PgSleep       | SELECT pg_sleep(4);
+ 59752 | active | Lock            | transactionid | SELECT t.expect('LINK of D2 to V1 is refused E3 once the RETYPE commits', $$INSE
 (2 rows)
 
 ----- session 1 output (B3b-retype) -----
 Output format is unaligned.
 SELECT 'RETYPE session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-RETYPE session pid=55498 start 23:30:17.227
+RETYPE session pid=59748 start 00:33:21.792
 BEGIN;
 BEGIN
 SELECT current_setting('transaction_isolation') AS isolation;
@@ -244,23 +244,23 @@ read committed
 UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000001';
 UPDATE 1
 SELECT 'RETYPE updated (uncommitted), sleeping 4s ' || clock_timestamp()::time(3);
-RETYPE updated (uncommitted), sleeping 4s 23:30:17.229
+RETYPE updated (uncommitted), sleeping 4s 00:33:21.793
 SELECT pg_sleep(4);
 
 COMMIT;
 COMMIT
 SELECT 'RETYPE committed ' || clock_timestamp()::time(3);
-RETYPE committed 23:30:21.231
+RETYPE committed 00:33:25.795
 ----- session 2 output (B3b-link) -----
 Output format is unaligned.
 SELECT 'LINK session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-LINK session pid=55502 start 23:30:18.748
+LINK session pid=59752 start 00:33:23.312
 SELECT current_setting('transaction_isolation') AS isolation;
 read committed
 SELECT t.expect('LINK of D2 to V1 is refused E3 once the RETYPE commits', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'E3');
 PASS: LINK of D2 to V1 is refused E3 once the RETYPE commits -- refused, SQLSTATE=QE003 MESSAGE=E3
 SELECT 'LINK finished ' || clock_timestamp()::time(3);
-LINK finished 23:30:21.232
+LINK finished 00:33:25.796
 $ psql -X -e -d t_b3_rc_retype_first_green -v exp_type=internal_transfer -v exp_links=0 -f B3-end.sql
 Output format is unaligned.
 -- END STATE after both sessions finished
@@ -273,27 +273,27 @@ PASS: INVARIANT: no active link points at an internal_transfer delivery -- value
 >>> RESULT race rc_retype_first (GREEN): PASS=4 FAIL=0
 ################ RED race rr: MUTANT (named) no_guard ################
 MUTANT (named): no_guard   -- diff of the real file against the mutated copy:
-467c467
+476c476
 <   IF current_setting('transaction_isolation') <> 'read committed' THEN
 ---
 >   IF false THEN
-539c539
+550c550
 <   IF current_setting('transaction_isolation') <> 'read committed' THEN
 ---
 >   IF false THEN
-629c629
+640c640
 <   IF current_setting('transaction_isolation') <> 'read committed' THEN
 ---
 >   IF false THEN
-767c767
+778c778
 <   IF current_setting('transaction_isolation') <> 'read committed' THEN
 ---
 >   IF false THEN
-819c819
+830c830
 <   IF current_setting('transaction_isolation') <> 'read committed' THEN
 ---
 >   IF false THEN
-843c843
+863c863
 <   IF current_setting('transaction_isolation') <> 'read committed' THEN
 ---
 >   IF false THEN
@@ -314,13 +314,13 @@ Output format is aligned.
 -- OBSERVER session (a third connection) while both writers are open: proves the sessions really overlap
   pid  | state  | wait_event_type | wait_event |        query        
 -------+--------+-----------------+------------+---------------------
- 55541 | active | Timeout         | PgSleep    | SELECT pg_sleep(4);
+ 59790 | active | Timeout         | PgSleep    | SELECT pg_sleep(4);
 (1 row)
 
 ----- session 1 output (B3c-retype) -----
 Output format is unaligned.
 SELECT 'RETYPE(RR) session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-RETYPE(RR) session pid=55541 start 23:30:21.647
+RETYPE(RR) session pid=59790 start 00:33:26.217
 BEGIN ISOLATION LEVEL REPEATABLE READ;
 BEGIN
 SELECT current_setting('transaction_isolation') AS isolation;
@@ -328,7 +328,7 @@ repeatable read
 SELECT 'links seen by my snapshot: ' || count(*) FROM public.delivery_invoice_links;
 links seen by my snapshot: 0
 SELECT 'RETYPE(RR) snapshot taken, sleeping 4s ' || clock_timestamp()::time(3);
-RETYPE(RR) snapshot taken, sleeping 4s 23:30:21.648
+RETYPE(RR) snapshot taken, sleeping 4s 00:33:26.217
 SELECT pg_sleep(4);
 
 SELECT 'links seen by my snapshot after the sleep (the LINK has committed meanwhile): ' || count(*) FROM public.delivery_invoice_links;
@@ -338,17 +338,17 @@ FAIL: RETYPE of V1 under REPEATABLE READ is refused E14 -- expected refusal E14 
 COMMIT;
 COMMIT
 SELECT 'RETYPE(RR) finished ' || clock_timestamp()::time(3);
-RETYPE(RR) finished 23:30:25.655
+RETYPE(RR) finished 00:33:30.226
 ----- session 2 output (B3c-link) -----
 Output format is unaligned.
 SELECT 'LINK session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-LINK session pid=55545 start 23:30:23.166
+LINK session pid=59795 start 00:33:27.735
 SELECT current_setting('transaction_isolation') AS isolation;
 read committed
 INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001');
 INSERT 0 1
 SELECT 'LINK committed (autocommit) ' || clock_timestamp()::time(3);
-LINK committed (autocommit) 23:30:23.17
+LINK committed (autocommit) 00:33:27.74
 $ psql -X -e -d t_b3_rr_red -v exp_type=supplier -v exp_links=1 -f B3-end.sql
 Output format is unaligned.
 -- END STATE after both sessions finished
@@ -377,13 +377,13 @@ Output format is aligned.
 -- OBSERVER session (a third connection) while both writers are open: proves the sessions really overlap
   pid  | state  | wait_event_type | wait_event |        query        
 -------+--------+-----------------+------------+---------------------
- 55582 | active | Timeout         | PgSleep    | SELECT pg_sleep(4);
+ 59831 | active | Timeout         | PgSleep    | SELECT pg_sleep(4);
 (1 row)
 
 ----- session 1 output (B3c-retype) -----
 Output format is unaligned.
 SELECT 'RETYPE(RR) session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-RETYPE(RR) session pid=55582 start 23:30:26.064
+RETYPE(RR) session pid=59831 start 00:33:30.636
 BEGIN ISOLATION LEVEL REPEATABLE READ;
 BEGIN
 SELECT current_setting('transaction_isolation') AS isolation;
@@ -391,7 +391,7 @@ repeatable read
 SELECT 'links seen by my snapshot: ' || count(*) FROM public.delivery_invoice_links;
 links seen by my snapshot: 0
 SELECT 'RETYPE(RR) snapshot taken, sleeping 4s ' || clock_timestamp()::time(3);
-RETYPE(RR) snapshot taken, sleeping 4s 23:30:26.065
+RETYPE(RR) snapshot taken, sleeping 4s 00:33:30.636
 SELECT pg_sleep(4);
 
 SELECT 'links seen by my snapshot after the sleep (the LINK has committed meanwhile): ' || count(*) FROM public.delivery_invoice_links;
@@ -401,17 +401,17 @@ PASS: RETYPE of V1 under REPEATABLE READ is refused E14 -- refused, SQLSTATE=QE0
 COMMIT;
 COMMIT
 SELECT 'RETYPE(RR) finished ' || clock_timestamp()::time(3);
-RETYPE(RR) finished 23:30:30.071
+RETYPE(RR) finished 00:33:34.643
 ----- session 2 output (B3c-link) -----
 Output format is unaligned.
 SELECT 'LINK session pid=' || pg_backend_pid() || ' start ' || clock_timestamp()::time(3);
-LINK session pid=55586 start 23:30:27.586
+LINK session pid=59835 start 00:33:32.157
 SELECT current_setting('transaction_isolation') AS isolation;
 read committed
 INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001');
 INSERT 0 1
 SELECT 'LINK committed (autocommit) ' || clock_timestamp()::time(3);
-LINK committed (autocommit) 23:30:27.591
+LINK committed (autocommit) 00:33:32.163
 $ psql -X -e -d t_b3_rr_green -v exp_type=supplier -v exp_links=1 -f B3-end.sql
 Output format is unaligned.
 -- END STATE after both sessions finished

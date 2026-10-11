@@ -5,7 +5,7 @@ Written 11 Oct 2026; updated 11 Oct for block 2a-FIX (O-1, O-3 closed) and block
 ## 1. Repo-state header
 
 - `main` @ `0289bcfacccc3c97738624e764e11b853f944726` (fetched 11 Oct; unchanged since round 2).
-- Branch `feat/049-capture-tables` (PR #331, draft). **SQL artifact commit** (the one every transcript names): `7fae0c954543aa79c06c61eb5e1d0d274815cc5a` ("fix(049): F4-1 linked_at stamped; F4-2 INSERT guards (HELD)"). The commit that ran the transcripts is `0e2723f130145a3ef11db9ad11103caf4ccb44f5` (test sources); its SQL blob is identical (`2597c50e…`, shown in every transcript header). Earlier artifacts: `ecc8e1e` (S-3), `668956e` (SQL review round 2 reviewed this one), `50b929a` (round 1). The branch head is the next commit (this package + transcripts); its SHA is in the hand-off report from `git ls-remote`, not here (a file cannot name the commit that contains it).
+- Branch `feat/049-capture-tables` (PR #331, draft). **SQL artifact commit** (the one every transcript names): `3a0244f6cc3c93252e7457d7b78e71a1e5a90485` ("fix(049): S-4 created_at stamped; N-4 PM fields NULL at insert (HELD)"). The commit that ran the transcripts is `7635bb983d768a7ca2ef176f0609b11121752c89` (test sources); its SQL blob is identical (`3b50f2c6…`, shown in every transcript header). Earlier artifacts: `7fae0c9` (F4-1/F4-2; SQL review round 3 reviewed this one), `ecc8e1e` (S-3), `668956e` (round 2), `50b929a` (round 1). The branch head is the next commit (this package + transcripts); its SHA is in the hand-off report from `git ls-remote`, not here (a file cannot name the commit that contains it).
 - Superseded artifact commits (history): `f26c7ed` (block 2a), `50b929a` (O-1/O-3; **this is the file SQL review round 1 reviewed**, blob `687d640a…`, head `8968222`).
 - `supabase migration list`, prod: 44 rows, local = remote on all 44, last row 048 — from `049-plan-evidence/prod-P13-raw.json`, 11 Oct. **Not re-run** (no Supabase command that links or writes was permitted).
 - Last runbook executed: 048 prod apply, 2026-09-21.
@@ -13,14 +13,14 @@ Written 11 Oct 2026; updated 11 Oct for block 2a-FIX (O-1, O-3 closed) and block
 
 ## 2. Pinned artifacts
 
-Hashes taken with `git show 7fae0c9:<path> | shasum -a 256`; the same values are echoed at the top of every transcript (`shasum` frame).
+Hashes taken with `git show 3a0244f:<path> | shasum -a 256`; the same values are echoed at the top of every transcript (`shasum` frame).
 
 | Artifact | sha256 | git blob |
 |---|---|---|
-| `docs/reviews/049_capture_tables.sql` (1172 lines) | `e1f7b62c4403ebcd2fb9879b5df52dce6c1407ca05a160ca96af36b7f73467eb` | `2597c50ea788d5fe3b698cf97c5ba15d2acc373b` |
+| `docs/reviews/049_capture_tables.sql` (1195 lines) | `069fbe16f07c383d54edd3233b845de55591548815ce5e6b068e098c9dfa574b` | `3b50f2c6c683a5ea5481d91533be4aa9991b13bc` |
 | `scripts/test-db-only-capture-helpers.sql` (unchanged since block 2a) | `4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3` | `fac582130a10b63ec10d734d95a4d3a6d4a15901` |
 
-Previous values: `ecc8e1e` (S-3) sha256 `009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a`, blob `903abba5…`; `668956e` (the file SQL review round 2 reviewed) sha256 `cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6`, blob `b49df7bd…`; `50b929a` (round 1) sha256 `31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd`, blob `687d640a…`. Sections 5, 8, 9 and 11 give line references at `668956e`; section 15 gives the S-3 delta at `ecc8e1e` (lines after ~577 shifted by about +28).
+Previous values: `7fae0c9` (F4) sha256 `e1f7b62c4403ebcd2fb9879b5df52dce6c1407ca05a160ca96af36b7f73467eb`, blob `2597c50e…`; `ecc8e1e` (S-3) sha256 `009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a`, blob `903abba5…`; `668956e` (the file SQL review round 2 reviewed) sha256 `cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6`, blob `b49df7bd…`; `50b929a` (round 1) sha256 `31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd`, blob `687d640a…`. Sections 5, 8, 9 and 11 give line references at `668956e`; section 15 gives the S-3 delta at `ecc8e1e` (lines after ~577 shifted by about +28).
 
 Reviewer: `git show ecc8e1e:docs/reviews/049_capture_tables.sql` is the file; do not trust a GitHub branch view. The SQL header carries a source-id → line-range map generated from the `-- [src: ...]` markers (92 of 92 map lines re-checked against the final file) and the dated lines "11 Oct: O-1 and O-3 closed per Aravind." and "11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2)."
 
@@ -142,7 +142,7 @@ Line references are to the SQL file at `668956e`.
 
 ## 11. Delta-review request
 
-**CURRENT (round 3): review the delta `668956e` → `7fae0c9`, which is S-3 (section 15) + F4-1 + F4-2 (section 16, line ranges at `7fae0c9`) plus the re-run tests.** `git diff 668956e 7fae0c9 -- docs/reviews/049_capture_tables.sql`. The round-2 request below is kept as history.
+**CURRENT (round 4): review the S-4 + N-4 lines only — `git diff 7fae0c9 3a0244f -- docs/reviews/049_capture_tables.sql` — plus the re-run tests.** Changed line ranges at `3a0244f`: 15–20 (dated line and the TIME RULE header text), 44–141 (regenerated source map), 463 (TR1 marker), 490–491 (S-4 in `trg_dil_before_insert`), 821 (deliveries-insert marker), 837–848 (N-4 columns in the deliveries INSERT guard, then S-4 `created_at`), 854 (documents-insert marker), 871–872 (S-4 in `trg_capture_documents_before_insert`). The earlier requests (S-3 + F4 at `668956e` → `7fae0c9`, and round 2) are kept below as history.
 
 **Round 2 (history): the delta was SQL `50b929a` → `668956e`**, plus the re-run tests.
 `git diff 50b929a 668956e -- docs/reviews/049_capture_tables.sql` (188 insertions, 112 deletions; about 92 of those lines are the regenerated header map). Changed line ranges at `668956e`:
@@ -207,7 +207,11 @@ Real Storage (MIME/size refusal; whether it refuses a SQL delete of a bucket —
 - **Housekeeping:** a stray `src/T-TRIG.sql.bak` was committed by mistake in the test-source commit and is removed in the transcripts commit.
 - **OPEN (unchanged):** none new from this block. Still owed: block 2b on test-db, P10 and P14 pinned with dates, the apply package.
 
-## 17. SQL review round 3 and the whole-file time audit (block 2a-FIX5, 12 Oct) — STOPPED at the audit
+## 17. SQL review round 3 and the whole-file time audit (block 2a-FIX5, 12 Oct)
+
+**STATUS (updated): S-4 and N-4 are LANDED at `3a0244f` (see "Landing record" at the end of this section). The `dc_date` question below was DECIDED by Aravind on 12 Oct. The text between is the audit as first written (the block paused at it), kept for the record.**
+
+**STANDING TIME RULE for this file (Aravind, 12 Oct): Every time column recording a system event is set by the database. Exceptions: `received_at` (D-25) and `dc_date` (document content, as printed).**
 
 - **Round 3 evidence:** `049-sql-evidence/review-sql-round-3.txt`, sha256 `59d6e86e0b725750ee7ccabebc804e594f7e7c6297506f7ed45999afa7d829d0` (verified before use). Verdict: the SQL-stage GO holds, conditional. It found **S-4** (`created_at` caller-supplied at INSERT; proven on the reviewer's stub: a document with a future `created_at` can never be acknowledged; a delivery's `received_order_chk` is bypassed) and **N-4** (PM-owned fields can be set at INSERT). **Reviewer error, owned:** per-column fix specs leaving siblings open (C-36, B-1's timestamps, `created_at`); the reviewer's standing rule is below.
 - **Decisions (Aravind, 12 Oct):** S-4 — `NEW.created_at := now()` in the three INSERT triggers (`trg_deliveries_before_insert`, `trg_capture_documents_before_insert`, `trg_dil_before_insert`); `capture_files.created_at` goes to the PR-C blocking condition (no trigger here). N-4 Option A — `delivery_type`, `vehicle_number`, `dc_number`, `dc_date` must be NULL at deliveries INSERT, else E12. **TIME RULE for the whole file:** every time column is set by the database at the moment of the event it records; `received_at` is the one named exception (D-25).
@@ -223,7 +227,7 @@ Real Storage (MIME/size refusal; whether it refuses a SQL delete of a bucket —
 | `deliveries.created_at` | row creation | `DEFAULT now()`, caller may override | **caller-supplied** | immutable (S-1) | S-4 |
 | `deliveries.received_at` | inbound message receipt | caller-supplied by design | caller | immutable (TR4a) | named exception (D-25) |
 | `deliveries.delivery_date` | IST date of `received_at` | generated, stored | n/a | n/a | compliant |
-| **`deliveries.dc_date`** | date **printed on the delivery challan** (document content, PM-entered) | **caller-supplied, unconstrained** | **caller-supplied** | caller-supplied; locked while approved/cancelled (TR4c(4)) | **OPEN** |
+| **`deliveries.dc_date`** | date **printed on the delivery challan** (document content, PM-entered) | **caller-supplied, unconstrained** | **caller-supplied** | caller-supplied; locked while approved/cancelled (TR4c(4)) | **DECIDED (Aravind, 12 Oct): named exception to the TIME RULE** (document content as printed); NULL at INSERT (N-4); no CHECK, no stamp |
 | `deliveries.approved_at` | move INTO approved | DB-stamped (TR4, S-3) | must be NULL (F4-2) | stamped | compliant |
 | `deliveries.rejected_at` | move INTO rejected | DB-stamped (TR4, S-3) | must be NULL (F4-2) | stamped | compliant |
 | `deliveries.cancelled_at` | move INTO cancelled | DB-stamped (TR4, S-3) | must be NULL (F4-2) | stamped; cleared on restore | compliant |
@@ -232,6 +236,19 @@ Real Storage (MIME/size refusal; whether it refuses a SQL delete of a bucket —
 | `delivery_invoice_links.unlinked_at` | the unlink | DB-stamped (TR3, S-3) | must be NULL (B2) | stamped on unlink | compliant |
 | `delivery_invoice_links.superseded_approval_at` | when the superseded approval happened | copied by TR3 from `deliveries.approved_at` (itself DB-stamped); caller value overwritten | must be NULL (B2) | derived | compliant |
 
-- **OPEN — `deliveries.dc_date` (decision needed from Aravind).** It is a `date` column that is caller-supplied, is not `received_at`, and is not covered by S-4, so under the brief's audit rule it is neither fixed nor assumed. My reading, for the decision only: it does not record an event the system observes; it records a fact printed on a paper document (the date on the supplier's DC) and is PM-entered content, like `dc_number` and `vehicle_number`. Options: (a) name it as a second explicit exception to the TIME RULE ("document content dates are caller-supplied"); (b) bound it (for example `dc_date <= delivery_date`) as a CHECK; (c) stamp it (this would defeat its purpose: the printed date). **Block 2a-FIX5 STOPPED here, before STEP 2: no SQL was edited, no transcripts were re-run.** S-4 and N-4 are therefore NOT yet landed. N-4 makes `dc_date` NULL at INSERT regardless; this question is about the UPDATE path.
+- **~~OPEN~~ DECIDED 12 Oct — `deliveries.dc_date`: a named exception (see the standing rule above; the options and reading below are the historical question).** It is a `date` column that is caller-supplied, is not `received_at`, and is not covered by S-4, so under the brief's audit rule it is neither fixed nor assumed. My reading, for the decision only: it does not record an event the system observes; it records a fact printed on a paper document (the date on the supplier's DC) and is PM-entered content, like `dc_number` and `vehicle_number`. Options: (a) name it as a second explicit exception to the TIME RULE ("document content dates are caller-supplied"); (b) bound it (for example `dc_date <= delivery_date`) as a CHECK; (c) stamp it (this would defeat its purpose: the printed date). **Block 2a-FIX5 STOPPED here, before STEP 2: no SQL was edited, no transcripts were re-run.** S-4 and N-4 are therefore NOT yet landed. N-4 makes `dc_date` NULL at INSERT regardless; this question is about the UPDATE path.
+
+**Landing record (block 2a-FIX5 resumed, 12 Oct, per Aravind):**
+- **dc_date DECIDED:** named exception to the TIME RULE; no CHECK, no stamp; NULL at INSERT (N-4); locked while approved/cancelled (D-23). Recorded in the SQL header (dated line "12 Oct: S-4 … and N-4 … per Aravind." and the TIME RULE text, SQL lines 15–20) and above. The audit table above is otherwise unchanged: 14 time columns, 11 compliant before this block, 3 `created_at` fixed by S-4, `capture_files.created_at` to PR-C, `received_at` and `dc_date` the two named exceptions.
+- **S-4 LANDED:** `NEW.created_at := now()` in `trg_deliveries_before_insert` (SQL 848), `trg_capture_documents_before_insert` (872) and `trg_dil_before_insert` (491). `capture_files.created_at` has no trigger and is on the **PR-C blocking condition** (to be stamped by the database).
+- **N-4 LANDED (Option A):** `delivery_type`, `vehicle_number`, `dc_number`, `dc_date` must be NULL at `deliveries` INSERT, else E12 (SQL 837–845).
+- **Artifact commit** `3a0244f6cc3c93252e7457d7b78e71a1e5a90485`, sha256 `069fbe16f07c383d54edd3233b845de55591548815ce5e6b068e098c9dfa574b`, blob `3b50f2c6c683a5ea5481d91533be4aa9991b13bc` (section 2). Transcripts ran at `7635bb9`.
+- **Tests.** T-TRIG 102 → 122 (+20): a future-dated and a past-dated `created_at` on each of `deliveries`, `capture_documents`, `delivery_invoice_links` is stored as the transaction time; a document born with a supplied future `created_at` can still be acknowledged; the C4 shape (`received_at = now() + 1 hour`, `created_at = now() + 2 hours`) is refused by `deliveries_received_order_chk` (the message is asserted); N-4 one case per field → E12, plus the positive UPDATE path. RED against `7fae0c9`'s file via `commit:`: fails 15 checks, including the C4 shape actually succeeding on the old file.
+- **Scenarios changed (every one listed; no assertion weakened):** `_fixture.sql` (`t.mk_dc`, `t.mk_inv`: `delivery_type` set by UPDATE after INSERT, same final state); `T-CHK` section A (the three automatic deliveries: `delivery_type` by UPDATE); `T-RLS` (V3, V4: `delivery_type` by UPDATE); `T-TRIG` (V6: type by UPDATE; the E7 CHECK-backstop assertion keeps its expectation 23514 but runs with the user triggers on `deliveries` disabled, because the N-4 guard now answers E12 first); `T-HELP` H2 (`delivery_type` removed from the helper's jsonb row; the `delivery_date` assertion is unchanged). Run.sh: `commit:7fae0c9` RED added for T-TRIG.
+- **Counts, GREEN expected = PASS, FAIL 0, versus block 2a-FIX4:** T-B1 10 (10), T-B2 11 (11), T-B3 4 per race (same), T-R5 10 (10), T-D18 11 (11), T-CHK 57 (57), T-ORPH 29 (29), T-DOWN 17 (17), T-ACL 82 (82), **T-TRIG 122 (102)**, T-RLS 19 (19), T-HELP 23 (23). No drop.
+- **Lint:** `lint:migrations` exit 0, last line `migration-lint: clean. 107 known violation(s), all exempted.` (0 raw violations for 049); `lint:filesize` clean.
+- **For block 2b (helper script):** `quoco_test_capture_acl()` in `scripts/test-db-only-capture-helpers.sql` still counts 4 trigger functions; it must count the current number (six) before 2b. The helper's insert path also cannot now set the PM-owned or attribution fields at INSERT (use `quoco_test_capture_update`).
+- **Reviewer error owned (round 3):** per-column fix specs leaving siblings open (C-36, B-1's timestamps, `created_at`); the whole-file TIME RULE replaces column lists.
+- **Review round 3 verdict:** the SQL-stage GO holds (conditional). Conditions: S-4 landed with T-TRIG RED/GREEN and N-4 decided, before block 2b (done here); then block 2b, P10/P14 pins and the apply package (unchanged); PR-B and PR-C blocking conditions in section 10 stand, with `capture_files.created_at` added to PR-C's.
 
 END OF 049 SQL REVIEW PACKAGE
