@@ -5,7 +5,7 @@ Written 11 Oct 2026; updated 11 Oct for block 2a-FIX (O-1, O-3 closed) and block
 ## 1. Repo-state header
 
 - `main` @ `0289bcfacccc3c97738624e764e11b853f944726` (fetched 11 Oct; unchanged since round 2).
-- Branch `feat/049-capture-tables` (PR #331, draft). **SQL artifact commit** (the one every transcript names): `ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056` ("fix(049): SQL review r2 — S-3 timestamps stamped by the database (HELD)"). The commit that ran the transcripts is `70228cc6dad88b3f4169770017ad0159e2fdd84a` (test sources); its SQL blob is identical (`903abba5…`, shown in every transcript header). Earlier reviewed artifacts: `668956e` (SQL review round 2 reviewed this one), `50b929a` (round 1). The branch head is the next commit (this package + transcripts); its SHA is in the hand-off report from `git ls-remote`, not here (a file cannot name the commit that contains it).
+- Branch `feat/049-capture-tables` (PR #331, draft). **SQL artifact commit** (the one every transcript names): `7fae0c954543aa79c06c61eb5e1d0d274815cc5a` ("fix(049): F4-1 linked_at stamped; F4-2 INSERT guards (HELD)"). The commit that ran the transcripts is `0e2723f130145a3ef11db9ad11103caf4ccb44f5` (test sources); its SQL blob is identical (`2597c50e…`, shown in every transcript header). Earlier artifacts: `ecc8e1e` (S-3), `668956e` (SQL review round 2 reviewed this one), `50b929a` (round 1). The branch head is the next commit (this package + transcripts); its SHA is in the hand-off report from `git ls-remote`, not here (a file cannot name the commit that contains it).
 - Superseded artifact commits (history): `f26c7ed` (block 2a), `50b929a` (O-1/O-3; **this is the file SQL review round 1 reviewed**, blob `687d640a…`, head `8968222`).
 - `supabase migration list`, prod: 44 rows, local = remote on all 44, last row 048 — from `049-plan-evidence/prod-P13-raw.json`, 11 Oct. **Not re-run** (no Supabase command that links or writes was permitted).
 - Last runbook executed: 048 prod apply, 2026-09-21.
@@ -13,14 +13,14 @@ Written 11 Oct 2026; updated 11 Oct for block 2a-FIX (O-1, O-3 closed) and block
 
 ## 2. Pinned artifacts
 
-Hashes taken with `git show ecc8e1e:<path> | shasum -a 256`; the same values are echoed at the top of every transcript (`shasum` frame).
+Hashes taken with `git show 7fae0c9:<path> | shasum -a 256`; the same values are echoed at the top of every transcript (`shasum` frame).
 
 | Artifact | sha256 | git blob |
 |---|---|---|
-| `docs/reviews/049_capture_tables.sql` (1101 lines) | `009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a` | `903abba5d3dfa94dc5486923d22a5f5cdd91d25e` |
+| `docs/reviews/049_capture_tables.sql` (1172 lines) | `e1f7b62c4403ebcd2fb9879b5df52dce6c1407ca05a160ca96af36b7f73467eb` | `2597c50ea788d5fe3b698cf97c5ba15d2acc373b` |
 | `scripts/test-db-only-capture-helpers.sql` (unchanged since block 2a) | `4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3` | `fac582130a10b63ec10d734d95a4d3a6d4a15901` |
 
-Previous values: `668956e` (the file SQL review round 2 reviewed) sha256 `cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6`, blob `b49df7bd…`; `50b929a` (round 1) sha256 `31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd`, blob `687d640a…`. Sections 5, 8, 9 and 11 give line references at `668956e`; section 15 gives the S-3 delta at `ecc8e1e` (lines after ~577 shifted by about +28).
+Previous values: `ecc8e1e` (S-3) sha256 `009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a`, blob `903abba5…`; `668956e` (the file SQL review round 2 reviewed) sha256 `cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6`, blob `b49df7bd…`; `50b929a` (round 1) sha256 `31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd`, blob `687d640a…`. Sections 5, 8, 9 and 11 give line references at `668956e`; section 15 gives the S-3 delta at `ecc8e1e` (lines after ~577 shifted by about +28).
 
 Reviewer: `git show ecc8e1e:docs/reviews/049_capture_tables.sql` is the file; do not trust a GitHub branch view. The SQL header carries a source-id → line-range map generated from the `-- [src: ...]` markers (92 of 92 map lines re-checked against the final file) and the dated lines "11 Oct: O-1 and O-3 closed per Aravind." and "11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2)."
 
@@ -142,7 +142,7 @@ Line references are to the SQL file at `668956e`.
 
 ## 11. Delta-review request
 
-**CURRENT (round 3): review the S-3-only delta `668956e` → `ecc8e1e` (section 15 lists its line ranges) plus the re-run tests.** The round-2 request below is kept as history.
+**CURRENT (round 3): review the delta `668956e` → `7fae0c9`, which is S-3 (section 15) + F4-1 + F4-2 (section 16, line ranges at `7fae0c9`) plus the re-run tests.** `git diff 668956e 7fae0c9 -- docs/reviews/049_capture_tables.sql`. The round-2 request below is kept as history.
 
 **Round 2 (history): the delta was SQL `50b929a` → `668956e`**, plus the re-run tests.
 `git diff 50b929a 668956e -- docs/reviews/049_capture_tables.sql` (188 insertions, 112 deletions; about 92 of those lines are the regenerated header map). Changed line ranges at `668956e`:
@@ -192,5 +192,19 @@ Real Storage (MIME/size refusal; whether it refuses a SQL delete of a bucket —
 - **Lint:** `lint:migrations` exit 0, last line `migration-lint: clean. 107 known violation(s), all exempted.` (0 raw violations for 049); `lint:filesize` clean.
 - **OPEN (not added, per the brief):** (1) `linked_at` is still caller-supplied; if the D-12 clock needs it stamped, that is a separate decision (an unlink with `now()` earlier than a future `linked_at` is refused by `dil_unlinked_order_chk`). (2) The stamps are in BEFORE UPDATE triggers only; the tables have no BEFORE INSERT trigger, so a row INSERTed directly with `status = 'approved'` / an ack already set can still carry a caller-chosen time (PR-B inserts documents with ack NULL and deliveries `incomplete`; reviewer to say whether an INSERT trigger is wanted).
 - **Owed (reviewer §7 conditions 2–4), unchanged:** block 2b on test-db (bucket INSERT and the separate bucket DELETE step against real Storage, full DOWN, T-BKT, the CI run incl. anon-key 42501 per table and `service_role` refusals under Option Y, helpers pre-check); P10 and P14 pinned with dates; then the apply package (runbook, PITR observed, in-flight probe P3 = 0, ledger row, post-apply fingerprint incl. `pg_proc` count 1 per function name, types regenerated per D-16).
+
+## 16. F4-1 and F4-2 (decided by Aravind, 11 Oct; the two OPEN items of section 15) — block 2a-FIX4
+
+- **F4-1 — LANDED.** `linked_at` is stamped by the database: TR1 (`trg_dil_before_insert`) sets `NEW.linked_at := now()`, never trusting NEW (SQL lines 478–480). The earlier "unlink older than a future `linked_at`" hole is closed.
+- **F4-2 — LANDED.** Two new functions, `trg_deliveries_before_insert` (line 811) and `trg_capture_documents_before_insert` (line 835), with BEFORE INSERT triggers (line 856 on): SECURITY DEFINER, `SET search_path = ''`, plain `CREATE FUNCTION`, B3 isolation guard first, REVOKE ALL by name then `GRANT EXECUTE … TO postgres` with the 048-shape comment (lines ~975–983), both added to the in-transaction ACL/owner assertion (line 1056) and to the commented DOWN (guard exclusion list and drop order, lines ~1125, 1153). Refusal code **E12** (`QE012`; the E-code table in the header now lists E12 as raised here as well as by CHECK/FK).
+  - (a) `deliveries`: refused unless `status = 'incomplete'` and `approved_by`, `approved_at`, `rejected_by`, `rejected_at`, `reject_reason`, `cancelled_at`, `cancel_reason` are all NULL. **Spec read before writing:** a delivery is CREATED `incomplete` (D1; plan v3 line 105: it becomes `awaiting_pm` inside the engineer RPC when the ack is stored, i.e. by UPDATE; plan v2 §2.1 default `'incomplete'`). The brief's text named approved/rejected/cancelled; because the spec allows only `incomplete` at creation, `awaiting_pm` is refused at INSERT too (a deliberate, stated reading of "allow exactly those").
+  - (b) `capture_documents`: refused if `engineer_ack`, `engineer_ack_at` or `engineer_ack_note` is non-NULL.
+- **Tests.** T-TRIG 87 → 102: F4-1 (a future-dated `linked_at` is stored as the transaction time; the later unlink works), F4-2 (insert as approved / with approved_by only / with cancel_reason only / as rejected / as awaiting_pm / document with ack / document with note only → E12; normal creation still succeeds; both guards refuse under REPEATABLE READ with E14). T-ACL 76 → 82 (the two new functions: EXECUTE only postgres, owner postgres, SECURITY DEFINER, empty `search_path`, exact ACL `{postgres=X/postgres}`, 42501 for every role; six functions and six triggers now). T-DOWN 17 = 17 (the DOWN drops both new functions; catalog back to baseline). RED for the new cases against the file at `ecc8e1e` (the runner's `commit:` mutant): T-TRIG and T-ACL fail there.
+- **Scenarios changed (listed; no assertion weakened).** `T-CHK`: sections B (deliveries) and C (capture_documents) test the CHECKs by INSERTing rows that carry exactly the fields F4-2 now refuses, so, as section A already did for links, the user triggers on those two tables are disabled for those sections (owner-level, scaffold only); every assertion and expected code is unchanged (57 = 57). `T-TRIG`: the rejected automatic delivery V6 is now INSERTed incomplete and rejected by UPDATE (it was INSERTed already rejected). No other scenario inserted these fields. The test-db helper script is unchanged; its `quoco_test_capture_acl()` still reports four trigger functions (a count check there, T-HELP H14, still passes; the helper file is outside this block's allowed files — a follow-up if it should list six).
+- **Counts (GREEN expected = PASS, all FAIL 0), versus block 2a-FIX3:** T-B1 10 (10), T-B2 11 (11), T-B3 4 per race (same), T-R5 10 (10), T-D18 11 (11), T-CHK 57 (57), T-ORPH 29 (29), T-DOWN 17 (17), T-ACL 82 (76), T-TRIG 102 (87), T-RLS 19 (19), T-HELP 23 (23). No drop.
+- **Lint:** `lint:migrations` exit 0, last line `migration-lint: clean. 107 known violation(s), all exempted.` (0 raw violations for 049); `lint:filesize` clean.
+- **Delta ranges at `7fae0c9` (vs `ecc8e1e`):** 14 (dated line), 38–132 (regenerated map), 153–155 (E12 header lines), 454 (TR1 marker), 478–481 (F4-1), 806–860 (two new functions and their three triggers), 975–983 (REVOKE/GRANT), 1056 (assertion array), 1124–1125 (DOWN guard list), 1153–1154 (DOWN drops). Full: `git diff ecc8e1e 7fae0c9 -- docs/reviews/049_capture_tables.sql`.
+- **Housekeeping:** a stray `src/T-TRIG.sql.bak` was committed by mistake in the test-source commit and is removed in the transcripts commit.
+- **OPEN (unchanged):** none new from this block. Still owed: block 2b on test-db, P10 and P14 pinned with dates, the apply package.
 
 END OF 049 SQL REVIEW PACKAGE

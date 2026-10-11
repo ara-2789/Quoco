@@ -1,12 +1,12 @@
 == 049-sql evidence: T-DOWN ==
-generated: 2026-10-11T07:00:42Z
+generated: 2026-10-11T18:00:32Z
 $ git rev-parse HEAD
-70228cc6dad88b3f4169770017ad0159e2fdd84a
-$ SQL artifact commit under test: ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056
-$ git rev-parse ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056:docs/reviews/049_capture_tables.sql
-903abba5d3dfa94dc5486923d22a5f5cdd91d25e
+0e2723f130145a3ef11db9ad11103caf4ccb44f5
+$ SQL artifact commit under test: 7fae0c954543aa79c06c61eb5e1d0d274815cc5a
+$ git rev-parse 7fae0c954543aa79c06c61eb5e1d0d274815cc5a:docs/reviews/049_capture_tables.sql
+2597c50ea788d5fe3b698cf97c5ba15d2acc373b
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-903abba5d3dfa94dc5486923d22a5f5cdd91d25e
+2597c50ea788d5fe3b698cf97c5ba15d2acc373b
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,12 +15,12 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a  docs/reviews/049_capture_tables.sql
+e1f7b62c4403ebcd2fb9879b5df52dce6c1407ca05a160ca96af36b7f73467eb  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
 20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
 
-DOWN blocks extracted by uncommenting (awk/sed in run.sh:extract_down):       67 lines (049),        8 lines (helpers). 049 DOWN as run:
+DOWN blocks extracted by uncommenting (awk/sed in run.sh:extract_down):       70 lines (049),        8 lines (helpers). 049 DOWN as run:
 BEGIN;
 
 DO $$
@@ -51,7 +51,8 @@ BEGIN
      AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
      AND NOT (n.nspname = 'public' AND p.proname IN (
            'trg_dil_before_insert', 'trg_dil_before_update',
-           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+           'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
   IF v_names IS NOT NULL THEN
     RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
   END IF;
@@ -79,6 +80,8 @@ DROP FUNCTION public.trg_dil_before_insert();
 DROP FUNCTION public.trg_dil_before_update();
 DROP FUNCTION public.trg_deliveries_before_update();
 DROP FUNCTION public.trg_capture_documents_before_update();
+DROP FUNCTION public.trg_deliveries_before_insert();
+DROP FUNCTION public.trg_capture_documents_before_insert();
 
 -- Ledger: in the same transaction, so `migration list` never shows 049
 -- applied with no objects (R8).
@@ -280,6 +283,10 @@ BEGIN
      OR NEW.superseded_approval_at IS NOT NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'QE010', MESSAGE = 'E10';
   END IF;
+
+  -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
+  -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
+  NEW.linked_at := now();
 
   -- Lock level 1: the invoice document row, FOR NO KEY UPDATE (R3).
   PERFORM 1 FROM public.capture_documents d WHERE d.id = NEW.invoice_document_id FOR NO KEY UPDATE;
@@ -602,6 +609,55 @@ BEGIN
 END;
 $$;
 CREATE FUNCTION
+CREATE FUNCTION public.trg_deliveries_before_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  -- B3: first statement.
+  IF current_setting('transaction_isolation') <> 'read committed' THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+  END IF;
+
+  IF NEW.status IS DISTINCT FROM 'incomplete'
+     OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
+     OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
+     OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+CREATE FUNCTION
+CREATE FUNCTION public.trg_capture_documents_before_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  -- B3: first statement.
+  IF current_setting('transaction_isolation') <> 'read committed' THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+  END IF;
+
+  IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+CREATE FUNCTION
+CREATE TRIGGER tr_deliveries_before_insert BEFORE INSERT ON public.deliveries
+  FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_insert();
+CREATE TRIGGER
+CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents
+  FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_insert();
+CREATE TRIGGER
 CREATE TRIGGER tr_dil_before_insert BEFORE INSERT ON public.delivery_invoice_links
   FOR EACH ROW EXECUTE FUNCTION public.trg_dil_before_insert();
 CREATE TRIGGER
@@ -710,6 +766,14 @@ REVOKE ALL ON FUNCTION public.trg_capture_documents_before_update() FROM PUBLIC,
 REVOKE
 GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_update() TO postgres;
 GRANT
+REVOKE ALL ON FUNCTION public.trg_deliveries_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE
+GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_insert() TO postgres;
+GRANT
+REVOKE ALL ON FUNCTION public.trg_capture_documents_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE
+GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_insert() TO postgres;
+GRANT
 COMMENT ON TABLE public.capture_documents IS 'Capture engine slice 1a: one document (DC or invoice) per capture flow. Written only by PR-B definer functions. Business record, never pruned (D-29).';
 COMMENT
 COMMENT ON TABLE public.capture_files IS 'Capture engine slice 1a: one row per page/photo of a capture_documents row. Bytes live in the capture-documents bucket.';
@@ -769,7 +833,7 @@ BEGIN
       v_bad := v_bad || ' ' || v_t || ':owner';
     END IF;
   END LOOP;
-  FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+  FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
     FOREACH v_r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
       IF has_function_privilege(v_r, 'public.' || v_f || '()', 'EXECUTE') THEN
         v_bad := v_bad || ' ' || v_f || ':' || v_r || ':EXECUTE';
@@ -985,9 +1049,9 @@ GRANT
 $ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('049', 'capture_tables');  (stands in for the ledger repair)
 ## fingerprint AFTER UP + helpers + ledger row:
 relations a9014cad6c5515427671025b1a662948
-functions 596a5aad21505a7129fef93807dcbf89
+functions d7b1cc0df5eacc91dc1a6c935e131723
 constraints c3acf380234e4c15ba2e5e983ef0dd80
-triggers 3d5d868ac5a030845af6a78be6eb819c
+triggers 31bd29f111ff1665d177217bed606b32
 policies 8f2ffb5bfc25291bc74a8edf76a989be
 indexes dbcb5fb46c3487a39b7ada9c692064a6
 table/column comments 31 d0825a981a1a304c2d41f4caabd8a3d0
@@ -995,7 +1059,7 @@ function comments 0
 default_acl 82074218540eaa004ee83da5f47c4504
 storage.buckets rows 1
 ledger rows 1
-public tables=36 functions=146
+public tables=36 functions=148
 PASS: UP changed the catalog (fingerprint differs from baseline)
 ## RED: run the 049 DOWN while the helper functions exist
 $ psql -X -e -d t_down_a -v ON_ERROR_STOP=1 -f 049-down.sql
@@ -1029,14 +1093,15 @@ BEGIN
      AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
      AND NOT (n.nspname = 'public' AND p.proname IN (
            'trg_dil_before_insert', 'trg_dil_before_update',
-           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+           'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
   IF v_names IS NOT NULL THEN
     RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
   END IF;
 END;
 $$;
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_FUNCTIONS: public.quoco_test_capture_update, public.quoco_test_capture_cleanup, public.quoco_test_capture_insert, public.quoco_test_capture_acl
-CONTEXT:  PL/pgSQL function inline_code_block line 31 at RAISE
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:37: ERROR:  DOWN_GUARD_FUNCTIONS: public.quoco_test_capture_update, public.quoco_test_capture_insert, public.quoco_test_capture_cleanup, public.quoco_test_capture_acl
+CONTEXT:  PL/pgSQL function inline_code_block line 32 at RAISE
 [exit 3]
 PASS: DOWN refused with DOWN_GUARD_FUNCTIONS while helpers exist
 PASS: the guard names the offending helper functions
@@ -1092,7 +1157,8 @@ BEGIN
      AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
      AND NOT (n.nspname = 'public' AND p.proname IN (
            'trg_dil_before_insert', 'trg_dil_before_update',
-           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+           'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
   IF v_names IS NOT NULL THEN
     RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
   END IF;
@@ -1122,6 +1188,10 @@ DROP FUNCTION
 DROP FUNCTION public.trg_deliveries_before_update();
 DROP FUNCTION
 DROP FUNCTION public.trg_capture_documents_before_update();
+DROP FUNCTION
+DROP FUNCTION public.trg_deliveries_before_insert();
+DROP FUNCTION
+DROP FUNCTION public.trg_capture_documents_before_insert();
 DROP FUNCTION
 DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
 DELETE 1
@@ -1193,13 +1263,14 @@ BEGIN
      AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
      AND NOT (n.nspname = 'public' AND p.proname IN (
            'trg_dil_before_insert', 'trg_dil_before_update',
-           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+           'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
   IF v_names IS NOT NULL THEN
     RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
   END IF;
 END;
 $$;
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_ROWS
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:37: ERROR:  DOWN_GUARD_ROWS
 CONTEXT:  PL/pgSQL function inline_code_block line 13 at RAISE
 [exit 3]
 PASS: guard 1: DOWN refused with DOWN_GUARD_ROWS while a table has rows
@@ -1236,14 +1307,15 @@ BEGIN
      AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
      AND NOT (n.nspname = 'public' AND p.proname IN (
            'trg_dil_before_insert', 'trg_dil_before_update',
-           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+           'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
   IF v_names IS NOT NULL THEN
     RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
   END IF;
 END;
 $$;
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_FUNCTIONS: t.mk_inv, t.mk_doc, t.mk_dc
-CONTEXT:  PL/pgSQL function inline_code_block line 31 at RAISE
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:37: ERROR:  DOWN_GUARD_FUNCTIONS: t.mk_doc, t.mk_dc, t.mk_inv
+CONTEXT:  PL/pgSQL function inline_code_block line 32 at RAISE
 [exit 3]
 PASS: guard 2: refused, naming a function in a NON-public, non-system schema (t.mk_doc)
 NOTICE:  drop cascades to 6 other objects
@@ -1285,14 +1357,15 @@ BEGIN
      AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
      AND NOT (n.nspname = 'public' AND p.proname IN (
            'trg_dil_before_insert', 'trg_dil_before_update',
-           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+           'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
   IF v_names IS NOT NULL THEN
     RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
   END IF;
 END;
 $$;
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_FUNCTIONS: public.pm_unlink_invoice_future
-CONTEXT:  PL/pgSQL function inline_code_block line 31 at RAISE
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:37: ERROR:  DOWN_GUARD_FUNCTIONS: public.pm_unlink_invoice_future
+CONTEXT:  PL/pgSQL function inline_code_block line 32 at RAISE
 [exit 3]
 PASS: guard 2: refused, naming the planted future public function
 $ psql -X -e -d t_down_b -v ON_ERROR_STOP=1 -f 049-down.sql
@@ -1326,7 +1399,8 @@ BEGIN
      AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
      AND NOT (n.nspname = 'public' AND p.proname IN (
            'trg_dil_before_insert', 'trg_dil_before_update',
-           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+           'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
   IF v_names IS NOT NULL THEN
     RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
   END IF;
@@ -1356,6 +1430,10 @@ DROP FUNCTION
 DROP FUNCTION public.trg_deliveries_before_update();
 DROP FUNCTION
 DROP FUNCTION public.trg_capture_documents_before_update();
+DROP FUNCTION
+DROP FUNCTION public.trg_deliveries_before_insert();
+DROP FUNCTION
+DROP FUNCTION public.trg_capture_documents_before_insert();
 DROP FUNCTION
 DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
 DELETE 0
@@ -1483,7 +1561,8 @@ BEGIN
      AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
      AND NOT (n.nspname = 'public' AND p.proname IN (
            'trg_dil_before_insert', 'trg_dil_before_update',
-           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+           'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
   IF v_names IS NOT NULL THEN
     RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
   END IF;
@@ -1514,6 +1593,10 @@ DROP FUNCTION public.trg_deliveries_before_update();
 DROP FUNCTION
 DROP FUNCTION public.trg_capture_documents_before_update();
 DROP FUNCTION
+DROP FUNCTION public.trg_deliveries_before_insert();
+DROP FUNCTION
+DROP FUNCTION public.trg_capture_documents_before_insert();
+DROP FUNCTION
 DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
 DELETE 1
 COMMIT;
@@ -1521,7 +1604,7 @@ COMMIT
 BEGIN;
 BEGIN
 DELETE FROM storage.buckets WHERE id = 'capture-documents';
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:66: ERROR:  STORAGE_REFUSES_SQL_DELETE
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:69: ERROR:  STORAGE_REFUSES_SQL_DELETE
 CONTEXT:  PL/pgSQL function storage.refuse_bucket_delete() line 1 at RAISE
 [exit 3]
 $ psql -X -At -d t_down_c_new -f state.sql   (state after the refusal)

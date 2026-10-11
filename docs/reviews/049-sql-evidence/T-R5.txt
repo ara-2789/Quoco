@@ -1,12 +1,12 @@
 == 049-sql evidence: T-R5 ==
-generated: 2026-10-11T07:00:39Z
+generated: 2026-10-11T18:00:30Z
 $ git rev-parse HEAD
-70228cc6dad88b3f4169770017ad0159e2fdd84a
-$ SQL artifact commit under test: ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056
-$ git rev-parse ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056:docs/reviews/049_capture_tables.sql
-903abba5d3dfa94dc5486923d22a5f5cdd91d25e
+0e2723f130145a3ef11db9ad11103caf4ccb44f5
+$ SQL artifact commit under test: 7fae0c954543aa79c06c61eb5e1d0d274815cc5a
+$ git rev-parse 7fae0c954543aa79c06c61eb5e1d0d274815cc5a:docs/reviews/049_capture_tables.sql
+2597c50ea788d5fe3b698cf97c5ba15d2acc373b
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-903abba5d3dfa94dc5486923d22a5f5cdd91d25e
+2597c50ea788d5fe3b698cf97c5ba15d2acc373b
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,7 +15,7 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a  docs/reviews/049_capture_tables.sql
+e1f7b62c4403ebcd2fb9879b5df52dce6c1407ca05a160ca96af36b7f73467eb  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
 20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql

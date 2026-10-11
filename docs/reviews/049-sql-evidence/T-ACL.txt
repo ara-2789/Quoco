@@ -1,12 +1,12 @@
 == 049-sql evidence: T-ACL ==
-generated: 2026-10-11T07:00:43Z
+generated: 2026-10-11T18:00:33Z
 $ git rev-parse HEAD
-70228cc6dad88b3f4169770017ad0159e2fdd84a
-$ SQL artifact commit under test: ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056
-$ git rev-parse ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056:docs/reviews/049_capture_tables.sql
-903abba5d3dfa94dc5486923d22a5f5cdd91d25e
+0e2723f130145a3ef11db9ad11103caf4ccb44f5
+$ SQL artifact commit under test: 7fae0c954543aa79c06c61eb5e1d0d274815cc5a
+$ git rev-parse 7fae0c954543aa79c06c61eb5e1d0d274815cc5a:docs/reviews/049_capture_tables.sql
+2597c50ea788d5fe3b698cf97c5ba15d2acc373b
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-903abba5d3dfa94dc5486923d22a5f5cdd91d25e
+2597c50ea788d5fe3b698cf97c5ba15d2acc373b
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,7 +15,7 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a  docs/reviews/049_capture_tables.sql
+e1f7b62c4403ebcd2fb9879b5df52dce6c1407ca05a160ca96af36b7f73467eb  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
 20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
@@ -82,23 +82,25 @@ Output format is aligned.
 SELECT p.proname, p.prosecdef, p.proconfig, pg_get_userbyid(p.proowner) AS owner, p.proacl, has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_x, has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_x, has_function_privilege('service_role', p.oid, 'EXECUTE') AS svc_x FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'trg\_%' ORDER BY p.proname;
                proname               | prosecdef |      proconfig       |  owner   |                     proacl                     | anon_x | auth_x | svc_x 
 -------------------------------------+-----------+----------------------+----------+------------------------------------------------+--------+--------+-------
+ trg_capture_documents_before_insert | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres}                          | f      | f      | f
  trg_capture_documents_before_update | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres}                          | f      | f      | f
+ trg_deliveries_before_insert        | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres}                          | f      | f      | f
  trg_deliveries_before_update        | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres}                          | f      | f      | f
  trg_dil_before_insert               | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres,authenticated=X/postgres} | f      | t      | f
  trg_dil_before_update               | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres}                          | f      | f      | f
-(4 rows)
+(6 rows)
 
 Output format is unaligned.
-SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '4');
-PASS: trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres -- value = 4
-SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
+SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '6');
+PASS: trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres -- value = 6
+SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
 FAIL: EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function -- expected 0 got 1
-SELECT t.val('O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all four trigger functions', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND has_function_privilege('postgres', p.oid, 'EXECUTE')$$, '4');
-PASS: O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all four trigger functions -- value = 4
-SELECT t.val('O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing)', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.proacl::text = '{postgres=X/postgres}'$$, '4');
-FAIL: O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing) -- expected 4 got 3
-SELECT t.val('the four triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '4');
-PASS: the four triggers exist and are enabled -- value = 4
+SELECT t.val('O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all six trigger functions', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND has_function_privilege('postgres', p.oid, 'EXECUTE')$$, '6');
+PASS: O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all six trigger functions -- value = 6
+SELECT t.val('O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing)', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.proacl::text = '{postgres=X/postgres}'$$, '6');
+FAIL: O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing) -- expected 6 got 5
+SELECT t.val('the six triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '6');
+PASS: the six triggers exist and are enabled -- value = 6
 
 -- ===== real denials, as each role (42501 = insufficient_privilege). SQL runs through EXECUTE inside thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:33: error: unterminated quoted string
 
@@ -128,6 +130,10 @@ SELECT t.expect('anon calls trg_deliveries_before_update()', 'SELECT public.trg_
 PASS: anon calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
 SELECT t.expect('anon calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
 PASS: anon calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('anon calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+PASS: anon calls trg_deliveries_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_insert
+SELECT t.expect('anon calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+PASS: anon calls trg_capture_documents_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
 RESET ROLE;
 RESET
 SET ROLE authenticated;
@@ -180,6 +186,10 @@ SELECT t.expect('authenticated calls trg_deliveries_before_update()', 'SELECT pu
 PASS: authenticated calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
 SELECT t.expect('authenticated calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
 PASS: authenticated calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('authenticated calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+PASS: authenticated calls trg_deliveries_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_insert
+SELECT t.expect('authenticated calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+PASS: authenticated calls trg_capture_documents_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
 RESET ROLE;
 RESET
 SET ROLE service_role;
@@ -232,15 +242,19 @@ SELECT t.expect('service_role calls trg_deliveries_before_update()', 'SELECT pub
 PASS: service_role calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
 SELECT t.expect('service_role calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
 PASS: service_role calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('service_role calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+PASS: service_role calls trg_deliveries_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_insert
+SELECT t.expect('service_role calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+PASS: service_role calls trg_capture_documents_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
 RESET ROLE;
 RESET
 
 -- ===== N-1 (SQL review r1): ownership. The GRANT ... TO postgres is a no-op only if postgres owns the objects =====
 SELECT t.val('N-1: the four tables are owned by postgres', $$SELECT count(*)::text FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND relowner = 'postgres'::regrole$$, '4');
 PASS: N-1: the four tables are owned by postgres -- value = 4
-SELECT t.val('N-1: the four trigger functions are owned by postgres', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND proowner = 'postgres'::regrole$$, '4');
-PASS: N-1: the four trigger functions are owned by postgres -- value = 4
--- The UPpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:104: error: unterminated quoted string
+SELECT t.val('N-1: the six trigger functions are owned by postgres', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND proowner = 'postgres'::regrole$$, '6');
+PASS: N-1: the six trigger functions are owned by postgres -- value = 6
+-- The UPpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:110: error: unterminated quoted string
 
 SELECT t.expect('N-1: the assertion block passes on the clean state', 'SELECT t.assert_block()', 'ok');
 FAIL: N-1: the assertion block passes on the clean state -- expected ok, got refusal SQLSTATE=P0001 MESSAGE=ACL_ASSERT: capture_documents:authenticated:UPDATE capture_f
@@ -267,15 +281,16 @@ ROLLBACK
 SELECT t.expect('N-1: clean again after the rolled-back owner changes', 'SELECT t.assert_block()', 'ok');
 FAIL: N-1: clean again after the rolled-back owner changes -- expected ok, got refusal SQLSTATE=P0001 MESSAGE=ACL_ASSERT: capture_documents:authenticated:UPDATE capture_f
 
->>> RESULT t_T_ACL_red1: PASS=67 FAIL=9   (declared EXPECT_PASS=76, static assertion lines=76)
+>>> RESULT t_T_ACL_red1: PASS=73 FAIL=9   (declared EXPECT_PASS=82, static assertion lines=82)
 >>> RED verdict: test FAILED against the mutant (FAIL=9) -- the test can fail: OK
 
 ################ RED run 2: commit:50b929a ################
 MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file against the file under test:
-11a12,13
+11a12,14
 > -- 11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2).
 > -- 11 Oct: S-3 landed (Option A, per Aravind).
-35,122c37,128
+> -- 11 Oct: F4-1 (linked_at stamped) and F4-2 (INSERT guards) landed per Aravind.
+35,122c38,132
 < --   E7: 124-147, 591-673
 < --   E12: 124-147
 < --   E-codes-table: 124-147
@@ -365,107 +380,116 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 < --   C-31: 918-997
 < --   down-order: 918-997
 ---
-> --   E7: 130-153, 610-746
-> --   E12: 130-153
-> --   E-codes-table: 130-153
-> --   N-1: 130-153, 960-1008
-> --   D-31: 130-153
-> --   lock-paths: 155-213
-> --   R3: 155-213, 448-514, 610-746, 748-794
-> --   D-26: 155-213
-> --   Q2-2: 155-213
-> --   Q2-3: 155-213
-> --   S-C: 155-213
-> --   D-27: 155-213, 610-746
-> --   S-F: 215-225
-> --   S-E: 215-225
-> --   D-4: 215-225, 265-289, 296-323
-> --   Q2-6: 227-238
-> --   D-22: 227-238, 331-380
-> --   D-25: 227-238, 331-380
-> --   B3: 240-250, 448-514, 516-608, 610-746, 748-794
-> --   S-B: 240-250
-> --   D-19: 240-250, 265-289, 331-380
-> --   D-1: 265-289, 331-380
-> --   S-2: 265-289, 296-323, 1012-1101
-> --   D-5: 265-289, 296-323, 331-380, 819-832, 834-847, 849-862, 864-877
-> --   D-30: 265-289
-> --   S-A: 265-289, 331-380, 387-424
-> --   S4: 265-289, 331-380
-> --   C-29: 265-289, 296-323, 331-380, 387-424
-> --   D-29: 265-289, 296-323, 331-380, 387-424, 1012-1101
-> --   S-3: 296-323, 516-608, 610-746, 748-794
-> --   D-9: 296-323, 929-933
-> --   D-10: 296-323, 929-933
-> --   D-18: 331-380
-> --   D-23: 331-380, 610-746
-> --   D-2: 387-424
-> --   D-3: 387-424, 431-436, 516-608
-> --   R2: 387-424, 516-608
-> --   Q2-5: 387-424
-> --   R5: 387-424
-> --   C-37: 387-424
-> --   Q-1: 387-424
-> --   N1: 431-436
-> --   A33: 431-436
-> --   E8: 431-436
-> --   C-35: 431-436
-> --   TR1: 448-514, 796-804
-> --   TR2: 448-514
-> --   B2: 448-514, 516-608
-> --   B-2: 448-514
-> --   R4: 448-514, 516-608, 610-746, 748-794, 886-890, 906-914, 960-1008
-> --   D-7: 448-514, 516-608, 610-746, 748-794, 906-914
-> --   E1: 448-514
-> --   E2: 448-514
-> --   E3: 448-514
-> --   E4: 448-514
-> --   E5: 448-514
-> --   E10: 448-514, 516-608
-> --   E14: 448-514, 516-608, 610-746, 748-794
-> --   A28: 448-514
-> --   A34: 448-514
-> --   TR3: 516-608, 796-804
-> --   C-36: 516-608, 610-746
-> --   Q2-4: 516-608
-> --   TR4a: 610-746, 796-804
-> --   TR4b: 610-746, 796-804
-> --   TR4c: 610-746, 796-804
-> --   B-1: 610-746
-> --   S-1: 610-746, 748-794
-> --   D-6: 610-746, 748-794
-> --   S6: 610-746
-> --   B1: 610-746
-> --   E6: 610-746
-> --   O-3: 610-746
-> --   E9: 610-746, 748-794
-> --   E11: 610-746, 748-794
-> --   E13: 610-746
-> --   TR5: 748-794, 796-804
-> --   D-20: 813-817, 819-832, 834-847, 849-862, 864-877
-> --   R7: 813-817, 819-832, 834-847, 849-862, 864-877
-> --   C-30: 813-817, 819-832, 834-847, 849-862, 864-877
-> --   D-8: 886-890, 960-1008
-> --   D-21: 886-890
-> --   CLAUDE.md-s6-per-role-revoke: 886-890
-> --   C-27: 906-914
-> --   O-1: 906-914
-> --   D-11: 929-933
-> --   042-precedent: 929-933
-> --   CLAUDE.md-s6-ACL-fingerprint: 960-1008
-> --   R8: 1012-1101
-> --   S-D: 1012-1101
-> --   C-31: 1012-1101
-> --   down-order: 1012-1101
-133c139
+> --   E7: 134-159, 620-756
+> --   E12: 134-159, 810-832, 834-853
+> --   E-codes-table: 134-159
+> --   N-1: 134-159, 1028-1076
+> --   D-31: 134-159
+> --   lock-paths: 161-219
+> --   R3: 161-219, 454-524, 620-756, 758-804
+> --   D-26: 161-219
+> --   Q2-2: 161-219
+> --   Q2-3: 161-219
+> --   S-C: 161-219
+> --   D-27: 161-219, 620-756
+> --   S-F: 221-231
+> --   S-E: 221-231
+> --   D-4: 221-231, 271-295, 302-329
+> --   Q2-6: 233-244
+> --   D-22: 233-244, 337-386
+> --   D-25: 233-244, 337-386
+> --   B3: 246-256, 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+> --   S-B: 246-256
+> --   D-19: 246-256, 271-295, 337-386
+> --   D-1: 271-295, 337-386
+> --   S-2: 271-295, 302-329, 1080-1172
+> --   D-5: 271-295, 302-329, 337-386, 882-895, 897-910, 912-925, 927-940
+> --   D-30: 271-295
+> --   S-A: 271-295, 337-386, 393-430
+> --   S4: 271-295, 337-386
+> --   C-29: 271-295, 302-329, 337-386, 393-430
+> --   D-29: 271-295, 302-329, 337-386, 393-430, 1080-1172
+> --   S-3: 302-329, 526-618, 620-756, 758-804
+> --   D-9: 302-329, 997-1001
+> --   D-10: 302-329, 997-1001
+> --   D-18: 337-386
+> --   D-23: 337-386, 620-756
+> --   D-2: 393-430
+> --   D-3: 393-430, 437-442, 526-618
+> --   R2: 393-430, 526-618
+> --   Q2-5: 393-430
+> --   R5: 393-430
+> --   C-37: 393-430
+> --   Q-1: 393-430
+> --   N1: 437-442
+> --   A33: 437-442
+> --   E8: 437-442
+> --   C-35: 437-442
+> --   TR1: 454-524, 855-867
+> --   TR2: 454-524
+> --   F4-1: 454-524
+> --   B2: 454-524, 526-618
+> --   B-2: 454-524
+> --   R4: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 949-953,
+> --         969-982, 1028-1076
+> --   D-7: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 969-982
+> --   E1: 454-524
+> --   E2: 454-524
+> --   E3: 454-524
+> --   E4: 454-524
+> --   E5: 454-524
+> --   E10: 454-524, 526-618
+> --   E14: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+> --   A28: 454-524
+> --   A34: 454-524
+> --   TR3: 526-618, 855-867
+> --   C-36: 526-618, 620-756
+> --   Q2-4: 526-618
+> --   TR4a: 620-756, 855-867
+> --   TR4b: 620-756, 855-867
+> --   TR4c: 620-756, 855-867
+> --   B-1: 620-756
+> --   S-1: 620-756, 758-804
+> --   D-6: 620-756, 758-804
+> --   S6: 620-756
+> --   B1: 620-756
+> --   E6: 620-756
+> --   O-3: 620-756
+> --   E9: 620-756, 758-804
+> --   E11: 620-756, 758-804
+> --   E13: 620-756
+> --   TR5: 758-804, 855-867
+> --   F4-2: 810-832, 834-853, 855-867
+> --   D-20: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   R7: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   C-30: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   D-8: 949-953, 1028-1076
+> --   D-21: 949-953
+> --   CLAUDE.md-s6-per-role-revoke: 949-953
+> --   C-27: 969-982
+> --   O-1: 969-982
+> --   D-11: 997-1001
+> --   042-precedent: 997-1001
+> --   CLAUDE.md-s6-ACL-fingerprint: 1028-1076
+> --   R8: 1080-1172
+> --   S-D: 1080-1172
+> --   C-31: 1080-1172
+> --   down-order: 1080-1172
+133c143
 < --                   self-link to a rejected delivery (A34)
 ---
 > --                   self-link to a rejected or cancelled delivery (A34, B-2)
-381c387
+143c153,155
+< --   E12 (not raised) CHECK/FK, SQLSTATE 23514 / 23503
+---
+> --   E12 QE012  F4-2  INSERT guards (deliveries not 'incomplete' or carrying
+> --                   attribution/stamp/reason values; capture_documents
+> --                   carrying ack values); also raised by CHECK/FK, SQLSTATE 23514 / 23503
+381c393
 < -- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29]
 ---
 > -- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29, Q-1]
-412c418,423
+412c424,429
 <   CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL))
 ---
 >   CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL)),
@@ -474,32 +498,37 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >   -- the invoice with no active link while its automatic delivery is not cancelled.
 >   CONSTRAINT dil_superseded_reason_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'superseded_by_link' OR link_source = 'created_from_invoice'),
 >   CONSTRAINT dil_pm_unlinked_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'pm_unlinked' OR link_source = 'pm_manual')
-437c448
+437c454
 < -- [src: TR1, TR2, B2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
 ---
-> -- [src: TR1, TR2, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
-493c504,507
+> -- [src: TR1, TR2, F4-1, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+460a478,481
+>   -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
+>   -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
+>   NEW.linked_at := now();
+> 
+493c514,517
 <     ELSIF v_status = 'rejected' THEN
 ---
 >     ELSIF v_status IN ('rejected', 'cancelled') THEN
 >       -- B-2 (SQL review r1): a self-link is also refused onto a CANCELLED
 >       -- delivery. Paths 2 and 4 restore the delivery BEFORE inserting the
 >       -- new self-link, so this turns that header rule into one the trigger enforces.
-502c516
+502c526
 < -- [src: TR3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
 ---
 > -- [src: TR3, S-3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
-561a576,580
-> 
+562a587,591
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the unlink time is
 >   -- stamped by the database; the caller's value only signals the unlink and is
 >   -- overwritten. (linked_at is NOT touched here: see the package, OPEN item.)
 >   NEW.unlinked_at := now();
-591c610
+> 
+591c620
 < -- [src: TR4a, TR4b, TR4c, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
 ---
 > -- [src: TR4a, TR4b, TR4c, B-1, S-3, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
-604,605c623,627
+604,605c633,637
 <   -- TR4a: immutable columns.
 <   IF NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
 ---
@@ -508,7 +537,7 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >   IF NEW.id IS DISTINCT FROM OLD.id
 >      OR NEW.created_at IS DISTINCT FROM OLD.created_at
 >      OR NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
-666a689,724
+666a699,734
 >       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
 >     END IF;
 >   END IF;
@@ -545,7 +574,7 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >       OR (NEW.cancelled_at IS NULL AND NEW.cancel_reason IS NULL
 >           AND OLD.status = 'cancelled' AND NEW.status IN ('incomplete', 'awaiting_pm'))
 >     ) THEN
-670a729,743
+670a739,753
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the DATABASE stamps the
 >   -- time at each allowed transition; any caller-supplied value is overwritten
 >   -- (the same "wrong stamp impossible, not merely uncaught" rule as 043's
@@ -561,18 +590,18 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >     NEW.cancelled_at := now();
 >   END IF;
 > 
-675c748
+675c758
 < -- [src: TR5, D-6, B3, R3, R4, D-7, E9, E11, E14]
 ---
 > -- [src: TR5, S-1, S-3, D-6, B3, R3, R4, D-7, E9, E11, E14]
-688c761,764
+688c771,774
 <   IF NEW.kind IS DISTINCT FROM OLD.kind
 ---
 >   -- S-1 (SQL review r1): id and created_at added to the immutable set.
 >   IF NEW.id IS DISTINCT FROM OLD.id
 >      OR NEW.created_at IS DISTINCT FROM OLD.created_at
 >      OR NEW.kind IS DISTINCT FROM OLD.kind
-708a785,791
+708a795,801
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the acknowledgement time
 >   -- is stamped by the database when the ack is first set; a caller-supplied
 >   -- value is overwritten. It drives the D-12 clock.
@@ -580,11 +609,76 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >     NEW.engineer_ack_at := now();
 >   END IF;
 > 
-877c960
+713c806,859
+< -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5]
+---
+> -- F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values. A delivery is CREATED
+> -- 'incomplete' (D1; plan v3 line 105: it becomes 'awaiting_pm' inside the engineer RPC when the ack is stored,
+> -- i.e. by UPDATE), so exactly 'incomplete' is allowed; every other status and every attribution/stamp/reason
+> -- column must be NULL at INSERT. These fields are set only through the guarded UPDATE path.
+> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_deliveries_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.status IS DISTINCT FROM 'incomplete'
+>      OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
+>      OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
+>      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_capture_documents_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5, F4-2]
+> CREATE TRIGGER tr_deliveries_before_insert BEFORE INSERT ON public.deliveries
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_insert();
+> CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_insert();
+831a978,982
+> -- F4-2: the two INSERT-guard functions, same shape (O-1).
+> REVOKE ALL ON FUNCTION public.trg_deliveries_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_insert() TO postgres;
+> REVOKE ALL ON FUNCTION public.trg_capture_documents_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_insert() TO postgres;
+877c1028
 < -- [src: R4, D-8, CLAUDE.md-s6-ACL-fingerprint]
 ---
 > -- [src: R4, D-8, N-1, CLAUDE.md-s6-ACL-fingerprint]
-894a978,987
+895c1046,1056
+<   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+---
 >   -- N-1 (SQL review r1): ownership. The GRANT ... TO postgres above is a no-op only if postgres owns the objects.
 >   FOREACH v_t IN ARRAY ARRAY['capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links'] LOOP
 >     IF NOT EXISTS (
@@ -595,13 +689,19 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >       v_bad := v_bad || ' ' || v_t || ':owner';
 >     END IF;
 >   END LOOP;
-904a998
+>   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
+904a1066
 >         AND p.proowner = 'postgres'::regrole
-918c1012
+918c1080
 < -- [src: R8, S-D, D-29, C-31, down-order]
 ---
 > -- [src: R8, S-D, S-2, D-29, C-31, down-order]
-968a1063,1074
+962c1124,1125
+< --            'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+---
+> --            'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+> --            'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
+968a1132,1143
 > -- -- S-2 (SQL review r1): the bucket DELETE is NOT in this transaction. If
 > -- -- Storage refused a direct SQL delete, a delete inside this transaction
 > -- -- would roll the table drops and the ledger delete back with it. The
@@ -614,7 +714,10 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 > -- END;
 > -- $$;
 > --
-983,994c1089
+977a1153,1154
+> -- DROP FUNCTION public.trg_deliveries_before_insert();
+> -- DROP FUNCTION public.trg_capture_documents_before_insert();
+983,994c1160
 < -- -- Bucket: zero objects, then delete. Supabase Storage may refuse a direct
 < -- -- SQL delete on storage.*; the disposable scaffold stubs storage and cannot
 < -- -- show that (block 2b executes this on test-db). If refused, remove the
@@ -629,7 +732,7 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 < -- DELETE FROM storage.buckets WHERE id = 'capture-documents';
 ---
 > -- COMMIT;
-995a1091,1099
+995a1162,1170
 > -- -- BUCKET STEP: a SEPARATE step, run only AFTER the COMMIT above, by SQL.
 > -- -- Supabase Storage may refuse a direct SQL delete on storage.*; the
 > -- -- disposable scaffold stubs storage and cannot show that. Block 2b executes
@@ -699,16 +802,16 @@ SELECT p.proname, p.prosecdef, p.proconfig, pg_get_userbyid(p.proowner) AS owner
 (4 rows)
 
 Output format is unaligned.
-SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '4');
-PASS: trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres -- value = 4
-SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
+SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '6');
+FAIL: trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres -- expected 6 got 4
+SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
 PASS: EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function -- value = 0
-SELECT t.val('O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all four trigger functions', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND has_function_privilege('postgres', p.oid, 'EXECUTE')$$, '4');
-PASS: O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all four trigger functions -- value = 4
-SELECT t.val('O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing)', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.proacl::text = '{postgres=X/postgres}'$$, '4');
-PASS: O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing) -- value = 4
-SELECT t.val('the four triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '4');
-PASS: the four triggers exist and are enabled -- value = 4
+SELECT t.val('O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all six trigger functions', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND has_function_privilege('postgres', p.oid, 'EXECUTE')$$, '6');
+FAIL: O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all six trigger functions -- expected 6 got 4
+SELECT t.val('O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing)', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.proacl::text = '{postgres=X/postgres}'$$, '6');
+FAIL: O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing) -- expected 6 got 4
+SELECT t.val('the six triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '6');
+FAIL: the six triggers exist and are enabled -- expected 6 got 4
 
 -- ===== real denials, as each role (42501 = insufficient_privilege). SQL runs through EXECUTE inside thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:33: error: unterminated quoted string
 
@@ -738,6 +841,10 @@ SELECT t.expect('anon calls trg_deliveries_before_update()', 'SELECT public.trg_
 PASS: anon calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
 SELECT t.expect('anon calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
 PASS: anon calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('anon calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+FAIL: anon calls trg_deliveries_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_deliveries_before_insert() does not exis
+SELECT t.expect('anon calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+FAIL: anon calls trg_capture_documents_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_capture_documents_before_insert() does n
 RESET ROLE;
 RESET
 SET ROLE authenticated;
@@ -790,6 +897,10 @@ SELECT t.expect('authenticated calls trg_deliveries_before_update()', 'SELECT pu
 PASS: authenticated calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
 SELECT t.expect('authenticated calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
 PASS: authenticated calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('authenticated calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+FAIL: authenticated calls trg_deliveries_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_deliveries_before_insert() does not exis
+SELECT t.expect('authenticated calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+FAIL: authenticated calls trg_capture_documents_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_capture_documents_before_insert() does n
 RESET ROLE;
 RESET
 SET ROLE service_role;
@@ -842,15 +953,19 @@ SELECT t.expect('service_role calls trg_deliveries_before_update()', 'SELECT pub
 PASS: service_role calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
 SELECT t.expect('service_role calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
 PASS: service_role calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('service_role calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+FAIL: service_role calls trg_deliveries_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_deliveries_before_insert() does not exis
+SELECT t.expect('service_role calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+FAIL: service_role calls trg_capture_documents_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_capture_documents_before_insert() does n
 RESET ROLE;
 RESET
 
 -- ===== N-1 (SQL review r1): ownership. The GRANT ... TO postgres is a no-op only if postgres owns the objects =====
 SELECT t.val('N-1: the four tables are owned by postgres', $$SELECT count(*)::text FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND relowner = 'postgres'::regrole$$, '4');
 PASS: N-1: the four tables are owned by postgres -- value = 4
-SELECT t.val('N-1: the four trigger functions are owned by postgres', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND proowner = 'postgres'::regrole$$, '4');
-PASS: N-1: the four trigger functions are owned by postgres -- value = 4
--- The UPpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:104: error: unterminated quoted string
+SELECT t.val('N-1: the six trigger functions are owned by postgres', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND proowner = 'postgres'::regrole$$, '6');
+FAIL: N-1: the six trigger functions are owned by postgres -- expected 6 got 4
+-- The UPpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:110: error: unterminated quoted string
 
 SELECT t.expect('N-1: the assertion block passes on the clean state', 'SELECT t.assert_block()', 'ok');
 PASS: N-1: the assertion block passes on the clean state -- succeeded as expected (1 row(s))
@@ -877,8 +992,544 @@ ROLLBACK
 SELECT t.expect('N-1: clean again after the rolled-back owner changes', 'SELECT t.assert_block()', 'ok');
 PASS: N-1: clean again after the rolled-back owner changes -- succeeded as expected (1 row(s))
 
->>> RESULT t_T_ACL_red2: PASS=74 FAIL=2   (declared EXPECT_PASS=76, static assertion lines=76)
->>> RED verdict: test FAILED against the mutant (FAIL=2) -- the test can fail: OK
+>>> RESULT t_T_ACL_red2: PASS=69 FAIL=13   (declared EXPECT_PASS=82, static assertion lines=82)
+>>> RED verdict: test FAILED against the mutant (FAIL=13) -- the test can fail: OK
+
+################ RED run 3: commit:ecc8e1e ################
+MUTANT (named): the REVIEWED file at commit ecc8e1e   -- diff of that file against the file under test:
+13a14
+> -- 11 Oct: F4-1 (linked_at stamped) and F4-2 (INSERT guards) landed per Aravind.
+37,128c38,132
+< --   E7: 130-153, 610-746
+< --   E12: 130-153
+< --   E-codes-table: 130-153
+< --   N-1: 130-153, 960-1008
+< --   D-31: 130-153
+< --   lock-paths: 155-213
+< --   R3: 155-213, 448-514, 610-746, 748-794
+< --   D-26: 155-213
+< --   Q2-2: 155-213
+< --   Q2-3: 155-213
+< --   S-C: 155-213
+< --   D-27: 155-213, 610-746
+< --   S-F: 215-225
+< --   S-E: 215-225
+< --   D-4: 215-225, 265-289, 296-323
+< --   Q2-6: 227-238
+< --   D-22: 227-238, 331-380
+< --   D-25: 227-238, 331-380
+< --   B3: 240-250, 448-514, 516-608, 610-746, 748-794
+< --   S-B: 240-250
+< --   D-19: 240-250, 265-289, 331-380
+< --   D-1: 265-289, 331-380
+< --   S-2: 265-289, 296-323, 1012-1101
+< --   D-5: 265-289, 296-323, 331-380, 819-832, 834-847, 849-862, 864-877
+< --   D-30: 265-289
+< --   S-A: 265-289, 331-380, 387-424
+< --   S4: 265-289, 331-380
+< --   C-29: 265-289, 296-323, 331-380, 387-424
+< --   D-29: 265-289, 296-323, 331-380, 387-424, 1012-1101
+< --   S-3: 296-323, 516-608, 610-746, 748-794
+< --   D-9: 296-323, 929-933
+< --   D-10: 296-323, 929-933
+< --   D-18: 331-380
+< --   D-23: 331-380, 610-746
+< --   D-2: 387-424
+< --   D-3: 387-424, 431-436, 516-608
+< --   R2: 387-424, 516-608
+< --   Q2-5: 387-424
+< --   R5: 387-424
+< --   C-37: 387-424
+< --   Q-1: 387-424
+< --   N1: 431-436
+< --   A33: 431-436
+< --   E8: 431-436
+< --   C-35: 431-436
+< --   TR1: 448-514, 796-804
+< --   TR2: 448-514
+< --   B2: 448-514, 516-608
+< --   B-2: 448-514
+< --   R4: 448-514, 516-608, 610-746, 748-794, 886-890, 906-914, 960-1008
+< --   D-7: 448-514, 516-608, 610-746, 748-794, 906-914
+< --   E1: 448-514
+< --   E2: 448-514
+< --   E3: 448-514
+< --   E4: 448-514
+< --   E5: 448-514
+< --   E10: 448-514, 516-608
+< --   E14: 448-514, 516-608, 610-746, 748-794
+< --   A28: 448-514
+< --   A34: 448-514
+< --   TR3: 516-608, 796-804
+< --   C-36: 516-608, 610-746
+< --   Q2-4: 516-608
+< --   TR4a: 610-746, 796-804
+< --   TR4b: 610-746, 796-804
+< --   TR4c: 610-746, 796-804
+< --   B-1: 610-746
+< --   S-1: 610-746, 748-794
+< --   D-6: 610-746, 748-794
+< --   S6: 610-746
+< --   B1: 610-746
+< --   E6: 610-746
+< --   O-3: 610-746
+< --   E9: 610-746, 748-794
+< --   E11: 610-746, 748-794
+< --   E13: 610-746
+< --   TR5: 748-794, 796-804
+< --   D-20: 813-817, 819-832, 834-847, 849-862, 864-877
+< --   R7: 813-817, 819-832, 834-847, 849-862, 864-877
+< --   C-30: 813-817, 819-832, 834-847, 849-862, 864-877
+< --   D-8: 886-890, 960-1008
+< --   D-21: 886-890
+< --   CLAUDE.md-s6-per-role-revoke: 886-890
+< --   C-27: 906-914
+< --   O-1: 906-914
+< --   D-11: 929-933
+< --   042-precedent: 929-933
+< --   CLAUDE.md-s6-ACL-fingerprint: 960-1008
+< --   R8: 1012-1101
+< --   S-D: 1012-1101
+< --   C-31: 1012-1101
+< --   down-order: 1012-1101
+---
+> --   E7: 134-159, 620-756
+> --   E12: 134-159, 810-832, 834-853
+> --   E-codes-table: 134-159
+> --   N-1: 134-159, 1028-1076
+> --   D-31: 134-159
+> --   lock-paths: 161-219
+> --   R3: 161-219, 454-524, 620-756, 758-804
+> --   D-26: 161-219
+> --   Q2-2: 161-219
+> --   Q2-3: 161-219
+> --   S-C: 161-219
+> --   D-27: 161-219, 620-756
+> --   S-F: 221-231
+> --   S-E: 221-231
+> --   D-4: 221-231, 271-295, 302-329
+> --   Q2-6: 233-244
+> --   D-22: 233-244, 337-386
+> --   D-25: 233-244, 337-386
+> --   B3: 246-256, 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+> --   S-B: 246-256
+> --   D-19: 246-256, 271-295, 337-386
+> --   D-1: 271-295, 337-386
+> --   S-2: 271-295, 302-329, 1080-1172
+> --   D-5: 271-295, 302-329, 337-386, 882-895, 897-910, 912-925, 927-940
+> --   D-30: 271-295
+> --   S-A: 271-295, 337-386, 393-430
+> --   S4: 271-295, 337-386
+> --   C-29: 271-295, 302-329, 337-386, 393-430
+> --   D-29: 271-295, 302-329, 337-386, 393-430, 1080-1172
+> --   S-3: 302-329, 526-618, 620-756, 758-804
+> --   D-9: 302-329, 997-1001
+> --   D-10: 302-329, 997-1001
+> --   D-18: 337-386
+> --   D-23: 337-386, 620-756
+> --   D-2: 393-430
+> --   D-3: 393-430, 437-442, 526-618
+> --   R2: 393-430, 526-618
+> --   Q2-5: 393-430
+> --   R5: 393-430
+> --   C-37: 393-430
+> --   Q-1: 393-430
+> --   N1: 437-442
+> --   A33: 437-442
+> --   E8: 437-442
+> --   C-35: 437-442
+> --   TR1: 454-524, 855-867
+> --   TR2: 454-524
+> --   F4-1: 454-524
+> --   B2: 454-524, 526-618
+> --   B-2: 454-524
+> --   R4: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 949-953,
+> --         969-982, 1028-1076
+> --   D-7: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 969-982
+> --   E1: 454-524
+> --   E2: 454-524
+> --   E3: 454-524
+> --   E4: 454-524
+> --   E5: 454-524
+> --   E10: 454-524, 526-618
+> --   E14: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+> --   A28: 454-524
+> --   A34: 454-524
+> --   TR3: 526-618, 855-867
+> --   C-36: 526-618, 620-756
+> --   Q2-4: 526-618
+> --   TR4a: 620-756, 855-867
+> --   TR4b: 620-756, 855-867
+> --   TR4c: 620-756, 855-867
+> --   B-1: 620-756
+> --   S-1: 620-756, 758-804
+> --   D-6: 620-756, 758-804
+> --   S6: 620-756
+> --   B1: 620-756
+> --   E6: 620-756
+> --   O-3: 620-756
+> --   E9: 620-756, 758-804
+> --   E11: 620-756, 758-804
+> --   E13: 620-756
+> --   TR5: 758-804, 855-867
+> --   F4-2: 810-832, 834-853, 855-867
+> --   D-20: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   R7: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   C-30: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   D-8: 949-953, 1028-1076
+> --   D-21: 949-953
+> --   CLAUDE.md-s6-per-role-revoke: 949-953
+> --   C-27: 969-982
+> --   O-1: 969-982
+> --   D-11: 997-1001
+> --   042-precedent: 997-1001
+> --   CLAUDE.md-s6-ACL-fingerprint: 1028-1076
+> --   R8: 1080-1172
+> --   S-D: 1080-1172
+> --   C-31: 1080-1172
+> --   down-order: 1080-1172
+149c153,155
+< --   E12 (not raised) CHECK/FK, SQLSTATE 23514 / 23503
+---
+> --   E12 QE012  F4-2  INSERT guards (deliveries not 'incomplete' or carrying
+> --                   attribution/stamp/reason values; capture_documents
+> --                   carrying ack values); also raised by CHECK/FK, SQLSTATE 23514 / 23503
+448c454
+< -- [src: TR1, TR2, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+---
+> -- [src: TR1, TR2, F4-1, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+471a478,481
+>   -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
+>   -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
+>   NEW.linked_at := now();
+> 
+796c806,859
+< -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5]
+---
+> -- F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values. A delivery is CREATED
+> -- 'incomplete' (D1; plan v3 line 105: it becomes 'awaiting_pm' inside the engineer RPC when the ack is stored,
+> -- i.e. by UPDATE), so exactly 'incomplete' is allowed; every other status and every attribution/stamp/reason
+> -- column must be NULL at INSERT. These fields are set only through the guarded UPDATE path.
+> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_deliveries_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.status IS DISTINCT FROM 'incomplete'
+>      OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
+>      OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
+>      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_capture_documents_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5, F4-2]
+> CREATE TRIGGER tr_deliveries_before_insert BEFORE INSERT ON public.deliveries
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_insert();
+> CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_insert();
+914a978,982
+> -- F4-2: the two INSERT-guard functions, same shape (O-1).
+> REVOKE ALL ON FUNCTION public.trg_deliveries_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_insert() TO postgres;
+> REVOKE ALL ON FUNCTION public.trg_capture_documents_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_insert() TO postgres;
+988c1056
+<   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+---
+>   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
+1056c1124,1125
+< --            'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+---
+> --            'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+> --            'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
+1083a1153,1154
+> -- DROP FUNCTION public.trg_deliveries_before_insert();
+> -- DROP FUNCTION public.trg_capture_documents_before_insert();
+$ psql -d t_T_ACL_red3 -v ON_ERROR_STOP=1 -f old-ecc8e1e.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ the UP's final assertion DO block extracted from old-ecc8e1e.sql (lines:       48) and loaded as t.assert_block()
+[exit 0]
+$ psql -X -e -d t_T_ACL_red3 -f T-ACL.sql (tokens expanded by src/expand.py)
+== T-ACL: ACL fingerprint after UP -- has_table_privilege matrix (anon, authenticated, service_role x 8 privileges x 4 tables), function fingerprint, real denials ==
+Output format is unaligned.
+-- Pre-state of the scaffold (REAL dump of test-db public): default ACL for new public tables/functions created by postgres:
+SELECT 'default_acl ' || defaclobjtype::text || ' ' || defaclacl::text FROM pg_default_acl WHERE defaclnamespace = 'public'::regnamespace AND defaclrole = 'postgres'::regrole ORDER BY defaclobjtype;
+default_acl S {postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}
+default_acl f {postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}
+default_acl r {postgres=arwdDxtm/postgres,anon=arw/postgres,authenticated=arw/postgres,service_role=arwdDxtm/postgres}
+
+-- ===== the intended matrix: anon none; authenticated SELECT; service_role SELECT; nobody TRUNCATE/REFERENCES/TRIGGER/MAINTAIN/INSERT/UPDATE/DELETE =====
+Output format is aligned.
+SELECT tb AS table_name, r AS role, COALESCE(string_agg(p, ',' ORDER BY p) FILTER (WHERE has_table_privilege(r, 'public.' || tb, p)), '(none)') AS granted
+FROM unnest(ARRAY['capture_documents','capture_files','deliveries','delivery_invoice_links']) tb, unnest(ARRAY['anon','authenticated','service_role']) r, unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p GROUP BY tb, r ORDER BY tb, r;
+       table_name       |     role      | granted 
+------------------------+---------------+---------
+ capture_documents      | anon          | (none)
+ capture_documents      | authenticated | SELECT
+ capture_documents      | service_role  | SELECT
+ capture_files          | anon          | (none)
+ capture_files          | authenticated | SELECT
+ capture_files          | service_role  | SELECT
+ deliveries             | anon          | (none)
+ deliveries             | authenticated | SELECT
+ deliveries             | service_role  | SELECT
+ delivery_invoice_links | anon          | (none)
+ delivery_invoice_links | authenticated | SELECT
+ delivery_invoice_links | service_role  | SELECT
+(12 rows)
+
+Output format is unaligned.
+SELECT t.val('privileges that differ from the intended matrix (96 cells)', $$SELECT count(*)::text FROM unnest(ARRAY['capture_documents','capture_files','deliveries','delivery_invoice_links']) tb, unnest(ARRAY['anon','authenticated','service_role']) r, unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p WHERE has_table_privilege(r, 'public.' || tb, p) IS DISTINCT FROM (p = 'SELECT' AND r <> 'anon')$$, '0');
+PASS: privileges that differ from the intended matrix (96 cells) -- value = 0
+SELECT t.val('column-level grants on the four tables', $$SELECT count(*)::text FROM pg_attribute WHERE attrelid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND attacl IS NOT NULL$$, '0');
+PASS: column-level grants on the four tables -- value = 0
+SELECT t.val('table ACL entries granted to PUBLIC (grantee 0)', $$SELECT count(*)::text FROM pg_class c, aclexplode(c.relacl) x WHERE c.oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND x.grantee = 0$$, '0');
+PASS: table ACL entries granted to PUBLIC (grantee 0) -- value = 0
+-- raw relacl of the four tables (owner postgres keeps everything; that is not a role under test):
+SELECT relname || ' ' || COALESCE(relacl::text, '(null)') FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) ORDER BY relname;
+capture_documents {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+capture_files {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+deliveries {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+delivery_invoice_links {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+
+-- ===== the four trigger functions: fingerprint =====
+Output format is aligned.
+SELECT p.proname, p.prosecdef, p.proconfig, pg_get_userbyid(p.proowner) AS owner, p.proacl, has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_x, has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_x, has_function_privilege('service_role', p.oid, 'EXECUTE') AS svc_x FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'trg\_%' ORDER BY p.proname;
+               proname               | prosecdef |      proconfig       |  owner   |        proacl         | anon_x | auth_x | svc_x 
+-------------------------------------+-----------+----------------------+----------+-----------------------+--------+--------+-------
+ trg_capture_documents_before_update | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
+ trg_deliveries_before_update        | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
+ trg_dil_before_insert               | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
+ trg_dil_before_update               | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
+(4 rows)
+
+Output format is unaligned.
+SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '6');
+FAIL: trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres -- expected 6 got 4
+SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
+PASS: EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function -- value = 0
+SELECT t.val('O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all six trigger functions', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND has_function_privilege('postgres', p.oid, 'EXECUTE')$$, '6');
+FAIL: O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all six trigger functions -- expected 6 got 4
+SELECT t.val('O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing)', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.proacl::text = '{postgres=X/postgres}'$$, '6');
+FAIL: O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing) -- expected 6 got 4
+SELECT t.val('the six triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '6');
+FAIL: the six triggers exist and are enabled -- expected 6 got 4
+
+-- ===== real denials, as each role (42501 = insufficient_privilege). SQL runs through EXECUTE inside thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:33: error: unterminated quoted string
+
+SET ROLE anon;
+SET
+SELECT t.expect('anon SELECT capture_documents', 'SELECT count(*) FROM public.capture_documents', '42501');
+PASS: anon SELECT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('anon INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
+PASS: anon INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('anon SELECT capture_files', 'SELECT count(*) FROM public.capture_files', '42501');
+PASS: anon SELECT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('anon INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
+PASS: anon INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('anon SELECT deliveries', 'SELECT count(*) FROM public.deliveries', '42501');
+PASS: anon SELECT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('anon INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
+PASS: anon INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('anon SELECT delivery_invoice_links', 'SELECT count(*) FROM public.delivery_invoice_links', '42501');
+PASS: anon SELECT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('anon INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
+PASS: anon INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('anon calls trg_dil_before_insert()', 'SELECT public.trg_dil_before_insert()', '42501');
+PASS: anon calls trg_dil_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_insert
+SELECT t.expect('anon calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
+PASS: anon calls trg_dil_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_update
+SELECT t.expect('anon calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
+PASS: anon calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
+SELECT t.expect('anon calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+PASS: anon calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('anon calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+FAIL: anon calls trg_deliveries_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_deliveries_before_insert() does not exis
+SELECT t.expect('anon calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+FAIL: anon calls trg_capture_documents_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_capture_documents_before_insert() does n
+RESET ROLE;
+RESET
+SET ROLE authenticated;
+SET
+SELECT t.expect('authenticated SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
+PASS: authenticated SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected (1 row(s))
+SELECT t.expect('authenticated INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
+PASS: authenticated INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
+PASS: authenticated UPDATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated DELETE capture_documents', 'DELETE FROM public.capture_documents', '42501');
+PASS: authenticated DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
+PASS: authenticated TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
+PASS: authenticated SELECT capture_files (granted; RLS filters rows) -- succeeded as expected (1 row(s))
+SELECT t.expect('authenticated INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
+PASS: authenticated INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
+PASS: authenticated UPDATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated DELETE capture_files', 'DELETE FROM public.capture_files', '42501');
+PASS: authenticated DELETE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
+PASS: authenticated TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
+PASS: authenticated SELECT deliveries (granted; RLS filters rows) -- succeeded as expected (1 row(s))
+SELECT t.expect('authenticated INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
+PASS: authenticated INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
+PASS: authenticated UPDATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated DELETE deliveries', 'DELETE FROM public.deliveries', '42501');
+PASS: authenticated DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
+PASS: authenticated TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
+PASS: authenticated SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected (1 row(s))
+SELECT t.expect('authenticated INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
+PASS: authenticated INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
+PASS: authenticated UPDATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated DELETE delivery_invoice_links', 'DELETE FROM public.delivery_invoice_links', '42501');
+PASS: authenticated DELETE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated TRUNCATE delivery_invoice_links', 'TRUNCATE public.delivery_invoice_links', '42501');
+PASS: authenticated TRUNCATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated calls trg_dil_before_insert()', 'SELECT public.trg_dil_before_insert()', '42501');
+PASS: authenticated calls trg_dil_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_insert
+SELECT t.expect('authenticated calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
+PASS: authenticated calls trg_dil_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_update
+SELECT t.expect('authenticated calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
+PASS: authenticated calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
+SELECT t.expect('authenticated calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+PASS: authenticated calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('authenticated calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+FAIL: authenticated calls trg_deliveries_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_deliveries_before_insert() does not exis
+SELECT t.expect('authenticated calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+FAIL: authenticated calls trg_capture_documents_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_capture_documents_before_insert() does n
+RESET ROLE;
+RESET
+SET ROLE service_role;
+SET
+SELECT t.expect('service_role SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
+PASS: service_role SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected (1 row(s))
+SELECT t.expect('service_role INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
+PASS: service_role INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
+PASS: service_role UPDATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role DELETE capture_documents', 'DELETE FROM public.capture_documents', '42501');
+PASS: service_role DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
+PASS: service_role TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
+PASS: service_role SELECT capture_files (granted; RLS filters rows) -- succeeded as expected (1 row(s))
+SELECT t.expect('service_role INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
+PASS: service_role INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
+PASS: service_role UPDATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role DELETE capture_files', 'DELETE FROM public.capture_files', '42501');
+PASS: service_role DELETE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
+PASS: service_role TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
+PASS: service_role SELECT deliveries (granted; RLS filters rows) -- succeeded as expected (1 row(s))
+SELECT t.expect('service_role INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
+PASS: service_role INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
+PASS: service_role UPDATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role DELETE deliveries', 'DELETE FROM public.deliveries', '42501');
+PASS: service_role DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
+PASS: service_role TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
+PASS: service_role SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected (1 row(s))
+SELECT t.expect('service_role INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
+PASS: service_role INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
+PASS: service_role UPDATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role DELETE delivery_invoice_links', 'DELETE FROM public.delivery_invoice_links', '42501');
+PASS: service_role DELETE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role TRUNCATE delivery_invoice_links', 'TRUNCATE public.delivery_invoice_links', '42501');
+PASS: service_role TRUNCATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role calls trg_dil_before_insert()', 'SELECT public.trg_dil_before_insert()', '42501');
+PASS: service_role calls trg_dil_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_insert
+SELECT t.expect('service_role calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
+PASS: service_role calls trg_dil_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_update
+SELECT t.expect('service_role calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
+PASS: service_role calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
+SELECT t.expect('service_role calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+PASS: service_role calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('service_role calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+FAIL: service_role calls trg_deliveries_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_deliveries_before_insert() does not exis
+SELECT t.expect('service_role calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+FAIL: service_role calls trg_capture_documents_before_insert() -- expected 42501, got refusal SQLSTATE=42883 MESSAGE=function public.trg_capture_documents_before_insert() does n
+RESET ROLE;
+RESET
+
+-- ===== N-1 (SQL review r1): ownership. The GRANT ... TO postgres is a no-op only if postgres owns the objects =====
+SELECT t.val('N-1: the four tables are owned by postgres', $$SELECT count(*)::text FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND relowner = 'postgres'::regrole$$, '4');
+PASS: N-1: the four tables are owned by postgres -- value = 4
+SELECT t.val('N-1: the six trigger functions are owned by postgres', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND proowner = 'postgres'::regrole$$, '6');
+FAIL: N-1: the six trigger functions are owned by postgres -- expected 6 got 4
+-- The UPpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:110: error: unterminated quoted string
+
+SELECT t.expect('N-1: the assertion block passes on the clean state', 'SELECT t.assert_block()', 'ok');
+PASS: N-1: the assertion block passes on the clean state -- succeeded as expected (1 row(s))
+BEGIN;
+BEGIN
+ALTER TABLE public.deliveries OWNER TO service_role;
+ALTER TABLE
+SELECT t.expect('N-1: wrong TABLE owner -> the assertion block raises', 'SELECT t.assert_block()', 'P0001');
+PASS: N-1: wrong TABLE owner -> the assertion block raises -- refused, SQLSTATE=P0001 MESSAGE=ACL_ASSERT: deliveries:service_role:INSERT deliveries:servic
+SELECT t.val('N-1: the message names deliveries:owner', $$SELECT (t.errmsg('SELECT t.assert_block()') LIKE '%deliveries:owner%')::text$$, 'true');
+PASS: N-1: the message names deliveries:owner -- value = true
+ROLLBACK;
+ROLLBACK
+BEGIN;
+BEGIN
+ALTER FUNCTION public.trg_dil_before_update() OWNER TO service_role;
+ALTER FUNCTION
+SELECT t.expect('N-1: wrong FUNCTION owner -> the assertion block raises', 'SELECT t.assert_block()', 'P0001');
+PASS: N-1: wrong FUNCTION owner -> the assertion block raises -- refused, SQLSTATE=P0001 MESSAGE=ACL_ASSERT: trg_dil_before_update:service_role:EXECUTE trg_d
+SELECT t.val('N-1: the message names trg_dil_before_update:fingerprint', $$SELECT (t.errmsg('SELECT t.assert_block()') LIKE '%trg_dil_before_update:fingerprint%')::text$$, 'true');
+PASS: N-1: the message names trg_dil_before_update:fingerprint -- value = true
+ROLLBACK;
+ROLLBACK
+SELECT t.expect('N-1: clean again after the rolled-back owner changes', 'SELECT t.assert_block()', 'ok');
+PASS: N-1: clean again after the rolled-back owner changes -- succeeded as expected (1 row(s))
+
+>>> RESULT t_T_ACL_red3: PASS=71 FAIL=11   (declared EXPECT_PASS=82, static assertion lines=82)
+>>> RED verdict: test FAILED against the mutant (FAIL=11) -- the test can fail: OK
 
 ################ GREEN run: the real file ################
 $ psql -d t_T_ACL_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
@@ -934,23 +1585,25 @@ Output format is aligned.
 SELECT p.proname, p.prosecdef, p.proconfig, pg_get_userbyid(p.proowner) AS owner, p.proacl, has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_x, has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_x, has_function_privilege('service_role', p.oid, 'EXECUTE') AS svc_x FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'trg\_%' ORDER BY p.proname;
                proname               | prosecdef |      proconfig       |  owner   |        proacl         | anon_x | auth_x | svc_x 
 -------------------------------------+-----------+----------------------+----------+-----------------------+--------+--------+-------
+ trg_capture_documents_before_insert | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
  trg_capture_documents_before_update | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
+ trg_deliveries_before_insert        | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
  trg_deliveries_before_update        | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
  trg_dil_before_insert               | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
  trg_dil_before_update               | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
-(4 rows)
+(6 rows)
 
 Output format is unaligned.
-SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '4');
-PASS: trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres -- value = 4
-SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
+SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '6');
+PASS: trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres -- value = 6
+SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
 PASS: EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function -- value = 0
-SELECT t.val('O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all four trigger functions', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND has_function_privilege('postgres', p.oid, 'EXECUTE')$$, '4');
-PASS: O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all four trigger functions -- value = 4
-SELECT t.val('O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing)', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.proacl::text = '{postgres=X/postgres}'$$, '4');
-PASS: O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing) -- value = 4
-SELECT t.val('the four triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '4');
-PASS: the four triggers exist and are enabled -- value = 4
+SELECT t.val('O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all six trigger functions', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND has_function_privilege('postgres', p.oid, 'EXECUTE')$$, '6');
+PASS: O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all six trigger functions -- value = 6
+SELECT t.val('O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing)', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.proacl::text = '{postgres=X/postgres}'$$, '6');
+PASS: O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing) -- value = 6
+SELECT t.val('the six triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '6');
+PASS: the six triggers exist and are enabled -- value = 6
 
 -- ===== real denials, as each role (42501 = insufficient_privilege). SQL runs through EXECUTE inside thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:33: error: unterminated quoted string
 
@@ -980,6 +1633,10 @@ SELECT t.expect('anon calls trg_deliveries_before_update()', 'SELECT public.trg_
 PASS: anon calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
 SELECT t.expect('anon calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
 PASS: anon calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('anon calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+PASS: anon calls trg_deliveries_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_insert
+SELECT t.expect('anon calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+PASS: anon calls trg_capture_documents_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
 RESET ROLE;
 RESET
 SET ROLE authenticated;
@@ -1032,6 +1689,10 @@ SELECT t.expect('authenticated calls trg_deliveries_before_update()', 'SELECT pu
 PASS: authenticated calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
 SELECT t.expect('authenticated calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
 PASS: authenticated calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('authenticated calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+PASS: authenticated calls trg_deliveries_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_insert
+SELECT t.expect('authenticated calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+PASS: authenticated calls trg_capture_documents_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
 RESET ROLE;
 RESET
 SET ROLE service_role;
@@ -1084,15 +1745,19 @@ SELECT t.expect('service_role calls trg_deliveries_before_update()', 'SELECT pub
 PASS: service_role calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
 SELECT t.expect('service_role calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
 PASS: service_role calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+SELECT t.expect('service_role calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+PASS: service_role calls trg_deliveries_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_insert
+SELECT t.expect('service_role calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
+PASS: service_role calls trg_capture_documents_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
 RESET ROLE;
 RESET
 
 -- ===== N-1 (SQL review r1): ownership. The GRANT ... TO postgres is a no-op only if postgres owns the objects =====
 SELECT t.val('N-1: the four tables are owned by postgres', $$SELECT count(*)::text FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND relowner = 'postgres'::regrole$$, '4');
 PASS: N-1: the four tables are owned by postgres -- value = 4
-SELECT t.val('N-1: the four trigger functions are owned by postgres', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND proowner = 'postgres'::regrole$$, '4');
-PASS: N-1: the four trigger functions are owned by postgres -- value = 4
--- The UPpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:104: error: unterminated quoted string
+SELECT t.val('N-1: the six trigger functions are owned by postgres', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND proowner = 'postgres'::regrole$$, '6');
+PASS: N-1: the six trigger functions are owned by postgres -- value = 6
+-- The UPpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:110: error: unterminated quoted string
 
 SELECT t.expect('N-1: the assertion block passes on the clean state', 'SELECT t.assert_block()', 'ok');
 PASS: N-1: the assertion block passes on the clean state -- succeeded as expected (1 row(s))
@@ -1119,5 +1784,5 @@ ROLLBACK
 SELECT t.expect('N-1: clean again after the rolled-back owner changes', 'SELECT t.assert_block()', 'ok');
 PASS: N-1: clean again after the rolled-back owner changes -- succeeded as expected (1 row(s))
 
->>> RESULT t_T_ACL_green: PASS=76 FAIL=0   (declared EXPECT_PASS=76, static assertion lines=76)
->>> OVERALL T-ACL: RED failed as required, GREEN PASS=76 == expected 76 (static 76), FAIL=0
+>>> RESULT t_T_ACL_green: PASS=82 FAIL=0   (declared EXPECT_PASS=82, static assertion lines=82)
+>>> OVERALL T-ACL: RED failed as required, GREEN PASS=82 == expected 82 (static 82), FAIL=0

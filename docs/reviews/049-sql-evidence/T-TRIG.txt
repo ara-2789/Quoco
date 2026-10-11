@@ -1,12 +1,12 @@
 == 049-sql evidence: T-TRIG ==
-generated: 2026-10-11T07:00:44Z
+generated: 2026-10-11T18:00:34Z
 $ git rev-parse HEAD
-70228cc6dad88b3f4169770017ad0159e2fdd84a
-$ SQL artifact commit under test: ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056
-$ git rev-parse ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056:docs/reviews/049_capture_tables.sql
-903abba5d3dfa94dc5486923d22a5f5cdd91d25e
+0e2723f130145a3ef11db9ad11103caf4ccb44f5
+$ SQL artifact commit under test: 7fae0c954543aa79c06c61eb5e1d0d274815cc5a
+$ git rev-parse 7fae0c954543aa79c06c61eb5e1d0d274815cc5a:docs/reviews/049_capture_tables.sql
+2597c50ea788d5fe3b698cf97c5ba15d2acc373b
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-903abba5d3dfa94dc5486923d22a5f5cdd91d25e
+2597c50ea788d5fe3b698cf97c5ba15d2acc373b
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,7 +15,7 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a  docs/reviews/049_capture_tables.sql
+e1f7b62c4403ebcd2fb9879b5df52dce6c1407ca05a160ca96af36b7f73467eb  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
 20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
@@ -29,6 +29,8 @@ DROP TRIGGER tr_dil_before_insert ON public.delivery_invoice_links;
 DROP TRIGGER tr_dil_before_update ON public.delivery_invoice_links;
 DROP TRIGGER tr_deliveries_before_update ON public.deliveries;
 DROP TRIGGER tr_capture_documents_before_update ON public.capture_documents;
+DROP TRIGGER tr_deliveries_before_insert ON public.deliveries;
+DROP TRIGGER tr_capture_documents_before_insert ON public.capture_documents;
 [exit 0]
 (fixtures: src/_lib.sql, src/_fixture.sql loaded)
 $ psql -X -e -d t_T_TRIG_red1 -f T-TRIG.sql (tokens expanded by src/expand.py)
@@ -52,7 +54,7 @@ FAIL: E1 PM link of D3 while D3 has an ACTIVE SELF-LINK -- expected refusal E1 b
 -- PATH 1 on D3: soft-unlink the self-link, cancel V3, insert the pm_manual link L3 (V1 <- D3)
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000001';
 psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:15: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
-DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000001, 2026-10-11 12:30:44.339291+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000003, 50000000-0000-0000-0000-000000000003, invoice, created_from_invoice, null, 2026-10-11 12:30:44.339291+05:30, 2026-10-11 12:30:44.340483+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000003).
+DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000001, 2026-10-11 23:30:34.781793+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000003, 50000000-0000-0000-0000-000000000003, invoice, created_from_invoice, null, 2026-10-11 23:30:34.781793+05:30, 2026-10-11 23:30:34.782939+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000003).
 UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000003';
 UPDATE 1
 SELECT t.expect('PATH 1 positive control: pm_manual link V1 <- D3', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000003', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'ok');
@@ -76,8 +78,11 @@ SELECT t.expect('E5 link to a REJECTED DC delivery', $$INSERT INTO public.delive
 FAIL: E5 link to a REJECTED DC delivery -- expected refusal E5 but the statement SUCCEEDED
 SELECT t.mk_doc('50000000-0000-0000-0000-000000000006', 'invoice', 'SM_T_inv6');
 50000000-0000-0000-0000-000000000006
-INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id, status, rejected_by, rejected_at, reject_reason) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'bad invoice');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006');
 INSERT 0 1
+-- (F4-2: a delivery can no longer be INSERTed already rejected; it is created incomplete and rejected through the guarded UPDATE path)
+UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad invoice' WHERE id = '60000000-0000-0000-0000-000000000006';
+UPDATE 1
 SELECT t.expect('E5 (A34) self-link for a REJECTED automatic delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000006', '50000000-0000-0000-0000-000000000006', 'created_from_invoice')$$, 'E5');
 FAIL: E5 (A34) self-link for a REJECTED automatic delivery -- expected refusal E5 but the statement SUCCEEDED
 
@@ -112,7 +117,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 FAIL: E6 retype linked DC V1 to internal_transfer -- expected refusal E6 but the statement SUCCEEDED
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 FAIL: E6 V1 still supplier -- expected supplier got internal_transfer
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:50: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:52: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 FAIL: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- expected E7, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
@@ -176,8 +181,8 @@ UPDATE 1
 SELECT t.expect('E13 cancel V10 while its self-link is active (C-36)', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link', approved_by = approved_by WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'E13');
 FAIL: E13 cancel V10 while its self-link is active (C-36) -- expected refusal E13 but the statement SUCCEEDED
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000010';
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:84: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
-DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000010, 2026-10-11 12:30:44.345071+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000010, 50000000-0000-0000-0000-000000000010, invoice, created_from_invoice, null, 2026-10-11 12:30:44.345071+05:30, 2026-10-11 12:30:44.345564+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000010).
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:86: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
+DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000010, 2026-10-11 23:30:34.78824+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000010, 50000000-0000-0000-0000-000000000010, invoice, created_from_invoice, null, 2026-10-11 23:30:34.78824+05:30, 2026-10-11 23:30:34.788761+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000010).
 SELECT t.val('snapshot recorded the pre-cancel status', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000010'$$, 'approved');
 FAIL: snapshot recorded the pre-cancel status -- expected approved got (null)
 SELECT t.expect('B-1 cancel V10 WHILE changing approved_by', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link', approved_by = '30000000-0000-0000-0000-000000000006' WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'E11');
@@ -199,8 +204,8 @@ PASS: positive: after restore the content is editable again -- succeeded as expe
 SELECT t.mk_inv('50000000-0000-0000-0000-000000000014', '60000000-0000-0000-0000-000000000014', '70000000-0000-0000-0000-000000000014', 'SM_T_inv14');
 50000000-0000-0000-0000-000000000014
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000014';
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:96: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
-DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000014, 2026-10-11 12:30:44.346183+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000014, 50000000-0000-0000-0000-000000000014, invoice, created_from_invoice, null, 2026-10-11 12:30:44.346183+05:30, 2026-10-11 12:30:44.346374+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000014).
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:98: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
+DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000014, 2026-10-11 23:30:34.78942+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000014, 50000000-0000-0000-0000-000000000014, invoice, created_from_invoice, null, 2026-10-11 23:30:34.78942+05:30, 2026-10-11 23:30:34.789599+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000014).
 UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000014';
 UPDATE 1
 SELECT t.expect('B-2 self-link INSERTed onto cancelled V14 (invoice D14 has no active link)', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000015', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000014', '50000000-0000-0000-0000-000000000014', 'created_from_invoice')$$, 'E5');
@@ -301,6 +306,54 @@ FAIL: S-3 engineer_ack_at was stamped as the transaction time -- expected true g
 COMMIT;
 COMMIT
 
+-- ===== F4-1 (per Aravind 11 Oct): linked_at is stamped by the database at INSERT =====
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000021', '60000000-0000-0000-0000-000000000021', 'SM_T_dc21');
+60000000-0000-0000-0000-000000000021
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000022', 'invoice', 'SM_T_inv22');
+50000000-0000-0000-0000-000000000022
+BEGIN;
+BEGIN
+SELECT t.expect('F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, linked_at) VALUES ('70000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000021', '50000000-0000-0000-0000-000000000022', 'pm_manual', '30000000-0000-0000-0000-000000000001', now() + interval '5 days')$$, 'ok');
+PASS: F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days -- succeeded as expected (1 row(s))
+SELECT t.val('F4-1 linked_at was stored as the transaction time', $$SELECT (linked_at = now())::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'true');
+FAIL: F4-1 linked_at was stored as the transaction time -- expected true got false
+COMMIT;
+COMMIT
+SELECT t.expect('F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at)', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'pm_unlinked' WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'ok');
+FAIL: F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at) -- expected ok, got refusal SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+
+-- ===== F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values (E12). A delivery is CREATED incomplete. =====
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000023', 'dc', 'SM_T_doc23');
+50000000-0000-0000-0000-000000000023
+SELECT t.expect('F4-2 INSERT a delivery as approved (with approver and time)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000023', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'E12');
+FAIL: F4-2 INSERT a delivery as approved (with approver and time) -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying approved_by', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, approved_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', '30000000-0000-0000-0000-000000000001')$$, 'E12');
+FAIL: F4-2 INSERT an incomplete delivery carrying approved_by -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying cancel_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, cancel_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'superseded_by_link')$$, 'E12');
+FAIL: F4-2 INSERT an incomplete delivery carrying cancel_reason -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('F4-2 INSERT a delivery as rejected', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'x')$$, 'E12');
+FAIL: F4-2 INSERT a delivery as rejected -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'awaiting_pm')$$, 'E12');
+FAIL: F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored) -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 INSERT a document with engineer_ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42a', 'yes', now())$$, 'E12');
+FAIL: F4-2 INSERT a document with engineer_ack -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('F4-2 INSERT a document with engineer_ack_note only', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42b', 'note')$$, 'E12');
+FAIL: F4-2 INSERT a document with engineer_ack_note only -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'ok');
+FAIL: F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds -- expected ok, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42c')$$, 'ok');
+PASS: F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds -- succeeded as expected (1 row(s))
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+BEGIN
+SELECT t.val('isolation level of this transaction', $$SELECT current_setting('transaction_isolation')$$, 'repeatable read');
+PASS: isolation level of this transaction -- value = repeatable read
+SELECT t.expect('E14 the delivery INSERT guard under RR', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'E14');
+FAIL: E14 the delivery INSERT guard under RR -- expected E14, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('E14 the document INSERT guard under RR', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42d')$$, 'E14');
+FAIL: E14 the document INSERT guard under RR -- expected refusal E14 but the statement SUCCEEDED
+ROLLBACK;
+ROLLBACK
+
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
 BEGIN
@@ -325,12 +378,12 @@ ROLLBACK
 SELECT t.expect('positive control: the same update under the default READ COMMITTED', $$UPDATE public.deliveries SET vehicle_number = 'RC1' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'ok');
 FAIL: positive control: the same update under the default READ COMMITTED -- succeeded but touched 0 rows (N-3: a positive control must touch at least 1 row)
 
->>> RESULT t_T_TRIG_red1: PASS=19 FAIL=68   (declared EXPECT_PASS=87, static assertion lines=87)
->>> RED verdict: test FAILED against the mutant (FAIL=68) -- the test can fail: OK
+>>> RESULT t_T_TRIG_red1: PASS=22 FAIL=80   (declared EXPECT_PASS=102, static assertion lines=102)
+>>> RED verdict: test FAILED against the mutant (FAIL=80) -- the test can fail: OK
 
 ################ RED run 2: file:old_order ################
 MUTANT (named): old_order   -- diff of the real file against the mutated copy:
-652c652
+662c662
 <      AND NEW.created_from_invoice_id IS NOT NULL THEN
 ---
 >      AND false THEN
@@ -381,8 +434,11 @@ SELECT t.expect('E5 link to a REJECTED DC delivery', $$INSERT INTO public.delive
 PASS: E5 link to a REJECTED DC delivery -- refused, SQLSTATE=QE005 MESSAGE=E5
 SELECT t.mk_doc('50000000-0000-0000-0000-000000000006', 'invoice', 'SM_T_inv6');
 50000000-0000-0000-0000-000000000006
-INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id, status, rejected_by, rejected_at, reject_reason) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'bad invoice');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006');
 INSERT 0 1
+-- (F4-2: a delivery can no longer be INSERTed already rejected; it is created incomplete and rejected through the guarded UPDATE path)
+UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad invoice' WHERE id = '60000000-0000-0000-0000-000000000006';
+UPDATE 1
 SELECT t.expect('E5 (A34) self-link for a REJECTED automatic delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000006', '50000000-0000-0000-0000-000000000006', 'created_from_invoice')$$, 'E5');
 PASS: E5 (A34) self-link for a REJECTED automatic delivery -- refused, SQLSTATE=QE005 MESSAGE=E5
 
@@ -417,7 +473,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 PASS: E6 V1 still supplier -- value = supplier
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:50: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:52: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 FAIL: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- expected E7, got refusal SQLSTATE=QE006 MESSAGE=E6
@@ -604,6 +660,54 @@ PASS: S-3 engineer_ack_at was stamped as the transaction time -- value = true
 COMMIT;
 COMMIT
 
+-- ===== F4-1 (per Aravind 11 Oct): linked_at is stamped by the database at INSERT =====
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000021', '60000000-0000-0000-0000-000000000021', 'SM_T_dc21');
+60000000-0000-0000-0000-000000000021
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000022', 'invoice', 'SM_T_inv22');
+50000000-0000-0000-0000-000000000022
+BEGIN;
+BEGIN
+SELECT t.expect('F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, linked_at) VALUES ('70000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000021', '50000000-0000-0000-0000-000000000022', 'pm_manual', '30000000-0000-0000-0000-000000000001', now() + interval '5 days')$$, 'ok');
+PASS: F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days -- succeeded as expected (1 row(s))
+SELECT t.val('F4-1 linked_at was stored as the transaction time', $$SELECT (linked_at = now())::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'true');
+PASS: F4-1 linked_at was stored as the transaction time -- value = true
+COMMIT;
+COMMIT
+SELECT t.expect('F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at)', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'pm_unlinked' WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'ok');
+PASS: F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at) -- succeeded as expected (1 row(s))
+
+-- ===== F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values (E12). A delivery is CREATED incomplete. =====
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000023', 'dc', 'SM_T_doc23');
+50000000-0000-0000-0000-000000000023
+SELECT t.expect('F4-2 INSERT a delivery as approved (with approver and time)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000023', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'E12');
+PASS: F4-2 INSERT a delivery as approved (with approver and time) -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying approved_by', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, approved_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', '30000000-0000-0000-0000-000000000001')$$, 'E12');
+PASS: F4-2 INSERT an incomplete delivery carrying approved_by -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying cancel_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, cancel_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'superseded_by_link')$$, 'E12');
+PASS: F4-2 INSERT an incomplete delivery carrying cancel_reason -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT a delivery as rejected', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'x')$$, 'E12');
+PASS: F4-2 INSERT a delivery as rejected -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'awaiting_pm')$$, 'E12');
+PASS: F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored) -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT a document with engineer_ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42a', 'yes', now())$$, 'E12');
+PASS: F4-2 INSERT a document with engineer_ack -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT a document with engineer_ack_note only', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42b', 'note')$$, 'E12');
+PASS: F4-2 INSERT a document with engineer_ack_note only -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'ok');
+PASS: F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds -- succeeded as expected (1 row(s))
+SELECT t.expect('F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42c')$$, 'ok');
+PASS: F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds -- succeeded as expected (1 row(s))
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+BEGIN
+SELECT t.val('isolation level of this transaction', $$SELECT current_setting('transaction_isolation')$$, 'repeatable read');
+PASS: isolation level of this transaction -- value = repeatable read
+SELECT t.expect('E14 the delivery INSERT guard under RR', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'E14');
+PASS: E14 the delivery INSERT guard under RR -- refused, SQLSTATE=QE014 MESSAGE=E14
+SELECT t.expect('E14 the document INSERT guard under RR', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42d')$$, 'E14');
+PASS: E14 the document INSERT guard under RR -- refused, SQLSTATE=QE014 MESSAGE=E14
+ROLLBACK;
+ROLLBACK
+
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
 BEGIN
@@ -628,15 +732,16 @@ ROLLBACK
 SELECT t.expect('positive control: the same update under the default READ COMMITTED', $$UPDATE public.deliveries SET vehicle_number = 'RC1' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'ok');
 PASS: positive control: the same update under the default READ COMMITTED -- succeeded as expected (1 row(s))
 
->>> RESULT t_T_TRIG_red2: PASS=85 FAIL=2   (declared EXPECT_PASS=87, static assertion lines=87)
+>>> RESULT t_T_TRIG_red2: PASS=100 FAIL=2   (declared EXPECT_PASS=102, static assertion lines=102)
 >>> RED verdict: test FAILED against the mutant (FAIL=2) -- the test can fail: OK
 
 ################ RED run 3: commit:50b929a ################
 MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file against the file under test:
-11a12,13
+11a12,14
 > -- 11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2).
 > -- 11 Oct: S-3 landed (Option A, per Aravind).
-35,122c37,128
+> -- 11 Oct: F4-1 (linked_at stamped) and F4-2 (INSERT guards) landed per Aravind.
+35,122c38,132
 < --   E7: 124-147, 591-673
 < --   E12: 124-147
 < --   E-codes-table: 124-147
@@ -726,107 +831,116 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 < --   C-31: 918-997
 < --   down-order: 918-997
 ---
-> --   E7: 130-153, 610-746
-> --   E12: 130-153
-> --   E-codes-table: 130-153
-> --   N-1: 130-153, 960-1008
-> --   D-31: 130-153
-> --   lock-paths: 155-213
-> --   R3: 155-213, 448-514, 610-746, 748-794
-> --   D-26: 155-213
-> --   Q2-2: 155-213
-> --   Q2-3: 155-213
-> --   S-C: 155-213
-> --   D-27: 155-213, 610-746
-> --   S-F: 215-225
-> --   S-E: 215-225
-> --   D-4: 215-225, 265-289, 296-323
-> --   Q2-6: 227-238
-> --   D-22: 227-238, 331-380
-> --   D-25: 227-238, 331-380
-> --   B3: 240-250, 448-514, 516-608, 610-746, 748-794
-> --   S-B: 240-250
-> --   D-19: 240-250, 265-289, 331-380
-> --   D-1: 265-289, 331-380
-> --   S-2: 265-289, 296-323, 1012-1101
-> --   D-5: 265-289, 296-323, 331-380, 819-832, 834-847, 849-862, 864-877
-> --   D-30: 265-289
-> --   S-A: 265-289, 331-380, 387-424
-> --   S4: 265-289, 331-380
-> --   C-29: 265-289, 296-323, 331-380, 387-424
-> --   D-29: 265-289, 296-323, 331-380, 387-424, 1012-1101
-> --   S-3: 296-323, 516-608, 610-746, 748-794
-> --   D-9: 296-323, 929-933
-> --   D-10: 296-323, 929-933
-> --   D-18: 331-380
-> --   D-23: 331-380, 610-746
-> --   D-2: 387-424
-> --   D-3: 387-424, 431-436, 516-608
-> --   R2: 387-424, 516-608
-> --   Q2-5: 387-424
-> --   R5: 387-424
-> --   C-37: 387-424
-> --   Q-1: 387-424
-> --   N1: 431-436
-> --   A33: 431-436
-> --   E8: 431-436
-> --   C-35: 431-436
-> --   TR1: 448-514, 796-804
-> --   TR2: 448-514
-> --   B2: 448-514, 516-608
-> --   B-2: 448-514
-> --   R4: 448-514, 516-608, 610-746, 748-794, 886-890, 906-914, 960-1008
-> --   D-7: 448-514, 516-608, 610-746, 748-794, 906-914
-> --   E1: 448-514
-> --   E2: 448-514
-> --   E3: 448-514
-> --   E4: 448-514
-> --   E5: 448-514
-> --   E10: 448-514, 516-608
-> --   E14: 448-514, 516-608, 610-746, 748-794
-> --   A28: 448-514
-> --   A34: 448-514
-> --   TR3: 516-608, 796-804
-> --   C-36: 516-608, 610-746
-> --   Q2-4: 516-608
-> --   TR4a: 610-746, 796-804
-> --   TR4b: 610-746, 796-804
-> --   TR4c: 610-746, 796-804
-> --   B-1: 610-746
-> --   S-1: 610-746, 748-794
-> --   D-6: 610-746, 748-794
-> --   S6: 610-746
-> --   B1: 610-746
-> --   E6: 610-746
-> --   O-3: 610-746
-> --   E9: 610-746, 748-794
-> --   E11: 610-746, 748-794
-> --   E13: 610-746
-> --   TR5: 748-794, 796-804
-> --   D-20: 813-817, 819-832, 834-847, 849-862, 864-877
-> --   R7: 813-817, 819-832, 834-847, 849-862, 864-877
-> --   C-30: 813-817, 819-832, 834-847, 849-862, 864-877
-> --   D-8: 886-890, 960-1008
-> --   D-21: 886-890
-> --   CLAUDE.md-s6-per-role-revoke: 886-890
-> --   C-27: 906-914
-> --   O-1: 906-914
-> --   D-11: 929-933
-> --   042-precedent: 929-933
-> --   CLAUDE.md-s6-ACL-fingerprint: 960-1008
-> --   R8: 1012-1101
-> --   S-D: 1012-1101
-> --   C-31: 1012-1101
-> --   down-order: 1012-1101
-133c139
+> --   E7: 134-159, 620-756
+> --   E12: 134-159, 810-832, 834-853
+> --   E-codes-table: 134-159
+> --   N-1: 134-159, 1028-1076
+> --   D-31: 134-159
+> --   lock-paths: 161-219
+> --   R3: 161-219, 454-524, 620-756, 758-804
+> --   D-26: 161-219
+> --   Q2-2: 161-219
+> --   Q2-3: 161-219
+> --   S-C: 161-219
+> --   D-27: 161-219, 620-756
+> --   S-F: 221-231
+> --   S-E: 221-231
+> --   D-4: 221-231, 271-295, 302-329
+> --   Q2-6: 233-244
+> --   D-22: 233-244, 337-386
+> --   D-25: 233-244, 337-386
+> --   B3: 246-256, 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+> --   S-B: 246-256
+> --   D-19: 246-256, 271-295, 337-386
+> --   D-1: 271-295, 337-386
+> --   S-2: 271-295, 302-329, 1080-1172
+> --   D-5: 271-295, 302-329, 337-386, 882-895, 897-910, 912-925, 927-940
+> --   D-30: 271-295
+> --   S-A: 271-295, 337-386, 393-430
+> --   S4: 271-295, 337-386
+> --   C-29: 271-295, 302-329, 337-386, 393-430
+> --   D-29: 271-295, 302-329, 337-386, 393-430, 1080-1172
+> --   S-3: 302-329, 526-618, 620-756, 758-804
+> --   D-9: 302-329, 997-1001
+> --   D-10: 302-329, 997-1001
+> --   D-18: 337-386
+> --   D-23: 337-386, 620-756
+> --   D-2: 393-430
+> --   D-3: 393-430, 437-442, 526-618
+> --   R2: 393-430, 526-618
+> --   Q2-5: 393-430
+> --   R5: 393-430
+> --   C-37: 393-430
+> --   Q-1: 393-430
+> --   N1: 437-442
+> --   A33: 437-442
+> --   E8: 437-442
+> --   C-35: 437-442
+> --   TR1: 454-524, 855-867
+> --   TR2: 454-524
+> --   F4-1: 454-524
+> --   B2: 454-524, 526-618
+> --   B-2: 454-524
+> --   R4: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 949-953,
+> --         969-982, 1028-1076
+> --   D-7: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 969-982
+> --   E1: 454-524
+> --   E2: 454-524
+> --   E3: 454-524
+> --   E4: 454-524
+> --   E5: 454-524
+> --   E10: 454-524, 526-618
+> --   E14: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+> --   A28: 454-524
+> --   A34: 454-524
+> --   TR3: 526-618, 855-867
+> --   C-36: 526-618, 620-756
+> --   Q2-4: 526-618
+> --   TR4a: 620-756, 855-867
+> --   TR4b: 620-756, 855-867
+> --   TR4c: 620-756, 855-867
+> --   B-1: 620-756
+> --   S-1: 620-756, 758-804
+> --   D-6: 620-756, 758-804
+> --   S6: 620-756
+> --   B1: 620-756
+> --   E6: 620-756
+> --   O-3: 620-756
+> --   E9: 620-756, 758-804
+> --   E11: 620-756, 758-804
+> --   E13: 620-756
+> --   TR5: 758-804, 855-867
+> --   F4-2: 810-832, 834-853, 855-867
+> --   D-20: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   R7: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   C-30: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   D-8: 949-953, 1028-1076
+> --   D-21: 949-953
+> --   CLAUDE.md-s6-per-role-revoke: 949-953
+> --   C-27: 969-982
+> --   O-1: 969-982
+> --   D-11: 997-1001
+> --   042-precedent: 997-1001
+> --   CLAUDE.md-s6-ACL-fingerprint: 1028-1076
+> --   R8: 1080-1172
+> --   S-D: 1080-1172
+> --   C-31: 1080-1172
+> --   down-order: 1080-1172
+133c143
 < --                   self-link to a rejected delivery (A34)
 ---
 > --                   self-link to a rejected or cancelled delivery (A34, B-2)
-381c387
+143c153,155
+< --   E12 (not raised) CHECK/FK, SQLSTATE 23514 / 23503
+---
+> --   E12 QE012  F4-2  INSERT guards (deliveries not 'incomplete' or carrying
+> --                   attribution/stamp/reason values; capture_documents
+> --                   carrying ack values); also raised by CHECK/FK, SQLSTATE 23514 / 23503
+381c393
 < -- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29]
 ---
 > -- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29, Q-1]
-412c418,423
+412c424,429
 <   CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL))
 ---
 >   CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL)),
@@ -835,32 +949,37 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >   -- the invoice with no active link while its automatic delivery is not cancelled.
 >   CONSTRAINT dil_superseded_reason_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'superseded_by_link' OR link_source = 'created_from_invoice'),
 >   CONSTRAINT dil_pm_unlinked_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'pm_unlinked' OR link_source = 'pm_manual')
-437c448
+437c454
 < -- [src: TR1, TR2, B2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
 ---
-> -- [src: TR1, TR2, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
-493c504,507
+> -- [src: TR1, TR2, F4-1, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+460a478,481
+>   -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
+>   -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
+>   NEW.linked_at := now();
+> 
+493c514,517
 <     ELSIF v_status = 'rejected' THEN
 ---
 >     ELSIF v_status IN ('rejected', 'cancelled') THEN
 >       -- B-2 (SQL review r1): a self-link is also refused onto a CANCELLED
 >       -- delivery. Paths 2 and 4 restore the delivery BEFORE inserting the
 >       -- new self-link, so this turns that header rule into one the trigger enforces.
-502c516
+502c526
 < -- [src: TR3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
 ---
 > -- [src: TR3, S-3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
-561a576,580
-> 
+562a587,591
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the unlink time is
 >   -- stamped by the database; the caller's value only signals the unlink and is
 >   -- overwritten. (linked_at is NOT touched here: see the package, OPEN item.)
 >   NEW.unlinked_at := now();
-591c610
+> 
+591c620
 < -- [src: TR4a, TR4b, TR4c, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
 ---
 > -- [src: TR4a, TR4b, TR4c, B-1, S-3, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
-604,605c623,627
+604,605c633,637
 <   -- TR4a: immutable columns.
 <   IF NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
 ---
@@ -869,7 +988,7 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >   IF NEW.id IS DISTINCT FROM OLD.id
 >      OR NEW.created_at IS DISTINCT FROM OLD.created_at
 >      OR NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
-666a689,724
+666a699,734
 >       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
 >     END IF;
 >   END IF;
@@ -906,7 +1025,7 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >       OR (NEW.cancelled_at IS NULL AND NEW.cancel_reason IS NULL
 >           AND OLD.status = 'cancelled' AND NEW.status IN ('incomplete', 'awaiting_pm'))
 >     ) THEN
-670a729,743
+670a739,753
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the DATABASE stamps the
 >   -- time at each allowed transition; any caller-supplied value is overwritten
 >   -- (the same "wrong stamp impossible, not merely uncaught" rule as 043's
@@ -922,18 +1041,18 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >     NEW.cancelled_at := now();
 >   END IF;
 > 
-675c748
+675c758
 < -- [src: TR5, D-6, B3, R3, R4, D-7, E9, E11, E14]
 ---
 > -- [src: TR5, S-1, S-3, D-6, B3, R3, R4, D-7, E9, E11, E14]
-688c761,764
+688c771,774
 <   IF NEW.kind IS DISTINCT FROM OLD.kind
 ---
 >   -- S-1 (SQL review r1): id and created_at added to the immutable set.
 >   IF NEW.id IS DISTINCT FROM OLD.id
 >      OR NEW.created_at IS DISTINCT FROM OLD.created_at
 >      OR NEW.kind IS DISTINCT FROM OLD.kind
-708a785,791
+708a795,801
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the acknowledgement time
 >   -- is stamped by the database when the ack is first set; a caller-supplied
 >   -- value is overwritten. It drives the D-12 clock.
@@ -941,11 +1060,76 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >     NEW.engineer_ack_at := now();
 >   END IF;
 > 
-877c960
+713c806,859
+< -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5]
+---
+> -- F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values. A delivery is CREATED
+> -- 'incomplete' (D1; plan v3 line 105: it becomes 'awaiting_pm' inside the engineer RPC when the ack is stored,
+> -- i.e. by UPDATE), so exactly 'incomplete' is allowed; every other status and every attribution/stamp/reason
+> -- column must be NULL at INSERT. These fields are set only through the guarded UPDATE path.
+> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_deliveries_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.status IS DISTINCT FROM 'incomplete'
+>      OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
+>      OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
+>      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_capture_documents_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5, F4-2]
+> CREATE TRIGGER tr_deliveries_before_insert BEFORE INSERT ON public.deliveries
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_insert();
+> CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_insert();
+831a978,982
+> -- F4-2: the two INSERT-guard functions, same shape (O-1).
+> REVOKE ALL ON FUNCTION public.trg_deliveries_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_insert() TO postgres;
+> REVOKE ALL ON FUNCTION public.trg_capture_documents_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_insert() TO postgres;
+877c1028
 < -- [src: R4, D-8, CLAUDE.md-s6-ACL-fingerprint]
 ---
 > -- [src: R4, D-8, N-1, CLAUDE.md-s6-ACL-fingerprint]
-894a978,987
+895c1046,1056
+<   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+---
 >   -- N-1 (SQL review r1): ownership. The GRANT ... TO postgres above is a no-op only if postgres owns the objects.
 >   FOREACH v_t IN ARRAY ARRAY['capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links'] LOOP
 >     IF NOT EXISTS (
@@ -956,13 +1140,19 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >       v_bad := v_bad || ' ' || v_t || ':owner';
 >     END IF;
 >   END LOOP;
-904a998
+>   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
+904a1066
 >         AND p.proowner = 'postgres'::regrole
-918c1012
+918c1080
 < -- [src: R8, S-D, D-29, C-31, down-order]
 ---
 > -- [src: R8, S-D, S-2, D-29, C-31, down-order]
-968a1063,1074
+962c1124,1125
+< --            'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+---
+> --            'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+> --            'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
+968a1132,1143
 > -- -- S-2 (SQL review r1): the bucket DELETE is NOT in this transaction. If
 > -- -- Storage refused a direct SQL delete, a delete inside this transaction
 > -- -- would roll the table drops and the ledger delete back with it. The
@@ -975,7 +1165,10 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 > -- END;
 > -- $$;
 > --
-983,994c1089
+977a1153,1154
+> -- DROP FUNCTION public.trg_deliveries_before_insert();
+> -- DROP FUNCTION public.trg_capture_documents_before_insert();
+983,994c1160
 < -- -- Bucket: zero objects, then delete. Supabase Storage may refuse a direct
 < -- -- SQL delete on storage.*; the disposable scaffold stubs storage and cannot
 < -- -- show that (block 2b executes this on test-db). If refused, remove the
@@ -990,7 +1183,7 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 < -- DELETE FROM storage.buckets WHERE id = 'capture-documents';
 ---
 > -- COMMIT;
-995a1091,1099
+995a1162,1170
 > -- -- BUCKET STEP: a SEPARATE step, run only AFTER the COMMIT above, by SQL.
 > -- -- Supabase Storage may refuse a direct SQL delete on storage.*; the
 > -- -- disposable scaffold stubs storage and cannot show that. Block 2b executes
@@ -1047,8 +1240,11 @@ SELECT t.expect('E5 link to a REJECTED DC delivery', $$INSERT INTO public.delive
 PASS: E5 link to a REJECTED DC delivery -- refused, SQLSTATE=QE005 MESSAGE=E5
 SELECT t.mk_doc('50000000-0000-0000-0000-000000000006', 'invoice', 'SM_T_inv6');
 50000000-0000-0000-0000-000000000006
-INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id, status, rejected_by, rejected_at, reject_reason) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'bad invoice');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006');
 INSERT 0 1
+-- (F4-2: a delivery can no longer be INSERTed already rejected; it is created incomplete and rejected through the guarded UPDATE path)
+UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad invoice' WHERE id = '60000000-0000-0000-0000-000000000006';
+UPDATE 1
 SELECT t.expect('E5 (A34) self-link for a REJECTED automatic delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000006', '50000000-0000-0000-0000-000000000006', 'created_from_invoice')$$, 'E5');
 PASS: E5 (A34) self-link for a REJECTED automatic delivery -- refused, SQLSTATE=QE005 MESSAGE=E5
 
@@ -1083,7 +1279,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 PASS: E6 V1 still supplier -- value = supplier
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:50: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:52: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 PASS: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- refused, SQLSTATE=QE007 MESSAGE=E7
@@ -1270,6 +1466,54 @@ FAIL: S-3 engineer_ack_at was stamped as the transaction time -- expected true g
 COMMIT;
 COMMIT
 
+-- ===== F4-1 (per Aravind 11 Oct): linked_at is stamped by the database at INSERT =====
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000021', '60000000-0000-0000-0000-000000000021', 'SM_T_dc21');
+60000000-0000-0000-0000-000000000021
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000022', 'invoice', 'SM_T_inv22');
+50000000-0000-0000-0000-000000000022
+BEGIN;
+BEGIN
+SELECT t.expect('F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, linked_at) VALUES ('70000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000021', '50000000-0000-0000-0000-000000000022', 'pm_manual', '30000000-0000-0000-0000-000000000001', now() + interval '5 days')$$, 'ok');
+PASS: F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days -- succeeded as expected (1 row(s))
+SELECT t.val('F4-1 linked_at was stored as the transaction time', $$SELECT (linked_at = now())::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'true');
+FAIL: F4-1 linked_at was stored as the transaction time -- expected true got false
+COMMIT;
+COMMIT
+SELECT t.expect('F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at)', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'pm_unlinked' WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'ok');
+FAIL: F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at) -- expected ok, got refusal SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+
+-- ===== F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values (E12). A delivery is CREATED incomplete. =====
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000023', 'dc', 'SM_T_doc23');
+50000000-0000-0000-0000-000000000023
+SELECT t.expect('F4-2 INSERT a delivery as approved (with approver and time)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000023', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'E12');
+FAIL: F4-2 INSERT a delivery as approved (with approver and time) -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying approved_by', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, approved_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', '30000000-0000-0000-0000-000000000001')$$, 'E12');
+FAIL: F4-2 INSERT an incomplete delivery carrying approved_by -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying cancel_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, cancel_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'superseded_by_link')$$, 'E12');
+FAIL: F4-2 INSERT an incomplete delivery carrying cancel_reason -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('F4-2 INSERT a delivery as rejected', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'x')$$, 'E12');
+FAIL: F4-2 INSERT a delivery as rejected -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'awaiting_pm')$$, 'E12');
+FAIL: F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored) -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 INSERT a document with engineer_ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42a', 'yes', now())$$, 'E12');
+FAIL: F4-2 INSERT a document with engineer_ack -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('F4-2 INSERT a document with engineer_ack_note only', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42b', 'note')$$, 'E12');
+FAIL: F4-2 INSERT a document with engineer_ack_note only -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'ok');
+FAIL: F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds -- expected ok, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42c')$$, 'ok');
+PASS: F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds -- succeeded as expected (1 row(s))
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+BEGIN
+SELECT t.val('isolation level of this transaction', $$SELECT current_setting('transaction_isolation')$$, 'repeatable read');
+PASS: isolation level of this transaction -- value = repeatable read
+SELECT t.expect('E14 the delivery INSERT guard under RR', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'E14');
+FAIL: E14 the delivery INSERT guard under RR -- expected E14, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('E14 the document INSERT guard under RR', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42d')$$, 'E14');
+FAIL: E14 the document INSERT guard under RR -- expected refusal E14 but the statement SUCCEEDED
+ROLLBACK;
+ROLLBACK
+
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
 BEGIN
@@ -1294,14 +1538,15 @@ ROLLBACK
 SELECT t.expect('positive control: the same update under the default READ COMMITTED', $$UPDATE public.deliveries SET vehicle_number = 'RC1' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'ok');
 FAIL: positive control: the same update under the default READ COMMITTED -- succeeded but touched 0 rows (N-3: a positive control must touch at least 1 row)
 
->>> RESULT t_T_TRIG_red3: PASS=60 FAIL=27   (declared EXPECT_PASS=87, static assertion lines=87)
->>> RED verdict: test FAILED against the mutant (FAIL=27) -- the test can fail: OK
+>>> RESULT t_T_TRIG_red3: PASS=63 FAIL=39   (declared EXPECT_PASS=102, static assertion lines=102)
+>>> RED verdict: test FAILED against the mutant (FAIL=39) -- the test can fail: OK
 
 ################ RED run 4: commit:668956e ################
 MUTANT (named): the REVIEWED file at commit 668956e   -- diff of that file against the file under test:
-12a13
+12a13,14
 > -- 11 Oct: S-3 landed (Option A, per Aravind).
-36,127c37,128
+> -- 11 Oct: F4-1 (linked_at stamped) and F4-2 (INSERT guards) landed per Aravind.
+36,127c38,132
 < --   E7: 129-152, 604-725
 < --   E12: 129-152
 < --   E-codes-table: 129-152
@@ -1395,115 +1640,131 @@ MUTANT (named): the REVIEWED file at commit 668956e   -- diff of that file again
 < --   C-31: 984-1073
 < --   down-order: 984-1073
 ---
-> --   E7: 130-153, 610-746
-> --   E12: 130-153
-> --   E-codes-table: 130-153
-> --   N-1: 130-153, 960-1008
-> --   D-31: 130-153
-> --   lock-paths: 155-213
-> --   R3: 155-213, 448-514, 610-746, 748-794
-> --   D-26: 155-213
-> --   Q2-2: 155-213
-> --   Q2-3: 155-213
-> --   S-C: 155-213
-> --   D-27: 155-213, 610-746
-> --   S-F: 215-225
-> --   S-E: 215-225
-> --   D-4: 215-225, 265-289, 296-323
-> --   Q2-6: 227-238
-> --   D-22: 227-238, 331-380
-> --   D-25: 227-238, 331-380
-> --   B3: 240-250, 448-514, 516-608, 610-746, 748-794
-> --   S-B: 240-250
-> --   D-19: 240-250, 265-289, 331-380
-> --   D-1: 265-289, 331-380
-> --   S-2: 265-289, 296-323, 1012-1101
-> --   D-5: 265-289, 296-323, 331-380, 819-832, 834-847, 849-862, 864-877
-> --   D-30: 265-289
-> --   S-A: 265-289, 331-380, 387-424
-> --   S4: 265-289, 331-380
-> --   C-29: 265-289, 296-323, 331-380, 387-424
-> --   D-29: 265-289, 296-323, 331-380, 387-424, 1012-1101
-> --   S-3: 296-323, 516-608, 610-746, 748-794
-> --   D-9: 296-323, 929-933
-> --   D-10: 296-323, 929-933
-> --   D-18: 331-380
-> --   D-23: 331-380, 610-746
-> --   D-2: 387-424
-> --   D-3: 387-424, 431-436, 516-608
-> --   R2: 387-424, 516-608
-> --   Q2-5: 387-424
-> --   R5: 387-424
-> --   C-37: 387-424
-> --   Q-1: 387-424
-> --   N1: 431-436
-> --   A33: 431-436
-> --   E8: 431-436
-> --   C-35: 431-436
-> --   TR1: 448-514, 796-804
-> --   TR2: 448-514
-> --   B2: 448-514, 516-608
-> --   B-2: 448-514
-> --   R4: 448-514, 516-608, 610-746, 748-794, 886-890, 906-914, 960-1008
-> --   D-7: 448-514, 516-608, 610-746, 748-794, 906-914
-> --   E1: 448-514
-> --   E2: 448-514
-> --   E3: 448-514
-> --   E4: 448-514
-> --   E5: 448-514
-> --   E10: 448-514, 516-608
-> --   E14: 448-514, 516-608, 610-746, 748-794
-> --   A28: 448-514
-> --   A34: 448-514
-> --   TR3: 516-608, 796-804
-> --   C-36: 516-608, 610-746
-> --   Q2-4: 516-608
-> --   TR4a: 610-746, 796-804
-> --   TR4b: 610-746, 796-804
-> --   TR4c: 610-746, 796-804
-> --   B-1: 610-746
-> --   S-1: 610-746, 748-794
-> --   D-6: 610-746, 748-794
-> --   S6: 610-746
-> --   B1: 610-746
-> --   E6: 610-746
-> --   O-3: 610-746
-> --   E9: 610-746, 748-794
-> --   E11: 610-746, 748-794
-> --   E13: 610-746
-> --   TR5: 748-794, 796-804
-> --   D-20: 813-817, 819-832, 834-847, 849-862, 864-877
-> --   R7: 813-817, 819-832, 834-847, 849-862, 864-877
-> --   C-30: 813-817, 819-832, 834-847, 849-862, 864-877
-> --   D-8: 886-890, 960-1008
-> --   D-21: 886-890
-> --   CLAUDE.md-s6-per-role-revoke: 886-890
-> --   C-27: 906-914
-> --   O-1: 906-914
-> --   D-11: 929-933
-> --   042-precedent: 929-933
-> --   CLAUDE.md-s6-ACL-fingerprint: 960-1008
-> --   R8: 1012-1101
-> --   S-D: 1012-1101
-> --   C-31: 1012-1101
-> --   down-order: 1012-1101
-515c516
+> --   E7: 134-159, 620-756
+> --   E12: 134-159, 810-832, 834-853
+> --   E-codes-table: 134-159
+> --   N-1: 134-159, 1028-1076
+> --   D-31: 134-159
+> --   lock-paths: 161-219
+> --   R3: 161-219, 454-524, 620-756, 758-804
+> --   D-26: 161-219
+> --   Q2-2: 161-219
+> --   Q2-3: 161-219
+> --   S-C: 161-219
+> --   D-27: 161-219, 620-756
+> --   S-F: 221-231
+> --   S-E: 221-231
+> --   D-4: 221-231, 271-295, 302-329
+> --   Q2-6: 233-244
+> --   D-22: 233-244, 337-386
+> --   D-25: 233-244, 337-386
+> --   B3: 246-256, 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+> --   S-B: 246-256
+> --   D-19: 246-256, 271-295, 337-386
+> --   D-1: 271-295, 337-386
+> --   S-2: 271-295, 302-329, 1080-1172
+> --   D-5: 271-295, 302-329, 337-386, 882-895, 897-910, 912-925, 927-940
+> --   D-30: 271-295
+> --   S-A: 271-295, 337-386, 393-430
+> --   S4: 271-295, 337-386
+> --   C-29: 271-295, 302-329, 337-386, 393-430
+> --   D-29: 271-295, 302-329, 337-386, 393-430, 1080-1172
+> --   S-3: 302-329, 526-618, 620-756, 758-804
+> --   D-9: 302-329, 997-1001
+> --   D-10: 302-329, 997-1001
+> --   D-18: 337-386
+> --   D-23: 337-386, 620-756
+> --   D-2: 393-430
+> --   D-3: 393-430, 437-442, 526-618
+> --   R2: 393-430, 526-618
+> --   Q2-5: 393-430
+> --   R5: 393-430
+> --   C-37: 393-430
+> --   Q-1: 393-430
+> --   N1: 437-442
+> --   A33: 437-442
+> --   E8: 437-442
+> --   C-35: 437-442
+> --   TR1: 454-524, 855-867
+> --   TR2: 454-524
+> --   F4-1: 454-524
+> --   B2: 454-524, 526-618
+> --   B-2: 454-524
+> --   R4: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 949-953,
+> --         969-982, 1028-1076
+> --   D-7: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 969-982
+> --   E1: 454-524
+> --   E2: 454-524
+> --   E3: 454-524
+> --   E4: 454-524
+> --   E5: 454-524
+> --   E10: 454-524, 526-618
+> --   E14: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+> --   A28: 454-524
+> --   A34: 454-524
+> --   TR3: 526-618, 855-867
+> --   C-36: 526-618, 620-756
+> --   Q2-4: 526-618
+> --   TR4a: 620-756, 855-867
+> --   TR4b: 620-756, 855-867
+> --   TR4c: 620-756, 855-867
+> --   B-1: 620-756
+> --   S-1: 620-756, 758-804
+> --   D-6: 620-756, 758-804
+> --   S6: 620-756
+> --   B1: 620-756
+> --   E6: 620-756
+> --   O-3: 620-756
+> --   E9: 620-756, 758-804
+> --   E11: 620-756, 758-804
+> --   E13: 620-756
+> --   TR5: 758-804, 855-867
+> --   F4-2: 810-832, 834-853, 855-867
+> --   D-20: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   R7: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   C-30: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   D-8: 949-953, 1028-1076
+> --   D-21: 949-953
+> --   CLAUDE.md-s6-per-role-revoke: 949-953
+> --   C-27: 969-982
+> --   O-1: 969-982
+> --   D-11: 997-1001
+> --   042-precedent: 997-1001
+> --   CLAUDE.md-s6-ACL-fingerprint: 1028-1076
+> --   R8: 1080-1172
+> --   S-D: 1080-1172
+> --   C-31: 1080-1172
+> --   down-order: 1080-1172
+148c153,155
+< --   E12 (not raised) CHECK/FK, SQLSTATE 23514 / 23503
+---
+> --   E12 QE012  F4-2  INSERT guards (deliveries not 'incomplete' or carrying
+> --                   attribution/stamp/reason values; capture_documents
+> --                   carrying ack values); also raised by CHECK/FK, SQLSTATE 23514 / 23503
+447c454
+< -- [src: TR1, TR2, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+---
+> -- [src: TR1, TR2, F4-1, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+469a477,480
+> 
+>   -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
+>   -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
+>   NEW.linked_at := now();
+515c526
 < -- [src: TR3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
 ---
 > -- [src: TR3, S-3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
-575a577,581
+575a587,591
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the unlink time is
 >   -- stamped by the database; the caller's value only signals the unlink and is
 >   -- overwritten. (linked_at is NOT touched here: see the package, OPEN item.)
 >   NEW.unlinked_at := now();
 > 
-604c610
+604c620
 < -- [src: TR4a, TR4b, TR4c, B-1, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
 ---
 > -- [src: TR4a, TR4b, TR4c, B-1, S-3, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
-720a727,738
->   END IF;
-> 
+722a739,753
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the DATABASE stamps the
 >   -- time at each allowed transition; any caller-supplied value is overwritten
 >   -- (the same "wrong stamp impossible, not merely uncaught" rule as 043's
@@ -1514,23 +1775,98 @@ MUTANT (named): the REVIEWED file at commit 668956e   -- diff of that file again
 >   END IF;
 >   IF NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected' THEN
 >     NEW.rejected_at := now();
-721a740,742
+>   END IF;
 >   IF NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM 'cancelled' THEN
 >     NEW.cancelled_at := now();
 >   END IF;
-727c748
+> 
+727c758
 < -- [src: TR5, S-1, D-6, B3, R3, R4, D-7, E9, E11, E14]
 ---
 > -- [src: TR5, S-1, S-3, D-6, B3, R3, R4, D-7, E9, E11, E14]
-761a783,789
->   END IF;
-> 
+763a795,801
 >   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the acknowledgement time
 >   -- is stamped by the database when the ack is first set; a caller-supplied
 >   -- value is overwritten. It drives the D-12 clock.
 >   IF OLD.engineer_ack IS NULL AND NEW.engineer_ack IS NOT NULL THEN
 >     NEW.engineer_ack_at := now();
-NOTICE:  database "t_T_TRIG_red4" does not exist, skipping
+>   END IF;
+> 
+768c806,859
+< -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5]
+---
+> -- F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values. A delivery is CREATED
+> -- 'incomplete' (D1; plan v3 line 105: it becomes 'awaiting_pm' inside the engineer RPC when the ack is stored,
+> -- i.e. by UPDATE), so exactly 'incomplete' is allowed; every other status and every attribution/stamp/reason
+> -- column must be NULL at INSERT. These fields are set only through the guarded UPDATE path.
+> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_deliveries_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.status IS DISTINCT FROM 'incomplete'
+>      OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
+>      OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
+>      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_capture_documents_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5, F4-2]
+> CREATE TRIGGER tr_deliveries_before_insert BEFORE INSERT ON public.deliveries
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_insert();
+> CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_insert();
+886a978,982
+> -- F4-2: the two INSERT-guard functions, same shape (O-1).
+> REVOKE ALL ON FUNCTION public.trg_deliveries_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_insert() TO postgres;
+> REVOKE ALL ON FUNCTION public.trg_capture_documents_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_insert() TO postgres;
+960c1056
+<   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+---
+>   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
+1028c1124,1125
+< --            'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+---
+> --            'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+> --            'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
+1055a1153,1154
+> -- DROP FUNCTION public.trg_deliveries_before_insert();
+> -- DROP FUNCTION public.trg_capture_documents_before_insert();
 $ psql -d t_T_TRIG_red4 -v ON_ERROR_STOP=1 -f old-668956e.sql   (049 UP)
 [exit 0]
 (fixtures: src/_lib.sql, src/_fixture.sql loaded)
@@ -1578,8 +1914,11 @@ SELECT t.expect('E5 link to a REJECTED DC delivery', $$INSERT INTO public.delive
 PASS: E5 link to a REJECTED DC delivery -- refused, SQLSTATE=QE005 MESSAGE=E5
 SELECT t.mk_doc('50000000-0000-0000-0000-000000000006', 'invoice', 'SM_T_inv6');
 50000000-0000-0000-0000-000000000006
-INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id, status, rejected_by, rejected_at, reject_reason) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'bad invoice');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006');
 INSERT 0 1
+-- (F4-2: a delivery can no longer be INSERTed already rejected; it is created incomplete and rejected through the guarded UPDATE path)
+UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad invoice' WHERE id = '60000000-0000-0000-0000-000000000006';
+UPDATE 1
 SELECT t.expect('E5 (A34) self-link for a REJECTED automatic delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000006', '50000000-0000-0000-0000-000000000006', 'created_from_invoice')$$, 'E5');
 PASS: E5 (A34) self-link for a REJECTED automatic delivery -- refused, SQLSTATE=QE005 MESSAGE=E5
 
@@ -1614,7 +1953,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 PASS: E6 V1 still supplier -- value = supplier
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:50: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:52: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 PASS: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- refused, SQLSTATE=QE007 MESSAGE=E7
@@ -1801,6 +2140,54 @@ FAIL: S-3 engineer_ack_at was stamped as the transaction time -- expected true g
 COMMIT;
 COMMIT
 
+-- ===== F4-1 (per Aravind 11 Oct): linked_at is stamped by the database at INSERT =====
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000021', '60000000-0000-0000-0000-000000000021', 'SM_T_dc21');
+60000000-0000-0000-0000-000000000021
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000022', 'invoice', 'SM_T_inv22');
+50000000-0000-0000-0000-000000000022
+BEGIN;
+BEGIN
+SELECT t.expect('F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, linked_at) VALUES ('70000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000021', '50000000-0000-0000-0000-000000000022', 'pm_manual', '30000000-0000-0000-0000-000000000001', now() + interval '5 days')$$, 'ok');
+PASS: F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days -- succeeded as expected (1 row(s))
+SELECT t.val('F4-1 linked_at was stored as the transaction time', $$SELECT (linked_at = now())::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'true');
+FAIL: F4-1 linked_at was stored as the transaction time -- expected true got false
+COMMIT;
+COMMIT
+SELECT t.expect('F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at)', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'pm_unlinked' WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'ok');
+FAIL: F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at) -- expected ok, got refusal SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+
+-- ===== F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values (E12). A delivery is CREATED incomplete. =====
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000023', 'dc', 'SM_T_doc23');
+50000000-0000-0000-0000-000000000023
+SELECT t.expect('F4-2 INSERT a delivery as approved (with approver and time)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000023', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'E12');
+FAIL: F4-2 INSERT a delivery as approved (with approver and time) -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying approved_by', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, approved_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', '30000000-0000-0000-0000-000000000001')$$, 'E12');
+FAIL: F4-2 INSERT an incomplete delivery carrying approved_by -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying cancel_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, cancel_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'superseded_by_link')$$, 'E12');
+FAIL: F4-2 INSERT an incomplete delivery carrying cancel_reason -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('F4-2 INSERT a delivery as rejected', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'x')$$, 'E12');
+FAIL: F4-2 INSERT a delivery as rejected -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'awaiting_pm')$$, 'E12');
+FAIL: F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored) -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 INSERT a document with engineer_ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42a', 'yes', now())$$, 'E12');
+FAIL: F4-2 INSERT a document with engineer_ack -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('F4-2 INSERT a document with engineer_ack_note only', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42b', 'note')$$, 'E12');
+FAIL: F4-2 INSERT a document with engineer_ack_note only -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'ok');
+FAIL: F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds -- expected ok, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42c')$$, 'ok');
+PASS: F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds -- succeeded as expected (1 row(s))
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+BEGIN
+SELECT t.val('isolation level of this transaction', $$SELECT current_setting('transaction_isolation')$$, 'repeatable read');
+PASS: isolation level of this transaction -- value = repeatable read
+SELECT t.expect('E14 the delivery INSERT guard under RR', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'E14');
+FAIL: E14 the delivery INSERT guard under RR -- expected E14, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('E14 the document INSERT guard under RR', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42d')$$, 'E14');
+FAIL: E14 the document INSERT guard under RR -- expected refusal E14 but the statement SUCCEEDED
+ROLLBACK;
+ROLLBACK
+
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
 BEGIN
@@ -1825,14 +2212,296 @@ ROLLBACK
 SELECT t.expect('positive control: the same update under the default READ COMMITTED', $$UPDATE public.deliveries SET vehicle_number = 'RC1' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'ok');
 PASS: positive control: the same update under the default READ COMMITTED -- succeeded as expected (1 row(s))
 
->>> RESULT t_T_TRIG_red4: PASS=80 FAIL=7   (declared EXPECT_PASS=87, static assertion lines=87)
->>> RED verdict: test FAILED against the mutant (FAIL=7) -- the test can fail: OK
+>>> RESULT t_T_TRIG_red4: PASS=83 FAIL=19   (declared EXPECT_PASS=102, static assertion lines=102)
+>>> RED verdict: test FAILED against the mutant (FAIL=19) -- the test can fail: OK
 
-################ GREEN run: the real file ################
-$ psql -d t_T_TRIG_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+################ RED run 5: commit:ecc8e1e ################
+MUTANT (named): the REVIEWED file at commit ecc8e1e   -- diff of that file against the file under test:
+13a14
+> -- 11 Oct: F4-1 (linked_at stamped) and F4-2 (INSERT guards) landed per Aravind.
+37,128c38,132
+< --   E7: 130-153, 610-746
+< --   E12: 130-153
+< --   E-codes-table: 130-153
+< --   N-1: 130-153, 960-1008
+< --   D-31: 130-153
+< --   lock-paths: 155-213
+< --   R3: 155-213, 448-514, 610-746, 748-794
+< --   D-26: 155-213
+< --   Q2-2: 155-213
+< --   Q2-3: 155-213
+< --   S-C: 155-213
+< --   D-27: 155-213, 610-746
+< --   S-F: 215-225
+< --   S-E: 215-225
+< --   D-4: 215-225, 265-289, 296-323
+< --   Q2-6: 227-238
+< --   D-22: 227-238, 331-380
+< --   D-25: 227-238, 331-380
+< --   B3: 240-250, 448-514, 516-608, 610-746, 748-794
+< --   S-B: 240-250
+< --   D-19: 240-250, 265-289, 331-380
+< --   D-1: 265-289, 331-380
+< --   S-2: 265-289, 296-323, 1012-1101
+< --   D-5: 265-289, 296-323, 331-380, 819-832, 834-847, 849-862, 864-877
+< --   D-30: 265-289
+< --   S-A: 265-289, 331-380, 387-424
+< --   S4: 265-289, 331-380
+< --   C-29: 265-289, 296-323, 331-380, 387-424
+< --   D-29: 265-289, 296-323, 331-380, 387-424, 1012-1101
+< --   S-3: 296-323, 516-608, 610-746, 748-794
+< --   D-9: 296-323, 929-933
+< --   D-10: 296-323, 929-933
+< --   D-18: 331-380
+< --   D-23: 331-380, 610-746
+< --   D-2: 387-424
+< --   D-3: 387-424, 431-436, 516-608
+< --   R2: 387-424, 516-608
+< --   Q2-5: 387-424
+< --   R5: 387-424
+< --   C-37: 387-424
+< --   Q-1: 387-424
+< --   N1: 431-436
+< --   A33: 431-436
+< --   E8: 431-436
+< --   C-35: 431-436
+< --   TR1: 448-514, 796-804
+< --   TR2: 448-514
+< --   B2: 448-514, 516-608
+< --   B-2: 448-514
+< --   R4: 448-514, 516-608, 610-746, 748-794, 886-890, 906-914, 960-1008
+< --   D-7: 448-514, 516-608, 610-746, 748-794, 906-914
+< --   E1: 448-514
+< --   E2: 448-514
+< --   E3: 448-514
+< --   E4: 448-514
+< --   E5: 448-514
+< --   E10: 448-514, 516-608
+< --   E14: 448-514, 516-608, 610-746, 748-794
+< --   A28: 448-514
+< --   A34: 448-514
+< --   TR3: 516-608, 796-804
+< --   C-36: 516-608, 610-746
+< --   Q2-4: 516-608
+< --   TR4a: 610-746, 796-804
+< --   TR4b: 610-746, 796-804
+< --   TR4c: 610-746, 796-804
+< --   B-1: 610-746
+< --   S-1: 610-746, 748-794
+< --   D-6: 610-746, 748-794
+< --   S6: 610-746
+< --   B1: 610-746
+< --   E6: 610-746
+< --   O-3: 610-746
+< --   E9: 610-746, 748-794
+< --   E11: 610-746, 748-794
+< --   E13: 610-746
+< --   TR5: 748-794, 796-804
+< --   D-20: 813-817, 819-832, 834-847, 849-862, 864-877
+< --   R7: 813-817, 819-832, 834-847, 849-862, 864-877
+< --   C-30: 813-817, 819-832, 834-847, 849-862, 864-877
+< --   D-8: 886-890, 960-1008
+< --   D-21: 886-890
+< --   CLAUDE.md-s6-per-role-revoke: 886-890
+< --   C-27: 906-914
+< --   O-1: 906-914
+< --   D-11: 929-933
+< --   042-precedent: 929-933
+< --   CLAUDE.md-s6-ACL-fingerprint: 960-1008
+< --   R8: 1012-1101
+< --   S-D: 1012-1101
+< --   C-31: 1012-1101
+< --   down-order: 1012-1101
+---
+> --   E7: 134-159, 620-756
+> --   E12: 134-159, 810-832, 834-853
+> --   E-codes-table: 134-159
+> --   N-1: 134-159, 1028-1076
+> --   D-31: 134-159
+> --   lock-paths: 161-219
+> --   R3: 161-219, 454-524, 620-756, 758-804
+> --   D-26: 161-219
+> --   Q2-2: 161-219
+> --   Q2-3: 161-219
+> --   S-C: 161-219
+> --   D-27: 161-219, 620-756
+> --   S-F: 221-231
+> --   S-E: 221-231
+> --   D-4: 221-231, 271-295, 302-329
+> --   Q2-6: 233-244
+> --   D-22: 233-244, 337-386
+> --   D-25: 233-244, 337-386
+> --   B3: 246-256, 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+> --   S-B: 246-256
+> --   D-19: 246-256, 271-295, 337-386
+> --   D-1: 271-295, 337-386
+> --   S-2: 271-295, 302-329, 1080-1172
+> --   D-5: 271-295, 302-329, 337-386, 882-895, 897-910, 912-925, 927-940
+> --   D-30: 271-295
+> --   S-A: 271-295, 337-386, 393-430
+> --   S4: 271-295, 337-386
+> --   C-29: 271-295, 302-329, 337-386, 393-430
+> --   D-29: 271-295, 302-329, 337-386, 393-430, 1080-1172
+> --   S-3: 302-329, 526-618, 620-756, 758-804
+> --   D-9: 302-329, 997-1001
+> --   D-10: 302-329, 997-1001
+> --   D-18: 337-386
+> --   D-23: 337-386, 620-756
+> --   D-2: 393-430
+> --   D-3: 393-430, 437-442, 526-618
+> --   R2: 393-430, 526-618
+> --   Q2-5: 393-430
+> --   R5: 393-430
+> --   C-37: 393-430
+> --   Q-1: 393-430
+> --   N1: 437-442
+> --   A33: 437-442
+> --   E8: 437-442
+> --   C-35: 437-442
+> --   TR1: 454-524, 855-867
+> --   TR2: 454-524
+> --   F4-1: 454-524
+> --   B2: 454-524, 526-618
+> --   B-2: 454-524
+> --   R4: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 949-953,
+> --         969-982, 1028-1076
+> --   D-7: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 969-982
+> --   E1: 454-524
+> --   E2: 454-524
+> --   E3: 454-524
+> --   E4: 454-524
+> --   E5: 454-524
+> --   E10: 454-524, 526-618
+> --   E14: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+> --   A28: 454-524
+> --   A34: 454-524
+> --   TR3: 526-618, 855-867
+> --   C-36: 526-618, 620-756
+> --   Q2-4: 526-618
+> --   TR4a: 620-756, 855-867
+> --   TR4b: 620-756, 855-867
+> --   TR4c: 620-756, 855-867
+> --   B-1: 620-756
+> --   S-1: 620-756, 758-804
+> --   D-6: 620-756, 758-804
+> --   S6: 620-756
+> --   B1: 620-756
+> --   E6: 620-756
+> --   O-3: 620-756
+> --   E9: 620-756, 758-804
+> --   E11: 620-756, 758-804
+> --   E13: 620-756
+> --   TR5: 758-804, 855-867
+> --   F4-2: 810-832, 834-853, 855-867
+> --   D-20: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   R7: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   C-30: 876-880, 882-895, 897-910, 912-925, 927-940
+> --   D-8: 949-953, 1028-1076
+> --   D-21: 949-953
+> --   CLAUDE.md-s6-per-role-revoke: 949-953
+> --   C-27: 969-982
+> --   O-1: 969-982
+> --   D-11: 997-1001
+> --   042-precedent: 997-1001
+> --   CLAUDE.md-s6-ACL-fingerprint: 1028-1076
+> --   R8: 1080-1172
+> --   S-D: 1080-1172
+> --   C-31: 1080-1172
+> --   down-order: 1080-1172
+149c153,155
+< --   E12 (not raised) CHECK/FK, SQLSTATE 23514 / 23503
+---
+> --   E12 QE012  F4-2  INSERT guards (deliveries not 'incomplete' or carrying
+> --                   attribution/stamp/reason values; capture_documents
+> --                   carrying ack values); also raised by CHECK/FK, SQLSTATE 23514 / 23503
+448c454
+< -- [src: TR1, TR2, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+---
+> -- [src: TR1, TR2, F4-1, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+471a478,481
+>   -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
+>   -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
+>   NEW.linked_at := now();
+> 
+796c806,859
+< -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5]
+---
+> -- F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values. A delivery is CREATED
+> -- 'incomplete' (D1; plan v3 line 105: it becomes 'awaiting_pm' inside the engineer RPC when the ack is stored,
+> -- i.e. by UPDATE), so exactly 'incomplete' is allowed; every other status and every attribution/stamp/reason
+> -- column must be NULL at INSERT. These fields are set only through the guarded UPDATE path.
+> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_deliveries_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.status IS DISTINCT FROM 'incomplete'
+>      OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
+>      OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
+>      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: F4-2, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_capture_documents_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5, F4-2]
+> CREATE TRIGGER tr_deliveries_before_insert BEFORE INSERT ON public.deliveries
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_insert();
+> CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_insert();
+914a978,982
+> -- F4-2: the two INSERT-guard functions, same shape (O-1).
+> REVOKE ALL ON FUNCTION public.trg_deliveries_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_insert() TO postgres;
+> REVOKE ALL ON FUNCTION public.trg_capture_documents_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_insert() TO postgres;
+988c1056
+<   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+---
+>   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
+1056c1124,1125
+< --            'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+---
+> --            'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+> --            'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
+1083a1153,1154
+> -- DROP FUNCTION public.trg_deliveries_before_insert();
+> -- DROP FUNCTION public.trg_capture_documents_before_insert();
+$ psql -d t_T_TRIG_red5 -v ON_ERROR_STOP=1 -f old-ecc8e1e.sql   (049 UP)
 [exit 0]
 (fixtures: src/_lib.sql, src/_fixture.sql loaded)
-$ psql -X -e -d t_T_TRIG_green -f T-TRIG.sql (tokens expanded by src/expand.py)
+$ psql -X -e -d t_T_TRIG_red5 -f T-TRIG.sql (tokens expanded by src/expand.py)
 == T-TRIG: TR1..TR5 and the A33 index -- every refusal with its E-code, each with a positive control ==
 Output format is unaligned.
 -- setup: DC V1/D1; DC V2/D2 (will be internal_transfer); invoice D3/V3/L1; invoice D4/V4/L2; plain invoice document D5
@@ -1876,8 +2545,11 @@ SELECT t.expect('E5 link to a REJECTED DC delivery', $$INSERT INTO public.delive
 PASS: E5 link to a REJECTED DC delivery -- refused, SQLSTATE=QE005 MESSAGE=E5
 SELECT t.mk_doc('50000000-0000-0000-0000-000000000006', 'invoice', 'SM_T_inv6');
 50000000-0000-0000-0000-000000000006
-INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id, status, rejected_by, rejected_at, reject_reason) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'bad invoice');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006');
 INSERT 0 1
+-- (F4-2: a delivery can no longer be INSERTed already rejected; it is created incomplete and rejected through the guarded UPDATE path)
+UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad invoice' WHERE id = '60000000-0000-0000-0000-000000000006';
+UPDATE 1
 SELECT t.expect('E5 (A34) self-link for a REJECTED automatic delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000006', '50000000-0000-0000-0000-000000000006', 'created_from_invoice')$$, 'E5');
 PASS: E5 (A34) self-link for a REJECTED automatic delivery -- refused, SQLSTATE=QE005 MESSAGE=E5
 
@@ -1912,7 +2584,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 PASS: E6 V1 still supplier -- value = supplier
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:50: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:52: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 PASS: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- refused, SQLSTATE=QE007 MESSAGE=E7
@@ -2099,6 +2771,54 @@ PASS: S-3 engineer_ack_at was stamped as the transaction time -- value = true
 COMMIT;
 COMMIT
 
+-- ===== F4-1 (per Aravind 11 Oct): linked_at is stamped by the database at INSERT =====
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000021', '60000000-0000-0000-0000-000000000021', 'SM_T_dc21');
+60000000-0000-0000-0000-000000000021
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000022', 'invoice', 'SM_T_inv22');
+50000000-0000-0000-0000-000000000022
+BEGIN;
+BEGIN
+SELECT t.expect('F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, linked_at) VALUES ('70000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000021', '50000000-0000-0000-0000-000000000022', 'pm_manual', '30000000-0000-0000-0000-000000000001', now() + interval '5 days')$$, 'ok');
+PASS: F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days -- succeeded as expected (1 row(s))
+SELECT t.val('F4-1 linked_at was stored as the transaction time', $$SELECT (linked_at = now())::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'true');
+FAIL: F4-1 linked_at was stored as the transaction time -- expected true got false
+COMMIT;
+COMMIT
+SELECT t.expect('F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at)', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'pm_unlinked' WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'ok');
+FAIL: F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at) -- expected ok, got refusal SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+
+-- ===== F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values (E12). A delivery is CREATED incomplete. =====
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000023', 'dc', 'SM_T_doc23');
+50000000-0000-0000-0000-000000000023
+SELECT t.expect('F4-2 INSERT a delivery as approved (with approver and time)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000023', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'E12');
+FAIL: F4-2 INSERT a delivery as approved (with approver and time) -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying approved_by', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, approved_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', '30000000-0000-0000-0000-000000000001')$$, 'E12');
+FAIL: F4-2 INSERT an incomplete delivery carrying approved_by -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying cancel_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, cancel_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'superseded_by_link')$$, 'E12');
+FAIL: F4-2 INSERT an incomplete delivery carrying cancel_reason -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('F4-2 INSERT a delivery as rejected', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'x')$$, 'E12');
+FAIL: F4-2 INSERT a delivery as rejected -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'awaiting_pm')$$, 'E12');
+FAIL: F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored) -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 INSERT a document with engineer_ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42a', 'yes', now())$$, 'E12');
+FAIL: F4-2 INSERT a document with engineer_ack -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('F4-2 INSERT a document with engineer_ack_note only', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42b', 'note')$$, 'E12');
+FAIL: F4-2 INSERT a document with engineer_ack_note only -- expected E12, got refusal SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'ok');
+FAIL: F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds -- expected ok, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42c')$$, 'ok');
+PASS: F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds -- succeeded as expected (1 row(s))
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+BEGIN
+SELECT t.val('isolation level of this transaction', $$SELECT current_setting('transaction_isolation')$$, 'repeatable read');
+PASS: isolation level of this transaction -- value = repeatable read
+SELECT t.expect('E14 the delivery INSERT guard under RR', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'E14');
+FAIL: E14 the delivery INSERT guard under RR -- expected E14, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('E14 the document INSERT guard under RR', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42d')$$, 'E14');
+FAIL: E14 the document INSERT guard under RR -- expected refusal E14 but the statement SUCCEEDED
+ROLLBACK;
+ROLLBACK
+
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
 BEGIN
@@ -2123,5 +2843,354 @@ ROLLBACK
 SELECT t.expect('positive control: the same update under the default READ COMMITTED', $$UPDATE public.deliveries SET vehicle_number = 'RC1' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'ok');
 PASS: positive control: the same update under the default READ COMMITTED -- succeeded as expected (1 row(s))
 
->>> RESULT t_T_TRIG_green: PASS=87 FAIL=0   (declared EXPECT_PASS=87, static assertion lines=87)
->>> OVERALL T-TRIG: RED failed as required, GREEN PASS=87 == expected 87 (static 87), FAIL=0
+>>> RESULT t_T_TRIG_red5: PASS=90 FAIL=12   (declared EXPECT_PASS=102, static assertion lines=102)
+>>> RED verdict: test FAILED against the mutant (FAIL=12) -- the test can fail: OK
+
+################ GREEN run: the real file ################
+$ psql -d t_T_TRIG_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_TRIG_green -f T-TRIG.sql (tokens expanded by src/expand.py)
+== T-TRIG: TR1..TR5 and the A33 index -- every refusal with its E-code, each with a positive control ==
+Output format is unaligned.
+-- setup: DC V1/D1; DC V2/D2 (will be internal_transfer); invoice D3/V3/L1; invoice D4/V4/L2; plain invoice document D5
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'SM_T_dc1');
+60000000-0000-0000-0000-000000000001
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', 'SM_T_dc2');
+60000000-0000-0000-0000-000000000002
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000003', '60000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000001', 'SM_T_inv3');
+50000000-0000-0000-0000-000000000003
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000004', '60000000-0000-0000-0000-000000000004', '70000000-0000-0000-0000-000000000002', 'SM_T_inv4');
+50000000-0000-0000-0000-000000000004
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000005', 'invoice', 'SM_T_inv5');
+50000000-0000-0000-0000-000000000005
+
+-- ===== TR1 XOR (A28): E1 / E2 =====
+SELECT t.expect('E1 PM link of D3 while D3 has an ACTIVE SELF-LINK', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000003', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'E1');
+PASS: E1 PM link of D3 while D3 has an ACTIVE SELF-LINK -- refused, SQLSTATE=QE001 MESSAGE=E1
+-- PATH 1 on D3: soft-unlink the self-link, cancel V3, insert the pm_manual link L3 (V1 <- D3)
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000001';
+UPDATE 1
+UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000003';
+UPDATE 1
+SELECT t.expect('PATH 1 positive control: pm_manual link V1 <- D3', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000003', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'ok');
+PASS: PATH 1 positive control: pm_manual link V1 <- D3 -- succeeded as expected (1 row(s))
+SELECT t.expect('E2 self-link of D3 while D3 has an ACTIVE PM LINK', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice')$$, 'E2');
+PASS: E2 self-link of D3 while D3 has an ACTIVE PM LINK -- refused, SQLSTATE=QE002 MESSAGE=E2
+
+-- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:20: error: unterminated quoted string
+
+SELECT t.expect('TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000002'$$, 'ok');
+PASS: TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds -- succeeded as expected (1 row(s))
+SELECT t.expect('E3link to an INTERNAL TRANSFER', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000005', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'E3');
+PASS: E3link to an INTERNAL TRANSFER -- refused, SQLSTATE=QE003 MESSAGE=E3
+SELECT t.expect('E4 link to an AUTOMATIC delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000004', '50000000-0000-0000-0000-000000000005', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'E4');
+PASS: E4 link to an AUTOMATIC delivery -- refused, SQLSTATE=QE004 MESSAGE=E4
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000007', '60000000-0000-0000-0000-000000000007', 'SM_T_dc7');
+60000000-0000-0000-0000-000000000007
+UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad dc' WHERE id = '60000000-0000-0000-0000-000000000007';
+UPDATE 1
+SELECT t.expect('E5 link to a REJECTED DC delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000007', '50000000-0000-0000-0000-000000000005', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'E5');
+PASS: E5 link to a REJECTED DC delivery -- refused, SQLSTATE=QE005 MESSAGE=E5
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000006', 'invoice', 'SM_T_inv6');
+50000000-0000-0000-0000-000000000006
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000006');
+INSERT 0 1
+-- (F4-2: a delivery can no longer be INSERTed already rejected; it is created incomplete and rejected through the guarded UPDATE path)
+UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad invoice' WHERE id = '60000000-0000-0000-0000-000000000006';
+UPDATE 1
+SELECT t.expect('E5 (A34) self-link for a REJECTED automatic delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000006', '50000000-0000-0000-0000-000000000006', 'created_from_invoice')$$, 'E5');
+PASS: E5 (A34) self-link for a REJECTED automatic delivery -- refused, SQLSTATE=QE005 MESSAGE=E5
+
+-- ===== A33 (unique index): a DC has at most one active link -- E8 =====
+SELECT t.expect('E8 second active link on V1 (already linked by L3)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000005', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, '23505');
+PASS: E8 second active link on V1 (already linked by L3) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "uq_dil_activ
+
+-- ===== TR3: link edits =====
+SELECT t.expect('E10 change delivery_id of an active link', $$UPDATE public.delivery_invoice_links SET delivery_id = '60000000-0000-0000-0000-000000000002' WHERE id = '70000000-0000-0000-0000-000000000003'$$, 'E10');
+PASS: E10 change delivery_id of an active link -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.expect('E10 change linked_by of an active link', $$UPDATE public.delivery_invoice_links SET linked_by = '30000000-0000-0000-0000-000000000006' WHERE id = '70000000-0000-0000-0000-000000000003'$$, 'E10');
+PASS: E10 change linked_by of an active link -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.expect('E10 half an unlink (unlinked_at only)', $$UPDATE public.delivery_invoice_links SET unlinked_at = now() WHERE id = '70000000-0000-0000-0000-000000000003'$$, 'E10');
+PASS: E10 half an unlink (unlinked_at only) -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.expect('TR3 positive control: no-op update of an active link', $$UPDATE public.delivery_invoice_links SET created_at = created_at WHERE id = '70000000-0000-0000-0000-000000000003'$$, 'ok');
+PASS: TR3 positive control: no-op update of an active link -- succeeded as expected (1 row(s))
+
+-- ===== TR4a immutable columns: E9 =====
+SELECT t.expect('E9 change received_at', $$UPDATE public.deliveries SET received_at = received_at - interval '1 minute' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'E9');
+PASS: E9 change received_at -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('E9 change reported_by', $$UPDATE public.deliveries SET reported_by = '30000000-0000-0000-0000-000000000001' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'E9');
+PASS: E9 change reported_by -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('E9 change project_id', $$UPDATE public.deliveries SET project_id = '20000000-0000-0000-0000-000000000002' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'E9');
+PASS: E9 change project_id -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('E9 change dc_document_id', $$UPDATE public.deliveries SET dc_document_id = '50000000-0000-0000-0000-000000000002' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'E9');
+PASS: E9 change dc_document_id -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('E9 change created_from_invoice_id of an automatic delivery', $$UPDATE public.deliveries SET created_from_invoice_id = '50000000-0000-0000-0000-000000000005' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E9');
+PASS: E9 change created_from_invoice_id of an automatic delivery -- refused, SQLSTATE=QE009 MESSAGE=E9
+
+-- ===== TR4b retype to internal_transfer while linked: E6 (and observation O-3) =====
+SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'E6');
+PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
+SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
+PASS: E6 V1 still supplier -- value = supplier
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:52: error: unterminated quoted string
+
+SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
+PASS: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- refused, SQLSTATE=QE007 MESSAGE=E7
+SELECT t.expect('E7 (O-3) rejected automatic V6 (no active link) retyped to internal_transfer -> E7', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000006'$$, 'E7');
+PASS: E7 (O-3) rejected automatic V6 (no active link) retyped to internal_transfer -> E7 -- refused, SQLSTATE=QE007 MESSAGE=E7
+SELECT t.val('E7 V4 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'supplier');
+PASS: E7 V4 still supplier -- value = supplier
+SELECT t.expect('E7 backstop: the CHECK still refuses an automatic delivery INSERTed as internal_transfer (23514)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, created_from_invoice_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000005', 'internal_transfer')$$, '23514');
+PASS: E7 backstop: the CHECK still refuses an automatic delivery INSERTed as internal_transfer (23514) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('E6 is unchanged for a DC delivery: linked DC V1 retyped -> E6 (still)', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'E6');
+PASS: E6 is unchanged for a DC delivery: linked DC V1 retyped -> E6 (still) -- refused, SQLSTATE=QE006 MESSAGE=E6
+
+-- ===== TR4c status transitions =====
+SELECT t.expect('E11 nothing leaves rejected (V7 rejected -> incomplete)', $$UPDATE public.deliveries SET status = 'incomplete', rejected_by = NULL, rejected_at = NULL, reject_reason = NULL WHERE id = '60000000-0000-0000-0000-000000000007'$$, 'E11');
+PASS: E11 nothing leaves rejected (V7 rejected -> incomplete) -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000008', '60000000-0000-0000-0000-000000000008', 'SM_T_dc8');
+60000000-0000-0000-0000-000000000008
+SELECT t.expect('positive: incomplete -> approved (V8)', $$UPDATE public.deliveries SET status = 'approved', approved_by = '30000000-0000-0000-0000-000000000001', approved_at = now() WHERE id = '60000000-0000-0000-0000-000000000008'$$, 'ok');
+PASS: positive: incomplete -> approved (V8) -- succeeded as expected (1 row(s))
+SELECT t.expect('E11 approved -> awaiting_pm', $$UPDATE public.deliveries SET status = 'awaiting_pm', approved_by = NULL, approved_at = NULL WHERE id = '60000000-0000-0000-0000-000000000008'$$, 'E11');
+PASS: E11 approved -> awaiting_pm -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000009', '60000000-0000-0000-0000-000000000009', 'SM_T_dc9');
+60000000-0000-0000-0000-000000000009
+SELECT t.expect('positive: incomplete -> awaiting_pm (V9)', $$UPDATE public.deliveries SET status = 'awaiting_pm' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'ok');
+PASS: positive: incomplete -> awaiting_pm (V9) -- succeeded as expected (1 row(s))
+SELECT t.expect('E11 awaiting_pm -> incomplete', $$UPDATE public.deliveries SET status = 'incomplete' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'E11');
+PASS: E11 awaiting_pm -> incomplete -- refused, SQLSTATE=QE011 MESSAGE=E11
+-- D-23 approved means locked
+SELECT t.expect('E11 approved V8: vehicle_number', $$UPDATE public.deliveries SET vehicle_number = 'TN01AB1234' WHERE id = '60000000-0000-0000-0000-000000000008'$$, 'E11');
+PASS: E11 approved V8: vehicle_number -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('E11 approved V8: delivery_type', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000008'$$, 'E11');
+PASS: E11 approved V8: delivery_type -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('E11 approved V8: dc_number', $$UPDATE public.deliveries SET dc_number = 'DC-1' WHERE id = '60000000-0000-0000-0000-000000000008'$$, 'E11');
+PASS: E11 approved V8: dc_number -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('E11 approved V8: dc_date', $$UPDATE public.deliveries SET dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000008'$$, 'E11');
+PASS: E11 approved V8: dc_date -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('positive: a non-locked column (reject_reason is irrelevant; caption-like edit) -- no-op update of approved V8', $$UPDATE public.deliveries SET dc_number = dc_number WHERE id = '60000000-0000-0000-0000-000000000008'$$, 'ok');
+PASS: positive: a non-locked column (reject_reason is irrelevant; caption-like edit) -- no-op update of approved V8 -- succeeded as expected (1 row(s))
+-- B-1 (SQL review r1): who approved / rejected / cancelled cannot be rewritten after the fact; each group changes only on its own transition
+SELECT t.expect('B-1 rewrite the approver of approved V8, status unchanged', $$UPDATE public.deliveries SET approved_by = '30000000-0000-0000-0000-000000000006', approved_at = now() WHERE id = '60000000-0000-0000-0000-000000000008'$$, 'E11');
+PASS: B-1 rewrite the approver of approved V8, status unchanged -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('B-1 clear the approver of approved V8, status unchanged', $$UPDATE public.deliveries SET approved_by = NULL, approved_at = NULL WHERE id = '60000000-0000-0000-0000-000000000008'$$, 'E11');
+PASS: B-1 clear the approver of approved V8, status unchanged -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.val('B-1 V8 approver is still PM1', $$SELECT (approved_by = '30000000-0000-0000-0000-000000000001')::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000008'$$, 'true');
+PASS: B-1 V8 approver is still PM1 -- value = true
+SELECT t.expect('B-1 set rejected_by on awaiting_pm V9 without moving to rejected', $$UPDATE public.deliveries SET rejected_by = '30000000-0000-0000-0000-000000000001' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'E11');
+PASS: B-1 set rejected_by on awaiting_pm V9 without moving to rejected -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('B-1 set cancelled_at/cancel_reason on V9 without moving to cancelled', $$UPDATE public.deliveries SET cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'E11');
+PASS: B-1 set cancelled_at/cancel_reason on V9 without moving to cancelled -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('B-1 rewrite reject_reason of rejected V7, status unchanged', $$UPDATE public.deliveries SET reject_reason = 'rewritten' WHERE id = '60000000-0000-0000-0000-000000000007'$$, 'E11');
+PASS: B-1 rewrite reject_reason of rejected V7, status unchanged -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000013', '60000000-0000-0000-0000-000000000013', 'SM_T_dc13');
+60000000-0000-0000-0000-000000000013
+SELECT t.expect('B-1 positive: a move INTO rejected sets rejected_* (V13)', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'short count' WHERE id = '60000000-0000-0000-0000-000000000013'$$, 'ok');
+PASS: B-1 positive: a move INTO rejected sets rejected_* (V13) -- succeeded as expected (1 row(s))
+-- approved automatic delivery, superseded, cancelled, restored (D-23, D-33): invoice D10 / V10 / L10
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000010', '60000000-0000-0000-0000-000000000010', '70000000-0000-0000-0000-000000000010', 'SM_T_inv10');
+50000000-0000-0000-0000-000000000010
+UPDATE public.deliveries SET status = 'approved', approved_by = '30000000-0000-0000-0000-000000000001', approved_at = now() WHERE id = '60000000-0000-0000-0000-000000000010';
+UPDATE 1
+SELECT t.expect('E13 cancel V10 while its self-link is active (C-36)', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link', approved_by = approved_by WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'E13');
+PASS: E13 cancel V10 while its self-link is active (C-36) -- refused, SQLSTATE=QE013 MESSAGE=E13
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000010';
+UPDATE 1
+SELECT t.val('snapshot recorded the pre-cancel status', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000010'$$, 'approved');
+PASS: snapshot recorded the pre-cancel status -- value = approved
+SELECT t.expect('B-1 cancel V10 WHILE changing approved_by', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link', approved_by = '30000000-0000-0000-0000-000000000006' WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'E11');
+PASS: B-1 cancel V10 WHILE changing approved_by -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.val('B-1 V10 is still approved by PM1 after the refused cancel', $$SELECT status || ':' || (approved_by = '30000000-0000-0000-0000-000000000001')::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'approved:true');
+PASS: B-1 V10 is still approved by PM1 after the refused cancel -- value = approved:true
+SELECT t.expect('positive: approved -> cancelled once unlinked', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'ok');
+PASS: positive: approved -> cancelled once unlinked -- succeeded as expected (1 row(s))
+SELECT t.expect('E11 cancelled V10: content locked (vehicle_number)', $$UPDATE public.deliveries SET vehicle_number = 'X1' WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'E11');
+PASS: E11 cancelled V10: content locked (vehicle_number) -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('positive: restore cancelled -> incomplete (approved_* and cancelled_* cleared)', $$UPDATE public.deliveries SET status = 'incomplete', cancelled_at = NULL, cancel_reason = NULL, approved_by = NULL, approved_at = NULL WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'ok');
+PASS: positive: restore cancelled -> incomplete (approved_* and cancelled_* cleared) -- succeeded as expected (1 row(s))
+SELECT t.val('B-1 positive: after restore approved_* and cancelled_* are cleared', $$SELECT (approved_by IS NULL AND approved_at IS NULL AND cancelled_at IS NULL AND cancel_reason IS NULL)::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'true');
+PASS: B-1 positive: after restore approved_* and cancelled_* are cleared -- value = true
+SELECT t.expect('positive: after restore the content is editable again', $$UPDATE public.deliveries SET vehicle_number = 'TN01AB1234' WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'ok');
+PASS: positive: after restore the content is editable again -- succeeded as expected (1 row(s))
+
+-- ===== B-2 (SQL review r1): a self-link is refused onto a CANCELLED delivery (the other direction of C-36) =====
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000014', '60000000-0000-0000-0000-000000000014', '70000000-0000-0000-0000-000000000014', 'SM_T_inv14');
+50000000-0000-0000-0000-000000000014
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000014';
+UPDATE 1
+UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000014';
+UPDATE 1
+SELECT t.expect('B-2 self-link INSERTed onto cancelled V14 (invoice D14 has no active link)', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000015', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000014', '50000000-0000-0000-0000-000000000014', 'created_from_invoice')$$, 'E5');
+PASS: B-2 self-link INSERTed onto cancelled V14 (invoice D14 has no active link) -- refused, SQLSTATE=QE005 MESSAGE=E5
+SELECT t.val('B-2 no active link was created on V14', $$SELECT count(*)::text FROM public.delivery_invoice_links WHERE delivery_id = '60000000-0000-0000-0000-000000000014' AND unlinked_at IS NULL$$, '0');
+PASS: B-2 no active link was created on V14 -- value = 0
+SELECT t.expect('B-2 positive: restore V14 FIRST (paths 2 and 4)', $$UPDATE public.deliveries SET status = 'incomplete', cancelled_at = NULL, cancel_reason = NULL WHERE id = '60000000-0000-0000-0000-000000000014'$$, 'ok');
+PASS: B-2 positive: restore V14 FIRST (paths 2 and 4) -- succeeded as expected (1 row(s))
+SELECT t.expect('B-2 positive: THEN the new self-link is accepted', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000015', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000014', '50000000-0000-0000-0000-000000000014', 'created_from_invoice')$$, 'ok');
+PASS: B-2 positive: THEN the new self-link is accepted -- succeeded as expected (1 row(s))
+
+-- ===== TR5 capture_documents =====
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000011', 'dc', 'SM_T_doc11');
+50000000-0000-0000-0000-000000000011
+SELECT t.expect('positive: set ack once', $$UPDATE public.capture_documents SET engineer_ack = 'no', engineer_ack_at = now(), engineer_ack_note = 'two bags short' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'ok');
+PASS: positive: set ack once -- succeeded as expected (1 row(s))
+SELECT t.expect('E11 change ack once set', $$UPDATE public.capture_documents SET engineer_ack = 'yes', engineer_ack_note = NULL WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'E11');
+PASS: E11 change ack once set -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('E11 change ack_at once set', $$UPDATE public.capture_documents SET engineer_ack_at = now() + interval '1 minute' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'E11');
+PASS: E11 change ack_at once set -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('E11 change the note once set', $$UPDATE public.capture_documents SET engineer_ack_note = 'other' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'E11');
+PASS: E11 change the note once set -- refused, SQLSTATE=QE011 MESSAGE=E11
+SELECT t.expect('E9 change kind', $$UPDATE public.capture_documents SET kind = 'invoice' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'E9');
+PASS: E9 change kind -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('E9 change sent_by', $$UPDATE public.capture_documents SET sent_by = '30000000-0000-0000-0000-000000000001' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'E9');
+PASS: E9 change sent_by -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('E9 change source_message_sid', $$UPDATE public.capture_documents SET source_message_sid = 'SM_other' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'E9');
+PASS: E9 change source_message_sid -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('E9 change project_id', $$UPDATE public.capture_documents SET project_id = '20000000-0000-0000-0000-000000000002' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'E9');
+PASS: E9 change project_id -- refused, SQLSTATE=QE009 MESSAGE=E9
+-- S-1 (SQL review r1): id and created_at are immutable (every ordering CHECK is measured against created_at)
+SELECT t.expect('S-1 change id of a delivery', $$UPDATE public.deliveries SET id = '60000000-0000-0000-0000-000000000020' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'E9');
+PASS: S-1 change id of a delivery -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('S-1 change created_at of a delivery', $$UPDATE public.deliveries SET created_at = created_at - interval '2 days' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'E9');
+PASS: S-1 change created_at of a delivery -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('S-1 change id of a capture_documents row', $$UPDATE public.capture_documents SET id = '50000000-0000-0000-0000-000000000020' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'E9');
+PASS: S-1 change id of a capture_documents row -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('S-1 change created_at of a capture_documents row', $$UPDATE public.capture_documents SET created_at = created_at - interval '2 days' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'E9');
+PASS: S-1 change created_at of a capture_documents row -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('positive: caption is editable', $$UPDATE public.capture_documents SET caption = 'cement' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'ok');
+PASS: positive: caption is editable -- succeeded as expected (1 row(s))
+
+
+-- ===== S-3 (SQL review r2, Option A per Aravind): the database stamps the time at each allowed transition =====
+-- Each block is ONE transaction, so now() is the same value the trigger used; the caller supplies a FUTURE time and it must not be stored.
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000015', '60000000-0000-0000-0000-000000000015', 'SM_T_dc15');
+60000000-0000-0000-0000-000000000015
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000016', '60000000-0000-0000-0000-000000000016', 'SM_T_dc16');
+60000000-0000-0000-0000-000000000016
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000017', '60000000-0000-0000-0000-000000000017', '70000000-0000-0000-0000-000000000017', 'SM_T_inv17');
+50000000-0000-0000-0000-000000000017
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000018', 'dc', 'SM_T_doc18');
+50000000-0000-0000-0000-000000000018
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000019', 'dc', 'SM_T_doc19');
+50000000-0000-0000-0000-000000000019
+BEGIN;
+BEGIN
+SELECT t.expect('S-3 approved_at: move INTO approved with approved_at = now() + 5 days', $$UPDATE public.deliveries SET status = 'approved', approved_by = '30000000-0000-0000-0000-000000000001', approved_at = now() + interval '5 days' WHERE id = '60000000-0000-0000-0000-000000000015'$$, 'ok');
+PASS: S-3 approved_at: move INTO approved with approved_at = now() + 5 days -- succeeded as expected (1 row(s))
+SELECT t.val('S-3 approved_at was stored as the transaction time', $$SELECT (approved_at = now())::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000015'$$, 'true');
+PASS: S-3 approved_at was stored as the transaction time -- value = true
+COMMIT;
+COMMIT
+BEGIN;
+BEGIN
+SELECT t.expect('S-3 rejected_at: move INTO rejected with rejected_at = now() + 30 days', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now() + interval '30 days', reject_reason = 'short count' WHERE id = '60000000-0000-0000-0000-000000000016'$$, 'ok');
+PASS: S-3 rejected_at: move INTO rejected with rejected_at = now() + 30 days -- succeeded as expected (1 row(s))
+SELECT t.val('S-3 rejected_at was stored as the transaction time', $$SELECT (rejected_at = now())::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000016'$$, 'true');
+PASS: S-3 rejected_at was stored as the transaction time -- value = true
+COMMIT;
+COMMIT
+BEGIN;
+BEGIN
+SELECT t.expect('S-3 unlinked_at: unlink with unlinked_at = now() + 3 days', $$UPDATE public.delivery_invoice_links SET unlinked_at = now() + interval '3 days', unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000017'$$, 'ok');
+PASS: S-3 unlinked_at: unlink with unlinked_at = now() + 3 days -- succeeded as expected (1 row(s))
+SELECT t.val('S-3 unlinked_at was stored as the transaction time', $$SELECT (unlinked_at = now())::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000017'$$, 'true');
+PASS: S-3 unlinked_at was stored as the transaction time -- value = true
+SELECT t.expect('S-3 cancelled_at: move INTO cancelled with cancelled_at = now() + 7 days', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now() + interval '7 days', cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000017'$$, 'ok');
+PASS: S-3 cancelled_at: move INTO cancelled with cancelled_at = now() + 7 days -- succeeded as expected (1 row(s))
+SELECT t.val('S-3 cancelled_at was stored as the transaction time', $$SELECT (cancelled_at = now())::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000017'$$, 'true');
+PASS: S-3 cancelled_at was stored as the transaction time -- value = true
+COMMIT;
+COMMIT
+BEGIN;
+BEGIN
+SELECT t.expect('S-3 engineer_ack_at: ack first set with engineer_ack_at = now() + 10 days', $$UPDATE public.capture_documents SET engineer_ack = 'yes', engineer_ack_at = now() + interval '10 days' WHERE id = '50000000-0000-0000-0000-000000000018'$$, 'ok');
+PASS: S-3 engineer_ack_at: ack first set with engineer_ack_at = now() + 10 days -- succeeded as expected (1 row(s))
+SELECT t.val('S-3 engineer_ack_at was stored as the transaction time', $$SELECT (engineer_ack_at = now())::text FROM public.capture_documents WHERE id = '50000000-0000-0000-0000-000000000018'$$, 'true');
+PASS: S-3 engineer_ack_at was stored as the transaction time -- value = true
+COMMIT;
+COMMIT
+BEGIN;
+BEGIN
+SELECT t.expect('S-3 engineer_ack_at: ack first set with NO caller time at all (the database supplies it)', $$UPDATE public.capture_documents SET engineer_ack = 'no' WHERE id = '50000000-0000-0000-0000-000000000019'$$, 'ok');
+PASS: S-3 engineer_ack_at: ack first set with NO caller time at all (the database supplies it) -- succeeded as expected (1 row(s))
+SELECT t.val('S-3 engineer_ack_at was stamped as the transaction time', $$SELECT (engineer_ack_at = now())::text FROM public.capture_documents WHERE id = '50000000-0000-0000-0000-000000000019'$$, 'true');
+PASS: S-3 engineer_ack_at was stamped as the transaction time -- value = true
+COMMIT;
+COMMIT
+
+-- ===== F4-1 (per Aravind 11 Oct): linked_at is stamped by the database at INSERT =====
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000021', '60000000-0000-0000-0000-000000000021', 'SM_T_dc21');
+60000000-0000-0000-0000-000000000021
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000022', 'invoice', 'SM_T_inv22');
+50000000-0000-0000-0000-000000000022
+BEGIN;
+BEGIN
+SELECT t.expect('F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, linked_at) VALUES ('70000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000021', '50000000-0000-0000-0000-000000000022', 'pm_manual', '30000000-0000-0000-0000-000000000001', now() + interval '5 days')$$, 'ok');
+PASS: F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days -- succeeded as expected (1 row(s))
+SELECT t.val('F4-1 linked_at was stored as the transaction time', $$SELECT (linked_at = now())::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'true');
+PASS: F4-1 linked_at was stored as the transaction time -- value = true
+COMMIT;
+COMMIT
+SELECT t.expect('F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at)', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'pm_unlinked' WHERE id = '70000000-0000-0000-0000-000000000021'$$, 'ok');
+PASS: F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at) -- succeeded as expected (1 row(s))
+
+-- ===== F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values (E12). A delivery is CREATED incomplete. =====
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000023', 'dc', 'SM_T_doc23');
+50000000-0000-0000-0000-000000000023
+SELECT t.expect('F4-2 INSERT a delivery as approved (with approver and time)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000023', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'E12');
+PASS: F4-2 INSERT a delivery as approved (with approver and time) -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying approved_by', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, approved_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', '30000000-0000-0000-0000-000000000001')$$, 'E12');
+PASS: F4-2 INSERT an incomplete delivery carrying approved_by -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying cancel_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, cancel_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'superseded_by_link')$$, 'E12');
+PASS: F4-2 INSERT an incomplete delivery carrying cancel_reason -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT a delivery as rejected', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'x')$$, 'E12');
+PASS: F4-2 INSERT a delivery as rejected -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023', 'awaiting_pm')$$, 'E12');
+PASS: F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored) -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT a document with engineer_ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42a', 'yes', now())$$, 'E12');
+PASS: F4-2 INSERT a document with engineer_ack -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 INSERT a document with engineer_ack_note only', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42b', 'note')$$, 'E12');
+PASS: F4-2 INSERT a document with engineer_ack_note only -- refused, SQLSTATE=QE012 MESSAGE=E12
+SELECT t.expect('F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'ok');
+PASS: F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds -- succeeded as expected (1 row(s))
+SELECT t.expect('F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42c')$$, 'ok');
+PASS: F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds -- succeeded as expected (1 row(s))
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+BEGIN
+SELECT t.val('isolation level of this transaction', $$SELECT current_setting('transaction_isolation')$$, 'repeatable read');
+PASS: isolation level of this transaction -- value = repeatable read
+SELECT t.expect('E14 the delivery INSERT guard under RR', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000023')$$, 'E14');
+PASS: E14 the delivery INSERT guard under RR -- refused, SQLSTATE=QE014 MESSAGE=E14
+SELECT t.expect('E14 the document INSERT guard under RR', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_T_f42d')$$, 'E14');
+PASS: E14 the document INSERT guard under RR -- refused, SQLSTATE=QE014 MESSAGE=E14
+ROLLBACK;
+ROLLBACK
+
+-- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+BEGIN
+SELECT t.val('isolation level of this transaction', $$SELECT current_setting('transaction_isolation')$$, 'repeatable read');
+PASS: isolation level of this transaction -- value = repeatable read
+SELECT t.expect('E14 TR1 insert link under RR', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000005', 'created_from_invoice')$$, 'E14');
+PASS: E14 TR1 insert link under RR -- refused, SQLSTATE=QE014 MESSAGE=E14
+SELECT t.expect('E14 TR3 update link under RR', $$UPDATE public.delivery_invoice_links SET created_at = created_at WHERE id = '70000000-0000-0000-0000-000000000003'$$, 'E14');
+PASS: E14 TR3 update link under RR -- refused, SQLSTATE=QE014 MESSAGE=E14
+SELECT t.expect('E14 TR4 update delivery under RR', $$UPDATE public.deliveries SET vehicle_number = 'RR1' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'E14');
+PASS: E14 TR4 update delivery under RR -- refused, SQLSTATE=QE014 MESSAGE=E14
+SELECT t.expect('E14 TR5 update document under RR', $$UPDATE public.capture_documents SET caption = 'rr' WHERE id = '50000000-0000-0000-0000-000000000011'$$, 'E14');
+PASS: E14 TR5 update document under RR -- refused, SQLSTATE=QE014 MESSAGE=E14
+ROLLBACK;
+ROLLBACK
+BEGIN ISOLATION LEVEL SERIALIZABLE;
+BEGIN
+SELECT t.expect('E14 TR4 update delivery under SERIALIZABLE', $$UPDATE public.deliveries SET vehicle_number = 'SZ1' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'E14');
+PASS: E14 TR4 update delivery under SERIALIZABLE -- refused, SQLSTATE=QE014 MESSAGE=E14
+ROLLBACK;
+ROLLBACK
+SELECT t.expect('positive control: the same update under the default READ COMMITTED', $$UPDATE public.deliveries SET vehicle_number = 'RC1' WHERE id = '60000000-0000-0000-0000-000000000009'$$, 'ok');
+PASS: positive control: the same update under the default READ COMMITTED -- succeeded as expected (1 row(s))
+
+>>> RESULT t_T_TRIG_green: PASS=102 FAIL=0   (declared EXPECT_PASS=102, static assertion lines=102)
+>>> OVERALL T-TRIG: RED failed as required, GREEN PASS=102 == expected 102 (static 102), FAIL=0
