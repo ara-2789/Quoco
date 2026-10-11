@@ -12,7 +12,7 @@ SET ROLE service_role;
 SELECT t.val('CI pre-check: helpers present', $$SELECT public.quoco_test_capture_helpers_present()::text$$, 'true');
 \echo -- insert through the helper (service_role has no INSERT grant of its own)
 SELECT t.expect('H1 insert a capture_documents row for the fixture tenant', $$SELECT public.quoco_test_capture_insert('capture_documents', '{"id":"{D1}","tenant_id":"{T1}","project_id":"{P1}","kind":"dc","sent_by":"{U.ENG1}","source_message_sid":"SM_H_1"}'::jsonb)$$, 'ok');
-SELECT t.expect('H2 insert a delivery: generated delivery_date is NOT supplied, defaults apply', $$SELECT public.quoco_test_capture_insert('deliveries', '{"id":"{V1}","tenant_id":"{T1}","project_id":"{P1}","reported_by":"{U.ENG1}","received_at":"2026-09-23T00:30:00+05:30","delivery_type":"supplier","dc_document_id":"{D1}"}'::jsonb)$$, 'ok');
+SELECT t.expect('H2 insert a delivery: generated delivery_date is NOT supplied, defaults apply', $$SELECT public.quoco_test_capture_insert('deliveries', '{"id":"{V1}","tenant_id":"{T1}","project_id":"{P1}","reported_by":"{U.ENG1}","received_at":"2026-09-23T00:30:00+05:30","dc_document_id":"{D1}"}'::jsonb)$$, 'ok');
 SELECT t.val('H2 delivery_date was generated (IST date)', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '{V1}'$$, '2026-09-23');
 SELECT t.expect('H3 a caller NAMING a generated column still gets the rejection', $$SELECT public.quoco_test_capture_insert('deliveries', '{"id":"{V2}","tenant_id":"{T1}","project_id":"{P1}","reported_by":"{U.ENG1}","received_at":"2026-09-23T00:30:00+05:30","dc_document_id":"{D1}","delivery_date":"2026-01-01"}'::jsonb)$$, '428C9');
 \echo -- the tenant guard (same function for insert, update and cleanup)

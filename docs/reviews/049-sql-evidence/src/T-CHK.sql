@@ -10,7 +10,9 @@ SELECT t.mk_doc('{D1}', 'invoice', 'SM_CHK_1');
 SELECT t.mk_doc('{D2}', 'invoice', 'SM_CHK_2');
 SELECT t.mk_doc('{D3}', 'invoice', 'SM_CHK_3');
 SELECT t.mk_doc('{D4}', 'invoice', 'SM_CHK_4');
-INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('{V1}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', 'supplier', '{D1}'), ('{V2}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', 'supplier', '{D2}'), ('{V3}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', 'supplier', '{D3}');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('{V1}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D1}'), ('{V2}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D2}'), ('{V3}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D3}');
+\echo -- (N-4: delivery_type is PM-owned and NULL at INSERT; set through UPDATE, same final state as before)
+UPDATE public.deliveries SET delivery_type = 'supplier' WHERE id IN ('{V1}', '{V2}', '{V3}');
 SELECT t.mk_dc('{D5}', '{V5}', 'SM_CHK_5');
 \echo
 \echo -- ===== A. delivery_invoice_links: the snapshot CHECKs =====

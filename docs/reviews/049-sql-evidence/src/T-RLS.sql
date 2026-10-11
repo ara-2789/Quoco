@@ -6,9 +6,11 @@
 SELECT t.mk_dc('{D1}', '{V1}', 'SM_R_dc1');
 SELECT t.mk_inv('{D2}', '{V2}', '{L1}', 'SM_R_inv2');
 SELECT t.mk_doc('{D3}', 'dc', 'SM_R_dc3', '{P2}');
-INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id) VALUES ('{V3}', '{T1}', '{P2}', '{U.ENG1}', now() - interval '1 hour', 'supplier', '{D3}');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('{V3}', '{T1}', '{P2}', '{U.ENG1}', now() - interval '1 hour', '{D3}');
+UPDATE public.deliveries SET delivery_type = 'supplier' WHERE id = '{V3}';
 SELECT t.mk_doc('{D4}', 'invoice', 'SM_R_inv4', '{P2}');
-INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('{V4}', '{T1}', '{P2}', '{U.ENG1}', now() - interval '1 hour', 'supplier', '{D4}');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('{V4}', '{T1}', '{P2}', '{U.ENG1}', now() - interval '1 hour', '{D4}');
+UPDATE public.deliveries SET delivery_type = 'supplier' WHERE id = '{V4}';
 INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('{L2}', '{T1}', '{P2}', '{V4}', '{D4}', 'created_from_invoice');
 INSERT INTO public.capture_files (id, tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('80000000-0000-0000-0000-000000000001', '{T1}', '{P1}', '{D1}', 1, 'SM_R_f1', 0), ('80000000-0000-0000-0000-000000000002', '{T1}', '{P2}', '{D3}', 1, 'SM_R_f2', 0);
 INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('{D5}', '{T2}', '{P3}', 'dc', '{U.PM3}', 'SM_R_dc5');

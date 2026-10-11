@@ -54,9 +54,11 @@ CREATE OR REPLACE FUNCTION t.mk_dc(p_doc uuid, p_dlv uuid, p_sid text)
 RETURNS uuid LANGUAGE plpgsql AS $$
 BEGIN
   PERFORM t.mk_doc(p_doc, 'dc', p_sid);
-  INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id)
+  INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id)
   VALUES (p_dlv, '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001',
-          '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', p_doc);
+          '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', p_doc);
+  -- N-4 (SQL review r3): delivery_type is PM-owned and NULL at INSERT; set through UPDATE (same final state as before).
+  UPDATE public.deliveries SET delivery_type = 'supplier' WHERE id = p_dlv;
   RETURN p_dlv;
 END;
 $$;
@@ -67,9 +69,11 @@ CREATE OR REPLACE FUNCTION t.mk_inv(p_doc uuid, p_dlv uuid, p_link uuid, p_sid t
 RETURNS uuid LANGUAGE plpgsql AS $$
 BEGIN
   PERFORM t.mk_doc(p_doc, 'invoice', p_sid);
-  INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id)
+  INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id)
   VALUES (p_dlv, '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001',
-          '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', p_doc);
+          '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', p_doc);
+  -- N-4 (SQL review r3): delivery_type set through UPDATE (same final state as before).
+  UPDATE public.deliveries SET delivery_type = 'supplier' WHERE id = p_dlv;
   INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source)
   VALUES (p_link, '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', p_dlv, p_doc, 'created_from_invoice');
   RETURN p_doc;

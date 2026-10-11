@@ -1,4 +1,4 @@
--- EXPECT_PASS: 102
+-- EXPECT_PASS: 122
 \echo == T-TRIG: TR1..TR5 and the A33 index -- every refusal with its E-code, each with a positive control ==
 \pset tuples_only on
 \pset format unaligned
@@ -25,7 +25,8 @@ SELECT t.mk_dc('{D7}', '{V7}', 'SM_T_dc7');
 UPDATE public.deliveries SET status = 'rejected', rejected_by = '{U.PM1}', rejected_at = now(), reject_reason = 'bad dc' WHERE id = '{V7}';
 SELECT t.expect('E5 link to a REJECTED DC delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('{T1}', '{P1}', '{V7}', '{D5}', 'pm_manual', '{U.PM1}')$$, 'E5');
 SELECT t.mk_doc('{D6}', 'invoice', 'SM_T_inv6');
-INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('{V6}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', 'supplier', '{D6}');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('{V6}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D6}');
+UPDATE public.deliveries SET delivery_type = 'supplier' WHERE id = '{V6}';
 \echo -- (F4-2: a delivery can no longer be INSERTed already rejected; it is created incomplete and rejected through the guarded UPDATE path)
 UPDATE public.deliveries SET status = 'rejected', rejected_by = '{U.PM1}', rejected_at = now(), reject_reason = 'bad invoice' WHERE id = '{V6}';
 SELECT t.expect('E5 (A34) self-link for a REJECTED automatic delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('{T1}', '{P1}', '{V6}', '{D6}', 'created_from_invoice')$$, 'E5');
@@ -53,7 +54,10 @@ SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveri
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '{V4}'$$, 'E7');
 SELECT t.expect('E7 (O-3) rejected automatic V6 (no active link) retyped to internal_transfer -> E7', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '{V6}'$$, 'E7');
 SELECT t.val('E7 V4 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '{V4}'$$, 'supplier');
+\echo -- (N-4: the INSERT guard now answers E12 first for this row, so the CHECK backstop is shown with the user triggers disabled on deliveries; same expectation, 23514)
+ALTER TABLE public.deliveries DISABLE TRIGGER USER;
 SELECT t.expect('E7 backstop: the CHECK still refuses an automatic delivery INSERTed as internal_transfer (23514)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, created_from_invoice_id, delivery_type) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D5}', 'internal_transfer')$$, '23514');
+ALTER TABLE public.deliveries ENABLE TRIGGER USER;
 SELECT t.expect('E6 is unchanged for a DC delivery: linked DC V1 retyped -> E6 (still)', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '{V1}'$$, 'E6');
 \echo
 \echo -- ===== TR4c status transitions =====
@@ -175,6 +179,50 @@ SELECT t.val('isolation level of this transaction', $$SELECT current_setting('tr
 SELECT t.expect('E14 the delivery INSERT guard under RR', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D23}')$$, 'E14');
 SELECT t.expect('E14 the document INSERT guard under RR', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_T_f42d')$$, 'E14');
 ROLLBACK;
+\echo
+\echo -- ===== S-4 (SQL review r3, per Aravind 12 Oct): created_at is stamped by the database at INSERT on all three trigger-guarded tables =====
+\echo -- One transaction per case, so now() is the value the trigger used. Future-dated AND past-dated caller values must both be ignored.
+SELECT t.mk_doc('{D31}', 'dc', 'SM_T_dc31');
+SELECT t.mk_doc('{D32}', 'dc', 'SM_T_dc32');
+SELECT t.mk_doc('{D35}', 'invoice', 'SM_T_inv35');
+SELECT t.mk_doc('{D36}', 'invoice', 'SM_T_inv36');
+BEGIN;
+SELECT t.expect('S-4 deliveries: INSERT with created_at = now() + 2 hours', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, created_at) VALUES ('{V31}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D31}', now() + interval '2 hours')$$, 'ok');
+SELECT t.val('S-4 deliveries (future): created_at was stored as the transaction time', $$SELECT (created_at = now())::text FROM public.deliveries WHERE id = '{V31}'$$, 'true');
+COMMIT;
+BEGIN;
+SELECT t.expect('S-4 deliveries: INSERT with created_at = now() - 3 days', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, created_at) VALUES ('{V32}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D32}', now() - interval '3 days')$$, 'ok');
+SELECT t.val('S-4 deliveries (past): created_at was stored as the transaction time', $$SELECT (created_at = now())::text FROM public.deliveries WHERE id = '{V32}'$$, 'true');
+COMMIT;
+BEGIN;
+SELECT t.expect('S-4 capture_documents: INSERT with created_at = now() + 30 days', $$INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid, created_at) VALUES ('{D33}', '{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_T_s4a', now() + interval '30 days')$$, 'ok');
+SELECT t.val('S-4 capture_documents (future): created_at was stored as the transaction time', $$SELECT (created_at = now())::text FROM public.capture_documents WHERE id = '{D33}'$$, 'true');
+COMMIT;
+BEGIN;
+SELECT t.expect('S-4 capture_documents: INSERT with created_at = now() - 3 days', $$INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid, created_at) VALUES ('{D34}', '{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_T_s4b', now() - interval '3 days')$$, 'ok');
+SELECT t.val('S-4 capture_documents (past): created_at was stored as the transaction time', $$SELECT (created_at = now())::text FROM public.capture_documents WHERE id = '{D34}'$$, 'true');
+COMMIT;
+\echo -- ... and the reviewer's consequence: a document born with a future created_at could never be acknowledged. Now it can:
+SELECT t.expect('S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged', $$UPDATE public.capture_documents SET engineer_ack = 'yes' WHERE id = '{D33}'$$, 'ok');
+BEGIN;
+SELECT t.expect('S-4 delivery_invoice_links: INSERT with created_at = now() + 2 days', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, created_at) VALUES ('{L31}', '{T1}', '{P1}', '{V31}', '{D35}', 'pm_manual', '{U.PM1}', now() + interval '2 days')$$, 'ok');
+SELECT t.val('S-4 links (future): created_at was stored as the transaction time', $$SELECT (created_at = now())::text FROM public.delivery_invoice_links WHERE id = '{L31}'$$, 'true');
+COMMIT;
+BEGIN;
+SELECT t.expect('S-4 delivery_invoice_links: INSERT with created_at = now() - 3 days', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, created_at) VALUES ('{L32}', '{T1}', '{P1}', '{V32}', '{D36}', 'pm_manual', '{U.PM1}', now() - interval '3 days')$$, 'ok');
+SELECT t.val('S-4 links (past): created_at was stored as the transaction time', $$SELECT (created_at = now())::text FROM public.delivery_invoice_links WHERE id = '{L32}'$$, 'true');
+COMMIT;
+\echo -- the "C4 shape" (reviewer): received_at in the FUTURE relative to the transaction, with a future created_at to hide it -> refused by deliveries_received_order_chk
+SELECT t.mk_doc('{D37}', 'dc', 'SM_T_dc37');
+SELECT t.expect('S-4 C4 shape: received_at = now() + 1 hour with created_at = now() + 2 hours', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, created_at) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() + interval '1 hour', '{D37}', now() + interval '2 hours')$$, '23514');
+SELECT t.val('S-4 C4 shape: it is deliveries_received_order_chk that refuses it', $$SELECT (t.errmsg('INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, created_at) VALUES (''{T1}'', ''{P1}'', ''{U.ENG1}'', now() + interval ''1 hour'', ''{D37}'', now() + interval ''2 hours'')') LIKE '%deliveries_received_order_chk%')::text$$, 'true');
+\echo
+\echo -- ===== N-4 (SQL review r3, Option A per Aravind 12 Oct): PM-owned fields are NULL at deliveries INSERT; set later only through UPDATE =====
+SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D37}', 'internal_transfer')$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D37}', 'TN01AB1234')$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D37}', 'DC-1')$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D37}', current_date)$$, 'E12');
+SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V21)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '{V21}'$$, 'ok');
 \echo
 \echo -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
