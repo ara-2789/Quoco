@@ -3,6 +3,6 @@ file-size-lint: WARN  docs/plans/email-otp-plan.md  129,577 chars (>= 120,000 wa
 file-size-lint: OK    docs/reviews/049-plan-evidence/pra-plan-v1.md  63,461 chars
 file-size-lint: OK    docs/reviews/049-plan-evidence/pra-plan-v2.md  63,246 chars
 file-size-lint: OK    docs/reviews/049-plan-review-package.md  27,136 chars
-file-size-lint: OK    docs/reviews/049-review-package.md  21,537 chars
+file-size-lint: OK    docs/reviews/049-review-package.md  22,330 chars
 file-size-lint: WARN  docs/reviews/morning-flow-migration-review-package.md  141,180 chars (>= 120,000 warn threshold) — consider splitting.
 file-size-lint: clean (160 files checked, no hard failures).

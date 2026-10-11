@@ -1,12 +1,12 @@
 == 049-sql evidence: T-R5 ==
-generated: 2026-10-11T06:36:28Z
+generated: 2026-10-11T07:00:39Z
 $ git rev-parse HEAD
-0c6239c9f3e913c383e0f94cd38a6024fc8ccb36
-$ SQL artifact commit under test: 668956e6131ee38d3cd96f32edb0c05e29974d0e
-$ git rev-parse 668956e6131ee38d3cd96f32edb0c05e29974d0e:docs/reviews/049_capture_tables.sql
-b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
+70228cc6dad88b3f4169770017ad0159e2fdd84a
+$ SQL artifact commit under test: ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056
+$ git rev-parse ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056:docs/reviews/049_capture_tables.sql
+903abba5d3dfa94dc5486923d22a5f5cdd91d25e
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
+903abba5d3dfa94dc5486923d22a5f5cdd91d25e
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,9 +15,9 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6  docs/reviews/049_capture_tables.sql
+009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
-61118fb670facec5b84a4ca59a30a2498b193fb213e0461ce2eb7705702d9ea0  docs/reviews/049-sql-evidence/src/_lib.sql
+20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
 
 ################ RED run 1: post:drop_self_fk ################
@@ -105,12 +105,12 @@ PASS: R5a self-link for V1 naming a DIFFERENT invoice D2 -- refused, SQLSTATE=23
 SELECT t.val('R5a no row was inserted', $$SELECT count(*)::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000002'$$, '0');
 PASS: R5a no row was inserted -- value = 0
 SELECT t.expect('R5b self-link for V1 naming its OWN invoice D1', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'created_from_invoice')$$, 'ok');
-PASS: R5b self-link for V1 naming its OWN invoice D1 -- succeeded as expected
+PASS: R5b self-link for V1 naming its OWN invoice D1 -- succeeded as expected (1 row(s))
 SELECT t.val('R5b generated self_invoice_id = D1', $$SELECT (self_invoice_id = '50000000-0000-0000-0000-000000000001')::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000003'$$, 'true');
 PASS: R5b generated self_invoice_id = D1 -- value = true
 -- a pm_manual link has self_invoice_id NULL, so the FK is skipped (MATCH SIMPLE) and it may name any invoice
 SELECT t.expect('R5c pm_manual link V3 -> D2 (self_invoice_id NULL, FK skipped)', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'ok');
-PASS: R5c pm_manual link V3 -> D2 (self_invoice_id NULL, FK skipped) -- succeeded as expected
+PASS: R5c pm_manual link V3 -> D2 (self_invoice_id NULL, FK skipped) -- succeeded as expected (1 row(s))
 SELECT t.val('R5c self_invoice_id is NULL', $$SELECT (self_invoice_id IS NULL)::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000004'$$, 'true');
 PASS: R5c self_invoice_id is NULL -- value = true
 -- a generated column cannot be written

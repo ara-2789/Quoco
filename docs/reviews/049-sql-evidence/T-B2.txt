@@ -1,12 +1,12 @@
 == 049-sql evidence: T-B2 ==
-generated: 2026-10-11T06:36:01Z
+generated: 2026-10-11T07:00:12Z
 $ git rev-parse HEAD
-0c6239c9f3e913c383e0f94cd38a6024fc8ccb36
-$ SQL artifact commit under test: 668956e6131ee38d3cd96f32edb0c05e29974d0e
-$ git rev-parse 668956e6131ee38d3cd96f32edb0c05e29974d0e:docs/reviews/049_capture_tables.sql
-b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
+70228cc6dad88b3f4169770017ad0159e2fdd84a
+$ SQL artifact commit under test: ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056
+$ git rev-parse ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056:docs/reviews/049_capture_tables.sql
+903abba5d3dfa94dc5486923d22a5f5cdd91d25e
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
+903abba5d3dfa94dc5486923d22a5f5cdd91d25e
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,22 +15,21 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6  docs/reviews/049_capture_tables.sql
+009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
-61118fb670facec5b84a4ca59a30a2498b193fb213e0461ce2eb7705702d9ea0  docs/reviews/049-sql-evidence/src/_lib.sql
+20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
 
 ################ RED run 1: file:no_b2_insert ################
 MUTANT (named): no_b2_insert   -- diff of the real file against the mutated copy:
-465c465
+466c466
 <   IF NEW.unlinked_at IS NOT NULL OR NEW.unlinked_by IS NOT NULL OR NEW.unlink_reason IS NOT NULL
 ---
 >   IF (NEW.unlinked_at IS NOT NULL OR NEW.unlinked_by IS NOT NULL OR NEW.unlink_reason IS NOT NULL
-467c467
+468c468
 <      OR NEW.superseded_approval_at IS NOT NULL THEN
 ---
 >      OR NEW.superseded_approval_at IS NOT NULL) AND false THEN
-NOTICE:  database "t_T_B2_red1" does not exist, skipping
 $ psql -d t_T_B2_red1 -v ON_ERROR_STOP=1 -f mutant-no_b2_insert.sql   (049 UP)
 [exit 0]
 (fixtures: src/_lib.sql, src/_fixture.sql loaded)
@@ -84,7 +83,6 @@ PASS: B2d clear unlinked_at -- refused, SQLSTATE=QE010 MESSAGE=E10
 
 ################ RED run 2: post:no_tr3_trigger ################
 MUTANT (named): no_tr3_trigger   (post-UP SQL applied to the real file's result)
-NOTICE:  database "t_T_B2_red2" does not exist, skipping
 $ psql -d t_T_B2_red2 -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
 [exit 0]
 $ psql -d t_T_B2_red2 -f <post-UP mutation>:
@@ -117,7 +115,7 @@ UPDATE public.deliveries SET status = 'approved', approved_by = '30000000-0000-0
 UPDATE 1
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link', superseded_from_status = 'incomplete', superseded_approval_by = '30000000-0000-0000-0000-000000000006', superseded_approval_at = now() - interval '5 days' WHERE id = '70000000-0000-0000-0000-000000000001';
 psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-B2.expanded.sql:18: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_approver_chk"
-DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000001, 2026-10-11 12:06:01.641719+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000001, 50000000-0000-0000-0000-000000000001, invoice, created_from_invoice, null, 2026-10-11 12:06:01.641719+05:30, 2026-10-11 12:06:01.645668+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, incomplete, 30000000-0000-0000-0000-000000000006, 2026-10-06 12:06:01.645668+05:30, 50000000-0000-0000-0000-000000000001).
+DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000001, 2026-10-11 12:30:12.937933+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000001, 50000000-0000-0000-0000-000000000001, invoice, created_from_invoice, null, 2026-10-11 12:30:12.937933+05:30, 2026-10-11 12:30:12.94197+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, incomplete, 30000000-0000-0000-0000-000000000006, 2026-10-06 12:30:12.94197+05:30, 50000000-0000-0000-0000-000000000001).
 SELECT t.val('B2b approved: superseded_from_status = approved', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000001'$$, 'approved');
 FAIL: B2b approved: superseded_from_status = approved -- expected approved got (null)
 SELECT t.val('B2b approved: approver is the delivery approver, not the forged one', $$SELECT (superseded_approval_by = '30000000-0000-0000-0000-000000000001')::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000001'$$, 'true');
@@ -141,7 +139,6 @@ FAIL: B2d clear unlinked_at -- expected E10, got refusal SQLSTATE=23514 MESSAGE=
 >>> RED verdict: test FAILED against the mutant (FAIL=7) -- the test can fail: OK
 
 ################ GREEN run: the real file ################
-NOTICE:  database "t_T_B2_green" does not exist, skipping
 $ psql -d t_T_B2_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
 [exit 0]
 (fixtures: src/_lib.sql, src/_fixture.sql loaded)

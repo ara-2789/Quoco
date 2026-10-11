@@ -1,12 +1,12 @@
 == 049-sql evidence: T-ACL ==
-generated: 2026-10-11T06:36:32Z
+generated: 2026-10-11T07:00:43Z
 $ git rev-parse HEAD
-0c6239c9f3e913c383e0f94cd38a6024fc8ccb36
-$ SQL artifact commit under test: 668956e6131ee38d3cd96f32edb0c05e29974d0e
-$ git rev-parse 668956e6131ee38d3cd96f32edb0c05e29974d0e:docs/reviews/049_capture_tables.sql
-b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
+70228cc6dad88b3f4169770017ad0159e2fdd84a
+$ SQL artifact commit under test: ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056
+$ git rev-parse ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056:docs/reviews/049_capture_tables.sql
+903abba5d3dfa94dc5486923d22a5f5cdd91d25e
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
+903abba5d3dfa94dc5486923d22a5f5cdd91d25e
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,9 +15,9 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6  docs/reviews/049_capture_tables.sql
+009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
-61118fb670facec5b84a4ca59a30a2498b193fb213e0461ce2eb7705702d9ea0  docs/reviews/049-sql-evidence/src/_lib.sql
+20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
 
 ################ RED run 1: post:plant_grants ################
@@ -133,7 +133,7 @@ RESET
 SET ROLE authenticated;
 SET
 SELECT t.expect('authenticated SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
-PASS: authenticated SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
 PASS: authenticated INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('authenticated UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
@@ -143,7 +143,7 @@ PASS: authenticated DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=
 SELECT t.expect('authenticated TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
 PASS: authenticated TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('authenticated SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
-PASS: authenticated SELECT capture_files (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT capture_files (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
 PASS: authenticated INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('authenticated UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
@@ -153,7 +153,7 @@ PASS: authenticated DELETE capture_files -- refused, SQLSTATE=42501 MESSAGE=perm
 SELECT t.expect('authenticated TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
 PASS: authenticated TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('authenticated SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
-PASS: authenticated SELECT deliveries (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT deliveries (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
 PASS: authenticated INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('authenticated UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
@@ -163,7 +163,7 @@ PASS: authenticated DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permiss
 SELECT t.expect('authenticated TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
 PASS: authenticated TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('authenticated SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
-PASS: authenticated SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
 PASS: authenticated INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
 SELECT t.expect('authenticated UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
@@ -185,7 +185,7 @@ RESET
 SET ROLE service_role;
 SET
 SELECT t.expect('service_role SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
-PASS: service_role SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
 PASS: service_role INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('service_role UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
@@ -195,7 +195,7 @@ PASS: service_role DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=p
 SELECT t.expect('service_role TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
 PASS: service_role TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('service_role SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
-PASS: service_role SELECT capture_files (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT capture_files (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
 PASS: service_role INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('service_role UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
@@ -205,7 +205,7 @@ FAIL: service_role DELETE capture_files -- expected refusal 42501 but the statem
 SELECT t.expect('service_role TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
 PASS: service_role TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('service_role SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
-PASS: service_role SELECT deliveries (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT deliveries (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
 PASS: service_role INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('service_role UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
@@ -215,7 +215,7 @@ PASS: service_role DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permissi
 SELECT t.expect('service_role TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
 PASS: service_role TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('service_role SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
-PASS: service_role SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
 PASS: service_role INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
 SELECT t.expect('service_role UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
@@ -272,9 +272,10 @@ FAIL: N-1: clean again after the rolled-back owner changes -- expected ok, got r
 
 ################ RED run 2: commit:50b929a ################
 MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file against the file under test:
-11a12
+11a12,13
 > -- 11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2).
-35,122c36,127
+> -- 11 Oct: S-3 landed (Option A, per Aravind).
+35,122c37,128
 < --   E7: 124-147, 591-673
 < --   E12: 124-147
 < --   E-codes-table: 124-147
@@ -364,107 +365,107 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 < --   C-31: 918-997
 < --   down-order: 918-997
 ---
-> --   E7: 129-152, 604-725
-> --   E12: 129-152
-> --   E-codes-table: 129-152
-> --   N-1: 129-152, 932-980
-> --   D-31: 129-152
-> --   lock-paths: 154-212
-> --   R3: 154-212, 447-513, 604-725, 727-766
-> --   D-26: 154-212
-> --   Q2-2: 154-212
-> --   Q2-3: 154-212
-> --   S-C: 154-212
-> --   D-27: 154-212, 604-725
-> --   S-F: 214-224
-> --   S-E: 214-224
-> --   D-4: 214-224, 264-288, 295-322
-> --   Q2-6: 226-237
-> --   D-22: 226-237, 330-379
-> --   D-25: 226-237, 330-379
-> --   B3: 239-249, 447-513, 515-602, 604-725, 727-766
-> --   S-B: 239-249
-> --   D-19: 239-249, 264-288, 330-379
-> --   D-1: 264-288, 330-379
-> --   S-2: 264-288, 295-322, 984-1073
-> --   D-5: 264-288, 295-322, 330-379, 791-804, 806-819, 821-834, 836-849
-> --   D-30: 264-288
-> --   S-A: 264-288, 330-379, 386-423
-> --   S4: 264-288, 330-379
-> --   C-29: 264-288, 295-322, 330-379, 386-423
-> --   D-29: 264-288, 295-322, 330-379, 386-423, 984-1073
-> --   S-3: 295-322
-> --   D-9: 295-322, 901-905
-> --   D-10: 295-322, 901-905
-> --   D-18: 330-379
-> --   D-23: 330-379, 604-725
-> --   D-2: 386-423
-> --   D-3: 386-423, 430-435, 515-602
-> --   R2: 386-423, 515-602
-> --   Q2-5: 386-423
-> --   R5: 386-423
-> --   C-37: 386-423
-> --   Q-1: 386-423
-> --   N1: 430-435
-> --   A33: 430-435
-> --   E8: 430-435
-> --   C-35: 430-435
-> --   TR1: 447-513, 768-776
-> --   TR2: 447-513
-> --   B2: 447-513, 515-602
-> --   B-2: 447-513
-> --   R4: 447-513, 515-602, 604-725, 727-766, 858-862, 878-886, 932-980
-> --   D-7: 447-513, 515-602, 604-725, 727-766, 878-886
-> --   E1: 447-513
-> --   E2: 447-513
-> --   E3: 447-513
-> --   E4: 447-513
-> --   E5: 447-513
-> --   E10: 447-513, 515-602
-> --   E14: 447-513, 515-602, 604-725, 727-766
-> --   A28: 447-513
-> --   A34: 447-513
-> --   TR3: 515-602, 768-776
-> --   C-36: 515-602, 604-725
-> --   Q2-4: 515-602
-> --   TR4a: 604-725, 768-776
-> --   TR4b: 604-725, 768-776
-> --   TR4c: 604-725, 768-776
-> --   B-1: 604-725
-> --   S-1: 604-725, 727-766
-> --   D-6: 604-725, 727-766
-> --   S6: 604-725
-> --   B1: 604-725
-> --   E6: 604-725
-> --   O-3: 604-725
-> --   E9: 604-725, 727-766
-> --   E11: 604-725, 727-766
-> --   E13: 604-725
-> --   TR5: 727-766, 768-776
-> --   D-20: 785-789, 791-804, 806-819, 821-834, 836-849
-> --   R7: 785-789, 791-804, 806-819, 821-834, 836-849
-> --   C-30: 785-789, 791-804, 806-819, 821-834, 836-849
-> --   D-8: 858-862, 932-980
-> --   D-21: 858-862
-> --   CLAUDE.md-s6-per-role-revoke: 858-862
-> --   C-27: 878-886
-> --   O-1: 878-886
-> --   D-11: 901-905
-> --   042-precedent: 901-905
-> --   CLAUDE.md-s6-ACL-fingerprint: 932-980
-> --   R8: 984-1073
-> --   S-D: 984-1073
-> --   C-31: 984-1073
-> --   down-order: 984-1073
-133c138
+> --   E7: 130-153, 610-746
+> --   E12: 130-153
+> --   E-codes-table: 130-153
+> --   N-1: 130-153, 960-1008
+> --   D-31: 130-153
+> --   lock-paths: 155-213
+> --   R3: 155-213, 448-514, 610-746, 748-794
+> --   D-26: 155-213
+> --   Q2-2: 155-213
+> --   Q2-3: 155-213
+> --   S-C: 155-213
+> --   D-27: 155-213, 610-746
+> --   S-F: 215-225
+> --   S-E: 215-225
+> --   D-4: 215-225, 265-289, 296-323
+> --   Q2-6: 227-238
+> --   D-22: 227-238, 331-380
+> --   D-25: 227-238, 331-380
+> --   B3: 240-250, 448-514, 516-608, 610-746, 748-794
+> --   S-B: 240-250
+> --   D-19: 240-250, 265-289, 331-380
+> --   D-1: 265-289, 331-380
+> --   S-2: 265-289, 296-323, 1012-1101
+> --   D-5: 265-289, 296-323, 331-380, 819-832, 834-847, 849-862, 864-877
+> --   D-30: 265-289
+> --   S-A: 265-289, 331-380, 387-424
+> --   S4: 265-289, 331-380
+> --   C-29: 265-289, 296-323, 331-380, 387-424
+> --   D-29: 265-289, 296-323, 331-380, 387-424, 1012-1101
+> --   S-3: 296-323, 516-608, 610-746, 748-794
+> --   D-9: 296-323, 929-933
+> --   D-10: 296-323, 929-933
+> --   D-18: 331-380
+> --   D-23: 331-380, 610-746
+> --   D-2: 387-424
+> --   D-3: 387-424, 431-436, 516-608
+> --   R2: 387-424, 516-608
+> --   Q2-5: 387-424
+> --   R5: 387-424
+> --   C-37: 387-424
+> --   Q-1: 387-424
+> --   N1: 431-436
+> --   A33: 431-436
+> --   E8: 431-436
+> --   C-35: 431-436
+> --   TR1: 448-514, 796-804
+> --   TR2: 448-514
+> --   B2: 448-514, 516-608
+> --   B-2: 448-514
+> --   R4: 448-514, 516-608, 610-746, 748-794, 886-890, 906-914, 960-1008
+> --   D-7: 448-514, 516-608, 610-746, 748-794, 906-914
+> --   E1: 448-514
+> --   E2: 448-514
+> --   E3: 448-514
+> --   E4: 448-514
+> --   E5: 448-514
+> --   E10: 448-514, 516-608
+> --   E14: 448-514, 516-608, 610-746, 748-794
+> --   A28: 448-514
+> --   A34: 448-514
+> --   TR3: 516-608, 796-804
+> --   C-36: 516-608, 610-746
+> --   Q2-4: 516-608
+> --   TR4a: 610-746, 796-804
+> --   TR4b: 610-746, 796-804
+> --   TR4c: 610-746, 796-804
+> --   B-1: 610-746
+> --   S-1: 610-746, 748-794
+> --   D-6: 610-746, 748-794
+> --   S6: 610-746
+> --   B1: 610-746
+> --   E6: 610-746
+> --   O-3: 610-746
+> --   E9: 610-746, 748-794
+> --   E11: 610-746, 748-794
+> --   E13: 610-746
+> --   TR5: 748-794, 796-804
+> --   D-20: 813-817, 819-832, 834-847, 849-862, 864-877
+> --   R7: 813-817, 819-832, 834-847, 849-862, 864-877
+> --   C-30: 813-817, 819-832, 834-847, 849-862, 864-877
+> --   D-8: 886-890, 960-1008
+> --   D-21: 886-890
+> --   CLAUDE.md-s6-per-role-revoke: 886-890
+> --   C-27: 906-914
+> --   O-1: 906-914
+> --   D-11: 929-933
+> --   042-precedent: 929-933
+> --   CLAUDE.md-s6-ACL-fingerprint: 960-1008
+> --   R8: 1012-1101
+> --   S-D: 1012-1101
+> --   C-31: 1012-1101
+> --   down-order: 1012-1101
+133c139
 < --                   self-link to a rejected delivery (A34)
 ---
 > --                   self-link to a rejected or cancelled delivery (A34, B-2)
-381c386
+381c387
 < -- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29]
 ---
 > -- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29, Q-1]
-412c417,422
+412c418,423
 <   CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL))
 ---
 >   CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL)),
@@ -473,22 +474,32 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >   -- the invoice with no active link while its automatic delivery is not cancelled.
 >   CONSTRAINT dil_superseded_reason_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'superseded_by_link' OR link_source = 'created_from_invoice'),
 >   CONSTRAINT dil_pm_unlinked_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'pm_unlinked' OR link_source = 'pm_manual')
-437c447
+437c448
 < -- [src: TR1, TR2, B2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
 ---
 > -- [src: TR1, TR2, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
-493c503,506
+493c504,507
 <     ELSIF v_status = 'rejected' THEN
 ---
 >     ELSIF v_status IN ('rejected', 'cancelled') THEN
 >       -- B-2 (SQL review r1): a self-link is also refused onto a CANCELLED
 >       -- delivery. Paths 2 and 4 restore the delivery BEFORE inserting the
 >       -- new self-link, so this turns that header rule into one the trigger enforces.
-591c604
+502c516
+< -- [src: TR3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
+---
+> -- [src: TR3, S-3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
+561a576,580
+> 
+>   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the unlink time is
+>   -- stamped by the database; the caller's value only signals the unlink and is
+>   -- overwritten. (linked_at is NOT touched here: see the package, OPEN item.)
+>   NEW.unlinked_at := now();
+591c610
 < -- [src: TR4a, TR4b, TR4c, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
 ---
-> -- [src: TR4a, TR4b, TR4c, B-1, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
-604,605c617,621
+> -- [src: TR4a, TR4b, TR4c, B-1, S-3, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
+604,605c623,627
 <   -- TR4a: immutable columns.
 <   IF NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
 ---
@@ -497,7 +508,11 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >   IF NEW.id IS DISTINCT FROM OLD.id
 >      OR NEW.created_at IS DISTINCT FROM OLD.created_at
 >      OR NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
-670a687,722
+666a689,724
+>       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+>     END IF;
+>   END IF;
+> 
 >   -- B-1 (SQL review r1): approval attribution cannot be rewritten after the
 >   -- fact. Each group may change ONLY on its own status transition; any other
 >   -- IS DISTINCT FROM on these columns raises E11.
@@ -530,27 +545,46 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >       OR (NEW.cancelled_at IS NULL AND NEW.cancel_reason IS NULL
 >           AND OLD.status = 'cancelled' AND NEW.status IN ('incomplete', 'awaiting_pm'))
 >     ) THEN
->       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
->     END IF;
+670a729,743
+>   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the DATABASE stamps the
+>   -- time at each allowed transition; any caller-supplied value is overwritten
+>   -- (the same "wrong stamp impossible, not merely uncaught" rule as 043's
+>   -- generated expires_at and B2's snapshot overwrite). Clearing on restore is
+>   -- left as validated above. received_at stays caller-supplied (D-25).
+>   IF NEW.status = 'approved' AND OLD.status IS DISTINCT FROM 'approved' THEN
+>     NEW.approved_at := now();
+>   END IF;
+>   IF NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected' THEN
+>     NEW.rejected_at := now();
+>   END IF;
+>   IF NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM 'cancelled' THEN
+>     NEW.cancelled_at := now();
 >   END IF;
 > 
-675c727
+675c748
 < -- [src: TR5, D-6, B3, R3, R4, D-7, E9, E11, E14]
 ---
-> -- [src: TR5, S-1, D-6, B3, R3, R4, D-7, E9, E11, E14]
-688c740,743
+> -- [src: TR5, S-1, S-3, D-6, B3, R3, R4, D-7, E9, E11, E14]
+688c761,764
 <   IF NEW.kind IS DISTINCT FROM OLD.kind
 ---
 >   -- S-1 (SQL review r1): id and created_at added to the immutable set.
 >   IF NEW.id IS DISTINCT FROM OLD.id
 >      OR NEW.created_at IS DISTINCT FROM OLD.created_at
 >      OR NEW.kind IS DISTINCT FROM OLD.kind
-877c932
+708a785,791
+>   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the acknowledgement time
+>   -- is stamped by the database when the ack is first set; a caller-supplied
+>   -- value is overwritten. It drives the D-12 clock.
+>   IF OLD.engineer_ack IS NULL AND NEW.engineer_ack IS NOT NULL THEN
+>     NEW.engineer_ack_at := now();
+>   END IF;
+> 
+877c960
 < -- [src: R4, D-8, CLAUDE.md-s6-ACL-fingerprint]
 ---
 > -- [src: R4, D-8, N-1, CLAUDE.md-s6-ACL-fingerprint]
-893a949,958
->   END LOOP;
+894a978,987
 >   -- N-1 (SQL review r1): ownership. The GRANT ... TO postgres above is a no-op only if postgres owns the objects.
 >   FOREACH v_t IN ARRAY ARRAY['capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links'] LOOP
 >     IF NOT EXISTS (
@@ -560,13 +594,14 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 >     ) THEN
 >       v_bad := v_bad || ' ' || v_t || ':owner';
 >     END IF;
-904a970
+>   END LOOP;
+904a998
 >         AND p.proowner = 'postgres'::regrole
-918c984
+918c1012
 < -- [src: R8, S-D, D-29, C-31, down-order]
 ---
 > -- [src: R8, S-D, S-2, D-29, C-31, down-order]
-968a1035,1046
+968a1063,1074
 > -- -- S-2 (SQL review r1): the bucket DELETE is NOT in this transaction. If
 > -- -- Storage refused a direct SQL delete, a delete inside this transaction
 > -- -- would roll the table drops and the ledger delete back with it. The
@@ -579,7 +614,7 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 > -- END;
 > -- $$;
 > --
-983,994c1061
+983,994c1089
 < -- -- Bucket: zero objects, then delete. Supabase Storage may refuse a direct
 < -- -- SQL delete on storage.*; the disposable scaffold stubs storage and cannot
 < -- -- show that (block 2b executes this on test-db). If refused, remove the
@@ -594,7 +629,7 @@ MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file again
 < -- DELETE FROM storage.buckets WHERE id = 'capture-documents';
 ---
 > -- COMMIT;
-995a1063,1071
+995a1091,1099
 > -- -- BUCKET STEP: a SEPARATE step, run only AFTER the COMMIT above, by SQL.
 > -- -- Supabase Storage may refuse a direct SQL delete on storage.*; the
 > -- -- disposable scaffold stubs storage and cannot show that. Block 2b executes
@@ -708,7 +743,7 @@ RESET
 SET ROLE authenticated;
 SET
 SELECT t.expect('authenticated SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
-PASS: authenticated SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
 PASS: authenticated INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('authenticated UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
@@ -718,7 +753,7 @@ PASS: authenticated DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=
 SELECT t.expect('authenticated TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
 PASS: authenticated TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('authenticated SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
-PASS: authenticated SELECT capture_files (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT capture_files (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
 PASS: authenticated INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('authenticated UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
@@ -728,7 +763,7 @@ PASS: authenticated DELETE capture_files -- refused, SQLSTATE=42501 MESSAGE=perm
 SELECT t.expect('authenticated TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
 PASS: authenticated TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('authenticated SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
-PASS: authenticated SELECT deliveries (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT deliveries (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
 PASS: authenticated INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('authenticated UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
@@ -738,7 +773,7 @@ PASS: authenticated DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permiss
 SELECT t.expect('authenticated TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
 PASS: authenticated TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('authenticated SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
-PASS: authenticated SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
 PASS: authenticated INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
 SELECT t.expect('authenticated UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
@@ -760,7 +795,7 @@ RESET
 SET ROLE service_role;
 SET
 SELECT t.expect('service_role SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
-PASS: service_role SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
 PASS: service_role INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('service_role UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
@@ -770,7 +805,7 @@ PASS: service_role DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=p
 SELECT t.expect('service_role TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
 PASS: service_role TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('service_role SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
-PASS: service_role SELECT capture_files (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT capture_files (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
 PASS: service_role INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('service_role UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
@@ -780,7 +815,7 @@ PASS: service_role DELETE capture_files -- refused, SQLSTATE=42501 MESSAGE=permi
 SELECT t.expect('service_role TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
 PASS: service_role TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('service_role SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
-PASS: service_role SELECT deliveries (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT deliveries (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
 PASS: service_role INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('service_role UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
@@ -790,7 +825,7 @@ PASS: service_role DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permissi
 SELECT t.expect('service_role TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
 PASS: service_role TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('service_role SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
-PASS: service_role SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
 PASS: service_role INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
 SELECT t.expect('service_role UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
@@ -818,7 +853,7 @@ PASS: N-1: the four trigger functions are owned by postgres -- value = 4
 -- The UPpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:104: error: unterminated quoted string
 
 SELECT t.expect('N-1: the assertion block passes on the clean state', 'SELECT t.assert_block()', 'ok');
-PASS: N-1: the assertion block passes on the clean state -- succeeded as expected
+PASS: N-1: the assertion block passes on the clean state -- succeeded as expected (1 row(s))
 BEGIN;
 BEGIN
 ALTER TABLE public.deliveries OWNER TO service_role;
@@ -840,7 +875,7 @@ FAIL: N-1: the message names trg_dil_before_update:fingerprint -- expected true 
 ROLLBACK;
 ROLLBACK
 SELECT t.expect('N-1: clean again after the rolled-back owner changes', 'SELECT t.assert_block()', 'ok');
-PASS: N-1: clean again after the rolled-back owner changes -- succeeded as expected
+PASS: N-1: clean again after the rolled-back owner changes -- succeeded as expected (1 row(s))
 
 >>> RESULT t_T_ACL_red2: PASS=74 FAIL=2   (declared EXPECT_PASS=76, static assertion lines=76)
 >>> RED verdict: test FAILED against the mutant (FAIL=2) -- the test can fail: OK
@@ -950,7 +985,7 @@ RESET
 SET ROLE authenticated;
 SET
 SELECT t.expect('authenticated SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
-PASS: authenticated SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
 PASS: authenticated INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('authenticated UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
@@ -960,7 +995,7 @@ PASS: authenticated DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=
 SELECT t.expect('authenticated TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
 PASS: authenticated TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('authenticated SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
-PASS: authenticated SELECT capture_files (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT capture_files (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
 PASS: authenticated INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('authenticated UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
@@ -970,7 +1005,7 @@ PASS: authenticated DELETE capture_files -- refused, SQLSTATE=42501 MESSAGE=perm
 SELECT t.expect('authenticated TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
 PASS: authenticated TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('authenticated SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
-PASS: authenticated SELECT deliveries (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT deliveries (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
 PASS: authenticated INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('authenticated UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
@@ -980,7 +1015,7 @@ PASS: authenticated DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permiss
 SELECT t.expect('authenticated TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
 PASS: authenticated TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('authenticated SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
-PASS: authenticated SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected
+PASS: authenticated SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('authenticated INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
 PASS: authenticated INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
 SELECT t.expect('authenticated UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
@@ -1002,7 +1037,7 @@ RESET
 SET ROLE service_role;
 SET
 SELECT t.expect('service_role SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
-PASS: service_role SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
 PASS: service_role INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('service_role UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
@@ -1012,7 +1047,7 @@ PASS: service_role DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=p
 SELECT t.expect('service_role TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
 PASS: service_role TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
 SELECT t.expect('service_role SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
-PASS: service_role SELECT capture_files (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT capture_files (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
 PASS: service_role INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('service_role UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
@@ -1022,7 +1057,7 @@ PASS: service_role DELETE capture_files -- refused, SQLSTATE=42501 MESSAGE=permi
 SELECT t.expect('service_role TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
 PASS: service_role TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
 SELECT t.expect('service_role SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
-PASS: service_role SELECT deliveries (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT deliveries (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
 PASS: service_role INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('service_role UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
@@ -1032,7 +1067,7 @@ PASS: service_role DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permissi
 SELECT t.expect('service_role TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
 PASS: service_role TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
 SELECT t.expect('service_role SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
-PASS: service_role SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected
+PASS: service_role SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected (1 row(s))
 SELECT t.expect('service_role INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
 PASS: service_role INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
 SELECT t.expect('service_role UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
@@ -1060,7 +1095,7 @@ PASS: N-1: the four trigger functions are owned by postgres -- value = 4
 -- The UPpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:104: error: unterminated quoted string
 
 SELECT t.expect('N-1: the assertion block passes on the clean state', 'SELECT t.assert_block()', 'ok');
-PASS: N-1: the assertion block passes on the clean state -- succeeded as expected
+PASS: N-1: the assertion block passes on the clean state -- succeeded as expected (1 row(s))
 BEGIN;
 BEGIN
 ALTER TABLE public.deliveries OWNER TO service_role;
@@ -1082,7 +1117,7 @@ PASS: N-1: the message names trg_dil_before_update:fingerprint -- value = true
 ROLLBACK;
 ROLLBACK
 SELECT t.expect('N-1: clean again after the rolled-back owner changes', 'SELECT t.assert_block()', 'ok');
-PASS: N-1: clean again after the rolled-back owner changes -- succeeded as expected
+PASS: N-1: clean again after the rolled-back owner changes -- succeeded as expected (1 row(s))
 
 >>> RESULT t_T_ACL_green: PASS=76 FAIL=0   (declared EXPECT_PASS=76, static assertion lines=76)
 >>> OVERALL T-ACL: RED failed as required, GREEN PASS=76 == expected 76 (static 76), FAIL=0
