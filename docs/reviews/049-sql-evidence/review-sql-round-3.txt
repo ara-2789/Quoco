@@ -1,0 +1,68 @@
+# 049 SQL delta review: PR #331 @ `3a06666`
+
+**Verdict: the SQL-stage GO still holds, conditional.** S-3, F4-1 and F4-2 are in and they work. Your `awaiting_pm` reading is right. One new gap needs closing before block 2b: `created_at` can still be supplied by the caller at INSERT (S-4 below). It's the same class as S-3, and it's my spec's fault.
+
+## Pins and what I checked
+
+- **Pins:** PR head `3a06666b19fa0b048a1458d455a460303658b67d`; `main` still `0289bcf`, migrations still end at 048. SQL sha256 `e1f7b62c…67eb` matches yours. The blob is `2597c50e` at `7fae0c9`, `0e2723f` and the head.
+- **The diff from `668956e` to `7fae0c9`, line by line.** It contains S-3 (via `ecc8e1e`), F4-1 and F4-2, plus the matching REVOKE/GRANT, assertion, DOWN-guard and DROP lines for the two new functions. Nothing else.
+- **Transcripts.** All 12 are headed `0c6239c`→`0e2723f`, artifact `7fae0c9`, with empty porcelain. Every GREEN equals its declared and static count; T-TRIG is 102/102.
+- **The T-TRIG RED against `ecc8e1e`.** I read all 12 FAIL lines. Every one is an F4 case or a duplicate-key knock-on from an earlier F4 insert succeeding on the old file. One is worth noting: "the later unlink … got 23514". On the old file, a future `linked_at` made the S-3-stamped `unlinked_at` fail its CHECK. That's the exact bug F4-1 closes, caught by its own RED.
+- **My own stub run** on PG 16.15. The only edit was the `MAINTAIN` line, as before. Inside single transactions:
+  - approving with `approved_at = now() + 5 days` stores the transaction time;
+  - rejecting with `rejected_at = now() + 30 days` stores the transaction time;
+  - an ack with `engineer_ack_at = now() + 9 days` stores the transaction time.
+- I made one test mistake along the way: comparing `now()` across autocommit statements. It's discarded, not reported.
+
+## The two things you flagged
+
+**F4-2 refusing `awaiting_pm` at insert is correct.**
+- Plan v3 (`docs/plans/slice-1a-plan-v3.md`, the `deliveries` section): "`incomplete` = created, no ack yet … It becomes `awaiting_pm` inside the engineer RPC when the ack is stored."
+- The two new guards back each other up. A document can't be born with an ack, so a delivery can't legitimately be born `awaiting_pm`.
+- Restore to `awaiting_pm` (paths 2 and 4) is an UPDATE, so it isn't touched.
+- If PR-B wants document and delivery created after the answer, it inserts `incomplete` and updates in the same transaction. TR4c allows `incomplete → awaiting_pm`, so that costs nothing.
+
+**T-CHK B and C disabling user triggers is fine.**
+- `DISABLE TRIGGER USER` leaves the FK constraint triggers running, so only the CHECKs are isolated.
+- Each section re-enables before the next.
+- The trigger-level refusals the CHECK rows would now hit first are covered by T-TRIG's F4 cases.
+
+## My error
+
+S-3 told you to stamp the time at each transition. It said nothing about the INSERT-time anchor every ordering CHECK measures against. This is the third time on this file a fix I specified per column has left a sibling open: C-36 in round 2, B-1's timestamps, and now `created_at`.
+
+I should have written the rule once, for the whole file. **Every time column is set by the database at the moment of the event it records. `received_at` is the one named exception (D-25).** Hold the next delta to that rule, not to my column list.
+
+## S-4. `created_at` is caller-supplied at INSERT (proven on the stub)
+
+S-1 made `created_at` immutable after insert, because everything is measured against it. But the INSERT path still takes whatever the caller sends:
+
+- **C1/C2:** a document inserted with `created_at = now() + 30 days` was accepted. When the engineer then answered, the database-stamped `engineer_ack_at` failed `capture_documents_ack_at_order_chk`. That document can never be acknowledged.
+- **C4:** a delivery inserted with `received_at = now() + 1 hour` and `created_at = now() + 2 hours` was accepted. That is exactly the "SID from a later message" case Q-4 said `received_order_chk` refuses. The check only holds while `created_at` is the database's own time.
+
+Same reachability and grade as S-3: only a PR-B definer can do this, and the damage is a wrong time or a stuck row, not a wrong actor.
+
+**Fix:** set `NEW.created_at := now()` in the three INSERT triggers that already exist: `trg_deliveries_before_insert`, `trg_capture_documents_before_insert` and `trg_dil_before_insert`. That's three lines.
+
+`capture_files.created_at` anchors no CHECK and the table has no trigger. Add it to the PR-C condition rather than creating a trigger here.
+
+**Test** (T-TRIG): a future-dated and a past-dated `created_at` on each of the three tables both get stored as the transaction time, and the C4 shape is refused by `deliveries_received_order_chk`. RED against `7fae0c9`.
+
+## N-4. PM-owned fields can be set at INSERT
+
+C5: a DC delivery inserted already typed `internal_transfer`, with a vehicle number, was accepted. A8 says `delivery_type` is NULL until the PM sets it. A13 makes `vehicle_number`, `dc_number` and `dc_date` PM-entered.
+
+None of this is attribution, so it isn't a finding at S. But an engineer-path insert that prefills the type takes the internal-transfer decision away from the PM. Decide one of:
+- add those four columns to the F4-2 INSERT guard, or
+- record that PR-B may prefill them, and from what.
+
+## What's good
+
+- TR3 stamps `unlinked_at` only after the "all three together" check (line 590). A caller still has to *say* it's unlinking, but the database decides *when*. Those two jobs used to be one column, and now they're separate.
+- With F4-1 in, every link-side time (`linked_at`, `unlinked_at`) comes from one clock. So `dil_unlinked_order_chk` can no longer be tripped by a client clock. The `ecc8e1e` RED shows it being tripped.
+
+## Conditions
+
+1. S-4 landed with T-TRIG RED (`commit:7fae0c9`) and GREEN, and N-4 decided, before block 2b. The next delta is those lines only.
+2. Then block 2b, P10/P14 pins and the apply package, unchanged from my last list.
+3. The PR-B and PR-C blocking conditions in package §10 still stand. Add `capture_files.created_at` to PR-C's.

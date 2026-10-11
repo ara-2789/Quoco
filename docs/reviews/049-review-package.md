@@ -207,4 +207,31 @@ Real Storage (MIME/size refusal; whether it refuses a SQL delete of a bucket —
 - **Housekeeping:** a stray `src/T-TRIG.sql.bak` was committed by mistake in the test-source commit and is removed in the transcripts commit.
 - **OPEN (unchanged):** none new from this block. Still owed: block 2b on test-db, P10 and P14 pinned with dates, the apply package.
 
+## 17. SQL review round 3 and the whole-file time audit (block 2a-FIX5, 12 Oct) — STOPPED at the audit
+
+- **Round 3 evidence:** `049-sql-evidence/review-sql-round-3.txt`, sha256 `59d6e86e0b725750ee7ccabebc804e594f7e7c6297506f7ed45999afa7d829d0` (verified before use). Verdict: the SQL-stage GO holds, conditional. It found **S-4** (`created_at` caller-supplied at INSERT; proven on the reviewer's stub: a document with a future `created_at` can never be acknowledged; a delivery's `received_order_chk` is bypassed) and **N-4** (PM-owned fields can be set at INSERT). **Reviewer error, owned:** per-column fix specs leaving siblings open (C-36, B-1's timestamps, `created_at`); the reviewer's standing rule is below.
+- **Decisions (Aravind, 12 Oct):** S-4 — `NEW.created_at := now()` in the three INSERT triggers (`trg_deliveries_before_insert`, `trg_capture_documents_before_insert`, `trg_dil_before_insert`); `capture_files.created_at` goes to the PR-C blocking condition (no trigger here). N-4 Option A — `delivery_type`, `vehicle_number`, `dc_number`, `dc_date` must be NULL at deliveries INSERT, else E12. **TIME RULE for the whole file:** every time column is set by the database at the moment of the event it records; `received_at` is the one named exception (D-25).
+- **PR-C blocking condition gains:** `capture_files.created_at` stamped by the database (PR-C adds the trigger; the table has none today).
+- **Note for block 2b:** the helper script's `quoco_test_capture_acl()` still counts 4 trigger functions; it must count the current number (six now) before 2b.
+- **WHOLE-FILE TIME AUDIT (at `3a06666`, SQL blob `2597c50e`).** 14 time columns across the four tables (`delivery_date` is generated; `self_invoice_id` is a uuid and not a time):
+
+| Column | Event it records | Set today | On INSERT | On UPDATE | Status |
+|---|---|---|---|---|---|
+| `capture_documents.created_at` | row creation | `DEFAULT now()`, caller may override | **caller-supplied** | immutable (S-1) | S-4 |
+| `capture_documents.engineer_ack_at` | first ack stored | DB-stamped (TR5, S-3) | must be NULL (F4-2) | stamped | compliant |
+| `capture_files.created_at` | row creation | `DEFAULT now()`, caller may override; no trigger | **caller-supplied** | mutable (no trigger) | PR-C condition |
+| `deliveries.created_at` | row creation | `DEFAULT now()`, caller may override | **caller-supplied** | immutable (S-1) | S-4 |
+| `deliveries.received_at` | inbound message receipt | caller-supplied by design | caller | immutable (TR4a) | named exception (D-25) |
+| `deliveries.delivery_date` | IST date of `received_at` | generated, stored | n/a | n/a | compliant |
+| **`deliveries.dc_date`** | date **printed on the delivery challan** (document content, PM-entered) | **caller-supplied, unconstrained** | **caller-supplied** | caller-supplied; locked while approved/cancelled (TR4c(4)) | **OPEN** |
+| `deliveries.approved_at` | move INTO approved | DB-stamped (TR4, S-3) | must be NULL (F4-2) | stamped | compliant |
+| `deliveries.rejected_at` | move INTO rejected | DB-stamped (TR4, S-3) | must be NULL (F4-2) | stamped | compliant |
+| `deliveries.cancelled_at` | move INTO cancelled | DB-stamped (TR4, S-3) | must be NULL (F4-2) | stamped; cleared on restore | compliant |
+| `delivery_invoice_links.created_at` | row creation | `DEFAULT now()`, caller may override | **caller-supplied** | immutable (TR3) | S-4 |
+| `delivery_invoice_links.linked_at` | link creation | DB-stamped (TR1, F4-1) | stamped | immutable | compliant |
+| `delivery_invoice_links.unlinked_at` | the unlink | DB-stamped (TR3, S-3) | must be NULL (B2) | stamped on unlink | compliant |
+| `delivery_invoice_links.superseded_approval_at` | when the superseded approval happened | copied by TR3 from `deliveries.approved_at` (itself DB-stamped); caller value overwritten | must be NULL (B2) | derived | compliant |
+
+- **OPEN — `deliveries.dc_date` (decision needed from Aravind).** It is a `date` column that is caller-supplied, is not `received_at`, and is not covered by S-4, so under the brief's audit rule it is neither fixed nor assumed. My reading, for the decision only: it does not record an event the system observes; it records a fact printed on a paper document (the date on the supplier's DC) and is PM-entered content, like `dc_number` and `vehicle_number`. Options: (a) name it as a second explicit exception to the TIME RULE ("document content dates are caller-supplied"); (b) bound it (for example `dc_date <= delivery_date`) as a CHECK; (c) stamp it (this would defeat its purpose: the printed date). **Block 2a-FIX5 STOPPED here, before STEP 2: no SQL was edited, no transcripts were re-run.** S-4 and N-4 are therefore NOT yet landed. N-4 makes `dc_date` NULL at INSERT regardless; this question is about the UPDATE path.
+
 END OF 049 SQL REVIEW PACKAGE
