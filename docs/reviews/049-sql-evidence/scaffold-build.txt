@@ -1,11 +1,11 @@
+# 2a-FIX2 start; head 8968222 confirmed; review sha256 dedc4245... matches (STEP 0 ok)
 
 > quocoai@0.1.0 lint:migrations
 > node scripts/lint-migrations.mjs
 
 migration-lint: clean. 107 known violation(s), all exempted.
-
 file-size-lint: clean (160 files checked, no hard failures).
-# STEP 4 scaffold rebuild 2026-10-11T06:08:43Z
+# STEP 4 scaffold rebuild 2026-10-11T06:34:19Z
 $ cat /Users/aravindanrajamani/Desktop/quocoai/supabase/.temp/project-ref  (linked ref, printed before the dump; must equal exfccwlrhoutkgrlikod)
 exfccwlrhoutkgrlikod
 $ supabase --workdir /Users/aravindanrajamani/Desktop/quocoai db dump --linked --schema public --dry-run > /tmp/quoco/dry.sh 2> /tmp/quoco/dry.err   (output NOT printed; mode 600)

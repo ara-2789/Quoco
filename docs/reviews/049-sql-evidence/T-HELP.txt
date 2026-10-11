@@ -1,12 +1,12 @@
 == 049-sql evidence: T-HELP ==
-generated: 2026-10-11T06:11:18Z
+generated: 2026-10-11T06:36:34Z
 $ git rev-parse HEAD
-1121e72f5288db613eb5a53c5e35edb971fabc8b
-$ SQL artifact commit under test: 50b929a666d394f9e47884c5661304de722830aa
-$ git rev-parse 50b929a666d394f9e47884c5661304de722830aa:docs/reviews/049_capture_tables.sql
-687d640ad1fece1bf0bcbb50dd1ca0347c079e94
+0c6239c9f3e913c383e0f94cd38a6024fc8ccb36
+$ SQL artifact commit under test: 668956e6131ee38d3cd96f32edb0c05e29974d0e
+$ git rev-parse 668956e6131ee38d3cd96f32edb0c05e29974d0e:docs/reviews/049_capture_tables.sql
+b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-687d640ad1fece1bf0bcbb50dd1ca0347c079e94
+b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,9 +15,9 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd  docs/reviews/049_capture_tables.sql
+cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
-0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+61118fb670facec5b84a4ca59a30a2498b193fb213e0461ce2eb7705702d9ea0  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
 
 ################ RED run 1: hfile:no_guard ################
@@ -113,7 +113,7 @@ PASS: H15 fixture tenant has no document left -- value = 0
 RESET ROLE;
 RESET
 
->>> RESULT t_T_HELP_red1: PASS=18 FAIL=5
+>>> RESULT t_T_HELP_red1: PASS=18 FAIL=5   (declared EXPECT_PASS=23, static assertion lines=23)
 >>> RED verdict: test FAILED against the mutant (FAIL=5) -- the test can fail: OK
 
 ################ GREEN run: the real file ################
@@ -204,5 +204,5 @@ PASS: H15 fixture tenant has no document left -- value = 0
 RESET ROLE;
 RESET
 
->>> RESULT t_T_HELP_green: PASS=23 FAIL=0
->>> OVERALL T-HELP: RED failed as required, GREEN PASS=23 FAIL=0
+>>> RESULT t_T_HELP_green: PASS=23 FAIL=0   (declared EXPECT_PASS=23, static assertion lines=23)
+>>> OVERALL T-HELP: RED failed as required, GREEN PASS=23 == expected 23 (static 23), FAIL=0

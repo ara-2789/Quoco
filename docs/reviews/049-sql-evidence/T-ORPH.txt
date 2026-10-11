@@ -1,12 +1,12 @@
 == 049-sql evidence: T-ORPH ==
-generated: 2026-10-11T06:11:15Z
+generated: 2026-10-11T06:36:30Z
 $ git rev-parse HEAD
-1121e72f5288db613eb5a53c5e35edb971fabc8b
-$ SQL artifact commit under test: 50b929a666d394f9e47884c5661304de722830aa
-$ git rev-parse 50b929a666d394f9e47884c5661304de722830aa:docs/reviews/049_capture_tables.sql
-687d640ad1fece1bf0bcbb50dd1ca0347c079e94
+0c6239c9f3e913c383e0f94cd38a6024fc8ccb36
+$ SQL artifact commit under test: 668956e6131ee38d3cd96f32edb0c05e29974d0e
+$ git rev-parse 668956e6131ee38d3cd96f32edb0c05e29974d0e:docs/reviews/049_capture_tables.sql
+b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-687d640ad1fece1bf0bcbb50dd1ca0347c079e94
+b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,14 +15,13 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd  docs/reviews/049_capture_tables.sql
+cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
-0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+61118fb670facec5b84a4ca59a30a2498b193fb213e0461ce2eb7705702d9ea0  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
 
 ################ RED run 1: flag:red=1 ################
 MUTANT (named): flow variant -v red=1
-NOTICE:  database "t_T_ORPH_red1" does not exist, skipping
 $ psql -d t_T_ORPH_red1 -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
 [exit 0]
 (fixtures: src/_lib.sql, src/_fixture.sql loaded)
@@ -30,6 +29,8 @@ $ psql -X -e -d t_T_ORPH_red1 -f T-ORPH.sql (tokens expanded by src/expand.py)
 == T-ORPH (D-19, S-B): the three orphan probes return 0 after every PR-B path ==
 Output format is unaligned.
 -- the three probes (psql variables, passed to t.val as the query text):
+-- probe 4 (Q-2, SQL review r1): links unlinked as delivery_rejected whose delivery is NOT rejected. The row-level triggers cannot enforce this
+-- (it needs a deferred check), so every PR-B path test must return 0 here.
 -- probe 1: DC document with no delivery. probe 2: invoice document with neither a delivery nor an active link (v2).
 -- probe 3 (S-B): invoice document with no active link whose automatic delivery is not rejected.
 
@@ -40,6 +41,8 @@ SELECT t.val('S0 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S0 probe2 -- value = 0
 SELECT t.val('S0 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S0 probe3 -- value = 0
+SELECT t.val('S0 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S0 probe4 -- value = 0
 -- STEP 1: create a DC (document D1 + delivery V1)
 SELECT t.mk_dc('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'SM_O_dc1');
 60000000-0000-0000-0000-000000000001
@@ -49,6 +52,8 @@ SELECT t.val('S1 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S1 probe2 -- value = 0
 SELECT t.val('S1 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S1 probe3 -- value = 0
+SELECT t.val('S1 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S1 probe4 -- value = 0
 -- STEP 2: create an invoice (document D2 + automatic delivery V2 + self-link L1)
 SELECT t.mk_inv('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', 'SM_O_inv1');
 50000000-0000-0000-0000-000000000002
@@ -58,6 +63,8 @@ SELECT t.val('S2 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S2 probe2 -- value = 0
 SELECT t.val('S2 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S2 probe3 -- value = 0
+SELECT t.val('S2 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S2 probe4 -- value = 0
 -- STEP 3: PATH 1 link D2 -> V1 (soft-unlink self-link, cancel V2, insert pm_manual L2)
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000001';
 UPDATE 1
@@ -71,6 +78,8 @@ SELECT t.val('S3 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S3 probe2 -- value = 0
 SELECT t.val('S3 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S3 probe3 -- value = 0
+SELECT t.val('S3 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S3 probe4 -- value = 0
 -- STEP 4: PATH 2 unlink with restore (unlink L2, restore V2 FIRST, then the new self-link L3)
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'pm_unlinked' WHERE id = '70000000-0000-0000-0000-000000000002';
 UPDATE 1
@@ -84,6 +93,8 @@ SELECT t.val('S4 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S4 probe2 -- value = 0
 SELECT t.val('S4 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S4 probe3 -- value = 0
+SELECT t.val('S4 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S4 probe4 -- value = 0
 -- STEP 5: PATH 3 reject an automatic delivery (new invoice D3 / V3 / L4: unlink delivery_rejected, then reject)
 SELECT t.mk_inv('50000000-0000-0000-0000-000000000003', '60000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000004', 'SM_O_inv2');
 50000000-0000-0000-0000-000000000003
@@ -97,6 +108,8 @@ SELECT t.val('S5 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S5 probe2 -- value = 0
 SELECT t.val('S5 probe3 (rejected automatic delivery is the allowed exception)', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S5 probe3 (rejected automatic delivery is the allowed exception) -- value = 0
+SELECT t.val('S5 probe4 (the self-link was unlinked as delivery_rejected AND the delivery is rejected)', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S5 probe4 (the self-link was unlinked as delivery_rejected AND the delivery is rejected) -- value = 0
 -- STEP 6: PATH 4 reject a DC with restore. DC D4/V4, invoice D5/V5/L5; link D5 -> V4 (PATH 1), then reject V4.
 SELECT t.mk_dc('50000000-0000-0000-0000-000000000004', '60000000-0000-0000-0000-000000000004', 'SM_O_dc2');
 60000000-0000-0000-0000-000000000004
@@ -113,7 +126,7 @@ UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '300
 UPDATE 1
 UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad dc' WHERE id = '60000000-0000-0000-0000-000000000004';
 UPDATE 1
--- path 4 step 7: countpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ORPH.expanded.sql:55: error: unterminated quoted string
+-- path 4 step 7: countpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ORPH.expanded.sql:65: error: unterminated quoted string
 
 SELECT t.val('S6 active PM links of D5', $$SELECT count(*)::text FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000005' AND link_source = 'pm_manual' AND unlinked_at IS NULL$$, '0');
 PASS: S6 active PM links of D5 -- value = 0
@@ -124,6 +137,8 @@ SELECT t.val('S6 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S6 probe2 -- value = 0
 SELECT t.val('S6 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 FAIL: S6 probe3 -- expected 0 got 1
+SELECT t.val('S6 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S6 probe4 -- value = 0
 -- RED positive controls: plant a DC document with no delivery (probe 1) and an invoice document with nothing (probe 2)
 SELECT t.mk_doc('50000000-0000-0000-0000-000000000008', 'dc', 'SM_O_orph_dc');
 50000000-0000-0000-0000-000000000008
@@ -133,12 +148,18 @@ SELECT t.val('RED planted: probe1 must detect the orphan DC (expects 0, sees 1 -
 FAIL: RED planted: probe1 must detect the orphan DC (expects 0, sees 1 -> FAIL proves the probe can fail) -- expected 0 got 1
 SELECT t.val('RED planted: probe2 must detect the orphan invoice (expects 0, sees 1 -> FAIL)', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id) AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL)', '0');
 FAIL: RED planted: probe2 must detect the orphan invoice (expects 0, sees 1 -> FAIL) -- expected 0 got 1
+-- RED positive control for probe 4 (Q-2): unlink a self-link as delivery_rejected and leave its delivery incomplete (accepted by the row-level triggers)
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000006', '60000000-0000-0000-0000-000000000006', '70000000-0000-0000-0000-000000000008', 'SM_O_inv_p4');
+50000000-0000-0000-0000-000000000006
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'delivery_rejected' WHERE id = '70000000-0000-0000-0000-000000000008';
+UPDATE 1
+SELECT t.val('RED planted: probe4 must detect the unrejected delivery (expects 0, sees 1 -> FAIL)', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+FAIL: RED planted: probe4 must detect the unrejected delivery (expects 0, sees 1 -> FAIL) -- expected 0 got 1
 
->>> RESULT t_T_ORPH_red1: PASS=21 FAIL=3
->>> RED verdict: test FAILED against the mutant (FAIL=3) -- the test can fail: OK
+>>> RESULT t_T_ORPH_red1: PASS=28 FAIL=4   (declared EXPECT_PASS=29, static assertion lines=29)
+>>> RED verdict: test FAILED against the mutant (FAIL=4) -- the test can fail: OK
 
 ################ GREEN run: the real file ################
-NOTICE:  database "t_T_ORPH_green" does not exist, skipping
 $ psql -d t_T_ORPH_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
 [exit 0]
 (fixtures: src/_lib.sql, src/_fixture.sql loaded)
@@ -146,6 +167,8 @@ $ psql -X -e -d t_T_ORPH_green -f T-ORPH.sql (tokens expanded by src/expand.py)
 == T-ORPH (D-19, S-B): the three orphan probes return 0 after every PR-B path ==
 Output format is unaligned.
 -- the three probes (psql variables, passed to t.val as the query text):
+-- probe 4 (Q-2, SQL review r1): links unlinked as delivery_rejected whose delivery is NOT rejected. The row-level triggers cannot enforce this
+-- (it needs a deferred check), so every PR-B path test must return 0 here.
 -- probe 1: DC document with no delivery. probe 2: invoice document with neither a delivery nor an active link (v2).
 -- probe 3 (S-B): invoice document with no active link whose automatic delivery is not rejected.
 
@@ -156,6 +179,8 @@ SELECT t.val('S0 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S0 probe2 -- value = 0
 SELECT t.val('S0 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S0 probe3 -- value = 0
+SELECT t.val('S0 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S0 probe4 -- value = 0
 -- STEP 1: create a DC (document D1 + delivery V1)
 SELECT t.mk_dc('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'SM_O_dc1');
 60000000-0000-0000-0000-000000000001
@@ -165,6 +190,8 @@ SELECT t.val('S1 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S1 probe2 -- value = 0
 SELECT t.val('S1 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S1 probe3 -- value = 0
+SELECT t.val('S1 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S1 probe4 -- value = 0
 -- STEP 2: create an invoice (document D2 + automatic delivery V2 + self-link L1)
 SELECT t.mk_inv('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', 'SM_O_inv1');
 50000000-0000-0000-0000-000000000002
@@ -174,6 +201,8 @@ SELECT t.val('S2 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S2 probe2 -- value = 0
 SELECT t.val('S2 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S2 probe3 -- value = 0
+SELECT t.val('S2 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S2 probe4 -- value = 0
 -- STEP 3: PATH 1 link D2 -> V1 (soft-unlink self-link, cancel V2, insert pm_manual L2)
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000001';
 UPDATE 1
@@ -187,6 +216,8 @@ SELECT t.val('S3 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S3 probe2 -- value = 0
 SELECT t.val('S3 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S3 probe3 -- value = 0
+SELECT t.val('S3 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S3 probe4 -- value = 0
 -- STEP 4: PATH 2 unlink with restore (unlink L2, restore V2 FIRST, then the new self-link L3)
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'pm_unlinked' WHERE id = '70000000-0000-0000-0000-000000000002';
 UPDATE 1
@@ -200,6 +231,8 @@ SELECT t.val('S4 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S4 probe2 -- value = 0
 SELECT t.val('S4 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S4 probe3 -- value = 0
+SELECT t.val('S4 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S4 probe4 -- value = 0
 -- STEP 5: PATH 3 reject an automatic delivery (new invoice D3 / V3 / L4: unlink delivery_rejected, then reject)
 SELECT t.mk_inv('50000000-0000-0000-0000-000000000003', '60000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000004', 'SM_O_inv2');
 50000000-0000-0000-0000-000000000003
@@ -213,6 +246,8 @@ SELECT t.val('S5 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S5 probe2 -- value = 0
 SELECT t.val('S5 probe3 (rejected automatic delivery is the allowed exception)', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S5 probe3 (rejected automatic delivery is the allowed exception) -- value = 0
+SELECT t.val('S5 probe4 (the self-link was unlinked as delivery_rejected AND the delivery is rejected)', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S5 probe4 (the self-link was unlinked as delivery_rejected AND the delivery is rejected) -- value = 0
 -- STEP 6: PATH 4 reject a DC with restore. DC D4/V4, invoice D5/V5/L5; link D5 -> V4 (PATH 1), then reject V4.
 SELECT t.mk_dc('50000000-0000-0000-0000-000000000004', '60000000-0000-0000-0000-000000000004', 'SM_O_dc2');
 60000000-0000-0000-0000-000000000004
@@ -229,7 +264,7 @@ UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '300
 UPDATE 1
 UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad dc' WHERE id = '60000000-0000-0000-0000-000000000004';
 UPDATE 1
--- path 4 step 7: countpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ORPH.expanded.sql:55: error: unterminated quoted string
+-- path 4 step 7: countpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ORPH.expanded.sql:65: error: unterminated quoted string
 
 SELECT t.val('S6 active PM links of D5', $$SELECT count(*)::text FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000005' AND link_source = 'pm_manual' AND unlinked_at IS NULL$$, '0');
 PASS: S6 active PM links of D5 -- value = 0
@@ -244,6 +279,8 @@ SELECT t.val('S6 probe2', 'SELECT count(*)::text FROM public.capture_documents d
 PASS: S6 probe2 -- value = 0
 SELECT t.val('S6 probe3', 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')', '0');
 PASS: S6 probe3 -- value = 0
+SELECT t.val('S6 probe4', 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected''', '0');
+PASS: S6 probe4 -- value = 0
 
->>> RESULT t_T_ORPH_green: PASS=22 FAIL=0
->>> OVERALL T-ORPH: RED failed as required, GREEN PASS=22 FAIL=0
+>>> RESULT t_T_ORPH_green: PASS=29 FAIL=0   (declared EXPECT_PASS=29, static assertion lines=29)
+>>> OVERALL T-ORPH: RED failed as required, GREEN PASS=29 == expected 29 (static 29), FAIL=0

@@ -1,12 +1,12 @@
 == 049-sql evidence: T-DOWN ==
-generated: 2026-10-11T06:11:15Z
+generated: 2026-10-11T06:36:31Z
 $ git rev-parse HEAD
-1121e72f5288db613eb5a53c5e35edb971fabc8b
-$ SQL artifact commit under test: 50b929a666d394f9e47884c5661304de722830aa
-$ git rev-parse 50b929a666d394f9e47884c5661304de722830aa:docs/reviews/049_capture_tables.sql
-687d640ad1fece1bf0bcbb50dd1ca0347c079e94
+0c6239c9f3e913c383e0f94cd38a6024fc8ccb36
+$ SQL artifact commit under test: 668956e6131ee38d3cd96f32edb0c05e29974d0e
+$ git rev-parse 668956e6131ee38d3cd96f32edb0c05e29974d0e:docs/reviews/049_capture_tables.sql
+b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-687d640ad1fece1bf0bcbb50dd1ca0347c079e94
+b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,12 +15,12 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd  docs/reviews/049_capture_tables.sql
+cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
-0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+61118fb670facec5b84a4ca59a30a2498b193fb213e0461ce2eb7705702d9ea0  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
 
-DOWN blocks extracted by uncommenting (awk/sed in run.sh:extract_down):       65 lines (049),        8 lines (helpers). 049 DOWN as run:
+DOWN blocks extracted by uncommenting (awk/sed in run.sh:extract_down):       67 lines (049),        8 lines (helpers). 049 DOWN as run:
 BEGIN;
 
 DO $$
@@ -58,6 +58,18 @@ BEGIN
 END;
 $$;
 
+-- S-2 (SQL review r1): the bucket DELETE is NOT in this transaction. If
+-- Storage refused a direct SQL delete, a delete inside this transaction
+-- would roll the table drops and the ledger delete back with it. The
+-- zero-objects assertion stays here; the delete is the separate step below.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
+    RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
+  END IF;
+END;
+$$;
+
 DROP TABLE public.delivery_invoice_links;
 DROP TABLE public.capture_files;
 DROP TABLE public.deliveries;
@@ -72,24 +84,13 @@ DROP FUNCTION public.trg_capture_documents_before_update();
 -- applied with no objects (R8).
 DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
 
--- Bucket: zero objects, then delete. Supabase Storage may refuse a direct
--- SQL delete on storage.*; the disposable scaffold stubs storage and cannot
--- show that (block 2b executes this on test-db). If refused, remove the
--- bucket through the Storage API instead.
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
-    RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
-  END IF;
-END;
-$$;
+COMMIT;
+BEGIN;
 DELETE FROM storage.buckets WHERE id = 'capture-documents';
-
 COMMIT;
 -----
 
 ######## PHASE A (S-D): helpers present -> the guard must TRIP (RED); drop helpers, then DOWN succeeds (GREEN) ########
-NOTICE:  database "t_down_a" does not exist, skipping
 ## fingerprint BEFORE 049 (baseline of the REAL-dump scaffold):
 relations 81c40691162cef7e5a707e8822bc6a48
 functions c83f66f077cf7fbe891c4c3de00bbcf1
@@ -239,7 +240,12 @@ CREATE TABLE public.delivery_invoice_links (
   CONSTRAINT dil_unlink_reason_pair_chk CHECK ((unlinked_at IS NULL) = (unlink_reason IS NULL)),
   CONSTRAINT dil_snapshot_status_chk CHECK ((superseded_from_status IS NOT NULL) = COALESCE(link_source = 'created_from_invoice' AND unlink_reason = 'superseded_by_link', false)),
   CONSTRAINT dil_snapshot_approver_chk CHECK ((superseded_approval_by IS NOT NULL) = (superseded_from_status IS NOT DISTINCT FROM 'approved')),
-  CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL))
+  CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL)),
+  -- Q-1 (SQL review r1): unlink_reason is scoped to link_source. Both are safe when unlink_reason is NULL
+  -- (IS DISTINCT FROM is then true). The second matters more: a self-link unlinked as pm_unlinked would leave
+  -- the invoice with no active link while its automatic delivery is not cancelled.
+  CONSTRAINT dil_superseded_reason_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'superseded_by_link' OR link_source = 'created_from_invoice'),
+  CONSTRAINT dil_pm_unlinked_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'pm_unlinked' OR link_source = 'pm_manual')
 );
 CREATE TABLE
 CREATE UNIQUE INDEX uq_dil_active_per_delivery ON public.delivery_invoice_links (delivery_id) WHERE unlinked_at IS NULL;
@@ -307,7 +313,10 @@ BEGIN
       ELSIF v_status IN ('rejected', 'cancelled') THEN
         RAISE EXCEPTION USING ERRCODE = 'QE005', MESSAGE = 'E5';
       END IF;
-    ELSIF v_status = 'rejected' THEN
+    ELSIF v_status IN ('rejected', 'cancelled') THEN
+      -- B-2 (SQL review r1): a self-link is also refused onto a CANCELLED
+      -- delivery. Paths 2 and 4 restore the delivery BEFORE inserting the
+      -- new self-link, so this turns that header rule into one the trigger enforces.
       RAISE EXCEPTION USING ERRCODE = 'QE005', MESSAGE = 'E5';
     END IF;
   END IF;
@@ -416,8 +425,11 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
   END IF;
 
-  -- TR4a: immutable columns.
-  IF NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
+  -- TR4a: immutable columns (S-1, SQL review r1: id and created_at added --
+  -- every ordering CHECK is measured against created_at).
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+     OR NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
      OR NEW.dc_document_id IS DISTINCT FROM OLD.dc_document_id
      OR NEW.project_id IS DISTINCT FROM OLD.project_id
      OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
@@ -483,6 +495,42 @@ BEGIN
     END IF;
   END IF;
 
+  -- B-1 (SQL review r1): approval attribution cannot be rewritten after the
+  -- fact. Each group may change ONLY on its own status transition; any other
+  -- IS DISTINCT FROM on these columns raises E11.
+  -- approved_by/approved_at: NULL -> value only on a move INTO approved;
+  -- value -> NULL only on restore (cancelled -> incomplete/awaiting_pm).
+  IF NEW.approved_by IS DISTINCT FROM OLD.approved_by
+     OR NEW.approved_at IS DISTINCT FROM OLD.approved_at THEN
+    IF NOT (
+         (OLD.approved_by IS NULL AND OLD.approved_at IS NULL
+          AND NEW.status = 'approved' AND OLD.status IS DISTINCT FROM 'approved')
+      OR (NEW.approved_by IS NULL AND NEW.approved_at IS NULL
+          AND OLD.status = 'cancelled' AND NEW.status IN ('incomplete', 'awaiting_pm'))
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+  END IF;
+  -- rejected_by/rejected_at/reject_reason: set only on a move INTO rejected.
+  IF NEW.rejected_by IS DISTINCT FROM OLD.rejected_by
+     OR NEW.rejected_at IS DISTINCT FROM OLD.rejected_at
+     OR NEW.reject_reason IS DISTINCT FROM OLD.reject_reason THEN
+    IF NOT (NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected') THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+  END IF;
+  -- cancelled_at/cancel_reason: set on a move INTO cancelled; cleared on restore.
+  IF NEW.cancelled_at IS DISTINCT FROM OLD.cancelled_at
+     OR NEW.cancel_reason IS DISTINCT FROM OLD.cancel_reason THEN
+    IF NOT (
+         (NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM 'cancelled')
+      OR (NEW.cancelled_at IS NULL AND NEW.cancel_reason IS NULL
+          AND OLD.status = 'cancelled' AND NEW.status IN ('incomplete', 'awaiting_pm'))
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+  END IF;
+
   RETURN NEW;
 END;
 $$;
@@ -499,7 +547,10 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
   END IF;
 
-  IF NEW.kind IS DISTINCT FROM OLD.kind
+  -- S-1 (SQL review r1): id and created_at added to the immutable set.
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+     OR NEW.kind IS DISTINCT FROM OLD.kind
      OR NEW.project_id IS DISTINCT FROM OLD.project_id
      OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
      OR NEW.sent_by IS DISTINCT FROM OLD.sent_by
@@ -681,6 +732,16 @@ BEGIN
       END LOOP;
     END LOOP;
   END LOOP;
+  -- N-1 (SQL review r1): ownership. The GRANT ... TO postgres above is a no-op only if postgres owns the objects.
+  FOREACH v_t IN ARRAY ARRAY['capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_class c
+      WHERE c.oid = ('public.' || v_t)::regclass
+        AND c.relowner = 'postgres'::regrole
+    ) THEN
+      v_bad := v_bad || ' ' || v_t || ':owner';
+    END IF;
+  END LOOP;
   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
     FOREACH v_r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
       IF has_function_privilege(v_r, 'public.' || v_f || '()', 'EXECUTE') THEN
@@ -691,6 +752,7 @@ BEGIN
       SELECT 1 FROM pg_proc p
       WHERE p.oid = ('public.' || v_f || '()')::regprocedure
         AND p.prosecdef
+        AND p.proowner = 'postgres'::regrole
         AND p.proconfig = ARRAY['search_path=""']::text[]
     ) THEN
       v_bad := v_bad || ' ' || v_f || ':fingerprint';
@@ -896,8 +958,8 @@ GRANT
 $ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('049', 'capture_tables');  (stands in for the ledger repair)
 ## fingerprint AFTER UP + helpers + ledger row:
 relations a9014cad6c5515427671025b1a662948
-functions 82f9f8f5ba29f47152da941c1c9f0702
-constraints 6f809fbdc789f5552fe9de1b08f3e446
+functions d67c2fd490642bd531370063dcb2bfec
+constraints c3acf380234e4c15ba2e5e983ef0dd80
 triggers 3d5d868ac5a030845af6a78be6eb819c
 policies 8f2ffb5bfc25291bc74a8edf76a989be
 indexes dbcb5fb46c3487a39b7ada9c692064a6
@@ -946,7 +1008,7 @@ BEGIN
   END IF;
 END;
 $$;
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_FUNCTIONS: public.quoco_test_capture_update, public.quoco_test_capture_cleanup, public.quoco_test_capture_insert, public.quoco_test_capture_acl
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_FUNCTIONS: public.quoco_test_capture_insert, public.quoco_test_capture_cleanup, public.quoco_test_capture_update, public.quoco_test_capture_acl
 CONTEXT:  PL/pgSQL function inline_code_block line 31 at RAISE
 [exit 3]
 PASS: DOWN refused with DOWN_GUARD_FUNCTIONS while helpers exist
@@ -1010,6 +1072,14 @@ BEGIN
 END;
 $$;
 DO
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
+    RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
+  END IF;
+END;
+$$;
+DO
 DROP TABLE public.delivery_invoice_links;
 DROP TABLE
 DROP TABLE public.capture_files;
@@ -1028,14 +1098,10 @@ DROP FUNCTION public.trg_capture_documents_before_update();
 DROP FUNCTION
 DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
 DELETE 1
-DO $$
+COMMIT;
+COMMIT
+BEGIN;
 BEGIN
-  IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
-    RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
-  END IF;
-END;
-$$;
-DO
 DELETE FROM storage.buckets WHERE id = 'capture-documents';
 DELETE 1
 COMMIT;
@@ -1067,7 +1133,6 @@ comments on the four tables left: 0
 PASS: post-DOWN catalog shows none of the 049 objects (7 of 7 counts are 0)
 
 ######## PHASE B: guard 1 (rows) and guard 2 (any other function naming the tables, any non-system schema) ########
-NOTICE:  database "t_down_b" does not exist, skipping
 $ one DC document + delivery inserted (t.mk_dc) so the tables are not empty
 60000000-0000-0000-0000-000000000001
 $ psql -X -e -d t_down_b -v ON_ERROR_STOP=1 -f 049-down.sql
@@ -1154,8 +1219,9 @@ psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.s
 CONTEXT:  PL/pgSQL function inline_code_block line 31 at RAISE
 [exit 3]
 PASS: guard 2: refused, naming a function in a NON-public, non-system schema (t.mk_doc)
-NOTICE:  drop cascades to 5 other objects
+NOTICE:  drop cascades to 6 other objects
 DETAIL:  drop cascades to function t.expect(text,text,text)
+drop cascades to function t.errmsg(text)
 drop cascades to function t.val(text,text,text)
 drop cascades to function t.mk_doc(uuid,text,text,uuid)
 drop cascades to function t.mk_dc(uuid,uuid,text)
@@ -1240,6 +1306,14 @@ BEGIN
 END;
 $$;
 DO
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
+    RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
+  END IF;
+END;
+$$;
+DO
 DROP TABLE public.delivery_invoice_links;
 DROP TABLE
 DROP TABLE public.capture_files;
@@ -1258,6 +1332,77 @@ DROP FUNCTION public.trg_capture_documents_before_update();
 DROP FUNCTION
 DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
 DELETE 0
+COMMIT;
+COMMIT
+BEGIN;
+BEGIN
+DELETE FROM storage.buckets WHERE id = 'capture-documents';
+DELETE 1
+COMMIT;
+COMMIT
+[exit 0]
+PASS: no row, no foreign function: DOWN ran to COMMIT
+
+######## PHASE C (S-2): Storage REFUSES the direct SQL bucket delete (STUB trigger on storage.buckets). RED = the reviewed file's DOWN; GREEN = the new DOWN ########
+
+--- phase C RED: DOWN of the REVIEWED file (50b929a): bucket DELETE inside the single transaction
+$ psql -f refuse.sql   (STUB: BEFORE DELETE trigger on storage.buckets raising STORAGE_REFUSES_SQL_DELETE; stands in for Storage refusing a direct SQL delete)
+$ psql -X -e -d t_down_c_old -v ON_ERROR_STOP=1 -f old-down.sql
+BEGIN;
+BEGIN
+DO $$
+DECLARE
+  v_rows  bigint;
+  v_names text;
+BEGIN
+  -- Guard 1: nothing to lose.
+  SELECT (SELECT count(*) FROM public.delivery_invoice_links)
+       + (SELECT count(*) FROM public.capture_files)
+       + (SELECT count(*) FROM public.deliveries)
+       + (SELECT count(*) FROM public.capture_documents)
+    INTO v_rows;
+  IF v_rows <> 0 THEN
+    RAISE EXCEPTION 'DOWN_GUARD_ROWS';
+  END IF;
+  -- Guard 2 (intensional, R8; restricted to non-system namespaces, S-D): no
+  -- function other than 049's own four trigger functions may name these
+  -- tables. plpgsql bodies record no dependency, so DROP TABLE alone would
+  -- leave broken functions behind. Catches renamed or later PR-B/PR-C/PR-D
+  -- functions without listing them.
+  SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+    INTO v_names
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+     AND n.nspname !~ '^pg_'
+     AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+     AND NOT (n.nspname = 'public' AND p.proname IN (
+           'trg_dil_before_insert', 'trg_dil_before_update',
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+  IF v_names IS NOT NULL THEN
+    RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
+  END IF;
+END;
+$$;
+DO
+DROP TABLE public.delivery_invoice_links;
+DROP TABLE
+DROP TABLE public.capture_files;
+DROP TABLE
+DROP TABLE public.deliveries;
+DROP TABLE
+DROP TABLE public.capture_documents;
+DROP TABLE
+DROP FUNCTION public.trg_dil_before_insert();
+DROP FUNCTION
+DROP FUNCTION public.trg_dil_before_update();
+DROP FUNCTION
+DROP FUNCTION public.trg_deliveries_before_update();
+DROP FUNCTION
+DROP FUNCTION public.trg_capture_documents_before_update();
+DROP FUNCTION
+DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
+DELETE 1
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
@@ -1267,11 +1412,102 @@ END;
 $$;
 DO
 DELETE FROM storage.buckets WHERE id = 'capture-documents';
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/old-down.sql:63: ERROR:  STORAGE_REFUSES_SQL_DELETE
+CONTEXT:  PL/pgSQL function storage.refuse_bucket_delete() line 1 at RAISE
+[exit 3]
+$ psql -X -At -d t_down_c_old -f state.sql   (state after the refusal)
+tables left: 4
+functions left: 4
+ledger 049 rows left: 1
+bucket rows left: 1
+RED observation (not counted): exits non-zero=yes; main transaction committed (tables left 0)=NO -- ROLLED BACK; functions+ledger gone=NO -- ROLLED BACK
+FAIL(expected, RED): with the bucket DELETE inside the transaction, a Storage refusal rolls the table drops and the ledger delete back -- the defect S-2 fixes
+
+--- phase C GREEN: DOWN of the NEW file: main transaction, then the separate bucket step
+$ psql -f refuse.sql   (STUB: BEFORE DELETE trigger on storage.buckets raising STORAGE_REFUSES_SQL_DELETE; stands in for Storage refusing a direct SQL delete)
+$ psql -X -e -d t_down_c_new -v ON_ERROR_STOP=1 -f 049-down.sql
+BEGIN;
+BEGIN
+DO $$
+DECLARE
+  v_rows  bigint;
+  v_names text;
+BEGIN
+  -- Guard 1: nothing to lose.
+  SELECT (SELECT count(*) FROM public.delivery_invoice_links)
+       + (SELECT count(*) FROM public.capture_files)
+       + (SELECT count(*) FROM public.deliveries)
+       + (SELECT count(*) FROM public.capture_documents)
+    INTO v_rows;
+  IF v_rows <> 0 THEN
+    RAISE EXCEPTION 'DOWN_GUARD_ROWS';
+  END IF;
+  -- Guard 2 (intensional, R8; restricted to non-system namespaces, S-D): no
+  -- function other than 049's own four trigger functions may name these
+  -- tables. plpgsql bodies record no dependency, so DROP TABLE alone would
+  -- leave broken functions behind. Catches renamed or later PR-B/PR-C/PR-D
+  -- functions without listing them.
+  SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+    INTO v_names
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+     AND n.nspname !~ '^pg_'
+     AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+     AND NOT (n.nspname = 'public' AND p.proname IN (
+           'trg_dil_before_insert', 'trg_dil_before_update',
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+  IF v_names IS NOT NULL THEN
+    RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
+  END IF;
+END;
+$$;
+DO
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
+    RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
+  END IF;
+END;
+$$;
+DO
+DROP TABLE public.delivery_invoice_links;
+DROP TABLE
+DROP TABLE public.capture_files;
+DROP TABLE
+DROP TABLE public.deliveries;
+DROP TABLE
+DROP TABLE public.capture_documents;
+DROP TABLE
+DROP FUNCTION public.trg_dil_before_insert();
+DROP FUNCTION
+DROP FUNCTION public.trg_dil_before_update();
+DROP FUNCTION
+DROP FUNCTION public.trg_deliveries_before_update();
+DROP FUNCTION
+DROP FUNCTION public.trg_capture_documents_before_update();
+DROP FUNCTION
+DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
 DELETE 1
 COMMIT;
 COMMIT
-[exit 0]
-PASS: no row, no foreign function: DOWN ran to COMMIT
+BEGIN;
+BEGIN
+DELETE FROM storage.buckets WHERE id = 'capture-documents';
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:66: ERROR:  STORAGE_REFUSES_SQL_DELETE
+CONTEXT:  PL/pgSQL function storage.refuse_bucket_delete() line 1 at RAISE
+[exit 3]
+$ psql -X -At -d t_down_c_new -f state.sql   (state after the refusal)
+tables left: 0
+functions left: 0
+ledger 049 rows left: 0
+bucket rows left: 1
+PASS: S-2: the DOWN exits non-zero when Storage refuses (the bucket step failed)
+PASS: S-2: the MAIN transaction committed anyway (tables left 0)
+PASS: S-2: functions and the 049 ledger row are gone too (committed)
+PASS: S-2: the bucket row is still there and the refusal message is in the output
+$ Storage-API fallback (stand-in: drop the refusing stub trigger, then remove the bucket row)
+PASS: S-2: after the fallback the catalog fingerprint == the pre-049 baseline
 
->>> DOWN RESULT: PASS=12 FAIL=0
+>>> DOWN RESULT: PASS=17 FAIL=0 (expected PASS=17)
 >>> OVERALL T-DOWN: guards tripped (RED) where required, DOWN succeeded (GREEN) after the procedure, catalog back to baseline

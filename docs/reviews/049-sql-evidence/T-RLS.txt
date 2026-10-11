@@ -1,12 +1,12 @@
 == 049-sql evidence: T-RLS ==
-generated: 2026-10-11T06:11:18Z
+generated: 2026-10-11T06:36:34Z
 $ git rev-parse HEAD
-1121e72f5288db613eb5a53c5e35edb971fabc8b
-$ SQL artifact commit under test: 50b929a666d394f9e47884c5661304de722830aa
-$ git rev-parse 50b929a666d394f9e47884c5661304de722830aa:docs/reviews/049_capture_tables.sql
-687d640ad1fece1bf0bcbb50dd1ca0347c079e94
+0c6239c9f3e913c383e0f94cd38a6024fc8ccb36
+$ SQL artifact commit under test: 668956e6131ee38d3cd96f32edb0c05e29974d0e
+$ git rev-parse 668956e6131ee38d3cd96f32edb0c05e29974d0e:docs/reviews/049_capture_tables.sql
+b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
 $ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
-687d640ad1fece1bf0bcbb50dd1ca0347c079e94
+b49df7bd6a51bede54fe1d153c0fcbc272fc93a4
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -15,27 +15,27 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd  docs/reviews/049_capture_tables.sql
+cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
-0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+61118fb670facec5b84a4ca59a30a2498b193fb213e0461ce2eb7705702d9ea0  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
 
 ################ RED run 1: file:rls_no_status ################
 MUTANT (named): rls_no_status   -- diff of the real file against the mutated copy:
-747d746
+802d801
 <         AND u.status = 'active'
-762d760
+817d815
 <         AND u.status = 'active'
-777d774
+832d829
 <         AND u.status = 'active'
-792d788
+847d843
 <         AND u.status = 'active'
 NOTICE:  database "t_T_RLS_red1" does not exist, skipping
 $ psql -d t_T_RLS_red1 -v ON_ERROR_STOP=1 -f mutant-rls_no_status.sql   (049 UP)
 [exit 0]
 (fixtures: src/_lib.sql, src/_fixture.sql loaded)
 $ psql -X -e -d t_T_RLS_red1 -f T-RLS.sql (tokens expanded by src/expand.py)
-== T-RLS (D-20, R7): SELECT audience = PMs of thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-RLS.expanded.sql:1: error: unterminated quoted string
+== T-RLS (D-20, R7): SELECT audience = PMs of thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-RLS.expanded.sql:2: error: unterminated quoted string
 
 Output format is unaligned.
 -- rows (inserted as the owner): P1: doc D1 + delivery V1, invoice D2 + V2 + link L1, file F1. P2 (same tenant): D3, V3, invoice D4 + V4 + link L2, file F2. T2/P3: doc D5, delivery V5, file F3.
@@ -133,25 +133,25 @@ PASS: exactly 4 policies, all SELECT, all TO authenticated -- value = 4
 SELECT t.val('no INSERT/UPDATE/DELETE/ALL policy on the four tables', $$SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links') AND cmd <> 'SELECT'$$, '0');
 PASS: no INSERT/UPDATE/DELETE/ALL policy on the four tables -- value = 0
 
->>> RESULT t_T_RLS_red1: PASS=17 FAIL=2
+>>> RESULT t_T_RLS_red1: PASS=17 FAIL=2   (declared EXPECT_PASS=19, static assertion lines=19)
 >>> RED verdict: test FAILED against the mutant (FAIL=2) -- the test can fail: OK
 
 ################ RED run 2: file:rls_no_role ################
 MUTANT (named): rls_no_role   -- diff of the real file against the mutated copy:
-745d744
+800d799
 <         AND pm.role = 'pm'
-760d758
+815d813
 <         AND pm.role = 'pm'
-775d772
+830d827
 <         AND pm.role = 'pm'
-790d786
+845d841
 <         AND pm.role = 'pm'
 NOTICE:  database "t_T_RLS_red2" does not exist, skipping
 $ psql -d t_T_RLS_red2 -v ON_ERROR_STOP=1 -f mutant-rls_no_role.sql   (049 UP)
 [exit 0]
 (fixtures: src/_lib.sql, src/_fixture.sql loaded)
 $ psql -X -e -d t_T_RLS_red2 -f T-RLS.sql (tokens expanded by src/expand.py)
-== T-RLS (D-20, R7): SELECT audience = PMs of thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-RLS.expanded.sql:1: error: unterminated quoted string
+== T-RLS (D-20, R7): SELECT audience = PMs of thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-RLS.expanded.sql:2: error: unterminated quoted string
 
 Output format is unaligned.
 -- rows (inserted as the owner): P1: doc D1 + delivery V1, invoice D2 + V2 + link L1, file F1. P2 (same tenant): D3, V3, invoice D4 + V4 + link L2, file F2. T2/P3: doc D5, delivery V5, file F3.
@@ -249,7 +249,7 @@ PASS: exactly 4 policies, all SELECT, all TO authenticated -- value = 4
 SELECT t.val('no INSERT/UPDATE/DELETE/ALL policy on the four tables', $$SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links') AND cmd <> 'SELECT'$$, '0');
 PASS: no INSERT/UPDATE/DELETE/ALL policy on the four tables -- value = 0
 
->>> RESULT t_T_RLS_red2: PASS=18 FAIL=1
+>>> RESULT t_T_RLS_red2: PASS=18 FAIL=1   (declared EXPECT_PASS=19, static assertion lines=19)
 >>> RED verdict: test FAILED against the mutant (FAIL=1) -- the test can fail: OK
 
 ################ GREEN run: the real file ################
@@ -258,7 +258,7 @@ $ psql -d t_T_RLS_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
 [exit 0]
 (fixtures: src/_lib.sql, src/_fixture.sql loaded)
 $ psql -X -e -d t_T_RLS_green -f T-RLS.sql (tokens expanded by src/expand.py)
-== T-RLS (D-20, R7): SELECT audience = PMs of thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-RLS.expanded.sql:1: error: unterminated quoted string
+== T-RLS (D-20, R7): SELECT audience = PMs of thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-RLS.expanded.sql:2: error: unterminated quoted string
 
 Output format is unaligned.
 -- rows (inserted as the owner): P1: doc D1 + delivery V1, invoice D2 + V2 + link L1, file F1. P2 (same tenant): D3, V3, invoice D4 + V4 + link L2, file F2. T2/P3: doc D5, delivery V5, file F3.
@@ -356,5 +356,5 @@ PASS: exactly 4 policies, all SELECT, all TO authenticated -- value = 4
 SELECT t.val('no INSERT/UPDATE/DELETE/ALL policy on the four tables', $$SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links') AND cmd <> 'SELECT'$$, '0');
 PASS: no INSERT/UPDATE/DELETE/ALL policy on the four tables -- value = 0
 
->>> RESULT t_T_RLS_green: PASS=19 FAIL=0
->>> OVERALL T-RLS: RED failed as required, GREEN PASS=19 FAIL=0
+>>> RESULT t_T_RLS_green: PASS=19 FAIL=0   (declared EXPECT_PASS=19, static assertion lines=19)
+>>> OVERALL T-RLS: RED failed as required, GREEN PASS=19 == expected 19 (static 19), FAIL=0
