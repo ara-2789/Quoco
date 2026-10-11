@@ -1,3 +1,4 @@
+-- EXPECT_PASS: 11
 \echo == T-B2 (B2): forged INSERT with snapshot values -> refused; caller snapshot on UPDATE -> overwritten by TR3 ==
 \pset tuples_only on
 \pset format unaligned

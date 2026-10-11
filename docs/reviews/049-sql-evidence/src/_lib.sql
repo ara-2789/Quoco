@@ -29,6 +29,22 @@ BEGIN
 END;
 $$;
 
+-- t.errmsg: run p_sql and return the MESSAGE_TEXT of the error it raises ('(no error)' if it succeeds).
+CREATE OR REPLACE FUNCTION t.errmsg(p_sql text)
+RETURNS text LANGUAGE plpgsql AS $$
+DECLARE
+  v_msg text;
+BEGIN
+  BEGIN
+    EXECUTE p_sql;
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT;
+    RETURN v_msg;
+  END;
+  RETURN '(no error)';
+END;
+$$;
+
 -- t.val: run a one-value query and compare its text to p_expected.
 CREATE OR REPLACE FUNCTION t.val(p_label text, p_sql text, p_expected text)
 RETURNS text LANGUAGE plpgsql AS $$

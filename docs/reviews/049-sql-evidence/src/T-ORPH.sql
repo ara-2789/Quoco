@@ -1,3 +1,4 @@
+-- EXPECT_PASS: 29
 \echo == T-ORPH (D-19, S-B): the three orphan probes return 0 after every PR-B path ==
 \pset tuples_only on
 \pset format unaligned
@@ -5,6 +6,9 @@
 \set p1 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''dc'' AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.dc_document_id = d.id)'
 \set p2 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id) AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL)'
 \set p3 'SELECT count(*)::text FROM public.capture_documents d WHERE d.kind = ''invoice'' AND NOT EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.invoice_document_id = d.id AND l.unlinked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM public.deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = ''rejected'')'
+\set p4 'SELECT count(*)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.unlink_reason = ''delivery_rejected'' AND d.status <> ''rejected'''
+\echo -- probe 4 (Q-2, SQL review r1): links unlinked as delivery_rejected whose delivery is NOT rejected. The row-level triggers cannot enforce this
+\echo --   (it needs a deferred check), so every PR-B path test must return 0 here.
 \echo -- probe 1: DC document with no delivery.  probe 2: invoice document with neither a delivery nor an active link (v2).
 \echo -- probe 3 (S-B): invoice document with no active link whose automatic delivery is not rejected.
 \echo
@@ -12,16 +16,19 @@
 SELECT t.val('S0 probe1', :'p1', '0');
 SELECT t.val('S0 probe2', :'p2', '0');
 SELECT t.val('S0 probe3', :'p3', '0');
+SELECT t.val('S0 probe4', :'p4', '0');
 \echo -- STEP 1: create a DC (document D1 + delivery V1)
 SELECT t.mk_dc('{D1}', '{V1}', 'SM_O_dc1');
 SELECT t.val('S1 probe1', :'p1', '0');
 SELECT t.val('S1 probe2', :'p2', '0');
 SELECT t.val('S1 probe3', :'p3', '0');
+SELECT t.val('S1 probe4', :'p4', '0');
 \echo -- STEP 2: create an invoice (document D2 + automatic delivery V2 + self-link L1)
 SELECT t.mk_inv('{D2}', '{V2}', '{L1}', 'SM_O_inv1');
 SELECT t.val('S2 probe1', :'p1', '0');
 SELECT t.val('S2 probe2', :'p2', '0');
 SELECT t.val('S2 probe3', :'p3', '0');
+SELECT t.val('S2 probe4', :'p4', '0');
 \echo -- STEP 3: PATH 1 link D2 -> V1 (soft-unlink self-link, cancel V2, insert pm_manual L2)
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '{U.PM1}', unlink_reason = 'superseded_by_link' WHERE id = '{L1}';
 UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '{V2}';
@@ -29,6 +36,7 @@ INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_i
 SELECT t.val('S3 probe1', :'p1', '0');
 SELECT t.val('S3 probe2', :'p2', '0');
 SELECT t.val('S3 probe3', :'p3', '0');
+SELECT t.val('S3 probe4', :'p4', '0');
 \echo -- STEP 4: PATH 2 unlink with restore (unlink L2, restore V2 FIRST, then the new self-link L3)
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '{U.PM1}', unlink_reason = 'pm_unlinked' WHERE id = '{L2}';
 UPDATE public.deliveries SET status = 'incomplete', cancelled_at = NULL, cancel_reason = NULL, approved_by = NULL, approved_at = NULL WHERE id = '{V2}';
@@ -36,6 +44,7 @@ INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_i
 SELECT t.val('S4 probe1', :'p1', '0');
 SELECT t.val('S4 probe2', :'p2', '0');
 SELECT t.val('S4 probe3', :'p3', '0');
+SELECT t.val('S4 probe4', :'p4', '0');
 \echo -- STEP 5: PATH 3 reject an automatic delivery (new invoice D3 / V3 / L4: unlink delivery_rejected, then reject)
 SELECT t.mk_inv('{D3}', '{V3}', '{L4}', 'SM_O_inv2');
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '{U.PM1}', unlink_reason = 'delivery_rejected' WHERE id = '{L4}';
@@ -43,6 +52,7 @@ UPDATE public.deliveries SET status = 'rejected', rejected_by = '{U.PM1}', rejec
 SELECT t.val('S5 probe1', :'p1', '0');
 SELECT t.val('S5 probe2', :'p2', '0');
 SELECT t.val('S5 probe3 (rejected automatic delivery is the allowed exception)', :'p3', '0');
+SELECT t.val('S5 probe4 (the self-link was unlinked as delivery_rejected AND the delivery is rejected)', :'p4', '0');
 \echo -- STEP 6: PATH 4 reject a DC with restore. DC D4/V4, invoice D5/V5/L5; link D5 -> V4 (PATH 1), then reject V4.
 SELECT t.mk_dc('{D4}', '{V4}', 'SM_O_dc2');
 SELECT t.mk_inv('{D5}', '{V5}', '{L5}', 'SM_O_inv3');
@@ -64,10 +74,15 @@ INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_i
 SELECT t.val('S6 probe1', :'p1', '0');
 SELECT t.val('S6 probe2', :'p2', '0');
 SELECT t.val('S6 probe3', :'p3', '0');
+SELECT t.val('S6 probe4', :'p4', '0');
 \if :{?red}
 \echo -- RED positive controls: plant a DC document with no delivery (probe 1) and an invoice document with nothing (probe 2)
 SELECT t.mk_doc('{D8}', 'dc', 'SM_O_orph_dc');
 SELECT t.mk_doc('{D9}', 'invoice', 'SM_O_orph_inv');
 SELECT t.val('RED planted: probe1 must detect the orphan DC (expects 0, sees 1 -> FAIL proves the probe can fail)', :'p1', '0');
 SELECT t.val('RED planted: probe2 must detect the orphan invoice (expects 0, sees 1 -> FAIL)', :'p2', '0');
+\echo -- RED positive control for probe 4 (Q-2): unlink a self-link as delivery_rejected and leave its delivery incomplete (accepted by the row-level triggers)
+SELECT t.mk_inv('{D6}', '{V6}', '{L8}', 'SM_O_inv_p4');
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '{U.PM1}', unlink_reason = 'delivery_rejected' WHERE id = '{L8}';
+SELECT t.val('RED planted: probe4 must detect the unrejected delivery (expects 0, sees 1 -> FAIL)', :'p4', '0');
 \endif

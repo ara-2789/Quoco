@@ -1,3 +1,4 @@
+-- EXPECT_PASS: 57
 \echo == T-CHK: the CHECK combinations (plan v2 section 3, R2 / Q2-5, incl. the NULL-status case) and the NULL-safety of every implication CHECK ==
 \pset tuples_only on
 \pset format unaligned
@@ -28,6 +29,12 @@ SELECT t.expect('A12 unlinked_at before linked_at', $$INSERT INTO public.deliver
 SELECT t.expect('A13 pm_manual with NULL linked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('{T1}', '{P1}', '{V5}', '{D4}', 'pm_manual')$$, '23514');
 SELECT t.expect('A14 self-link WITH linked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('{T1}', '{P1}', '{V2}', '{D2}', 'created_from_invoice', '{U.PM1}')$$, '23514');
 SELECT t.expect('A15 unlinked_by a user of ANOTHER tenant (S-A composite FK)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('{T1}', '{P1}', '{V5}', '{D4}', 'pm_manual', '{U.PM1}', now(), '{U.PM3}', 'pm_unlinked')$$, '23503');
+\echo -- Q-1 (SQL review r1): unlink_reason is scoped to link_source (each row below has no status/approver, so ONLY the new CHECKs can answer)
+SELECT t.expect('A16 pm_manual row unlinked as superseded_by_link', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('{T1}', '{P1}', '{V5}', '{D4}', 'pm_manual', '{U.PM1}', now(), '{U.PM1}', 'superseded_by_link')$$, '23514');
+SELECT t.expect('A17 self-link unlinked as pm_unlinked (would leave the invoice with no active link while its delivery is not cancelled)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('{T1}', '{P1}', '{V3}', '{D3}', 'created_from_invoice', now(), '{U.PM1}', 'pm_unlinked')$$, '23514');
+SELECT t.expect('A18 NULL unlink_reason passes both new CHECKs (active pm_manual link V5 <- D4)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('{T1}', '{P1}', '{V5}', '{D4}', 'pm_manual', '{U.PM1}')$$, 'ok');
+SELECT t.expect('A19 pm_manual unlinked as pm_unlinked passes', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('{T1}', '{P1}', '{V5}', '{D4}', 'pm_manual', '{U.PM1}', now(), '{U.PM1}', 'pm_unlinked')$$, 'ok');
+SELECT t.expect('A20 delivery_rejected is allowed for BOTH sources (self-link)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('{T1}', '{P1}', '{V3}', '{D3}', 'created_from_invoice', now(), '{U.PM1}', 'delivery_rejected')$$, 'ok');
 ALTER TABLE public.delivery_invoice_links ENABLE TRIGGER USER;
 \echo
 \echo -- ===== B. deliveries: every "X implies Y" CHECK is NULL-safe =====

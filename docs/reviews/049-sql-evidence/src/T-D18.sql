@@ -1,3 +1,4 @@
+-- EXPECT_PASS: 11
 \echo == T-D18 (D-18): fixed-value kind columns -- wrong kind -> 23503; other project -> 23503 ==
 \pset tuples_only on
 \pset format unaligned

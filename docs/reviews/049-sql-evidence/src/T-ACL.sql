@@ -1,3 +1,4 @@
+-- EXPECT_PASS: 76
 \echo == T-ACL: ACL fingerprint after UP -- has_table_privilege matrix (anon, authenticated, service_role x 8 privileges x 4 tables), function fingerprint, real denials ==
 \pset tuples_only on
 \pset format unaligned
@@ -96,3 +97,20 @@ SELECT t.expect('service_role calls trg_dil_before_update()', 'SELECT public.trg
 SELECT t.expect('service_role calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
 SELECT t.expect('service_role calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
 RESET ROLE;
+\echo
+\echo -- ===== N-1 (SQL review r1): ownership. The GRANT ... TO postgres is a no-op only if postgres owns the objects =====
+SELECT t.val('N-1: the four tables are owned by postgres', $$SELECT count(*)::text FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND relowner = 'postgres'::regrole$$, '4');
+SELECT t.val('N-1: the four trigger functions are owned by postgres', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND proowner = 'postgres'::regrole$$, '4');
+\echo -- The UP file's OWN in-transaction assertion block (extracted from the file under test by the runner, loaded as t.assert_block()):
+SELECT t.expect('N-1: the assertion block passes on the clean state', 'SELECT t.assert_block()', 'ok');
+BEGIN;
+ALTER TABLE public.deliveries OWNER TO service_role;
+SELECT t.expect('N-1: wrong TABLE owner -> the assertion block raises', 'SELECT t.assert_block()', 'P0001');
+SELECT t.val('N-1: the message names deliveries:owner', $$SELECT (t.errmsg('SELECT t.assert_block()') LIKE '%deliveries:owner%')::text$$, 'true');
+ROLLBACK;
+BEGIN;
+ALTER FUNCTION public.trg_dil_before_update() OWNER TO service_role;
+SELECT t.expect('N-1: wrong FUNCTION owner -> the assertion block raises', 'SELECT t.assert_block()', 'P0001');
+SELECT t.val('N-1: the message names trg_dil_before_update:fingerprint', $$SELECT (t.errmsg('SELECT t.assert_block()') LIKE '%trg_dil_before_update:fingerprint%')::text$$, 'true');
+ROLLBACK;
+SELECT t.expect('N-1: clean again after the rolled-back owner changes', 'SELECT t.assert_block()', 'ok');

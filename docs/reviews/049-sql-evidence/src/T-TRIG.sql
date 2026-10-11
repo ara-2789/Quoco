@@ -1,3 +1,4 @@
+-- EXPECT_PASS: 75
 \echo == T-TRIG: TR1..TR5 and the A33 index -- every refusal with its E-code, each with a positive control ==
 \pset tuples_only on
 \pset format unaligned
@@ -67,16 +68,37 @@ SELECT t.expect('E11 approved V8: delivery_type', $$UPDATE public.deliveries SET
 SELECT t.expect('E11 approved V8: dc_number', $$UPDATE public.deliveries SET dc_number = 'DC-1' WHERE id = '{V8}'$$, 'E11');
 SELECT t.expect('E11 approved V8: dc_date', $$UPDATE public.deliveries SET dc_date = current_date WHERE id = '{V8}'$$, 'E11');
 SELECT t.expect('positive: a non-locked column (reject_reason is irrelevant; caption-like edit) -- no-op update of approved V8', $$UPDATE public.deliveries SET dc_number = dc_number WHERE id = '{V8}'$$, 'ok');
+\echo -- B-1 (SQL review r1): who approved / rejected / cancelled cannot be rewritten after the fact; each group changes only on its own transition
+SELECT t.expect('B-1 rewrite the approver of approved V8, status unchanged', $$UPDATE public.deliveries SET approved_by = '{U.ADMP}', approved_at = now() WHERE id = '{V8}'$$, 'E11');
+SELECT t.expect('B-1 clear the approver of approved V8, status unchanged', $$UPDATE public.deliveries SET approved_by = NULL, approved_at = NULL WHERE id = '{V8}'$$, 'E11');
+SELECT t.val('B-1 V8 approver is still PM1', $$SELECT (approved_by = '{U.PM1}')::text FROM public.deliveries WHERE id = '{V8}'$$, 'true');
+SELECT t.expect('B-1 set rejected_by on awaiting_pm V9 without moving to rejected', $$UPDATE public.deliveries SET rejected_by = '{U.PM1}' WHERE id = '{V9}'$$, 'E11');
+SELECT t.expect('B-1 set cancelled_at/cancel_reason on V9 without moving to cancelled', $$UPDATE public.deliveries SET cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '{V9}'$$, 'E11');
+SELECT t.expect('B-1 rewrite reject_reason of rejected V7, status unchanged', $$UPDATE public.deliveries SET reject_reason = 'rewritten' WHERE id = '{V7}'$$, 'E11');
+SELECT t.mk_dc('{D13}', '{V13}', 'SM_T_dc13');
+SELECT t.expect('B-1 positive: a move INTO rejected sets rejected_* (V13)', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '{U.PM1}', rejected_at = now(), reject_reason = 'short count' WHERE id = '{V13}'$$, 'ok');
 \echo -- approved automatic delivery, superseded, cancelled, restored (D-23, D-33): invoice D10 / V10 / L10
 SELECT t.mk_inv('{D10}', '{V10}', '{L10}', 'SM_T_inv10');
 UPDATE public.deliveries SET status = 'approved', approved_by = '{U.PM1}', approved_at = now() WHERE id = '{V10}';
 SELECT t.expect('E13 cancel V10 while its self-link is active (C-36)', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link', approved_by = approved_by WHERE id = '{V10}'$$, 'E13');
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '{U.PM1}', unlink_reason = 'superseded_by_link' WHERE id = '{L10}';
 SELECT t.val('snapshot recorded the pre-cancel status', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '{L10}'$$, 'approved');
+SELECT t.expect('B-1 cancel V10 WHILE changing approved_by', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link', approved_by = '{U.ADMP}' WHERE id = '{V10}'$$, 'E11');
+SELECT t.val('B-1 V10 is still approved by PM1 after the refused cancel', $$SELECT status || ':' || (approved_by = '{U.PM1}')::text FROM public.deliveries WHERE id = '{V10}'$$, 'approved:true');
 SELECT t.expect('positive: approved -> cancelled once unlinked', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '{V10}'$$, 'ok');
 SELECT t.expect('E11 cancelled V10: content locked (vehicle_number)', $$UPDATE public.deliveries SET vehicle_number = 'X1' WHERE id = '{V10}'$$, 'E11');
 SELECT t.expect('positive: restore cancelled -> incomplete (approved_* and cancelled_* cleared)', $$UPDATE public.deliveries SET status = 'incomplete', cancelled_at = NULL, cancel_reason = NULL, approved_by = NULL, approved_at = NULL WHERE id = '{V10}'$$, 'ok');
+SELECT t.val('B-1 positive: after restore approved_* and cancelled_* are cleared', $$SELECT (approved_by IS NULL AND approved_at IS NULL AND cancelled_at IS NULL AND cancel_reason IS NULL)::text FROM public.deliveries WHERE id = '{V10}'$$, 'true');
 SELECT t.expect('positive: after restore the content is editable again', $$UPDATE public.deliveries SET vehicle_number = 'TN01AB1234' WHERE id = '{V10}'$$, 'ok');
+\echo
+\echo -- ===== B-2 (SQL review r1): a self-link is refused onto a CANCELLED delivery (the other direction of C-36) =====
+SELECT t.mk_inv('{D14}', '{V14}', '{L14}', 'SM_T_inv14');
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '{U.PM1}', unlink_reason = 'superseded_by_link' WHERE id = '{L14}';
+UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '{V14}';
+SELECT t.expect('B-2 self-link INSERTed onto cancelled V14 (invoice D14 has no active link)', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('{L15}', '{T1}', '{P1}', '{V14}', '{D14}', 'created_from_invoice')$$, 'E5');
+SELECT t.val('B-2 no active link was created on V14', $$SELECT count(*)::text FROM public.delivery_invoice_links WHERE delivery_id = '{V14}' AND unlinked_at IS NULL$$, '0');
+SELECT t.expect('B-2 positive: restore V14 FIRST (paths 2 and 4)', $$UPDATE public.deliveries SET status = 'incomplete', cancelled_at = NULL, cancel_reason = NULL WHERE id = '{V14}'$$, 'ok');
+SELECT t.expect('B-2 positive: THEN the new self-link is accepted', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('{L15}', '{T1}', '{P1}', '{V14}', '{D14}', 'created_from_invoice')$$, 'ok');
 \echo
 \echo -- ===== TR5 capture_documents =====
 SELECT t.mk_doc('{D11}', 'dc', 'SM_T_doc11');
@@ -88,6 +110,11 @@ SELECT t.expect('E9 change kind', $$UPDATE public.capture_documents SET kind = '
 SELECT t.expect('E9 change sent_by', $$UPDATE public.capture_documents SET sent_by = '{U.PM1}' WHERE id = '{D11}'$$, 'E9');
 SELECT t.expect('E9 change source_message_sid', $$UPDATE public.capture_documents SET source_message_sid = 'SM_other' WHERE id = '{D11}'$$, 'E9');
 SELECT t.expect('E9 change project_id', $$UPDATE public.capture_documents SET project_id = '{P2}' WHERE id = '{D11}'$$, 'E9');
+\echo -- S-1 (SQL review r1): id and created_at are immutable (every ordering CHECK is measured against created_at)
+SELECT t.expect('S-1 change id of a delivery', $$UPDATE public.deliveries SET id = '{V20}' WHERE id = '{V9}'$$, 'E9');
+SELECT t.expect('S-1 change created_at of a delivery', $$UPDATE public.deliveries SET created_at = created_at - interval '2 days' WHERE id = '{V9}'$$, 'E9');
+SELECT t.expect('S-1 change id of a capture_documents row', $$UPDATE public.capture_documents SET id = '{D20}' WHERE id = '{D11}'$$, 'E9');
+SELECT t.expect('S-1 change created_at of a capture_documents row', $$UPDATE public.capture_documents SET created_at = created_at - interval '2 days' WHERE id = '{D11}'$$, 'E9');
 SELECT t.expect('positive: caption is editable', $$UPDATE public.capture_documents SET caption = 'cement' WHERE id = '{D11}'$$, 'ok');
 \echo
 \echo -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====

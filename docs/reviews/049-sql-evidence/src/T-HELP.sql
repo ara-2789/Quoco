@@ -1,3 +1,4 @@
+-- EXPECT_PASS: 23
 \echo == T-HELP (D-21, Q2-1): scripts/test-db-only-capture-helpers.sql -- loaded by the runner AFTER the 049 UP in this scenario only ==
 \pset tuples_only on
 \pset format unaligned

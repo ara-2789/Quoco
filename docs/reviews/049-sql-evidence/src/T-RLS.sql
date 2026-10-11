@@ -1,3 +1,4 @@
+-- EXPECT_PASS: 19
 \echo == T-RLS (D-20, R7): SELECT audience = PMs of the row's project, users.status = active; nobody else ==
 \pset tuples_only on
 \pset format unaligned

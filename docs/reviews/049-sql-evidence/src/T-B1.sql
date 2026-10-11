@@ -1,3 +1,4 @@
+-- EXPECT_PASS: 10
 \echo == T-B1 (B1): link then reject -> refused; unlink then reject -> succeeds ==
 \pset tuples_only on
 \pset format unaligned

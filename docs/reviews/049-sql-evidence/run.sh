@@ -68,6 +68,21 @@ mkdb() {
   $PSQL -X -q -d "$db" -v ON_ERROR_STOP=1 -f "$SRC/_lib.sql" >> "$T" 2>&1
   $PSQL -X -q -d "$db" -v ON_ERROR_STOP=1 -f "$SRC/_fixture.sql" >> "$T" 2>&1
   p "(fixtures: src/_lib.sql, src/_fixture.sql loaded)"
+  if [ -n "${LOAD_ASSERT:-}" ]; then
+    # N-1: the UP file's own in-transaction ACL/ownership assertion block (the last DO block before the UP's COMMIT),
+    # extracted and re-created as t.assert_block() so a scenario can run it after planting a wrong owner.
+    python3 -I - "$up" "$WORK/assert-fn.sql" <<'PYEOF'
+import sys
+lines = open(sys.argv[1]).read().split('\n')
+c = lines.index('COMMIT;')
+end = max(i for i in range(c) if lines[i] == '$$;')
+start = max(i for i in range(end) if lines[i] == 'DO $$')
+body = lines[start + 1:end]
+open(sys.argv[2], 'w').write('CREATE OR REPLACE FUNCTION t.assert_block() RETURNS void LANGUAGE plpgsql AS $$\n' + '\n'.join(body) + '\n$$;\n')
+PYEOF
+    p "\$ the UP's final assertion DO block extracted from $(basename "$up") (lines: $(wc -l < "$WORK/assert-fn.sql")) and loaded as t.assert_block()"
+    $PSQL -X -q -d "$db" -v ON_ERROR_STOP=1 -f "$WORK/assert-fn.sql" >> "$T" 2>&1; p "[exit $?]"
+  fi
   if [ -n "${HELPER_FILE:-}" ]; then
     p "\$ psql -d $db -v ON_ERROR_STOP=1 -f $(basename "$HELPER_FILE")   (test-db-only helpers, loaded for THIS scenario only)"
     $PSQL -X -q -d "$db" -v ON_ERROR_STOP=1 -f "$HELPER_FILE" >> "$T" 2>&1; p "[exit $?]"
@@ -84,7 +99,11 @@ scn() {
   cat "$o" >> "$T"
   local pass fail
   pass=$(grep -c '^PASS:' "$o"); fail=$(grep -c '^FAIL:' "$o")
-  p ""; p ">>> RESULT $db: PASS=$pass FAIL=$fail"
+  # N-2: the expected assertion count is DECLARED in the source (-- EXPECT_PASS: N) and cross-checked against a static
+  # count of the source's own assertion lines outside \if blocks (the RED-only controls live inside \if).
+  SCN_EXPECT=$(grep -m1 -oE '^-- EXPECT_PASS: [0-9]+' "$SRC/$name.sql" | grep -oE '[0-9]+$')
+  SCN_STATIC=$(awk 'BEGIN{d=0} /^\\if /{d++} /^\\endif/{d--} d==0 && /^SELECT t\.(expect|val)\(/{n++} END{print n+0}' "$SRC/$name.sql")
+  p ""; p ">>> RESULT $db: PASS=$pass FAIL=$fail   (declared EXPECT_PASS=${SCN_EXPECT:-none}, static assertion lines=$SCN_STATIC)"
   SCN_PASS=$pass; SCN_FAIL=$fail
 }
 
@@ -132,6 +151,9 @@ generic() {
              case $name in no_guard) sed "s/^  SELECT p_tenant_id IS NOT NULL AND EXISTS (\$/  SELECT true OR p_tenant_id IS NOT NULL AND EXISTS (/" "$HELPF" > "$HELPER_FILE";; esac
              p "MUTANT (named): helper $name   -- diff of the real helper script against the mutated copy:"; diff "$HELPF" "$HELPER_FILE" >> "$T"
              mkdb "$db" "$SQLF"; HELPER_FILE=$HELPF;;
+      commit) git -C "$ROOT" show "$name:docs/reviews/049_capture_tables.sql" > "$WORK/old-$name.sql"
+              p "MUTANT (named): the REVIEWED file at commit $name   -- diff of that file against the file under test:"; diff "$WORK/old-$name.sql" "$SQLF" >> "$T"
+              mkdb "$db" "$WORK/old-$name.sql";;
       post) p "MUTANT (named): $name   (post-UP SQL applied to the real file's result)"; mkdb "$db" "$SQLF" "$(mut_post "$name")";;
       flag) p "MUTANT (named): flow variant -v $name"; mkdb "$db" "$SQLF";;
     esac
@@ -143,10 +165,11 @@ generic() {
   local gdb="t_${ID//-/_}_green"
   mkdb "$gdb" "$SQLF"
   if [ "${#reds[@]}" -gt 0 ] && [[ ${reds[0]} == flag:* ]]; then scn "$gdb" "$scenario" -v green=1; else scn "$gdb" "$scenario"; fi
-  if [ "${SCN_FAIL:-1}" -eq 0 ] && [ "${SCN_PASS:-0}" -gt 0 ] && [ "$red_ok" -eq 1 ]; then
-    p ">>> OVERALL $ID: RED failed as required, GREEN PASS=$SCN_PASS FAIL=0"; return 0
+  # N-2 gate: PASS must EQUAL the declared expected count (which must equal the static count); FAIL must be 0.
+  if [ "${SCN_FAIL:-1}" -eq 0 ] && [ -n "${SCN_EXPECT:-}" ] && [ "${SCN_PASS:-0}" -eq "$SCN_EXPECT" ] && [ "$SCN_EXPECT" -eq "$SCN_STATIC" ] && [ "$red_ok" -eq 1 ]; then
+    p ">>> OVERALL $ID: RED failed as required, GREEN PASS=$SCN_PASS == expected $SCN_EXPECT (static $SCN_STATIC), FAIL=0"; return 0
   fi
-  p ">>> OVERALL $ID: NOT CLEAN (red_ok=$red_ok green PASS=${SCN_PASS:-0} FAIL=${SCN_FAIL:-?})"; return 1
+  p ">>> OVERALL $ID: NOT CLEAN (red_ok=$red_ok green PASS=${SCN_PASS:-0} expected=${SCN_EXPECT:-none} static=${SCN_STATIC:-?} FAIL=${SCN_FAIL:-?})"; return 1
 }
 
 # ---- custom driver: T-B3, link-vs-retype races with REAL concurrent psql sessions --------------------------------
@@ -192,11 +215,11 @@ b3() {
   p "concurrent on a local PG 17 cluster; 'LINK' = pm_manual link INSERT (TR1/TR2), 'RETYPE' = UPDATE delivery_type (TR4b)."
   local ok=1
   race rc_link_first   B3a-link    B3a-retype  supplier 1 file:no_tr4b;     [ "$RACE_FAIL" -gt 0 ] || { p ">>> RED did NOT fail -- not a valid test"; ok=0; }
-  race rc_link_first   B3a-link    B3a-retype  supplier 1;                  [ "$RACE_FAIL" -eq 0 ] && [ "$RACE_PASS" -gt 0 ] || ok=0
+  race rc_link_first   B3a-link    B3a-retype  supplier 1;                  [ "$RACE_FAIL" -eq 0 ] && [ "$RACE_PASS" -eq 4 ] || ok=0
   race rc_retype_first B3b-retype  B3b-link    internal_transfer 0 file:no_for_share; [ "$RACE_FAIL" -gt 0 ] || { p ">>> RED did NOT fail -- not a valid test"; ok=0; }
-  race rc_retype_first B3b-retype  B3b-link    internal_transfer 0;         [ "$RACE_FAIL" -eq 0 ] && [ "$RACE_PASS" -gt 0 ] || ok=0
+  race rc_retype_first B3b-retype  B3b-link    internal_transfer 0;         [ "$RACE_FAIL" -eq 0 ] && [ "$RACE_PASS" -eq 4 ] || ok=0
   race rr              B3c-retype  B3c-link    supplier 1 file:no_guard;    [ "$RACE_FAIL" -gt 0 ] || { p ">>> RED did NOT fail -- not a valid test"; ok=0; }
-  race rr              B3c-retype  B3c-link    supplier 1;                  [ "$RACE_FAIL" -eq 0 ] && [ "$RACE_PASS" -gt 0 ] || ok=0
+  race rr              B3c-retype  B3c-link    supplier 1;                  [ "$RACE_FAIL" -eq 0 ] && [ "$RACE_PASS" -eq 4 ] || ok=0
   if [ $ok -eq 1 ]; then p ">>> OVERALL T-B3: every RED failed as required, every GREEN clean"; else p ">>> OVERALL T-B3: NOT CLEAN"; return 1; fi
 }
 
@@ -291,8 +314,55 @@ EOSQL
   [ $RC -ne 0 ] && grep -q 'DOWN_GUARD_FUNCTIONS' "$WORK/last.out" && grep -q 'public.pm_unlink_invoice_future' "$WORK/last.out"; verdict "guard 2: refused, naming the planted future public function" $?
   $PSQL -X -q -d $db -c "DROP FUNCTION public.pm_unlink_invoice_future()" >> "$T" 2>&1
   runsql $db "$WORK/049-down.sql"; verdict "no row, no foreign function: DOWN ran to COMMIT" $RC
+  # ---------------- phase C (S-2): Storage refuses a direct SQL delete on storage.buckets --------------------------
+  p ""; p "######## PHASE C (S-2): Storage REFUSES the direct SQL bucket delete (STUB trigger on storage.buckets). RED = the reviewed file's DOWN; GREEN = the new DOWN ########"
+  git -C "$ROOT" show "50b929a:docs/reviews/049_capture_tables.sql" > "$WORK/old-50b929a.sql"
+  extract_down "$WORK/old-50b929a.sql" > "$WORK/old-down.sql"
+  cat > "$WORK/refuse.sql" <<'EOSQL'
+CREATE FUNCTION storage.refuse_bucket_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'STORAGE_REFUSES_SQL_DELETE'; END; $$;
+CREATE TRIGGER refuse_bucket_delete BEFORE DELETE ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.refuse_bucket_delete();
+EOSQL
+  cat > "$WORK/state.sql" <<'EOSQL'
+SELECT 'tables left: ' || count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relname IN ('capture_documents','capture_files','deliveries','delivery_invoice_links');
+SELECT 'functions left: ' || count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname LIKE 'trg\_%';
+SELECT 'ledger 049 rows left: ' || count(*) FROM supabase_migrations.schema_migrations WHERE version = '049';
+SELECT 'bucket rows left: ' || count(*) FROM storage.buckets WHERE id = 'capture-documents';
+EOSQL
+  for variant in old new; do
+    local cdb="t_down_c_$variant" upf="$SQLF" dnf="$WORK/049-down.sql" kind=GREEN
+    if [ $variant = old ]; then upf="$WORK/old-50b929a.sql"; dnf="$WORK/old-down.sql"; kind=RED; fi
+    p ""; p "--- phase C $kind: DOWN of $( [ $variant = old ] && echo 'the REVIEWED file (50b929a): bucket DELETE inside the single transaction' || echo 'the NEW file: main transaction, then the separate bucket step' )"
+    $PSQL -X -q -d postgres -c "DROP DATABASE IF EXISTS $cdb" -c "CREATE DATABASE $cdb TEMPLATE quoco_049_scaffold" >> "$T" 2>&1
+    $PSQL -X -q -d $cdb -v ON_ERROR_STOP=1 -f "$upf" >> "$T" 2>&1
+    $PSQL -X -q -d $cdb -c "INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('049', 'capture_tables')" >> "$T" 2>&1
+    p "\$ psql -f refuse.sql   (STUB: BEFORE DELETE trigger on storage.buckets raising STORAGE_REFUSES_SQL_DELETE; stands in for Storage refusing a direct SQL delete)"
+    $PSQL -X -q -d $cdb -v ON_ERROR_STOP=1 -f "$WORK/refuse.sql" >> "$T" 2>&1
+    runsql $cdb "$dnf"; local drc=$RC
+    p "\$ psql -X -At -d $cdb -f state.sql   (state after the refusal)"
+    $PSQL -X -At -d $cdb -f "$WORK/state.sql" > "$WORK/state.out" 2>&1; cat "$WORK/state.out" >> "$T"
+    local c1=1 c2=1 c3=1 c4=1
+    [ $drc -ne 0 ] && c1=0
+    grep -q 'tables left: 0' "$WORK/state.out" && c2=0
+    grep -q 'functions left: 0' "$WORK/state.out" && grep -q 'ledger 049 rows left: 0' "$WORK/state.out" && c3=0
+    grep -q 'bucket rows left: 1' "$WORK/state.out" && grep -q 'STORAGE_REFUSES_SQL_DELETE' "$WORK/last.out" && c4=0
+    if [ $variant = new ]; then
+      verdict "S-2: the DOWN exits non-zero when Storage refuses (the bucket step failed)" $c1
+      verdict "S-2: the MAIN transaction committed anyway (tables left 0)" $c2
+      verdict "S-2: functions and the 049 ledger row are gone too (committed)" $c3
+      verdict "S-2: the bucket row is still there and the refusal message is in the output" $c4
+      p "\$ Storage-API fallback (stand-in: drop the refusing stub trigger, then remove the bucket row)"
+      $PSQL -X -q -d $cdb -c "DROP TRIGGER refuse_bucket_delete ON storage.buckets" -c "DELETE FROM storage.buckets WHERE id = 'capture-documents'" >> "$T" 2>&1
+      fp $cdb > "$WORK/fp_c.txt"; cmp -s "$WORK/fp_base.txt" "$WORK/fp_c.txt"
+      verdict "S-2: after the fallback the catalog fingerprint == the pre-049 baseline" $?
+    else
+      p "RED observation (not counted): exits non-zero=$([ $c1 -eq 0 ] && echo yes || echo no); main transaction committed (tables left 0)=$([ $c2 -eq 0 ] && echo yes || echo NO -- ROLLED BACK); functions+ledger gone=$([ $c3 -eq 0 ] && echo yes || echo NO -- ROLLED BACK)"
+      if [ $c2 -ne 0 ] && [ $c3 -ne 0 ]; then p "FAIL(expected, RED): with the bucket DELETE inside the transaction, a Storage refusal rolls the table drops and the ledger delete back -- the defect S-2 fixes"; C_RED_OK=1; else p "RED did NOT reproduce the defect -- NOT A VALID TEST"; C_RED_OK=0; fi
+    fi
+  done
   p ""
-  p ">>> DOWN RESULT: PASS=$DPASS FAIL=$DFAIL"
+  p ">>> DOWN RESULT: PASS=$DPASS FAIL=$DFAIL (expected PASS=17)"
+  [ "${C_RED_OK:-0}" -eq 1 ] || DFAIL=$((DFAIL+1))
+  [ "$DPASS" -eq 17 ] || DFAIL=$((DFAIL+1))
   if [ "$DFAIL" -eq 0 ]; then p ">>> OVERALL T-DOWN: guards tripped (RED) where required, DOWN succeeded (GREEN) after the procedure, catalog back to baseline"; return 0; fi
   p ">>> OVERALL T-DOWN: NOT CLEAN"; return 1
 }
@@ -304,11 +374,11 @@ case $ID in
   T-B2)   generic T-B2 file:no_b2_insert post:no_tr3_trigger;;
   T-R5)   generic T-R5 post:drop_self_fk;;
   T-D18)  generic T-D18 post:drop_doc_fks;;
-  T-CHK)  generic T-CHK post:weak_approver_chk;;
+  T-CHK)  generic T-CHK post:weak_approver_chk commit:50b929a;;
   T-ORPH) generic T-ORPH flag:red=1;;
-  T-TRIG) generic T-TRIG post:no_triggers file:old_order;;
+  T-TRIG) generic T-TRIG post:no_triggers file:old_order commit:50b929a;;
   T-RLS)  generic T-RLS file:rls_no_status file:rls_no_role;;
-  T-ACL)  generic T-ACL post:plant_grants;;
+  T-ACL)  LOAD_ASSERT=1; generic T-ACL post:plant_grants commit:50b929a;;
   T-HELP) HELPER_FILE=$HELPF; generic T-HELP hfile:no_guard;;
   *) echo "unknown or custom test id $ID (custom drivers are added below)" >&2; exit 2;;
 esac

@@ -1,3 +1,4 @@
+-- EXPECT_PASS: 10
 \echo == T-R5 (R5): self_invoice_id generated column inside an FK -- wrong invoice -> 23503; correct -> inserts (PG 17) ==
 \pset tuples_only on
 \pset format unaligned
@@ -21,4 +22,8 @@ SELECT t.val('R5c self_invoice_id is NULL', $$SELECT (self_invoice_id IS NULL)::
 SELECT t.expect('R5d explicit value for the generated column', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, self_invoice_id) VALUES ('{T1}', '{P1}', '{V1}', '{D1}', 'created_from_invoice', '{D1}')$$, '428C9');
 \echo -- RESTRICT both ways: the delivery cannot be deleted or re-keyed while a link references it
 SELECT t.expect('R5e DELETE the referenced delivery', $$DELETE FROM public.deliveries WHERE id = '{V1}'$$, '23503');
-SELECT t.expect('R5e re-key the referenced delivery (ON UPDATE RESTRICT)', $$UPDATE public.deliveries SET id = '{V9}' WHERE id = '{V1}'$$, '23503');
+SELECT t.expect('R5e re-key the referenced delivery: refused by TR4a (S-1, id immutable) -> E9', $$UPDATE public.deliveries SET id = '{V9}' WHERE id = '{V1}'$$, 'E9');
+\echo -- the FK's own ON UPDATE RESTRICT, shown with the user triggers disabled (owner-level, scaffold only)
+ALTER TABLE public.deliveries DISABLE TRIGGER USER;
+SELECT t.expect('R5e FK ON UPDATE RESTRICT: re-key the referenced delivery with triggers off', $$UPDATE public.deliveries SET id = '{V9}' WHERE id = '{V1}'$$, '23503');
+ALTER TABLE public.deliveries ENABLE TRIGGER USER;
