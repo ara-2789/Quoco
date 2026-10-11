@@ -10,6 +10,7 @@
 --
 -- 11 Oct: O-1 and O-3 closed per Aravind.
 -- 11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2).
+-- 11 Oct: S-3 landed (Option A, per Aravind).
 --
 -- Spec commit: 0289bcf (origin/main). Specification, in order of precedence:
 --   docs/reviews/049-plan-review-package.md  (section 3 D-1..D-33, section 4
@@ -33,98 +34,98 @@
 -- lines in this file (line numbers are of THIS file). Source ids are those of
 -- the cover file (D-n), review round 1 (R/B/S/N), review round 2 (S-A..S-F,
 -- N-1, N-2, Q2-n) and plan v2 (TR1..TR5, C-n).
---   E7: 129-152, 604-725
---   E12: 129-152
---   E-codes-table: 129-152
---   N-1: 129-152, 932-980
---   D-31: 129-152
---   lock-paths: 154-212
---   R3: 154-212, 447-513, 604-725, 727-766
---   D-26: 154-212
---   Q2-2: 154-212
---   Q2-3: 154-212
---   S-C: 154-212
---   D-27: 154-212, 604-725
---   S-F: 214-224
---   S-E: 214-224
---   D-4: 214-224, 264-288, 295-322
---   Q2-6: 226-237
---   D-22: 226-237, 330-379
---   D-25: 226-237, 330-379
---   B3: 239-249, 447-513, 515-602, 604-725, 727-766
---   S-B: 239-249
---   D-19: 239-249, 264-288, 330-379
---   D-1: 264-288, 330-379
---   S-2: 264-288, 295-322, 984-1073
---   D-5: 264-288, 295-322, 330-379, 791-804, 806-819, 821-834, 836-849
---   D-30: 264-288
---   S-A: 264-288, 330-379, 386-423
---   S4: 264-288, 330-379
---   C-29: 264-288, 295-322, 330-379, 386-423
---   D-29: 264-288, 295-322, 330-379, 386-423, 984-1073
---   S-3: 295-322
---   D-9: 295-322, 901-905
---   D-10: 295-322, 901-905
---   D-18: 330-379
---   D-23: 330-379, 604-725
---   D-2: 386-423
---   D-3: 386-423, 430-435, 515-602
---   R2: 386-423, 515-602
---   Q2-5: 386-423
---   R5: 386-423
---   C-37: 386-423
---   Q-1: 386-423
---   N1: 430-435
---   A33: 430-435
---   E8: 430-435
---   C-35: 430-435
---   TR1: 447-513, 768-776
---   TR2: 447-513
---   B2: 447-513, 515-602
---   B-2: 447-513
---   R4: 447-513, 515-602, 604-725, 727-766, 858-862, 878-886, 932-980
---   D-7: 447-513, 515-602, 604-725, 727-766, 878-886
---   E1: 447-513
---   E2: 447-513
---   E3: 447-513
---   E4: 447-513
---   E5: 447-513
---   E10: 447-513, 515-602
---   E14: 447-513, 515-602, 604-725, 727-766
---   A28: 447-513
---   A34: 447-513
---   TR3: 515-602, 768-776
---   C-36: 515-602, 604-725
---   Q2-4: 515-602
---   TR4a: 604-725, 768-776
---   TR4b: 604-725, 768-776
---   TR4c: 604-725, 768-776
---   B-1: 604-725
---   S-1: 604-725, 727-766
---   D-6: 604-725, 727-766
---   S6: 604-725
---   B1: 604-725
---   E6: 604-725
---   O-3: 604-725
---   E9: 604-725, 727-766
---   E11: 604-725, 727-766
---   E13: 604-725
---   TR5: 727-766, 768-776
---   D-20: 785-789, 791-804, 806-819, 821-834, 836-849
---   R7: 785-789, 791-804, 806-819, 821-834, 836-849
---   C-30: 785-789, 791-804, 806-819, 821-834, 836-849
---   D-8: 858-862, 932-980
---   D-21: 858-862
---   CLAUDE.md-s6-per-role-revoke: 858-862
---   C-27: 878-886
---   O-1: 878-886
---   D-11: 901-905
---   042-precedent: 901-905
---   CLAUDE.md-s6-ACL-fingerprint: 932-980
---   R8: 984-1073
---   S-D: 984-1073
---   C-31: 984-1073
---   down-order: 984-1073
+--   E7: 130-153, 610-746
+--   E12: 130-153
+--   E-codes-table: 130-153
+--   N-1: 130-153, 960-1008
+--   D-31: 130-153
+--   lock-paths: 155-213
+--   R3: 155-213, 448-514, 610-746, 748-794
+--   D-26: 155-213
+--   Q2-2: 155-213
+--   Q2-3: 155-213
+--   S-C: 155-213
+--   D-27: 155-213, 610-746
+--   S-F: 215-225
+--   S-E: 215-225
+--   D-4: 215-225, 265-289, 296-323
+--   Q2-6: 227-238
+--   D-22: 227-238, 331-380
+--   D-25: 227-238, 331-380
+--   B3: 240-250, 448-514, 516-608, 610-746, 748-794
+--   S-B: 240-250
+--   D-19: 240-250, 265-289, 331-380
+--   D-1: 265-289, 331-380
+--   S-2: 265-289, 296-323, 1012-1101
+--   D-5: 265-289, 296-323, 331-380, 819-832, 834-847, 849-862, 864-877
+--   D-30: 265-289
+--   S-A: 265-289, 331-380, 387-424
+--   S4: 265-289, 331-380
+--   C-29: 265-289, 296-323, 331-380, 387-424
+--   D-29: 265-289, 296-323, 331-380, 387-424, 1012-1101
+--   S-3: 296-323, 516-608, 610-746, 748-794
+--   D-9: 296-323, 929-933
+--   D-10: 296-323, 929-933
+--   D-18: 331-380
+--   D-23: 331-380, 610-746
+--   D-2: 387-424
+--   D-3: 387-424, 431-436, 516-608
+--   R2: 387-424, 516-608
+--   Q2-5: 387-424
+--   R5: 387-424
+--   C-37: 387-424
+--   Q-1: 387-424
+--   N1: 431-436
+--   A33: 431-436
+--   E8: 431-436
+--   C-35: 431-436
+--   TR1: 448-514, 796-804
+--   TR2: 448-514
+--   B2: 448-514, 516-608
+--   B-2: 448-514
+--   R4: 448-514, 516-608, 610-746, 748-794, 886-890, 906-914, 960-1008
+--   D-7: 448-514, 516-608, 610-746, 748-794, 906-914
+--   E1: 448-514
+--   E2: 448-514
+--   E3: 448-514
+--   E4: 448-514
+--   E5: 448-514
+--   E10: 448-514, 516-608
+--   E14: 448-514, 516-608, 610-746, 748-794
+--   A28: 448-514
+--   A34: 448-514
+--   TR3: 516-608, 796-804
+--   C-36: 516-608, 610-746
+--   Q2-4: 516-608
+--   TR4a: 610-746, 796-804
+--   TR4b: 610-746, 796-804
+--   TR4c: 610-746, 796-804
+--   B-1: 610-746
+--   S-1: 610-746, 748-794
+--   D-6: 610-746, 748-794
+--   S6: 610-746
+--   B1: 610-746
+--   E6: 610-746
+--   O-3: 610-746
+--   E9: 610-746, 748-794
+--   E11: 610-746, 748-794
+--   E13: 610-746
+--   TR5: 748-794, 796-804
+--   D-20: 813-817, 819-832, 834-847, 849-862, 864-877
+--   R7: 813-817, 819-832, 834-847, 849-862, 864-877
+--   C-30: 813-817, 819-832, 834-847, 849-862, 864-877
+--   D-8: 886-890, 960-1008
+--   D-21: 886-890
+--   CLAUDE.md-s6-per-role-revoke: 886-890
+--   C-27: 906-914
+--   O-1: 906-914
+--   D-11: 929-933
+--   042-precedent: 929-933
+--   CLAUDE.md-s6-ACL-fingerprint: 960-1008
+--   R8: 1012-1101
+--   S-D: 1012-1101
+--   C-31: 1012-1101
+--   down-order: 1012-1101
 --
 -- [src: E7, E12, E-codes-table, N-1, D-31]
 -- RAISE CODES (E-numbers of the cover file section 4). Every RAISE in this
@@ -512,7 +513,7 @@ BEGIN
 END;
 $$;
 
--- [src: TR3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
+-- [src: TR3, S-3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
 CREATE FUNCTION public.trg_dil_before_update()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -573,6 +574,11 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'QE010', MESSAGE = 'E10';
   END IF;
 
+  -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the unlink time is
+  -- stamped by the database; the caller's value only signals the unlink and is
+  -- overwritten. (linked_at is NOT touched here: see the package, OPEN item.)
+  NEW.unlinked_at := now();
+
   -- Overwrite the snapshot from the delivery row (B2). Only a self-link
   -- unlinked as superseded_by_link records the delivery's pre-cancel state.
   IF OLD.link_source = 'created_from_invoice' AND NEW.unlink_reason = 'superseded_by_link' THEN
@@ -601,7 +607,7 @@ BEGIN
 END;
 $$;
 
--- [src: TR4a, TR4b, TR4c, B-1, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
+-- [src: TR4a, TR4b, TR4c, B-1, S-3, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
 CREATE FUNCTION public.trg_deliveries_before_update()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -720,11 +726,26 @@ BEGIN
     END IF;
   END IF;
 
+  -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the DATABASE stamps the
+  -- time at each allowed transition; any caller-supplied value is overwritten
+  -- (the same "wrong stamp impossible, not merely uncaught" rule as 043's
+  -- generated expires_at and B2's snapshot overwrite). Clearing on restore is
+  -- left as validated above. received_at stays caller-supplied (D-25).
+  IF NEW.status = 'approved' AND OLD.status IS DISTINCT FROM 'approved' THEN
+    NEW.approved_at := now();
+  END IF;
+  IF NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected' THEN
+    NEW.rejected_at := now();
+  END IF;
+  IF NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM 'cancelled' THEN
+    NEW.cancelled_at := now();
+  END IF;
+
   RETURN NEW;
 END;
 $$;
 
--- [src: TR5, S-1, D-6, B3, R3, R4, D-7, E9, E11, E14]
+-- [src: TR5, S-1, S-3, D-6, B3, R3, R4, D-7, E9, E11, E14]
 CREATE FUNCTION public.trg_capture_documents_before_update()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -759,6 +780,13 @@ BEGIN
     IF NEW.engineer_ack_note IS DISTINCT FROM OLD.engineer_ack_note THEN
       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
     END IF;
+  END IF;
+
+  -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the acknowledgement time
+  -- is stamped by the database when the ack is first set; a caller-supplied
+  -- value is overwritten. It drives the D-12 clock.
+  IF OLD.engineer_ack IS NULL AND NEW.engineer_ack IS NOT NULL THEN
+    NEW.engineer_ack_at := now();
   END IF;
 
   RETURN NEW;
