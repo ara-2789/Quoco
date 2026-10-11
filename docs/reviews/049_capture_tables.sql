@@ -11,6 +11,7 @@
 -- 11 Oct: O-1 and O-3 closed per Aravind.
 -- 11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2).
 -- 11 Oct: S-3 landed (Option A, per Aravind).
+-- 11 Oct: F4-1 (linked_at stamped) and F4-2 (INSERT guards) landed per Aravind.
 --
 -- Spec commit: 0289bcf (origin/main). Specification, in order of precedence:
 --   docs/reviews/049-plan-review-package.md  (section 3 D-1..D-33, section 4
@@ -34,98 +35,101 @@
 -- lines in this file (line numbers are of THIS file). Source ids are those of
 -- the cover file (D-n), review round 1 (R/B/S/N), review round 2 (S-A..S-F,
 -- N-1, N-2, Q2-n) and plan v2 (TR1..TR5, C-n).
---   E7: 130-153, 610-746
---   E12: 130-153
---   E-codes-table: 130-153
---   N-1: 130-153, 960-1008
---   D-31: 130-153
---   lock-paths: 155-213
---   R3: 155-213, 448-514, 610-746, 748-794
---   D-26: 155-213
---   Q2-2: 155-213
---   Q2-3: 155-213
---   S-C: 155-213
---   D-27: 155-213, 610-746
---   S-F: 215-225
---   S-E: 215-225
---   D-4: 215-225, 265-289, 296-323
---   Q2-6: 227-238
---   D-22: 227-238, 331-380
---   D-25: 227-238, 331-380
---   B3: 240-250, 448-514, 516-608, 610-746, 748-794
---   S-B: 240-250
---   D-19: 240-250, 265-289, 331-380
---   D-1: 265-289, 331-380
---   S-2: 265-289, 296-323, 1012-1101
---   D-5: 265-289, 296-323, 331-380, 819-832, 834-847, 849-862, 864-877
---   D-30: 265-289
---   S-A: 265-289, 331-380, 387-424
---   S4: 265-289, 331-380
---   C-29: 265-289, 296-323, 331-380, 387-424
---   D-29: 265-289, 296-323, 331-380, 387-424, 1012-1101
---   S-3: 296-323, 516-608, 610-746, 748-794
---   D-9: 296-323, 929-933
---   D-10: 296-323, 929-933
---   D-18: 331-380
---   D-23: 331-380, 610-746
---   D-2: 387-424
---   D-3: 387-424, 431-436, 516-608
---   R2: 387-424, 516-608
---   Q2-5: 387-424
---   R5: 387-424
---   C-37: 387-424
---   Q-1: 387-424
---   N1: 431-436
---   A33: 431-436
---   E8: 431-436
---   C-35: 431-436
---   TR1: 448-514, 796-804
---   TR2: 448-514
---   B2: 448-514, 516-608
---   B-2: 448-514
---   R4: 448-514, 516-608, 610-746, 748-794, 886-890, 906-914, 960-1008
---   D-7: 448-514, 516-608, 610-746, 748-794, 906-914
---   E1: 448-514
---   E2: 448-514
---   E3: 448-514
---   E4: 448-514
---   E5: 448-514
---   E10: 448-514, 516-608
---   E14: 448-514, 516-608, 610-746, 748-794
---   A28: 448-514
---   A34: 448-514
---   TR3: 516-608, 796-804
---   C-36: 516-608, 610-746
---   Q2-4: 516-608
---   TR4a: 610-746, 796-804
---   TR4b: 610-746, 796-804
---   TR4c: 610-746, 796-804
---   B-1: 610-746
---   S-1: 610-746, 748-794
---   D-6: 610-746, 748-794
---   S6: 610-746
---   B1: 610-746
---   E6: 610-746
---   O-3: 610-746
---   E9: 610-746, 748-794
---   E11: 610-746, 748-794
---   E13: 610-746
---   TR5: 748-794, 796-804
---   D-20: 813-817, 819-832, 834-847, 849-862, 864-877
---   R7: 813-817, 819-832, 834-847, 849-862, 864-877
---   C-30: 813-817, 819-832, 834-847, 849-862, 864-877
---   D-8: 886-890, 960-1008
---   D-21: 886-890
---   CLAUDE.md-s6-per-role-revoke: 886-890
---   C-27: 906-914
---   O-1: 906-914
---   D-11: 929-933
---   042-precedent: 929-933
---   CLAUDE.md-s6-ACL-fingerprint: 960-1008
---   R8: 1012-1101
---   S-D: 1012-1101
---   C-31: 1012-1101
---   down-order: 1012-1101
+--   E7: 134-159, 620-756
+--   E12: 134-159, 810-832, 834-853
+--   E-codes-table: 134-159
+--   N-1: 134-159, 1028-1076
+--   D-31: 134-159
+--   lock-paths: 161-219
+--   R3: 161-219, 454-524, 620-756, 758-804
+--   D-26: 161-219
+--   Q2-2: 161-219
+--   Q2-3: 161-219
+--   S-C: 161-219
+--   D-27: 161-219, 620-756
+--   S-F: 221-231
+--   S-E: 221-231
+--   D-4: 221-231, 271-295, 302-329
+--   Q2-6: 233-244
+--   D-22: 233-244, 337-386
+--   D-25: 233-244, 337-386
+--   B3: 246-256, 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+--   S-B: 246-256
+--   D-19: 246-256, 271-295, 337-386
+--   D-1: 271-295, 337-386
+--   S-2: 271-295, 302-329, 1080-1172
+--   D-5: 271-295, 302-329, 337-386, 882-895, 897-910, 912-925, 927-940
+--   D-30: 271-295
+--   S-A: 271-295, 337-386, 393-430
+--   S4: 271-295, 337-386
+--   C-29: 271-295, 302-329, 337-386, 393-430
+--   D-29: 271-295, 302-329, 337-386, 393-430, 1080-1172
+--   S-3: 302-329, 526-618, 620-756, 758-804
+--   D-9: 302-329, 997-1001
+--   D-10: 302-329, 997-1001
+--   D-18: 337-386
+--   D-23: 337-386, 620-756
+--   D-2: 393-430
+--   D-3: 393-430, 437-442, 526-618
+--   R2: 393-430, 526-618
+--   Q2-5: 393-430
+--   R5: 393-430
+--   C-37: 393-430
+--   Q-1: 393-430
+--   N1: 437-442
+--   A33: 437-442
+--   E8: 437-442
+--   C-35: 437-442
+--   TR1: 454-524, 855-867
+--   TR2: 454-524
+--   F4-1: 454-524
+--   B2: 454-524, 526-618
+--   B-2: 454-524
+--   R4: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 949-953,
+--         969-982, 1028-1076
+--   D-7: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 969-982
+--   E1: 454-524
+--   E2: 454-524
+--   E3: 454-524
+--   E4: 454-524
+--   E5: 454-524
+--   E10: 454-524, 526-618
+--   E14: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
+--   A28: 454-524
+--   A34: 454-524
+--   TR3: 526-618, 855-867
+--   C-36: 526-618, 620-756
+--   Q2-4: 526-618
+--   TR4a: 620-756, 855-867
+--   TR4b: 620-756, 855-867
+--   TR4c: 620-756, 855-867
+--   B-1: 620-756
+--   S-1: 620-756, 758-804
+--   D-6: 620-756, 758-804
+--   S6: 620-756
+--   B1: 620-756
+--   E6: 620-756
+--   O-3: 620-756
+--   E9: 620-756, 758-804
+--   E11: 620-756, 758-804
+--   E13: 620-756
+--   TR5: 758-804, 855-867
+--   F4-2: 810-832, 834-853, 855-867
+--   D-20: 876-880, 882-895, 897-910, 912-925, 927-940
+--   R7: 876-880, 882-895, 897-910, 912-925, 927-940
+--   C-30: 876-880, 882-895, 897-910, 912-925, 927-940
+--   D-8: 949-953, 1028-1076
+--   D-21: 949-953
+--   CLAUDE.md-s6-per-role-revoke: 949-953
+--   C-27: 969-982
+--   O-1: 969-982
+--   D-11: 997-1001
+--   042-precedent: 997-1001
+--   CLAUDE.md-s6-ACL-fingerprint: 1028-1076
+--   R8: 1080-1172
+--   S-D: 1080-1172
+--   C-31: 1080-1172
+--   down-order: 1080-1172
 --
 -- [src: E7, E12, E-codes-table, N-1, D-31]
 -- RAISE CODES (E-numbers of the cover file section 4). Every RAISE in this
@@ -146,7 +150,9 @@
 --   E10 QE010  TR3 (any refused link edit) and TR1 (B2: INSERT carrying
 --                   unlink/snapshot values)  -- assignment, see review package
 --   E11 QE011  TR4c (transition, locked content) and TR5 (second ack/note)
---   E12 (not raised) CHECK/FK, SQLSTATE 23514 / 23503
+--   E12 QE012  F4-2  INSERT guards (deliveries not 'incomplete' or carrying
+--                   attribution/stamp/reason values; capture_documents
+--                   carrying ack values); also raised by CHECK/FK, SQLSTATE 23514 / 23503
 --   E13 QE013  TR4c(2)(3)  move to rejected/cancelled while a link is active
 --   E14 QE014  isolation guard: any invariant trigger under a level other
 --                   than READ COMMITTED
@@ -445,7 +451,7 @@ CREATE INDEX idx_deliveries_reported_by ON public.deliveries (reported_by);
 -- get 42501 from the FOR SHARE lock in TR2 instead of the invariant verdict).
 -- -----------------------------------------------------------------------------
 
--- [src: TR1, TR2, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+-- [src: TR1, TR2, F4-1, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
 CREATE FUNCTION public.trg_dil_before_insert()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -468,6 +474,10 @@ BEGIN
      OR NEW.superseded_approval_at IS NOT NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'QE010', MESSAGE = 'E10';
   END IF;
+
+  -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
+  -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
+  NEW.linked_at := now();
 
   -- Lock level 1: the invoice document row, FOR NO KEY UPDATE (R3).
   PERFORM 1 FROM public.capture_documents d WHERE d.id = NEW.invoice_document_id FOR NO KEY UPDATE;
@@ -793,7 +803,60 @@ BEGIN
 END;
 $$;
 
--- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5]
+-- F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values. A delivery is CREATED
+-- 'incomplete' (D1; plan v3 line 105: it becomes 'awaiting_pm' inside the engineer RPC when the ack is stored,
+-- i.e. by UPDATE), so exactly 'incomplete' is allowed; every other status and every attribution/stamp/reason
+-- column must be NULL at INSERT. These fields are set only through the guarded UPDATE path.
+-- [src: F4-2, B3, R4, D-7, E12, E14]
+CREATE FUNCTION public.trg_deliveries_before_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  -- B3: first statement.
+  IF current_setting('transaction_isolation') <> 'read committed' THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+  END IF;
+
+  IF NEW.status IS DISTINCT FROM 'incomplete'
+     OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
+     OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
+     OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- [src: F4-2, B3, R4, D-7, E12, E14]
+CREATE FUNCTION public.trg_capture_documents_before_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  -- B3: first statement.
+  IF current_setting('transaction_isolation') <> 'read committed' THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+  END IF;
+
+  IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5, F4-2]
+CREATE TRIGGER tr_deliveries_before_insert BEFORE INSERT ON public.deliveries
+  FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_insert();
+CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents
+  FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_insert();
 CREATE TRIGGER tr_dil_before_insert BEFORE INSERT ON public.delivery_invoice_links
   FOR EACH ROW EXECUTE FUNCTION public.trg_dil_before_insert();
 CREATE TRIGGER tr_dil_before_update BEFORE UPDATE ON public.delivery_invoice_links
@@ -912,6 +975,11 @@ REVOKE ALL ON FUNCTION public.trg_deliveries_before_update() FROM PUBLIC, anon, 
 GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_update() TO postgres;
 REVOKE ALL ON FUNCTION public.trg_capture_documents_before_update() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_update() TO postgres;
+-- F4-2: the two INSERT-guard functions, same shape (O-1).
+REVOKE ALL ON FUNCTION public.trg_deliveries_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_insert() TO postgres;
+REVOKE ALL ON FUNCTION public.trg_capture_documents_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_insert() TO postgres;
 
 COMMENT ON TABLE public.capture_documents IS 'Capture engine slice 1a: one document (DC or invoice) per capture flow. Written only by PR-B definer functions. Business record, never pruned (D-29).';
 COMMENT ON TABLE public.capture_files IS 'Capture engine slice 1a: one row per page/photo of a capture_documents row. Bytes live in the capture-documents bucket.';
@@ -985,7 +1053,7 @@ BEGIN
       v_bad := v_bad || ' ' || v_t || ':owner';
     END IF;
   END LOOP;
-  FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+  FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
     FOREACH v_r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
       IF has_function_privilege(v_r, 'public.' || v_f || '()', 'EXECUTE') THEN
         v_bad := v_bad || ' ' || v_f || ':' || v_r || ':EXECUTE';
@@ -1053,7 +1121,8 @@ COMMIT;
 --      AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
 --      AND NOT (n.nspname = 'public' AND p.proname IN (
 --            'trg_dil_before_insert', 'trg_dil_before_update',
---            'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+--            'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+--            'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
 --   IF v_names IS NOT NULL THEN
 --     RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
 --   END IF;
@@ -1081,6 +1150,8 @@ COMMIT;
 -- DROP FUNCTION public.trg_dil_before_update();
 -- DROP FUNCTION public.trg_deliveries_before_update();
 -- DROP FUNCTION public.trg_capture_documents_before_update();
+-- DROP FUNCTION public.trg_deliveries_before_insert();
+-- DROP FUNCTION public.trg_capture_documents_before_insert();
 --
 -- -- Ledger: in the same transaction, so `migration list` never shows 049
 -- -- applied with no objects (R8).
