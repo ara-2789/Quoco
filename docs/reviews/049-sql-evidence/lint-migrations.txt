@@ -2,11 +2,4 @@
 > quocoai@0.1.0 lint:migrations
 > node scripts/lint-migrations.mjs
 
-migration-lint: 4 violation(s) not covered by scripts/migration-lint-exceptions.json:
-
-  docs/reviews/049_capture_tables.sql: trg_dil_before_insert  [no-orphan-security-definer]
-  docs/reviews/049_capture_tables.sql: trg_dil_before_update  [no-orphan-security-definer]
-  docs/reviews/049_capture_tables.sql: trg_deliveries_before_update  [no-orphan-security-definer]
-  docs/reviews/049_capture_tables.sql: trg_capture_documents_before_update  [no-orphan-security-definer]
-
-Each violation needs either a fix, or a new (file, object, rule) entry in scripts/migration-lint-exceptions.json with a reason — never a file-wide or rule-wide exemption.
+migration-lint: clean. 107 known violation(s), all exempted.

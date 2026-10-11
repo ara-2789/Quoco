@@ -1,7 +1,12 @@
 == 049-sql evidence: T-DOWN ==
-generated: 2026-10-11T05:59:27Z
+generated: 2026-10-11T06:11:15Z
 $ git rev-parse HEAD
-f26c7eddb8813001c0a32f83fef644a28edecbb1
+1121e72f5288db613eb5a53c5e35edb971fabc8b
+$ SQL artifact commit under test: 50b929a666d394f9e47884c5661304de722830aa
+$ git rev-parse 50b929a666d394f9e47884c5661304de722830aa:docs/reviews/049_capture_tables.sql
+687d640ad1fece1bf0bcbb50dd1ca0347c079e94
+$ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
+687d640ad1fece1bf0bcbb50dd1ca0347c079e94
 $ git status --porcelain      (empty output between the next two lines = clean tree)
 ----- begin porcelain -----
 ----- end porcelain -----
@@ -10,7 +15,7 @@ psql (PostgreSQL) 17.11 (Homebrew)
 $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
-1f0ad956633d084d2c92d4f50a8ccb53529a73c3f20745bda72b94f7cee68bc4  docs/reviews/049_capture_tables.sql
+31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd  docs/reviews/049_capture_tables.sql
 4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
 0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
 737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
@@ -84,6 +89,7 @@ COMMIT;
 -----
 
 ######## PHASE A (S-D): helpers present -> the guard must TRIP (RED); drop helpers, then DOWN succeeds (GREEN) ########
+NOTICE:  database "t_down_a" does not exist, skipping
 ## fingerprint BEFORE 049 (baseline of the REAL-dump scaffold):
 relations 81c40691162cef7e5a707e8822bc6a48
 functions c83f66f077cf7fbe891c4c3de00bbcf1
@@ -430,6 +436,16 @@ BEGIN
     PERFORM 1 FROM public.capture_documents d WHERE d.id = NEW.created_from_invoice_id FOR NO KEY UPDATE;
   END IF;
 
+  -- O-3 (closed per Aravind 11 Oct): an AUTOMATIC delivery can never be an
+  -- internal transfer. Raised BEFORE the active-link check below, so a PM
+  -- retyping an automatic delivery gets E7, not E6 ("Unlink it first" -- which
+  -- cannot be done for a self-link). The CHECK deliveries_auto_not_internal_chk
+  -- stays as the backstop (it also covers an INSERT).
+  IF NEW.delivery_type = 'internal_transfer' AND OLD.delivery_type IS DISTINCT FROM 'internal_transfer'
+     AND NEW.created_from_invoice_id IS NOT NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE007', MESSAGE = 'E7';
+  END IF;
+
   -- TR4b: no retype to internal_transfer while an active link exists.
   IF NEW.delivery_type = 'internal_transfer' AND OLD.delivery_type IS DISTINCT FROM 'internal_transfer' THEN
     IF EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.delivery_id = NEW.id AND l.unlinked_at IS NULL) THEN
@@ -602,12 +618,20 @@ GRANT SELECT ON public.delivery_invoice_links TO authenticated, service_role;
 GRANT
 REVOKE ALL ON FUNCTION public.trg_dil_before_insert() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE
+GRANT EXECUTE ON FUNCTION public.trg_dil_before_insert() TO postgres;
+GRANT
 REVOKE ALL ON FUNCTION public.trg_dil_before_update() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE
+GRANT EXECUTE ON FUNCTION public.trg_dil_before_update() TO postgres;
+GRANT
 REVOKE ALL ON FUNCTION public.trg_deliveries_before_update() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE
+GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_update() TO postgres;
+GRANT
 REVOKE ALL ON FUNCTION public.trg_capture_documents_before_update() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE
+GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_update() TO postgres;
+GRANT
 COMMENT ON TABLE public.capture_documents IS 'Capture engine slice 1a: one document (DC or invoice) per capture flow. Written only by PR-B definer functions. Business record, never pruned (D-29).';
 COMMENT
 COMMENT ON TABLE public.capture_files IS 'Capture engine slice 1a: one row per page/photo of a capture_documents row. Bytes live in the capture-documents bucket.';
@@ -872,7 +896,7 @@ GRANT
 $ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('049', 'capture_tables');  (stands in for the ledger repair)
 ## fingerprint AFTER UP + helpers + ledger row:
 relations a9014cad6c5515427671025b1a662948
-functions c37fa726541a666c660e2667d991466e
+functions 82f9f8f5ba29f47152da941c1c9f0702
 constraints 6f809fbdc789f5552fe9de1b08f3e446
 triggers 3d5d868ac5a030845af6a78be6eb819c
 policies 8f2ffb5bfc25291bc74a8edf76a989be
@@ -922,7 +946,7 @@ BEGIN
   END IF;
 END;
 $$;
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_FUNCTIONS: public.quoco_test_capture_update, public.quoco_test_capture_acl, public.quoco_test_capture_insert, public.quoco_test_capture_cleanup
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_FUNCTIONS: public.quoco_test_capture_update, public.quoco_test_capture_cleanup, public.quoco_test_capture_insert, public.quoco_test_capture_acl
 CONTEXT:  PL/pgSQL function inline_code_block line 31 at RAISE
 [exit 3]
 PASS: DOWN refused with DOWN_GUARD_FUNCTIONS while helpers exist
@@ -1043,6 +1067,7 @@ comments on the four tables left: 0
 PASS: post-DOWN catalog shows none of the 049 objects (7 of 7 counts are 0)
 
 ######## PHASE B: guard 1 (rows) and guard 2 (any other function naming the tables, any non-system schema) ########
+NOTICE:  database "t_down_b" does not exist, skipping
 $ one DC document + delivery inserted (t.mk_dc) so the tables are not empty
 60000000-0000-0000-0000-000000000001
 $ psql -X -e -d t_down_b -v ON_ERROR_STOP=1 -f 049-down.sql
