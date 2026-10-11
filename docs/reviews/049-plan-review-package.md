@@ -5,16 +5,19 @@ Written 11 Oct 2026. ~~Tier: LIGHT (docs only).~~ Corrected 11 Oct: PR tier LIGH
 ## 1. Repo-state header
 
 - `main` @ `58a455ed8cc9bbc247b65f132b274afe98cd31d1` (fetched 11 Oct; `git merge-base --is-ancestor 58a455e origin/main` exit 0).
-- `supabase migration list` on prod: 44 rows, local = remote on all 44, last row 048. Source: `049-plan-evidence/prod-probe-1011.txt`, probe P13 (extraction at the end of that file).
+- `supabase migration list` on prod: 44 rows, local = remote on all 44, last row 048. Source: `049-plan-evidence/prod-probe-1011.txt`, probe P13 (extraction at the end of that file). Updated 11 Oct: raw output is `049-plan-evidence/prod-P13-raw.json` (review round 2, §1).
 - Last runbook executed: 048 prod apply, 2026-09-21 (`scripts/migration-number-reservations.json`, 048 entry).
 - Proposed migration number: 049. It is not in `supabase/migrations/`, not in the reservations file, and not under `docs/reviews/` on `origin/main` (plan §1).
 - Plan file sha256 (`pra-plan-v1.md`): `10d0e4fa78762b90344476b90246d52bf70c4aa9cec430125f7a4f38b8a4d51f`.
+- Plan v2 sha256 (`pra-plan-v2.md`): `8a90f68751dc43a4bc3c3926c4ead71aa9b349a0c0727d30d21789327ce0aa5b`.
 
 ## 2. What is under review
 
 ~~The PR-A plan, `049-plan-evidence/pra-plan-v1.md`, as amended by section 3 below. Where section 3 and the plan disagree, section 3 wins.~~ Corrected 11 Oct, after review round 1 (section 9): now under review is `049-plan-evidence/pra-plan-v2.md`, as amended by section 3 below. Where section 3 and the plan disagree, section 3 wins. `pra-plan-v1.md` is kept unchanged as history.
 
 No SQL exists yet. The reviewer's output decides the SQL.
+
+Status 11 Oct: Design GO (round 2). The approved specification is `pra-plan-v2.md` as amended by section 3 (D-1..D-33) and section 11. The SQL package builds from that.
 
 ## 3. Decisions recorded 11 Oct 2026, per Aravind
 
@@ -60,8 +63,15 @@ These apply to `pra-plan-v2.md`. "v2 §" means a section of that file.
 - **D-25** (Q-recv) `received_at` = `processed_messages.created_at` for the inbound `MessageSid` (the webhook's receipt time). Overrides the v2 §4 open question.
 - **D-26** (Q2-2) When a PM rejects a DC delivery and that removes the invoice's last active PM link, the invoice's automatic delivery is restored as pending (`incomplete` or `awaiting_pm`, re-derived from the ack), exactly as in the unlink path (v2 §6 path 2), unless the automatic delivery was rejected. Consistent with A34. Overrides the v2 §6 "reject DC" open note.
 - **D-27** (Q2-4) C-36 accepted: unlink the self-link first, then cancel; a move to `cancelled` is refused while an active link exists. Overrides v2 §16 item 3.
-- **D-28** (Q-E13) E13 reuses E6's approved string, no new string: "This delivery has a linked invoice. Unlink it first." Only reject can reach it (a PM never cancels directly).
+- **D-28** ~~(Q-E13) E13 reuses E6's approved string, no new string: "This delivery has a linked invoice. Unlink it first." Only reject can reach it (a PM never cancels directly).~~ Superseded 11 Oct by D-31 (review round 2, N-1).
 - **D-29** (retention) The four tables and the bucket objects are a business record (GST evidence for supplier invoices and DCs): kept indefinitely, never pruned. Overrides the [GUESS] in v2 §15.
+
+### Decided by Aravind, 11 Oct, after review round 2
+
+- **D-30** (S-E) One document per capture flow. Every file that arrives in the flow before the engineer's 1/2/3 answer is a page (`capture_files` row) of that one document, whether sent in one message or several. A different document needs a new flow (menu 4 again). `UNIQUE (source_message_sid)` on `capture_documents` stays: the creating message is one per document. The bot must tell the engineer this rule (see section 4, S-1 and S-2). PR-B test item: confirm on a real phone how WhatsApp/Twilio delivers several photos selected together (one message or several); the bot must ask 1/2/3 once per document.
+- **D-31** (N-1) Reverses D-28. E13 maps to the existing generic string "Something went wrong — please try again." No new string.
+- **D-32** (R-I) The 043/044 photo-table policies do not check `users.status`. Backlog, owner Aravind, dated 11 Oct: BLOCKER before the switch trigger. Separate PR, not PR-A.
+- **D-33** (N-2) Accepted for 1a: after a restore, the originally approved content (for example `delivery_type`) is not snapshotted. First input to 1b's events table.
 
 ## 4. Approved user-facing strings
 
@@ -77,9 +87,14 @@ English approved by Aravind on 11 Oct 2026. Tamil owed, NOT approved. These repl
 
 The PR-D button label must be "Unlink", to match E6 and E8.
 
-E13 = E6 (D-28). No new string.
+~~E13 = E6 (D-28). No new string.~~ Superseded 11 Oct by D-31: E13 = generic string.
 
 ~~Added 11 Oct, in `pra-plan-v2.md` §10: **E13** (a move to rejected or cancelled while an active link exists) is new. Its wording is owed from Aravind. No string was written for it.~~ Superseded 11 Oct by D-28.
+
+Two new engineer strings, added 11 Oct after review round 2 (D-30). Both are marked: draft, approved in principle by Aravind 11 Oct; final wording checked against Rules 3.5, 3.6, 3.12 in the 1a strings redraft; Tamil owed.
+
+- **S-1** (menu 4 chosen): "Send one DC or invoice. A PDF, or photos of all its pages together."
+- **S-2** (after the 1/2/3 answer is saved): "Saved. To send another DC or invoice, choose 4 from the menu."
 
 Each string ships as a named constant with the comment "Tamil owed, NOT approved" (Tamil only).
 
@@ -143,6 +158,7 @@ The first four are verbatim copies, made with `cp`; sha256 was checked against t
 - `test-db-probe-1010.txt` was recovered from a chat upload of 10 Oct 23:51 IST. The Desktop original was deleted.
 - Secret scan on the first four: 0 matches for each pattern (counts only).
 - Secret scan on `review-round-1.txt` and `prod-P13-raw.json` (11 Oct, same regex, counts only): 0 and 0.
+- Added 11 Oct, after review round 2: `049-plan-evidence/review-round-2.txt` (verbatim copy), sha256 `96503ee038be8a8f735ea506fc2b758ec25f91ee29245a4037448a7f3ec40118`. Secret scan: 0.
 
 ## 9. Review round 1 (anonymous external reviewer, 11 Oct)
 
@@ -186,3 +202,37 @@ Confirm each disposition in section 9. Then:
   - Accepted by Aravind as D-27. Reviewer: confirm soundness.
 - **Q2-5** Is the NULL-safe form of the R2 CHECK (v2 §2.4, §3) correct?
 - **Q2-6** D-25 reads `processed_messages.created_at` by `MessageSid` inside the RPC. `processed_messages` has no `tenant_id`. Is that read safe and sufficient, or should the webhook pass the time as an argument?
+
+## 11. Review round 2 (anonymous external reviewer, 11 Oct)
+
+**Verdict: Design GO. No further plan round.** Evidence: `049-plan-evidence/review-round-2.txt`, sha256 `96503ee038be8a8f735ea506fc2b758ec25f91ee29245a4037448a7f3ec40118`. The review was made at head `19567dd`.
+
+**Reviewer errors owned in round 2** (`review-round-2.txt` §2): the round-1 R2 CHECK passed on NULL; the round-1 "P13 misparse" claim was made without seeing the raw output; and the round-1 R3 sentence ("retype and reject … take no other lock") contradicted the round-1 B1. The plan's versions stand: the NULL-safe R2 CHECK (v2 §2.4, §3), the P13 extraction (the raw output shows the CLI itself emits `time` equal to the version), and B1's reading (invoice, then delivery).
+
+| Item | Ruling | Carried to |
+|---|---|---|
+| S-A | Restore `linked_by` and `unlinked_by` composite FKs to `users(id, tenant_id)`, RESTRICT both ways (v1 had them; v2 dropped them silently). Re-count the Rule 9 entries. | SQL package |
+| S-B | Add a third orphan probe: an invoice document with no active link and whose automatic delivery is not rejected. It must return 0 after every scenario. | SQL package |
+| S-C | Path 4 (reject DC) re-reads under the locks. On a mismatch it raises E11 and stops; it never takes the invoice after the delivery. CI-only race test. | SQL package |
+| S-D | Test-db DOWN procedure: drop the helpers first, then run the 049 DOWN. The guard is restricted to non-system namespaces. | SQL package |
+| S-E | Decided as D-30. | SQL package, PR-B |
+| S-F | Capture-loss window: the SID is consumed before processing, so a capture that fails after that point is lost when Twilio retries. **PR-B BLOCKING condition.** `UNIQUE (source_message_sid)` guards server-side double calls only, not webhook retries. | PR-B (blocking) |
+| N-1 | Decided as D-31. | SQL package |
+| N-2 | Decided as D-33. | 1b |
+| Q2-1 | Option Y accepted, with: the helper insert refuses any `tenant_id` not created by the capture fixture (same guard as cleanup); the column list is built from the jsonb keys, never `INSERT … SELECT * FROM jsonb_populate_record` (generated columns reject non-DEFAULT values); a CI pre-check that the helpers exist on test-db. | SQL package |
+| Q2-2 | D-26 confirmed. Path 4 = `review-round-2.txt` §4 Q2-2, steps 1–8. | SQL package |
+| Q2-3 | B1's reading (invoice, then delivery). | SQL package |
+| Q2-4 | Sound. | — |
+| Q2-5 | The plan v2 CHECK form is correct. | SQL package |
+| Q2-6 | `received_at` is read inside the RPC. ONE `p_message_sid` parameter is used for both the lookup and `capture_documents.source_message_sid`. Refuse a missing row or NULL `created_at`. Residual risk, named: `processed_messages` holds no sender, so a server bug pairing one engineer with another's SID cannot be detected in the database. | SQL package |
+| S4 | Add `CHECK (received_at <= created_at)`. | SQL package |
+| R7 | The R-I backlog line (043/044 policies do not check `users.status`). | D-32 |
+
+**The reviewer's SQL-package checklist** (`review-round-2.txt` §7, items 1–6):
+
+1. S-A through S-E landed. S-F carried as a named PR-B blocking condition.
+2. Path 4 rewritten as the numbered steps in Q2-2.
+3. The Q2-1 helper tenant guard, and the Q2-6 single-parameter rule.
+4. The SQL file run against the PG 17 scaffold, with RED-then-GREEN transcripts for B1, B2 and B3 (B3 under both isolation levels), R5, D-18, the §3 CHECK combinations and the three orphan probes.
+5. Bucket INSERT and DELETE plus the full DOWN executed on test-db, with output captured.
+6. P10 and P14 pinned with their dates.
