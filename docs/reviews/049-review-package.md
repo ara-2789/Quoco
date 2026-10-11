@@ -5,7 +5,7 @@ Written 11 Oct 2026; updated 11 Oct for block 2a-FIX (O-1, O-3 closed) and block
 ## 1. Repo-state header
 
 - `main` @ `0289bcfacccc3c97738624e764e11b853f944726` (fetched 11 Oct; unchanged since round 2).
-- Branch `feat/049-capture-tables` (PR #331, draft). **SQL artifact commit** (the one every transcript names): `668956e6131ee38d3cd96f32edb0c05e29974d0e` ("fix(049): SQL review r1 — B-1, B-2, S-1, Q-1, N-1, S-2 (HELD)"). The commit that ran the transcripts is `0c6239c9f3e913c383e0f94cd38a6024fc8ccb36` (test sources); its SQL blob is identical (`b49df7bd…`, shown in every transcript header). The branch head is the next commit (this package + transcripts); its SHA is in the hand-off report from `git ls-remote`, not here (a file cannot name the commit that contains it).
+- Branch `feat/049-capture-tables` (PR #331, draft). **SQL artifact commit** (the one every transcript names): `ecc8e1ef6d3e9e0a844ea13bbd07d4c89cab5056` ("fix(049): SQL review r2 — S-3 timestamps stamped by the database (HELD)"). The commit that ran the transcripts is `70228cc6dad88b3f4169770017ad0159e2fdd84a` (test sources); its SQL blob is identical (`903abba5…`, shown in every transcript header). Earlier reviewed artifacts: `668956e` (SQL review round 2 reviewed this one), `50b929a` (round 1). The branch head is the next commit (this package + transcripts); its SHA is in the hand-off report from `git ls-remote`, not here (a file cannot name the commit that contains it).
 - Superseded artifact commits (history): `f26c7ed` (block 2a), `50b929a` (O-1/O-3; **this is the file SQL review round 1 reviewed**, blob `687d640a…`, head `8968222`).
 - `supabase migration list`, prod: 44 rows, local = remote on all 44, last row 048 — from `049-plan-evidence/prod-P13-raw.json`, 11 Oct. **Not re-run** (no Supabase command that links or writes was permitted).
 - Last runbook executed: 048 prod apply, 2026-09-21.
@@ -13,16 +13,16 @@ Written 11 Oct 2026; updated 11 Oct for block 2a-FIX (O-1, O-3 closed) and block
 
 ## 2. Pinned artifacts
 
-Hashes taken with `git show 668956e:<path> | shasum -a 256`; the same values are echoed at the top of every transcript (`shasum` frame).
+Hashes taken with `git show ecc8e1e:<path> | shasum -a 256`; the same values are echoed at the top of every transcript (`shasum` frame).
 
 | Artifact | sha256 | git blob |
 |---|---|---|
-| `docs/reviews/049_capture_tables.sql` (1073 lines) | `cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6` | `b49df7bd6a51bede54fe1d153c0fcbc272fc93a4` |
+| `docs/reviews/049_capture_tables.sql` (1101 lines) | `009ea0eb9ad89ee9c398e97de9a28f8d57a389718f4e5b3b6a74ac1f7964c28a` | `903abba5d3dfa94dc5486923d22a5f5cdd91d25e` |
 | `scripts/test-db-only-capture-helpers.sql` (unchanged since block 2a) | `4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3` | `fac582130a10b63ec10d734d95a4d3a6d4a15901` |
 
-The previous values (block 2a-FIX, the file the reviewer saw): SQL sha256 `31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd`, blob `687d640a…`.
+Previous values: `668956e` (the file SQL review round 2 reviewed) sha256 `cfa6c96bcc4fb369dcc3520d7f8bfa2e365f229f5478849906196b0384689fb6`, blob `b49df7bd…`; `50b929a` (round 1) sha256 `31d5b0436ba6688449c37be8416d531c1c8af0e6f42507f7af37b34516dc3dbd`, blob `687d640a…`. Sections 5, 8, 9 and 11 give line references at `668956e`; section 15 gives the S-3 delta at `ecc8e1e` (lines after ~577 shifted by about +28).
 
-Reviewer: `git show 668956e:docs/reviews/049_capture_tables.sql` is the file; do not trust a GitHub branch view. The SQL header carries a source-id → line-range map generated from the `-- [src: ...]` markers (92 of 92 map lines re-checked against the final file) and the dated lines "11 Oct: O-1 and O-3 closed per Aravind." and "11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2)."
+Reviewer: `git show ecc8e1e:docs/reviews/049_capture_tables.sql` is the file; do not trust a GitHub branch view. The SQL header carries a source-id → line-range map generated from the `-- [src: ...]` markers (92 of 92 map lines re-checked against the final file) and the dated lines "11 Oct: O-1 and O-3 closed per Aravind." and "11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2)."
 
 ## 3. The PG 17 scaffold (CLAUDE.md section 7)
 
@@ -142,7 +142,9 @@ Line references are to the SQL file at `668956e`.
 
 ## 11. Delta-review request
 
-**Reviewer: please review the delta only — SQL `50b929a` → `668956e`**, plus the re-run tests.
+**CURRENT (round 3): review the S-3-only delta `668956e` → `ecc8e1e` (section 15 lists its line ranges) plus the re-run tests.** The round-2 request below is kept as history.
+
+**Round 2 (history): the delta was SQL `50b929a` → `668956e`**, plus the re-run tests.
 `git diff 50b929a 668956e -- docs/reviews/049_capture_tables.sql` (188 insertions, 112 deletions; about 92 of those lines are the regenerated header map). Changed line ranges at `668956e`:
 
 | Lines | Change |
