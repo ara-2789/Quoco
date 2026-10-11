@@ -12,6 +12,12 @@
 -- 11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2).
 -- 11 Oct: S-3 landed (Option A, per Aravind).
 -- 11 Oct: F4-1 (linked_at stamped) and F4-2 (INSERT guards) landed per Aravind.
+-- 12 Oct: S-4 (created_at stamped) and N-4 (PM fields NULL at insert) per Aravind.
+--
+-- TIME RULE (per Aravind, 12 Oct): Every time column recording a system event
+-- is set by the database. Exceptions: received_at (D-25) and dc_date (document
+-- content, as printed). dc_date is PM-entered, NULL at INSERT (N-4), locked
+-- while approved/cancelled (D-23); it has no CHECK and no stamp.
 --
 -- Spec commit: 0289bcf (origin/main). Specification, in order of precedence:
 --   docs/reviews/049-plan-review-package.md  (section 3 D-1..D-33, section 4
@@ -35,101 +41,104 @@
 -- lines in this file (line numbers are of THIS file). Source ids are those of
 -- the cover file (D-n), review round 1 (R/B/S/N), review round 2 (S-A..S-F,
 -- N-1, N-2, Q2-n) and plan v2 (TR1..TR5, C-n).
---   E7: 134-159, 620-756
---   E12: 134-159, 810-832, 834-853
---   E-codes-table: 134-159
---   N-1: 134-159, 1028-1076
---   D-31: 134-159
---   lock-paths: 161-219
---   R3: 161-219, 454-524, 620-756, 758-804
---   D-26: 161-219
---   Q2-2: 161-219
---   Q2-3: 161-219
---   S-C: 161-219
---   D-27: 161-219, 620-756
---   S-F: 221-231
---   S-E: 221-231
---   D-4: 221-231, 271-295, 302-329
---   Q2-6: 233-244
---   D-22: 233-244, 337-386
---   D-25: 233-244, 337-386
---   B3: 246-256, 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
---   S-B: 246-256
---   D-19: 246-256, 271-295, 337-386
---   D-1: 271-295, 337-386
---   S-2: 271-295, 302-329, 1080-1172
---   D-5: 271-295, 302-329, 337-386, 882-895, 897-910, 912-925, 927-940
---   D-30: 271-295
---   S-A: 271-295, 337-386, 393-430
---   S4: 271-295, 337-386
---   C-29: 271-295, 302-329, 337-386, 393-430
---   D-29: 271-295, 302-329, 337-386, 393-430, 1080-1172
---   S-3: 302-329, 526-618, 620-756, 758-804
---   D-9: 302-329, 997-1001
---   D-10: 302-329, 997-1001
---   D-18: 337-386
---   D-23: 337-386, 620-756
---   D-2: 393-430
---   D-3: 393-430, 437-442, 526-618
---   R2: 393-430, 526-618
---   Q2-5: 393-430
---   R5: 393-430
---   C-37: 393-430
---   Q-1: 393-430
---   N1: 437-442
---   A33: 437-442
---   E8: 437-442
---   C-35: 437-442
---   TR1: 454-524, 855-867
---   TR2: 454-524
---   F4-1: 454-524
---   B2: 454-524, 526-618
---   B-2: 454-524
---   R4: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 949-953,
---         969-982, 1028-1076
---   D-7: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853, 969-982
---   E1: 454-524
---   E2: 454-524
---   E3: 454-524
---   E4: 454-524
---   E5: 454-524
---   E10: 454-524, 526-618
---   E14: 454-524, 526-618, 620-756, 758-804, 810-832, 834-853
---   A28: 454-524
---   A34: 454-524
---   TR3: 526-618, 855-867
---   C-36: 526-618, 620-756
---   Q2-4: 526-618
---   TR4a: 620-756, 855-867
---   TR4b: 620-756, 855-867
---   TR4c: 620-756, 855-867
---   B-1: 620-756
---   S-1: 620-756, 758-804
---   D-6: 620-756, 758-804
---   S6: 620-756
---   B1: 620-756
---   E6: 620-756
---   O-3: 620-756
---   E9: 620-756, 758-804
---   E11: 620-756, 758-804
---   E13: 620-756
---   TR5: 758-804, 855-867
---   F4-2: 810-832, 834-853, 855-867
---   D-20: 876-880, 882-895, 897-910, 912-925, 927-940
---   R7: 876-880, 882-895, 897-910, 912-925, 927-940
---   C-30: 876-880, 882-895, 897-910, 912-925, 927-940
---   D-8: 949-953, 1028-1076
---   D-21: 949-953
---   CLAUDE.md-s6-per-role-revoke: 949-953
---   C-27: 969-982
---   O-1: 969-982
---   D-11: 997-1001
---   042-precedent: 997-1001
---   CLAUDE.md-s6-ACL-fingerprint: 1028-1076
---   R8: 1080-1172
---   S-D: 1080-1172
---   C-31: 1080-1172
---   down-order: 1080-1172
+--   E7: 143-168, 631-767
+--   E12: 143-168, 821-852, 854-876
+--   E-codes-table: 143-168
+--   N-1: 143-168, 1051-1099
+--   D-31: 143-168
+--   lock-paths: 170-228
+--   R3: 170-228, 463-535, 631-767, 769-815
+--   D-26: 170-228
+--   Q2-2: 170-228
+--   Q2-3: 170-228
+--   S-C: 170-228
+--   D-27: 170-228, 631-767
+--   S-F: 230-240
+--   S-E: 230-240
+--   D-4: 230-240, 280-304, 311-338
+--   Q2-6: 242-253
+--   D-22: 242-253, 346-395
+--   D-25: 242-253, 346-395
+--   B3: 255-265, 463-535, 537-629, 631-767, 769-815, 821-852, 854-876
+--   S-B: 255-265
+--   D-19: 255-265, 280-304, 346-395
+--   D-1: 280-304, 346-395
+--   S-2: 280-304, 311-338, 1103-1195
+--   D-5: 280-304, 311-338, 346-395, 905-918, 920-933, 935-948, 950-963
+--   D-30: 280-304
+--   S-A: 280-304, 346-395, 402-439
+--   S4: 280-304, 346-395
+--   C-29: 280-304, 311-338, 346-395, 402-439
+--   D-29: 280-304, 311-338, 346-395, 402-439, 1103-1195
+--   S-3: 311-338, 537-629, 631-767, 769-815
+--   D-9: 311-338, 1020-1024
+--   D-10: 311-338, 1020-1024
+--   D-18: 346-395
+--   D-23: 346-395, 631-767
+--   D-2: 402-439
+--   D-3: 402-439, 446-451, 537-629
+--   R2: 402-439, 537-629
+--   Q2-5: 402-439
+--   R5: 402-439
+--   C-37: 402-439
+--   Q-1: 402-439
+--   N1: 446-451
+--   A33: 446-451
+--   E8: 446-451
+--   C-35: 446-451
+--   TR1: 463-535, 878-890
+--   TR2: 463-535
+--   F4-1: 463-535
+--   S-4: 463-535, 821-852, 854-876
+--   TIME-RULE: 463-535, 821-852, 854-876
+--   B2: 463-535, 537-629
+--   B-2: 463-535
+--   R4: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876, 972-976,
+--         992-1005, 1051-1099
+--   D-7: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876, 992-1005
+--   E1: 463-535
+--   E2: 463-535
+--   E3: 463-535
+--   E4: 463-535
+--   E5: 463-535
+--   E10: 463-535, 537-629
+--   E14: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876
+--   A28: 463-535
+--   A34: 463-535
+--   TR3: 537-629, 878-890
+--   C-36: 537-629, 631-767
+--   Q2-4: 537-629
+--   TR4a: 631-767, 878-890
+--   TR4b: 631-767, 878-890
+--   TR4c: 631-767, 878-890
+--   B-1: 631-767
+--   S-1: 631-767, 769-815
+--   D-6: 631-767, 769-815
+--   S6: 631-767
+--   B1: 631-767
+--   E6: 631-767
+--   O-3: 631-767
+--   E9: 631-767, 769-815
+--   E11: 631-767, 769-815
+--   E13: 631-767
+--   TR5: 769-815, 878-890
+--   F4-2: 821-852, 854-876, 878-890
+--   N-4: 821-852
+--   D-20: 899-903, 905-918, 920-933, 935-948, 950-963
+--   R7: 899-903, 905-918, 920-933, 935-948, 950-963
+--   C-30: 899-903, 905-918, 920-933, 935-948, 950-963
+--   D-8: 972-976, 1051-1099
+--   D-21: 972-976
+--   CLAUDE.md-s6-per-role-revoke: 972-976
+--   C-27: 992-1005
+--   O-1: 992-1005
+--   D-11: 1020-1024
+--   042-precedent: 1020-1024
+--   CLAUDE.md-s6-ACL-fingerprint: 1051-1099
+--   R8: 1103-1195
+--   S-D: 1103-1195
+--   C-31: 1103-1195
+--   down-order: 1103-1195
 --
 -- [src: E7, E12, E-codes-table, N-1, D-31]
 -- RAISE CODES (E-numbers of the cover file section 4). Every RAISE in this
@@ -451,7 +460,7 @@ CREATE INDEX idx_deliveries_reported_by ON public.deliveries (reported_by);
 -- get 42501 from the FOR SHARE lock in TR2 instead of the invariant verdict).
 -- -----------------------------------------------------------------------------
 
--- [src: TR1, TR2, F4-1, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+-- [src: TR1, TR2, F4-1, S-4, TIME-RULE, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
 CREATE FUNCTION public.trg_dil_before_insert()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -478,6 +487,8 @@ BEGIN
   -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
   -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
   NEW.linked_at := now();
+  -- S-4 (SQL review r3, per Aravind 12 Oct): created_at stamped by the database too.
+  NEW.created_at := now();
 
   -- Lock level 1: the invoice document row, FOR NO KEY UPDATE (R3).
   PERFORM 1 FROM public.capture_documents d WHERE d.id = NEW.invoice_document_id FOR NO KEY UPDATE;
@@ -807,7 +818,7 @@ $$;
 -- 'incomplete' (D1; plan v3 line 105: it becomes 'awaiting_pm' inside the engineer RPC when the ack is stored,
 -- i.e. by UPDATE), so exactly 'incomplete' is allowed; every other status and every attribution/stamp/reason
 -- column must be NULL at INSERT. These fields are set only through the guarded UPDATE path.
--- [src: F4-2, B3, R4, D-7, E12, E14]
+-- [src: F4-2, S-4, N-4, TIME-RULE, B3, R4, D-7, E12, E14]
 CREATE FUNCTION public.trg_deliveries_before_insert()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -823,15 +834,24 @@ BEGIN
   IF NEW.status IS DISTINCT FROM 'incomplete'
      OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
      OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
-     OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL THEN
+     OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL
+     OR NEW.delivery_type IS NOT NULL OR NEW.vehicle_number IS NOT NULL
+     OR NEW.dc_number IS NOT NULL OR NEW.dc_date IS NOT NULL THEN
+    -- N-4 (SQL review r3, Option A per Aravind 12 Oct): the PM-owned fields
+    -- (delivery_type, vehicle_number, dc_number, dc_date) are also NULL at
+    -- INSERT; the engineer path cannot pre-fill them. Set only through UPDATE.
     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
   END IF;
+
+  -- S-4 (SQL review r3, per Aravind 12 Oct): created_at is the anchor every
+  -- ordering CHECK is measured against; the database stamps it, never NEW.
+  NEW.created_at := now();
 
   RETURN NEW;
 END;
 $$;
 
--- [src: F4-2, B3, R4, D-7, E12, E14]
+-- [src: F4-2, S-4, TIME-RULE, B3, R4, D-7, E12, E14]
 CREATE FUNCTION public.trg_capture_documents_before_insert()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -847,6 +867,9 @@ BEGIN
   IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
   END IF;
+
+  -- S-4 (SQL review r3, per Aravind 12 Oct): created_at stamped by the database.
+  NEW.created_at := now();
 
   RETURN NEW;
 END;
