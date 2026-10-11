@@ -39,6 +39,11 @@ header() {
   p "== 049-sql evidence: $ID =="
   p "generated: $(date -u +%FT%TZ)"
   p "\$ git rev-parse HEAD"; git -C "$ROOT" rev-parse HEAD >> "$T"
+  if [ -n "${ARTIFACT_SHA:-}" ]; then
+    p "\$ SQL artifact commit under test: $ARTIFACT_SHA"
+    p "\$ git rev-parse $ARTIFACT_SHA:docs/reviews/049_capture_tables.sql"; git -C "$ROOT" rev-parse "$ARTIFACT_SHA:docs/reviews/049_capture_tables.sql" >> "$T"
+    p "\$ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)"; git -C "$ROOT" rev-parse "HEAD:docs/reviews/049_capture_tables.sql" >> "$T"
+  fi
   p "\$ git status --porcelain      (empty output between the next two lines = clean tree)"
   p "----- begin porcelain -----"; git -C "$ROOT" status --porcelain >> "$T"; p "----- end porcelain -----"
   p "\$ psql --version"; $PSQL --version >> "$T"
@@ -89,7 +94,8 @@ mut_file() {  # $1 name -> writes $WORK/mutant-$1.sql ; prints a diff into the t
   case $n in
     no_guard)       sed "s/IF current_setting('transaction_isolation') <> 'read committed' THEN/IF false THEN/" "$SQLF" > "$f";;
     no_for_share)   sed "s/^     FOR SHARE;\$/     ;/" "$SQLF" > "$f";;
-    no_tr4b)        sed "s/IF NEW.delivery_type = 'internal_transfer' AND OLD.delivery_type IS DISTINCT FROM 'internal_transfer' THEN/IF false THEN/" "$SQLF" > "$f";;
+    old_order)      sed "s/^     AND NEW.created_from_invoice_id IS NOT NULL THEN\$/     AND false THEN/" "$SQLF" > "$f";;
+    no_tr4b)      sed "s/IF NEW.delivery_type = 'internal_transfer' AND OLD.delivery_type IS DISTINCT FROM 'internal_transfer' THEN/IF false THEN/" "$SQLF" > "$f";;
     no_b2_insert)   sed -e "s/^  IF NEW.unlinked_at IS NOT NULL OR NEW.unlinked_by IS NOT NULL OR NEW.unlink_reason IS NOT NULL\$/  IF (NEW.unlinked_at IS NOT NULL OR NEW.unlinked_by IS NOT NULL OR NEW.unlink_reason IS NOT NULL/" -e "s/^     OR NEW.superseded_approval_at IS NOT NULL THEN\$/     OR NEW.superseded_approval_at IS NOT NULL) AND false THEN/" "$SQLF" > "$f";;
     rls_no_status)  sed "/AND u.status = 'active'/d" "$SQLF" > "$f";;
     rls_no_role)    sed "/AND pm.role = 'pm'/d" "$SQLF" > "$f";;
@@ -300,7 +306,7 @@ case $ID in
   T-D18)  generic T-D18 post:drop_doc_fks;;
   T-CHK)  generic T-CHK post:weak_approver_chk;;
   T-ORPH) generic T-ORPH flag:red=1;;
-  T-TRIG) generic T-TRIG post:no_triggers;;
+  T-TRIG) generic T-TRIG post:no_triggers file:old_order;;
   T-RLS)  generic T-RLS file:rls_no_status file:rls_no_role;;
   T-ACL)  generic T-ACL post:plant_grants;;
   T-HELP) HELPER_FILE=$HELPF; generic T-HELP hfile:no_guard;;

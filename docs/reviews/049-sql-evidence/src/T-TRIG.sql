@@ -46,8 +46,12 @@ SELECT t.expect('E9 change created_from_invoice_id of an automatic delivery', $$
 \echo -- ===== TR4b retype to internal_transfer while linked: E6 (and observation O-3) =====
 SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '{V1}'$$, 'E6');
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '{V1}'$$, 'supplier');
-SELECT t.expect('O-3 OBSERVED: automatic V4 with an active self-link retyped to internal_transfer is refused by TR4b (E6), so E7 (the CHECK) is preempted', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '{V4}'$$, 'E6');
-SELECT t.expect('E7 reachable only when no active link exists: rejected automatic V6 retyped to internal_transfer (CHECK)', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '{V6}'$$, '23514');
+\echo -- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFORE TR4b's E6
+SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '{V4}'$$, 'E7');
+SELECT t.expect('E7 (O-3) rejected automatic V6 (no active link) retyped to internal_transfer -> E7', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '{V6}'$$, 'E7');
+SELECT t.val('E7 V4 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '{V4}'$$, 'supplier');
+SELECT t.expect('E7 backstop: the CHECK still refuses an automatic delivery INSERTed as internal_transfer (23514)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, created_from_invoice_id, delivery_type) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D5}', 'internal_transfer')$$, '23514');
+SELECT t.expect('E6 is unchanged for a DC delivery: linked DC V1 retyped -> E6 (still)', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '{V1}'$$, 'E6');
 \echo
 \echo -- ===== TR4c status transitions =====
 SELECT t.expect('E11 nothing leaves rejected (V7 rejected -> incomplete)', $$UPDATE public.deliveries SET status = 'incomplete', rejected_by = NULL, rejected_at = NULL, reject_reason = NULL WHERE id = '{V7}'$$, 'E11');
