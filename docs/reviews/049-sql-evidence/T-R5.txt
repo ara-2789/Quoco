@@ -1,0 +1,113 @@
+== 049-sql evidence: T-R5 ==
+generated: 2026-10-11T05:59:25Z
+$ git rev-parse HEAD
+f26c7eddb8813001c0a32f83fef644a28edecbb1
+$ git status --porcelain      (empty output between the next two lines = clean tree)
+----- begin porcelain -----
+----- end porcelain -----
+$ psql --version
+psql (PostgreSQL) 17.11 (Homebrew)
+$ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+$ shasum -a 256 (artifacts under test)
+1f0ad956633d084d2c92d4f50a8ccb53529a73c3f20745bda72b94f7cee68bc4  docs/reviews/049_capture_tables.sql
+4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
+0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
+
+################ RED run 1: post:drop_self_fk ################
+MUTANT (named): drop_self_fk   (post-UP SQL applied to the real file's result)
+$ psql -d t_T_R5_red1 -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+$ psql -d t_T_R5_red1 -f <post-UP mutation>:
+ALTER TABLE public.delivery_invoice_links DROP CONSTRAINT dil_self_link_fk;
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_R5_red1 -f T-R5.sql (tokens expanded by src/expand.py)
+== T-R5 (R5): self_invoice_id generated column inside an FK -- wrong invoice -> 23503; correct -> inserts (PG 17) ==
+Output format is unaligned.
+-- the constraint as PG 17 stores it (RESTRICT written explicitly, generated column inside the FK):
+SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'dil_self_link_fk';
+SELECT 'self_invoice_id attgenerated=' || attgenerated::text FROM pg_attribute WHERE attrelid = 'public.delivery_invoice_links'::regclass AND attname = 'self_invoice_id';
+self_invoice_id attgenerated=s
+-- setup: invoice D1 + automatic delivery V1 + self-link L1; plain invoice document D2 (no delivery, no link); DC V3/D3
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', 'SM_R5_1');
+50000000-0000-0000-0000-000000000001
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000002', 'invoice', 'SM_R5_2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000003', '60000000-0000-0000-0000-000000000003', 'SM_R5_dc');
+60000000-0000-0000-0000-000000000003
+-- free V1 of its active link so the partial unique index cannot answer first (it would give 23505, not the FK)
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'delivery_rejected' WHERE id = '70000000-0000-0000-0000-000000000001';
+UPDATE 1
+SELECT t.expect('R5a self-link for V1 naming a DIFFERENT invoice D2', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002', 'created_from_invoice')$$, '23503');
+FAIL: R5a self-link for V1 naming a DIFFERENT invoice D2 -- expected refusal 23503 but the statement SUCCEEDED
+SELECT t.val('R5a no row was inserted', $$SELECT count(*)::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000002'$$, '0');
+FAIL: R5a no row was inserted -- expected 0 got 1
+SELECT t.expect('R5b self-link for V1 naming its OWN invoice D1', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'created_from_invoice')$$, 'ok');
+FAIL: R5b self-link for V1 naming its OWN invoice D1 -- expected ok, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "uq_dil_activ
+SELECT t.val('R5b generated self_invoice_id = D1', $$SELECT (self_invoice_id = '50000000-0000-0000-0000-000000000001')::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000003'$$, 'true');
+FAIL: R5b generated self_invoice_id = D1 -- expected true got (null)
+-- a pm_manual link has self_invoice_id NULL, so the FK is skipped (MATCH SIMPLE) and it may name any invoice
+SELECT t.expect('R5c pm_manual link V3 -> D2 (self_invoice_id NULL, FK skipped)', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'ok');
+FAIL: R5c pm_manual link V3 -> D2 (self_invoice_id NULL, FK skipped) -- expected ok, got refusal SQLSTATE=QE001 MESSAGE=E1
+SELECT t.val('R5c self_invoice_id is NULL', $$SELECT (self_invoice_id IS NULL)::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000004'$$, 'true');
+FAIL: R5c self_invoice_id is NULL -- expected true got (null)
+-- a generated column cannot be written
+SELECT t.expect('R5d explicit value for the generated column', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, self_invoice_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'created_from_invoice', '50000000-0000-0000-0000-000000000001')$$, '428C9');
+PASS: R5d explicit value for the generated column -- refused, SQLSTATE=428C9 MESSAGE=cannot insert a non-DEFAULT value into column "self_invoice_
+-- RESTRICT both ways: the delivery cannot be deleted or re-keyed while a link references it
+SELECT t.expect('R5e DELETE the referenced delivery', $$DELETE FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, '23503');
+PASS: R5e DELETE the referenced delivery -- refused, SQLSTATE=23503 MESSAGE=update or delete on table "deliveries" violates foreign key 
+SELECT t.expect('R5e re-key the referenced delivery (ON UPDATE RESTRICT)', $$UPDATE public.deliveries SET id = '60000000-0000-0000-0000-000000000009' WHERE id = '60000000-0000-0000-0000-000000000001'$$, '23503');
+PASS: R5e re-key the referenced delivery (ON UPDATE RESTRICT) -- refused, SQLSTATE=23503 MESSAGE=update or delete on table "deliveries" violates foreign key 
+
+>>> RESULT t_T_R5_red1: PASS=3 FAIL=6
+>>> RED verdict: test FAILED against the mutant (FAIL=6) -- the test can fail: OK
+
+################ GREEN run: the real file ################
+$ psql -d t_T_R5_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_R5_green -f T-R5.sql (tokens expanded by src/expand.py)
+== T-R5 (R5): self_invoice_id generated column inside an FK -- wrong invoice -> 23503; correct -> inserts (PG 17) ==
+Output format is unaligned.
+-- the constraint as PG 17 stores it (RESTRICT written explicitly, generated column inside the FK):
+SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'dil_self_link_fk';
+FOREIGN KEY (delivery_id, self_invoice_id) REFERENCES deliveries(id, created_from_invoice_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+SELECT 'self_invoice_id attgenerated=' || attgenerated::text FROM pg_attribute WHERE attrelid = 'public.delivery_invoice_links'::regclass AND attname = 'self_invoice_id';
+self_invoice_id attgenerated=s
+-- setup: invoice D1 + automatic delivery V1 + self-link L1; plain invoice document D2 (no delivery, no link); DC V3/D3
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', 'SM_R5_1');
+50000000-0000-0000-0000-000000000001
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000002', 'invoice', 'SM_R5_2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000003', '60000000-0000-0000-0000-000000000003', 'SM_R5_dc');
+60000000-0000-0000-0000-000000000003
+-- free V1 of its active link so the partial unique index cannot answer first (it would give 23505, not the FK)
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'delivery_rejected' WHERE id = '70000000-0000-0000-0000-000000000001';
+UPDATE 1
+SELECT t.expect('R5a self-link for V1 naming a DIFFERENT invoice D2', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002', 'created_from_invoice')$$, '23503');
+PASS: R5a self-link for V1 naming a DIFFERENT invoice D2 -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "delivery_invoice_links" violates 
+SELECT t.val('R5a no row was inserted', $$SELECT count(*)::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000002'$$, '0');
+PASS: R5a no row was inserted -- value = 0
+SELECT t.expect('R5b self-link for V1 naming its OWN invoice D1', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'created_from_invoice')$$, 'ok');
+PASS: R5b self-link for V1 naming its OWN invoice D1 -- succeeded as expected
+SELECT t.val('R5b generated self_invoice_id = D1', $$SELECT (self_invoice_id = '50000000-0000-0000-0000-000000000001')::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000003'$$, 'true');
+PASS: R5b generated self_invoice_id = D1 -- value = true
+-- a pm_manual link has self_invoice_id NULL, so the FK is skipped (MATCH SIMPLE) and it may name any invoice
+SELECT t.expect('R5c pm_manual link V3 -> D2 (self_invoice_id NULL, FK skipped)', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'ok');
+PASS: R5c pm_manual link V3 -> D2 (self_invoice_id NULL, FK skipped) -- succeeded as expected
+SELECT t.val('R5c self_invoice_id is NULL', $$SELECT (self_invoice_id IS NULL)::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000004'$$, 'true');
+PASS: R5c self_invoice_id is NULL -- value = true
+-- a generated column cannot be written
+SELECT t.expect('R5d explicit value for the generated column', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, self_invoice_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'created_from_invoice', '50000000-0000-0000-0000-000000000001')$$, '428C9');
+PASS: R5d explicit value for the generated column -- refused, SQLSTATE=428C9 MESSAGE=cannot insert a non-DEFAULT value into column "self_invoice_
+-- RESTRICT both ways: the delivery cannot be deleted or re-keyed while a link references it
+SELECT t.expect('R5e DELETE the referenced delivery', $$DELETE FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, '23503');
+PASS: R5e DELETE the referenced delivery -- refused, SQLSTATE=23503 MESSAGE=update or delete on table "deliveries" violates foreign key 
+SELECT t.expect('R5e re-key the referenced delivery (ON UPDATE RESTRICT)', $$UPDATE public.deliveries SET id = '60000000-0000-0000-0000-000000000009' WHERE id = '60000000-0000-0000-0000-000000000001'$$, '23503');
+PASS: R5e re-key the referenced delivery (ON UPDATE RESTRICT) -- refused, SQLSTATE=23503 MESSAGE=update or delete on table "deliveries" violates foreign key 
+
+>>> RESULT t_T_R5_green: PASS=9 FAIL=0
+>>> OVERALL T-R5: RED failed as required, GREEN PASS=9 FAIL=0

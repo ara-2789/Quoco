@@ -1,0 +1,120 @@
+== 049-sql evidence: T-B1 ==
+generated: 2026-10-11T05:58:57Z
+$ git rev-parse HEAD
+f26c7eddb8813001c0a32f83fef644a28edecbb1
+$ git status --porcelain      (empty output between the next two lines = clean tree)
+----- begin porcelain -----
+----- end porcelain -----
+$ psql --version
+psql (PostgreSQL) 17.11 (Homebrew)
+$ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+$ shasum -a 256 (artifacts under test)
+1f0ad956633d084d2c92d4f50a8ccb53529a73c3f20745bda72b94f7cee68bc4  docs/reviews/049_capture_tables.sql
+4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
+0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
+
+################ RED run 1: post:no_triggers ################
+MUTANT (named): no_triggers   (post-UP SQL applied to the real file's result)
+$ psql -d t_T_B1_red1 -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+$ psql -d t_T_B1_red1 -f <post-UP mutation>:
+DROP TRIGGER tr_dil_before_insert ON public.delivery_invoice_links;
+DROP TRIGGER tr_dil_before_update ON public.delivery_invoice_links;
+DROP TRIGGER tr_deliveries_before_update ON public.deliveries;
+DROP TRIGGER tr_capture_documents_before_update ON public.capture_documents;
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_B1_red1 -f T-B1.sql (tokens expanded by src/expand.py)
+== T-B1 (B1): link then reject -> refused; unlink then reject -> succeeds ==
+Output format is unaligned.
+-- setup: DC delivery V1 (document D1); invoice D2 with automatic delivery V2 and self-link L1
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'SM_B1_dc');
+60000000-0000-0000-0000-000000000001
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', 'SM_B1_inv');
+50000000-0000-0000-0000-000000000002
+-- PATH 1 (link I=D2 to Dd=V1): soft-unlink the self-link, cancel Da, insert the pm_manual link
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000001';
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-B1.expanded.sql:8: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
+DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000001, 2026-10-11 11:28:57.6135+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000002, 50000000-0000-0000-0000-000000000002, invoice, created_from_invoice, null, 2026-10-11 11:28:57.6135+05:30, 2026-10-11 11:28:57.614214+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000002).
+UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000002';
+UPDATE 1
+INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001');
+INSERT 0 1
+-- B1a: reject the DC delivery while its link is active -> refused (E13)
+SELECT t.expect('B1a reject DC while link active', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad dc' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'E13');
+FAIL: B1a reject DC while link active -- expected refusal E13 but the statement SUCCEEDED
+SELECT t.val('B1a DC delivery still incomplete', $$SELECT status FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'incomplete');
+FAIL: B1a DC delivery still incomplete -- expected incomplete got rejected
+-- B1b: unlink (delivery_rejected), THEN reject -> succeeds
+SELECT t.expect('B1b unlink the PM link', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'delivery_rejected' WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'ok');
+PASS: B1b unlink the PM link -- succeeded as expected
+SELECT t.expect('B1b reject DC after unlink', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad dc' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'ok');
+PASS: B1b reject DC after unlink -- succeeded as expected
+SELECT t.val('B1b DC delivery is rejected', $$SELECT status FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'rejected');
+PASS: B1b DC delivery is rejected -- value = rejected
+-- B1c: an AUTOMATIC delivery with an active self-link (new invoice D3 / V3 / L3)
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000003', '60000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000003', 'SM_B1_inv3');
+50000000-0000-0000-0000-000000000003
+SELECT t.expect('B1c reject Da while self-link active', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad inv' WHERE id = '60000000-0000-0000-0000-000000000003'$$, 'E13');
+FAIL: B1c reject Da while self-link active -- expected refusal E13 but the statement SUCCEEDED
+SELECT t.expect('B1c cancel Da while self-link active', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000003'$$, 'E13');
+FAIL: B1c cancel Da while self-link active -- expected E13, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B1d unlink the self-link (delivery_rejected)', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'delivery_rejected' WHERE id = '70000000-0000-0000-0000-000000000003'$$, 'ok');
+PASS: B1d unlink the self-link (delivery_rejected) -- succeeded as expected
+SELECT t.expect('B1d reject Da after unlinking', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad inv' WHERE id = '60000000-0000-0000-0000-000000000003'$$, 'ok');
+PASS: B1d reject Da after unlinking -- succeeded as expected
+SELECT t.val('B1d Da is rejected', $$SELECT status FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000003'$$, 'rejected');
+PASS: B1d Da is rejected -- value = rejected
+
+>>> RESULT t_T_B1_red1: PASS=6 FAIL=4
+>>> RED verdict: test FAILED against the mutant (FAIL=4) -- the test can fail: OK
+
+################ GREEN run: the real file ################
+$ psql -d t_T_B1_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_B1_green -f T-B1.sql (tokens expanded by src/expand.py)
+== T-B1 (B1): link then reject -> refused; unlink then reject -> succeeds ==
+Output format is unaligned.
+-- setup: DC delivery V1 (document D1); invoice D2 with automatic delivery V2 and self-link L1
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'SM_B1_dc');
+60000000-0000-0000-0000-000000000001
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', 'SM_B1_inv');
+50000000-0000-0000-0000-000000000002
+-- PATH 1 (link I=D2 to Dd=V1): soft-unlink the self-link, cancel Da, insert the pm_manual link
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000001';
+UPDATE 1
+UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000002';
+UPDATE 1
+INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002', 'pm_manual', '30000000-0000-0000-0000-000000000001');
+INSERT 0 1
+-- B1a: reject the DC delivery while its link is active -> refused (E13)
+SELECT t.expect('B1a reject DC while link active', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad dc' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'E13');
+PASS: B1a reject DC while link active -- refused, SQLSTATE=QE013 MESSAGE=E13
+SELECT t.val('B1a DC delivery still incomplete', $$SELECT status FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'incomplete');
+PASS: B1a DC delivery still incomplete -- value = incomplete
+-- B1b: unlink (delivery_rejected), THEN reject -> succeeds
+SELECT t.expect('B1b unlink the PM link', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'delivery_rejected' WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'ok');
+PASS: B1b unlink the PM link -- succeeded as expected
+SELECT t.expect('B1b reject DC after unlink', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad dc' WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'ok');
+PASS: B1b reject DC after unlink -- succeeded as expected
+SELECT t.val('B1b DC delivery is rejected', $$SELECT status FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'rejected');
+PASS: B1b DC delivery is rejected -- value = rejected
+-- B1c: an AUTOMATIC delivery with an active self-link (new invoice D3 / V3 / L3)
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000003', '60000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000003', 'SM_B1_inv3');
+50000000-0000-0000-0000-000000000003
+SELECT t.expect('B1c reject Da while self-link active', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad inv' WHERE id = '60000000-0000-0000-0000-000000000003'$$, 'E13');
+PASS: B1c reject Da while self-link active -- refused, SQLSTATE=QE013 MESSAGE=E13
+SELECT t.expect('B1c cancel Da while self-link active', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000003'$$, 'E13');
+PASS: B1c cancel Da while self-link active -- refused, SQLSTATE=QE013 MESSAGE=E13
+SELECT t.expect('B1d unlink the self-link (delivery_rejected)', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'delivery_rejected' WHERE id = '70000000-0000-0000-0000-000000000003'$$, 'ok');
+PASS: B1d unlink the self-link (delivery_rejected) -- succeeded as expected
+SELECT t.expect('B1d reject Da after unlinking', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '30000000-0000-0000-0000-000000000001', rejected_at = now(), reject_reason = 'bad inv' WHERE id = '60000000-0000-0000-0000-000000000003'$$, 'ok');
+PASS: B1d reject Da after unlinking -- succeeded as expected
+SELECT t.val('B1d Da is rejected', $$SELECT status FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000003'$$, 'rejected');
+PASS: B1d Da is rejected -- value = rejected
+
+>>> RESULT t_T_B1_green: PASS=10 FAIL=0
+>>> OVERALL T-B1: RED failed as required, GREEN PASS=10 FAIL=0

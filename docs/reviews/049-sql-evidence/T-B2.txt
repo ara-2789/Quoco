@@ -1,0 +1,186 @@
+== 049-sql evidence: T-B2 ==
+generated: 2026-10-11T05:58:57Z
+$ git rev-parse HEAD
+f26c7eddb8813001c0a32f83fef644a28edecbb1
+$ git status --porcelain      (empty output between the next two lines = clean tree)
+----- begin porcelain -----
+----- end porcelain -----
+$ psql --version
+psql (PostgreSQL) 17.11 (Homebrew)
+$ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+$ shasum -a 256 (artifacts under test)
+1f0ad956633d084d2c92d4f50a8ccb53529a73c3f20745bda72b94f7cee68bc4  docs/reviews/049_capture_tables.sql
+4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
+0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
+
+################ RED run 1: file:no_b2_insert ################
+MUTANT (named): no_b2_insert   -- diff of the real file against the mutated copy:
+449c449
+<   IF NEW.unlinked_at IS NOT NULL OR NEW.unlinked_by IS NOT NULL OR NEW.unlink_reason IS NOT NULL
+---
+>   IF (NEW.unlinked_at IS NOT NULL OR NEW.unlinked_by IS NOT NULL OR NEW.unlink_reason IS NOT NULL
+451c451
+<      OR NEW.superseded_approval_at IS NOT NULL THEN
+---
+>      OR NEW.superseded_approval_at IS NOT NULL) AND false THEN
+$ psql -d t_T_B2_red1 -v ON_ERROR_STOP=1 -f mutant-no_b2_insert.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_B2_red1 -f T-B2.sql (tokens expanded by src/expand.py)
+== T-B2 (B2): forged INSERT with snapshot values -> refused; caller snapshot on UPDATE -> overwritten by TR3 ==
+Output format is unaligned.
+-- setup: invoice D1 / automatic delivery V1 / self-link L1 (V1 will be approved), invoice D2 / V2 / L2 (V2 stays incomplete)
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', 'SM_B2_inv1');
+50000000-0000-0000-0000-000000000001
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000002', 'SM_B2_inv2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000003', '60000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000003', 'SM_B2_inv3');
+50000000-0000-0000-0000-000000000003
+-- B2a: a FULLY CONSISTENT forged INSERT (already unlinked, superseded, with a caller-supplied approver) -> refused (E10).
+-- It satisfies every CHECK, so only TR1 can stop it. The invoice D3 has its own active self-link L3, so no unique index is hit.
+SELECT t.expect('B2a forged unlinked self-link carrying approver', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status, superseded_approval_by, superseded_approval_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'E10');
+FAIL: B2a forged unlinked self-link carrying approver -- expected refusal E10 but the statement SUCCEEDED
+SELECT t.expect('B2a forged: only unlinked_at set', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now())$$, 'E10');
+FAIL: B2a forged: only unlinked_at set -- expected E10, got refusal SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('B2a forged: only unlink_reason set', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', 'pm_unlinked')$$, 'E10');
+FAIL: B2a forged: only unlink_reason set -- expected E10, got refusal SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.val('B2a no forged row exists', $$SELECT count(*)::text FROM public.delivery_invoice_links WHERE unlinked_at IS NOT NULL$$, '0');
+FAIL: B2a no forged row exists -- expected 0 got 1
+-- B2b: caller-supplied snapshot on UPDATE is OVERWRITTEN from the delivery. V1 is approved, then its self-link is unlinked
+-- with a FORGED snapshot (status incomplete, a different approver).
+UPDATE public.deliveries SET status = 'approved', approved_by = '30000000-0000-0000-0000-000000000001', approved_at = now() WHERE id = '60000000-0000-0000-0000-000000000001';
+UPDATE 1
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link', superseded_from_status = 'incomplete', superseded_approval_by = '30000000-0000-0000-0000-000000000006', superseded_approval_at = now() - interval '5 days' WHERE id = '70000000-0000-0000-0000-000000000001';
+UPDATE 1
+SELECT t.val('B2b approved: superseded_from_status = approved', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000001'$$, 'approved');
+PASS: B2b approved: superseded_from_status = approved -- value = approved
+SELECT t.val('B2b approved: approver is the delivery approver, not the forged one', $$SELECT (superseded_approval_by = '30000000-0000-0000-0000-000000000001')::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000001'$$, 'true');
+PASS: B2b approved: approver is the delivery approver, not the forged one -- value = true
+SELECT t.val('B2b approved: approval time copied from the delivery', $$SELECT (l.superseded_approval_at = d.approved_at)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.id = '70000000-0000-0000-0000-000000000001'$$, 'true');
+PASS: B2b approved: approval time copied from the delivery -- value = true
+-- B2c: V2 is incomplete (never approved); the forged snapshot claims approved with an approver.
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link', superseded_from_status = 'approved', superseded_approval_by = '30000000-0000-0000-0000-000000000006', superseded_approval_at = now() WHERE id = '70000000-0000-0000-0000-000000000002';
+UPDATE 1
+SELECT t.val('B2c incomplete: superseded_from_status = incomplete', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'incomplete');
+PASS: B2c incomplete: superseded_from_status = incomplete -- value = incomplete
+SELECT t.val('B2c incomplete: approver forced NULL', $$SELECT (superseded_approval_by IS NULL AND superseded_approval_at IS NULL)::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'true');
+PASS: B2c incomplete: approver forced NULL -- value = true
+-- B2d: an unlinked row is final -- a later UPDATE cannot rewrite its snapshot
+SELECT t.expect('B2d rewrite snapshot on an unlinked row', $$UPDATE public.delivery_invoice_links SET superseded_from_status = 'awaiting_pm' WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'E10');
+PASS: B2d rewrite snapshot on an unlinked row -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.expect('B2d clear unlinked_at', $$UPDATE public.delivery_invoice_links SET unlinked_at = NULL, unlinked_by = NULL, unlink_reason = NULL, superseded_from_status = NULL WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'E10');
+PASS: B2d clear unlinked_at -- refused, SQLSTATE=QE010 MESSAGE=E10
+
+>>> RESULT t_T_B2_red1: PASS=7 FAIL=4
+>>> RED verdict: test FAILED against the mutant (FAIL=4) -- the test can fail: OK
+
+################ RED run 2: post:no_tr3_trigger ################
+MUTANT (named): no_tr3_trigger   (post-UP SQL applied to the real file's result)
+$ psql -d t_T_B2_red2 -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+$ psql -d t_T_B2_red2 -f <post-UP mutation>:
+DROP TRIGGER tr_dil_before_update ON public.delivery_invoice_links;
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_B2_red2 -f T-B2.sql (tokens expanded by src/expand.py)
+== T-B2 (B2): forged INSERT with snapshot values -> refused; caller snapshot on UPDATE -> overwritten by TR3 ==
+Output format is unaligned.
+-- setup: invoice D1 / automatic delivery V1 / self-link L1 (V1 will be approved), invoice D2 / V2 / L2 (V2 stays incomplete)
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', 'SM_B2_inv1');
+50000000-0000-0000-0000-000000000001
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000002', 'SM_B2_inv2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000003', '60000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000003', 'SM_B2_inv3');
+50000000-0000-0000-0000-000000000003
+-- B2a: a FULLY CONSISTENT forged INSERT (already unlinked, superseded, with a caller-supplied approver) -> refused (E10).
+-- It satisfies every CHECK, so only TR1 can stop it. The invoice D3 has its own active self-link L3, so no unique index is hit.
+SELECT t.expect('B2a forged unlinked self-link carrying approver', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status, superseded_approval_by, superseded_approval_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'E10');
+PASS: B2a forged unlinked self-link carrying approver -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.expect('B2a forged: only unlinked_at set', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now())$$, 'E10');
+PASS: B2a forged: only unlinked_at set -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.expect('B2a forged: only unlink_reason set', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', 'pm_unlinked')$$, 'E10');
+PASS: B2a forged: only unlink_reason set -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.val('B2a no forged row exists', $$SELECT count(*)::text FROM public.delivery_invoice_links WHERE unlinked_at IS NOT NULL$$, '0');
+PASS: B2a no forged row exists -- value = 0
+-- B2b: caller-supplied snapshot on UPDATE is OVERWRITTEN from the delivery. V1 is approved, then its self-link is unlinked
+-- with a FORGED snapshot (status incomplete, a different approver).
+UPDATE public.deliveries SET status = 'approved', approved_by = '30000000-0000-0000-0000-000000000001', approved_at = now() WHERE id = '60000000-0000-0000-0000-000000000001';
+UPDATE 1
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link', superseded_from_status = 'incomplete', superseded_approval_by = '30000000-0000-0000-0000-000000000006', superseded_approval_at = now() - interval '5 days' WHERE id = '70000000-0000-0000-0000-000000000001';
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-B2.expanded.sql:17: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_approver_chk"
+DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000001, 2026-10-11 11:28:58.359815+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000001, 50000000-0000-0000-0000-000000000001, invoice, created_from_invoice, null, 2026-10-11 11:28:58.359815+05:30, 2026-10-11 11:28:58.363896+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, incomplete, 30000000-0000-0000-0000-000000000006, 2026-10-06 11:28:58.363896+05:30, 50000000-0000-0000-0000-000000000001).
+SELECT t.val('B2b approved: superseded_from_status = approved', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000001'$$, 'approved');
+FAIL: B2b approved: superseded_from_status = approved -- expected approved got (null)
+SELECT t.val('B2b approved: approver is the delivery approver, not the forged one', $$SELECT (superseded_approval_by = '30000000-0000-0000-0000-000000000001')::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000001'$$, 'true');
+FAIL: B2b approved: approver is the delivery approver, not the forged one -- expected true got (null)
+SELECT t.val('B2b approved: approval time copied from the delivery', $$SELECT (l.superseded_approval_at = d.approved_at)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.id = '70000000-0000-0000-0000-000000000001'$$, 'true');
+FAIL: B2b approved: approval time copied from the delivery -- expected true got (null)
+-- B2c: V2 is incomplete (never approved); the forged snapshot claims approved with an approver.
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link', superseded_from_status = 'approved', superseded_approval_by = '30000000-0000-0000-0000-000000000006', superseded_approval_at = now() WHERE id = '70000000-0000-0000-0000-000000000002';
+UPDATE 1
+SELECT t.val('B2c incomplete: superseded_from_status = incomplete', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'incomplete');
+FAIL: B2c incomplete: superseded_from_status = incomplete -- expected incomplete got approved
+SELECT t.val('B2c incomplete: approver forced NULL', $$SELECT (superseded_approval_by IS NULL AND superseded_approval_at IS NULL)::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'true');
+FAIL: B2c incomplete: approver forced NULL -- expected true got false
+-- B2d: an unlinked row is final -- a later UPDATE cannot rewrite its snapshot
+SELECT t.expect('B2d rewrite snapshot on an unlinked row', $$UPDATE public.delivery_invoice_links SET superseded_from_status = 'awaiting_pm' WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'E10');
+FAIL: B2d rewrite snapshot on an unlinked row -- expected E10, got refusal SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('B2d clear unlinked_at', $$UPDATE public.delivery_invoice_links SET unlinked_at = NULL, unlinked_by = NULL, unlink_reason = NULL, superseded_from_status = NULL WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'E10');
+FAIL: B2d clear unlinked_at -- expected E10, got refusal SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+
+>>> RESULT t_T_B2_red2: PASS=4 FAIL=7
+>>> RED verdict: test FAILED against the mutant (FAIL=7) -- the test can fail: OK
+
+################ GREEN run: the real file ################
+$ psql -d t_T_B2_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_B2_green -f T-B2.sql (tokens expanded by src/expand.py)
+== T-B2 (B2): forged INSERT with snapshot values -> refused; caller snapshot on UPDATE -> overwritten by TR3 ==
+Output format is unaligned.
+-- setup: invoice D1 / automatic delivery V1 / self-link L1 (V1 will be approved), invoice D2 / V2 / L2 (V2 stays incomplete)
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', 'SM_B2_inv1');
+50000000-0000-0000-0000-000000000001
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000002', 'SM_B2_inv2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000003', '60000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000003', 'SM_B2_inv3');
+50000000-0000-0000-0000-000000000003
+-- B2a: a FULLY CONSISTENT forged INSERT (already unlinked, superseded, with a caller-supplied approver) -> refused (E10).
+-- It satisfies every CHECK, so only TR1 can stop it. The invoice D3 has its own active self-link L3, so no unique index is hit.
+SELECT t.expect('B2a forged unlinked self-link carrying approver', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status, superseded_approval_by, superseded_approval_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'E10');
+PASS: B2a forged unlinked self-link carrying approver -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.expect('B2a forged: only unlinked_at set', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now())$$, 'E10');
+PASS: B2a forged: only unlinked_at set -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.expect('B2a forged: only unlink_reason set', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', 'pm_unlinked')$$, 'E10');
+PASS: B2a forged: only unlink_reason set -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.val('B2a no forged row exists', $$SELECT count(*)::text FROM public.delivery_invoice_links WHERE unlinked_at IS NOT NULL$$, '0');
+PASS: B2a no forged row exists -- value = 0
+-- B2b: caller-supplied snapshot on UPDATE is OVERWRITTEN from the delivery. V1 is approved, then its self-link is unlinked
+-- with a FORGED snapshot (status incomplete, a different approver).
+UPDATE public.deliveries SET status = 'approved', approved_by = '30000000-0000-0000-0000-000000000001', approved_at = now() WHERE id = '60000000-0000-0000-0000-000000000001';
+UPDATE 1
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link', superseded_from_status = 'incomplete', superseded_approval_by = '30000000-0000-0000-0000-000000000006', superseded_approval_at = now() - interval '5 days' WHERE id = '70000000-0000-0000-0000-000000000001';
+UPDATE 1
+SELECT t.val('B2b approved: superseded_from_status = approved', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000001'$$, 'approved');
+PASS: B2b approved: superseded_from_status = approved -- value = approved
+SELECT t.val('B2b approved: approver is the delivery approver, not the forged one', $$SELECT (superseded_approval_by = '30000000-0000-0000-0000-000000000001')::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000001'$$, 'true');
+PASS: B2b approved: approver is the delivery approver, not the forged one -- value = true
+SELECT t.val('B2b approved: approval time copied from the delivery', $$SELECT (l.superseded_approval_at = d.approved_at)::text FROM public.delivery_invoice_links l JOIN public.deliveries d ON d.id = l.delivery_id WHERE l.id = '70000000-0000-0000-0000-000000000001'$$, 'true');
+PASS: B2b approved: approval time copied from the delivery -- value = true
+-- B2c: V2 is incomplete (never approved); the forged snapshot claims approved with an approver.
+UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link', superseded_from_status = 'approved', superseded_approval_by = '30000000-0000-0000-0000-000000000006', superseded_approval_at = now() WHERE id = '70000000-0000-0000-0000-000000000002';
+UPDATE 1
+SELECT t.val('B2c incomplete: superseded_from_status = incomplete', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'incomplete');
+PASS: B2c incomplete: superseded_from_status = incomplete -- value = incomplete
+SELECT t.val('B2c incomplete: approver forced NULL', $$SELECT (superseded_approval_by IS NULL AND superseded_approval_at IS NULL)::text FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'true');
+PASS: B2c incomplete: approver forced NULL -- value = true
+-- B2d: an unlinked row is final -- a later UPDATE cannot rewrite its snapshot
+SELECT t.expect('B2d rewrite snapshot on an unlinked row', $$UPDATE public.delivery_invoice_links SET superseded_from_status = 'awaiting_pm' WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'E10');
+PASS: B2d rewrite snapshot on an unlinked row -- refused, SQLSTATE=QE010 MESSAGE=E10
+SELECT t.expect('B2d clear unlinked_at', $$UPDATE public.delivery_invoice_links SET unlinked_at = NULL, unlinked_by = NULL, unlink_reason = NULL, superseded_from_status = NULL WHERE id = '70000000-0000-0000-0000-000000000002'$$, 'E10');
+PASS: B2d clear unlinked_at -- refused, SQLSTATE=QE010 MESSAGE=E10
+
+>>> RESULT t_T_B2_green: PASS=11 FAIL=0
+>>> OVERALL T-B2: RED failed as required, GREEN PASS=11 FAIL=0

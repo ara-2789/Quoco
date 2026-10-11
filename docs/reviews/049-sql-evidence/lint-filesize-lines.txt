@@ -1,0 +1,7 @@
+file-size-lint: WARN  docs/plans/add-engineer-plan.md  121,188 chars (>= 120,000 warn threshold) — consider splitting.
+file-size-lint: WARN  docs/plans/email-otp-plan.md  129,577 chars (>= 120,000 warn threshold) — consider splitting.
+file-size-lint: OK    docs/reviews/049-plan-evidence/pra-plan-v1.md  63,461 chars
+file-size-lint: OK    docs/reviews/049-plan-evidence/pra-plan-v2.md  63,246 chars
+file-size-lint: OK    docs/reviews/049-plan-review-package.md  27,136 chars
+file-size-lint: WARN  docs/reviews/morning-flow-migration-review-package.md  141,180 chars (>= 120,000 warn threshold) — consider splitting.
+file-size-lint: clean (159 files checked, no hard failures).

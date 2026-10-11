@@ -1,0 +1,123 @@
+== 049-sql evidence: T-D18 ==
+generated: 2026-10-11T05:59:25Z
+$ git rev-parse HEAD
+f26c7eddb8813001c0a32f83fef644a28edecbb1
+$ git status --porcelain      (empty output between the next two lines = clean tree)
+----- begin porcelain -----
+----- end porcelain -----
+$ psql --version
+psql (PostgreSQL) 17.11 (Homebrew)
+$ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+$ shasum -a 256 (artifacts under test)
+1f0ad956633d084d2c92d4f50a8ccb53529a73c3f20745bda72b94f7cee68bc4  docs/reviews/049_capture_tables.sql
+4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
+0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
+
+################ RED run 1: post:drop_doc_fks ################
+MUTANT (named): drop_doc_fks   (post-UP SQL applied to the real file's result)
+$ psql -d t_T_D18_red1 -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+$ psql -d t_T_D18_red1 -f <post-UP mutation>:
+ALTER TABLE public.deliveries DROP CONSTRAINT deliveries_dc_document_fk;
+ALTER TABLE public.deliveries DROP CONSTRAINT deliveries_invoice_document_fk;
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_D18_red1 -f T-D18.sql (tokens expanded by src/expand.py)
+== T-D18 (D-18): fixed-value kind columns -- wrong kind -> 23503; other project -> 23503 ==
+Output format is unaligned.
+-- setup: D1 dc (P1); D2 invoice (P1); D3 dc in project P2 (same tenant); D4 invoice (P1); D5 dc document in tenant T2
+-- (each attempt below uses its OWN delivery id, so onepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-D18.expanded.sql:5: error: unterminated quoted string
+
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000001', 'dc', 'SM_D18_1');
+50000000-0000-0000-0000-000000000001
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000002', 'invoice', 'SM_D18_2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000003', 'dc', 'SM_D18_3', '20000000-0000-0000-0000-000000000002');
+50000000-0000-0000-0000-000000000003
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000004', 'invoice', 'SM_D18_4');
+50000000-0000-0000-0000-000000000004
+INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('50000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', 'dc', '30000000-0000-0000-0000-000000000009', 'SM_D18_5');
+INSERT 0 1
+-- wrong kind
+SELECT t.expect('D18a dc_document_id pointing at an INVOICE document', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000002')$$, '23503');
+FAIL: D18a dc_document_id pointing at an INVOICE document -- expected refusal 23503 but the statement SUCCEEDED
+SELECT t.expect('D18b created_from_invoice_id pointing at a DC document', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001')$$, '23503');
+FAIL: D18b created_from_invoice_id pointing at a DC document -- expected refusal 23503 but the statement SUCCEEDED
+-- other project, other tenant
+SELECT t.expect('D18c delivery in P1 pointing at a DC document of P2 (same tenant)', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000003')$$, '23503');
+FAIL: D18c delivery in P1 pointing at a DC document of P2 (same tenant) -- expected refusal 23503 but the statement SUCCEEDED
+SELECT t.expect('D18d delivery in T1/P1 pointing at a DC document of tenant T2', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000007', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000005')$$, '23503');
+FAIL: D18d delivery in T1/P1 pointing at a DC document of tenant T2 -- expected refusal 23503 but the statement SUCCEEDED
+-- the fixed-value columns themselves, and the exactly-one-pointer CHECK
+SELECT t.expect('D18e dc_doc_kind forced to invoice', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_doc_kind) VALUES ('60000000-0000-0000-0000-000000000008', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000002', 'invoice')$$, '23514');
+PASS: D18e dc_doc_kind forced to invoice -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('D18f both document pointers set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000009', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002')$$, '23514');
+PASS: D18f both document pointers set -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('D18g neither document pointer set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at) VALUES ('60000000-0000-0000-0000-000000000010', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour')$$, '23514');
+PASS: D18g neither document pointer set -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+-- positive controls: the right kind in the right project inserts; MATCH SIMPLE skips the non-chosen pointer
+SELECT t.expect('D18h DC delivery -> DC document D1', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001')$$, 'ok');
+PASS: D18h DC delivery -> DC document D1 -- succeeded as expected
+SELECT t.expect('D18i automatic delivery -> invoice document D4', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000004')$$, 'ok');
+PASS: D18i automatic delivery -> invoice document D4 -- succeeded as expected
+-- one document, one delivery, for life (D-19)
+SELECT t.expect('D18j second delivery for the same DC document', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001')$$, '23505');
+PASS: D18j second delivery for the same DC document -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('D18k second automatic delivery for the same invoice', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000011', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000004')$$, '23505');
+PASS: D18k second automatic delivery for the same invoice -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_c
+
+>>> RESULT t_T_D18_red1: PASS=7 FAIL=4
+>>> RED verdict: test FAILED against the mutant (FAIL=4) -- the test can fail: OK
+
+################ GREEN run: the real file ################
+$ psql -d t_T_D18_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_D18_green -f T-D18.sql (tokens expanded by src/expand.py)
+== T-D18 (D-18): fixed-value kind columns -- wrong kind -> 23503; other project -> 23503 ==
+Output format is unaligned.
+-- setup: D1 dc (P1); D2 invoice (P1); D3 dc in project P2 (same tenant); D4 invoice (P1); D5 dc document in tenant T2
+-- (each attempt below uses its OWN delivery id, so onepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-D18.expanded.sql:5: error: unterminated quoted string
+
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000001', 'dc', 'SM_D18_1');
+50000000-0000-0000-0000-000000000001
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000002', 'invoice', 'SM_D18_2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000003', 'dc', 'SM_D18_3', '20000000-0000-0000-0000-000000000002');
+50000000-0000-0000-0000-000000000003
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000004', 'invoice', 'SM_D18_4');
+50000000-0000-0000-0000-000000000004
+INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('50000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', 'dc', '30000000-0000-0000-0000-000000000009', 'SM_D18_5');
+INSERT 0 1
+-- wrong kind
+SELECT t.expect('D18a dc_document_id pointing at an INVOICE document', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000002')$$, '23503');
+PASS: D18a dc_document_id pointing at an INVOICE document -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "deliveries" violates foreign key 
+SELECT t.expect('D18b created_from_invoice_id pointing at a DC document', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001')$$, '23503');
+PASS: D18b created_from_invoice_id pointing at a DC document -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "deliveries" violates foreign key 
+-- other project, other tenant
+SELECT t.expect('D18c delivery in P1 pointing at a DC document of P2 (same tenant)', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000003')$$, '23503');
+PASS: D18c delivery in P1 pointing at a DC document of P2 (same tenant) -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "deliveries" violates foreign key 
+SELECT t.expect('D18d delivery in T1/P1 pointing at a DC document of tenant T2', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000007', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000005')$$, '23503');
+PASS: D18d delivery in T1/P1 pointing at a DC document of tenant T2 -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "deliveries" violates foreign key 
+-- the fixed-value columns themselves, and the exactly-one-pointer CHECK
+SELECT t.expect('D18e dc_doc_kind forced to invoice', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_doc_kind) VALUES ('60000000-0000-0000-0000-000000000008', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000002', 'invoice')$$, '23514');
+PASS: D18e dc_doc_kind forced to invoice -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('D18f both document pointers set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000009', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000002')$$, '23514');
+PASS: D18f both document pointers set -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('D18g neither document pointer set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at) VALUES ('60000000-0000-0000-0000-000000000010', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour')$$, '23514');
+PASS: D18g neither document pointer set -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+-- positive controls: the right kind in the right project inserts; MATCH SIMPLE skips the non-chosen pointer
+SELECT t.expect('D18h DC delivery -> DC document D1', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001')$$, 'ok');
+PASS: D18h DC delivery -> DC document D1 -- succeeded as expected
+SELECT t.expect('D18i automatic delivery -> invoice document D4', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000004')$$, 'ok');
+PASS: D18i automatic delivery -> invoice document D4 -- succeeded as expected
+-- one document, one delivery, for life (D-19)
+SELECT t.expect('D18j second delivery for the same DC document', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001')$$, '23505');
+PASS: D18j second delivery for the same DC document -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
+SELECT t.expect('D18k second automatic delivery for the same invoice', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000011', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000004')$$, '23505');
+PASS: D18k second automatic delivery for the same invoice -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_c
+
+>>> RESULT t_T_D18_green: PASS=11 FAIL=0
+>>> OVERALL T-D18: RED failed as required, GREEN PASS=11 FAIL=0

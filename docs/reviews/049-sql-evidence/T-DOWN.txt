@@ -1,0 +1,1252 @@
+== 049-sql evidence: T-DOWN ==
+generated: 2026-10-11T05:59:27Z
+$ git rev-parse HEAD
+f26c7eddb8813001c0a32f83fef644a28edecbb1
+$ git status --porcelain      (empty output between the next two lines = clean tree)
+----- begin porcelain -----
+----- end porcelain -----
+$ psql --version
+psql (PostgreSQL) 17.11 (Homebrew)
+$ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+$ shasum -a 256 (artifacts under test)
+1f0ad956633d084d2c92d4f50a8ccb53529a73c3f20745bda72b94f7cee68bc4  docs/reviews/049_capture_tables.sql
+4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
+0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
+
+DOWN blocks extracted by uncommenting (awk/sed in run.sh:extract_down):       65 lines (049),        8 lines (helpers). 049 DOWN as run:
+BEGIN;
+
+DO $$
+DECLARE
+  v_rows  bigint;
+  v_names text;
+BEGIN
+  -- Guard 1: nothing to lose.
+  SELECT (SELECT count(*) FROM public.delivery_invoice_links)
+       + (SELECT count(*) FROM public.capture_files)
+       + (SELECT count(*) FROM public.deliveries)
+       + (SELECT count(*) FROM public.capture_documents)
+    INTO v_rows;
+  IF v_rows <> 0 THEN
+    RAISE EXCEPTION 'DOWN_GUARD_ROWS';
+  END IF;
+  -- Guard 2 (intensional, R8; restricted to non-system namespaces, S-D): no
+  -- function other than 049's own four trigger functions may name these
+  -- tables. plpgsql bodies record no dependency, so DROP TABLE alone would
+  -- leave broken functions behind. Catches renamed or later PR-B/PR-C/PR-D
+  -- functions without listing them.
+  SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+    INTO v_names
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+     AND n.nspname !~ '^pg_'
+     AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+     AND NOT (n.nspname = 'public' AND p.proname IN (
+           'trg_dil_before_insert', 'trg_dil_before_update',
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+  IF v_names IS NOT NULL THEN
+    RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
+  END IF;
+END;
+$$;
+
+DROP TABLE public.delivery_invoice_links;
+DROP TABLE public.capture_files;
+DROP TABLE public.deliveries;
+DROP TABLE public.capture_documents;
+
+DROP FUNCTION public.trg_dil_before_insert();
+DROP FUNCTION public.trg_dil_before_update();
+DROP FUNCTION public.trg_deliveries_before_update();
+DROP FUNCTION public.trg_capture_documents_before_update();
+
+-- Ledger: in the same transaction, so `migration list` never shows 049
+-- applied with no objects (R8).
+DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
+
+-- Bucket: zero objects, then delete. Supabase Storage may refuse a direct
+-- SQL delete on storage.*; the disposable scaffold stubs storage and cannot
+-- show that (block 2b executes this on test-db). If refused, remove the
+-- bucket through the Storage API instead.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
+    RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
+  END IF;
+END;
+$$;
+DELETE FROM storage.buckets WHERE id = 'capture-documents';
+
+COMMIT;
+-----
+
+######## PHASE A (S-D): helpers present -> the guard must TRIP (RED); drop helpers, then DOWN succeeds (GREEN) ########
+## fingerprint BEFORE 049 (baseline of the REAL-dump scaffold):
+relations 81c40691162cef7e5a707e8822bc6a48
+functions c83f66f077cf7fbe891c4c3de00bbcf1
+constraints 79046243744afaa534d35cbc05612b21
+triggers d41d8cd98f00b204e9800998ecf8427e
+policies 93722ac750bc76cfacbd3c707831ed0f
+indexes 10878e1978af5fa4ef2ef237ce3272ae
+table/column comments 27 eace14236f6beb57d980e8ba635d04e0
+function comments 0
+default_acl 82074218540eaa004ee83da5f47c4504
+storage.buckets rows 0
+ledger rows 0
+public tables=32 functions=136
+$ psql -X -e -d t_down_a -v ON_ERROR_STOP=1 -f 049_capture_tables.sql
+BEGIN;
+BEGIN
+CREATE TABLE public.capture_documents (
+  id                 uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  tenant_id          uuid        NOT NULL REFERENCES public.tenants(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  project_id         uuid        NOT NULL,
+  kind               text        NOT NULL CHECK (kind IN ('dc', 'invoice')),
+  sent_by            uuid        NOT NULL,
+  source_message_sid text        NOT NULL,
+  engineer_ack       text        CHECK (engineer_ack IN ('yes', 'no', 'partial', 'unclear')),
+  engineer_ack_at    timestamptz,
+  engineer_ack_note  text,
+  caption            text,
+  CONSTRAINT capture_documents_source_message_sid_key UNIQUE (source_message_sid),
+  CONSTRAINT capture_documents_id_tenant_key UNIQUE (id, tenant_id),
+  CONSTRAINT capture_documents_id_project_tenant_key UNIQUE (id, project_id, tenant_id),
+  CONSTRAINT capture_documents_id_project_tenant_kind_key UNIQUE (id, project_id, tenant_id, kind),
+  CONSTRAINT capture_documents_project_fk FOREIGN KEY (project_id, tenant_id) REFERENCES public.projects (id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT capture_documents_sent_by_fk FOREIGN KEY (sent_by, tenant_id) REFERENCES public.users (id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT capture_documents_ack_pair_chk CHECK ((engineer_ack IS NULL) = (engineer_ack_at IS NULL)),
+  CONSTRAINT capture_documents_ack_at_order_chk CHECK (engineer_ack_at IS NULL OR engineer_ack_at >= created_at),
+  CONSTRAINT capture_documents_ack_note_scope_chk CHECK (engineer_ack_note IS NULL OR COALESCE(engineer_ack IN ('no', 'partial', 'unclear'), false)),
+  CONSTRAINT capture_documents_ack_note_len_chk CHECK (char_length(engineer_ack_note) <= 1000),
+  CONSTRAINT capture_documents_caption_len_chk CHECK (char_length(caption) <= 1000)
+);
+CREATE TABLE
+CREATE TABLE public.capture_files (
+  id                   uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  tenant_id            uuid        NOT NULL REFERENCES public.tenants(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  project_id           uuid        NOT NULL,
+  document_id          uuid        NOT NULL,
+  file_no              integer     NOT NULL CHECK (file_no > 0),
+  source_message_sid   text        NOT NULL,
+  media_index          integer     NOT NULL CHECK (media_index >= 0),
+  claimed_content_type text,
+  content_type         text,
+  byte_size            bigint,
+  sha256               text,
+  storage_path         text,
+  ingest_status        text        NOT NULL DEFAULT 'pending' CHECK (ingest_status IN ('pending', 'stored', 'rejected', 'failed')),
+  reject_reason        text        CHECK (reject_reason IN ('wrong_type', 'too_large')),
+  preview_state        text        CHECK (preview_state IN ('previewable', 'not_previewable')),
+  CONSTRAINT capture_files_document_file_no_key UNIQUE (document_id, file_no),
+  CONSTRAINT capture_files_sid_media_index_key UNIQUE (source_message_sid, media_index),
+  CONSTRAINT capture_files_document_fk FOREIGN KEY (document_id, project_id, tenant_id) REFERENCES public.capture_documents (id, project_id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT capture_files_stored_complete_chk CHECK (ingest_status <> 'stored' OR (storage_path IS NOT NULL AND content_type IS NOT NULL AND byte_size IS NOT NULL AND sha256 IS NOT NULL)),
+  CONSTRAINT capture_files_rejected_reason_chk CHECK (ingest_status <> 'rejected' OR reject_reason IS NOT NULL),
+  CONSTRAINT capture_files_stored_size_chk CHECK (ingest_status <> 'stored' OR byte_size <= 16777216),
+  CONSTRAINT capture_files_content_type_chk CHECK (content_type IS NULL OR content_type IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')),
+  CONSTRAINT capture_files_sha256_chk CHECK (sha256 IS NULL OR sha256 ~ '^[0-9a-f]{64}$'),
+  CONSTRAINT capture_files_storage_path_prefix_chk CHECK (storage_path IS NULL OR starts_with(storage_path, tenant_id::text || '/' || project_id::text || '/' || document_id::text || '/'))
+);
+CREATE TABLE
+CREATE TABLE public.deliveries (
+  id                      uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at              timestamptz NOT NULL DEFAULT now(),
+  tenant_id               uuid        NOT NULL REFERENCES public.tenants(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  project_id              uuid        NOT NULL,
+  reported_by             uuid        NOT NULL,
+  received_at             timestamptz NOT NULL,
+  delivery_date           date        GENERATED ALWAYS AS (timezone('Asia/Kolkata', received_at)::date) STORED,
+  status                  text        NOT NULL DEFAULT 'incomplete' CHECK (status IN ('incomplete', 'awaiting_pm', 'approved', 'rejected', 'cancelled')),
+  delivery_type           text        CHECK (delivery_type IN ('supplier', 'internal_transfer')),
+  vehicle_number          text        CHECK (char_length(vehicle_number) <= 64),
+  dc_number               text        CHECK (char_length(dc_number) <= 64),
+  dc_date                 date,
+  dc_document_id          uuid,
+  dc_doc_kind             text        NOT NULL DEFAULT 'dc' CHECK (dc_doc_kind = 'dc'),
+  created_from_invoice_id uuid,
+  inv_doc_kind            text        NOT NULL DEFAULT 'invoice' CHECK (inv_doc_kind = 'invoice'),
+  approved_by             uuid,
+  approved_at             timestamptz,
+  rejected_by             uuid,
+  rejected_at             timestamptz,
+  reject_reason           text,
+  cancelled_at            timestamptz,
+  cancel_reason           text        CHECK (cancel_reason IN ('superseded_by_link')),
+  CONSTRAINT deliveries_dc_document_id_key UNIQUE (dc_document_id),
+  CONSTRAINT deliveries_created_from_invoice_id_key UNIQUE (created_from_invoice_id),
+  CONSTRAINT deliveries_id_project_tenant_key UNIQUE (id, project_id, tenant_id),
+  CONSTRAINT deliveries_id_created_from_invoice_key UNIQUE (id, created_from_invoice_id),
+  CONSTRAINT deliveries_project_fk FOREIGN KEY (project_id, tenant_id) REFERENCES public.projects (id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT deliveries_reported_by_fk FOREIGN KEY (reported_by, tenant_id) REFERENCES public.users (id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT deliveries_approved_by_fk FOREIGN KEY (approved_by, tenant_id) REFERENCES public.users (id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT deliveries_rejected_by_fk FOREIGN KEY (rejected_by, tenant_id) REFERENCES public.users (id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT deliveries_dc_document_fk FOREIGN KEY (dc_document_id, project_id, tenant_id, dc_doc_kind) REFERENCES public.capture_documents (id, project_id, tenant_id, kind) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT deliveries_invoice_document_fk FOREIGN KEY (created_from_invoice_id, project_id, tenant_id, inv_doc_kind) REFERENCES public.capture_documents (id, project_id, tenant_id, kind) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT deliveries_one_document_chk CHECK (num_nonnulls(dc_document_id, created_from_invoice_id) = 1),
+  CONSTRAINT deliveries_approved_pair_chk CHECK ((approved_by IS NULL) = (approved_at IS NULL)),
+  CONSTRAINT deliveries_approved_requires_chk CHECK (status <> 'approved' OR (approved_by IS NOT NULL AND delivery_type IS NOT NULL)),
+  CONSTRAINT deliveries_unapproved_no_approver_chk CHECK (status NOT IN ('incomplete', 'awaiting_pm', 'rejected') OR approved_by IS NULL),
+  CONSTRAINT deliveries_rejected_requires_chk CHECK (status <> 'rejected' OR (rejected_by IS NOT NULL AND rejected_at IS NOT NULL AND reject_reason IS NOT NULL AND btrim(reject_reason) <> '')),
+  CONSTRAINT deliveries_rejected_clear_chk CHECK (status = 'rejected' OR (rejected_by IS NULL AND rejected_at IS NULL AND reject_reason IS NULL)),
+  CONSTRAINT deliveries_cancelled_at_chk CHECK ((status = 'cancelled') = (cancelled_at IS NOT NULL)),
+  CONSTRAINT deliveries_cancelled_reason_chk CHECK ((cancelled_at IS NOT NULL) = (cancel_reason IS NOT NULL)),
+  CONSTRAINT deliveries_cancelled_auto_only_chk CHECK (status <> 'cancelled' OR created_from_invoice_id IS NOT NULL),
+  CONSTRAINT deliveries_auto_not_internal_chk CHECK (created_from_invoice_id IS NULL OR delivery_type IS DISTINCT FROM 'internal_transfer'),
+  CONSTRAINT deliveries_received_order_chk CHECK (received_at <= created_at),
+  CONSTRAINT deliveries_approved_at_order_chk CHECK (approved_at IS NULL OR approved_at >= created_at),
+  CONSTRAINT deliveries_rejected_at_order_chk CHECK (rejected_at IS NULL OR rejected_at >= created_at),
+  CONSTRAINT deliveries_cancelled_at_order_chk CHECK (cancelled_at IS NULL OR cancelled_at >= created_at)
+);
+CREATE TABLE
+CREATE TABLE public.delivery_invoice_links (
+  id                      uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at              timestamptz NOT NULL DEFAULT now(),
+  tenant_id               uuid        NOT NULL REFERENCES public.tenants(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  project_id              uuid        NOT NULL,
+  delivery_id             uuid        NOT NULL,
+  invoice_document_id     uuid        NOT NULL,
+  doc_kind                text        NOT NULL DEFAULT 'invoice' CHECK (doc_kind = 'invoice'),
+  link_source             text        NOT NULL CHECK (link_source IN ('created_from_invoice', 'pm_manual')),
+  linked_by               uuid,
+  linked_at               timestamptz NOT NULL DEFAULT now(),
+  unlinked_at             timestamptz,
+  unlinked_by             uuid,
+  unlink_reason           text        CHECK (unlink_reason IN ('superseded_by_link', 'pm_unlinked', 'delivery_rejected')),
+  superseded_from_status  text        DEFAULT NULL::text CHECK (superseded_from_status IN ('incomplete', 'awaiting_pm', 'approved')),
+  superseded_approval_by  uuid,
+  superseded_approval_at  timestamptz,
+  self_invoice_id         uuid        GENERATED ALWAYS AS (CASE WHEN link_source = 'created_from_invoice' THEN invoice_document_id END) STORED,
+  CONSTRAINT dil_delivery_fk FOREIGN KEY (delivery_id, project_id, tenant_id) REFERENCES public.deliveries (id, project_id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT dil_invoice_document_fk FOREIGN KEY (invoice_document_id, project_id, tenant_id, doc_kind) REFERENCES public.capture_documents (id, project_id, tenant_id, kind) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT dil_self_link_fk FOREIGN KEY (delivery_id, self_invoice_id) REFERENCES public.deliveries (id, created_from_invoice_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT dil_linked_by_fk FOREIGN KEY (linked_by, tenant_id) REFERENCES public.users (id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT dil_unlinked_by_fk FOREIGN KEY (unlinked_by, tenant_id) REFERENCES public.users (id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT dil_superseded_approval_by_fk FOREIGN KEY (superseded_approval_by, tenant_id) REFERENCES public.users (id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT dil_linked_by_pairing_chk CHECK ((link_source = 'pm_manual') = (linked_by IS NOT NULL)),
+  CONSTRAINT dil_unlinked_pair_chk CHECK ((unlinked_at IS NULL) = (unlinked_by IS NULL)),
+  CONSTRAINT dil_unlinked_order_chk CHECK (unlinked_at IS NULL OR unlinked_at >= linked_at),
+  CONSTRAINT dil_unlink_reason_pair_chk CHECK ((unlinked_at IS NULL) = (unlink_reason IS NULL)),
+  CONSTRAINT dil_snapshot_status_chk CHECK ((superseded_from_status IS NOT NULL) = COALESCE(link_source = 'created_from_invoice' AND unlink_reason = 'superseded_by_link', false)),
+  CONSTRAINT dil_snapshot_approver_chk CHECK ((superseded_approval_by IS NOT NULL) = (superseded_from_status IS NOT DISTINCT FROM 'approved')),
+  CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL))
+);
+CREATE TABLE
+CREATE UNIQUE INDEX uq_dil_active_per_delivery ON public.delivery_invoice_links (delivery_id) WHERE unlinked_at IS NULL;
+CREATE INDEX
+CREATE UNIQUE INDEX uq_dil_active_self_per_invoice ON public.delivery_invoice_links (invoice_document_id) WHERE link_source = 'created_from_invoice' AND unlinked_at IS NULL;
+CREATE INDEX
+CREATE INDEX idx_dil_active_invoice ON public.delivery_invoice_links (invoice_document_id) WHERE unlinked_at IS NULL;
+CREATE INDEX
+CREATE INDEX idx_deliveries_project_received ON public.deliveries (project_id, received_at DESC);
+CREATE INDEX
+CREATE INDEX idx_deliveries_reported_by ON public.deliveries (reported_by);
+CREATE INDEX
+CREATE FUNCTION public.trg_dil_before_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_status   text;
+  v_type     text;
+  v_auto_inv uuid;
+BEGIN
+  -- B3: first statement.
+  IF current_setting('transaction_isolation') <> 'read committed' THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+  END IF;
+
+  -- B2: a forged INSERT cannot carry unlink or snapshot values.
+  IF NEW.unlinked_at IS NOT NULL OR NEW.unlinked_by IS NOT NULL OR NEW.unlink_reason IS NOT NULL
+     OR NEW.superseded_from_status IS NOT NULL OR NEW.superseded_approval_by IS NOT NULL
+     OR NEW.superseded_approval_at IS NOT NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE010', MESSAGE = 'E10';
+  END IF;
+
+  -- Lock level 1: the invoice document row, FOR NO KEY UPDATE (R3).
+  PERFORM 1 FROM public.capture_documents d WHERE d.id = NEW.invoice_document_id FOR NO KEY UPDATE;
+
+  -- A28 XOR, written with <> so a later auto_match source needs no edit.
+  IF EXISTS (
+    SELECT 1 FROM public.delivery_invoice_links l
+    WHERE l.invoice_document_id = NEW.invoice_document_id
+      AND l.unlinked_at IS NULL
+      AND (l.link_source = 'created_from_invoice') <> (NEW.link_source = 'created_from_invoice')
+  ) THEN
+    IF NEW.link_source = 'pm_manual' THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE001', MESSAGE = 'E1';
+    ELSE
+      RAISE EXCEPTION USING ERRCODE = 'QE002', MESSAGE = 'E2';
+    END IF;
+  END IF;
+
+  -- TR2 (same function, fixed order): FOR SHARE on the target delivery.
+  SELECT d.status, d.delivery_type, d.created_from_invoice_id
+    INTO v_status, v_type, v_auto_inv
+    FROM public.deliveries d
+   WHERE d.id = NEW.delivery_id
+     FOR SHARE;
+  IF FOUND THEN
+    IF NEW.link_source = 'pm_manual' THEN
+      IF v_auto_inv IS NOT NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'QE004', MESSAGE = 'E4';
+      ELSIF v_type = 'internal_transfer' THEN
+        RAISE EXCEPTION USING ERRCODE = 'QE003', MESSAGE = 'E3';
+      ELSIF v_status IN ('rejected', 'cancelled') THEN
+        RAISE EXCEPTION USING ERRCODE = 'QE005', MESSAGE = 'E5';
+      END IF;
+    ELSIF v_status = 'rejected' THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE005', MESSAGE = 'E5';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+CREATE FUNCTION
+CREATE FUNCTION public.trg_dil_before_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_status  text;
+  v_appr_by uuid;
+  v_appr_at timestamptz;
+BEGIN
+  -- B3: first statement.
+  IF current_setting('transaction_isolation') <> 'read committed' THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+  END IF;
+
+  -- TR3 does not lock the delivery: it runs at lock level 3 (R3).
+  -- Identity columns never change.
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+     OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+     OR NEW.project_id IS DISTINCT FROM OLD.project_id
+     OR NEW.delivery_id IS DISTINCT FROM OLD.delivery_id
+     OR NEW.invoice_document_id IS DISTINCT FROM OLD.invoice_document_id
+     OR NEW.doc_kind IS DISTINCT FROM OLD.doc_kind
+     OR NEW.link_source IS DISTINCT FROM OLD.link_source
+     OR NEW.linked_by IS DISTINCT FROM OLD.linked_by
+     OR NEW.linked_at IS DISTINCT FROM OLD.linked_at THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE010', MESSAGE = 'E10';
+  END IF;
+
+  -- An already-unlinked row is final: nothing set may change, unlinked_at
+  -- can never be cleared.
+  IF OLD.unlinked_at IS NOT NULL THEN
+    IF NEW.unlinked_at IS DISTINCT FROM OLD.unlinked_at
+       OR NEW.unlinked_by IS DISTINCT FROM OLD.unlinked_by
+       OR NEW.unlink_reason IS DISTINCT FROM OLD.unlink_reason
+       OR NEW.superseded_from_status IS DISTINCT FROM OLD.superseded_from_status
+       OR NEW.superseded_approval_by IS DISTINCT FROM OLD.superseded_approval_by
+       OR NEW.superseded_approval_at IS DISTINCT FROM OLD.superseded_approval_at THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE010', MESSAGE = 'E10';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  -- The row is active. No unlink in this UPDATE: the snapshot columns are
+  -- forced NULL, never trusted from NEW (B2).
+  IF NEW.unlinked_at IS NULL AND NEW.unlinked_by IS NULL AND NEW.unlink_reason IS NULL THEN
+    NEW.superseded_from_status := NULL;
+    NEW.superseded_approval_by := NULL;
+    NEW.superseded_approval_at := NULL;
+    RETURN NEW;
+  END IF;
+
+  -- The only allowed change: NULL -> value on unlinked_by + unlinked_at +
+  -- unlink_reason TOGETHER.
+  IF NEW.unlinked_at IS NULL OR NEW.unlinked_by IS NULL OR NEW.unlink_reason IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE010', MESSAGE = 'E10';
+  END IF;
+
+  -- Overwrite the snapshot from the delivery row (B2). Only a self-link
+  -- unlinked as superseded_by_link records the delivery's pre-cancel state.
+  IF OLD.link_source = 'created_from_invoice' AND NEW.unlink_reason = 'superseded_by_link' THEN
+    SELECT d.status, d.approved_by, d.approved_at
+      INTO v_status, v_appr_by, v_appr_at
+      FROM public.deliveries d
+     WHERE d.id = OLD.delivery_id;
+    IF NOT FOUND OR NOT COALESCE(v_status IN ('incomplete', 'awaiting_pm', 'approved'), false) THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE010', MESSAGE = 'E10';
+    END IF;
+    NEW.superseded_from_status := v_status;
+    IF v_status = 'approved' THEN
+      NEW.superseded_approval_by := v_appr_by;
+      NEW.superseded_approval_at := v_appr_at;
+    ELSE
+      NEW.superseded_approval_by := NULL;
+      NEW.superseded_approval_at := NULL;
+    END IF;
+  ELSE
+    NEW.superseded_from_status := NULL;
+    NEW.superseded_approval_by := NULL;
+    NEW.superseded_approval_at := NULL;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+CREATE FUNCTION
+CREATE FUNCTION public.trg_deliveries_before_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  -- B3: first statement.
+  IF current_setting('transaction_isolation') <> 'read committed' THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+  END IF;
+
+  -- TR4a: immutable columns.
+  IF NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
+     OR NEW.dc_document_id IS DISTINCT FROM OLD.dc_document_id
+     OR NEW.project_id IS DISTINCT FROM OLD.project_id
+     OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+     OR NEW.reported_by IS DISTINCT FROM OLD.reported_by
+     OR NEW.received_at IS DISTINCT FROM OLD.received_at THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE009', MESSAGE = 'E9';
+  END IF;
+
+  -- Self-enforcing lock contract (R3): for an automatic delivery the first
+  -- lock action is the invoice document, FOR NO KEY UPDATE. A correct caller
+  -- already holds it (no-op); an out-of-order caller deadlocks (40P01)
+  -- instead of racing silently. The unlocked read of created_from_invoice_id
+  -- that finds the invoice is safe ONLY because TR4a above makes that column
+  -- immutable.
+  IF NEW.created_from_invoice_id IS NOT NULL THEN
+    PERFORM 1 FROM public.capture_documents d WHERE d.id = NEW.created_from_invoice_id FOR NO KEY UPDATE;
+  END IF;
+
+  -- TR4b: no retype to internal_transfer while an active link exists.
+  IF NEW.delivery_type = 'internal_transfer' AND OLD.delivery_type IS DISTINCT FROM 'internal_transfer' THEN
+    IF EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.delivery_id = NEW.id AND l.unlinked_at IS NULL) THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE006', MESSAGE = 'E6';
+    END IF;
+  END IF;
+
+  -- TR4c (1): status transitions. Nothing leaves rejected.
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF NOT (
+         (OLD.status = 'incomplete'  AND NEW.status IN ('awaiting_pm', 'approved', 'rejected', 'cancelled'))
+      OR (OLD.status = 'awaiting_pm' AND NEW.status IN ('approved', 'rejected', 'cancelled'))
+      OR (OLD.status = 'approved'    AND NEW.status = 'cancelled')
+      OR (OLD.status = 'cancelled'   AND NEW.status IN ('incomplete', 'awaiting_pm'))
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+    -- TR4c (2)(3): B1 and C-36 -- no move to rejected/cancelled while ANY
+    -- active link exists (DC or automatic): the paths unlink first.
+    IF NEW.status IN ('rejected', 'cancelled') THEN
+      IF EXISTS (SELECT 1 FROM public.delivery_invoice_links l WHERE l.delivery_id = NEW.id AND l.unlinked_at IS NULL) THEN
+        RAISE EXCEPTION USING ERRCODE = 'QE013', MESSAGE = 'E13';
+      END IF;
+    END IF;
+  END IF;
+
+  -- TR4c (4): approved means locked (D-23). While OLD is approved or
+  -- cancelled these four content fields are immutable.
+  IF OLD.status IN ('approved', 'cancelled') THEN
+    IF NEW.delivery_type IS DISTINCT FROM OLD.delivery_type
+       OR NEW.vehicle_number IS DISTINCT FROM OLD.vehicle_number
+       OR NEW.dc_number IS DISTINCT FROM OLD.dc_number
+       OR NEW.dc_date IS DISTINCT FROM OLD.dc_date THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+CREATE FUNCTION
+CREATE FUNCTION public.trg_capture_documents_before_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  -- B3: first statement.
+  IF current_setting('transaction_isolation') <> 'read committed' THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+  END IF;
+
+  IF NEW.kind IS DISTINCT FROM OLD.kind
+     OR NEW.project_id IS DISTINCT FROM OLD.project_id
+     OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+     OR NEW.sent_by IS DISTINCT FROM OLD.sent_by
+     OR NEW.source_message_sid IS DISTINCT FROM OLD.source_message_sid THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE009', MESSAGE = 'E9';
+  END IF;
+
+  -- The acknowledgement is settable once; the note is settable once.
+  IF OLD.engineer_ack IS NOT NULL THEN
+    IF NEW.engineer_ack IS DISTINCT FROM OLD.engineer_ack
+       OR NEW.engineer_ack_at IS DISTINCT FROM OLD.engineer_ack_at THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+  END IF;
+  IF OLD.engineer_ack_note IS NOT NULL THEN
+    IF NEW.engineer_ack_note IS DISTINCT FROM OLD.engineer_ack_note THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+CREATE FUNCTION
+CREATE TRIGGER tr_dil_before_insert BEFORE INSERT ON public.delivery_invoice_links
+  FOR EACH ROW EXECUTE FUNCTION public.trg_dil_before_insert();
+CREATE TRIGGER
+CREATE TRIGGER tr_dil_before_update BEFORE UPDATE ON public.delivery_invoice_links
+  FOR EACH ROW EXECUTE FUNCTION public.trg_dil_before_update();
+CREATE TRIGGER
+CREATE TRIGGER tr_deliveries_before_update BEFORE UPDATE ON public.deliveries
+  FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_update();
+CREATE TRIGGER
+CREATE TRIGGER tr_capture_documents_before_update BEFORE UPDATE ON public.capture_documents
+  FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_update();
+CREATE TRIGGER
+ALTER TABLE public.capture_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE
+ALTER TABLE public.capture_files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE
+ALTER TABLE public.deliveries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE
+ALTER TABLE public.delivery_invoice_links ENABLE ROW LEVEL SECURITY;
+ALTER TABLE
+CREATE POLICY capture_documents_select ON public.capture_documents
+  FOR SELECT TO authenticated
+  USING (
+    tenant_id = public.get_user_tenant_id()
+    AND EXISTS (
+      SELECT 1 FROM public.project_members pm
+      JOIN public.users u ON u.id = pm.user_id
+      WHERE pm.project_id = capture_documents.project_id
+        AND pm.role = 'pm'
+        AND u.auth_id = (SELECT auth.uid())
+        AND u.status = 'active'
+    )
+  );
+CREATE POLICY
+CREATE POLICY capture_files_select ON public.capture_files
+  FOR SELECT TO authenticated
+  USING (
+    tenant_id = public.get_user_tenant_id()
+    AND EXISTS (
+      SELECT 1 FROM public.project_members pm
+      JOIN public.users u ON u.id = pm.user_id
+      WHERE pm.project_id = capture_files.project_id
+        AND pm.role = 'pm'
+        AND u.auth_id = (SELECT auth.uid())
+        AND u.status = 'active'
+    )
+  );
+CREATE POLICY
+CREATE POLICY deliveries_select ON public.deliveries
+  FOR SELECT TO authenticated
+  USING (
+    tenant_id = public.get_user_tenant_id()
+    AND EXISTS (
+      SELECT 1 FROM public.project_members pm
+      JOIN public.users u ON u.id = pm.user_id
+      WHERE pm.project_id = deliveries.project_id
+        AND pm.role = 'pm'
+        AND u.auth_id = (SELECT auth.uid())
+        AND u.status = 'active'
+    )
+  );
+CREATE POLICY
+CREATE POLICY delivery_invoice_links_select ON public.delivery_invoice_links
+  FOR SELECT TO authenticated
+  USING (
+    tenant_id = public.get_user_tenant_id()
+    AND EXISTS (
+      SELECT 1 FROM public.project_members pm
+      JOIN public.users u ON u.id = pm.user_id
+      WHERE pm.project_id = delivery_invoice_links.project_id
+        AND pm.role = 'pm'
+        AND u.auth_id = (SELECT auth.uid())
+        AND u.status = 'active'
+    )
+  );
+CREATE POLICY
+REVOKE ALL ON public.capture_documents FROM anon, authenticated, service_role;
+REVOKE
+REVOKE ALL ON public.capture_files FROM anon, authenticated, service_role;
+REVOKE
+REVOKE ALL ON public.deliveries FROM anon, authenticated, service_role;
+REVOKE
+REVOKE ALL ON public.delivery_invoice_links FROM anon, authenticated, service_role;
+REVOKE
+GRANT SELECT ON public.capture_documents TO authenticated, service_role;
+GRANT
+GRANT SELECT ON public.capture_files TO authenticated, service_role;
+GRANT
+GRANT SELECT ON public.deliveries TO authenticated, service_role;
+GRANT
+GRANT SELECT ON public.delivery_invoice_links TO authenticated, service_role;
+GRANT
+REVOKE ALL ON FUNCTION public.trg_dil_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE
+REVOKE ALL ON FUNCTION public.trg_dil_before_update() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE
+REVOKE ALL ON FUNCTION public.trg_deliveries_before_update() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE
+REVOKE ALL ON FUNCTION public.trg_capture_documents_before_update() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE
+COMMENT ON TABLE public.capture_documents IS 'Capture engine slice 1a: one document (DC or invoice) per capture flow. Written only by PR-B definer functions. Business record, never pruned (D-29).';
+COMMENT
+COMMENT ON TABLE public.capture_files IS 'Capture engine slice 1a: one row per page/photo of a capture_documents row. Bytes live in the capture-documents bucket.';
+COMMENT
+COMMENT ON TABLE public.deliveries IS 'Capture engine slice 1a: a delivery points at its document (dc_document_id xor created_from_invoice_id).';
+COMMENT
+COMMENT ON TABLE public.delivery_invoice_links IS 'Capture engine slice 1a: invoice-to-delivery links; soft-unlinked, never deleted; the unlinked self-link row carries the supersession snapshot (D-2).';
+COMMENT
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('capture-documents', 'capture-documents', false, 16777216,
+        ARRAY['application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
+ON CONFLICT (id) DO NOTHING;
+INSERT 0 1
+DO $$
+DECLARE
+  v_public boolean;
+  v_limit  bigint;
+  v_mimes  text[];
+BEGIN
+  SELECT b.public, b.file_size_limit, b.allowed_mime_types
+    INTO v_public, v_limit, v_mimes
+    FROM storage.buckets b
+   WHERE b.id = 'capture-documents';
+  IF NOT FOUND
+     OR v_public IS DISTINCT FROM false
+     OR v_limit IS DISTINCT FROM 16777216
+     OR v_mimes IS DISTINCT FROM ARRAY['application/pdf', 'image/jpeg', 'image/png', 'image/webp']::text[] THEN
+    RAISE EXCEPTION 'BUCKET_ASSERT';
+  END IF;
+END;
+$$;
+DO
+DO $$
+DECLARE
+  v_t   text;
+  v_r   text;
+  v_p   text;
+  v_f   text;
+  v_bad text := '';
+BEGIN
+  FOREACH v_t IN ARRAY ARRAY['capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links'] LOOP
+    FOREACH v_r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+      FOREACH v_p IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] LOOP
+        IF has_table_privilege(v_r, 'public.' || v_t, v_p) IS DISTINCT FROM (v_p = 'SELECT' AND v_r <> 'anon') THEN
+          v_bad := v_bad || ' ' || v_t || ':' || v_r || ':' || v_p;
+        END IF;
+      END LOOP;
+    END LOOP;
+  END LOOP;
+  FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+    FOREACH v_r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+      IF has_function_privilege(v_r, 'public.' || v_f || '()', 'EXECUTE') THEN
+        v_bad := v_bad || ' ' || v_f || ':' || v_r || ':EXECUTE';
+      END IF;
+    END LOOP;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_proc p
+      WHERE p.oid = ('public.' || v_f || '()')::regprocedure
+        AND p.prosecdef
+        AND p.proconfig = ARRAY['search_path=""']::text[]
+    ) THEN
+      v_bad := v_bad || ' ' || v_f || ':fingerprint';
+    END IF;
+  END LOOP;
+  IF v_bad <> '' THEN
+    RAISE EXCEPTION 'ACL_ASSERT:%', v_bad;
+  END IF;
+END;
+$$;
+DO
+COMMIT;
+COMMIT
+[exit 0]
+$ psql -X -e -d t_down_a -v ON_ERROR_STOP=1 -f test-db-only-capture-helpers.sql
+CREATE OR REPLACE FUNCTION public.quoco_test_capture_fixture_tenant_ok(p_tenant_id uuid)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT p_tenant_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.tenants t
+    WHERE t.id = p_tenant_id AND t.slug LIKE 'zz-test-capture-%'
+  );
+$$;
+CREATE FUNCTION
+CREATE OR REPLACE FUNCTION public.quoco_test_capture_insert(p_table text, p_row jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_tenant uuid;
+  v_cols   text;
+  v_out    jsonb;
+BEGIN
+  IF p_table IS NULL OR p_table NOT IN ('deliveries', 'capture_documents', 'capture_files', 'delivery_invoice_links') THEN
+    RAISE EXCEPTION 'HELPER_TABLE_NOT_ALLOWED';
+  END IF;
+  IF jsonb_typeof(p_row) IS DISTINCT FROM 'object' OR p_row = '{}'::jsonb THEN
+    RAISE EXCEPTION 'HELPER_ROW_NOT_OBJECT';
+  END IF;
+  BEGIN
+    v_tenant := (p_row ->> 'tenant_id')::uuid;
+  EXCEPTION WHEN others THEN
+    v_tenant := NULL;
+  END;
+  IF NOT public.quoco_test_capture_fixture_tenant_ok(v_tenant) THEN
+    RAISE EXCEPTION 'HELPER_TENANT_NOT_FIXTURE';
+  END IF;
+  SELECT string_agg(format('%I', k), ', ' ORDER BY k) INTO v_cols FROM jsonb_object_keys(p_row) AS k;
+  EXECUTE format(
+    'INSERT INTO public.%1$I (%2$s) SELECT %2$s FROM jsonb_populate_record(NULL::public.%1$I, $1) RETURNING to_jsonb(%1$I)',
+    p_table, v_cols
+  ) INTO v_out USING p_row;
+  RETURN v_out;
+END;
+$$;
+CREATE FUNCTION
+CREATE OR REPLACE FUNCTION public.quoco_test_capture_update(p_table text, p_id uuid, p_set jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_tenant uuid;
+  v_sets   text;
+  v_out    jsonb;
+BEGIN
+  IF p_table IS NULL OR p_table NOT IN ('deliveries', 'capture_documents', 'capture_files', 'delivery_invoice_links') THEN
+    RAISE EXCEPTION 'HELPER_TABLE_NOT_ALLOWED';
+  END IF;
+  IF jsonb_typeof(p_set) IS DISTINCT FROM 'object' OR p_set = '{}'::jsonb THEN
+    RAISE EXCEPTION 'HELPER_ROW_NOT_OBJECT';
+  END IF;
+  EXECUTE format('SELECT tenant_id FROM public.%I WHERE id = $1', p_table) INTO v_tenant USING p_id;
+  IF NOT public.quoco_test_capture_fixture_tenant_ok(v_tenant) THEN
+    RAISE EXCEPTION 'HELPER_TENANT_NOT_FIXTURE';
+  END IF;
+  SELECT string_agg(format('%I = (jsonb_populate_record(NULL::public.%I, $2)).%I', k, p_table, k), ', ' ORDER BY k)
+    INTO v_sets FROM jsonb_object_keys(p_set) AS k;
+  EXECUTE format('UPDATE public.%1$I SET %2$s WHERE id = $1 RETURNING to_jsonb(%1$I)', p_table, v_sets)
+    INTO v_out USING p_id, p_set;
+  RETURN v_out;
+END;
+$$;
+CREATE FUNCTION
+CREATE OR REPLACE FUNCTION public.quoco_test_capture_cleanup(p_tenant_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_links int;
+  v_files int;
+  v_deliveries int;
+  v_documents int;
+BEGIN
+  IF NOT public.quoco_test_capture_fixture_tenant_ok(p_tenant_id) THEN
+    RAISE EXCEPTION 'HELPER_TENANT_NOT_FIXTURE';
+  END IF;
+  DELETE FROM public.delivery_invoice_links WHERE tenant_id = p_tenant_id;
+  GET DIAGNOSTICS v_links = ROW_COUNT;
+  DELETE FROM public.capture_files WHERE tenant_id = p_tenant_id;
+  GET DIAGNOSTICS v_files = ROW_COUNT;
+  DELETE FROM public.deliveries WHERE tenant_id = p_tenant_id;
+  GET DIAGNOSTICS v_deliveries = ROW_COUNT;
+  DELETE FROM public.capture_documents WHERE tenant_id = p_tenant_id;
+  GET DIAGNOSTICS v_documents = ROW_COUNT;
+  RETURN jsonb_build_object('delivery_invoice_links', v_links, 'capture_files', v_files,
+                            'deliveries', v_deliveries, 'capture_documents', v_documents);
+END;
+$$;
+CREATE FUNCTION
+CREATE OR REPLACE FUNCTION public.quoco_test_capture_acl()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_t   text;
+  v_r   text;
+  v_p   text;
+  v_f   text;
+  v_tbl jsonb := '{}'::jsonb;
+  v_fn  jsonb := '{}'::jsonb;
+  v_row jsonb;
+  v_cell jsonb;
+BEGIN
+  FOREACH v_t IN ARRAY ARRAY['capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links'] LOOP
+    v_row := '{}'::jsonb;
+    FOREACH v_r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+      v_cell := '{}'::jsonb;
+      FOREACH v_p IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'] LOOP
+        v_cell := v_cell || jsonb_build_object(v_p, has_table_privilege(v_r, 'public.' || v_t, v_p));
+      END LOOP;
+      v_row := v_row || jsonb_build_object(v_r, v_cell);
+    END LOOP;
+    v_tbl := v_tbl || jsonb_build_object(v_t, v_row);
+  END LOOP;
+  FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+    SELECT jsonb_build_object(
+             'exists', true,
+             'prosecdef', p.prosecdef,
+             'proconfig', to_jsonb(p.proconfig),
+             'owner', pg_get_userbyid(p.proowner)::text,
+             'anon_execute', has_function_privilege('anon', p.oid, 'EXECUTE'),
+             'authenticated_execute', has_function_privilege('authenticated', p.oid, 'EXECUTE'),
+             'service_role_execute', has_function_privilege('service_role', p.oid, 'EXECUTE'))
+      INTO v_row
+      FROM pg_proc p
+     WHERE p.oid = to_regprocedure('public.' || v_f || '()');
+    v_fn := v_fn || jsonb_build_object(v_f, COALESCE(v_row, jsonb_build_object('exists', false)));
+  END LOOP;
+  RETURN jsonb_build_object('tables', v_tbl, 'functions', v_fn);
+END;
+$$;
+CREATE FUNCTION
+CREATE OR REPLACE FUNCTION public.quoco_test_capture_helpers_present()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT to_regprocedure('public.quoco_test_capture_fixture_tenant_ok(uuid)') IS NOT NULL
+     AND to_regprocedure('public.quoco_test_capture_insert(text,jsonb)') IS NOT NULL
+     AND to_regprocedure('public.quoco_test_capture_update(text,uuid,jsonb)') IS NOT NULL
+     AND to_regprocedure('public.quoco_test_capture_cleanup(uuid)') IS NOT NULL
+     AND to_regprocedure('public.quoco_test_capture_acl()') IS NOT NULL
+     AND to_regprocedure('public.quoco_test_capture_helpers_present()') IS NOT NULL;
+$$;
+CREATE FUNCTION
+REVOKE ALL ON FUNCTION public.quoco_test_capture_fixture_tenant_ok(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE
+REVOKE ALL ON FUNCTION public.quoco_test_capture_insert(text, jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE
+REVOKE ALL ON FUNCTION public.quoco_test_capture_update(text, uuid, jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE
+REVOKE ALL ON FUNCTION public.quoco_test_capture_cleanup(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE
+REVOKE ALL ON FUNCTION public.quoco_test_capture_acl() FROM PUBLIC, anon, authenticated;
+REVOKE
+REVOKE ALL ON FUNCTION public.quoco_test_capture_helpers_present() FROM PUBLIC, anon, authenticated;
+REVOKE
+GRANT EXECUTE ON FUNCTION public.quoco_test_capture_fixture_tenant_ok(uuid) TO service_role;
+GRANT
+GRANT EXECUTE ON FUNCTION public.quoco_test_capture_insert(text, jsonb) TO service_role;
+GRANT
+GRANT EXECUTE ON FUNCTION public.quoco_test_capture_update(text, uuid, jsonb) TO service_role;
+GRANT
+GRANT EXECUTE ON FUNCTION public.quoco_test_capture_cleanup(uuid) TO service_role;
+GRANT
+GRANT EXECUTE ON FUNCTION public.quoco_test_capture_acl() TO service_role;
+GRANT
+GRANT EXECUTE ON FUNCTION public.quoco_test_capture_helpers_present() TO service_role;
+GRANT
+[exit 0]
+$ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('049', 'capture_tables');  (stands in for the ledger repair)
+## fingerprint AFTER UP + helpers + ledger row:
+relations a9014cad6c5515427671025b1a662948
+functions c37fa726541a666c660e2667d991466e
+constraints 6f809fbdc789f5552fe9de1b08f3e446
+triggers 3d5d868ac5a030845af6a78be6eb819c
+policies 8f2ffb5bfc25291bc74a8edf76a989be
+indexes dbcb5fb46c3487a39b7ada9c692064a6
+table/column comments 31 d0825a981a1a304c2d41f4caabd8a3d0
+function comments 0
+default_acl 82074218540eaa004ee83da5f47c4504
+storage.buckets rows 1
+ledger rows 1
+public tables=36 functions=146
+PASS: UP changed the catalog (fingerprint differs from baseline)
+## RED: run the 049 DOWN while the helper functions exist
+$ psql -X -e -d t_down_a -v ON_ERROR_STOP=1 -f 049-down.sql
+BEGIN;
+BEGIN
+DO $$
+DECLARE
+  v_rows  bigint;
+  v_names text;
+BEGIN
+  -- Guard 1: nothing to lose.
+  SELECT (SELECT count(*) FROM public.delivery_invoice_links)
+       + (SELECT count(*) FROM public.capture_files)
+       + (SELECT count(*) FROM public.deliveries)
+       + (SELECT count(*) FROM public.capture_documents)
+    INTO v_rows;
+  IF v_rows <> 0 THEN
+    RAISE EXCEPTION 'DOWN_GUARD_ROWS';
+  END IF;
+  -- Guard 2 (intensional, R8; restricted to non-system namespaces, S-D): no
+  -- function other than 049's own four trigger functions may name these
+  -- tables. plpgsql bodies record no dependency, so DROP TABLE alone would
+  -- leave broken functions behind. Catches renamed or later PR-B/PR-C/PR-D
+  -- functions without listing them.
+  SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+    INTO v_names
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+     AND n.nspname !~ '^pg_'
+     AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+     AND NOT (n.nspname = 'public' AND p.proname IN (
+           'trg_dil_before_insert', 'trg_dil_before_update',
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+  IF v_names IS NOT NULL THEN
+    RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
+  END IF;
+END;
+$$;
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_FUNCTIONS: public.quoco_test_capture_update, public.quoco_test_capture_acl, public.quoco_test_capture_insert, public.quoco_test_capture_cleanup
+CONTEXT:  PL/pgSQL function inline_code_block line 31 at RAISE
+[exit 3]
+PASS: DOWN refused with DOWN_GUARD_FUNCTIONS while helpers exist
+PASS: the guard names the offending helper functions
+PASS: refused DOWN rolled back completely (fingerprint == after-UP fingerprint)
+## GREEN: helpers' own DOWN first, then the 049 DOWN
+$ psql -X -e -d t_down_a -v ON_ERROR_STOP=1 -f helpers-down.sql
+BEGIN;
+BEGIN
+DROP FUNCTION IF EXISTS public.quoco_test_capture_helpers_present();
+DROP FUNCTION
+DROP FUNCTION IF EXISTS public.quoco_test_capture_acl();
+DROP FUNCTION
+DROP FUNCTION IF EXISTS public.quoco_test_capture_cleanup(uuid);
+DROP FUNCTION
+DROP FUNCTION IF EXISTS public.quoco_test_capture_update(text, uuid, jsonb);
+DROP FUNCTION
+DROP FUNCTION IF EXISTS public.quoco_test_capture_insert(text, jsonb);
+DROP FUNCTION
+DROP FUNCTION IF EXISTS public.quoco_test_capture_fixture_tenant_ok(uuid);
+DROP FUNCTION
+COMMIT;
+COMMIT
+[exit 0]
+PASS: helpers DOWN ran
+$ psql -X -e -d t_down_a -v ON_ERROR_STOP=1 -f 049-down.sql
+BEGIN;
+BEGIN
+DO $$
+DECLARE
+  v_rows  bigint;
+  v_names text;
+BEGIN
+  -- Guard 1: nothing to lose.
+  SELECT (SELECT count(*) FROM public.delivery_invoice_links)
+       + (SELECT count(*) FROM public.capture_files)
+       + (SELECT count(*) FROM public.deliveries)
+       + (SELECT count(*) FROM public.capture_documents)
+    INTO v_rows;
+  IF v_rows <> 0 THEN
+    RAISE EXCEPTION 'DOWN_GUARD_ROWS';
+  END IF;
+  -- Guard 2 (intensional, R8; restricted to non-system namespaces, S-D): no
+  -- function other than 049's own four trigger functions may name these
+  -- tables. plpgsql bodies record no dependency, so DROP TABLE alone would
+  -- leave broken functions behind. Catches renamed or later PR-B/PR-C/PR-D
+  -- functions without listing them.
+  SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+    INTO v_names
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+     AND n.nspname !~ '^pg_'
+     AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+     AND NOT (n.nspname = 'public' AND p.proname IN (
+           'trg_dil_before_insert', 'trg_dil_before_update',
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+  IF v_names IS NOT NULL THEN
+    RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
+  END IF;
+END;
+$$;
+DO
+DROP TABLE public.delivery_invoice_links;
+DROP TABLE
+DROP TABLE public.capture_files;
+DROP TABLE
+DROP TABLE public.deliveries;
+DROP TABLE
+DROP TABLE public.capture_documents;
+DROP TABLE
+DROP FUNCTION public.trg_dil_before_insert();
+DROP FUNCTION
+DROP FUNCTION public.trg_dil_before_update();
+DROP FUNCTION
+DROP FUNCTION public.trg_deliveries_before_update();
+DROP FUNCTION
+DROP FUNCTION public.trg_capture_documents_before_update();
+DROP FUNCTION
+DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
+DELETE 1
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
+    RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
+  END IF;
+END;
+$$;
+DO
+DELETE FROM storage.buckets WHERE id = 'capture-documents';
+DELETE 1
+COMMIT;
+COMMIT
+[exit 0]
+PASS: 049 DOWN ran to COMMIT
+## fingerprint AFTER DOWN:
+relations 81c40691162cef7e5a707e8822bc6a48
+functions c83f66f077cf7fbe891c4c3de00bbcf1
+constraints 79046243744afaa534d35cbc05612b21
+triggers d41d8cd98f00b204e9800998ecf8427e
+policies 93722ac750bc76cfacbd3c707831ed0f
+indexes 10878e1978af5fa4ef2ef237ce3272ae
+table/column comments 27 eace14236f6beb57d980e8ba635d04e0
+function comments 0
+default_acl 82074218540eaa004ee83da5f47c4504
+storage.buckets rows 0
+ledger rows 0
+public tables=32 functions=136
+PASS: post-DOWN catalog fingerprint == pre-049 baseline (structure, ACLs, policies, triggers, indexes, comments, default ACL, bucket, ledger)
+$ psql -X -At -d t_down_a -f gone.sql   (post-DOWN catalog: nothing of 049 remains)
+tables left: 0
+functions left: 0
+triggers left: 0
+policies left: 0
+bucket rows left: 0
+ledger 049 rows left: 0
+comments on the four tables left: 0
+PASS: post-DOWN catalog shows none of the 049 objects (7 of 7 counts are 0)
+
+######## PHASE B: guard 1 (rows) and guard 2 (any other function naming the tables, any non-system schema) ########
+$ one DC document + delivery inserted (t.mk_dc) so the tables are not empty
+60000000-0000-0000-0000-000000000001
+$ psql -X -e -d t_down_b -v ON_ERROR_STOP=1 -f 049-down.sql
+BEGIN;
+BEGIN
+DO $$
+DECLARE
+  v_rows  bigint;
+  v_names text;
+BEGIN
+  -- Guard 1: nothing to lose.
+  SELECT (SELECT count(*) FROM public.delivery_invoice_links)
+       + (SELECT count(*) FROM public.capture_files)
+       + (SELECT count(*) FROM public.deliveries)
+       + (SELECT count(*) FROM public.capture_documents)
+    INTO v_rows;
+  IF v_rows <> 0 THEN
+    RAISE EXCEPTION 'DOWN_GUARD_ROWS';
+  END IF;
+  -- Guard 2 (intensional, R8; restricted to non-system namespaces, S-D): no
+  -- function other than 049's own four trigger functions may name these
+  -- tables. plpgsql bodies record no dependency, so DROP TABLE alone would
+  -- leave broken functions behind. Catches renamed or later PR-B/PR-C/PR-D
+  -- functions without listing them.
+  SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+    INTO v_names
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+     AND n.nspname !~ '^pg_'
+     AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+     AND NOT (n.nspname = 'public' AND p.proname IN (
+           'trg_dil_before_insert', 'trg_dil_before_update',
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+  IF v_names IS NOT NULL THEN
+    RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
+  END IF;
+END;
+$$;
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_ROWS
+CONTEXT:  PL/pgSQL function inline_code_block line 13 at RAISE
+[exit 3]
+PASS: guard 1: DOWN refused with DOWN_GUARD_ROWS while a table has rows
+rows still there: 1
+$ delete the rows (owner); the fixture functions in schema t (a NON-public, non-system schema) still name the tables
+$ psql -X -e -d t_down_b -v ON_ERROR_STOP=1 -f 049-down.sql
+BEGIN;
+BEGIN
+DO $$
+DECLARE
+  v_rows  bigint;
+  v_names text;
+BEGIN
+  -- Guard 1: nothing to lose.
+  SELECT (SELECT count(*) FROM public.delivery_invoice_links)
+       + (SELECT count(*) FROM public.capture_files)
+       + (SELECT count(*) FROM public.deliveries)
+       + (SELECT count(*) FROM public.capture_documents)
+    INTO v_rows;
+  IF v_rows <> 0 THEN
+    RAISE EXCEPTION 'DOWN_GUARD_ROWS';
+  END IF;
+  -- Guard 2 (intensional, R8; restricted to non-system namespaces, S-D): no
+  -- function other than 049's own four trigger functions may name these
+  -- tables. plpgsql bodies record no dependency, so DROP TABLE alone would
+  -- leave broken functions behind. Catches renamed or later PR-B/PR-C/PR-D
+  -- functions without listing them.
+  SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+    INTO v_names
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+     AND n.nspname !~ '^pg_'
+     AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+     AND NOT (n.nspname = 'public' AND p.proname IN (
+           'trg_dil_before_insert', 'trg_dil_before_update',
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+  IF v_names IS NOT NULL THEN
+    RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
+  END IF;
+END;
+$$;
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_FUNCTIONS: t.mk_doc, t.mk_dc, t.mk_inv
+CONTEXT:  PL/pgSQL function inline_code_block line 31 at RAISE
+[exit 3]
+PASS: guard 2: refused, naming a function in a NON-public, non-system schema (t.mk_doc)
+NOTICE:  drop cascades to 5 other objects
+DETAIL:  drop cascades to function t.expect(text,text,text)
+drop cascades to function t.val(text,text,text)
+drop cascades to function t.mk_doc(uuid,text,text,uuid)
+drop cascades to function t.mk_dc(uuid,uuid,text)
+drop cascades to function t.mk_inv(uuid,uuid,uuid,text)
+$ plant a FUTURE PR-B-style function in public that names a table
+$ psql -X -e -d t_down_b -v ON_ERROR_STOP=1 -f 049-down.sql
+BEGIN;
+BEGIN
+DO $$
+DECLARE
+  v_rows  bigint;
+  v_names text;
+BEGIN
+  -- Guard 1: nothing to lose.
+  SELECT (SELECT count(*) FROM public.delivery_invoice_links)
+       + (SELECT count(*) FROM public.capture_files)
+       + (SELECT count(*) FROM public.deliveries)
+       + (SELECT count(*) FROM public.capture_documents)
+    INTO v_rows;
+  IF v_rows <> 0 THEN
+    RAISE EXCEPTION 'DOWN_GUARD_ROWS';
+  END IF;
+  -- Guard 2 (intensional, R8; restricted to non-system namespaces, S-D): no
+  -- function other than 049's own four trigger functions may name these
+  -- tables. plpgsql bodies record no dependency, so DROP TABLE alone would
+  -- leave broken functions behind. Catches renamed or later PR-B/PR-C/PR-D
+  -- functions without listing them.
+  SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+    INTO v_names
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+     AND n.nspname !~ '^pg_'
+     AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+     AND NOT (n.nspname = 'public' AND p.proname IN (
+           'trg_dil_before_insert', 'trg_dil_before_update',
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+  IF v_names IS NOT NULL THEN
+    RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
+  END IF;
+END;
+$$;
+psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:36: ERROR:  DOWN_GUARD_FUNCTIONS: public.pm_unlink_invoice_future
+CONTEXT:  PL/pgSQL function inline_code_block line 31 at RAISE
+[exit 3]
+PASS: guard 2: refused, naming the planted future public function
+$ psql -X -e -d t_down_b -v ON_ERROR_STOP=1 -f 049-down.sql
+BEGIN;
+BEGIN
+DO $$
+DECLARE
+  v_rows  bigint;
+  v_names text;
+BEGIN
+  -- Guard 1: nothing to lose.
+  SELECT (SELECT count(*) FROM public.delivery_invoice_links)
+       + (SELECT count(*) FROM public.capture_files)
+       + (SELECT count(*) FROM public.deliveries)
+       + (SELECT count(*) FROM public.capture_documents)
+    INTO v_rows;
+  IF v_rows <> 0 THEN
+    RAISE EXCEPTION 'DOWN_GUARD_ROWS';
+  END IF;
+  -- Guard 2 (intensional, R8; restricted to non-system namespaces, S-D): no
+  -- function other than 049's own four trigger functions may name these
+  -- tables. plpgsql bodies record no dependency, so DROP TABLE alone would
+  -- leave broken functions behind. Catches renamed or later PR-B/PR-C/PR-D
+  -- functions without listing them.
+  SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+    INTO v_names
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+     AND n.nspname !~ '^pg_'
+     AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+     AND NOT (n.nspname = 'public' AND p.proname IN (
+           'trg_dil_before_insert', 'trg_dil_before_update',
+           'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+  IF v_names IS NOT NULL THEN
+    RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
+  END IF;
+END;
+$$;
+DO
+DROP TABLE public.delivery_invoice_links;
+DROP TABLE
+DROP TABLE public.capture_files;
+DROP TABLE
+DROP TABLE public.deliveries;
+DROP TABLE
+DROP TABLE public.capture_documents;
+DROP TABLE
+DROP FUNCTION public.trg_dil_before_insert();
+DROP FUNCTION
+DROP FUNCTION public.trg_dil_before_update();
+DROP FUNCTION
+DROP FUNCTION public.trg_deliveries_before_update();
+DROP FUNCTION
+DROP FUNCTION public.trg_capture_documents_before_update();
+DROP FUNCTION
+DELETE FROM supabase_migrations.schema_migrations WHERE version = '049';
+DELETE 0
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
+    RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
+  END IF;
+END;
+$$;
+DO
+DELETE FROM storage.buckets WHERE id = 'capture-documents';
+DELETE 1
+COMMIT;
+COMMIT
+[exit 0]
+PASS: no row, no foreign function: DOWN ran to COMMIT
+
+>>> DOWN RESULT: PASS=12 FAIL=0
+>>> OVERALL T-DOWN: guards tripped (RED) where required, DOWN succeeded (GREEN) after the procedure, catalog back to baseline

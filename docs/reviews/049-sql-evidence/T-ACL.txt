@@ -1,0 +1,432 @@
+== 049-sql evidence: T-ACL ==
+generated: 2026-10-11T05:59:27Z
+$ git rev-parse HEAD
+f26c7eddb8813001c0a32f83fef644a28edecbb1
+$ git status --porcelain      (empty output between the next two lines = clean tree)
+----- begin porcelain -----
+----- end porcelain -----
+$ psql --version
+psql (PostgreSQL) 17.11 (Homebrew)
+$ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+$ shasum -a 256 (artifacts under test)
+1f0ad956633d084d2c92d4f50a8ccb53529a73c3f20745bda72b94f7cee68bc4  docs/reviews/049_capture_tables.sql
+4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
+0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
+
+################ RED run 1: post:plant_grants ################
+MUTANT (named): plant_grants   (post-UP SQL applied to the real file's result)
+$ psql -d t_T_ACL_red1 -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+$ psql -d t_T_ACL_red1 -f <post-UP mutation>:
+GRANT INSERT ON public.deliveries TO anon;
+GRANT DELETE ON public.capture_files TO service_role;
+GRANT TRUNCATE ON public.delivery_invoice_links TO service_role;
+GRANT EXECUTE ON FUNCTION public.trg_dil_before_insert() TO authenticated;
+GRANT UPDATE ON public.capture_documents TO authenticated;
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_ACL_red1 -f T-ACL.sql (tokens expanded by src/expand.py)
+== T-ACL: ACL fingerprint after UP -- has_table_privilege matrix (anon, authenticated, service_role x 8 privileges x 4 tables), function fingerprint, real denials ==
+Output format is unaligned.
+-- Pre-state of the scaffold (REAL dump of test-db public): default ACL for new public tables/functions created by postgres:
+SELECT 'default_acl ' || defaclobjtype::text || ' ' || defaclacl::text FROM pg_default_acl WHERE defaclnamespace = 'public'::regnamespace AND defaclrole = 'postgres'::regrole ORDER BY defaclobjtype;
+default_acl S {postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}
+default_acl f {postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}
+default_acl r {postgres=arwdDxtm/postgres,anon=arw/postgres,authenticated=arw/postgres,service_role=arwdDxtm/postgres}
+
+-- ===== the intended matrix: anon none; authenticated SELECT; service_role SELECT; nobody TRUNCATE/REFERENCES/TRIGGER/MAINTAIN/INSERT/UPDATE/DELETE =====
+Output format is aligned.
+SELECT tb AS table_name, r AS role, COALESCE(string_agg(p, ',' ORDER BY p) FILTER (WHERE has_table_privilege(r, 'public.' || tb, p)), '(none)') AS granted
+FROM unnest(ARRAY['capture_documents','capture_files','deliveries','delivery_invoice_links']) tb, unnest(ARRAY['anon','authenticated','service_role']) r, unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p GROUP BY tb, r ORDER BY tb, r;
+       table_name       |     role      |     granted     
+------------------------+---------------+-----------------
+ capture_documents      | anon          | (none)
+ capture_documents      | authenticated | SELECT,UPDATE
+ capture_documents      | service_role  | SELECT
+ capture_files          | anon          | (none)
+ capture_files          | authenticated | SELECT
+ capture_files          | service_role  | DELETE,SELECT
+ deliveries             | anon          | INSERT
+ deliveries             | authenticated | SELECT
+ deliveries             | service_role  | SELECT
+ delivery_invoice_links | anon          | (none)
+ delivery_invoice_links | authenticated | SELECT
+ delivery_invoice_links | service_role  | SELECT,TRUNCATE
+(12 rows)
+
+Output format is unaligned.
+SELECT t.val('privileges that differ from the intended matrix (96 cells)', $$SELECT count(*)::text FROM unnest(ARRAY['capture_documents','capture_files','deliveries','delivery_invoice_links']) tb, unnest(ARRAY['anon','authenticated','service_role']) r, unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p WHERE has_table_privilege(r, 'public.' || tb, p) IS DISTINCT FROM (p = 'SELECT' AND r <> 'anon')$$, '0');
+FAIL: privileges that differ from the intended matrix (96 cells) -- expected 0 got 4
+SELECT t.val('column-level grants on the four tables', $$SELECT count(*)::text FROM pg_attribute WHERE attrelid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND attacl IS NOT NULL$$, '0');
+PASS: column-level grants on the four tables -- value = 0
+SELECT t.val('table ACL entries granted to PUBLIC (grantee 0)', $$SELECT count(*)::text FROM pg_class c, aclexplode(c.relacl) x WHERE c.oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND x.grantee = 0$$, '0');
+PASS: table ACL entries granted to PUBLIC (grantee 0) -- value = 0
+-- raw relacl of the four tables (owner postgres keeps everything; that is not a role under test):
+SELECT relname || ' ' || COALESCE(relacl::text, '(null)') FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) ORDER BY relname;
+capture_documents {postgres=arwdDxtm/postgres,authenticated=rw/postgres,service_role=r/postgres}
+capture_files {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=rd/postgres}
+deliveries {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres,anon=a/postgres}
+delivery_invoice_links {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=rD/postgres}
+
+-- ===== the four trigger functions: fingerprint =====
+Output format is aligned.
+SELECT p.proname, p.prosecdef, p.proconfig, pg_get_userbyid(p.proowner) AS owner, p.proacl, has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_x, has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_x, has_function_privilege('service_role', p.oid, 'EXECUTE') AS svc_x FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'trg\_%' ORDER BY p.proname;
+               proname               | prosecdef |      proconfig       |  owner   |                     proacl                     | anon_x | auth_x | svc_x 
+-------------------------------------+-----------+----------------------+----------+------------------------------------------------+--------+--------+-------
+ trg_capture_documents_before_update | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres}                          | f      | f      | f
+ trg_deliveries_before_update        | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres}                          | f      | f      | f
+ trg_dil_before_insert               | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres,authenticated=X/postgres} | f      | t      | f
+ trg_dil_before_update               | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres}                          | f      | f      | f
+(4 rows)
+
+Output format is unaligned.
+SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '4');
+PASS: trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres -- value = 4
+SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
+FAIL: EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function -- expected 0 got 1
+SELECT t.val('the four triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '4');
+PASS: the four triggers exist and are enabled -- value = 4
+
+-- ===== real denials, as each role (42501 = insufficient_privilege). SQL runs through EXECUTE inside thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:30: error: unterminated quoted string
+
+SET ROLE anon;
+SET
+SELECT t.expect('anon SELECT capture_documents', 'SELECT count(*) FROM public.capture_documents', '42501');
+PASS: anon SELECT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('anon INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
+PASS: anon INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('anon SELECT capture_files', 'SELECT count(*) FROM public.capture_files', '42501');
+PASS: anon SELECT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('anon INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
+PASS: anon INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('anon SELECT deliveries', 'SELECT count(*) FROM public.deliveries', '42501');
+PASS: anon SELECT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('anon INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
+PASS: anon INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=new row violates row-level security policy for table "delive
+SELECT t.expect('anon SELECT delivery_invoice_links', 'SELECT count(*) FROM public.delivery_invoice_links', '42501');
+PASS: anon SELECT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('anon INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
+PASS: anon INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('anon calls trg_dil_before_insert()', 'SELECT public.trg_dil_before_insert()', '42501');
+PASS: anon calls trg_dil_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_insert
+SELECT t.expect('anon calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
+PASS: anon calls trg_dil_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_update
+SELECT t.expect('anon calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
+PASS: anon calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
+SELECT t.expect('anon calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+PASS: anon calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+RESET ROLE;
+RESET
+SET ROLE authenticated;
+SET
+SELECT t.expect('authenticated SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
+PASS: authenticated SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('authenticated INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
+PASS: authenticated INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
+FAIL: authenticated UPDATE capture_documents -- expected refusal 42501 but the statement SUCCEEDED
+SELECT t.expect('authenticated DELETE capture_documents', 'DELETE FROM public.capture_documents', '42501');
+PASS: authenticated DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
+PASS: authenticated TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
+PASS: authenticated SELECT capture_files (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('authenticated INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
+PASS: authenticated INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
+PASS: authenticated UPDATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated DELETE capture_files', 'DELETE FROM public.capture_files', '42501');
+PASS: authenticated DELETE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
+PASS: authenticated TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
+PASS: authenticated SELECT deliveries (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('authenticated INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
+PASS: authenticated INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
+PASS: authenticated UPDATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated DELETE deliveries', 'DELETE FROM public.deliveries', '42501');
+PASS: authenticated DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
+PASS: authenticated TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
+PASS: authenticated SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('authenticated INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
+PASS: authenticated INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
+PASS: authenticated UPDATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated DELETE delivery_invoice_links', 'DELETE FROM public.delivery_invoice_links', '42501');
+PASS: authenticated DELETE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated TRUNCATE delivery_invoice_links', 'TRUNCATE public.delivery_invoice_links', '42501');
+PASS: authenticated TRUNCATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated calls trg_dil_before_insert()', 'SELECT public.trg_dil_before_insert()', '42501');
+FAIL: authenticated calls trg_dil_before_insert() -- expected 42501, got refusal SQLSTATE=0A000 MESSAGE=trigger functions can only be called as triggers
+SELECT t.expect('authenticated calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
+PASS: authenticated calls trg_dil_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_update
+SELECT t.expect('authenticated calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
+PASS: authenticated calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
+SELECT t.expect('authenticated calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+PASS: authenticated calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+RESET ROLE;
+RESET
+SET ROLE service_role;
+SET
+SELECT t.expect('service_role SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
+PASS: service_role SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('service_role INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
+PASS: service_role INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
+PASS: service_role UPDATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role DELETE capture_documents', 'DELETE FROM public.capture_documents', '42501');
+PASS: service_role DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
+PASS: service_role TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
+PASS: service_role SELECT capture_files (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('service_role INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
+PASS: service_role INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
+PASS: service_role UPDATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role DELETE capture_files', 'DELETE FROM public.capture_files', '42501');
+FAIL: service_role DELETE capture_files -- expected refusal 42501 but the statement SUCCEEDED
+SELECT t.expect('service_role TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
+PASS: service_role TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
+PASS: service_role SELECT deliveries (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('service_role INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
+PASS: service_role INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
+PASS: service_role UPDATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role DELETE deliveries', 'DELETE FROM public.deliveries', '42501');
+PASS: service_role DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
+PASS: service_role TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
+PASS: service_role SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('service_role INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
+PASS: service_role INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
+PASS: service_role UPDATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role DELETE delivery_invoice_links', 'DELETE FROM public.delivery_invoice_links', '42501');
+PASS: service_role DELETE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role TRUNCATE delivery_invoice_links', 'TRUNCATE public.delivery_invoice_links', '42501');
+FAIL: service_role TRUNCATE delivery_invoice_links -- expected refusal 42501 but the statement SUCCEEDED
+SELECT t.expect('service_role calls trg_dil_before_insert()', 'SELECT public.trg_dil_before_insert()', '42501');
+PASS: service_role calls trg_dil_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_insert
+SELECT t.expect('service_role calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
+PASS: service_role calls trg_dil_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_update
+SELECT t.expect('service_role calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
+PASS: service_role calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
+SELECT t.expect('service_role calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+PASS: service_role calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+RESET ROLE;
+RESET
+
+>>> RESULT t_T_ACL_red1: PASS=60 FAIL=6
+>>> RED verdict: test FAILED against the mutant (FAIL=6) -- the test can fail: OK
+
+################ GREEN run: the real file ################
+$ psql -d t_T_ACL_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_ACL_green -f T-ACL.sql (tokens expanded by src/expand.py)
+== T-ACL: ACL fingerprint after UP -- has_table_privilege matrix (anon, authenticated, service_role x 8 privileges x 4 tables), function fingerprint, real denials ==
+Output format is unaligned.
+-- Pre-state of the scaffold (REAL dump of test-db public): default ACL for new public tables/functions created by postgres:
+SELECT 'default_acl ' || defaclobjtype::text || ' ' || defaclacl::text FROM pg_default_acl WHERE defaclnamespace = 'public'::regnamespace AND defaclrole = 'postgres'::regrole ORDER BY defaclobjtype;
+default_acl S {postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}
+default_acl f {postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}
+default_acl r {postgres=arwdDxtm/postgres,anon=arw/postgres,authenticated=arw/postgres,service_role=arwdDxtm/postgres}
+
+-- ===== the intended matrix: anon none; authenticated SELECT; service_role SELECT; nobody TRUNCATE/REFERENCES/TRIGGER/MAINTAIN/INSERT/UPDATE/DELETE =====
+Output format is aligned.
+SELECT tb AS table_name, r AS role, COALESCE(string_agg(p, ',' ORDER BY p) FILTER (WHERE has_table_privilege(r, 'public.' || tb, p)), '(none)') AS granted
+FROM unnest(ARRAY['capture_documents','capture_files','deliveries','delivery_invoice_links']) tb, unnest(ARRAY['anon','authenticated','service_role']) r, unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p GROUP BY tb, r ORDER BY tb, r;
+       table_name       |     role      | granted 
+------------------------+---------------+---------
+ capture_documents      | anon          | (none)
+ capture_documents      | authenticated | SELECT
+ capture_documents      | service_role  | SELECT
+ capture_files          | anon          | (none)
+ capture_files          | authenticated | SELECT
+ capture_files          | service_role  | SELECT
+ deliveries             | anon          | (none)
+ deliveries             | authenticated | SELECT
+ deliveries             | service_role  | SELECT
+ delivery_invoice_links | anon          | (none)
+ delivery_invoice_links | authenticated | SELECT
+ delivery_invoice_links | service_role  | SELECT
+(12 rows)
+
+Output format is unaligned.
+SELECT t.val('privileges that differ from the intended matrix (96 cells)', $$SELECT count(*)::text FROM unnest(ARRAY['capture_documents','capture_files','deliveries','delivery_invoice_links']) tb, unnest(ARRAY['anon','authenticated','service_role']) r, unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p WHERE has_table_privilege(r, 'public.' || tb, p) IS DISTINCT FROM (p = 'SELECT' AND r <> 'anon')$$, '0');
+PASS: privileges that differ from the intended matrix (96 cells) -- value = 0
+SELECT t.val('column-level grants on the four tables', $$SELECT count(*)::text FROM pg_attribute WHERE attrelid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND attacl IS NOT NULL$$, '0');
+PASS: column-level grants on the four tables -- value = 0
+SELECT t.val('table ACL entries granted to PUBLIC (grantee 0)', $$SELECT count(*)::text FROM pg_class c, aclexplode(c.relacl) x WHERE c.oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND x.grantee = 0$$, '0');
+PASS: table ACL entries granted to PUBLIC (grantee 0) -- value = 0
+-- raw relacl of the four tables (owner postgres keeps everything; that is not a role under test):
+SELECT relname || ' ' || COALESCE(relacl::text, '(null)') FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) ORDER BY relname;
+capture_documents {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+capture_files {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+deliveries {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+delivery_invoice_links {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+
+-- ===== the four trigger functions: fingerprint =====
+Output format is aligned.
+SELECT p.proname, p.prosecdef, p.proconfig, pg_get_userbyid(p.proowner) AS owner, p.proacl, has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_x, has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_x, has_function_privilege('service_role', p.oid, 'EXECUTE') AS svc_x FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'trg\_%' ORDER BY p.proname;
+               proname               | prosecdef |      proconfig       |  owner   |        proacl         | anon_x | auth_x | svc_x 
+-------------------------------------+-----------+----------------------+----------+-----------------------+--------+--------+-------
+ trg_capture_documents_before_update | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
+ trg_deliveries_before_update        | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
+ trg_dil_before_insert               | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
+ trg_dil_before_update               | t         | {"search_path=\"\""} | postgres | {postgres=X/postgres} | f      | f      | f
+(4 rows)
+
+Output format is unaligned.
+SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '4');
+PASS: trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres -- value = 4
+SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
+PASS: EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function -- value = 0
+SELECT t.val('the four triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '4');
+PASS: the four triggers exist and are enabled -- value = 4
+
+-- ===== real denials, as each role (42501 = insufficient_privilege). SQL runs through EXECUTE inside thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-ACL.expanded.sql:30: error: unterminated quoted string
+
+SET ROLE anon;
+SET
+SELECT t.expect('anon SELECT capture_documents', 'SELECT count(*) FROM public.capture_documents', '42501');
+PASS: anon SELECT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('anon INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
+PASS: anon INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('anon SELECT capture_files', 'SELECT count(*) FROM public.capture_files', '42501');
+PASS: anon SELECT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('anon INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
+PASS: anon INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('anon SELECT deliveries', 'SELECT count(*) FROM public.deliveries', '42501');
+PASS: anon SELECT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('anon INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
+PASS: anon INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('anon SELECT delivery_invoice_links', 'SELECT count(*) FROM public.delivery_invoice_links', '42501');
+PASS: anon SELECT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('anon INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
+PASS: anon INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('anon calls trg_dil_before_insert()', 'SELECT public.trg_dil_before_insert()', '42501');
+PASS: anon calls trg_dil_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_insert
+SELECT t.expect('anon calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
+PASS: anon calls trg_dil_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_update
+SELECT t.expect('anon calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
+PASS: anon calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
+SELECT t.expect('anon calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+PASS: anon calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+RESET ROLE;
+RESET
+SET ROLE authenticated;
+SET
+SELECT t.expect('authenticated SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
+PASS: authenticated SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('authenticated INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
+PASS: authenticated INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
+PASS: authenticated UPDATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated DELETE capture_documents', 'DELETE FROM public.capture_documents', '42501');
+PASS: authenticated DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
+PASS: authenticated TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('authenticated SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
+PASS: authenticated SELECT capture_files (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('authenticated INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
+PASS: authenticated INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
+PASS: authenticated UPDATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated DELETE capture_files', 'DELETE FROM public.capture_files', '42501');
+PASS: authenticated DELETE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
+PASS: authenticated TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('authenticated SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
+PASS: authenticated SELECT deliveries (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('authenticated INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
+PASS: authenticated INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
+PASS: authenticated UPDATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated DELETE deliveries', 'DELETE FROM public.deliveries', '42501');
+PASS: authenticated DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
+PASS: authenticated TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('authenticated SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
+PASS: authenticated SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('authenticated INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
+PASS: authenticated INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
+PASS: authenticated UPDATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated DELETE delivery_invoice_links', 'DELETE FROM public.delivery_invoice_links', '42501');
+PASS: authenticated DELETE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated TRUNCATE delivery_invoice_links', 'TRUNCATE public.delivery_invoice_links', '42501');
+PASS: authenticated TRUNCATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('authenticated calls trg_dil_before_insert()', 'SELECT public.trg_dil_before_insert()', '42501');
+PASS: authenticated calls trg_dil_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_insert
+SELECT t.expect('authenticated calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
+PASS: authenticated calls trg_dil_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_update
+SELECT t.expect('authenticated calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
+PASS: authenticated calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
+SELECT t.expect('authenticated calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+PASS: authenticated calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+RESET ROLE;
+RESET
+SET ROLE service_role;
+SET
+SELECT t.expect('service_role SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
+PASS: service_role SELECT capture_documents (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('service_role INSERT capture_documents', 'INSERT INTO public.capture_documents DEFAULT VALUES', '42501');
+PASS: service_role INSERT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role UPDATE capture_documents', 'UPDATE public.capture_documents SET created_at = created_at', '42501');
+PASS: service_role UPDATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role DELETE capture_documents', 'DELETE FROM public.capture_documents', '42501');
+PASS: service_role DELETE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role TRUNCATE capture_documents', 'TRUNCATE public.capture_documents', '42501');
+PASS: service_role TRUNCATE capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('service_role SELECT capture_files (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_files', 'ok');
+PASS: service_role SELECT capture_files (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('service_role INSERT capture_files', 'INSERT INTO public.capture_files DEFAULT VALUES', '42501');
+PASS: service_role INSERT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role UPDATE capture_files', 'UPDATE public.capture_files SET created_at = created_at', '42501');
+PASS: service_role UPDATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role DELETE capture_files', 'DELETE FROM public.capture_files', '42501');
+PASS: service_role DELETE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role TRUNCATE capture_files', 'TRUNCATE public.capture_files', '42501');
+PASS: service_role TRUNCATE capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+SELECT t.expect('service_role SELECT deliveries (granted; RLS filters rows)', 'SELECT count(*) FROM public.deliveries', 'ok');
+PASS: service_role SELECT deliveries (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('service_role INSERT deliveries', 'INSERT INTO public.deliveries DEFAULT VALUES', '42501');
+PASS: service_role INSERT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role UPDATE deliveries', 'UPDATE public.deliveries SET created_at = created_at', '42501');
+PASS: service_role UPDATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role DELETE deliveries', 'DELETE FROM public.deliveries', '42501');
+PASS: service_role DELETE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role TRUNCATE deliveries', 'TRUNCATE public.deliveries', '42501');
+PASS: service_role TRUNCATE deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('service_role SELECT delivery_invoice_links (granted; RLS filters rows)', 'SELECT count(*) FROM public.delivery_invoice_links', 'ok');
+PASS: service_role SELECT delivery_invoice_links (granted; RLS filters rows) -- succeeded as expected
+SELECT t.expect('service_role INSERT delivery_invoice_links', 'INSERT INTO public.delivery_invoice_links DEFAULT VALUES', '42501');
+PASS: service_role INSERT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role UPDATE delivery_invoice_links', 'UPDATE public.delivery_invoice_links SET created_at = created_at', '42501');
+PASS: service_role UPDATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role DELETE delivery_invoice_links', 'DELETE FROM public.delivery_invoice_links', '42501');
+PASS: service_role DELETE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role TRUNCATE delivery_invoice_links', 'TRUNCATE public.delivery_invoice_links', '42501');
+PASS: service_role TRUNCATE delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('service_role calls trg_dil_before_insert()', 'SELECT public.trg_dil_before_insert()', '42501');
+PASS: service_role calls trg_dil_before_insert() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_insert
+SELECT t.expect('service_role calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
+PASS: service_role calls trg_dil_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_dil_before_update
+SELECT t.expect('service_role calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
+PASS: service_role calls trg_deliveries_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_deliveries_before_update
+SELECT t.expect('service_role calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+PASS: service_role calls trg_capture_documents_before_update() -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_documents_before_
+RESET ROLE;
+RESET
+
+>>> RESULT t_T_ACL_green: PASS=66 FAIL=0
+>>> OVERALL T-ACL: RED failed as required, GREEN PASS=66 FAIL=0

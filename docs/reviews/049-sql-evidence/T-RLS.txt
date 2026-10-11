@@ -1,0 +1,352 @@
+== 049-sql evidence: T-RLS ==
+generated: 2026-10-11T05:59:28Z
+$ git rev-parse HEAD
+f26c7eddb8813001c0a32f83fef644a28edecbb1
+$ git status --porcelain      (empty output between the next two lines = clean tree)
+----- begin porcelain -----
+----- end porcelain -----
+$ psql --version
+psql (PostgreSQL) 17.11 (Homebrew)
+$ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+$ shasum -a 256 (artifacts under test)
+1f0ad956633d084d2c92d4f50a8ccb53529a73c3f20745bda72b94f7cee68bc4  docs/reviews/049_capture_tables.sql
+4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
+0ecc295ebc14e5d55f7c85957aacf1d5cc8f1f483a6b131153c2df8140dffa88  docs/reviews/049-sql-evidence/src/_lib.sql
+737410fbec0385f8cb2f05661588d27bd2ee6ad1739d006e978a4e4d90e9febe  docs/reviews/049-sql-evidence/src/_fixture.sql
+
+################ RED run 1: file:rls_no_status ################
+MUTANT (named): rls_no_status   -- diff of the real file against the mutated copy:
+731d730
+<         AND u.status = 'active'
+746d744
+<         AND u.status = 'active'
+761d758
+<         AND u.status = 'active'
+776d772
+<         AND u.status = 'active'
+$ psql -d t_T_RLS_red1 -v ON_ERROR_STOP=1 -f mutant-rls_no_status.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_RLS_red1 -f T-RLS.sql (tokens expanded by src/expand.py)
+== T-RLS (D-20, R7): SELECT audience = PMs of thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-RLS.expanded.sql:1: error: unterminated quoted string
+
+Output format is unaligned.
+-- rows (inserted as the owner): P1: doc D1 + delivery V1, invoice D2 + V2 + link L1, file F1. P2 (same tenant): D3, V3, invoice D4 + V4 + link L2, file F2. T2/P3: doc D5, delivery V5, file F3.
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'SM_R_dc1');
+60000000-0000-0000-0000-000000000001
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', 'SM_R_inv2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000003', 'dc', 'SM_R_dc3', '20000000-0000-0000-0000-000000000002');
+50000000-0000-0000-0000-000000000003
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000003');
+INSERT 0 1
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000004', 'invoice', 'SM_R_inv4', '20000000-0000-0000-0000-000000000002');
+50000000-0000-0000-0000-000000000004
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000004');
+INSERT 0 1
+INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000004', '50000000-0000-0000-0000-000000000004', 'created_from_invoice');
+INSERT 0 1
+INSERT INTO public.capture_files (id, tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('80000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 1, 'SM_R_f1', 0), ('80000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000003', 1, 'SM_R_f2', 0);
+INSERT 0 2
+INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('50000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', 'dc', '30000000-0000-0000-0000-000000000009', 'SM_R_dc5');
+INSERT 0 1
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000009', now() - interval '1 hour', '50000000-0000-0000-0000-000000000005');
+INSERT 0 1
+INSERT INTO public.capture_files (id, tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('80000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000005', 1, 'SM_R_f3', 0);
+INSERT 0 1
+-- what each actor sees, as documents/deliveries/links/files counts. The owner sees everything (positive control for the rows):
+SELECT t.val('owner sees all rows (docs/deliveries/links/files)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '5/5/2/3');
+PASS: owner sees all rows (docs/deliveries/links/files) -- value = 5/5/2/3
+
+-- ===== PM1: PM member of P1 -> only P1 =====
+SET ROLE authenticated;
+SET
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000001', false);
+40000000-0000-0000-0000-000000000001
+SELECT t.val('PM1 (pm of P1)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '2/2/1/1');
+PASS: PM1 (pm of P1) -- value = 2/2/1/1
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000007', false);
+40000000-0000-0000-0000-000000000007
+SELECT t.val('PM2 (pm of P2, same tenant) sees only P2', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '2/2/1/1');
+PASS: PM2 (pm of P2, same tenant) sees only P2 -- value = 2/2/1/1
+SELECT t.val('PM2 sees none of P1: document D1', $$SELECT count(*)::text FROM public.capture_documents WHERE id = '50000000-0000-0000-0000-000000000001'$$, '0');
+PASS: PM2 sees none of P1: document D1 -- value = 0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000009', false);
+40000000-0000-0000-0000-000000000009
+SELECT t.val('PM3 (pm of P3, OTHER tenant) sees only T2', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '1/1/0/1');
+PASS: PM3 (pm of P3, OTHER tenant) sees only T2 -- value = 1/1/0/1
+SELECT t.val('PM3 sees none of T1: document D1', $$SELECT count(*)::text FROM public.capture_documents WHERE id = '50000000-0000-0000-0000-000000000001'$$, '0');
+PASS: PM3 sees none of T1: document D1 -- value = 0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000006', false);
+40000000-0000-0000-0000-000000000006
+SELECT t.val('ADMP (admin who IS a pm member of P1)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '2/2/1/1');
+PASS: ADMP (admin who IS a pm member of P1) -- value = 2/2/1/1
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000005', false);
+40000000-0000-0000-0000-000000000005
+SELECT t.val('ADMN (admin, NO membership) sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: ADMN (admin, NO membership) sees nothing -- value = 0/0/0/0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000003', false);
+40000000-0000-0000-0000-000000000003
+SELECT t.val('QS1 (qs member of P1) sees nothing (QS excluded in 1a)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: QS1 (qs member of P1) sees nothing (QS excluded in 1a) -- value = 0/0/0/0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000004', false);
+40000000-0000-0000-0000-000000000004
+SELECT t.val('DPM (DEACTIVATED pm member of P1) sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+FAIL: DPM (DEACTIVATED pm member of P1) sees nothing -- expected 0/0/0/0 got 2/2/1/1
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000008', false);
+40000000-0000-0000-0000-000000000008
+SELECT t.val('PEND (PENDING pm member of P1) sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+FAIL: PEND (PENDING pm member of P1) sees nothing -- expected 0/0/0/0 got 2/2/1/1
+SELECT set_config('request.jwt.claim.sub', '', false);
+
+SELECT t.val('authenticated with no auth.uid() sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: authenticated with no auth.uid() sees nothing -- value = 0/0/0/0
+RESET ROLE;
+RESET
+
+-- ===== anon: no grant at all =====
+SET ROLE anon;
+SET
+SELECT t.expect('anon SELECT capture_documents', 'SELECT count(*) FROM public.capture_documents', '42501');
+PASS: anon SELECT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('anon SELECT deliveries', 'SELECT count(*) FROM public.deliveries', '42501');
+PASS: anon SELECT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('anon SELECT delivery_invoice_links', 'SELECT count(*) FROM public.delivery_invoice_links', '42501');
+PASS: anon SELECT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('anon SELECT capture_files', 'SELECT count(*) FROM public.capture_files', '42501');
+PASS: anon SELECT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+RESET ROLE;
+RESET
+
+-- ===== catalog: RLS enabled (not forced), one SELECT policy per table, no write policy =====
+SELECT t.val('RLS enabled on all four, none forced', $$SELECT count(*)::text FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND relrowsecurity AND NOT relforcerowsecurity$$, '4');
+PASS: RLS enabled on all four, none forced -- value = 4
+SELECT t.val('exactly 4 policies, all SELECT, all TO authenticated', $$SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links') AND cmd = 'SELECT' AND roles = '{authenticated}'$$, '4');
+PASS: exactly 4 policies, all SELECT, all TO authenticated -- value = 4
+SELECT t.val('no INSERT/UPDATE/DELETE/ALL policy on the four tables', $$SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links') AND cmd <> 'SELECT'$$, '0');
+PASS: no INSERT/UPDATE/DELETE/ALL policy on the four tables -- value = 0
+
+>>> RESULT t_T_RLS_red1: PASS=17 FAIL=2
+>>> RED verdict: test FAILED against the mutant (FAIL=2) -- the test can fail: OK
+
+################ RED run 2: file:rls_no_role ################
+MUTANT (named): rls_no_role   -- diff of the real file against the mutated copy:
+729d728
+<         AND pm.role = 'pm'
+744d742
+<         AND pm.role = 'pm'
+759d756
+<         AND pm.role = 'pm'
+774d770
+<         AND pm.role = 'pm'
+$ psql -d t_T_RLS_red2 -v ON_ERROR_STOP=1 -f mutant-rls_no_role.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_RLS_red2 -f T-RLS.sql (tokens expanded by src/expand.py)
+== T-RLS (D-20, R7): SELECT audience = PMs of thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-RLS.expanded.sql:1: error: unterminated quoted string
+
+Output format is unaligned.
+-- rows (inserted as the owner): P1: doc D1 + delivery V1, invoice D2 + V2 + link L1, file F1. P2 (same tenant): D3, V3, invoice D4 + V4 + link L2, file F2. T2/P3: doc D5, delivery V5, file F3.
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'SM_R_dc1');
+60000000-0000-0000-0000-000000000001
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', 'SM_R_inv2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000003', 'dc', 'SM_R_dc3', '20000000-0000-0000-0000-000000000002');
+50000000-0000-0000-0000-000000000003
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000003');
+INSERT 0 1
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000004', 'invoice', 'SM_R_inv4', '20000000-0000-0000-0000-000000000002');
+50000000-0000-0000-0000-000000000004
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000004');
+INSERT 0 1
+INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000004', '50000000-0000-0000-0000-000000000004', 'created_from_invoice');
+INSERT 0 1
+INSERT INTO public.capture_files (id, tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('80000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 1, 'SM_R_f1', 0), ('80000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000003', 1, 'SM_R_f2', 0);
+INSERT 0 2
+INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('50000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', 'dc', '30000000-0000-0000-0000-000000000009', 'SM_R_dc5');
+INSERT 0 1
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000009', now() - interval '1 hour', '50000000-0000-0000-0000-000000000005');
+INSERT 0 1
+INSERT INTO public.capture_files (id, tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('80000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000005', 1, 'SM_R_f3', 0);
+INSERT 0 1
+-- what each actor sees, as documents/deliveries/links/files counts. The owner sees everything (positive control for the rows):
+SELECT t.val('owner sees all rows (docs/deliveries/links/files)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '5/5/2/3');
+PASS: owner sees all rows (docs/deliveries/links/files) -- value = 5/5/2/3
+
+-- ===== PM1: PM member of P1 -> only P1 =====
+SET ROLE authenticated;
+SET
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000001', false);
+40000000-0000-0000-0000-000000000001
+SELECT t.val('PM1 (pm of P1)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '2/2/1/1');
+PASS: PM1 (pm of P1) -- value = 2/2/1/1
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000007', false);
+40000000-0000-0000-0000-000000000007
+SELECT t.val('PM2 (pm of P2, same tenant) sees only P2', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '2/2/1/1');
+PASS: PM2 (pm of P2, same tenant) sees only P2 -- value = 2/2/1/1
+SELECT t.val('PM2 sees none of P1: document D1', $$SELECT count(*)::text FROM public.capture_documents WHERE id = '50000000-0000-0000-0000-000000000001'$$, '0');
+PASS: PM2 sees none of P1: document D1 -- value = 0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000009', false);
+40000000-0000-0000-0000-000000000009
+SELECT t.val('PM3 (pm of P3, OTHER tenant) sees only T2', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '1/1/0/1');
+PASS: PM3 (pm of P3, OTHER tenant) sees only T2 -- value = 1/1/0/1
+SELECT t.val('PM3 sees none of T1: document D1', $$SELECT count(*)::text FROM public.capture_documents WHERE id = '50000000-0000-0000-0000-000000000001'$$, '0');
+PASS: PM3 sees none of T1: document D1 -- value = 0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000006', false);
+40000000-0000-0000-0000-000000000006
+SELECT t.val('ADMP (admin who IS a pm member of P1)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '2/2/1/1');
+PASS: ADMP (admin who IS a pm member of P1) -- value = 2/2/1/1
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000005', false);
+40000000-0000-0000-0000-000000000005
+SELECT t.val('ADMN (admin, NO membership) sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: ADMN (admin, NO membership) sees nothing -- value = 0/0/0/0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000003', false);
+40000000-0000-0000-0000-000000000003
+SELECT t.val('QS1 (qs member of P1) sees nothing (QS excluded in 1a)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+FAIL: QS1 (qs member of P1) sees nothing (QS excluded in 1a) -- expected 0/0/0/0 got 2/2/1/1
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000004', false);
+40000000-0000-0000-0000-000000000004
+SELECT t.val('DPM (DEACTIVATED pm member of P1) sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: DPM (DEACTIVATED pm member of P1) sees nothing -- value = 0/0/0/0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000008', false);
+40000000-0000-0000-0000-000000000008
+SELECT t.val('PEND (PENDING pm member of P1) sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: PEND (PENDING pm member of P1) sees nothing -- value = 0/0/0/0
+SELECT set_config('request.jwt.claim.sub', '', false);
+
+SELECT t.val('authenticated with no auth.uid() sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: authenticated with no auth.uid() sees nothing -- value = 0/0/0/0
+RESET ROLE;
+RESET
+
+-- ===== anon: no grant at all =====
+SET ROLE anon;
+SET
+SELECT t.expect('anon SELECT capture_documents', 'SELECT count(*) FROM public.capture_documents', '42501');
+PASS: anon SELECT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('anon SELECT deliveries', 'SELECT count(*) FROM public.deliveries', '42501');
+PASS: anon SELECT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('anon SELECT delivery_invoice_links', 'SELECT count(*) FROM public.delivery_invoice_links', '42501');
+PASS: anon SELECT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('anon SELECT capture_files', 'SELECT count(*) FROM public.capture_files', '42501');
+PASS: anon SELECT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+RESET ROLE;
+RESET
+
+-- ===== catalog: RLS enabled (not forced), one SELECT policy per table, no write policy =====
+SELECT t.val('RLS enabled on all four, none forced', $$SELECT count(*)::text FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND relrowsecurity AND NOT relforcerowsecurity$$, '4');
+PASS: RLS enabled on all four, none forced -- value = 4
+SELECT t.val('exactly 4 policies, all SELECT, all TO authenticated', $$SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links') AND cmd = 'SELECT' AND roles = '{authenticated}'$$, '4');
+PASS: exactly 4 policies, all SELECT, all TO authenticated -- value = 4
+SELECT t.val('no INSERT/UPDATE/DELETE/ALL policy on the four tables', $$SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links') AND cmd <> 'SELECT'$$, '0');
+PASS: no INSERT/UPDATE/DELETE/ALL policy on the four tables -- value = 0
+
+>>> RESULT t_T_RLS_red2: PASS=18 FAIL=1
+>>> RED verdict: test FAILED against the mutant (FAIL=1) -- the test can fail: OK
+
+################ GREEN run: the real file ################
+$ psql -d t_T_RLS_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_RLS_green -f T-RLS.sql (tokens expanded by src/expand.py)
+== T-RLS (D-20, R7): SELECT audience = PMs of thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-RLS.expanded.sql:1: error: unterminated quoted string
+
+Output format is unaligned.
+-- rows (inserted as the owner): P1: doc D1 + delivery V1, invoice D2 + V2 + link L1, file F1. P2 (same tenant): D3, V3, invoice D4 + V4 + link L2, file F2. T2/P3: doc D5, delivery V5, file F3.
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'SM_R_dc1');
+60000000-0000-0000-0000-000000000001
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', 'SM_R_inv2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000003', 'dc', 'SM_R_dc3', '20000000-0000-0000-0000-000000000002');
+50000000-0000-0000-0000-000000000003
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000003');
+INSERT 0 1
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000004', 'invoice', 'SM_R_inv4', '20000000-0000-0000-0000-000000000002');
+50000000-0000-0000-0000-000000000004
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', 'supplier', '50000000-0000-0000-0000-000000000004');
+INSERT 0 1
+INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000004', '50000000-0000-0000-0000-000000000004', 'created_from_invoice');
+INSERT 0 1
+INSERT INTO public.capture_files (id, tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('80000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 1, 'SM_R_f1', 0), ('80000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000003', 1, 'SM_R_f2', 0);
+INSERT 0 2
+INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('50000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', 'dc', '30000000-0000-0000-0000-000000000009', 'SM_R_dc5');
+INSERT 0 1
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000009', now() - interval '1 hour', '50000000-0000-0000-0000-000000000005');
+INSERT 0 1
+INSERT INTO public.capture_files (id, tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('80000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000005', 1, 'SM_R_f3', 0);
+INSERT 0 1
+-- what each actor sees, as documents/deliveries/links/files counts. The owner sees everything (positive control for the rows):
+SELECT t.val('owner sees all rows (docs/deliveries/links/files)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '5/5/2/3');
+PASS: owner sees all rows (docs/deliveries/links/files) -- value = 5/5/2/3
+
+-- ===== PM1: PM member of P1 -> only P1 =====
+SET ROLE authenticated;
+SET
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000001', false);
+40000000-0000-0000-0000-000000000001
+SELECT t.val('PM1 (pm of P1)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '2/2/1/1');
+PASS: PM1 (pm of P1) -- value = 2/2/1/1
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000007', false);
+40000000-0000-0000-0000-000000000007
+SELECT t.val('PM2 (pm of P2, same tenant) sees only P2', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '2/2/1/1');
+PASS: PM2 (pm of P2, same tenant) sees only P2 -- value = 2/2/1/1
+SELECT t.val('PM2 sees none of P1: document D1', $$SELECT count(*)::text FROM public.capture_documents WHERE id = '50000000-0000-0000-0000-000000000001'$$, '0');
+PASS: PM2 sees none of P1: document D1 -- value = 0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000009', false);
+40000000-0000-0000-0000-000000000009
+SELECT t.val('PM3 (pm of P3, OTHER tenant) sees only T2', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '1/1/0/1');
+PASS: PM3 (pm of P3, OTHER tenant) sees only T2 -- value = 1/1/0/1
+SELECT t.val('PM3 sees none of T1: document D1', $$SELECT count(*)::text FROM public.capture_documents WHERE id = '50000000-0000-0000-0000-000000000001'$$, '0');
+PASS: PM3 sees none of T1: document D1 -- value = 0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000006', false);
+40000000-0000-0000-0000-000000000006
+SELECT t.val('ADMP (admin who IS a pm member of P1)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '2/2/1/1');
+PASS: ADMP (admin who IS a pm member of P1) -- value = 2/2/1/1
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000005', false);
+40000000-0000-0000-0000-000000000005
+SELECT t.val('ADMN (admin, NO membership) sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: ADMN (admin, NO membership) sees nothing -- value = 0/0/0/0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000003', false);
+40000000-0000-0000-0000-000000000003
+SELECT t.val('QS1 (qs member of P1) sees nothing (QS excluded in 1a)', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: QS1 (qs member of P1) sees nothing (QS excluded in 1a) -- value = 0/0/0/0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000004', false);
+40000000-0000-0000-0000-000000000004
+SELECT t.val('DPM (DEACTIVATED pm member of P1) sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: DPM (DEACTIVATED pm member of P1) sees nothing -- value = 0/0/0/0
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000008', false);
+40000000-0000-0000-0000-000000000008
+SELECT t.val('PEND (PENDING pm member of P1) sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: PEND (PENDING pm member of P1) sees nothing -- value = 0/0/0/0
+SELECT set_config('request.jwt.claim.sub', '', false);
+
+SELECT t.val('authenticated with no auth.uid() sees nothing', 'SELECT (SELECT count(*) FROM public.capture_documents)::text || ''/'' || (SELECT count(*) FROM public.deliveries)::text || ''/'' || (SELECT count(*) FROM public.delivery_invoice_links)::text || ''/'' || (SELECT count(*) FROM public.capture_files)::text', '0/0/0/0');
+PASS: authenticated with no auth.uid() sees nothing -- value = 0/0/0/0
+RESET ROLE;
+RESET
+
+-- ===== anon: no grant at all =====
+SET ROLE anon;
+SET
+SELECT t.expect('anon SELECT capture_documents', 'SELECT count(*) FROM public.capture_documents', '42501');
+PASS: anon SELECT capture_documents -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+SELECT t.expect('anon SELECT deliveries', 'SELECT count(*) FROM public.deliveries', '42501');
+PASS: anon SELECT deliveries -- refused, SQLSTATE=42501 MESSAGE=permission denied for table deliveries
+SELECT t.expect('anon SELECT delivery_invoice_links', 'SELECT count(*) FROM public.delivery_invoice_links', '42501');
+PASS: anon SELECT delivery_invoice_links -- refused, SQLSTATE=42501 MESSAGE=permission denied for table delivery_invoice_links
+SELECT t.expect('anon SELECT capture_files', 'SELECT count(*) FROM public.capture_files', '42501');
+PASS: anon SELECT capture_files -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+RESET ROLE;
+RESET
+
+-- ===== catalog: RLS enabled (not forced), one SELECT policy per table, no write policy =====
+SELECT t.val('RLS enabled on all four, none forced', $$SELECT count(*)::text FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND relrowsecurity AND NOT relforcerowsecurity$$, '4');
+PASS: RLS enabled on all four, none forced -- value = 4
+SELECT t.val('exactly 4 policies, all SELECT, all TO authenticated', $$SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links') AND cmd = 'SELECT' AND roles = '{authenticated}'$$, '4');
+PASS: exactly 4 policies, all SELECT, all TO authenticated -- value = 4
+SELECT t.val('no INSERT/UPDATE/DELETE/ALL policy on the four tables', $$SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links') AND cmd <> 'SELECT'$$, '0');
+PASS: no INSERT/UPDATE/DELETE/ALL policy on the four tables -- value = 0
+
+>>> RESULT t_T_RLS_green: PASS=19 FAIL=0
+>>> OVERALL T-RLS: RED failed as required, GREEN PASS=19 FAIL=0

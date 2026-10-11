@@ -1,0 +1,151 @@
+# BLOCK 2a start 2026-10-11T05:31:53Z
+$ git fetch origin
+[exit 0]
+$ git rev-parse origin/main
+0289bcfacccc3c97738624e764e11b853f944726
+[exit 0]
+$ git merge-base --is-ancestor 0289bcfacccc3c97738624e764e11b853f944726 origin/main
+[exit 0]
+$ git branch --show-current
+feat/049-capture-tables
+[exit 0]
+$ git status --porcelain
+[exit 0]
+$ git rev-parse HEAD
+0289bcfacccc3c97738624e764e11b853f944726
+[exit 0]
+$ pg_dump --version
+pg_dump (PostgreSQL) 17.11 (Homebrew)
+[exit 0]
+$ postgres --version
+postgres (PostgreSQL) 17.11 (Homebrew)
+[exit 0]
+$ psql --version
+psql (PostgreSQL) 17.11 (Homebrew)
+[exit 0]
+$ cat /Users/aravindanrajamani/Desktop/quocoai/supabase/.temp/project-ref  (linked ref, printed before the dump)
+exfccwlrhoutkgrlikod
+$ supabase --workdir /Users/aravindanrajamani/Desktop/quocoai db dump --linked --schema public --dry-run  > /tmp/quoco/dry.sh 2> /tmp/quoco/dry.err   (output NOT printed; mode 600)
+[exit 0]
+dry.sh bytes:     2474  lines:       58
+dry.err bytes:      123
+dry.sh variable NAMES only:
+   1 export PGDATABASE=
+   1 export PGHOST=
+   1 export PGPASSWORD=
+   1 export PGPORT=
+   1 export PGUSER=
+dry.sh: count of lines invoking pg_dump: 2
+dry.sh: count of lines invoking docker: 0
+dry.err first-line category (word count only):        3
+$ bash /tmp/quoco/dry.sh > /tmp/quoco/049-schema.sql 2> /tmp/quoco/dump.err   (runs the CLI's own pg_dump invocation; pg_dump 17.11 local)
+[exit 0]
+049-schema.sql bytes:   206211 lines:     4611
+dump.err bytes:        0
+$ credential-pattern scan of 049-schema.sql (count only)
+0
+$ deleting dry.sh and dry.err (credential-bearing)
+049-2a-brief.txt
+049-2a-log.txt
+049-close-lint.txt
+049-close-log.txt
+049-d25-lint.txt
+049-d25-log.txt
+049-fold-lint.txt
+049-fold-r1-log.txt
+049-lint-filesize.txt
+049-pkg-log.txt
+049-pr-view.json
+049-schema.sql
+330-ci.json
+close-plan-brief.txt
+docs-1010-log.txt
+dump.err
+evidence
+fold-d25-brief.txt
+fold-r1-brief.txt
+l1-10a.txt
+l1-files.txt
+l2-fields.txt
+l2-pm.txt
+l4-files.txt
+o13
+pra-plan-log.txt
+pra-plan.md
+probe-prod
+prod-probe-1011.txt
+review-round-1.txt
+review-round-2.txt
+slice1a-plan-v3.md
+slice1a-v3-log.txt
+src
+test-db-probe-1010.txt
+$ /opt/homebrew/opt/postgresql@17/bin/initdb -D /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/pg17 -U postgres --auth=trust --encoding=UTF8 --locale=C
+The files belonging to this database system will be owned by user "aravindanrajamani".
+This user must also own the server process.
+
+The database cluster will be initialized with locale "C".
+The default text search configuration will be set to "english".
+
+Data page checksums are disabled.
+
+creating directory /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/pg17 ... ok
+creating subdirectories ... ok
+selecting dynamic shared memory implementation ... posix
+selecting default "max_connections" ... 100
+selecting default "shared_buffers" ... 128MB
+selecting default time zone ... Asia/Kolkata
+creating configuration files ... ok
+running bootstrap script ... ok
+performing post-bootstrap initialization ... ok
+syncing data to disk ... ok
+
+Success. You can now start the database server using:
+
+    '/opt/homebrew/opt/postgresql@17/bin/pg_ctl' -D /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/pg17 -l logfile start
+
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/pg_ctl -D /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/pg17 -l /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/pg17.log -o -p 54329 -k /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/sock -c listen_addresses='' -w start
+waiting for server to start.... done
+server started
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -h /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/sock -p 54329 -U postgres -d postgres -Atc select version()
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -h /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/sock -p 54329 -U postgres -d postgres -Atc select name, default_version from pg_available_extensions where name in ('vector','btree_gist') order by 1
+btree_gist|1.7
+vector|0.8.6
+[exit 0]
+# STEP 2 scaffold build. STUB roles (Supabase role shapes): postgres exists as the cluster superuser.
+$ /opt/homebrew/opt/postgresql@17/bin/psql -v ON_ERROR_STOP=1 -d postgres -c CREATE ROLE anon NOLOGIN NOINHERIT -c CREATE ROLE authenticated NOLOGIN NOINHERIT -c CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS -c CREATE ROLE supabase_auth_admin NOLOGIN NOINHERIT -c CREATE DATABASE quoco_049_scaffold
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE DATABASE
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -v ON_ERROR_STOP=1 -d quoco_049_scaffold -f /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/stubs.sql
+CREATE EXTENSION
+CREATE SCHEMA
+CREATE TABLE
+CREATE FUNCTION
+GRANT
+GRANT
+CREATE SCHEMA
+CREATE TABLE
+CREATE TABLE
+CREATE SCHEMA
+CREATE TABLE
+[exit 0]
+$ psql -d quoco_049_scaffold -v ON_ERROR_STOP=1 -f /tmp/quoco/049-schema.sql  (REAL dump; output to /tmp/quoco/load.out)
+[exit 0]
+load.out lines:      597; ERROR lines: 0
+$ /opt/homebrew/opt/postgresql@17/bin/psql -d quoco_049_scaffold -Atc select count(*) as public_tables from pg_tables where schemaname='public'
+32
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -d quoco_049_scaffold -Atc select count(*) as public_functions from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+136
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -d quoco_049_scaffold -Atc select to_regclass('public.users') is not null as users, to_regclass('public.projects') is not null as projects, to_regclass('public.project_members') is not null as pm, to_regclass('public.tenants') is not null as tenants, to_regprocedure('public.get_user_tenant_id()') is not null as gutid
+t|t|t|t|t
+[exit 0]
