@@ -11,9 +11,12 @@ RETURNS text LANGUAGE plpgsql AS $$
 DECLARE
   v_state text;
   v_msg   text;
+  v_rows  bigint;
 BEGIN
   BEGIN
     EXECUTE p_sql;
+    -- N-3 (SQL review r2): ROW_COUNT of the statement just executed.
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT;
     v_state := SQLSTATE;
@@ -23,7 +26,12 @@ BEGIN
     RETURN 'FAIL: ' || p_label || ' -- expected ' || p_expected || ', got refusal SQLSTATE=' || v_state || ' MESSAGE=' || left(v_msg, 60);
   END;
   IF p_expected = 'ok' THEN
-    RETURN 'PASS: ' || p_label || ' -- succeeded as expected';
+    -- N-3: a positive control on INSERT/UPDATE/DELETE/SELECT that touched 0 rows proves nothing (an UPDATE whose WHERE
+    -- matched nothing "succeeds"). DDL statements (no row count) are exempt.
+    IF p_sql ~* '^\s*(insert|update|delete|select|with)\M' AND v_rows = 0 THEN
+      RETURN 'FAIL: ' || p_label || ' -- succeeded but touched 0 rows (N-3: a positive control must touch at least 1 row)';
+    END IF;
+    RETURN 'PASS: ' || p_label || ' -- succeeded as expected (' || v_rows || ' row(s))';
   END IF;
   RETURN 'FAIL: ' || p_label || ' -- expected refusal ' || p_expected || ' but the statement SUCCEEDED';
 END;

@@ -1,4 +1,4 @@
--- EXPECT_PASS: 75
+-- EXPECT_PASS: 87
 \echo == T-TRIG: TR1..TR5 and the A33 index -- every refusal with its E-code, each with a positive control ==
 \pset tuples_only on
 \pset format unaligned
@@ -116,6 +116,37 @@ SELECT t.expect('S-1 change created_at of a delivery', $$UPDATE public.deliverie
 SELECT t.expect('S-1 change id of a capture_documents row', $$UPDATE public.capture_documents SET id = '{D20}' WHERE id = '{D11}'$$, 'E9');
 SELECT t.expect('S-1 change created_at of a capture_documents row', $$UPDATE public.capture_documents SET created_at = created_at - interval '2 days' WHERE id = '{D11}'$$, 'E9');
 SELECT t.expect('positive: caption is editable', $$UPDATE public.capture_documents SET caption = 'cement' WHERE id = '{D11}'$$, 'ok');
+\echo
+\echo
+\echo -- ===== S-3 (SQL review r2, Option A per Aravind): the database stamps the time at each allowed transition =====
+\echo -- Each block is ONE transaction, so now() is the same value the trigger used; the caller supplies a FUTURE time and it must not be stored.
+SELECT t.mk_dc('{D15}', '{V15}', 'SM_T_dc15');
+SELECT t.mk_dc('{D16}', '{V16}', 'SM_T_dc16');
+SELECT t.mk_inv('{D17}', '{V17}', '{L17}', 'SM_T_inv17');
+SELECT t.mk_doc('{D18}', 'dc', 'SM_T_doc18');
+SELECT t.mk_doc('{D19}', 'dc', 'SM_T_doc19');
+BEGIN;
+SELECT t.expect('S-3 approved_at: move INTO approved with approved_at = now() + 5 days', $$UPDATE public.deliveries SET status = 'approved', approved_by = '{U.PM1}', approved_at = now() + interval '5 days' WHERE id = '{V15}'$$, 'ok');
+SELECT t.val('S-3 approved_at was stored as the transaction time', $$SELECT (approved_at = now())::text FROM public.deliveries WHERE id = '{V15}'$$, 'true');
+COMMIT;
+BEGIN;
+SELECT t.expect('S-3 rejected_at: move INTO rejected with rejected_at = now() + 30 days', $$UPDATE public.deliveries SET status = 'rejected', rejected_by = '{U.PM1}', rejected_at = now() + interval '30 days', reject_reason = 'short count' WHERE id = '{V16}'$$, 'ok');
+SELECT t.val('S-3 rejected_at was stored as the transaction time', $$SELECT (rejected_at = now())::text FROM public.deliveries WHERE id = '{V16}'$$, 'true');
+COMMIT;
+BEGIN;
+SELECT t.expect('S-3 unlinked_at: unlink with unlinked_at = now() + 3 days', $$UPDATE public.delivery_invoice_links SET unlinked_at = now() + interval '3 days', unlinked_by = '{U.PM1}', unlink_reason = 'superseded_by_link' WHERE id = '{L17}'$$, 'ok');
+SELECT t.val('S-3 unlinked_at was stored as the transaction time', $$SELECT (unlinked_at = now())::text FROM public.delivery_invoice_links WHERE id = '{L17}'$$, 'true');
+SELECT t.expect('S-3 cancelled_at: move INTO cancelled with cancelled_at = now() + 7 days', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now() + interval '7 days', cancel_reason = 'superseded_by_link' WHERE id = '{V17}'$$, 'ok');
+SELECT t.val('S-3 cancelled_at was stored as the transaction time', $$SELECT (cancelled_at = now())::text FROM public.deliveries WHERE id = '{V17}'$$, 'true');
+COMMIT;
+BEGIN;
+SELECT t.expect('S-3 engineer_ack_at: ack first set with engineer_ack_at = now() + 10 days', $$UPDATE public.capture_documents SET engineer_ack = 'yes', engineer_ack_at = now() + interval '10 days' WHERE id = '{D18}'$$, 'ok');
+SELECT t.val('S-3 engineer_ack_at was stored as the transaction time', $$SELECT (engineer_ack_at = now())::text FROM public.capture_documents WHERE id = '{D18}'$$, 'true');
+COMMIT;
+BEGIN;
+SELECT t.expect('S-3 engineer_ack_at: ack first set with NO caller time at all (the database supplies it)', $$UPDATE public.capture_documents SET engineer_ack = 'no' WHERE id = '{D19}'$$, 'ok');
+SELECT t.val('S-3 engineer_ack_at was stamped as the transaction time', $$SELECT (engineer_ack_at = now())::text FROM public.capture_documents WHERE id = '{D19}'$$, 'true');
+COMMIT;
 \echo
 \echo -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;

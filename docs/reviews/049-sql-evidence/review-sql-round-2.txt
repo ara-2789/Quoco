@@ -1,0 +1,111 @@
+I'll pin `b70ca1b`, diff the SQL against `50b929a`, and re-run my round's probes against the new file.
+
+The hash matches `cfa6c96b…`, and the blob is identical across `668956e`, `0c6239c` and the head. Now the full SQL diff.
+
+Everything is accounted for. Last step: re-run my own P1–P7 probes against the new file, plus extra attacks on the B-1 transition logic.
+
+My harness error: roles are cluster-wide, so the second stub load stopped at `CREATE ROLE`. I'll re-run on a fresh cluster.
+
+# 049 SQL delta review: PR #331 @ `b70ca1b`
+
+**Verdict: SQL-stage GO (conditional).** Every round-1 blocker is fixed and proven. One new should-fix (S-3, timestamps can be future-dated) needs a decision before block 2b. This is not an apply GO.
+
+## 1. Pins and scope
+
+**Pins**
+- PR head: `b70ca1b6ae93d1f25e69d049396bd02fdfc95c8b`. `main` is unchanged at `0289bcf`, and migrations still end at 048.
+- SQL sha256 is `cfa6c96b…fb6`, matching what you gave. The SQL blob is `b49df7bd` at `668956e`, `0c6239c` and the head. The helpers blob is unchanged (`fac58213`).
+- `review-sql-round-1.txt` is my round-1 text.
+
+**What I checked**
+- **The SQL diff `50b929a..668956e`, line by line.** It contains exactly the six items and nothing else, apart from the traceability map and comments.
+- **All 12 transcripts.** Every header shows HEAD `0c6239c`, artifact `668956e`, equal blobs and empty porcelain. Every GREEN shows `PASS = declared = static count`, with FAIL 0.
+- **The REDs against the reviewed file.** For T-TRIG I read every FAIL line. 15 are the new cases. The other 3 (E14 under RR/SERIALIZABLE) are knock-ons: against the old file the S-1 probe really changed V9 and D11's ids, so the later E14 updates matched 0 rows. The RED is still valid. T-CHK fails exactly on A16/A17 (Q-1). T-ACL fails exactly on the two N-1 owner checks.
+- **My own probes, re-run** against `668956e` on PG 16.15 stubs. The only edit was removing `MAINTAIN`, diff printed. This shows mechanism only.
+
+## 2. My round-1 probes against the new file
+
+| Probe | Before | Now |
+|---|---|---|
+| P1: approver rewritten on an approved row | succeeded | **E11** |
+| P2: cancel while rewriting `approved_by` | snapshot and row disagreed | snapshot and row agree |
+| P3: self-link inserted onto a cancelled delivery | succeeded | **E5**, 0 active links |
+| P4: `pm_manual` unlinked as `superseded_by_link` | succeeded | **`dil_superseded_reason_scope_chk`** |
+| P6: `created_at` changed on deliveries and documents | succeeded | **E9**, both tables |
+| P7: stored file's `sha256` rewritten | succeeded | still succeeds. Moved to PR-C as blocking (package §10). |
+
+I also tried a partial restore: `cancelled → awaiting_pm` that leaves `cancelled_at` set. It is refused with **E11**, so the clear-on-restore half of B-1 works.
+
+## 3. Dispositions (package §9)
+
+- **B-1, B-2, S-1, Q-1, N-1, S-2, N-2: landed and proven.**
+  - S-2's phase C uses a stub trigger that refuses the delete. Against the old DOWN everything rolls back (RED). With the new DOWN the main transaction commits and the bucket row survives for the fallback (GREEN). That is the right test of the restructure.
+- **Q-2 to Q-7: answers recorded correctly.**
+- **The PR-B conditions (1–6) and the PR-C condition are recorded as blocking** in package §10. They match what I asked for.
+
+## 4. Reviewer error, owned
+
+My B-1 spec said each group of attribution columns may change "only on its own status transition". It never said the trigger should *stamp* the timestamp at that transition. The file implements my spec exactly, so the hole below is mine. It's the same incomplete-spec class as my round-2 C-36 miss.
+
+## 5. Findings
+
+### S-3. Caller-supplied timestamps are accepted at the allowed transitions (proven)
+
+**What breaks**
+- X3: moving a DC into `approved` with `approved_at = now() + 5 days` was accepted.
+- X4: moving into `rejected` with `rejected_at = now() + 30 days` was accepted.
+- The only bound is `>= created_at`. The same shape applies to `cancelled_at`, to `unlinked_at` in TR3, and to `engineer_ack_at` in TR5.
+
+**Why it matters**
+- `engineer_ack_at` and `linked_at` drive the 30-day clock (D-12, D-14). A wrong value silently moves "overdue".
+- It's the same "wrong stamp impossible, not merely uncaught" reasoning behind 043's generated `expires_at` and B2's snapshot overwrite.
+- Who approved is now locked. When is still caller-chosen.
+
+**Why S, not B:** only a PR-B definer function can reach this. The damage is a wrong time, not a wrong actor, and the clock it moves is display-only.
+
+**Fix**
+- At each allowed transition, the trigger overwrites the timestamp with `now()`: `approved_at`, `rejected_at` and `cancelled_at` in TR4, `unlinked_at` in TR3, `engineer_ack_at` in TR5.
+- This follows TR3's existing "overwrite, never trust NEW".
+- `received_at` stays caller-supplied by design (D-25).
+- If you'd rather keep caller time for a future backfill path, record that as a decision instead.
+
+**Test** (T-TRIG): a future-dated value at each transition gets stored as the transaction time. RED against `668956e`.
+
+### N-3. A positive control can pass on 0 rows
+
+- `t.expect(…, 'ok')` passes when an UPDATE matches 0 rows. The T-TRIG knock-ons show that ids can drift inside a scenario.
+- Expected *refusals* fail safe in that case, as the RED showed. A positive control does not.
+- Add `GET DIAGNOSTICS … ROW_COUNT` to `t.expect` and fail an `'ok'` DML that touched 0 rows.
+
+## 6. Credit
+
+- **B-1's second branch** clears `approved_*` only on `cancelled → pending`. That keeps the record "approved, then superseded" on a cancelled row while making a partial restore impossible (X1).
+- **The `commit:` mutant in `run.sh`** runs the REDs against the exact file I reviewed, by SHA, not against a hand-made mutation. A RED can now never test a strawman.
+- **The N-2 gate** checks the declared count against a static count of the source's own assertion lines outside `\if`. A dropped assertion now fails the run instead of shrinking the tally.
+
+## 7. Verdict
+
+**SQL-stage GO (conditional).**
+
+Pre-verdict checklist, against `668956e`:
+- FKs: explicit and argued.
+- Definer posture: correct, with owner now asserted inside the UP.
+- New tables: `service_role` named in the REVOKE, audience stated, retention line, negative probes in place.
+- UP and DOWN: each in a transaction; DOWN executed on the scaffold.
+- Numbering: re-verified.
+- Prior items: all accounted for.
+- Guards: RED then GREEN.
+
+Owed to the apply stage: the deploy window and the post-apply record.
+
+Conditions, in order:
+1. **S-3 landed, with T-TRIG RED/GREEN, or explicitly decided against.** Either way, before block 2b, so test-db runs the final file. If it lands, the delta review is S-3 only.
+2. **Block 2b on test-db:**
+   - bucket INSERT and the separate bucket DELETE step against real Storage, plus the full DOWN, with output captured;
+   - T-BKT (MIME and size refusal);
+   - the CI run, including the anon-key 42501 call per table and the `service_role` refusals under Option Y;
+   - the helpers pre-check.
+3. **P10 and P14 pinned with their dates.**
+4. **Then the apply package:** runbook, PITR observed, in-flight probe (P3 = 0 sessions with `current_flow='invoice'`), ledger row, the post-apply fingerprint including `pg_proc` count = 1 per function name, and types regenerated per D-16.
+
+The PR-B and PR-C blocking conditions in package §10 travel with those PRs. PR-B must not merge without S-F resolved.
