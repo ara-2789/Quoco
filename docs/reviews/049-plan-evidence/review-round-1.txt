@@ -1,0 +1,175 @@
+I'll load the reviewer skill, finding classes, and project state, then pull the review package from PR #330.
+
+# 049 plan review: PR-A (capture slice 1a tables), PR #330
+
+## 1. Pins and scope
+
+- `main` = `58a455ed8cc9bbc247b65f132b274afe98cd31d1`. PR head = `f4613d43bdf4c459e9c30d9fc848c40581509fa9`. Both resolved with `git ls-remote` this session. The merge-base is main, and the diff is the 5 docs files only.
+- All four evidence sha256 values match §8 byte for byte. The package itself hashes to `dd754a4f…6eda`.
+- I read the following in full: the package, `pra-plan-v1.md` (486 lines) and `prod-probe-1011.txt`. I also opened `CLAUDE.md:525-548`, `043:250-310`, `027:420-445` and `scripts/test-db-only-grants.sql` at the head SHA.
+- Migration count: there are 44 files at head (001–007, 011–025, 027–048). That agrees with P13's count.
+- Behavioral probe: I ran a hand-built stub on a disposable **PG 16.15**. Prod is 17.6, and a hand-built stub is circular by your §7 rule. It proves mechanism only. It is not a rehearsal.
+
+Drift found while pinning:
+- (N) Package line 3 says "Tier: LIGHT (docs only)". The plan (§1) and your request say FULL. Label the PR tier and the migration tier separately.
+- (N) P13 in the evidence is a Python extraction, not raw output. In its `last 6`, `time` equals the version string, which is a column misparse. The raw P13 is owed in the SQL package.
+- (N) P10's re-run and P14 (the 50 MB limit) are "per Aravind". They are not evidence. Neither blocks: `CREATE TABLE` aborts on a name collision, and T-BKT-2 exercises the size limit. Pin both in the apply package.
+
+## 2. Rulings on R1–R8
+
+**R1: delivery → document (D-1). Sound for the guarantee. Accept, with three corrections.**
+- Proven on the stub:
+  - The fixed-value `dc_doc_kind` from D-18 refuses an invoice document: 23503 (T2).
+  - It refuses another project's document: 23503 (T3).
+  - MATCH SIMPLE skips the non-chosen pointer.
+  - D-18 is better than generated columns here.
+- D-1 silently changes the cardinality from "a delivery has **≥1** document" (plan §5, v3's shape) to **exactly 1**, for life (`UNIQUE (dc_document_id)`).
+  - Consequence: if an engineer sends DC page 2 as a separate message, it can only attach as a `capture_files` row on the same document, or it becomes a second delivery (a double count).
+  - Record this as a decision, and make it a PR-B flow requirement.
+- The reversal swaps one unguaranteed rule for another. "Every document has a delivery" is now app-only. An orphan DC document is supplier evidence that no PM page ever lists.
+  - Add an orphan probe to the rehearsal and to PR-B's tests: DC documents with no delivery, and invoice documents with neither a delivery nor an active link.
+- The plan states `ON DELETE` everywhere and `ON UPDATE` nowhere. A bare `ON UPDATE` is a finding on its face. Write `ON UPDATE RESTRICT` explicitly. The stub shows `confupdtype = r` is accepted on all three link FKs.
+
+**R2: Option 2 (D-2). Enough for 1a on who and when. Not enough on what.**
+- See finding **B2**. The snapshot is forgeable at INSERT, so "a wrong stamp is impossible" is false as planned.
+- A restore returns the row to `incomplete` or `awaiting_pm`. Which one it was before the supersession is not recorded anywhere.
+  - Add `superseded_from_status text`, filled by TR3.
+  - Add `CHECK ((superseded_approval_by IS NOT NULL) = (superseded_from_status = 'approved'))`.
+  - This makes a NULL approver mean "was not approved" by construction, instead of being ambiguous.
+- Safe for 1b: an events table is additive, and the CHECK is scoped to `created_from_invoice` + `superseded_by_link`.
+
+**R3: the lock order is right in shape and incomplete in contract. Not cleared.**
+- Deadlocks abort with 40P01 and do not corrupt data, so the real defect is the isolation finding **B3**. Required changes:
+  - **Name the mode at each level.** Every link or unlink path takes level 2 on a **DC** delivery `FOR SHARE`, never stronger.
+    - Mechanism: txn A (unlink Dd from I1) holds I1 and wants Dd. Txn B (link Dd to I2) holds I2 and `FOR SHARE` on Dd, and waits on A at the A33 unique index.
+    - If A's Dd lock is stronger than SHARE, that is a cycle. Retype and reject are the only exclusive takers, and they take no other lock.
+  - **TR1: use `FOR NO KEY UPDATE`, not `FOR UPDATE`.** `FOR UPDATE` also blocks `FOR KEY SHARE`, so it stalls every FK check that references the invoice document. TR5 makes the key columns immutable anyway.
+  - **TR3 must not lock the delivery itself.** It runs at level 3, so a lock there inverts the order.
+    - Make the contract self-enforcing instead. TR4 on a row with `created_from_invoice_id IS NOT NULL` does `PERFORM … FROM public.capture_documents WHERE id = NEW.created_from_invoice_id FOR NO KEY UPDATE`.
+    - A correct caller already holds that lock, so the call is a no-op. An out-of-order caller gets 40P01 instead of a silent race.
+    - Credit: the unlocked read of `created_from_invoice_id` to find the invoice is safe only because TR4a makes it immutable. Say so in the file.
+  - Write the sequence for each PR-B path (link, unlink-with-restore, reject automatic, reject DC, approve, retype) as numbered lock steps in the SQL package.
+
+**R4: definer + `search_path = ''`. Accept. The stated reason is wrong.**
+- Plan §6 says invoker triggers would break the test-db direct inserts. Under X, test-db `service_role` gets UPDATE on all four tables, so `FOR SHARE` would work there.
+- The real reason: an invariant check must not change behaviour with the writer's grants. Under invoker, prod `service_role` (SELECT only) would get 42501 from TR2's `FOR SHARE` instead of the invariant verdict. Record that reason.
+- Conditions:
+  - Every relation is `public.`-qualified.
+  - RAISE carries codes only, never other rows' data (definer reads bypass RLS).
+  - The fingerprint pins `proconfig = {search_path=""}`, `prosecdef`, and the owner `postgres`.
+  - Use plain `CREATE FUNCTION`, not `OR REPLACE`. P9 shows the public-function default ACL is `anon=X, authenticated=X`. A same-name function must abort, not get silently replaced.
+
+**R5: generated column inside an FK (`self_invoice_id`). Accept. Keep the FK, no trigger.**
+- On PG16:
+  - It creates with RESTRICT/RESTRICT.
+  - A self-link of invoice 1002 on 1001's automatic delivery gives 23503 `self_link_fk` (T5).
+  - The correct self-link inserts (T6).
+  - `pm_manual` rows skip the check.
+- Re-run on PG17 in the rehearsal. Postgres rejects `SET NULL`, `SET DEFAULT` and `ON UPDATE CASCADE` on a generated referencing column, which is one more reason to write RESTRICT explicitly.
+
+**R6: test-db divergence (D-15). Not acceptable as specified.**
+- Entries 1–3 grant **DELETE only** (`test-db-only-grants.sql:64-66`). Prod 043/044 already give `service_role` INSERT and UPDATE.
+- Entry 4 grants INSERT, UPDATE and DELETE on tables where prod `service_role` has **SELECT only**. That masks `service_role`'s entire prod write surface, not just the DELETE denial.
+  - Any PR-C or PR-D code that writes these tables directly as `service_role` will pass CI and fail on prod with 42501.
+  - Plan §12.2's CI test "UPDATE of forbidden columns → 42501" can never go red on test-db, because a table-level UPDATE grant overrides column scoping.
+- Accept X only with all of these:
+  1. A dated rule in the file: no CI test on these four tables may claim to prove a `service_role` restriction.
+  2. Any app path that writes them as `service_role` gets a rehearsal `SET ROLE service_role` proof before merge.
+  3. A CI tripwire asserts the exact test-db grant set, so further widening is visible.
+  4. The CLAUDE.md paragraph lands **before or with** PR-A. `CLAUDE.md:541` says "If a second such exception is ever added, name it here too." PR-A would add the fourth while the paragraph still names one. Deferring that to a later docs PR breaks a standing rule knowingly.
+
+**R7: the RLS predicate is complete for tenant and project. It is incomplete for audience.**
+- Tenant and project isolation are correct. Each row's own `project_id` is composite-FK-checked. `uq_users_auth_id` (007:76) makes the `auth_id` subquery single-row. The RLS-3 planted-row mutant is the right red-first test.
+- Audience (S):
+  - The house has two patterns. 027/029/041 gate on `users.role`. 043/044 gate on `project_members.role`. PR-A copies 043 without deciding.
+  - QS is excluded by inference only (plan §7 `[inferred]`). Supplier invoices are QS work, unlike attendance in 027. Decide QS and admin explicitly, in writing.
+  - No policy checks `users.status <> 'deactivated'`. Under §10a deactivation-only offboarding, a deactivated PM whose auth account still works keeps reading supplier documents.
+  - Either add `AND u.status = 'active'`, or record why not and name where offboarding revokes the auth account.
+- (N) Wrap `auth.uid()` as `(select auth.uid())` so it is evaluated once per query, not per row.
+
+**R8: the DOWN plan is missing four things.**
+1. The step-1 guard lists PR-B and PR-C functions by name. That is extensional, so a renamed or later function slips past it. Make it intensional: `pg_proc.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'`, excluding PR-A's own trigger functions.
+2. **Ledger row.** Apply-by-file writes a 049 row in the post-apply step, and DOWN must delete it. Otherwise `migration list` shows 049 as applied with no objects.
+3. Write DOWN as one explicit `BEGIN … COMMIT`. A DO-block guard under autocommit does not protect the DROPs.
+4. **Bucket step.** Supabase Storage may refuse direct SQL deletes on `storage.*`. I could not verify this from here. The disposable scaffold stubs `storage`, so it cannot show it either. Execute the bucket INSERT and DELETE on **test-db**, with output captured.
+
+## 3. Findings beyond R1–R8
+
+**B1. A rejection can leave an active link on a rejected delivery (proven).**
+- TR2 refuses linking *to* a rejected delivery only at link INSERT. Nothing refuses rejecting an *already-linked* DC delivery. D-3 covers automatic deliveries only.
+- Stub T9: `UPDATE deliveries SET status='rejected'` on a PM-linked DC gives `UPDATE 1`. The end state is `rejected | pm_manual | link_active t`. The invoice's expectation is then satisfied by goods the PM rejected.
+- Fix: TR4c refuses `→ rejected` while any active link exists, for both DC and automatic deliveries.
+  - The reject function first locks the invoice, then locks the delivery `FOR NO KEY UPDATE`, then unlinks (`'delivery_rejected'`), then updates the status.
+  - This is the same both-directions shape you already built for internal transfers (TR2 and TR4b).
+- Test: link, then reject, expects the E6-class refusal. Unlink, then reject, succeeds.
+
+**B2. The GAP A snapshot is forgeable at INSERT (proven).**
+- Stub T7: a link row inserted already unlinked, with a caller-supplied `superseded_approval_by` and `superseded_approval_at`, gives `INSERT 0 1`.
+- D-2 was chosen because the trigger copies the stamp, so a wrong stamp is impossible. As planned, that holds only on UPDATE.
+- Fix in TR1:
+  - Refuse INSERT when any of `unlinked_*`, `unlink_reason` or `superseded_*` is non-NULL.
+  - TR3 **overwrites** `superseded_*` (and `superseded_from_status`) unconditionally from the delivery. It never trusts NEW.
+- Test: a forged insert gets refused. An update carrying a caller-supplied snapshot gets overwritten.
+
+**B3. TR1, TR2 and TR4b hold only under READ COMMITTED (proven).**
+- I raced a link INSERT against a retype to `internal_transfer`, with A committing after B had taken its snapshot.
+  - With B in READ COMMITTED: `ERROR: E6`, end state `type=supplier, active_links=1`. Correct.
+  - With B in REPEATABLE READ: no error, end state **`type=internal_transfer, active_links=1`**.
+- Mechanism: the BEFORE-row trigger does wait for the tuple lock. But under RR its EXISTS query reads the transaction snapshot, which predates the link's commit. The link only locked the row and did not update it, so no serialization failure fires.
+- TR1's XOR check (lock the document, then read the links) has the same shape.
+- Fix: the first line of every invariant trigger is `IF current_setting('transaction_isolation') <> 'read committed' THEN RAISE …`. That turns a silent write-skew into a loud refusal.
+- Test: the same race in the rehearsal on PG17, both isolation levels. The RR case must show the refusal.
+
+**S1. `received_at DEFAULT now()` records processing time, not receipt time.**
+- `delivery_date` is derived from it, and so is the D-12 clock.
+- A 23:59 IST message processed at 00:01 lands on the wrong day, and you can't tell a defaulted value from a supplied one.
+- Fix: no DEFAULT. NOT NULL, supplied by the RPC from the inbound record. If the inbound path is synchronous and you want the default anyway, state it and pin where receipt time is captured.
+
+**S2. The idempotency key sits on the leaf.**
+- `UNIQUE (source_message_sid, media_index)` is on `capture_files`. A duplicate webhook inserts the document and the delivery first, then aborts at the file insert.
+- Both columns are nullable, so NULLs never collide.
+- Fix: make them NOT NULL if every 1a file comes from a Twilio message. Add `CHECK (media_index >= 0)`. Put the message key on `capture_documents` if a document maps to one message, so the dedupe fires at the first insert.
+- Also state whether `file_no` and `media_index` are one fact stored twice.
+
+**S3. `storage_path` prefix is tenant-only.**
+- PR-C's signed URL is gated per project. A path pointing into a sibling project's folder within the same tenant is still representable.
+- Fix: pin the full prefix `tenant_id || '/' || project_id || '/' || document_id || '/%'`.
+
+**S4. Missing house-rule items.**
+- No timestamp-ordering CHECKs: `approved_at`, `rejected_at` and `cancelled_at` ≥ `created_at`; `unlinked_at` ≥ `linked_at`; `engineer_ack_at` ≥ `created_at`. The plan has pairing CHECKs only.
+- No retention-ledger line for the four tables, and none for the bucket's objects.
+
+**S5. The gate order is circular for PR-A's tests.**
+- The order is: CI green → merge → prod apply → types (D-16).
+- If PR-A's tests use `.from('deliveries')` through a typed client, CI cannot go green until types exist, and types cannot exist until after the apply.
+- Package §7 parks this as "not asked". It must be decided before SQL, for example with untyped test clients for these four tables, as 043's tests did with `.single<{…}>()`.
+
+**S6. Approval is final for status only.**
+- TR4c freezes status transitions. Nothing freezes `delivery_type`, `vehicle_number`, `dc_number` or `dc_date` on an `approved` row.
+- Fix: extend TR4c so content fields are immutable while status is `approved` or `cancelled`. Otherwise "approved" doesn't say *what* was approved.
+
+**N1.** Add an index on `delivery_invoice_links (invoice_document_id) WHERE unlinked_at IS NULL`. TR1's XOR scan needs it, and the partial unique index covers self-links only.
+
+## 4. Credit
+
+- D-18: pinned-value kind columns replace two unproven generated FKs with a CHECK that a client cannot argue with. The stub refuses both the wrong kind and the wrong project.
+- `UNIQUE (id, created_from_invoice_id)` as the FK target for `self_invoice_id` makes "a self-link sits only on that invoice's own automatic delivery" declarative. T5 proves it.
+- Prod probe hygiene: P1–P12 each ran under `SET TRANSACTION READ ONLY … ROLLBACK`, and the project ref was printed before and after. The worktree was re-linked back to test-db at the end (`exfccwlr…`) and `git status` was confirmed clean.
+- The `byte_size` cap on stored files only keeps an oversize file recordable (A11) instead of silently dropped.
+- P9's catch that prod's postgres-owned default ACL gives `anon` and `authenticated` `arw` on new tables is why REVOKE-by-name is mandatory, not stylistic. The plan's REVOKE also names `service_role`, which P9 shows at `arwdDxtm`.
+
+## 5. Verdict
+
+**STOP at plan stage, one round short.**
+- B1, B2 and B3 are each a few lines of trigger spec. None is a redesign, and R1's shape stands.
+- To clear, the next package needs:
+  - B1–B3 written into §6.
+  - R3's per-path lock sequences, with modes.
+  - R4's corrected reason and the plain `CREATE FUNCTION` rule.
+  - R6's four conditions, including the CLAUDE.md paragraph in or before PR-A.
+  - R7's QS, admin and deactivation decisions, recorded.
+  - S1–S6 dispositioned as landed or deferred.
+  - Raw P13 output.
+- At SQL stage I will expect the B2, B3 and B1 tests captured red, then green, on a PG17 scaffold built from a structure-only dump. I will also expect the bucket and DOWN steps executed on test-db.
+
+No reviewer errors to own this round.

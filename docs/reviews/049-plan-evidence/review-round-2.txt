@@ -1,0 +1,157 @@
+I'll pin the new head, diff it against round 1's `f4613d4`, and read the cover file and plan v2 in full.
+
+# 049 plan review, round 2: PR #330 @ `19567dd`
+
+## 1. Pins and scope
+
+- PR head = `19567dd7860a9929bb344e698166456218c2f820`. `main` = `58a455ed8cc9bbc247b65f132b274afe98cd31d1`, unchanged since round 1. Both resolved with `git ls-remote` this session. The merge-base is still main.
+- Delta from round 1 (`f4613d4..19567dd`): two commits and four docs files.
+- All three new sha256 values match cover §8. The cover file itself hashes to `640d05b4…17a1`. `review-round-1.txt` is my round-1 text verbatim.
+- Read in full: the cover file and `pra-plan-v2.md` (590 lines).
+- Opened at the head SHA: `011_processed_messages.sql`, `webhook/route.ts:105-235`, `idempotency.ts:15-40`, `shared-fixture-fk-coverage.json:138-150`, `media-ingest.test.ts:289,323` and `prod-P13-raw.json`.
+- Behavioral probe: the R2 CHECK forms, on a disposable PG 16.15. This shows mechanism only; it is not a rehearsal.
+- (N) Cover §1 line 8 still cites the P13 extraction, and line 11 pins only v1's hash. Point line 8 at `prod-P13-raw.json` and add v2's hash.
+
+## 2. Reviewer errors, owned
+
+- **R2 CHECK.** My form `(approved_by IS NOT NULL) = (status = 'approved')` evaluates to NULL when status is NULL, and a CHECK passes on NULL. On the stub, an approver with a NULL status inserted silently under my form. Your v2 form refused it. This was a NULL-semantics error in a constraint I wrote without running it. Same class as my 026 instruction: asserted, not probed.
+- **P13 "column misparse."** The raw file shows the CLI itself emits `"time":"001"`. I called the extraction wrong without having seen the raw output. That is the claim-about-unseen-output class.
+- **R3 vs B1.** In R3 I wrote that "retype and reject ... take no other lock". In B1 I specified that reject locks the invoice first. My own review contradicted itself. B1 is correct; see Q2-3.
+
+None of the three changes a verdict.
+
+## 3. Dispositions (cover §9)
+
+| Item | Ruling |
+|---|---|
+| R1 | **Landed, with one silent drop (S-A below).** |
+| R2 | **Landed.** Your CHECK is the correct one (Q2-5). |
+| R3 | **Landed, except path 4** (S-C below). |
+| R4 | **Landed.** |
+| R5 | **Landed.** |
+| R6 | **Closed by D-21** (Q2-1). |
+| R7 | **Landed.** R-I, the 043/044 policies not checking status, needs a dated backlog line with an owner. Otherwise "out of scope" reads as "never". |
+| R8 | **Landed, with one procedure gap** (S-D below). |
+| B1 | **Landed.** |
+| B2 | **Landed.** |
+| B3 | **Landed.** |
+| S1 | **Landed.** D-25 is answered under Q2-6. |
+| S2 | **Landed, with a decision now hidden in it** (S-E below). |
+| S3 | **Landed.** `starts_with` is immutable, so it is valid in a CHECK. |
+| S4 | **Landed.** D-29 settles retention. Add (N) `received_at <= created_at`: it is the lifecycle pair that matters now that `received_at` is supplied, not defaulted. |
+| S5 | **Landed.** The cited lines exist and use `.single<{…}>()`. |
+| S6 | **Landed.** See N-2. |
+| N1 | **Landed.** |
+| Drift 1–3 | **Landed, or deferred as named.** |
+
+## 4. Answers to Q2-1 to Q2-6
+
+**Q2-1. Option Y: accept.**
+- It closes the gap X's conditions existed for. Test-db grants on the four tables now equal prod, so CI can prove `service_role` restrictions.
+- Y opens a different gap. The Rule 9 entries are `not-applicable`, and the `outbound_sends` precedent justifies that by convention ("always writes under its own dedicated tenant", `shared-fixture-fk-coverage.json:142-147`).
+- Under Y, make that true by construction. `quoco_test_capture_insert` refuses any `tenant_id` not created by the capture fixture, using the same guard as cleanup. Otherwise one test that seeds against a shared fixture user re-creates the RESTRICT-teardown incident behind the "18 failed test files" note.
+- Two further conditions:
+  - (N) Build the column list from the jsonb keys. Never `INSERT … SELECT * FROM jsonb_populate_record`, because it supplies values for `delivery_date` and `self_invoice_id`, and generated columns reject non-DEFAULT values.
+  - (N) Add a CI pre-check that the helpers exist on test-db, so a missed hand-apply fails at setup rather than mid-suite.
+
+**Q2-2. D-26 confirmed. Lock path for reject-DC-with-restore:**
+1. Read Dd's active link unlocked, to get **I**.
+2. Lock **I** `FOR NO KEY UPDATE`.
+3. In ascending `id` order, lock **Dd** and, if restore is possible, **Da**, both `FOR NO KEY UPDATE`.
+4. Re-read under the locks. If Dd's active link no longer points at I, or now exists when step 1 saw none, raise E11 and stop (S-C).
+5. Soft-unlink the link (`delivery_rejected`). TR3 forces the snapshot to NULL.
+6. Update **Dd** to `rejected`. TR4c passes because no link is active.
+7. Count I's active PM links. This count is stable, because every path that inserts or unlinks I's links holds I.
+8. If the count is zero and Da is `cancelled` with `superseded_by_link`: update **Da** to pending (`incomplete` or `awaiting_pm`, from the ack), clearing `cancelled_*` and `approved_*`. Then insert the new self-link (TR1 XOR passes; TR2 sees Da not rejected).
+
+This is path 2's steps 3–4 with the reason changed. Write it as path 4 in the SQL package.
+
+**Q2-3. Yes: B1's reading, invoice then delivery.** My R3 sentence was wrong (section 2). The rule that survives is that every path takes level 1 before level 2, and reject is no exception.
+
+**Q2-4. Sound.**
+- C-36 has two independent guards on the order:
+  - TR4c(3) refuses `→ cancelled` while a link is active, so cancel-first fails.
+  - TR3 refuses a `superseded_by_link` unlink unless the delivery is in `incomplete`, `awaiting_pm` or `approved`. So even if TR4c(3) were dropped, the snapshot could never record `cancelled`.
+- The transient window between step 4 and step 6, where the invoice has no active link, is inside one transaction and invisible outside it.
+
+**Q2-5. Your form is correct. Proven on the stub:**
+- My round-1 form accepted an approver with a NULL status.
+- Your form refused that row, a NULL approver with status `approved`, an active self-link carrying a status, and an unlinked `pm_manual` row carrying a status.
+- Your form accepted the valid superseded-approved row and the valid active self-link.
+- Keep `(superseded_approval_by IS NULL) = (superseded_approval_at IS NULL)` as written.
+
+**Q2-6. Read inside the RPC. It is safe, and better than an argument.**
+- The RPC's lookup reads a value the database recorded itself. A route argument is a caller-supplied claim the database cannot check.
+- The missing `tenant_id` does not matter here. `message_sid` is `NOT NULL UNIQUE` (`011:11`), so the SID is the whole key.
+- Condition: the RPC takes **one** `p_message_sid`, and uses it for both the lookup and `capture_documents.source_message_sid`. Then `received_at` and the document's creating message are the same fact by construction.
+- Refuse a missing row or a NULL `created_at` (already in v2 §4).
+- Residual risk, accepted and named: `processed_messages` holds no sender. A server bug that pairs engineer A with B's SID cannot be detected in the database. Its cost is bounded: B's own document then fails the UNIQUE loudly.
+- The finding below this answer is the more important one.
+
+## 5. Findings
+
+**S-A. Silent drop: `linked_by`, `unlinked_by` FKs.**
+- In v1 §2.4, `linked_by` was a composite FK to users, and v1 §12.6 counted `linked_by` and `unlinked_by` toward Rule 9.
+- In v2 §2.4, `linked_by` has only the pairing CHECK, `unlinked_by` has none, and only `superseded_approval_by` carries an FK.
+- Restore `(linked_by, tenant_id)` and `(unlinked_by, tenant_id)` → `users(id, tenant_id)`, RESTRICT both ways. Re-count the Rule 9 entries.
+
+**S-B. The second orphan probe cannot detect the D-3 invariant.**
+- Under A28, every invoice gets an automatic delivery that is never deleted. So `NOT EXISTS (deliveries …)` is false for every invoice that went through the RPC, and the `AND NOT EXISTS (active link)` branch never runs.
+- The probe finds invoices with no automatic delivery. It cannot find "an invoice with no active link whose automatic delivery is not rejected".
+- Add that as a third probe:
+  `kind='invoice' AND NOT EXISTS (active link) AND NOT EXISTS (deliveries x WHERE x.created_from_invoice_id = d.id AND x.status = 'rejected')`.
+- It must return 0 after every scenario, including reject-DC-with-restore.
+
+**S-C. Path 4's level-1 key is mutable.**
+- Paths 2 and 3 find I through immutable columns (TR3, TR4a). Path 4 finds I through "Dd's active link", which another transaction can change between the unlocked read and the Dd lock.
+- Postgres cannot release a row lock inside a transaction. So on a mismatch at re-read, the only in-order response is to raise E11 ("This delivery has changed. Refresh") and stop. Never take I after Dd.
+- TR4's self-enforcing lock covers automatic deliveries only, so nothing catches this inversion for a DC.
+- Test (CI-only): reject Dd while a concurrent link of Dd commits. Expect E11 or E5, never 40P01.
+
+**S-D. On test-db, the DOWN guard trips on Option Y's own helpers.**
+- The `quoco_test_capture_*` bodies name the four tables, so the intensional guard matches them and aborts the test-db DOWN rehearsal.
+- That is the correct outcome. Write the procedure: drop the helpers (the helper script's own DOWN) first, then run the 049 DOWN.
+- (N) Restrict the guard to non-system namespaces.
+
+**S-E. `UNIQUE (source_message_sid)` on `capture_documents` encodes "one message creates at most one document".**
+- A message with `NumMedia = 2` carrying a DC photo and an invoice PDF can then produce only one document of one kind.
+- That may be right, but it is now a schema decision the plan never states. v2 did not re-read `docs/bot-flows.md` (v2 limit 3).
+- Record the decision against the flow before SQL.
+
+**S-F. Capture-loss window (pre-existing; relocated to PR-B, where it is blocking).**
+- `isNewMessage` consumes the SID before any processing (`route.ts:224`; `idempotency.ts:24-38`).
+- If the capture RPC then fails and the route returns 5xx, Twilio's retry hits `duplicate_ignored` (`route.ts:225-227`). The supplier document is lost, with no row and no alert.
+- S2's `UNIQUE (source_message_sid)` is never reached by a retry for the same reason. It guards server-side double calls, not webhook retries. Say so in the file.
+- PR-B must have a durable record of the inbound media at or before SID consumption, or a failure path that records and alerts. This is the "never guess / capture at write" class: evidence lost at the write boundary.
+
+**N-1. E13 (D-28).** Path 4 unlinks before rejecting, and a PM never cancels directly. So TR4c(2) and (3) fire only on a function bug. "Unlink it first" tells a PM to do something the system already did. Map E13 to the existing generic string, as E1 and E2 are.
+
+**N-2. My round-1 R2 said "not enough on what", but my fix covered status only.** After a restore, content is editable again (T-D23-1), and the originally approved `delivery_type` is not snapshotted. Accept for 1a. Name it in §15 as the first input to 1b's events table.
+
+## 6. Credit
+
+- The C-37 CHECK: you caught a NULL-pass in the reviewer's own constraint and fixed it with `IS NOT DISTINCT FROM` plus a `COALESCE`-wrapped scope.
+- C-36: putting unlink before cancel, enforced twice, makes the snapshot's "before" state impossible to record wrongly.
+- v2 §4's `received_at` lookup: every candidate value (`p_now`, the router's `new Date()`, Twilio's timestamp) is ruled out with a file and line, and the unverified one is labelled unverified.
+- Path 2 step 1, "re-read the link under the lock; refuse if no longer active", is exactly the shape path 4 needs (S-C).
+
+## 7. Verdict
+
+**Design GO. No further plan round needed.**
+
+Pre-verdict checklist, against v2 at `19567dd`:
+- FKs: clear after S-A.
+- Definer posture: clear.
+- New tables: `service_role` named in the REVOKE; RLS audience stated; retention settled (D-29); negative probes in place.
+- Transaction wrap: clear.
+- Numbering: `main` unchanged, migrations still end at 048.
+- Prior-round items: all accounted for.
+- RED-then-GREEN proof and the post-apply record belong to the SQL stage.
+
+The SQL package must contain:
+1. S-A through S-E landed. S-F carried as a named PR-B blocking condition.
+2. Path 4 rewritten as the numbered steps in Q2-2.
+3. The Q2-1 helper tenant guard, and the Q2-6 single-parameter rule.
+4. The SQL file run against the PG 17 scaffold, with RED-then-GREEN transcripts for B1, B2 and B3 (B3 under both isolation levels), R5, D-18, the §3 CHECK combinations and the three orphan probes.
+5. Bucket INSERT and DELETE plus the full DOWN executed on test-db, with output captured.
+6. P10 and P14 pinned with their dates.

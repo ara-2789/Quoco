@@ -1,0 +1,266 @@
+$ git fetch origin
+From https://github.com/ara-2789/Quoco
+   6ccc8f1..58a455e    main       -> origin/main
+[exit 0]
+$ git rev-parse origin/main
+58a455ed8cc9bbc247b65f132b274afe98cd31d1
+[exit 0]
+$ git merge-base --is-ancestor 58a455e origin/main
+[exit 0]
+$ git log --oneline -3 origin/main
+58a455e Merge pull request #329 from ara-2789/docs/capture-1a-decisions-2026-10-10b
+345f249 docs: capture 1a decisions A34-A37 (10 Oct)
+6ccc8f1 Merge pull request #328 from ara-2789/docs/capture-1a-decisions-2026-10-10
+[exit 0]
+$ git status --porcelain
+[exit 0]
+$ git show origin/main:docs/plans/capture-engine-design.md > /tmp/quoco/src/capture-engine-design.md
+[exit 0]
+$ git show origin/main:docs/plans/slice-1a-plan-v3.md > /tmp/quoco/src/slice-1a-plan-v3.md
+[exit 0]
+$ git show origin/main:scripts/migration-number-reservations.json > /tmp/quoco/src/migration-number-reservations.json
+[exit 0]
+$ git show origin/main:test/helpers/db.ts > /tmp/quoco/src/db.ts
+[exit 0]
+$ git show origin/main:supabase/migrations/042_storage_bucket_setup.sql > /tmp/quoco/src/042_storage_bucket_setup.sql
+[exit 0]
+$ git ls-tree --name-only origin/main supabase/migrations/
+supabase/migrations/001_core_schema.sql
+supabase/migrations/002_rls_policies.sql
+supabase/migrations/003_indexes.sql
+supabase/migrations/004_pgvector.sql
+supabase/migrations/005_auth_trigger.sql
+supabase/migrations/006_jobs_queue.sql
+supabase/migrations/007_auth_surgery.sql
+supabase/migrations/011_processed_messages.sql
+supabase/migrations/012_whatsapp_session_transition.sql
+supabase/migrations/013_session_transition_test_lock_probe.sql
+supabase/migrations/014_morning_flow_apply_turn.sql
+supabase/migrations/015_users_update_column_grant.sql
+supabase/migrations/016_corrections.sql
+supabase/migrations/017_rls_column_bounding.sql
+supabase/migrations/018_morning_flow_parsers.sql
+supabase/migrations/019_daily_log_corrections.sql
+supabase/migrations/020_function_execute_hardening.sql
+supabase/migrations/021_index_hygiene.sql
+supabase/migrations/022_evening_flow_apply_turn.sql
+supabase/migrations/023_dpr_reports.sql
+supabase/migrations/024_evening_flow_q4_q5.sql
+supabase/migrations/025_evening_productivity_reconciliation.sql
+supabase/migrations/027_checkin_escalations.sql
+supabase/migrations/028_dprs_engineer_id_option_a.sql
+supabase/migrations/029_dpr_versioning.sql
+supabase/migrations/030_morning_flow_attendance.sql
+supabase/migrations/031_outbound_send_ledger.sql
+supabase/migrations/032_session_transition_lock_probe_nowait.sql
+supabase/migrations/033_sweep_stale_morning_sessions.sql
+supabase/migrations/034_owner_email_delivery.sql
+supabase/migrations/035_evening_flow_restructuring.sql
+supabase/migrations/036_hindrance_timing_column.sql
+supabase/migrations/037_hindrances_pm_notified_at.sql
+supabase/migrations/038_hindrance_flow_and_collision_fix.sql
+supabase/migrations/039_hindrance_acknowledgement.sql
+supabase/migrations/040_evening_q5_tomorrow_needs.sql
+supabase/migrations/041_write_dpr_version_first_write_fix.sql
+supabase/migrations/042_storage_bucket_setup.sql
+supabase/migrations/043_daily_log_photos.sql
+supabase/migrations/044_hindrance_photos.sql
+supabase/migrations/045_media_nudge_throttle.sql
+supabase/migrations/046_hindrances_report_date.sql
+supabase/migrations/047_revoke_unused_table_rights.sql
+supabase/migrations/048_engineer_registration.sql
+$ git show origin/main:CLAUDE.md > /tmp/quoco/src/CLAUDE.md
+[exit 0]
+$ git diff --stat HEAD origin/main -- CLAUDE.md
+[exit 0]
+$ git rev-list --count HEAD..origin/main
+84
+[exit 0]
+$ git ls-tree --name-only origin/main supabase/migrations/ | grep -E '/(039|043)'
+supabase/migrations/039_hindrance_acknowledgement.sql
+supabase/migrations/043_daily_log_photos.sql
+[exit 0]
+$ git grep -ohE "testPhone\('[0-9]+'\)" origin/main -- test/ | sort -u | tr '
+' ' '
+testPhone('101') testPhone('102') testPhone('103') testPhone('104') testPhone('105') testPhone('190') testPhone('199') testPhone('301') testPhone('302') testPhone('303') testPhone('304') testPhone('305') testPhone('306') testPhone('307') testPhone('308') testPhone('309') testPhone('310') testPhone('311') testPhone('312') testPhone('313') testPhone('314') testPhone('315') testPhone('316') testPhone('317') testPhone('318') testPhone('319') testPhone('320') testPhone('321') testPhone('322') testPhone('323') testPhone('324') testPhone('325') testPhone('326') testPhone('327') testPhone('328') testPhone('329') testPhone('330') testPhone('331') testPhone('340') testPhone('341') testPhone('342') testPhone('343') testPhone('344') testPhone('345') testPhone('346') testPhone('347') testPhone('348') testPhone('349') testPhone('350') testPhone('351') testPhone('352') testPhone('353') testPhone('354') testPhone('355') testPhone('356') testPhone('357') testPhone('358') testPhone('401') testPhone('501') testPhone('502') testPhone('503') testPhone('504') testPhone('505') testPhone('506') testPhone('507') testPhone('508') testPhone('690') testPhone('691') testPhone('692') testPhone('693') testPhone('694') testPhone('695') testPhone('801') testPhone('802') testPhone('803') testPhone('804') testPhone('805') testPhone('806') testPhone('807') testPhone('808') testPhone('811') testPhone('812') testPhone('813') testPhone('814') testPhone('815') testPhone('816') testPhone('817') testPhone('818') testPhone('819') testPhone('820') testPhone('821') testPhone('822') testPhone('823') testPhone('824') testPhone('825') testPhone('826') testPhone('827') testPhone('828') testPhone('829') testPhone('830') testPhone('831') testPhone('832') testPhone('833') testPhone('840') testPhone('870') testPhone('871') testPhone('872') testPhone('873') testPhone('874') testPhone('875') testPhone('876') testPhone('877') testPhone('878') testPhone('879') testPhone('900') testPhone('901') testPhone('902') testPhone('903') testPhone('904') testPhone('905') testPhone('906') testPhone('907') [exit 0]
+$ git grep -nE "'invoice'" origin/main -- lib app components | cut -c1-220
+origin/main:lib/whatsapp/inbound-start.ts:719:    // 'hindrance' (or 'safety'/'invoice', SessionFlow's other pre-
+origin/main:lib/whatsapp/session.ts:6:export type SessionFlow = 'morning' | 'evening' | 'safety' | 'invoice' | 'hindrance'
+[exit 0]
+$ git grep -nE "current_flow.*invoice|invoice.*current_flow" origin/main -- supabase docs lib app | cut -c1-240 | head -30
+origin/main:docs/plans/slice-1a-plan-v3.md:232:| **PR-A** | Migration, tables: `deliveries`, `capture_documents`, `capture_files`, `delivery_invoice_links`; composite FKs, RLS, per-role grants, the A28 constraint trigger and the two interna
+origin/main:docs/schema.md:167:- current_flow TEXT CHECK(morning/evening/safety/invoice/hindrance) (BETA)
+origin/main:supabase/migrations/001_core_schema.sql:92:    current_flow TEXT         CHECK (current_flow IN ('morning', 'evening', 'safety', 'invoice', 'hindrance')),
+[exit 0]
+$ git grep -nE 'service_role|GRANT|REVOKE' origin/main -- supabase/migrations/039_hindrance_acknowledgement.sql | cut -c1-200 | head -40
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:98:-- `service_role`'s negative capabilities on the three new columns
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:100:-- COLUMNS on an existing table whose service_role grants are untouched by
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:116:-- REVOKE/GRANT does not change any of them, since cases 1-5 run as the
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:125:--       new GRANT UPDATE (acknowledged_at, acknowledged_by) list. This
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:136:-- re-run with the REVOKE/GRANT and the DOWN's restorative GRANT included.
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:147:-- Without the DOWN's explicit `GRANT UPDATE ON hindrances TO
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:150:-- column-scoped grant with it, and the table-level REVOKE this round
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:163:-- `deps.supabaseClient ?? createServiceClient()` -- service_role by
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:164:-- default, not `authenticated`, and service_role bypasses both RLS and
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:346:-- service_role is UNAFFECTED by either policy, permissive or restrictive --
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:347:-- service_role has BYPASSRLS and does not evaluate table policies at all
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:372:-- privilege narrowing (REVOKE/GRANT, round 2) on an existing table with
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:398:-- GRANT/REVOKE block below, which makes that structurally true rather than
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:462:-- touched the table-level GRANT). Combined with the two RLS UPDATE policies
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:481:-- unbuilt Fast-Follow), ack_notified_at (Stage 3, service_role only), and
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:483:-- REVOKE-then-narrow-GRANT below is a complete list, not a partial one that
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:485:REVOKE UPDATE ON hindrances FROM authenticated;
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:486:GRANT UPDATE (acknowledged_at, acknowledged_by) ON hindrances TO authenticated;
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:502:--   GRANT UPDATE ON hindrances TO authenticated;
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:504:-- THE GRANT ABOVE IS NOT REDUNDANT -- external review finding, 2026-09-08.
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:506:-- `GRANT UPDATE (acknowledged_at, acknowledged_by) ON hindrances TO
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:509:-- when its column is dropped). Combined with this file's own `REVOKE
+origin/main:supabase/migrations/039_hindrance_acknowledgement.sql:515:-- migration ever ran. The explicit re-GRANT above is what actually
+[exit 0]
+$ (slots grep, raw) 
+101 102 103 104 105 190 199 301 302 303 304 305 306 307 308 309 310 311 312 313 314 315 316 317 318 319 320 321 322 323 324 325 326 327 328 329 330 331 340 341 342 343 344 345 346 347 348 349 350 351 352 353 354 355 356 357 358 401 501 502 503 504 505 506 507 508 690 691 692 693 694 695 801 802 803 804 805 806 807 808 811 812 813 814 815 816 817 818 819 820 821 822 823 824 825 826 827 828 829 830 831 832 833 840 870 871 872 873 874 875 876 877 878 879 900 901 902 903 904 905 906 907 
+$ git grep -nE 'FOREIGN KEY|REFERENCES public.(users|projects|tenants)\(id' origin/main -- supabase/migrations/044_hindrance_photos.sql supabase/migrations/038_hindrance_flow_and_collision_fix.sql | cut -c1-200 | head -20
+origin/main:supabase/migrations/038_hindrance_flow_and_collision_fix.sql:211:  FOREIGN KEY (project_id, tenant_id) REFERENCES public.projects (id, tenant_id);
+origin/main:supabase/migrations/038_hindrance_flow_and_collision_fix.sql:216:  FOREIGN KEY (reported_by, tenant_id) REFERENCES public.users (id, tenant_id);
+origin/main:supabase/migrations/038_hindrance_flow_and_collision_fix.sql:1999:--   FOREIGN KEY (project_id) REFERENCES public.projects (id);
+origin/main:supabase/migrations/038_hindrance_flow_and_collision_fix.sql:2004:--   FOREIGN KEY (reported_by) REFERENCES public.users (id);
+origin/main:supabase/migrations/044_hindrance_photos.sql:185:  tenant_id       UUID         NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+[exit 0]
+$ git grep -nE 'contentType|content-type|upsert|\.upload\(|image/' origin/main -- lib/media/ingest.ts | cut -c1-200 | head -30
+origin/main:lib/media/ingest.ts:68:function extensionForContentType(contentType: string): string {
+origin/main:lib/media/ingest.ts:69:  if (contentType.includes('png')) return '.png'
+origin/main:lib/media/ingest.ts:70:  if (contentType.includes('webp')) return '.webp'
+origin/main:lib/media/ingest.ts:71:  if (contentType.includes('gif')) return '.gif'
+origin/main:lib/media/ingest.ts:72:  // Default to .jpg -- WhatsApp photos are overwhelmingly image/jpeg, and an
+origin/main:lib/media/ingest.ts:121:    const objectPath = `${payload.tenant_id}/${payload.daily_log_id}/${photoId}${extensionForContentType(item.contentType)}`
+origin/main:lib/media/ingest.ts:125:      .upload(objectPath, bytes, { contentType: item.contentType, upsert: false })
+origin/main:lib/media/ingest.ts:264: * (the same UNIQUE constraint every flow RPC's own upsert already keys on)
+origin/main:lib/media/ingest.ts:287:    .upsert(
+[exit 0]
+$ git grep -nE 'ENABLE ROW LEVEL SECURITY|CREATE POLICY' origin/main -- supabase/migrations/044_hindrance_photos.sql | cut -c1-200
+origin/main:supabase/migrations/044_hindrance_photos.sql:290:ALTER TABLE public.hindrance_photos ENABLE ROW LEVEL SECURITY;
+origin/main:supabase/migrations/044_hindrance_photos.sql:292:CREATE POLICY "hindrance_photos_select" ON public.hindrance_photos
+[exit 0]
+$ git show origin/main:supabase/migrations/038_...sql | sed -n 196,220p
+-- point: "before anything depends on the current behavior, before any
+-- production data is written against it, is the cheapest this fix will
+-- ever be." That is exactly this moment for this table.
+--
+-- Parent composite uniques already exist (017_rls_column_bounding.sql:
+-- users_id_tenant_id_key, projects_id_tenant_id_key) -- no new UNIQUE
+-- constraint needed, only the FK swap itself, mirroring 017's own
+-- project_members precedent exactly. ON DELETE behaviour preserved
+-- unchanged from each existing plain FK (both NO ACTION, the default --
+-- confirmed against the live prod schema dump, not assumed) -- this is a
+-- same-tenant CHECK added to an existing relationship, not a new cascade
+-- policy.
+ALTER TABLE public.hindrances DROP CONSTRAINT hindrances_project_id_fkey;
+ALTER TABLE public.hindrances
+  ADD CONSTRAINT hindrances_project_id_fkey
+  FOREIGN KEY (project_id, tenant_id) REFERENCES public.projects (id, tenant_id);
+
+ALTER TABLE public.hindrances DROP CONSTRAINT hindrances_reported_by_fkey;
+ALTER TABLE public.hindrances
+  ADD CONSTRAINT hindrances_reported_by_fkey
+  FOREIGN KEY (reported_by, tenant_id) REFERENCES public.users (id, tenant_id);
+
+-- =============================================================================
+-- STEP 1 -- apply_hindrance_flow_turn, brand new. SECURITY DEFINER,
+-- explicit per-role REVOKE below (CLAUDE.md §0's "every new function
+$ git ls-tree -r --name-only origin/main docs/reviews | grep -E '/049' || echo NO_049_IN_DOCS_REVIEWS
+NO_049_IN_DOCS_REVIEWS
+[exit 0]
+$ git branch -r | grep -iE '049|capture|pra|slice-1a' || echo NO_MATCHING_REMOTE_BRANCHES
+  origin/docs/capture-1a-decisions-2026-10-06
+  origin/docs/capture-1a-decisions-2026-10-10
+  origin/docs/capture-1a-decisions-2026-10-10b
+  origin/docs/capture-engine-answers-2026-10-05
+  origin/docs/capture-engine-block-a-findings
+  origin/docs/capture-engine-decisions-2-2026-10-04
+  origin/docs/capture-engine-decisions-2026-10-04
+  origin/docs/capture-engine-design
+  origin/docs/p3-scope-capture
+  origin/fix/outbound-send-response-shape-capture
+  origin/worktree-media-capture-design
+[exit 0]
+$ git ls-remote --heads origin | grep -iE '049|capture|slice' || echo NO_MATCHING_LS_REMOTE_HEADS
+3cc50e5c9d0fd92bc537924e0a46459598f5f795	refs/heads/docs/capture-1a-decisions-2026-10-06
+743edf9e1353f4bd0fb5af57d0dc676ed9900103	refs/heads/docs/capture-1a-decisions-2026-10-10
+345f249c8ee8a611a6f8cc5939203e5569195bc9	refs/heads/docs/capture-1a-decisions-2026-10-10b
+a3c43e1e6fe07bb495f33d56a77d7ca504394878	refs/heads/docs/capture-engine-answers-2026-10-05
+a2cedcf96d42427d8d460fd1d48a62767311eff4	refs/heads/docs/capture-engine-block-a-findings
+e543e137770b4f2048f505ce4cb17c8e25be5cdd	refs/heads/docs/capture-engine-decisions-2-2026-10-04
+cc705d3a8cb5549522db65d6367fa3e8756642f1	refs/heads/docs/capture-engine-decisions-2026-10-04
+0e83ea807ee4b653611cea60e7982895dd7d88a1	refs/heads/docs/capture-engine-design
+7011810ab304924e477068d6a8100e61deb6bb3d	refs/heads/docs/equipment-parser-lexicon-debt
+4e71985b41632297ddf6d276a351d61d9b4d28f3	refs/heads/docs/p3-scope-capture
+aac55524ca527782c6756cd12aed02673b5d2052	refs/heads/feat/add-engineer-slice1
+8ab7105a79ddd56c9b32f6bc9b0b657f2d5da951	refs/heads/feat/owner-delivery-independent-slice
+5a4e2b5938d9b9777e7ecdd89127c0d022c2c13f	refs/heads/feat/ui-slice2-logs-dates
+9248d242cb15fd6f1cd0b443c2e1c582c18178f0	refs/heads/feat/ui-slice3-list-and-dates
+03d9b6ad9513cf67ffa4246c91124e5696e7052f	refs/heads/feat/ui-slice5-today
+de8ed83d66d6baa46b52c93646ce6f1556f73371	refs/heads/feat/ui-slice6-log-card
+20c2aa1f0e54022da81f59ef8db5f22d0cb09b99	refs/heads/worktree-media-capture-design
+[exit 0]
+$ head -45 scripts/test-db-only-grants.sql (origin/main)
+-- TEST-DB-ONLY. NEVER APPLY THIS TO PRODUCTION. NEVER MOVE THIS FILE INTO
+-- supabase/migrations/.
+--
+-- Target: test-db ONLY (project ref exfccwlrhoutkgrlikod). NOT prod
+-- (jvxwqignooseazzmwhvl). Run it with an EXPLICIT --db-url or an explicit
+-- test-db project selection -- never `supabase db query --linked`, since
+-- `--linked` in this worktree currently resolves to PROD (confirmed via
+-- `cat supabase/.temp/project-ref` -> jvxwqignooseazzmwhvl).
+--
+-- WHY THIS FILE, NOT A MIGRATION (the actual mechanism that stops this
+-- reaching prod, not a comment asserting it): every apply/rehearsal/lint
+-- tool this project uses -- `supabase db push`, `supabase db query --linked
+-- -f`, scripts/lint-migrations.mjs, the CI "Migration Lint" job -- scans
+-- ONLY supabase/migrations/*.sql (files matching `^\d+_.*\.sql$` in that
+-- one directory; see CLAUDE.md's "A MIGRATION FILE ENTERS
+-- supabase/migrations/ WHEN IT IS BEING APPLIED" rule). This file lives in
+-- scripts/, has no numeric prefix, and will never be picked up by any of
+-- them -- it is not a migration that could accidentally get promoted or
+-- replayed against prod, it is inert data as far as every apply path is
+-- concerned. The only way this SQL reaches a database is a human pasting
+-- it into an explicitly-targeted psql/`supabase db query --db-url` session.
+--
+-- WHAT THIS DOES: gives service_role DELETE on outbound_sends, test-db
+-- ONLY. Prod's migration (031_outbound_send_ledger.sql) deliberately grants
+-- service_role no DELETE on this table -- it is a durable, append-only send
+-- ledger there, and MUST STAY THAT WAY. Test-db needs the opposite property
+-- (a way for its own test suite to clean up after itself) -- see
+-- docs/reviews/admin-merge-retrospective-2026-09-05.md (Fix 2) and CLAUDE.md
+-- ("outbound_sends' schema now differs between test-db and prod") for why
+-- this divergence is deliberate and documented, not an inconsistency.
+--
+-- SECOND ENTRY, SAME MECHANISM (2026-09-14, migration 043's external review
+-- round 1, item 1/item 3 interaction). daily_log_photos is the identical
+-- shape: 043_daily_log_photos.sql deliberately revokes DELETE/TRUNCATE from
+-- service_role (a tombstone-only, never-hard-deleted table by design,
+-- COMMENT ON TABLE says so explicitly), and the review round that added
+-- that revoke also changed daily_log_id's FK from CASCADE to RESTRICT
+-- (item 3) -- so a leftover daily_log_photos row, which test cleanup could
+-- no longer DELETE once the revoke landed, started blocking every OTHER
+-- test file's routine cleanup of its own daily_logs rows under the same
+-- shared fixture project, across roughly a dozen unrelated test files, the
+-- moment the revoke and the RESTRICT FK combined. Found live: a full
+-- 97-file suite run went from the previous round's clean baseline to 18
+-- failed test files the moment both changes were applied together. Same
+-- fix, same reasoning as outbound_sends above: test-db needs DELETE here
+$ grep -nE "CREATE|GRANT|REVOKE" scripts/test-db-only-047-rights-check.sql
+42:-- EXECUTE for service_role only (SECURITY DEFINER, REVOKE FROM PUBLIC,
+43:-- anon, authenticated; GRANT TO service_role) -- same structural
+49:-- Run once. `CREATE OR REPLACE` -- idempotent on re-run.
+51:CREATE OR REPLACE FUNCTION quoco_test_047_unused_rights_check()
+85:REVOKE EXECUTE ON FUNCTION public.quoco_test_047_unused_rights_check() FROM PUBLIC, anon, authenticated;
+86:GRANT EXECUTE ON FUNCTION public.quoco_test_047_unused_rights_check() TO service_role;
+$ git status --porcelain   (repo checkout; must be empty)
+[exit 0]
+$ git diff --stat   (must be empty)
+[exit 0]
+$ git rev-parse origin/main
+58a455ed8cc9bbc247b65f132b274afe98cd31d1
+$ ls ~/Desktop newer than plan (nothing written there)
+[exit 0]
+END OF PR-A PLAN 1010
