@@ -38,6 +38,9 @@ SELECT t.expect('A20 delivery_rejected is allowed for BOTH sources (self-link)',
 ALTER TABLE public.delivery_invoice_links ENABLE TRIGGER USER;
 \echo
 \echo -- ===== B. deliveries: every "X implies Y" CHECK is NULL-safe =====
+\echo -- (F4-2: the INSERT guard now answers first with E12 for these rows, so, as in section A, the user triggers are DISABLED
+\echo --  on deliveries for this section (owner-level, scaffold only) to test the CHECKs ALONE. No assertion is changed.)
+ALTER TABLE public.deliveries DISABLE TRIGGER USER;
 SELECT t.mk_doc('{D10}', 'dc', 'SM_CHK_10');
 SELECT t.mk_doc('{D11}', 'dc', 'SM_CHK_11');
 SELECT t.mk_doc('{D14}', 'invoice', 'SM_CHK_14');
@@ -59,8 +62,11 @@ SELECT t.mk_doc('{D13}', 'dc', 'SM_CHK_13');
 INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('{V12}', '{T1}', '{P1}', '{U.ENG1}', '2026-09-23 00:30:00+05:30', '{D12}'), ('{V13}', '{T1}', '{P1}', '{U.ENG1}', '2026-09-22 23:59:00+05:30', '{D13}');
 SELECT t.val('B13 00:30 IST -> 2026-09-23', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '{V12}'$$, '2026-09-23');
 SELECT t.val('B13 23:59 IST -> 2026-09-22', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '{V13}'$$, '2026-09-22');
+ALTER TABLE public.deliveries ENABLE TRIGGER USER;
 \echo
 \echo -- ===== C. capture_documents =====
+\echo -- (F4-2: same as section B -- the INSERT guard is disabled on capture_documents for this section so the CHECKs are tested ALONE.)
+ALTER TABLE public.capture_documents DISABLE TRIGGER USER;
 SELECT t.expect('C1 ack note with NULL ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_C1', 'text')$$, '23514');
 SELECT t.expect('C2 ack note with ack = yes', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at, engineer_ack_note) VALUES ('{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_C2', 'yes', now(), 'text')$$, '23514');
 SELECT t.expect('C3 valid: ack = no with note', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at, engineer_ack_note) VALUES ('{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_C3', 'no', now(), 'short')$$, 'ok');
@@ -70,6 +76,8 @@ SELECT t.expect('C6 caption of 1001 characters', $$INSERT INTO public.capture_do
 SELECT t.expect('C7 duplicate source_message_sid (S2)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_C3')$$, '23505');
 SELECT t.expect('C8 unknown kind', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('{T1}', '{P1}', 'receipt', '{U.ENG1}', 'SM_C8')$$, '23514');
 SELECT t.expect('C9 sent_by of another tenant (S-A style composite FK)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('{T1}', '{P1}', 'dc', '{U.PM3}', 'SM_C9')$$, '23503');
+\echo
+ALTER TABLE public.capture_documents ENABLE TRIGGER USER;
 \echo
 \echo -- ===== D. capture_files (document D10, tenant T1, project P1) =====
 SELECT t.expect('D1 storage_path into a SIBLING project folder (S-3)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, storage_path) VALUES ('{T1}', '{P1}', '{D10}', 1, 'SM_F0', 0, '{T1}/{P2}/{D10}/f.pdf')$$, '23514');

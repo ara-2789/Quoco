@@ -125,7 +125,7 @@ mut_file() {  # $1 name -> writes $WORK/mutant-$1.sql ; prints a diff into the t
 }
 mut_post() {  # $1 name -> prints post-UP SQL
   case $1 in
-    no_triggers)    printf '%s\n' "DROP TRIGGER tr_dil_before_insert ON public.delivery_invoice_links;" "DROP TRIGGER tr_dil_before_update ON public.delivery_invoice_links;" "DROP TRIGGER tr_deliveries_before_update ON public.deliveries;" "DROP TRIGGER tr_capture_documents_before_update ON public.capture_documents;";;
+    no_triggers)    printf '%s\n' "DROP TRIGGER tr_dil_before_insert ON public.delivery_invoice_links;" "DROP TRIGGER tr_dil_before_update ON public.delivery_invoice_links;" "DROP TRIGGER tr_deliveries_before_update ON public.deliveries;" "DROP TRIGGER tr_capture_documents_before_update ON public.capture_documents;" "DROP TRIGGER tr_deliveries_before_insert ON public.deliveries;" "DROP TRIGGER tr_capture_documents_before_insert ON public.capture_documents;";;
     no_tr3_trigger) printf '%s\n' "DROP TRIGGER tr_dil_before_update ON public.delivery_invoice_links;";;
     drop_self_fk)   printf '%s\n' "ALTER TABLE public.delivery_invoice_links DROP CONSTRAINT dil_self_link_fk;";;
     drop_doc_fks)   printf '%s\n' "ALTER TABLE public.deliveries DROP CONSTRAINT deliveries_dc_document_fk;" "ALTER TABLE public.deliveries DROP CONSTRAINT deliveries_invoice_document_fk;";;
@@ -376,9 +376,9 @@ case $ID in
   T-D18)  generic T-D18 post:drop_doc_fks;;
   T-CHK)  generic T-CHK post:weak_approver_chk commit:50b929a;;
   T-ORPH) generic T-ORPH flag:red=1;;
-  T-TRIG) generic T-TRIG post:no_triggers file:old_order commit:50b929a commit:668956e;;
+  T-TRIG) generic T-TRIG post:no_triggers file:old_order commit:50b929a commit:668956e commit:ecc8e1e;;
   T-RLS)  generic T-RLS file:rls_no_status file:rls_no_role;;
-  T-ACL)  LOAD_ASSERT=1; generic T-ACL post:plant_grants commit:50b929a;;
+  T-ACL)  LOAD_ASSERT=1; generic T-ACL post:plant_grants commit:50b929a commit:ecc8e1e;;
   T-HELP) HELPER_FILE=$HELPF; generic T-HELP hfile:no_guard;;
   *) echo "unknown or custom test id $ID (custom drivers are added below)" >&2; exit 2;;
 esac

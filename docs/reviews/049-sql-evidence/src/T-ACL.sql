@@ -1,4 +1,4 @@
--- EXPECT_PASS: 76
+-- EXPECT_PASS: 82
 \echo == T-ACL: ACL fingerprint after UP -- has_table_privilege matrix (anon, authenticated, service_role x 8 privileges x 4 tables), function fingerprint, real denials ==
 \pset tuples_only on
 \pset format unaligned
@@ -24,11 +24,11 @@ SELECT relname || ' ' || COALESCE(relacl::text, '(null)') FROM pg_class WHERE oi
 SELECT p.proname, p.prosecdef, p.proconfig, pg_get_userbyid(p.proowner) AS owner, p.proacl, has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_x, has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_x, has_function_privilege('service_role', p.oid, 'EXECUTE') AS svc_x FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'trg\_%' ORDER BY p.proname;
 \pset tuples_only on
 \pset format unaligned
-SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '4');
-SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
-SELECT t.val('O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all four trigger functions', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND has_function_privilege('postgres', p.oid, 'EXECUTE')$$, '4');
-SELECT t.val('O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing)', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND p.proacl::text = '{postgres=X/postgres}'$$, '4');
-SELECT t.val('the four triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '4');
+SELECT t.val('trigger functions that are SECURITY DEFINER, search_path pinned to empty, owner postgres', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.prosecdef AND p.proconfig = ARRAY['search_path=""']::text[] AND pg_get_userbyid(p.proowner) = 'postgres'$$, '6');
+SELECT t.val('EXECUTE held by anon/authenticated/service_role/PUBLIC on any trigger function', $$SELECT count(*)::text FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.pronamespace = 'public'::regnamespace AND x.privilege_type = 'EXECUTE' AND (x.grantee = 0 OR x.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role')))$$, '0');
+SELECT t.val('O-1: postgres (the owner, via the explicit GRANT) holds EXECUTE on all six trigger functions', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND has_function_privilege('postgres', p.oid, 'EXECUTE')$$, '6');
+SELECT t.val('O-1: the effective ACL of each trigger function is exactly {postgres=X/postgres} (the GRANT to the owner changed nothing)', $$SELECT count(*)::text FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND p.proacl::text = '{postgres=X/postgres}'$$, '6');
+SELECT t.val('the six triggers exist and are enabled', $$SELECT count(*)::text FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.capture_documents'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND tgenabled = 'O'$$, '6');
 \echo
 \echo -- ===== real denials, as each role (42501 = insufficient_privilege). SQL runs through EXECUTE inside the role's session =====
 SET ROLE anon;
@@ -44,6 +44,8 @@ SELECT t.expect('anon calls trg_dil_before_insert()', 'SELECT public.trg_dil_bef
 SELECT t.expect('anon calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
 SELECT t.expect('anon calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
 SELECT t.expect('anon calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+SELECT t.expect('anon calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+SELECT t.expect('anon calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
 RESET ROLE;
 SET ROLE authenticated;
 SELECT t.expect('authenticated SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
@@ -70,6 +72,8 @@ SELECT t.expect('authenticated calls trg_dil_before_insert()', 'SELECT public.tr
 SELECT t.expect('authenticated calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
 SELECT t.expect('authenticated calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
 SELECT t.expect('authenticated calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+SELECT t.expect('authenticated calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+SELECT t.expect('authenticated calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
 RESET ROLE;
 SET ROLE service_role;
 SELECT t.expect('service_role SELECT capture_documents (granted; RLS filters rows)', 'SELECT count(*) FROM public.capture_documents', 'ok');
@@ -96,11 +100,13 @@ SELECT t.expect('service_role calls trg_dil_before_insert()', 'SELECT public.trg
 SELECT t.expect('service_role calls trg_dil_before_update()', 'SELECT public.trg_dil_before_update()', '42501');
 SELECT t.expect('service_role calls trg_deliveries_before_update()', 'SELECT public.trg_deliveries_before_update()', '42501');
 SELECT t.expect('service_role calls trg_capture_documents_before_update()', 'SELECT public.trg_capture_documents_before_update()', '42501');
+SELECT t.expect('service_role calls trg_deliveries_before_insert()', 'SELECT public.trg_deliveries_before_insert()', '42501');
+SELECT t.expect('service_role calls trg_capture_documents_before_insert()', 'SELECT public.trg_capture_documents_before_insert()', '42501');
 RESET ROLE;
 \echo
 \echo -- ===== N-1 (SQL review r1): ownership. The GRANT ... TO postgres is a no-op only if postgres owns the objects =====
 SELECT t.val('N-1: the four tables are owned by postgres', $$SELECT count(*)::text FROM pg_class WHERE oid IN ('public.capture_documents'::regclass, 'public.capture_files'::regclass, 'public.deliveries'::regclass, 'public.delivery_invoice_links'::regclass) AND relowner = 'postgres'::regrole$$, '4');
-SELECT t.val('N-1: the four trigger functions are owned by postgres', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update') AND proowner = 'postgres'::regrole$$, '4');
+SELECT t.val('N-1: the six trigger functions are owned by postgres', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('trg_dil_before_insert','trg_dil_before_update','trg_deliveries_before_update','trg_capture_documents_before_update','trg_deliveries_before_insert','trg_capture_documents_before_insert') AND proowner = 'postgres'::regrole$$, '6');
 \echo -- The UP file's OWN in-transaction assertion block (extracted from the file under test by the runner, loaded as t.assert_block()):
 SELECT t.expect('N-1: the assertion block passes on the clean state', 'SELECT t.assert_block()', 'ok');
 BEGIN;

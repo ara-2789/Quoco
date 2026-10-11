@@ -1,4 +1,4 @@
--- EXPECT_PASS: 87
+-- EXPECT_PASS: 102
 \echo == T-TRIG: TR1..TR5 and the A33 index -- every refusal with its E-code, each with a positive control ==
 \pset tuples_only on
 \pset format unaligned
@@ -25,7 +25,9 @@ SELECT t.mk_dc('{D7}', '{V7}', 'SM_T_dc7');
 UPDATE public.deliveries SET status = 'rejected', rejected_by = '{U.PM1}', rejected_at = now(), reject_reason = 'bad dc' WHERE id = '{V7}';
 SELECT t.expect('E5 link to a REJECTED DC delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('{T1}', '{P1}', '{V7}', '{D5}', 'pm_manual', '{U.PM1}')$$, 'E5');
 SELECT t.mk_doc('{D6}', 'invoice', 'SM_T_inv6');
-INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id, status, rejected_by, rejected_at, reject_reason) VALUES ('{V6}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', 'supplier', '{D6}', 'rejected', '{U.PM1}', now(), 'bad invoice');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, delivery_type, created_from_invoice_id) VALUES ('{V6}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', 'supplier', '{D6}');
+\echo -- (F4-2: a delivery can no longer be INSERTed already rejected; it is created incomplete and rejected through the guarded UPDATE path)
+UPDATE public.deliveries SET status = 'rejected', rejected_by = '{U.PM1}', rejected_at = now(), reject_reason = 'bad invoice' WHERE id = '{V6}';
 SELECT t.expect('E5 (A34) self-link for a REJECTED automatic delivery', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('{T1}', '{P1}', '{V6}', '{D6}', 'created_from_invoice')$$, 'E5');
 \echo
 \echo -- ===== A33 (unique index): a DC has at most one active link -- E8 =====
@@ -147,6 +149,32 @@ BEGIN;
 SELECT t.expect('S-3 engineer_ack_at: ack first set with NO caller time at all (the database supplies it)', $$UPDATE public.capture_documents SET engineer_ack = 'no' WHERE id = '{D19}'$$, 'ok');
 SELECT t.val('S-3 engineer_ack_at was stamped as the transaction time', $$SELECT (engineer_ack_at = now())::text FROM public.capture_documents WHERE id = '{D19}'$$, 'true');
 COMMIT;
+\echo
+\echo -- ===== F4-1 (per Aravind 11 Oct): linked_at is stamped by the database at INSERT =====
+SELECT t.mk_dc('{D21}', '{V21}', 'SM_T_dc21');
+SELECT t.mk_doc('{D22}', 'invoice', 'SM_T_inv22');
+BEGIN;
+SELECT t.expect('F4-1 linked_at: INSERT a pm_manual link with linked_at = now() + 5 days', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, linked_at) VALUES ('{L21}', '{T1}', '{P1}', '{V21}', '{D22}', 'pm_manual', '{U.PM1}', now() + interval '5 days')$$, 'ok');
+SELECT t.val('F4-1 linked_at was stored as the transaction time', $$SELECT (linked_at = now())::text FROM public.delivery_invoice_links WHERE id = '{L21}'$$, 'true');
+COMMIT;
+SELECT t.expect('F4-1 the later unlink of that link succeeds (unlinked_at >= the stamped linked_at)', $$UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '{U.PM1}', unlink_reason = 'pm_unlinked' WHERE id = '{L21}'$$, 'ok');
+\echo
+\echo -- ===== F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values (E12). A delivery is CREATED incomplete. =====
+SELECT t.mk_doc('{D23}', 'dc', 'SM_T_doc23');
+SELECT t.expect('F4-2 INSERT a delivery as approved (with approver and time)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, delivery_type, dc_document_id, status, approved_by, approved_at) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', 'supplier', '{D23}', 'approved', '{U.PM1}', now())$$, 'E12');
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying approved_by', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, approved_by) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D23}', '{U.PM1}')$$, 'E12');
+SELECT t.expect('F4-2 INSERT an incomplete delivery carrying cancel_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, cancel_reason) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D23}', 'superseded_by_link')$$, 'E12');
+SELECT t.expect('F4-2 INSERT a delivery as rejected', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D23}', 'rejected', '{U.PM1}', now(), 'x')$$, 'E12');
+SELECT t.expect('F4-2 INSERT a delivery as awaiting_pm (it becomes awaiting_pm by UPDATE when the ack is stored)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D23}', 'awaiting_pm')$$, 'E12');
+SELECT t.expect('F4-2 INSERT a document with engineer_ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at) VALUES ('{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_T_f42a', 'yes', now())$$, 'E12');
+SELECT t.expect('F4-2 INSERT a document with engineer_ack_note only', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_T_f42b', 'note')$$, 'E12');
+SELECT t.expect('F4-2 positive: the normal creation path -- a delivery INSERT (incomplete) succeeds', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D23}')$$, 'ok');
+SELECT t.expect('F4-2 positive: the normal creation path -- a document INSERT (no ack) succeeds', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_T_f42c')$$, 'ok');
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT t.val('isolation level of this transaction', $$SELECT current_setting('transaction_isolation')$$, 'repeatable read');
+SELECT t.expect('E14 the delivery INSERT guard under RR', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D23}')$$, 'E14');
+SELECT t.expect('E14 the document INSERT guard under RR', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('{T1}', '{P1}', 'dc', '{U.ENG1}', 'SM_T_f42d')$$, 'E14');
+ROLLBACK;
 \echo
 \echo -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
