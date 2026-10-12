@@ -138,6 +138,8 @@ Line references are to the SQL file at `668956e`.
 5. **D-30 multi-photo real-phone test:** confirm on a real phone how WhatsApp/Twilio delivers several photos selected together; the bot must ask 1/2/3 once per document.
 6. The Q2-6 single-parameter `received_at` rule (SQL header 226–237) and the CI-only race tests for paths 1–6.
 
+DATED NOTE (2026-10-12, per Aravind): PR-B condition 1 (S-F) is split. PR-B makes apply_material_inward_turn safe to repeat for one SID (a second call with the same SID writes nothing). PR-C closes the rest: the webhook ordering of SID consumption and the failure path that records and alerts. S-F stays BLOCKING for PR-C.
+
 **PR-C — BLOCKING:** `capture_files` immutability (reviewer S-1, second part; proven open on the reviewer's stub — a stored file's `sha256` was rewritten): once stored, `storage_path`, `sha256`, `byte_size`, `content_type` are immutable; `stored` and `rejected` are terminal; identity columns are immutable. Together with the D-8 `capture_files` column UPDATE grant. Nothing writes `capture_files` before PR-B/C.
 
 ## 11. Delta-review request
