@@ -1,0 +1,102 @@
+== 049-sql evidence: T-BKT (real Storage, test-db exfccwlrhoutkgrlikod) ==
+generated: 2026-10-12T06:18:42Z
+$ git rev-parse HEAD
+0aafe402cb012a4478eeaf144fdbf6124cc206b1
+$ git status --porcelain   (uncommitted B4/S1 edits present at the time of this run; the 049 SQL file is unchanged)
+ M docs/reviews/049-sql-evidence/src/T-HELP.sql
+ M scripts/test-db-only-capture-helpers.sql
+?? docs/reviews/049-sql-evidence/T-BKT.txt
+$ sha256sum docs/reviews/049_capture_tables.sql
+069fbe16f07c383d54edd3233b845de55591548815ce5e6b068e098c9dfa574b  docs/reviews/049_capture_tables.sql
+
+Bodies are zero bytes; the bucket checks the declared content type only, not file content. The bucket is a backstop; PR-C byte checks decide acceptance (049 lines 1013-1018).
+
+Declared before the run: T-BKT-1 text/plain refused (mime); T-BKT-2 16 MiB+1 PDF refused (size); T-BKT-3 image/heic refused (mime); T-BKT-4 16 MiB PDF accepted; T-BKT-5 small JPEG accepted.
+RED evidence is the contrast: the 16 MiB PDF is accepted by the same upload code that refuses 1, 2 and 3 (no bucket change).
+
+--- script (verbatim) ---
+// T-BKT: bucket MIME/size behaviour against real Storage (test-db). Untyped client, service role. Prints no secrets.
+import { createRequire } from 'module'
+const require = createRequire(process.cwd() + '/')
+const { config } = require('dotenv'); config({ path: '.env.test', quiet: true })
+const { createClient } = require('@supabase/supabase-js')
+const c = createClient(process.env.SUPABASE_TEST_URL, process.env.SUPABASE_TEST_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+console.log('host:', new URL(process.env.SUPABASE_TEST_URL).hostname)
+console.log('Bodies are zero bytes; the bucket checks the declared content type only, not file content. The bucket is a backstop; PR-C byte checks decide acceptance (049 lines 1013-1018).')
+const run = 'zz-2b-bkt-' + Date.now()
+console.log('prefix:', run)
+const MiB = 1024 * 1024
+const MIME = /mime/i
+const SIZE = /size|exceed|too large/i
+const cases = [
+  { id: 'T-BKT-1', name: 'text/plain refused',          path: `${run}/a.txt`,   type: 'text/plain',      bytes: 16,           expect: 'refused',  reason: MIME },
+  { id: 'T-BKT-2', name: '16 MiB + 1 byte PDF refused', path: `${run}/big.pdf`, type: 'application/pdf', bytes: 16 * MiB + 1, expect: 'refused',  reason: SIZE },
+  { id: 'T-BKT-3', name: 'HEIC refused (D-9)',          path: `${run}/a.heic`,  type: 'image/heic',      bytes: 16,           expect: 'refused',  reason: MIME },
+  { id: 'T-BKT-4', name: '16 MiB PDF accepted',         path: `${run}/max.pdf`, type: 'application/pdf', bytes: 16 * MiB,     expect: 'accepted' },
+  { id: 'T-BKT-5', name: 'small JPEG accepted',         path: `${run}/a.jpg`,   type: 'image/jpeg',      bytes: 16,           expect: 'accepted' },
+]
+const accepted = []
+let ok = 0
+for (const k of cases) {
+  const body = new Blob([new Uint8Array(k.bytes)], { type: k.type })
+  const { data, error } = await c.storage.from('capture-documents').upload(k.path, body, { contentType: k.type })
+  const got = error ? 'refused' : 'accepted'
+  if (!error) accepted.push(k.path)
+  let pass = got === k.expect
+  let why = ''
+  if (error) {
+    const msg = String(error.message ?? '')
+    console.log(`  error detail: statusCode=${error.statusCode ?? error.status ?? '?'} name=${error.name ?? '?'} code=${error.error ?? error.code ?? '?'} message=${msg.slice(0, 200)}`)
+    if (pass && k.reason && !k.reason.test(msg)) { pass = false; why = ` (refused for the wrong reason: message does not match ${k.reason})` }
+  }
+  if (pass) ok++
+  console.log(`${pass ? 'PASS' : 'FAIL'}: ${k.id} ${k.name} -- expected ${k.expect}, got ${got}${why}` + (error ? '' : ` | path=${data?.path}`))
+}
+console.log(`RESULT: PASS=${ok} FAIL=${cases.length - ok}`)
+console.log('ACCEPTED_PATHS:', JSON.stringify(accepted))
+
+--- raw run, verbatim from /tmp/quoco/2026-10-12-2b-B.txt ---
+=== S3 WRITE (uploads) 2026-10-12T06:16:41Z (yes from Aravind) ===
+exfccwlrhoutkgrlikod
+$ node /tmp/quoco/2b/t-bkt.mjs
+host: exfccwlrhoutkgrlikod.supabase.co
+Bodies are zero bytes; the bucket checks the declared content type only, not file content. The bucket is a backstop; PR-C byte checks decide acceptance (049 lines 1013-1018).
+prefix: zz-2b-bkt-1791785801914
+  error detail: statusCode=415 name=StorageApiError code=? message=mime type text/plain is not supported
+PASS: T-BKT-1 text/plain refused -- expected refused, got refused
+  error detail: statusCode=413 name=StorageApiError code=? message=The object exceeded the maximum allowed size
+PASS: T-BKT-2 16 MiB + 1 byte PDF refused -- expected refused, got refused
+  error detail: statusCode=415 name=StorageApiError code=? message=mime type image/heic is not supported
+PASS: T-BKT-3 HEIC refused (D-9) -- expected refused, got refused
+PASS: T-BKT-4 16 MiB PDF accepted -- expected accepted, got accepted | path=zz-2b-bkt-1791785801914/max.pdf
+PASS: T-BKT-5 small JPEG accepted -- expected accepted, got accepted | path=zz-2b-bkt-1791785801914/a.jpg
+RESULT: PASS=5 FAIL=0
+ACCEPTED_PATHS: ["zz-2b-bkt-1791785801914/max.pdf","zz-2b-bkt-1791785801914/a.jpg"]
+exit=0
+
+$ select name, size, mime from storage.objects (read-only)
+Initialising login role...{ "rows": [ { "mime": "image/jpeg", "name": "zz-2b-bkt-1791785801914/a.jpg", "size": "16" }, { "mime": "application/pdf", "name": "zz-2b-bkt-1791785801914/max.pdf", "size": "16777216" } ],}
+
+=== S3 cleanup prepared (not run) ===
+exfccwlrhoutkgrlikod
+// Removes ONLY the two objects T-BKT-4/5 created (exact paths), through the Storage API. Prints no secrets.
+import { createRequire } from 'module'
+const require = createRequire(process.cwd() + '/')
+const { config } = require('dotenv'); config({ path: '.env.test', quiet: true })
+const { createClient } = require('@supabase/supabase-js')
+const c = createClient(process.env.SUPABASE_TEST_URL, process.env.SUPABASE_TEST_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+console.log('host:', new URL(process.env.SUPABASE_TEST_URL).hostname)
+const paths = ['zz-2b-bkt-1791785801914/max.pdf', 'zz-2b-bkt-1791785801914/a.jpg']
+const { data, error } = await c.storage.from('capture-documents').remove(paths)
+console.log('removed:', JSON.stringify((data || []).map(o => o.name)), '| error:', error ? error.message : null)
+
+=== S3 NOTE: exact command text of the earlier S3 SQL step (was logged as a label): supabase db query --linked "select name, metadata->>'size' as size, metadata->>'mimetype' as mime from storage.objects where bucket_id = 'capture-documents' order by name;" ===
+=== S3 CLEANUP WRITE 2026-10-12T06:18:30Z (yes from Aravind) ===
+$ cat supabase/.temp/project-ref
+exfccwlrhoutkgrlikod
+$ node /tmp/quoco/2b/t-bkt-cleanup.mjs
+host: exfccwlrhoutkgrlikod.supabase.co
+removed: ["zz-2b-bkt-1791785801914/a.jpg","zz-2b-bkt-1791785801914/max.pdf"] | error: null
+exit=0
+$ supabase db query --linked "select count(*) as objects from storage.objects where bucket_id = 'capture-documents';"
+Initialising login role...{ "rows": [ { "objects": 0 } ],}

@@ -1,0 +1,5 @@
+
+> quocoai@0.1.0 lint:migrations
+> node scripts/lint-migrations.mjs
+
+migration-lint: clean. 107 known violation(s), all exempted.

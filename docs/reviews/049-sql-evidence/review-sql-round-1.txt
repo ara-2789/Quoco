@@ -1,0 +1,179 @@
+049 SQL review, block 2a: PR #331 @ 8968222
+
+Verdict: STOP, but small. The file needs two trigger edits before it can be applied (B-1, B-2 below). Everything else is fixes for later stages or answers to your questions. The next round can be a delta review: the changed lines plus the re-run tests.
+
+1. Pins and scope
+
+Pins
+
+PR head: 8968222f9a6aa16af8d8a6ff2db51cbeacf43af7.
+main: 0289bcfacccc3c97738624e764e11b853f944726. The only change since round 2 is PR #330 merging. Migrations still end at 048.
+SQL sha256 is 31d5b043…dbd, matching what you gave. The SQL blob is 687d640a at 50b929a, at 1121e72 and at the head. The helpers blob is fac58213 at all three. The package’s two-commit explanation holds.
+
+Read in full
+
+The package, the 997-line SQL file, run.sh, _lib.sql, and the T-ORPH and B3c sources.
+The RED/GREEN sections of every transcript.
+
+Transcript check
+
+Every header shows HEAD 1121e72, the artifact commit 50b929a, equal blob hashes, and an empty porcelain block.
+For 9 of 10 tests, GREEN PASS equals the number of assertions in the source, with 0 ERROR: lines.
+T-ORPH has 24 assertions and 22 PASS. The other 2 are the planted controls that only run in RED (src/T-ORPH.sql:67-73), so it is complete too.
+
+My own probes
+
+I loaded the real UP onto stubs on PG 16.15. The only edit was removing 'MAINTAIN' from line 888, because PG 16 doesn’t have that privilege; the diff was printed.
+This shows mechanism only. It is not a rehearsal.
+2. Reviewer error, owned
+
+In round 2 I ruled C-36 “sound” after checking only one direction: moving a delivery to cancelled while a link is active. I didn’t check the other direction: inserting a link onto a delivery that is already cancelled. That direction is open (B-2 below). It is the same “enforce both directions” rule I set myself in round-1 B1.
+
+This is a coverage miss, the same class as my B1 miss in the 028 round. It doesn’t change any earlier verdict. It adds a finding now.
+
+3. Your round-2 checklist
+#	Ruling
+1	Landed. S-A: the FKs are at lines 403-405, and 13 Rule 9 entries matches my count. S-B: probe 3 RED goes red through the flow mutant. S-D: T-DOWN phase A/B. S-E: line 272. S-F: lines 209-218, marked PR-B blocking.
+2	Landed: lines 182-199, steps 1-8 as I wrote them.
+3	Landed. The tenant guard is one function with three callers, and its RED really deletes a non-fixture row. The single-parameter rule is at lines 221-232.
+4	Landed for the transcripts. The B3 RR RED shows the actual write-skew end state (internal_transfer, 1 active link), so the race window was opened, not simulated.
+5, 6	Owed to block 2b and the apply, as the package says. Accepted.
+4. Answers to Q-1 to Q-7
+
+Q-1: Yes, add two CHECKs.
+
+unlink_reason IS DISTINCT FROM 'superseded_by_link' OR link_source = 'created_from_invoice'
+unlink_reason IS DISTINCT FROM 'pm_unlinked' OR link_source = 'pm_manual'
+
+Both are safe when unlink_reason is NULL, because IS DISTINCT FROM returns true. The probe showed pm_manual unlinked as superseded_by_link is accepted today (P4).
+
+The second CHECK matters more. A self-link unlinked as pm_unlinked leaves the invoice with no active link while its automatic delivery is not cancelled. Probe 3 would only catch that afterwards; the CHECK makes it impossible.
+
+Q-2: The row-level check is enough. Add a probe for the reason being true.
+
+I unlinked a link as delivery_rejected and left the delivery at awaiting_pm. It was accepted (P5).
+Enforcing this at commit time would need a deferred trigger, which isn’t worth it for 1a.
+Add a 4th probe to T-ORPH and the PR-B tests: links unlinked as delivery_rejected whose delivery is not rejected must be 0.
+
+Q-3: The indirect project/tenant tie is enough.
+
+capture_files and delivery_invoice_links get their project and tenant through the composite FK to the parent row. That FK targets a unique key that includes both columns.
+The parent’s project_id and tenant_id can’t change (TR4a, TR5) and can’t be deleted (RESTRICT).
+If someone changed the child’s own project_id, it would still have to satisfy the composite FK. So the child can never disagree with its parent. No direct projects FK is needed.
+
+Q-4: Yes, the refusal is the intended edge.
+
+The webhook’s processed_messages insert commits before the RPC is called (route.ts:224, then await). So the RPC transaction’s now() is always at or after that row’s created_at.
+A received_at later than the RPC’s own transaction start can only come from a different, later message. Refusing it is correct.
+
+Q-5: Acceptable, with two PR-B conditions.
+
+PR-B’s CI must assert that one QE code reaches supabase-js as error.code. I believe PostgREST returns HTTP 400 for SQLSTATEs it doesn’t know, but I can’t verify that from here. One CI assertion settles it.
+E8 must be translated inside PR-B. In this file, 23505 can come from four unique constraints: source_message_sid, sid/media_index, uq_dil_active_self_per_invoice and uq_dil_active_per_delivery. Its details text also contains the key values.
+The link function should catch unique_violation, read CONSTRAINT_NAME with GET STACKED DIAGNOSTICS, and re-raise as QE008 only for uq_dil_active_per_delivery.
+The app must never map on SQLSTATE 23505 alone.
+
+Q-6: Already closed (O-1).
+
+Q-7: Nothing else needs to raise E7.
+
+The E7 branch is in the BEFORE UPDATE trigger. Any future path that updates delivery_type, including a bulk edit, gets E7 automatically.
+On INSERT, an automatic delivery is created with a NULL type, so only the CHECK backstop (23514, mapped to E12) can apply there.
+5. Findings
+B-1. Approval attribution can be rewritten after the fact (proven on the stub)
+
+What breaks
+
+TR4c(4) (lines 662-669) locks the four content fields while a delivery is approved or cancelled. Nothing locks approved_by, approved_at, rejected_* or cancelled_*.
+P1: On an approved row, UPDATE … SET approved_by = <other user>, approved_at = now() + 3 days with the status unchanged succeeded. The row then read status=approved approved_by=c2.
+P2: I then ran path 1: unlink the self-link, which takes the snapshot, then cancel. The cancel UPDATE also rewrote approved_by. Result: the snapshot says c2 approved it, the delivery row says c1.
+
+Why it matters
+
+Round 2 rejected Option 1 so that “a wrong stamp is impossible”, and B2 removed caller input from the snapshot. But the snapshot copies its source, the delivery row, and that source can be rewritten.
+D-23 says “approved means locked”. As written, that covers the content but not who approved it.
+It is reachable the same way B2 was, through a bug in a PR-B definer function. Same grade.
+
+Fix (in trg_deliveries_before_update, raising E11): each group may change only on its own status transition.
+
+approved_by/approved_at: set NULL→value only on a move into approved. Cleared value→NULL only on cancelled → incomplete/awaiting_pm (restore).
+rejected_*: set only on a move into rejected.
+cancelled_*: set on a move into cancelled, cleared on restore.
+Any other IS DISTINCT FROM raises E11.
+
+Test (T-TRIG)
+
+Rewrite the approver with the status unchanged → E11.
+Cancel while changing approved_by → E11.
+RED: the current file. GREEN: approve, cancel, restore and reject all still pass.
+B-2. A self-link can be inserted onto a cancelled delivery (proven on the stub)
+
+What breaks
+
+TR2’s self-link branch (line 493) refuses only rejected.
+P3: With A1 cancelled and no PM links on the invoice, inserting a new self-link before restoring A1 succeeded. Result: A1 status=cancelled, active links on A1=1.
+
+Why it matters
+
+TR4c(3) refuses moving to cancelled while a link is active. Inserting a link onto a cancelled delivery is the other direction, and it’s open.
+Paths 2 and 4 rely on a header comment (“never the self-link first”) to stay correct.
+
+Fix
+
+Line 493: ELSIF v_status IN ('rejected', 'cancelled') THEN … E5.
+No legitimate path is affected: paths 2 and 4 restore the delivery before inserting the self-link, and creating an invoice inserts its delivery as incomplete.
+This turns the header comment into a rule the trigger enforces.
+
+Test
+
+Self-link onto a cancelled delivery → E5.
+RED: the current file.
+S-1. Two immutability gaps
+
+id and created_at are missing from TR4a and TR5.
+
+P6: created_at was rewritable on both deliveries and capture_documents.
+Every ordering CHECK (received_at <= created_at, approved_at >= created_at, engineer_ack_at >= created_at) is measured against that column. TR3 already includes both for links.
+Add id and created_at to both functions.
+
+capture_files has no update trigger.
+
+P7: a stored file’s sha256 was rewritten and its status flipped to failed.
+The spec never listed this, and nothing writes the table until PR-B/C. So I’m moving the guard rather than adding it to PR-A.
+It becomes a blocking condition for PR-C’s migration, alongside the column grant from D-8:
+once a file is stored, storage_path, sha256, byte_size and content_type are immutable;
+stored and rejected are terminal;
+identity columns are immutable.
+S-2. If the bucket delete is refused, the whole DOWN rolls back
+Line 994 runs the bucket DELETE inside the DOWN’s single transaction. If Storage refuses a direct SQL delete, the table drops and the ledger delete roll back with it.
+The fallback the file describes (lines 983-986, “through the Storage API”) can’t run inside that transaction.
+Structure it as:
+the main transaction keeps the zero-objects assertion and drops everything else, then commits;
+the bucket delete runs as its own step afterwards, by SQL or, if refused, through the API.
+Block 2b settles which one works on test-db.
+N-1. Add owner checks to the in-file assertion
+Add p.proowner = 'postgres'::regrole and table relowner checks to the assertion block (lines 901-908).
+The 048 prod apply record observed owner postgres through this same apply path (048-prod-apply-record.md:70), so this is cheap insurance, not a gap.
+The GRANT … TO postgres at lines 825-831 is a no-op only if that ownership holds.
+N-2. Tighten the runner’s GREEN gate
+The GREEN gate is FAIL=0 AND PASS>0 (run.sh:146). It should be PASS = expected count.
+I checked the counts by hand this time. The gate should do it itself.
+6. Credit
+Lines 550-555: TR3 forces the snapshot columns to NULL on any UPDATE of an active link row that doesn’t unlink it. That closes B2 for active rows, a case I never asked about.
+Lines 878-914: the in-transaction ACL and fingerprint assertion aborts the UP if any of the 84 table-privilege cells or 12 function-privilege cells is unexpected. The REVOKE no longer depends on trusting what the platform’s default privileges happen to be.
+T-DOWN phase B: it plants a future function in public and a fixture function in a schema outside public, and shows the guard names both. That proves the guard is intensional rather than a list of names.
+Transcript provenance: both SHAs are named, the blobs are shown equal, and the porcelain block is empty. A reader can check the file under test without trusting the package.
+O-3 (lines 624-632): E7 now comes before E6, so a PM is never told to “unlink” a self-link they can’t touch.
+7. Verdict
+
+STOP, one small round short. B-1 and B-2 are both trigger edits of a few lines each.
+
+The next submission is a delta review. It must contain:
+
+B-1, B-2 and S-1 (the id/created_at part) landed in the SQL. Q-1’s two CHECKs landed.
+T-TRIG re-run with the new cases, RED against 50b929a’s file and GREEN against the new one. T-B2, T-CHK, T-ORPH (with Q-2’s probe 4 added) and T-ACL re-run as well.
+The new SQL sha256 and blob hash in the package.
+S-2’s restructured bucket step, carried into block 2b.
+The PR-B conditions recorded in the package: S-F, Q-5’s E8 translation and QE CI assertion, and Q-2’s probe 4. Plus the PR-C condition from S-1 (capture_files immutability).
+
+Items 5 and 6 of the round-2 checklist stay owed to block 2b and the apply, as stated.

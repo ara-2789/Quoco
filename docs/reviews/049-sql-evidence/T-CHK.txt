@@ -1,0 +1,1052 @@
+== 049-sql evidence: T-CHK ==
+generated: 2026-10-12T06:52:56Z
+$ git rev-parse HEAD
+b088ef5ce9371863c36ff533c68081adea978001
+$ SQL artifact commit under test: 3a0244f6cc3c93252e7457d7b78e71a1e5a90485
+$ git rev-parse 3a0244f6cc3c93252e7457d7b78e71a1e5a90485:docs/reviews/049_capture_tables.sql
+3b50f2c6c683a5ea5481d91533be4aa9991b13bc
+$ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
+3b50f2c6c683a5ea5481d91533be4aa9991b13bc
+$ git status --porcelain      (empty output between the next two lines = clean tree)
+----- begin porcelain -----
+----- end porcelain -----
+$ psql --version
+psql (PostgreSQL) 17.11 (Homebrew)
+$ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+$ shasum -a 256 (artifacts under test)
+069fbe16f07c383d54edd3233b845de55591548815ce5e6b068e098c9dfa574b  docs/reviews/049_capture_tables.sql
+8328ca7f56865f2af72b1a45a4c69b236f60ac788ae15379fad5adc7f8f7e308  scripts/test-db-only-capture-helpers.sql
+20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
+3c5207f9d91c1f2aaab24b96deebeb6e16b96bfe05e8fff448f4f27b6b5062cf  docs/reviews/049-sql-evidence/src/_fixture.sql
+
+################ RED run 1: post:weak_approver_chk ################
+MUTANT (named): weak_approver_chk   (post-UP SQL applied to the real file's result)
+NOTICE:  database "t_T_CHK_red1" does not exist, skipping
+$ psql -d t_T_CHK_red1 -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+$ psql -d t_T_CHK_red1 -f <post-UP mutation>:
+ALTER TABLE public.delivery_invoice_links DROP CONSTRAINT dil_snapshot_approver_chk;
+ALTER TABLE public.delivery_invoice_links ADD CONSTRAINT dil_snapshot_approver_chk CHECK ((superseded_approval_by IS NOT NULL) = (superseded_from_status = 'approved'));
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_CHK_red1 -f T-CHK.sql (tokens expanded by src/expand.py)
+== T-CHK: the CHECK combinations (plan v2 section 3, R2 / Q2-5, incl. the NULL-status case) and the NULL-safety of every implication CHECK ==
+Output format is unaligned.
+-- The link-table triggers are DISABLED for section A (owner-level, scaffold only) so that the CHECKs are tested ALONE;
+-- with TR1/TR3 enabled a forged row is refused earlier (E10) and would hide a weak CHECK.
+ALTER TABLE public.delivery_invoice_links DISABLE TRIGGER USER;
+ALTER TABLE
+-- setup: automatic deliveries V1/V2/V3 for invoices D1/D2/D3 (no links yet); invoice D4 + DC delivery V5 (doc D5) for pm_manual rows
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000001', 'invoice', 'SM_CHK_1');
+50000000-0000-0000-0000-000000000001
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000002', 'invoice', 'SM_CHK_2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000003', 'invoice', 'SM_CHK_3');
+50000000-0000-0000-0000-000000000003
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000004', 'invoice', 'SM_CHK_4');
+50000000-0000-0000-0000-000000000004
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001'), ('60000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000002'), ('60000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000003');
+INSERT 0 3
+-- (N-4: delivery_type is PM-owned and NULL at INSERT; set through UPDATE, same final state as before)
+UPDATE public.deliveries SET delivery_type = 'supplier' WHERE id IN ('60000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000003');
+UPDATE 3
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000005', 'SM_CHK_5');
+60000000-0000-0000-0000-000000000005
+
+-- ===== A. delivery_invoice_links: the snapshot CHECKs =====
+SELECT t.expect('A1 valid ACTIVE self-link', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'created_from_invoice')$$, 'ok');
+PASS: A1 valid ACTIVE self-link -- succeeded as expected (1 row(s))
+SELECT t.expect('A2 active self-link CARRYING a status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000002', 'created_from_invoice', 'incomplete')$$, '23514');
+PASS: A2 active self-link CARRYING a status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A3 valid superseded-APPROVED self-link', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status, superseded_approval_by, superseded_approval_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'ok');
+PASS: A3 valid superseded-APPROVED self-link -- succeeded as expected (1 row(s))
+SELECT t.expect('A4 NULL-STATUS case: unlinked pm_manual row with an approver and NULL status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason, superseded_approval_by, superseded_approval_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked', '30000000-0000-0000-0000-000000000001', now())$$, '23514');
+FAIL: A4 NULL-STATUS case: unlinked pm_manual row with an approver and NULL status -- expected refusal 23514 but the statement SUCCEEDED
+SELECT t.expect('A5 status approved but NULL approver', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved')$$, '23514');
+PASS: A5 status approved but NULL approver -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A6 unlinked pm_manual row carrying a status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked', 'incomplete')$$, '23514');
+PASS: A6 unlinked pm_manual row carrying a status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A7 approved with approver but NULL approval time', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status, superseded_approval_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved', '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: A7 approved with approver but NULL approval time -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A8 superseded self-link with NULL status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link')$$, '23514');
+PASS: A8 superseded self-link with NULL status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A9 valid superseded-AWAITING_PM self-link (no approver)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'awaiting_pm')$$, 'ok');
+PASS: A9 valid superseded-AWAITING_PM self-link (no approver) -- succeeded as expected (1 row(s))
+SELECT t.expect('A10 unlinked_at without unlinked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), 'pm_unlinked')$$, '23514');
+PASS: A10 unlinked_at without unlinked_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A11 unlinked without a reason', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: A11 unlinked without a reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A12 unlinked_at before linked_at', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now() - interval '1 day', '30000000-0000-0000-0000-000000000001', 'pm_unlinked')$$, '23514');
+PASS: A12 unlinked_at before linked_at -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A13 pm_manual with NULL linked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual')$$, '23514');
+PASS: A13 pm_manual with NULL linked_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A14 self-link WITH linked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000002', 'created_from_invoice', '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: A14 self-link WITH linked_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A15 unlinked_by a user of ANOTHER tenant (S-A composite FK)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000009', 'pm_unlinked')$$, '23503');
+PASS: A15 unlinked_by a user of ANOTHER tenant (S-A composite FK) -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "delivery_invoice_links" violates 
+-- Q-1 (SQL review r1): unlink_reason is scoped to link_source (each row below has no status/approver, so ONLY the new CHECKs can answer)
+SELECT t.expect('A16 pm_manual row unlinked as superseded_by_link', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link')$$, '23514');
+PASS: A16 pm_manual row unlinked as superseded_by_link -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A17 self-link unlinked as pm_unlinked (would leave the invoice with no active link while its delivery is not cancelled)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked')$$, '23514');
+PASS: A17 self-link unlinked as pm_unlinked (would leave the invoice with no active link while its delivery is not cancelled) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A18 NULL unlink_reason passes both new CHECKs (active pm_manual link V5 <- D4)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'ok');
+PASS: A18 NULL unlink_reason passes both new CHECKs (active pm_manual link V5 <- D4) -- succeeded as expected (1 row(s))
+SELECT t.expect('A19 pm_manual unlinked as pm_unlinked passes', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked')$$, 'ok');
+PASS: A19 pm_manual unlinked as pm_unlinked passes -- succeeded as expected (1 row(s))
+SELECT t.expect('A20 delivery_rejected is allowed for BOTH sources (self-link)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'delivery_rejected')$$, 'ok');
+PASS: A20 delivery_rejected is allowed for BOTH sources (self-link) -- succeeded as expected (1 row(s))
+ALTER TABLE public.delivery_invoice_links ENABLE TRIGGER USER;
+ALTER TABLE
+
+-- ===== B. deliveries: every "X implies Y" CHECK is NULL-safe =====
+-- (F4-2: the INSERT guard now answers first with E12 for these rows, so, as in section A, the user triggers are DISABLED
+-- on deliveries for this section (owner-level, scaffold only) to test the CHECKs ALONE. No assertion is changed.)
+ALTER TABLE public.deliveries DISABLE TRIGGER USER;
+ALTER TABLE
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000010', 'dc', 'SM_CHK_10');
+50000000-0000-0000-0000-000000000010
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000011', 'dc', 'SM_CHK_11');
+50000000-0000-0000-0000-000000000011
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000014', 'invoice', 'SM_CHK_14');
+50000000-0000-0000-0000-000000000014
+SELECT t.expect('B1 rejected with NULL reject_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'rejected', '30000000-0000-0000-0000-000000000001', now())$$, '23514');
+PASS: B1 rejected with NULL reject_reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B2 rejected with a blank reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'rejected', '30000000-0000-0000-0000-000000000001', now(), '   ')$$, '23514');
+PASS: B2 rejected with a blank reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B3 valid rejected delivery', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000011', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'wrong goods')$$, 'ok');
+PASS: B3 valid rejected delivery -- succeeded as expected (1 row(s))
+SELECT t.expect('B4 approved without an approver', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'approved', 'supplier')$$, '23514');
+PASS: B4 approved without an approver -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B5 approved with approver but NULL delivery_type', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, '23514');
+PASS: B5 approved with approver but NULL delivery_type -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B6 cancelled without cancelled_at/cancel_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, created_from_invoice_id, status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000014', 'cancelled')$$, '23514');
+PASS: B6 cancelled without cancelled_at/cancel_reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B7 cancelled DC delivery (cancel is automatic-only)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, cancelled_at, cancel_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'cancelled', now(), 'superseded_by_link')$$, '23514');
+PASS: B7 cancelled DC delivery (cancel is automatic-only) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B8 automatic delivery typed internal_transfer (E7)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, created_from_invoice_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000014', 'internal_transfer')$$, '23514');
+PASS: B8 automatic delivery typed internal_transfer (E7) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B9 received_at AFTER created_at (S4)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() + interval '1 hour', '50000000-0000-0000-0000-000000000010')$$, '23514');
+PASS: B9 received_at AFTER created_at (S4) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B10 approved_at BEFORE created_at (S4)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'supplier', 'approved', '30000000-0000-0000-0000-000000000001', now() - interval '1 day')$$, '23514');
+PASS: B10 approved_at BEFORE created_at (S4) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B11 incomplete delivery carrying rejected_by', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, rejected_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: B11 incomplete delivery carrying rejected_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B12 received_at omitted (NOT NULL, no default; D-22)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000010')$$, '23502');
+PASS: B12 received_at omitted (NOT NULL, no default; D-22) -- refused, SQLSTATE=23502 MESSAGE=null value in column "received_at" of relation "deliveries" 
+-- delivery_date boundary (generated, IST): 00:30 IST on 23-09-2026 -> 2026-09-23 ; 23:59 IST on 22-09-2026 -> 2026-09-22
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000012', 'dc', 'SM_CHK_12');
+50000000-0000-0000-0000-000000000012
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000013', 'dc', 'SM_CHK_13');
+50000000-0000-0000-0000-000000000013
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000012', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '2026-09-23 00:30:00+05:30', '50000000-0000-0000-0000-000000000012'), ('60000000-0000-0000-0000-000000000013', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '2026-09-22 23:59:00+05:30', '50000000-0000-0000-0000-000000000013');
+INSERT 0 2
+SELECT t.val('B13 00:30 IST -> 2026-09-23', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000012'$$, '2026-09-23');
+PASS: B13 00:30 IST -> 2026-09-23 -- value = 2026-09-23
+SELECT t.val('B13 23:59 IST -> 2026-09-22', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000013'$$, '2026-09-22');
+PASS: B13 23:59 IST -> 2026-09-22 -- value = 2026-09-22
+ALTER TABLE public.deliveries ENABLE TRIGGER USER;
+ALTER TABLE
+
+-- ===== C. capture_documents =====
+-- (F4-2: same as section B -- the INSERT guard is disabled on capture_documents for this section so the CHECKs are tested ALONE.)
+ALTER TABLE public.capture_documents DISABLE TRIGGER USER;
+ALTER TABLE
+SELECT t.expect('C1 ack note with NULL ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C1', 'text')$$, '23514');
+PASS: C1 ack note with NULL ack -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C2 ack note with ack = yes', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C2', 'yes', now(), 'text')$$, '23514');
+PASS: C2 ack note with ack = yes -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C3 valid: ack = no with note', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C3', 'no', now(), 'short')$$, 'ok');
+PASS: C3 valid: ack = no with note -- succeeded as expected (1 row(s))
+SELECT t.expect('C4 ack without ack_at', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C4', 'yes')$$, '23514');
+PASS: C4 ack without ack_at -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C5 ack_at before created_at (S4)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C5', 'yes', now() - interval '1 day')$$, '23514');
+PASS: C5 ack_at before created_at (S4) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C6 caption of 1001 characters', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, caption) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C6', repeat('x', 1001))$$, '23514');
+PASS: C6 caption of 1001 characters -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C7 duplicate source_message_sid (S2)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C3')$$, '23505');
+PASS: C7 duplicate source_message_sid (S2) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "capture_docu
+SELECT t.expect('C8 unknown kind', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'receipt', '30000000-0000-0000-0000-000000000002', 'SM_C8')$$, '23514');
+PASS: C8 unknown kind -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C9 sent_by of another tenant (S-A style composite FK)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000009', 'SM_C9')$$, '23503');
+PASS: C9 sent_by of another tenant (S-A style composite FK) -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "capture_documents" violates forei
+
+ALTER TABLE public.capture_documents ENABLE TRIGGER USER;
+ALTER TABLE
+
+-- ===== D. capture_files (document D10, tenant T1, project P1) =====
+SELECT t.expect('D1 storage_path into a SIBLING project folder (S-3)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, storage_path) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 1, 'SM_F0', 0, '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000002/50000000-0000-0000-0000-000000000010/f.pdf')$$, '23514');
+PASS: D1 storage_path into a SIBLING project folder (S-3) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D2 correct prefix tenant/project/document/', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, storage_path) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 1, 'SM_F1', 0, '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f1.pdf')$$, 'ok');
+PASS: D2 correct prefix tenant/project/document/ -- succeeded as expected (1 row(s))
+SELECT t.expect('D3 malformed sha256', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, sha256) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F3', 0, 'xyz')$$, '23514');
+PASS: D3 malformed sha256 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D4 content_type image/heic (HEIC excluded, D-9)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, content_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F4', 0, 'image/heic')$$, '23514');
+PASS: D4 content_type image/heic (HEIC excluded, D-9) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D5 stored but sha256 missing', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status, storage_path, content_type, byte_size) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F5', 0, 'stored', '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f5.pdf', 'application/pdf', 10)$$, '23514');
+PASS: D5 stored but sha256 missing -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D6 stored with byte_size 16777217 (16 MiB + 1)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status, storage_path, content_type, byte_size, sha256) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F6', 0, 'stored', '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f6.pdf', 'application/pdf', 16777217, repeat('a', 64))$$, '23514');
+PASS: D6 stored with byte_size 16777217 (16 MiB + 1) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D7 stored with byte_size 16777216 (exactly 16 MiB)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status, storage_path, content_type, byte_size, sha256) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F7', 0, 'stored', '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f7.pdf', 'application/pdf', 16777216, repeat('a', 64))$$, 'ok');
+PASS: D7 stored with byte_size 16777216 (exactly 16 MiB) -- succeeded as expected (1 row(s))
+SELECT t.expect('D8 rejected without reject_reason', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 3, 'SM_F8', 0, 'rejected')$$, '23514');
+PASS: D8 rejected without reject_reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D9 media_index -1', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 3, 'SM_F9', -1)$$, '23514');
+PASS: D9 media_index -1 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D10 file_no 0', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 0, 'SM_F10', 0)$$, '23514');
+PASS: D10 file_no 0 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D11 duplicate (source_message_sid, media_index)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 5, 'SM_F1', 0)$$, '23505');
+PASS: D11 duplicate (source_message_sid, media_index) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "capture_file
+SELECT t.expect('D12 duplicate (document_id, file_no)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 1, 'SM_F12', 0)$$, '23505');
+PASS: D12 duplicate (document_id, file_no) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "capture_file
+SELECT t.expect('D13 file naming the document under the WRONG project', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000010', 6, 'SM_F13', 0)$$, '23503');
+PASS: D13 file naming the document under the WRONG project -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "capture_files" violates foreign k
+SELECT t.expect('D14 second page of the same document, later message (file_no 3, media_index 0)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 3, 'SM_F14', 0)$$, 'ok');
+PASS: D14 second page of the same document, later message (file_no 3, media_index 0) -- succeeded as expected (1 row(s))
+
+>>> RESULT t_T_CHK_red1: PASS=56 FAIL=1   (declared EXPECT_PASS=57, static assertion lines=57)
+>>> RED verdict: test FAILED against the mutant (FAIL=1) -- the test can fail: OK
+
+################ RED run 2: commit:50b929a ################
+MUTANT (named): the REVIEWED file at commit 50b929a   -- diff of that file against the file under test:
+11a12,15
+> -- 11 Oct: SQL review round 1 folded (B-1, B-2, S-1, Q-1, N-1, S-2).
+> -- 11 Oct: S-3 landed (Option A, per Aravind).
+> -- 11 Oct: F4-1 (linked_at stamped) and F4-2 (INSERT guards) landed per Aravind.
+> -- 12 Oct: S-4 (created_at stamped) and N-4 (PM fields NULL at insert) per Aravind.
+12a17,21
+> -- TIME RULE (per Aravind, 12 Oct): Every time column recording a system event
+> -- is set by the database. Exceptions: received_at (D-25) and dc_date (document
+> -- content, as printed). dc_date is PM-entered, NULL at INSERT (N-4), locked
+> -- while approved/cancelled (D-23); it has no CHECK and no stamp.
+> --
+35,122c44,141
+< --   E7: 124-147, 591-673
+< --   E12: 124-147
+< --   E-codes-table: 124-147
+< --   N-1: 124-147
+< --   D-31: 124-147
+< --   lock-paths: 149-207
+< --   R3: 149-207, 437-500, 591-673, 675-711
+< --   D-26: 149-207
+< --   Q2-2: 149-207
+< --   Q2-3: 149-207
+< --   S-C: 149-207
+< --   D-27: 149-207, 591-673
+< --   S-F: 209-219
+< --   S-E: 209-219
+< --   D-4: 209-219, 259-283, 290-317
+< --   Q2-6: 221-232
+< --   D-22: 221-232, 325-374
+< --   D-25: 221-232, 325-374
+< --   B3: 234-244, 437-500, 502-589, 591-673, 675-711
+< --   S-B: 234-244
+< --   D-19: 234-244, 259-283, 325-374
+< --   D-1: 259-283, 325-374
+< --   S-2: 259-283, 290-317
+< --   D-5: 259-283, 290-317, 325-374, 736-749, 751-764, 766-779, 781-794
+< --   D-30: 259-283
+< --   S-A: 259-283, 325-374, 381-413
+< --   S4: 259-283, 325-374
+< --   C-29: 259-283, 290-317, 325-374, 381-413
+< --   D-29: 259-283, 290-317, 325-374, 381-413, 918-997
+< --   S-3: 290-317
+< --   D-9: 290-317, 846-850
+< --   D-10: 290-317, 846-850
+< --   D-18: 325-374
+< --   D-23: 325-374, 591-673
+< --   D-2: 381-413
+< --   D-3: 381-413, 420-425, 502-589
+< --   R2: 381-413, 502-589
+< --   Q2-5: 381-413
+< --   R5: 381-413
+< --   C-37: 381-413
+< --   N1: 420-425
+< --   A33: 420-425
+< --   E8: 420-425
+< --   C-35: 420-425
+< --   TR1: 437-500, 713-721
+< --   TR2: 437-500
+< --   B2: 437-500, 502-589
+< --   R4: 437-500, 502-589, 591-673, 675-711, 803-807, 823-831, 877-914
+< --   D-7: 437-500, 502-589, 591-673, 675-711, 823-831
+< --   E1: 437-500
+< --   E2: 437-500
+< --   E3: 437-500
+< --   E4: 437-500
+< --   E5: 437-500
+< --   E10: 437-500, 502-589
+< --   E14: 437-500, 502-589, 591-673, 675-711
+< --   A28: 437-500
+< --   A34: 437-500
+< --   TR3: 502-589, 713-721
+< --   C-36: 502-589, 591-673
+< --   Q2-4: 502-589
+< --   TR4a: 591-673, 713-721
+< --   TR4b: 591-673, 713-721
+< --   TR4c: 591-673, 713-721
+< --   D-6: 591-673, 675-711
+< --   S6: 591-673
+< --   B1: 591-673
+< --   E6: 591-673
+< --   O-3: 591-673
+< --   E9: 591-673, 675-711
+< --   E11: 591-673, 675-711
+< --   E13: 591-673
+< --   TR5: 675-711, 713-721
+< --   D-20: 730-734, 736-749, 751-764, 766-779, 781-794
+< --   R7: 730-734, 736-749, 751-764, 766-779, 781-794
+< --   C-30: 730-734, 736-749, 751-764, 766-779, 781-794
+< --   D-8: 803-807, 877-914
+< --   D-21: 803-807
+< --   CLAUDE.md-s6-per-role-revoke: 803-807
+< --   C-27: 823-831
+< --   O-1: 823-831
+< --   D-11: 846-850
+< --   042-precedent: 846-850
+< --   CLAUDE.md-s6-ACL-fingerprint: 877-914
+< --   R8: 918-997
+< --   S-D: 918-997
+< --   C-31: 918-997
+< --   down-order: 918-997
+---
+> --   E7: 143-168, 631-767
+> --   E12: 143-168, 821-852, 854-876
+> --   E-codes-table: 143-168
+> --   N-1: 143-168, 1051-1099
+> --   D-31: 143-168
+> --   lock-paths: 170-228
+> --   R3: 170-228, 463-535, 631-767, 769-815
+> --   D-26: 170-228
+> --   Q2-2: 170-228
+> --   Q2-3: 170-228
+> --   S-C: 170-228
+> --   D-27: 170-228, 631-767
+> --   S-F: 230-240
+> --   S-E: 230-240
+> --   D-4: 230-240, 280-304, 311-338
+> --   Q2-6: 242-253
+> --   D-22: 242-253, 346-395
+> --   D-25: 242-253, 346-395
+> --   B3: 255-265, 463-535, 537-629, 631-767, 769-815, 821-852, 854-876
+> --   S-B: 255-265
+> --   D-19: 255-265, 280-304, 346-395
+> --   D-1: 280-304, 346-395
+> --   S-2: 280-304, 311-338, 1103-1195
+> --   D-5: 280-304, 311-338, 346-395, 905-918, 920-933, 935-948, 950-963
+> --   D-30: 280-304
+> --   S-A: 280-304, 346-395, 402-439
+> --   S4: 280-304, 346-395
+> --   C-29: 280-304, 311-338, 346-395, 402-439
+> --   D-29: 280-304, 311-338, 346-395, 402-439, 1103-1195
+> --   S-3: 311-338, 537-629, 631-767, 769-815
+> --   D-9: 311-338, 1020-1024
+> --   D-10: 311-338, 1020-1024
+> --   D-18: 346-395
+> --   D-23: 346-395, 631-767
+> --   D-2: 402-439
+> --   D-3: 402-439, 446-451, 537-629
+> --   R2: 402-439, 537-629
+> --   Q2-5: 402-439
+> --   R5: 402-439
+> --   C-37: 402-439
+> --   Q-1: 402-439
+> --   N1: 446-451
+> --   A33: 446-451
+> --   E8: 446-451
+> --   C-35: 446-451
+> --   TR1: 463-535, 878-890
+> --   TR2: 463-535
+> --   F4-1: 463-535
+> --   S-4: 463-535, 821-852, 854-876
+> --   TIME-RULE: 463-535, 821-852, 854-876
+> --   B2: 463-535, 537-629
+> --   B-2: 463-535
+> --   R4: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876, 972-976,
+> --         992-1005, 1051-1099
+> --   D-7: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876, 992-1005
+> --   E1: 463-535
+> --   E2: 463-535
+> --   E3: 463-535
+> --   E4: 463-535
+> --   E5: 463-535
+> --   E10: 463-535, 537-629
+> --   E14: 463-535, 537-629, 631-767, 769-815, 821-852, 854-876
+> --   A28: 463-535
+> --   A34: 463-535
+> --   TR3: 537-629, 878-890
+> --   C-36: 537-629, 631-767
+> --   Q2-4: 537-629
+> --   TR4a: 631-767, 878-890
+> --   TR4b: 631-767, 878-890
+> --   TR4c: 631-767, 878-890
+> --   B-1: 631-767
+> --   S-1: 631-767, 769-815
+> --   D-6: 631-767, 769-815
+> --   S6: 631-767
+> --   B1: 631-767
+> --   E6: 631-767
+> --   O-3: 631-767
+> --   E9: 631-767, 769-815
+> --   E11: 631-767, 769-815
+> --   E13: 631-767
+> --   TR5: 769-815, 878-890
+> --   F4-2: 821-852, 854-876, 878-890
+> --   N-4: 821-852
+> --   D-20: 899-903, 905-918, 920-933, 935-948, 950-963
+> --   R7: 899-903, 905-918, 920-933, 935-948, 950-963
+> --   C-30: 899-903, 905-918, 920-933, 935-948, 950-963
+> --   D-8: 972-976, 1051-1099
+> --   D-21: 972-976
+> --   CLAUDE.md-s6-per-role-revoke: 972-976
+> --   C-27: 992-1005
+> --   O-1: 992-1005
+> --   D-11: 1020-1024
+> --   042-precedent: 1020-1024
+> --   CLAUDE.md-s6-ACL-fingerprint: 1051-1099
+> --   R8: 1103-1195
+> --   S-D: 1103-1195
+> --   C-31: 1103-1195
+> --   down-order: 1103-1195
+133c152
+< --                   self-link to a rejected delivery (A34)
+---
+> --                   self-link to a rejected or cancelled delivery (A34, B-2)
+143c162,164
+< --   E12 (not raised) CHECK/FK, SQLSTATE 23514 / 23503
+---
+> --   E12 QE012  F4-2  INSERT guards (deliveries not 'incomplete' or carrying
+> --                   attribution/stamp/reason values; capture_documents
+> --                   carrying ack values); also raised by CHECK/FK, SQLSTATE 23514 / 23503
+381c402
+< -- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29]
+---
+> -- [src: D-2, D-3, S-A, R2, Q2-5, R5, C-29, C-37, D-29, Q-1]
+412c433,438
+<   CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL))
+---
+>   CONSTRAINT dil_snapshot_approver_pair_chk CHECK ((superseded_approval_by IS NULL) = (superseded_approval_at IS NULL)),
+>   -- Q-1 (SQL review r1): unlink_reason is scoped to link_source. Both are safe when unlink_reason is NULL
+>   -- (IS DISTINCT FROM is then true). The second matters more: a self-link unlinked as pm_unlinked would leave
+>   -- the invoice with no active link while its automatic delivery is not cancelled.
+>   CONSTRAINT dil_superseded_reason_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'superseded_by_link' OR link_source = 'created_from_invoice'),
+>   CONSTRAINT dil_pm_unlinked_scope_chk CHECK (unlink_reason IS DISTINCT FROM 'pm_unlinked' OR link_source = 'pm_manual')
+437c463
+< -- [src: TR1, TR2, B2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+---
+> -- [src: TR1, TR2, F4-1, S-4, TIME-RULE, B2, B-2, B3, R3, R4, D-7, E1, E2, E3, E4, E5, E10, E14, A28, A34]
+459a486,491
+> 
+>   -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
+>   -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
+>   NEW.linked_at := now();
+>   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at stamped by the database too.
+>   NEW.created_at := now();
+493c525,528
+<     ELSIF v_status = 'rejected' THEN
+---
+>     ELSIF v_status IN ('rejected', 'cancelled') THEN
+>       -- B-2 (SQL review r1): a self-link is also refused onto a CANCELLED
+>       -- delivery. Paths 2 and 4 restore the delivery BEFORE inserting the
+>       -- new self-link, so this turns that header rule into one the trigger enforces.
+502c537
+< -- [src: TR3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
+---
+> -- [src: TR3, S-3, B2, B3, R2, C-36, Q2-4, D-3, R4, D-7, E10, E14]
+562a598,602
+>   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the unlink time is
+>   -- stamped by the database; the caller's value only signals the unlink and is
+>   -- overwritten. (linked_at is NOT touched here: see the package, OPEN item.)
+>   NEW.unlinked_at := now();
+> 
+591c631
+< -- [src: TR4a, TR4b, TR4c, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
+---
+> -- [src: TR4a, TR4b, TR4c, B-1, S-3, S-1, D-6, D-23, S6, B1, B3, C-36, D-27, R3, R4, D-7, E6, E7, O-3, E9, E11, E13, E14]
+604,605c644,648
+<   -- TR4a: immutable columns.
+<   IF NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
+---
+>   -- TR4a: immutable columns (S-1, SQL review r1: id and created_at added --
+>   -- every ordering CHECK is measured against created_at).
+>   IF NEW.id IS DISTINCT FROM OLD.id
+>      OR NEW.created_at IS DISTINCT FROM OLD.created_at
+>      OR NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
+670a714,764
+>   -- B-1 (SQL review r1): approval attribution cannot be rewritten after the
+>   -- fact. Each group may change ONLY on its own status transition; any other
+>   -- IS DISTINCT FROM on these columns raises E11.
+>   -- approved_by/approved_at: NULL -> value only on a move INTO approved;
+>   -- value -> NULL only on restore (cancelled -> incomplete/awaiting_pm).
+>   IF NEW.approved_by IS DISTINCT FROM OLD.approved_by
+>      OR NEW.approved_at IS DISTINCT FROM OLD.approved_at THEN
+>     IF NOT (
+>          (OLD.approved_by IS NULL AND OLD.approved_at IS NULL
+>           AND NEW.status = 'approved' AND OLD.status IS DISTINCT FROM 'approved')
+>       OR (NEW.approved_by IS NULL AND NEW.approved_at IS NULL
+>           AND OLD.status = 'cancelled' AND NEW.status IN ('incomplete', 'awaiting_pm'))
+>     ) THEN
+>       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+>     END IF;
+>   END IF;
+>   -- rejected_by/rejected_at/reject_reason: set only on a move INTO rejected.
+>   IF NEW.rejected_by IS DISTINCT FROM OLD.rejected_by
+>      OR NEW.rejected_at IS DISTINCT FROM OLD.rejected_at
+>      OR NEW.reject_reason IS DISTINCT FROM OLD.reject_reason THEN
+>     IF NOT (NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected') THEN
+>       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+>     END IF;
+>   END IF;
+>   -- cancelled_at/cancel_reason: set on a move INTO cancelled; cleared on restore.
+>   IF NEW.cancelled_at IS DISTINCT FROM OLD.cancelled_at
+>      OR NEW.cancel_reason IS DISTINCT FROM OLD.cancel_reason THEN
+>     IF NOT (
+>          (NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM 'cancelled')
+>       OR (NEW.cancelled_at IS NULL AND NEW.cancel_reason IS NULL
+>           AND OLD.status = 'cancelled' AND NEW.status IN ('incomplete', 'awaiting_pm'))
+>     ) THEN
+>       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+>     END IF;
+>   END IF;
+> 
+>   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the DATABASE stamps the
+>   -- time at each allowed transition; any caller-supplied value is overwritten
+>   -- (the same "wrong stamp impossible, not merely uncaught" rule as 043's
+>   -- generated expires_at and B2's snapshot overwrite). Clearing on restore is
+>   -- left as validated above. received_at stays caller-supplied (D-25).
+>   IF NEW.status = 'approved' AND OLD.status IS DISTINCT FROM 'approved' THEN
+>     NEW.approved_at := now();
+>   END IF;
+>   IF NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected' THEN
+>     NEW.rejected_at := now();
+>   END IF;
+>   IF NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM 'cancelled' THEN
+>     NEW.cancelled_at := now();
+>   END IF;
+> 
+675c769
+< -- [src: TR5, D-6, B3, R3, R4, D-7, E9, E11, E14]
+---
+> -- [src: TR5, S-1, S-3, D-6, B3, R3, R4, D-7, E9, E11, E14]
+688c782,785
+<   IF NEW.kind IS DISTINCT FROM OLD.kind
+---
+>   -- S-1 (SQL review r1): id and created_at added to the immutable set.
+>   IF NEW.id IS DISTINCT FROM OLD.id
+>      OR NEW.created_at IS DISTINCT FROM OLD.created_at
+>      OR NEW.kind IS DISTINCT FROM OLD.kind
+708a806,812
+>   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the acknowledgement time
+>   -- is stamped by the database when the ack is first set; a caller-supplied
+>   -- value is overwritten. It drives the D-12 clock.
+>   IF OLD.engineer_ack IS NULL AND NEW.engineer_ack IS NOT NULL THEN
+>     NEW.engineer_ack_at := now();
+>   END IF;
+> 
+713c817,882
+< -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5]
+---
+> -- F4-2 (per Aravind 11 Oct): INSERT paths cannot carry attribution or ack values. A delivery is CREATED
+> -- 'incomplete' (D1; plan v3 line 105: it becomes 'awaiting_pm' inside the engineer RPC when the ack is stored,
+> -- i.e. by UPDATE), so exactly 'incomplete' is allowed; every other status and every attribution/stamp/reason
+> -- column must be NULL at INSERT. These fields are set only through the guarded UPDATE path.
+> -- [src: F4-2, S-4, N-4, TIME-RULE, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_deliveries_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.status IS DISTINCT FROM 'incomplete'
+>      OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
+>      OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
+>      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL
+>      OR NEW.delivery_type IS NOT NULL OR NEW.vehicle_number IS NOT NULL
+>      OR NEW.dc_number IS NOT NULL OR NEW.dc_date IS NOT NULL THEN
+>     -- N-4 (SQL review r3, Option A per Aravind 12 Oct): the PM-owned fields
+>     -- (delivery_type, vehicle_number, dc_number, dc_date) are also NULL at
+>     -- INSERT; the engineer path cannot pre-fill them. Set only through UPDATE.
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at is the anchor every
+>   -- ordering CHECK is measured against; the database stamps it, never NEW.
+>   NEW.created_at := now();
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: F4-2, S-4, TIME-RULE, B3, R4, D-7, E12, E14]
+> CREATE FUNCTION public.trg_capture_documents_before_insert()
+> RETURNS trigger
+> LANGUAGE plpgsql
+> SECURITY DEFINER
+> SET search_path = ''
+> AS $$
+> BEGIN
+>   -- B3: first statement.
+>   IF current_setting('transaction_isolation') <> 'read committed' THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+>   END IF;
+> 
+>   IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN
+>     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+>   END IF;
+> 
+>   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at stamped by the database.
+>   NEW.created_at := now();
+> 
+>   RETURN NEW;
+> END;
+> $$;
+> 
+> -- [src: TR1, TR3, TR4a, TR4b, TR4c, TR5, F4-2]
+> CREATE TRIGGER tr_deliveries_before_insert BEFORE INSERT ON public.deliveries
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_deliveries_before_insert();
+> CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents
+>   FOR EACH ROW EXECUTE FUNCTION public.trg_capture_documents_before_insert();
+831a1001,1005
+> -- F4-2: the two INSERT-guard functions, same shape (O-1).
+> REVOKE ALL ON FUNCTION public.trg_deliveries_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_deliveries_before_insert() TO postgres;
+> REVOKE ALL ON FUNCTION public.trg_capture_documents_before_insert() FROM PUBLIC, anon, authenticated, service_role;
+> GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_insert() TO postgres;
+877c1051
+< -- [src: R4, D-8, CLAUDE.md-s6-ACL-fingerprint]
+---
+> -- [src: R4, D-8, N-1, CLAUDE.md-s6-ACL-fingerprint]
+895c1069,1079
+<   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+---
+>   -- N-1 (SQL review r1): ownership. The GRANT ... TO postgres above is a no-op only if postgres owns the objects.
+>   FOREACH v_t IN ARRAY ARRAY['capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links'] LOOP
+>     IF NOT EXISTS (
+>       SELECT 1 FROM pg_class c
+>       WHERE c.oid = ('public.' || v_t)::regclass
+>         AND c.relowner = 'postgres'::regrole
+>     ) THEN
+>       v_bad := v_bad || ' ' || v_t || ':owner';
+>     END IF;
+>   END LOOP;
+>   FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
+904a1089
+>         AND p.proowner = 'postgres'::regrole
+918c1103
+< -- [src: R8, S-D, D-29, C-31, down-order]
+---
+> -- [src: R8, S-D, S-2, D-29, C-31, down-order]
+962c1147,1148
+< --            'trg_deliveries_before_update', 'trg_capture_documents_before_update'));
+---
+> --            'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+> --            'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
+968a1155,1166
+> -- -- S-2 (SQL review r1): the bucket DELETE is NOT in this transaction. If
+> -- -- Storage refused a direct SQL delete, a delete inside this transaction
+> -- -- would roll the table drops and the ledger delete back with it. The
+> -- -- zero-objects assertion stays here; the delete is the separate step below.
+> -- DO $$
+> -- BEGIN
+> --   IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
+> --     RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
+> --   END IF;
+> -- END;
+> -- $$;
+> --
+977a1176,1177
+> -- DROP FUNCTION public.trg_deliveries_before_insert();
+> -- DROP FUNCTION public.trg_capture_documents_before_insert();
+983,994c1183
+< -- -- Bucket: zero objects, then delete. Supabase Storage may refuse a direct
+< -- -- SQL delete on storage.*; the disposable scaffold stubs storage and cannot
+< -- -- show that (block 2b executes this on test-db). If refused, remove the
+< -- -- bucket through the Storage API instead.
+< -- DO $$
+< -- BEGIN
+< --   IF EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'capture-documents') THEN
+< --     RAISE EXCEPTION 'DOWN_GUARD_BUCKET_OBJECTS';
+< --   END IF;
+< -- END;
+< -- $$;
+< -- DELETE FROM storage.buckets WHERE id = 'capture-documents';
+---
+> -- COMMIT;
+995a1185,1193
+> -- -- BUCKET STEP: a SEPARATE step, run only AFTER the COMMIT above, by SQL.
+> -- -- Supabase Storage may refuse a direct SQL delete on storage.*; the
+> -- -- disposable scaffold stubs storage and cannot show that. Block 2b executes
+> -- -- this step on test-db. If it is refused, the tables, functions and ledger
+> -- -- row are already gone (committed above) and the bucket is removed through
+> -- -- the Storage API instead (the Storage API cannot run inside a SQL
+> -- -- transaction, which is why this step is separate).
+> -- BEGIN;
+> -- DELETE FROM storage.buckets WHERE id = 'capture-documents';
+NOTICE:  database "t_T_CHK_red2" does not exist, skipping
+$ psql -d t_T_CHK_red2 -v ON_ERROR_STOP=1 -f old-50b929a.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_CHK_red2 -f T-CHK.sql (tokens expanded by src/expand.py)
+== T-CHK: the CHECK combinations (plan v2 section 3, R2 / Q2-5, incl. the NULL-status case) and the NULL-safety of every implication CHECK ==
+Output format is unaligned.
+-- The link-table triggers are DISABLED for section A (owner-level, scaffold only) so that the CHECKs are tested ALONE;
+-- with TR1/TR3 enabled a forged row is refused earlier (E10) and would hide a weak CHECK.
+ALTER TABLE public.delivery_invoice_links DISABLE TRIGGER USER;
+ALTER TABLE
+-- setup: automatic deliveries V1/V2/V3 for invoices D1/D2/D3 (no links yet); invoice D4 + DC delivery V5 (doc D5) for pm_manual rows
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000001', 'invoice', 'SM_CHK_1');
+50000000-0000-0000-0000-000000000001
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000002', 'invoice', 'SM_CHK_2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000003', 'invoice', 'SM_CHK_3');
+50000000-0000-0000-0000-000000000003
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000004', 'invoice', 'SM_CHK_4');
+50000000-0000-0000-0000-000000000004
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001'), ('60000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000002'), ('60000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000003');
+INSERT 0 3
+-- (N-4: delivery_type is PM-owned and NULL at INSERT; set through UPDATE, same final state as before)
+UPDATE public.deliveries SET delivery_type = 'supplier' WHERE id IN ('60000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000003');
+UPDATE 3
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000005', 'SM_CHK_5');
+60000000-0000-0000-0000-000000000005
+
+-- ===== A. delivery_invoice_links: the snapshot CHECKs =====
+SELECT t.expect('A1 valid ACTIVE self-link', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'created_from_invoice')$$, 'ok');
+PASS: A1 valid ACTIVE self-link -- succeeded as expected (1 row(s))
+SELECT t.expect('A2 active self-link CARRYING a status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000002', 'created_from_invoice', 'incomplete')$$, '23514');
+PASS: A2 active self-link CARRYING a status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A3 valid superseded-APPROVED self-link', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status, superseded_approval_by, superseded_approval_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'ok');
+PASS: A3 valid superseded-APPROVED self-link -- succeeded as expected (1 row(s))
+SELECT t.expect('A4 NULL-STATUS case: unlinked pm_manual row with an approver and NULL status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason, superseded_approval_by, superseded_approval_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked', '30000000-0000-0000-0000-000000000001', now())$$, '23514');
+PASS: A4 NULL-STATUS case: unlinked pm_manual row with an approver and NULL status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A5 status approved but NULL approver', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved')$$, '23514');
+PASS: A5 status approved but NULL approver -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A6 unlinked pm_manual row carrying a status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked', 'incomplete')$$, '23514');
+PASS: A6 unlinked pm_manual row carrying a status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A7 approved with approver but NULL approval time', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status, superseded_approval_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved', '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: A7 approved with approver but NULL approval time -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A8 superseded self-link with NULL status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link')$$, '23514');
+PASS: A8 superseded self-link with NULL status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A9 valid superseded-AWAITING_PM self-link (no approver)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'awaiting_pm')$$, 'ok');
+PASS: A9 valid superseded-AWAITING_PM self-link (no approver) -- succeeded as expected (1 row(s))
+SELECT t.expect('A10 unlinked_at without unlinked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), 'pm_unlinked')$$, '23514');
+PASS: A10 unlinked_at without unlinked_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A11 unlinked without a reason', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: A11 unlinked without a reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A12 unlinked_at before linked_at', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now() - interval '1 day', '30000000-0000-0000-0000-000000000001', 'pm_unlinked')$$, '23514');
+PASS: A12 unlinked_at before linked_at -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A13 pm_manual with NULL linked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual')$$, '23514');
+PASS: A13 pm_manual with NULL linked_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A14 self-link WITH linked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000002', 'created_from_invoice', '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: A14 self-link WITH linked_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A15 unlinked_by a user of ANOTHER tenant (S-A composite FK)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000009', 'pm_unlinked')$$, '23503');
+PASS: A15 unlinked_by a user of ANOTHER tenant (S-A composite FK) -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "delivery_invoice_links" violates 
+-- Q-1 (SQL review r1): unlink_reason is scoped to link_source (each row below has no status/approver, so ONLY the new CHECKs can answer)
+SELECT t.expect('A16 pm_manual row unlinked as superseded_by_link', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link')$$, '23514');
+FAIL: A16 pm_manual row unlinked as superseded_by_link -- expected refusal 23514 but the statement SUCCEEDED
+SELECT t.expect('A17 self-link unlinked as pm_unlinked (would leave the invoice with no active link while its delivery is not cancelled)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked')$$, '23514');
+FAIL: A17 self-link unlinked as pm_unlinked (would leave the invoice with no active link while its delivery is not cancelled) -- expected refusal 23514 but the statement SUCCEEDED
+SELECT t.expect('A18 NULL unlink_reason passes both new CHECKs (active pm_manual link V5 <- D4)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'ok');
+PASS: A18 NULL unlink_reason passes both new CHECKs (active pm_manual link V5 <- D4) -- succeeded as expected (1 row(s))
+SELECT t.expect('A19 pm_manual unlinked as pm_unlinked passes', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked')$$, 'ok');
+PASS: A19 pm_manual unlinked as pm_unlinked passes -- succeeded as expected (1 row(s))
+SELECT t.expect('A20 delivery_rejected is allowed for BOTH sources (self-link)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'delivery_rejected')$$, 'ok');
+PASS: A20 delivery_rejected is allowed for BOTH sources (self-link) -- succeeded as expected (1 row(s))
+ALTER TABLE public.delivery_invoice_links ENABLE TRIGGER USER;
+ALTER TABLE
+
+-- ===== B. deliveries: every "X implies Y" CHECK is NULL-safe =====
+-- (F4-2: the INSERT guard now answers first with E12 for these rows, so, as in section A, the user triggers are DISABLED
+-- on deliveries for this section (owner-level, scaffold only) to test the CHECKs ALONE. No assertion is changed.)
+ALTER TABLE public.deliveries DISABLE TRIGGER USER;
+ALTER TABLE
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000010', 'dc', 'SM_CHK_10');
+50000000-0000-0000-0000-000000000010
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000011', 'dc', 'SM_CHK_11');
+50000000-0000-0000-0000-000000000011
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000014', 'invoice', 'SM_CHK_14');
+50000000-0000-0000-0000-000000000014
+SELECT t.expect('B1 rejected with NULL reject_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'rejected', '30000000-0000-0000-0000-000000000001', now())$$, '23514');
+PASS: B1 rejected with NULL reject_reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B2 rejected with a blank reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'rejected', '30000000-0000-0000-0000-000000000001', now(), '   ')$$, '23514');
+PASS: B2 rejected with a blank reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B3 valid rejected delivery', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000011', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'wrong goods')$$, 'ok');
+PASS: B3 valid rejected delivery -- succeeded as expected (1 row(s))
+SELECT t.expect('B4 approved without an approver', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'approved', 'supplier')$$, '23514');
+PASS: B4 approved without an approver -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B5 approved with approver but NULL delivery_type', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, '23514');
+PASS: B5 approved with approver but NULL delivery_type -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B6 cancelled without cancelled_at/cancel_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, created_from_invoice_id, status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000014', 'cancelled')$$, '23514');
+PASS: B6 cancelled without cancelled_at/cancel_reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B7 cancelled DC delivery (cancel is automatic-only)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, cancelled_at, cancel_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'cancelled', now(), 'superseded_by_link')$$, '23514');
+PASS: B7 cancelled DC delivery (cancel is automatic-only) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B8 automatic delivery typed internal_transfer (E7)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, created_from_invoice_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000014', 'internal_transfer')$$, '23514');
+PASS: B8 automatic delivery typed internal_transfer (E7) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B9 received_at AFTER created_at (S4)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() + interval '1 hour', '50000000-0000-0000-0000-000000000010')$$, '23514');
+PASS: B9 received_at AFTER created_at (S4) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B10 approved_at BEFORE created_at (S4)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'supplier', 'approved', '30000000-0000-0000-0000-000000000001', now() - interval '1 day')$$, '23514');
+PASS: B10 approved_at BEFORE created_at (S4) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B11 incomplete delivery carrying rejected_by', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, rejected_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: B11 incomplete delivery carrying rejected_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B12 received_at omitted (NOT NULL, no default; D-22)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000010')$$, '23502');
+PASS: B12 received_at omitted (NOT NULL, no default; D-22) -- refused, SQLSTATE=23502 MESSAGE=null value in column "received_at" of relation "deliveries" 
+-- delivery_date boundary (generated, IST): 00:30 IST on 23-09-2026 -> 2026-09-23 ; 23:59 IST on 22-09-2026 -> 2026-09-22
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000012', 'dc', 'SM_CHK_12');
+50000000-0000-0000-0000-000000000012
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000013', 'dc', 'SM_CHK_13');
+50000000-0000-0000-0000-000000000013
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000012', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '2026-09-23 00:30:00+05:30', '50000000-0000-0000-0000-000000000012'), ('60000000-0000-0000-0000-000000000013', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '2026-09-22 23:59:00+05:30', '50000000-0000-0000-0000-000000000013');
+INSERT 0 2
+SELECT t.val('B13 00:30 IST -> 2026-09-23', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000012'$$, '2026-09-23');
+PASS: B13 00:30 IST -> 2026-09-23 -- value = 2026-09-23
+SELECT t.val('B13 23:59 IST -> 2026-09-22', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000013'$$, '2026-09-22');
+PASS: B13 23:59 IST -> 2026-09-22 -- value = 2026-09-22
+ALTER TABLE public.deliveries ENABLE TRIGGER USER;
+ALTER TABLE
+
+-- ===== C. capture_documents =====
+-- (F4-2: same as section B -- the INSERT guard is disabled on capture_documents for this section so the CHECKs are tested ALONE.)
+ALTER TABLE public.capture_documents DISABLE TRIGGER USER;
+ALTER TABLE
+SELECT t.expect('C1 ack note with NULL ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C1', 'text')$$, '23514');
+PASS: C1 ack note with NULL ack -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C2 ack note with ack = yes', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C2', 'yes', now(), 'text')$$, '23514');
+PASS: C2 ack note with ack = yes -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C3 valid: ack = no with note', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C3', 'no', now(), 'short')$$, 'ok');
+PASS: C3 valid: ack = no with note -- succeeded as expected (1 row(s))
+SELECT t.expect('C4 ack without ack_at', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C4', 'yes')$$, '23514');
+PASS: C4 ack without ack_at -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C5 ack_at before created_at (S4)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C5', 'yes', now() - interval '1 day')$$, '23514');
+PASS: C5 ack_at before created_at (S4) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C6 caption of 1001 characters', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, caption) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C6', repeat('x', 1001))$$, '23514');
+PASS: C6 caption of 1001 characters -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C7 duplicate source_message_sid (S2)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C3')$$, '23505');
+PASS: C7 duplicate source_message_sid (S2) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "capture_docu
+SELECT t.expect('C8 unknown kind', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'receipt', '30000000-0000-0000-0000-000000000002', 'SM_C8')$$, '23514');
+PASS: C8 unknown kind -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C9 sent_by of another tenant (S-A style composite FK)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000009', 'SM_C9')$$, '23503');
+PASS: C9 sent_by of another tenant (S-A style composite FK) -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "capture_documents" violates forei
+
+ALTER TABLE public.capture_documents ENABLE TRIGGER USER;
+ALTER TABLE
+
+-- ===== D. capture_files (document D10, tenant T1, project P1) =====
+SELECT t.expect('D1 storage_path into a SIBLING project folder (S-3)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, storage_path) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 1, 'SM_F0', 0, '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000002/50000000-0000-0000-0000-000000000010/f.pdf')$$, '23514');
+PASS: D1 storage_path into a SIBLING project folder (S-3) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D2 correct prefix tenant/project/document/', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, storage_path) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 1, 'SM_F1', 0, '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f1.pdf')$$, 'ok');
+PASS: D2 correct prefix tenant/project/document/ -- succeeded as expected (1 row(s))
+SELECT t.expect('D3 malformed sha256', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, sha256) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F3', 0, 'xyz')$$, '23514');
+PASS: D3 malformed sha256 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D4 content_type image/heic (HEIC excluded, D-9)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, content_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F4', 0, 'image/heic')$$, '23514');
+PASS: D4 content_type image/heic (HEIC excluded, D-9) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D5 stored but sha256 missing', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status, storage_path, content_type, byte_size) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F5', 0, 'stored', '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f5.pdf', 'application/pdf', 10)$$, '23514');
+PASS: D5 stored but sha256 missing -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D6 stored with byte_size 16777217 (16 MiB + 1)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status, storage_path, content_type, byte_size, sha256) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F6', 0, 'stored', '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f6.pdf', 'application/pdf', 16777217, repeat('a', 64))$$, '23514');
+PASS: D6 stored with byte_size 16777217 (16 MiB + 1) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D7 stored with byte_size 16777216 (exactly 16 MiB)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status, storage_path, content_type, byte_size, sha256) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F7', 0, 'stored', '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f7.pdf', 'application/pdf', 16777216, repeat('a', 64))$$, 'ok');
+PASS: D7 stored with byte_size 16777216 (exactly 16 MiB) -- succeeded as expected (1 row(s))
+SELECT t.expect('D8 rejected without reject_reason', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 3, 'SM_F8', 0, 'rejected')$$, '23514');
+PASS: D8 rejected without reject_reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D9 media_index -1', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 3, 'SM_F9', -1)$$, '23514');
+PASS: D9 media_index -1 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D10 file_no 0', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 0, 'SM_F10', 0)$$, '23514');
+PASS: D10 file_no 0 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D11 duplicate (source_message_sid, media_index)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 5, 'SM_F1', 0)$$, '23505');
+PASS: D11 duplicate (source_message_sid, media_index) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "capture_file
+SELECT t.expect('D12 duplicate (document_id, file_no)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 1, 'SM_F12', 0)$$, '23505');
+PASS: D12 duplicate (document_id, file_no) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "capture_file
+SELECT t.expect('D13 file naming the document under the WRONG project', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000010', 6, 'SM_F13', 0)$$, '23503');
+PASS: D13 file naming the document under the WRONG project -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "capture_files" violates foreign k
+SELECT t.expect('D14 second page of the same document, later message (file_no 3, media_index 0)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 3, 'SM_F14', 0)$$, 'ok');
+PASS: D14 second page of the same document, later message (file_no 3, media_index 0) -- succeeded as expected (1 row(s))
+
+>>> RESULT t_T_CHK_red2: PASS=55 FAIL=2   (declared EXPECT_PASS=57, static assertion lines=57)
+>>> RED verdict: test FAILED against the mutant (FAIL=2) -- the test can fail: OK
+
+################ GREEN run: the real file ################
+NOTICE:  database "t_T_CHK_green" does not exist, skipping
+$ psql -d t_T_CHK_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -X -e -d t_T_CHK_green -f T-CHK.sql (tokens expanded by src/expand.py)
+== T-CHK: the CHECK combinations (plan v2 section 3, R2 / Q2-5, incl. the NULL-status case) and the NULL-safety of every implication CHECK ==
+Output format is unaligned.
+-- The link-table triggers are DISABLED for section A (owner-level, scaffold only) so that the CHECKs are tested ALONE;
+-- with TR1/TR3 enabled a forged row is refused earlier (E10) and would hide a weak CHECK.
+ALTER TABLE public.delivery_invoice_links DISABLE TRIGGER USER;
+ALTER TABLE
+-- setup: automatic deliveries V1/V2/V3 for invoices D1/D2/D3 (no links yet); invoice D4 + DC delivery V5 (doc D5) for pm_manual rows
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000001', 'invoice', 'SM_CHK_1');
+50000000-0000-0000-0000-000000000001
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000002', 'invoice', 'SM_CHK_2');
+50000000-0000-0000-0000-000000000002
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000003', 'invoice', 'SM_CHK_3');
+50000000-0000-0000-0000-000000000003
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000004', 'invoice', 'SM_CHK_4');
+50000000-0000-0000-0000-000000000004
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, created_from_invoice_id) VALUES ('60000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000001'), ('60000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000002'), ('60000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000003');
+INSERT 0 3
+-- (N-4: delivery_type is PM-owned and NULL at INSERT; set through UPDATE, same final state as before)
+UPDATE public.deliveries SET delivery_type = 'supplier' WHERE id IN ('60000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', '60000000-0000-0000-0000-000000000003');
+UPDATE 3
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000005', 'SM_CHK_5');
+60000000-0000-0000-0000-000000000005
+
+-- ===== A. delivery_invoice_links: the snapshot CHECKs =====
+SELECT t.expect('A1 valid ACTIVE self-link', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'created_from_invoice')$$, 'ok');
+PASS: A1 valid ACTIVE self-link -- succeeded as expected (1 row(s))
+SELECT t.expect('A2 active self-link CARRYING a status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000002', 'created_from_invoice', 'incomplete')$$, '23514');
+PASS: A2 active self-link CARRYING a status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A3 valid superseded-APPROVED self-link', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status, superseded_approval_by, superseded_approval_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, 'ok');
+PASS: A3 valid superseded-APPROVED self-link -- succeeded as expected (1 row(s))
+SELECT t.expect('A4 NULL-STATUS case: unlinked pm_manual row with an approver and NULL status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason, superseded_approval_by, superseded_approval_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked', '30000000-0000-0000-0000-000000000001', now())$$, '23514');
+PASS: A4 NULL-STATUS case: unlinked pm_manual row with an approver and NULL status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A5 status approved but NULL approver', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved')$$, '23514');
+PASS: A5 status approved but NULL approver -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A6 unlinked pm_manual row carrying a status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked', 'incomplete')$$, '23514');
+PASS: A6 unlinked pm_manual row carrying a status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A7 approved with approver but NULL approval time', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status, superseded_approval_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'approved', '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: A7 approved with approver but NULL approval time -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A8 superseded self-link with NULL status', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link')$$, '23514');
+PASS: A8 superseded self-link with NULL status -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A9 valid superseded-AWAITING_PM self-link (no approver)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason, superseded_from_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link', 'awaiting_pm')$$, 'ok');
+PASS: A9 valid superseded-AWAITING_PM self-link (no approver) -- succeeded as expected (1 row(s))
+SELECT t.expect('A10 unlinked_at without unlinked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), 'pm_unlinked')$$, '23514');
+PASS: A10 unlinked_at without unlinked_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A11 unlinked without a reason', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: A11 unlinked without a reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A12 unlinked_at before linked_at', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now() - interval '1 day', '30000000-0000-0000-0000-000000000001', 'pm_unlinked')$$, '23514');
+PASS: A12 unlinked_at before linked_at -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A13 pm_manual with NULL linked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual')$$, '23514');
+PASS: A13 pm_manual with NULL linked_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A14 self-link WITH linked_by', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000002', 'created_from_invoice', '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: A14 self-link WITH linked_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A15 unlinked_by a user of ANOTHER tenant (S-A composite FK)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000009', 'pm_unlinked')$$, '23503');
+PASS: A15 unlinked_by a user of ANOTHER tenant (S-A composite FK) -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "delivery_invoice_links" violates 
+-- Q-1 (SQL review r1): unlink_reason is scoped to link_source (each row below has no status/approver, so ONLY the new CHECKs can answer)
+SELECT t.expect('A16 pm_manual row unlinked as superseded_by_link', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'superseded_by_link')$$, '23514');
+PASS: A16 pm_manual row unlinked as superseded_by_link -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A17 self-link unlinked as pm_unlinked (would leave the invoice with no active link while its delivery is not cancelled)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked')$$, '23514');
+PASS: A17 self-link unlinked as pm_unlinked (would leave the invoice with no active link while its delivery is not cancelled) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "delivery_invoice_links" violates check
+SELECT t.expect('A18 NULL unlink_reason passes both new CHECKs (active pm_manual link V5 <- D4)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'ok');
+PASS: A18 NULL unlink_reason passes both new CHECKs (active pm_manual link V5 <- D4) -- succeeded as expected (1 row(s))
+SELECT t.expect('A19 pm_manual unlinked as pm_unlinked passes', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000005', '50000000-0000-0000-0000-000000000004', 'pm_manual', '30000000-0000-0000-0000-000000000001', now(), '30000000-0000-0000-0000-000000000001', 'pm_unlinked')$$, 'ok');
+PASS: A19 pm_manual unlinked as pm_unlinked passes -- succeeded as expected (1 row(s))
+SELECT t.expect('A20 delivery_rejected is allowed for BOTH sources (self-link)', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source, unlinked_at, unlinked_by, unlink_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice', now(), '30000000-0000-0000-0000-000000000001', 'delivery_rejected')$$, 'ok');
+PASS: A20 delivery_rejected is allowed for BOTH sources (self-link) -- succeeded as expected (1 row(s))
+ALTER TABLE public.delivery_invoice_links ENABLE TRIGGER USER;
+ALTER TABLE
+
+-- ===== B. deliveries: every "X implies Y" CHECK is NULL-safe =====
+-- (F4-2: the INSERT guard now answers first with E12 for these rows, so, as in section A, the user triggers are DISABLED
+-- on deliveries for this section (owner-level, scaffold only) to test the CHECKs ALONE. No assertion is changed.)
+ALTER TABLE public.deliveries DISABLE TRIGGER USER;
+ALTER TABLE
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000010', 'dc', 'SM_CHK_10');
+50000000-0000-0000-0000-000000000010
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000011', 'dc', 'SM_CHK_11');
+50000000-0000-0000-0000-000000000011
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000014', 'invoice', 'SM_CHK_14');
+50000000-0000-0000-0000-000000000014
+SELECT t.expect('B1 rejected with NULL reject_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'rejected', '30000000-0000-0000-0000-000000000001', now())$$, '23514');
+PASS: B1 rejected with NULL reject_reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B2 rejected with a blank reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'rejected', '30000000-0000-0000-0000-000000000001', now(), '   ')$$, '23514');
+PASS: B2 rejected with a blank reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B3 valid rejected delivery', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, rejected_by, rejected_at, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000011', 'rejected', '30000000-0000-0000-0000-000000000001', now(), 'wrong goods')$$, 'ok');
+PASS: B3 valid rejected delivery -- succeeded as expected (1 row(s))
+SELECT t.expect('B4 approved without an approver', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'approved', 'supplier')$$, '23514');
+PASS: B4 approved without an approver -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B5 approved with approver but NULL delivery_type', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'approved', '30000000-0000-0000-0000-000000000001', now())$$, '23514');
+PASS: B5 approved with approver but NULL delivery_type -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B6 cancelled without cancelled_at/cancel_reason', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, created_from_invoice_id, status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000014', 'cancelled')$$, '23514');
+PASS: B6 cancelled without cancelled_at/cancel_reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B7 cancelled DC delivery (cancel is automatic-only)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, status, cancelled_at, cancel_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'cancelled', now(), 'superseded_by_link')$$, '23514');
+PASS: B7 cancelled DC delivery (cancel is automatic-only) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B8 automatic delivery typed internal_transfer (E7)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, created_from_invoice_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000014', 'internal_transfer')$$, '23514');
+PASS: B8 automatic delivery typed internal_transfer (E7) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B9 received_at AFTER created_at (S4)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() + interval '1 hour', '50000000-0000-0000-0000-000000000010')$$, '23514');
+PASS: B9 received_at AFTER created_at (S4) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B10 approved_at BEFORE created_at (S4)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type, status, approved_by, approved_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', 'supplier', 'approved', '30000000-0000-0000-0000-000000000001', now() - interval '1 day')$$, '23514');
+PASS: B10 approved_at BEFORE created_at (S4) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B11 incomplete delivery carrying rejected_by', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, rejected_by) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000010', '30000000-0000-0000-0000-000000000001')$$, '23514');
+PASS: B11 incomplete delivery carrying rejected_by -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+SELECT t.expect('B12 received_at omitted (NOT NULL, no default; D-22)', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, dc_document_id) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000010')$$, '23502');
+PASS: B12 received_at omitted (NOT NULL, no default; D-22) -- refused, SQLSTATE=23502 MESSAGE=null value in column "received_at" of relation "deliveries" 
+-- delivery_date boundary (generated, IST): 00:30 IST on 23-09-2026 -> 2026-09-23 ; 23:59 IST on 22-09-2026 -> 2026-09-22
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000012', 'dc', 'SM_CHK_12');
+50000000-0000-0000-0000-000000000012
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000013', 'dc', 'SM_CHK_13');
+50000000-0000-0000-0000-000000000013
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id) VALUES ('60000000-0000-0000-0000-000000000012', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '2026-09-23 00:30:00+05:30', '50000000-0000-0000-0000-000000000012'), ('60000000-0000-0000-0000-000000000013', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '2026-09-22 23:59:00+05:30', '50000000-0000-0000-0000-000000000013');
+INSERT 0 2
+SELECT t.val('B13 00:30 IST -> 2026-09-23', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000012'$$, '2026-09-23');
+PASS: B13 00:30 IST -> 2026-09-23 -- value = 2026-09-23
+SELECT t.val('B13 23:59 IST -> 2026-09-22', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000013'$$, '2026-09-22');
+PASS: B13 23:59 IST -> 2026-09-22 -- value = 2026-09-22
+ALTER TABLE public.deliveries ENABLE TRIGGER USER;
+ALTER TABLE
+
+-- ===== C. capture_documents =====
+-- (F4-2: same as section B -- the INSERT guard is disabled on capture_documents for this section so the CHECKs are tested ALONE.)
+ALTER TABLE public.capture_documents DISABLE TRIGGER USER;
+ALTER TABLE
+SELECT t.expect('C1 ack note with NULL ack', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C1', 'text')$$, '23514');
+PASS: C1 ack note with NULL ack -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C2 ack note with ack = yes', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C2', 'yes', now(), 'text')$$, '23514');
+PASS: C2 ack note with ack = yes -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C3 valid: ack = no with note', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at, engineer_ack_note) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C3', 'no', now(), 'short')$$, 'ok');
+PASS: C3 valid: ack = no with note -- succeeded as expected (1 row(s))
+SELECT t.expect('C4 ack without ack_at', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C4', 'yes')$$, '23514');
+PASS: C4 ack without ack_at -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C5 ack_at before created_at (S4)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, engineer_ack, engineer_ack_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C5', 'yes', now() - interval '1 day')$$, '23514');
+PASS: C5 ack_at before created_at (S4) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C6 caption of 1001 characters', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid, caption) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C6', repeat('x', 1001))$$, '23514');
+PASS: C6 caption of 1001 characters -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C7 duplicate source_message_sid (S2)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_C3')$$, '23505');
+PASS: C7 duplicate source_message_sid (S2) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "capture_docu
+SELECT t.expect('C8 unknown kind', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'receipt', '30000000-0000-0000-0000-000000000002', 'SM_C8')$$, '23514');
+PASS: C8 unknown kind -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
+SELECT t.expect('C9 sent_by of another tenant (S-A style composite FK)', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000009', 'SM_C9')$$, '23503');
+PASS: C9 sent_by of another tenant (S-A style composite FK) -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "capture_documents" violates forei
+
+ALTER TABLE public.capture_documents ENABLE TRIGGER USER;
+ALTER TABLE
+
+-- ===== D. capture_files (document D10, tenant T1, project P1) =====
+SELECT t.expect('D1 storage_path into a SIBLING project folder (S-3)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, storage_path) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 1, 'SM_F0', 0, '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000002/50000000-0000-0000-0000-000000000010/f.pdf')$$, '23514');
+PASS: D1 storage_path into a SIBLING project folder (S-3) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D2 correct prefix tenant/project/document/', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, storage_path) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 1, 'SM_F1', 0, '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f1.pdf')$$, 'ok');
+PASS: D2 correct prefix tenant/project/document/ -- succeeded as expected (1 row(s))
+SELECT t.expect('D3 malformed sha256', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, sha256) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F3', 0, 'xyz')$$, '23514');
+PASS: D3 malformed sha256 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D4 content_type image/heic (HEIC excluded, D-9)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, content_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F4', 0, 'image/heic')$$, '23514');
+PASS: D4 content_type image/heic (HEIC excluded, D-9) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D5 stored but sha256 missing', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status, storage_path, content_type, byte_size) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F5', 0, 'stored', '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f5.pdf', 'application/pdf', 10)$$, '23514');
+PASS: D5 stored but sha256 missing -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D6 stored with byte_size 16777217 (16 MiB + 1)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status, storage_path, content_type, byte_size, sha256) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F6', 0, 'stored', '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f6.pdf', 'application/pdf', 16777217, repeat('a', 64))$$, '23514');
+PASS: D6 stored with byte_size 16777217 (16 MiB + 1) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D7 stored with byte_size 16777216 (exactly 16 MiB)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status, storage_path, content_type, byte_size, sha256) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 2, 'SM_F7', 0, 'stored', '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-000000000010/f7.pdf', 'application/pdf', 16777216, repeat('a', 64))$$, 'ok');
+PASS: D7 stored with byte_size 16777216 (exactly 16 MiB) -- succeeded as expected (1 row(s))
+SELECT t.expect('D8 rejected without reject_reason', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, ingest_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 3, 'SM_F8', 0, 'rejected')$$, '23514');
+PASS: D8 rejected without reject_reason -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D9 media_index -1', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 3, 'SM_F9', -1)$$, '23514');
+PASS: D9 media_index -1 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D10 file_no 0', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 0, 'SM_F10', 0)$$, '23514');
+PASS: D10 file_no 0 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+SELECT t.expect('D11 duplicate (source_message_sid, media_index)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 5, 'SM_F1', 0)$$, '23505');
+PASS: D11 duplicate (source_message_sid, media_index) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "capture_file
+SELECT t.expect('D12 duplicate (document_id, file_no)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 1, 'SM_F12', 0)$$, '23505');
+PASS: D12 duplicate (document_id, file_no) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "capture_file
+SELECT t.expect('D13 file naming the document under the WRONG project', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000010', 6, 'SM_F13', 0)$$, '23503');
+PASS: D13 file naming the document under the WRONG project -- refused, SQLSTATE=23503 MESSAGE=insert or update on table "capture_files" violates foreign k
+SELECT t.expect('D14 second page of the same document, later message (file_no 3, media_index 0)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000010', 3, 'SM_F14', 0)$$, 'ok');
+PASS: D14 second page of the same document, later message (file_no 3, media_index 0) -- succeeded as expected (1 row(s))
+
+>>> RESULT t_T_CHK_green: PASS=57 FAIL=0   (declared EXPECT_PASS=57, static assertion lines=57)
+>>> OVERALL T-CHK: RED failed as required, GREEN PASS=57 == expected 57 (static 57), FAIL=0

@@ -1,0 +1,206 @@
+== 049-sql evidence: T-HELP ==
+generated: 2026-10-12T06:53:01Z
+$ git rev-parse HEAD
+b088ef5ce9371863c36ff533c68081adea978001
+$ SQL artifact commit under test: 3a0244f6cc3c93252e7457d7b78e71a1e5a90485
+$ git rev-parse 3a0244f6cc3c93252e7457d7b78e71a1e5a90485:docs/reviews/049_capture_tables.sql
+3b50f2c6c683a5ea5481d91533be4aa9991b13bc
+$ git rev-parse HEAD:docs/reviews/049_capture_tables.sql   (identical blob = the file under test IS the artifact commit's file)
+3b50f2c6c683a5ea5481d91533be4aa9991b13bc
+$ git status --porcelain      (empty output between the next two lines = clean tree)
+----- begin porcelain -----
+----- end porcelain -----
+$ psql --version
+psql (PostgreSQL) 17.11 (Homebrew)
+$ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+$ shasum -a 256 (artifacts under test)
+069fbe16f07c383d54edd3233b845de55591548815ce5e6b068e098c9dfa574b  docs/reviews/049_capture_tables.sql
+8328ca7f56865f2af72b1a45a4c69b236f60ac788ae15379fad5adc7f8f7e308  scripts/test-db-only-capture-helpers.sql
+20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
+3c5207f9d91c1f2aaab24b96deebeb6e16b96bfe05e8fff448f4f27b6b5062cf  docs/reviews/049-sql-evidence/src/_fixture.sql
+
+################ RED run 1: hfile:no_guard ################
+MUTANT (named): helper no_guard   -- diff of the real helper script against the mutated copy:
+74c74
+<   SELECT p_tenant_id IS NOT NULL AND EXISTS (
+---
+>   SELECT true OR p_tenant_id IS NOT NULL AND EXISTS (
+$ psql -d t_T_HELP_red1 -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -d t_T_HELP_red1 -v ON_ERROR_STOP=1 -f mutant-helper-no_guard.sql   (test-db-only helpers, loaded for THIS scenario only)
+[exit 0]
+$ psql -X -e -d t_T_HELP_red1 -f T-HELP.sql (tokens expanded by src/expand.py)
+== T-HELP (D-21, Q2-1): scripts/test-db-only-capture-helpers.sql -- loaded by the runner AFTER the 049 UP in this scenario only ==
+Output format is unaligned.
+-- a tenant that is NOT a capture fixture (slug lacks the zz-test-capture- prefix), with a project, a user and one document, created as the owner
+INSERT INTO public.tenants (id, name, slug) VALUES ('10000000-0000-0000-0000-000000000003', 'Real-looking tenant', 'acme-builders');
+INSERT 0 1
+INSERT INTO public.projects (id, tenant_id, name) VALUES ('20000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000003', 'Real project');
+INSERT 0 1
+INSERT INTO public.users (id, tenant_id, full_name, role, status) VALUES ('30000000-0000-0000-0000-000000000010', '10000000-0000-0000-0000-000000000003', 'Real eng', 'engineer', 'active');
+INSERT 0 1
+INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('50000000-0000-0000-0000-000000000009', '10000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000004', 'dc', '30000000-0000-0000-0000-000000000010', 'SM_H_real');
+INSERT 0 1
+
+SET ROLE service_role;
+SET
+SELECT t.val('CI pre-check: helpers present', $$SELECT public.quoco_test_capture_helpers_present()::text$$, 'true');
+PASS: CI pre-check: helpers present -- value = true
+-- insert through the helper (service_role has no INSERT grant of its own)
+SELECT t.expect('H1 insert a capture_documents row for the fixture tenant', $$SELECT public.quoco_test_capture_insert('capture_documents', '{"id":"50000000-0000-0000-0000-000000000001","tenant_id":"10000000-0000-0000-0000-000000000001","project_id":"20000000-0000-0000-0000-000000000001","kind":"dc","sent_by":"30000000-0000-0000-0000-000000000002","source_message_sid":"SM_H_1"}'::jsonb)$$, 'ok');
+PASS: H1 insert a capture_documents row for the fixture tenant -- succeeded as expected (1 row(s))
+SELECT t.expect('H2 insert a delivery: generated delivery_date is NOT supplied, defaults apply', $$SELECT public.quoco_test_capture_insert('deliveries', '{"id":"60000000-0000-0000-0000-000000000001","tenant_id":"10000000-0000-0000-0000-000000000001","project_id":"20000000-0000-0000-0000-000000000001","reported_by":"30000000-0000-0000-0000-000000000002","received_at":"2026-09-23T00:30:00+05:30","dc_document_id":"50000000-0000-0000-0000-000000000001"}'::jsonb)$$, 'ok');
+PASS: H2 insert a delivery: generated delivery_date is NOT supplied, defaults apply -- succeeded as expected (1 row(s))
+SELECT t.val('H2 delivery_date was generated (IST date)', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, '2026-09-23');
+PASS: H2 delivery_date was generated (IST date) -- value = 2026-09-23
+SELECT t.expect('H3 a caller NAMING a generated column still gets the rejection', $$SELECT public.quoco_test_capture_insert('deliveries', '{"id":"60000000-0000-0000-0000-000000000002","tenant_id":"10000000-0000-0000-0000-000000000001","project_id":"20000000-0000-0000-0000-000000000001","reported_by":"30000000-0000-0000-0000-000000000002","received_at":"2026-09-23T00:30:00+05:30","dc_document_id":"50000000-0000-0000-0000-000000000001","delivery_date":"2026-01-01"}'::jsonb)$$, '428C9');
+PASS: H3 a caller NAMING a generated column still gets the rejection -- refused, SQLSTATE=428C9 MESSAGE=cannot insert a non-DEFAULT value into column "delivery_date
+-- the tenant guard (same function for insert, update and cleanup)
+SELECT t.expect('H4 insert for a NON-fixture tenant', $$SELECT public.quoco_test_capture_insert('capture_documents', '{"tenant_id":"10000000-0000-0000-0000-000000000003","project_id":"20000000-0000-0000-0000-000000000004","kind":"dc","sent_by":"30000000-0000-0000-0000-000000000010","source_message_sid":"SM_H_x"}'::jsonb)$$, 'HELPER_TENANT_NOT_FIXTURE');
+FAIL: H4 insert for a NON-fixture tenant -- expected refusal HELPER_TENANT_NOT_FIXTURE but the statement SUCCEEDED
+SELECT t.expect('H5 insert with NO tenant_id', $$SELECT public.quoco_test_capture_insert('capture_documents', '{"project_id":"20000000-0000-0000-0000-000000000001","kind":"dc","sent_by":"30000000-0000-0000-0000-000000000002","source_message_sid":"SM_H_y"}'::jsonb)$$, 'HELPER_TENANT_NOT_FIXTURE');
+FAIL: H5 insert with NO tenant_id -- expected HELPER_TENANT_NOT_FIXTURE, got refusal SQLSTATE=23502 MESSAGE=null value in column "tenant_id" of relation "capture_docume
+SELECT t.expect('H6 update a row of a NON-fixture tenant', $$SELECT public.quoco_test_capture_update('capture_documents', '50000000-0000-0000-0000-000000000009', '{"caption":"x"}'::jsonb)$$, 'HELPER_TENANT_NOT_FIXTURE');
+FAIL: H6 update a row of a NON-fixture tenant -- expected refusal HELPER_TENANT_NOT_FIXTURE but the statement SUCCEEDED
+SELECT t.expect('H7 cleanup of a NON-fixture tenant', $$SELECT public.quoco_test_capture_cleanup('10000000-0000-0000-0000-000000000003')$$, 'HELPER_TENANT_NOT_FIXTURE');
+FAIL: H7 cleanup of a NON-fixture tenant -- expected refusal HELPER_TENANT_NOT_FIXTURE but the statement SUCCEEDED
+SELECT t.val('H7 the non-fixture tenant row is still there', $$SELECT count(*)::text FROM public.capture_documents WHERE id = '50000000-0000-0000-0000-000000000009'$$, '1');
+FAIL: H7 the non-fixture tenant row is still there -- expected 1 got 0
+SELECT t.expect('H8 table outside the allow-list', $$SELECT public.quoco_test_capture_insert('users', '{"tenant_id":"10000000-0000-0000-0000-000000000001"}'::jsonb)$$, 'HELPER_TABLE_NOT_ALLOWED');
+PASS: H8 table outside the allow-list -- refused, SQLSTATE=P0001 MESSAGE=HELPER_TABLE_NOT_ALLOWED
+-- the 049 triggers STILL FIRE through the helper (owner privileges do not bypass triggers)
+SELECT t.expect('H9 update kind of a document -> TR5 refuses (E9)', $$SELECT public.quoco_test_capture_update('capture_documents', '50000000-0000-0000-0000-000000000001', '{"kind":"invoice"}'::jsonb)$$, 'E9');
+PASS: H9 update kind of a document -> TR5 refuses (E9) -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('H10 update an editable column', $$SELECT public.quoco_test_capture_update('capture_documents', '50000000-0000-0000-0000-000000000001', '{"caption":"cement bags"}'::jsonb)$$, 'ok');
+PASS: H10 update an editable column -- succeeded as expected (1 row(s))
+-- the helper is the only write path for service_role; direct writes are still denied
+SELECT t.expect('H11 direct INSERT as service_role', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_H_z')$$, '42501');
+PASS: H11 direct INSERT as service_role -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+RESET ROLE;
+RESET
+-- EXECUTE: service_role only
+SET ROLE anon;
+SET
+SELECT t.expect('H12 anon calls the insert helper', $$SELECT public.quoco_test_capture_insert('capture_documents', '{}'::jsonb)$$, '42501');
+PASS: H12 anon calls the insert helper -- refused, SQLSTATE=42501 MESSAGE=permission denied for function quoco_test_capture_insert
+SELECT t.expect('H12 anon calls helpers_present', $$SELECT public.quoco_test_capture_helpers_present()$$, '42501');
+PASS: H12 anon calls helpers_present -- refused, SQLSTATE=42501 MESSAGE=permission denied for function quoco_test_capture_helpers_pr
+RESET ROLE;
+RESET
+SET ROLE authenticated;
+SET
+SELECT t.expect('H13 authenticated calls the cleanup helper', $$SELECT public.quoco_test_capture_cleanup('10000000-0000-0000-0000-000000000001')$$, '42501');
+PASS: H13 authenticated calls the cleanup helper -- refused, SQLSTATE=42501 MESSAGE=permission denied for function quoco_test_capture_cleanup
+SELECT t.expect('H13 authenticated calls the acl helper', $$SELECT public.quoco_test_capture_acl()$$, '42501');
+PASS: H13 authenticated calls the acl helper -- refused, SQLSTATE=42501 MESSAGE=permission denied for function quoco_test_capture_acl
+RESET ROLE;
+RESET
+SET ROLE service_role;
+SET
+SELECT t.val('H14 acl helper: service_role holds only SELECT on deliveries', $$SELECT (SELECT string_agg(k, ',' ORDER BY k) FROM jsonb_each_text(public.quoco_test_capture_acl() #> '{tables,deliveries,service_role}') AS e(k, v) WHERE v = 'true')$$, 'SELECT');
+PASS: H14 acl helper: service_role holds only SELECT on deliveries -- value = SELECT
+SELECT t.val('H14 acl helper: anon holds nothing on capture_files', $$SELECT count(*)::text FROM jsonb_each_text(public.quoco_test_capture_acl() #> '{tables,capture_files,anon}') AS e(k, v) WHERE v = 'true'$$, '0');
+PASS: H14 acl helper: anon holds nothing on capture_files -- value = 0
+SELECT t.val('H14 acl helper: all six trigger functions are definer with empty search_path', $$SELECT count(*)::text FROM jsonb_each(public.quoco_test_capture_acl() #> '{functions}') AS e(k, v) WHERE (v ->> 'prosecdef') = 'true' AND v -> 'proconfig' = '["search_path=\"\""]'::jsonb$$, '6');
+PASS: H14 acl helper: all six trigger functions are definer with empty search_path -- value = 6
+SELECT t.expect('H15 cleanup of the fixture tenant', $$SELECT public.quoco_test_capture_cleanup('10000000-0000-0000-0000-000000000001')$$, 'ok');
+PASS: H15 cleanup of the fixture tenant -- succeeded as expected (1 row(s))
+SELECT t.val('H15 fixture tenant has no document left', $$SELECT count(*)::text FROM public.capture_documents WHERE tenant_id = '10000000-0000-0000-0000-000000000001'$$, '0');
+PASS: H15 fixture tenant has no document left -- value = 0
+RESET ROLE;
+RESET
+
+>>> RESULT t_T_HELP_red1: PASS=18 FAIL=5   (declared EXPECT_PASS=23, static assertion lines=23)
+>>> RED verdict: test FAILED against the mutant (FAIL=5) -- the test can fail: OK
+
+################ GREEN run: the real file ################
+$ psql -d t_T_HELP_green -v ON_ERROR_STOP=1 -f 049_capture_tables.sql   (049 UP)
+[exit 0]
+(fixtures: src/_lib.sql, src/_fixture.sql loaded)
+$ psql -d t_T_HELP_green -v ON_ERROR_STOP=1 -f test-db-only-capture-helpers.sql   (test-db-only helpers, loaded for THIS scenario only)
+[exit 0]
+$ psql -X -e -d t_T_HELP_green -f T-HELP.sql (tokens expanded by src/expand.py)
+== T-HELP (D-21, Q2-1): scripts/test-db-only-capture-helpers.sql -- loaded by the runner AFTER the 049 UP in this scenario only ==
+Output format is unaligned.
+-- a tenant that is NOT a capture fixture (slug lacks the zz-test-capture- prefix), with a project, a user and one document, created as the owner
+INSERT INTO public.tenants (id, name, slug) VALUES ('10000000-0000-0000-0000-000000000003', 'Real-looking tenant', 'acme-builders');
+INSERT 0 1
+INSERT INTO public.projects (id, tenant_id, name) VALUES ('20000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000003', 'Real project');
+INSERT 0 1
+INSERT INTO public.users (id, tenant_id, full_name, role, status) VALUES ('30000000-0000-0000-0000-000000000010', '10000000-0000-0000-0000-000000000003', 'Real eng', 'engineer', 'active');
+INSERT 0 1
+INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('50000000-0000-0000-0000-000000000009', '10000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000004', 'dc', '30000000-0000-0000-0000-000000000010', 'SM_H_real');
+INSERT 0 1
+
+SET ROLE service_role;
+SET
+SELECT t.val('CI pre-check: helpers present', $$SELECT public.quoco_test_capture_helpers_present()::text$$, 'true');
+PASS: CI pre-check: helpers present -- value = true
+-- insert through the helper (service_role has no INSERT grant of its own)
+SELECT t.expect('H1 insert a capture_documents row for the fixture tenant', $$SELECT public.quoco_test_capture_insert('capture_documents', '{"id":"50000000-0000-0000-0000-000000000001","tenant_id":"10000000-0000-0000-0000-000000000001","project_id":"20000000-0000-0000-0000-000000000001","kind":"dc","sent_by":"30000000-0000-0000-0000-000000000002","source_message_sid":"SM_H_1"}'::jsonb)$$, 'ok');
+PASS: H1 insert a capture_documents row for the fixture tenant -- succeeded as expected (1 row(s))
+SELECT t.expect('H2 insert a delivery: generated delivery_date is NOT supplied, defaults apply', $$SELECT public.quoco_test_capture_insert('deliveries', '{"id":"60000000-0000-0000-0000-000000000001","tenant_id":"10000000-0000-0000-0000-000000000001","project_id":"20000000-0000-0000-0000-000000000001","reported_by":"30000000-0000-0000-0000-000000000002","received_at":"2026-09-23T00:30:00+05:30","dc_document_id":"50000000-0000-0000-0000-000000000001"}'::jsonb)$$, 'ok');
+PASS: H2 insert a delivery: generated delivery_date is NOT supplied, defaults apply -- succeeded as expected (1 row(s))
+SELECT t.val('H2 delivery_date was generated (IST date)', $$SELECT delivery_date::text FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, '2026-09-23');
+PASS: H2 delivery_date was generated (IST date) -- value = 2026-09-23
+SELECT t.expect('H3 a caller NAMING a generated column still gets the rejection', $$SELECT public.quoco_test_capture_insert('deliveries', '{"id":"60000000-0000-0000-0000-000000000002","tenant_id":"10000000-0000-0000-0000-000000000001","project_id":"20000000-0000-0000-0000-000000000001","reported_by":"30000000-0000-0000-0000-000000000002","received_at":"2026-09-23T00:30:00+05:30","dc_document_id":"50000000-0000-0000-0000-000000000001","delivery_date":"2026-01-01"}'::jsonb)$$, '428C9');
+PASS: H3 a caller NAMING a generated column still gets the rejection -- refused, SQLSTATE=428C9 MESSAGE=cannot insert a non-DEFAULT value into column "delivery_date
+-- the tenant guard (same function for insert, update and cleanup)
+SELECT t.expect('H4 insert for a NON-fixture tenant', $$SELECT public.quoco_test_capture_insert('capture_documents', '{"tenant_id":"10000000-0000-0000-0000-000000000003","project_id":"20000000-0000-0000-0000-000000000004","kind":"dc","sent_by":"30000000-0000-0000-0000-000000000010","source_message_sid":"SM_H_x"}'::jsonb)$$, 'HELPER_TENANT_NOT_FIXTURE');
+PASS: H4 insert for a NON-fixture tenant -- refused, SQLSTATE=P0001 MESSAGE=HELPER_TENANT_NOT_FIXTURE
+SELECT t.expect('H5 insert with NO tenant_id', $$SELECT public.quoco_test_capture_insert('capture_documents', '{"project_id":"20000000-0000-0000-0000-000000000001","kind":"dc","sent_by":"30000000-0000-0000-0000-000000000002","source_message_sid":"SM_H_y"}'::jsonb)$$, 'HELPER_TENANT_NOT_FIXTURE');
+PASS: H5 insert with NO tenant_id -- refused, SQLSTATE=P0001 MESSAGE=HELPER_TENANT_NOT_FIXTURE
+SELECT t.expect('H6 update a row of a NON-fixture tenant', $$SELECT public.quoco_test_capture_update('capture_documents', '50000000-0000-0000-0000-000000000009', '{"caption":"x"}'::jsonb)$$, 'HELPER_TENANT_NOT_FIXTURE');
+PASS: H6 update a row of a NON-fixture tenant -- refused, SQLSTATE=P0001 MESSAGE=HELPER_TENANT_NOT_FIXTURE
+SELECT t.expect('H7 cleanup of a NON-fixture tenant', $$SELECT public.quoco_test_capture_cleanup('10000000-0000-0000-0000-000000000003')$$, 'HELPER_TENANT_NOT_FIXTURE');
+PASS: H7 cleanup of a NON-fixture tenant -- refused, SQLSTATE=P0001 MESSAGE=HELPER_TENANT_NOT_FIXTURE
+SELECT t.val('H7 the non-fixture tenant row is still there', $$SELECT count(*)::text FROM public.capture_documents WHERE id = '50000000-0000-0000-0000-000000000009'$$, '1');
+PASS: H7 the non-fixture tenant row is still there -- value = 1
+SELECT t.expect('H8 table outside the allow-list', $$SELECT public.quoco_test_capture_insert('users', '{"tenant_id":"10000000-0000-0000-0000-000000000001"}'::jsonb)$$, 'HELPER_TABLE_NOT_ALLOWED');
+PASS: H8 table outside the allow-list -- refused, SQLSTATE=P0001 MESSAGE=HELPER_TABLE_NOT_ALLOWED
+-- the 049 triggers STILL FIRE through the helper (owner privileges do not bypass triggers)
+SELECT t.expect('H9 update kind of a document -> TR5 refuses (E9)', $$SELECT public.quoco_test_capture_update('capture_documents', '50000000-0000-0000-0000-000000000001', '{"kind":"invoice"}'::jsonb)$$, 'E9');
+PASS: H9 update kind of a document -> TR5 refuses (E9) -- refused, SQLSTATE=QE009 MESSAGE=E9
+SELECT t.expect('H10 update an editable column', $$SELECT public.quoco_test_capture_update('capture_documents', '50000000-0000-0000-0000-000000000001', '{"caption":"cement bags"}'::jsonb)$$, 'ok');
+PASS: H10 update an editable column -- succeeded as expected (1 row(s))
+-- the helper is the only write path for service_role; direct writes are still denied
+SELECT t.expect('H11 direct INSERT as service_role', $$INSERT INTO public.capture_documents (tenant_id, project_id, kind, sent_by, source_message_sid) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'dc', '30000000-0000-0000-0000-000000000002', 'SM_H_z')$$, '42501');
+PASS: H11 direct INSERT as service_role -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_documents
+RESET ROLE;
+RESET
+-- EXECUTE: service_role only
+SET ROLE anon;
+SET
+SELECT t.expect('H12 anon calls the insert helper', $$SELECT public.quoco_test_capture_insert('capture_documents', '{}'::jsonb)$$, '42501');
+PASS: H12 anon calls the insert helper -- refused, SQLSTATE=42501 MESSAGE=permission denied for function quoco_test_capture_insert
+SELECT t.expect('H12 anon calls helpers_present', $$SELECT public.quoco_test_capture_helpers_present()$$, '42501');
+PASS: H12 anon calls helpers_present -- refused, SQLSTATE=42501 MESSAGE=permission denied for function quoco_test_capture_helpers_pr
+RESET ROLE;
+RESET
+SET ROLE authenticated;
+SET
+SELECT t.expect('H13 authenticated calls the cleanup helper', $$SELECT public.quoco_test_capture_cleanup('10000000-0000-0000-0000-000000000001')$$, '42501');
+PASS: H13 authenticated calls the cleanup helper -- refused, SQLSTATE=42501 MESSAGE=permission denied for function quoco_test_capture_cleanup
+SELECT t.expect('H13 authenticated calls the acl helper', $$SELECT public.quoco_test_capture_acl()$$, '42501');
+PASS: H13 authenticated calls the acl helper -- refused, SQLSTATE=42501 MESSAGE=permission denied for function quoco_test_capture_acl
+RESET ROLE;
+RESET
+SET ROLE service_role;
+SET
+SELECT t.val('H14 acl helper: service_role holds only SELECT on deliveries', $$SELECT (SELECT string_agg(k, ',' ORDER BY k) FROM jsonb_each_text(public.quoco_test_capture_acl() #> '{tables,deliveries,service_role}') AS e(k, v) WHERE v = 'true')$$, 'SELECT');
+PASS: H14 acl helper: service_role holds only SELECT on deliveries -- value = SELECT
+SELECT t.val('H14 acl helper: anon holds nothing on capture_files', $$SELECT count(*)::text FROM jsonb_each_text(public.quoco_test_capture_acl() #> '{tables,capture_files,anon}') AS e(k, v) WHERE v = 'true'$$, '0');
+PASS: H14 acl helper: anon holds nothing on capture_files -- value = 0
+SELECT t.val('H14 acl helper: all six trigger functions are definer with empty search_path', $$SELECT count(*)::text FROM jsonb_each(public.quoco_test_capture_acl() #> '{functions}') AS e(k, v) WHERE (v ->> 'prosecdef') = 'true' AND v -> 'proconfig' = '["search_path=\"\""]'::jsonb$$, '6');
+PASS: H14 acl helper: all six trigger functions are definer with empty search_path -- value = 6
+SELECT t.expect('H15 cleanup of the fixture tenant', $$SELECT public.quoco_test_capture_cleanup('10000000-0000-0000-0000-000000000001')$$, 'ok');
+PASS: H15 cleanup of the fixture tenant -- succeeded as expected (1 row(s))
+SELECT t.val('H15 fixture tenant has no document left', $$SELECT count(*)::text FROM public.capture_documents WHERE tenant_id = '10000000-0000-0000-0000-000000000001'$$, '0');
+PASS: H15 fixture tenant has no document left -- value = 0
+RESET ROLE;
+RESET
+
+>>> RESULT t_T_HELP_green: PASS=23 FAIL=0   (declared EXPECT_PASS=23, static assertion lines=23)
+>>> OVERALL T-HELP: RED failed as required, GREEN PASS=23 == expected 23 (static 23), FAIL=0

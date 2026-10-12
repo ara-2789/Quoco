@@ -243,5 +243,96 @@
     "parent": "users",
     "action": "delete",
     "note": "048_engineer_registration.sql (HELD in docs/reviews/) -- composite (registered_by, tenant_id) REFERENCES users(id, tenant_id) ON UPDATE NO ACTION ON DELETE RESTRICT. The FIRST self-referential edge in this registry (table == parent): the sweep's delete action recurses child-first into the engineers an admin registered, deletes them, then the admin (docs/plans/add-engineer-plan.md section 2.8b). 'delete', not 'null': a single-column null update violates users_registered_pairing_chk (23514). The JS sweep has NOT yet been observed on this edge -- UNKNOWN #69; its SQL equivalent was observed on test-db, rolled back. THIS ENTRY LANDS WITH THE HELD FILE (this rule has no exceptions mechanism and scans held files) BUT THE SWEEP READS IT AT RUNTIME: until 048 is applied to test-db, sweepSharedFixtureReferences('users', id) selects users.registered_by, which does not exist there, and throws -- so CI is expected red until that apply (docs/reviews/048-review-package.md, section F2)."
+  },
+  {
+    "table": "capture_documents",
+    "column": "tenant_id",
+    "parent": "tenants",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- NOT NULL, ON UPDATE RESTRICT ON DELETE RESTRICT. Option Y (D-21): the capture tests write ONLY under dedicated run-scoped tenants whose slug starts zz-test-capture- (never the shared TEST_TENANT_*), enforced by construction in the test-only helpers (scripts/test-db-only-capture-helpers.sql: insert/update/cleanup all refuse any other tenant), and clean up with quoco_test_capture_cleanup. service_role has no DELETE on this table, so a generic sweep delete would error, not no-op. sweepSharedFixtureReferences() must skip 'not-applicable' entries."
+  },
+  {
+    "table": "capture_documents",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- composite (project_id, tenant_id) -> projects(id, tenant_id), RESTRICT both ways. Capture tests use only projects of their own capture-fixture tenants (same Option Y reasoning as capture_documents.tenant_id); service_role has no DELETE on this table."
+  },
+  {
+    "table": "capture_documents",
+    "column": "sent_by",
+    "parent": "users",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- composite (sent_by, tenant_id) -> users(id, tenant_id), RESTRICT both ways. Capture tests use only users of their own capture-fixture tenants (Option Y); never the shared morning-flow fixture engineer. service_role has no DELETE on this table."
+  },
+  {
+    "table": "capture_files",
+    "column": "tenant_id",
+    "parent": "tenants",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- NOT NULL, ON UPDATE RESTRICT ON DELETE RESTRICT. Option Y: capture-fixture tenants only (zz-test-capture- slug prefix, enforced by the test-only helpers). capture_files has no other FK to users/projects/tenants (its project/tenant pair rides the composite FK to capture_documents). service_role has no DELETE on this table."
+  },
+  {
+    "table": "deliveries",
+    "column": "tenant_id",
+    "parent": "tenants",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- NOT NULL, ON UPDATE RESTRICT ON DELETE RESTRICT. Option Y: capture-fixture tenants only (zz-test-capture- slug prefix, enforced by the test-only helpers). service_role has no DELETE on this table."
+  },
+  {
+    "table": "deliveries",
+    "column": "project_id",
+    "parent": "projects",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- composite (project_id, tenant_id) -> projects(id, tenant_id), RESTRICT both ways. Capture-fixture projects only (Option Y)."
+  },
+  {
+    "table": "deliveries",
+    "column": "reported_by",
+    "parent": "users",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- composite (reported_by, tenant_id) -> users(id, tenant_id), RESTRICT both ways. Capture-fixture users only (Option Y)."
+  },
+  {
+    "table": "deliveries",
+    "column": "approved_by",
+    "parent": "users",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- nullable composite (approved_by, tenant_id) -> users(id, tenant_id), RESTRICT both ways. Capture-fixture users only (Option Y)."
+  },
+  {
+    "table": "deliveries",
+    "column": "rejected_by",
+    "parent": "users",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- nullable composite (rejected_by, tenant_id) -> users(id, tenant_id), RESTRICT both ways. Capture-fixture users only (Option Y)."
+  },
+  {
+    "table": "delivery_invoice_links",
+    "column": "tenant_id",
+    "parent": "tenants",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- NOT NULL, ON UPDATE RESTRICT ON DELETE RESTRICT. Option Y: capture-fixture tenants only (zz-test-capture- slug prefix, enforced by the test-only helpers). service_role has no DELETE on this table; rows are never deleted by the application either (soft-unlink)."
+  },
+  {
+    "table": "delivery_invoice_links",
+    "column": "linked_by",
+    "parent": "users",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- nullable composite (linked_by, tenant_id) -> users(id, tenant_id), RESTRICT both ways (S-A, review round 2). Capture-fixture users only (Option Y)."
+  },
+  {
+    "table": "delivery_invoice_links",
+    "column": "unlinked_by",
+    "parent": "users",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- nullable composite (unlinked_by, tenant_id) -> users(id, tenant_id), RESTRICT both ways (S-A, review round 2). Capture-fixture users only (Option Y)."
+  },
+  {
+    "table": "delivery_invoice_links",
+    "column": "superseded_approval_by",
+    "parent": "users",
+    "action": "not-applicable",
+    "note": "049_capture_tables.sql (HELD) -- nullable composite (superseded_approval_by, tenant_id) -> users(id, tenant_id), RESTRICT both ways. Capture-fixture users only (Option Y)."
   }
 ]

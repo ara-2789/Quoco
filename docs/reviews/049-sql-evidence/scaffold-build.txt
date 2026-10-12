@@ -1,0 +1,80 @@
+# 2a-FIX5 STEP 0: head 3a06666 confirmed; review-sql-round-3.txt sha256 59d6e86e... verified and copied.
+# 2a-FIX5 STEP 1: WHOLE-FILE TIME AUDIT of docs/reviews/049_capture_tables.sql at 3a06666 (SQL blob 2597c50e = 7fae0c9)
+# (columns found by awk over the four CREATE TABLE bodies: 14 time columns; self_invoice_id is a uuid, not a time)
+# table.column | event it records | how set today | INSERT | UPDATE | status
+# capture_documents.created_at | row creation | DEFAULT now(); caller may override | CALLER-SUPPLIED (hole) | immutable (TR5, S-1) | fixed by S-4
+# capture_documents.engineer_ack_at | first ack stored | DB-stamped now() in TR5 | must be NULL (F4-2 guard) | stamped on first ack | compliant
+# capture_files.created_at | row creation | DEFAULT now(); caller may override; no trigger on the table | CALLER-SUPPLIED | no trigger, mutable | PR-C blocking condition (per S-4 decision)
+# deliveries.created_at | row creation | DEFAULT now(); caller may override | CALLER-SUPPLIED (hole) | immutable (TR4a, S-1) | fixed by S-4
+# deliveries.received_at | inbound message receipt | caller-supplied by design (D-25) | caller | immutable (TR4a) | the ONE named exception
+# deliveries.delivery_date | IST date of received_at | GENERATED ALWAYS ... STORED | n/a | n/a | compliant (generated)
+# deliveries.dc_date | the date PRINTED on the delivery challan (document content, PM-entered) | caller-supplied, unconstrained | CALLER-SUPPLIED | caller-supplied; locked while approved/cancelled (TR4c(4)) | *** OPEN: caller-supplied, not received_at, not covered by S-4 ***
+# deliveries.approved_at | move INTO approved | DB-stamped now() in TR4 (S-3) | must be NULL (F4-2 guard) | stamped; clear only on restore (B-1) | compliant
+# deliveries.rejected_at | move INTO rejected | DB-stamped now() in TR4 (S-3) | must be NULL (F4-2) | stamped (B-1) | compliant
+# deliveries.cancelled_at | move INTO cancelled | DB-stamped now() in TR4 (S-3) | must be NULL (F4-2) | stamped; cleared on restore | compliant
+# delivery_invoice_links.created_at | row creation | DEFAULT now(); caller may override | CALLER-SUPPLIED (hole) | immutable (TR3) | fixed by S-4
+# delivery_invoice_links.linked_at | link creation | DB-stamped now() in TR1 (F4-1) | stamped | immutable (TR3) | compliant
+# delivery_invoice_links.unlinked_at | the unlink | DB-stamped now() in TR3 (S-3) | must be NULL (B2) | stamped on unlink; immutable after | compliant
+# delivery_invoice_links.superseded_approval_at | when the superseded approval happened | copied by TR3 from deliveries.approved_at (itself DB-stamped); caller value overwritten | must be NULL (B2) | derived, never caller | compliant (DB-derived)
+# RESULT: 1 OPEN item: deliveries.dc_date. Per the brief ("do NOT fix it. List it as OPEN and STOP before STEP 2"), STOPPING before STEP 2: no SQL edited in this block.
+STOP at STEP 1: deliveries.dc_date is caller-supplied, not received_at, not covered by S-4 -> OPEN. No SQL edited. Audit committed locally (docs only), NOT pushed.
+END OF 049 2a-FIX5
+# RESUME from STEP 2 2026-10-11T18:58:41Z: head 8978219, parent 3a06666b19fa0b048a1458d455a460303658b67d. dc_date DECIDED by Aravind 12 Oct: named exception to the TIME RULE.
+
+> quocoai@0.1.0 lint:migrations
+> node scripts/lint-migrations.mjs
+
+migration-lint: clean. 107 known violation(s), all exempted.
+file-size-lint: clean (160 files checked, no hard failures).
+# STEP 4 scaffold rebuild 2026-10-11T19:00:57Z
+$ cat /Users/aravindanrajamani/Desktop/quocoai/supabase/.temp/project-ref  (linked ref, printed before the dump; must equal exfccwlrhoutkgrlikod)
+exfccwlrhoutkgrlikod
+$ supabase --workdir /Users/aravindanrajamani/Desktop/quocoai db dump --linked --schema public --dry-run > /tmp/quoco/dry.sh 2> /tmp/quoco/dry.err   (output NOT printed; mode 600)
+[exit 0]
+dry.sh bytes:     2474; variable NAMES only: export PGHOST= export PGPORT= export PGUSER= export PGPASSWORD= export PGDATABASE= 
+$ bash /tmp/quoco/dry.sh > /tmp/quoco/049-schema.sql 2> /tmp/quoco/dump.err   (pg_dump 17.11 local)
+[exit 0]
+049-schema.sql bytes:   206211 lines:     4611; dump.err bytes:        0
+credential-pattern scan of 049-schema.sql (count only): 0
+deleted dry.sh and dry.err
+$ /opt/homebrew/opt/postgresql@17/bin/initdb -D /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/pg17 -U postgres --auth=trust --encoding=UTF8 --locale=C
+The files belonging to this database system will be owned by user "aravindanrajamani".
+This user must also own the server process.
+
+The database cluster will be initialized with locale "C".
+The default text search configuration will be set to "english".
+
+Data page checksums are disabled.
+
+creating directory /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/pg17 ... ok
+creating subdirectories ... ok
+selecting dynamic shared memory implementation ... posix
+selecting default "max_connections" ... 100
+selecting default "shared_buffers" ... 128MB
+selecting default time zone ... Asia/Kolkata
+creating configuration files ... ok
+running bootstrap script ... ok
+performing post-bootstrap initialization ... ok
+syncing data to disk ... ok
+
+Success. You can now start the database server using:
+
+    '/opt/homebrew/opt/postgresql@17/bin/pg_ctl' -D /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/pg17 -l logfile start
+
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/pg_ctl -D /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/pg17 -l /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/pg17.log -o -p 54329 -k /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/sock -c listen_addresses='' -w start
+waiting for server to start.... done
+server started
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -d postgres -v ON_ERROR_STOP=1 -c CREATE ROLE anon NOLOGIN NOINHERIT -c CREATE ROLE authenticated NOLOGIN NOINHERIT -c CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS -c CREATE ROLE supabase_auth_admin NOLOGIN NOINHERIT -c CREATE DATABASE quoco_049_scaffold
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE DATABASE
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -d quoco_049_scaffold -v ON_ERROR_STOP=1 -q -f /Users/aravindanrajamani/.claude/jobs/35999be2/tmp/stubs.sql
+[exit 0]
+$ psql -d quoco_049_scaffold -v ON_ERROR_STOP=1 -f /tmp/quoco/049-schema.sql  (REAL dump)
+[exit 0] load.out lines:      597; ERROR lines: 0
+public tables: 32; public functions: 136
