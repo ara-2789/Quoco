@@ -196,6 +196,142 @@ export type Database = {
           },
         ]
       }
+      capture_documents: {
+        Row: {
+          caption: string | null
+          created_at: string
+          engineer_ack: string | null
+          engineer_ack_at: string | null
+          engineer_ack_note: string | null
+          id: string
+          kind: string
+          project_id: string
+          sent_by: string
+          source_message_sid: string
+          tenant_id: string
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          engineer_ack?: string | null
+          engineer_ack_at?: string | null
+          engineer_ack_note?: string | null
+          id?: string
+          kind: string
+          project_id: string
+          sent_by: string
+          source_message_sid: string
+          tenant_id: string
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          engineer_ack?: string | null
+          engineer_ack_at?: string | null
+          engineer_ack_note?: string | null
+          id?: string
+          kind?: string
+          project_id?: string
+          sent_by?: string
+          source_message_sid?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capture_documents_project_fk"
+            columns: ["project_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "capture_documents_sent_by_fk"
+            columns: ["sent_by", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "capture_documents_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capture_files: {
+        Row: {
+          byte_size: number | null
+          claimed_content_type: string | null
+          content_type: string | null
+          created_at: string
+          document_id: string
+          file_no: number
+          id: string
+          ingest_status: string
+          media_index: number
+          preview_state: string | null
+          project_id: string
+          reject_reason: string | null
+          sha256: string | null
+          source_message_sid: string
+          storage_path: string | null
+          tenant_id: string
+        }
+        Insert: {
+          byte_size?: number | null
+          claimed_content_type?: string | null
+          content_type?: string | null
+          created_at?: string
+          document_id: string
+          file_no: number
+          id?: string
+          ingest_status?: string
+          media_index: number
+          preview_state?: string | null
+          project_id: string
+          reject_reason?: string | null
+          sha256?: string | null
+          source_message_sid: string
+          storage_path?: string | null
+          tenant_id: string
+        }
+        Update: {
+          byte_size?: number | null
+          claimed_content_type?: string | null
+          content_type?: string | null
+          created_at?: string
+          document_id?: string
+          file_no?: number
+          id?: string
+          ingest_status?: string
+          media_index?: number
+          preview_state?: string | null
+          project_id?: string
+          reject_reason?: string | null
+          sha256?: string | null
+          source_message_sid?: string
+          storage_path?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capture_files_document_fk"
+            columns: ["document_id", "project_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "capture_documents"
+            referencedColumns: ["id", "project_id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "capture_files_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       checkin_escalations: {
         Row: {
           closed_at: string | null
@@ -533,6 +669,259 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tenants"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      deliveries: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          created_at: string
+          created_from_invoice_id: string | null
+          dc_date: string | null
+          dc_doc_kind: string
+          dc_document_id: string | null
+          dc_number: string | null
+          delivery_date: string | null
+          delivery_type: string | null
+          id: string
+          inv_doc_kind: string
+          project_id: string
+          received_at: string
+          reject_reason: string | null
+          rejected_at: string | null
+          rejected_by: string | null
+          reported_by: string
+          status: string
+          tenant_id: string
+          vehicle_number: string | null
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          created_at?: string
+          created_from_invoice_id?: string | null
+          dc_date?: string | null
+          dc_doc_kind?: string
+          dc_document_id?: string | null
+          dc_number?: string | null
+          delivery_date?: string | null
+          delivery_type?: string | null
+          id?: string
+          inv_doc_kind?: string
+          project_id: string
+          received_at: string
+          reject_reason?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
+          reported_by: string
+          status?: string
+          tenant_id: string
+          vehicle_number?: string | null
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          created_at?: string
+          created_from_invoice_id?: string | null
+          dc_date?: string | null
+          dc_doc_kind?: string
+          dc_document_id?: string | null
+          dc_number?: string | null
+          delivery_date?: string | null
+          delivery_type?: string | null
+          id?: string
+          inv_doc_kind?: string
+          project_id?: string
+          received_at?: string
+          reject_reason?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
+          reported_by?: string
+          status?: string
+          tenant_id?: string
+          vehicle_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deliveries_approved_by_fk"
+            columns: ["approved_by", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "deliveries_dc_document_fk"
+            columns: [
+              "dc_document_id",
+              "project_id",
+              "tenant_id",
+              "dc_doc_kind",
+            ]
+            isOneToOne: false
+            referencedRelation: "capture_documents"
+            referencedColumns: ["id", "project_id", "tenant_id", "kind"]
+          },
+          {
+            foreignKeyName: "deliveries_invoice_document_fk"
+            columns: [
+              "created_from_invoice_id",
+              "project_id",
+              "tenant_id",
+              "inv_doc_kind",
+            ]
+            isOneToOne: false
+            referencedRelation: "capture_documents"
+            referencedColumns: ["id", "project_id", "tenant_id", "kind"]
+          },
+          {
+            foreignKeyName: "deliveries_project_fk"
+            columns: ["project_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "deliveries_rejected_by_fk"
+            columns: ["rejected_by", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "deliveries_reported_by_fk"
+            columns: ["reported_by", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "deliveries_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_invoice_links: {
+        Row: {
+          created_at: string
+          delivery_id: string
+          doc_kind: string
+          id: string
+          invoice_document_id: string
+          link_source: string
+          linked_at: string
+          linked_by: string | null
+          project_id: string
+          self_invoice_id: string | null
+          superseded_approval_at: string | null
+          superseded_approval_by: string | null
+          superseded_from_status: string | null
+          tenant_id: string
+          unlink_reason: string | null
+          unlinked_at: string | null
+          unlinked_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          delivery_id: string
+          doc_kind?: string
+          id?: string
+          invoice_document_id: string
+          link_source: string
+          linked_at?: string
+          linked_by?: string | null
+          project_id: string
+          self_invoice_id?: string | null
+          superseded_approval_at?: string | null
+          superseded_approval_by?: string | null
+          superseded_from_status?: string | null
+          tenant_id: string
+          unlink_reason?: string | null
+          unlinked_at?: string | null
+          unlinked_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          delivery_id?: string
+          doc_kind?: string
+          id?: string
+          invoice_document_id?: string
+          link_source?: string
+          linked_at?: string
+          linked_by?: string | null
+          project_id?: string
+          self_invoice_id?: string | null
+          superseded_approval_at?: string | null
+          superseded_approval_by?: string | null
+          superseded_from_status?: string | null
+          tenant_id?: string
+          unlink_reason?: string | null
+          unlinked_at?: string | null
+          unlinked_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_invoice_links_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dil_delivery_fk"
+            columns: ["delivery_id", "project_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries"
+            referencedColumns: ["id", "project_id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "dil_invoice_document_fk"
+            columns: [
+              "invoice_document_id",
+              "project_id",
+              "tenant_id",
+              "doc_kind",
+            ]
+            isOneToOne: false
+            referencedRelation: "capture_documents"
+            referencedColumns: ["id", "project_id", "tenant_id", "kind"]
+          },
+          {
+            foreignKeyName: "dil_linked_by_fk"
+            columns: ["linked_by", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "dil_self_link_fk"
+            columns: ["delivery_id", "self_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries"
+            referencedColumns: ["id", "created_from_invoice_id"]
+          },
+          {
+            foreignKeyName: "dil_superseded_approval_by_fk"
+            columns: ["superseded_approval_by", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "dil_unlinked_by_fk"
+            columns: ["unlinked_by", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
           },
         ]
       }
@@ -2285,6 +2674,24 @@ export type Database = {
           grant_count: number
           policy_count: number
         }[]
+      }
+      quoco_test_capture_acl: { Args: never; Returns: Json }
+      quoco_test_capture_cleanup: {
+        Args: { p_tenant_id: string }
+        Returns: Json
+      }
+      quoco_test_capture_fixture_tenant_ok: {
+        Args: { p_tenant_id: string }
+        Returns: boolean
+      }
+      quoco_test_capture_helpers_present: { Args: never; Returns: boolean }
+      quoco_test_capture_insert: {
+        Args: { p_row: Json; p_table: string }
+        Returns: Json
+      }
+      quoco_test_capture_update: {
+        Args: { p_id: string; p_set: Json; p_table: string }
+        Returns: Json
       }
       quoco_test_row_is_locked: {
         Args: { p_phone_number: string }
