@@ -1,7 +1,7 @@
 == 049-sql evidence: T-TRIG ==
-generated: 2026-10-11T19:03:39Z
+generated: 2026-10-12T06:52:59Z
 $ git rev-parse HEAD
-7635bb983d768a7ca2ef176f0609b11121752c89
+b088ef5ce9371863c36ff533c68081adea978001
 $ SQL artifact commit under test: 3a0244f6cc3c93252e7457d7b78e71a1e5a90485
 $ git rev-parse 3a0244f6cc3c93252e7457d7b78e71a1e5a90485:docs/reviews/049_capture_tables.sql
 3b50f2c6c683a5ea5481d91533be4aa9991b13bc
@@ -16,7 +16,7 @@ $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
 069fbe16f07c383d54edd3233b845de55591548815ce5e6b068e098c9dfa574b  docs/reviews/049_capture_tables.sql
-4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
+8328ca7f56865f2af72b1a45a4c69b236f60ac788ae15379fad5adc7f8f7e308  scripts/test-db-only-capture-helpers.sql
 20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
 3c5207f9d91c1f2aaab24b96deebeb6e16b96bfe05e8fff448f4f27b6b5062cf  docs/reviews/049-sql-evidence/src/_fixture.sql
 
@@ -53,8 +53,8 @@ SELECT t.expect('E1 PM link of D3 while D3 has an ACTIVE SELF-LINK', $$INSERT IN
 FAIL: E1 PM link of D3 while D3 has an ACTIVE SELF-LINK -- expected refusal E1 but the statement SUCCEEDED
 -- PATH 1 on D3: soft-unlink the self-link, cancel V3, insert the pm_manual link L3 (V1 <- D3)
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000001';
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:15: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
-DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000001, 2026-10-12 00:33:39.402649+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000003, 50000000-0000-0000-0000-000000000003, invoice, created_from_invoice, null, 2026-10-12 00:33:39.402649+05:30, 2026-10-12 00:33:39.404065+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000003).
+psql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:15: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
+DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000001, 2026-10-12 12:22:59.976654+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000003, 50000000-0000-0000-0000-000000000003, invoice, created_from_invoice, null, 2026-10-12 12:22:59.976654+05:30, 2026-10-12 12:22:59.978057+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000003).
 UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000003';
 UPDATE 1
 SELECT t.expect('PATH 1 positive control: pm_manual link V1 <- D3', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source, linked_by) VALUES ('70000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000003', 'pm_manual', '30000000-0000-0000-0000-000000000001')$$, 'ok');
@@ -62,7 +62,7 @@ FAIL: PATH 1 positive control: pm_manual link V1 <- D3 -- expected ok, got refus
 SELECT t.expect('E2 self-link of D3 while D3 has an ACTIVE PM LINK', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice')$$, 'E2');
 FAIL: E2 self-link of D3 while D3 has an ACTIVE PM LINK -- expected E2, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "uq_dil_activ
 
--- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:20: error: unterminated quoted string
+-- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:20: error: unterminated quoted string
 
 SELECT t.expect('TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000002'$$, 'ok');
 PASS: TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds -- succeeded as expected (1 row(s))
@@ -119,7 +119,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 FAIL: E6 retype linked DC V1 to internal_transfer -- expected refusal E6 but the statement SUCCEEDED
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 FAIL: E6 V1 still supplier -- expected supplier got internal_transfer
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:53: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:53: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 FAIL: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- expected E7, got refusal SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
@@ -188,8 +188,8 @@ UPDATE 1
 SELECT t.expect('E13 cancel V10 while its self-link is active (C-36)', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link', approved_by = approved_by WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'E13');
 FAIL: E13 cancel V10 while its self-link is active (C-36) -- expected refusal E13 but the statement SUCCEEDED
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000010';
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:90: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
-DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000010, 2026-10-12 00:33:39.40937+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000010, 50000000-0000-0000-0000-000000000010, invoice, created_from_invoice, null, 2026-10-12 00:33:39.40937+05:30, 2026-10-12 00:33:39.409813+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000010).
+psql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:90: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
+DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000010, 2026-10-12 12:22:59.983412+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000010, 50000000-0000-0000-0000-000000000010, invoice, created_from_invoice, null, 2026-10-12 12:22:59.983412+05:30, 2026-10-12 12:22:59.983919+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000010).
 SELECT t.val('snapshot recorded the pre-cancel status', $$SELECT superseded_from_status FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000010'$$, 'approved');
 FAIL: snapshot recorded the pre-cancel status -- expected approved got (null)
 SELECT t.expect('B-1 cancel V10 WHILE changing approved_by', $$UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link', approved_by = '30000000-0000-0000-0000-000000000006' WHERE id = '60000000-0000-0000-0000-000000000010'$$, 'E11');
@@ -211,8 +211,8 @@ PASS: positive: after restore the content is editable again -- succeeded as expe
 SELECT t.mk_inv('50000000-0000-0000-0000-000000000014', '60000000-0000-0000-0000-000000000014', '70000000-0000-0000-0000-000000000014', 'SM_T_inv14');
 50000000-0000-0000-0000-000000000014
 UPDATE public.delivery_invoice_links SET unlinked_at = now(), unlinked_by = '30000000-0000-0000-0000-000000000001', unlink_reason = 'superseded_by_link' WHERE id = '70000000-0000-0000-0000-000000000014';
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:102: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
-DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000014, 2026-10-12 00:33:39.410476+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000014, 50000000-0000-0000-0000-000000000014, invoice, created_from_invoice, null, 2026-10-12 00:33:39.410476+05:30, 2026-10-12 00:33:39.410698+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000014).
+psql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:102: ERROR:  new row for relation "delivery_invoice_links" violates check constraint "dil_snapshot_status_chk"
+DETAIL:  Failing row contains (70000000-0000-0000-0000-000000000014, 2026-10-12 12:22:59.984527+05:30, 10000000-0000-0000-0000-000000000001, 20000000-0000-0000-0000-000000000001, 60000000-0000-0000-0000-000000000014, 50000000-0000-0000-0000-000000000014, invoice, created_from_invoice, null, 2026-10-12 12:22:59.984527+05:30, 2026-10-12 12:22:59.984755+05:30, 30000000-0000-0000-0000-000000000001, superseded_by_link, null, null, null, 50000000-0000-0000-0000-000000000014).
 UPDATE public.deliveries SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'superseded_by_link' WHERE id = '60000000-0000-0000-0000-000000000014';
 UPDATE 1
 SELECT t.expect('B-2 self-link INSERTed onto cancelled V14 (invoice D14 has no active link)', $$INSERT INTO public.delivery_invoice_links (id, tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('70000000-0000-0000-0000-000000000015', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000014', '50000000-0000-0000-0000-000000000014', 'created_from_invoice')$$, 'E5');
@@ -403,7 +403,7 @@ SELECT t.val('S-4 capture_documents (past): created_at was stored as the transac
 FAIL: S-4 capture_documents (past): created_at was stored as the transaction time -- expected true got false
 COMMIT;
 COMMIT
--- ... and thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:205: error: unterminated quoted string
+-- ... and thepsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:205: error: unterminated quoted string
 
 SELECT t.expect('S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged', $$UPDATE public.capture_documents SET engineer_ack = 'yes' WHERE id = '50000000-0000-0000-0000-000000000033'$$, 'ok');
 FAIL: S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged -- expected ok, got refusal SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
@@ -432,16 +432,26 @@ SELECT t.val('S-4 C4 shape: it is deliveries_received_order_chk that refuses it'
 FAIL: S-4 C4 shape: it is deliveries_received_order_chk that refuses it -- expected true got false
 
 -- ===== N-4 (SQL review r3, Option A per Aravind 12 Oct): PM-owned fields are NULL at deliveries INSERT; set later only through UPDATE =====
-SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'internal_transfer')$$, 'E12');
-FAIL: N-4 INSERT a delivery with delivery_type set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'TN01AB1234')$$, 'E12');
-FAIL: N-4 INSERT a delivery with vehicle_number set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'DC-1')$$, 'E12');
-FAIL: N-4 INSERT a delivery with dc_number set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', current_date)$$, 'E12');
-FAIL: N-4 INSERT a delivery with dc_date set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V21)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000021'$$, 'ok');
-PASS: N-4 positive: the same four fields are set later through UPDATE (V21) -- succeeded as expected (1 row(s))
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000038', 'dc', 'SM_T_dc38');
+50000000-0000-0000-0000-000000000038
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000039', 'dc', 'SM_T_dc39');
+50000000-0000-0000-0000-000000000039
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000040', 'dc', 'SM_T_dc40');
+50000000-0000-0000-0000-000000000040
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000041', 'dc', 'SM_T_dc41');
+50000000-0000-0000-0000-000000000041
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000042', '60000000-0000-0000-0000-000000000041', 'SM_T_dc42');
+60000000-0000-0000-0000-000000000041
+SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('60000000-0000-0000-0000-000000000042', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000038', 'internal_transfer')$$, 'E12');
+FAIL: N-4 INSERT a delivery with delivery_type set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('60000000-0000-0000-0000-000000000043', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000039', 'TN01AB1234')$$, 'E12');
+FAIL: N-4 INSERT a delivery with vehicle_number set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('60000000-0000-0000-0000-000000000044', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000040', 'DC-1')$$, 'E12');
+FAIL: N-4 INSERT a delivery with dc_number set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('60000000-0000-0000-0000-000000000045', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000041', current_date)$$, 'E12');
+FAIL: N-4 INSERT a delivery with dc_date set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V41)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000041'$$, 'ok');
+PASS: N-4 positive: the same four fields are set later through UPDATE (V41) -- succeeded as expected (1 row(s))
 
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
@@ -507,7 +517,7 @@ PASS: PATH 1 positive control: pm_manual link V1 <- D3 -- succeeded as expected 
 SELECT t.expect('E2 self-link of D3 while D3 has an ACTIVE PM LINK', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice')$$, 'E2');
 PASS: E2 self-link of D3 while D3 has an ACTIVE PM LINK -- refused, SQLSTATE=QE002 MESSAGE=E2
 
--- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:20: error: unterminated quoted string
+-- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:20: error: unterminated quoted string
 
 SELECT t.expect('TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000002'$$, 'ok');
 PASS: TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds -- succeeded as expected (1 row(s))
@@ -564,7 +574,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 PASS: E6 V1 still supplier -- value = supplier
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:53: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:53: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 FAIL: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- expected E7, got refusal SQLSTATE=QE006 MESSAGE=E6
@@ -846,7 +856,7 @@ SELECT t.val('S-4 capture_documents (past): created_at was stored as the transac
 PASS: S-4 capture_documents (past): created_at was stored as the transaction time -- value = true
 COMMIT;
 COMMIT
--- ... and thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:205: error: unterminated quoted string
+-- ... and thepsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:205: error: unterminated quoted string
 
 SELECT t.expect('S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged', $$UPDATE public.capture_documents SET engineer_ack = 'yes' WHERE id = '50000000-0000-0000-0000-000000000033'$$, 'ok');
 PASS: S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged -- succeeded as expected (1 row(s))
@@ -875,16 +885,26 @@ SELECT t.val('S-4 C4 shape: it is deliveries_received_order_chk that refuses it'
 PASS: S-4 C4 shape: it is deliveries_received_order_chk that refuses it -- value = true
 
 -- ===== N-4 (SQL review r3, Option A per Aravind 12 Oct): PM-owned fields are NULL at deliveries INSERT; set later only through UPDATE =====
-SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'internal_transfer')$$, 'E12');
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000038', 'dc', 'SM_T_dc38');
+50000000-0000-0000-0000-000000000038
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000039', 'dc', 'SM_T_dc39');
+50000000-0000-0000-0000-000000000039
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000040', 'dc', 'SM_T_dc40');
+50000000-0000-0000-0000-000000000040
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000041', 'dc', 'SM_T_dc41');
+50000000-0000-0000-0000-000000000041
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000042', '60000000-0000-0000-0000-000000000041', 'SM_T_dc42');
+60000000-0000-0000-0000-000000000041
+SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('60000000-0000-0000-0000-000000000042', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000038', 'internal_transfer')$$, 'E12');
 PASS: N-4 INSERT a delivery with delivery_type set -- refused, SQLSTATE=QE012 MESSAGE=E12
-SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'TN01AB1234')$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('60000000-0000-0000-0000-000000000043', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000039', 'TN01AB1234')$$, 'E12');
 PASS: N-4 INSERT a delivery with vehicle_number set -- refused, SQLSTATE=QE012 MESSAGE=E12
-SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'DC-1')$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('60000000-0000-0000-0000-000000000044', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000040', 'DC-1')$$, 'E12');
 PASS: N-4 INSERT a delivery with dc_number set -- refused, SQLSTATE=QE012 MESSAGE=E12
-SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', current_date)$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('60000000-0000-0000-0000-000000000045', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000041', current_date)$$, 'E12');
 PASS: N-4 INSERT a delivery with dc_date set -- refused, SQLSTATE=QE012 MESSAGE=E12
-SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V21)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000021'$$, 'ok');
-PASS: N-4 positive: the same four fields are set later through UPDATE (V21) -- succeeded as expected (1 row(s))
+SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V41)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000041'$$, 'ok');
+PASS: N-4 positive: the same four fields are set later through UPDATE (V41) -- succeeded as expected (1 row(s))
 
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
@@ -1425,7 +1445,7 @@ PASS: PATH 1 positive control: pm_manual link V1 <- D3 -- succeeded as expected 
 SELECT t.expect('E2 self-link of D3 while D3 has an ACTIVE PM LINK', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice')$$, 'E2');
 PASS: E2 self-link of D3 while D3 has an ACTIVE PM LINK -- refused, SQLSTATE=QE002 MESSAGE=E2
 
--- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:20: error: unterminated quoted string
+-- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:20: error: unterminated quoted string
 
 SELECT t.expect('TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000002'$$, 'ok');
 PASS: TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds -- succeeded as expected (1 row(s))
@@ -1482,7 +1502,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 PASS: E6 V1 still supplier -- value = supplier
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:53: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:53: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 PASS: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- refused, SQLSTATE=QE007 MESSAGE=E7
@@ -1764,7 +1784,7 @@ SELECT t.val('S-4 capture_documents (past): created_at was stored as the transac
 FAIL: S-4 capture_documents (past): created_at was stored as the transaction time -- expected true got false
 COMMIT;
 COMMIT
--- ... and thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:205: error: unterminated quoted string
+-- ... and thepsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:205: error: unterminated quoted string
 
 SELECT t.expect('S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged', $$UPDATE public.capture_documents SET engineer_ack = 'yes' WHERE id = '50000000-0000-0000-0000-000000000033'$$, 'ok');
 FAIL: S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged -- expected ok, got refusal SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
@@ -1793,16 +1813,26 @@ SELECT t.val('S-4 C4 shape: it is deliveries_received_order_chk that refuses it'
 FAIL: S-4 C4 shape: it is deliveries_received_order_chk that refuses it -- expected true got false
 
 -- ===== N-4 (SQL review r3, Option A per Aravind 12 Oct): PM-owned fields are NULL at deliveries INSERT; set later only through UPDATE =====
-SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'internal_transfer')$$, 'E12');
-FAIL: N-4 INSERT a delivery with delivery_type set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'TN01AB1234')$$, 'E12');
-FAIL: N-4 INSERT a delivery with vehicle_number set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'DC-1')$$, 'E12');
-FAIL: N-4 INSERT a delivery with dc_number set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', current_date)$$, 'E12');
-FAIL: N-4 INSERT a delivery with dc_date set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V21)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000021'$$, 'ok');
-PASS: N-4 positive: the same four fields are set later through UPDATE (V21) -- succeeded as expected (1 row(s))
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000038', 'dc', 'SM_T_dc38');
+50000000-0000-0000-0000-000000000038
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000039', 'dc', 'SM_T_dc39');
+50000000-0000-0000-0000-000000000039
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000040', 'dc', 'SM_T_dc40');
+50000000-0000-0000-0000-000000000040
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000041', 'dc', 'SM_T_dc41');
+50000000-0000-0000-0000-000000000041
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000042', '60000000-0000-0000-0000-000000000041', 'SM_T_dc42');
+60000000-0000-0000-0000-000000000041
+SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('60000000-0000-0000-0000-000000000042', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000038', 'internal_transfer')$$, 'E12');
+FAIL: N-4 INSERT a delivery with delivery_type set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('60000000-0000-0000-0000-000000000043', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000039', 'TN01AB1234')$$, 'E12');
+FAIL: N-4 INSERT a delivery with vehicle_number set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('60000000-0000-0000-0000-000000000044', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000040', 'DC-1')$$, 'E12');
+FAIL: N-4 INSERT a delivery with dc_number set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('60000000-0000-0000-0000-000000000045', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000041', current_date)$$, 'E12');
+FAIL: N-4 INSERT a delivery with dc_date set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V41)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000041'$$, 'ok');
+PASS: N-4 positive: the same four fields are set later through UPDATE (V41) -- succeeded as expected (1 row(s))
 
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
@@ -2213,7 +2243,7 @@ PASS: PATH 1 positive control: pm_manual link V1 <- D3 -- succeeded as expected 
 SELECT t.expect('E2 self-link of D3 while D3 has an ACTIVE PM LINK', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice')$$, 'E2');
 PASS: E2 self-link of D3 while D3 has an ACTIVE PM LINK -- refused, SQLSTATE=QE002 MESSAGE=E2
 
--- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:20: error: unterminated quoted string
+-- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:20: error: unterminated quoted string
 
 SELECT t.expect('TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000002'$$, 'ok');
 PASS: TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds -- succeeded as expected (1 row(s))
@@ -2270,7 +2300,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 PASS: E6 V1 still supplier -- value = supplier
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:53: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:53: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 PASS: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- refused, SQLSTATE=QE007 MESSAGE=E7
@@ -2552,7 +2582,7 @@ SELECT t.val('S-4 capture_documents (past): created_at was stored as the transac
 FAIL: S-4 capture_documents (past): created_at was stored as the transaction time -- expected true got false
 COMMIT;
 COMMIT
--- ... and thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:205: error: unterminated quoted string
+-- ... and thepsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:205: error: unterminated quoted string
 
 SELECT t.expect('S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged', $$UPDATE public.capture_documents SET engineer_ack = 'yes' WHERE id = '50000000-0000-0000-0000-000000000033'$$, 'ok');
 FAIL: S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged -- expected ok, got refusal SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
@@ -2581,16 +2611,26 @@ SELECT t.val('S-4 C4 shape: it is deliveries_received_order_chk that refuses it'
 FAIL: S-4 C4 shape: it is deliveries_received_order_chk that refuses it -- expected true got false
 
 -- ===== N-4 (SQL review r3, Option A per Aravind 12 Oct): PM-owned fields are NULL at deliveries INSERT; set later only through UPDATE =====
-SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'internal_transfer')$$, 'E12');
-FAIL: N-4 INSERT a delivery with delivery_type set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'TN01AB1234')$$, 'E12');
-FAIL: N-4 INSERT a delivery with vehicle_number set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'DC-1')$$, 'E12');
-FAIL: N-4 INSERT a delivery with dc_number set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', current_date)$$, 'E12');
-FAIL: N-4 INSERT a delivery with dc_date set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V21)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000021'$$, 'ok');
-PASS: N-4 positive: the same four fields are set later through UPDATE (V21) -- succeeded as expected (1 row(s))
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000038', 'dc', 'SM_T_dc38');
+50000000-0000-0000-0000-000000000038
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000039', 'dc', 'SM_T_dc39');
+50000000-0000-0000-0000-000000000039
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000040', 'dc', 'SM_T_dc40');
+50000000-0000-0000-0000-000000000040
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000041', 'dc', 'SM_T_dc41');
+50000000-0000-0000-0000-000000000041
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000042', '60000000-0000-0000-0000-000000000041', 'SM_T_dc42');
+60000000-0000-0000-0000-000000000041
+SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('60000000-0000-0000-0000-000000000042', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000038', 'internal_transfer')$$, 'E12');
+FAIL: N-4 INSERT a delivery with delivery_type set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('60000000-0000-0000-0000-000000000043', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000039', 'TN01AB1234')$$, 'E12');
+FAIL: N-4 INSERT a delivery with vehicle_number set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('60000000-0000-0000-0000-000000000044', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000040', 'DC-1')$$, 'E12');
+FAIL: N-4 INSERT a delivery with dc_number set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('60000000-0000-0000-0000-000000000045', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000041', current_date)$$, 'E12');
+FAIL: N-4 INSERT a delivery with dc_date set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V41)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000041'$$, 'ok');
+PASS: N-4 positive: the same four fields are set later through UPDATE (V41) -- succeeded as expected (1 row(s))
 
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
@@ -2957,7 +2997,7 @@ PASS: PATH 1 positive control: pm_manual link V1 <- D3 -- succeeded as expected 
 SELECT t.expect('E2 self-link of D3 while D3 has an ACTIVE PM LINK', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice')$$, 'E2');
 PASS: E2 self-link of D3 while D3 has an ACTIVE PM LINK -- refused, SQLSTATE=QE002 MESSAGE=E2
 
--- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:20: error: unterminated quoted string
+-- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:20: error: unterminated quoted string
 
 SELECT t.expect('TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000002'$$, 'ok');
 PASS: TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds -- succeeded as expected (1 row(s))
@@ -3014,7 +3054,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 PASS: E6 V1 still supplier -- value = supplier
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:53: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:53: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 PASS: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- refused, SQLSTATE=QE007 MESSAGE=E7
@@ -3296,7 +3336,7 @@ SELECT t.val('S-4 capture_documents (past): created_at was stored as the transac
 FAIL: S-4 capture_documents (past): created_at was stored as the transaction time -- expected true got false
 COMMIT;
 COMMIT
--- ... and thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:205: error: unterminated quoted string
+-- ... and thepsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:205: error: unterminated quoted string
 
 SELECT t.expect('S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged', $$UPDATE public.capture_documents SET engineer_ack = 'yes' WHERE id = '50000000-0000-0000-0000-000000000033'$$, 'ok');
 FAIL: S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged -- expected ok, got refusal SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
@@ -3325,16 +3365,26 @@ SELECT t.val('S-4 C4 shape: it is deliveries_received_order_chk that refuses it'
 FAIL: S-4 C4 shape: it is deliveries_received_order_chk that refuses it -- expected true got false
 
 -- ===== N-4 (SQL review r3, Option A per Aravind 12 Oct): PM-owned fields are NULL at deliveries INSERT; set later only through UPDATE =====
-SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'internal_transfer')$$, 'E12');
-FAIL: N-4 INSERT a delivery with delivery_type set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'TN01AB1234')$$, 'E12');
-FAIL: N-4 INSERT a delivery with vehicle_number set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'DC-1')$$, 'E12');
-FAIL: N-4 INSERT a delivery with dc_number set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', current_date)$$, 'E12');
-FAIL: N-4 INSERT a delivery with dc_date set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V21)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000021'$$, 'ok');
-PASS: N-4 positive: the same four fields are set later through UPDATE (V21) -- succeeded as expected (1 row(s))
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000038', 'dc', 'SM_T_dc38');
+50000000-0000-0000-0000-000000000038
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000039', 'dc', 'SM_T_dc39');
+50000000-0000-0000-0000-000000000039
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000040', 'dc', 'SM_T_dc40');
+50000000-0000-0000-0000-000000000040
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000041', 'dc', 'SM_T_dc41');
+50000000-0000-0000-0000-000000000041
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000042', '60000000-0000-0000-0000-000000000041', 'SM_T_dc42');
+60000000-0000-0000-0000-000000000041
+SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('60000000-0000-0000-0000-000000000042', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000038', 'internal_transfer')$$, 'E12');
+FAIL: N-4 INSERT a delivery with delivery_type set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('60000000-0000-0000-0000-000000000043', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000039', 'TN01AB1234')$$, 'E12');
+FAIL: N-4 INSERT a delivery with vehicle_number set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('60000000-0000-0000-0000-000000000044', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000040', 'DC-1')$$, 'E12');
+FAIL: N-4 INSERT a delivery with dc_number set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('60000000-0000-0000-0000-000000000045', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000041', current_date)$$, 'E12');
+FAIL: N-4 INSERT a delivery with dc_date set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V41)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000041'$$, 'ok');
+PASS: N-4 positive: the same four fields are set later through UPDATE (V41) -- succeeded as expected (1 row(s))
 
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
@@ -3632,7 +3682,7 @@ PASS: PATH 1 positive control: pm_manual link V1 <- D3 -- succeeded as expected 
 SELECT t.expect('E2 self-link of D3 while D3 has an ACTIVE PM LINK', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice')$$, 'E2');
 PASS: E2 self-link of D3 while D3 has an ACTIVE PM LINK -- refused, SQLSTATE=QE002 MESSAGE=E2
 
--- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:20: error: unterminated quoted string
+-- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:20: error: unterminated quoted string
 
 SELECT t.expect('TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000002'$$, 'ok');
 PASS: TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds -- succeeded as expected (1 row(s))
@@ -3689,7 +3739,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 PASS: E6 V1 still supplier -- value = supplier
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:53: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:53: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 PASS: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- refused, SQLSTATE=QE007 MESSAGE=E7
@@ -3971,7 +4021,7 @@ SELECT t.val('S-4 capture_documents (past): created_at was stored as the transac
 FAIL: S-4 capture_documents (past): created_at was stored as the transaction time -- expected true got false
 COMMIT;
 COMMIT
--- ... and thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:205: error: unterminated quoted string
+-- ... and thepsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:205: error: unterminated quoted string
 
 SELECT t.expect('S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged', $$UPDATE public.capture_documents SET engineer_ack = 'yes' WHERE id = '50000000-0000-0000-0000-000000000033'$$, 'ok');
 FAIL: S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged -- expected ok, got refusal SQLSTATE=23514 MESSAGE=new row for relation "capture_documents" violates check cons
@@ -4000,16 +4050,26 @@ SELECT t.val('S-4 C4 shape: it is deliveries_received_order_chk that refuses it'
 FAIL: S-4 C4 shape: it is deliveries_received_order_chk that refuses it -- expected true got false
 
 -- ===== N-4 (SQL review r3, Option A per Aravind 12 Oct): PM-owned fields are NULL at deliveries INSERT; set later only through UPDATE =====
-SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'internal_transfer')$$, 'E12');
-FAIL: N-4 INSERT a delivery with delivery_type set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'TN01AB1234')$$, 'E12');
-FAIL: N-4 INSERT a delivery with vehicle_number set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'DC-1')$$, 'E12');
-FAIL: N-4 INSERT a delivery with dc_number set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', current_date)$$, 'E12');
-FAIL: N-4 INSERT a delivery with dc_date set -- expected E12, got refusal SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "deliveries_d
-SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V21)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000021'$$, 'ok');
-PASS: N-4 positive: the same four fields are set later through UPDATE (V21) -- succeeded as expected (1 row(s))
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000038', 'dc', 'SM_T_dc38');
+50000000-0000-0000-0000-000000000038
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000039', 'dc', 'SM_T_dc39');
+50000000-0000-0000-0000-000000000039
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000040', 'dc', 'SM_T_dc40');
+50000000-0000-0000-0000-000000000040
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000041', 'dc', 'SM_T_dc41');
+50000000-0000-0000-0000-000000000041
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000042', '60000000-0000-0000-0000-000000000041', 'SM_T_dc42');
+60000000-0000-0000-0000-000000000041
+SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('60000000-0000-0000-0000-000000000042', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000038', 'internal_transfer')$$, 'E12');
+FAIL: N-4 INSERT a delivery with delivery_type set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('60000000-0000-0000-0000-000000000043', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000039', 'TN01AB1234')$$, 'E12');
+FAIL: N-4 INSERT a delivery with vehicle_number set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('60000000-0000-0000-0000-000000000044', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000040', 'DC-1')$$, 'E12');
+FAIL: N-4 INSERT a delivery with dc_number set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('60000000-0000-0000-0000-000000000045', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000041', current_date)$$, 'E12');
+FAIL: N-4 INSERT a delivery with dc_date set -- expected refusal E12 but the statement SUCCEEDED
+SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V41)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000041'$$, 'ok');
+PASS: N-4 positive: the same four fields are set later through UPDATE (V41) -- succeeded as expected (1 row(s))
 
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
@@ -4070,7 +4130,7 @@ PASS: PATH 1 positive control: pm_manual link V1 <- D3 -- succeeded as expected 
 SELECT t.expect('E2 self-link of D3 while D3 has an ACTIVE PM LINK', $$INSERT INTO public.delivery_invoice_links (tenant_id, project_id, delivery_id, invoice_document_id, link_source) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000003', 'created_from_invoice')$$, 'E2');
 PASS: E2 self-link of D3 while D3 has an ACTIVE PM LINK -- refused, SQLSTATE=QE002 MESSAGE=E2
 
--- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:20: error: unterminated quoted string
+-- ===== TR2 target checks: E3 / E4 / E5 (invoice D5 has no links, sopsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:20: error: unterminated quoted string
 
 SELECT t.expect('TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000002'$$, 'ok');
 PASS: TR4b positive control: retype of an UNLINKED DC (V2) to internal_transfer succeeds -- succeeded as expected (1 row(s))
@@ -4127,7 +4187,7 @@ SELECT t.expect('E6 retype linked DC V1 to internal_transfer', $$UPDATE public.d
 PASS: E6 retype linked DC V1 to internal_transfer -- refused, SQLSTATE=QE006 MESSAGE=E6
 SELECT t.val('E6 V1 still supplier', $$SELECT delivery_type FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'$$, 'supplier');
 PASS: E6 V1 still supplier -- value = supplier
--- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:53: error: unterminated quoted string
+-- O-3 closed (Aravind, 11 Oct): retyping an AUTOMATIC delivery raises E7, raised BEFOREpsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:53: error: unterminated quoted string
 
 SELECT t.expect('E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6', $$UPDATE public.deliveries SET delivery_type = 'internal_transfer' WHERE id = '60000000-0000-0000-0000-000000000004'$$, 'E7');
 PASS: E7 (O-3) automatic V4 WITH an active self-link retyped to internal_transfer -> E7, not E6 -- refused, SQLSTATE=QE007 MESSAGE=E7
@@ -4409,7 +4469,7 @@ SELECT t.val('S-4 capture_documents (past): created_at was stored as the transac
 PASS: S-4 capture_documents (past): created_at was stored as the transaction time -- value = true
 COMMIT;
 COMMIT
--- ... and thepsql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/T-TRIG.expanded.sql:205: error: unterminated quoted string
+-- ... and thepsql:/tmp/quoco/049-run-final/T-TRIG.expanded.sql:205: error: unterminated quoted string
 
 SELECT t.expect('S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged', $$UPDATE public.capture_documents SET engineer_ack = 'yes' WHERE id = '50000000-0000-0000-0000-000000000033'$$, 'ok');
 PASS: S-4 the document D33 (supplied created_at = now() + 30 days) CAN be acknowledged -- succeeded as expected (1 row(s))
@@ -4438,16 +4498,26 @@ SELECT t.val('S-4 C4 shape: it is deliveries_received_order_chk that refuses it'
 PASS: S-4 C4 shape: it is deliveries_received_order_chk that refuses it -- value = true
 
 -- ===== N-4 (SQL review r3, Option A per Aravind 12 Oct): PM-owned fields are NULL at deliveries INSERT; set later only through UPDATE =====
-SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'internal_transfer')$$, 'E12');
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000038', 'dc', 'SM_T_dc38');
+50000000-0000-0000-0000-000000000038
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000039', 'dc', 'SM_T_dc39');
+50000000-0000-0000-0000-000000000039
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000040', 'dc', 'SM_T_dc40');
+50000000-0000-0000-0000-000000000040
+SELECT t.mk_doc('50000000-0000-0000-0000-000000000041', 'dc', 'SM_T_dc41');
+50000000-0000-0000-0000-000000000041
+SELECT t.mk_dc('50000000-0000-0000-0000-000000000042', '60000000-0000-0000-0000-000000000041', 'SM_T_dc42');
+60000000-0000-0000-0000-000000000041
+SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('60000000-0000-0000-0000-000000000042', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000038', 'internal_transfer')$$, 'E12');
 PASS: N-4 INSERT a delivery with delivery_type set -- refused, SQLSTATE=QE012 MESSAGE=E12
-SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'TN01AB1234')$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('60000000-0000-0000-0000-000000000043', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000039', 'TN01AB1234')$$, 'E12');
 PASS: N-4 INSERT a delivery with vehicle_number set -- refused, SQLSTATE=QE012 MESSAGE=E12
-SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', 'DC-1')$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('60000000-0000-0000-0000-000000000044', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000040', 'DC-1')$$, 'E12');
 PASS: N-4 INSERT a delivery with dc_number set -- refused, SQLSTATE=QE012 MESSAGE=E12
-SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000037', current_date)$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('60000000-0000-0000-0000-000000000045', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', now() - interval '1 hour', '50000000-0000-0000-0000-000000000041', current_date)$$, 'E12');
 PASS: N-4 INSERT a delivery with dc_date set -- refused, SQLSTATE=QE012 MESSAGE=E12
-SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V21)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000021'$$, 'ok');
-PASS: N-4 positive: the same four fields are set later through UPDATE (V21) -- succeeded as expected (1 row(s))
+SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V41)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '60000000-0000-0000-0000-000000000041'$$, 'ok');
+PASS: N-4 positive: the same four fields are set later through UPDATE (V41) -- succeeded as expected (1 row(s))
 
 -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;

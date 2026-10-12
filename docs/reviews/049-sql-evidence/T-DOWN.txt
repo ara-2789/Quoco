@@ -1,7 +1,7 @@
 == 049-sql evidence: T-DOWN ==
-generated: 2026-10-11T19:03:37Z
+generated: 2026-10-12T06:52:57Z
 $ git rev-parse HEAD
-7635bb983d768a7ca2ef176f0609b11121752c89
+b088ef5ce9371863c36ff533c68081adea978001
 $ SQL artifact commit under test: 3a0244f6cc3c93252e7457d7b78e71a1e5a90485
 $ git rev-parse 3a0244f6cc3c93252e7457d7b78e71a1e5a90485:docs/reviews/049_capture_tables.sql
 3b50f2c6c683a5ea5481d91533be4aa9991b13bc
@@ -16,7 +16,7 @@ $ select version()   (LOCAL scaffold server; test-db/prod are 17.6)
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 $ shasum -a 256 (artifacts under test)
 069fbe16f07c383d54edd3233b845de55591548815ce5e6b068e098c9dfa574b  docs/reviews/049_capture_tables.sql
-4842ed8f8546152d233cc873f3c5c058f3d944b047a8661ff280bc386de761f3  scripts/test-db-only-capture-helpers.sql
+8328ca7f56865f2af72b1a45a4c69b236f60ac788ae15379fad5adc7f8f7e308  scripts/test-db-only-capture-helpers.sql
 20b42af38477a395ad8e2364a5e7950eadfd3c4e9c4d9bc563690c594c93b03d  docs/reviews/049-sql-evidence/src/_lib.sql
 3c5207f9d91c1f2aaab24b96deebeb6e16b96bfe05e8fff448f4f27b6b5062cf  docs/reviews/049-sql-evidence/src/_fixture.sql
 
@@ -94,6 +94,7 @@ COMMIT;
 -----
 
 ######## PHASE A (S-D): helpers present -> the guard must TRIP (RED); drop helpers, then DOWN succeeds (GREEN) ########
+NOTICE:  database "t_down_a" does not exist, skipping
 ## fingerprint BEFORE 049 (baseline of the REAL-dump scaffold):
 relations 81c40691162cef7e5a707e8822bc6a48
 functions c83f66f077cf7fbe891c4c3de00bbcf1
@@ -1003,7 +1004,7 @@ BEGIN
     END LOOP;
     v_tbl := v_tbl || jsonb_build_object(v_t, v_row);
   END LOOP;
-  FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+  FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
     SELECT jsonb_build_object(
              'exists', true,
              'prosecdef', p.prosecdef,
@@ -1063,7 +1064,7 @@ GRANT
 $ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('049', 'capture_tables');  (stands in for the ledger repair)
 ## fingerprint AFTER UP + helpers + ledger row:
 relations a9014cad6c5515427671025b1a662948
-functions aacf6023e0932469db60bf252cfeb106
+functions e078e90dc88ba337bb054a62355738e7
 constraints c3acf380234e4c15ba2e5e983ef0dd80
 triggers 31bd29f111ff1665d177217bed606b32
 policies 8f2ffb5bfc25291bc74a8edf76a989be
@@ -1114,7 +1115,7 @@ BEGIN
   END IF;
 END;
 $$;
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:37: ERROR:  DOWN_GUARD_FUNCTIONS: public.quoco_test_capture_cleanup, public.quoco_test_capture_update, public.quoco_test_capture_insert, public.quoco_test_capture_acl
+psql:/tmp/quoco/049-run-final/049-down.sql:37: ERROR:  DOWN_GUARD_FUNCTIONS: public.quoco_test_capture_insert, public.quoco_test_capture_update, public.quoco_test_capture_cleanup, public.quoco_test_capture_acl
 CONTEXT:  PL/pgSQL function inline_code_block line 32 at RAISE
 [exit 3]
 PASS: DOWN refused with DOWN_GUARD_FUNCTIONS while helpers exist
@@ -1244,6 +1245,7 @@ comments on the four tables left: 0
 PASS: post-DOWN catalog shows none of the 049 objects (7 of 7 counts are 0)
 
 ######## PHASE B: guard 1 (rows) and guard 2 (any other function naming the tables, any non-system schema) ########
+NOTICE:  database "t_down_b" does not exist, skipping
 $ one DC document + delivery inserted (t.mk_dc) so the tables are not empty
 60000000-0000-0000-0000-000000000001
 $ psql -X -e -d t_down_b -v ON_ERROR_STOP=1 -f 049-down.sql
@@ -1284,7 +1286,7 @@ BEGIN
   END IF;
 END;
 $$;
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:37: ERROR:  DOWN_GUARD_ROWS
+psql:/tmp/quoco/049-run-final/049-down.sql:37: ERROR:  DOWN_GUARD_ROWS
 CONTEXT:  PL/pgSQL function inline_code_block line 13 at RAISE
 [exit 3]
 PASS: guard 1: DOWN refused with DOWN_GUARD_ROWS while a table has rows
@@ -1328,7 +1330,7 @@ BEGIN
   END IF;
 END;
 $$;
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:37: ERROR:  DOWN_GUARD_FUNCTIONS: t.mk_doc, t.mk_dc, t.mk_inv
+psql:/tmp/quoco/049-run-final/049-down.sql:37: ERROR:  DOWN_GUARD_FUNCTIONS: t.mk_doc, t.mk_dc, t.mk_inv
 CONTEXT:  PL/pgSQL function inline_code_block line 32 at RAISE
 [exit 3]
 PASS: guard 2: refused, naming a function in a NON-public, non-system schema (t.mk_doc)
@@ -1378,7 +1380,7 @@ BEGIN
   END IF;
 END;
 $$;
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:37: ERROR:  DOWN_GUARD_FUNCTIONS: public.pm_unlink_invoice_future
+psql:/tmp/quoco/049-run-final/049-down.sql:37: ERROR:  DOWN_GUARD_FUNCTIONS: public.pm_unlink_invoice_future
 CONTEXT:  PL/pgSQL function inline_code_block line 32 at RAISE
 [exit 3]
 PASS: guard 2: refused, naming the planted future public function
@@ -1465,6 +1467,7 @@ PASS: no row, no foreign function: DOWN ran to COMMIT
 ######## PHASE C (S-2): Storage REFUSES the direct SQL bucket delete (STUB trigger on storage.buckets). RED = the reviewed file's DOWN; GREEN = the new DOWN ########
 
 --- phase C RED: DOWN of the REVIEWED file (50b929a): bucket DELETE inside the single transaction
+NOTICE:  database "t_down_c_old" does not exist, skipping
 $ psql -f refuse.sql   (STUB: BEFORE DELETE trigger on storage.buckets raising STORAGE_REFUSES_SQL_DELETE; stands in for Storage refusing a direct SQL delete)
 $ psql -X -e -d t_down_c_old -v ON_ERROR_STOP=1 -f old-down.sql
 BEGIN;
@@ -1531,7 +1534,7 @@ END;
 $$;
 DO
 DELETE FROM storage.buckets WHERE id = 'capture-documents';
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/old-down.sql:63: ERROR:  STORAGE_REFUSES_SQL_DELETE
+psql:/tmp/quoco/049-run-final/old-down.sql:63: ERROR:  STORAGE_REFUSES_SQL_DELETE
 CONTEXT:  PL/pgSQL function storage.refuse_bucket_delete() line 1 at RAISE
 [exit 3]
 $ psql -X -At -d t_down_c_old -f state.sql   (state after the refusal)
@@ -1543,6 +1546,7 @@ RED observation (not counted): exits non-zero=yes; main transaction committed (t
 FAIL(expected, RED): with the bucket DELETE inside the transaction, a Storage refusal rolls the table drops and the ledger delete back -- the defect S-2 fixes
 
 --- phase C GREEN: DOWN of the NEW file: main transaction, then the separate bucket step
+NOTICE:  database "t_down_c_new" does not exist, skipping
 $ psql -f refuse.sql   (STUB: BEFORE DELETE trigger on storage.buckets raising STORAGE_REFUSES_SQL_DELETE; stands in for Storage refusing a direct SQL delete)
 $ psql -X -e -d t_down_c_new -v ON_ERROR_STOP=1 -f 049-down.sql
 BEGIN;
@@ -1618,7 +1622,7 @@ COMMIT
 BEGIN;
 BEGIN
 DELETE FROM storage.buckets WHERE id = 'capture-documents';
-psql:/Users/aravindanrajamani/.claude/jobs/35999be2/tmp/work-official/049-down.sql:69: ERROR:  STORAGE_REFUSES_SQL_DELETE
+psql:/tmp/quoco/049-run-final/049-down.sql:69: ERROR:  STORAGE_REFUSES_SQL_DELETE
 CONTEXT:  PL/pgSQL function storage.refuse_bucket_delete() line 1 at RAISE
 [exit 3]
 $ psql -X -At -d t_down_c_new -f state.sql   (state after the refusal)
