@@ -1,6 +1,6 @@
 # PR-B plan — migration 050: material-inward functions and the N2 branches
 
-Written 2026-10-12. Branch `feat/050-material-inward-fns`, from `origin/main` 4b419f6.
+Written 2026-10-12; revision 2 the same night after Aravind's 23:15 decisions (all recommended options accepted). Branch `feat/050-material-inward-fns`, from `origin/main` 4b419f6.
 Status: PLAN ONLY. No SQL, no app code, no user-facing wording is in this
 document or this branch. Wording is written as `STRING OWED — Aravind to supply`.
 
@@ -15,7 +15,7 @@ Sources, all read from `origin/main` 4b419f6 unless marked otherwise:
 (049), `docs/reviews/049-review-package.md` (049 package), migrations 038 and
 040 and 030, `lib/whatsapp/*`, and the probe captures
 `/tmp/quoco/pr-b-probe-1.txt`, `/tmp/quoco/pr-b-probe-2.txt`,
-`/tmp/quoco/pr-b-block-2.txt` (not in the repo).
+`/tmp/quoco/pr-b-block-2.txt`, `/tmp/quoco/pr-b-probe-3.txt`, `/tmp/quoco/pr-b-block-3.txt` (none in the repo).
 
 ---
 
@@ -42,6 +42,11 @@ Owned elsewhere [observed: v3 section 8; `[inferred]` where noted]:
 
 - **D-1 [per Aravind, 12 Oct]:** the stored `current_flow` value for the material-inward flow is `'invoice'`. It is already allowed by 001:92 [observed: `001_core_schema.sql:92`; test-db constraint, probe 2]. The user-facing label stays "Material inward" (the label text itself is a string already owned by v3 section 7: `MI_MENU_LINE`; no new wording here).
 - **D-2 [per Aravind]:** the `ensure_rls` event trigger is mirrored onto test-db by `scripts/test-db-only-ensure-rls.sql` (commit ae7e0db; sha256 e58571540da2c2fe93a74e01dd631c696ad47886ddfbe64e09c21ed8f975ce52 [observed: shasum before and after the copy]). test-db has the event trigger `ensure_rls` calling `rls_auto_enable`, enabled, owner postgres [observed: probe 2 step 3a]. This is the second named test-db/prod divergence after `outbound_sends` DELETE [observed: CLAUDE.md section 0]; whether CLAUDE.md should name it is an open item (section 14).
+- **D-3 [per Aravind, 12 Oct 23:15]:** N13 is fixed in PR-B, by a guard inside the two live functions (section 7). It is not accepted as a residual risk and not deferred to PR-C.
+- **D-4 [per Aravind, 12 Oct 23:15]:** the five `pm_*` functions are granted to `authenticated` only, following the 048 pattern (048:381-384). `service_role` and `anon` are refused. This supersedes the session handover line "all definer functions service_role only" for the five `pm_*` functions. That line still holds for `apply_material_inward_turn` and `expire_stale_material_inward` (section 5).
+- **D-5 [per Aravind, 12 Oct 23:15]:** S-F (049 package section 10, PR-B condition 1) is split between PR-B and PR-C. PR-B makes `apply_material_inward_turn` safe to repeat for one SID. PR-C closes the webhook ordering and the record-and-alert failure path. The dated note is in `docs/reviews/049-review-package.md`, commit e96e116. S-F stays BLOCKING for PR-C.
+- **D-6 [per Aravind, 12 Oct 23:15]:** PITR is substituted by captured prod bodies. Before the apply, `pg_get_functiondef` of the two live functions is captured from prod with its sha256, and the DOWN restores from that text (section 12). The apply record says "substituted", not "skipped".
+- Also decided the same hour, recorded where each applies: the N2 branch returns `'start'` (or `'already_complete'`) plus a new return key `capture_discarded` (section 6); the five `pm_*` functions share one refusal shape (section 4); every 23505 other than `uq_dil_active_per_delivery` is re-raised unchanged (section 4.5).
 
 ### Name-mapping table: every v3 `material_inward` identifier to its PR-B name
 
@@ -116,21 +121,38 @@ The engineer path starts one level above that list: the session row `FOR UPDATE`
 
 Note: 049 labels TR1 and TR2 as two checks inside one function; the brief's "TR1-TR5" are 049's labels, not five function names [observed].
 
+### One refusal shape for the five `pm_*` functions [per Aravind, 12 Oct 23:15]
+
+Three cases must be indistinguishable to the caller: (1) the id does not exist, (2) the id belongs to another tenant, (3) the id belongs to another project in the caller's own tenant. Same SQLSTATE, same absence of detail: no message text that names the case, no id, no row data, no differing timing path that the function controls `[inferred]`. This is the "refusal is identical for a nonexistent id and an unauthorised one" rule in v3 T-F5-1..3 [observed: v3 section 9].
+
+What 048 does today, quoted from `048_engineer_registration.sql:156-189` [observed]:
+- no profile for `auth.uid()`: `ERRCODE = 'insufficient_privilege'`, message `engineer_admin_gate: no profile for caller` (lines 160-163);
+- project missing OR project in another tenant: `ERRCODE = 'no_data_found'`, message `engineer_admin_gate: project not found` (lines 171-174);
+- role not admin or pm: `insufficient_privilege`, message `engineer_admin_gate: role may not manage engineers` (lines 177-180);
+- a pm who is not a pm on this project: `insufficient_privilege`, message `engineer_admin_gate: pm is not a pm on this project` (lines 181-189).
+
+Consequence, observed from those lines: 048's shape is NOT identical across the three cases. Missing and other-tenant both give `no_data_found` (P0002), but "another project, same tenant" gives `insufficient_privilege` (42501) with a different message. A caller can tell "this id exists in my tenant but I am not on its project" from "this id does not exist for me". The 048 shape therefore cannot be copied as is for the `pm_*` functions. What is copied from 048 is the grant pattern (section 5) and the caller resolution (`users.auth_id = auth.uid()`, tenant bound by one NULL-safe comparison, lines 154-174).
+
+PROPOSED (not yet named by Aravind): one new code in 049's family, `ERRCODE = 'QE015'`, `MESSAGE = 'E15'`, code only, raised for all three cases and for "caller has no profile" and "caller is not a pm on the project's project_members" as well, so the caller learns nothing beyond "refused". 049 uses QE001-QE014 with QE008 reserved [observed: 049 lines 143-168], so QE015 is the next free code `[inferred]`; the number and its app string (STRING OWED — Aravind to supply) are OWED. Alternative, not recommended: reuse `insufficient_privilege`, which would make a function refusal indistinguishable from a grant-level refusal in T-F5-3's anon case; that is not wrong, but it removes the ability to tell, in a test, which layer refused.
+
+Two things this does not cover: the `qs` role and a same-tenant non-PM are refused by the same code (also required by T-F5-3); and `anon` and `service_role` never reach the function (42501 from the grant layer, section 5).
+
 ### 4.1 `apply_material_inward_turn`
 - Caller: `service_role` only [observed: v3 T-F5-4]. Called by the webhook handler (PR-C).
 - Parameters `[inferred]`, by analogy with 038/040: phone number, tenant, user (the engineer), project, message text, the single message SID, the media list (type, index), a parsed-kind or ack input if parsing stays outside, `p_now`, and the test-only sleep parameter 038/040 carry. Final list OWED at design.
 - Uses ONE SID for both the `received_at` lookup and `source_message_sid`; refuses a missing `processed_messages` row or NULL `created_at` [observed: 049 lines 242-253, Q2-6]. This closes Q2-6 inside PR-B.
-- Checks `expires_at <= p_now` before doing anything; if expired, clears and returns `expired` with no other write [observed: v3 line 334].
+- **SID idempotency [per Aravind, 12 Oct 23:15]; this is PR-B's half of S-F (D-5).** A second call carrying an already-recorded SID writes nothing and returns a named duplicate outcome (name OWED). "Already recorded" means a `capture_documents` row with that `source_message_sid`, or a `capture_files` row with that `source_message_sid`, exists `[inferred: the two UNIQUE constraints in 049 are the source of truth, 049 lines 281-340]`. The check runs under the session lock, before any write, so two calls for one phone are serialised by the lock and the later one sees the first one's rows. It does not rely on catching the unique violation, which would roll the call back and (per 4.5) must never be swallowed. What it does NOT do: it does not stop the webhook from consuming the SID before processing, which is the PR-C half (D-5, S-F stays BLOCKING for PR-C). T-FLOW-3 (a duplicate SID creates no duplicate rows or reply) is the existing v3 test for this behaviour [observed: v3 section 9].
+- Checks `expires_at <= p_now` before doing anything; if expired, clears and returns `expired` with no other write [observed: v3 line 334]. Order between the duplicate check and the expiry check is OWED `[inferred]`: a duplicate of a SID already handled should not re-expire or re-clear a session.
 - Checks the IST-day rule exactly as 038/040 do (`quoco_same_ist_day`) [observed: 038:455; 040:490]; the IST date rule is applied first [observed: v3 line 342].
 - Reads the session under the lock; any `current_flow` other than `'invoice'` returns `wrong_flow`, matching the other flow functions [observed: 038:610-611]. It never creates a session over a live other-flow session: that case is `reask` in the start branches today [observed: 038:518-519; 040:538-539], and the idle menu start for digit 4 must follow the same rule `[inferred]`.
 - Raises: QE for any 049 trigger refusal bubbles up unchanged. `unique_violation` handling: see 4.4 and section 10.
 
 ### 4.2 `pm_set_delivery_details`
-- Caller: an authenticated PM (see CONFLICT in section 5). Authorisation inside the function: caller is a PM of the delivery's project, via `auth.uid()` joined to `users` and `project_members`, as 048 does (`auth_id = auth.uid()`) [observed: 048 line 159]. `[inferred]` same helper shape.
+- Caller: an authenticated PM (D-4, section 5). Authorisation inside the function: caller is a PM of the delivery's project, via `auth.uid()` joined to `users` and `project_members`, as 048 does (`auth_id = auth.uid()`) [observed: 048 line 159]. `[inferred]` same helper shape.
 - Fields: type (supplier or internal transfer), vehicle number, DC number, DC date. These columns exist [observed: 049 lines 347-373]. No money column: A24 forbids it [observed: v3 T-A17-1/T-R7-1].
 - Path 6: DC delivery updates the DC row only; automatic delivery locks the invoice first, then the delivery [observed: 049 lines 223-228].
 - Refusals from the triggers: QE006 (retype with active link), QE007 (automatic delivery to internal transfer), QE009, QE011 (locked content while approved or cancelled; D-23 [observed: 049 header on `dc_date`]).
-- Refusal for a nonexistent id and for an unauthorised id must be IDENTICAL [observed: v3 T-F5-1..3]. That means the same code and the same absence of detail; code choice OWED (a QE code or a plain not-found shape).
+- Refusal shape: see "One refusal shape for the five `pm_*` functions" below. It applies to every `pm_*` function, not only this one.
 
 ### 4.3 `pm_approve_delivery`
 - Caller: authenticated PM. Path 5: DC delivery, update only; automatic delivery, read `created_from_invoice_id` unlocked, lock the invoice, update [observed: 049 lines 219-222].
@@ -149,7 +171,8 @@ Note: 049 labels TR1 and TR2 as two checks inside one function; the brief's "TR1
 - Path 1, exactly as 049 states (lock invoice; validate caller and every target; lock DC deliveries `FOR SHARE` in ascending id and the automatic delivery `FOR NO KEY UPDATE` in the same pass; soft-unlink the self-link as `superseded_by_link`; cancel the automatic delivery; insert the `pm_manual` rows) [observed: 049 lines 183-196].
 - Refuses when the automatic delivery is `approved` (X6) [observed: v3 T-A28-5]; nothing changes.
 - The whole call is one transaction; a failing target leaves the automatic delivery uncancelled [observed: v3 T-A28-2 control].
-- **Q-5 / E8 translation (BLOCKING in 049 package, item 2):** a 23505 can come from four unique constraints (`source_message_sid`, `(source_message_sid, media_index)`, `uq_dil_active_self_per_invoice`, `uq_dil_active_per_delivery`) and its detail text carries key values. The function catches `unique_violation`, reads the constraint name with `GET STACKED DIAGNOSTICS ... CONSTRAINT_NAME`, and re-raises as QE008 ONLY for `uq_dil_active_per_delivery`; every other 23505 is not translated, and the app never maps on 23505 alone [observed: 049 package line 135; E8 reserved but "not raised" in 049 line 156]. QE008 is the one E-number 049 left unused for exactly this [observed: 049 line 156].
+- **Q-5 / E8 translation (BLOCKING in 049 package, item 2):** a 23505 can come from four unique constraints (`source_message_sid`, `(source_message_sid, media_index)`, `uq_dil_active_self_per_invoice`, `uq_dil_active_per_delivery`) and its detail text carries key values. The function catches `unique_violation`, reads the constraint name with `GET STACKED DIAGNOSTICS ... CONSTRAINT_NAME`, and re-raises as QE008 ONLY for `uq_dil_active_per_delivery`; the app never maps on 23505 alone [observed: 049 package line 135; E8 reserved but "not raised" in 049 line 156]. QE008 is the one E-number 049 left unused for exactly this [observed: 049 line 156].
+- **Every other 23505 is re-raised unchanged [per Aravind, 12 Oct 23:15].** Inside the exception handler, a `unique_violation` whose constraint name is not `uq_dil_active_per_delivery` is re-raised with a bare `RAISE;` (the original error, SQLSTATE and constraint intact). It is never swallowed and never translated. A handler that does not re-raise lets the call continue and COMMIT: in plpgsql an `EXCEPTION` block that handles an error and falls through to the end of the function returns normally, and the surrounding transaction commits whatever the function wrote before the error. Here that would mean a link call that hit `uq_dil_active_self_per_invoice` or a SID unique violation reports success with partial writes, and the automatic delivery could be left cancelled without the PM links. The re-raise is therefore a correctness requirement, not style. The test is T-E8-RERAISE (section 11).
 
 ### 4.6 `pm_unlink_invoice`
 - Caller: authenticated PM. Path 2 (unlink with restore) [observed: 049 lines 197-206]: read the link's invoice unlocked (safe, TR3 makes it immutable), lock the invoice, re-read the link under the lock and refuse if no longer active, lock the DC delivery `FOR SHARE` and, if restore is possible, the automatic delivery; soft-unlink as `pm_unlinked`; if the invoice now has zero active PM links and the automatic delivery is `cancelled` with `superseded_by_link`, update the automatic delivery FIRST to `incomplete` or `awaiting_pm` (from whether the invoice document has an ack), clearing `cancelled_*` and `approved_*`, THEN insert the new self-link. Never the self-link first.
@@ -170,22 +193,19 @@ Rule [observed: CLAUDE.md section 6]: every new function in `public` needs an ex
 
 049's tables stay SELECT-only for `authenticated` and `service_role`; no INSERT, UPDATE, DELETE or TRUNCATE for any role; `anon` holds nothing [observed: 049 lines 965-985].
 
-**CONFLICT (brief vs v3) — the pm_* functions' audience. DECISION OWED.**
-- The brief for this plan says: "Grants. service_role only."
-- v3 T-F5-1..3 requires, for each of the five `pm_*` functions: a PM of another project in the same tenant refused, a PM of another tenant refused, `anon`, a same-tenant `qs` and `service_role` refused (42501), and "the right PM succeeds and the row changes" [observed: v3 line 281]. A function that `service_role` can call and `authenticated` cannot would make "the right PM succeeds" impossible unless the PM page calls it with the service-role client, which CLAUDE.md section 4 limits ("NEVER use the service role key ... in any route reachable without authentication"; Supabase SSR client for dashboard routes).
-- Precedent for the second shape: `add_engineers_to_project` (048): `authenticated = true`, `service_role = false`, `anon = false` [observed: 048 prod apply record in the reservations note: "F4 add_engineers_to_project anon=false authenticated=true service_role=false"].
-
-Planned grant matrix, v3 reading, pending the decision:
+**Final grant matrix [per Aravind, 12 Oct 23:15, D-4].** History, one line: the brief for the first plan said "service_role only" for all seven; v3 T-F5-1..3 needs the right PM to succeed and `service_role` to be refused, so the five `pm_*` functions are `authenticated` only, as `add_engineers_to_project` is (048:381-384, quoted in `/tmp/quoco/pr-b-probe-3.txt` step 3) [observed]. The handover line "all definer functions service_role only" is superseded for those five; it still holds for the other two.
 
 | Function | anon | authenticated | service_role | Evidence |
 |---|---|---|---|---|
 | `apply_material_inward_turn` | no | no | YES | v3 T-F5-4 [observed] |
 | `expire_stale_material_inward` | no | no | YES | v3 T-F5-4 [observed] |
-| `pm_set_delivery_details` | no | YES (PM, checked inside) | no | v3 T-F5-1..3 [observed]; brief says service_role only — CONFLICT |
+| `pm_set_delivery_details` | no | YES (PM, checked inside) | no | v3 T-F5-1..3; 048:381-384 [observed]; D-4 |
 | `pm_approve_delivery` | no | YES | no | same |
 | `pm_reject_delivery` | no | YES | no | same |
 | `pm_link_invoice` | no | YES | no | same |
 | `pm_unlink_invoice` | no | YES | no | same |
+
+For the five `pm_*` functions the statement shape is the 048 one: `REVOKE EXECUTE ... FROM PUBLIC, anon, service_role` then `GRANT EXECUTE ... TO authenticated` (048:381-384) [observed]. The ACL is defence in front of the body, not instead of it: the body re-derives the caller from `auth.uid()` and re-checks tenant and project membership (048 lines 154-189, "Class 2 in 020's convention", 048:379-380) [observed]. For the two service_role functions, REVOKE from PUBLIC, anon, authenticated and GRANT to service_role.
 
 Mechanics `[inferred]`: for each function, REVOKE ALL from PUBLIC, anon, authenticated, service_role, then GRANT EXECUTE to only the intended roles (so `scripts/lint-migrations.mjs` Rule 1 is satisfied by a real grant rather than a to-postgres stub). The N2 `CREATE OR REPLACE` of 038/040 must re-assert their existing grants in the same file, since `CREATE OR REPLACE` with an unchanged signature preserves them but the lint rule requires the pair [observed: 038:712-715, 040:907-910].
 
@@ -208,25 +228,18 @@ What follows in the app today [observed: probes 1 and 2]:
 
 The change [per Aravind / v3 Q6]: add one branch to the start section of each function, keyed on `current_flow = 'invoice'`, next to the hindrance branch. The partial delivery rows stay saved (they are not in `whatsapp_sessions`).
 
-**Method (as instructed):** the new body = the live body + exactly one branch. Proof = a unified diff of the 050 function body against the live `pg_get_functiondef`, from test-db AND from prod, captured just before apply; the diff must show the new branch and nothing else. The migration files 038 and 040 are NOT the baseline; the live text is, because `CREATE OR REPLACE` replaces whatever is live and out-of-band drift is documented on this project (CLAUDE.md section 0 and handle_new_user drift).
+**Method [per Aravind, refined 12 Oct 23:15]:** the new body = the live body + exactly three named hunks, and nothing else: (1) the N2 branch; (2) the Q1 guard from section 7; (3) the new return key `capture_discarded`. Proof = a unified diff of the 050 function body against the live `pg_get_functiondef`, from test-db AND from prod, captured just before apply; the diff must show those three hunks and no other change, per function. The migration files 038 and 040 are NOT the baseline; the live text is, because `CREATE OR REPLACE` replaces whatever is live and out-of-band drift is documented on this project (CLAUDE.md section 0; handle_new_user drift).
 
-Not captured in this block: the live bodies and md5s on test-db (block 3e was skipped: the new worktree has no `supabase/.temp/project-ref`, and `supabase link` is forbidden). The only md5s recorded are from probe 1, against test-db [observed]:
-- `apply_evening_flow_turn` d19d07507abccdaf7d54ee1d74419af7
-- `apply_hindrance_flow_turn` 09b4e083638dd359b6415a71f6146bec
-- `apply_morning_flow_turn` 707c10fe09dfd5a7cd065f7826eacd46
-No prod md5 exists anywhere yet [section 13].
+Baseline captured so far [observed: `/tmp/quoco/pr-b-probe-3.txt` step 1, test-db ref `exfccwlrhoutkgrlikod`, SELECT only]: the full `pg_get_functiondef` of both live functions, saved outside the repo as `/tmp/quoco/live-apply_morning_flow_turn-testdb.sql` (294 lines) and `/tmp/quoco/live-apply_evening_flow_turn-testdb.sql` (460 lines). Their md5s equal probe 1's: morning `707c10fe09dfd5a7cd065f7826eacd46` MATCH, evening `d19d07507abccdaf7d54ee1d74419af7` MATCH. So test-db has not changed between probe 1 and probe 3. NOT done: a diff of these bodies against the 038 and 040 migration text, and anything on prod. No prod md5 exists yet (section 13).
 
-**CONFLICT (brief vs v3 Q6 vs `trigger.ts`) — what the N2 branch returns. DECISION OWED.**
-- The brief: the N2 branch "returns a distinct outcome `capture_reset`".
-- v3 Q6 and T-SESS-1: the branch mirrors the hindrance branch: "clear the session ... return `already_complete` if that day's half is already submitted"; T-SESS-1 says "cleared, check-in starts" [observed: v3 lines 251, 349]. That is outcome `start` (or `already_complete`).
-- `trigger.ts:372` treats every outcome other than `start` as an anomaly: it logs a Sentry error and still records the send as `sent`. The template has already gone out before the RPC runs (`trigger.ts:347`). If the branch clears the session and returns `capture_reset` WITHOUT starting the check-in, the engineer has a delivered check-in message and no active session, and their reply is handled as idle. If it clears AND starts but returns `capture_reset`, `trigger.ts` raises the error on a handled case.
-- The hindrance precedent keeps the outcome `start` and adds a separate return key (`hindrance_discarded`, `hindrance_had_description`) for observability [observed: 040:522-523, 898-899].
-- Whichever is chosen, a new outcome value needs the TS outcome unions and `trigger.ts:372` updated; that is app code and belongs to PR-C `[inferred]`. Until PR-C lands, a `capture_reset` outcome would raise the Sentry error above for each affected engineer.
-- Options for the decision: (A) outcome `start` plus a new return key, as hindrance did; (B) outcome `capture_reset` with the check-in started, and PR-C changes `trigger.ts`; (C) outcome `capture_reset` with the session only cleared (check-in not started). I recommend NONE yet; the engineer-visible consequence of C is the worst. `[inferred]`
+**Decision [per Aravind, 12 Oct 23:15]: what the N2 branch returns.** The branch returns outcome `'start'` (or `'already_complete'` when that half is already submitted, as the hindrance branch does) and adds one return key, `capture_discarded` (boolean), mirroring `hindrance_discarded` [observed: 038:700-708 and 040:892-900 return `hindrance_discarded` and `hindrance_had_description` after the `jsonb_build_object` keys; both variables are declared `BOOLEAN := NULL`, 038:438-439, 040:473-474; the wrappers pass the keys through, `flows/morning.ts:557-568`, `flows/evening.ts:375-395`; `trigger.ts:413-425` reads only `hindranceDiscarded` and logs an info-level Sentry message]. `capture_discarded` is true when the branch discarded an `'invoice'` session, and NULL otherwise, as the hindrance key is.
+- `trigger.ts` needs no change in PR-B. The outcome on this path is `start`, so the `turn.outcome !== 'start'` branch (`trigger.ts:372`) is not reached, and no new outcome value enters the TypeScript outcome unions. Logging `capture_discarded` is optional PR-C work (the wrappers cast the RPC result to a fixed shape and pick named fields, so the extra key is ignored until a wrapper reads it `[inferred]`).
+- History, one line: the first plan had a CONFLICT block here (the brief wanted a distinct outcome `capture_reset`; v3 Q6 and `trigger.ts:372` expect `start`). The decision above is option (A) of that block; options (B) and (C) are dropped.
 
 Other facts the branch must respect:
 - Submitted-marker check first, as hindrance does (`morning_submitted` for morning, `evening_submitted` for evening), returning `already_complete` and clearing the session [observed: 038:505-509; 040:524-528; v3 line 349].
 - Subtract-only context cleanup, never a bare replace: only the keys that the flow's own steps wrote are removed, so cross-flow markers survive by construction [observed: 038 B1 comment 484-502]. The exact flow-owned context keys are OWED (v3 line 334 says "MI context keys removed" and never names them).
+- When the branch starts the check-in (not when it returns `already_complete`), it also sets the N13 context flag (section 7). The flag is a context key, so it is part of hunk (1) or (2) of the proof diff, not a fourth hunk `[inferred]`; the exact hunk boundary is decided when the body is written.
 - Same-signature `CREATE OR REPLACE`; grants re-asserted in the same file (section 5).
 - DOWN restores the live bodies (section 9).
 
@@ -238,7 +251,7 @@ The problem [observed: v3 N13, line 66; R5, line 403]: if a scheduled check-in f
 
 Step 3c findings, with quotes [observed]:
 - **Morning check-in, first question (step 1):** `v_yesno := quoco_classify_yes_no(p_message)` (038:534). In `quoco_classify_yes_no` (030:267-318) the YES list is yes, y, yeah, yep, yup, ok, okay, done, completed, complete, finished, achieved, met, full, fully, aama, ama, aam, half, half-day, late, coming, come, reaching, reached, way; the NO list adds no, n, nope, not, notdone, incomplete, pending, partly, partial, partially, mostly, some, delayed, missed, short; the NONE list is no, none, nothing, nil, na, zero, `'0'`, `'-'`, illa, ille, illai, illae, kidaiyathu, kedaiyathu. The digits `1`, `2`, `3` are in none of them, so a bare `1`, `2` or `3` returns `{met:false, ok:false}`. Then 038:536-538: with `q1_reask` at 0 it re-asks once and writes only the reask counter. On the second non-parsing answer the else branch at 543-550 runs: step becomes 2, `v_attendance := 'present'`, `v_attendance_defaulted := NOT ok` (true), `v_attendance_raw := v_text`. So: the first stray digit is a re-ask, no attendance written; a second stray digit silently records the engineer present (defaulted). A bare `0` is the exception: it is in NONE, so `ok:true, met:false`, and the branch at 539-542 jumps to step 5 (the not-on-site route).
-- **Evening check-in, first question (step 1):** 040:553-558, "Q1 (free text + enrichment) -> evening_output + quantities": `current_step := 2; v_outcome := 'advance'; v_col := 'output'`, with no validation. A bare `1`, `2` or `3` is accepted as the answer. The write at 040:721-728 inserts `evening_output = v_text` ("1") into `daily_logs` with `ON CONFLICT ... DO UPDATE SET evening_output = EXCLUDED.evening_output`, which overwrites the day's evening output. (Whether the TypeScript layer filters a lone digit before the RPC was not read; this is the SQL's own behaviour.)
+- **Evening check-in, first question (step 1):** 040:553-558, "Q1 (free text + enrichment) -> evening_output + quantities": `current_step := 2; v_outcome := 'advance'; v_col := 'output'`, with no validation. A bare `1`, `2` or `3` is accepted as the answer. The write at 040:721-728 inserts `evening_output = v_text` ("1") into `daily_logs` with `ON CONFLICT ... DO UPDATE SET evening_output = EXCLUDED.evening_output`. At 18:30 the evening output is normally empty, so a stray `1` BECOMES the day's work text (the upsert would also replace a value if one were already present; that is not the expected case). There is no digit or length check between the router and the RPC: `flows/evening.ts:339-340` sets `parseOk['1']: true // Q1 is never parse-gated`, `dispatch.ts:197-207` passes `message` through unchanged, and `classifyAdhocInput` is first called at `inbound-start.ts:939`, after the active-flow block [observed: `/tmp/quoco/pr-b-probe-3.txt` step 5].
 
 Step 3d findings, with quotes [observed]:
 - The two check-ins are fired by cron once a day: morning `0 3 * * *` UTC, evening `0 13 * * *` UTC (`vercel.json`: `/api/cron/morning-trigger`, `/api/cron/evening-trigger`).
@@ -247,10 +260,22 @@ Step 3d findings, with quotes [observed]:
 - `coverage-sweep.ts` compares the expected roster size with `outbound_sends` rows that reached `sent` and alerts; it does not send (`coverage-sweep.ts:10-20`). A row recorded `sent` counts as covered.
 - Therefore: if a scheduled check-in does not start (for example, the RPC returns `reask` because of a live `invoice` session), nothing fires it again that day. The engineer receives the template and has no active session. [observed from the lines above; "nothing else fires it" is also an absence claim: I read `trigger.ts`, `checkpoint-trigger.ts` and the head of `coverage-sweep.ts`, not the whole of `jobs/tick`; `[inferred]` for the tick.]
 
-Conclusion, without deciding it:
-- The brief's rule: if a bare 1/2/3 parses as a first-question answer, a defer path is REQUIRED before engineers go live after PR-D. By the quotes above, a bare digit does NOT parse as a valid morning Q1 answer on the first attempt (it is re-asked) but IS accepted as a valid evening Q1 answer immediately and written to `evening_output`, and a second digit is silently accepted as defaulted attendance on morning.
-- So the condition for requiring a defer path is met for the evening check-in on the SQL evidence and partly met for the morning one. A defer path is therefore required before engineers go live, by the brief's own rule.
-- What the defer path is, and where it lives (the N2 branch not clearing a session with a pending ack; deferring the check-in by N minutes; holding the check-in's first question until the ack closes; or accepting the loss) is **DECISION OWED — Aravind**. This plan does not choose. Listed options are not recommendations.
+### The D-3 design [per Aravind, 12 Oct 23:15]: N13 is fixed in PR-B
+
+The brief's rule was: if a bare 1/2/3 parses as a first-question answer, a defer path is required before engineers go live. By the quotes above it does (evening: accepted at once; morning: accepted on the second attempt as defaulted attendance). D-3 decides the fix: a guard in the two live functions, so a stray ack digit right after a check-in start is not taken as the first answer.
+
+1. **Flag.** The N2 branch sets a context flag whenever it discards an `'invoice'` session and starts the check-in. Flag name PROPOSED: `invoice_reset_guard` (boolean true in `whatsapp_sessions.context`); final name OWED. It is not set when the branch returns `already_complete` (no check-in starts, so there is no first question to protect) `[inferred]`.
+2. **While the flag is set, at step 1,** a message that is exactly `1`, `2` or `3` after `btrim`:
+   - morning (step 1, attendance): outcome `reask`; it does NOT count toward `q1_reask`; no attendance is written; the session stays at step 1;
+   - evening (step 1, work completed): outcome `reask`; nothing is written to `daily_logs`; the session stays at step 1.
+3. **`0` keeps its current morning meaning.** A bare `0` is in `quoco_classify_yes_no`'s NONE list (030:290), so it routes to step 5 (not on site) as today (038:539-542). The guard covers only the digits `1`, `2` and `3`.
+4. **Clearing.** The first step-1 answer that is not a bare `1`, `2` or `3` clears the flag (as part of that turn's own context write). The IST-day rule also clears it: when `quoco_same_ist_day` is false the RPC resets the whole context to `{}` (038:455-459, 040:490-495 [observed]).
+5. **Unbounded re-asks, stated.** While the flag is set, an engineer who keeps sending only a bare `1`, `2` or `3` is re-asked each time and never progresses, with no budget consumed. This matches how an empty or whitespace answer already behaves at both step 1s (038:530-531, 040:550-551: reask, unlimited, no write) [observed]. The flag cannot outlive the IST day.
+6. **Re-ask text.**
+   - Morning: the step-1 re-ask is the question itself. `buildMorningReply('reask', 1)` returns `MORNING_QUESTIONS[currentStep]` (`flows/morning.ts:184-185`), and `MORNING_QUESTIONS[1]` is `'Good morning. Are you on site today? Reply yes or no.'` (`flows/morning.ts:92`) [observed: block 3 step 1]. No new string is created for morning.
+   - Evening: no dedicated step-1 re-ask exists. `EVENING_REASK_MESSAGES` has keys 2, 3 and 4 only (`flows/evening.ts:121-125`); a step-1 re-ask falls back to `EVENING_QUESTIONS[1]` (`flows/evening.ts:227`; the text is at `flows/evening.ts:98`) [observed: block 3 step 1]. Per the brief: STRING OWED — Aravind to supply (constant carries 'Tamil owed, NOT approved'). Two notes: that marker is not in `flows/morning.ts` or `flows/evening.ts` (it is in `lib/photos/copy.ts`; a search of `lib` and `app` found no match in the flow files) [observed]; and the existing fallback already re-sends the approved question text, which is one option for Aravind to weigh, not a recommendation.
+7. **Where it lives.** It is hunk (2) of the proof diff in section 6 (the Q1 guard), in both functions. The TypeScript layer is unchanged: the guard returns the ordinary outcome `reask`, which both reply builders already handle.
+8. **What it does not fix** `[inferred]`: an engineer who is mid-capture and answers the ack question with a digit AFTER the check-in has started and the flag has been cleared by a real step-1 answer is not protected; that digit then belongs to a later question. The exposure window is the first answer only.
 - Time window `[inferred]`: the ack question is pending for at most 30 minutes (A27); the evening trigger is 18:30 IST and the morning trigger 08:30 IST. An engineer mid-capture at those minutes is the exposed population; how many such engineers exist is unknown.
 
 ---
@@ -275,7 +300,9 @@ Required content [per Aravind's brief]:
 4. The 050 DOWN has no CHECK to restore. v3's T-DOWN-1 reasoning ("the CHECK removal would fail with a row present, so DOWN resets them first", v3 line 252) no longer applies; the reset is still required for the lockout reason in item 3. [observed / inferred]
 5. The DOWN section is commented, inert text [observed: `down-section-must-be-commented` lint rule, CLAUDE.md section 7].
 
-Order inside the DOWN `[inferred]`: clear `invoice` sessions; restore the two live bodies; drop the seven new functions; all in one transaction.
+6. **Strip the N13 flag [per Aravind, 12 Oct 23:15, D-3]:** remove the guard key (PROPOSED name `invoice_reset_guard`) from `whatsapp_sessions.context` on EVERY row that carries it, not only `invoice` rows. A flag left behind would be inert once the restored bodies no longer read it, but the DOWN leaves no trace of the migration in session state, and T-DOWN-1 is extended to check that (section 11).
+
+Order inside the DOWN [per Aravind, 12 Oct 23:15]: clear the `'invoice'` sessions; strip the N13 flag; restore the two bodies; drop the seven functions; all in one transaction.
 
 Delivery data is not touched by DOWN: `capture_documents`, `capture_files`, `deliveries`, `delivery_invoice_links` are 049's tables and stay. Rows written between apply and DOWN remain and are readable; no function can then write them. `[inferred]`
 
@@ -289,16 +316,16 @@ Source: 049 package section 10, lines 131-141, and line 267 [observed].
 
 | # | Condition (verbatim substance) | Closed by | Which PR |
 |---|---|---|---|
-| PR-B 1 | S-F capture-loss window: the SID is consumed before processing, so a capture that fails after that point is lost when Twilio retries. Record the inbound media durably at or before SID consumption, or add a failure path that records and alerts. | The SID consumption happens in the webhook route (`route.ts:224`, `idempotency.ts:24-38`, [observed: 049 lines 235-239]), which is app code. A SQL function in PR-B can make a second call after a failure safe (the UNIQUE guards) but cannot change when the route consumes the SID. | PR-B can supply an idempotent RPC; the ordering fix and the alert are PR-C app code `[inferred]`. State plainly: PR-B alone cannot close S-F. |
+| PR-B 1 (S-F), SPLIT [per Aravind, 12 Oct 23:15, D-5] | S-F capture-loss window: the SID is consumed before processing, so a capture that fails after that point is lost when Twilio retries. Record the inbound media durably at or before SID consumption, or add a failure path that records and alerts. | **PR-B half:** `apply_material_inward_turn` is safe to repeat for one SID: a second call with the same SID writes nothing and returns a named duplicate outcome (section 4.1; test T-FLOW-3 plus a PR-B-side duplicate-outcome test, section 11). **PR-C half:** the webhook ordering of SID consumption (`app/api/whatsapp/webhook/route.ts:224`, `lib/whatsapp/idempotency.ts:24-38` [observed: 049 lines 235-239]) and the failure path that records and alerts. Recorded in `docs/reviews/049-review-package.md` by the dated note in commit e96e116. | PR-B closes its half only. **S-F stays BLOCKING for PR-C.** |
 | PR-B 2 | Q-5, E8 translation: catch `unique_violation`, read the constraint name, re-raise as QE008 only for `uq_dil_active_per_delivery`; the app never maps on 23505 alone. | Design element: `pm_link_invoice` (section 4.5). Test: Q-5 E8 test below. | PR-B |
 | PR-B 3 | Q-5, CI assertion that one QE code reaches supabase-js as `error.code` (PostgREST's handling of unknown SQLSTATEs is unverified). | CI-only assertion against the real PostgREST path. | PR-B tests; unverified until CI runs |
 | PR-B 4 | Q-2 probe 4 in the PR-B tests: links unlinked as `delivery_rejected` whose delivery is not `rejected` must be 0 after every path. | `pm_reject_delivery` plus the probe as a test. | PR-B |
 | PR-B 5 | D-30 multi-photo real-phone test: how WhatsApp/Twilio delivers several photos selected together; the bot must ask 1/2/3 once per document. | A real handset test of the live bot. | Needs the handler (PR-C); PR-B contributes one document per SID. `[inferred]` |
 | PR-B 6 | The Q2-6 single-parameter `received_at` rule (SQL header 214-237) and the CI-only race tests for paths 1-6. | Rule: `apply_material_inward_turn` (section 4.1). Race tests: CI-only; "not verified locally" (CLAUDE.md section 0). | PR-B |
 | line 267 | "Deferred to PR-B: vitest cases c, d, f (helper insert, tenant guard, N-4 E12 via the helper); fixture design belongs to PR-B." | Test design for the PR-B suite: the helper `scripts/test-db-only-capture-helpers.sql` (insert, tenant guard) is the test-only fixture surface; case c is the helper insert, d is the tenant guard (`quoco_test_capture_fixture_tenant_ok`, helper lines 68-78 [observed: 049 package line 73]), f is N-4 E12 through the helper. What cases a, b and e were is not in the package; see section 14. | PR-B |
-| PR-C | `capture_files` immutability (reviewer S-1, second part): once stored, `storage_path`, `sha256`, `byte_size`, `content_type` immutable; `stored` and `rejected` terminal; identity columns immutable; together with the D-8 `capture_files` column UPDATE grant. "Nothing writes `capture_files` before PR-B/C." | PR-C | PR-C |
+| PR-C | `capture_files` immutability (reviewer S-1, second part): once stored, `storage_path`, `sha256`, `byte_size`, `content_type` immutable; `stored` and `rejected` terminal; identity columns immutable. The `capture_files` column UPDATE grant for `service_role` moved to PR-C by D-8 (`docs/reviews/049-plan-review-package.md:33`: "the `capture_files` column UPDATE grant is removed from PR-A. It moves to PR-C. PR-A grants `service_role` SELECT only") [observed: `/tmp/quoco/pr-b-probe-3.txt` step 4]. v3:101 names the grantee and columns (`service_role`, column-scoped UPDATE on `ingest_status, content_type, byte_size, sha256, storage_path, reject_reason, preview_state`, precedent 039) [observed]. | PR-C | PR-C |
 
-Related gap, not a blocker listed in the package [observed]: 049 grants `service_role` SELECT only on all four tables (049 lines 965-985) while the package line 141 speaks of "the D-8 `capture_files` column UPDATE grant". The ingest job that moves a file from `pending` to `stored` has to write `capture_files`. Which definer function does that write, and in which PR, is OWED (section 14).
+`capture_files` writes: 049 grants `service_role` SELECT only (049:978-981), and D-8 moved the column UPDATE grant to PR-C. PR-B writes no `capture_files` row after S2 other than the `pending` rows its RPC inserts; the ingest job's UPDATE of the ingest columns is PR-C's [observed: 049-plan-review-package.md:33; v3:101, 117].
 
 ---
 
@@ -313,7 +340,7 @@ Positive control = the case that must go RED.
 | ID | PR-B or PR-C `[inferred]` | Behaviour | Positive control (RED) |
 |---|---|---|---|
 | T-SESS-1 (N2) | PR-B | Scheduled morning and evening start over a live `invoice` session: cleared, check-in per the section 6 decision, partial delivery rows survive; `already_complete` if that half is submitted. | The same call on the 038/040 SQL (no new branch) returns `reask`. |
-| T-DOWN-1 | PR-B | DOWN leaves a live in-flight session safely reset (section 9). | The same turn works before DOWN. |
+| T-DOWN-1 (extended, D-3) | PR-B | DOWN leaves a live in-flight session safely reset (section 9). Extended: after the DOWN, no `whatsapp_sessions.context` on any row carries the N13 flag. | The same turn works before DOWN; a flag planted on a non-`invoice` row must be removed by the DOWN, and the check fails if it is left. |
 | T-A27-3 | PR-B | Stale `invoice` row, then hindrance start: outcome `start`, not `reask`, because the row was cleared first. | Skip `expire_stale_material_inward`: outcome `reask`. |
 | T-A27-4 | PR-B | Stale row plus scheduled morning or evening start: starts normally. | n/a in v3 (`—`) |
 | T-A27-5 | PR-B | Every valid turn, including a re-ask, refreshes `expires_at` and `updated_at`; replying every 25 minutes never expires. | A 31-minute gap expires. |
@@ -338,8 +365,15 @@ Positive control = the case that must go RED.
 | T-DATE-1 | PR-B (generated column is 049; the RPC's `received_at` source is PR-B) | IST boundary for `delivery_date`. | A UTC implementation fails. |
 | T-R7-1, T-A17-1, T-A24-1 | PR-B | No `confidence`, `paid` or money column or `amount`/`rate`/`total` in the migration. | A planted column fails. |
 | vitest c, d, f | PR-B | Helper insert; tenant guard; N-4 E12 through the helper (section 10). | per 049 package |
+| T-N13-1 (evening) [per Aravind, 12 Oct 23:15] | PR-B | Flag set: a bare `1` at evening step 1 re-asks and `daily_logs.evening_output` is unchanged. | Without the flag, the `1` is written. |
+| T-N13-2 (morning) | PR-B | Flag set: two bare digits at morning step 1 write no attendance and consume no `q1_reask`. | Without the flag, the second digit records present (defaulted). |
+| T-N13-3 | PR-B | The flag is cleared by a real step-1 answer; and `0` still routes to not-on-site with the flag set. | A guard that also swallowed `0` fails it. |
+| T-N2-KEY | PR-B | A start over a live `'invoice'` session returns outcome `'start'` and `capture_discarded = true` (and `'already_complete'` with `capture_discarded = true` when that half is submitted). | The 038/040 live body returns `'reask'`. |
+| T-E8-RERAISE | PR-B | The other three 23505 sources (`source_message_sid`, `(source_message_sid, media_index)`, `uq_dil_active_self_per_invoice`) reach the caller as 23505 and the call commits nothing. | A handler without `RAISE;` lets the call commit. |
+| T-F5-SAME | PR-B | A nonexistent id, an id in another tenant and an id in another project (same tenant) give the identical error: same SQLSTATE, same absence of detail. | A planted different code in one case fails it. |
+| T-SID-DUP | PR-B `[inferred]` | A second `apply_material_inward_turn` call with an already-recorded SID writes nothing and returns the named duplicate outcome (name OWED). This is the PR-B half of S-F (D-5). | A new SID creates its rows. |
 
-New rows the N2 decision requires `[inferred]`: a test that the branch with a PENDING ack behaves per the N13 decision (section 7); a test of the outcome the section 6 decision chooses at `trigger.ts:372`.
+The two rows the first plan listed as "new rows the N2 decision requires" are now T-N13-1..3 and T-N2-KEY above. The PR-B versus PR-C split in this table is `[inferred]` throughout; v3 does not assign tests to PRs.
 
 ---
 
@@ -349,7 +383,7 @@ FULL tier [observed: CLAUDE.md section 0, the 2026-09-19 correction: a change to
 
 Apply commands: `supabase db query --linked -f <file>`, foreground, one file at a time, never `db push`; the linked ref printed and pasted in the same frame; pre/post hashes compared with a live re-probed reference; no apply without Aravind's explicit go-ahead in the same exchange [observed: CLAUDE.md section 0, rules (a)-(c)].
 
-**PROPOSED, ARAVIND TO DECIDE: PITR substitution.** PITR is OFF on prod until beta launch [observed: `scripts/migration-number-reservations.json` 049 entry: "PITR disabled on prod until beta launch, applied without it per Aravind"]. CLAUDE.md section 0 requires the rollback mechanism to be verified by observation, never by checklist (rule on ROLLBACK MECHANISMS). Proposal: substitute the PITR step with a captured-body rollback: the `pg_get_functiondef` text of `apply_morning_flow_turn` (038 live) and `apply_evening_flow_turn` (040 live) from prod, plus their sha256, captured just before the apply, and the DOWN restores from that text. The apply record must say "substituted", not "skipped", and name the evidence. What this does NOT cover: it restores the two function bodies and clears `invoice` rows; it cannot restore any data written by the new functions afterward, so a rollback after engineers go live loses nothing only because engineers are enabled after PR-D `[inferred]`. If Aravind declines the substitution, the apply waits for PITR to be on and observed.
+**DECIDED [per Aravind, 12 Oct 23:15, D-6]: PITR substitution.** PITR is OFF on prod until beta launch [observed: `scripts/migration-number-reservations.json` 049 entry: "PITR disabled on prod until beta launch, applied without it per Aravind"]. CLAUDE.md section 0 requires the rollback mechanism to be verified by observation, never by checklist (rule on ROLLBACK MECHANISMS). Decision: the PITR step is substituted by a captured-body rollback: the `pg_get_functiondef` text of `apply_morning_flow_turn` (038 live) and `apply_evening_flow_turn` (040 live) from prod, plus their sha256, captured just before the apply, and the DOWN restores from that text. The apply record must say "substituted", not "skipped", and name the evidence. What this does NOT cover: it restores the two function bodies and clears `invoice` rows; it cannot restore any data written by the new functions afterward, so a rollback after engineers go live loses nothing only because engineers are enabled after PR-D `[inferred]`. The captured text is the one named in section 13 item 2 and the DOWN restores from it (section 9). It is also the baseline for the three-hunk proof diff in section 6, taken from prod as well as test-db.
 
 Order relative to the other PRs [observed: v3 section 8]: A, B, C, D, F. PR-B alone does not let any `'invoice'` session be created: the idle menu digit 4 is PR-C. So between PR-B's apply and PR-C's merge, nothing writes an `invoice` row, and the N2 branch is dormant. That is the safe ordering for the problems in section 6; reversing it is not safe `[inferred]`.
 
@@ -357,7 +391,7 @@ Order relative to the other PRs [observed: v3 section 8]: A, B, C, D, F. PR-B al
 
 ## 13. Prod pre-checks before apply
 
-Prod has NOT been contacted in this block or in the two earlier probes. All of the following are to be read just before the apply, with the linked ref printed in the same frame, read-only:
+Prod has NOT been contacted in any block or probe so far (probes 1 to 3, blocks 2 and 3). All of the following are to be read just before the apply, with the linked ref printed in the same frame, read-only:
 
 1. Count of `whatsapp_sessions` rows with `current_flow = 'invoice'` on prod (expected 0). Test-db had 0: the distribution was evening 435, hindrance 1, NULL 106 [observed: probe 1 step 8].
 2. The prod md5 AND the full `pg_get_functiondef` text, saved to a file with its sha256, of `apply_morning_flow_turn` and `apply_evening_flow_turn`. Compared to the test-db live text; any difference between prod and test-db is explained before the 050 body is built on either.
@@ -371,22 +405,21 @@ Prod has NOT been contacted in this block or in the two earlier probes. All of t
 
 ## 14. Open items and unknowns
 
+DECIDED since the first plan, removed from this list [per Aravind, 12 Oct 23:15]: N13 (D-3), the N2 return value (section 6), the `pm_*` grants (D-4), PITR (D-6), and who writes `capture_files` (PR-C, by D-8, section 10).
+
 DECISIONS OWED (Aravind):
-1. **N13 / defer path** (section 7). Required by the brief's own rule given the SQL evidence; what it is, is undecided.
-2. **`capture_reset` versus `start`** (section 6), and whether the branch starts the check-in.
-3. **Grants for the five `pm_*` functions** (section 5): brief says `service_role` only, v3 tests need `authenticated`.
-4. **PITR substitution** (section 12).
-5. **Who writes `capture_files` after S2** (ingest status, `stored`, `rejected`): 049 gives no role a write, and the package speaks of a D-8 column UPDATE grant that the file does not contain. Which definer function, which PR.
-6. **v3's own open decisions that touch PR-B** [observed: v3 lines 384-396]: D1 (what 1/2/3 do after expiry), D3 (refuse linking when the automatic delivery is approved: recommended refuse, and T-A28-5 assumes refuse), D6 (Q3 refuse, Q4 restore on unlink, self-link model, trigger versus extension), D8 (can a DC have more than one invoice), D9 (may the PM approve `incomplete`; assumed yes), D10 (further photos at S3/S4 attach to the same document, does the bot reply to each).
-7. **The name `'invoice'` is now taken by this flow.** CLAUDE.md section 2 lists "Ad-hoc safety / invoice / hindrance flows" and "DASH-05 invoice queue" as Fast-Follow, not built [observed]. A future ad-hoc invoice flow cannot reuse `current_flow = 'invoice'`; and today `SessionFlow` comments call `safety` and `invoice` "pre-provisioned-never-built values" (`inbound-start.ts:719`) [observed]. This is a consequence of D-1, not a request to reverse it.
-8. Whether CLAUDE.md should name the second test-db/prod divergence (D-2), as it names `outbound_sends` DELETE.
+1. **v3's own open decisions that touch PR-B** [observed: v3 section 12, 'Decisions I need from you']: D1 (what `1`, `2`, `3` do after expiry), D3 (refuse linking when the automatic delivery is approved; recommended refuse, and T-A28-5 assumes refuse), D6 (Q3 refuse, Q4 restore on unlink, self-link model, trigger versus extension), D8 (can a DC have more than one invoice), D9 (may the PM approve `incomplete`; assumed yes), D10 (further photos at S3/S4 attach to the same document, does the bot reply to each).
+2. **Names, all PROPOSED or OWED:** the N13 context flag (PROPOSED `invoice_reset_guard`); the duplicate-SID outcome name (OWED); the `pm_*` refusal code (PROPOSED `QE015`, code only, with its app string STRING OWED — Aravind to supply); the order of the duplicate check against the expiry check in `apply_material_inward_turn`.
+3. **Evening step-1 re-ask text:** STRING OWED — Aravind to supply (constant carries 'Tamil owed, NOT approved'). Morning needs no new string (section 7, item 6).
+4. **The name `'invoice'` is now taken by this flow.** CLAUDE.md section 2 lists "Ad-hoc safety / invoice / hindrance flows" and "DASH-05 invoice queue" as Fast-Follow, not built [observed]. A future ad-hoc invoice flow cannot reuse `current_flow = 'invoice'`; and `inbound-start.ts:719` calls `safety` and `invoice` "pre-provisioned-never-built values" [observed]. A consequence of D-1, not a request to reverse it.
+5. Whether CLAUDE.md should name the second test-db/prod divergence (D-2), as it names `outbound_sends` DELETE.
 
 UNKNOWNS (could not be answered from raw evidence):
-- The live bodies of the two functions on test-db were not captured in this block, and nothing on prod has ever been read. The 050 body does not exist yet; "live body + one branch" is a method, not a result.
-- Whether the live test-db and prod bodies equal 038 and 040 exactly (v3 itself lists this as unverified, line 417).
+- Prod: nothing on prod has ever been read. The test-db live bodies were captured (probe 3, md5s MATCH probe 1, section 6), but they have not been diffed against the 038 and 040 migration text, and whether prod equals test-db is unknown. The 050 body does not exist yet; "live body + three hunks" is a method, not a result.
+- Whether the live test-db and prod bodies equal 038 and 040 exactly (v3 itself lists this as unverified, line 417). Also whether `quoco_classify_yes_no` on prod equals 030:267-318, which is its only definer in the repo; the morning half of D-3 is built on that function's behaviour.
 - The names of the flow-owned context keys of the `invoice` flow, and their cleanup list in the N2 branch.
 - The exact parameter list and outcome codes of `apply_material_inward_turn` (named by analogy only).
-- Whether the TypeScript layer filters a lone digit before the evening RPC (only the SQL was read).
+- Where exactly hunk boundaries fall once the body is written: whether setting the N13 flag belongs to hunk (1) or (2) of the proof diff (section 6), and whether the existing `v_session.context` handling needs a fourth hunk. If it does, the three-hunk rule has to be restated before the apply.
 - What the media path after `inbound-start.ts:900` does for the evening case with an `invoice` session. Lines 876-900 show the morning reply; the evening branch beyond was not read.
 - Whether a stored `invoice` session survives anything other than the IST-day rule and the 30-minute rule (for instance the BOT-07 reset block): not read.
 - How many engineers could be mid-capture at 08:30 or 18:30 IST. There is one active engineer on prod as of 19 Sep [observed: CLAUDE.md section 0 correction]; the production usage pattern of the capture flow is unknown because it has never run.
@@ -394,5 +427,8 @@ UNKNOWNS (could not be answered from raw evidence):
 - Whether CI has a direct owner Postgres connection (T-A28-3 in CI) [observed: v3].
 - Whether `btree_gist` is installed (v3 Q4 alternative) [observed: v3].
 - Whether PostgREST passes unknown SQLSTATEs (`QE0nn`) through as `error.code`. 049's package states it is unverified [observed].
-- Whether this branch conflicts with any sibling worktree reserving 050 (55 worktrees exist at probe 1; none was checked).
-- The v3 lines I left unedited in step 4 (29, 44, 55, 61-66, 85, 249-268, 333-349) say "`material_inward` session" in narrative or test text. I treated them as readable under the one correction at lines 132-211, not as separate stored-value uses. That is a judgement call; Aravind may want them struck too.
+- Whether anything outside the 56 worktrees on this machine reserves 050 (probe 3 step 6 found only this branch's own file; other clones and unmerged remote branches without a local ref are not covered).
+- The v3 lines left unedited (29, 44, 55, 61-66, 85, 249-268, 333-349 in the pre-consolidation numbering) say "`material_inward` session" in narrative or test text. They are covered by the single note under the v3 title (commit 3c3c9e5), which says exactly that. Whether Aravind also wants them struck is a judgement call left open.
+
+- Whether `QE015` is free: 049 uses QE001-QE014, but no later migration was searched for another `QE` code. The proposed refusal code is unchecked against `supabase/migrations/` beyond 049 and against test-db and prod.
+- Whether a bare `RAISE;` inside the `unique_violation` handler preserves the original constraint name and SQLSTATE all the way to supabase-js as `error.code`: unverified, same class as the PostgREST QE-code question.
