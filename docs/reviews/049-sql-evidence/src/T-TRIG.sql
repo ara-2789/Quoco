@@ -218,11 +218,17 @@ SELECT t.expect('S-4 C4 shape: received_at = now() + 1 hour with created_at = no
 SELECT t.val('S-4 C4 shape: it is deliveries_received_order_chk that refuses it', $$SELECT (t.errmsg('INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, created_at) VALUES (''{T1}'', ''{P1}'', ''{U.ENG1}'', now() + interval ''1 hour'', ''{D37}'', now() + interval ''2 hours'')') LIKE '%deliveries_received_order_chk%')::text$$, 'true');
 \echo
 \echo -- ===== N-4 (SQL review r3, Option A per Aravind 12 Oct): PM-owned fields are NULL at deliveries INSERT; set later only through UPDATE =====
-SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D37}', 'internal_transfer')$$, 'E12');
-SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D37}', 'TN01AB1234')$$, 'E12');
-SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D37}', 'DC-1')$$, 'E12');
-SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D37}', current_date)$$, 'E12');
-SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V21)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '{V21}'$$, 'ok');
+-- N-5: each N-4 case owns its document and delivery ids (no borrowing of {D37} from the S-4 C4 case or {V21} from F4-1).
+SELECT t.mk_doc('{D38}', 'dc', 'SM_T_dc38');
+SELECT t.mk_doc('{D39}', 'dc', 'SM_T_dc39');
+SELECT t.mk_doc('{D40}', 'dc', 'SM_T_dc40');
+SELECT t.mk_doc('{D41}', 'dc', 'SM_T_dc41');
+SELECT t.mk_dc('{D42}', '{V41}', 'SM_T_dc42');
+SELECT t.expect('N-4 INSERT a delivery with delivery_type set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, delivery_type) VALUES ('{V42}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D38}', 'internal_transfer')$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with vehicle_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, vehicle_number) VALUES ('{V43}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D39}', 'TN01AB1234')$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with dc_number set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_number) VALUES ('{V44}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D40}', 'DC-1')$$, 'E12');
+SELECT t.expect('N-4 INSERT a delivery with dc_date set', $$INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id, dc_date) VALUES ('{V45}', '{T1}', '{P1}', '{U.ENG1}', now() - interval '1 hour', '{D41}', current_date)$$, 'E12');
+SELECT t.expect('N-4 positive: the same four fields are set later through UPDATE (V41)', $$UPDATE public.deliveries SET delivery_type = 'supplier', vehicle_number = 'TN01AB1234', dc_number = 'DC-9', dc_date = current_date WHERE id = '{V41}'$$, 'ok');
 \echo
 \echo -- ===== B3 / E14: every invariant trigger refuses a REPEATABLE READ writer =====
 BEGIN ISOLATION LEVEL REPEATABLE READ;
