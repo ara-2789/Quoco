@@ -52,3 +52,11 @@ Generated from test-db: 4 new tables **plus 6 `quoco_test_capture_*` helpers** (
 5. The 131 → 135 function drift on prod (section 1).
 6. The local `tsc` baseline in the 049-sql worktree (section 6).
 7. PR-B / PR-C blocking conditions (package section 10) unchanged.
+
+## 8. Addendum — CI, merge, file on `main` (12 Oct 2026) — [O]
+
+- **Commits after the apply** on `feat/049-capture-tables`: `df92495` (package section 18, runbook, probes), `f67d98c` (the `git mv` only — its message names this record, but `git apply` could not find the patch file and the commit ran anyway; not rewritten, already pushed), `693de26` (types, test-db source per D-16), `022dc5c` (this record and the reservations entry).
+- **CI on the PR head** (`gh run view 38229009816`): `conclusion: success`, `headSha: 022dc5ca3e168a54676d7a3157c325e1fdbfb827`; jobs Migration Lint, File Size Lint, Lint, Fixture Literal Lint, **Typecheck**, **Test (real test-db)** all `success`; "Detect already-green PR head" `skipped`. Typecheck passing with the regenerated types confirms section 6's reading: the two local `tsc` errors are local to the worktree, not in the code.
+- **Draft state:** `gh pr merge` was refused ("Pull Request is still a draft"), although #331 had been reported ready earlier on 12 Oct [R]. Aravind ran `gh pr ready 331`; `isDraft: false`, head `022dc5c`.
+- **Merge:** regular merge commit `2292bed591712a638adffcccef72e962a8441164` (`origin/main` `0289bcf..2292bed`), by Aravind. `git show origin/main:supabase/migrations/049_capture_tables.sql | shasum -a 256` = **`069fbe16f07c383d54edd3233b845de55591548815ce5e6b068e098c9dfa574b`** — the file on `main` is the file applied to prod (CLAUDE.md PROD APPLIES (d)).
+- **Closed from section 7:** items 2 and 3. **Still open:** 1 (P14 dated pin), 4 (PITR before the switch trigger), 5 (prod function drift 131 → 135), 6 (local `tsc` baseline in the 049-sql worktree), 7 (PR-B / PR-C conditions). Also: #331's title still reads "HELD, not applied" (cosmetic; the merge commit message carries it).
