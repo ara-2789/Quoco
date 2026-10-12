@@ -2,6 +2,8 @@ Copied into the repo on 2026-10-10 from /tmp/quoco/slice1a-plan-v3.md (written 2
 
 # Slice 1a plan v3 — engineer capture, A18 confirmation, storage, PM approval, PM invoice linking, automatic delivery from invoice
 
+DATED CORRECTION (2026-10-12, per Aravind): the stored current_flow value for the material-inward flow is 'invoice', already allowed by 001:92's CHECK (whatsapp_sessions_current_flow_check, observed on test-db 12 Oct). No CHECK change. session.ts:6 already lists 'invoice'. User-facing label stays 'Material inward'. Narrative and test text that says 'a material_inward session' means a session with current_flow = 'invoice'.
+
 PLAN ONLY. No code, no commits, no branch, no push, no database access, no Supabase CLI. Written 2026-10-06/07 (IST night).
 Base: `origin/main` = `5789b9c72e1fedd6ae4f8bb4f382fc1e746d1c30` (fetched, read back, logged; matches the expected SHA, so v2's code evidence was not re-read wholesale).
 Worktree (detached, read-only use): `/Users/aravindanrajamani/Desktop/quoco-1a-plan-v2` (HEAD = the same SHA, `status --porcelain` empty at start). Log: `/tmp/quoco/slice1a-v3-log.txt`.
@@ -129,7 +131,7 @@ Columns: `id`, `created_at`, `tenant_id`, `project_id`, `delivery_id`, `invoice_
 - **Arrives in 1b, additive:** `link_source` gains `'auto_match'` (a CHECK change); allocation amounts in a **new** table keyed on `link_id`.
 
 ### 2.4 Other 1a schema changes
-- ~~`whatsapp_sessions.current_flow` CHECK gains `'material_inward'` (v2 §3.8: inline constraint from `001:92`; its auto-generated name is read from the catalog at apply time, **UNVERIFIED** now). `SessionFlow` (`session.ts:6` `[read]`) gains the value.~~ DATED CORRECTION (2026-10-12, per Aravind): the stored value is 'invoice', already allowed by 001:92's CHECK (whatsapp_sessions_current_flow_check, observed on test-db 12 Oct). No CHECK change. User-facing label stays 'Material inward'.
+- ~~`whatsapp_sessions.current_flow` CHECK gains `'material_inward'` (v2 §3.8: inline constraint from `001:92`; its auto-generated name is read from the catalog at apply time, **UNVERIFIED** now). `SessionFlow` (`session.ts:6` `[read]`) gains the value.~~ (see correction, 12 Oct)
 - New private storage bucket, created by migration, mirroring `042` (N12).
 - `jobs.type` has no CHECK (`006:7` `[v2-read]`); new type `capture_ingest` is a code change only.
 
@@ -137,7 +139,7 @@ Columns: `id`, `created_at`, `tenant_id`, `project_id`, `delivery_id`, `invoice_
 
 ## 3. Engineer flow with message count per path
 
-Steps. **S0** idle `4` → session ~~`material_inward`~~, DATED CORRECTION (2026-10-12, per Aravind): the stored value is 'invoice', already allowed by 001:92's CHECK (whatsapp_sessions_current_flow_check, observed on test-db 12 Oct). No CHECK change. User-facing label stays 'Material inward'. step 1. **S1** kind (DC or invoice; whether numbered or typed is **not decided**, slot `MI_ASK_KIND`). **S2** file(s). **S3** ack `1/2/3`. **S4** note (only after 2 or 3). RPC `apply_material_inward_turn` locks the session row `FOR UPDATE` (CLAUDE.md §6) and writes `expires_at = p_now + 30 min`, `updated_at = p_now` on every turn (N8).
+Steps. **S0** idle `4` → session ~~`material_inward`~~, (see correction, 12 Oct) step 1. **S1** kind (DC or invoice; whether numbered or typed is **not decided**, slot `MI_ASK_KIND`). **S2** file(s). **S3** ack `1/2/3`. **S4** note (only after 2 or 3). RPC `apply_material_inward_turn` locks the session row `FOR UPDATE` (CLAUDE.md §6) and writes `expires_at = p_now + 30 min`, `updated_at = p_now` on every turn (N8).
 
 | Path | Engineer messages | Bot replies | Notes |
 |---|---|---|---|
@@ -204,11 +206,11 @@ Files (image inline; PDF as an attachment download named by us, content type fro
 
 ## 6. Session and router changes (N1, N2, N3, A27)
 
-1. **Migration/functions (one PR, same as the CHECK, N1/N2):** ~~CHECK gains `'material_inward'`;~~ DATED CORRECTION (2026-10-12, per Aravind): the stored value is 'invoice', already allowed by 001:92's CHECK (whatsapp_sessions_current_flow_check, observed on test-db 12 Oct). No CHECK change. User-facing label stays 'Material inward'. `apply_material_inward_turn` (service_role only); **new ~~`material_inward`~~ (DATED CORRECTION above applies.) start-branch in `apply_morning_flow_turn` and `apply_evening_flow_turn`** (Q6); `expire_stale_material_inward` (Q5).
-2. ~~`session.ts:6` union gains `'material_inward'`.~~ DATED CORRECTION (2026-10-12, per Aravind): the stored value is 'invoice', already allowed by 001:92's CHECK (whatsapp_sessions_current_flow_check, observed on test-db 12 Oct). No CHECK change. User-facing label stays 'Material inward'. (`session.ts:6` already lists `'invoice'`.)
+1. **Migration/functions (one PR, same as the CHECK, N1/N2):** ~~CHECK gains `'material_inward'`;~~ (see correction, 12 Oct) `apply_material_inward_turn` (service_role only); **new ~~`material_inward`~~ (see correction, 12 Oct) start-branch in `apply_morning_flow_turn` and `apply_evening_flow_turn`** (Q6); `expire_stale_material_inward` (Q5).
+2. ~~`session.ts:6` union gains `'material_inward'`.~~ (see correction, 12 Oct) (`session.ts:6` already lists `'invoice'`.)
 3. **Replace both flow collapses** (`inbound-start.ts:723-724`, `dispatch.ts:266`, N1 `[v2-read]`) with one exhaustive function ending in a TypeScript `never` check. `Flow` at `dispatch.ts:47` stays three-valued.
-4. New router branch **before** `inbound-start.ts:735` for ~~`material_inward`~~ DATED CORRECTION (2026-10-12, per Aravind): the stored value is 'invoice', already allowed by 001:92's CHECK (whatsapp_sessions_current_flow_check, observed on test-db 12 Oct). No CHECK change. User-facing label stays 'Material inward'. (including media). Nothing falls through to `:749` or `:786+`.
-5. **A27 in the router:** `readActiveFlowForRouting` (`session.ts:82-102` `[read]`) today returns `null` only when the IST date changed. v3 adds, **for** ~~`material_inward`~~ DATED CORRECTION (2026-10-12, per Aravind): the stored value is 'invoice', already allowed by 001:92's CHECK (whatsapp_sessions_current_flow_check, observed on test-db 12 Oct). No CHECK change. User-facing label stays 'Material inward'. **only**: if `expires_at <= now`, call `expire_stale_material_inward(phone, now)` (service_role) and return `null`. Morning, evening and hindrance are untouched (X7).
+4. New router branch **before** `inbound-start.ts:735` for ~~`material_inward`~~ (see correction, 12 Oct) (including media). Nothing falls through to `:749` or `:786+`.
+5. **A27 in the router:** `readActiveFlowForRouting` (`session.ts:82-102` `[read]`) today returns `null` only when the IST date changed. v3 adds, **for** ~~`material_inward`~~ (see correction, 12 Oct) **only**: if `expires_at <= now`, call `expire_stale_material_inward(phone, now)` (service_role) and return `null`. Morning, evening and hindrance are untouched (X7).
 6. Idle `4`: `classifyAdhocInput` (`inbound-start.ts:257-265` `[read]`) gains `'item4'`; the type is currently `'item1' | 'item2' | 'item_reserved' | 'unrecognized'`. `CORRECTION_LINE`'s `Exclude<AdhocInputKind,'item1'>` keying (`:348`) needs `item4` handled (or excluded) or the build fails — a deliberate exhaustiveness check.
 7. **Pattern grep for the same defect class** (CLAUDE.md §0): the v2 grep stands (`flows/morning.ts:347-361`, `flows/evening.ts:368`, `flows/hindrance.ts:218`, `033:199`: none collapses an unknown value). v3 adds a second grep for "any code that starts a flow over an unknown non-null `current_flow`": the `reask` fall-through in the start branches (038 morning/evening, 040 evening, 044 hindrance). It is the N9 signature. Re-run at build.
 
@@ -419,7 +421,7 @@ The A18 question asks whether goods **arrived**. An invoice that bills goods rec
 - I did not verify the Resend page, 1b only.
 
 ### Guesses (each also marked in the text)
-~~`'material_inward'` as the flow name~~ DATED CORRECTION (2026-10-12, per Aravind): the stored value is 'invoice', already allowed by 001:92's CHECK (whatsapp_sessions_current_flow_check, observed on test-db 12 Oct). No CHECK change. User-facing label stays 'Material inward'.; two document tables; soft unlink; atomic ingest-job insert in the RPC; the ack stored on the document; **self-link row as the model for the automatic delivery**; **`expires_at` as the A27 clock**; `>` not `>=` at 30 minutes; `incomplete` defined as "no ack yet"; PM may approve `incomplete`; link targets must carry a DC document and not be automatic deliveries; one re-ask then close-with-nothing at S1/S2; further files attach to the same document; case numbering (1/2/3) of A28; service_role SELECT-only on three tables; `CAPTURE_MAX_BYTES` 16 MiB read as 16 × 1024 × 1024; image magic-byte checks in the capture flow.
+~~`'material_inward'` as the flow name~~ (see correction, 12 Oct); two document tables; soft unlink; atomic ingest-job insert in the RPC; the ack stored on the document; **self-link row as the model for the automatic delivery**; **`expires_at` as the A27 clock**; `>` not `>=` at 30 minutes; `incomplete` defined as "no ack yet"; PM may approve `incomplete`; link targets must carry a DC document and not be automatic deliveries; one re-ask then close-with-nothing at S1/S2; further files attach to the same document; case numbering (1/2/3) of A28; service_role SELECT-only on three tables; `CAPTURE_MAX_BYTES` 16 MiB read as 16 × 1024 × 1024; image magic-byte checks in the capture flow.
 
 ### Corrections owed to the design record (PR-F, dated, struck, not silent)
 A16–A28 and findings N1–N4, N7–N13; A1's "owner email in 1a" (superseded by A24); A7's "PM values" (superseded by A23); the v1/v2 "TTL" claim (not in the record); A1's text "1a = engineer capture, storage, PM approval, owner email" is the line to strike.
