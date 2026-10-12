@@ -1,0 +1,107 @@
+== 049-sql evidence: T-REFUSE (S4 / B7 grant refusals, test-db exfccwlrhoutkgrlikod) ==
+generated: 2026-10-12T06:23:19Z
+$ git rev-parse HEAD
+0aafe402cb012a4478eeaf144fdbf6124cc206b1
+$ git status --porcelain
+ M docs/reviews/049-sql-evidence/src/T-HELP.sql
+ M scripts/test-db-only-capture-helpers.sql
+?? docs/reviews/049-sql-evidence/T-BKT.txt
+?? docs/reviews/049-sql-evidence/T-REFUSE.txt
+
+--- script (verbatim) ---
+$ cat /tmp/quoco/2b/s4-refusals.mjs
+// S4 / B7: grant refusals on the 4 capture tables, via PostgREST (supabase-js), untyped clients. Prints hostname only, no keys.
+import { createRequire } from 'module'
+const require = createRequire(process.cwd() + '/')
+const { config } = require('dotenv'); config({ path: '.env.test', quiet: true })
+const { createClient } = require('@supabase/supabase-js')
+const url = process.env.SUPABASE_TEST_URL
+const opts = { auth: { persistSession: false } }
+const svc = createClient(url, process.env.SUPABASE_TEST_SERVICE_ROLE_KEY, opts)
+const anon = createClient(url, process.env.SUPABASE_TEST_ANON_KEY, opts)
+console.log('host:', new URL(url).hostname)
+const IMPOSSIBLE_ID = '00000000-0000-0000-0000-0000000000ff'
+const TABLES = ['capture_documents', 'capture_files', 'deliveries', 'delivery_invoice_links']
+let pass = 0, fail = 0
+const show = (e) => `code=${e.code ?? '?'} message=${String(e.message ?? '').slice(0, 160)} hint=${e.hint ?? ''}`
+function report(label, ok, extra) { if (ok) pass++; else fail++; console.log(`${ok ? 'PASS' : 'FAIL'}: ${label} -- ${extra}`) }
+// a refusal case: must error with one of okCodes
+function refusal(label, res, okCodes) {
+  const { data, error } = res
+  if (!error) return report(label, false, `expected refusal ${okCodes.join('|')} but the call SUCCEEDED (data length ${Array.isArray(data) ? data.length : data === null ? 'null' : typeof data})`)
+  if (okCodes.includes(error.code)) return report(label, true, `refused: ${show(error)}`)
+  return report(label, false, `refused for the wrong reason (expected ${okCodes.join('|')}): ${show(error)}`)
+}
+// A. anon, per table
+for (const t of TABLES) {
+  refusal(`A anon SELECT ${t}`, await anon.from(t).select('*').limit(1), ['42501'])
+  refusal(`A anon INSERT {} ${t}`, await anon.from(t).insert({}), ['42501'])
+  refusal(`A anon UPDATE ${t}`, await anon.from(t).update({ id: IMPOSSIBLE_ID }).eq('id', IMPOSSIBLE_ID), ['42501'])
+  refusal(`A anon DELETE ${t}`, await anon.from(t).delete().eq('id', IMPOSSIBLE_ID), ['42501'])
+}
+// B. service_role, per table
+for (const t of TABLES) {
+  refusal(`B service_role INSERT {} ${t}`, await svc.from(t).insert({}), ['42501'])
+  refusal(`B service_role UPDATE ${t}`, await svc.from(t).update({ id: IMPOSSIBLE_ID }).eq('id', IMPOSSIBLE_ID), ['42501'])
+  refusal(`B service_role DELETE ${t}`, await svc.from(t).delete().eq('id', IMPOSSIBLE_ID), ['42501'])
+}
+// C. positive control: service_role SELECT succeeds
+for (const t of TABLES) {
+  const { data, error } = await svc.from(t).select('*').limit(1)
+  report(`C service_role SELECT ${t}`, !error && Array.isArray(data), error ? `unexpected error: ${show(error)}` : `succeeded, data is an array (length ${data.length})`)
+}
+// D. rpc helpers_present
+{
+  const { data, error } = await svc.rpc('quoco_test_capture_helpers_present')
+  report('D service_role rpc quoco_test_capture_helpers_present', !error && data === true, error ? `unexpected error: ${show(error)}` : `returned ${JSON.stringify(data)}`)
+  const r = await anon.rpc('quoco_test_capture_helpers_present')
+  refusal('D anon rpc quoco_test_capture_helpers_present', r, ['42501', 'PGRST202'])
+  if (r.error) console.log(`  D-anon code observed: ${r.error.code}`)
+}
+console.log(`RESULT PASS=${pass} FAIL=${fail}   (expected PASS = 16 + 12 + 4 + 2 = 34)`)
+
+--- S4 run section, verbatim from /tmp/quoco/2026-10-12-2b-B.txt (exact commands, raw output, after-run counts) ---
+=== S4 RUN 2026-10-12T06:20:48Z (yes from Aravind) ===
+$ cat supabase/.temp/project-ref
+exfccwlrhoutkgrlikod
+$ node /tmp/quoco/2b/s4-refusals.mjs
+host: exfccwlrhoutkgrlikod.supabase.co
+PASS: A anon SELECT capture_documents -- refused: code=42501 message=permission denied for table capture_documents hint=Grant the required privileges to the current role with: GRANT SELECT ON public.capture_documents TO anon;
+PASS: A anon INSERT {} capture_documents -- refused: code=42501 message=permission denied for table capture_documents hint=Grant the required privileges to the current role with: GRANT INSERT ON public.capture_documents TO anon;
+PASS: A anon UPDATE capture_documents -- refused: code=42501 message=permission denied for table capture_documents hint=Grant the required privileges to the current role with: GRANT SELECT, UPDATE ON public.capture_documents TO anon;
+PASS: A anon DELETE capture_documents -- refused: code=42501 message=permission denied for table capture_documents hint=Grant the required privileges to the current role with: GRANT SELECT, DELETE ON public.capture_documents TO anon;
+PASS: A anon SELECT capture_files -- refused: code=42501 message=permission denied for table capture_files hint=Grant the required privileges to the current role with: GRANT SELECT ON public.capture_files TO anon;
+PASS: A anon INSERT {} capture_files -- refused: code=42501 message=permission denied for table capture_files hint=Grant the required privileges to the current role with: GRANT INSERT ON public.capture_files TO anon;
+PASS: A anon UPDATE capture_files -- refused: code=42501 message=permission denied for table capture_files hint=Grant the required privileges to the current role with: GRANT SELECT, UPDATE ON public.capture_files TO anon;
+PASS: A anon DELETE capture_files -- refused: code=42501 message=permission denied for table capture_files hint=Grant the required privileges to the current role with: GRANT SELECT, DELETE ON public.capture_files TO anon;
+PASS: A anon SELECT deliveries -- refused: code=42501 message=permission denied for table deliveries hint=Grant the required privileges to the current role with: GRANT SELECT ON public.deliveries TO anon;
+PASS: A anon INSERT {} deliveries -- refused: code=42501 message=permission denied for table deliveries hint=Grant the required privileges to the current role with: GRANT INSERT ON public.deliveries TO anon;
+PASS: A anon UPDATE deliveries -- refused: code=42501 message=permission denied for table deliveries hint=Grant the required privileges to the current role with: GRANT SELECT, UPDATE ON public.deliveries TO anon;
+PASS: A anon DELETE deliveries -- refused: code=42501 message=permission denied for table deliveries hint=Grant the required privileges to the current role with: GRANT SELECT, DELETE ON public.deliveries TO anon;
+PASS: A anon SELECT delivery_invoice_links -- refused: code=42501 message=permission denied for table delivery_invoice_links hint=Grant the required privileges to the current role with: GRANT SELECT ON public.delivery_invoice_links TO anon;
+PASS: A anon INSERT {} delivery_invoice_links -- refused: code=42501 message=permission denied for table delivery_invoice_links hint=Grant the required privileges to the current role with: GRANT INSERT ON public.delivery_invoice_links TO anon;
+PASS: A anon UPDATE delivery_invoice_links -- refused: code=42501 message=permission denied for table delivery_invoice_links hint=Grant the required privileges to the current role with: GRANT SELECT, UPDATE ON public.delivery_invoice_links TO anon;
+PASS: A anon DELETE delivery_invoice_links -- refused: code=42501 message=permission denied for table delivery_invoice_links hint=Grant the required privileges to the current role with: GRANT SELECT, DELETE ON public.delivery_invoice_links TO anon;
+PASS: B service_role INSERT {} capture_documents -- refused: code=42501 message=permission denied for table capture_documents hint=Grant the required privileges to the current role with: GRANT INSERT ON public.capture_documents TO service_role;
+PASS: B service_role UPDATE capture_documents -- refused: code=42501 message=permission denied for table capture_documents hint=Grant the required privileges to the current role with: GRANT UPDATE ON public.capture_documents TO service_role;
+PASS: B service_role DELETE capture_documents -- refused: code=42501 message=permission denied for table capture_documents hint=Grant the required privileges to the current role with: GRANT DELETE ON public.capture_documents TO service_role;
+PASS: B service_role INSERT {} capture_files -- refused: code=42501 message=permission denied for table capture_files hint=Grant the required privileges to the current role with: GRANT INSERT ON public.capture_files TO service_role;
+PASS: B service_role UPDATE capture_files -- refused: code=42501 message=permission denied for table capture_files hint=Grant the required privileges to the current role with: GRANT UPDATE ON public.capture_files TO service_role;
+PASS: B service_role DELETE capture_files -- refused: code=42501 message=permission denied for table capture_files hint=Grant the required privileges to the current role with: GRANT DELETE ON public.capture_files TO service_role;
+PASS: B service_role INSERT {} deliveries -- refused: code=42501 message=permission denied for table deliveries hint=Grant the required privileges to the current role with: GRANT INSERT ON public.deliveries TO service_role;
+PASS: B service_role UPDATE deliveries -- refused: code=42501 message=permission denied for table deliveries hint=Grant the required privileges to the current role with: GRANT UPDATE ON public.deliveries TO service_role;
+PASS: B service_role DELETE deliveries -- refused: code=42501 message=permission denied for table deliveries hint=Grant the required privileges to the current role with: GRANT DELETE ON public.deliveries TO service_role;
+PASS: B service_role INSERT {} delivery_invoice_links -- refused: code=42501 message=permission denied for table delivery_invoice_links hint=Grant the required privileges to the current role with: GRANT INSERT ON public.delivery_invoice_links TO service_role;
+PASS: B service_role UPDATE delivery_invoice_links -- refused: code=42501 message=permission denied for table delivery_invoice_links hint=Grant the required privileges to the current role with: GRANT UPDATE ON public.delivery_invoice_links TO service_role;
+PASS: B service_role DELETE delivery_invoice_links -- refused: code=42501 message=permission denied for table delivery_invoice_links hint=Grant the required privileges to the current role with: GRANT DELETE ON public.delivery_invoice_links TO service_role;
+PASS: C service_role SELECT capture_documents -- succeeded, data is an array (length 0)
+PASS: C service_role SELECT capture_files -- succeeded, data is an array (length 0)
+PASS: C service_role SELECT deliveries -- succeeded, data is an array (length 0)
+PASS: C service_role SELECT delivery_invoice_links -- succeeded, data is an array (length 0)
+PASS: D service_role rpc quoco_test_capture_helpers_present -- returned true
+PASS: D anon rpc quoco_test_capture_helpers_present -- refused: code=42501 message=permission denied for function quoco_test_capture_helpers_present hint=
+  D-anon code observed: 42501
+RESULT PASS=34 FAIL=0   (expected PASS = 16 + 12 + 4 + 2 = 34)
+exit=0
+$ supabase db query --linked "select (select count(*) from public.capture_documents) as capture_documents, (select count(*) from public.capture_files) as capture_files, (select count(*) from public.deliveries) as deliveries, (select count(*) from public.delivery_invoice_links) as delivery_invoice_links, (select count(*) from storage.objects where bucket_id = 'capture-documents') as bucket_objects;"
+Initialising login role...{ "rows": [ { "bucket_objects": 0, "capture_documents": 0, "capture_files": 0, "deliveries": 0, "delivery_invoice_links": 0 } ],}
