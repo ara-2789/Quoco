@@ -40,7 +40,7 @@ RESET ROLE;
 SET ROLE service_role;
 SELECT t.val('H14 acl helper: service_role holds only SELECT on deliveries', $$SELECT (SELECT string_agg(k, ',' ORDER BY k) FROM jsonb_each_text(public.quoco_test_capture_acl() #> '{tables,deliveries,service_role}') AS e(k, v) WHERE v = 'true')$$, 'SELECT');
 SELECT t.val('H14 acl helper: anon holds nothing on capture_files', $$SELECT count(*)::text FROM jsonb_each_text(public.quoco_test_capture_acl() #> '{tables,capture_files,anon}') AS e(k, v) WHERE v = 'true'$$, '0');
-SELECT t.val('H14 acl helper: all four trigger functions are definer with empty search_path', $$SELECT count(*)::text FROM jsonb_each(public.quoco_test_capture_acl() #> '{functions}') AS e(k, v) WHERE (v ->> 'prosecdef') = 'true' AND v -> 'proconfig' = '["search_path=\"\""]'::jsonb$$, '4');
+SELECT t.val('H14 acl helper: all six trigger functions are definer with empty search_path', $$SELECT count(*)::text FROM jsonb_each(public.quoco_test_capture_acl() #> '{functions}') AS e(k, v) WHERE (v ->> 'prosecdef') = 'true' AND v -> 'proconfig' = '["search_path=\"\""]'::jsonb$$, '6');
 SELECT t.expect('H15 cleanup of the fixture tenant', $$SELECT public.quoco_test_capture_cleanup('{T1}')$$, 'ok');
 SELECT t.val('H15 fixture tenant has no document left', $$SELECT count(*)::text FROM public.capture_documents WHERE tenant_id = '{T1}'$$, '0');
 RESET ROLE;

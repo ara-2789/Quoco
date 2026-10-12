@@ -195,7 +195,7 @@ BEGIN
     END LOOP;
     v_tbl := v_tbl || jsonb_build_object(v_t, v_row);
   END LOOP;
-  FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update'] LOOP
+  FOREACH v_f IN ARRAY ARRAY['trg_dil_before_insert', 'trg_dil_before_update', 'trg_deliveries_before_update', 'trg_capture_documents_before_update', 'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'] LOOP
     SELECT jsonb_build_object(
              'exists', true,
              'prosecdef', p.prosecdef,
