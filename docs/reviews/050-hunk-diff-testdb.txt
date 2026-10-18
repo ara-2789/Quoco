@@ -1,0 +1,145 @@
+### morning: diff -u live (test-db, md5 707c10fe09dfd5a7cd065f7826eacd46) vs 050 body (extracted from docs/reviews/050_material_inward_functions.sql; trailing ';' after $function$ stripped)
+--- live-apply_morning_flow_turn-testdb.sql	2026-10-18 22:43:45
++++ 050-body-morning.sql	2026-10-18 22:50:13
+@@ -21,6 +21,9 @@
+   -- didn't fire" from "it fired and found nothing to discard."
+   v_hindrance_discarded      BOOLEAN := NULL;
+   v_hindrance_had_description BOOLEAN := NULL;
++  -- 050 hunk (0): variables for the N2 branch and the N13 deferral (plan section 6).
++  v_capture_discarded         BOOLEAN := NULL;
++  v_capture_deferred          BOOLEAN := NULL;
+ BEGIN
+   v_log_date := (p_now AT TIME ZONE 'Asia/Kolkata')::date;
+ 
+@@ -99,6 +102,29 @@
+                                     - 'q2_reask' - 'description';
+         v_outcome := 'start';
+       END IF;
++    ELSIF v_session.current_flow = 'invoice' THEN
++      -- 050 hunk (1): N2. A scheduled start over a live 'invoice' (material inward) session discards
++      -- that session, subtract-only (flow-owned keys only; morning_submitted and every other cross-flow
++      -- marker survive by NOT being named), and starts the check-in (outcome 'start'). The partial
++      -- delivery rows are not in whatsapp_sessions and stay saved. The N13 flag records which
++      -- check-in set it (value 'morning'); the first step-1 message afterwards is deferred
++      -- by hunk (2). Mirrors the hindrance branch above; capture_discarded mirrors hindrance_discarded.
++      v_capture_discarded := true;
++      IF COALESCE((v_session.context->>'morning_submitted')::boolean, false) THEN
++        v_session.current_flow := NULL;
++        v_session.current_step := 0;
++        v_session.context      := v_session.context
++                                    - 'mi_last_sid' - 'mi_kind' - 'mi_document_id' - 'mi_reask';
++        v_outcome := 'already_complete';
++      ELSE
++        v_session.current_flow := 'morning';
++        v_session.current_step := 1;
++        v_session.context      := (v_session.context
++                                    - 'q1_reask' - 'q3_reask' - 'q4_reask' - 'q5_reask'
++                                    - 'mi_last_sid' - 'mi_kind' - 'mi_document_id' - 'mi_reask')
++                                  || jsonb_build_object('invoice_reset_guard', 'morning');
++        v_outcome := 'start';
++      END IF;
+     ELSE
+       v_outcome := 'reask';
+     END IF;
+@@ -114,6 +140,17 @@
+     IF v_text = '' THEN
+       v_outcome := 'reask';
+ 
++    ELSIF v_session.current_step = 1
++          AND (v_session.context->>'invoice_reset_guard') = 'morning' THEN
++      -- 050 hunk (2): N13, review r1 B3 option (a). The FIRST non-empty step-1 message after an
++      -- 'invoice' discard is never taken as an answer, whatever it contains: nothing is written
++      -- (no attendance, q1_reask not consumed), v_col stays NULL, the flag is cleared, and the reply
++      -- builder sends one explanation-plus-question message (capture_deferred). The SECOND message
++      -- is handled by the existing step-1 arm below, unchanged. A NEW arm: no existing line moves.
++      v_session.context  := v_session.context - 'invoice_reset_guard';
++      v_capture_deferred := true;
++      v_outcome          := 'reask';
++
+     ELSIF v_session.current_step = 1 THEN
+       v_yesno := quoco_classify_yes_no(p_message);
+       v_reask := COALESCE((v_session.context->>'q1_reask')::int, 0);
+@@ -287,6 +324,8 @@
+     'current_step',               v_session.current_step,
+     'log_date',                   v_log_date,
+     'attendance',                 v_attendance,
++    'capture_discarded',          v_capture_discarded,
++    'capture_deferred',           v_capture_deferred,
+     'hindrance_discarded',        v_hindrance_discarded,
+     'hindrance_had_description',  v_hindrance_had_description
+   );
+### morning: hunks = 4  removed lines (excluding header) = 0  added lines = 38
+
+### evening: diff -u live (test-db, md5 d19d07507abccdaf7d54ee1d74419af7) vs 050 body (extracted from docs/reviews/050_material_inward_functions.sql; trailing ';' after $function$ stripped)
+--- live-apply_evening_flow_turn-testdb.sql	2026-10-18 22:43:45
++++ 050-body-evening.sql	2026-10-18 22:50:13
+@@ -30,6 +30,9 @@
+   -- function needing 038's body as its base, not 035's alone.
+   v_hindrance_discarded      BOOLEAN := NULL;
+   v_hindrance_had_description BOOLEAN := NULL;
++  -- 050 hunk (0): variables for the N2 branch and the N13 deferral (plan section 6).
++  v_capture_discarded         BOOLEAN := NULL;
++  v_capture_deferred          BOOLEAN := NULL;
+ BEGIN
+   v_log_date := (p_now AT TIME ZONE 'Asia/Kolkata')::date;
+ 
+@@ -91,6 +94,30 @@
+                                     - 'e2_reask' - 'e3_reask' - 'e4_reask'
+                                     - 'e4_headcount' - 'e5_reask' - 'e6_reask'
+                                     - 'q2_reask' - 'description';
++        v_outcome := 'start';
++      END IF;
++    ELSIF v_session.current_flow = 'invoice' THEN
++      -- 050 hunk (1): N2. A scheduled start over a live 'invoice' (material inward) session discards
++      -- that session, subtract-only (flow-owned keys only; evening_submitted and every other cross-flow
++      -- marker survive by NOT being named), and starts the check-in (outcome 'start'). The partial
++      -- delivery rows are not in whatsapp_sessions and stay saved. The N13 flag records which
++      -- check-in set it (value 'evening'); the first step-1 message afterwards is deferred
++      -- by hunk (2). Mirrors the hindrance branch above; capture_discarded mirrors hindrance_discarded.
++      v_capture_discarded := true;
++      IF COALESCE((v_session.context->>'evening_submitted')::boolean, false) THEN
++        v_session.current_flow := NULL;
++        v_session.current_step := 0;
++        v_session.context      := v_session.context
++                                    - 'mi_last_sid' - 'mi_kind' - 'mi_document_id' - 'mi_reask';
++        v_outcome := 'already_complete';
++      ELSE
++        v_session.current_flow := 'evening';
++        v_session.current_step := 1;
++        v_session.context      := (v_session.context
++                                    - 'e2_reask' - 'e3_reask' - 'e4_reask'
++                                    - 'e4_headcount' - 'e5_reask' - 'e6_reask'
++                                    - 'mi_last_sid' - 'mi_kind' - 'mi_document_id' - 'mi_reask')
++                                  || jsonb_build_object('invoice_reset_guard', 'evening');
+         v_outcome := 'start';
+       END IF;
+     ELSE
+@@ -108,6 +135,17 @@
+     IF v_text = '' THEN
+       v_outcome := 'reask';
+ 
++    ELSIF v_session.current_step = 1
++          AND (v_session.context->>'invoice_reset_guard') = 'evening' THEN
++      -- 050 hunk (2): N13, review r1 B3 option (a). The FIRST non-empty step-1 message after an
++      -- 'invoice' discard is never taken as an answer, whatever it contains: nothing is written
++      -- (daily_logs untouched), v_col stays NULL, the flag is cleared, and the reply
++      -- builder sends one explanation-plus-question message (capture_deferred). The SECOND message
++      -- is handled by the existing step-1 arm below, unchanged. A NEW arm: no existing line moves.
++      v_session.context  := v_session.context - 'invoice_reset_guard';
++      v_capture_deferred := true;
++      v_outcome          := 'reask';
++
+     ELSIF v_session.current_step = 1 THEN
+       -- Q1 (free text + enrichment) -> evening_output + quantities.
+       -- BYTE-IDENTICAL to the pre-migration step 1 (plan §2: "unchanged").
+@@ -453,6 +491,8 @@
+     'current_step',               v_session.current_step,
+     'log_date',                   v_log_date,
+     'equipment_echo',             v_equipment_echo,
++    'capture_discarded',          v_capture_discarded,
++    'capture_deferred',           v_capture_deferred,
+     'hindrance_discarded',        v_hindrance_discarded,
+     'hindrance_had_description',  v_hindrance_had_description
+   );
+### evening: hunks = 4  removed lines (excluding header) = 0  added lines = 39
+
