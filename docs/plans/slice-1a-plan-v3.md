@@ -383,6 +383,9 @@ The A18 question asks whether goods **arrived**. An invoice that bills goods rec
 ## 12. Risks, unknowns, guesses
 
 ### Decisions I need from you
+
+DATED NOTE (2026-10-18, per Aravind): D3 refuse; D6 ratified (Q3 refuse, Q4 restore on unlink, self-link model, trigger approach; ratified after the 049 prod apply); D8 one invoice per DC delivery at a time, enforced by 049 uq_dil_active_per_delivery; D9 yes; D10 further files at S3/S4 attach to the same document (bot reply per file: PR-C). Recorded in docs/plans/pr-b-050-plan.md section 2.
+
 - **D1. X9 / A27:** after expiry, `1` starts hindrance and `2` prints a safety message. Accept, or change? (Options in Q5.)
 - **D2. Q1:** supplier/origin name: (a) PM types, (b) vendors table, (c) blank until 1b, (d) optional forever. And is a supplier name a "value" under A23?
 - **D3. X6:** if the PM approved the automatic delivery and later wants to link the invoice, refuse (recommended) or allow cancelling an approved record? Refusing leaves that invoice unlinkable.
