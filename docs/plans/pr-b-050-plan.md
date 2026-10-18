@@ -53,7 +53,7 @@ Owned elsewhere [observed: v3 section 8; `[inferred]` where noted]:
 - **D-9 [per Aravind, 18 Oct 22:07] (v3 D3):** linking an invoice to an APPROVED automatic delivery is refused; nothing changes (T-A28-5).
 - **D-10 [per Aravind, 18 Oct 22:07] (v3 D9):** the PM may approve an `incomplete` (not acknowledged) delivery.
 - **D-11 [per Aravind, 18 Oct 22:07] (v3 D10):** files sent at S3 or S4 attach to the same `capture_documents` row as new `capture_files` rows; the session stays at its step. Whether the bot replies to each file is PR-C behaviour and is NOT decided here.
-- **External review round 1 [review r1, per Aravind 18 Oct]:** B1-B3, S1-S5 and N1-N4 are applied in this revision, each marked where it lands: B1 section 3 (S3 row, bullet list), B2 and S1 section 4 (audience and order of operations), B3 section 7 (replaces the digit-only guard), S2 sections 4.5 and 11, S3 section 4.1, S4 and N2 section 9, S5 sections 2 (D-5 correction) and 10 and the 049 package, N1 section 6, N3 section 5, N4 sections 3 and 4.1. The verbatim review text is NOT saved in the repo by this block (section 14, unknowns).
+- **External review round 1 [review r1, per Aravind 18 Oct]:** B1-B3, S1-S5 and N1-N4 are applied in this revision, each marked where it lands: B1 section 3 (S3 row, bullet list), B2 and S1 section 4 (audience and order of operations), B3 section 7 (replaces the digit-only guard), S2 sections 4.5 and 11, S3 section 4.1, S4 and N2 section 9, S5 sections 2 (D-5 correction) and 10 and the 049 package, N1 section 6, N3 section 5, N4 sections 3 and 4.1. The verbatim review text is saved in `docs/reviews/050-plan-review-round-1.md` (sha256 2382018c62610c979773a102e9292e24fc6c9d001801eb9f3f5688ea467dd6c9).
 
 ### Name-mapping table: every v3 `material_inward` identifier to its PR-B name
 
@@ -455,7 +455,6 @@ DECISIONS OWED (Aravind):
 5. Whether CLAUDE.md should name the second test-db/prod divergence (D-2), as it names `outbound_sends` DELETE.
 
 UNKNOWNS added [review r1, per Aravind 18 Oct]:
-- The verbatim text of external review round 1 is NOT in the repo: `/tmp/quoco/050-review-r1.txt` held only the shell command `pbpaste > /tmp/quoco/050-review-r1.txt` (61 bytes), so `docs/reviews/050-plan-review-round-1.md` was not created. This revision applies the findings as Aravind summarised them in the block 7 instruction, not as the reviewer worded them.
 - Whether the explanation-plus-question reply needs a new outcome value or only the return key, and where in the TypeScript reply builders it lands (PR-C versus PR-E).
 - Whether the flag should live as one JSON object or two context keys.
 - Whether `LOCK TABLE ... SHARE ROW EXCLUSIVE` on `whatsapp_sessions` in the DOWN conflicts with the webhook's `FOR UPDATE` row locks under load (it blocks writers for the DOWN's duration); not measured.
