@@ -1,0 +1,89 @@
+-- S1: engineer path through apply_material_inward_turn (real 049 tables and triggers).
+\pset pager off
+\echo == S1.1 DC: S0 start -> S1 kind -> S2 two files -> S3 ack 1
+SELECT t.turn('+91900000001', '4', 'e1-s0', NULL, true) AS s0_start;
+SELECT t.ok('S0 start: flow=invoice step=1', t.sess('+91900000001') LIKE 'invoice/1 %');
+SELECT t.turn('+91900000001', '1', 'e1-s1') AS s1_kind;
+SELECT t.ok('S1 kind dc -> step 2, mi_kind=dc', t.sess('+91900000001') LIKE 'invoice/2 %"mi_kind": "dc"%');
+SELECT t.turn('+91900000001', 'gate pass photo', 'e1-s2', t.media(2)) AS s2_files;
+SELECT t.ok('S2 one document kind=dc, 2 files pending, delivery incomplete with dc_document_id',
+  (SELECT count(*) = 1 FROM public.capture_documents WHERE source_message_sid = 'e1-s2' AND kind = 'dc')
+  AND (SELECT count(*) = 2 FROM public.capture_files WHERE source_message_sid = 'e1-s2' AND ingest_status = 'pending')
+  AND t.dstatus(t.docid('e1-s2')) = 'incomplete');
+SELECT t.ok('S2 job capture_ingest with 2 files', (SELECT count(*) = 1 FROM public.jobs WHERE type = 'capture_ingest' AND payload->>'source_message_sid' = 'e1-s2' AND jsonb_array_length(payload->'files') = 2));
+SELECT t.ok('S2 session at step 3 with mi_document_id; expires_at about now+30m',
+  t.sess('+91900000001') LIKE 'invoice/3 %mi_document_id%'
+  AND (SELECT expires_at BETWEEN now() + interval '29 minutes' AND now() + interval '31 minutes' FROM public.whatsapp_sessions WHERE phone_number = '+91900000001'));
+SELECT t.turn('+91900000001', '1', 'e1-s3') AS s3_ack1;
+SELECT t.ok('S3 ack 1: ack=yes, delivery awaiting_pm, flow closed',
+  (SELECT engineer_ack = 'yes' FROM public.capture_documents WHERE source_message_sid = 'e1-s2')
+  AND t.dstatus(t.docid('e1-s2')) = 'awaiting_pm' AND t.sess('+91900000001') LIKE 'NULL/0 %"mi_last_sid": "e1-s3"%');
+
+\echo == S1.2 invoice: file creates automatic delivery + one active self-link; ack 2 -> S4 note
+SELECT t.turn('+91900000002', '4', 'e2-s0', NULL, true) AS s0;
+SELECT t.turn('+91900000002', '2', 'e2-s1') AS s1;
+SELECT t.turn('+91900000002', NULL, 'e2-s2', t.media(1)) AS s2;
+SELECT t.ok('invoice: automatic delivery created_from_invoice_id, status incomplete, exactly one active self-link',
+  (SELECT count(*) = 1 FROM public.deliveries WHERE created_from_invoice_id = t.docid('e2-s2') AND status = 'incomplete')
+  AND (SELECT count(*) = 1 FROM public.delivery_invoice_links WHERE invoice_document_id = t.docid('e2-s2') AND link_source = 'created_from_invoice' AND unlinked_at IS NULL));
+SELECT t.turn('+91900000002', '2', 'e2-s3') AS ack2;
+SELECT t.ok('ack 2 -> ack=no, step 4, delivery awaiting_pm', (SELECT engineer_ack = 'no' FROM public.capture_documents WHERE id = t.docid('e2-s2')) AND t.sess('+91900000002') LIKE 'invoice/4 %' AND t.dstatus(t.docid('e2-s2')) = 'awaiting_pm');
+SELECT t.turn('+91900000002', NULL, 'e2-s4', t.media(1)) AS file_at_s4;
+SELECT t.ok('file at S4 attaches as file_no 2, session stays at step 4 (D-11)', (SELECT count(*) = 2 FROM public.capture_files WHERE document_id = t.docid('e2-s2')) AND t.sess('+91900000002') LIKE 'invoice/4 %');
+SELECT t.turn('+91900000002', 'two bags short', 'e2-s5') AS note;
+SELECT t.ok('S4 note stored, flow closed', (SELECT engineer_ack_note = 'two bags short' FROM public.capture_documents WHERE id = t.docid('e2-s2')) AND t.sess('+91900000002') LIKE 'NULL/0 %');
+
+\echo == S1.3 ack 3 -> partial, step 4
+SELECT t.turn('+91900000003', '4', 'e3-s0', NULL, true);
+SELECT t.turn('+91900000003', '1', 'e3-s1');
+SELECT t.turn('+91900000003', NULL, 'e3-s2', t.media(1));
+SELECT t.turn('+91900000003', '3', 'e3-s3') AS ack3;
+SELECT t.ok('ack 3 -> partial, step 4', (SELECT engineer_ack = 'partial' FROM public.capture_documents WHERE id = t.docid('e3-s2')) AND t.sess('+91900000003') LIKE 'invoice/4 %');
+
+\echo == S1.4 unclear: garbage -> one re-ask -> unclear, CLOSES (never S4), raw text is the note
+SELECT t.turn('+91900000004', '4', 'e4-s0', NULL, true);
+SELECT t.turn('+91900000004', '1', 'e4-s1');
+SELECT t.turn('+91900000004', NULL, 'e4-s2', t.media(1));
+SELECT t.turn('+91900000004', 'maybe', 'e4-s3') AS garbage1;
+SELECT t.ok('first garbage -> reask, still step 3, no ack', t.sess('+91900000004') LIKE 'invoice/3 %' AND (SELECT engineer_ack IS NULL FROM public.capture_documents WHERE id = t.docid('e4-s2')));
+SELECT t.turn('+91900000004', 'not sure', 'e4-s4') AS garbage2;
+SELECT t.ok('second garbage -> ack=unclear, note=raw text, flow closed (no S4)', (SELECT engineer_ack = 'unclear' AND engineer_ack_note = 'not sure' FROM public.capture_documents WHERE id = t.docid('e4-s2')) AND t.sess('+91900000004') LIKE 'NULL/0 %');
+
+\echo == S1.5 accepted ack forms: 1. / 2) / keycap 3
+SELECT t.turn('+91900000005', '4', 'e5-s0', NULL, true); SELECT t.turn('+91900000005', '1', 'e5-s1'); SELECT t.turn('+91900000005', NULL, 'e5-s2', t.media(1));
+SELECT t.turn('+91900000005', '1.', 'e5-s3');
+SELECT t.ok('"1." -> yes', (SELECT engineer_ack = 'yes' FROM public.capture_documents WHERE id = t.docid('e5-s2')));
+SELECT t.turn('+91900000006', '4', 'e6-s0', NULL, true); SELECT t.turn('+91900000006', '1', 'e6-s1'); SELECT t.turn('+91900000006', NULL, 'e6-s2', t.media(1));
+SELECT t.turn('+91900000006', '2)', 'e6-s3');
+SELECT t.ok('"2)" -> no', (SELECT engineer_ack = 'no' FROM public.capture_documents WHERE id = t.docid('e6-s2')));
+SELECT t.turn('+91900000007', '4', 'e7-s0', NULL, true); SELECT t.turn('+91900000007', '1', 'e7-s1'); SELECT t.turn('+91900000007', NULL, 'e7-s2', t.media(1));
+SELECT t.turn('+91900000007', E'3️⃣', 'e7-s3');
+SELECT t.ok('keycap 3 -> partial', (SELECT engineer_ack = 'partial' FROM public.capture_documents WHERE id = t.docid('e7-s2')));
+SELECT t.turn('+91900000008', '4', 'e8-s0', NULL, true); SELECT t.turn('+91900000008', '1', 'e8-s1'); SELECT t.turn('+91900000008', NULL, 'e8-s2', t.media(1));
+SELECT t.turn('+91900000008', '12', 'e8-s3');
+SELECT t.ok('"12" is NOT an ack -> reask, no ack stored', (SELECT engineer_ack IS NULL FROM public.capture_documents WHERE id = t.docid('e8-s2')) AND t.sess('+91900000008') LIKE 'invoice/3 %');
+
+\echo == S1.6 duplicate SID: file turn and text turn
+SELECT t.turn('+91900000001', '1', 'e1-s3') AS dup_text_after_close;
+SELECT t.ok('retried final ack (text turn) -> duplicate, no QE011, ack unchanged', (SELECT engineer_ack = 'yes' FROM public.capture_documents WHERE source_message_sid = 'e1-s2'));
+SELECT t.turn('+91900000001', 'gate pass photo', 'e1-s2', t.media(2)) AS dup_file;
+SELECT t.ok('retried file turn -> duplicate, still 1 doc and 2 files', (SELECT count(*) = 1 FROM public.capture_documents WHERE source_message_sid = 'e1-s2') AND (SELECT count(*) = 2 FROM public.capture_files WHERE source_message_sid = 'e1-s2'));
+SELECT t.turn('+91900000003', '3', 'e3-s3') AS dup_text_mid_flow;
+SELECT t.ok('retried ack mid-flow (S4 session) -> duplicate (no second ack, no QE011), still step 4', t.sess('+91900000003') LIKE 'invoice/4 %');
+SELECT t.ok('outcome strings: duplicate', (t.turn('+91900000003', '3', 'e3-s3')->>'outcome') = 'duplicate');
+
+\echo == S1.7 expiry: apply_material_inward_turn after 31 min, and expire_stale_material_inward
+SELECT t.turn('+91900000009', '4', 'e9-s0', NULL, true);
+SELECT t.turn('+91900000009', '1', 'e9-s1', NULL, false, now() + interval '31 minutes') AS late_turn;
+SELECT t.ok('turn after 31 min -> expired, flow NULL', (t.sess('+91900000009') LIKE 'NULL/0 %'));
+SELECT t.turn('+91900000010', '4', 'e10-s0', NULL, true);
+SET ROLE service_role;
+SELECT public.expire_stale_material_inward('+91900000010', now() + interval '31 minutes') AS expired_true;
+SELECT public.expire_stale_material_inward('+91900000010', now() + interval '31 minutes') AS second_call_false;
+RESET ROLE;
+SELECT t.ok('expire_stale: cleared once (flow NULL), second call false', t.sess('+91900000010') LIKE 'NULL/0 %');
+INSERT INTO public.whatsapp_sessions (phone_number, tenant_id, current_flow, current_step, context, expires_at, updated_at)
+  VALUES ('+91900000011', '10000000-0000-0000-0000-000000000001', 'morning', 2, '{}', now() - interval '1 hour', now());
+SELECT public.expire_stale_material_inward('+91900000011', now() + interval '31 minutes') AS morning_untouched_false;
+SELECT t.ok('expire_stale leaves an expired MORNING session alone', t.sess('+91900000011') LIKE 'morning/2 %');
+\echo == S1 end

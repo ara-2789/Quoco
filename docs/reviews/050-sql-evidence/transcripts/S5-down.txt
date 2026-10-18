@@ -1,0 +1,169 @@
+== 050 DOWN dry-run (local scaffold) ==
+generated: 2026-10-18T17:32:59Z
+HEAD: 4faf1c410828eef5c04b3535635baef5a6915737
+sha256 UP:   0d5a8c14f8349503aff5dd96f477c4f7abb6d61e8ac1078aa8efbfb3996846d6
+sha256 DOWN: 5338d448442871e97487ca2e2578e1203b5e50735a4fd510d3dabc815acb9a52
+
+=== A. DOWN with a live in-flight session ===
+SELECT t.turn('+91950000001', '4', 'dn-s0', NULL, true) 
+SELECT t.turn('+91950000001', '1', 'dn-s1') 
+SELECT t.turn('+91950000001', NULL, 'dn-s2', t.media(1)) 
+INSERT INTO public.whatsapp_sessions (phone_number, tenant_id, user_id, current_flow, current_step, context, expires_at, updated_at)
+VALUES ('+91950000002','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002','morning',1,'{"invoice_reset_guard":"morning"}', now()+interval '20 minutes', now()),
+       ('+91950000003','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002',NULL,0,'{"morning_submitted":true,"mi_last_sid":"z","mi_kind":"dc"}', now()+interval '20 minutes', now());
+SELECT 'BEFORE: ' || phone_number || ' ' || coalesce(current_flow,'NULL') || '/' || current_step || ' ' || context::text AS sessions FROM public.whatsapp_sessions WHERE phone_number LIKE '+9195%' ORDER BY 1;
+                                                                     sessions                                                                      
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ BEFORE: +91950000001 invoice/3 {"mi_kind": "dc", "mi_reask": 0, "mi_last_sid": "dn-s2", "mi_document_id": "9e372737-6b4f-498d-a873-4699a74aec80"}
+ BEFORE: +91950000002 morning/1 {"invoice_reset_guard": "morning"}
+ BEFORE: +91950000003 NULL/0 {"mi_kind": "dc", "mi_last_sid": "z", "morning_submitted": true}
+(3 rows)
+
+SELECT t.ok('before: the in-flight session works (S3 ack accepted) -- the same turn that must still be safe after the DOWN', (t.turn('+91950000001','1','dn-ack')->>'outcome') = 'complete');
+                                                         ok                                                          
+---------------------------------------------------------------------------------------------------------------------
+ PASS: before: the in-flight session works (S3 ack accepted) -- the same turn that must still be safe after the DOWN
+(1 row)
+
+UPDATE public.whatsapp_sessions SET current_flow = 'invoice', current_step = 3, context = context || '{"mi_kind":"dc","mi_last_sid":"dn-s2"}' WHERE phone_number = '+91950000001';
+$ psql -X -q -d d_down -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/050-pr-b/docs/reviews/050-down-testdb.sql
+[exit 0]
+SELECT 'AFTER: ' || phone_number || ' ' || coalesce(current_flow,'NULL') || '/' || current_step || ' ' || context::text AS sessions FROM public.whatsapp_sessions WHERE phone_number LIKE '+9195%' ORDER BY 1;
+                        sessions                        
+--------------------------------------------------------
+ AFTER: +91950000001 NULL/0 {}
+ AFTER: +91950000002 morning/1 {}
+ AFTER: +91950000003 NULL/0 {"morning_submitted": true}
+(3 rows)
+
+SELECT t.ok('T-DOWN-1: no invoice session and no flag/flow-owned key on ANY row', (SELECT count(*) = 0 FROM public.whatsapp_sessions WHERE current_flow = 'invoice' OR context ?| ARRAY['mi_last_sid','mi_kind','mi_document_id','mi_reask','invoice_reset_guard']));
+                                    ok                                    
+--------------------------------------------------------------------------
+ PASS: T-DOWN-1: no invoice session and no flag/flow-owned key on ANY row
+(1 row)
+
+SELECT t.ok('subtract-only: morning_submitted survived on the idle row', (SELECT context = '{"morning_submitted": true}'::jsonb FROM public.whatsapp_sessions WHERE phone_number = '+91950000003'));
+                               ok                                
+-----------------------------------------------------------------
+ PASS: subtract-only: morning_submitted survived on the idle row
+(1 row)
+
+SELECT t.ok('the seven functions are gone', (SELECT count(*) = 0 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('apply_material_inward_turn','expire_stale_material_inward','pm_set_delivery_details','pm_approve_delivery','pm_reject_delivery','pm_link_invoice','pm_unlink_invoice')));
+                 ok                 
+------------------------------------
+ PASS: the seven functions are gone
+(1 row)
+
+SELECT t.ok('the restored bodies equal the captured md5s', md5(pg_get_functiondef('public.apply_morning_flow_turn(text,uuid,uuid,uuid,text,boolean,jsonb,boolean,jsonb,boolean,timestamptz,integer)'::regprocedure)) = '707c10fe09dfd5a7cd065f7826eacd46' AND md5(pg_get_functiondef('public.apply_evening_flow_turn(text,uuid,uuid,uuid,text,boolean,jsonb,jsonb,timestamptz,integer)'::regprocedure)) = 'd19d07507abccdaf7d54ee1d74419af7');
+                        ok                         
+---------------------------------------------------
+ PASS: the restored bodies equal the captured md5s
+(1 row)
+
+SELECT t.ok('049 data untouched by the DOWN (documents, files, deliveries still there)', (SELECT count(*) FROM public.capture_documents) >= 1 AND (SELECT count(*) FROM public.capture_files) >= 1 AND (SELECT count(*) FROM public.deliveries) >= 1);
+                                       ok                                        
+---------------------------------------------------------------------------------
+ PASS: 049 data untouched by the DOWN (documents, files, deliveries still there)
+(1 row)
+
+SELECT public.apply_morning_flow_turn('+91950000001','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','',true) AS morning_start_after_down;
+                                                                             morning_start_after_down                                                                             
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "log_date": "2026-10-18", "attendance": null, "current_flow": "morning", "current_step": 1, "hindrance_discarded": null, "hindrance_had_description": null}
+(1 row)
+
+SELECT t.ok('after the DOWN a scheduled morning start over the former invoice session STARTS (outcome start, not reask)', (SELECT current_flow = 'morning' AND current_step = 1 FROM public.whatsapp_sessions WHERE phone_number = '+91950000001'));
+                                                        ok                                                        
+------------------------------------------------------------------------------------------------------------------
+ PASS: after the DOWN a scheduled morning start over the former invoice session STARTS (outcome start, not reask)
+(1 row)
+
+SELECT public.apply_morning_flow_turn('+91950000002','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','yes',false) AS turn_on_row_that_carried_the_flag;
+                                                                            turn_on_row_that_carried_the_flag                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "log_date": "2026-10-18", "attendance": "present", "current_flow": "morning", "current_step": 2, "hindrance_discarded": null, "hindrance_had_description": null}
+(1 row)
+
+SELECT t.ok('a row that carried the flag processes a normal turn after the DOWN (step 2)', (SELECT current_step = 2 FROM public.whatsapp_sessions WHERE phone_number = '+91950000002'));
+                                        ok                                         
+-----------------------------------------------------------------------------------
+ PASS: a row that carried the flag processes a normal turn after the DOWN (step 2)
+(1 row)
+
+SELECT t.expect('the dropped engineer function no longer exists (42883)', $$SELECT public.apply_material_inward_turn('+91950000001','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','1','sid-after-down')$$, '42883');
+                                                                            expect                                                                            
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: the dropped engineer function no longer exists (42883) -- refused, SQLSTATE=42883 MESSAGE=function public.apply_material_inward_turn(unknown, unknown,
+(1 row)
+
+race row before: invoice {"mi_last_sid": "race-s0"}
+
+=== B. CONCURRENT TURN vs DOWN with EXCLUSIVE (must NOT deadlock; the turn commits, then the DOWN clears) ===
+turn A: BEGIN; SELECT ... FOR UPDATE; pg_sleep(2); UPDATE ... context || {turn:1}; COMMIT.   DOWN B starts 0.7s later (lock_timeout 3s).
+--- turn A output ---
+                  id                  
+--------------------------------------
+ 459ff661-a2b3-49cb-a7bf-036ac756bb65
+(1 row)
+
+ pg_sleep 
+----------
+ 
+(1 row)
+
+[turn A exit 0]
+--- DOWN B output ---
+[DOWN B exit 0]
+race row after: NULL {"turn": 1}
+seven functions left: 0
+race row before: invoice {"mi_last_sid": "race-s0"}
+
+(RED mutant: SHARE ROW EXCLUSIVE; lines differing from the DOWN: 1)
+
+=== C. RED: the SAME race with SHARE ROW EXCLUSIVE (review r1's mode) -- expected: deadlock detected ===
+turn A: BEGIN; SELECT ... FOR UPDATE; pg_sleep(2); UPDATE ... context || {turn:1}; COMMIT.   DOWN B starts 0.7s later (lock_timeout 3s).
+--- turn A output ---
+                  id                  
+--------------------------------------
+ 49580ff2-0b31-4d9a-928f-c6fb0398dd16
+(1 row)
+
+ pg_sleep 
+----------
+ 
+(1 row)
+
+ERROR:  deadlock detected
+LINE 1: UPDATE public.whatsapp_sessions SET context = context || '{"...
+               ^
+DETAIL:  Process 328 waits for RowExclusiveLock on relation 16754 of database 18868; blocked by process 334.
+Process 334 waits for ShareLock on transaction 2529; blocked by process 328.
+HINT:  See server log for query details.
+[turn A exit 3]
+--- DOWN B output ---
+[DOWN B exit 0]
+race row after: NULL {}
+seven functions left: 0
+race row before: invoice {"mi_last_sid": "race-s0"}
+
+=== D. lock_timeout: the turn holds the row 6s, the DOWN gives up after 3s and changes NOTHING ===
+turn A: BEGIN; SELECT ... FOR UPDATE; pg_sleep(6); UPDATE ... context || {turn:1}; COMMIT.   DOWN B starts 0.7s later (lock_timeout 3s).
+--- turn A output ---
+                  id                  
+--------------------------------------
+ cdc799ff-b22a-4b20-8931-af6e33ec4c07
+(1 row)
+
+ pg_sleep 
+----------
+ 
+(1 row)
+
+[turn A exit 0]
+--- DOWN B output ---
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/050-pr-b/docs/reviews/050-down-testdb.sql:17: ERROR:  canceling statement due to lock timeout
+[DOWN B exit 3]
+race row after: invoice {"turn": 1, "mi_last_sid": "race-s0"}
+seven functions left: 7
+
+=== end ===

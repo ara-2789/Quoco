@@ -1,0 +1,5 @@
+# sha256 of the artifacts under test (block 10, 2026-10-18T17:33:24Z); HEAD before this commit 4faf1c410828eef5c04b3535635baef5a6915737
+0d5a8c14f8349503aff5dd96f477c4f7abb6d61e8ac1078aa8efbfb3996846d6  docs/reviews/050_material_inward_functions.sql
+5338d448442871e97487ca2e2578e1203b5e50735a4fd510d3dabc815acb9a52  docs/reviews/050-down-testdb.sql
+2e2cc80cad40d269771caf99c6a0eccf00fe26540e488c3ea5b298cda1df4b26  docs/reviews/050-hunk-diff-testdb.txt
+# live bodies captured from test-db 18 Oct (outside the repo): morning md5 707c10fe09dfd5a7cd065f7826eacd46 sha256 69ae1b5cb73e9a1b2830b7524d853db2e48d91d4bc8030f1233e31edab2cebe5 ; evening md5 d19d07507abccdaf7d54ee1d74419af7 sha256 30979c8f4d8745e63184079cefedfd74b2cc2d54455b9e679578a4e9327c18a4

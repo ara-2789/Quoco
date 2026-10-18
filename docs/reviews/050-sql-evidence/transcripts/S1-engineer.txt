@@ -1,0 +1,441 @@
+== 050 scaffold dry-run: S1-engineer ==
+generated: 2026-10-18T17:32:58Z
+HEAD: 4faf1c410828eef5c04b3535635baef5a6915737
+sha256 UP: 0d5a8c14f8349503aff5dd96f477c4f7abb6d61e8ac1078aa8efbfb3996846d6
+sha256 scenario: 27e21c4ac240131b86f326a4c6a261dc7c1255fbdd0a970125402d1722d1379a
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+$ psql -d d_S1-engineer -v ON_ERROR_STOP=1 -f 050_material_inward_functions.sql   (050 UP)
+[exit 0]
+
+--- scenario output (psql -e echoes every statement) ---
+== S1.1 DC: S0 start -> S1 kind -> S2 two files -> S3 ack 1
+SELECT t.turn('+91900000001', '4', 'e1-s0', NULL, true) AS s0_start;
+                                                   s0_start                                                   
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.ok('S0 start: flow=invoice step=1', t.sess('+91900000001') LIKE 'invoice/1 %');
+                 ok                  
+-------------------------------------
+ PASS: S0 start: flow=invoice step=1
+(1 row)
+
+SELECT t.turn('+91900000001', '1', 'e1-s1') AS s1_kind;
+                                                    s1_kind                                                     
+----------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+SELECT t.ok('S1 kind dc -> step 2, mi_kind=dc', t.sess('+91900000001') LIKE 'invoice/2 %"mi_kind": "dc"%');
+                   ok                   
+----------------------------------------
+ PASS: S1 kind dc -> step 2, mi_kind=dc
+(1 row)
+
+SELECT t.turn('+91900000001', 'gate pass photo', 'e1-s2', t.media(2)) AS s2_files;
+                                                                                      s2_files                                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": "fb02fa10-be41-461a-8492-5c0ec26e6ce7", "document_id": "148693c0-05f8-44da-a5ae-c021a39407e0", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.ok('S2 one document kind=dc, 2 files pending, delivery incomplete with dc_document_id',
+  (SELECT count(*) = 1 FROM public.capture_documents WHERE source_message_sid = 'e1-s2' AND kind = 'dc')
+  AND (SELECT count(*) = 2 FROM public.capture_files WHERE source_message_sid = 'e1-s2' AND ingest_status = 'pending')
+  AND t.dstatus(t.docid('e1-s2')) = 'incomplete');
+                                           ok                                            
+-----------------------------------------------------------------------------------------
+ PASS: S2 one document kind=dc, 2 files pending, delivery incomplete with dc_document_id
+(1 row)
+
+SELECT t.ok('S2 job capture_ingest with 2 files', (SELECT count(*) = 1 FROM public.jobs WHERE type = 'capture_ingest' AND payload->>'source_message_sid' = 'e1-s2' AND jsonb_array_length(payload->'files') = 2));
+                    ok                    
+------------------------------------------
+ PASS: S2 job capture_ingest with 2 files
+(1 row)
+
+SELECT t.ok('S2 session at step 3 with mi_document_id; expires_at about now+30m',
+  t.sess('+91900000001') LIKE 'invoice/3 %mi_document_id%'
+  AND (SELECT expires_at BETWEEN now() + interval '29 minutes' AND now() + interval '31 minutes' FROM public.whatsapp_sessions WHERE phone_number = '+91900000001'));
+                                    ok                                    
+--------------------------------------------------------------------------
+ PASS: S2 session at step 3 with mi_document_id; expires_at about now+30m
+(1 row)
+
+SELECT t.turn('+91900000001', '1', 'e1-s3') AS s3_ack1;
+                                                                   s3_ack1                                                                    
+----------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "complete", "delivery_id": null, "document_id": "148693c0-05f8-44da-a5ae-c021a39407e0", "current_flow": null, "current_step": 0}
+(1 row)
+
+SELECT t.ok('S3 ack 1: ack=yes, delivery awaiting_pm, flow closed',
+  (SELECT engineer_ack = 'yes' FROM public.capture_documents WHERE source_message_sid = 'e1-s2')
+  AND t.dstatus(t.docid('e1-s2')) = 'awaiting_pm' AND t.sess('+91900000001') LIKE 'NULL/0 %"mi_last_sid": "e1-s3"%');
+                             ok                             
+------------------------------------------------------------
+ PASS: S3 ack 1: ack=yes, delivery awaiting_pm, flow closed
+(1 row)
+
+== S1.2 invoice: file creates automatic delivery + one active self-link; ack 2 -> S4 note
+SELECT t.turn('+91900000002', '4', 'e2-s0', NULL, true) AS s0;
+                                                      s0                                                      
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.turn('+91900000002', '2', 'e2-s1') AS s1;
+                                                       s1                                                       
+----------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+SELECT t.turn('+91900000002', NULL, 'e2-s2', t.media(1)) AS s2;
+                                                                                         s2                                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": "04ca0dcd-0353-41e9-9c92-0e2b43eb7e48", "document_id": "a79bbc56-4b3e-4e43-81c3-5c0691a941e4", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.ok('invoice: automatic delivery created_from_invoice_id, status incomplete, exactly one active self-link',
+  (SELECT count(*) = 1 FROM public.deliveries WHERE created_from_invoice_id = t.docid('e2-s2') AND status = 'incomplete')
+  AND (SELECT count(*) = 1 FROM public.delivery_invoice_links WHERE invoice_document_id = t.docid('e2-s2') AND link_source = 'created_from_invoice' AND unlinked_at IS NULL));
+                                                     ok                                                     
+------------------------------------------------------------------------------------------------------------
+ PASS: invoice: automatic delivery created_from_invoice_id, status incomplete, exactly one active self-link
+(1 row)
+
+SELECT t.turn('+91900000002', '2', 'e2-s3') AS ack2;
+                                                                       ack2                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": "a79bbc56-4b3e-4e43-81c3-5c0691a941e4", "current_flow": "invoice", "current_step": 4}
+(1 row)
+
+SELECT t.ok('ack 2 -> ack=no, step 4, delivery awaiting_pm', (SELECT engineer_ack = 'no' FROM public.capture_documents WHERE id = t.docid('e2-s2')) AND t.sess('+91900000002') LIKE 'invoice/4 %' AND t.dstatus(t.docid('e2-s2')) = 'awaiting_pm');
+                         ok                          
+-----------------------------------------------------
+ PASS: ack 2 -> ack=no, step 4, delivery awaiting_pm
+(1 row)
+
+SELECT t.turn('+91900000002', NULL, 'e2-s4', t.media(1)) AS file_at_s4;
+                                                                       file_at_s4                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "file_attached", "delivery_id": null, "document_id": "a79bbc56-4b3e-4e43-81c3-5c0691a941e4", "current_flow": "invoice", "current_step": 4}
+(1 row)
+
+SELECT t.ok('file at S4 attaches as file_no 2, session stays at step 4 (D-11)', (SELECT count(*) = 2 FROM public.capture_files WHERE document_id = t.docid('e2-s2')) AND t.sess('+91900000002') LIKE 'invoice/4 %');
+                                   ok                                   
+------------------------------------------------------------------------
+ PASS: file at S4 attaches as file_no 2, session stays at step 4 (D-11)
+(1 row)
+
+SELECT t.turn('+91900000002', 'two bags short', 'e2-s5') AS note;
+                                                                     note                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "complete", "delivery_id": null, "document_id": "a79bbc56-4b3e-4e43-81c3-5c0691a941e4", "current_flow": null, "current_step": 0}
+(1 row)
+
+SELECT t.ok('S4 note stored, flow closed', (SELECT engineer_ack_note = 'two bags short' FROM public.capture_documents WHERE id = t.docid('e2-s2')) AND t.sess('+91900000002') LIKE 'NULL/0 %');
+                ok                 
+-----------------------------------
+ PASS: S4 note stored, flow closed
+(1 row)
+
+== S1.3 ack 3 -> partial, step 4
+SELECT t.turn('+91900000003', '4', 'e3-s0', NULL, true);
+                                                     turn                                                     
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.turn('+91900000003', '1', 'e3-s1');
+                                                      turn                                                      
+----------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+SELECT t.turn('+91900000003', NULL, 'e3-s2', t.media(1));
+                                                                                        turn                                                                                        
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": "399fdaa7-2580-4ad0-90de-1a8d9b96b97e", "document_id": "27793a62-a127-4d9b-b307-f69f10e2ce3b", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.turn('+91900000003', '3', 'e3-s3') AS ack3;
+                                                                       ack3                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": "27793a62-a127-4d9b-b307-f69f10e2ce3b", "current_flow": "invoice", "current_step": 4}
+(1 row)
+
+SELECT t.ok('ack 3 -> partial, step 4', (SELECT engineer_ack = 'partial' FROM public.capture_documents WHERE id = t.docid('e3-s2')) AND t.sess('+91900000003') LIKE 'invoice/4 %');
+               ok               
+--------------------------------
+ PASS: ack 3 -> partial, step 4
+(1 row)
+
+== S1.4 unclear: garbage -> one re-ask -> unclear, CLOSES (never S4), raw text is the note
+SELECT t.turn('+91900000004', '4', 'e4-s0', NULL, true);
+                                                     turn                                                     
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.turn('+91900000004', '1', 'e4-s1');
+                                                      turn                                                      
+----------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+SELECT t.turn('+91900000004', NULL, 'e4-s2', t.media(1));
+                                                                                        turn                                                                                        
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": "d507a587-4897-4c75-8571-51fce39941ad", "document_id": "dbd563ee-804f-460e-b7af-fb6e164d76b9", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.turn('+91900000004', 'maybe', 'e4-s3') AS garbage1;
+                                                                    garbage1                                                                    
+------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "reask", "delivery_id": null, "document_id": "dbd563ee-804f-460e-b7af-fb6e164d76b9", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.ok('first garbage -> reask, still step 3, no ack', t.sess('+91900000004') LIKE 'invoice/3 %' AND (SELECT engineer_ack IS NULL FROM public.capture_documents WHERE id = t.docid('e4-s2')));
+                         ok                         
+----------------------------------------------------
+ PASS: first garbage -> reask, still step 3, no ack
+(1 row)
+
+SELECT t.turn('+91900000004', 'not sure', 'e4-s4') AS garbage2;
+                                                                   garbage2                                                                   
+----------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "complete", "delivery_id": null, "document_id": "dbd563ee-804f-460e-b7af-fb6e164d76b9", "current_flow": null, "current_step": 0}
+(1 row)
+
+SELECT t.ok('second garbage -> ack=unclear, note=raw text, flow closed (no S4)', (SELECT engineer_ack = 'unclear' AND engineer_ack_note = 'not sure' FROM public.capture_documents WHERE id = t.docid('e4-s2')) AND t.sess('+91900000004') LIKE 'NULL/0 %');
+                                   ok                                    
+-------------------------------------------------------------------------
+ PASS: second garbage -> ack=unclear, note=raw text, flow closed (no S4)
+(1 row)
+
+== S1.5 accepted ack forms: 1. / 2) / keycap 3
+SELECT t.turn('+91900000005', '4', 'e5-s0', NULL, true);
+                                                     turn                                                     
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.turn('+91900000005', '1', 'e5-s1');
+                                                      turn                                                      
+----------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+SELECT t.turn('+91900000005', NULL, 'e5-s2', t.media(1));
+                                                                                        turn                                                                                        
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": "0b890a15-c002-4e88-9b75-f9ab69d00298", "document_id": "9be7ec2e-cbd4-4265-8e96-1ea52679b2be", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.turn('+91900000005', '1.', 'e5-s3');
+                                                                     turn                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "complete", "delivery_id": null, "document_id": "9be7ec2e-cbd4-4265-8e96-1ea52679b2be", "current_flow": null, "current_step": 0}
+(1 row)
+
+SELECT t.ok('"1." -> yes', (SELECT engineer_ack = 'yes' FROM public.capture_documents WHERE id = t.docid('e5-s2')));
+        ok         
+-------------------
+ PASS: "1." -> yes
+(1 row)
+
+SELECT t.turn('+91900000006', '4', 'e6-s0', NULL, true);
+                                                     turn                                                     
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.turn('+91900000006', '1', 'e6-s1');
+                                                      turn                                                      
+----------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+SELECT t.turn('+91900000006', NULL, 'e6-s2', t.media(1));
+                                                                                        turn                                                                                        
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": "b9b3562b-80a4-45b1-83e5-c20616af4078", "document_id": "81d7d5ec-202f-4757-b0a5-9f70420b8c87", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.turn('+91900000006', '2)', 'e6-s3');
+                                                                       turn                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": "81d7d5ec-202f-4757-b0a5-9f70420b8c87", "current_flow": "invoice", "current_step": 4}
+(1 row)
+
+SELECT t.ok('"2)" -> no', (SELECT engineer_ack = 'no' FROM public.capture_documents WHERE id = t.docid('e6-s2')));
+        ok        
+------------------
+ PASS: "2)" -> no
+(1 row)
+
+SELECT t.turn('+91900000007', '4', 'e7-s0', NULL, true);
+                                                     turn                                                     
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.turn('+91900000007', '1', 'e7-s1');
+                                                      turn                                                      
+----------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+SELECT t.turn('+91900000007', NULL, 'e7-s2', t.media(1));
+                                                                                        turn                                                                                        
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": "91d96200-0068-4745-a8b0-1c9b58a87784", "document_id": "11284179-d3d4-4fce-9712-9be7f1fc1820", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.turn('+91900000007', E'3️⃣', 'e7-s3');
+                                                                       turn                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": "11284179-d3d4-4fce-9712-9be7f1fc1820", "current_flow": "invoice", "current_step": 4}
+(1 row)
+
+SELECT t.ok('keycap 3 -> partial', (SELECT engineer_ack = 'partial' FROM public.capture_documents WHERE id = t.docid('e7-s2')));
+            ok             
+---------------------------
+ PASS: keycap 3 -> partial
+(1 row)
+
+SELECT t.turn('+91900000008', '4', 'e8-s0', NULL, true);
+                                                     turn                                                     
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.turn('+91900000008', '1', 'e8-s1');
+                                                      turn                                                      
+----------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+SELECT t.turn('+91900000008', NULL, 'e8-s2', t.media(1));
+                                                                                        turn                                                                                        
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": "2f80545b-093d-400b-a870-2de5fc2081e4", "document_id": "fd991d6b-3836-49ed-bbc0-cd9a04f494e9", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.turn('+91900000008', '12', 'e8-s3');
+                                                                      turn                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "reask", "delivery_id": null, "document_id": "fd991d6b-3836-49ed-bbc0-cd9a04f494e9", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.ok('"12" is NOT an ack -> reask, no ack stored', (SELECT engineer_ack IS NULL FROM public.capture_documents WHERE id = t.docid('e8-s2')) AND t.sess('+91900000008') LIKE 'invoice/3 %');
+                        ok                        
+--------------------------------------------------
+ PASS: "12" is NOT an ack -> reask, no ack stored
+(1 row)
+
+== S1.6 duplicate SID: file turn and text turn
+SELECT t.turn('+91900000001', '1', 'e1-s3') AS dup_text_after_close;
+                       dup_text_after_close                        
+-------------------------------------------------------------------
+ {"outcome": "duplicate", "current_flow": null, "current_step": 0}
+(1 row)
+
+SELECT t.ok('retried final ack (text turn) -> duplicate, no QE011, ack unchanged', (SELECT engineer_ack = 'yes' FROM public.capture_documents WHERE source_message_sid = 'e1-s2'));
+                                    ok                                     
+---------------------------------------------------------------------------
+ PASS: retried final ack (text turn) -> duplicate, no QE011, ack unchanged
+(1 row)
+
+SELECT t.turn('+91900000001', 'gate pass photo', 'e1-s2', t.media(2)) AS dup_file;
+                             dup_file                              
+-------------------------------------------------------------------
+ {"outcome": "duplicate", "current_flow": null, "current_step": 0}
+(1 row)
+
+SELECT t.ok('retried file turn -> duplicate, still 1 doc and 2 files', (SELECT count(*) = 1 FROM public.capture_documents WHERE source_message_sid = 'e1-s2') AND (SELECT count(*) = 2 FROM public.capture_files WHERE source_message_sid = 'e1-s2'));
+                              ok                               
+---------------------------------------------------------------
+ PASS: retried file turn -> duplicate, still 1 doc and 2 files
+(1 row)
+
+SELECT t.turn('+91900000003', '3', 'e3-s3') AS dup_text_mid_flow;
+                           dup_text_mid_flow                            
+------------------------------------------------------------------------
+ {"outcome": "duplicate", "current_flow": "invoice", "current_step": 4}
+(1 row)
+
+SELECT t.ok('retried ack mid-flow (S4 session) -> duplicate (no second ack, no QE011), still step 4', t.sess('+91900000003') LIKE 'invoice/4 %');
+                                              ok                                              
+----------------------------------------------------------------------------------------------
+ PASS: retried ack mid-flow (S4 session) -> duplicate (no second ack, no QE011), still step 4
+(1 row)
+
+SELECT t.ok('outcome strings: duplicate', (t.turn('+91900000003', '3', 'e3-s3')->>'outcome') = 'duplicate');
+                ok                
+----------------------------------
+ PASS: outcome strings: duplicate
+(1 row)
+
+== S1.7 expiry: apply_material_inward_turn after 31 min, and expire_stale_material_inward
+SELECT t.turn('+91900000009', '4', 'e9-s0', NULL, true);
+                                                     turn                                                     
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.turn('+91900000009', '1', 'e9-s1', NULL, false, now() + interval '31 minutes') AS late_turn;
+                            late_turn                            
+-----------------------------------------------------------------
+ {"outcome": "expired", "current_flow": null, "current_step": 0}
+(1 row)
+
+SELECT t.ok('turn after 31 min -> expired, flow NULL', (t.sess('+91900000009') LIKE 'NULL/0 %'));
+                      ok                       
+-----------------------------------------------
+ PASS: turn after 31 min -> expired, flow NULL
+(1 row)
+
+SELECT t.turn('+91900000010', '4', 'e10-s0', NULL, true);
+                                                     turn                                                     
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SET ROLE service_role;
+SELECT public.expire_stale_material_inward('+91900000010', now() + interval '31 minutes') AS expired_true;
+ expired_true 
+--------------
+ t
+(1 row)
+
+SELECT public.expire_stale_material_inward('+91900000010', now() + interval '31 minutes') AS second_call_false;
+ second_call_false 
+-------------------
+ f
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('expire_stale: cleared once (flow NULL), second call false', t.sess('+91900000010') LIKE 'NULL/0 %');
+                               ok                                
+-----------------------------------------------------------------
+ PASS: expire_stale: cleared once (flow NULL), second call false
+(1 row)
+
+INSERT INTO public.whatsapp_sessions (phone_number, tenant_id, current_flow, current_step, context, expires_at, updated_at)
+  VALUES ('+91900000011', '10000000-0000-0000-0000-000000000001', 'morning', 2, '{}', now() - interval '1 hour', now());
+SELECT public.expire_stale_material_inward('+91900000011', now() + interval '31 minutes') AS morning_untouched_false;
+ morning_untouched_false 
+-------------------------
+ f
+(1 row)
+
+SELECT t.ok('expire_stale leaves an expired MORNING session alone', t.sess('+91900000011') LIKE 'morning/2 %');
+                             ok                             
+------------------------------------------------------------
+ PASS: expire_stale leaves an expired MORNING session alone
+(1 row)
+
+== S1 end
+

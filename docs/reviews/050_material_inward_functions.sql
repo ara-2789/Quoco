@@ -38,11 +38,12 @@
 -- NO CHECK CHANGE: the stored current_flow value is 'invoice', already allowed by
 -- whatsapp_sessions_current_flow_check (001:92; D-1).
 --
--- PROPOSED values in this file (mark: "-- PROPOSED"; listed in the block 9 report for approval):
---   flow-owned context keys mi_kind, mi_document_id, mi_reask (mi_last_sid is decided)
---   kind answers at S1; ack digits at S3; outcome names start/advance/reask/complete/closed/
---   file_attached/duplicate/expired/idle/wrong_flow; the capture_ingest job payload;
---   parameter lists of the seven functions; the codes used for validation failures (QE011/QE012).
+-- DECISIONS applied in this revision (Aravind, 18 Oct): the block 9 proposals are approved as listed in the
+-- block 9 report, with these changes: the S3 ack parser also accepts a trailing '.' or ')' and the keycap forms;
+-- pm_approve_delivery with no type raises QE016 'E16'; pm_reject_delivery with a blank reason raises QE017 'E17'.
+-- QE011 stays for real transition refusals (approving or rejecting from a status that does not allow it, linking
+-- while the automatic delivery is approved). Nothing in this file is left awaiting approval. Still contracts with
+-- PR-C, to be confirmed there: the capture_ingest job payload and the outcome names.
 --
 -- LOCK ORDER (plan section 4; 049 header "THE SIX PR-B LOCK PATHS"): session row; then the invoice
 -- capture_documents row FOR NO KEY UPDATE; then deliveries ascending id (DC delivery FOR SHARE on
@@ -50,8 +51,9 @@
 -- of these locks, with unlocked reads of project_id / tenant_id, which are immutable (TR4a, TR5),
 -- so a refused caller never waits on a row and never learns whether an id exists (S1).
 --
--- DOWN: see the commented block at the end. It points to docs/reviews/050-down-testdb.sql and
--- docs/reviews/050-down-prod.sql (one per database; not created yet).
+-- DOWN: see the commented block at the end. It points to docs/reviews/050-down-testdb.sql (written; dry-run on the
+-- local scaffold, sha256 in docs/reviews/050-sql-evidence/SHA256.txt) and docs/reviews/050-down-prod.sql (built from the
+-- prod-captured bodies just before the apply; does not exist yet).
 
 BEGIN;
 
@@ -86,18 +88,19 @@ DECLARE
   v_delivery_id   uuid;
   v_reask         integer;
   v_ack           text;
+  v_ackin         text;
   v_note          text;
   v_create        boolean := false;
   v_attach        boolean := false;
   v_received      timestamptz;
   v_next_file_no  integer;
   v_files         jsonb;
-  -- PROPOSED: the flow-owned context keys (plan section 14: list OWED). mi_last_sid is decided.
+  -- The flow-owned context keys (decided 18 Oct).
   c_mi_keys CONSTANT text[] := ARRAY['mi_last_sid', 'mi_kind', 'mi_document_id', 'mi_reask'];
 BEGIN
   -- Input shape. A SID is mandatory: it is both the duplicate key and the received_at key (Q2-6).
   IF p_message_sid IS NULL OR btrim(p_message_sid) = '' THEN
-    RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';       -- PROPOSED code for a malformed call
+    RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';       -- malformed call
   END IF;
   IF p_media IS NOT NULL AND jsonb_typeof(p_media) <> 'array' THEN
     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
@@ -179,7 +182,7 @@ BEGIN
       v_outcome := 'reask';
 
     ELSIF v_session.current_step = 1 THEN
-      -- S1 kind. PROPOSED parsing: '1' / 'dc' / 'challan' = delivery challan; '2' / 'invoice' / 'bill'
+      -- S1 kind parsing (decided 18 Oct): '1' / 'dc' / 'challan' = delivery challan; '2' / 'invoice' / 'bill'
       -- = invoice. A file at S1 is not an answer. One re-ask, then close with nothing recorded.
       IF v_media_n = 0 AND lower(v_text) IN ('1', 'dc', 'challan') THEN
         v_session.current_step := 2;
@@ -218,8 +221,10 @@ BEGIN
       IF v_media_n > 0 THEN
         v_attach := true;
       ELSE
-        -- S3: the ONE ack parser (review r1 S3). PROPOSED accepted forms: exactly '1', '2', '3'.
-        v_ack := CASE v_text WHEN '1' THEN 'yes' WHEN '2' THEN 'no' WHEN '3' THEN 'partial' ELSE NULL END;
+        -- S3: the ONE ack parser (review r1 S3; forms decided 18 Oct). Accepts 1 / 2 / 3, optionally followed by
+        -- a single '.' or ')', and the keycap forms (digit + U+FE0F + U+20E3). Anything else is not an ack.
+        v_ackin := btrim(regexp_replace(translate(v_text, E'\uFE0F\u20E3', ''), '[.)]$', ''));
+        v_ack := CASE v_ackin WHEN '1' THEN 'yes' WHEN '2' THEN 'no' WHEN '3' THEN 'partial' ELSE NULL END;
         IF v_ack IS NULL AND v_reask < 1 THEN
           v_session.context := v_session.context || jsonb_build_object('mi_reask', v_reask + 1);
           v_outcome := 'reask';
@@ -329,7 +334,7 @@ BEGIN
            t.e ->> 'content_type'
       FROM jsonb_array_elements(p_media) WITH ORDINALITY AS t(e, ord);
 
-    -- The ingest job (PROPOSED payload; contract with PR-C, plan section 14). jobs.type has no CHECK.
+    -- The ingest job (payload: a contract with PR-C, plan section 14). jobs.type has no CHECK.
     SELECT jsonb_agg(
              jsonb_build_object(
                'file_id',              f.id,
@@ -431,7 +436,7 @@ $fn$;
 
 -- =============================================================================
 -- 1c. pm_set_delivery_details  (PM side; authenticated only)
---     Full overwrite: a NULL argument clears that field (PROPOSED).
+--     Full overwrite: a NULL argument clears that field (decided 18 Oct).
 -- =============================================================================
 CREATE FUNCTION public.pm_set_delivery_details(
   p_delivery_id   uuid,
@@ -548,10 +553,14 @@ BEGIN
      FOR NO KEY UPDATE;
 
   -- D-10: the PM may approve 'incomplete' (not acknowledged) as well as 'awaiting_pm'.
-  -- PROPOSED code QE011 for "not approvable" (any other status) and "no type set" (the CHECK
-  -- deliveries_approved_requires_chk would otherwise answer with 23514).
-  IF v_status NOT IN ('incomplete', 'awaiting_pm') OR v_type IS NULL THEN
+  -- QE011: the delivery is in a status that cannot be approved (a real transition refusal).
+  IF v_status NOT IN ('incomplete', 'awaiting_pm') THEN
     RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+  END IF;
+  -- QE016 (decided 18 Oct): no delivery type set; the CHECK deliveries_approved_requires_chk would
+  -- otherwise answer with 23514.
+  IF v_type IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE016', MESSAGE = 'E16';
   END IF;
 
   -- approved_by is set here; approved_at is stamped by the database (TR4c, S-3).
@@ -613,9 +622,9 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'QE015', MESSAGE = 'E15';
   END IF;
 
-  -- A rejection needs a reason (CHECK deliveries_rejected_requires_chk). PROPOSED code QE011.
+  -- A rejection needs a reason (CHECK deliveries_rejected_requires_chk). QE017 (decided 18 Oct).
   IF p_reason IS NULL OR btrim(p_reason) = '' THEN
-    RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    RAISE EXCEPTION USING ERRCODE = 'QE017', MESSAGE = 'E17';
   END IF;
 
   IF v_auto_inv IS NOT NULL THEN
@@ -816,7 +825,7 @@ BEGIN
   END LOOP;
 
   -- X6 / D-9: linking while the automatic delivery is APPROVED is refused; nothing changes.
-  -- PROPOSED code QE011 (transition / locked content).
+  -- QE011 (a real transition refusal).
   IF v_auto_id IS NOT NULL THEN
     SELECT d.status INTO v_auto_status FROM public.deliveries d WHERE d.id = v_auto_id;
     IF v_auto_status = 'approved' THEN
@@ -1928,8 +1937,8 @@ COMMIT;
 
 -- =============================================================================
 -- DOWN (commented, inert text; plan section 9). The restore text exists once per database, in two
--- artifacts that are NOT created yet: docs/reviews/050-down-testdb.sql and docs/reviews/050-down-prod.sql
--- (each recorded with its own sha256). This block carries no restore text of its own.
+-- artifacts: docs/reviews/050-down-testdb.sql (written) and docs/reviews/050-down-prod.sql (NOT created yet; built
+-- from the prod-captured bodies before the apply), each recorded with its own sha256. This block carries no restore text of its own.
 --
 -- DOWN, in order, one transaction:
 --   SET LOCAL lock_timeout = '3s';

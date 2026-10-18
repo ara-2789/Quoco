@@ -1,0 +1,142 @@
+== 050 scaffold dry-run: S2-b1 ==
+generated: 2026-10-18T17:32:58Z
+HEAD: 4faf1c410828eef5c04b3535635baef5a6915737
+sha256 UP: 0d5a8c14f8349503aff5dd96f477c4f7abb6d61e8ac1078aa8efbfb3996846d6
+sha256 scenario: 8cdd4f09c2ab5f2568f8257a971469bb0d98bad3ed08aab974172b36605b9a35
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+$ psql -d d_S2-b1 -v ON_ERROR_STOP=1 -f 050_material_inward_functions.sql   (050 UP)
+[exit 0]
+
+--- scenario output (psql -e echoes every statement) ---
+== B1.1 approve-then-ack (D-10: the PM approves an incomplete delivery first)
+SELECT t.turn('+91910000001', '4', 'b1a-s0', NULL, true) 
+SELECT t.turn('+91910000001', '1', 'b1a-s1') 
+SELECT t.turn('+91910000001', NULL, 'b1a-s2', t.media(1)) 
+SELECT t.dlv(t.docid('b1a-s2')) AS da 
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000001', false) 
+SET ROLE authenticated;
+SELECT public.pm_set_delivery_details('53dc8c68-e26d-477b-acd8-72e4819ee6b8', 'supplier', 'TN01AB1', 'DC-1', current_date) AS set_details;
+                       set_details                       
+---------------------------------------------------------
+ {"delivery_id": "53dc8c68-e26d-477b-acd8-72e4819ee6b8"}
+(1 row)
+
+SELECT public.pm_approve_delivery('53dc8c68-e26d-477b-acd8-72e4819ee6b8') AS approve_incomplete;
+                              approve_incomplete                               
+-------------------------------------------------------------------------------
+ {"status": "approved", "delivery_id": "53dc8c68-e26d-477b-acd8-72e4819ee6b8"}
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-D10-APPROVE-INCOMPLETE: approved from incomplete, approved_by = PM1, approved_at stamped',
+  (SELECT status = 'approved' AND approved_by = '30000000-0000-0000-0000-000000000001' AND approved_at IS NOT NULL FROM public.deliveries WHERE id = '53dc8c68-e26d-477b-acd8-72e4819ee6b8'));
+                                                ok                                                
+--------------------------------------------------------------------------------------------------
+ PASS: T-D10-APPROVE-INCOMPLETE: approved from incomplete, approved_by = PM1, approved_at stamped
+(1 row)
+
+SELECT t.turn('+91910000001', '1', 'b1a-s3') AS ack_after_approval;
+                                                              ack_after_approval                                                              
+----------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "complete", "delivery_id": null, "document_id": "5b96370b-77c4-4c69-893e-1427524e9659", "current_flow": null, "current_step": 0}
+(1 row)
+
+SELECT t.ok('T-B1-APPROVE-THEN-ACK: ack stored (yes), delivery STAYS approved, no error',
+  (SELECT engineer_ack = 'yes' FROM public.capture_documents WHERE id = t.docid('b1a-s2')) AND t.dstatus(t.docid('b1a-s2')) = 'approved');
+                                        ok                                        
+----------------------------------------------------------------------------------
+ PASS: T-B1-APPROVE-THEN-ACK: ack stored (yes), delivery STAYS approved, no error
+(1 row)
+
+== B1.2 reject-then-ack
+SELECT t.turn('+91910000002', '4', 'b1b-s0', NULL, true) 
+SELECT t.turn('+91910000002', '1', 'b1b-s1') 
+SELECT t.turn('+91910000002', NULL, 'b1b-s2', t.media(1)) 
+SELECT t.dlv(t.docid('b1b-s2')) AS dbb 
+SET ROLE authenticated;
+SELECT public.pm_reject_delivery('f540f5a6-9514-43c8-a1fe-5d6eb4120ebb', 'wrong material') AS reject;
+                                                   reject                                                   
+------------------------------------------------------------------------------------------------------------
+ {"status": "rejected", "delivery_id": "f540f5a6-9514-43c8-a1fe-5d6eb4120ebb", "restored_automatic": false}
+(1 row)
+
+RESET ROLE;
+SELECT t.turn('+91910000002', '2', 'b1b-s3') AS ack_after_rejection;
+                                                               ack_after_rejection                                                                
+--------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": "596b7f65-6fcd-4561-891a-07aad0c0925e", "current_flow": "invoice", "current_step": 4}
+(1 row)
+
+SELECT t.ok('T-B1-REJECT-THEN-ACK: ack stored (no), delivery STAYS rejected',
+  (SELECT engineer_ack = 'no' FROM public.capture_documents WHERE id = t.docid('b1b-s2')) AND t.dstatus(t.docid('b1b-s2')) = 'rejected');
+                                  ok                                  
+----------------------------------------------------------------------
+ PASS: T-B1-REJECT-THEN-ACK: ack stored (no), delivery STAYS rejected
+(1 row)
+
+== B1.3 link-then-ack (the automatic delivery is cancelled by the link; the ack arrives afterwards)
+SELECT t.turn('+91910000003', '4', 'b1c-s0', NULL, true) 
+SELECT t.turn('+91910000003', '2', 'b1c-s1') 
+SELECT t.turn('+91910000003', NULL, 'b1c-s2', t.media(1)) 
+SELECT t.turn('+91910000004', '4', 'b1d-s0', NULL, true) 
+SELECT t.turn('+91910000004', '1', 'b1d-s1') 
+SELECT t.turn('+91910000004', NULL, 'b1d-s2', t.media(1)) 
+SELECT t.docid('b1c-s2') AS invc, t.dlv(t.docid('b1d-s2')) AS dd, t.dlv(t.docid('b1c-s2')) AS dc 
+SET ROLE authenticated;
+SELECT public.pm_link_invoice('259e5cfc-5a35-4310-9fe9-35582c421fc0', ARRAY['701b08e0-6f4e-41f3-b555-b06912ddfcf1']::uuid[]) AS link;
+                                                    link                                                    
+------------------------------------------------------------------------------------------------------------
+ {"linked": 1, "invoice_document_id": "259e5cfc-5a35-4310-9fe9-35582c421fc0", "superseded_automatic": true}
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('link cancelled the automatic delivery (superseded_by_link)', (SELECT status = 'cancelled' AND cancel_reason = 'superseded_by_link' AND cancelled_at IS NOT NULL FROM public.deliveries WHERE id = '5598e9b3-7ac7-4404-9569-040135c66748'));
+                                ok                                
+------------------------------------------------------------------
+ PASS: link cancelled the automatic delivery (superseded_by_link)
+(1 row)
+
+SELECT t.turn('+91910000003', '1', 'b1c-s3') AS ack_after_link;
+                                                                ack_after_link                                                                
+----------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "complete", "delivery_id": null, "document_id": "259e5cfc-5a35-4310-9fe9-35582c421fc0", "current_flow": null, "current_step": 0}
+(1 row)
+
+SELECT t.ok('T-B1-LINK-THEN-ACK: ack stored, delivery STAYS cancelled with cancelled_at / cancel_reason still set',
+  (SELECT engineer_ack = 'yes' FROM public.capture_documents WHERE id = '259e5cfc-5a35-4310-9fe9-35582c421fc0')
+  AND (SELECT status = 'cancelled' AND cancelled_at IS NOT NULL AND cancel_reason = 'superseded_by_link' FROM public.deliveries WHERE id = '5598e9b3-7ac7-4404-9569-040135c66748'));
+                                                     ok                                                     
+------------------------------------------------------------------------------------------------------------
+ PASS: T-B1-LINK-THEN-ACK: ack stored, delivery STAYS cancelled with cancelled_at / cancel_reason still set
+(1 row)
+
+SELECT t.ok('... self-link still soft-unlinked (superseded_by_link) and exactly one active PM link',
+  (SELECT count(*) = 1 FROM public.delivery_invoice_links WHERE invoice_document_id = '259e5cfc-5a35-4310-9fe9-35582c421fc0' AND link_source = 'created_from_invoice' AND unlink_reason = 'superseded_by_link')
+  AND (SELECT count(*) = 1 FROM public.delivery_invoice_links WHERE invoice_document_id = '259e5cfc-5a35-4310-9fe9-35582c421fc0' AND link_source = 'pm_manual' AND unlinked_at IS NULL));
+                                             ok                                              
+---------------------------------------------------------------------------------------------
+ PASS: ... self-link still soft-unlinked (superseded_by_link) and exactly one active PM link
+(1 row)
+
+== B1 REDs: the unconditional status move this fix avoids, run directly as the table owner (exact codes)
+SELECT t.expect('RED approved -> awaiting_pm raises QE011', format('UPDATE public.deliveries SET status = %L WHERE id = %L', 'awaiting_pm', '53dc8c68-e26d-477b-acd8-72e4819ee6b8'), 'QE011');
+                                        expect                                         
+---------------------------------------------------------------------------------------
+ PASS: RED approved -> awaiting_pm raises QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('RED rejected -> awaiting_pm raises QE011', format('UPDATE public.deliveries SET status = %L WHERE id = %L', 'awaiting_pm', 'f540f5a6-9514-43c8-a1fe-5d6eb4120ebb'), 'QE011');
+                                        expect                                         
+---------------------------------------------------------------------------------------
+ PASS: RED rejected -> awaiting_pm raises QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('RED cancelled -> awaiting_pm with cancelled_* left set raises 23514 (deliveries_cancelled_at_chk)', format('UPDATE public.deliveries SET status = %L WHERE id = %L', 'awaiting_pm', '5598e9b3-7ac7-4404-9569-040135c66748'), '23514');
+                                                                                                 expect                                                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: RED cancelled -> awaiting_pm with cancelled_* left set raises 23514 (deliveries_cancelled_at_chk) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "deliveries" violates check constraint 
+(1 row)
+
+== S2 end
+

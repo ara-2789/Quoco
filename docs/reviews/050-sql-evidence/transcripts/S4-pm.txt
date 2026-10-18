@@ -1,0 +1,520 @@
+== 050 scaffold dry-run: S4-pm ==
+generated: 2026-10-18T17:32:59Z
+HEAD: 4faf1c410828eef5c04b3535635baef5a6915737
+sha256 UP: 0d5a8c14f8349503aff5dd96f477c4f7abb6d61e8ac1078aa8efbfb3996846d6
+sha256 scenario: ae68860415c83de7bd077104a92659bd172e36c9595a6d669847335581169475
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+$ psql -d d_S4-pm -v ON_ERROR_STOP=1 -f 050_material_inward_functions.sql   (050 UP)
+[exit 0]
+
+--- scenario output (psql -e echoes every statement) ---
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000001','70000000-0000-0000-0000-000000000001','pm-i1') 
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000002','60000000-0000-0000-0000-000000000002','70000000-0000-0000-0000-000000000002','pm-i2') 
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000003','60000000-0000-0000-0000-000000000003','70000000-0000-0000-0000-000000000003','pm-i3') 
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000004','60000000-0000-0000-0000-000000000004','70000000-0000-0000-0000-000000000004','pm-i4') 
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000005','60000000-0000-0000-0000-000000000005','70000000-0000-0000-0000-000000000005','pm-i5') 
+SELECT t.mk_inv('50000000-0000-0000-0000-000000000006','60000000-0000-0000-0000-000000000006','70000000-0000-0000-0000-000000000006','pm-i6') 
+SELECT t.mk_dc('50000000-0000-0000-0000-0000000000a1','60000000-0000-0000-0000-0000000000a1','pm-d1') 
+SELECT t.mk_dc('50000000-0000-0000-0000-0000000000a2','60000000-0000-0000-0000-0000000000a2','pm-d2') 
+SELECT t.mk_dc('50000000-0000-0000-0000-0000000000a3','60000000-0000-0000-0000-0000000000a3','pm-d3') 
+SELECT t.mk_dc('50000000-0000-0000-0000-0000000000a4','60000000-0000-0000-0000-0000000000a4','pm-d4') 
+SELECT t.mk_dc('50000000-0000-0000-0000-0000000000a5','60000000-0000-0000-0000-0000000000a5','pm-d5') 
+SELECT t.mk_dc('50000000-0000-0000-0000-0000000000a6','60000000-0000-0000-0000-0000000000a6','pm-d6') 
+SELECT t.mk_doc('50000000-0000-0000-0000-0000000000b1', 'dc', 'pm-fp2', '20000000-0000-0000-0000-000000000002') 
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id)
+VALUES ('60000000-0000-0000-0000-0000000000b1','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','30000000-0000-0000-0000-000000000002', now() - interval '1 hour','50000000-0000-0000-0000-0000000000b1');
+INSERT INTO public.capture_documents (id, tenant_id, project_id, kind, sent_by, source_message_sid)
+VALUES ('50000000-0000-0000-0000-0000000000b2','10000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000003','dc','30000000-0000-0000-0000-000000000009','pm-ft2');
+INSERT INTO public.deliveries (id, tenant_id, project_id, reported_by, received_at, dc_document_id)
+VALUES ('60000000-0000-0000-0000-0000000000b2','10000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000009', now() - interval '1 hour','50000000-0000-0000-0000-0000000000b2');
+== AUDIENCE (B2) and identical refusal (S1): every failure is QE015, nothing changes
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000004', false) 
+SET ROLE authenticated;
+SELECT t.expect('T-B2-DEACTIVATED pm_link_invoice', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000001', ARRAY['60000000-0000-0000-0000-0000000000a1']::uuid[])$$, 'QE015');
+                                    expect                                     
+-------------------------------------------------------------------------------
+ PASS: T-B2-DEACTIVATED pm_link_invoice -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-B2-DEACTIVATED pm_approve_delivery', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000a1')$$, 'QE015');
+                                      expect                                       
+-----------------------------------------------------------------------------------
+ PASS: T-B2-DEACTIVATED pm_approve_delivery -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-B2-DEACTIVATED pm_reject_delivery', $$SELECT public.pm_reject_delivery('60000000-0000-0000-0000-0000000000a1','r')$$, 'QE015');
+                                      expect                                      
+----------------------------------------------------------------------------------
+ PASS: T-B2-DEACTIVATED pm_reject_delivery -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-B2-DEACTIVATED pm_set_delivery_details', $$SELECT public.pm_set_delivery_details('60000000-0000-0000-0000-0000000000a1','supplier',NULL,NULL,NULL)$$, 'QE015');
+                                        expect                                         
+---------------------------------------------------------------------------------------
+ PASS: T-B2-DEACTIVATED pm_set_delivery_details -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-B2-DEACTIVATED pm_unlink_invoice', $$SELECT public.pm_unlink_invoice('70000000-0000-0000-0000-000000000001')$$, 'QE015');
+                                     expect                                      
+---------------------------------------------------------------------------------
+ PASS: T-B2-DEACTIVATED pm_unlink_invoice -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000008', false) 
+SET ROLE authenticated;
+SELECT t.expect('T-B2-PENDING pm_link_invoice', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000001', ARRAY['60000000-0000-0000-0000-0000000000a1']::uuid[])$$, 'QE015');
+                                  expect                                   
+---------------------------------------------------------------------------
+ PASS: T-B2-PENDING pm_link_invoice -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-B2-PENDING pm_approve_delivery', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000a1')$$, 'QE015');
+                                    expect                                     
+-------------------------------------------------------------------------------
+ PASS: T-B2-PENDING pm_approve_delivery -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000005', false) 
+SET ROLE authenticated;
+SELECT t.expect('T-B2-ADMIN-NONMEMBER pm_link_invoice', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000001', ARRAY['60000000-0000-0000-0000-0000000000a1']::uuid[])$$, 'QE015');
+                                      expect                                       
+-----------------------------------------------------------------------------------
+ PASS: T-B2-ADMIN-NONMEMBER pm_link_invoice -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-B2-ADMIN-NONMEMBER pm_approve_delivery', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000a1')$$, 'QE015');
+                                        expect                                         
+---------------------------------------------------------------------------------------
+ PASS: T-B2-ADMIN-NONMEMBER pm_approve_delivery -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000003', false) 
+SET ROLE authenticated;
+SELECT t.expect('qs refused pm_approve_delivery', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000a1')$$, 'QE015');
+                                   expect                                    
+-----------------------------------------------------------------------------
+ PASS: qs refused pm_approve_delivery -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000007', false) 
+SET ROLE authenticated;
+SELECT t.expect('PM of another project (same tenant) refused', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000a1')$$, 'QE015');
+                                          expect                                          
+------------------------------------------------------------------------------------------
+ PASS: PM of another project (same tenant) refused -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000009', false) 
+SET ROLE authenticated;
+SELECT t.expect('PM of another tenant refused', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000a1')$$, 'QE015');
+                                  expect                                   
+---------------------------------------------------------------------------
+ PASS: PM of another tenant refused -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000001', false) 
+SET ROLE authenticated;
+SELECT t.expect('T-F5-SAME PM1: nonexistent id', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000ff')$$, 'QE015');
+                                   expect                                   
+----------------------------------------------------------------------------
+ PASS: T-F5-SAME PM1: nonexistent id -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-F5-SAME PM1: delivery in ANOTHER PROJECT (same tenant)', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000b1')$$, 'QE015');
+                                                expect                                                 
+-------------------------------------------------------------------------------------------------------
+ PASS: T-F5-SAME PM1: delivery in ANOTHER PROJECT (same tenant) -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-F5-SAME PM1: delivery in ANOTHER TENANT', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000b2')$$, 'QE015');
+                                         expect                                         
+----------------------------------------------------------------------------------------
+ PASS: T-F5-SAME PM1: delivery in ANOTHER TENANT -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.ok('T-F5-SAME: the three refusals carry the IDENTICAL message text',
+  t.errmsg($$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000ff')$$) = t.errmsg($$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000b1')$$)
+  AND t.errmsg($$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000b1')$$) = t.errmsg($$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000b2')$$)) AS identical;
+                              identical                               
+----------------------------------------------------------------------
+ PASS: T-F5-SAME: the three refusals carry the IDENTICAL message text
+(1 row)
+
+SELECT t.errmsg($$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000ff')$$) AS the_message;
+ the_message 
+-------------
+ E15
+(1 row)
+
+RESET ROLE;
+== ARRAY SHAPE and foreign id (S1): QE015, nothing locked or written
+SET request.jwt.claim.sub = '40000000-0000-0000-0000-000000000001';
+SET ROLE authenticated;
+SELECT t.expect('T-S1-FOREIGN-ID other project: QE015 (not 23503)', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000003', ARRAY['60000000-0000-0000-0000-0000000000b1']::uuid[])$$, 'QE015');
+                                            expect                                             
+-----------------------------------------------------------------------------------------------
+ PASS: T-S1-FOREIGN-ID other project: QE015 (not 23503) -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-S1-FOREIGN-ID other tenant: QE015 (not 23503)', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000003', ARRAY['60000000-0000-0000-0000-0000000000b2']::uuid[])$$, 'QE015');
+                                            expect                                            
+----------------------------------------------------------------------------------------------
+ PASS: T-S1-FOREIGN-ID other tenant: QE015 (not 23503) -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-S1-FOREIGN-ID one good id + one foreign id', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000003', ARRAY['60000000-0000-0000-0000-0000000000a1','60000000-0000-0000-0000-0000000000b1']::uuid[])$$, 'QE015');
+                                          expect                                           
+-------------------------------------------------------------------------------------------
+ PASS: T-S1-FOREIGN-ID one good id + one foreign id -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-S1-ARRAY-SHAPE empty array', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000003', ARRAY[]::uuid[])$$, 'QE015');
+                                  expect                                   
+---------------------------------------------------------------------------
+ PASS: T-S1-ARRAY-SHAPE empty array -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-S1-ARRAY-SHAPE NULL array', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000003', NULL)$$, 'QE015');
+                                  expect                                  
+--------------------------------------------------------------------------
+ PASS: T-S1-ARRAY-SHAPE NULL array -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-S1-ARRAY-SHAPE NULL element', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000003', ARRAY['60000000-0000-0000-0000-0000000000a1', NULL]::uuid[])$$, 'QE015');
+                                   expect                                   
+----------------------------------------------------------------------------
+ PASS: T-S1-ARRAY-SHAPE NULL element -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-S1-ARRAY-SHAPE duplicate id', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000003', ARRAY['60000000-0000-0000-0000-0000000000a1','60000000-0000-0000-0000-0000000000a1']::uuid[])$$, 'QE015');
+                                   expect                                   
+----------------------------------------------------------------------------
+ PASS: T-S1-ARRAY-SHAPE duplicate id -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-S1-ARRAY-SHAPE 21 ids (cap 20)', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000003', (SELECT array_agg(gen_random_uuid()) FROM generate_series(1,21)))$$, 'QE015');
+                                    expect                                     
+-------------------------------------------------------------------------------
+ PASS: T-S1-ARRAY-SHAPE 21 ids (cap 20) -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+SELECT t.expect('T-S1-UNLINK nonexistent link id', $$SELECT public.pm_unlink_invoice('70000000-0000-0000-0000-0000000000ff')$$, 'QE015');
+                                    expect                                    
+------------------------------------------------------------------------------
+ PASS: T-S1-UNLINK nonexistent link id -- refused, SQLSTATE=QE015 MESSAGE=E15
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('nothing cancelled, no pm_manual link written by any refusal',
+  (SELECT count(*) = 0 FROM public.deliveries WHERE status = 'cancelled') AND (SELECT count(*) = 0 FROM public.delivery_invoice_links WHERE link_source = 'pm_manual'));
+                                ok                                 
+-------------------------------------------------------------------
+ PASS: nothing cancelled, no pm_manual link written by any refusal
+(1 row)
+
+== pm_link_invoice SUCCESS (PM1): I1 -> D1, D2 ; the automatic delivery is cancelled, the self-link soft-unlinked
+SET request.jwt.claim.sub = '40000000-0000-0000-0000-000000000001';
+SET ROLE authenticated;
+SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000001', ARRAY['60000000-0000-0000-0000-0000000000a2','60000000-0000-0000-0000-0000000000a1']::uuid[]) AS linked;
+                                                   linked                                                   
+------------------------------------------------------------------------------------------------------------
+ {"linked": 2, "invoice_document_id": "50000000-0000-0000-0000-000000000001", "superseded_automatic": true}
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-A28-2: two pm_manual links, automatic delivery cancelled (superseded_by_link), self-link unlinked with the pre-cancel snapshot',
+  (SELECT count(*) = 2 FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000001' AND link_source = 'pm_manual' AND unlinked_at IS NULL AND linked_by = '30000000-0000-0000-0000-000000000001')
+  AND (SELECT status = 'cancelled' AND cancel_reason = 'superseded_by_link' FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001')
+  AND (SELECT unlink_reason = 'superseded_by_link' AND superseded_from_status = 'incomplete' FROM public.delivery_invoice_links WHERE id = '70000000-0000-0000-0000-000000000001'));
+                                                                   ok                                                                   
+----------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-A28-2: two pm_manual links, automatic delivery cancelled (superseded_by_link), self-link unlinked with the pre-cancel snapshot
+(1 row)
+
+== QE008: a second invoice linking a DC delivery that already has an active link
+SET request.jwt.claim.sub = '40000000-0000-0000-0000-000000000001';
+SET ROLE authenticated;
+SELECT t.expect('QE008 (uq_dil_active_per_delivery translated), D1 already linked to I1', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000002', ARRAY['60000000-0000-0000-0000-0000000000a1']::uuid[])$$, 'QE008');
+                                                       expect                                                       
+--------------------------------------------------------------------------------------------------------------------
+ PASS: QE008 (uq_dil_active_per_delivery translated), D1 already linked to I1 -- refused, SQLSTATE=QE008 MESSAGE=E8
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-A28-2 control: the failed link left I2''s automatic delivery UNcancelled and its self-link ACTIVE (whole call rolled back)',
+  (SELECT status = 'incomplete' FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000002')
+  AND (SELECT count(*) = 1 FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000002' AND link_source = 'created_from_invoice' AND unlinked_at IS NULL)
+  AND (SELECT count(*) = 0 FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000002' AND link_source = 'pm_manual'));
+                                                                ok                                                                 
+-----------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-A28-2 control: the failed link left I2's automatic delivery UNcancelled and its self-link ACTIVE (whole call rolled back)
+(1 row)
+
+== T-B2-ADMIN-PMMEMBER: an admin who is also a pm member of the project succeeds
+SET request.jwt.claim.sub = '40000000-0000-0000-0000-000000000006';
+SET ROLE authenticated;
+SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000004', ARRAY['60000000-0000-0000-0000-0000000000a3']::uuid[]) AS admin_member_link;
+                                             admin_member_link                                              
+------------------------------------------------------------------------------------------------------------
+ {"linked": 1, "invoice_document_id": "50000000-0000-0000-0000-000000000004", "superseded_automatic": true}
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('admin PM-member linked I4 -> D3 (linked_by = ADMP)', (SELECT count(*) = 1 FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000004' AND linked_by = '30000000-0000-0000-0000-000000000006' AND unlinked_at IS NULL));
+                            ok                            
+----------------------------------------------------------
+ PASS: admin PM-member linked I4 -> D3 (linked_by = ADMP)
+(1 row)
+
+== E8 RE-RAISE (T-E8-RERAISE): a rehearsal-only planted unique index hit by a pm_manual insert
+CREATE UNIQUE INDEX plant_uq_pm_per_invoice ON public.delivery_invoice_links (invoice_document_id) WHERE link_source = 'pm_manual' AND unlinked_at IS NULL AND invoice_document_id = '50000000-0000-0000-0000-000000000005';
+SET request.jwt.claim.sub = '40000000-0000-0000-0000-000000000001';
+SET ROLE authenticated;
+SELECT t.expect('native 23505 reaches the caller (not QE008)', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000005', ARRAY['60000000-0000-0000-0000-0000000000a4','60000000-0000-0000-0000-0000000000a5']::uuid[])$$, '23505');
+                                                                      expect                                                                       
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: native 23505 reaches the caller (not QE008) -- refused, SQLSTATE=23505 MESSAGE=duplicate key value violates unique constraint "plant_uq_pm_
+(1 row)
+
+SELECT t.errmsg($$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000005', ARRAY['60000000-0000-0000-0000-0000000000a4','60000000-0000-0000-0000-0000000000a5']::uuid[])$$) AS native_error_text;
+                            native_error_text                             
+--------------------------------------------------------------------------
+ duplicate key value violates unique constraint "plant_uq_pm_per_invoice"
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('nothing changed: automatic delivery NOT cancelled, self-link still ACTIVE, no pm_manual row',
+  (SELECT status = 'incomplete' FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000005')
+  AND (SELECT count(*) = 1 FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000005' AND link_source = 'created_from_invoice' AND unlinked_at IS NULL)
+  AND (SELECT count(*) = 0 FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000005' AND link_source = 'pm_manual'));
+                                                ok                                                 
+---------------------------------------------------------------------------------------------------
+ PASS: nothing changed: automatic delivery NOT cancelled, self-link still ACTIVE, no pm_manual row
+(1 row)
+
+DROP INDEX public.plant_uq_pm_per_invoice;
+== pm_unlink_invoice: unlink one of two (no restore), then the last (restore: incomplete + NEW self-link)
+SET request.jwt.claim.sub = '40000000-0000-0000-0000-000000000001';
+SET ROLE authenticated;
+SELECT public.pm_unlink_invoice(l.id) AS unlink_first FROM public.delivery_invoice_links l WHERE l.invoice_document_id = '50000000-0000-0000-0000-000000000001' AND l.delivery_id = '60000000-0000-0000-0000-0000000000a1' AND l.unlinked_at IS NULL;
+                                   unlink_first                                   
+----------------------------------------------------------------------------------
+ {"link_id": "4739f65a-9a1c-47c5-9243-179c79a6f6a5", "restored_automatic": false}
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-A28-4 contrast: another PM link remains -> the automatic delivery is still cancelled',
+  (SELECT status = 'cancelled' FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001'));
+                                              ok                                              
+----------------------------------------------------------------------------------------------
+ PASS: T-A28-4 contrast: another PM link remains -> the automatic delivery is still cancelled
+(1 row)
+
+SET request.jwt.claim.sub = '40000000-0000-0000-0000-000000000001';
+SET ROLE authenticated;
+SELECT public.pm_unlink_invoice(l.id) AS unlink_last FROM public.delivery_invoice_links l WHERE l.invoice_document_id = '50000000-0000-0000-0000-000000000001' AND l.delivery_id = '60000000-0000-0000-0000-0000000000a2' AND l.unlinked_at IS NULL;
+                                   unlink_last                                   
+---------------------------------------------------------------------------------
+ {"link_id": "cda2c025-3108-4222-a2ef-7f5cc38682b5", "restored_automatic": true}
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-A28-4: last PM link gone -> automatic delivery restored (incomplete, cancelled_* cleared) with a NEW active self-link',
+  (SELECT status = 'incomplete' AND cancelled_at IS NULL AND cancel_reason IS NULL FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000001')
+  AND (SELECT count(*) = 1 FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000001' AND link_source = 'created_from_invoice' AND unlinked_at IS NULL)
+  AND (SELECT count(*) = 2 FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000001' AND link_source = 'created_from_invoice'));
+                                                              ok                                                               
+-------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-A28-4: last PM link gone -> automatic delivery restored (incomplete, cancelled_* cleared) with a NEW active self-link
+(1 row)
+
+== pm_reject_delivery Path 4 with restore, blank reason, approve without type, bad transitions
+SET request.jwt.claim.sub = '40000000-0000-0000-0000-000000000001';
+SET ROLE authenticated;
+SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000006', ARRAY['60000000-0000-0000-0000-0000000000a6']::uuid[]) AS link_i6_d6;
+                                                 link_i6_d6                                                 
+------------------------------------------------------------------------------------------------------------
+ {"linked": 1, "invoice_document_id": "50000000-0000-0000-0000-000000000006", "superseded_automatic": true}
+(1 row)
+
+SELECT t.expect('QE017 reject with blank reason', $$SELECT public.pm_reject_delivery('60000000-0000-0000-0000-0000000000a6','   ')$$, 'QE017');
+                                   expect                                    
+-----------------------------------------------------------------------------
+ PASS: QE017 reject with blank reason -- refused, SQLSTATE=QE017 MESSAGE=E17
+(1 row)
+
+SELECT public.pm_reject_delivery('60000000-0000-0000-0000-0000000000a6', 'not ours') AS reject_d6;
+                                                 reject_d6                                                 
+-----------------------------------------------------------------------------------------------------------
+ {"status": "rejected", "delivery_id": "60000000-0000-0000-0000-0000000000a6", "restored_automatic": true}
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('Path 4: rejecting the only linked DC delivery rejected it AND restored I6''s automatic delivery with a new self-link',
+  (SELECT status = 'rejected' FROM public.deliveries WHERE id = '60000000-0000-0000-0000-0000000000a6')
+  AND (SELECT status = 'incomplete' FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000006')
+  AND (SELECT count(*) = 1 FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000006' AND link_source = 'created_from_invoice' AND unlinked_at IS NULL)
+  AND (SELECT unlink_reason = 'delivery_rejected' FROM public.delivery_invoice_links WHERE delivery_id = '60000000-0000-0000-0000-0000000000a6'));
+                                                            ok                                                             
+---------------------------------------------------------------------------------------------------------------------------
+ PASS: Path 4: rejecting the only linked DC delivery rejected it AND restored I6's automatic delivery with a new self-link
+(1 row)
+
+SET request.jwt.claim.sub = '40000000-0000-0000-0000-000000000001';
+SET ROLE authenticated;
+RESET ROLE;
+UPDATE public.deliveries SET delivery_type = NULL WHERE id = '60000000-0000-0000-0000-000000000003';
+SET ROLE authenticated;
+SELECT t.expect('QE016 approve with no delivery_type', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-000000000003')$$, 'QE016');
+                                      expect                                      
+----------------------------------------------------------------------------------
+ PASS: QE016 approve with no delivery_type -- refused, SQLSTATE=QE016 MESSAGE=E16
+(1 row)
+
+SELECT t.expect('QE011 approve a rejected delivery', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000a6')$$, 'QE011');
+                                     expect                                     
+--------------------------------------------------------------------------------
+ PASS: QE011 approve a rejected delivery -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('QE011 reject a rejected delivery', $$SELECT public.pm_reject_delivery('60000000-0000-0000-0000-0000000000a6','again')$$, 'QE011');
+                                    expect                                     
+-------------------------------------------------------------------------------
+ PASS: QE011 reject a rejected delivery -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT public.pm_set_delivery_details('60000000-0000-0000-0000-000000000003', 'supplier', 'TN9', 'DC-3', current_date) AS set_i3;
+                         set_i3                          
+---------------------------------------------------------
+ {"delivery_id": "60000000-0000-0000-0000-000000000003"}
+(1 row)
+
+SELECT public.pm_approve_delivery('60000000-0000-0000-0000-000000000003') AS approve_auto_i3;
+                                approve_auto_i3                                
+-------------------------------------------------------------------------------
+ {"status": "approved", "delivery_id": "60000000-0000-0000-0000-000000000003"}
+(1 row)
+
+SELECT t.expect('QE011 X6/D-9: linking an invoice whose automatic delivery is APPROVED is refused', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000003', ARRAY['60000000-0000-0000-0000-0000000000a4']::uuid[])$$, 'QE011');
+                                                            expect                                                             
+-------------------------------------------------------------------------------------------------------------------------------
+ PASS: QE011 X6/D-9: linking an invoice whose automatic delivery is APPROVED is refused -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('QE006 retype to internal_transfer while a link is active', $$SELECT public.pm_set_delivery_details('60000000-0000-0000-0000-0000000000a3','internal_transfer',NULL,NULL,NULL)$$, 'QE006');
+                                                expect                                                
+------------------------------------------------------------------------------------------------------
+ PASS: QE006 retype to internal_transfer while a link is active -- refused, SQLSTATE=QE006 MESSAGE=E6
+(1 row)
+
+SELECT t.expect('QE007 retype an AUTOMATIC delivery to internal_transfer', $$SELECT public.pm_set_delivery_details('60000000-0000-0000-0000-000000000006','internal_transfer',NULL,NULL,NULL)$$, 'QE007');
+                                               expect                                                
+-----------------------------------------------------------------------------------------------------
+ PASS: QE007 retype an AUTOMATIC delivery to internal_transfer -- refused, SQLSTATE=QE007 MESSAGE=E7
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('X6: after the refused link, I3''s automatic delivery is still approved and its self-link still active',
+  (SELECT status = 'approved' FROM public.deliveries WHERE id = '60000000-0000-0000-0000-000000000003')
+  AND (SELECT count(*) = 1 FROM public.delivery_invoice_links WHERE invoice_document_id = '50000000-0000-0000-0000-000000000003' AND link_source = 'created_from_invoice' AND unlinked_at IS NULL));
+                                                     ok                                                     
+------------------------------------------------------------------------------------------------------------
+ PASS: X6: after the refused link, I3's automatic delivery is still approved and its self-link still active
+(1 row)
+
+== GRANTS (T-F5-4 and the pm_* audience at the grant layer): refusals are 42501
+SET ROLE anon;
+SELECT t.expect('anon refused pm_approve_delivery', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000a1')$$, '42501');
+                                                            expect                                                            
+------------------------------------------------------------------------------------------------------------------------------
+ PASS: anon refused pm_approve_delivery -- refused, SQLSTATE=42501 MESSAGE=permission denied for function pm_approve_delivery
+(1 row)
+
+SELECT t.expect('anon refused pm_link_invoice', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000001', ARRAY['60000000-0000-0000-0000-0000000000a1']::uuid[])$$, '42501');
+                                                        expect                                                        
+----------------------------------------------------------------------------------------------------------------------
+ PASS: anon refused pm_link_invoice -- refused, SQLSTATE=42501 MESSAGE=permission denied for function pm_link_invoice
+(1 row)
+
+SELECT t.expect('anon refused apply_material_inward_turn', $$SELECT public.apply_material_inward_turn('+9100','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','x','sid-anon')$$, '42501');
+                                                                   expect                                                                   
+--------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: anon refused apply_material_inward_turn -- refused, SQLSTATE=42501 MESSAGE=permission denied for function apply_material_inward_turn
+(1 row)
+
+SELECT t.expect('anon refused expire_stale_material_inward', $$SELECT public.expire_stale_material_inward('+9100')$$, '42501');
+                                                                     expect                                                                     
+------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: anon refused expire_stale_material_inward -- refused, SQLSTATE=42501 MESSAGE=permission denied for function expire_stale_material_inward
+(1 row)
+
+RESET ROLE;
+SET ROLE service_role;
+SELECT t.expect('service_role refused pm_approve_delivery', $$SELECT public.pm_approve_delivery('60000000-0000-0000-0000-0000000000a1')$$, '42501');
+                                                                expect                                                                
+--------------------------------------------------------------------------------------------------------------------------------------
+ PASS: service_role refused pm_approve_delivery -- refused, SQLSTATE=42501 MESSAGE=permission denied for function pm_approve_delivery
+(1 row)
+
+SELECT t.expect('service_role refused pm_set_delivery_details', $$SELECT public.pm_set_delivery_details('60000000-0000-0000-0000-0000000000a1','supplier',NULL,NULL,NULL)$$, '42501');
+                                                                    expect                                                                    
+----------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: service_role refused pm_set_delivery_details -- refused, SQLSTATE=42501 MESSAGE=permission denied for function pm_set_delivery_details
+(1 row)
+
+SELECT t.expect('service_role refused pm_reject_delivery', $$SELECT public.pm_reject_delivery('60000000-0000-0000-0000-0000000000a1','x')$$, '42501');
+                                                               expect                                                               
+------------------------------------------------------------------------------------------------------------------------------------
+ PASS: service_role refused pm_reject_delivery -- refused, SQLSTATE=42501 MESSAGE=permission denied for function pm_reject_delivery
+(1 row)
+
+SELECT t.expect('service_role refused pm_link_invoice', $$SELECT public.pm_link_invoice('50000000-0000-0000-0000-000000000001', ARRAY['60000000-0000-0000-0000-0000000000a1']::uuid[])$$, '42501');
+                                                            expect                                                            
+------------------------------------------------------------------------------------------------------------------------------
+ PASS: service_role refused pm_link_invoice -- refused, SQLSTATE=42501 MESSAGE=permission denied for function pm_link_invoice
+(1 row)
+
+SELECT t.expect('service_role refused pm_unlink_invoice', $$SELECT public.pm_unlink_invoice('70000000-0000-0000-0000-000000000001')$$, '42501');
+                                                              expect                                                              
+----------------------------------------------------------------------------------------------------------------------------------
+ PASS: service_role refused pm_unlink_invoice -- refused, SQLSTATE=42501 MESSAGE=permission denied for function pm_unlink_invoice
+(1 row)
+
+RESET ROLE;
+SET ROLE authenticated;
+SELECT t.expect('authenticated refused apply_material_inward_turn', $$SELECT public.apply_material_inward_turn('+9100','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','x','sid-auth')$$, '42501');
+                                                                       expect                                                                        
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: authenticated refused apply_material_inward_turn -- refused, SQLSTATE=42501 MESSAGE=permission denied for function apply_material_inward_turn
+(1 row)
+
+SELECT t.expect('authenticated refused expire_stale_material_inward', $$SELECT public.expire_stale_material_inward('+9100')$$, '42501');
+                                                                         expect                                                                          
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: authenticated refused expire_stale_material_inward -- refused, SQLSTATE=42501 MESSAGE=permission denied for function expire_stale_material_inward
+(1 row)
+
+SELECT t.expect('authenticated refused apply_morning_flow_turn (live ACL unchanged)', $$SELECT public.apply_morning_flow_turn('+9100','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','x',false)$$, '42501');
+                                                                               expect                                                                               
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: authenticated refused apply_morning_flow_turn (live ACL unchanged) -- refused, SQLSTATE=42501 MESSAGE=permission denied for function apply_morning_flow_turn
+(1 row)
+
+RESET ROLE;
+SET ROLE service_role;
+SELECT t.expect('service_role positive control: expire_stale_material_inward runs', $$SELECT public.expire_stale_material_inward('+9100')$$, 'ok');
+                                                   expect                                                   
+------------------------------------------------------------------------------------------------------------
+ PASS: service_role positive control: expire_stale_material_inward runs -- succeeded as expected (1 row(s))
+(1 row)
+
+RESET ROLE;
+== S4 end
+
