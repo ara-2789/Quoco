@@ -105,7 +105,7 @@ SELECT t.turn_as('+91900000021', NULL, 's1y-s2', '30000000-0000-0000-0000-000000
 SELECT t.ok('S-1 positive control: the same P2 engineer into P2 creates the document', (SELECT count(*) = 1 FROM public.capture_documents WHERE source_message_sid = 's1y-s2'));
 SELECT t.turn('+91900000022', '4', 's1z-s0', NULL, true);
 SELECT t.turn('+91900000022', '1', 's1z-s1');
-SELECT t.expect('S-1: an engineer with only a QS/other-role membership would also be refused -- here: ENG1 (P1 engineer member) into P2', $$SELECT t.turn_as('+91900000022', NULL, 's1z-s2', '30000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000002', t.media(1))$$, 'QE012');
+SELECT t.expect('S-1: ENG1 (an engineer member of P1 only, NOT of P2) sending into a P2 session is refused -- a non-member case; the other-ROLE membership case is S1b-s4.sql', $$SELECT t.turn_as('+91900000022', NULL, 's1z-s2', '30000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000002', t.media(1))$$, 'QE012');
 
 \echo == N-1 [SQL review r1]: S1 kind parsing uses the SAME normalisation as the S3 ack parser
 SELECT t.turn('+91900000023', '4', 'n1a-s0', NULL, true);

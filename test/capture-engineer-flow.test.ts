@@ -31,7 +31,7 @@ import {
 let kit: CaptureKit
 
 beforeAll(async () => {
-  kit = await buildCaptureKit('engineer-flow', ['eng', 'engP2', 'pm1'])
+  kit = await buildCaptureKit('engineer-flow', ['eng', 'engP2', 'engQs', 'pm1'])
 })
 
 afterAll(async () => {
@@ -235,6 +235,19 @@ describe('050 engineer flow (apply_material_inward_turn)', () => {
     // positive control: the same engineer into HER project creates the document
     const ok = await makeDoc(kit, 'dc', 's1-own-project', { userId: kit.uid('engP2'), projectId: kit.p2 })
     expect((await getDelivery(kit, ok.deliveryId)).project_id).toBe(kit.p2)
+  })
+
+  it('S-4 (SQL review r2) an engineer whose ONLY membership has role qs (not engineer) is refused QE012 and nothing is written', async () => {
+    const phone = kit.phone('s4-qs-membership')
+    const o = { userId: kit.uid('engQs'), projectId: kit.p1 }
+    await miTurn(kit, phone, '4', kit.sid('s4-s0'), { ...o, start: true })
+    await miTurn(kit, phone, '1', kit.sid('s4-s1'), o)
+    const fileSid = kit.sid('s4-s2')
+    const { error } = await miTurnRaw(kit, phone, null, fileSid, { ...o, media: jpegMedia(1) })
+    expect(error?.code).toBe('QE012')
+    const { data: docs } = await kit.svc.from('capture_documents').select('id').eq('source_message_sid', fileSid)
+    const { data: dels } = await kit.svc.from('deliveries').select('id').eq('reported_by', kit.uid('engQs'))
+    expect([docs, dels].map((x) => (x ?? []).length)).toEqual([0, 0])
   })
 
   it.each([
