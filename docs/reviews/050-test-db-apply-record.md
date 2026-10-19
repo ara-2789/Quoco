@@ -1,43 +1,55 @@
-# 050 test-db apply record -- INCOMPLETE (stopped at the ledger step)
+# 050 test-db apply record -- COMPLETE
 
-Date 19 Oct 2026. Target: test-db, ref `exfccwlrhoutkgrlikod` ONLY (printed before every database command; prod `jvxwqignooseazzmwhvl` never touched). FULL tier. Branch `feat/050-material-inward-fns` at `ed7852f` plus this block's uncommitted-at-the-time edits.
-Raw log of every command and its output: `docs/reviews/050-test-db-apply/block-13-raw-log.txt` (copied from `/tmp/quoco/pr-b-block-13.txt`); the queries and the anon script are beside it.
+Date 19 Oct 2026 (blocks 13 and 14). Target: test-db, ref `exfccwlrhoutkgrlikod` ONLY (printed before every database command; prod `jvxwqignooseazzmwhvl` never touched). FULL tier. Branch `feat/050-material-inward-fns`.
+Raw log of every command and its output: `docs/reviews/050-test-db-apply/block-13-raw-log.txt` (copied from `/tmp/quoco/pr-b-block-13.txt`). The queries (`q-*.sql`) and the two node scripts (`anon-refusals.mjs`, `down-seed.mjs`: host and key claims checked before any call, keys never printed) are beside it.
 
-## State in one line
+## Final state (observed 19 Oct, after the re-apply)
 
-**050 IS APPLIED TO TEST-DB (objects present, assertion block passed) BUT ITS LEDGER ROW WAS NOT WRITTEN.** `supabase migration list` still ends at 049. The DOWN rehearsal (step 6), the re-apply (step 7) and the final readbacks are NOT done. See "Stop" below.
+- 050 is applied to test-db; the in-file assertion block passed twice (first apply, re-apply), each time with exit 0.
+- Nine functions, one `pg_proc` row each, `prosecdef` true, owner postgres. Seven new: `proconfig {"search_path=\"\""}`; `apply_material_inward_turn` and `expire_stale_material_inward` ACL `{postgres=X/postgres,service_role=X/postgres}`; the five `pm_*` ACL `{postgres=X/postgres,authenticated=X/postgres}`.
+- Replaced `apply_morning_flow_turn` md5 **`cf2e78881f03d4e03a0dc51fd9b6008e`** and `apply_evening_flow_turn` md5 **`9987ab905a5563f94f9226445fbcef8b`** (the same values after the first apply and after the re-apply: reproducible). `proconfig {search_path=public}`, ACL `{postgres=X/postgres,service_role=X/postgres}`, equal to the pre-apply reading.
+- Ledger: `049 capture_tables 59` and `050 material_inward_functions 31`. `supabase migration list`: 46 entries, the last `{"local":"","remote":"050"}` (local empty because the main tree, which must not change, has no 050 file; the 050 SQL stays in `docs/reviews/` until the prod apply, as 049's did).
+- `current_flow='invoice'` sessions: 0. Seed rows: none left.
 
 ## Observed vs reported
 
 | Step | Result | Source |
 |---|---|---|
-| 0. review r2 | `~/Downloads/050-sql-review-r2.txt` sha256 `24651560c93f96108f91be01f2fbc816f7a98a7dcf17622c81a778a9c57fd890` = expected; copied verbatim to `docs/reviews/050-sql-review-round-2.md` | observed |
+| 0. review r2 | sha256 `24651560c93f96108f91be01f2fbc816f7a98a7dcf17622c81a778a9c57fd890` = expected; copied verbatim to `docs/reviews/050-sql-review-round-2.md` | observed |
 | 1. ref | `exfccwlrhoutkgrlikod` printed before every database command | observed |
-| 2. S-4 probe (reviewer's exact query) | **0 rows** (`"rows": []`) -> proceed | observed, raw log |
-| 3. pre-apply | live md5 morning `707c10fe09dfd5a7cd065f7826eacd46`, evening `d19d07507abccdaf7d54ee1d74419af7` (both as expected); ACL of both `{postgres=X/postgres,service_role=X/postgres}`, `proconfig {search_path=public}`, owner postgres, anon false / authenticated false / service_role true; the seven new names absent; `current_flow='invoice'` sessions 0; CHECK `whatsapp_sessions_current_flow_check` allows `invoice`; ledger 049 present (59 statements), no 050; `migration list`: 45 entries, last `049 / 049` | observed |
-| 4. apply | sha256 of the file checked in the same frame = `1e09730d26aec0dcd46fefd09601651bad149138326c351556b8405acec0fade`; `supabase db query --linked -f docs/reviews/050_material_inward_functions.sql`, foreground, one run, 08:48:14Z to 08:48:20Z, **exit 0**, `"rows": []`. The file is one `BEGIN ... COMMIT` whose last block is the ACL/fingerprint assertion for all nine functions, so exit 0 means it passed. | observed |
-| 4. ledger | **NOT DONE** -- see Stop | observed |
-| 5. catalog readback | all nine functions: one `pg_proc` row each, `prosecdef` true, owner postgres; the seven new: `proconfig {"search_path=\"\""}`; two engineer-side service_role only (`{postgres=X, service_role=X}`), five `pm_*` authenticated only (`{postgres=X, authenticated=X}`); the two replaced: `{search_path=public}` and ACL **identical to the pre-apply reading**; new md5 morning `cf2e78881f03d4e03a0dc51fd9b6008e`, evening `9987ab905a5563f94f9226445fbcef8b` (differ from the old, as they must) | observed |
-| 5. anon-key PostgREST | host `exfccwlrhoutkgrlikod.supabase.co`, anon key ref claim = test-db, role claim anon (keys never printed): `pm_approve_delivery`, `apply_material_inward_turn`, `expire_stale_material_inward` each **HTTP 401, code 42501, "permission denied for function ..."** | observed |
-| 5. 050 ledger row present | **NO** (ledger query returns only `049 capture_tables 59`) | observed |
-| 6. DOWN rehearsal | NOT RUN (it needs the 050 ledger row to test S-2) | -- |
-| 7. re-apply | NOT RUN | -- |
-| 8. vitest S-4 + label | done in the repo (not run): `test/capture-engineer-flow.test.ts` case "S-4", fixture user `engQs`; S1 scaffold label fixed; the case the old label described is `docs/reviews/050-sql-evidence/src/S1b-s4.sql` -- **NOT YET RUN** (the scaffold was destroyed and a dump of test-db now already contains the 050 functions) | not run |
+| 2. **S-4 probe** (reviewer's exact query: engineers whose membership role is not `engineer`) | **0 rows** | observed, raw log |
+| 3. pre-apply | live md5 morning `707c10fe09dfd5a7cd065f7826eacd46`, evening `d19d07507abccdaf7d54ee1d74419af7` (as expected); ACL `{postgres=X/postgres,service_role=X/postgres}`, `proconfig {search_path=public}`, owner postgres, anon/authenticated false, service_role true; the seven new names absent; `invoice` sessions 0; CHECK allows `invoice`; ledger 049 present (59), no 050; `migration list` 45 entries, last 049 | observed |
+| 4. apply | SQL sha256 `1e09730d26aec0dcd46fefd09601651bad149138326c351556b8405acec0fade` checked in the same frame; `supabase db query --linked -f docs/reviews/050_material_inward_functions.sql`, foreground, one run, 08:48:14Z to 08:48:20Z, **exit 0** | observed |
+| 4. ledger (first) | the classifier denied my attempt (throwaway workdir `repair`); nothing ran. **Run by Aravind** in his own terminal, option (a): `supabase --workdir /tmp/quoco/cli-wd migration repair --status applied 050 --linked` (workdir = sha-identical copy of the file + a copy of `project-ref`, not `supabase link`). His paste: ref `exfccwlrhoutkgrlikod`, sha256 `1e09730d...0fade`, `Repaired migration history: [050] => applied`. Verified by query: `050 material_inward_functions`, **31 statements** (filled from the file); `migration list` last `remote 050` | observed (the repair itself: reported by Aravind) |
+| 5. catalog fingerprint, all nine | as in "Final state"; for the two replaced functions the ACL equals the pre-apply reading | observed |
+| 5. real anon-key PostgREST | host `exfccwlrhoutkgrlikod.supabase.co`, anon key ref claim = test-db, role claim anon: `pm_approve_delivery`, `apply_material_inward_turn`, `expire_stale_material_inward` each **HTTP 401, code 42501, "permission denied for function ..."** (run after the first apply and again after the re-apply) | observed |
+| 6. **DOWN rehearsal**, 14:27 IST (outside 08:25-08:40 and 18:25-18:40) | see below | observed |
+| 7. re-apply | same file, same frame checks (ref, sha), foreground, one run, 08:58:10Z, **exit 0** (assertion block passed). Ledger row (second): **run by Aravind** (same command and same pasted output as above). Verified: 050 row present (31 statements), `migration list` last `remote 050`, readbacks identical to the first apply, anon refusals 42501 again | observed (repair: reported by Aravind) |
+| 8. S-4 vitest + S1 label | `test/capture-engineer-flow.test.ts` case "S-4" (fixture user `engQs`, engineer role with only a `qs` membership); the S1 scaffold label corrected; the other-role-membership scaffold case is `docs/reviews/050-sql-evidence/src/S1b-s4.sql`. **Both are NOT RUN**: the vitest case waits for CI; S1b needs a pre-apply dump (a dump of test-db now already contains the 050 functions) | not run |
 
-## Stop
+## DOWN rehearsal on test-db (step 6)
 
-Step 4 says to write the ledger row "exactly the way the 049 test-db apply did". That method is `supabase migration repair --status applied <version> --linked`, which reads the statements from `supabase/migrations/<file>` in the CLI workdir (049 prod record sections 4-5). Two constraints collide here:
-1. the 050 file is in `docs/reviews/` (held, as 049's was on test-db until its prod apply) and the main tree (the linked one) must not be changed;
-2. `repair` only fills `statements` from a local file.
+Seed (under tenant `zz-test-capture-down-<run id>`, via PostgREST as service_role; engineer user with an `engineer` membership):
+- engineer mid-capture: `apply_material_inward_turn` start -> `start`; kind -> `advance`; file -> `advance` at step 3; a further file at S3 -> `file_attached` (**"a turn works"**), session `invoice/3` with `mi_document_id`, `mi_kind`, `mi_last_sid`, `mi_reask` in its context;
+- a check-in session `morning/1` with context `{"invoice_reset_guard": "morning"}`.
 
-I tried to satisfy both with a throwaway workdir (`/tmp/quoco/cli-wd` holding a sha-identical COPY of the file and a COPY of `project-ref`, `supabase --workdir ... migration repair --status applied 050 --linked`). **The Claude Code permission classifier denied that command ("Modify Shared Resources"). Nothing in it ran** (no directory was created, the ledger is unchanged). I did not work around the denial.
+DOWN: `docs/reviews/050-down-testdb.sql`, sha256 checked first = `c7f13299441ce26c2fa7f63a396a6dfa2c571bbd3d64b0c6ab7451e6ecc83bd6`; `supabase db query --linked -f`, foreground, one run, **exit 0** (08:57:33Z). Its own closing assertion (md5s, no `invoice` rows, no flags or keys, seven functions gone, ACL, ledger row gone) passed, because a failure aborts the transaction.
 
-Options for Aravind (his call):
-- (a) approve the throwaway-workdir `repair` as described (ledger row with the statements from the sha-identical file);
-- (b) `git mv docs/reviews/050_material_inward_functions.sql supabase/migrations/` in the worktree and run `repair` with `--workdir` on a linked directory (the 049 prod flow; moves the file earlier than 049's test-db apply did);
-- (c) hand-insert the row with `statements` NULL as 049's first test-db apply did (the record calls that row the odd one out; the later re-alignment replaced it).
-After the ledger row exists: the DOWN rehearsal (step 6, which then also proves S-2 against a real row), the re-apply and its ledger row, and the final readbacks.
+Independent readback after the DOWN:
+- both sessions cleared subtract-only: the in-flight one `null/0 {}`, the flag one `morning/1 {}` (flag stripped);
+- `apply_morning_flow_turn` md5 `707c10fe09dfd5a7cd065f7826eacd46`, `apply_evening_flow_turn` md5 `d19d07507abccdaf7d54ee1d74419af7`; both ACLs `{postgres=X/postgres,service_role=X/postgres}`;
+- the seven functions gone (`[]`); `invoice` sessions 0; rows carrying the flag or a `mi_*` key 0;
+- **ledger: only `049`; the 050 row is gone** (S-2 proved on a real row);
+- 049 data untouched (the seed tenant's capture document still there until the cleanup);
+- `apply_morning_flow_turn` start for the seeded engineer -> `{"outcome":"start", ... "current_flow":"morning","current_step":1}`;
+- `apply_material_inward_turn` after the DOWN -> PGRST202 (function not found).
 
-## Current state of test-db (observed)
+Cleanup of the seed: `quoco_test_capture_cleanup` -> `{"deliveries":1,"capture_files":2,"capture_documents":1,"delivery_invoice_links":0}`, then jobs, daily_logs, processed_messages, sessions, members, project, users, tenant deleted; rows left: 0 tenants, 0 users, 0 sessions.
 
-050's seven functions present with the intended grants; the two check-in functions replaced (new md5s above); **no 050 ledger row**; `migration list` last = 049. If left this way, `migration list` and the catalog disagree (objects without a row) -- the same shape as 032's ledger/reality mismatch.
+## Not verified here
+
+- The vitest suite (`test/capture-*.test.ts`, including S-4 and the CI-only race tests, N-7) has never run; its first CI run is the next evidence. Nothing in this record claims it.
+- The concurrent-turn-versus-DOWN race was exercised only on the local scaffold (`transcripts/S5-down.txt`), not on test-db; the test-db rehearsal above was sequential.
+- Prod: no GO, no read, no write. The prod pre-checks (plan section 13, with the S-4 probe added), `050-down-prod.sql` and the prod-captured bodies are still to do, and the reviewer wants `050-down-prod.sql` before the prod apply.
+- `types/database.ts` is not regenerated by this block.
+- The throwaway workdir `/tmp/quoco/cli-wd` has been deleted.
