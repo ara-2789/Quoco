@@ -17,6 +17,17 @@ BEGIN
 END;
 $$;
 
+-- t.turn_as: like t.turn, for an arbitrary engineer user and project (SQL review r1 S-1 cases).
+CREATE OR REPLACE FUNCTION t.turn_as(p_phone text, p_msg text, p_sid text, p_user uuid, p_project uuid,
+                                     p_media jsonb DEFAULT NULL, p_start boolean DEFAULT false, p_now timestamptz DEFAULT now())
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  INSERT INTO public.processed_messages (message_sid) VALUES (p_sid) ON CONFLICT DO NOTHING;
+  RETURN public.apply_material_inward_turn(p_phone, '10000000-0000-0000-0000-000000000001', p_user, p_project,
+    p_msg, p_sid, p_media, p_start, p_now);
+END;
+$$;
+
 -- t.media: n jpeg media items for a message
 CREATE OR REPLACE FUNCTION t.media(n int) RETURNS jsonb LANGUAGE sql AS
 $$ SELECT jsonb_agg(jsonb_build_object('index', i, 'content_type', 'image/jpeg', 'url', 'https://example.invalid/m/' || i)) FROM generate_series(0, n - 1) i $$;

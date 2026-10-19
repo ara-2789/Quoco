@@ -39,7 +39,7 @@ async function as(label: CaptureUserLabel): Promise<SupabaseClient> {
 }
 
 beforeAll(async () => {
-  kit = await buildCaptureKit('pm-functions', ['eng', 'engB', 'pm1', 'pm2', 'pmB', 'qs', 'deact', 'pend', 'admNon', 'admMem'])
+  kit = await buildCaptureKit('pm-functions', ['eng', 'engP2', 'engB', 'pm1', 'pm2', 'pmB', 'qs', 'deact', 'pend', 'admNon', 'admMem'])
 })
 
 afterAll(async () => {
@@ -94,7 +94,7 @@ describe('T-F5-1/2/3 + B2 audience: every refusal inside the five pm_* functions
     dcTarget = await typedDc('f5-dc')
     invTarget = await makeDoc(kit, 'invoice', 'f5-inv')
     selfLinkId = (await linksOfInvoice(kit, invTarget.docId))[0].id
-    foreignProject = await makeDoc(kit, 'dc', 'f5-foreign-p2', { projectId: kit.p2 })
+    foreignProject = await makeDoc(kit, 'dc', 'f5-foreign-p2', { projectId: kit.p2, userId: kit.uid('engP2') })
     foreignTenant = await makeDoc(kit, 'dc', 'f5-foreign-b', { tenantId: kit.tenantB, projectId: kit.p3, userId: kit.uid('engB') })
   })
 
@@ -171,7 +171,7 @@ describe('T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole
   beforeAll(async () => {
     inv = await makeDoc(kit, 'invoice', 's1-inv')
     dc = await typedDc('s1-dc')
-    foreignProject = await makeDoc(kit, 'dc', 's1-foreign-p2', { projectId: kit.p2 })
+    foreignProject = await makeDoc(kit, 'dc', 's1-foreign-p2', { projectId: kit.p2, userId: kit.uid('engP2') })
     foreignTenant = await makeDoc(kit, 'dc', 's1-foreign-b', { tenantId: kit.tenantB, projectId: kit.p3, userId: kit.uid('engB') })
   })
 
@@ -227,7 +227,7 @@ describe('T-S1 array shape and ownership of pm_link_invoice: QE015 for the whole
   })
 
   it('T-S1-UNLINK a nonexistent link id, another project\'s link and another tenant\'s link give the identical QE015', async () => {
-    const otherInv = await makeDoc(kit, 'invoice', 's1-unlink-other', { projectId: kit.p2 })
+    const otherInv = await makeDoc(kit, 'invoice', 's1-unlink-other', { projectId: kit.p2, userId: kit.uid('engP2') })
     const otherLink = (await linksOfInvoice(kit, otherInv.docId))[0].id
     const pm = await as('pm1')
     const a = await pm.rpc('pm_unlink_invoice', { p_link_id: randomUUID() })
@@ -620,7 +620,7 @@ describe('T-A28-3 / T-Q3-1 / T-LINK-1 with the PR-B functions BYPASSED (quoco_te
     const retype = await kit.svc.rpc('quoco_test_capture_update', { p_table: 'deliveries', p_id: dc.deliveryId, p_set: { delivery_type: 'internal_transfer' } })
     expect(retype.error?.code).toBe('QE006')
     // a link whose delivery lives in another project: the composite FK (delivery_id, project_id, tenant_id) refuses it
-    const other = await makeDoc(kit, 'dc', 'q3-bypass-p2', { projectId: kit.p2 })
+    const other = await makeDoc(kit, 'dc', 'q3-bypass-p2', { projectId: kit.p2, userId: kit.uid('engP2') })
     const cross = await helperInsert({
       tenant_id: kit.tenantA,
       project_id: kit.p1,
@@ -630,5 +630,31 @@ describe('T-A28-3 / T-Q3-1 / T-LINK-1 with the PR-B functions BYPASSED (quoco_te
       linked_by: kit.uid('pm1'),
     })
     expect(cross.error?.code).toBe('23503')
+  })
+})
+
+describe('SQL review r1 N-3 / N-4', () => {
+  it('N-3 pm_set_delivery_details on a REJECTED delivery is refused QE011 and the content is unchanged', async () => {
+    const d = await makeDoc(kit, 'dc', 'n3-rejected')
+    const pm = await as('pm1')
+    expect((await pm.rpc('pm_reject_delivery', { p_delivery_id: d.deliveryId, p_reason: 'ZZ rejected' })).error).toBeNull()
+    const before = await getDelivery(kit, d.deliveryId)
+    const r = await setDetails('pm1', d.deliveryId, 'supplier')
+    expect(r.error?.code).toBe('QE011')
+    expect(await getDelivery(kit, d.deliveryId)).toEqual(before)
+    // control: a not-rejected delivery is editable
+    const ok = await makeDoc(kit, 'dc', 'n3-control')
+    expect((await setDetails('pm1', ok.deliveryId, 'supplier')).error).toBeNull()
+  })
+
+  it('N-4 reject_reason is capped at 1000 characters: 1001 -> QE017 (nothing changes), 1000 is accepted', async () => {
+    const pm = await as('pm1')
+    const d = await makeDoc(kit, 'dc', 'n4')
+    const tooLong = await pm.rpc('pm_reject_delivery', { p_delivery_id: d.deliveryId, p_reason: 'x'.repeat(1001) })
+    expect(tooLong.error?.code).toBe('QE017')
+    expect((await getDelivery(kit, d.deliveryId)).status).toBe('incomplete')
+    const exact = await pm.rpc('pm_reject_delivery', { p_delivery_id: d.deliveryId, p_reason: 'x'.repeat(1000) })
+    expect(exact.error).toBeNull()
+    expect((await getDelivery(kit, d.deliveryId)).status).toBe('rejected')
   })
 })

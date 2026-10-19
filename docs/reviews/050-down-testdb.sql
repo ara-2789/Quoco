@@ -795,7 +795,11 @@ DROP FUNCTION public.pm_reject_delivery(uuid, text);
 DROP FUNCTION public.pm_link_invoice(uuid, uuid[]);
 DROP FUNCTION public.pm_unlink_invoice(uuid);
 
--- 5. Post-condition assertion: the restored bodies equal the captured md5s, no session carries an 'invoice'
+-- 4b. [SQL review r1, per Aravind 18 Oct] S-2: remove the 050 ledger row in the SAME transaction (049's DOWN does the same for its
+--     own row); otherwise migration list would show 050 applied with none of its objects.
+DELETE FROM supabase_migrations.schema_migrations WHERE version = '050';
+
+-- 5. Post-condition assertion: the 050 ledger row is gone, the restored bodies equal the captured md5s, no session carries an 'invoice'
 --    flow, the flag or a flow-owned key, the seven functions are gone, and the two restored functions keep the
 --    live ACL (service_role only). Aborts the whole DOWN on any surprise.
 DO $$
@@ -808,6 +812,7 @@ BEGIN
   SELECT md5(pg_get_functiondef('public.apply_evening_flow_turn(text,uuid,uuid,uuid,text,boolean,jsonb,jsonb,timestamptz,integer)'::regprocedure)) INTO v_e;
   IF v_m <> '707c10fe09dfd5a7cd065f7826eacd46' THEN v_bad := v_bad || ' morning_md5=' || v_m; END IF;
   IF v_e <> 'd19d07507abccdaf7d54ee1d74419af7' THEN v_bad := v_bad || ' evening_md5=' || v_e; END IF;
+  IF EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '050') THEN v_bad := v_bad || ' ledger_row_left'; END IF;
   IF EXISTS (SELECT 1 FROM public.whatsapp_sessions WHERE current_flow = 'invoice') THEN v_bad := v_bad || ' invoice_rows'; END IF;
   IF EXISTS (SELECT 1 FROM public.whatsapp_sessions WHERE context ?| ARRAY['mi_last_sid', 'mi_kind', 'mi_document_id', 'mi_reask', 'invoice_reset_guard']) THEN v_bad := v_bad || ' keys_left'; END IF;
   IF EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace

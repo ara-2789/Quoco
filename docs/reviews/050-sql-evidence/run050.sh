@@ -12,6 +12,9 @@ E49=$ROOT/docs/reviews/049-sql-evidence/src
 UP=${UP:-$ROOT/docs/reviews/050_material_inward_functions.sql}
 DOWN=${DOWN:-$ROOT/docs/reviews/050-down-testdb.sql}
 case "${PGHOST:-}" in /*|localhost|127.0.0.1) ;; *) echo "refusing: PGHOST must be a local socket dir or localhost" >&2; exit 2;; esac
+# [SQL review r1, per Aravind 18 Oct] N-6: an OFFICIAL transcript needs an empty `git status --porcelain` (the artifacts COMMITTED
+# first; transcripts are written OUTSIDE the repo) so the HEAD recorded below IS the artifact commit. DEV=1 allows a dirty tree.
+if [ "${DEV:-0}" != "1" ] && [ -n "$(git status --porcelain)" ]; then echo "refusing: the tree is dirty (commit the artifacts first, or DEV=1 for a non-official run)" >&2; git status --porcelain >&2; exit 2; fi
 mkdir -p "$OUT"
 PSQL="psql -X -q"
 mk() { # mk <db> [up-file]
@@ -22,7 +25,7 @@ mk() { # mk <db> [up-file]
   $PSQL -d "$1" -v ON_ERROR_STOP=1 -f "$E49/_fixture.sql" 2>&1 | head -5
   $PSQL -d "$1" -v ON_ERROR_STOP=1 -f "$EV/_lib050.sql" 2>&1 | head -5
 }
-hdr() { echo "== 050 scaffold dry-run: $1 =="; echo "generated: $(date -u +%FT%TZ)"; echo "HEAD: $(git rev-parse HEAD)"; echo "sha256 UP: $(shasum -a 256 "$UP" | cut -d' ' -f1)"; echo "sha256 scenario: $(shasum -a 256 "$2" 2>/dev/null | cut -d' ' -f1)"; psql -X -At -d postgres -c "select version()"; echo; }
+hdr() { echo "== 050 scaffold dry-run: $1 =="; echo "generated: $(date -u +%FT%TZ)"; echo "HEAD: $(git rev-parse HEAD)"; echo "git status --porcelain (empty between the markers = clean tree):"; echo "----- begin porcelain -----"; git status --porcelain; echo "----- end porcelain -----"; echo "sha256 UP: $(shasum -a 256 "$UP" | cut -d' ' -f1)"; echo "sha256 scenario: $(shasum -a 256 "$2" 2>/dev/null | cut -d' ' -f1)"; psql -X -At -d postgres -c "select version()"; echo; }
 scn() { # scn <name> <scenario file> [up-file]
   { hdr "$1" "$2"; mk "d_$1" "${3:-$UP}"; echo; echo "--- scenario output (psql -e echoes every statement) ---"; $PSQL -e -d "d_$1" -f "$2" 2>&1; echo; } > "$OUT/$1.txt" 2>&1
   echo "$1: PASS=$(grep -c 'PASS: ' "$OUT/$1.txt") FAIL=$(grep -c 'FAIL: ' "$OUT/$1.txt") psql-ERROR=$(grep -c 'ERROR:' "$OUT/$1.txt")"

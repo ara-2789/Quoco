@@ -1,6 +1,6 @@
 ### morning: diff -u live (test-db, md5 707c10fe09dfd5a7cd065f7826eacd46) vs 050 body (extracted from docs/reviews/050_material_inward_functions.sql; trailing ';' after $function$ stripped)
 --- live-apply_morning_flow_turn-testdb.sql	2026-10-18 22:43:45
-+++ 050-body-morning.sql	2026-10-18 23:02:52
++++ 050-body-morning.sql	2026-10-19 14:06:32
 @@ -21,6 +21,9 @@
    -- didn't fire" from "it fired and found nothing to discard."
    v_hindrance_discarded      BOOLEAN := NULL;
@@ -72,7 +72,7 @@
 
 ### evening: diff -u live (test-db, md5 d19d07507abccdaf7d54ee1d74419af7) vs 050 body (extracted from docs/reviews/050_material_inward_functions.sql; trailing ';' after $function$ stripped)
 --- live-apply_evening_flow_turn-testdb.sql	2026-10-18 22:43:45
-+++ 050-body-evening.sql	2026-10-18 23:02:52
++++ 050-body-evening.sql	2026-10-19 14:06:32
 @@ -30,6 +30,9 @@
    -- function needing 038's body as its base, not 035's alone.
    v_hindrance_discarded      BOOLEAN := NULL;

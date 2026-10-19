@@ -39,6 +39,7 @@ export async function captureJwtClient(email: string): Promise<SupabaseClient> {
 
 export type CaptureUserLabel =
   | 'eng' //       engineer, active, member of P1 (no web login)
+  | 'engP2' //     engineer, active, member of P2 (same tenant as eng; for the "other project" fixtures, S-1)
   | 'engB' //      engineer in tenant B, member of P3
   | 'pm1' //       PM, active, pm member of P1
   | 'pm2' //       PM, active, pm member of P2 (same tenant, other project)
@@ -59,6 +60,7 @@ interface UserSpec {
 
 const USER_SPECS: Record<CaptureUserLabel, UserSpec> = {
   eng: { role: 'engineer', status: 'active', tenant: 'A', login: false, member: { project: 'P1', role: 'engineer' } },
+  engP2: { role: 'engineer', status: 'active', tenant: 'A', login: false, member: { project: 'P2', role: 'engineer' } },
   engB: { role: 'engineer', status: 'active', tenant: 'B', login: false, member: { project: 'P3', role: 'engineer' } },
   pm1: { role: 'pm', status: 'active', tenant: 'A', login: true, member: { project: 'P1', role: 'pm' } },
   pm2: { role: 'pm', status: 'active', tenant: 'A', login: true, member: { project: 'P2', role: 'pm' } },

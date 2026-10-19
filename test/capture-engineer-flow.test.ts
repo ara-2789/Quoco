@@ -31,7 +31,7 @@ import {
 let kit: CaptureKit
 
 beforeAll(async () => {
-  kit = await buildCaptureKit('engineer-flow', ['eng', 'pm1'])
+  kit = await buildCaptureKit('engineer-flow', ['eng', 'engP2', 'pm1'])
 })
 
 afterAll(async () => {
@@ -216,6 +216,55 @@ describe('050 engineer flow (apply_material_inward_turn)', () => {
     const r = await miTurn(kit, phone, null, fileSid, { media: jpegMedia(1), skipProcessed: true })
     const { data } = await kit.svc.from('deliveries').select('delivery_date').eq('id', r.delivery_id!).single<{ delivery_date: string }>()
     expect(data!.delivery_date).toBe(expectedDate)
+  })
+
+  it('S-1 (SQL review r1) a P2 engineer sending the file into a P1 session is refused QE012 and NOTHING is written', async () => {
+    const phone = kit.phone('s1-cross-project')
+    const o = { userId: kit.uid('engP2'), projectId: kit.p1 }
+    await miTurn(kit, phone, '4', kit.sid('s1x-s0'), { ...o, start: true })
+    await miTurn(kit, phone, '1', kit.sid('s1x-s1'), o)
+    const fileSid = kit.sid('s1x-s2')
+    const { error } = await miTurnRaw(kit, phone, null, fileSid, { ...o, media: jpegMedia(1) })
+    expect(error?.code).toBe('QE012')
+    const { data: docs } = await kit.svc.from('capture_documents').select('id').eq('source_message_sid', fileSid)
+    const { data: files } = await kit.svc.from('capture_files').select('id').eq('source_message_sid', fileSid)
+    const { data: dels } = await kit.svc.from('deliveries').select('id').eq('reported_by', kit.uid('engP2'))
+    const { data: jobs } = await kit.svc.from('jobs').select('id').eq('type', 'capture_ingest').contains('payload', { source_message_sid: fileSid })
+    expect([docs, files, dels, jobs].map((x) => (x ?? []).length)).toEqual([0, 0, 0, 0])
+    expect(await getSession(kit, phone)).toMatchObject({ current_flow: 'invoice', current_step: 2 })
+    // positive control: the same engineer into HER project creates the document
+    const ok = await makeDoc(kit, 'dc', 's1-own-project', { userId: kit.uid('engP2'), projectId: kit.p2 })
+    expect((await getDelivery(kit, ok.deliveryId)).project_id).toBe(kit.p2)
+  })
+
+  it.each([
+    ['1.', 'dc'],
+    ['2)', 'invoice'],
+    ['2\uFE0F\u20E3', 'invoice'],
+    ['Invoice.', 'invoice'],
+    ['DC', 'dc'],
+  ])('N-1 (SQL review r1) S1 kind parsing shares the ack normalisation: %j -> %s', async (reply, kind) => {
+    const phone = kit.phone(`n1-${Buffer.from(reply).toString('hex')}`)
+    const label = `n1-${Buffer.from(reply).toString('hex')}`
+    await miTurn(kit, phone, '4', kit.sid(`${label}-s0`), { start: true })
+    const r = await miTurn(kit, phone, reply, kit.sid(`${label}-s1`))
+    expect(r).toMatchObject({ outcome: 'advance', current_step: 2 })
+    expect((await getSession(kit, phone))!.context.mi_kind).toBe(kind)
+  })
+
+  it('N-1 contrast: "12" is not a kind (re-ask, still step 1)', async () => {
+    const phone = kit.phone('n1-twelve')
+    await miTurn(kit, phone, '4', kit.sid('n1-twelve-s0'), { start: true })
+    expect(await miTurn(kit, phone, '12', kit.sid('n1-twelve-s1'))).toMatchObject({ outcome: 'reask', current_step: 1 })
+  })
+
+  it('N-2 (SQL review r1) an ack with mi_document_id missing is refused QE012; nothing changes', async () => {
+    const base = noonIst()
+    const phone = kit.phone('n2-missing-doc')
+    await seedSession(kit, phone, { flow: 'invoice', step: 3, context: { mi_kind: 'dc' }, updatedAt: base, expiresAt: new Date(base.getTime() + 20 * 60 * 1000) })
+    const { error } = await miTurnRaw(kit, phone, '1', kit.sid('n2-missing-ack'), { now: base })
+    expect(error?.code).toBe('QE012')
+    expect(await getSession(kit, phone)).toMatchObject({ current_flow: 'invoice', current_step: 3 })
   })
 
   it('capture_ingest job contract: one job per file turn, payload carries tenant, project, document, SID and every file', async () => {

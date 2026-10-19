@@ -86,4 +86,47 @@ INSERT INTO public.whatsapp_sessions (phone_number, tenant_id, current_flow, cur
   VALUES ('+91900000011', '10000000-0000-0000-0000-000000000001', 'morning', 2, '{}', now() - interval '1 hour', now());
 SELECT public.expire_stale_material_inward('+91900000011', now() + interval '31 minutes') AS morning_untouched_false;
 SELECT t.ok('expire_stale leaves an expired MORNING session alone', t.sess('+91900000011') LIKE 'morning/2 %');
+
+\echo == S-1 [SQL review r1]: the engineer must be an ENGINEER MEMBER of the project the document is created in
+INSERT INTO public.users (id, tenant_id, full_name, role, status) VALUES ('30000000-0000-0000-0000-0000000000e2', '10000000-0000-0000-0000-000000000001', 'ENG2', 'engineer', 'active');
+INSERT INTO public.project_members (tenant_id, project_id, user_id, role) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-0000000000e2', 'engineer');
+SELECT t.turn_as('+91900000020', '4', 's1x-s0', '30000000-0000-0000-0000-0000000000e2', '20000000-0000-0000-0000-000000000001', NULL, true) AS p2_engineer_session_in_p1;
+SELECT t.turn_as('+91900000020', '1', 's1x-s1', '30000000-0000-0000-0000-0000000000e2', '20000000-0000-0000-0000-000000000001') AS kind;
+SELECT t.expect('S-1: a P2 engineer sending the file into a P1 session is refused QE012', $$SELECT t.turn_as('+91900000020', NULL, 's1x-s2', '30000000-0000-0000-0000-0000000000e2', '20000000-0000-0000-0000-000000000001', t.media(1))$$, 'QE012');
+SELECT t.ok('S-1: NO rows written (no document, no file, no delivery for ENG2, no job) and the session is unchanged at step 2',
+  (SELECT count(*) = 0 FROM public.capture_documents WHERE source_message_sid = 's1x-s2')
+  AND (SELECT count(*) = 0 FROM public.capture_files WHERE source_message_sid = 's1x-s2')
+  AND (SELECT count(*) = 0 FROM public.deliveries WHERE reported_by = '30000000-0000-0000-0000-0000000000e2')
+  AND (SELECT count(*) = 0 FROM public.jobs WHERE type = 'capture_ingest' AND payload->>'source_message_sid' = 's1x-s2')
+  AND t.sess('+91900000020') LIKE 'invoice/2 %');
+SELECT t.turn_as('+91900000021', '4', 's1y-s0', '30000000-0000-0000-0000-0000000000e2', '20000000-0000-0000-0000-000000000002', NULL, true);
+SELECT t.turn_as('+91900000021', '1', 's1y-s1', '30000000-0000-0000-0000-0000000000e2', '20000000-0000-0000-0000-000000000002');
+SELECT t.turn_as('+91900000021', NULL, 's1y-s2', '30000000-0000-0000-0000-0000000000e2', '20000000-0000-0000-0000-000000000002', t.media(1)) AS p2_engineer_into_p2;
+SELECT t.ok('S-1 positive control: the same P2 engineer into P2 creates the document', (SELECT count(*) = 1 FROM public.capture_documents WHERE source_message_sid = 's1y-s2'));
+SELECT t.turn('+91900000022', '4', 's1z-s0', NULL, true);
+SELECT t.turn('+91900000022', '1', 's1z-s1');
+SELECT t.expect('S-1: an engineer with only a QS/other-role membership would also be refused -- here: ENG1 (P1 engineer member) into P2', $$SELECT t.turn_as('+91900000022', NULL, 's1z-s2', '30000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000002', t.media(1))$$, 'QE012');
+
+\echo == N-1 [SQL review r1]: S1 kind parsing uses the SAME normalisation as the S3 ack parser
+SELECT t.turn('+91900000023', '4', 'n1a-s0', NULL, true);
+SELECT t.turn('+91900000023', '1.', 'n1a-s1') AS kind_dot;
+SELECT t.ok('N-1: "1." as the kind -> DC, step 2 (it used to be re-asked)', t.sess('+91900000023') LIKE 'invoice/2 %"mi_kind": "dc"%');
+SELECT t.turn('+91900000024', '4', 'n1b-s0', NULL, true);
+SELECT t.turn('+91900000024', '2)', 'n1b-s1') AS kind_paren;
+SELECT t.ok('N-1: "2)" as the kind -> invoice, step 2', t.sess('+91900000024') LIKE 'invoice/2 %"mi_kind": "invoice"%');
+SELECT t.turn('+91900000025', '4', 'n1c-s0', NULL, true);
+SELECT t.turn('+91900000025', E'2\uFE0F\u20E3', 'n1c-s1') AS kind_keycap;
+SELECT t.ok('N-1: keycap 2 as the kind -> invoice, step 2', t.sess('+91900000025') LIKE 'invoice/2 %"mi_kind": "invoice"%');
+SELECT t.turn('+91900000026', '4', 'n1d-s0', NULL, true);
+SELECT t.turn('+91900000026', 'Invoice.', 'n1d-s1');
+SELECT t.ok('N-1: "Invoice." (case + trailing dot) -> invoice', t.sess('+91900000026') LIKE 'invoice/2 %"mi_kind": "invoice"%');
+SELECT t.turn('+91900000027', '4', 'n1e-s0', NULL, true);
+SELECT t.turn('+91900000027', '12', 'n1e-s1') AS kind_12;
+SELECT t.ok('N-1 contrast: "12" is NOT a kind -> re-ask, still step 1', t.sess('+91900000027') LIKE 'invoice/1 %');
+
+\echo == N-2 [SQL review r1]: the ack UPDATE must touch exactly one document row
+INSERT INTO public.whatsapp_sessions (phone_number, tenant_id, user_id, current_flow, current_step, context, expires_at, updated_at)
+VALUES ('+91900000028', '10000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', 'invoice', 3, '{"mi_kind": "dc"}', now() + interval '20 minutes', now());
+SELECT t.expect('N-2: ack with mi_document_id missing is refused QE012 (it used to answer complete with no ack stored)', $$SELECT t.turn('+91900000028', '1', 'n2-ack')$$, 'QE012');
+SELECT t.ok('N-2: the session is unchanged (rolled back), still invoice/3', t.sess('+91900000028') LIKE 'invoice/3 %');
 \echo == S1 end

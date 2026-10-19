@@ -189,4 +189,19 @@ RESET ROLE;
 SET ROLE service_role;
 SELECT t.expect('service_role positive control: expire_stale_material_inward runs', $$SELECT public.expire_stale_material_inward('+9100')$$, 'ok');
 RESET ROLE;
+
+\echo == N-3 [SQL review r1]: pm_set_delivery_details refuses a REJECTED delivery; N-4: reject_reason capped at 1000 characters
+SELECT t.mk_dc('50000000-0000-0000-0000-0000000000a7','60000000-0000-0000-0000-0000000000a7','pm-d7') \gset
+SELECT t.mk_dc('50000000-0000-0000-0000-0000000000a8','60000000-0000-0000-0000-0000000000a8','pm-d8') \gset
+SET request.jwt.claim.sub = '40000000-0000-0000-0000-000000000001';
+SET ROLE authenticated;
+SELECT public.pm_reject_delivery('60000000-0000-0000-0000-0000000000a7', 'ZZ rejected for N-3') AS reject_d7;
+SELECT t.expect('N-3: pm_set_delivery_details on a REJECTED delivery is refused QE011', $$SELECT public.pm_set_delivery_details('60000000-0000-0000-0000-0000000000a7','supplier','TN-X','DC-X',current_date)$$, 'QE011');
+SELECT t.expect('N-3 control: the same call on a not-rejected delivery succeeds', $$SELECT public.pm_set_delivery_details('60000000-0000-0000-0000-0000000000a8','supplier','TN-X','DC-X',current_date)$$, 'ok');
+SELECT t.expect('N-4: a 1001-character reject_reason is refused QE017', $$SELECT public.pm_reject_delivery('60000000-0000-0000-0000-0000000000a8', repeat('x', 1001))$$, 'QE017');
+SELECT t.expect('N-4 control: a 1000-character reject_reason is accepted', $$SELECT public.pm_reject_delivery('60000000-0000-0000-0000-0000000000a8', repeat('x', 1000))$$, 'ok');
+RESET ROLE;
+SELECT t.ok('N-3/N-4: d7 content unchanged by the refused retype (delivery_type still the builder value, dc_number NULL); d8 rejected with the 1000-char reason',
+  (SELECT dc_number IS NULL FROM public.deliveries WHERE id = '60000000-0000-0000-0000-0000000000a7')
+  AND (SELECT status = 'rejected' AND char_length(reject_reason) = 1000 FROM public.deliveries WHERE id = '60000000-0000-0000-0000-0000000000a8'));
 \echo == S4 end

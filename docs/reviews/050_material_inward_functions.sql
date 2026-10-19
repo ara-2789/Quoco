@@ -45,6 +45,11 @@
 -- while the automatic delivery is approved). Nothing in this file is left awaiting approval. Still contracts with
 -- PR-C, to be confirmed there: the capture_ingest job payload and the outcome names.
 --
+-- SQL REVIEW ROUND 1 (docs/reviews/050-sql-review-round-1.md, verbatim; applied 19 Oct, marked [SQL review r1, per Aravind 18 Oct]):
+-- S-1 engineer project-membership check (QE012); S-2 the DOWN deletes the 050 ledger row; N-1 S1 and S3 share one
+-- normalisation; N-2 ROW_COUNT = 1 on the document UPDATEs; N-3 pm_set_delivery_details refuses a rejected delivery;
+-- N-4 reject_reason capped at 1000 characters; N-5 the ACL comment reworded. S-3 is a PR-C condition (plan section 10).
+--
 -- LOCK ORDER (plan section 4; 049 header "THE SIX PR-B LOCK PATHS"): session row; then the invoice
 -- capture_documents row FOR NO KEY UPDATE; then deliveries ascending id (DC delivery FOR SHARE on
 -- link paths, automatic delivery FOR NO KEY UPDATE); then links. Authorisation happens BEFORE any
@@ -88,7 +93,8 @@ DECLARE
   v_delivery_id   uuid;
   v_reask         integer;
   v_ack           text;
-  v_ackin         text;
+  v_norm          text;     -- [SQL review r1, per Aravind 18 Oct] N-1: ONE normalised reply, used by BOTH the S1 kind parser and the S3 ack parser
+  v_rows          integer;  -- [SQL review r1, per Aravind 18 Oct] N-2
   v_note          text;
   v_create        boolean := false;
   v_attach        boolean := false;
@@ -177,6 +183,8 @@ BEGIN
     v_kind   := v_session.context ->> 'mi_kind';
     v_doc_id := NULLIF(v_session.context ->> 'mi_document_id', '')::uuid;
     v_reask  := COALESCE((v_session.context ->> 'mi_reask')::int, 0);
+    -- [SQL review r1, per Aravind 18 Oct] N-1: the shared normalisation (decided 18 Oct): strip the keycap marks, then ONE trailing '.' or ')'.
+    v_norm   := btrim(regexp_replace(translate(v_text, E'\uFE0F\u20E3', ''), '[.)]$', ''));
 
     IF v_text = '' AND v_media_n = 0 THEN
       v_outcome := 'reask';
@@ -184,11 +192,11 @@ BEGIN
     ELSIF v_session.current_step = 1 THEN
       -- S1 kind parsing (decided 18 Oct): '1' / 'dc' / 'challan' = delivery challan; '2' / 'invoice' / 'bill'
       -- = invoice. A file at S1 is not an answer. One re-ask, then close with nothing recorded.
-      IF v_media_n = 0 AND lower(v_text) IN ('1', 'dc', 'challan') THEN
+      IF v_media_n = 0 AND lower(v_norm) IN ('1', 'dc', 'challan') THEN
         v_session.current_step := 2;
         v_session.context      := v_session.context || jsonb_build_object('mi_kind', 'dc', 'mi_reask', 0);
         v_outcome := 'advance';
-      ELSIF v_media_n = 0 AND lower(v_text) IN ('2', 'invoice', 'bill') THEN
+      ELSIF v_media_n = 0 AND lower(v_norm) IN ('2', 'invoice', 'bill') THEN
         v_session.current_step := 2;
         v_session.context      := v_session.context || jsonb_build_object('mi_kind', 'invoice', 'mi_reask', 0);
         v_outcome := 'advance';
@@ -223,8 +231,7 @@ BEGIN
       ELSE
         -- S3: the ONE ack parser (review r1 S3; forms decided 18 Oct). Accepts 1 / 2 / 3, optionally followed by
         -- a single '.' or ')', and the keycap forms (digit + U+FE0F + U+20E3). Anything else is not an ack.
-        v_ackin := btrim(regexp_replace(translate(v_text, E'\uFE0F\u20E3', ''), '[.)]$', ''));
-        v_ack := CASE v_ackin WHEN '1' THEN 'yes' WHEN '2' THEN 'no' WHEN '3' THEN 'partial' ELSE NULL END;
+        v_ack := CASE v_norm WHEN '1' THEN 'yes' WHEN '2' THEN 'no' WHEN '3' THEN 'partial' ELSE NULL END;
         IF v_ack IS NULL AND v_reask < 1 THEN
           v_session.context := v_session.context || jsonb_build_object('mi_reask', v_reask + 1);
           v_outcome := 'reask';
@@ -238,6 +245,12 @@ BEGIN
              SET engineer_ack      = v_ack,
                  engineer_ack_note = v_note
            WHERE id = v_doc_id;
+          -- [SQL review r1, per Aravind 18 Oct] N-2: exactly one document row must have been updated. If mi_document_id were ever missing,
+          -- the UPDATE would touch 0 rows and the flow would still answer 'complete' with no ack stored.
+          GET DIAGNOSTICS v_rows = ROW_COUNT;
+          IF v_rows <> 1 THEN
+            RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+          END IF;
           -- The delivery moves to awaiting_pm ONLY WHERE its status is 'incomplete'; any other
           -- status is left alone (B1). Do NOT clear cancelled_* to force a move.
           UPDATE public.deliveries
@@ -267,6 +280,11 @@ BEGIN
         UPDATE public.capture_documents
            SET engineer_ack_note = left(v_text, 1000)
          WHERE id = v_doc_id;
+        -- N-2 applied to the note UPDATE too (same reasoning; the reviewer named the ack UPDATE): one row or QE012.
+        GET DIAGNOSTICS v_rows = ROW_COUNT;
+        IF v_rows <> 1 THEN
+          RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+        END IF;
         v_session.current_flow := NULL;
         v_session.current_step := 0;
         v_session.context      := v_session.context - 'mi_kind' - 'mi_document_id' - 'mi_reask';
@@ -285,6 +303,13 @@ BEGIN
   -- file rows; S3 / S4 attach further files to the same document.
   IF v_create OR v_attach THEN
     IF v_create THEN
+      -- [SQL review r1, per Aravind 18 Oct] S-1: the engineer must be a member of THIS project as an engineer. The composite FKs on
+      -- sent_by / reported_by catch another TENANT's user; nothing else catches the right tenant with the wrong
+      -- PROJECT. Refused with QE012 before anything is written.
+      IF NOT EXISTS (SELECT 1 FROM public.project_members m
+                      WHERE m.project_id = p_project_id AND m.user_id = p_user_id AND m.role = 'engineer') THEN
+        RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+      END IF;
       -- Q2-6: ONE SID for both the received_at lookup and source_message_sid. A missing
       -- processed_messages row (or a NULL created_at) is refused.
       SELECT pm.created_at INTO v_received
@@ -455,6 +480,7 @@ DECLARE
   v_tenant   uuid;
   v_auto_inv uuid;
   v_caller   uuid;
+  v_status   text;   -- [SQL review r1, per Aravind 18 Oct] N-3
 BEGIN
   IF p_delivery_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'QE015', MESSAGE = 'E15';
@@ -486,6 +512,16 @@ BEGIN
   -- Path 6: a DC delivery updates its own row only; an automatic delivery locks the invoice first.
   IF v_auto_inv IS NOT NULL THEN
     PERFORM 1 FROM public.capture_documents d WHERE d.id = v_auto_inv FOR NO KEY UPDATE;
+  END IF;
+
+  -- [SQL review r1, per Aravind 18 Oct] N-3: a REJECTED delivery is final (nothing leaves 'rejected'); its type and DC number must not be
+  -- rewritten after the fact. D-23 locks content only while approved / cancelled, so this is the function's rule.
+  SELECT d.status INTO v_status
+    FROM public.deliveries d
+   WHERE d.id = p_delivery_id
+     FOR NO KEY UPDATE;
+  IF v_status = 'rejected' THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
   END IF;
 
   -- The 049 triggers raise QE006 (retype with an active link), QE007 (automatic delivery to
@@ -623,7 +659,9 @@ BEGIN
   END IF;
 
   -- A rejection needs a reason (CHECK deliveries_rejected_requires_chk). QE017 (decided 18 Oct).
-  IF p_reason IS NULL OR btrim(p_reason) = '' THEN
+  -- [SQL review r1, per Aravind 18 Oct] N-4: reject_reason is capped at 1000 characters here (049's other PM-typed text is capped at 64 / 1000; a CHECK
+  -- cannot be added without touching 049).
+  IF p_reason IS NULL OR btrim(p_reason) = '' OR char_length(p_reason) > 1000 THEN
     RAISE EXCEPTION USING ERRCODE = 'QE017', MESSAGE = 'E17';
   END IF;
 
@@ -1859,7 +1897,8 @@ GRANT EXECUTE ON FUNCTION public.pm_unlink_invoice(uuid)
   TO authenticated;
 
 -- The two replaced live functions keep their grants (same signature): re-asserted, and the ACL is
--- READ BACK from the live catalog by the assertion block below (before == after, review r1 N1).
+-- checked by the assertion block below against the EXPECTED matrix ([SQL review r1, per Aravind 18 Oct] N-5). The before-reading of the live ACL
+-- (read from the live database before the apply, compared after) belongs in the apply runbook, not in this file.
 REVOKE EXECUTE ON FUNCTION public.apply_morning_flow_turn(
   text, uuid, uuid, uuid, text, boolean, jsonb, boolean, jsonb, boolean, timestamptz, integer
 ) FROM PUBLIC, anon, authenticated;
@@ -1947,7 +1986,9 @@ COMMIT;
 --     remove mi_last_sid / mi_kind / mi_document_id / mi_reask and invoice_reset_guard; never context := '{}');
 --   strip invoice_reset_guard from every row that carries it;
 --   restore apply_morning_flow_turn and apply_evening_flow_turn from the per-database captured text;
---   DROP the seven new functions.
+--   DROP the seven new functions;
+--   DELETE FROM supabase_migrations.schema_migrations WHERE version = '050';   -- [SQL review r1, per Aravind 18 Oct] S-2, before the closing assertion
+--     (049's DOWN deletes its own row the same way); the closing assertion also checks NOT EXISTS (version = '050').
 -- Precondition: PR-C rolled back and that rollback live (C, then B, then A). Never run at 08:25-08:40
 -- or 18:25-18:40 IST. Named consequence: a pending ack "1" arriving after a DOWN reaches idle and
 -- starts a hindrance report (N2).
