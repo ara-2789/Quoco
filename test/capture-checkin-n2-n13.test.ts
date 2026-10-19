@@ -235,11 +235,30 @@ describe('A27 interactions with the other flows (SQL halves; the router half is 
     const phone = kit.phone('a27-3')
     await seedSession(kit, phone, { flow: 'invoice', step: 2, context: { mi_kind: 'dc' }, updatedAt: base, expiresAt: new Date(base.getTime() - 60 * 1000) })
     const late = new Date(base.getTime() + 60 * 1000)
-    // the bug N9 describes: without the clear, the hindrance start sees a live flow and re-asks
+    // RED / the bug N9 describes: without the clear, the hindrance start sees a live flow and re-asks
     expect((await hindrance(phone, '', true, late)).outcome).toBe('reask')
-    const cleared = await kit.svc.rpc('expire_stale_material_inward', { p_phone_number: phone, p_now: late.toISOString() })
+    // CI run 845 (a878de7) showed that this very 'reask' turn REFRESHES the row: apply_hindrance_flow_turn persists
+    // expires_at = p_now + 30 min and updated_at = p_now on every turn it processes, including a 'reask' over a non-NULL
+    // current_flow (044:604-614, live definition lines 192-202; the start branch's ELSE returns 'reask' at 044:482-485 and
+    // falls through to that UPDATE). So the row is no longer stale at `late`. Production is safe because the router calls
+    // expire_stale_material_inward BEFORE the flow function (v3:211); here we age the row again, past the refreshed expiry.
+    const later = new Date(late.getTime() + 31 * 60 * 1000)
+    const cleared = await kit.svc.rpc('expire_stale_material_inward', { p_phone_number: phone, p_now: later.toISOString() })
     expect(cleared.data).toBe(true)
-    expect((await hindrance(phone, '', true, late)).outcome).toBe('start')
+    expect((await hindrance(phone, '', true, later)).outcome).toBe('start')
+  })
+
+  it('A27 / N9 any other flow\'s turn over an invoice row REFRESHES its expiry (why the router must call expire_stale_material_inward first)', async () => {
+    const base = noonIst()
+    const phone = kit.phone('a27-refresh')
+    await seedSession(kit, phone, { flow: 'invoice', step: 2, context: { mi_kind: 'dc' }, updatedAt: base, expiresAt: new Date(base.getTime() - 60 * 1000) })
+    const late = new Date(base.getTime() + 60 * 1000)
+    expect((await hindrance(phone, '', true, late)).outcome).toBe('reask')
+    const s = await getSession(kit, phone)
+    expect(new Date(s!.expires_at).getTime()).toBe(late.getTime() + 30 * 60 * 1000)
+    // and the stale row is therefore NOT cleared by an expire call at the same instant
+    const same = await kit.svc.rpc('expire_stale_material_inward', { p_phone_number: phone, p_now: late.toISOString() })
+    expect(same.data).toBe(false)
   })
 
   it('T-A27-7 an idle morning / evening / hindrance session at 31 minutes is STILL ACTIVE (only the invoice flow has the 30-minute rule)', async () => {
