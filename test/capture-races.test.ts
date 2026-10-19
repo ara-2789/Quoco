@@ -28,6 +28,37 @@ import {
 const CI_ONLY = ' -- NOT verified locally, CI-only'
 const ROUNDS = 4
 
+// Diagnostics (block 16): CI run 39242144077 timed out three of these at 30 s with no indication of WHERE the time went.
+// `setupClock` times fixture setup per round; `raceCalls` runs the raced RPCs together, times each one, and gives each its
+// own client-side timeout (15 s, well under the 30 s test budget) that NAMES the stuck call instead of a bare test timeout.
+// A raced call that really waits on a lock shows up here as a long `ms` on that call, not in `setup`.
+const CALL_TIMEOUT_MS = 15000
+
+function setupClock(test: string) {
+  const t0 = Date.now()
+  return (round: number, what: string) => console.log(`[race-diag] ${test} round=${round} ${what} setup_ms=${Date.now() - t0}`)
+}
+
+async function raceCalls<T extends { error: { code?: string; message: string } | null }>(
+  test: string,
+  round: number,
+  calls: Array<[string, () => PromiseLike<T>]>,
+): Promise<T[]> {
+  const t0 = Date.now()
+  const out = await Promise.all(
+    calls.map(async ([name, fn]) => {
+      const start = Date.now() - t0
+      const timer = new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error(`[race-diag] ${test} round=${round} call=${name} exceeded ${CALL_TIMEOUT_MS} ms client-side`)), CALL_TIMEOUT_MS),
+      )
+      const r = await Promise.race([Promise.resolve(fn()), timer])
+      console.log(`[race-diag] ${test} round=${round} call=${name} start=+${start}ms end=+${Date.now() - t0}ms error=${r.error ? r.error.code : 'none'}`)
+      return r
+    }),
+  )
+  return out
+}
+
 let kit: CaptureKit
 
 beforeAll(async () => {
@@ -72,14 +103,20 @@ async function expectInvoiceInvariants(inv: MadeDoc): Promise<void> {
 
 describe('049 lock paths 1-6 under concurrency (PostgREST, two real sessions)', () => {
   it(`path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing${CI_ONLY}`, async () => {
+    const T = 'p1xp1'
     for (let i = 0; i < ROUNDS; i++) {
+      const clock = setupClock(T)
       const invA = await makeDoc(kit, 'invoice', `r11-a${i}`)
+      clock(i, 'invA')
       const invB = await makeDoc(kit, 'invoice', `r11-b${i}`)
+      clock(i, 'invB')
       const dc = await typedDc(`r11-dc${i}`)
+      clock(i, 'dc')
       const pm = await kit.jwt('pm1')
-      const [ra, rb] = await Promise.all([
-        pm.rpc('pm_link_invoice', { p_invoice_document_id: invA.docId, p_delivery_ids: [dc.deliveryId] }),
-        pm.rpc('pm_link_invoice', { p_invoice_document_id: invB.docId, p_delivery_ids: [dc.deliveryId] }),
+      clock(i, 'jwt')
+      const [ra, rb] = await raceCalls(T, i, [
+        ['link-A', () => pm.rpc('pm_link_invoice', { p_invoice_document_id: invA.docId, p_delivery_ids: [dc.deliveryId] })],
+        ['link-B', () => pm.rpc('pm_link_invoice', { p_invoice_document_id: invB.docId, p_delivery_ids: [dc.deliveryId] })],
       ])
       const results = [ra, rb]
       expect(results.filter((r) => r.error === null)).toHaveLength(1)
@@ -107,15 +144,20 @@ describe('049 lock paths 1-6 under concurrency (PostgREST, two real sessions)', 
   })
 
   it(`path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold${CI_ONLY}`, async () => {
+    const T = 'p1xp4'
     for (let i = 0; i < ROUNDS; i++) {
+      const clock = setupClock(T)
       const inv = await makeDoc(kit, 'invoice', `r14-inv${i}`)
+      clock(i, 'inv')
       const d1 = await typedDc(`r14-d1-${i}`)
       const d2 = await typedDc(`r14-d2-${i}`)
+      clock(i, 'd1+d2')
       const pm = await kit.jwt('pm1')
       expect((await pm.rpc('pm_link_invoice', { p_invoice_document_id: inv.docId, p_delivery_ids: [d1.deliveryId] })).error).toBeNull()
-      const rs = await Promise.all([
-        pm.rpc('pm_reject_delivery', { p_delivery_id: d1.deliveryId, p_reason: 'ZZ race' }),
-        pm.rpc('pm_link_invoice', { p_invoice_document_id: inv.docId, p_delivery_ids: [d2.deliveryId] }),
+      clock(i, 'jwt+first-link')
+      const rs = await raceCalls(T, i, [
+        ['reject-d1', () => pm.rpc('pm_reject_delivery', { p_delivery_id: d1.deliveryId, p_reason: 'ZZ race' })],
+        ['link-d2', () => pm.rpc('pm_link_invoice', { p_invoice_document_id: inv.docId, p_delivery_ids: [d2.deliveryId] })],
       ])
       for (const r of rs) if (r.error) expect(r.error.code).not.toBe('40P01')
       await expectInvoiceInvariants(inv)
@@ -123,16 +165,21 @@ describe('049 lock paths 1-6 under concurrency (PostgREST, two real sessions)', 
   })
 
   it(`path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold${CI_ONLY}`, async () => {
+    const T = 'p1xp2'
     for (let i = 0; i < ROUNDS; i++) {
+      const clock = setupClock(T)
       const inv = await makeDoc(kit, 'invoice', `r12-inv${i}`)
+      clock(i, 'inv')
       const d1 = await typedDc(`r12-d1-${i}`)
       const d2 = await typedDc(`r12-d2-${i}`)
+      clock(i, 'd1+d2')
       const pm = await kit.jwt('pm1')
       expect((await pm.rpc('pm_link_invoice', { p_invoice_document_id: inv.docId, p_delivery_ids: [d1.deliveryId] })).error).toBeNull()
       const link = (await linksOfInvoice(kit, inv.docId)).find((l) => l.link_source === 'pm_manual')!
-      const rs = await Promise.all([
-        pm.rpc('pm_unlink_invoice', { p_link_id: link.id }),
-        pm.rpc('pm_link_invoice', { p_invoice_document_id: inv.docId, p_delivery_ids: [d2.deliveryId] }),
+      clock(i, 'jwt+first-link')
+      const rs = await raceCalls(T, i, [
+        ['unlink', () => pm.rpc('pm_unlink_invoice', { p_link_id: link.id })],
+        ['link-d2', () => pm.rpc('pm_link_invoice', { p_invoice_document_id: inv.docId, p_delivery_ids: [d2.deliveryId] })],
       ])
       for (const r of rs) if (r.error) expect(r.error.code).not.toBe('40P01')
       await expectInvoiceInvariants(inv)
