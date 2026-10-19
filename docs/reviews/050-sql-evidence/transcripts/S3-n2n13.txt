@@ -1,7 +1,10 @@
 == 050 scaffold dry-run: S3-n2n13 ==
-generated: 2026-10-18T17:32:58Z
-HEAD: 4faf1c410828eef5c04b3535635baef5a6915737
-sha256 UP: 0d5a8c14f8349503aff5dd96f477c4f7abb6d61e8ac1078aa8efbfb3996846d6
+generated: 2026-10-19T08:40:16Z
+HEAD: f25b49fd73554c0d333b699d96c6c1c52fd8de86
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 UP: 1e09730d26aec0dcd46fefd09601651bad149138326c351556b8405acec0fade
 sha256 scenario: 33793c0ae1f76208934d44132a7f8faf36e196b900fe0480090fd19b14ffacd9
 PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
 
@@ -16,12 +19,12 @@ SELECT t.turn('+91920000001', NULL, 'n1-s2', t.media(1))
 SELECT t.sess('+91920000001') AS before_start;
                                                          before_start                                                         
 ------------------------------------------------------------------------------------------------------------------------------
- invoice/3 {"mi_kind": "dc", "mi_reask": 0, "mi_last_sid": "n1-s2", "mi_document_id": "93c877a7-8e69-445d-8353-1e595199c754"}
+ invoice/3 {"mi_kind": "dc", "mi_reask": 0, "mi_last_sid": "n1-s2", "mi_document_id": "f4f8c2fa-5592-405d-8280-27e1ccd2384b"}
 (1 row)
 
 SELECT public.apply_morning_flow_turn('+91920000001', '10000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002',
   '20000000-0000-0000-0000-000000000001', '', true) AS res_m 
-morning_start result: {"outcome": "start", "log_date": "2026-10-18", "attendance": null, "current_flow": "morning", "current_step": 1, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}
+morning_start result: {"outcome": "start", "log_date": "2026-10-19", "attendance": null, "current_flow": "morning", "current_step": 1, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}
 SELECT t.sess('+91920000001') AS after_start;
                  after_start                  
 ----------------------------------------------
@@ -29,7 +32,7 @@ SELECT t.sess('+91920000001') AS after_start;
 (1 row)
 
 SELECT t.ok('T-N2-KEY morning: outcome start, capture_discarded = true, flow morning step 1, guard = morning, flow-owned keys gone',
-  ('{"outcome": "start", "log_date": "2026-10-18", "attendance": null, "current_flow": "morning", "current_step": 1, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}'::jsonb->>'outcome') = 'start' AND ('{"outcome": "start", "log_date": "2026-10-18", "attendance": null, "current_flow": "morning", "current_step": 1, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}'::jsonb->>'capture_discarded') = 'true'
+  ('{"outcome": "start", "log_date": "2026-10-19", "attendance": null, "current_flow": "morning", "current_step": 1, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}'::jsonb->>'outcome') = 'start' AND ('{"outcome": "start", "log_date": "2026-10-19", "attendance": null, "current_flow": "morning", "current_step": 1, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}'::jsonb->>'capture_discarded') = 'true'
   AND t.sess('+91920000001') LIKE 'morning/1 %"invoice_reset_guard": "morning"%' AND t.sess('+91920000001') NOT LIKE '%mi_%');
                                                              ok                                                              
 -----------------------------------------------------------------------------------------------------------------------------
@@ -47,7 +50,7 @@ SELECT public.apply_morning_flow_turn('+91920000001', '10000000-0000-0000-0000-0
   '20000000-0000-0000-0000-000000000001', '2 bags short', false) AS morning_first_msg;
                                                                                                            morning_first_msg                                                                                                           
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"outcome": "reask", "log_date": "2026-10-18", "attendance": null, "current_flow": "morning", "current_step": 1, "capture_deferred": true, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
+ {"outcome": "reask", "log_date": "2026-10-19", "attendance": null, "current_flow": "morning", "current_step": 1, "capture_deferred": true, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
 (1 row)
 
 SELECT t.ok('T-N13-2 morning: deferred (outcome reask, capture_deferred true), NO attendance row, q1_reask not consumed, guard cleared, still step 1',
@@ -62,7 +65,7 @@ SELECT public.apply_morning_flow_turn('+91920000001', '10000000-0000-0000-0000-0
   '20000000-0000-0000-0000-000000000001', 'yes', false) AS morning_second_msg;
                                                                                                               morning_second_msg                                                                                                              
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"outcome": "advance", "log_date": "2026-10-18", "attendance": "present", "current_flow": "morning", "current_step": 2, "capture_deferred": null, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
+ {"outcome": "advance", "log_date": "2026-10-19", "attendance": "present", "current_flow": "morning", "current_step": 2, "capture_deferred": null, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
 (1 row)
 
 SELECT t.ok('second message handled normally: step 2, attendance present',
@@ -79,7 +82,7 @@ SELECT public.apply_morning_flow_turn('+91920000002', '10000000-0000-0000-0000-0
 SELECT public.apply_morning_flow_turn('+91920000002', '10000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '0', false) AS zero_second;
                                                                                                                zero_second                                                                                                               
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"outcome": "advance", "log_date": "2026-10-18", "attendance": null, "current_flow": "morning", "current_step": 5, "capture_deferred": null, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
+ {"outcome": "advance", "log_date": "2026-10-19", "attendance": null, "current_flow": "morning", "current_step": 5, "capture_deferred": null, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
 (1 row)
 
 SELECT t.ok('T-N13-3: after the deferral, a bare 0 goes to step 5 (not on site)', t.sess('+91920000002') LIKE 'morning/5 %');
@@ -95,7 +98,7 @@ VALUES ('+91920000003', '10000000-0000-0000-0000-000000000001', '30000000-0000-0
 SELECT public.apply_morning_flow_turn('+91920000003', '10000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '', true) AS morning_already;
                                                                                                                morning_already                                                                                                               
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"outcome": "already_complete", "log_date": "2026-10-18", "attendance": null, "current_flow": null, "current_step": 0, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}
+ {"outcome": "already_complete", "log_date": "2026-10-19", "attendance": null, "current_flow": null, "current_step": 0, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}
 (1 row)
 
 SELECT t.ok('already_complete path: flow NULL, morning_submitted survives, no guard, mi_* gone', t.sess('+91920000003') = 'NULL/0 {"morning_submitted": true}');
@@ -108,9 +111,9 @@ SELECT t.ok('already_complete path: flow NULL, morning_submitted survives, no gu
 SELECT t.turn('+91920000004', '4', 'n4-s0', NULL, true) 
 SELECT public.apply_evening_flow_turn('+91920000004', '10000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002',
   '20000000-0000-0000-0000-000000000001', '', true, '{}'::jsonb, '{}'::jsonb) AS res_e 
-evening_start result: {"outcome": "start", "log_date": "2026-10-18", "current_flow": "evening", "current_step": 1, "equipment_echo": null, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}
+evening_start result: {"outcome": "start", "log_date": "2026-10-19", "current_flow": "evening", "current_step": 1, "equipment_echo": null, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}
 SELECT t.ok('T-N2-KEY evening: outcome start, capture_discarded = true, flow evening step 1, guard = evening',
-  ('{"outcome": "start", "log_date": "2026-10-18", "current_flow": "evening", "current_step": 1, "equipment_echo": null, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}'::jsonb->>'outcome') = 'start' AND ('{"outcome": "start", "log_date": "2026-10-18", "current_flow": "evening", "current_step": 1, "equipment_echo": null, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}'::jsonb->>'capture_discarded') = 'true'
+  ('{"outcome": "start", "log_date": "2026-10-19", "current_flow": "evening", "current_step": 1, "equipment_echo": null, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}'::jsonb->>'outcome') = 'start' AND ('{"outcome": "start", "log_date": "2026-10-19", "current_flow": "evening", "current_step": 1, "equipment_echo": null, "capture_deferred": null, "capture_discarded": true, "hindrance_discarded": null, "hindrance_had_description": null}'::jsonb->>'capture_discarded') = 'true'
   AND t.sess('+91920000004') LIKE 'evening/1 %"invoice_reset_guard": "evening"%');
                                                   ok                                                   
 -------------------------------------------------------------------------------------------------------
@@ -121,7 +124,7 @@ SELECT public.apply_evening_flow_turn('+91920000004', '10000000-0000-0000-0000-0
   '20000000-0000-0000-0000-000000000001', '1', false, '{"1": []}'::jsonb, '{"1": true}'::jsonb) AS evening_first_msg;
                                                                                                              evening_first_msg                                                                                                             
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"outcome": "reask", "log_date": "2026-10-18", "current_flow": "evening", "current_step": 1, "equipment_echo": null, "capture_deferred": true, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
+ {"outcome": "reask", "log_date": "2026-10-19", "current_flow": "evening", "current_step": 1, "equipment_echo": null, "capture_deferred": true, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
 (1 row)
 
 SELECT t.ok('T-N13-1 evening: bare "1" deferred, daily_logs.evening_output NOT written, still step 1, guard cleared',
@@ -136,7 +139,7 @@ SELECT public.apply_evening_flow_turn('+91920000004', '10000000-0000-0000-0000-0
   '20000000-0000-0000-0000-000000000001', 'slab 10 sqm done', false, '{"1": []}'::jsonb, '{"1": true}'::jsonb) AS evening_second_msg;
                                                                                                              evening_second_msg                                                                                                              
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"outcome": "advance", "log_date": "2026-10-18", "current_flow": "evening", "current_step": 2, "equipment_echo": null, "capture_deferred": null, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
+ {"outcome": "advance", "log_date": "2026-10-19", "current_flow": "evening", "current_step": 2, "equipment_echo": null, "capture_deferred": null, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
 (1 row)
 
 SELECT t.ok('second message handled normally: step 2, evening_output written',
@@ -154,7 +157,7 @@ SELECT public.apply_evening_flow_turn('+91920000005', '10000000-0000-0000-0000-0
   '20000000-0000-0000-0000-000000000001', 'bricks laid', false, '{"1": []}'::jsonb, '{"1": true}'::jsonb) AS evening_with_morning_flag;
                                                                                                           evening_with_morning_flag                                                                                                          
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"outcome": "advance", "log_date": "2026-10-18", "current_flow": "evening", "current_step": 2, "equipment_echo": null, "capture_deferred": null, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
+ {"outcome": "advance", "log_date": "2026-10-19", "current_flow": "evening", "current_step": 2, "equipment_echo": null, "capture_deferred": null, "capture_discarded": null, "hindrance_discarded": null, "hindrance_had_description": null}
 (1 row)
 
 SELECT t.ok('T-N13-4: evening first message taken as the answer (step 2), the other check-in''s flag untouched', t.sess('+91920000005') LIKE 'evening/2 %"invoice_reset_guard": "morning"%');

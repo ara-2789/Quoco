@@ -1,8 +1,11 @@
 == 050 DOWN dry-run (local scaffold) ==
-generated: 2026-10-18T17:32:59Z
-HEAD: 4faf1c410828eef5c04b3535635baef5a6915737
-sha256 UP:   0d5a8c14f8349503aff5dd96f477c4f7abb6d61e8ac1078aa8efbfb3996846d6
-sha256 DOWN: 5338d448442871e97487ca2e2578e1203b5e50735a4fd510d3dabc815acb9a52
+generated: 2026-10-19T08:40:17Z
+HEAD: f25b49fd73554c0d333b699d96c6c1c52fd8de86
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 UP:   1e09730d26aec0dcd46fefd09601651bad149138326c351556b8405acec0fade
+sha256 DOWN: c7f13299441ce26c2fa7f63a396a6dfa2c571bbd3d64b0c6ab7451e6ecc83bd6
 
 === A. DOWN with a live in-flight session ===
 SELECT t.turn('+91950000001', '4', 'dn-s0', NULL, true) 
@@ -11,10 +14,11 @@ SELECT t.turn('+91950000001', NULL, 'dn-s2', t.media(1))
 INSERT INTO public.whatsapp_sessions (phone_number, tenant_id, user_id, current_flow, current_step, context, expires_at, updated_at)
 VALUES ('+91950000002','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002','morning',1,'{"invoice_reset_guard":"morning"}', now()+interval '20 minutes', now()),
        ('+91950000003','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002',NULL,0,'{"morning_submitted":true,"mi_last_sid":"z","mi_kind":"dc"}', now()+interval '20 minutes', now());
+INSERT INTO supabase_migrations.schema_migrations (version, statements, name) VALUES ('049', ARRAY['x'], 'capture_tables'), ('050', ARRAY['x'], 'material_inward_functions');
 SELECT 'BEFORE: ' || phone_number || ' ' || coalesce(current_flow,'NULL') || '/' || current_step || ' ' || context::text AS sessions FROM public.whatsapp_sessions WHERE phone_number LIKE '+9195%' ORDER BY 1;
                                                                      sessions                                                                      
 ---------------------------------------------------------------------------------------------------------------------------------------------------
- BEFORE: +91950000001 invoice/3 {"mi_kind": "dc", "mi_reask": 0, "mi_last_sid": "dn-s2", "mi_document_id": "9e372737-6b4f-498d-a873-4699a74aec80"}
+ BEFORE: +91950000001 invoice/3 {"mi_kind": "dc", "mi_reask": 0, "mi_last_sid": "dn-s2", "mi_document_id": "5fd62da0-d2a8-4c8a-9e94-ba356c30dc15"}
  BEFORE: +91950000002 morning/1 {"invoice_reset_guard": "morning"}
  BEFORE: +91950000003 NULL/0 {"mi_kind": "dc", "mi_last_sid": "z", "morning_submitted": true}
 (3 rows)
@@ -48,6 +52,12 @@ SELECT t.ok('subtract-only: morning_submitted survived on the idle row', (SELECT
  PASS: subtract-only: morning_submitted survived on the idle row
 (1 row)
 
+SELECT t.ok('S-2: the 050 ledger row was deleted by the DOWN and the 049 row is untouched', (SELECT count(*) = 0 FROM supabase_migrations.schema_migrations WHERE version = '050') AND (SELECT count(*) = 1 FROM supabase_migrations.schema_migrations WHERE version = '049'));
+                                         ok                                         
+------------------------------------------------------------------------------------
+ PASS: S-2: the 050 ledger row was deleted by the DOWN and the 049 row is untouched
+(1 row)
+
 SELECT t.ok('the seven functions are gone', (SELECT count(*) = 0 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('apply_material_inward_turn','expire_stale_material_inward','pm_set_delivery_details','pm_approve_delivery','pm_reject_delivery','pm_link_invoice','pm_unlink_invoice')));
                  ok                 
 ------------------------------------
@@ -69,7 +79,7 @@ SELECT t.ok('049 data untouched by the DOWN (documents, files, deliveries still 
 SELECT public.apply_morning_flow_turn('+91950000001','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','',true) AS morning_start_after_down;
                                                                              morning_start_after_down                                                                             
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"outcome": "start", "log_date": "2026-10-18", "attendance": null, "current_flow": "morning", "current_step": 1, "hindrance_discarded": null, "hindrance_had_description": null}
+ {"outcome": "start", "log_date": "2026-10-19", "attendance": null, "current_flow": "morning", "current_step": 1, "hindrance_discarded": null, "hindrance_had_description": null}
 (1 row)
 
 SELECT t.ok('after the DOWN a scheduled morning start over the former invoice session STARTS (outcome start, not reask)', (SELECT current_flow = 'morning' AND current_step = 1 FROM public.whatsapp_sessions WHERE phone_number = '+91950000001'));
@@ -81,7 +91,7 @@ SELECT t.ok('after the DOWN a scheduled morning start over the former invoice se
 SELECT public.apply_morning_flow_turn('+91950000002','10000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','yes',false) AS turn_on_row_that_carried_the_flag;
                                                                             turn_on_row_that_carried_the_flag                                                                            
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"outcome": "advance", "log_date": "2026-10-18", "attendance": "present", "current_flow": "morning", "current_step": 2, "hindrance_discarded": null, "hindrance_had_description": null}
+ {"outcome": "advance", "log_date": "2026-10-19", "attendance": "present", "current_flow": "morning", "current_step": 2, "hindrance_discarded": null, "hindrance_had_description": null}
 (1 row)
 
 SELECT t.ok('a row that carried the flag processes a normal turn after the DOWN (step 2)', (SELECT current_step = 2 FROM public.whatsapp_sessions WHERE phone_number = '+91950000002'));
@@ -103,7 +113,7 @@ turn A: BEGIN; SELECT ... FOR UPDATE; pg_sleep(2); UPDATE ... context || {turn:1
 --- turn A output ---
                   id                  
 --------------------------------------
- 459ff661-a2b3-49cb-a7bf-036ac756bb65
+ 30af9c9f-0185-431b-996a-13ee59374820
 (1 row)
 
  pg_sleep 
@@ -125,7 +135,7 @@ turn A: BEGIN; SELECT ... FOR UPDATE; pg_sleep(2); UPDATE ... context || {turn:1
 --- turn A output ---
                   id                  
 --------------------------------------
- 49580ff2-0b31-4d9a-928f-c6fb0398dd16
+ 22963399-a214-4c50-b40f-da9c6f78aa24
 (1 row)
 
  pg_sleep 
@@ -136,8 +146,8 @@ turn A: BEGIN; SELECT ... FOR UPDATE; pg_sleep(2); UPDATE ... context || {turn:1
 ERROR:  deadlock detected
 LINE 1: UPDATE public.whatsapp_sessions SET context = context || '{"...
                ^
-DETAIL:  Process 328 waits for RowExclusiveLock on relation 16754 of database 18868; blocked by process 334.
-Process 334 waits for ShareLock on transaction 2529; blocked by process 328.
+DETAIL:  Process 3613 waits for RowExclusiveLock on relation 16754 of database 18299; blocked by process 3616.
+Process 3616 waits for ShareLock on transaction 1897; blocked by process 3613.
 HINT:  See server log for query details.
 [turn A exit 3]
 --- DOWN B output ---
@@ -151,7 +161,7 @@ turn A: BEGIN; SELECT ... FOR UPDATE; pg_sleep(6); UPDATE ... context || {turn:1
 --- turn A output ---
                   id                  
 --------------------------------------
- cdc799ff-b22a-4b20-8931-af6e33ec4c07
+ a88fc105-e1d3-4518-93b0-e788e4a6aa75
 (1 row)
 
  pg_sleep 
