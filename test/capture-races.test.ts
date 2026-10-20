@@ -8,7 +8,7 @@
 // Covers: the six 049 lock paths (v3 / 049 header), T-A27-6, the duplicate-SID race, the B1 ack race, and the
 // DOWN-vs-turn race (skipped here: it needs a table-owner connection and the DOWN artifact; the local two-psql
 // evidence is docs/reviews/050-sql-evidence/transcripts/S5-down.txt and is NOT a CI verification either).
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   ack,
   buildCaptureKit,
@@ -27,6 +27,12 @@ import {
 
 const CI_ONLY = ' -- NOT verified locally, CI-only'
 const ROUNDS = 4
+
+// Per-test timeout for THIS FILE ONLY (block 17). CI run 39262005548 (head 54eaaa7) showed the 30 s default is too small
+// for the fixture SETUP, not for the races: every raced call finished in 234-374 ms (no lock wait, no 15 s client timeout),
+// while one round's setup took 5.4 s (p1xp1) to 8.0 s (p1xp2, growing 6.6 -> 8.0 s) and ROUNDS = 4 rounds of that is
+// 22-32 s. ROUNDS is unchanged on purpose: fewer rounds would mean fewer interleavings tried.
+vi.setConfig({ testTimeout: 120000 })
 
 // Diagnostics (block 16): CI run 39242144077 timed out three of these at 30 s with no indication of WHERE the time went.
 // `setupClock` times fixture setup per round; `raceCalls` runs the raced RPCs together, times each one, and gives each its
