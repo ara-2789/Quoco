@@ -16,6 +16,22 @@ SET LOCAL lock_timeout = '3s';
 -- SELECT ... FOR UPDATE and DEADLOCKS (review r2, proven on a stub); EXCLUSIVE waits for in-flight turns.
 LOCK TABLE public.whatsapp_sessions IN EXCLUSIVE MODE;
 
+-- 0. Precondition [block 19 pre-merge fix]: the DOWN refuses unless the 050 ledger row exists AND all seven functions exist.
+--    A second run (or a run against a database that never had 050) would otherwise restore bodies and report success on nothing.
+DO $$
+DECLARE
+  v_n int;
+BEGIN
+  SELECT count(*) INTO v_n FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname IN ('apply_material_inward_turn','expire_stale_material_inward','pm_set_delivery_details',
+                      'pm_approve_delivery','pm_reject_delivery','pm_link_invoice','pm_unlink_invoice');
+  IF NOT EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '050') OR v_n <> 7 THEN
+    RAISE EXCEPTION 'DOWN_PRECONDITION_050: ledger_050=% functions_found=%',
+      EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '050'), v_n;
+  END IF;
+END;
+$$;
+
 -- 1. Clear every 'invoice' session, SUBTRACT-ONLY: flow NULL, step 0, flow-owned keys and the N13 flag removed.
 --    Never context := '{}' (that would drop morning_submitted / evening_submitted).
 UPDATE public.whatsapp_sessions

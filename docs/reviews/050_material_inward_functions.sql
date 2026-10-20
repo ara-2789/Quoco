@@ -1982,6 +1982,8 @@ COMMIT;
 -- DOWN, in order, one transaction:
 --   SET LOCAL lock_timeout = '3s';
 --   LOCK TABLE public.whatsapp_sessions IN EXCLUSIVE MODE;            -- NOT SHARE ROW EXCLUSIVE (deadlocks)
+--   DO block right after the LOCK: RAISE EXCEPTION 'DOWN_PRECONDITION_050' unless the 050 ledger row exists AND all seven
+--     functions exist (a second run refuses and changes nothing);   [block 19 pre-merge fix]
 --   clear every whatsapp_sessions row with current_flow = 'invoice', SUBTRACT-ONLY (flow NULL, step 0,
 --     remove mi_last_sid / mi_kind / mi_document_id / mi_reask and invoice_reset_guard; never context := '{}');
 --   strip invoice_reset_guard from every row that carries it;
