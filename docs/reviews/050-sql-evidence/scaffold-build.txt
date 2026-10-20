@@ -1,0 +1,17 @@
+# 050 scaffold build (block 12, fresh read-only dump of test-db public) -- from /tmp/quoco/pr-b-block-12.txt
+# BLOCK 12 scaffold rebuild 2026-10-19T08:39:04Z
+$ cat supabase/.temp/project-ref (must equal exfccwlrhoutkgrlikod)
+exfccwlrhoutkgrlikod
+dry-run exit 0
+variable NAMES only: export PGHOST= export PGPORT= export PGUSER= export PGPASSWORD= export PGDATABASE= 
+pg_dump exit 0 bytes   255632 dump.err bytes        0
+credential-pattern scan (count): 0
+dump load exit 0; ERROR lines: 0
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+36
+149
+707c10fe09dfd5a7cd065f7826eacd46
+d19d07507abccdaf7d54ee1d74419af7
+0
+
+scaffold destroyed 2026-10-19T08:40:51Z: cluster stopped; data directory, schema dump and mutant files deleted
