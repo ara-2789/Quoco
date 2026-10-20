@@ -70,3 +70,7 @@ Cleanup of the seed: `quoco_test_capture_cleanup` -> `{"deliveries":1,"capture_f
 - **`test/daily-log-correction-rpc.test.ts`: passed** (4 tests, 18235 ms).
 - **050 suites in the same run:** `capture-pm-functions` 74 (1 skipped), `capture-engineer-flow` 40, `capture-races` 11 (1 skipped), `capture-checkin-n2-n13` 21, `capture-static-guards` 11, `capture-tables` 15, all passed. T-A27-3 (the earlier CI 845 failure) is inside `capture-checkin-n2-n13`.
 - Race tests ran in CI only, per CLAUDE.md section 0; this run is their first valid evidence. The run started after the last ledger row and readbacks (no overlap with an apply or rehearsal).
+
+## Prod pre-checks and prod DOWN (added 20 Oct, block 18)
+
+Read-only prod pre-checks are done and recorded in `docs/plans/pr-b-050-plan.md` section 13.1 (verbatim: `docs/reviews/050-prod-precheck-transcript.txt`). Prod live bodies match test-db pre-050 by md5 (morning `707c10fe...`, evening `d19d07507...`); S-4 probe 0 rows; 0 `invoice` sessions; ledger ends 049. The prod DOWN, `docs/reviews/050-down-prod.sql` (sha256 `2e3747d4...b44c`), differs from the test-db DOWN in header comments only. No write to prod was made.

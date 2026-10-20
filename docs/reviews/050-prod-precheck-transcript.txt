@@ -1,0 +1,249 @@
+# 050 prod pre-checks, READ-ONLY, 2026-10-20T05:55Z, re-run to capture verbatim (first pass 20 Oct, block 18). Queries 3c (function bodies) are in 050-prod-live-*.sql.
+# git HEAD at capture: c038a79
+
+=== 3-a
+project-ref: jvxwqignooseazzmwhvl
+--- query: /Users/aravindanrajamani/.claude/jobs/0cbd717a/tmp/q-a.sql
+SELECT u.id, m.project_id, m.role
+FROM public.users u
+JOIN public.project_members m ON m.user_id = u.id
+WHERE u.role = 'engineer' AND u.status = 'active' AND m.role <> 'engineer';
+--- result:
+{
+  "rows": [],
+}
+exit=0
+
+=== 3-b
+project-ref: jvxwqignooseazzmwhvl
+--- query: /Users/aravindanrajamani/.claude/jobs/0cbd717a/tmp/q-b.sql
+SELECT count(*) AS invoice_sessions FROM public.whatsapp_sessions WHERE current_flow = 'invoice';
+--- result:
+{
+  "rows": [
+    {
+      "invoice_sessions": 0
+    }
+  ],
+}
+exit=0
+
+=== 3-d1
+project-ref: jvxwqignooseazzmwhvl
+--- query: /Users/aravindanrajamani/.claude/jobs/0cbd717a/tmp/q-d1.sql
+SELECT p.proname, p.proowner::regrole::text AS owner, p.prosecdef, p.proconfig::text AS proconfig, p.proacl::text AS proacl,
+  has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_x,
+  has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_x,
+  has_function_privilege('service_role', p.oid, 'EXECUTE') AS svc_x
+FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('apply_morning_flow_turn','apply_evening_flow_turn') ORDER BY 1;
+--- result:
+{
+  "rows": [
+    {
+      "anon_x": false,
+      "auth_x": false,
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "proconfig": "{search_path=public}",
+      "proname": "apply_evening_flow_turn",
+      "prosecdef": true,
+      "svc_x": true
+    },
+    {
+      "anon_x": false,
+      "auth_x": false,
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "proconfig": "{search_path=public}",
+      "proname": "apply_morning_flow_turn",
+      "prosecdef": true,
+      "svc_x": true
+    }
+  ],
+}
+exit=0
+
+=== 3-e1
+project-ref: jvxwqignooseazzmwhvl
+--- query: /Users/aravindanrajamani/.claude/jobs/0cbd717a/tmp/q-e1.sql
+SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'public.whatsapp_sessions'::regclass AND contype = 'c' ORDER BY conname;
+--- result:
+{
+  "rows": [
+    {
+      "conname": "whatsapp_sessions_current_flow_check",
+      "def": "CHECK ((current_flow = ANY (ARRAY['morning'::text, 'evening'::text, 'safety'::text, 'invoice'::text, 'hindrance'::text])))"
+    }
+  ],
+}
+exit=0
+
+=== 3-e2
+project-ref: jvxwqignooseazzmwhvl
+--- query: /Users/aravindanrajamani/.claude/jobs/0cbd717a/tmp/q-e2.sql
+SELECT p.proname, md5(pg_get_functiondef(p.oid)) AS md5, p.prosecdef, p.proconfig::text AS proconfig, p.proacl::text AS proacl, p.proowner::regrole::text AS owner FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'rls_auto_enable';
+--- result:
+{
+  "rows": [
+    {
+      "md5": "6998ea6b4c2480f5d2e34b5dcf3f8d36",
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "proconfig": "{search_path=pg_catalog}",
+      "proname": "rls_auto_enable",
+      "prosecdef": true
+    }
+  ],
+}
+exit=0
+
+=== 3-e3
+project-ref: jvxwqignooseazzmwhvl
+--- query: /Users/aravindanrajamani/.claude/jobs/0cbd717a/tmp/q-e3.sql
+SELECT e.evtname, e.evtevent, e.evtowner::regrole::text AS owner, e.evtenabled, e.evttags::text AS tags, e.evtfoid::regprocedure::text AS fn FROM pg_event_trigger e ORDER BY e.evtname;
+--- result:
+{
+  "rows": [
+    {
+      "evtenabled": "O",
+      "evtevent": "ddl_command_end",
+      "evtname": "ensure_rls",
+      "fn": "rls_auto_enable()",
+      "owner": "postgres",
+      "tags": "{\"CREATE TABLE\",\"CREATE TABLE AS\",\"SELECT INTO\"}"
+    },
+    {
+      "evtenabled": "O",
+      "evtevent": "sql_drop",
+      "evtname": "issue_graphql_placeholder",
+      "fn": "set_graphql_placeholder()",
+      "owner": "supabase_admin",
+      "tags": "{\"DROP EXTENSION\"}"
+    },
+    {
+      "evtenabled": "O",
+      "evtevent": "ddl_command_end",
+      "evtname": "issue_pg_cron_access",
+      "fn": "grant_pg_cron_access()",
+      "owner": "supabase_admin",
+      "tags": "{\"CREATE EXTENSION\"}"
+    },
+    {
+      "evtenabled": "O",
+      "evtevent": "ddl_command_end",
+      "evtname": "issue_pg_graphql_access",
+      "fn": "grant_pg_graphql_access()",
+      "owner": "supabase_admin",
+      "tags": "{\"CREATE EXTENSION\"}"
+    },
+    {
+      "evtenabled": "O",
+      "evtevent": "ddl_command_end",
+      "evtname": "issue_pg_net_access",
+      "fn": "grant_pg_net_access()",
+      "owner": "supabase_admin",
+      "tags": "{\"CREATE EXTENSION\"}"
+    },
+    {
+      "evtenabled": "O",
+      "evtevent": "ddl_command_end",
+      "evtname": "pgrst_ddl_watch",
+      "fn": "pgrst_ddl_watch()",
+      "owner": "supabase_admin",
+      "tags": null
+    },
+    {
+      "evtenabled": "O",
+      "evtevent": "sql_drop",
+      "evtname": "pgrst_drop_watch",
+      "fn": "pgrst_drop_watch()",
+      "owner": "supabase_admin",
+      "tags": null
+    }
+  ],
+}
+exit=0
+
+=== 3-f1
+project-ref: jvxwqignooseazzmwhvl
+--- query: /Users/aravindanrajamani/.claude/jobs/0cbd717a/tmp/q-f1.sql
+SELECT version, name, coalesce(array_length(statements,1),0) AS statements, (SELECT max(version) FROM supabase_migrations.schema_migrations) AS max_version, (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version > '049') AS rows_after_049 FROM supabase_migrations.schema_migrations ORDER BY version DESC LIMIT 4;
+--- result:
+{
+  "rows": [
+    {
+      "max_version": "049",
+      "name": "capture_tables",
+      "rows_after_049": 0,
+      "statements": 59,
+      "version": "049"
+    },
+    {
+      "max_version": "049",
+      "name": "engineer_registration",
+      "rows_after_049": 0,
+      "statements": 14,
+      "version": "048"
+    },
+    {
+      "max_version": "049",
+      "name": "revoke_unused_table_rights",
+      "rows_after_049": 0,
+      "statements": 54,
+      "version": "047"
+    },
+    {
+      "max_version": "049",
+      "name": "hindrances_report_date",
+      "rows_after_049": 0,
+      "statements": 6,
+      "version": "046"
+    }
+  ],
+}
+exit=0
+
+=== 3-f2
+project-ref: jvxwqignooseazzmwhvl
+--- query: /Users/aravindanrajamani/.claude/jobs/0cbd717a/tmp/q-f2.sql
+SELECT n.nspname, p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND p.prosrc ~* 'QE01[567]';
+--- result:
+{
+  "rows": [],
+}
+exit=0
+
+=== 3-f3
+project-ref: jvxwqignooseazzmwhvl
+--- query: /Users/aravindanrajamani/.claude/jobs/0cbd717a/tmp/q-f3.sql
+SELECT count(*) AS functions_scanned, count(*) FILTER (WHERE p.prosrc ~* 'QE01[567]') AS mentioning_qe015_016_017 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema');
+--- result:
+{
+  "rows": [
+    {
+      "functions_scanned": 243,
+      "mentioning_qe015_016_017": 0
+    }
+  ],
+}
+exit=0
+
+=== 3-d2 (seven names)
+project-ref: jvxwqignooseazzmwhvl
+--- query: /Users/aravindanrajamani/.claude/jobs/0cbd717a/tmp/q-d.sql
+SELECT p.proname, p.proowner::regrole::text AS owner, p.prosecdef, p.proconfig::text AS proconfig, p.proacl::text AS proacl,
+  has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_x,
+  has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_x,
+  has_function_privilege('service_role', p.oid, 'EXECUTE') AS svc_x
+FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('apply_morning_flow_turn','apply_evening_flow_turn') ORDER BY 1;
+SELECT coalesce(jsonb_agg(proname), '[]'::jsonb) AS new_names_present FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN
+ ('apply_material_inward_turn','expire_stale_material_inward','pm_set_delivery_details','pm_approve_delivery','pm_reject_delivery','pm_link_invoice','pm_unlink_invoice');
+--- result:
+{
+  "rows": [
+    {
+      "new_names_present": []
+    }
+  ],
+}
+exit=0

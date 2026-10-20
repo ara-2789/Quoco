@@ -453,6 +453,22 @@ Prod has NOT been contacted in any block or probe so far (probes 1 to 3, blocks 
 6. The seven function names do not already exist on prod (a same-name function would make a bare `CREATE` abort or an overload appear).
 7. The ACL readback and a real anon-key refusal after the apply (section 5).
 
+### 13.1 Prod pre-check results (read-only, 20 Oct 2026, block 18) [observed]
+
+Linked workdir `/tmp/quoco/cli-prod` to `jvxwqignooseazzmwhvl` (ref printed before every query; the main tree's link untouched). SELECT only. Verbatim queries and results: `docs/reviews/050-prod-precheck-transcript.txt` (re-run of the first pass, same results). Result by item above:
+
+1. `invoice` sessions on prod: **0**. S-4 probe (reviewer's query): **0 rows**.
+2. Bodies saved: `docs/reviews/050-prod-live-morning.sql` md5 `707c10fe09dfd5a7cd065f7826eacd46` (equals test-db pre-050), sha256 `69ae1b5cb73e9a1b2830b7524d853db2e48d91d4bc8030f1233e31edab2cebe5`; `docs/reviews/050-prod-live-evening.sql` md5 `d19d07507abccdaf7d54ee1d74419af7` (equals test-db pre-050), sha256 `30979c8f4d8745e63184079cefedfd74b2cc2d54455b9e679578a4e9327c18a4`. The saved files' own md5 equals the database md5. **No difference between prod and test-db.**
+3. `whatsapp_sessions_current_flow_check` allows morning, evening, safety, invoice, hindrance.
+4. `rls_auto_enable` md5 `6998ea6b4c2480f5d2e34b5dcf3f8d36` (equals test-db); event trigger `ensure_rls` present, enabled, `ddl_command_end`, tags CREATE TABLE / CREATE TABLE AS / SELECT INTO.
+5. Prod ledger ends at `049` (`capture_tables`, 59 statements); 0 rows after 049; `supabase migration list --linked` ends `remote 049`. (The local column is empty because the workdir has no migrations; the ledger query is the evidence.)
+6. The seven new names: **none present**. Before-reading of the two live functions: owner postgres, SECURITY DEFINER, `proconfig {search_path=public}`, ACL `{postgres=X/postgres,service_role=X/postgres}`, anon and authenticated no EXECUTE, service_role EXECUTE.
+7. No function source in any non-system schema mentions QE015, QE016 or QE017 (243 functions scanned, 0 matches).
+
+### 13.2 Prod DOWN artifact [observed]
+
+`docs/reviews/050-down-prod.sql`, sha256 `2e3747d44325632975d1540fe4b23f9469958be4b09822a41fb261ce153db44c`, built from the prod-captured bodies (structure of `050-down-testdb.sql`). `diff` against `050-down-testdb.sql`: **header comment lines 1-6 only**; the restore bodies are byte-identical because the prod and test-db md5s are equal (also checked directly: the test-db DOWN's two body blocks equal the prod files). NOT RUN. Still owed before the prod apply: explicit GO from Aravind and the other plan section 12 steps.
+
 ---
 
 ## 14. Open items and unknowns
