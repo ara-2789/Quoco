@@ -74,3 +74,12 @@ Cleanup of the seed: `quoco_test_capture_cleanup` -> `{"deliveries":1,"capture_f
 ## Prod pre-checks and prod DOWN (added 20 Oct, block 18)
 
 Read-only prod pre-checks are done and recorded in `docs/plans/pr-b-050-plan.md` section 13.1 (verbatim: `docs/reviews/050-prod-precheck-transcript.txt`). Prod live bodies match test-db pre-050 by md5 (morning `707c10fe...`, evening `d19d07507...`); S-4 probe 0 rows; 0 `invoice` sessions; ledger ends 049. The prod DOWN, `docs/reviews/050-down-prod.sql` (sha256 `2e3747d4...b44c`), differs from the test-db DOWN in header comments only. No write to prod was made.
+
+## Dated correction: DOWN precondition (20 Oct, block 19) [observed]
+
+Reviewer's pre-merge fix: a DO block right after the LOCK in both DOWN artifacts raises `DOWN_PRECONDITION_050` unless the 050 ledger row exists AND all seven functions exist, so a second run refuses and changes nothing. The same text is noted in the SQL file's commented DOWN block.
+
+- `050-down-testdb.sql` sha256 **`8990092b04f2603134e5ea4da61961e0e4345074e4d91c808f8af7b108f438bd`** (was `c7f13299...83bd6`, the file rehearsed on test-db on 19 Oct; the rehearsed file did not have the precondition block).
+- `050-down-prod.sql` sha256 **`868a68f19304b546570445e627606f1f9b1e4ae9749d45a4112dee0cd1443a36`** (was `2e3747d4...b44c`). The two files differ in header comment lines 1-6 only.
+- `050_material_inward_functions.sql` sha256 **`657b9f9413c07ff8ea20fe9feb9374311cc58d9bc816031fbca691d0871d157a`** (was `1e09730d...0fade`, the file APPLIED to test-db). The change is two comment lines in the commented DOWN block; no executable statement changed, so the applied objects and the 31-statement ledger count are unaffected. **The applied-bytes hash and the committed-file hash now differ; the prod apply must pin the new hash.**
+- Proof: `docs/reviews/050-down-precondition-transcript.txt` (local scaffold from a fresh read-only test-db dump, HEAD `bf91095`, clean tree): each DOWN passes once; the second run fails with `DOWN_PRECONDITION_050: ledger_050=f functions_found=0`; the state after run 2 is identical to the state after run 1. Scaffold destroyed. The new DOWN text has therefore NOT been rehearsed on test-db itself (the test-db is at 050 applied, so a real rehearsal would need a re-apply; not done in this block).

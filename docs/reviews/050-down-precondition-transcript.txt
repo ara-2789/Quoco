@@ -1,0 +1,74 @@
+== 050 DOWN precondition proof (local scaffold from a fresh read-only test-db dump) ==
+generated: 2026-10-20T06:15:34Z
+HEAD: bf910950dc0c48e15d7a719cc9c815323766fc38
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+dump source: ref exfccwlrhoutkgrlikod (main tree supabase/.temp/project-ref printed before the dump: exfccwlrhoutkgrlikod); pg_dump 17.11; local server: PostgreSQL 17.11 (Homebrew) on aarch64-a
+NAMED STUBS: roles anon/authenticated/service_role/supabase_auth_admin (only the first three created); auth.users + auth.uid(); extension vector; supabase_migrations.schema_migrations (table only); the 049/050 ledger rows inserted by hand (the dump is public-schema only); seed rows inserted with session_replication_role=replica (no FK fixtures).
+sha256 DOWN testdb: 8990092b04f2603134e5ea4da61961e0e4345074e4d91c808f8af7b108f438bd
+sha256 DOWN prod:   868a68f19304b546570445e627606f1f9b1e4ae9749d45a4112dee0cd1443a36
+
+=================== DOWN file: 050-down-testdb.sql  (database sc_testdb) ===================
+--- state BEFORE run 1
+sessions_md5=fa48c2588abe2efdcee8e28c5de8f72f
+morning_md5=cf2e78881f03d4e03a0dc51fd9b6008e
+evening_md5=9987ab905a5563f94f9226445fbcef8b
+new_functions=7
+ledger_050=1
+--- RUN 1 (expect pass)
+$ psql -X -q -d sc_testdb -v ON_ERROR_STOP=1 -f docs/reviews/050-down-testdb.sql
+[exit 0]
+--- state AFTER run 1 (expect morning 707c10fe.., evening d19d0750.., new_functions=0, ledger_050=0)
+sessions_md5=9e33a5dd41c7183ae40515a3cc7fd816
+morning_md5=707c10fe09dfd5a7cd065f7826eacd46
+evening_md5=d19d07507abccdaf7d54ee1d74419af7
+new_functions=0
+ledger_050=0
+AFTER: +91950000001 NULL/0 {}
+AFTER: +91950000002 morning/1 {}
+--- RUN 2 (expect DOWN_PRECONDITION_050, nothing changed)
+$ psql -X -q -d sc_testdb -v ON_ERROR_STOP=1 -f docs/reviews/050-down-testdb.sql
+psql:docs/reviews/050-down-testdb.sql:33: ERROR:  DOWN_PRECONDITION_050: ledger_050=f functions_found=0
+CONTEXT:  PL/pgSQL function inline_code_block line 9 at RAISE
+[exit 3]
+--- state AFTER run 2
+sessions_md5=9e33a5dd41c7183ae40515a3cc7fd816
+morning_md5=707c10fe09dfd5a7cd065f7826eacd46
+evening_md5=d19d07507abccdaf7d54ee1d74419af7
+new_functions=0
+ledger_050=0
+snapshot after run 2 == snapshot after run 1: IDENTICAL
+
+=================== DOWN file: 050-down-prod.sql  (database sc_prod) ===================
+--- state BEFORE run 1
+sessions_md5=ee4c288abfe3f66e5527dd12cb9f5a9d
+morning_md5=cf2e78881f03d4e03a0dc51fd9b6008e
+evening_md5=9987ab905a5563f94f9226445fbcef8b
+new_functions=7
+ledger_050=1
+--- RUN 1 (expect pass)
+$ psql -X -q -d sc_prod -v ON_ERROR_STOP=1 -f docs/reviews/050-down-prod.sql
+[exit 0]
+--- state AFTER run 1 (expect morning 707c10fe.., evening d19d0750.., new_functions=0, ledger_050=0)
+sessions_md5=37857dd43852005e4f573750c187f0a9
+morning_md5=707c10fe09dfd5a7cd065f7826eacd46
+evening_md5=d19d07507abccdaf7d54ee1d74419af7
+new_functions=0
+ledger_050=0
+AFTER: +91950000001 NULL/0 {}
+AFTER: +91950000002 morning/1 {}
+--- RUN 2 (expect DOWN_PRECONDITION_050, nothing changed)
+$ psql -X -q -d sc_prod -v ON_ERROR_STOP=1 -f docs/reviews/050-down-prod.sql
+psql:docs/reviews/050-down-prod.sql:33: ERROR:  DOWN_PRECONDITION_050: ledger_050=f functions_found=0
+CONTEXT:  PL/pgSQL function inline_code_block line 9 at RAISE
+[exit 3]
+--- state AFTER run 2
+sessions_md5=37857dd43852005e4f573750c187f0a9
+morning_md5=707c10fe09dfd5a7cd065f7826eacd46
+evening_md5=d19d07507abccdaf7d54ee1d74419af7
+new_functions=0
+ledger_050=0
+snapshot after run 2 == snapshot after run 1: IDENTICAL
+
+scaffold destroyed 2026-10-20T06:15:43Z: cluster stopped; data directory, schema dump and dry-run script deleted
