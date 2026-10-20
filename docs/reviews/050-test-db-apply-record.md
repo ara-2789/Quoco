@@ -60,3 +60,13 @@ Cleanup of the seed: `quoco_test_capture_cleanup` -> `{"deliveries":1,"capture_f
 - **Rule: no CI run on test-db during an apply or a rehearsal.** Start CI only after the last ledger row is written and the readbacks are done.
 - **CI run 845** (`39226968754`, head `a878de7`, test job 09:25:28Z to 09:55:52Z, started after the re-apply at 08:58:10Z) is the first valid run. Result: every capture suite passed (`capture-pm-functions` 74 with 1 skip, `capture-engineer-flow` 40, `capture-races` 11 with 1 skip, `capture-static-guards` 11, `capture-tables` 15) except ONE assertion, `test/capture-checkin-n2-n13.test.ts:241` (T-A27-3). Cause (proved from code, `044:604-614` and `044:482-485`): the hindrance call that returned `reask` refreshed the stale invoice row's `expires_at`, so `expire_stale_material_inward` at the same instant correctly returned false. A test defect, not an SQL defect; fixed in the test (block 15), SQL unchanged (sha256 `1e09730d...0fade`).
 
+
+## CI pin (added 20 Oct, block 18)
+
+- **Run:** https://github.com/ara-2789/Quoco/actions/runs/39372883356 (`CI`, event `pull_request`, created 2026-10-20T05:03:57Z).
+- **headSha:** `5534d50cc8bf4fd79ed268db1b86390578afd81a` = PR #333 `headRefOid` at the time of reading. **conclusion: success** (observed with `gh run list` and `gh run view --json`).
+- **Jobs:** Migration Lint, Fixture Literal Lint, Detect docs-only change, Typecheck, File Size Lint, Lint, `Test (real test-db)` (job 118464479052, 43m33s) all success. **Skipped: `Detect already-green PR head`.** Reason, from `.github/workflows/ci.yml:235-237`: the job carries `if: github.event_name == 'push'`; this run's event is `pull_request`, so the job is skipped by design. It is not a failure and no test was skipped by it.
+- **Test job (log read):** 140 files passed (140); 1867 passed, 2 skipped, 1 todo (1870).
+- **`test/daily-log-correction-rpc.test.ts`: passed** (4 tests, 18235 ms).
+- **050 suites in the same run:** `capture-pm-functions` 74 (1 skipped), `capture-engineer-flow` 40, `capture-races` 11 (1 skipped), `capture-checkin-n2-n13` 21, `capture-static-guards` 11, `capture-tables` 15, all passed. T-A27-3 (the earlier CI 845 failure) is inside `capture-checkin-n2-n13`.
+- Race tests ran in CI only, per CLAUDE.md section 0; this run is their first valid evidence. The run started after the last ledger row and readbacks (no overlap with an apply or rehearsal).
