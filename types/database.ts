@@ -2600,6 +2600,21 @@ export type Database = {
         }
         Returns: Json
       }
+      apply_material_inward_turn: {
+        Args: {
+          p_media?: Json
+          p_message: string
+          p_message_sid: string
+          p_now?: string
+          p_phone_number: string
+          p_project_id: string
+          p_start_flow?: boolean
+          p_tenant_id: string
+          p_test_sleep_ms?: number
+          p_user_id: string
+        }
+        Returns: Json
+      }
       apply_morning_flow_turn: {
         Args: {
           p_equipment?: Json
@@ -2665,7 +2680,31 @@ export type Database = {
           o_tenant_id: string
         }[]
       }
+      expire_stale_material_inward: {
+        Args: { p_now?: string; p_phone_number: string }
+        Returns: boolean
+      }
       get_user_tenant_id: { Args: never; Returns: string }
+      pm_approve_delivery: { Args: { p_delivery_id: string }; Returns: Json }
+      pm_link_invoice: {
+        Args: { p_delivery_ids: string[]; p_invoice_document_id: string }
+        Returns: Json
+      }
+      pm_reject_delivery: {
+        Args: { p_delivery_id: string; p_reason: string }
+        Returns: Json
+      }
+      pm_set_delivery_details: {
+        Args: {
+          p_dc_date: string
+          p_dc_number: string
+          p_delivery_id: string
+          p_delivery_type: string
+          p_vehicle_number: string
+        }
+        Returns: Json
+      }
+      pm_unlink_invoice: { Args: { p_link_id: string }; Returns: Json }
       quoco_classify_yes_no: { Args: { p_text: string }; Returns: Json }
       quoco_same_ist_day: { Args: { a: string; b: string }; Returns: boolean }
       quoco_test_047_unused_rights_check: {
