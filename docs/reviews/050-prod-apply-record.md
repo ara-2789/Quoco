@@ -35,7 +35,7 @@ Frame printed in the same output immediately before the command: ref `jvxwqignoo
 
 ## 4. Step 4 — ledger [R] repair, [O] verification
 
-Printed for Aravind (ref + sha first, then the command): `supabase --workdir /tmp/quoco/cli-prod migration repair --status applied 050 --linked`. **Run by Aravind**; his pasted output: ref `jvxwqignooseazzmwhvl`, sha256 `1e09730d…0fade`, `Repaired migration history: [050] => applied` [R].
+Printed for Aravind (ref + sha first, then the command): `supabase --workdir /tmp/quoco/cli-prod migration repair --status applied 050 --linked`. **Run by Aravind in two attempts, both [R]:** (1) the first run, at 17:34:37Z, failed at "Initialising login role" with a Cloudflare 502 from api.supabase.com, before "Connecting to remote database"; nothing was written. (2) After about a minute he retried and the second run succeeded; his pasted output: ref `jvxwqignooseazzmwhvl`, sha256 `1e09730d…0fade`, `Repaired migration history: [050] => applied` [R].
 Verified by query (17:37:53Z) [O]: `050 material_inward_functions`, **31 statements**; previous row `049 capture_tables` 59; max version `050`; 46 rows. `supabase migration list --linked`: last entry `{"local":"050","remote":"050"}` (local is 050 only because the workdir holds the file).
 
 ## 5. Step 5 — readbacks [O]
@@ -53,4 +53,4 @@ Verified by query (17:37:53Z) [O]: `050 material_inward_functions`, **31 stateme
 
 ## 6. Observed vs reported
 
-Observed: everything marked [O]. Reported: only Aravind's ledger-repair output. Not done / not observed: PITR state; DOWN on prod; the CI run on the merge commit `349d360` (the pin above is for `f11451b`, the PR head; the merge commit's tree equals it only if `main` had no other change — not checked).
+Observed: everything marked [O]. Reported: only Aravind's ledger-repair runs (the failed first attempt and the successful second). Not done / not observed: PITR state; DOWN on prod; ~~the CI run on the merge commit `349d360`~~ (struck 2026-10-25, block 22). Observed: tree of `349d360` = tree of `f11451b` = `e4e5c5eaef4e71d887d0decf6f5792f2f46fdfab`, so CI run 39380098060 certifies the merged tree.
