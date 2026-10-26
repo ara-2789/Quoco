@@ -1,0 +1,37 @@
+== 051 scaffold probe: G5 049-DOWN Guard 2 ==
+generated: 2026-10-26T18:40:58Z
+HEAD: 4f302c03120b24d77bd7c88406322f66573866af
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+state: d_c2, 051 applied (trigger present: 1)
+
+-- Guard 2 text from 049's DOWN block (supabase/migrations/049_capture_tables.sql, DOWN, 'Guard 2'), run verbatim as a SELECT.
+-- Names the guard exempts are 049's own six trigger functions. 051's function is NOT in that list, so it must NOT match.
+SELECT p.proname, (p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M') AS body_names_a_table
+  FROM pg_proc p WHERE p.proname = 'trg_capture_files_before_update';
+             proname             | body_names_a_table 
+---------------------------------+--------------------
+ trg_capture_files_before_update | f
+(1 row)
+
+SELECT string_agg(n.nspname || '.' || p.proname, ', ') AS guard2_would_list
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname !~ '^pg_'
+   AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+   AND p.proname = 'trg_capture_files_before_update';
+ guard2_would_list 
+-------------------
+ 
+(1 row)
+
+-- control: the same regex DOES match the 050 function apply_material_inward_turn (its body names capture tables), so the probe can return true.
+SELECT p.proname, (p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M') AS body_names_a_table
+  FROM pg_proc p WHERE p.proname IN ('apply_material_inward_turn', 'trg_capture_documents_before_update', 'trg_capture_files_before_update') ORDER BY 1;
+               proname               | body_names_a_table 
+-------------------------------------+--------------------
+ apply_material_inward_turn          | t
+ trg_capture_documents_before_update | f
+ trg_capture_files_before_update     | f
+(3 rows)
+
