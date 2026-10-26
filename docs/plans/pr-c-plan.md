@@ -2,13 +2,15 @@
 
 Rev 1, written 2026-10-26 (background job). PLAN ONLY: no code, no tests, no migration, no database access, no supabase command. Branch `plan/pr-c` from `origin/main` `115070527d1d423a966a9157a6ba896a32b88a76` (fetched, printed, matched the expected `11507052…`). Raw log of every command: `/tmp/quoco/pr-c-plan-block.txt` on Aravind's machine (not committed). Files read with the Read tool (not shell commands, so not in that log) are listed in the Appendix.
 
+Rev 2, 2026-10-26: Aravind's answers to section 9, retier, approved strings.
+
 **Marks.** `[read]` = I saw it in a file at the cited path:line on this SHA. `[inferred]` = my reasoning, not read anywhere. Nothing is unmarked. A claim marked `[read]` about a document that quotes another document is read as the quote, not as a check of the original.
 
 **Legend (path abbreviations).** IS `lib/whatsapp/inbound-start.ts`; SS `lib/whatsapp/session.ts`; DP `lib/whatsapp/dispatch.ts`; RT `app/api/whatsapp/webhook/route.ts`; MR `lib/whatsapp/media-reply.ts`; TK `app/api/jobs/tick/route.ts`; FX `test/helpers/capture-fixtures.ts`; S050 `supabase/migrations/050_material_inward_functions.sql`; S049 `supabase/migrations/049_capture_tables.sql`; V3 `docs/plans/slice-1a-plan-v3.md`; PB `docs/plans/pr-b-050-plan.md` (rev 6); CF `docs/plans/pr-c-carry-forward.md`; CO `docs/reviews/050-closeout-record.md`; CED `docs/plans/capture-engine-design.md`; P49 `docs/reviews/049-plan-review-package.md`; R49 `docs/reviews/049-review-package.md`; CM `CLAUDE.md`.
 
 **Decisions carried, not reopened (Aravind, 2026-10-26, from the brief).**
 - **D1 = option (d), A27 amended.** When `expire_stale_material_inward` returns true for an inbound message, OR an `'invoice'` session comes back idle from the IST-day reset on that message, the router answers that ONE message with `MI_SESSION_ENDED_REPLY` instead of the idle menu, and does not process it. No SQL change.
-- `MI_SESSION_ENDED_REPLY`, English APPROVED: "That delivery question has ended. Your answer was not recorded. Reply 4 to start again." Code comment: "Tamil owed".
+- `MI_SESSION_ENDED_REPLY`, ~~English APPROVED: "That delivery question has ended. Your answer was not recorded. Reply 4 to start again." Code comment: "Tamil owed".~~ Rev 2, 2026-10-26, per Aravind: re-approved with the noun "DC or invoice": "That DC or invoice question has ended. Your answer was not recorded. Reply 4 to start again." Code comment: "Tamil owed". (Section 7, row 1.)
 - PITR is off until launch. Any prod migration in PR-C records "PITR substituted" (prod-captured state + a DOWN), like 050 [read CO:150-152; CF:14].
 - Overload rule: no second function with any of the seven 050 names, or update both 050 DOWN files in the same PR [read CF:5-7].
 
@@ -58,10 +60,12 @@ CM §0 says one feature per session [read CM §0, "HOW WE WORK"] and the databas
 |---|---|---|---|
 | **C1** | `test/helpers/capture-fixtures.ts` fixed clock (3g); one new unit test | LIGHT | Test-only; nothing in prod changes; CM §0 two-tier rule: only Aravind's own test data at stake [read CM §0, 2026-09-19 correction]. |
 | **C2** | Migration 051 (held in `docs/reviews/` until applied): `capture_files` immutability trigger + column UPDATE grant (D-8); review package; DOWN files; DB tests. **No app code.** | **FULL** | A grant plus a trigger on a tenant-scoped table: external-review trigger (b) [read CM §0, EXTERNAL REVIEW GATE]. |
-| **C3** | Router safety, all dormant: exhaustive flow mapping (N1), routing-state read, expire-first, D1(d) one-shot reply, S-3 guard, `capture_deferred` reply wiring, the digit-4 switch module (default off) | **FULL** | Changes how EVERY inbound message is routed; a misroute reaches a real engineer's phone. |
-| **C4** | The `'invoice'` handler (wrapper + reply builder), S-F failure path, webhook media gate for PDFs (only inside an `'invoice'` session) | **FULL** | Handles third-party bytes and extends what the webhook accepts [read V3:236 reason]. |
+| **C3** | Router safety, all dormant: exhaustive flow mapping (N1), routing-state read, expire-first, D1(d) one-shot reply, S-3 guard, `capture_deferred` reply wiring, the digit-4 switch module (default off) | ~~**FULL**~~ Rev 2: **LIGHT** | Changes how EVERY inbound message is routed; a misroute reaches a real engineer's phone. |
+| **C4** | The `'invoice'` handler (wrapper + reply builder), S-F failure path, webhook media gate for PDFs (only inside an `'invoice'` session) | ~~**FULL**~~ Rev 2: **LIGHT** | Handles third-party bytes and extends what the webhook accepts [read V3:236 reason]. |
 | **C5** | `capture_ingest` job handler, byte checks, tick dispatch + dead-letter | **FULL** | Writes tenant-scoped rows and a private bucket using the C2 grant. Deploys only after C2 is applied on prod. |
 | **C6** | Switch digit 4 on: flip the switch, add `MI_MENU_LINE` to the idle menu, rewrite T-WH-17/21/25 to the idle nudge, spec-sync edit | **FULL** | Real engineers' phones start receiving the new flow; one-line diff but the highest-consequence change. |
+
+Rev 2, 2026-10-26, per Aravind: tiers are C1 LIGHT, C2 FULL, C3 LIGHT, C4 LIGHT, C5 FULL, C6 FULL (C1, C2, C5, C6 unchanged from rev 1; C3 and C4 struck from FULL above). Reason: App code is LIGHT before the switch trigger. FULL = the grant and trigger (C2), tenant files written to storage (C5), go-live (C6). C3's routing risk is covered by its tests: every existing router and webhook test stays green and unedited, plus AT-DARK-1..3. LIGHT order for C3 and C4 is CM §0's: CI green with the pinned run URL, then merge (no database apply, no DOWN rehearsal).
 
 Order: **C1 → C3 → C2 (review → test-db apply → DOWN rehearsal → CI → merge → prod apply) → C4 → C5 → D-30 test → PR-D live → C6.** C1 and C3 do not need the DB change. C5 needs C2 on prod (its UPDATE needs the grant) `[inferred]`. C6 needs PR-D merged and applied [read V3:241] and the D-30 test passed [read R49:138, P49:71].
 
@@ -80,7 +84,7 @@ Order: **C1 → C3 → C2 (review → test-db apply → DOWN rehearsal → CI �
 **The ordering constraint [read].** `received_at` is read inside the RPC from `processed_messages.created_at` for the message SID; a missing row or NULL `created_at` is refused with QE012 (S050:313-320). So the SID row must exist before the RPC runs, and PR-C cannot move SID consumption to after processing unless 050 changes (PB:47-48, 355). The RPC is idempotent per SID as a second line of defence (S050:132-144). Because the row is created at webhook arrival, `received_at` = arrival time, not RPC time `[inferred from S050:315-317 and RT:224; `processed_messages.created_at` default not read — migration 011 not opened]`.
 
 **Options.**
-- **S-F-1 (recommended): record and alert, keep the SID consumed.** In the C4 handler wrap the RPC call (and the session read) in try/catch. On failure: (i) Sentry error, fingerprint `['capture-inbound','rpc_failed']`, extra = counts and content types only — no URL, phone, body, tenant or user id (the P0 rule: counts, content types, ids only [read V3:233]; same shape as the unsupported-media event, `RT:266-271`); (ii) reply `MI_CAPTURE_FAILED_REPLY` (NEEDED, no wording) telling the engineer to resend; (iii) return 200 so Twilio does not retry. Nothing is created because the RPC is one transaction `[inferred]`; a resend carries a new SID and succeeds. **Residual risk, stated:** a process crash or function timeout between `RT:224` and the catch still loses the capture silently — the window is one request, and the only record is whatever Sentry caught before dying.
+- **S-F-1 (recommended): record and alert, keep the SID consumed.** In the C4 handler wrap the RPC call (and the session read) in try/catch. On failure: (i) Sentry error, fingerprint `['capture-inbound','rpc_failed']`, extra = counts and content types only — no URL, phone, body, tenant or user id (the P0 rule: counts, content types, ids only [read V3:233]; same shape as the unsupported-media event, `RT:266-271`); (ii) reply `MI_CAPTURE_FAILED_REPLY` ~~(NEEDED, no wording)~~ (Rev 2, 2026-10-26, per Aravind: approved, section 7 row 19) telling the engineer to resend; (iii) return 200 so Twilio does not retry. Nothing is created because the RPC is one transaction `[inferred]`; a resend carries a new SID and succeeds. **Residual risk, stated:** a process crash or function timeout between `RT:224` and the catch still loses the capture silently — the window is one request, and the only record is whatever Sentry caught before dying.
 - **S-F-2: un-consume on failure.** Delete the `processed_messages` row and return 500 so Twilio's retry reprocesses; the RPC's SID check makes this safe. Costs: `received_at` shifts to the retry time `[inferred]`; needs `service_role` DELETE on `processed_messages` — 047 revoked DELETE only from anon/authenticated (047:201) and the default ACL gives `service_role` everything (CM §6, per-role rule), so likely held `[inferred]`, unverified (no DB access).
 - **S-F-3: durable pre-record.** Before `RT:224`, for any message carrying media, insert a `jobs` row keyed by the SID holding the content types and media indexes (precedent: the ingest job payload already carries the media URL, S050:366-369) and have a reconciler replay any SID with no `capture_files` row. Closes the crash window. Cost: a new job type, a reconciler, and a decision to persist a Twilio URL beyond the file reference (CM §6 allows it only transiently; the same URL is already in the 050 job payload, S050:369) `[inferred]`.
 
@@ -96,7 +100,7 @@ Order: **C1 → C3 → C2 (review → test-db apply → DOWN rehearsal → CI �
 
 **The problem [read].** N2 discards a live `'invoice'` session when a check-in starts and sets `invoice_reset_guard` = `'morning'` or `'evening'` (S050:1142-1150, 1473-1482); the first non-empty step-1 text is deferred and clears it (S050:1169-1175, 1501-1507). Text is handled in SQL. A PHOTO takes the router's media branch for an active morning/evening session: it resolves/creates the `daily_logs` row, enqueues `media_ingest`, sets `*_photos_status='pending'`, and re-asks (IS:786-888, enqueue at IS:837, status update IS:839-843). So a delivery photo sent right after the reset is stored as a check-in photo (PB:256, 363). The most likely moment is S2/S3 at 08:30/18:30.
 
-**Design (C3).** The routing-state read (3c) also returns `context.invoice_reset_guard` for morning/evening sessions. In the morning/evening media branch, BEFORE `resolveDailyLogId` (IS:790) add: if `guard === firstFlow` (the same scoping rule the SQL uses, S050:1169, 1501) → do not resolve or create a `daily_logs` row, do not enqueue `media_ingest`, do not touch `*_photos_status`; reply with `MI_CHECKIN_PHOTO_NOT_SAVED_REPLY` (NEEDED, no wording — name proposed here) followed by the current step's question. The guard is NOT cleared by a photo (only the first non-empty text clears it, S050:1169-1175). A guard for the other check-in is inert. Everything is gated behind sessions that can only exist after digit 4 is on, so it is dormant in C3 `[inferred]`.
+**Design (C3).** The routing-state read (3c) also returns `context.invoice_reset_guard` for morning/evening sessions. In the morning/evening media branch, BEFORE `resolveDailyLogId` (IS:790) add: if `guard === firstFlow` (the same scoping rule the SQL uses, S050:1169, 1501) → do not resolve or create a `daily_logs` row, do not enqueue `media_ingest`, do not touch `*_photos_status`; reply with `MI_CHECKIN_PHOTO_NOT_SAVED_REPLY` ~~(NEEDED, no wording — name proposed here)~~ (Rev 2, 2026-10-26, per Aravind: approved, section 7 row 21) followed by the current step's question. The guard is NOT cleared by a photo (only the first non-empty text clears it, S050:1169-1175). A guard for the other check-in is inert. Everything is gated behind sessions that can only exist after digit 4 is on, so it is dormant in C3 `[inferred]`.
 
 **Tests (C3), against test-db with the real 050 functions:**
 - `T-S3-1`: seed morning step-1 with `invoice_reset_guard='morning'`; send a photo through `routeInboundMessage`. Assert `daily_log_photos` row count unchanged, no `media_ingest` job for that engineer's daily log, `morning_photos_status` unchanged, guard still `'morning'`, reply starts with the new string constant.
@@ -157,7 +161,7 @@ Order: **C1 → C3 → C2 (review → test-db apply → DOWN rehearsal → CI �
 
 **Why it exists [read].** Confirm how WhatsApp/Twilio delivers several photos selected together (one message with N media, or N messages); the bot must ask 1/2/3 ONCE per document (R49:138; P49:71 "One document per capture flow … A different document needs a new flow"). The RPC creates the document from the first file message and attaches later files at S3/S4 (S050:227-231, 275-279, 348-360). What the bot replies to each ADDITIONAL file is undecided (D10 left to PR-C, PB:55; V3:387) — OQ5.
 
-**Preconditions.** C1-C5 deployed; digit 4 reachable for Aravind's own test phone only (the allowlist in section 4, OQ3); every `MI_*` slot used below has approved wording (the script cannot run before then; only `MI_SESSION_ENDED_REPLY` is approved today); Aravind's test project has him as engineer; the three read-only checks use the Supabase dashboard run by Aravind (Claude Code does no DB access in this plan). Record in a table: step, what was sent, replies seen (constant name), pass/fail.
+**Preconditions.** C1-C5 deployed; digit 4 reachable for Aravind's own test phone only (the allowlist in section 4, OQ3); ~~every `MI_*` slot used below has approved wording (the script cannot run before then; only `MI_SESSION_ENDED_REPLY` is approved today);~~ Rev 2: all MI_* strings are approved 2026-10-26 (section 7), so the script is executable once C4 puts the constants in code; Aravind's test project has him as engineer; the three read-only checks use the Supabase dashboard run by Aravind (Claude Code does no DB access in this plan). Record in a table: step, what was sent, replies seen (constant name), pass/fail.
 
 | # | Do | Expect (constant names) | Check afterwards (read-only) |
 |---|---|---|---|
@@ -186,7 +190,7 @@ The IST-midnight case (23:59 session answered at 00:01) is not practical by hand
 **Router flow (C3), inside `routeInboundMessage` before any flow dispatch:**
 1. `row = readRoutingState(phone, now)`; `dayStale = istDate(now) !== istDate(row.updated_at)` (the SS:100 comparison).
 2. If `row.current_flow === 'invoice'`: `cleared = expire_stale_material_inward(phone, dayStale ? max(now, row.expires_at) : now)`.
-3. If `cleared` → return `{ reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }`. The inbound message — text, photo, PDF or a bare `4` — is NOT processed (OQ1, OQ11).
+3. If `cleared` → return `{ reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }`. ~~The inbound message — text, photo, PDF or a bare `4` — is NOT processed (OQ1, OQ11).~~ Rev 2, 2026-10-26, per Aravind: The inbound message — text, photo or PDF — is NOT processed (OQ11). **A bare 4 sent as the first message after the session ended starts the flow at once. It does not get MI_SESSION_ENDED_REPLY.** Mechanism `[inferred]`: after `cleared` is true, if `classifyAdhocInput` (IS:257-265) returns the digit-4 kind and the phone's switch is live (section 4), the router skips the ended reply and falls into the start branch; any other message gets the ended reply. `classifyAdhocInput` is a leading-digit rule (IS:258), so "4 bags" would also count; whether that is wanted is an unknown, listed in the Appendix.
 4. Detection of (i): `cleared` with `dayStale=false`. Detection of (ii): `cleared` with `dayStale=true`. Both use the same reply.
 5. Race outcomes inside the handler (C4): RPC outcome `expired` (S050:154-162) → the same reply; RPC outcome `idle` from a day-stale in-memory reset (S050:178-179) → clear as in step 2, then the same reply `[inferred]`. These two are race paths: CI-only "not verified locally" (CM §0).
 6. Morning, evening and hindrance rows that are day-stale keep today's behaviour: null → idle path, no ended reply (T-A27-7, V3:269).
@@ -197,6 +201,7 @@ The IST-midnight case (23:59 session answered at 00:01) is not practical by hand
 - `T-D1-3` **the next message goes to the normal idle menu:** after T-D1-1 and after T-D1-2, send `hello` → `buildIdleReply('unrecognized', header)` (IS:368-370); send `1` → hindrance start; a third send never repeats the ended reply. **Control:** with the clear step deleted, T-D1-2's second message repeats the ended reply (this is the defect above).
 - `T-D1-4` a photo and a PDF as the first message after expiry → ended reply, no `capture_*` row, no `media_ingest` job, no idle nudge claimed (`claim_media_nudge` not called, IS:668 path unreachable). (Amends V3 T-A27-9, V3:271, which expected the idle nudge.)
 - `T-D1-5` a message at 29:59 after the last turn is processed by the flow; a turn every 25 minutes never expires (V3 T-A27-5, V3:267).
+- `T-D1-6` (Rev 2, per Aravind; phone allowlisted so the switch is live): after expiry, a bare "4" → `MI_ASK_KIND`, a new session at step 1, and NO ended reply. **Control:** "1" in the same state → `MI_SESSION_ENDED_REPLY`.
 - Doc conflict to correct, not reopen: CED:284 (A29, 10 Oct) had a different rule — only a bare 1/2/3 on the same IST day got the closed-question reply "plus the menu", everything else the idle path. D1(d) of 26 Oct replaces it (any message, no menu, also the IST-day case). PR-F needs a dated correction (OQ12).
 
 ### 3g. Fixed clock — the fixture fix
@@ -231,23 +236,25 @@ Tests outside these four files do not import the fixtures `[read]`; whether othe
 
 **Everything else in C3-C5 is dormant while dark `[inferred]`:** no `'invoice'` row can be created except through `apply_material_inward_turn(p_start_flow=true)`, whose only caller is the new digit-4 branch (S050:164-170; the cron start RPCs do not create it). So the ended reply, S-3 guard, handler, ingest and PDF acceptance are unreachable. Prod held 0 `'invoice'` sessions at 20 Oct (PB:460) — re-check at deploy, read-only.
 
+Rev 2, 2026-10-26, per Aravind: **A bare 4 sent as the first message after the session ended starts the flow at once. It does not get MI_SESSION_ENDED_REPLY** (test T-D1-6, section 3f). Same switch applies: dark phones get the current idle reply.
+
 **PDFs stay as today while dark.** The webhook's media gate runs before routing knows the flow (RT:256-273). C4 makes it hand PDF/mixed image+PDF messages to the router only so the router can decide: inside an `'invoice'` session → handler; anywhere else → the same `UNSUPPORTED_MEDIA_REPLY` and the same Sentry event as today (RT:266-272). T-WH-17/21/25 (`test/webhook.test.ts:593,667,753` `[read]`) therefore stay green and unedited until C6.
 
 **Acceptance test `AT-DARK-1` (C3, and re-run in C4/C5):** with no allowlist set, an engineer with no session sends `4` through `routeInboundMessage` (model: `inbound-start.test.ts:489-495`). Assert: `reply === buildIdleReply('item_reserved', header)`; `resolvedFlow === null`; no `whatsapp_sessions` row; `apply_material_inward_turn` never called (spy on `rpc`). **Control:** with the phone allowlisted the same call starts the flow and the reply differs. `AT-DARK-2`: `adhoc-menu-spec-sync` (IS menu text) stays green while dark. `AT-DARK-3`: an allowlist entry for phone X does not affect phone Y.
 
-**Who turns it on and what must be true first.** Aravind, by merging C6 (one-line constant change, plus the menu line and test rewrites). Must be true first: PR-D merged and applied [read V3:241]; C1-C5 deployed and 051 on prod; D-30 script passed (3e); every `MI_*` slot has approved wording and the English text is in the repo; OQ1, OQ2, OQ5 answered; the cofounder confirmation of A10/A18 (open in V3:401, CED:324); not flipped inside 08:25-08:40 or 18:25-18:40 IST (section 6). Rollback is reverting C6 (instant); engineers mid-flow then hit the ended reply path at expiry `[inferred]`.
+**Who turns it on and what must be true first.** Aravind, by merging C6 (one-line constant change, plus the menu line and test rewrites). Must be true first: PR-D merged and applied [read V3:241]; C1-C5 deployed and 051 on prod; D-30 script passed (3e); ~~every `MI_*` slot has approved wording and the English text is in the repo;~~ Rev 2: all MI_* strings approved 2026-10-26; OQ1, OQ2, OQ5 answered; the cofounder confirmation of A10/A18 (open in V3:401, CED:324); not flipped inside 08:25-08:40 or 18:25-18:40 IST (section 6). Rollback is reverting C6 (instant); engineers mid-flow then hit the ended reply path at expiry `[inferred]`.
 
 ---
 
 ## 5. The three D1 checks
 
-**5a. The noun in `MI_MENU_LINE`.** It does not exist anywhere in the repo. `MI_MENU_LINE` appears only as a slot name (V3:223, PB:43); a repo-wide search for the string "material inward" outside V3/PB found one hit: CED:173-175, "The PM page is labelled 'Material Inward' … The label applies to the page only. This record, the tables and the code keep the word 'delivery'" `[read]`. Nearby engineer-facing text uses other nouns: the approved `MI_SESSION_ENDED_REPLY` says "delivery question" (brief); the D-30 drafts say "DC or invoice" (P49:96-97). So the engineer-menu noun is undecided, and "Reply 4 to start again" in the approved reply points at a menu line whose wording does not exist yet. Rule 3.12 (same word for the same thing) applies [read V3:221] → OQ2.
+**5a. The noun in `MI_MENU_LINE`.** It does not exist anywhere in the repo. `MI_MENU_LINE` appears only as a slot name (V3:223, PB:43); a repo-wide search for the string "material inward" outside V3/PB found one hit: CED:173-175, "The PM page is labelled 'Material Inward' … The label applies to the page only. This record, the tables and the code keep the word 'delivery'" `[read]`. Nearby engineer-facing text uses other nouns: the approved `MI_SESSION_ENDED_REPLY` says "delivery question" (brief); the D-30 drafts say "DC or invoice" (P49:96-97). So the engineer-menu noun is undecided, and "Reply 4 to start again" in the approved reply points at a menu line whose wording does not exist yet. Rule 3.12 (same word for the same thing) applies [read V3:221] → OQ2. Rev 2, 2026-10-26, per Aravind: the noun is "DC or invoice"; `MI_MENU_LINE` is approved (section 7, row 2) and `MI_SESSION_ENDED_REPLY` was re-approved with the same noun.
 
 **5b. Engineer replies `4` after a photo was already received — does the PM later see two deliveries?** Trace `[read S050]`:
 - Session at S3 (document, delivery, files exist): the router sends `4` to the flow, not the menu, because the session is active. S050:227-273: `v_norm='4'` is not 1/2/3, so `v_ack` is NULL; first time `mi_reask` goes 0→1 and the outcome is `reask`; a second non-ack text sets ack `unclear` with note `4`, closes the flow. No new document, no new delivery. **One delivery.**
 - Session at S1 or S2 (no file yet): `4` is not a kind/file → reask then close with nothing recorded (S050:195-211, 217-225). **Zero deliveries.**
 - Flow already closed (`complete`/`unclear`): `4` at idle starts a NEW flow (S050:164-170), which writes only the session row. A second delivery appears ONLY if that second flow reaches S2 with a file: S050:322-345 creates a new document + delivery for every S2. **No cross-document de-duplication exists** — the only uniques are on SID and `(document_id, file_no)` (S049:329-330) `[read]`; no content hash uniqueness is declared `[read S049:312-338]`. So a re-sent photo is a second delivery and the PM would see two.
-- After expiry or the IST-day reset: the first `4` is swallowed by D1(d) (OQ1); a second `4` starts a new flow. The first delivery stays `incomplete` ("not acknowledged"); if the engineer re-sends the same photo the PM sees two `[inferred]`.
+- After expiry or the IST-day reset: the first `4` ~~is swallowed by D1(d) (OQ1); a second `4` starts a new flow.~~ Rev 2, 2026-10-26, per Aravind: starts a new flow at once (T-D1-6). The first delivery stays `incomplete` ("not acknowledged"); if the engineer re-sends the same photo the PM sees two `[inferred]`.
 
 **5c. What happens to a received file when the IST-day reset wipes a session at step 2 or 3.**
 - **Step 2** (kind chosen, no file yet): no file exists. The session row is the only thing; clearing it loses `mi_kind` only. Nothing orphaned.
@@ -261,7 +268,7 @@ Tests outside these four files do not import the fixtures `[read]`; whether othe
 | Case | What the engineer experiences | Source |
 |---|---|---|
 | **N2** — a scheduled check-in starts while a delivery session is live | The check-in template arrives (08:30 / 18:30). The delivery session is discarded; the start returns outcome `start` with `capture_discarded=true`; the delivery stays and shows "not acknowledged". The engineer is told nothing about the delivery. The next message is treated as the check-in's first message. | S050:1142-1150, 1473-1482; PB:265-266 `[read]`. No TS reads `capture_discarded` (grep over `lib app`: no hits) `[read]`; optional logging is PB:266's "optional PR-C work" (OQ15). |
-| **N13** — the first step-1 message after a discard | A TEXT first message (a bare digit such as `1`, or a note typed after a `2`) is NOT taken as the answer: the RPC returns `reask` with `capture_deferred=true` and writes no attendance / `evening_output`; the flag clears; the second message is handled normally. Today the TS wrappers ignore `capture_deferred`, so the reply is just the plain step-1 question with no explanation (grep: no hits in `lib app`). C3 wires the key to the deferral explanation string (name `CHECKIN_RESET_EXPLAIN_REPLY` proposed; NEEDED, owed in PR-E per PB:305-306). A PHOTO first message: S-3 (3b). | S050:1169-1175, 1501-1507; test `test/capture-checkin-n2-n13.test.ts:160-176` `[read]` |
+| **N13** — the first step-1 message after a discard | A TEXT first message (a bare digit such as `1`, or a note typed after a `2`) is NOT taken as the answer: the RPC returns `reask` with `capture_deferred=true` and writes no attendance / `evening_output`; the flag clears; the second message is handled normally. Today the TS wrappers ignore `capture_deferred`, so the reply is just the plain step-1 question with no explanation (grep: no hits in `lib app`). C3 wires the key to the deferral explanation string ~~(name `CHECKIN_RESET_EXPLAIN_REPLY` proposed; NEEDED, owed in PR-E per PB:305-306)~~ (Rev 2, 2026-10-26, per Aravind: approved, section 7 row 20). A PHOTO first message: S-3 (3b). | S050:1169-1175, 1501-1507; test `test/capture-checkin-n2-n13.test.ts:160-176` `[read]` |
 | **Hindrance flow** | While a delivery session is live every message, including `1`, goes to the delivery handler (it is an ack `yes`), never to hindrance — by design (V3 R1, V3:404). After expiry the first message gets the ended reply; the NEXT `1` starts hindrance (T-D1-3). A hindrance session in progress is never touched by delivery code: a start over a live other-flow session returns `reask` (S050:174-176), and digit 4 only fires at idle. Any hindrance turn over a stale delivery row would refresh its expiry — hence expire-first (3c). | S050:164-176; PB:320 `[read]` |
 | **08:25–08:40 and 18:25–18:40 IST windows** | (1) An engineer mid-capture at 08:30/18:30 gets the N2 behaviour above — the most exposed moment (PB:308). (2) The 050 DOWN must not run in these windows because it holds EXCLUSIVE on `whatsapp_sessions` (PB:333). C2's migration locks only `capture_files` (a trigger/grant), not `whatsapp_sessions` `[inferred]`, so the lock analysis does not require the window; I keep the same window for the prod apply and for flipping C6 so there is one rule, not two (OQ13). (3) The trigger crons are 08:30 and 18:30 IST (`vercel.json`, PB:288 `[read]`). | PB:288, 308, 333 `[read]` |
 | Scheduled sweeps | The 15:00 morning-cutoff sweep, the outbound coverage sweep and the escalation sweep run every tick (TK:104-152). Whether any of them touches an `'invoice'` row was NOT read; `reachability.ts:41` reads `whatsapp_sessions.updated_at` only for reachability `[read]`. Listed as an unknown. | TK:104-152 `[read]` |
@@ -270,29 +277,60 @@ Tests outside these four files do not import the fixtures `[read]`; whether othe
 
 ## 7. Strings
 
-No new wording is written here. A name marked "proposed" is only a constant name.
+Rev 2, 2026-10-26, per Aravind: all 21 rows below are approved. The Status column of rev 1 is struck and kept at the end of this section. `<br>` marks a line break inside the message (the brief's `\n`). Text in parentheses after a message is a composition note, not part of the message.
 
-| Constant | Purpose | Status |
-|---|---|---|
-| `MI_SESSION_ENDED_REPLY` | D1(d) one-shot reply | **APPROVED** 2026-10-26 (Aravind, in the PR-C brief; not yet in the repo). English: "That delivery question has ended. Your answer was not recorded. Reply 4 to start again." Comment: "Tamil owed". |
-| `MI_MENU_LINE` | idle menu line for digit 4 | NEEDED — no wording anywhere (5a) |
-| `MI_ASK_KIND` | S1 | NEEDED (V3:223; PB:89) |
-| `MI_ASK_FILE_DC`, `MI_ASK_FILE_INVOICE` | S2 prompts | NEEDED. A draft exists for the menu-4 prompt: "Send one DC or invoice. A PDF, or photos of all its pages together." — P49:94-96, "draft, approved in principle by Aravind 11 Oct; final wording checked in the 1a strings redraft; Tamil owed". NOT approved as a final constant. |
-| `MI_FILE_RECEIVED` | reply after a file; "received", never "saved" | NEEDED (V3:223, R1 at V3:259) |
-| `MI_ACK_QUESTION_DC`, `MI_ACK_QUESTION_INVOICE` | A18 numbered question; the invoice one must not ask whether goods arrived | NEEDED (V3:223, V3:355; CED:287 A32 "wording owed") |
-| `MI_ASK_NOTE_NO`, `MI_ASK_NOTE_PARTIAL` | note prompts after `2`/`3` | NEEDED |
-| `MI_ACK_REASK`, `MI_NOT_UNDERSTOOD_CLOSE` | one re-ask with one example, then close | NEEDED |
-| `MI_DONE` | closing line | NEEDED. A draft exists: "Saved. To send another DC or invoice, choose 4 from the menu." — P49:97, same draft status. Flag: it contains "Saved." while V3:259 (T-R1-1) says every reply after a file says "received", never "saved" — OQ14. |
-| `MI_KIND_REASK`, `MI_FILE_REASK`, `MI_NOTHING_RECORDED_CLOSE` | S1/S2 garbage | NEEDED (V3:223; marked `[GUESS]` in V3:91) |
-| `MI_UNSUPPORTED_FILE_REPLY` | file type not accepted inside the flow (names PDF as accepted) | NEEDED (V3:223) |
-| `MI_IDLE_DOCUMENT_NUDGE` | PDF at idle once digit 4 is live | NEEDED (V3:223). Until C6, PDF at idle keeps the approved `UNSUPPORTED_MEDIA_REPLY`. |
-| `MI_CAPTURE_FAILED_REPLY` (proposed name) | S-F: capture failed, please resend | NEEDED — no wording; new in this plan |
-| `MI_CHECKIN_PHOTO_NOT_SAVED_REPLY` (proposed name) | S-3: a photo arrived while the guard is set | NEEDED — no wording; new in this plan |
-| `CHECKIN_RESET_EXPLAIN_REPLY` (proposed name) | N13 deferral: explanation + step-1 question | NEEDED — "STRING OWED — Aravind to supply", PB:305-306 (PR-E) |
-| Progress line ("Question N of M") for these prompts | Rule 3.6 vs a flow of 3 or 4 steps | UNDECIDED — V3:49 (X10), V3:392 (D4); affects every prompt above |
-| Existing, approved, reused unchanged | `UNSUPPORTED_MEDIA_REPLY` (MR:56, approved 2026-10-05); `MEDIA_NUDGE_REPLY` and `MEDIA_NUDGE_PROGRESS_LINE` (MR:73,80, stage 3); `PHOTO_SAVE_FAILED_REPLY` (IS:32, approved 2026-09-13); `FLOW_RACE_REPLY` (DP:44-45); `HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY` (IS:70-71, approved 2026-09-14) | APPROVED, existing. Not reused for S-F/S-3: their wording says "photo", "check-in" or hindrance-specific content `[inferred]`. |
+| # | Constant | Purpose | Status and English (Rev 2) |
+|---|---|---|---|
+| 1 | `MI_SESSION_ENDED_REPLY` | D1(d) one-shot reply | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** That DC or invoice question has ended. Your answer was not recorded. Reply 4 to start again. |
+| 2 | `MI_MENU_LINE` | idle menu line for digit 4 | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** You can send a DC or invoice — reply 4. |
+| 3 | `MI_ASK_KIND` | S1 kind question | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Is it a DC or an invoice?<br>Reply 1 for DC<br>Reply 2 for invoice |
+| 4 | `MI_ASK_FILE_DC` | S2 prompt, DC | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Send one DC. A PDF, or photos of all its pages together. |
+| 5 | `MI_ASK_FILE_INVOICE` | S2 prompt, invoice | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Send one invoice. A PDF, or photos of all its pages together. |
+| 6 | `MI_FILE_RECEIVED` | reply after a file | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** ✅ 1 file received.  /  ✅ {n} files received. |
+| 7 | `MI_ACK_QUESTION_DC` | S3 ack question, DC | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Did the material on this DC arrive?<br>Reply 1 for all arrived<br>Reply 2 for not arrived<br>Reply 3 for part arrived |
+| 8 | `MI_ACK_QUESTION_INVOICE` | S3 ack question, invoice | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Does this invoice match the material received at site?<br>Reply 1 for matches<br>Reply 2 for does not match<br>Reply 3 for partly matches |
+| 9 | `MI_ASK_NOTE_NO` | note prompt after 2 | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** What is wrong? Describe it in your own words. |
+| 10 | `MI_ASK_NOTE_PARTIAL` | note prompt after 3 | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** What is missing or different? Describe it in your own words. |
+| 11 | `MI_ACK_REASK` | one re-ask at S3 | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Sorry, I didn't catch that.   (followed by the same ack question) |
+| 12 | `MI_NOT_UNDERSTOOD_CLOSE` | close after a second unclear ack | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** ✅ Your reply is recorded as a note. Your Project Manager will see it. |
+| 13 | `MI_DONE` | closing line | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** ✅ Done. Your Project Manager will see it. To send another DC or invoice, reply 4. |
+| 14 | `MI_KIND_REASK` | one re-ask at S1 | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Sorry, I didn't catch that.   (followed by #3) |
+| 15 | `MI_FILE_REASK` | one re-ask at S2 | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Sorry, I didn't get a file. Send a PDF, or photos of all its pages. |
+| 16 | `MI_NOTHING_RECORDED_CLOSE` | close at S1/S2 after a second miss | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Nothing was recorded. To send a DC or invoice, reply 4. |
+| 17 | `MI_UNSUPPORTED_FILE_REPLY` | file type not accepted inside the flow | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** This file type isn't supported. Nothing was recorded. Send a PDF or a photo instead. |
+| 18 | `MI_IDLE_DOCUMENT_NUDGE` | PDF at idle once digit 4 is live | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** File not saved. To send a DC or invoice, reply 4 first. |
+| 19 | `MI_CAPTURE_FAILED_REPLY` | S-F: capture failed | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Sorry, I couldn't receive that file. Please send it again. |
+| 20 | `CHECKIN_RESET_EXPLAIN_REPLY (PR-E)` | N13 deferral explanation | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Your DC or invoice was stopped for the check-in. Files already received are kept.   (followed by the check-in question) |
+| 21 | `MI_CHECKIN_PHOTO_NOT_SAVED_REPLY` | S-3: photo while the guard is set | **APPROVED 2026-10-26 (Aravind). Code comment: Tamil owed.** Photo not saved.   (followed by #20, then the check-in question) |
 
-Every new constant carries "Tamil owed, NOT approved" (V3:219). PM-page strings are PR-D.
+**Composition rules (Rev 2).** #6 and #7/#8 go in one message. Re-asks (#11, #14) repeat the question once, then the flow closes with #12 or #16. #13 and #20 deliberately do not say "resend": a resend after a received file creates a duplicate delivery for the PM. Row 1 supersedes the "That delivery question has ended…" text approved earlier on 2026-10-26; the noun changed to match `MI_MENU_LINE` (Rule 3.12).
+
+**Test `T-STR-1` (C4, Rev 2):** every approved constant equals the text in the table byte for byte (`<br>` = one LF; the `✅` and the em dash in row 2 are the exact characters). **Control:** a one-character change fails.
+
+| Other rows | Status |
+|---|---|
+| Progress line ("Question N of M") for these prompts | ~~UNDECIDED — V3:49 (X10), V3:392 (D4); affects every prompt above~~ Rev 2: no 'Question N of M' line in this flow. No live prompt uses one (D4). |
+| Existing, approved, reused unchanged | `UNSUPPORTED_MEDIA_REPLY` (MR:56, approved 2026-10-05); `MEDIA_NUDGE_REPLY` and `MEDIA_NUDGE_PROGRESS_LINE` (MR:73,80, stage 3); `PHOTO_SAVE_FAILED_REPLY` (IS:32, approved 2026-09-13); `FLOW_RACE_REPLY` (DP:44-45); `HINDRANCE_PHOTO_NOT_SAVED_YET_REPLY` (IS:70-71, approved 2026-09-14). APPROVED, existing. |
+
+Every new constant carries "Tamil owed" (V3:219). PM-page strings are PR-D.
+
+**Rev-1 table, superseded (struck, kept verbatim; cell separators shown as ¦; the progress-line and reused rows are carried above):**
+
+- ~~`MI_SESSION_ENDED_REPLY` ¦ D1(d) one-shot reply ¦ **APPROVED** 2026-10-26 (Aravind, in the PR-C brief; not yet in the repo). English: "That delivery question has ended. Your answer was not recorded. Reply 4 to start again." Comment: "Tamil owed".~~
+- ~~`MI_MENU_LINE` ¦ idle menu line for digit 4 ¦ NEEDED — no wording anywhere (5a)~~
+- ~~`MI_ASK_KIND` ¦ S1 ¦ NEEDED (V3:223; PB:89)~~
+- ~~`MI_ASK_FILE_DC`, `MI_ASK_FILE_INVOICE` ¦ S2 prompts ¦ NEEDED. A draft exists for the menu-4 prompt: "Send one DC or invoice. A PDF, or photos of all its pages together." — P49:94-96, "draft, approved in principle by Aravind 11 Oct; final wording checked in the 1a strings redraft; Tamil owed". NOT approved as a final constant.~~
+- ~~`MI_FILE_RECEIVED` ¦ reply after a file; "received", never "saved" ¦ NEEDED (V3:223, R1 at V3:259)~~
+- ~~`MI_ACK_QUESTION_DC`, `MI_ACK_QUESTION_INVOICE` ¦ A18 numbered question; the invoice one must not ask whether goods arrived ¦ NEEDED (V3:223, V3:355; CED:287 A32 "wording owed")~~
+- ~~`MI_ASK_NOTE_NO`, `MI_ASK_NOTE_PARTIAL` ¦ note prompts after `2`/`3` ¦ NEEDED~~
+- ~~`MI_ACK_REASK`, `MI_NOT_UNDERSTOOD_CLOSE` ¦ one re-ask with one example, then close ¦ NEEDED~~
+- ~~`MI_DONE` ¦ closing line ¦ NEEDED. A draft exists: "Saved. To send another DC or invoice, choose 4 from the menu." — P49:97, same draft status. Flag: it contains "Saved." while V3:259 (T-R1-1) says every reply after a file says "received", never "saved" — OQ14.~~
+- ~~`MI_KIND_REASK`, `MI_FILE_REASK`, `MI_NOTHING_RECORDED_CLOSE` ¦ S1/S2 garbage ¦ NEEDED (V3:223; marked `[GUESS]` in V3:91)~~
+- ~~`MI_UNSUPPORTED_FILE_REPLY` ¦ file type not accepted inside the flow (names PDF as accepted) ¦ NEEDED (V3:223)~~
+- ~~`MI_IDLE_DOCUMENT_NUDGE` ¦ PDF at idle once digit 4 is live ¦ NEEDED (V3:223). Until C6, PDF at idle keeps the approved `UNSUPPORTED_MEDIA_REPLY`.~~
+- ~~`MI_CAPTURE_FAILED_REPLY` (proposed name) ¦ S-F: capture failed, please resend ¦ NEEDED — no wording; new in this plan~~
+- ~~`MI_CHECKIN_PHOTO_NOT_SAVED_REPLY` (proposed name) ¦ S-3: a photo arrived while the guard is set ¦ NEEDED — no wording; new in this plan~~
+- ~~`CHECKIN_RESET_EXPLAIN_REPLY` (proposed name) ¦ N13 deferral: explanation + step-1 question ¦ NEEDED — "STRING OWED — Aravind to supply", PB:305-306 (PR-E)~~
 
 ---
 
@@ -305,7 +343,7 @@ Gate for every PR: CI "Test (real test-db)" green with the passing run's `headSh
 | **C1** | `test/helpers/capture-fixtures.ts`; new `test/unit/capture-fixtures-clock.test.ts` | `T-CLK-1` (crosses 18:30Z; today's fixture returns `idle`); `T-CLK-2` (`noonIst()` not memoised). No existing test should go red `[inferred]` — if any does, it is a mixed-clock test (3g). | `T-CLK-1` itself against the old fixture |
 | **C2** | `docs/reviews/051-*` (migration, review package, two DOWN files), new `test/capture-files-immutability.test.ts` (T-D8-1…11), reservations JSON, `types/database.ts` regen | All `T-D8-*` red before apply (no grant → 42501; no trigger). No existing test asserts `capture_files` UPDATE is denied (grep over `test`: no hits) `[read]`, so none should go red. | T-D8-1 (grant works), T-D8-2 (owner bypass reaches the trigger), anon-key call. Tier FULL steps: external review → test-db apply → DOWN rehearsal with captured output → CI green with pinned URL → merge (regular merge commit; the branch continues, CM §0) → PITR substituted → prod apply (below) → verify by observation → ledger → apply record → file moves into `supabase/migrations/` only in the apply commit (CM §6). |
 | **C3** | `lib/whatsapp/session.ts`, `inbound-start.ts`, `dispatch.ts`, new `capture-switch.ts`; `test/inbound-start.test.ts` (+), `test/dispatch.test.ts` (+), new `test/capture-router.test.ts`; fix mock in `test/unit/sentry-call-sites-no-phone.test.ts:26` | `T-C3-*`, `T-D1-*`, `T-S3-*`, `AT-DARK-*` (new behaviour). `sentry-call-sites-no-phone` goes red until its mock is renamed `[read]`. | T-C3-1 reversed order; T-D1-3 with the clear removed; T-S3-4; AT-DARK-1 allowlisted |
-| **C4** | `lib/whatsapp/flows/material-inward.ts` (new), `inbound-start.ts`, `app/api/whatsapp/webhook/route.ts`, `media-reply.ts` (second classifier, `classifyMediaReply` unchanged so `test/unit/media-reply.test.ts:46` stays green `[read]`); new `test/capture-handler.test.ts` (T-FLOW-1..4, T-R1-1, T-A18-1 reply halves, V3:255-260; T-SF-1..3) | New tests red. `test/webhook.test.ts` T-WH-17/21/25/18-24 must stay GREEN and unedited (dark). | T-SF-1 without the try/catch; V3 T-PDF-5 control "a PDF inside an active session is accepted" (V3:262) |
+| **C4** | `lib/whatsapp/flows/material-inward.ts` (new), `inbound-start.ts`, `app/api/whatsapp/webhook/route.ts`, `media-reply.ts` (second classifier, `classifyMediaReply` unchanged so `test/unit/media-reply.test.ts:46` stays green `[read]`); new `test/capture-handler.test.ts` (T-FLOW-1..4, T-R1-1, T-A18-1 reply halves, V3:255-260; T-SF-1..3; Rev 2: T-STR-1) | New tests red. `test/webhook.test.ts` T-WH-17/21/25/18-24 must stay GREEN and unedited (dark). | T-STR-1 with a one-character change; T-SF-1 without the try/catch; V3 T-PDF-5 control "a PDF inside an active session is accepted" (V3:262) |
 | **C5** | new `lib/media/capture-ingest.ts`, `app/api/jobs/tick/route.ts` (dispatch case + dead-letter, today an unknown type throws at TK:84-85 `[read]`), tests `test/capture-ingest.test.ts`: T-PDF-1..4, T-SIZE-1, T-R5-1 (V3:261) | New tests red; also a test that a `capture_ingest` job with no handler fails (documents the current state) | Encrypted PDF stored `not_previewable`; a file already `stored` is skipped (not rewritten — the C2 trigger would refuse it); a job-time rejection sends the engineer nothing (R5/A11, V3:185) |
 | **C6** | `capture-switch.ts`, `inbound-start.ts` (menu), `test/webhook.test.ts` T-WH-17/21/25 rewritten to the idle nudge (V3:262), `docs/plans/adhoc-menu-spec.md` reference copy, `test/unit/adhoc-menu-spec-sync.test.ts` | `adhoc-menu-spec-sync` goes RED the moment `MI_MENU_LINE` joins the menu until the spec doc is edited (IS:337-347 says the spec follows the code) `[read]`; the rewritten T-WH tests are red until the nudge is live | T-WH-18/19/20/22/23/24 stay unedited and green (V3:262) |
 
@@ -324,21 +362,39 @@ Gate for every PR: CI "Test (real test-db)" green with the passing run's `headSh
 ## 9. Open questions for Aravind
 
 1. A bare `4` sent as the FIRST message after the session ended (expiry or midnight) is swallowed by D1(d) and gets `MI_SESSION_ENDED_REPLY`, so the engineer sends `4` again — keep that, or let a bare `4` start the flow right away?
+   Rev 2 answer (Aravind, 2026-10-26): A bare 4 starts the flow at once (T-D1-6).
 2. What noun should `MI_MENU_LINE` use for this flow (the approved reply says "delivery"; the PM page says "Material Inward")?
+   Rev 2 answer (Aravind, 2026-10-26): "DC or invoice". MI_SESSION_ENDED_REPLY re-approved with that noun.
 3. Digit-4 switch: code constant only, or constant plus a strict phone allowlist (env var, fails closed) so your own phone can run the D-30 test on prod before C6?
+   Rev 2 answer (Aravind, 2026-10-26): Constant plus a strict, fail-closed phone allowlist env var.
 4. S-F: accept S-F-1 (record in Sentry, ask the engineer to resend, with the crash-window residual risk), or require S-F-3 (durable pre-record job)?
+   Rev 2 answer (Aravind, 2026-10-26): S-F-1 now; record the crash-window residual risk; revisit S-F-3 before launch.
 5. When further photos arrive at step 3 or 4, does the bot reply to every file, once per message, or only to the first?
+   Rev 2 answer (Aravind, 2026-10-26): Decide after the D-30 test. Default: one reply per inbound message.
 6. When a photo arrives while the check-in guard is set (S-3), is "not saved, here is the check-in question" the right behaviour, and will you supply that string?
+   Rev 2 answer (Aravind, 2026-10-26): Accepted. Strings #20, #21.
 7. For a midnight-crossing session that is not yet expired, may the router clear it by calling `expire_stale_material_inward` with `p_now` = the row's `expires_at` (no SQL change), or do you prefer a direct `service_role` UPDATE, or a small SQL change?
+   Rev 2 answer (Aravind, 2026-10-26): Accepted: p_now = max(now, expires_at), no SQL change.
 8. `current_flow='safety'` is never written; may the exhaustive mapping send it to the idle path with a Sentry warning?
+   Rev 2 answer (Aravind, 2026-10-26): Accepted.
 9. May the `capture` kind in `photo-access.ts` and the photo route move from PR-C to PR-D, where its only consumer is?
+   Rev 2 answer (Aravind, 2026-10-26): Accepted: moves to PR-D.
 10. Terminal states for `capture_files`: `stored` and `rejected` only, with `failed` allowed to move to `stored`/`rejected` on a replay — correct?
+   Rev 2 answer (Aravind, 2026-10-26): Accepted.
 11. A photo or PDF that is the first message after the session ended is not stored; should that raise a counts-only Sentry event so a lost delivery document is visible to you?
+   Rev 2 answer (Aravind, 2026-10-26): Accepted: counts-only Sentry event.
 12. May PR-F add a dated correction to A29 (CED:284) saying D1(d) replaces it (any message, no menu, IST-day case included)?
+   Rev 2 answer (Aravind, 2026-10-26): Accepted.
 13. Is the 08:25-08:40 / 18:25-18:40 IST quiet window right for the 051 prod apply and for flipping C6, though the 051 lock analysis does not require it?
+   Rev 2 answer (Aravind, 2026-10-26): Accepted: one quiet-window rule.
 14. The D-30 draft "Saved. To send another DC or invoice, choose 4 from the menu." (P49:97) uses "Saved" while T-R1-1 bans it after a file — is it exempt because it follows the ack, or must it change?
+   Rev 2 answer (Aravind, 2026-10-26): Replaced by approved MI_DONE (#13), no "Saved".
 15. Log `capture_discarded` from the N2 branch in `trigger.ts` (PB:266, optional), or drop it?
+   Rev 2 answer (Aravind, 2026-10-26): Dropped for now.
 16. Do you accept the six-PR split (C1 LIGHT; C2-C6 FULL), or want C3 and C4 merged?
+   Rev 2 answer (Aravind, 2026-10-26): Six PRs accepted, retiered (section 2).
+
+D4 (Rule 3.6): no progress line in this flow. (Rev 2, 2026-10-26, per Aravind.)
 
 ---
 
@@ -348,4 +404,4 @@ Gate for every PR: CI "Test (real test-db)" green with the passing run's `headSh
 
 **Decisions that rest on `[inferred]` (they decide the design):** (1) the day-stale clear via `expire_stale_material_inward(p_now = expires_at)` (3f); (2) migration number 051 and reuse of QE009/QE011/QE014 for the trigger (3d); (3) `received_at` = webhook arrival because `processed_messages.created_at` is set at insert (3a); (4) dormancy of C3-C5 while dark depends on `apply_material_inward_turn(p_start_flow=true)` having only the digit-4 caller (4); (5) `service_role` DELETE on `processed_messages` for S-F-2 (3a); (6) the C1 cause (IST-day reset) is attributed by timing and mechanism match, not traced (3g).
 
-**Unknowns (not checkable offline):** prod/test-db live grants on `whatsapp_sessions` and `processed_messages`; whether `btree_gist`/anything else is installed (irrelevant here); the v2 PDF rules text (not in repo; V3:203 relies on it); whether the sweeps in TK:104-152 touch `'invoice'` rows; real Twilio inbound size limit (V3:423); how WhatsApp delivers multi-photo selections (the D-30 test's purpose); whether CI has an owner connection for the bypass tests (V3:420); PostgREST's pass-through of `QE0nn` codes to `error.code` (PB:503); whether other suites cross IST midnight (3g).
+**Unknowns (not checkable offline):** prod/test-db live grants on `whatsapp_sessions` and `processed_messages`; whether `btree_gist`/anything else is installed (irrelevant here); the v2 PDF rules text (not in repo; V3:203 relies on it); whether the sweeps in TK:104-152 touch `'invoice'` rows; real Twilio inbound size limit (V3:423); how WhatsApp delivers multi-photo selections (the D-30 test's purpose); whether CI has an owner connection for the bypass tests (V3:420); PostgREST's pass-through of `QE0nn` codes to `error.code` (PB:503); whether other suites cross IST midnight (3g). Rev 2, 2026-10-26: whether a message such as "4 bags" (leading digit 4 with text) should count as a bare 4 for the post-expiry start (3f step 3; `classifyAdhocInput` accepts it, IS:258).
