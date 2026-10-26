@@ -1,0 +1,31 @@
+== 051 scaffold dry-run: G1-apply ==
+generated: 2026-10-26T18:38:09Z
+HEAD: 44cac2821e6068a98ce008d9b1a19c2a537d2f17
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP:        70ef913cb3a111246ed73f3946dfebedfd690343aaaa92ae2e0edb2551c349d2
+sha256 051 DOWN test: 0a587f06bb0f81ba7bf75a30a79859febaccf1658814490b64c3ce1d87758101
+PGHOST (must be a local socket dir): /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+baseline fingerprint (from G0, before 051): 0f74d310805711f3f88aa5714cda68a1
+baseline comments hash:                     80b77da945cc55890da3acee8182eca2
+
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+[exit 0]
+(first apply: psql exit above; the in-file post-condition block ran inside it and raised nothing)
+fingerprint after the first apply: c76efac51cf912a0bdb6b1919fce59ab
+comments hash after the first apply: 80b77da945cc55890da3acee8182eca2
+$ scaffold stand-in for the ledger step: INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('051', 'capture_files_immutability')
+[exit 0]
+
+== second apply: must fail cleanly (object exists) and change nothing ==
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql:127: ERROR:  function "trg_capture_files_before_update" already exists with same argument types
+[exit 3]
+fingerprint after the second apply: c76efac51cf912a0bdb6b1919fce59ab
+PASS: second apply changed nothing (fingerprint equal)
+trigger count after the second apply: 1
+function count after the second apply: 1
+transaction left open? 0 idle-in-transaction sessions

@@ -1,0 +1,33 @@
+== 051 scaffold dry-run: G1b-postcondition-negative ==
+generated: 2026-10-26T18:38:59Z
+HEAD: 44cac2821e6068a98ce008d9b1a19c2a537d2f17
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP: 70ef913cb3a111246ed73f3946dfebedfd690343aaaa92ae2e0edb2551c349d2
+
+Two wrong starting states, each on its own clone of the scaffold. 051 must ABORT WHOLE (nothing from sections 1-4 survives).
+
+-- case A: starting state made wrong with: GRANT DELETE ON public.capture_files TO service_role
+[setup exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2_pc_A -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql:267: ERROR:  POSTCONDITION_051: svc_delete
+CONTEXT:  PL/pgSQL function inline_code_block line 104 at RAISE
+[exit 3]
+after the aborted apply: functions named trg_capture_files_before_update = 0; triggers on capture_files = 0; service_role column-UPDATE count = 0 (granted seven NOT present)
+
+-- case B: starting state made wrong with: GRANT UPDATE (file_no) ON public.capture_files TO service_role
+[setup exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2_pc_B -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql:267: ERROR:  POSTCONDITION_051: svc_col_update:file_no
+CONTEXT:  PL/pgSQL function inline_code_block line 104 at RAISE
+[exit 3]
+after the aborted apply: functions named trg_capture_files_before_update = 0; triggers on capture_files = 0; service_role column-UPDATE count = 0 (granted seven NOT present)
+
+-- case C: starting state made wrong with: GRANT UPDATE ON public.capture_files TO authenticated
+[setup exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2_pc_C -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql:267: ERROR:  POSTCONDITION_051: auth_col_update:id auth_col_update:created_at auth_col_update:tenant_id auth_col_update:project_id auth_col_update:document_id auth_col_update:file_no auth_col_update:source_message_sid auth_col_update:media_index auth_col_update:claimed_content_type auth_col_update:content_type auth_col_update:byte_size auth_col_update:sha256 auth_col_update:storage_path auth_col_update:ingest_status auth_col_update:reject_reason auth_col_update:preview_state tbl_update:authenticated
+CONTEXT:  PL/pgSQL function inline_code_block line 104 at RAISE
+[exit 3]
+after the aborted apply: functions named trg_capture_files_before_update = 0; triggers on capture_files = 0; service_role column-UPDATE count = 0 (granted seven NOT present)

@@ -1,0 +1,37 @@
+== 051 static test run: T-D8-11 (no database) ==
+generated: 2026-10-26T18:39:40Z
+HEAD: 44cac2821e6068a98ce008d9b1a19c2a537d2f17
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 test file: 56794979358d740d0a59f59e5cfa6ed59983f4a5af76a69e4706f06f5d62a570
+SUPABASE_TEST_* variables in scope: 0
+$ vitest run --config <throwaway, no globalSetup> -t T-D8-11 --reporter=verbose
+ RUN  v3.2.7 /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-1 service_role can UPDATE the seven granted columns of a pending row [control: the row reads back stored; RED before 051: 42501, no grant]
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-2 grant layer: file_no, claimed_content_type, tenant_id and id are refused with 42501 [control: a granted column on the same row succeeds]
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-2b trigger layer with the grant bypassed: the same UPDATEs reach the trigger and raise QE009 -- SKIPPED: needs owner connection; evidence in docs/reviews/051-sql-evidence/
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-3 the reviewer's stub case: on a stored row, rewriting sha256, storage_path, byte_size or content_type raises QE011 [control: the same sha256 UPDATE on a pending row succeeds]
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-4 rejected is terminal: changing reject_reason or moving to stored raises QE011 [control: pending -> rejected succeeded when the row was made]
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-5 no move back to pending: stored -> pending and failed -> pending raise QE011; failed -> stored and failed -> rejected succeed [control: pending -> failed succeeded]
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-6 an UPDATE that changes nothing on a stored row is allowed (a retried job is a no-op) [control: T-D8-3 shows a real change is refused]
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-7 anon and an authenticated PM are refused UPDATE with 42501, including a real anon-key call [control: service_role updates the same row]
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-8 service_role DELETE on capture_files is refused with 42501 (TRUNCATE is probed on the scaffold: PostgREST cannot issue it) [control: the row still reads back]
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-9 the trigger function is not callable over PostgREST by service_role, anon or an authenticated PM [control: an exposed test helper is callable]
+ ↓ test/capture-files-immutability.test.ts > 051 capture_files immutability (test-db) > T-D8-10 DOWN rehearsal: after the DOWN, service_role UPDATE is 42501, the trigger and function are gone, ACLs match the pre-rehearsal values -- SKIPPED: needs owner connection; evidence in docs/reviews/051-sql-evidence/
+ ✓ test/capture-files-immutability.test.ts > T-D8-11 overload rule (static) > exactly one definition of apply_material_inward_turn across supabase/migrations/ and docs/reviews/*.sql 3ms
+ ✓ test/capture-files-immutability.test.ts > T-D8-11 overload rule (static) > exactly one definition of expire_stale_material_inward across supabase/migrations/ and docs/reviews/*.sql 3ms
+ ✓ test/capture-files-immutability.test.ts > T-D8-11 overload rule (static) > exactly one definition of pm_set_delivery_details across supabase/migrations/ and docs/reviews/*.sql 3ms
+ ✓ test/capture-files-immutability.test.ts > T-D8-11 overload rule (static) > exactly one definition of pm_approve_delivery across supabase/migrations/ and docs/reviews/*.sql 2ms
+ ✓ test/capture-files-immutability.test.ts > T-D8-11 overload rule (static) > exactly one definition of pm_reject_delivery across supabase/migrations/ and docs/reviews/*.sql 2ms
+ ✓ test/capture-files-immutability.test.ts > T-D8-11 overload rule (static) > exactly one definition of pm_link_invoice across supabase/migrations/ and docs/reviews/*.sql 2ms
+ ✓ test/capture-files-immutability.test.ts > T-D8-11 overload rule (static) > exactly one definition of pm_unlink_invoice across supabase/migrations/ and docs/reviews/*.sql 2ms
+ ✓ test/capture-files-immutability.test.ts > T-D8-11 overload rule (static) > 051 adds exactly one function, and its name is not one of the seven 050 names 3ms
+ ✓ test/capture-files-immutability.test.ts > T-D8-11 overload rule (static) > control: a planted second definition is counted (so a duplicate would fail the tests above) 4ms
+ Test Files  1 passed (1)
+      Tests  9 passed | 11 skipped (20)
+   Start at  00:09:41
+   Duration  276ms (transform 31ms, setup 0ms, collect 53ms, tests 25ms, environment 0ms, prepare 34ms)
+[vitest exit 0]
+$ npx tsc --noEmit
+[tsc exit 0]
