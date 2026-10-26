@@ -54,3 +54,5 @@ Verified by query (17:37:53Z) [O]: `050 material_inward_functions`, **31 stateme
 ## 6. Observed vs reported
 
 Observed: everything marked [O]. Reported: only Aravind's ledger-repair runs (the failed first attempt and the successful second). Not done / not observed: PITR state; DOWN on prod; ~~the CI run on the merge commit `349d360`~~ (struck 2026-10-25, block 22). Observed: tree of `349d360` = tree of `f11451b` = `e4e5c5eaef4e71d887d0decf6f5792f2f46fdfab`, so CI run 39380098060 certifies the merged tree.
+
+2026-10-26: the raw log quoted above is committed at docs/reviews/050-prod-apply/block-21-raw-log.txt (sha256 b8039298…0addf4). Close-out: docs/reviews/050-closeout-record.md.
