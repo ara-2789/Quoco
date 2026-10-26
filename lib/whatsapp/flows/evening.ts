@@ -7,6 +7,7 @@ import { parseQuantities } from './parsers/quantities'
 import { parseLabourCount, isLabourAnswered } from './parsers/labour'
 import { parseIdleHoursByTrade, isIdleHoursAnswered } from './parsers/idle-hours'
 import { parseEquipmentHours, isEquipmentHoursAnswered } from './parsers/equipment-hours'
+import { CHECKIN_RESET_EXPLAIN_REPLY } from './material-inward-strings'
 
 // Evening check-in flow — RESTRUCTURED (migration 035, 2026-09-02). FIVE
 // linear questions, one remaining conditional edge (the pre-existing
@@ -212,7 +213,18 @@ export function buildEveningReply(
   outcome: EveningOutcome,
   currentStep: number,
   equipmentEcho?: readonly EquipmentEchoItem[],
+  /**
+   * N13 (migration 050): the RPC deferred the first step-1 message after a
+   * delivery session was discarded for this check-in. Only meaningful on
+   * 'reask': the reply becomes the approved explanation, "\n", then the
+   * step's question (docs/plans/pr-c-plan.md section 7). Absent/false =
+   * unchanged behaviour.
+   */
+  captureDeferred?: boolean,
 ): string {
+  if (captureDeferred === true && outcome === 'reask') {
+    return `${CHECKIN_RESET_EXPLAIN_REPLY}\n${EVENING_QUESTIONS[currentStep] ?? ''}`
+  }
   switch (outcome) {
     case 'start':
       return EVENING_QUESTIONS[1]
@@ -258,6 +270,8 @@ export interface EveningTurnResult {
    * branch fired. */
   hindranceDiscarded: boolean | null
   hindranceHadDescription: boolean | null
+  /** N13 (migration 050): true only when this turn's first step-1 message was deferred after a delivery-session discard. */
+  captureDeferred: boolean
 }
 
 // Fetches the morning equipment list directly, bypassing the RPC's
@@ -374,6 +388,7 @@ export async function applyEveningFlowTurn(params: {
     equipment_echo: EquipmentEchoItem[] | null
     hindrance_discarded: boolean | null
     hindrance_had_description: boolean | null
+    capture_deferred?: boolean | null
   }
 
   const equipmentEcho =
@@ -393,5 +408,6 @@ export async function applyEveningFlowTurn(params: {
     equipmentEcho,
     hindranceDiscarded: result.hindrance_discarded,
     hindranceHadDescription: result.hindrance_had_description,
+    captureDeferred: result.capture_deferred === true,
   }
 }

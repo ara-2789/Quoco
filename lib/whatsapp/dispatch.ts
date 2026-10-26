@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { readCurrentFlow } from './session'
+import { readCurrentFlow, mapSessionFlowToCheckinFlow } from './session'
 import { applyMorningFlowTurn, buildMorningReply } from './flows/morning'
 import type { MorningOutcome } from './flows/morning'
 import { applyEveningFlowTurn, buildEveningReply } from './flows/evening'
@@ -67,12 +67,15 @@ export type Attempt =
       outcome: MorningOutcome
       currentStep: number
       attendance: 'present' | 'absent' | 'site_holiday' | null
+      /** N13: the RPC deferred this turn's first step-1 message (see buildMorningReply). Optional so fabricated attempts need not set it. */
+      captureDeferred?: boolean
     }
   | {
       flow: 'evening'
       outcome: EveningOutcome
       currentStep: number
       equipmentEcho: EquipmentEchoItem[] | null
+      captureDeferred?: boolean
     }
   | {
       flow: 'hindrance'
@@ -191,6 +194,7 @@ async function attempt(
       outcome: result.outcome,
       currentStep: result.currentStep,
       attendance: result.attendance,
+      captureDeferred: result.captureDeferred,
     }
   }
 
@@ -210,6 +214,7 @@ async function attempt(
       outcome: result.outcome,
       currentStep: result.currentStep,
       equipmentEcho: result.equipmentEcho,
+      captureDeferred: result.captureDeferred,
     }
   }
 
@@ -232,8 +237,10 @@ async function attempt(
 }
 
 function replyFor(a: Attempt): string {
-  if (a.flow === 'morning') return buildMorningReply(a.outcome, a.currentStep, a.attendance)
-  if (a.flow === 'evening') return buildEveningReply(a.outcome, a.currentStep, a.equipmentEcho ?? undefined)
+  if (a.flow === 'morning') return buildMorningReply(a.outcome, a.currentStep, a.attendance, a.captureDeferred)
+  if (a.flow === 'evening') {
+    return buildEveningReply(a.outcome, a.currentStep, a.equipmentEcho ?? undefined, a.captureDeferred)
+  }
   return buildHindranceReply(a.outcome, a.currentStep, a.wasExhausted)
 }
 
@@ -263,7 +270,9 @@ export async function dispatchInboundTurn(params: DispatchParams): Promise<Dispa
     // dispatchInboundTurn directly, but leaving it unaware of 'hindrance'
     // would be the identical bug this migration's own header names route.ts
     // for, one layer lower.
-    firstFlow = current === 'evening' ? 'evening' : current === 'hindrance' ? 'hindrance' : 'morning'
+    // Exhaustive mapping (PR-C C3) instead of a collapse: 'safety'/'invoice'
+    // are not check-in flows and, like idle, fall back to 'morning' here.
+    firstFlow = (current === null ? null : mapSessionFlowToCheckinFlow(current)) ?? 'morning'
   }
 
   const first = await attempt(firstFlow, common)

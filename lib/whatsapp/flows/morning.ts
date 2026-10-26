@@ -5,6 +5,7 @@ import type { SessionFlow, WhatsAppSession } from '@/lib/whatsapp/session'
 import { classifyYesNo, type YesNoClassification } from './parsers/lexicon'
 import { parseLabourCount, isLabourAnswered, type LabourParse } from './parsers/labour'
 import { parseEquipment, isEquipmentAnswered, type EquipmentParse } from './parsers/equipment'
+import { CHECKIN_RESET_EXPLAIN_REPLY } from './material-inward-strings'
 
 // Morning check-in flow. Renumbered by the morning flow migration
 // (supabase/migrations/030_morning_flow_attendance.sql) per
@@ -170,7 +171,18 @@ export function buildMorningReply(
   outcome: MorningOutcome,
   currentStep: number,
   attendance?: 'present' | 'absent' | 'site_holiday' | null,
+  /**
+   * N13 (migration 050): the RPC deferred the first step-1 message after a
+   * delivery session was discarded for this check-in. Only meaningful on
+   * 'reask': the reply becomes the approved explanation, "\n", then the
+   * step's question (docs/plans/pr-c-plan.md section 7). Absent/false =
+   * unchanged behaviour.
+   */
+  captureDeferred?: boolean,
 ): string {
+  if (captureDeferred === true && outcome === 'reask') {
+    return `${CHECKIN_RESET_EXPLAIN_REPLY}\n${MORNING_QUESTIONS[currentStep] ?? ''}`
+  }
   switch (outcome) {
     case 'start':
       return MORNING_QUESTIONS[1]
@@ -487,6 +499,8 @@ export interface MorningTurnResult {
   /** Whether Q1 had already been answered (a real description existed) at
    * the moment of discard -- null under the same condition as hindranceDiscarded. */
   hindranceHadDescription: boolean | null
+  /** N13 (migration 050): true only when this turn's first step-1 message was deferred after a delivery-session discard. */
+  captureDeferred: boolean
 }
 
 export async function applyMorningFlowTurn(params: {
@@ -556,6 +570,7 @@ export async function applyMorningFlowTurn(params: {
     attendance: 'present' | 'absent' | 'site_holiday' | null
     hindrance_discarded: boolean | null
     hindrance_had_description: boolean | null
+    capture_deferred?: boolean | null
   }
 
   return {
@@ -566,5 +581,6 @@ export async function applyMorningFlowTurn(params: {
     attendance: result.attendance,
     hindranceDiscarded: result.hindrance_discarded,
     hindranceHadDescription: result.hindrance_had_description,
+    captureDeferred: result.capture_deferred === true,
   }
 }

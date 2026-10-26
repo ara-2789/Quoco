@@ -73,6 +73,8 @@ Order: **C1 → C3 → C2 (review → test-db apply → DOWN rehearsal → CI �
 
 **Overload rule applied to the split.** C2 adds ONE new function, `trg_capture_files_before_update`, which is not one of the seven names the 050 DOWN counts [read CF:5-6; S050 DOWN guard quoted at CO:108-122]. C3-C6 add no SQL. So neither 050 DOWN file needs editing; a CI static test enforces it (3d, 8).
 
+Rev 3, 2026-10-26 (design review; Aravind approved the C3 block): the digit-4 start branch, T-D1-6 and the allowlisted-start control of AT-DARK-1 move from C3 to C4. In C3 a live 'invoice' session has no handler: Sentry error + idle path (T-INV-LIVE), unreachable in prod because nothing creates one. T-D1-4's PDF part moves to C4.
+
 ---
 
 ## 3. Blockers

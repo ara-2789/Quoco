@@ -23,7 +23,7 @@ vi.mock('@/lib/whatsapp/session', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/whatsapp/session')>()
   return {
     ...original,
-    readActiveFlowForRouting: vi.fn(async () => null),
+    readRoutingState: vi.fn(async () => ({ currentFlow: null, dayStale: false, expiresAt: null, context: {} })),
     claimMediaNudge: vi.fn(async () => {
       throw new Error('claim_media_nudge rpc unavailable')
     }),
