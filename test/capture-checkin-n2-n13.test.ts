@@ -48,7 +48,7 @@ async function morning(phone: string, message: string, start: boolean, now?: Dat
     p_project_id: kit.p1,
     p_message: message,
     p_start_flow: start,
-    ...(now ? { p_now: now.toISOString() } : {}),
+    p_now: (now ?? noonIst()).toISOString(),
   })
   if (error) throw new Error(`apply_morning_flow_turn failed (${error.code}): ${error.message}`)
   return data as CheckinTurn
@@ -64,7 +64,7 @@ async function evening(phone: string, message: string, start: boolean, now?: Dat
     p_start_flow: start,
     p_parse: { '1': [], '2': null, '3': null, '4': null },
     p_parse_ok: { '1': true, '2': false, '3': false, '4': false },
-    ...(now ? { p_now: now.toISOString() } : {}),
+    p_now: (now ?? noonIst()).toISOString(),
   })
   if (error) throw new Error(`apply_evening_flow_turn failed (${error.code}): ${error.message}`)
   return data as CheckinTurn
@@ -78,7 +78,7 @@ async function hindrance(phone: string, message: string, start: boolean, now?: D
     p_project_id: kit.p1,
     p_message: message,
     p_start_flow: start,
-    ...(now ? { p_now: now.toISOString() } : {}),
+    p_now: (now ?? noonIst()).toISOString(),
   })
   if (error) throw new Error(`apply_hindrance_flow_turn failed (${error.code}): ${error.message}`)
   return data as CheckinTurn
