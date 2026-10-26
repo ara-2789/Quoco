@@ -276,12 +276,18 @@ export function jpegMedia(n: number): Array<{ index: number; content_type: strin
   return Array.from({ length: n }, (_, index) => ({ index, content_type: 'image/jpeg', url: `https://example.invalid/m/${index}` }))
 }
 
-/** The instant of 12:00 IST today, as ISO. Time-travel base for p_now so +31 min never crosses an IST midnight. */
+// Memo: the FIRST call in a process fixes the instant for every later call, so a CI run that crosses IST midnight
+// (18:30Z) mid-file still sends one p_now (docs/plans/pr-c-plan.md section 3g; run 40217915047 attempt 1).
+let fixedNoonIstMs: number | null = null
+
+/** The instant of 12:00 IST on the day of the FIRST call in this process (memoised). Time-travel base for p_now so +31 min never crosses an IST midnight. */
 export function noonIst(): Date {
-  const now = new Date()
-  const ist = new Date(now.getTime() + 5.5 * 3600 * 1000)
-  const noonUtcMs = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 12, 0, 0) - 5.5 * 3600 * 1000
-  return new Date(noonUtcMs)
+  if (fixedNoonIstMs === null) {
+    const now = new Date()
+    const ist = new Date(now.getTime() + 5.5 * 3600 * 1000)
+    fixedNoonIstMs = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 12, 0, 0) - 5.5 * 3600 * 1000
+  }
+  return new Date(fixedNoonIstMs)
 }
 
 export interface TurnOpts {
@@ -309,7 +315,7 @@ export async function miTurnRaw(kit: CaptureKit, phone: string, message: string 
     p_message_sid: sid,
     p_media: o.media ?? null,
     p_start_flow: o.start ?? false,
-    ...(o.now ? { p_now: o.now.toISOString() } : {}),
+    p_now: (o.now ?? noonIst()).toISOString(),
   })
 }
 
@@ -453,8 +459,8 @@ export async function seedSession(
   if (error) throw new Error(`seedSession failed: ${error.message}`)
 }
 
-/** Today's IST date as YYYY-MM-DD. */
+/** The IST date (YYYY-MM-DD) of the memoised noonIst(), so log_date checks agree with the fixed p_now. */
 export function istToday(): string {
-  const ist = new Date(Date.now() + 5.5 * 3600 * 1000)
+  const ist = new Date(noonIst().getTime() + 5.5 * 3600 * 1000)
   return ist.toISOString().slice(0, 10)
 }
