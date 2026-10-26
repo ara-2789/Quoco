@@ -67,38 +67,108 @@ export async function readCurrentFlow(
 }
 
 /**
- * Like readCurrentFlow, but for ROUTING only (routeInboundMessage) — treats
- * a session whose updated_at falls on a different IST calendar day than
- * `now` as NOT active, even if current_flow is still set. Matches
- * quoco_same_ist_day's own Asia/Kolkata date-cast semantics
- * (012_whatsapp_session_transition.sql:57-63) via istDateString
- * (lib/daily-logs/date.ts), the same comparison already used project-wide
- * for this exact question (lib/hindrance/queue.ts, lib/daily-logs/query.ts).
- * A stale previous-day session falls through to the ordinary idle path
- * instead of being treated as active and reset by the RPC's own BOT-07
- * handling (which replies with empty TwiML on a next-day reset — see
- * fix/stale-flow-next-day (PR description) for the bug this fixes).
+ * What routeInboundMessage needs to know about a phone's session row, from ONE
+ * select (PR-C C3, docs/plans/pr-c-plan.md section 3c; replaces the old
+ * readActiveFlowForRouting, which selected only current_flow + updated_at).
+ *
+ * `currentFlow` is the RAW value, even when the row is from a previous IST
+ * day. `dayStale` carries that comparison separately so the router can still
+ * see a day-stale 'invoice' row (it must be cleared, not silently ignored: see
+ * the D1(d) design, plan section 3f). For every other flow a day-stale row is
+ * treated as NOT active, exactly as before: it falls through to the ordinary
+ * idle path instead of being reset by the RPC's own BOT-07 handling (which
+ * replies with empty TwiML on a next-day reset — see fix/stale-flow-next-day).
+ * The day comparison matches quoco_same_ist_day's Asia/Kolkata semantics
+ * (012_whatsapp_session_transition.sql:57-63) via istDateString.
  */
-export async function readActiveFlowForRouting(
+export interface RoutingState {
+  currentFlow: SessionFlow | null
+  /** true when the row's updated_at is on a different IST calendar day than `now` */
+  dayStale: boolean
+  expiresAt: string | null
+  context: Record<string, unknown>
+}
+
+export async function readRoutingState(
   phoneNumber: string,
   now: Date,
   supabaseClient?: SupabaseClient,
-): Promise<SessionFlow | null> {
+): Promise<RoutingState> {
   const supabase = supabaseClient ?? createServiceClient()
 
   const { data, error } = await supabase
     .from('whatsapp_sessions')
-    .select('current_flow, updated_at')
+    .select('current_flow, updated_at, expires_at, context')
     .eq('phone_number', phoneNumber)
-    .maybeSingle<{ current_flow: SessionFlow | null; updated_at: string }>()
+    .maybeSingle<{
+      current_flow: SessionFlow | null
+      updated_at: string
+      expires_at?: string | null
+      context?: Record<string, unknown> | null
+    }>()
 
   if (error) {
-    throw new Error(`readActiveFlowForRouting failed for ${phoneNumber}: ${error.message}`)
+    throw new Error(`readRoutingState failed for ${phoneNumber}: ${error.message}`)
   }
 
-  if (!data || data.current_flow === null) return null
-  if (istDateString(now) !== istDateString(new Date(data.updated_at))) return null
-  return data.current_flow
+  if (!data || data.current_flow === null) {
+    return { currentFlow: null, dayStale: false, expiresAt: null, context: {} }
+  }
+  return {
+    currentFlow: data.current_flow,
+    dayStale: istDateString(now) !== istDateString(new Date(data.updated_at)),
+    expiresAt: data.expires_at ?? null,
+    context: data.context ?? {},
+  }
+}
+
+/**
+ * The ONE place a SessionFlow becomes a check-in flow. Exhaustive over all
+ * five values with a `never` check, so a sixth SessionFlow fails `tsc` here
+ * instead of silently collapsing to 'morning' (the old behaviour at
+ * inbound-start.ts's and dispatch.ts's own ternaries). 'safety' and 'invoice'
+ * are not check-in flows: null.
+ */
+export function mapSessionFlowToCheckinFlow(flow: SessionFlow): 'morning' | 'evening' | 'hindrance' | null {
+  switch (flow) {
+    case 'morning':
+      return 'morning'
+    case 'evening':
+      return 'evening'
+    case 'hindrance':
+      return 'hindrance'
+    case 'safety':
+    case 'invoice':
+      return null
+    default: {
+      const unmapped: never = flow
+      throw new Error(`mapSessionFlowToCheckinFlow: unmapped session flow ${String(unmapped)}`)
+    }
+  }
+}
+
+/**
+ * Clear an expired 'invoice' (material-inward) session BEFORE any other flow
+ * function sees the row — any other flow's turn over an 'invoice' row would
+ * persist expires_at = p_now + 30 min, reviving it (plan section 3c). Wraps
+ * migration 050's expire_stale_material_inward (service_role only): true only
+ * when it cleared an 'invoice' row with expires_at <= asOf; false for every
+ * other row. Subtract-only, re-checked under the row lock.
+ */
+export async function expireStaleMaterialInward(
+  phoneNumber: string,
+  asOf: Date,
+  supabaseClient?: SupabaseClient,
+): Promise<boolean> {
+  const supabase = supabaseClient ?? createServiceClient()
+  const { data, error } = await supabase.rpc('expire_stale_material_inward', {
+    p_phone_number: phoneNumber,
+    p_now: asOf.toISOString(),
+  })
+  if (error) {
+    throw new Error(`expire_stale_material_inward failed for ${phoneNumber}: ${error.message}`)
+  }
+  return data === true
 }
 
 /**

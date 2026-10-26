@@ -4,7 +4,12 @@ import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase/service'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
-import { readActiveFlowForRouting, claimMediaNudge } from './session'
+import { readRoutingState, expireStaleMaterialInward, mapSessionFlowToCheckinFlow, claimMediaNudge } from './session'
+import {
+  MI_SESSION_ENDED_REPLY,
+  CHECKIN_RESET_EXPLAIN_REPLY,
+  MI_CHECKIN_PHOTO_NOT_SAVED_REPLY,
+} from './flows/material-inward-strings'
 import { dispatchInboundTurn } from './dispatch'
 import { applyHindranceFlowTurn, buildHindranceReply } from './flows/hindrance'
 import { MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, MEDIA_NUDGE_WINDOW_SECONDS, type MediaItem } from './media-reply'
@@ -705,25 +710,107 @@ async function handleIdlePhoto(params: RouteParams, supabase: SupabaseClient): P
 export async function routeInboundMessage(params: RouteParams): Promise<InboundRouteResult> {
   const supabase = params.supabaseClient ?? createServiceClient()
   const now = params.now !== undefined ? new Date(params.now) : new Date()
-  const currentFlow = await readActiveFlowForRouting(params.phoneNumber, now, supabase)
+  const state = await readRoutingState(params.phoneNumber, now, supabase)
+
+  // EXPIRE FIRST (PR-C C3, docs/plans/pr-c-plan.md sections 3c and 3f). A
+  // material-inward ('invoice') session that has expired is cleared BEFORE any
+  // other flow function can see the row: any other flow's turn over an
+  // 'invoice' row would persist expires_at = now + 30 min and revive it. For a
+  // row from a previous IST day (not yet expired by the clock, e.g. a turn at
+  // 23:50 with expires_at 00:20) p_now is max(now, expires_at), which makes the
+  // same locked, subtract-only clear apply; a late turn that refreshed
+  // expires_at in between makes it return false (safe).
+  if (state.currentFlow === 'invoice') {
+    const expiresMs = state.expiresAt !== null ? new Date(state.expiresAt).getTime() : now.getTime()
+    const asOf = state.dayStale ? new Date(Math.max(now.getTime(), expiresMs)) : now
+    const cleared = await expireStaleMaterialInward(params.phoneNumber, asOf, supabase)
+    if (cleared) {
+      // D1(d): the inbound message -- text, photo, any media -- is NOT
+      // processed; the engineer gets the one-shot ended reply. The row is
+      // already cleared, so the next message takes the ordinary idle path and
+      // this reply never repeats.
+      const media = params.media ?? []
+      if (media.length > 0) {
+        // Decision Q11: counts only. No phone, URL, body, tenant or user id.
+        Sentry.captureMessage('file received after the material-inward session ended', {
+          level: 'info',
+          fingerprint: ['capture-router', 'file_after_session_ended'],
+          tags: { feature: 'capture-router' },
+          extra: { mediaCount: media.length, contentTypes: media.map((m) => m.contentType) },
+        })
+      }
+      return { reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }
+    }
+    if (!state.dayStale) {
+      // Live and unexpired, but C3 has no handler for it (C4 adds one; nothing
+      // can create such a row while digit 4 is dark). Report and take the idle
+      // path rather than hand it to a check-in flow function.
+      Sentry.captureMessage('live invoice session reached the router with no handler', {
+        level: 'error',
+        fingerprint: ['capture-router', 'invoice_without_handler'],
+        tags: { feature: 'capture-router' },
+      })
+    }
+  } else if (state.currentFlow === 'safety' && !state.dayStale) {
+    // 'safety' is never written by anything (SessionFlow's pre-provisioned,
+    // never-built value). Idle path plus a warning, no write.
+    Sentry.captureMessage('safety session reached the router with no handler', {
+      level: 'warning',
+      fingerprint: ['capture-router', 'safety_without_handler'],
+      tags: { feature: 'capture-router' },
+    })
+  }
+
+  // Exhaustive mapping (session.ts), not a collapse. A day-stale row of any
+  // flow is NOT active (falls to the idle path, as before); 'safety' and
+  // 'invoice' map to null (idle path, reported above).
+  const currentFlow =
+    state.currentFlow === null || state.dayStale ? null : mapSessionFlowToCheckinFlow(state.currentFlow)
 
   if (currentFlow !== null) {
-    // A flow is already active -- the ad-hoc router below never runs. The
-    // collapse mirrors dispatchInboundTurn's own internal readCurrentFlow
-    // branch (dispatch.ts) exactly, so passing it through as firstFlow
-    // doesn't cost this call a second unlocked read.
-    //
-    // FIXED, 2026-09-07 (migration 038's own header names this exact bug):
-    // this used to collapse ANY non-'evening' currentFlow to 'morning' --
-    // silently correct only because nothing has ever written current_flow=
-    // 'hindrance' (or 'safety'/'invoice', SessionFlow's other pre-
-    // provisioned-never-built values) until now. A real 'hindrance' session
-    // would have been dispatched into applyMorningFlowTurn, which does not
-    // know that flow at all.
-    const firstFlow =
-      currentFlow === 'evening' ? 'evening' : currentFlow === 'hindrance' ? 'hindrance' : 'morning'
+    // A flow is already active -- the ad-hoc router below never runs.
+    // Passing the mapped flow through as firstFlow doesn't cost this call a
+    // second unlocked read in dispatchInboundTurn.
+    const firstFlow = currentFlow
 
     const media = params.media ?? []
+
+    // S-3 (PR-C C3, plan section 3b): while invoice_reset_guard names THIS
+    // check-in, a photo must not become a check-in photo -- it may be a
+    // delivery photo sent right after the scheduled start discarded the
+    // delivery session. Store nothing, enqueue nothing, leave *_photos_status
+    // alone, and do not dispatch it as an answer (keyed on isPhoto, not on
+    // extractable media, so an empty-extraction photo with a caption cannot
+    // become the deferred first answer either). The guard is NOT cleared by a
+    // photo: only the first non-empty text clears it (migration 050).
+    if (
+      firstFlow !== 'hindrance' &&
+      (params.isPhoto === true || media.length > 0) &&
+      state.context.invoice_reset_guard === firstFlow
+    ) {
+      const { data: guardRow, error: guardError } = await supabase
+        .from('whatsapp_sessions')
+        .select('current_step')
+        .eq('phone_number', params.phoneNumber)
+        .maybeSingle<{ current_step: number }>()
+      if (guardError) {
+        throw new Error(
+          `routeInboundMessage: session read failed for ${params.phoneNumber}: ${guardError.message}`,
+        )
+      }
+      if (guardRow) {
+        const question =
+          firstFlow === 'morning'
+            ? buildMorningReply('reask', guardRow.current_step)
+            : buildEveningReply('reask', guardRow.current_step)
+        return {
+          reply: [MI_CHECKIN_PHOTO_NOT_SAVED_REPLY, CHECKIN_RESET_EXPLAIN_REPLY, question].join('\n'),
+          resolvedFlow: firstFlow,
+        }
+      }
+      // Session vanished between the read above and here: fall through to the
+      // normal path, whose own locked re-read is authoritative.
+    }
 
     // Hindrance photo capture, stage 2 (migration 044). Needs session
     // state (current_step) to decide accept vs. reject, so it is its own

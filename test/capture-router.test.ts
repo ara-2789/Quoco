@@ -136,7 +136,7 @@ function route(phone: string, message: string, now: Date, client: SupabaseClient
   })
 }
 
-const PHOTO = { isPhoto: true, media: [{ url: 'https://example.invalid/m/0', contentType: 'image/jpeg' }] } as const
+const PHOTO: RouteExtra = { isPhoto: true, media: [{ url: 'https://example.invalid/m/0', contentType: 'image/jpeg' }] }
 
 async function seedInvoice(phone: string, o: { updatedAt: Date; expiresAt: Date; step?: number }) {
   await seedSession(kit, phone, {
