@@ -30,3 +30,17 @@ Written 2026-10-26. Four items PR-C must not lose. Nothing here is implemented. 
 
 9. **Apply block read-only count (rev 2).** Prod `capture_files` is believed empty (nothing calls `apply_material_inward_turn` before C4). The 051 rev 2 apply adds CHECKs that fail on any existing stored or rejected row (no `ingested_at` backfill is invented). The apply block verifies emptiness with a read-only count of `capture_files` rows by status before the apply, on test-db and on prod.
    Source: `docs/reviews/051-review-package.md` Rev 2 section; `docs/reviews/051-sql-evidence/G1b-postcondition-negative-rev2.txt` case D.
+
+## Added 2026-10-27, source: 051 external review round 2 (`docs/reviews/051-external-review-round-2.md`)
+
+10. **Any new `INSERT INTO capture_files` must insert a blank pending row** (S2(a)). 051 rev 3 puts INSERT inside the lock: the trigger refuses (QE011) anything but `ingest_status` `pending` with `content_type`, `byte_size`, `sha256`, `storage_path`, `reject_reason`, `preview_state` and `ingested_at` all NULL. C3 to C6 inserters (any DEFINER function) must name none of those columns. 050's insert names only `tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type`, so it is unaffected.
+    Source: `docs/reviews/051-external-review-round-2.md` S2; `docs/reviews/051_capture_files_immutability.sql` INSERT branch.
+
+11. **C5 writes every terminal detail in the same UPDATE that sets `stored` or `rejected`** (S1). `content_type` and `byte_size` are NULL on `pending` and `failed` rows by CHECK (`capture_files_details_terminal_only_chk`, 23514). A `stored` row needs `content_type, byte_size, sha256, storage_path` (row-owned path) in that one UPDATE; a `rejected` row needs `reject_reason` and may carry `content_type` and `byte_size` observed in that same UPDATE. A pending or failed row can change no column except by a status move.
+    Source: `docs/reviews/051-external-review-round-2.md` S1.
+
+12. **A rollback over live terminal rows needs its own reviewed artifact** (S3). The 051 DOWN refuses (`DOWN_PRECONDITION_051 ... terminal_rows=N`) when any row is `stored` or `rejected`, because the DOWN drops `ingested_at` and a re-apply cannot invent the times. Such a rollback is a separate reviewed artifact with its own decision on `ingested_at`.
+    Source: `docs/reviews/051-external-review-round-2.md` S3.
+
+13. **Apply GO needs (round 2).** The test-db apply; the ledger row; the pre-apply terminal-row count on each database (an early warning, not the guard: today only the owner can UPDATE `capture_files`, so a terminal row cannot exist short of a hand edit, and the file aborts whole if one does); and a pinned green CI run URL in which QE011 and 23514 both appear as `error.code`.
+    Source: `docs/reviews/051-external-review-round-2.md` verdict and R2-5.

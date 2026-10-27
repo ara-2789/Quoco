@@ -1,0 +1,229 @@
+== 051 rev 3 scaffold dry-run: G3-down-rev3 ==
+generated: 2026-10-27T13:26:00Z
+HEAD: 635d39bd68ad37a4618e4f4378018be901276239
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP (rev 3):  debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9
+sha256 051 UP (rev 2, git show f03a372): fbd3b3a535db3c9af41991c1b324ae0e7fe26fb5e5713a1de0e6b7a824c15907
+sha256 051 DOWN test:   672a422f895bc7b1425e21ae274ad9792c12ed4b1b2d12f334540b06a721da3a
+PGHOST (must be a local socket dir): /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+== G3.0 seed: a pending file row and a queued capture_ingest job ==
+SELECT t.mkfile(40, 'pending') AS pending_row;
+             pending_row              
+--------------------------------------
+ c2000000-0000-0000-0000-000000000040
+(1 row)
+
+INSERT INTO public.jobs (type, payload, status) VALUES ('capture_ingest', jsonb_build_object('file_id', t.fid(40), 'source_message_sid', 'ZZ-C2-S40'), 'pending');
+SELECT t.ok('seed: one queued capture_ingest job names pending file 40', (SELECT count(*) = 1 FROM public.jobs WHERE type = 'capture_ingest' AND status = 'pending' AND payload->>'file_id' = t.fid(40)::text));
+                               ok                                
+-----------------------------------------------------------------
+ PASS: seed: one queued capture_ingest job names pending file 40
+(1 row)
+
+SELECT 'PRE_DOWN_FP ' || t.fp() AS fingerprint_before_down;
+           fingerprint_before_down            
+----------------------------------------------
+ PRE_DOWN_FP 19102bc8020867d2650e13c6fddd13c0
+(1 row)
+
+fingerprint before the DOWN: 19102bc8020867d2650e13c6fddd13c0
+PASS: fingerprint before DOWN equals the post-apply fingerprint (data-only changes in between)
+terminal rows present: 18
+
+== G3.1 DOWN with MANY terminal rows present: must be refused (S3), nothing changed ==
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051-down-testdb.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051-down-testdb.sql:59: ERROR:  DOWN_PRECONDITION_051: ledger_051=t functions_found=1 triggers_found=1 constraints_found=5 ingested_at_found=1 terminal_rows=18
+CONTEXT:  PL/pgSQL function inline_code_block line 29 at RAISE
+[exit 3]
+PASS: the refused DOWN changed nothing (fingerprint equal: 19102bc8020867d2650e13c6fddd13c0)
+
+== G3.2 reduce to exactly ONE stored row (scaffold cleanup: owner DELETE of every other terminal row), DOWN again: refused with terminal_rows=1 ==
+[cleanup exit 0]
+terminal rows present: 1
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051-down-testdb.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051-down-testdb.sql:59: ERROR:  DOWN_PRECONDITION_051: ledger_051=t functions_found=1 triggers_found=1 constraints_found=5 ingested_at_found=1 terminal_rows=1
+CONTEXT:  PL/pgSQL function inline_code_block line 29 at RAISE
+[exit 3]
+PASS: DOWN with one stored row present changed nothing (fingerprint equal: 19102bc8020867d2650e13c6fddd13c0)
+PASS: stored row 12 is still there, intact (sha256 aaaa..., ingested_at set)
+
+== G3.3 remove the last terminal row (scaffold cleanup), then the DOWN (testdb file): passes ==
+[cleanup exit 0]
+terminal rows present: 0
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051-down-testdb.sql
+[exit 0]
+
+== fixtures created AFTER the DOWN (no trigger, no rev-2 CHECKs now): a stored row 41 and a rejected row 42
+SELECT t.mkfile(41, 'stored') AS stored_row, t.mkfile(42, 'rejected') AS rejected_row;
+              stored_row              |             rejected_row             
+--------------------------------------+--------------------------------------
+ c2000000-0000-0000-0000-000000000041 | c2000000-0000-0000-0000-000000000042
+(1 row)
+
+== T-D8-10 after DOWN: service_role UPDATE is refused 42501 again (RED shape). Control: SELECT still works.
+SET ROLE service_role;
+SELECT t.expect('T-D8-10 control: svc SELECT still works', $$SELECT 1 FROM public.capture_files WHERE id = t.fid(40)$$, 'ok');
+                                      expect                                       
+-----------------------------------------------------------------------------------
+ PASS: T-D8-10 control: svc SELECT still works -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-10 (T-D8-1 again) svc UPDATE of a granted column -> 42501', $$UPDATE public.capture_files SET preview_state = 'previewable' WHERE id = t.fid(40)$$, '42501');
+                                                                      expect                                                                       
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-10 (T-D8-1 again) svc UPDATE of a granted column -> 42501 -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-10 svc UPDATE seven columns on pending row 40 -> 42501 (the ingest would fail here: C5 must be rolled back first)', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('a', 64), storage_path = t.spath(40), preview_state = 'previewable' WHERE id = t.fid(40)$$, '42501');
+                                                                                                  expect                                                                                                   
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-10 svc UPDATE seven columns on pending row 40 -> 42501 (the ingest would fail here: C5 must be rolled back first) -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+RESET ROLE;
+== T-D8-3 after DOWN: the rewrite SUCCEEDS again (owner; there is no trigger). This proves the DOWN really removes the lock.
+SELECT t.expect('T-D8-3 after DOWN: owner rewrites sha256 on stored row 41 -> succeeds (hole back)', $$UPDATE public.capture_files SET sha256 = repeat('b', 64) WHERE id = t.fid(41)$$, 'ok');
+                                                           expect                                                            
+-----------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-3 after DOWN: owner rewrites sha256 on stored row 41 -> succeeds (hole back) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.val('T-D8-3 after DOWN: the stored row 41 carries the rewritten hash', $$SELECT left(sha256, 4) FROM public.capture_files WHERE id = t.fid(41)$$, 'bbbb');
+                                          val                                          
+---------------------------------------------------------------------------------------
+ PASS: T-D8-3 after DOWN: the stored row 41 carries the rewritten hash -- value = bbbb
+(1 row)
+
+== B1 after DOWN: the contradictory shapes are possible again too (the CHECKs are gone): a rejected row carrying sha256 and a pending row carrying a storage_path
+SELECT t.expect('B1 after DOWN: owner sets sha256 on a REJECTED row -> succeeds (rev-2 CHECK gone)', $$UPDATE public.capture_files SET sha256 = repeat('c', 64) WHERE id = t.fid(42)$$, 'ok');
+                                                           expect                                                            
+-----------------------------------------------------------------------------------------------------------------------------
+ PASS: B1 after DOWN: owner sets sha256 on a REJECTED row -> succeeds (rev-2 CHECK gone) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('S1 after DOWN: owner sets byte_size on a PENDING row -> succeeds (rev-3 CHECK gone)', $$UPDATE public.capture_files SET byte_size = 5 WHERE id = t.fid(40)$$, 'ok');
+                                                            expect                                                             
+-------------------------------------------------------------------------------------------------------------------------------
+ PASS: S1 after DOWN: owner sets byte_size on a PENDING row -> succeeds (rev-3 CHECK gone) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('S2(a) after DOWN: owner INSERT of a terminal row -> succeeds (INSERT lock gone)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, ingest_status, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 90, 'ZZ-C2-S90', 0, 'image/jpeg', 'rejected', 'too_large')$$, 'ok');
+                                                          expect                                                           
+---------------------------------------------------------------------------------------------------------------------------
+ PASS: S2(a) after DOWN: owner INSERT of a terminal row -> succeeds (INSERT lock gone) -- succeeded as expected (1 row(s))
+(1 row)
+
+UPDATE public.capture_files SET byte_size = NULL WHERE id = t.fid(40);
+== catalog after DOWN
+SELECT t.val('function gone', $$SELECT count(*)::text FROM pg_proc WHERE proname = 'trg_capture_files_before_update'$$, '0');
+               val                
+----------------------------------
+ PASS: function gone -- value = 0
+(1 row)
+
+SELECT t.val('ingested_at column gone', $$SELECT count(*)::text FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attname = 'ingested_at' AND NOT attisdropped$$, '0');
+                    val                     
+--------------------------------------------
+ PASS: ingested_at column gone -- value = 0
+(1 row)
+
+SELECT t.val('the five rev-2/rev-3 constraints gone, the six 049 constraints still present', $$SELECT (SELECT count(*) FROM pg_constraint WHERE conrelid = 'public.capture_files'::regclass AND conname IN ('capture_files_reject_reason_iff_chk','capture_files_stored_only_chk','capture_files_storage_path_row_chk','capture_files_ingested_at_iff_chk','capture_files_details_terminal_only_chk'))::text || '/' || (SELECT count(*) FROM pg_constraint WHERE conrelid = 'public.capture_files'::regclass AND conname IN ('capture_files_stored_complete_chk','capture_files_rejected_reason_chk','capture_files_stored_size_chk','capture_files_content_type_chk','capture_files_sha256_chk','capture_files_storage_path_prefix_chk'))::text$$, '0/6');
+                                                val                                                
+---------------------------------------------------------------------------------------------------
+ PASS: the five rev-2/rev-3 constraints gone, the six 049 constraints still present -- value = 0/6
+(1 row)
+
+SELECT t.val('trigger gone', $$SELECT count(*)::text FROM pg_trigger WHERE tgrelid = 'public.capture_files'::regclass AND NOT tgisinternal$$, '0');
+               val               
+---------------------------------
+ PASS: trigger gone -- value = 0
+(1 row)
+
+SELECT t.val('service_role column-UPDATE count = 0', $$SELECT count(*)::text FROM pg_attribute a WHERE a.attrelid = 'public.capture_files'::regclass AND a.attnum > 0 AND NOT a.attisdropped AND has_column_privilege('service_role', 'public.capture_files', a.attname, 'UPDATE')$$, '0');
+                           val                           
+---------------------------------------------------------
+ PASS: service_role column-UPDATE count = 0 -- value = 0
+(1 row)
+
+SELECT t.val('ledger row 051 gone', $$SELECT count(*)::text FROM supabase_migrations.schema_migrations WHERE version = '051'$$, '0');
+                  val                   
+----------------------------------------
+ PASS: ledger row 051 gone -- value = 0
+(1 row)
+
+SELECT t.ok('ACLs, trigger list and function list EQUAL the pre-051 baseline (fingerprint from G0)', t.fp() = '91a1865dd1fd0b98de6a9d9333008593');
+                                             ok                                              
+---------------------------------------------------------------------------------------------
+ PASS: ACLs, trigger list and function list EQUAL the pre-051 baseline (fingerprint from G0)
+(1 row)
+
+SELECT t.ok('COMMENTS (table, columns, function) EQUAL the pre-051 baseline (CLAUDE.md section 7: a teardown verifies comments too)', t.comments() = '80b77da945cc55890da3acee8182eca2');
+                                                              ok                                                              
+------------------------------------------------------------------------------------------------------------------------------
+ PASS: COMMENTS (table, columns, function) EQUAL the pre-051 baseline (CLAUDE.md section 7: a teardown verifies comments too)
+(1 row)
+
+== in-flight state after DOWN: the pending row and the queued job are intact; a new engineer turn still completes (050 does not depend on 051)
+SELECT t.ok('pending row 40 intact', (SELECT ingest_status = 'pending' AND sha256 IS NULL FROM public.capture_files WHERE id = t.fid(40)));
+             ok              
+-----------------------------
+ PASS: pending row 40 intact
+(1 row)
+
+SELECT t.ok('queued capture_ingest job intact', (SELECT count(*) = 1 FROM public.jobs WHERE type = 'capture_ingest' AND status = 'pending' AND payload->>'file_id' = t.fid(40)::text));
+                   ok                   
+----------------------------------------
+ PASS: queued capture_ingest job intact
+(1 row)
+
+SELECT t.turn('+91900000052', '4', 'c2d-s0', NULL, true) AS s0;
+                                                      s0                                                      
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.turn('+91900000052', '1', 'c2d-s1') AS s1;
+                                                       s1                                                       
+----------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+SELECT t.turn('+91900000052', 'gate pass', 'c2d-s2', t.media(1)) AS s2;
+                                                                                         s2                                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": "934afae7-ffe1-4f3e-93f8-0c599a02bdec", "document_id": "b6ffcaee-6ce6-492d-a735-05fa58bec78d", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.ok('a new file turn after DOWN still INSERTs a pending row and queues the job', (SELECT count(*) = 1 FROM public.capture_files WHERE source_message_sid = 'c2d-s2' AND ingest_status = 'pending') AND (SELECT count(*) = 1 FROM public.jobs WHERE type = 'capture_ingest' AND payload->>'source_message_sid' = 'c2d-s2'));
+                                       ok                                        
+---------------------------------------------------------------------------------
+ PASS: a new file turn after DOWN still INSERTs a pending row and queues the job
+(1 row)
+
+
+== G3.4 DOWN, second run: must be refused by the precondition, nothing changed ==
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051-down-testdb.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051-down-testdb.sql:59: ERROR:  DOWN_PRECONDITION_051: ledger_051=f functions_found=0 triggers_found=0 constraints_found=0 ingested_at_found=0 terminal_rows=0
+CONTEXT:  PL/pgSQL function inline_code_block line 29 at RAISE
+[exit 3]
+PASS: second DOWN changed nothing (fingerprint equal: 91a1865dd1fd0b98de6a9d9333008593)
+
+== G3.5 re-apply 051 rev 3 with the rows the rehearsal left behind (post-DOWN stored and rejected rows, a pending row with byte_size set after the DOWN): must ABORT whole ==
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql:169: ERROR:  check constraint "capture_files_stored_only_chk" of relation "capture_files" is violated by some row
+[exit 3]
+state after the aborted re-apply: ingested_at columns = 0; 051 constraints = 0; functions = 0; triggers = 0; service_role column-UPDATE count = 0
+
+== G3.6 scaffold test-data cleanup (owner DELETE of the terminal rows; reset row 40's byte_size), then re-apply ==
+[exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+[exit 0]
+[ledger stand-in exit 0]
+PASS: fingerprint after DOWN + cleanup + re-apply equals the first post-apply fingerprint (19102bc8020867d2650e13c6fddd13c0)
+PASS: re-applied: svc UPDATE of a granted column works again -- succeeded as expected (1 row(s))
+PASS: re-applied: a stored row cannot be rewritten (QE011) -- refused, SQLSTATE=QE011 MESSAGE=E11

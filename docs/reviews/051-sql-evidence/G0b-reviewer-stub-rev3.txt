@@ -1,0 +1,71 @@
+== 051 rev 3 scaffold dry-run: G0b-reviewer-stub-rev3 ==
+generated: 2026-10-27T13:25:57Z
+HEAD: 635d39bd68ad37a4618e4f4378018be901276239
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP (rev 3):  debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9
+sha256 051 UP (rev 2, git show f03a372): fbd3b3a535db3c9af41991c1b324ae0e7fe26fb5e5713a1de0e6b7a824c15907
+sha256 051 DOWN test:   672a422f895bc7b1425e21ae274ad9792c12ed4b1b2d12f334540b06a721da3a
+PGHOST (must be a local socket dir): /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+                mk_doc                
+--------------------------------------
+ 50000000-0000-0000-0000-0000000000c2
+(1 row)
+
+--- scenario output ---
+== G0b.1 the stub: grant only, no trigger
+GRANT UPDATE (ingest_status, content_type, byte_size, sha256, storage_path, reject_reason, preview_state) ON public.capture_files TO service_role;
+SELECT t.val('stub: no trigger on capture_files', $$SELECT count(*)::text FROM pg_trigger WHERE tgrelid = 'public.capture_files'::regclass AND NOT tgisinternal$$, '0');
+                         val                          
+------------------------------------------------------
+ PASS: stub: no trigger on capture_files -- value = 0
+(1 row)
+
+SELECT t.mkfile(2, 'stored') AS f2_stored, t.mkfile(3, 'rejected') AS f3_rejected, t.mkfile(4, 'pending') AS f4_pending;
+              f2_stored               |             f3_rejected              |              f4_pending              
+--------------------------------------+--------------------------------------+--------------------------------------
+ c2000000-0000-0000-0000-000000000002 | c2000000-0000-0000-0000-000000000003 | c2000000-0000-0000-0000-000000000004
+(1 row)
+
+SET ROLE service_role;
+SELECT t.expect('control: service_role UPDATE of a granted column works (the grant is live)', $$UPDATE public.capture_files SET preview_state = 'previewable' WHERE id = t.fid(4)$$, 'ok');
+                                                        expect                                                        
+----------------------------------------------------------------------------------------------------------------------
+ PASS: control: service_role UPDATE of a granted column works (the grant is live) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('HOLE REPRODUCED T-D8-3: service_role rewrites sha256 on a STORED row', $$UPDATE public.capture_files SET sha256 = repeat('b', 64) WHERE id = t.fid(2)$$, 'ok');
+                                                     expect                                                     
+----------------------------------------------------------------------------------------------------------------
+ PASS: HOLE REPRODUCED T-D8-3: service_role rewrites sha256 on a STORED row -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.val('HOLE REPRODUCED: the stored row now carries the rewritten hash', $$SELECT left(sha256, 4) FROM public.capture_files WHERE id = t.fid(2)$$, 'bbbb');
+                                         val                                          
+--------------------------------------------------------------------------------------
+ PASS: HOLE REPRODUCED: the stored row now carries the rewritten hash -- value = bbbb
+(1 row)
+
+SELECT t.expect('HOLE REPRODUCED: service_role rewrites storage_path on a STORED row', $$UPDATE public.capture_files SET storage_path = replace(storage_path, '/f2.jpg', '/other.jpg') WHERE id = t.fid(2)$$, 'ok');
+                                                    expect                                                     
+---------------------------------------------------------------------------------------------------------------
+ PASS: HOLE REPRODUCED: service_role rewrites storage_path on a STORED row -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('HOLE REPRODUCED: service_role reopens a REJECTED row (reject_reason changes)', $$UPDATE public.capture_files SET reject_reason = 'too_large' WHERE id = t.fid(3)$$, 'ok');
+                                                         expect                                                         
+------------------------------------------------------------------------------------------------------------------------
+ PASS: HOLE REPRODUCED: service_role reopens a REJECTED row (reject_reason changes) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('HOLE REPRODUCED: service_role moves a STORED row back to pending', $$UPDATE public.capture_files SET ingest_status = 'pending', content_type = NULL, byte_size = NULL, sha256 = NULL, storage_path = NULL WHERE id = t.fid(2)$$, 'ok');
+                                                   expect                                                   
+------------------------------------------------------------------------------------------------------------
+ PASS: HOLE REPRODUCED: service_role moves a STORED row back to pending -- succeeded as expected (1 row(s))
+(1 row)
+
+RESET ROLE;
+
