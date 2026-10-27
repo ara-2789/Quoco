@@ -4,7 +4,7 @@ Date 27 Oct 2026. Target: **test-db, ref `exfccwlrhoutkgrlikod` ONLY**, printed 
 
 Marks: **[O]** observed by Claude Code in this block (raw output in the log). **[R]** reported by Aravind (he ran it in his own terminal and pasted the output).
 
-Raw log of every command and its output: `docs/reviews/051-test-db-apply/raw-log.txt` (copied from `/tmp/quoco/c2-testdb-apply.txt`). The probe script is `docs/reviews/051-test-db-apply/postgrest-probes.cjs` (no key in it; keys are read from the environment and never printed). Readbacks: `docs/reviews/051-sql-evidence/P1-testdb-postapply.txt`, `P2-testdb-afterdown.txt`, `P3-testdb-afterreapply.txt`. Pre-apply probes (Part A, 27 Oct 13:39 UTC): `P0-testdb-preapply.txt`.
+Raw log of every command and its output: `docs/reviews/051-test-db-apply/raw-log.txt` (copied from `/tmp/quoco/c2-testdb-apply.txt`). The probe script is `docs/reviews/051-test-db-apply/postgrest-probes.cjs.txt` (no key in it; keys are read from the environment and never printed). 2026-10-27: renamed to `.cjs.txt` so the linter does not treat evidence as code (CI run 40527531487 Lint failure). Content unchanged, sha256 `c2f94897775e357929353722914b98d0ad518a7b7c5c244d079e2a04b047f0bd`. Readbacks: `docs/reviews/051-sql-evidence/P1-testdb-postapply.txt`, `P2-testdb-afterdown.txt`, `P3-testdb-afterreapply.txt`. Pre-apply probes (Part A, 27 Oct 13:39 UTC): `P0-testdb-preapply.txt`.
 
 **APPLY GO:** Aravind, 2026-10-27, given by sending the Part B block. Scope of the GO: test-db only. [R]
 **Design GO:** external review round 3, unconditional (`docs/reviews/051-external-review-round-3.md`, sha256 `b4f707c5934e9b3e88b9dd4d7f218574fe8897e6655c019300bd9a33ff1e6168`). [R]
