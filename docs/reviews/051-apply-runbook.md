@@ -100,7 +100,9 @@ Write `docs/reviews/051-test-db-apply-record.md` in the 050 style: observed vs r
 
 ## c. Prod (a later block, after test-db and CI are done)
 
-Same probes, on prod (`jvxwqignooseazzmwhvl`, ref printed first). All the STOP conditions in Step 1 apply. Prod has had **no** access in this block; nothing about prod has been observed.
+Same probes, on prod (`jvxwqignooseazzmwhvl`, ref printed first). All the STOP conditions in Step 1 apply.
+
+**PROD FINGERPRINT GATE (external review apply gate).** Prod P0 must show fingerprint **`91a1865dd1fd0b98de6a9d9333008593`** and comments hash **`80b77da945cc55890da3acee8182eca2`** (the values test-db and the local scaffold both had before the apply). After the apply, prod must show **`19102bc8020867d2650e13c6fddd13c0`** and **`b97d2e3b734f6c002fd5c0a57a06e643`**. **Any mismatch = STOP**, whatever the reason: this is the first time anyone looks at prod's `capture_files` for this migration, and a drifted prod must not get a migration only proved against test-db's shape. Prod has had **no** access in this block; nothing about prod has been observed.
 
 **"PITR substituted"** (PITR is OFF until launch). Before the apply, save a prod readback of `capture_files`: constraints (name, definition, validated), columns, column ACLs, table ACL, triggers, with its sha256, next to `051-down-prod.sql` (hash checked). Record the word "substituted". Then: apply (one file, foreground, ref and sha in the same frame, outside the two windows, Aravind's go-ahead in the same exchange), post-apply readback, ledger row by Aravind (Step 4), then the record `docs/reviews/051-prod-apply-record.md`. The `scripts/migration-number-reservations.json` entry is updated in the apply commit (CLAUDE.md §0, Step H), and the file moves into `supabase/migrations/` in that same commit. Types are regenerated after the apply (`ingested_at` is a new column).
 

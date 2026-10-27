@@ -5,6 +5,9 @@ debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9  docs/reviews/0
 08e1516d06cd28cead094ac812efa68578ca98624d97513dd55b459aece62c7b  docs/reviews/051-external-review-round-1.md
 f681927322fd968c295dfb93c66b4033fdcbb5eb64269ea4c639566dae9977a1  docs/reviews/051-external-review-round-2.md
 b4f707c5934e9b3e88b9dd4d7f218574fe8897e6655c019300bd9a33ff1e6168  docs/reviews/051-external-review-round-3.md
+5c6e5921b6821881a51b119a11ee5ea24d9d917eaa41da894a20921b3165226f  docs/reviews/051-external-review-apply-gate.md
+c2f94897775e357929353722914b98d0ad518a7b7c5c244d079e2a04b047f0bd  docs/reviews/051-test-db-apply/postgrest-probes.cjs.txt
+c21d12a0508c2424bb63e4e94eddce6d4ec9445e9dca0376196a5c9780edcbda  docs/reviews/051-sql-evidence/CI-f9363ab.txt
 7d86e44e999a2d7b52737380f34a0e45a1176cf89b6a7f63cb567b9959dc7a4b  docs/reviews/051-sql-evidence/G0-red-rev2.txt
 01c163eab9d4d3392b478f2dec9196293b03cc050e23d4b1cd75290ceb836fbc  docs/reviews/051-sql-evidence/G0-red-rev3.txt
 3233a5abca119f69ca1d0fe8e26520eb22e20db45f8deb482456d26cec4e4363  docs/reviews/051-sql-evidence/G0-red.txt
@@ -49,6 +52,7 @@ a0083004cb13325185cc04b5a195587d8783f04ca9ff8f39c79de5f5d2ed02c8  docs/reviews/0
 f457e5b1d448f77e05dac3aa6eca552fd9e37dd9c3f888fcf53095e4df4ecec6  docs/reviews/051-sql-evidence/P1-testdb-postapply.txt
 245811c6c9e0e9f418a8be3c1fa5ff7c05f91d9cef020c5534c0b1f803d00a2c  docs/reviews/051-sql-evidence/P2-testdb-afterdown.txt
 54b22fa6d0743260d761470020a4354510bbaddb5837a0ee89111f58c79b54a2  docs/reviews/051-sql-evidence/P3-testdb-afterreapply.txt
+ce9be26fa99f6a2cd3fabafdd02fcd1e4fd6e4354beef51971f7cf9b85c70733  docs/reviews/051-sql-evidence/P4-testdb-after-ci.txt
 f47775ca72069fa3e169238abcbd15ac43f5c8b7a693db29158451fb3d683702  docs/reviews/051-sql-evidence/scaffold-build-prep.txt
 c5b0c97a896d85d7c9bebc2fde633a15fbce019f9f16ad6cb73a8992092aef11  docs/reviews/051-sql-evidence/scaffold-build-rev2.txt
 e1c2e3eb925033577adb3a25d1f0d15d63f32e2395321037472e666a93cf6f13  docs/reviews/051-sql-evidence/scaffold-build-rev3.txt

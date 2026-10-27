@@ -52,3 +52,12 @@ Written 2026-10-26. Four items PR-C must not lose. Nothing here is implemented. 
 
 15. **Incident response for C5.** If C5 misbehaves, stop C5 and leave 051 in place. Do not reach for 051's DOWN first (item 12).
     Source: `docs/reviews/051-external-review-round-3.md`, R3-4.
+
+## Added 2026-10-27, source: 051 external review apply gate (`docs/reviews/051-external-review-apply-gate.md`)
+
+16. **Add an ESLint ignore for `docs/reviews/**`** so evidence scripts are not linted as code (separate LIGHT PR, not in 051's PR).
+    Source: `docs/reviews/051-external-review-apply-gate.md`, S1.
+
+17. **Prod gate.** Prod P0 must show fingerprint `91a1865dd1fd0b98de6a9d9333008593` and comments hash `80b77da945cc55890da3acee8182eca2`; after the apply `19102bc8020867d2650e13c6fddd13c0` and `b97d2e3b734f6c002fd5c0a57a06e643`. Any mismatch = STOP.
+    Source: `docs/reviews/051-external-review-apply-gate.md`, "One gate to add for prod".
+

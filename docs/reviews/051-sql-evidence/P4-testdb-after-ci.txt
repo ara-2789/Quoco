@@ -1,0 +1,47 @@
+== P4 test-db row counts after the CI run at f9363ab8 (run 40544837099) ==
+generated: 2026-10-27T17:28:14Z
+$ cat /Users/aravindanrajamani/Desktop/quocoai/supabase/.temp/project-ref   (must equal exfccwlrhoutkgrlikod)
+exfccwlrhoutkgrlikod
+SELECT only. No write is issued.
+
+---- rows by status
+SQL: SELECT ingest_status, count(*) FROM public.capture_files GROUP BY 1;
+{
+  "rows": [],
+}
+
+---- terminal rows
+SQL: SELECT count(*) AS terminal_rows FROM public.capture_files WHERE ingest_status IN ('stored','rejected');
+{
+  "rows": [
+    {
+      "terminal_rows": 0
+    }
+  ],
+}
+
+---- total rows (context)
+SQL: SELECT count(*) AS total_rows FROM public.capture_files;
+{
+  "rows": [
+    {
+      "total_rows": 0
+    }
+  ],
+}
+
+---- ledger top 2 (context)
+SQL: SELECT version, name FROM supabase_migrations.schema_migrations ORDER BY version DESC LIMIT 2;
+{
+  "rows": [
+    {
+      "name": "capture_files_immutability",
+      "version": "051"
+    },
+    {
+      "name": "material_inward_functions",
+      "version": "050"
+    }
+  ],
+}
+
