@@ -4,6 +4,23 @@
 -- be silently changed, and only the ingest job (service_role) may fill in a
 -- file's stored details.
 --
+-- REV 3, 2026-10-27, after external review round 2 (docs/reviews/051-external-review-round-2.md):
+--   S1  one more CHECK, capture_files_details_terminal_only_chk: content_type and byte_size
+--       are set only on 'stored' or 'rejected'. Every terminal detail must now arrive in the
+--       SAME UPDATE that makes the row terminal, so a stale value from an earlier attempt can
+--       never be inherited and then frozen. (Consequence: every one of the seven granted
+--       columns is NULL on a pending or failed row, so a pending or failed row can no longer
+--       change any column except by a status move. 'failed' -> 'failed' with changes is now
+--       vacuous; a no-change UPDATE is still allowed.)
+--   S2(a) the trigger is now BEFORE INSERT OR UPDATE. An INSERT must be a blank pending row:
+--       ingest_status 'pending' and content_type, byte_size, sha256, storage_path,
+--       reject_reason, preview_state and ingested_at all NULL (QE011 otherwise), so INSERT is
+--       no longer outside the lock. 050's live insert names none of those columns, so it is
+--       unaffected. R2-1 "no caller can ever supply the time" is therefore true for BOTH
+--       INSERT and UPDATE as of rev 3 (2026-10-27). In rev 2 it was true for UPDATE only: an
+--       owner (any DEFINER function) could INSERT a terminal row with its own ingested_at.
+--   S3  the DOWN refuses (DOWN_PRECONDITION_051 ... terminal_rows=N) when N > 0.
+--   R2-2 now() kept. R2-3 both path checks kept, no later drop planned.
 -- REV 2, 2026-10-27, after external review round 1 (docs/reviews/051-external-review-round-1.md).
 -- DATED CORRECTION (S1): rev 1 said "a stored capture file can never be silently
 --   changed". That is struck. 051 locks the DATABASE RECORD of a stored file, not
@@ -12,7 +29,7 @@
 --   no C5 code path overwrites or deletes an object under a stored row.
 -- Rev 2 adds, before the trigger: B1 (two lifecycle CHECKs), B2 (a row-owned
 --   storage path CHECK), S2 (a database-stamped ingested_at column and its CHECK).
---   Why B1 and B2 are needed: the trigger freezes whatever lands in a terminal
+--   (rev 3 adds S1, S2(a), S3 above.) Why B1 and B2 are needed: the trigger freezes whatever lands in a terminal
 --   row, so a row with a contradictory shape (a stored file carrying a
 --   reject_reason, a rejected file carrying a hash and path) would be frozen
 --   wrong, and two rows could certify one Storage object.
@@ -31,13 +48,14 @@
 --      fills in the stored details and moves it to 'stored' or 'rejected'.
 --      Today nobody can UPDATE that table at all (049 grants SELECT only).
 --      This file gives service_role UPDATE on seven columns, and nothing more.
---   2. A BEFORE UPDATE trigger then locks the rest. Identity columns never
+--   2. A BEFORE INSERT OR UPDATE trigger then locks the rest. Identity columns never
 --      change. 'stored' and 'rejected' are final: nothing about the row may
 --      change again. This closes the hole the external reviewer proved open
 --      on a stub (049-review-package.md:145): a stored file's sha256 could be
 --      rewritten.
---   3. (rev 2) Four CHECK constraints keep every row's shape consistent, so the
+--   3. (rev 2, five from rev 3) CHECK constraints keep every row's shape consistent, so the
 --      lock never freezes a contradiction (B1, B2, S2 below).
+--   3b.(rev 3) The trigger also fires on INSERT and accepts only a blank pending row.
 --   4. (rev 2) A new column ingested_at records when a file reached 'stored' or
 --      'rejected'. The DATABASE stamps it inside the trigger. No role can write
 --      it, and it is NOT in the service_role grant (S2, per Aravind 27 Oct).
@@ -58,8 +76,9 @@
 -- ROW SHAPE (rev 2; a violation raises 23514, check_violation, from the CHECKs in section 1):
 --   B1  reject_reason is set if and only if ingest_status = 'rejected'.
 --       storage_path, sha256 and preview_state are set only when 'stored'.
---       content_type and byte_size may be set on any status, so a 'too_large' or
---       'wrong_type' reject can record what was observed.
+--   S1  (rev 3) content_type and byte_size are set only on 'stored' or 'rejected', in the
+--       same UPDATE that makes the row terminal. A 'too_large' or 'wrong_type' reject still
+--       records what was observed, because that UPDATE sets them on the 'rejected' row.
 --   B2  storage_path starts with tenant/project/document/<this row's id>. The id
 --       is a fixed-width uuid, so no row's prefix can collide with another's.
 --       049's existing capture_files_storage_path_prefix_chk (the document folder
@@ -102,10 +121,12 @@
 --   scans the table to validate. ADD COLUMN (nullable, no default) is a catalog
 --   change only. CREATE TRIGGER takes SHARE ROW EXCLUSIVE and GRANT a brief lock.
 --   Nothing here locks whatsapp_sessions or any other table. SET LOCAL
---   lock_timeout below makes a blocked apply fail fast. Prod rows are believed to
---   be empty (nothing calls apply_material_inward_turn before C4); the 050 insert
---   writes only pending rows with every detail NULL, which satisfies all four
---   checks, so validation passes on any existing row.
+--   lock_timeout below makes a blocked apply fail fast. Existing pending rows
+--   validate (the 050 insert writes only blank pending rows). A stored or rejected
+--   row cannot exist today short of a hand edit: 049 grants SELECT only, so only the
+--   table owner can UPDATE capture_files (external review round 2, R2-5). If one
+--   does exist, this file aborts whole (G1b case D). The apply block's read-only
+--   count of terminal rows is an early warning, not the guard.
 --
 -- SOURCE MAP (id -> where)
 --   [src: R49:145]   docs/reviews/049-review-package.md:145 (PR-C BLOCKING item)
@@ -121,6 +142,9 @@
 --   [src: R1-B2]     same (B2: row-owned storage path)
 --   [src: R1-S1]     same (S1: the bytes are not locked)
 --   [src: R1-S2]     same (S2: terminal timestamp; stamped by the database per Aravind 27 Oct)
+--   [src: R2-S1]     docs/reviews/051-external-review-round-2.md (S1: stale attempt data frozen into terminal rows)
+--   [src: R2-S2]     same (S2: INSERT is outside the lock; option (a) taken per Aravind 27 Oct)
+--   [src: R2-S3]     same (S3: the DOWN refuses over live terminal rows)
 --   [src: S049-F4-1] supabase/migrations/049_capture_tables.sql (TR1 stamps delivery_invoice_links.linked_at)
 --
 -- DOWN: commented block at the end. The runnable files are
@@ -154,6 +178,11 @@ ALTER TABLE public.capture_files
   ADD CONSTRAINT capture_files_ingested_at_iff_chk
     CHECK ((ingest_status IN ('stored', 'rejected')) = (ingested_at IS NOT NULL));
 
+-- [src: R2-S1] content_type and byte_size only on a terminal row (stale attempt data is never inherited).
+ALTER TABLE public.capture_files
+  ADD CONSTRAINT capture_files_details_terminal_only_chk
+    CHECK (ingest_status IN ('stored', 'rejected') OR (content_type IS NULL AND byte_size IS NULL));
+
 -- -----------------------------------------------------------------------------
 -- 2. The trigger function.
 -- -----------------------------------------------------------------------------
@@ -168,6 +197,22 @@ BEGIN
   -- B3: first statement.
   IF current_setting('transaction_isolation') <> 'read committed' THEN
     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+  END IF;
+
+  -- S2(a): an INSERT must be a blank pending row. The caller (any owner or DEFINER function)
+  -- can then never supply a status, a detail or the stamp; the trigger stamps on UPDATE only.
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.ingest_status IS DISTINCT FROM 'pending'
+       OR NEW.content_type IS NOT NULL
+       OR NEW.byte_size IS NOT NULL
+       OR NEW.sha256 IS NOT NULL
+       OR NEW.storage_path IS NOT NULL
+       OR NEW.reject_reason IS NOT NULL
+       OR NEW.preview_state IS NOT NULL
+       OR NEW.ingested_at IS NOT NULL THEN
+      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+    END IF;
+    RETURN NEW;
   END IF;
 
   -- Identity: never changes, whatever the row's status.
@@ -220,7 +265,7 @@ $$;
 -- -----------------------------------------------------------------------------
 -- [src: PLAN-3d]
 CREATE TRIGGER trg_capture_files_before_update
-  BEFORE UPDATE ON public.capture_files
+  BEFORE INSERT OR UPDATE ON public.capture_files
   FOR EACH ROW
   EXECUTE FUNCTION public.trg_capture_files_before_update();
 
@@ -258,7 +303,7 @@ DECLARE
                                      'storage_path', 'reject_reason', 'preview_state'];
   v_con     text;
 BEGIN
-  -- Rev 2: the ingested_at column exists (timestamptz, nullable, no default) and the four new
+  -- Rev 2/3: the ingested_at column exists (timestamptz, nullable, no default) and the five new
   -- CHECK constraints exist, are CHECKs, and are validated.
   IF NOT EXISTS (
     SELECT 1 FROM pg_attribute a
@@ -268,7 +313,8 @@ BEGIN
     v_bad := v_bad || ' ingested_at_column';
   END IF;
   FOREACH v_con IN ARRAY ARRAY['capture_files_reject_reason_iff_chk', 'capture_files_stored_only_chk',
-                               'capture_files_storage_path_row_chk', 'capture_files_ingested_at_iff_chk'] LOOP
+                               'capture_files_storage_path_row_chk', 'capture_files_ingested_at_iff_chk',
+                               'capture_files_details_terminal_only_chk'] LOOP
     IF NOT EXISTS (
       SELECT 1 FROM pg_constraint c
        WHERE c.conrelid = 'public.capture_files'::regclass AND c.conname = v_con AND c.contype = 'c' AND c.convalidated
@@ -307,7 +353,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- Trigger present, enabled, BEFORE UPDATE FOR EACH ROW, bound to the function.
+  -- Trigger present, enabled, BEFORE INSERT OR UPDATE FOR EACH ROW, bound to the function.
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger t
      WHERE t.tgrelid = 'public.capture_files'::regclass
@@ -317,8 +363,9 @@ BEGIN
        AND t.tgfoid = v_oid
        AND (t.tgtype & 1) = 1      -- ROW
        AND (t.tgtype & 2) = 2      -- BEFORE
+       AND (t.tgtype & 4) = 4      -- INSERT (rev 3, S2(a))
        AND (t.tgtype & 16) = 16    -- UPDATE
-       AND (t.tgtype & (4 | 8 | 32)) = 0   -- not INSERT, DELETE, TRUNCATE
+       AND (t.tgtype & (8 | 32)) = 0   -- not DELETE, TRUNCATE
   ) THEN
     v_bad := v_bad || ' trigger';
   END IF;
@@ -390,16 +437,18 @@ COMMIT;
 --
 -- DOWN, in order, one transaction:
 --   SET LOCAL lock_timeout = '3s';
---   precondition: refuse (DOWN_PRECONDITION_051) unless the 051 ledger row, the function, the trigger, the four constraints and the column all exist;
+--   precondition: refuse (DOWN_PRECONDITION_051) unless the 051 ledger row, the function, the trigger, the five constraints and the column all exist, AND
+--     refuse when any row has ingest_status IN ('stored','rejected') (terminal_rows=N, rev 3 S3): a rollback over live terminal rows
+--     needs a separate reviewed artifact with its own decision on ingested_at;
 --   DROP TRIGGER trg_capture_files_before_update ON public.capture_files;
 --   DROP FUNCTION public.trg_capture_files_before_update();
---   DROP CONSTRAINT x4 (capture_files_ingested_at_iff_chk, capture_files_storage_path_row_chk,
+--   DROP CONSTRAINT x5 (capture_files_details_terminal_only_chk, capture_files_ingested_at_iff_chk, capture_files_storage_path_row_chk,
 --     capture_files_stored_only_chk, capture_files_reject_reason_iff_chk), then DROP COLUMN ingested_at
---     (rev 2; DOWN loses the ingested_at values -- that is a data loss, stated);
+--     (the DOWN can no longer run over terminal rows, so it loses no ingested_at value);
 --   REVOKE UPDATE (ingest_status, content_type, byte_size, sha256, storage_path, reject_reason, preview_state)
 --     ON public.capture_files FROM service_role;
 --   DELETE FROM supabase_migrations.schema_migrations WHERE version = '051';
---   closing assertion: function, trigger, four constraints and the column gone, service_role column UPDATE false on all seven, SELECT still held.
+--   closing assertion: function, trigger, five constraints and the column gone, service_role column UPDATE false on all seven, SELECT still held.
 -- Rollback order: C5 (the ingest job) must be rolled back BEFORE this DOWN, because the ingest needs the grant.
 -- Then C, then B, then A (049's DOWN comes last).
 -- =============================================================================

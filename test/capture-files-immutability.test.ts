@@ -1,6 +1,7 @@
-// C2 (migration 051, rev 2): capture_files immutability, lifecycle CHECKs and the column UPDATE grant (D-8).
-// Plan: docs/plans/pr-c-plan.md section 3d (T-D8-1..11) and section 8 row C2; rev 2 adds T-D8-12..17 after external
-// review round 1 (docs/reviews/051-external-review-round-1.md). NOT YET RUN against test-db: 051 is HELD in
+// C2 (migration 051, rev 3): capture_files immutability, lifecycle CHECKs, INSERT lock and the column UPDATE grant (D-8).
+// Plan: docs/plans/pr-c-plan.md section 3d (T-D8-1..11) and section 8 row C2; rev 2 added T-D8-12..17 after external
+// review round 1 (docs/reviews/051-external-review-round-1.md); rev 3 adds T-D8-18..21 after round 2
+// (docs/reviews/051-external-review-round-2.md). NOT YET RUN against test-db: 051 is HELD in
 // docs/reviews/ and is not applied there, so every database test below is expected RED in CI until the test-db apply.
 // T-D8-11 and T-D8-17 are static (no database) and read the migration SQL from supabase/migrations/ and docs/reviews/.
 //
@@ -124,9 +125,9 @@ describe('051 capture_files immutability (test-db)', () => {
     expect(after).toMatchObject({ ingest_status: 'stored', sha256: SHA_A, byte_size: 1000, content_type: 'image/jpeg', preview_state: 'previewable' })
   })
 
-  it('T-D8-2 grant layer: file_no, claimed_content_type, tenant_id and id are refused 42501 [control: a granted column on the same row succeeds]', async () => {
+  it('T-D8-2 grant layer: file_no, claimed_content_type, tenant_id and id are refused 42501 [control: a granted column (ingest_status) on the same row succeeds]', async () => {
     const f = await newPending()
-    await mustUpdate(f, { byte_size: 100 })
+    await mustUpdate(f, { ingest_status: 'failed' })
     for (const patch of [{ file_no: 99 }, { claimed_content_type: 'image/png' }, { tenant_id: kit.tenantB }, { id: randomUUID() }]) {
       const { error } = await update(f, patch)
       expect(error?.code, JSON.stringify(patch)).toBe('42501')
@@ -177,12 +178,12 @@ describe('051 capture_files immutability (test-db)', () => {
   it('T-D8-7 anon and an authenticated PM are refused UPDATE with 42501, including a real anon-key call [control: service_role updates the same row]', async () => {
     const f = await newPending()
     const anon = captureAnon()
-    const a = await anon.from('capture_files').update({ byte_size: 5 }).eq('id', f.id).select('id')
+    const a = await anon.from('capture_files').update({ ingest_status: 'failed' }).eq('id', f.id).select('id')
     expect(a.error?.code).toBe('42501')
     const pm = await kit.jwt('pm1')
-    const p = await pm.from('capture_files').update({ byte_size: 5 }).eq('id', f.id).select('id')
+    const p = await pm.from('capture_files').update({ ingest_status: 'failed' }).eq('id', f.id).select('id')
     expect(p.error?.code).toBe('42501')
-    await mustUpdate(f, { byte_size: 5 })
+    await mustUpdate(f, { ingest_status: 'failed' })
   })
 
   it('T-D8-8 service_role DELETE on capture_files is refused with 42501 (TRUNCATE is probed on the scaffold: PostgREST cannot issue it) [control: the row still reads back]', async () => {
@@ -206,7 +207,7 @@ describe('051 capture_files immutability (test-db)', () => {
     }
   })
 
-  it.skip(`T-D8-10 DOWN rehearsal: after the DOWN, service_role UPDATE is 42501, the trigger, function, constraints and column are gone, ACLs match the pre-rehearsal values${OWNER_ONLY}`, () => {})
+  it.skip(`T-D8-10 DOWN rehearsal: after the DOWN, service_role UPDATE is 42501, the trigger, function, five constraints and column are gone, ACLs match the pre-rehearsal values${OWNER_ONLY}`, () => {})
 
   // ---------------------------------------------------------------------------
   // Rev 2: the reviewer's three probes (B1 x2, B2). Each was a SUCCESS on rev-1 051 (G0c-review-probes-rev1) and is 23514 now.
@@ -232,6 +233,9 @@ describe('051 capture_files immutability (test-db)', () => {
     }
     // a pending row cannot carry the stored-only details either (the replaced rev-1 control, now refused by design)
     expect((await update(f, { sha256: SHA_B })).error?.code).toBe('23514')
+    // rev 3 (S1): nor content_type or byte_size
+    expect((await update(f, { byte_size: 5 })).error?.code).toBe('23514')
+    expect((await update(f, { content_type: 'image/png' })).error?.code).toBe('23514')
     expect((await read(f)).ingest_status).toBe('pending')
   })
 
@@ -260,7 +264,7 @@ describe('051 capture_files immutability (test-db)', () => {
     const failed = await newFailed()
     expect(failed.ingested_at).toBeNull()
     const f = await newPending()
-    await mustUpdate(f, { byte_size: 7 })
+    await mustUpdate(f, { ingest_status: 'failed' })
     const { error } = await update(f, { ingested_at: new Date().toISOString() })
     expect(error?.code).toBe('42501')
     expect((await read(f)).ingested_at).toBeNull()
@@ -274,6 +278,34 @@ describe('051 capture_files immutability (test-db)', () => {
     expect(Object.keys(f).sort()).toEqual(expected)
     expect(expected).toHaveLength(17)
   })
+
+  // ---------------------------------------------------------------------------
+  // Rev 3: the reviewer's two round-2 probes. Each SUCCEEDED on rev 2 (G0d-review2-probes-rev2) and is refused on rev 3.
+  // ---------------------------------------------------------------------------
+  it('T-D8-18 (S1 probe, round 2) a failed row carrying content_type and byte_size is refused 23514, so a later rejected row cannot inherit them [control: pending -> rejected wrong_type WITH its own content_type and byte_size in ONE update succeeds]', async () => {
+    const f = await newPending()
+    const stale = await update(f, { ingest_status: 'failed', content_type: 'image/png', byte_size: 99999999 })
+    expect(stale.error?.code).toBe('23514')
+    const pendingOnly = await update(f, { byte_size: 5 })
+    expect(pendingOnly.error?.code).toBe('23514')
+    await mustUpdate(f, { ingest_status: 'failed' })
+    // the second step of the probe: failed -> rejected WITHOUT overwriting anything. Nothing stale exists to inherit.
+    await mustUpdate(f, { ingest_status: 'rejected', reject_reason: 'wrong_type' })
+    expect(await read(f)).toMatchObject({ ingest_status: 'rejected', reject_reason: 'wrong_type', content_type: null, byte_size: null })
+    const g = await newPending()
+    await mustUpdate(g, { ingest_status: 'rejected', reject_reason: 'wrong_type', content_type: 'image/png', byte_size: 99999999 })
+    expect(await read(g)).toMatchObject({ content_type: 'image/png', byte_size: 99999999 })
+  })
+
+  it.skip(`T-D8-19 (S2(a) probe, round 2) an owner INSERT of a terminal row (rejected, too_large, ingested_at 2020-01-01) is refused QE011; a blank pending insert with exactly 050's column list is accepted${OWNER_ONLY}`, () => {})
+
+  it('T-D8-20 (S2(a) control) 050\'s real insert path is accepted by the INSERT lock: a file turn through apply_material_inward_turn yields a pending row with every detail and ingested_at NULL [control: the row exists, and a status move then works]', async () => {
+    const f = await newPending()
+    expect(f).toMatchObject({ ingest_status: 'pending', content_type: null, byte_size: null, sha256: null, storage_path: null, reject_reason: null, preview_state: null, ingested_at: null })
+    await mustUpdate(f, { ingest_status: 'failed' })
+  })
+
+  it.skip(`T-D8-21 (S3) a DOWN with one stored row present is refused DOWN_PRECONDITION_051 ... terminal_rows=1 and changes nothing${OWNER_ONLY}`, () => {})
 })
 
 // ---------------------------------------------------------------------------
