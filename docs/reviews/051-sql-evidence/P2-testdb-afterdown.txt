@@ -1,0 +1,292 @@
+== P2 test-db readback AFTER THE DOWN (051) ==
+generated: 2026-10-27T14:59:07Z
+$ cat /Users/aravindanrajamani/Desktop/quocoai/supabase/.temp/project-ref   (must equal exfccwlrhoutkgrlikod)
+exfccwlrhoutkgrlikod
+All statements below are SELECT. No write is issued.
+
+---- A. the function: count, prosecdef, owner, proconfig, ACL
+SQL: SELECT count(*) OVER () AS function_rows, p.prosecdef, p.proowner::regrole::text AS owner, p.proconfig, p.proacl::text AS acl FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'trg_capture_files_before_update';
+{
+  "rows": [],
+}
+[exit 0]
+
+---- B. EXECUTE privilege on the function for anon, authenticated, service_role (must be false x3)
+SQL: SELECT has_function_privilege('anon', 'public.trg_capture_files_before_update()', 'EXECUTE') AS anon_exec, has_function_privilege('authenticated', 'public.trg_capture_files_before_update()', 'EXECUTE') AS auth_exec, has_function_privilege('service_role', 'public.trg_capture_files_before_update()', 'EXECUTE') AS svc_exec;
+{"_tag":"Error","error":{"code":"LegacyDbQueryUnexpectedStatusError","message":"unexpected status 400: {\"message\":\"Failed to run sql query: ERROR:  42883: function \\\"public.trg_capture_files_before_update()\\\" does not exist\\n\"}"}}
+[exit 1]
+
+---- C. the trigger: name, tgtype, enabled, insert/update/row/before bits, definition
+SQL: SELECT tgname, tgtype, tgenabled, (tgtype & 1 = 1) AS is_row, (tgtype & 2 = 2) AS is_before, (tgtype & 4 = 4) AS on_insert, (tgtype & 16 = 16) AS on_update, (tgtype & (8|32)) = 0 AS not_delete_truncate, pg_get_triggerdef(oid) AS def FROM pg_trigger WHERE tgrelid = 'public.capture_files'::regclass AND NOT tgisinternal;
+{
+  "rows": [],
+}
+[exit 0]
+
+---- D. the five 051 constraints: name, convalidated, definition
+SQL: SELECT conname, convalidated, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'public.capture_files'::regclass AND conname IN ('capture_files_reject_reason_iff_chk','capture_files_stored_only_chk','capture_files_storage_path_row_chk','capture_files_ingested_at_iff_chk','capture_files_details_terminal_only_chk') ORDER BY conname;
+{
+  "rows": [],
+}
+[exit 0]
+
+---- E. the ingested_at column
+SQL: SELECT attnum, attname, format_type(atttypid, atttypmod) AS type, attnotnull, atthasdef FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attname = 'ingested_at' AND NOT attisdropped;
+{
+  "rows": [],
+}
+[exit 0]
+
+---- F. table ACL
+SQL: SELECT relacl::text AS table_acl FROM pg_class WHERE oid = 'public.capture_files'::regclass;
+{
+  "rows": [
+    {
+      "table_acl": "{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}"
+    }
+  ],
+}
+[exit 0]
+
+---- G. column ACLs (raw)
+SQL: SELECT attname, attacl::text AS column_acl FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attacl IS NOT NULL ORDER BY attname;
+{
+  "rows": [],
+}
+[exit 0]
+
+---- H. column UPDATE walk: service_role must be true for exactly the 7 granted columns; anon/authenticated false for all
+SQL: SELECT a.attname, has_column_privilege('service_role', 'public.capture_files', a.attname, 'UPDATE') AS svc_update, has_column_privilege('anon', 'public.capture_files', a.attname, 'UPDATE') AS anon_update, has_column_privilege('authenticated', 'public.capture_files', a.attname, 'UPDATE') AS auth_update FROM pg_attribute a WHERE a.attrelid = 'public.capture_files'::regclass AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum;
+{
+  "rows": [
+    {
+      "anon_update": false,
+      "attname": "id",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "created_at",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "tenant_id",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "project_id",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "document_id",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "file_no",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "source_message_sid",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "media_index",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "claimed_content_type",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "content_type",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "byte_size",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "sha256",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "storage_path",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "ingest_status",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "reject_reason",
+      "auth_update": false,
+      "svc_update": false
+    },
+    {
+      "anon_update": false,
+      "attname": "preview_state",
+      "auth_update": false,
+      "svc_update": false
+    }
+  ],
+}
+[exit 0]
+
+---- I. table privileges for service_role (must be SELECT only)
+SQL: SELECT string_agg(p, ',' ORDER BY p) AS svc_table_privileges FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p WHERE has_table_privilege('service_role', 'public.capture_files', p);
+{
+  "rows": [
+    {
+      "svc_table_privileges": "SELECT"
+    }
+  ],
+}
+[exit 0]
+
+---- J. FINGERPRINT (same expression as the scaffold t.fp(); scaffold post-apply value 19102bc8020867d2650e13c6fddd13c0; pre-apply was 91a1865dd1fd0b98de6a9d9333008593)
+SQL: SELECT md5(concat_ws('|', (SELECT coalesce(string_agg(pg_get_functiondef(p.oid), '' ORDER BY p.oid), '-') FROM pg_proc p WHERE p.proname = 'trg_capture_files_before_update'), (SELECT coalesce(string_agg(p.proacl::text, ',' ORDER BY p.oid), '-') FROM pg_proc p WHERE p.proname = 'trg_capture_files_before_update'), (SELECT coalesce(string_agg(pg_get_triggerdef(g.oid), ';' ORDER BY g.tgname), '-') FROM pg_trigger g WHERE g.tgrelid = 'public.capture_files'::regclass AND NOT g.tgisinternal), (SELECT relacl::text FROM pg_class WHERE oid = 'public.capture_files'::regclass), (SELECT coalesce(string_agg(attname || ':' || attacl::text, ',' ORDER BY attname), '-') FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attacl IS NOT NULL), (SELECT coalesce(string_agg(conname || ':' || pg_get_constraintdef(oid) || ':' || convalidated::text, ';' ORDER BY conname), '-') FROM pg_constraint WHERE conrelid = 'public.capture_files'::regclass), (SELECT coalesce(string_agg(attname || ':' || format_type(atttypid, atttypmod) || ':' || attnotnull::text || ':' || atthasdef::text, ',' ORDER BY attnum), '-') FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attnum > 0 AND NOT attisdropped))) AS fingerprint;
+{
+  "rows": [
+    {
+      "fingerprint": "91a1865dd1fd0b98de6a9d9333008593"
+    }
+  ],
+}
+[exit 0]
+
+---- K. comments hash (scaffold post-apply value b97d2e3b734f6c002fd5c0a57a06e643; pre-apply 80b77da945cc55890da3acee8182eca2)
+SQL: SELECT md5(concat_ws('|', coalesce(obj_description('public.capture_files'::regclass, 'pg_class'), '-'), (SELECT coalesce(string_agg(a.attname || '=' || coalesce(col_description(a.attrelid, a.attnum), '-'), ',' ORDER BY a.attnum), '-') FROM pg_attribute a WHERE a.attrelid = 'public.capture_files'::regclass AND a.attnum > 0 AND NOT a.attisdropped), (SELECT coalesce(string_agg(coalesce(obj_description(p.oid, 'pg_proc'), '-'), ',' ORDER BY p.oid), '-') FROM pg_proc p WHERE p.proname = 'trg_capture_files_before_update'))) AS comments_hash;
+{
+  "rows": [
+    {
+      "comments_hash": "80b77da945cc55890da3acee8182eca2"
+    }
+  ],
+}
+[exit 0]
+
+---- L. rows in capture_files (must still be 0: the apply wrote no row)
+SQL: SELECT count(*) AS total_rows FROM public.capture_files;
+{
+  "rows": [
+    {
+      "total_rows": 0
+    }
+  ],
+}
+[exit 0]
+
+---- M. ledger, latest two
+SQL: SELECT version, name, coalesce(array_length(statements,1),0) AS statements FROM supabase_migrations.schema_migrations ORDER BY version DESC LIMIT 2;
+{
+  "rows": [
+    {
+      "name": "material_inward_functions",
+      "statements": 31,
+      "version": "050"
+    },
+    {
+      "name": "capture_tables",
+      "statements": 59,
+      "version": "049"
+    }
+  ],
+}
+[exit 0]
+
+---- N. 050 functions still exactly one pg_proc row each
+SQL: SELECT proname, count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('apply_material_inward_turn','expire_stale_material_inward','pm_set_delivery_details','pm_approve_delivery','pm_reject_delivery','pm_link_invoice','pm_unlink_invoice') GROUP BY 1 ORDER BY 1;
+{
+  "rows": [
+    {
+      "count": 1,
+      "proname": "apply_material_inward_turn"
+    },
+    {
+      "count": 1,
+      "proname": "expire_stale_material_inward"
+    },
+    {
+      "count": 1,
+      "proname": "pm_approve_delivery"
+    },
+    {
+      "count": 1,
+      "proname": "pm_link_invoice"
+    },
+    {
+      "count": 1,
+      "proname": "pm_reject_delivery"
+    },
+    {
+      "count": 1,
+      "proname": "pm_set_delivery_details"
+    },
+    {
+      "count": 1,
+      "proname": "pm_unlink_invoice"
+    }
+  ],
+}
+[exit 0]
+
+== end ==
+== ledger verification: after the DOWN ==
+generated: 2026-10-27T15:00:12Z
+$ cat /Users/aravindanrajamani/Desktop/quocoai/supabase/.temp/project-ref
+exfccwlrhoutkgrlikod
+SQL: SELECT version, name, coalesce(array_length(statements,1),0) AS statements FROM supabase_migrations.schema_migrations ORDER BY version DESC LIMIT 3;
+{
+  "rows": [
+    {
+      "name": "material_inward_functions",
+      "statements": 31,
+      "version": "050"
+    },
+    {
+      "name": "capture_tables",
+      "statements": 59,
+      "version": "049"
+    },
+    {
+      "name": "engineer_registration",
+      "statements": 14,
+      "version": "048"
+    }
+  ],
+}
+SQL: SELECT count(*) AS rows_051 FROM supabase_migrations.schema_migrations WHERE version = '051';
+{
+  "rows": [
+    {
+      "rows_051": 0
+    }
+  ],
+}

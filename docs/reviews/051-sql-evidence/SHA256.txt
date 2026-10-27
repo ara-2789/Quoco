@@ -46,6 +46,9 @@ f72972166ae0c5fb45eb1b254fc67ec976a1893bd5f11008b294e79ad191e1c1  docs/reviews/0
 1ca874c4604ed322d8669b48278dd5546060e4bf1a2b454b49af299eb0b1d793  docs/reviews/051-sql-evidence/G6-scaffold-teardown-rev3.txt
 9ae2f48d476e868d426b5f199329c4dc1eb346886ad947bed8b3615061765339  docs/reviews/051-sql-evidence/G6-scaffold-teardown.txt
 a0083004cb13325185cc04b5a195587d8783f04ca9ff8f39c79de5f5d2ed02c8  docs/reviews/051-sql-evidence/P0-testdb-preapply.txt
+f457e5b1d448f77e05dac3aa6eca552fd9e37dd9c3f888fcf53095e4df4ecec6  docs/reviews/051-sql-evidence/P1-testdb-postapply.txt
+245811c6c9e0e9f418a8be3c1fa5ff7c05f91d9cef020c5534c0b1f803d00a2c  docs/reviews/051-sql-evidence/P2-testdb-afterdown.txt
+54b22fa6d0743260d761470020a4354510bbaddb5837a0ee89111f58c79b54a2  docs/reviews/051-sql-evidence/P3-testdb-afterreapply.txt
 f47775ca72069fa3e169238abcbd15ac43f5c8b7a693db29158451fb3d683702  docs/reviews/051-sql-evidence/scaffold-build-prep.txt
 c5b0c97a896d85d7c9bebc2fde633a15fbce019f9f16ad6cb73a8992092aef11  docs/reviews/051-sql-evidence/scaffold-build-rev2.txt
 e1c2e3eb925033577adb3a25d1f0d15d63f32e2395321037472e666a93cf6f13  docs/reviews/051-sql-evidence/scaffold-build-rev3.txt
