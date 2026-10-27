@@ -1,0 +1,64 @@
+== 051 rev 3 scaffold dry-run: G0d-review2-probes-rev2 ==
+generated: 2026-10-27T13:25:58Z
+HEAD: 635d39bd68ad37a4618e4f4378018be901276239
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP (rev 3):  debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9
+sha256 051 UP (rev 2, git show f03a372): fbd3b3a535db3c9af41991c1b324ae0e7fe26fb5e5713a1de0e6b7a824c15907
+sha256 051 DOWN test:   672a422f895bc7b1425e21ae274ad9792c12ed4b1b2d12f334540b06a721da3a
+PGHOST (must be a local socket dir): /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+                mk_doc                
+--------------------------------------
+ 50000000-0000-0000-0000-0000000000c2
+(1 row)
+
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2_r2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/051-rev2.sql
+[exit 0]
+--- the reviewer's two probes against rev-2 051 (psql -e echoes every statement) ---
+== G0d.0 fixture (blank pending owner INSERT, then the probes)
+SELECT t.mkfile(1, 'pending') AS p1;
+                  p1                  
+--------------------------------------
+ c2000000-0000-0000-0000-000000000001
+(1 row)
+
+SET ROLE service_role;
+== probe 1 (S1, stale attempt data): failed carrying content_type and byte_size, then rejected without overwriting them
+SELECT t.expect('HOLE rev-2 probe 1a: pending -> failed WITH content_type image/png and byte_size 99999999', $$UPDATE public.capture_files SET ingest_status = 'failed', content_type = 'image/png', byte_size = 99999999 WHERE id = t.fid(1)$$, 'ok');
+                                                               expect                                                                
+-------------------------------------------------------------------------------------------------------------------------------------
+ PASS: HOLE rev-2 probe 1a: pending -> failed WITH content_type image/png and byte_size 99999999 -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('HOLE rev-2 probe 1b: failed -> rejected wrong_type WITHOUT overwriting them', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type' WHERE id = t.fid(1)$$, 'ok');
+                                                        expect                                                         
+-----------------------------------------------------------------------------------------------------------------------
+ PASS: HOLE rev-2 probe 1b: failed -> rejected wrong_type WITHOUT overwriting them -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('rev-2 probe 1c: the stale values can no longer be cleared (terminal lock freezes them) -> QE011', $$UPDATE public.capture_files SET byte_size = NULL WHERE id = t.fid(1)$$, 'QE011');
+                                                                    expect                                                                    
+----------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: rev-2 probe 1c: the stale values can no longer be cleared (terminal lock freezes them) -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+RESET ROLE;
+== probe 2 (S2, INSERT outside the lock): an owner INSERT of a terminal row with thepsql:/Users/aravindanrajamani/.claude/jobs/335a6222/tmp/scripts/src/g0d-probes-rev2.sql:12: error: unterminated quoted string
+
+SELECT t.expect('HOLE rev-2 probe 2: owner INSERT of a rejected row, too_large, ingested_at 2020-01-01', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, ingest_status, reject_reason, ingested_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 2, 'ZZ-C2-S2', 0, 'image/jpeg', 'rejected', 'too_large', '2020-01-01')$$, 'ok');
+                                                             expect                                                              
+---------------------------------------------------------------------------------------------------------------------------------
+ PASS: HOLE rev-2 probe 2: owner INSERT of a rejected row, too_large, ingested_at 2020-01-01 -- succeeded as expected (1 row(s))
+(1 row)
+
+== resulting rows
+SELECT file_no, ingest_status, reject_reason, content_type, byte_size, ingested_at::date AS ingested_on FROM public.capture_files WHERE file_no IN (1, 2) ORDER BY file_no;
+ file_no | ingest_status | reject_reason | content_type | byte_size | ingested_on 
+---------+---------------+---------------+--------------+-----------+-------------
+       1 | rejected      | wrong_type    | image/png    |  99999999 | 2026-10-27
+       2 | rejected      | too_large     |              |           | 2020-01-01
+(2 rows)
+

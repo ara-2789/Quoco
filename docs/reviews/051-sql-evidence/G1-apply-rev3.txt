@@ -1,0 +1,35 @@
+== 051 rev 3 scaffold dry-run: G1-apply-rev3 ==
+generated: 2026-10-27T13:25:58Z
+HEAD: 635d39bd68ad37a4618e4f4378018be901276239
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP (rev 3):  debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9
+sha256 051 UP (rev 2, git show f03a372): fbd3b3a535db3c9af41991c1b324ae0e7fe26fb5e5713a1de0e6b7a824c15907
+sha256 051 DOWN test:   672a422f895bc7b1425e21ae274ad9792c12ed4b1b2d12f334540b06a721da3a
+PGHOST (must be a local socket dir): /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+baseline fingerprint (G0, before 051): 91a1865dd1fd0b98de6a9d9333008593
+baseline comments hash:                80b77da945cc55890da3acee8182eca2
+
+== G1.0 scenario cleanup: G0 left a stored and a rejected row in d_c2; 051 cannot validate over terminal rows (G1b case D shows that abort). ==
+rows before cleanup: 3 (terminal: 1)
+[cleanup exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+[exit 0]
+(first apply: the in-file post-condition block ran inside it and raised nothing)
+fingerprint after the first apply: 19102bc8020867d2650e13c6fddd13c0
+comments hash after the first apply: b97d2e3b734f6c002fd5c0a57a06e643
+$ scaffold stand-in for the ledger step: INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('051', 'capture_files_immutability')
+[exit 0]
+
+== second apply: must fail cleanly (object exists) and change nothing ==
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql:162: ERROR:  column "ingested_at" of relation "capture_files" already exists
+[exit 3]
+fingerprint after the second apply: 19102bc8020867d2650e13c6fddd13c0
+PASS: second apply changed nothing (fingerprint equal)
+state: ingested_at columns = 1; 051 constraints = 5; functions = 1; triggers = 1; service_role column-UPDATE count = 7
+trigger fires on INSERT and UPDATE: t
+idle-in-transaction sessions: 0

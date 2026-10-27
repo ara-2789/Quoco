@@ -1,0 +1,72 @@
+=== C2 scaffold dump 2026-10-27T13:24:23Z ===
+$ cat /Users/aravindanrajamani/Desktop/quocoai/supabase/.temp/project-ref   (must equal exfccwlrhoutkgrlikod)
+exfccwlrhoutkgrlikod
+$ supabase --workdir /Users/aravindanrajamani/Desktop/quocoai db dump --linked --schema public --dry-run > dry.sh 2> dry.err  (output NOT printed)
+[exit 0]
+dry.sh bytes:     2474; dry.err bytes:      123
+variable NAMES only: export PGHOST= export PGPORT= export PGUSER= export PGPASSWORD= export PGDATABASE= 
+$ bash dry.sh > c2-schema.sql 2> dump.err   (pg_dump, read-only, test-db)
+[exit 0]
+NOTE (rev 3, recorded by Claude): the rest of the dump script's own output (the c2-schema.sql byte and line count, the credential-pattern scan count, and the 'deleted dry.sh and dry.err' line) was NOT captured for this run: I piped the script through `| head -8` and the log was cut. The dump finished (exit 0 above) and the build below loaded it with 0 ERROR lines into a scaffold with the same counts as rev 1 and rev 2 (36 public tables, 156 public functions). The dump file was not re-scanned for credentials before it was deleted at teardown. dry.sh and dry.err were removed by the script on its last lines.
+# C2 scaffold build 2026-10-27T13:25:28Z
+$ initdb -D /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/pg17 -U postgres --auth=trust --encoding=UTF8 --locale=C
+[exit 0] (initdb output in job tmp,       23 lines)
+$ pg_ctl -D /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/pg17 -l /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/pg17.log -o "-p 54330 -k /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock -c listen_addresses=''" -w start
+waiting for server to start.... done
+server started
+[exit 0]
+$ psql: roles + CREATE DATABASE quoco_c2_scaffold
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE DATABASE
+[exit 0]
+$ psql -d quoco_c2_scaffold -f docs/reviews/049-sql-evidence/scaffold-stubs.sql  (NAMED STUBS)
+[exit 0]
+$ psql -d quoco_c2_scaffold -f c2-schema.sql  (REAL structure-only dump of test-db public)
+[exit 0] load.out lines:        5; ERROR lines: 0
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+public tables: 36; public functions: 156
+capture_files triggers: (none)
+trg_capture_files_before_update exists: false
+capture_files relacl: {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+capture_files column acls: 0
+SUMMARY G0-red-rev3: PASS=4 FAIL=7 psql-ERROR=0
+SUMMARY G0b-reviewer-stub-rev3: PASS=7 FAIL=0 psql-ERROR=0
+SUMMARY G0d-review2-probes-rev2: PASS=4 FAIL=0 psql-ERROR=0
+SUMMARY G1-apply-rev3: PASS=1 FAIL=0 psql-ERROR=1
+SUMMARY G1b-postcondition-negative-rev3: PASS=0 FAIL=0 psql-ERROR=5
+SUMMARY G2-green-rev3: PASS=143 FAIL=0 psql-ERROR=0
+SUMMARY G2b-mutant-stamp-rev3: PASS=52 FAIL=90 psql-ERROR=2
+SUMMARY G2b-mutant-pathchk-rev3: PASS=138 FAIL=5 psql-ERROR=0
+SUMMARY G2b-mutant-terminal-rev3: PASS=123 FAIL=20 psql-ERROR=0
+SUMMARY G2b-mutant-s1chk-rev3: PASS=137 FAIL=6 psql-ERROR=0
+SUMMARY G2b-mutant-insert-rev3: PASS=132 FAIL=11 psql-ERROR=0
+SUMMARY G3-down-rev3: PASS=28 FAIL=0 psql-ERROR=4
+done 2026-10-27T13:26:01Z
+
+# C2 scaffold build 2026-10-27T13:25:28Z
+$ initdb -D /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/pg17 -U postgres --auth=trust --encoding=UTF8 --locale=C
+[exit 0] (initdb output in job tmp,       23 lines)
+$ pg_ctl -D /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/pg17 -l /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/pg17.log -o "-p 54330 -k /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock -c listen_addresses=''" -w start
+waiting for server to start.... done
+server started
+[exit 0]
+$ psql: roles + CREATE DATABASE quoco_c2_scaffold
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE DATABASE
+[exit 0]
+$ psql -d quoco_c2_scaffold -f docs/reviews/049-sql-evidence/scaffold-stubs.sql  (NAMED STUBS)
+[exit 0]
+$ psql -d quoco_c2_scaffold -f c2-schema.sql  (REAL structure-only dump of test-db public)
+[exit 0] load.out lines:        5; ERROR lines: 0
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+public tables: 36; public functions: 156
+capture_files triggers: (none)
+trg_capture_files_before_update exists: false
+capture_files relacl: {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+capture_files column acls: 0

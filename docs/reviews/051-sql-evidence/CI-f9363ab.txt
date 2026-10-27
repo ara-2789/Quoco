@@ -1,0 +1,39 @@
+== CI evidence for head f9363ab8f6b8b83d64ff7dba863bd2e18cfead64 (run 40544837099) ==
+generated: 2026-10-27T17:27:26Z
+$ gh run view 40544837099 --json headSha,conclusion,jobs --jq '{headSha,conclusion,jobs:[.jobs[]|{name,conclusion}]}'
+{"conclusion":"success","headSha":"f9363ab8f6b8b83d64ff7dba863bd2e18cfead64","jobs":[{"conclusion":"success","name":"Migration Lint"},{"conclusion":"success","name":"File Size Lint"},{"conclusion":"success","name":"Detect docs-only change"},{"conclusion":"success","name":"Typecheck"},{"conclusion":"success","name":"Fixture Literal Lint"},{"conclusion":"success","name":"Lint"},{"conclusion":"skipped","name":"Detect already-green PR head"},{"conclusion":"success","name":"Test (real test-db)"}]}
+
+$ gh run view 40544837099 --json jobs --jq '.jobs[]|{databaseId,name}'
+122332527438	Migration Lint
+122332527609	File Size Lint
+122332527884	Detect docs-only change
+122332528015	Typecheck
+122332528358	Fixture Literal Lint
+122332529000	Lint
+122332529312	Detect already-green PR head
+122332584410	Test (real test-db)
+
+$ gh run view 40544837099 --log --job 122332584410   (Test (real test-db) job; the vitest block for test/capture-files-immutability.test.ts: its file line, then its per-test lines. ANSI colour codes stripped, timestamps kept. Only vitest result lines; no env, no key lines.)
+2026-10-27T17:03:14.4271542Z  ✓ test/capture-files-immutability.test.ts (32 tests | 5 skipped) 46904ms
+2026-10-27T17:03:14.4274682Z    ✓ 051 capture_files immutability (test-db) > T-D8-1 service_role can UPDATE the seven granted columns of a pending row [control: the row reads back stored; RED before 051: 42501, no grant]  1579ms
+2026-10-27T17:03:14.4277781Z    ✓ 051 capture_files immutability (test-db) > T-D8-2 grant layer: file_no, claimed_content_type, tenant_id and id are refused 42501 [control: a granted column (ingest_status) on the same row succeeds]  2271ms
+2026-10-27T17:03:14.4280431Z    ✓ 051 capture_files immutability (test-db) > T-D8-3 the reviewer's stub case: on a stored row, rewriting sha256, storage_path, byte_size or content_type raises QE011 [control: pending -> stored with full details succeeds, in newStored]  2513ms
+2026-10-27T17:03:14.4282662Z    ✓ 051 capture_files immutability (test-db) > T-D8-4 rejected is terminal: changing reject_reason or moving to stored raises QE011 [control: pending -> rejected succeeded when the row was made]  2125ms
+2026-10-27T17:03:14.4284785Z    ✓ 051 capture_files immutability (test-db) > T-D8-5 no move back to pending: stored -> pending and failed -> pending raise QE011; failed -> stored and failed -> rejected succeed [control: pending -> failed succeeded]  5574ms
+2026-10-27T17:03:14.4287153Z    ✓ 051 capture_files immutability (test-db) > T-D8-6 an UPDATE that changes nothing on a stored row is allowed (a retried job is a no-op) and leaves ingested_at unchanged [control: T-D8-3 shows a real change is refused]  1911ms
+2026-10-27T17:03:14.4289206Z    ✓ 051 capture_files immutability (test-db) > T-D8-7 anon and an authenticated PM are refused UPDATE with 42501, including a real anon-key call [control: service_role updates the same row]  2067ms
+2026-10-27T17:03:14.4291548Z    ✓ 051 capture_files immutability (test-db) > T-D8-8 service_role DELETE on capture_files is refused with 42501 (TRUNCATE is probed on the scaffold: PostgREST cannot issue it) [control: the row still reads back]  1582ms
+2026-10-27T17:03:14.4294229Z    ✓ 051 capture_files immutability (test-db) > T-D8-9 the trigger function is not callable over PostgREST by service_role, anon or an authenticated PM [control: an exposed test helper is callable]  972ms
+2026-10-27T17:03:14.4296576Z    ✓ 051 capture_files immutability (test-db) > T-D8-12 (B1 probe 1) a failed row carrying a reject_reason is refused 23514, so it can never become a stored file that says it was too large [control: failed -> stored with full details and no reject_reason succeeds]  2245ms
+2026-10-27T17:03:14.4299206Z    ✓ 051 capture_files immutability (test-db) > T-D8-13 (B1 probe 2) a rejected row carrying sha256, storage_path or preview_state is refused 23514 [control: pending -> rejected too_large WITH byte_size succeeds]  3789ms
+2026-10-27T17:03:14.4301548Z    ✓ 051 capture_files immutability (test-db) > T-D8-14 (B2 probe 3) a second row cannot claim another row's storage_path: refused 23514 [control: the same row's own path, stored, succeeds]  3147ms
+2026-10-27T17:03:14.4303589Z    ✓ 051 capture_files immutability (test-db) > T-D8-15 (S2) ingested_at is stamped by the database on the move into stored or rejected; service_role cannot set it [control: a granted column update on the same row succeeds]  6493ms
+2026-10-27T17:03:14.4306166Z    ✓ 051 capture_files immutability (test-db) > T-D8-16 (N3) the table's columns are exactly identity + granted + ingested_at: a new column fails this until the trigger and grant are revisited [control: the list compared against is named in this file]  1194ms
+2026-10-27T17:03:14.4308770Z    ✓ 051 capture_files immutability (test-db) > T-D8-18 (S1 probe, round 2) a failed row carrying content_type and byte_size is refused 23514, so a later rejected row cannot inherit them [control: pending -> rejected wrong_type WITH its own content_type and byte_size in ONE update succeeds]  3596ms
+2026-10-27T17:03:14.4311815Z    ✓ 051 capture_files immutability (test-db) > T-D8-20 (S2(a) control) 050's real insert path is accepted by the INSERT lock: a file turn through apply_material_inward_turn yields a pending row with every detail and ingested_at NULL [control: the row exists, and a status move then works]  1350ms
+
+(The default reporter lists passed tests only. The file line says 32 tests, 5 skipped: the five are T-D8-2b, T-D8-10, T-D8-15b, T-D8-19, T-D8-21, all owner-only, skipped on purpose. 11 static tests + 16 database tests ran = 27 passed.)
+
+$ the run summary lines (whole run)
+2026-10-27T17:22:43.7956326Z  Test Files  145 passed (145)
+2026-10-27T17:22:43.7964687Z       Tests  1935 passed | 7 skipped | 1 todo (1943)

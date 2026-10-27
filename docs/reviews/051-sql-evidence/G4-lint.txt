@@ -1,0 +1,19 @@
+== 051 scaffold dry-run: G4-lint ==
+generated: 2026-10-26T18:38:59Z
+HEAD: 44cac2821e6068a98ce008d9b1a19c2a537d2f17
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP: 70ef913cb3a111246ed73f3946dfebedfd690343aaaa92ae2e0edb2551c349d2
+
+$ npm run lint:migrations
+
+> quocoai@0.1.0 lint:migrations
+> node scripts/lint-migrations.mjs
+
+migration-lint: 1 violation(s) not covered by scripts/migration-lint-exceptions.json:
+
+  docs/reviews/051_capture_files_immutability.sql: unreserved-051  [held-migration-reservation-required]
+
+Each violation needs either a fix, or a new (file, object, rule) entry in scripts/migration-lint-exceptions.json with a reason — never a file-wide or rule-wide exemption.
+[exit 1]

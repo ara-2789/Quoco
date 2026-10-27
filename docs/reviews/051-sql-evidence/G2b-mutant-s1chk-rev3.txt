@@ -1,0 +1,1074 @@
+== 051 rev 3 scaffold dry-run: G2b-mutant-s1chk-rev3 ==
+generated: 2026-10-27T13:26:00Z
+HEAD: 635d39bd68ad37a4618e4f4378018be901276239
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP (rev 3):  debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9
+sha256 051 UP (rev 2, git show f03a372): fbd3b3a535db3c9af41991c1b324ae0e7fe26fb5e5713a1de0e6b7a824c15907
+sha256 051 DOWN test:   672a422f895bc7b1425e21ae274ad9792c12ed4b1b2d12f334540b06a721da3a
+PGHOST (must be a local socket dir): /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+mutant: capture_files_details_terminal_only_chk dropped after the apply (S1 removed)
+                mk_doc                
+--------------------------------------
+ 50000000-0000-0000-0000-0000000000c2
+(1 row)
+
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2_mut_s1chk -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/051-mutant-s1chk.sql
+[exit 0]
+$ ALTER TABLE public.capture_files DROP CONSTRAINT capture_files_details_terminal_only_chk
+[exit 0]
+--- the same g2-green.sql against the mutant: the assertions that depend on the removed piece MUST show FAIL lines ---
+== G2.0 fixtures (blank pending owner INSERTs, then owner UPDATEs; terminal rows are stamped by the trigger)
+SELECT t.mkfile(10, 'pending') AS p10, t.mkfile(11, 'pending') AS p11, t.mkfile(12, 'stored') AS s12, t.mkfile(13, 'rejected') AS r13,
+       t.mkfile(14, 'failed') AS f14, t.mkfile(15, 'failed') AS f15, t.mkfile(16, 'failed') AS f16, t.mkfile(17, 'failed') AS f17,
+       t.mkfile(18, 'stored') AS s18, t.mkfile(19, 'pending') AS p19, t.mkfile(20, 'pending') AS p20, t.mkfile(21, 'pending') AS p21,
+       t.mkfile(22, 'pending') AS p22, t.mkfile(23, 'stored') AS s23, t.mkfile(24, 'rejected') AS r24, t.mkfile(25, 'pending') AS p25,
+       t.mkfile(26, 'pending') AS p26, t.mkfile(28, 'pending') AS p28, t.mkfile(29, 'pending') AS p29,
+       t.mkfile(30, 'failed') AS f30, t.mkfile(31, 'pending') AS p31, t.mkfile(32, 'pending') AS p32, t.mkfile(33, 'pending') AS p33,
+       t.mkfile(34, 'stored') AS s34, t.mkfile(35, 'pending') AS p35, t.mkfile(36, 'pending') AS p36, t.mkfile(37, 'stored') AS s37,
+       t.mkfile(39, 'pending') AS p39, t.mkfile(60, 'pending') AS p60, t.mkfile(62, 'pending') AS p62, t.mkfile(63, 'pending') AS p63;
+                 p10                  |                 p11                  |                 s12                  |                 r13                  |                 f14                  |                 f15                  |                 f16                  |                 f17                  |                 s18                  |                 p19                  |                 p20                  |                 p21                  |                 p22                  |                 s23                  |                 r24                  |                 p25                  |                 p26                  |                 p28                  |                 p29                  |                 f30                  |                 p31                  |                 p32                  |                 p33                  |                 s34                  |                 p35                  |                 p36                  |                 s37                  |                 p39                  |                 p60                  |                 p62                  |                 p63                  
+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------
+ c2000000-0000-0000-0000-000000000010 | c2000000-0000-0000-0000-000000000011 | c2000000-0000-0000-0000-000000000012 | c2000000-0000-0000-0000-000000000013 | c2000000-0000-0000-0000-000000000014 | c2000000-0000-0000-0000-000000000015 | c2000000-0000-0000-0000-000000000016 | c2000000-0000-0000-0000-000000000017 | c2000000-0000-0000-0000-000000000018 | c2000000-0000-0000-0000-000000000019 | c2000000-0000-0000-0000-000000000020 | c2000000-0000-0000-0000-000000000021 | c2000000-0000-0000-0000-000000000022 | c2000000-0000-0000-0000-000000000023 | c2000000-0000-0000-0000-000000000024 | c2000000-0000-0000-0000-000000000025 | c2000000-0000-0000-0000-000000000026 | c2000000-0000-0000-0000-000000000028 | c2000000-0000-0000-0000-000000000029 | c2000000-0000-0000-0000-000000000030 | c2000000-0000-0000-0000-000000000031 | c2000000-0000-0000-0000-000000000032 | c2000000-0000-0000-0000-000000000033 | c2000000-0000-0000-0000-000000000034 | c2000000-0000-0000-0000-000000000035 | c2000000-0000-0000-0000-000000000036 | c2000000-0000-0000-0000-000000000037 | c2000000-0000-0000-0000-000000000039 | c2000000-0000-0000-0000-000000000060 | c2000000-0000-0000-0000-000000000062 | c2000000-0000-0000-0000-000000000063
+(1 row)
+
+== T-D8-1 service_role updates the seven granted columns on a pending row. Control: the row reads back stored. (RED in G0: 42501)
+SELECT clock_timestamp() AS t0 
+SET ROLE service_role;
+SELECT t.expect('T-D8-1 svc UPDATE seven columns pending->stored', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('a', 64), storage_path = t.spath(10), reject_reason = NULL, preview_state = 'previewable' WHERE id = t.fid(10)$$, 'ok');
+                                          expect                                           
+-------------------------------------------------------------------------------------------
+ PASS: T-D8-1 svc UPDATE seven columns pending->stored -- succeeded as expected (1 row(s))
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-D8-1 control: the row reads back stored with the written hash', (SELECT ingest_status = 'stored' AND sha256 = repeat('a', 64) AND byte_size = 1000 FROM public.capture_files WHERE id = t.fid(10)));
+                                  ok                                   
+-----------------------------------------------------------------------
+ PASS: T-D8-1 control: the row reads back stored with the written hash
+(1 row)
+
+== T-D8-15 (S2) ingested_at is stamped by the database on the move into a terminal status, inside thepsql:/Users/aravindanrajamani/.claude/jobs/335a6222/tmp/scripts/src/g2-green.sql:21: error: unterminated quoted string
+
+SELECT t.ok('T-D8-15 pending->stored stamped ingested_at within [t0, now] (t0 taken before the UPDATE)', (SELECT ingested_at >= '2026-10-27 18:56:00.578494+05:30'::timestamptz AND ingested_at <= clock_timestamp() FROM public.capture_files WHERE id = t.fid(10)));
+                                               ok                                                
+-------------------------------------------------------------------------------------------------
+ PASS: T-D8-15 pending->stored stamped ingested_at within [t0, now] (t0 taken before the UPDATE)
+(1 row)
+
+== T-D8-2 grant layer: each of the NINE identity columns is refused 42501 for service_role. Control: a granted column on the same row succeeds.
+SET ROLE service_role;
+SELECT t.expect('T-D8-2 control: svc UPDATE of a granted column (ingest_status) on pending row 11', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(11)$$, 'ok');
+                                                           expect                                                           
+----------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2 control: svc UPDATE of a granted column (ingest_status) on pending row 11 -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-2 svc UPDATE id', $$UPDATE public.capture_files SET id = gen_random_uuid() WHERE id = t.fid(11)$$, '42501');
+                                                 expect                                                  
+---------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2 svc UPDATE id -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-2 svc UPDATE created_at', $$UPDATE public.capture_files SET created_at = now() + interval '1 day' WHERE id = t.fid(11)$$, '42501');
+                                                     expect                                                      
+-----------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2 svc UPDATE created_at -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-2 svc UPDATE tenant_id', $$UPDATE public.capture_files SET tenant_id = '10000000-0000-0000-0000-000000000002' WHERE id = t.fid(11)$$, '42501');
+                                                     expect                                                     
+----------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2 svc UPDATE tenant_id -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-2 svc UPDATE project_id', $$UPDATE public.capture_files SET project_id = '20000000-0000-0000-0000-000000000002' WHERE id = t.fid(11)$$, '42501');
+                                                     expect                                                      
+-----------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2 svc UPDATE project_id -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-2 svc UPDATE document_id', $$UPDATE public.capture_files SET document_id = gen_random_uuid() WHERE id = t.fid(11)$$, '42501');
+                                                      expect                                                      
+------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2 svc UPDATE document_id -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-2 svc UPDATE file_no', $$UPDATE public.capture_files SET file_no = 99 WHERE id = t.fid(11)$$, '42501');
+                                                    expect                                                    
+--------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2 svc UPDATE file_no -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-2 svc UPDATE source_message_sid', $$UPDATE public.capture_files SET source_message_sid = 'other' WHERE id = t.fid(11)$$, '42501');
+                                                         expect                                                          
+-------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2 svc UPDATE source_message_sid -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-2 svc UPDATE media_index', $$UPDATE public.capture_files SET media_index = 7 WHERE id = t.fid(11)$$, '42501');
+                                                      expect                                                      
+------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2 svc UPDATE media_index -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-2 svc UPDATE claimed_content_type', $$UPDATE public.capture_files SET claimed_content_type = 'image/png' WHERE id = t.fid(11)$$, '42501');
+                                                          expect                                                           
+---------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2 svc UPDATE claimed_content_type -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+RESET ROLE;
+== T-D8-2b trigger layer, grant bypassed (table owner): each of the nine identity columns raises QE009. Control: owner UPDATE of a granted column succeeds, and an owner no-op succeeds.
+SELECT t.expect('T-D8-2b control: owner UPDATE of a granted column (ingest_status) on pending row 19', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(19)$$, 'ok');
+                                                            expect                                                             
+-------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2b control: owner UPDATE of a granted column (ingest_status) on pending row 19 -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-2b control: owner no-op UPDATE on row 19', $$UPDATE public.capture_files SET ingest_status = ingest_status WHERE id = t.fid(19)$$, 'ok');
+                                         expect                                          
+-----------------------------------------------------------------------------------------
+ PASS: T-D8-2b control: owner no-op UPDATE on row 19 -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-2b owner UPDATE id -> QE009', $$UPDATE public.capture_files SET id = gen_random_uuid() WHERE id = t.fid(19)$$, 'QE009');
+                                    expect                                    
+------------------------------------------------------------------------------
+ PASS: T-D8-2b owner UPDATE id -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-2b owner UPDATE created_at -> QE009', $$UPDATE public.capture_files SET created_at = now() + interval '1 day' WHERE id = t.fid(19)$$, 'QE009');
+                                        expect                                        
+--------------------------------------------------------------------------------------
+ PASS: T-D8-2b owner UPDATE created_at -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-2b owner UPDATE tenant_id -> QE009', $$UPDATE public.capture_files SET tenant_id = '10000000-0000-0000-0000-000000000002' WHERE id = t.fid(19)$$, 'QE009');
+                                       expect                                        
+-------------------------------------------------------------------------------------
+ PASS: T-D8-2b owner UPDATE tenant_id -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-2b owner UPDATE project_id -> QE009', $$UPDATE public.capture_files SET project_id = '20000000-0000-0000-0000-000000000002' WHERE id = t.fid(19)$$, 'QE009');
+                                        expect                                        
+--------------------------------------------------------------------------------------
+ PASS: T-D8-2b owner UPDATE project_id -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-2b owner UPDATE document_id -> QE009', $$UPDATE public.capture_files SET document_id = gen_random_uuid() WHERE id = t.fid(19)$$, 'QE009');
+                                        expect                                         
+---------------------------------------------------------------------------------------
+ PASS: T-D8-2b owner UPDATE document_id -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-2b owner UPDATE file_no -> QE009', $$UPDATE public.capture_files SET file_no = 99 WHERE id = t.fid(19)$$, 'QE009');
+                                      expect                                       
+-----------------------------------------------------------------------------------
+ PASS: T-D8-2b owner UPDATE file_no -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-2b owner UPDATE source_message_sid -> QE009', $$UPDATE public.capture_files SET source_message_sid = 'other' WHERE id = t.fid(19)$$, 'QE009');
+                                            expect                                            
+----------------------------------------------------------------------------------------------
+ PASS: T-D8-2b owner UPDATE source_message_sid -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-2b owner UPDATE media_index -> QE009', $$UPDATE public.capture_files SET media_index = 7 WHERE id = t.fid(19)$$, 'QE009');
+                                        expect                                         
+---------------------------------------------------------------------------------------
+ PASS: T-D8-2b owner UPDATE media_index -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-2b owner UPDATE claimed_content_type -> QE009', $$UPDATE public.capture_files SET claimed_content_type = 'image/png' WHERE id = t.fid(19)$$, 'QE009');
+                                             expect                                             
+------------------------------------------------------------------------------------------------
+ PASS: T-D8-2b owner UPDATE claimed_content_type -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-2b QE009 also wins on a STORED row (owner changes file_no of stored row 18)', $$UPDATE public.capture_files SET file_no = 98 WHERE id = t.fid(18)$$, 'QE009');
+                                                            expect                                                            
+------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2b QE009 also wins on a STORED row (owner changes file_no of stored row 18) -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-2b QE009 also wins on a REJECTED row (owner changes media_index of rejected row 24)', $$UPDATE public.capture_files SET media_index = 8 WHERE id = t.fid(24)$$, 'QE009');
+                                                                expect                                                                
+--------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-2b QE009 also wins on a REJECTED row (owner changes media_index of rejected row 24) -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.ok('T-D8-2b control: row 19 identity columns are unchanged after all the refusals', (SELECT file_no = 19 AND media_index = 0 AND claimed_content_type = 'image/jpeg' AND source_message_sid = 'ZZ-C2-S19' FROM public.capture_files WHERE id = t.fid(19)));
+                                         ok                                          
+-------------------------------------------------------------------------------------
+ PASS: T-D8-2b control: row 19 identity columns are unchanged after all the refusals
+(1 row)
+
+== T-D8-3 thepsql:/Users/aravindanrajamani/.claude/jobs/335a6222/tmp/scripts/src/g2-green.sql:54: error: unterminated quoted string
+
+SET ROLE service_role;
+SELECT t.expect('T-D8-3 svc rewrites sha256 on stored row 12 -> QE011', $$UPDATE public.capture_files SET sha256 = repeat('b', 64) WHERE id = t.fid(12)$$, 'QE011');
+                                              expect                                               
+---------------------------------------------------------------------------------------------------
+ PASS: T-D8-3 svc rewrites sha256 on stored row 12 -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-3 svc rewrites storage_path on stored row 12 -> QE011', $$UPDATE public.capture_files SET storage_path = t.spath(12) || 'x' WHERE id = t.fid(12)$$, 'QE011');
+                                                 expect                                                  
+---------------------------------------------------------------------------------------------------------
+ PASS: T-D8-3 svc rewrites storage_path on stored row 12 -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-3 svc rewrites byte_size on stored row 12 -> QE011', $$UPDATE public.capture_files SET byte_size = 2000 WHERE id = t.fid(12)$$, 'QE011');
+                                                expect                                                
+------------------------------------------------------------------------------------------------------
+ PASS: T-D8-3 svc rewrites byte_size on stored row 12 -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-3 svc rewrites content_type on stored row 12 -> QE011', $$UPDATE public.capture_files SET content_type = 'image/png' WHERE id = t.fid(12)$$, 'QE011');
+                                                 expect                                                  
+---------------------------------------------------------------------------------------------------------
+ PASS: T-D8-3 svc rewrites content_type on stored row 12 -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-3 svc changes preview_state on stored row 12 -> QE011', $$UPDATE public.capture_files SET preview_state = 'not_previewable' WHERE id = t.fid(12)$$, 'QE011');
+                                                 expect                                                  
+---------------------------------------------------------------------------------------------------------
+ PASS: T-D8-3 svc changes preview_state on stored row 12 -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-3 svc sets reject_reason on stored row 12 -> QE011 (the trigger refuses before the CHECK would)', $$UPDATE public.capture_files SET reject_reason = 'too_large' WHERE id = t.fid(12)$$, 'QE011');
+                                                                      expect                                                                       
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-3 svc sets reject_reason on stored row 12 -> QE011 (the trigger refuses before the CHECK would) -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+RESET ROLE;
+SELECT t.expect('T-D8-3 owner (grant bypassed) rewrites sha256 on stored row 12 -> QE011 (the trigger refuses even the owner)', $$UPDATE public.capture_files SET sha256 = repeat('c', 64) WHERE id = t.fid(12)$$, 'QE011');
+                                                                          expect                                                                           
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-3 owner (grant bypassed) rewrites sha256 on stored row 12 -> QE011 (the trigger refuses even the owner) -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.ok('T-D8-3 control: stored row 12 is byte-for-byte unchanged', (SELECT sha256 = repeat('a', 64) AND byte_size = 1000 AND content_type = 'image/jpeg' AND storage_path = t.spath(12) AND preview_state IS NULL AND reject_reason IS NULL FROM public.capture_files WHERE id = t.fid(12)));
+                               ok                               
+----------------------------------------------------------------
+ PASS: T-D8-3 control: stored row 12 is byte-for-byte unchanged
+(1 row)
+
+== T-D8-4 rejected is terminal. Control: pending -> rejected moves legally (row 21) and stamps ingested_at.
+SET ROLE service_role;
+SELECT t.expect('T-D8-4 control: svc pending->rejected on row 21', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type' WHERE id = t.fid(21)$$, 'ok');
+                                          expect                                           
+-------------------------------------------------------------------------------------------
+ PASS: T-D8-4 control: svc pending->rejected on row 21 -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-4 svc changes reject_reason on rejected row 13 -> QE011', $$UPDATE public.capture_files SET reject_reason = 'too_large' WHERE id = t.fid(13)$$, 'QE011');
+                                                  expect                                                   
+-----------------------------------------------------------------------------------------------------------
+ PASS: T-D8-4 svc changes reject_reason on rejected row 13 -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-4 svc rejected -> stored -> QE011', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('a', 64), storage_path = t.spath(13), reject_reason = NULL WHERE id = t.fid(13)$$, 'QE011');
+                                       expect                                        
+-------------------------------------------------------------------------------------
+ PASS: T-D8-4 svc rejected -> stored -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-4 svc rejected -> pending -> QE011', $$UPDATE public.capture_files SET ingest_status = 'pending', reject_reason = NULL WHERE id = t.fid(13)$$, 'QE011');
+                                        expect                                        
+--------------------------------------------------------------------------------------
+ PASS: T-D8-4 svc rejected -> pending -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-4 svc rejected -> failed -> QE011', $$UPDATE public.capture_files SET ingest_status = 'failed', reject_reason = NULL WHERE id = t.fid(13)$$, 'QE011');
+                                       expect                                        
+-------------------------------------------------------------------------------------
+ PASS: T-D8-4 svc rejected -> failed -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-4 svc sets preview_state on rejected row 13 -> QE011', $$UPDATE public.capture_files SET preview_state = 'previewable' WHERE id = t.fid(13)$$, 'QE011');
+                                                 expect                                                 
+--------------------------------------------------------------------------------------------------------
+ PASS: T-D8-4 svc sets preview_state on rejected row 13 -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-D8-4 control: rejected row 13 unchanged', (SELECT ingest_status = 'rejected' AND reject_reason = 'wrong_type' AND preview_state IS NULL FROM public.capture_files WHERE id = t.fid(13)));
+                       ok                        
+-------------------------------------------------
+ PASS: T-D8-4 control: rejected row 13 unchanged
+(1 row)
+
+== T-D8-5 status moves. Control rows move legally (pending->failed, pending->pending, failed->stored, failed->rejected, failed->failed).
+SET ROLE service_role;
+SELECT t.expect('T-D8-5 control: pending -> failed (row 22)', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(22)$$, 'ok');
+                                        expect                                        
+--------------------------------------------------------------------------------------
+ PASS: T-D8-5 control: pending -> failed (row 22) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-5 control: pending -> pending no-op (row 25; rev 3: a pending row cannot change any column, all seven are NULL by CHECK)', $$UPDATE public.capture_files SET ingest_status = 'pending' WHERE id = t.fid(25)$$, 'ok');
+                                                                                 expect                                                                                  
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-5 control: pending -> pending no-op (row 25; rev 3: a pending row cannot change any column, all seven are NULL by CHECK) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-5 stored -> pending refused (row 18)', $$UPDATE public.capture_files SET ingest_status = 'pending', content_type = NULL, byte_size = NULL, sha256 = NULL, storage_path = NULL, preview_state = NULL WHERE id = t.fid(18)$$, 'QE011');
+                                         expect                                         
+----------------------------------------------------------------------------------------
+ PASS: T-D8-5 stored -> pending refused (row 18) -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-5 stored -> rejected refused (row 18)', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type', sha256 = NULL, storage_path = NULL, preview_state = NULL WHERE id = t.fid(18)$$, 'QE011');
+                                         expect                                          
+-----------------------------------------------------------------------------------------
+ PASS: T-D8-5 stored -> rejected refused (row 18) -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-5 stored -> failed refused (row 18)', $$UPDATE public.capture_files SET ingest_status = 'failed', sha256 = NULL, storage_path = NULL, preview_state = NULL WHERE id = t.fid(18)$$, 'QE011');
+                                        expect                                         
+---------------------------------------------------------------------------------------
+ PASS: T-D8-5 stored -> failed refused (row 18) -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-5 failed -> pending refused (row 14)', $$UPDATE public.capture_files SET ingest_status = 'pending' WHERE id = t.fid(14)$$, 'QE011');
+                                         expect                                         
+----------------------------------------------------------------------------------------
+ PASS: T-D8-5 failed -> pending refused (row 14) -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-5 failed -> stored allowed (row 15)', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('a', 64), storage_path = t.spath(15), preview_state = 'previewable' WHERE id = t.fid(15)$$, 'ok');
+                                       expect                                       
+------------------------------------------------------------------------------------
+ PASS: T-D8-5 failed -> stored allowed (row 15) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-5 failed -> rejected allowed (row 16)', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'too_large' WHERE id = t.fid(16)$$, 'ok');
+                                        expect                                        
+--------------------------------------------------------------------------------------
+ PASS: T-D8-5 failed -> rejected allowed (row 16) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-5 failed -> failed no-op allowed (row 17; rev 3: failed -> failed WITH changes is vacuous, every granted column is NULL on a failed row)', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(17)$$, 'ok');
+                                                                                         expect                                                                                          
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-5 failed -> failed no-op allowed (row 17; rev 3: failed -> failed WITH changes is vacuous, every granted column is NULL on a failed row) -- succeeded as expected (1 row(s))
+(1 row)
+
+RESET ROLE;
+SELECT t.val('T-D8-5 control: rows ended in the expected statuses (14 failed, 15 stored, 16 rejected, 17 failed, 18 stored)', $$SELECT string_agg(ingest_status, ',' ORDER BY file_no) FROM public.capture_files WHERE file_no IN (14, 15, 16, 17, 18)$$, 'failed,stored,rejected,failed,stored');
+                                                                                 val                                                                                 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-5 control: rows ended in the expected statuses (14 failed, 15 stored, 16 rejected, 17 failed, 18 stored) -- value = failed,stored,rejected,failed,stored
+(1 row)
+
+== T-D8-6 an UPDATE that changes nothing on a terminal row is allowed (retry safety) and leaves ingested_at unchanged. Control: T-D8-3 shows a real change on a stored row is refused.
+SELECT ingested_at::text AS ia23_before FROM public.capture_files WHERE id = t.fid(23) 
+SET ROLE service_role;
+SELECT t.expect('T-D8-6 svc no-op UPDATE of all seven columns on stored row 23', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('a', 64), storage_path = t.spath(23), reject_reason = NULL, preview_state = NULL WHERE id = t.fid(23)$$, 'ok');
+                                                 expect                                                  
+---------------------------------------------------------------------------------------------------------
+ PASS: T-D8-6 svc no-op UPDATE of all seven columns on stored row 23 -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-6 svc no-op UPDATE on rejected row 24', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type' WHERE id = t.fid(24)$$, 'ok');
+                                        expect                                        
+--------------------------------------------------------------------------------------
+ PASS: T-D8-6 svc no-op UPDATE on rejected row 24 -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-6 control: a real change on stored row 23 is refused', $$UPDATE public.capture_files SET byte_size = 1001 WHERE id = t.fid(23)$$, 'QE011');
+                                                 expect                                                 
+--------------------------------------------------------------------------------------------------------
+ PASS: T-D8-6 control: a real change on stored row 23 is refused -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-D8-6 (S2) the no-op retry left ingested_at unchanged on row 23', (SELECT ingested_at::text = '2026-10-27 18:56:00.574424+05:30' FROM public.capture_files WHERE id = t.fid(23)));
+                                   ok                                   
+------------------------------------------------------------------------
+ PASS: T-D8-6 (S2) the no-op retry left ingested_at unchanged on row 23
+(1 row)
+
+== T-D8-7 anon and authenticated: UPDATE refused 42501 on every column. Control: service_role updates the same row.
+SET ROLE anon;
+SELECT t.expect('T-D8-7 anon UPDATE byte_size', $$UPDATE public.capture_files SET byte_size = 5 WHERE id = t.fid(26)$$, '42501');
+                                                     expect                                                      
+-----------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-7 anon UPDATE byte_size -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-7 anon UPDATE ingest_status', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(26)$$, '42501');
+                                                       expect                                                        
+---------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-7 anon UPDATE ingest_status -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-7 anon UPDATE file_no', $$UPDATE public.capture_files SET file_no = 97 WHERE id = t.fid(26)$$, '42501');
+                                                    expect                                                     
+---------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-7 anon UPDATE file_no -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+RESET ROLE;
+SET ROLE authenticated;
+SELECT t.expect('T-D8-7 authenticated UPDATE byte_size', $$UPDATE public.capture_files SET byte_size = 5 WHERE id = t.fid(26)$$, '42501');
+                                                          expect                                                          
+--------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-7 authenticated UPDATE byte_size -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-7 authenticated UPDATE ingest_status', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(26)$$, '42501');
+                                                            expect                                                            
+------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-7 authenticated UPDATE ingest_status -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-7 authenticated UPDATE file_no', $$UPDATE public.capture_files SET file_no = 97 WHERE id = t.fid(26)$$, '42501');
+                                                         expect                                                         
+------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-7 authenticated UPDATE file_no -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+RESET ROLE;
+SET ROLE service_role;
+SELECT t.expect('T-D8-7 control: service_role updates the same row 26', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(26)$$, 'ok');
+                                             expect                                             
+------------------------------------------------------------------------------------------------
+ PASS: T-D8-7 control: service_role updates the same row 26 -- succeeded as expected (1 row(s))
+(1 row)
+
+RESET ROLE;
+== T-D8-8 service_role DELETE and TRUNCATE on capture_files refused 42501 (unchanged by 051). anon and authenticated too. Control: SELECT works.
+SET ROLE service_role;
+SELECT t.expect('T-D8-8 control: svc SELECT works', $$SELECT 1 FROM public.capture_files WHERE id = t.fid(28)$$, 'ok');
+                                   expect                                   
+----------------------------------------------------------------------------
+ PASS: T-D8-8 control: svc SELECT works -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-8 svc DELETE', $$DELETE FROM public.capture_files WHERE id = t.fid(28)$$, '42501');
+                                                expect                                                
+------------------------------------------------------------------------------------------------------
+ PASS: T-D8-8 svc DELETE -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-8 svc TRUNCATE', $$TRUNCATE public.capture_files$$, '42501');
+                                                 expect                                                 
+--------------------------------------------------------------------------------------------------------
+ PASS: T-D8-8 svc TRUNCATE -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+RESET ROLE;
+SET ROLE anon;
+SELECT t.expect('T-D8-8 anon DELETE', $$DELETE FROM public.capture_files WHERE id = t.fid(28)$$, '42501');
+                                                expect                                                 
+-------------------------------------------------------------------------------------------------------
+ PASS: T-D8-8 anon DELETE -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+RESET ROLE;
+SET ROLE authenticated;
+SELECT t.expect('T-D8-8 authenticated DELETE', $$DELETE FROM public.capture_files WHERE id = t.fid(28)$$, '42501');
+                                                     expect                                                     
+----------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-8 authenticated DELETE -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-D8-8 control: row 28 still exists', EXISTS (SELECT 1 FROM public.capture_files WHERE id = t.fid(28)));
+                    ok                     
+-------------------------------------------
+ PASS: T-D8-8 control: row 28 still exists
+(1 row)
+
+== T-D8-9 the trigger function is not callable by any of the four roles. Control: thepsql:/Users/aravindanrajamani/.claude/jobs/335a6222/tmp/scripts/src/g2-green.sql:129: error: unterminated quoted string
+
+SET ROLE service_role;
+SELECT t.expect('T-D8-9 service_role calls the function', $$SELECT public.trg_capture_files_before_update()$$, '42501');
+                                                                    expect                                                                    
+----------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-9 service_role calls the function -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_files_before_upda
+(1 row)
+
+RESET ROLE;
+SET ROLE anon;
+SELECT t.expect('T-D8-9 anon calls the function', $$SELECT public.trg_capture_files_before_update()$$, '42501');
+                                                                expect                                                                
+--------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-9 anon calls the function -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_files_before_upda
+(1 row)
+
+RESET ROLE;
+SET ROLE authenticated;
+SELECT t.expect('T-D8-9 authenticated calls the function', $$SELECT public.trg_capture_files_before_update()$$, '42501');
+                                                                    expect                                                                     
+-----------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-9 authenticated calls the function -- refused, SQLSTATE=42501 MESSAGE=permission denied for function trg_capture_files_before_upda
+(1 row)
+
+RESET ROLE;
+SELECT t.expect('T-D8-9 control: the owner can call it, and the function itself refuses a direct call (0A000)', $$SELECT public.trg_capture_files_before_update()$$, '0A000');
+                                                                                         expect                                                                                         
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-9 control: the owner can call it, and the function itself refuses a direct call (0A000) -- refused, SQLSTATE=0A000 MESSAGE=trigger functions can only be called as triggers
+(1 row)
+
+SELECT t.ok('T-D8-9 has_function_privilege(EXECUTE): anon, authenticated, service_role all false', NOT has_function_privilege('anon', 'public.trg_capture_files_before_update()', 'EXECUTE') AND NOT has_function_privilege('authenticated', 'public.trg_capture_files_before_update()', 'EXECUTE') AND NOT has_function_privilege('service_role', 'public.trg_capture_files_before_update()', 'EXECUTE'));
+                                            ok                                             
+-------------------------------------------------------------------------------------------
+ PASS: T-D8-9 has_function_privilege(EXECUTE): anon, authenticated, service_role all false
+(1 row)
+
+SELECT t.ok('T-D8-9 no PUBLIC entry in the function ACL', NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a WHERE p.proname = 'trg_capture_files_before_update' AND a.grantee = 0));
+                        ok                        
+--------------------------------------------------
+ PASS: T-D8-9 no PUBLIC entry in the function ACL
+(1 row)
+
+== T-D8-12 (reviewer probe 1, B1): a failed row carrying reject_reason, and a stored file that says it was too large, are refused 23514. (rev-1 051: both SUCCEEDED, see G0c.) Control: failed -> stored with full details and no reject_reason succeeds.
+SET ROLE service_role;
+SELECT t.expect('T-D8-12 probe 1a (rev-1 first step): UPDATE status failed WITH reject_reason too_large -> 23514', $$UPDATE public.capture_files SET ingest_status = 'failed', reject_reason = 'too_large' WHERE id = t.fid(30)$$, '23514');
+                                                                                                expect                                                                                                 
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-12 probe 1a (rev-1 first step): UPDATE status failed WITH reject_reason too_large -> 23514 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-12 probe 1a (on a failed row): reject_reason on a failed row -> 23514', $$UPDATE public.capture_files SET reject_reason = 'too_large' WHERE id = t.fid(30)$$, '23514');
+                                                                                      expect                                                                                      
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-12 probe 1a (on a failed row): reject_reason on a failed row -> 23514 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-12 probe 1b: failed -> stored carrying reject_reason too_large -> 23514', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('a', 64), storage_path = t.spath(30), preview_state = 'previewable', reject_reason = 'too_large' WHERE id = t.fid(30)$$, '23514');
+                                                                                       expect                                                                                       
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-12 probe 1b: failed -> stored carrying reject_reason too_large -> 23514 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-12 control: failed -> stored with full details and no reject_reason', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('a', 64), storage_path = t.spath(30), preview_state = 'previewable' WHERE id = t.fid(30)$$, 'ok');
+                                                       expect                                                       
+--------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-12 control: failed -> stored with full details and no reject_reason -- succeeded as expected (1 row(s))
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-D8-12 control: row 30 ended stored with reject_reason NULL', (SELECT ingest_status = 'stored' AND reject_reason IS NULL FROM public.capture_files WHERE id = t.fid(30)));
+                                 ok                                 
+--------------------------------------------------------------------
+ PASS: T-D8-12 control: row 30 ended stored with reject_reason NULL
+(1 row)
+
+== T-D8-13 (reviewer probe 2, B1): a rejected row carrying sha256, storage_path or preview_state is refused 23514. A pending row carrying sha256 is refused too. Control: pending -> rejected too_large WITH byte_size succeeds; pending -> failed with nothing set succeeded (row 22).
+SET ROLE service_role;
+SELECT t.expect('T-D8-13 control: pending -> rejected too_large WITH byte_size (row 39)', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'too_large', byte_size = 20000000 WHERE id = t.fid(39)$$, 'ok');
+                                                      expect                                                      
+------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-13 control: pending -> rejected too_large WITH byte_size (row 39) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-13 probe 2: rejected + sha256 -> 23514', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type', sha256 = repeat('c', 64) WHERE id = t.fid(31)$$, '23514');
+                                                                      expect                                                                       
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-13 probe 2: rejected + sha256 -> 23514 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-13 probe 2: rejected + storage_path -> 23514', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type', storage_path = t.spath(31) WHERE id = t.fid(31)$$, '23514');
+                                                                         expect                                                                          
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-13 probe 2: rejected + storage_path -> 23514 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-13 probe 2: rejected + preview_state -> 23514', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type', preview_state = 'previewable' WHERE id = t.fid(31)$$, '23514');
+                                                                          expect                                                                          
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-13 probe 2: rejected + preview_state -> 23514 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-13 probe 2 (full rev-1 shape): rejected + content_type + byte_size + sha256 + storage_path + preview_state -> 23514', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('c', 64), storage_path = t.spath(32), preview_state = 'previewable' WHERE id = t.fid(32)$$, '23514');
+                                                                                                             expect                                                                                                             
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-13 probe 2 (full rev-1 shape): rejected + content_type + byte_size + sha256 + storage_path + preview_state -> 23514 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-13 a PENDING row carrying sha256 -> 23514 (the replaced rev-1 control, refused by design)', $$UPDATE public.capture_files SET sha256 = repeat('b', 64) WHERE id = t.fid(33)$$, '23514');
+                                                                                                expect                                                                                                
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-13 a PENDING row carrying sha256 -> 23514 (the replaced rev-1 control, refused by design) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-13 a PENDING row carrying preview_state -> 23514', $$UPDATE public.capture_files SET preview_state = 'previewable' WHERE id = t.fid(33)$$, '23514');
+                                                                           expect                                                                            
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-13 a PENDING row carrying preview_state -> 23514 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-13 a FAILED row carrying storage_path -> 23514', $$UPDATE public.capture_files SET storage_path = t.spath(14) WHERE id = t.fid(14)$$, '23514');
+                                                                          expect                                                                           
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-13 a FAILED row carrying storage_path -> 23514 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-13 a rejected-status move WITHOUT reject_reason -> 23514 (049 capture_files_rejected_reason_chk and the new iff check)', $$UPDATE public.capture_files SET ingest_status = 'rejected' WHERE id = t.fid(33)$$, '23514');
+                                                                                                              expect                                                                                                               
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-13 a rejected-status move WITHOUT reject_reason -> 23514 (049 capture_files_rejected_reason_chk and the new iff check) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-D8-13 control: rows 31, 32, 33 are still pending with NULL details', (SELECT count(*) = 3 AND bool_and(ingest_status = 'pending' AND sha256 IS NULL AND storage_path IS NULL AND preview_state IS NULL AND reject_reason IS NULL AND ingested_at IS NULL) FROM public.capture_files WHERE file_no IN (31, 32, 33)));
+                                     ok                                     
+----------------------------------------------------------------------------
+ PASS: T-D8-13 control: rows 31, 32, 33 are still pending with NULL details
+(1 row)
+
+== T-D8-14 (reviewer probe 3, B2): a second row claiming another rows storage_path is refused 23514. Control: the rows own path, stored, succeeds.
+SET ROLE service_role;
+SELECT t.expect('T-D8-14 probe 3: row 35 pending -> stored with ROW 34''s storage_path -> 23514', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('b', 64), storage_path = t.spath(34) WHERE id = t.fid(35)$$, '23514');
+                                                                                       expect                                                                                        
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-14 probe 3: row 35 pending -> stored with ROW 34's storage_path -> 23514 -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-14 a path in the right document folder but with no row id -> 23514 (049 prefix check alone would allow it)', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('b', 64), storage_path = '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-0000000000c2/shared.jpg' WHERE id = t.fid(35)$$, '23514');
+                                                                                                        expect                                                                                                         
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-14 a path in the right document folder but with no row id -> 23514 (049 prefix check alone would allow it) -- refused, SQLSTATE=23514 MESSAGE=new row for relation "capture_files" violates check constrai
+(1 row)
+
+SELECT t.expect('T-D8-14 control: row 35 stored with its OWN path', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('b', 64), storage_path = t.spath(35) WHERE id = t.fid(35)$$, 'ok');
+                                           expect                                           
+--------------------------------------------------------------------------------------------
+ PASS: T-D8-14 control: row 35 stored with its OWN path -- succeeded as expected (1 row(s))
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-D8-14 control: no two rows share a storage_path', (SELECT count(storage_path) = count(DISTINCT storage_path) FROM public.capture_files));
+                           ok                            
+---------------------------------------------------------
+ PASS: T-D8-14 control: no two rows share a storage_path
+(1 row)
+
+== T-D8-15 (S2) continued. Control: a granted column update on the same row succeeds.
+SELECT t.ok('T-D8-15 failed->stored (row 15) and failed->rejected (row 16) and pending->rejected (row 21) were stamped', (SELECT count(*) = 3 AND bool_and(ingested_at IS NOT NULL) FROM public.capture_files WHERE file_no IN (15, 16, 21)));
+                                                       ok                                                        
+-----------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-15 failed->stored (row 15) and failed->rejected (row 16) and pending->rejected (row 21) were stamped
+(1 row)
+
+SELECT t.ok('T-D8-15 pending->failed (row 22), pending->pending (row 25) and failed->failed (row 17) left ingested_at NULL', (SELECT count(*) = 3 AND bool_and(ingested_at IS NULL) FROM public.capture_files WHERE file_no IN (22, 25, 17)));
+                                                         ok                                                          
+---------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-15 pending->failed (row 22), pending->pending (row 25) and failed->failed (row 17) left ingested_at NULL
+(1 row)
+
+SET ROLE service_role;
+SELECT t.expect('T-D8-15 control: svc granted-column UPDATE (no-op ingest_status) on pending row 36', $$UPDATE public.capture_files SET ingest_status = 'pending' WHERE id = t.fid(36)$$, 'ok');
+                                                            expect                                                            
+------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-15 control: svc granted-column UPDATE (no-op ingest_status) on pending row 36 -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-15 svc sets ingested_at -> 42501 (not granted)', $$UPDATE public.capture_files SET ingested_at = now() WHERE id = t.fid(36)$$, '42501');
+                                                                 expect                                                                 
+----------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-15 svc sets ingested_at -> 42501 (not granted) -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+RESET ROLE;
+== T-D8-15b (owner, grant bypassed): ingested_at is never caller-set -> QE009
+SELECT t.expect('T-D8-15b owner sets ingested_at on a PENDING row -> QE009', $$UPDATE public.capture_files SET ingested_at = now() WHERE id = t.fid(36)$$, 'QE009');
+                                                expect                                                 
+-------------------------------------------------------------------------------------------------------
+ PASS: T-D8-15b owner sets ingested_at on a PENDING row -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-15b owner sets ingested_at on a STORED row -> QE009', $$UPDATE public.capture_files SET ingested_at = now() + interval '1 day' WHERE id = t.fid(37)$$, 'QE009');
+                                                expect                                                
+------------------------------------------------------------------------------------------------------
+ PASS: T-D8-15b owner sets ingested_at on a STORED row -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-15b owner clears ingested_at on a STORED row -> QE009', $$UPDATE public.capture_files SET ingested_at = NULL WHERE id = t.fid(37)$$, 'QE009');
+                                                 expect                                                 
+--------------------------------------------------------------------------------------------------------
+ PASS: T-D8-15b owner clears ingested_at on a STORED row -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.expect('T-D8-15b owner moves pending -> stored AND supplies his own ingested_at -> QE009', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('b', 64), storage_path = t.spath(36), ingested_at = now() - interval '1 year' WHERE id = t.fid(36)$$, 'QE009');
+                                                            expect                                                            
+------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-15b owner moves pending -> stored AND supplies his own ingested_at -> QE009 -- refused, SQLSTATE=QE009 MESSAGE=E9
+(1 row)
+
+SELECT t.ok('T-D8-15b control: row 36 is still pending with ingested_at NULL; row 37 kept its original ingested_at', (SELECT ingested_at IS NULL AND ingest_status = 'pending' FROM public.capture_files WHERE id = t.fid(36)) AND (SELECT ingested_at IS NOT NULL AND ingested_at <= now() FROM public.capture_files WHERE id = t.fid(37)));
+                                                     ok                                                      
+-------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-15b control: row 36 is still pending with ingested_at NULL; row 37 kept its original ingested_at
+(1 row)
+
+== T-D8-16 (N3) thepsql:/Users/aravindanrajamani/.claude/jobs/335a6222/tmp/scripts/src/g2-green.sql:188: error: unterminated quoted string
+
+SELECT t.ok('T-D8-16 columns of capture_files = 9 identity + 7 granted + ingested_at, both directions',
+  (SELECT array_agg(attname::text) FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attnum > 0 AND NOT attisdropped)
+    <@ ARRAY['id','created_at','tenant_id','project_id','document_id','file_no','source_message_sid','media_index','claimed_content_type',
+             'ingest_status','content_type','byte_size','sha256','storage_path','reject_reason','preview_state','ingested_at']
+  AND ARRAY['id','created_at','tenant_id','project_id','document_id','file_no','source_message_sid','media_index','claimed_content_type',
+             'ingest_status','content_type','byte_size','sha256','storage_path','reject_reason','preview_state','ingested_at']
+    <@ (SELECT array_agg(attname::text) FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attnum > 0 AND NOT attisdropped));
+                                               ok                                               
+------------------------------------------------------------------------------------------------
+ PASS: T-D8-16 columns of capture_files = 9 identity + 7 granted + ingested_at, both directions
+(1 row)
+
+SELECT t.val('T-D8-16 control: the column count is 17', $$SELECT count(*)::text FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attnum > 0 AND NOT attisdropped$$, '17');
+                             val                             
+-------------------------------------------------------------
+ PASS: T-D8-16 control: the column count is 17 -- value = 17
+(1 row)
+
+== QE014 isolation (not reachable over PostgREST, which is always READ COMMITTED). Control: the same UPDATE under READ COMMITTED succeeds.
+BEGIN;
+SET LOCAL ROLE service_role;
+SELECT t.expect('QE014 control: svc UPDATE under READ COMMITTED', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(29)$$, 'ok');
+                                          expect                                          
+------------------------------------------------------------------------------------------
+ PASS: QE014 control: svc UPDATE under READ COMMITTED -- succeeded as expected (1 row(s))
+(1 row)
+
+ROLLBACK;
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SET LOCAL ROLE service_role;
+SELECT t.expect('QE014 svc UPDATE under REPEATABLE READ', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(29)$$, 'QE014');
+                                       expect                                        
+-------------------------------------------------------------------------------------
+ PASS: QE014 svc UPDATE under REPEATABLE READ -- refused, SQLSTATE=QE014 MESSAGE=E14
+(1 row)
+
+ROLLBACK;
+BEGIN ISOLATION LEVEL SERIALIZABLE;
+SET LOCAL ROLE service_role;
+SELECT t.expect('QE014 svc UPDATE under SERIALIZABLE', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(29)$$, 'QE014');
+                                      expect                                      
+----------------------------------------------------------------------------------
+ PASS: QE014 svc UPDATE under SERIALIZABLE -- refused, SQLSTATE=QE014 MESSAGE=E14
+(1 row)
+
+ROLLBACK;
+== REGRESSION: the 050 INSERT path still works with 051 rev 3 in place (the trigger now also fires on INSERT and accepts a blank pending row) (apply_material_inward_turn writes pending capture_files rows with every new column NULL; the trigger is UPDATE-only; the new CHECKs accept them)
+SELECT t.turn('+91900000051', '4', 'c2-s0', NULL, true) AS s0;
+                                                      s0                                                      
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 1}
+(1 row)
+
+SELECT t.turn('+91900000051', '1', 'c2-s1') AS s1;
+                                                       s1                                                       
+----------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+SELECT t.turn('+91900000051', 'gate pass', 'c2-s2', t.media(2)) AS s2;
+                                                                                         s2                                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": "1e0582b6-1c8f-42c9-bb14-46bf3a8f05a4", "document_id": "2b13a62b-051a-424d-af16-c6d6413573e0", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+SELECT t.ok('050 path: 2 pending capture_files rows were INSERTed for the file turn, all details and ingested_at NULL', (SELECT count(*) = 2 AND bool_and(ingest_status = 'pending' AND storage_path IS NULL AND sha256 IS NULL AND preview_state IS NULL AND reject_reason IS NULL AND ingested_at IS NULL) FROM public.capture_files WHERE source_message_sid = 'c2-s2'));
+                                                       ok                                                       
+----------------------------------------------------------------------------------------------------------------
+ PASS: 050 path: 2 pending capture_files rows were INSERTed for the file turn, all details and ingested_at NULL
+(1 row)
+
+SELECT t.ok('050 path: the capture_ingest job was queued', (SELECT count(*) = 1 FROM public.jobs WHERE type = 'capture_ingest' AND payload->>'source_message_sid' = 'c2-s2'));
+                        ok                         
+---------------------------------------------------
+ PASS: 050 path: the capture_ingest job was queued
+(1 row)
+
+SET ROLE service_role;
+SELECT t.expect('050 path -> ingest: svc moves one of those rows pending->stored with its row-owned path', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 5000, sha256 = repeat('d', 64), storage_path = tenant_id::text || '/' || project_id::text || '/' || document_id::text || '/' || id::text || '.jpg' WHERE source_message_sid = 'c2-s2' AND media_index = 0$$, 'ok');
+                                                              expect                                                               
+-----------------------------------------------------------------------------------------------------------------------------------
+ PASS: 050 path -> ingest: svc moves one of those rows pending->stored with its row-owned path -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('050 path -> ingest: the same row cannot then be rewritten', $$UPDATE public.capture_files SET sha256 = repeat('e', 64) WHERE source_message_sid = 'c2-s2' AND media_index = 0$$, 'QE011');
+                                                 expect                                                 
+--------------------------------------------------------------------------------------------------------
+ PASS: 050 path -> ingest: the same row cannot then be rewritten -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('050 path -> ingest: that row was stamped', (SELECT ingested_at IS NOT NULL FROM public.capture_files WHERE source_message_sid = 'c2-s2' AND media_index = 0));
+                       ok                       
+------------------------------------------------
+ PASS: 050 path -> ingest: that row was stamped
+(1 row)
+
+== T-D8-18 (reviewer probe, round 2, S1): stale attempt data. A failed row carrying content_type and byte_size is refused 23514, so a later rejected row cannot inherit them. (rev-2 051: both steps SUCCEEDED, see G0d.)
+== Controls: pending -> rejected wrong_type WITH its own content_type and byte_size in ONE update succeeds (row 62); pending -> stored with full details in one UPDATE succeeds (row 63); pending -> failed with nothing set succeeds (row 60).
+SET ROLE service_role;
+SELECT t.expect('T-D8-18 probe step 1: pending -> failed WITH content_type image/png and byte_size 99999999 -> 23514', $$UPDATE public.capture_files SET ingest_status = 'failed', content_type = 'image/png', byte_size = 99999999 WHERE id = t.fid(60)$$, '23514');
+                                                                             expect                                                                              
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-18 probe step 1: pending -> failed WITH content_type image/png and byte_size 99999999 -> 23514 -- expected refusal 23514 but the statement SUCCEEDED
+(1 row)
+
+SELECT t.expect('T-D8-18 a pending row carrying byte_size -> 23514', $$UPDATE public.capture_files SET byte_size = 5 WHERE id = t.fid(60)$$, '23514');
+                                                    expect                                                     
+---------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-18 a pending row carrying byte_size -> 23514 -- expected refusal 23514 but the statement SUCCEEDED
+(1 row)
+
+SELECT t.expect('T-D8-18 a pending row carrying content_type -> 23514', $$UPDATE public.capture_files SET content_type = 'image/png' WHERE id = t.fid(60)$$, '23514');
+                                                      expect                                                      
+------------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-18 a pending row carrying content_type -> 23514 -- expected refusal 23514 but the statement SUCCEEDED
+(1 row)
+
+SELECT t.expect('T-D8-18 a failed row carrying byte_size -> 23514', $$UPDATE public.capture_files SET byte_size = 5 WHERE id = t.fid(14)$$, '23514');
+                                                    expect                                                    
+--------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-18 a failed row carrying byte_size -> 23514 -- expected refusal 23514 but the statement SUCCEEDED
+(1 row)
+
+SELECT t.expect('T-D8-18 control: pending -> failed with nothing set (row 60)', $$UPDATE public.capture_files SET ingest_status = 'failed' WHERE id = t.fid(60)$$, 'ok');
+                                                 expect                                                 
+--------------------------------------------------------------------------------------------------------
+ PASS: T-D8-18 control: pending -> failed with nothing set (row 60) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-18 probe step 2: failed -> rejected wrong_type WITHOUT overwriting anything (row 60): nothing stale exists to inherit', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type' WHERE id = t.fid(60)$$, 'ok');
+                                                                                expect                                                                                
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-18 probe step 2: failed -> rejected wrong_type WITHOUT overwriting anything (row 60): nothing stale exists to inherit -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-18 control: pending -> rejected wrong_type WITH its own content_type and byte_size in one UPDATE (row 62)', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type', content_type = 'image/png', byte_size = 99999999 WHERE id = t.fid(62)$$, 'ok');
+                                                                          expect                                                                          
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-18 control: pending -> rejected wrong_type WITH its own content_type and byte_size in one UPDATE (row 62) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-18 control: pending -> stored with full details in one UPDATE (row 63)', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('a', 64), storage_path = t.spath(63), preview_state = 'previewable' WHERE id = t.fid(63)$$, 'ok');
+                                                        expect                                                         
+-----------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-18 control: pending -> stored with full details in one UPDATE (row 63) -- succeeded as expected (1 row(s))
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-D8-18 control: row 60 ended rejected with content_type and byte_size NULL; row 62 ended rejected with its own png / 99999999', (SELECT ingest_status = 'rejected' AND content_type IS NULL AND byte_size IS NULL FROM public.capture_files WHERE id = t.fid(60)) AND (SELECT content_type = 'image/png' AND byte_size = 99999999 FROM public.capture_files WHERE id = t.fid(62)));
+                                                                  ok                                                                  
+--------------------------------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-18 control: row 60 ended rejected with content_type and byte_size NULL; row 62 ended rejected with its own png / 99999999
+(1 row)
+
+== T-D8-19 (reviewer probe, round 2, S2(a)): INSERT is inside the lock. An owner (or DEFINER function) INSERT of anything but a blank pending row is refused QE011. (rev-2 051: the terminal INSERT SUCCEEDED, see G0d.) Control: an INSERT with exactlypsql:/Users/aravindanrajamani/.claude/jobs/335a6222/tmp/scripts/src/g2-green.sql:239: error: unterminated quoted string
+
+SELECT t.expect('T-D8-19 control: owner INSERT with exactly 050''s column list (blank pending row)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 70, 'ZZ-C2-S70', 0, 'image/jpeg')$$, 'ok');
+                                                           expect                                                           
+----------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 control: owner INSERT with exactly 050's column list (blank pending row) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('T-D8-19 probe: owner INSERT of a terminal row (rejected, too_large, ingested_at 2020-01-01) -> QE011', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, ingest_status, reject_reason, ingested_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 71, 'ZZ-C2-S71', 0, 'image/jpeg', 'rejected', 'too_large', '2020-01-01')$$, 'QE011');
+                                                                      expect                                                                       
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 probe: owner INSERT of a terminal row (rejected, too_large, ingested_at 2020-01-01) -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-19 owner INSERT of a stored row with full details and his own ingested_at -> QE011', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, ingest_status, content_type, byte_size, sha256, storage_path, ingested_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 72, 'ZZ-C2-S72', 0, 'image/jpeg', 'stored', 'image/jpeg', 1000, repeat('a', 64), '10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/50000000-0000-0000-0000-0000000000c2/' || t.fid(72)::text || '.jpg', now())$$, 'QE011');
+                                                                expect                                                                
+--------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 owner INSERT of a stored row with full details and his own ingested_at -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-19 owner INSERT with ingest_status failed -> QE011', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, ingest_status) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 73, 'ZZ-C2-S73', 0, 'image/jpeg', 'failed')$$, 'QE011');
+                                                expect                                                
+------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 owner INSERT with ingest_status failed -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-19 owner INSERT of a pending row carrying ingested_at -> QE011', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, ingested_at) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 74, 'ZZ-C2-S74', 0, 'image/jpeg', now())$$, 'QE011');
+                                                      expect                                                      
+------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 owner INSERT of a pending row carrying ingested_at -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-19 owner INSERT of a pending row carrying byte_size -> QE011', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, byte_size) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 75, 'ZZ-C2-S75', 0, 'image/jpeg', 5)$$, 'QE011');
+                                                     expect                                                     
+----------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 owner INSERT of a pending row carrying byte_size -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-19 owner INSERT of a pending row carrying sha256 -> QE011', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, sha256) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 76, 'ZZ-C2-S76', 0, 'image/jpeg', repeat('a', 64))$$, 'QE011');
+                                                   expect                                                    
+-------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 owner INSERT of a pending row carrying sha256 -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-19 owner INSERT of a pending row carrying reject_reason -> QE011', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, reject_reason) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 77, 'ZZ-C2-S77', 0, 'image/jpeg', 'too_large')$$, 'QE011');
+                                                       expect                                                       
+--------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 owner INSERT of a pending row carrying reject_reason -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-19 owner INSERT of a pending row carrying preview_state -> QE011', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, preview_state) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 78, 'ZZ-C2-S78', 0, 'image/jpeg', 'previewable')$$, 'QE011');
+                                                       expect                                                       
+--------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 owner INSERT of a pending row carrying preview_state -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SELECT t.expect('T-D8-19 owner INSERT of a pending row carrying content_type -> QE011', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type, content_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 79, 'ZZ-C2-S79', 0, 'image/jpeg', 'image/png')$$, 'QE011');
+                                                      expect                                                       
+-------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 owner INSERT of a pending row carrying content_type -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+SET ROLE service_role;
+SELECT t.expect('T-D8-19 service_role INSERT is refused 42501 (no INSERT grant; unchanged)', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 80, 'ZZ-C2-S80', 0, 'image/jpeg')$$, '42501');
+                                                                            expect                                                                            
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 service_role INSERT is refused 42501 (no INSERT grant; unchanged) -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+RESET ROLE;
+SELECT t.ok('T-D8-19 control: only the blank pending row 70 was inserted; no row 71-80 exists', (SELECT count(*) = 1 FROM public.capture_files WHERE file_no = 70) AND (SELECT count(*) = 0 FROM public.capture_files WHERE file_no BETWEEN 71 AND 80));
+                                           ok                                           
+----------------------------------------------------------------------------------------
+ PASS: T-D8-19 control: only the blank pending row 70 was inserted; no row 71-80 exists
+(1 row)
+
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT t.expect('T-D8-19 QE014 on INSERT: a blank pending INSERT under REPEATABLE READ -> QE014', $$INSERT INTO public.capture_files (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type) VALUES ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-0000000000c2', 81, 'ZZ-C2-S81', 0, 'image/jpeg')$$, 'QE014');
+                                                           expect                                                            
+-----------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-19 QE014 on INSERT: a blank pending INSERT under REPEATABLE READ -> QE014 -- refused, SQLSTATE=QE014 MESSAGE=E14
+(1 row)
+
+ROLLBACK;
+== READBACK (catalog)
+SELECT pg_get_triggerdef(oid) AS trigger_def, (tgtype & 4 = 4) AS fires_on_insert, (tgtype & 16 = 16) AS fires_on_update FROM pg_trigger WHERE tgrelid = 'public.capture_files'::regclass AND NOT tgisinternal;
+                                                                          trigger_def                                                                           | fires_on_insert | fires_on_update 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+-----------------
+ CREATE TRIGGER trg_capture_files_before_update BEFORE INSERT OR UPDATE ON public.capture_files FOR EACH ROW EXECUTE FUNCTION trg_capture_files_before_update() | t               | t
+(1 row)
+
+SELECT p.proname, p.prosecdef, p.proowner::regrole, p.proconfig, p.proacl FROM pg_proc p WHERE p.proname = 'trg_capture_files_before_update';
+             proname             | prosecdef | proowner |      proconfig       |        proacl         
+---------------------------------+-----------+----------+----------------------+-----------------------
+ trg_capture_files_before_update | t         | postgres | {"search_path=\"\""} | {postgres=X/postgres}
+(1 row)
+
+SELECT relacl FROM pg_class WHERE oid = 'public.capture_files'::regclass;
+                                    relacl                                     
+-------------------------------------------------------------------------------
+ {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+(1 row)
+
+SELECT conname, convalidated, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'public.capture_files'::regclass AND contype = 'c' ORDER BY conname;
+                conname                | convalidated |                                                                                              def                                                                                               
+---------------------------------------+--------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ capture_files_content_type_chk        | t            | CHECK (((content_type IS NULL) OR (content_type = ANY (ARRAY['application/pdf'::text, 'image/jpeg'::text, 'image/png'::text, 'image/webp'::text]))))
+ capture_files_file_no_check           | t            | CHECK ((file_no > 0))
+ capture_files_ingest_status_check     | t            | CHECK ((ingest_status = ANY (ARRAY['pending'::text, 'stored'::text, 'rejected'::text, 'failed'::text])))
+ capture_files_ingested_at_iff_chk     | t            | CHECK (((ingest_status = ANY (ARRAY['stored'::text, 'rejected'::text])) = (ingested_at IS NOT NULL)))
+ capture_files_media_index_check       | t            | CHECK ((media_index >= 0))
+ capture_files_preview_state_check     | t            | CHECK ((preview_state = ANY (ARRAY['previewable'::text, 'not_previewable'::text])))
+ capture_files_reject_reason_check     | t            | CHECK ((reject_reason = ANY (ARRAY['wrong_type'::text, 'too_large'::text])))
+ capture_files_reject_reason_iff_chk   | t            | CHECK (((ingest_status = 'rejected'::text) = (reject_reason IS NOT NULL)))
+ capture_files_rejected_reason_chk     | t            | CHECK (((ingest_status <> 'rejected'::text) OR (reject_reason IS NOT NULL)))
+ capture_files_sha256_chk              | t            | CHECK (((sha256 IS NULL) OR (sha256 ~ '^[0-9a-f]{64}$'::text)))
+ capture_files_storage_path_prefix_chk | t            | CHECK (((storage_path IS NULL) OR starts_with(storage_path, ((((((tenant_id)::text || '/'::text) || (project_id)::text) || '/'::text) || (document_id)::text) || '/'::text))))
+ capture_files_storage_path_row_chk    | t            | CHECK (((storage_path IS NULL) OR starts_with(storage_path, (((((((tenant_id)::text || '/'::text) || (project_id)::text) || '/'::text) || (document_id)::text) || '/'::text) || (id)::text))))
+ capture_files_stored_complete_chk     | t            | CHECK (((ingest_status <> 'stored'::text) OR ((storage_path IS NOT NULL) AND (content_type IS NOT NULL) AND (byte_size IS NOT NULL) AND (sha256 IS NOT NULL))))
+ capture_files_stored_only_chk         | t            | CHECK (((ingest_status = 'stored'::text) OR ((storage_path IS NULL) AND (sha256 IS NULL) AND (preview_state IS NULL))))
+ capture_files_stored_size_chk         | t            | CHECK (((ingest_status <> 'stored'::text) OR (byte_size <= 16777216)))
+(15 rows)
+
+SELECT a.attname,
+       has_column_privilege('service_role', 'public.capture_files', a.attname, 'UPDATE') AS svc_update,
+       has_column_privilege('anon', 'public.capture_files', a.attname, 'UPDATE') AS anon_update,
+       has_column_privilege('authenticated', 'public.capture_files', a.attname, 'UPDATE') AS auth_update
+  FROM pg_attribute a WHERE a.attrelid = 'public.capture_files'::regclass AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum;
+       attname        | svc_update | anon_update | auth_update 
+----------------------+------------+-------------+-------------
+ id                   | f          | f           | f
+ created_at           | f          | f           | f
+ tenant_id            | f          | f           | f
+ project_id           | f          | f           | f
+ document_id          | f          | f           | f
+ file_no              | f          | f           | f
+ source_message_sid   | f          | f           | f
+ media_index          | f          | f           | f
+ claimed_content_type | f          | f           | f
+ content_type         | t          | f           | f
+ byte_size            | t          | f           | f
+ sha256               | t          | f           | f
+ storage_path         | t          | f           | f
+ ingest_status        | t          | f           | f
+ reject_reason        | t          | f           | f
+ preview_state        | t          | f           | f
+ ingested_at          | f          | f           | f
+(17 rows)
+
+SELECT t.val('READBACK svc column-UPDATE count = 7 (exactly the granted seven; ingested_at is NOT among them)', $$SELECT count(*)::text FROM pg_attribute a WHERE a.attrelid = 'public.capture_files'::regclass AND a.attnum > 0 AND NOT a.attisdropped AND has_column_privilege('service_role', 'public.capture_files', a.attname, 'UPDATE')$$, '7');
+                                                        val                                                         
+--------------------------------------------------------------------------------------------------------------------
+ PASS: READBACK svc column-UPDATE count = 7 (exactly the granted seven; ingested_at is NOT among them) -- value = 7
+(1 row)
+
+SELECT t.val('READBACK ingested_at: UPDATE privilege for service_role, anon, authenticated all false', $$SELECT (has_column_privilege('service_role', 'public.capture_files', 'ingested_at', 'UPDATE') OR has_column_privilege('anon', 'public.capture_files', 'ingested_at', 'UPDATE') OR has_column_privilege('authenticated', 'public.capture_files', 'ingested_at', 'UPDATE'))::text$$, 'false');
+                                                      val                                                      
+---------------------------------------------------------------------------------------------------------------
+ PASS: READBACK ingested_at: UPDATE privilege for service_role, anon, authenticated all false -- value = false
+(1 row)
+
+SELECT t.val('READBACK anon/authenticated column-UPDATE count = 0', $$SELECT count(*)::text FROM pg_attribute a WHERE a.attrelid = 'public.capture_files'::regclass AND a.attnum > 0 AND NOT a.attisdropped AND (has_column_privilege('anon', 'public.capture_files', a.attname, 'UPDATE') OR has_column_privilege('authenticated', 'public.capture_files', a.attname, 'UPDATE'))$$, '0');
+                                  val                                   
+------------------------------------------------------------------------
+ PASS: READBACK anon/authenticated column-UPDATE count = 0 -- value = 0
+(1 row)
+
+SELECT t.val('READBACK service_role table privileges = SELECT only', $$SELECT string_agg(p, ',' ORDER BY p) FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p WHERE has_table_privilege('service_role', 'public.capture_files', p)$$, 'SELECT');
+                                     val                                      
+------------------------------------------------------------------------------
+ PASS: READBACK service_role table privileges = SELECT only -- value = SELECT
+(1 row)
+
+SELECT t.val('READBACK the five rev-2/rev-3 constraints exist and are validated', $$SELECT count(*)::text FROM pg_constraint WHERE conrelid = 'public.capture_files'::regclass AND convalidated AND conname IN ('capture_files_reject_reason_iff_chk','capture_files_stored_only_chk','capture_files_storage_path_row_chk','capture_files_ingested_at_iff_chk','capture_files_details_terminal_only_chk')$$, '5');
+                                             val                                             
+---------------------------------------------------------------------------------------------
+ FAIL: READBACK the five rev-2/rev-3 constraints exist and are validated -- expected 5 got 4
+(1 row)
+
+SELECT t.val('READBACK 049 constraints still present (the old prefix check is kept)', $$SELECT count(*)::text FROM pg_constraint WHERE conrelid = 'public.capture_files'::regclass AND conname IN ('capture_files_stored_complete_chk','capture_files_rejected_reason_chk','capture_files_stored_size_chk','capture_files_content_type_chk','capture_files_sha256_chk','capture_files_storage_path_prefix_chk')$$, '6');
+                                           val                                            
+------------------------------------------------------------------------------------------
+ PASS: READBACK 049 constraints still present (the old prefix check is kept) -- value = 6
+(1 row)
+
+SELECT t.val('READBACK exactly one function of this name', $$SELECT count(*)::text FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'trg_capture_files_before_update'$$, '1');
+                              val                              
+---------------------------------------------------------------
+ PASS: READBACK exactly one function of this name -- value = 1
+(1 row)
+
+SELECT t.val('READBACK 050 overload count: each of the seven 050 names still has exactly one pg_proc row', $$SELECT string_agg(c::text, ',') FROM (SELECT count(*) c FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('apply_material_inward_turn','expire_stale_material_inward','pm_set_delivery_details','pm_approve_delivery','pm_reject_delivery','pm_link_invoice','pm_unlink_invoice') GROUP BY proname ORDER BY proname) s$$, '1,1,1,1,1,1,1');
+                                                            val                                                            
+---------------------------------------------------------------------------------------------------------------------------
+ PASS: READBACK 050 overload count: each of the seven 050 names still has exactly one pg_proc row -- value = 1,1,1,1,1,1,1
+(1 row)
+
+SELECT 'POST_APPLY_FP ' || t.fp() AS fingerprint_after, 'POST_APPLY_COMMENTS ' || t.comments() AS comments_after;
+               fingerprint_after                |                    comments_after                    
+------------------------------------------------+------------------------------------------------------
+ POST_APPLY_FP 6e5690af5b9aa38122a509b0ccbbefa4 | POST_APPLY_COMMENTS b97d2e3b734f6c002fd5c0a57a06e643
+(1 row)
+

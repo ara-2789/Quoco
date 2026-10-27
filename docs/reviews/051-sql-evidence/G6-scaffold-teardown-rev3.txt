@@ -1,0 +1,16 @@
+== 051 scaffold teardown ==
+started: 2026-10-27T13:26:14Z
+$ pg_ctl -D /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/pg17 -m fast -w stop
+waiting for server to shut down.... done
+server stopped
+[exit 0]
+$ rm -rf pg17 sock c2-schema.sql load.out dump.err 051-mutant-no-terminal.sql pg17.log initdb.out
+[exit 0]
+check: data directory exists? no
+check: schema dump exists? no
+check: mutant file exists? no
+check: any postgres process on port 54330? 0
+scaffold destroyed: 2026-10-27T13:26:14Z
+
+rev 3 addendum: also deleted the five mutant files (051-mutant-{stamp,pathchk,terminal,s1chk,insert}.sql) and the extracted rev-2 copy (051-rev2.sql)
+check: any 051-mutant-*.sql, 051-rev1.sql or 051-rev2.sql left? 0
