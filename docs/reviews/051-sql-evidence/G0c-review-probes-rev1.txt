@@ -1,0 +1,72 @@
+== 051 rev 2 scaffold dry-run: G0c-review-probes-rev1 ==
+generated: 2026-10-27T13:06:07Z
+HEAD: c606afae3acb1862ff5c7876b1436f115d47fa0c
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP (rev 2):  fbd3b3a535db3c9af41991c1b324ae0e7fe26fb5e5713a1de0e6b7a824c15907
+sha256 051 UP (rev 1, git show 9e9b63b): 70ef913cb3a111246ed73f3946dfebedfd690343aaaa92ae2e0edb2551c349d2
+sha256 051 DOWN test:   acd672658497c1dc745b90748c33704d9ac957d681f98324813737f557dc69c8
+PGHOST (must be a local socket dir): /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+                mk_doc                
+--------------------------------------
+ 50000000-0000-0000-0000-0000000000c2
+(1 row)
+
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2_r1 -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/051-rev1.sql
+[exit 0]
+--- the reviewer's three probes against rev-1 051 (psql -e echoes every statement) ---
+== G0c.0 fixtures (owner inserts, rev-1 table shape: no ingested_at)
+SELECT t.mkfile(1, 'pending') AS p1, t.mkfile(2, 'pending') AS p2, t.mkfile(3, 'stored') AS s3, t.mkfile(4, 'pending') AS p4;
+                  p1                  |                  p2                  |                  s3                  |                  p4                  
+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------
+ c2000000-0000-0000-0000-000000000001 | c2000000-0000-0000-0000-000000000002 | c2000000-0000-0000-0000-000000000003 | c2000000-0000-0000-0000-000000000004
+(1 row)
+
+SET ROLE service_role;
+== probe 1 (B1): a failed row with reject_reason, then stored, then the reject_reason cannot be removed
+SELECT t.expect('HOLE rev-1 probe 1a: pending -> failed WITH reject_reason too_large', $$UPDATE public.capture_files SET ingest_status = 'failed', reject_reason = 'too_large' WHERE id = t.fid(1)$$, 'ok');
+                                                    expect                                                     
+---------------------------------------------------------------------------------------------------------------
+ PASS: HOLE rev-1 probe 1a: pending -> failed WITH reject_reason too_large -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('HOLE rev-1 probe 1b: failed -> stored (reject_reason kept)', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('a', 64), storage_path = t.spath(1), preview_state = 'previewable' WHERE id = t.fid(1)$$, 'ok');
+                                                expect                                                
+------------------------------------------------------------------------------------------------------
+ PASS: HOLE rev-1 probe 1b: failed -> stored (reject_reason kept) -- succeeded as expected (1 row(s))
+(1 row)
+
+SELECT t.expect('rev-1 probe 1c: reject_reason can no longer be cleared (terminal lock freezes the contradiction) -> QE011', $$UPDATE public.capture_files SET reject_reason = NULL WHERE id = t.fid(1)$$, 'QE011');
+                                                                         expect                                                                         
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: rev-1 probe 1c: reject_reason can no longer be cleared (terminal lock freezes the contradiction) -> QE011 -- refused, SQLSTATE=QE011 MESSAGE=E11
+(1 row)
+
+== probe 2 (B1): a rejected row claiming stored, previewable bytes
+SELECT t.expect('HOLE rev-1 probe 2: pending -> rejected WITH sha256, storage_path and preview_state', $$UPDATE public.capture_files SET ingest_status = 'rejected', reject_reason = 'wrong_type', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('c', 64), storage_path = t.spath(2), preview_state = 'previewable' WHERE id = t.fid(2)$$, 'ok');
+                                                            expect                                                             
+-------------------------------------------------------------------------------------------------------------------------------
+ PASS: HOLE rev-1 probe 2: pending -> rejected WITH sha256, storage_path and preview_state -- succeeded as expected (1 row(s))
+(1 row)
+
+== probe 3 (B2): two rows claim one storage object (row 3 is stored with its path; row 4 claims the same path)
+SELECT t.expect('HOLE rev-1 probe 3: row 4 pending -> stored with ROW 3''s storage_path', $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('b', 64), storage_path = t.spath(3) WHERE id = t.fid(4)$$, 'ok');
+                                                     expect                                                      
+-----------------------------------------------------------------------------------------------------------------
+ PASS: HOLE rev-1 probe 3: row 4 pending -> stored with ROW 3's storage_path -- succeeded as expected (1 row(s))
+(1 row)
+
+RESET ROLE;
+== resulting rows (both contradictions are now frozen)
+SELECT file_no, ingest_status, reject_reason, left(sha256, 4) AS sha, preview_state, (storage_path = t.spath(3)) AS uses_row3_path FROM public.capture_files WHERE file_no IN (1, 2, 3, 4) ORDER BY file_no;
+ file_no | ingest_status | reject_reason | sha  | preview_state | uses_row3_path 
+---------+---------------+---------------+------+---------------+----------------
+       1 | stored        | too_large     | aaaa | previewable   | f
+       2 | rejected      | wrong_type    | cccc | previewable   | f
+       3 | stored        |               | aaaa |               | t
+       4 | stored        |               | bbbb |               | t
+(4 rows)
+

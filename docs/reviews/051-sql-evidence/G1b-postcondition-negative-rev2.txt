@@ -1,0 +1,55 @@
+== 051 rev 2 scaffold dry-run: G1b-postcondition-negative-rev2 ==
+generated: 2026-10-27T13:06:07Z
+HEAD: c606afae3acb1862ff5c7876b1436f115d47fa0c
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP (rev 2):  fbd3b3a535db3c9af41991c1b324ae0e7fe26fb5e5713a1de0e6b7a824c15907
+sha256 051 UP (rev 1, git show 9e9b63b): 70ef913cb3a111246ed73f3946dfebedfd690343aaaa92ae2e0edb2551c349d2
+sha256 051 DOWN test:   acd672658497c1dc745b90748c33704d9ac957d681f98324813737f557dc69c8
+PGHOST (must be a local socket dir): /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+Wrong starting states, each on its own clone. 051 rev 2 must ABORT WHOLE (nothing from its sections survives: no column, no constraint, no function, no trigger, no grant).
+
+-- case A: starting state made wrong with: GRANT DELETE ON public.capture_files TO service_role
+[setup exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2_pc_A -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql:383: ERROR:  POSTCONDITION_051: svc_delete
+CONTEXT:  PL/pgSQL function inline_code_block line 131 at RAISE
+[exit 3]
+after the aborted apply: ingested_at columns = 0; rev-2 constraints = 0; functions = 0; triggers = 0; service_role column-UPDATE count excluding the planted one = 0
+
+-- case B: starting state made wrong with: GRANT UPDATE (file_no) ON public.capture_files TO service_role
+[setup exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2_pc_B -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql:383: ERROR:  POSTCONDITION_051: svc_col_update:file_no
+CONTEXT:  PL/pgSQL function inline_code_block line 131 at RAISE
+[exit 3]
+after the aborted apply: ingested_at columns = 0; rev-2 constraints = 0; functions = 0; triggers = 0; service_role column-UPDATE count excluding the planted one = 0
+
+-- case C: starting state made wrong with: GRANT UPDATE ON public.capture_files TO authenticated
+[setup exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2_pc_C -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql:383: ERROR:  POSTCONDITION_051: auth_col_update:id auth_col_update:created_at auth_col_update:tenant_id auth_col_update:project_id auth_col_update:document_id auth_col_update:file_no auth_col_update:source_message_sid auth_col_update:media_index auth_col_update:claimed_content_type auth_col_update:content_type auth_col_update:byte_size auth_col_update:sha256 auth_col_update:storage_path auth_col_update:ingest_status auth_col_update:reject_reason auth_col_update:preview_state auth_col_update:ingested_at ingested_at_update:authenticated tbl_update:authenticated
+CONTEXT:  PL/pgSQL function inline_code_block line 131 at RAISE
+[exit 3]
+after the aborted apply: ingested_at columns = 0; rev-2 constraints = 0; functions = 0; triggers = 0; service_role column-UPDATE count excluding the planted one = 0
+
+-- case D: a PRE-EXISTING row that cannot satisfy a new constraint: a 'stored' row (valid under 049) has no way to carry ingested_at, so capture_files_ingested_at_iff_chk cannot validate
+                mk_doc                
+--------------------------------------
+ 50000000-0000-0000-0000-0000000000c2
+(1 row)
+
+        preexisting_stored_row        
+--------------------------------------
+ c2000000-0000-0000-0000-000000000001
+(1 row)
+
+[setup exit 0]
+$ /opt/homebrew/opt/postgresql@17/bin/psql -X -q -d d_c2_pc_D -v ON_ERROR_STOP=1 -f /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql
+psql:/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c2-capture-files-lock/docs/reviews/051_capture_files_immutability.sql:155: ERROR:  check constraint "capture_files_ingested_at_iff_chk" of relation "capture_files" is violated by some row
+[exit 3]
+after the aborted apply: ingested_at columns = 0; rev-2 constraints = 0; functions = 0; triggers = 0; service_role column-UPDATE count = 0
+fingerprint of case D after the abort equals the pre-051 baseline? yes

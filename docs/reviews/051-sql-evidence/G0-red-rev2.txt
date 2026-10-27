@@ -1,0 +1,110 @@
+== 051 rev 2 scaffold dry-run: G0-red-rev2 ==
+generated: 2026-10-27T13:06:06Z
+HEAD: c606afae3acb1862ff5c7876b1436f115d47fa0c
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP (rev 2):  fbd3b3a535db3c9af41991c1b324ae0e7fe26fb5e5713a1de0e6b7a824c15907
+sha256 051 UP (rev 1, git show 9e9b63b): 70ef913cb3a111246ed73f3946dfebedfd690343aaaa92ae2e0edb2551c349d2
+sha256 051 DOWN test:   acd672658497c1dc745b90748c33704d9ac957d681f98324813737f557dc69c8
+PGHOST (must be a local socket dir): /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+
+                mk_doc                
+--------------------------------------
+ 50000000-0000-0000-0000-0000000000c2
+(1 row)
+
+--- scenario output (psql -e echoes every statement) ---
+== G0.1 baseline (what 049 left)
+SELECT t.val('baseline: capture_files has no trigger', $$SELECT count(*)::text FROM pg_trigger WHERE tgrelid = 'public.capture_files'::regclass AND NOT tgisinternal$$, '0');
+                            val                            
+-----------------------------------------------------------
+ PASS: baseline: capture_files has no trigger -- value = 0
+(1 row)
+
+SELECT t.val('baseline: trg_capture_files_before_update does not exist', $$SELECT (count(*) > 0)::text FROM pg_proc WHERE proname = 'trg_capture_files_before_update'$$, 'false');
+                                       val                                       
+---------------------------------------------------------------------------------
+ PASS: baseline: trg_capture_files_before_update does not exist -- value = false
+(1 row)
+
+SELECT t.val('baseline: service_role table privileges on capture_files = SELECT only', $$SELECT string_agg(p, ',' ORDER BY p) FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p WHERE has_table_privilege('service_role', 'public.capture_files', p)$$, 'SELECT');
+                                              val                                               
+------------------------------------------------------------------------------------------------
+ PASS: baseline: service_role table privileges on capture_files = SELECT only -- value = SELECT
+(1 row)
+
+SELECT 'BASELINE_FP ' || t.fp() AS fingerprint_before, 'BASELINE_COMMENTS ' || t.comments() AS comments_before;
+              fingerprint_before              |                  comments_before                   
+----------------------------------------------+----------------------------------------------------
+ BASELINE_FP 91a1865dd1fd0b98de6a9d9333008593 | BASELINE_COMMENTS 80b77da945cc55890da3acee8182eca2
+(1 row)
+
+== G0.2 fixture rows (inserted as the table owner)
+SELECT t.mkfile(1, 'pending') AS f1_pending, t.mkfile(2, 'stored') AS f2_stored, t.mkfile(3, 'rejected') AS f3_rejected;
+              f1_pending              |              f2_stored               |             f3_rejected              
+--------------------------------------+--------------------------------------+--------------------------------------
+ c2000000-0000-0000-0000-000000000001 | c2000000-0000-0000-0000-000000000002 | c2000000-0000-0000-0000-000000000003
+(1 row)
+
+== G0.3 T-D8-1 (RED): service_role UPDATE of the seven columns on a pending row. Expected FAIL: 42501, no grant.
+SET ROLE service_role;
+SELECT t.expect('T-D8-1 (RED) svc UPDATE seven columns pending->stored',
+  $$UPDATE public.capture_files SET ingest_status = 'stored', content_type = 'image/jpeg', byte_size = 1000, sha256 = repeat('a', 64), storage_path = t.spath(1), reject_reason = NULL, preview_state = 'previewable' WHERE id = t.fid(1)$$, 'ok');
+                                                                          expect                                                                          
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-1 (RED) svc UPDATE seven columns pending->stored -- expected ok, got refusal SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+SELECT t.expect('T-D8-1 (RED) the refusal is the missing grant (42501)', $$UPDATE public.capture_files SET preview_state = 'previewable' WHERE id = t.fid(1)$$, '42501');
+                                                                  expect                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------
+ PASS: T-D8-1 (RED) the refusal is the missing grant (42501) -- refused, SQLSTATE=42501 MESSAGE=permission denied for table capture_files
+(1 row)
+
+RESET ROLE;
+== G0.4 T-D8-3 (RED): the reviewers hole. With NO trigger, a stored files sha256 CAN be rewritten.
+-- (a) as the table owner, the only role that can UPDATE today: the rewrite SUCCEEDS (expected FAIL below: refusal QE011 is absent)
+SELECT t.expect('T-D8-3 (RED) owner rewrites sha256 on a stored row -> must be refused QE011',
+  $$UPDATE public.capture_files SET sha256 = repeat('b', 64) WHERE id = t.fid(2)$$, 'QE011');
+                                                                 expect                                                                  
+-----------------------------------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-3 (RED) owner rewrites sha256 on a stored row -> must be refused QE011 -- expected refusal QE011 but the statement SUCCEEDED
+(1 row)
+
+SELECT t.val('T-D8-3 (RED) the stored row HAS BEEN rewritten (sha256 now b...)', $$SELECT left(sha256, 4) FROM public.capture_files WHERE id = t.fid(2)$$, 'aaaa');
+                                               val                                                
+--------------------------------------------------------------------------------------------------
+ FAIL: T-D8-3 (RED) the stored row HAS BEEN rewritten (sha256 now b...) -- expected aaaa got bbbb
+(1 row)
+
+SELECT t.expect('T-D8-3 (RED) owner rewrites storage_path on a stored row -> must be refused QE011',
+  $$UPDATE public.capture_files SET storage_path = replace(storage_path, '/f2.jpg', '/other.jpg') WHERE id = t.fid(2)$$, 'QE011');
+                                                                    expect                                                                     
+-----------------------------------------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-3 (RED) owner rewrites storage_path on a stored row -> must be refused QE011 -- expected refusal QE011 but the statement SUCCEEDED
+(1 row)
+
+SELECT t.expect('T-D8-4 (RED) owner changes a rejected row -> must be refused QE011',
+  $$UPDATE public.capture_files SET reject_reason = 'too_large' WHERE id = t.fid(3)$$, 'QE011');
+                                                             expect                                                             
+--------------------------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-4 (RED) owner changes a rejected row -> must be refused QE011 -- expected refusal QE011 but the statement SUCCEEDED
+(1 row)
+
+SELECT t.expect('T-D8-5 (RED) owner moves a stored row back to pending -> must be refused QE011',
+  $$UPDATE public.capture_files SET ingest_status = 'pending', content_type = NULL, byte_size = NULL, sha256 = NULL, storage_path = NULL WHERE id = t.fid(2)$$, 'QE011');
+                                                                   expect                                                                   
+--------------------------------------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-5 (RED) owner moves a stored row back to pending -> must be refused QE011 -- expected refusal QE011 but the statement SUCCEEDED
+(1 row)
+
+SELECT t.expect('T-D8-2b (RED) owner changes file_no -> must be refused QE009',
+  $$UPDATE public.capture_files SET file_no = 99 WHERE id = t.fid(1)$$, 'QE009');
+                                                          expect                                                          
+--------------------------------------------------------------------------------------------------------------------------
+ FAIL: T-D8-2b (RED) owner changes file_no -> must be refused QE009 -- expected refusal QE009 but the statement SUCCEEDED
+(1 row)
+
+
