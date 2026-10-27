@@ -1,0 +1,37 @@
+=== C2 scaffold dump 2026-10-27T13:37:56Z ===
+$ cat /Users/aravindanrajamani/Desktop/quocoai/supabase/.temp/project-ref   (must equal exfccwlrhoutkgrlikod)
+exfccwlrhoutkgrlikod
+$ supabase --workdir /Users/aravindanrajamani/Desktop/quocoai db dump --linked --schema public --dry-run > dry.sh 2> dry.err  (output NOT printed)
+[exit 0]
+dry.sh bytes:     2474; dry.err bytes:      123
+variable NAMES only: export PGHOST= export PGPORT= export PGUSER= export PGPASSWORD= export PGDATABASE= 
+$ bash dry.sh > c2-schema.sql 2> dump.err   (pg_dump, read-only, test-db)
+[exit 0]
+c2-schema.sql bytes:   302834 lines:     6773; dump.err bytes:        0
+credential-pattern scan of c2-schema.sql (count only): 0
+deleted dry.sh and dry.err
+
+# C2 scaffold build 2026-10-27T13:39:19Z
+$ initdb -D /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/pg17 -U postgres --auth=trust --encoding=UTF8 --locale=C
+[exit 0] (initdb output in job tmp,       23 lines)
+$ pg_ctl -D /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/pg17 -l /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/pg17.log -o "-p 54330 -k /Users/aravindanrajamani/.claude/jobs/335a6222/tmp/sock -c listen_addresses=''" -w start
+waiting for server to start.... done
+server started
+[exit 0]
+$ psql: roles + CREATE DATABASE quoco_c2_scaffold
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE DATABASE
+[exit 0]
+$ psql -d quoco_c2_scaffold -f docs/reviews/049-sql-evidence/scaffold-stubs.sql  (NAMED STUBS)
+[exit 0]
+$ psql -d quoco_c2_scaffold -f c2-schema.sql  (REAL structure-only dump of test-db public)
+[exit 0] load.out lines:        5; ERROR lines: 0
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit
+public tables: 36; public functions: 156
+capture_files triggers: (none)
+trg_capture_files_before_update exists: false
+capture_files relacl: {postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}
+capture_files column acls: 0

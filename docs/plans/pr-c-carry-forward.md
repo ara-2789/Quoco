@@ -28,7 +28,7 @@ Written 2026-10-26. Four items PR-C must not lose. Nothing here is implemented. 
 8. **Apply runbook (N4).** The ledger row is part of "apply done", not a follow-up. The 051 DOWN refuses without it. An apply GO needs the test-db apply, its ledger row, and a pinned green CI run URL in which QE011 is observed as `error.code`.
    Source: `docs/reviews/051-external-review-round-1.md` N4 and Verdict.
 
-9. **Apply block read-only count (rev 2).** Prod `capture_files` is believed empty (nothing calls `apply_material_inward_turn` before C4). The 051 rev 2 apply adds CHECKs that fail on any existing stored or rejected row (no `ingested_at` backfill is invented). The apply block verifies emptiness with a read-only count of `capture_files` rows by status before the apply, on test-db and on prod.
+9. **Apply block read-only count (rev 2).** ~~Prod `capture_files` is believed empty (nothing calls `apply_material_inward_turn` before C4).~~ **Superseded 2026-10-27 by item 13 (external review round 3, N1).** The 051 rev 2 apply adds CHECKs that fail on any existing stored or rejected row (no `ingested_at` backfill is invented). The apply block verifies emptiness with a read-only count of `capture_files` rows by status before the apply, on test-db and on prod.
    Source: `docs/reviews/051-review-package.md` Rev 2 section; `docs/reviews/051-sql-evidence/G1b-postcondition-negative-rev2.txt` case D.
 
 ## Added 2026-10-27, source: 051 external review round 2 (`docs/reviews/051-external-review-round-2.md`)
@@ -44,3 +44,11 @@ Written 2026-10-26. Four items PR-C must not lose. Nothing here is implemented. 
 
 13. **Apply GO needs (round 2).** The test-db apply; the ledger row; the pre-apply terminal-row count on each database (an early warning, not the guard: today only the owner can UPDATE `capture_files`, so a terminal row cannot exist short of a hand edit, and the file aborts whole if one does); and a pinned green CI run URL in which QE011 and 23514 both appear as `error.code`.
     Source: `docs/reviews/051-external-review-round-2.md` verdict and R2-5.
+
+## Added 2026-10-27, source: 051 external review round 3 (`docs/reviews/051-external-review-round-3.md`)
+
+14. **Data-only restores of `capture_files` need triggers disabled** (owner or superuser, `session_replication_role = replica` or `--disable-triggers`), and the restore record must say so. A full logical restore works unchanged. See `docs/reviews/051-apply-runbook.md`, section d.
+    Source: `docs/reviews/051-external-review-round-3.md`, "One consequence I should have named in round 2".
+
+15. **Incident response for C5.** If C5 misbehaves, stop C5 and leave 051 in place. Do not reach for 051's DOWN first (item 12).
+    Source: `docs/reviews/051-external-review-round-3.md`, R3-4.

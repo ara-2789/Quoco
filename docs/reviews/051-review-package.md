@@ -8,6 +8,30 @@
 
 ---
 
+## Round 3, 2026-10-27 — design GO, unconditional; apply prep (Part A, no database writes)
+
+**The review text.** `docs/reviews/051-external-review-round-3.md`, sha256 `b4f707c5934e9b3e88b9dd4d7f218574fe8897e6655c019300bd9a33ff1e6168`, 65 lines, copied by Aravind from the rendered message; not edited. **The 051 SQL, both DOWN files and the test file are unchanged by this block** (rev 3 hashes: SQL `debe97f0…2df9`, DOWN test-db `672a422f…da3a`, DOWN prod `288dc847…6046`, test `0de4517b…04a0`; re-checked at the end of the block).
+
+**Apply GO needs** (reviewer's list, with status): the test-db apply and its ledger row — **not done**; the pre-apply probes on each database — **test-db done 27 Oct 13:39 UTC (all clear), prod not done**; the epoch mutant transcript — **done**; the restore runbook line — **done**; the item 9 strike — **done**; a pinned green CI run where QE011 and 23514 appear as `error.code` — **not done**.
+
+| Round 3 point | Answer | Where |
+|---|---|---|
+| **R3-5** targeted mutant | `NEW.ingested_at := 'epoch'` instead of `now()`. Every fixture stays valid; the same GREEN scenario gives **142 PASS, 1 FAIL**. The one FAIL is exactly the time-window check: `T-D8-15 pending->stored stamped ingested_at within [t0, now] (t0 taken before the UPDATE)`. Nothing else fails. The window check does fire. | `G2c-epoch-mutant-rev3.txt` |
+| **R3-1** QE014 on INSERT | Kept. Two read-only probes on test-db: `SHOW default_transaction_isolation` = `read committed` (the Management API session, role `postgres`); `pg_roles.rolconfig` for `authenticator`, `service_role`, `postgres`, `authenticated`, `anon` and every `pg_db_role_setting` row hold only `statement_timeout`, `lock_timeout`, `search_path`, `session_preload_libraries`, `jwt_exp`, `log_statement`, `idle_in_transaction_session_timeout`, `default_transaction_read_only` (for `supabase_read_only_user`): **no isolation setting anywhere** (counts: 0 and 0). Prod not probed yet. | `P0-testdb-preapply.txt` |
+| **R3-3** count both | The pre-apply probes count terminal rows **and** rows with `content_type` or `byte_size` set (and any detail set, and total rows). Test-db: 0, 0, 0, 0, **the table is empty**. An early warning, not the guard. | `P0-testdb-preapply.txt` |
+| **R3-4** DOWN refusal acceptable | Accepted. The incident sentence is in the runbook (section e) and carry-forward item 15. | `051-apply-runbook.md` |
+| **N1** item 9 strike | Done, dated. | `docs/plans/pr-c-carry-forward.md` item 9 |
+| **N2** credential scan without `| head` | Done: the dump script's whole output was captured with no `head`: `c2-schema.sql bytes: 302834 lines: 6773; dump.err bytes: 0; credential-pattern scan (count only): 0; deleted dry.sh and dry.err`. | `scaffold-build-prep.txt` |
+| **Restore line** | In the runbook (section d) and carry-forward item 14. | `051-apply-runbook.md` |
+
+**What the probes found on test-db** (all read-only; the full output is in `P0-testdb-preapply.txt`): ref `exfccwlrhoutkgrlikod` printed first; `capture_files` has **0 rows**; ledger latest three `050`, `049`, `048`; the function, the five 051 constraints, `ingested_at` and any user trigger are all absent; table ACL `{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}`, no column ACLs. **Pre-apply fingerprint `91a1865dd1fd0b98de6a9d9333008593` and comments hash `80b77da945cc55890da3acee8182eca2` — both equal the local scaffold's baseline**, so the scaffold is an exact stand-in for test-db's `capture_files` structure. No STOP condition fired. Role settings worth knowing (not isolation): `authenticator` has `statement_timeout=8s` and `lock_timeout=8s`; `anon` `3s`; `authenticated` `8s`; `service_role` none.
+
+**Not observed:** prod. The same probes on prod are in the runbook's section c and are a later block.
+
+**The runbook:** `docs/reviews/051-apply-runbook.md` (prepared, **not run**; no apply GO exists).
+
+---
+
 ## Rev 3, 2026-10-27 — after external review round 2 (verdict: design GO, conditional)
 
 **The review text.** `docs/reviews/051-external-review-round-2.md`, sha256 `f681927322fd968c295dfb93c66b4033fdcbb5eb64269ea4c639566dae9977a1`, 93 lines. **Provenance note:** saved by Aravind, copied from the rendered message, **markdown intact**. Not edited. (Round 1's file, `…round-1.md`, `08e1516d…2c7b`, is the one with the missing narration lines and formatting.)
@@ -257,7 +281,7 @@ Results (28 PASS, 0 FAIL): the DOWN over 18 terminal rows is **refused** (`termi
 
 ## 7. What is NOT yet done
 
-- Test-db apply of 051 rev 3 (and its ledger row), preceded by the read-only count of `capture_files` rows by status (an early warning; see R2-5 above).
+- *(Runbook: `docs/reviews/051-apply-runbook.md`; test-db pre-apply probes done 27 Oct, see the Round 3 section.)* Test-db apply of 051 rev 3 (and its ledger row), preceded by the read-only count of `capture_files` rows by status (an early warning; see R2-5 above).
 - CI green with a pinned run URL where **QE011 and 23514** are observed as `error.code`. CI is **expected RED** on `test/capture-files-immutability.test.ts` until the test-db apply.
 - Prod readback for "PITR substituted": PITR is OFF until launch. At the prod apply, save the prod pre-apply ACL / trigger / constraint / column readback for `capture_files` with its sha256 and record the word "substituted". Not part of this block.
 - Prod apply (`supabase db query --linked -f`, with Aravind's go-ahead in the same exchange, CLAUDE.md §0).
@@ -273,7 +297,7 @@ Results (28 PASS, 0 FAIL): the DOWN over 18 terminal rows is **refused** (`termi
 
 ## 8. Hashes
 
-Full sha256 of every file (also in `docs/reviews/051-sql-evidence/SHA256.txt`, which lists everything except itself and this package; **`G4-lint-rev3.txt` and the final `SHA256.txt` are committed in the last commit, after the lint was run at the commit before it, so G4's hash is in `SHA256.txt` and not below**):
+Full sha256 of every file (also in `docs/reviews/051-sql-evidence/SHA256.txt`, which lists everything except itself and this package; **all files committed through the apply-prep commit are listed below; the apply-prep commit's own transcripts (`P0`, `G2c`, `G6-…-prep`, `scaffold-build-prep`) are in this list too**):
 
 ```
 debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9  docs/reviews/051_capture_files_immutability.sql
@@ -282,6 +306,7 @@ debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9  docs/reviews/0
 0de4517b02e743d0bcfb2c3e5e394c0345204aa09850c9a05407addd3ddc04a0  test/capture-files-immutability.test.ts
 08e1516d06cd28cead094ac812efa68578ca98624d97513dd55b459aece62c7b  docs/reviews/051-external-review-round-1.md
 f681927322fd968c295dfb93c66b4033fdcbb5eb64269ea4c639566dae9977a1  docs/reviews/051-external-review-round-2.md
+b4f707c5934e9b3e88b9dd4d7f218574fe8897e6655c019300bd9a33ff1e6168  docs/reviews/051-external-review-round-3.md
 7d86e44e999a2d7b52737380f34a0e45a1176cf89b6a7f63cb567b9959dc7a4b  docs/reviews/051-sql-evidence/G0-red-rev2.txt
 01c163eab9d4d3392b478f2dec9196293b03cc050e23d4b1cd75290ceb836fbc  docs/reviews/051-sql-evidence/G0-red-rev3.txt
 3233a5abca119f69ca1d0fe8e26520eb22e20db45f8deb482456d26cec4e4363  docs/reviews/051-sql-evidence/G0-red.txt
@@ -308,17 +333,22 @@ ded93c9cc1a5355be9e1a21373d8602003901bce817e1ccc1f332775c58f9eb9  docs/reviews/0
 ff27b176ca0c37e974088f958dedcc9b8959f4a1414f637576b5198209f7ff7d  docs/reviews/051-sql-evidence/G2b-mutant-terminal-rev2.txt
 58b537a0a67f681caf3f90e5b74eaa901fc78a2f0f6246e8fa5b231905f5711a  docs/reviews/051-sql-evidence/G2b-mutant-terminal-rev3.txt
 741c25d15dd87662c3f20b702aff9ba3b43901e7c8d1cf84c9bbb3b1cc6f708c  docs/reviews/051-sql-evidence/G2b-mutant.txt
+b366a770e59b5b4b68616db911f55b034d23229b76c087f669fba3056d0185e3  docs/reviews/051-sql-evidence/G2c-epoch-mutant-rev3.txt
 a5ef58968549ba58aaaf04f98502e1c384e9def7e9fdb6071ab7a9cba11786da  docs/reviews/051-sql-evidence/G3-down-rev2.txt
 7e2879cfadf6986af9e31d25a89fb09188b62b3fb2c364afd7336de79bc1f17f  docs/reviews/051-sql-evidence/G3-down-rev3.txt
 77e1dd870bb77a6fd039d2163ea6cccc50f9f6d0bb06812281f58b6ae7edf87b  docs/reviews/051-sql-evidence/G3-down.txt
 2e07df3a334ac4a2a1e69ba8bb72c3bb44310602bd757ce5a73bcd906cc076b2  docs/reviews/051-sql-evidence/G4-lint-rev2.txt
+874e0c845a97e6a28e7c1e3642c6d83c9b98be40476ea34880a123ca4a5ec0b8  docs/reviews/051-sql-evidence/G4-lint-rev3.txt
 f82555ac79c4d486afe437cc40475d9999ead63a8d73dfd89311b911f1af65b3  docs/reviews/051-sql-evidence/G4-lint.txt
 f72972166ae0c5fb45eb1b254fc67ec976a1893bd5f11008b294e79ad191e1c1  docs/reviews/051-sql-evidence/G5-049-down-guard-rev2.txt
 908fa95e9755ee495a1a7dab5c84a289c05bd632078d9e58632f5857fdfe6144  docs/reviews/051-sql-evidence/G5-049-down-guard-rev3.txt
 09545f71ea2e2604db4712b7ca4e706941600c40e4237ac360d39db63210ba31  docs/reviews/051-sql-evidence/G5-049-down-guard.txt
+889ebde964ab53e47b9a46945a2c6845203c2c5a180ba44b4555a1c351a38b70  docs/reviews/051-sql-evidence/G6-scaffold-teardown-prep.txt
 903bd23d8b6f4176558495741a8b55f312a8584f29b8e9b5e6c257af697dbed4  docs/reviews/051-sql-evidence/G6-scaffold-teardown-rev2.txt
 1ca874c4604ed322d8669b48278dd5546060e4bf1a2b454b49af299eb0b1d793  docs/reviews/051-sql-evidence/G6-scaffold-teardown-rev3.txt
 9ae2f48d476e868d426b5f199329c4dc1eb346886ad947bed8b3615061765339  docs/reviews/051-sql-evidence/G6-scaffold-teardown.txt
+a0083004cb13325185cc04b5a195587d8783f04ca9ff8f39c79de5f5d2ed02c8  docs/reviews/051-sql-evidence/P0-testdb-preapply.txt
+f47775ca72069fa3e169238abcbd15ac43f5c8b7a693db29158451fb3d683702  docs/reviews/051-sql-evidence/scaffold-build-prep.txt
 c5b0c97a896d85d7c9bebc2fde633a15fbce019f9f16ad6cb73a8992092aef11  docs/reviews/051-sql-evidence/scaffold-build-rev2.txt
 e1c2e3eb925033577adb3a25d1f0d15d63f32e2395321037472e666a93cf6f13  docs/reviews/051-sql-evidence/scaffold-build-rev3.txt
 09040e2d9e0152e812f59d290b872f033c3ecf074d2a07226de0c303b25bd553  docs/reviews/051-sql-evidence/scaffold-build.txt
@@ -342,7 +372,7 @@ How the scaffold was built (`scaffold-build-rev3.txt`): a read-only schema dump 
 **New questions for rev 3:**
 
 1. **R3-1 (QE014 now on INSERT).** The isolation check now also refuses a non-READ-COMMITTED INSERT, so 050's insert depends on READ COMMITTED. 050 sets no isolation level and PostgREST uses READ COMMITTED, but the server's `default_transaction_isolation` was not read. Is that acceptable, or should the INSERT branch skip the isolation check?
-2. **R3-2 (the vacuous `failed` → `failed`).** After S1, no column of a `pending` or `failed` row can change except by a status move. The earlier "allow `failed` → `failed` with changes" decision has nothing left to apply to. Confirm that is the intended end state.
+2. **R3-2 (the vacuous `failed` → `failed`).** *(superseded: vacuous under rev 3, intended end state (round 3, 2026-10-27); kept, not deleted)* After S1, no column of a `pending` or `failed` row can change except by a status move. The earlier "allow `failed` → `failed` with changes" decision has nothing left to apply to. Confirm that is the intended end state.
 3. **R3-3 (apply-time failure on a pending row with details).** Case E: any existing `pending` or `failed` row carrying `content_type` or `byte_size` aborts the whole apply. Prod and test-db rows come from 050's blank insert, so none should. Is the read-only count enough to catch it early (count of terminal rows, and of rows with `content_type` or `byte_size` set)?
 4. **R3-4 (the DOWN is now unusable over live data).** The DOWN refuses over any terminal row (S3). A real rollback after C5 has stored files needs a separate reviewed artifact. Is a refusal without a ready-made alternative acceptable at this stage, given PITR is off until launch?
 5. **R3-5 (the stamp mutant is noisy).** Removing the stamp makes the CHECK refuse the scenario's own fixtures, so 90 assertions fail. A narrower mutant would need the fixtures to stay valid. Is the broad failure enough evidence, or do you want a targeted one?
