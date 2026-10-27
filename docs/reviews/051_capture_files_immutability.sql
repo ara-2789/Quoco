@@ -1,7 +1,21 @@
 -- =============================================================================
 -- 051_capture_files_immutability.sql
--- Slice 1a, PR-C step C2: a stored capture file can never be silently changed,
--- and only the ingest job (service_role) may fill in a file's stored details.
+-- Slice 1a, PR-C step C2: the database record of a stored capture file cannot
+-- be silently changed, and only the ingest job (service_role) may fill in a
+-- file's stored details.
+--
+-- REV 2, 2026-10-27, after external review round 1 (docs/reviews/051-external-review-round-1.md).
+-- DATED CORRECTION (S1): rev 1 said "a stored capture file can never be silently
+--   changed". That is struck. 051 locks the DATABASE RECORD of a stored file, not
+--   the bytes in Storage. service_role can still overwrite a Storage object. The
+--   byte guard is C5's: upload with upsert false to the row-owned path (B2), and
+--   no C5 code path overwrites or deletes an object under a stored row.
+-- Rev 2 adds, before the trigger: B1 (two lifecycle CHECKs), B2 (a row-owned
+--   storage path CHECK), S2 (a database-stamped ingested_at column and its CHECK).
+--   Why B1 and B2 are needed: the trigger freezes whatever lands in a terminal
+--   row, so a row with a contradictory shape (a stored file carrying a
+--   reject_reason, a rejected file carrying a hash and path) would be frozen
+--   wrong, and two rows could certify one Storage object.
 --
 -- HELD -- NOT APPLIED to any database (test-db or prod). This file lives in
 -- docs/reviews/, not supabase/migrations/, until an apply is actually
@@ -22,15 +36,42 @@
 --      change again. This closes the hole the external reviewer proved open
 --      on a stub (049-review-package.md:145): a stored file's sha256 could be
 --      rewritten.
+--   3. (rev 2) Four CHECK constraints keep every row's shape consistent, so the
+--      lock never freezes a contradiction (B1, B2, S2 below).
+--   4. (rev 2) A new column ingested_at records when a file reached 'stored' or
+--      'rejected'. The DATABASE stamps it inside the trigger. No role can write
+--      it, and it is NOT in the service_role grant (S2, per Aravind 27 Oct).
 --
 -- DECISIONS (all per Aravind, 26 Oct 2026)
 --   * 'stored' and 'rejected' are terminal.
 --   * 'failed' may move only to 'stored' or 'rejected'.
 --   * An UPDATE that changes nothing on a terminal row is allowed, so a
 --     retried ingest job is a harmless no-op.
+--   * (rev 2, 27 Oct) B1 and B2 accepted as the reviewer wrote them. S2 yes, with
+--     one change: ingested_at is stamped by the database, not written by the
+--     caller (precedent: 049 TR1 stamps delivery_invoice_links.linked_at, F4-1).
+--     'failed' -> 'failed' with column changes stays allowed (safe under B1).
 --   * PITR is OFF until launch. The prod apply will record "PITR substituted"
 --     (a saved pre-apply readback of the table's ACLs and triggers, plus
 --     051-down-prod.sql). That readback is NOT part of this file.
+--
+-- ROW SHAPE (rev 2; a violation raises 23514, check_violation, from the CHECKs in section 1):
+--   B1  reject_reason is set if and only if ingest_status = 'rejected'.
+--       storage_path, sha256 and preview_state are set only when 'stored'.
+--       content_type and byte_size may be set on any status, so a 'too_large' or
+--       'wrong_type' reject can record what was observed.
+--   B2  storage_path starts with tenant/project/document/<this row's id>. The id
+--       is a fixed-width uuid, so no row's prefix can collide with another's.
+--       049's existing capture_files_storage_path_prefix_chk (the document folder
+--       only) is KEPT: it is applied and live, it is a weaker subset of the new
+--       check, and dropping a live constraint is a separate, avoidable risk.
+--       The new check is the strict one; the old one stays as a second wall.
+--   S2  ingested_at is set if and only if ingest_status is 'stored' or 'rejected'.
+--       The trigger stamps it with now() (transaction start time, the same
+--       function 049's TR4 uses for approved_at, S-3) on the move from 'pending'
+--       or 'failed' into 'stored' or 'rejected'. now() is stable inside the
+--       transaction, so it never disagrees with the row's other writes in that
+--       transaction. A caller who changes ingested_at gets QE009.
 --
 -- STATUS TRANSITIONS (ingest_status). Anything not listed raises QE011.
 --     pending -> pending | stored | rejected | failed
@@ -48,14 +89,23 @@
 --   document_id, file_no, source_message_sid, media_index, claimed_content_type.
 --   These are exactly the nine capture_files columns (049:305-340) that the
 --   column grant below does NOT give to service_role. Nothing is left out.
+--   ingested_at (rev 2) is the one extra column: NOT granted, and NOT writable by
+--   any caller. A change to it by anyone raises QE009 (it is checked with the
+--   identity columns, before the trigger's own stamp). So the table's 17 columns
+--   are: 9 identity + 7 granted + ingested_at (a test asserts this set).
 --
 -- CALLER NOTE: the trigger function body does not name the table. 049's DOWN
 --   guard (049 DOWN, Guard 2) scans function bodies for table names; a body
 --   naming the table would trip it. The function needs no table reference.
 --
--- LOCKS: CREATE TRIGGER takes SHARE ROW EXCLUSIVE on capture_files and GRANT
---   takes a brief lock on it. Nothing here locks whatsapp_sessions or any
---   other table. SET LOCAL lock_timeout below makes a blocked apply fail fast.
+-- LOCKS: ALTER TABLE ADD CONSTRAINT takes ACCESS EXCLUSIVE on capture_files and
+--   scans the table to validate. ADD COLUMN (nullable, no default) is a catalog
+--   change only. CREATE TRIGGER takes SHARE ROW EXCLUSIVE and GRANT a brief lock.
+--   Nothing here locks whatsapp_sessions or any other table. SET LOCAL
+--   lock_timeout below makes a blocked apply fail fast. Prod rows are believed to
+--   be empty (nothing calls apply_material_inward_turn before C4); the 050 insert
+--   writes only pending rows with every detail NULL, which satisfies all four
+--   checks, so validation passes on any existing row.
 --
 -- SOURCE MAP (id -> where)
 --   [src: R49:145]   docs/reviews/049-review-package.md:145 (PR-C BLOCKING item)
@@ -67,6 +117,11 @@
 --   [src: S050-ASSERT] supabase/migrations/050_material_inward_functions.sql:1915-1973 (assertion block pattern)
 --   [src: PLAN-3d]   docs/plans/pr-c-plan.md section 3d items 1-5, section 8 row C2
 --   [src: CM-s6]     CLAUDE.md section 6: every new function needs an explicit per-role REVOKE
+--   [src: R1-B1]     docs/reviews/051-external-review-round-1.md (B1: lifecycle CHECKs)
+--   [src: R1-B2]     same (B2: row-owned storage path)
+--   [src: R1-S1]     same (S1: the bytes are not locked)
+--   [src: R1-S2]     same (S2: terminal timestamp; stamped by the database per Aravind 27 Oct)
+--   [src: S049-F4-1] supabase/migrations/049_capture_tables.sql (TR1 stamps delivery_invoice_links.linked_at)
 --
 -- DOWN: commented block at the end. The runnable files are
 --   docs/reviews/051-down-testdb.sql and docs/reviews/051-down-prod.sql.
@@ -77,7 +132,30 @@ BEGIN;
 SET LOCAL lock_timeout = '3s';
 
 -- -----------------------------------------------------------------------------
--- 1. The trigger function.
+-- 1. Table changes (rev 2). All before the trigger exists.
+-- -----------------------------------------------------------------------------
+-- [src: R1-S2] ingested_at: nullable, no default. Stamped by the trigger below.
+ALTER TABLE public.capture_files ADD COLUMN ingested_at timestamptz;
+
+-- [src: R1-B1] reject_reason iff rejected; the stored details only on stored.
+ALTER TABLE public.capture_files
+  ADD CONSTRAINT capture_files_reject_reason_iff_chk
+    CHECK ((ingest_status = 'rejected') = (reject_reason IS NOT NULL)),
+  ADD CONSTRAINT capture_files_stored_only_chk
+    CHECK (ingest_status = 'stored' OR (storage_path IS NULL AND sha256 IS NULL AND preview_state IS NULL));
+
+-- [src: R1-B2] the path belongs to its row.
+ALTER TABLE public.capture_files
+  ADD CONSTRAINT capture_files_storage_path_row_chk
+    CHECK (storage_path IS NULL OR starts_with(storage_path, tenant_id::text || '/' || project_id::text || '/' || document_id::text || '/' || id::text));
+
+-- [src: R1-S2] ingested_at iff terminal.
+ALTER TABLE public.capture_files
+  ADD CONSTRAINT capture_files_ingested_at_iff_chk
+    CHECK ((ingest_status IN ('stored', 'rejected')) = (ingested_at IS NOT NULL));
+
+-- -----------------------------------------------------------------------------
+-- 2. The trigger function.
 -- -----------------------------------------------------------------------------
 -- [src: PLAN-3d, S049-TRG, R49:145]
 CREATE FUNCTION public.trg_capture_files_before_update()
@@ -105,6 +183,12 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'QE009', MESSAGE = 'E9';
   END IF;
 
+  -- S2: ingested_at is never caller-set. Compare the caller's value to OLD FIRST
+  -- (QE009 if it differs), and only THEN stamp it below.
+  IF NEW.ingested_at IS DISTINCT FROM OLD.ingested_at THEN
+    RAISE EXCEPTION USING ERRCODE = 'QE009', MESSAGE = 'E9';
+  END IF;
+
   -- Terminal rows: no column may change. An UPDATE that changes nothing is
   -- allowed (a retried job is a no-op).
   IF OLD.ingest_status IN ('stored', 'rejected') THEN
@@ -120,6 +204,11 @@ BEGIN
             OR (OLD.ingest_status = 'failed'  AND NEW.ingest_status IN ('stored', 'rejected'))) THEN
       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
     END IF;
+    -- S2: the database stamps the move into a terminal status. now() = transaction
+    -- start time (as 049's TR4 stamps approved_at); the table CHECK then requires it.
+    IF NEW.ingest_status IN ('stored', 'rejected') THEN
+      NEW.ingested_at := now();
+    END IF;
   END IF;
 
   RETURN NEW;
@@ -127,7 +216,7 @@ END;
 $$;
 
 -- -----------------------------------------------------------------------------
--- 2. The trigger.
+-- 3. The trigger.
 -- -----------------------------------------------------------------------------
 -- [src: PLAN-3d]
 CREATE TRIGGER trg_capture_files_before_update
@@ -136,7 +225,7 @@ CREATE TRIGGER trg_capture_files_before_update
   EXECUTE FUNCTION public.trg_capture_files_before_update();
 
 -- -----------------------------------------------------------------------------
--- 3. Function ACL. A trigger fires without the invoking role holding EXECUTE,
+-- 4. Function ACL. A trigger fires without the invoking role holding EXECUTE,
 --    so no role needs it. All four roles are named (FROM PUBLIC alone does not
 --    remove the per-role default grants). The GRANT to postgres changes the
 --    effective ACL not at all (postgres owns the function) and satisfies
@@ -147,7 +236,7 @@ REVOKE ALL ON FUNCTION public.trg_capture_files_before_update() FROM PUBLIC, ano
 GRANT EXECUTE ON FUNCTION public.trg_capture_files_before_update() TO postgres;
 
 -- -----------------------------------------------------------------------------
--- 4. The column UPDATE grant (D-8). Column-scoped only: no table-level UPDATE,
+-- 5. The column UPDATE grant (D-8). Column-scoped only: no table-level UPDATE,
 --    nothing for anon or authenticated.
 -- -----------------------------------------------------------------------------
 -- [src: P49:33, PLAN-3d]
@@ -155,7 +244,7 @@ GRANT UPDATE (ingest_status, content_type, byte_size, sha256, storage_path, reje
   ON public.capture_files TO service_role;
 
 -- -----------------------------------------------------------------------------
--- 5. IN-FILE POST-CONDITION BLOCK (S050-ASSERT pattern). Any miss aborts the
+-- 6. IN-FILE POST-CONDITION BLOCK (S050-ASSERT pattern). Any miss aborts the
 --    whole file: nothing from sections 1-4 survives.
 -- -----------------------------------------------------------------------------
 DO $$
@@ -167,7 +256,27 @@ DECLARE
   v_role text;
   v_granted constant text[] := ARRAY['ingest_status', 'content_type', 'byte_size', 'sha256',
                                      'storage_path', 'reject_reason', 'preview_state'];
+  v_con     text;
 BEGIN
+  -- Rev 2: the ingested_at column exists (timestamptz, nullable, no default) and the four new
+  -- CHECK constraints exist, are CHECKs, and are validated.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_attribute a
+     WHERE a.attrelid = 'public.capture_files'::regclass AND a.attname = 'ingested_at' AND NOT a.attisdropped
+       AND a.atttypid = 'timestamptz'::regtype AND NOT a.attnotnull AND NOT a.atthasdef
+  ) THEN
+    v_bad := v_bad || ' ingested_at_column';
+  END IF;
+  FOREACH v_con IN ARRAY ARRAY['capture_files_reject_reason_iff_chk', 'capture_files_stored_only_chk',
+                               'capture_files_storage_path_row_chk', 'capture_files_ingested_at_iff_chk'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint c
+       WHERE c.conrelid = 'public.capture_files'::regclass AND c.conname = v_con AND c.contype = 'c' AND c.convalidated
+    ) THEN
+      v_bad := v_bad || ' constraint:' || v_con;
+    END IF;
+  END LOOP;
+
   -- Exactly one function of this name in public.
   SELECT count(*) INTO v_n
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -233,6 +342,13 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Rev 2: ingested_at is writable by no role (explicit, on top of the walk above).
+  FOREACH v_role IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+    IF has_column_privilege(v_role, 'public.capture_files', 'ingested_at', 'UPDATE') THEN
+      v_bad := v_bad || ' ingested_at_update:' || v_role;
+    END IF;
+  END LOOP;
+
   -- All seven granted columns exist (a typo would otherwise show only as a missing 'true').
   SELECT count(*) INTO v_n
     FROM pg_attribute a
@@ -274,13 +390,16 @@ COMMIT;
 --
 -- DOWN, in order, one transaction:
 --   SET LOCAL lock_timeout = '3s';
---   precondition: refuse (DOWN_PRECONDITION_051) unless the 051 ledger row, the function and the trigger all exist;
+--   precondition: refuse (DOWN_PRECONDITION_051) unless the 051 ledger row, the function, the trigger, the four constraints and the column all exist;
 --   DROP TRIGGER trg_capture_files_before_update ON public.capture_files;
 --   DROP FUNCTION public.trg_capture_files_before_update();
+--   DROP CONSTRAINT x4 (capture_files_ingested_at_iff_chk, capture_files_storage_path_row_chk,
+--     capture_files_stored_only_chk, capture_files_reject_reason_iff_chk), then DROP COLUMN ingested_at
+--     (rev 2; DOWN loses the ingested_at values -- that is a data loss, stated);
 --   REVOKE UPDATE (ingest_status, content_type, byte_size, sha256, storage_path, reject_reason, preview_state)
 --     ON public.capture_files FROM service_role;
 --   DELETE FROM supabase_migrations.schema_migrations WHERE version = '051';
---   closing assertion: function and trigger gone, service_role column UPDATE false on all seven, SELECT still held.
+--   closing assertion: function, trigger, four constraints and the column gone, service_role column UPDATE false on all seven, SELECT still held.
 -- Rollback order: C5 (the ingest job) must be rolled back BEFORE this DOWN, because the ingest needs the grant.
 -- Then C, then B, then A (049's DOWN comes last).
 -- =============================================================================
