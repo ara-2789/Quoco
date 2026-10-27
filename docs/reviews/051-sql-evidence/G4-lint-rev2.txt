@@ -1,0 +1,27 @@
+== 051 rev 2: G4 lint ==
+generated: 2026-10-27T13:09:51Z
+HEAD: ee91d95fbd969e6cfdce1c9dfdf655933a2ba349
+git status --porcelain (empty between the markers = clean tree):
+----- begin porcelain -----
+----- end porcelain -----
+sha256 051 UP: fbd3b3a535db3c9af41991c1b324ae0e7fe26fb5e5713a1de0e6b7a824c15907
+
+$ node scripts/lint-migrations.mjs
+migration-lint: clean. 107 known violation(s), all exempted.
+[exit 0]
+
+$ npm run lint:migrations
+
+> quocoai@0.1.0 lint:migrations
+> node scripts/lint-migrations.mjs
+
+migration-lint: clean. 107 known violation(s), all exempted.
+[exit 0]
+
+$ npm run lint:filesize | grep 051
+file-size-lint: OK    docs/reviews/051-external-review-round-1.md  9,929 chars
+file-size-lint: OK    docs/reviews/051-review-package.md  35,485 chars
+
+$ node -e JSON.parse(reservations)
+valid JSON, 17 entries; 051 claimedBy = docs/reviews/051_capture_files_immutability.sql
+[exit 0]
