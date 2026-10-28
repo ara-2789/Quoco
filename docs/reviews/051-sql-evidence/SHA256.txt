@@ -60,3 +60,6 @@ e1c2e3eb925033577adb3a25d1f0d15d63f32e2395321037472e666a93cf6f13  docs/reviews/0
 e3297762a6c9a09d2c5fdf2b4a4a56e225c316ab5f1d7ab9e3bf3dd1bd3c3fcc  docs/reviews/051-sql-evidence/T-D8-11-static-rev2.txt
 7b8ba086b438ccda765a6b0bb0da84359e32640709d99ca1f2314b68fd161af3  docs/reviews/051-sql-evidence/T-D8-11-static-rev3.txt
 73f6e32ab16995ed4bee3d926d186bfbaff24d2fa642c235dfa26eafeb8e4695  docs/reviews/051-sql-evidence/T-D8-11-static.txt
+# 2026-10-28: supabase/migrations/051_capture_files_immutability.sql moved from docs/reviews/051_capture_files_immutability.sql in d9f369fb (git mv, same sha); the old-path line above now fails sha256sum -c, as intended.
+debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9  supabase/migrations/051_capture_files_immutability.sql
+f1ba5a67e5fdb353fbe11ad16695799f0df089b8336c7fc483342384f740aa3c  docs/reviews/051-prod-apply/raw-log.txt

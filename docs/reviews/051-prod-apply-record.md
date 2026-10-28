@@ -54,5 +54,10 @@ The block said to regenerate `types/database.ts` "against prod". **That was wron
 
 - The exact time of Aravind's ledger command (the verification query ran at 03:59:08Z, after the repair). [R]
 - Whether the Supabase CLI's "Initialising login role…" step changed anything in the prod database. Not inspected.
-- Whether CI on `main` at the merge commit was green; the gates only checked that no run was in progress or queued.
+- ~~Whether CI on `main` at the merge commit was green; the gates only checked that no run was in progress or queued.~~ **Closed 2026-10-28 by the tree check:** merge `9f3cfb51`'s tree equals `e8a6218`'s tree (`d80babe4…`); `e8a6218` differs from `f9363ab` only in docs/evidence (checked: no non-`docs/` file differs); run `40544837099` certified `f9363ab`. Same argument as 050's tree-equality strike (external review, prod verification).
 - While preparing the post-apply script, a read-only ledger query was run against **test-db** by mistake (my test-db verification script); its output was discarded. No write.
+
+## Close-out additions (2026-10-28, external review prod verification)
+
+- **Raw log.** Raw log committed at `docs/reviews/051-prod-apply/raw-log.txt`, sha256 `f1ba5a67e5fdb353fbe11ad16695799f0df089b8336c7fc483342384f740aa3c`; source for the apply exit and timestamps, the anon 42501 probe and the prod-sourced types diff summary. (Scrub check before committing: no credential-pattern hit.)
+- **PR #340 CI.** PR #340 CI: run `40630188756` at `d9f369fb`, success — https://github.com/ara-2789/Quoco/actions/runs/40630188756. Merged into `main` as `583f8b0d259ed9db479578c7886da454dc8541ed` (parents `9f3cfb51` and `d9f369fb`), per Aravind.
