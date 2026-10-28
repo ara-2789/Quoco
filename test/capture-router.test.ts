@@ -4,7 +4,12 @@
 // Real test-db, through routeInboundMessage, with an explicit `now` on EVERY call (never the real clock).
 // Sessions are seeded with the capture fixtures. The router's client is a thin Proxy that records every rpc() call.
 //
-// SCOPE (rev 3): the digit-4 START branch, T-D1-6 and the allowlisted-start control of AT-DARK-1 are C4's. In C3 a bare
+// C4a (2026-10-28): the live-'invoice' stub is gone and the real handler is wired (plan rev 4). Edits made in C4a, each
+// marked "C4a:" below: T-INV-LIVE's first case replaced by T-HANDLE-ROUTE-1; seedInvoice uses a valid random uuid;
+// route() supplies a unique messageSid; T-D1-1's control sends 'hello'. New here: T-D1-6, T-D1-6d, AT-DARK-1c, T-S3-7.
+// T-S3-5 is deliberately UNEDITED (PDFs still never reach the router until C4b).
+//
+// SCOPE (rev 3, now delivered in C4a): the digit-4 START branch, T-D1-6 and the allowlisted-start control of AT-DARK-1 are C4's. In C3 a bare
 // "4" always gets today's item_reserved reply. T-D1-4's PDF part is C4's (the webhook blocks PDFs before routing).
 //
 // Several tests end with a CONTROL: the same seed, one thing changed, proving the assertion above it is the router's
@@ -38,6 +43,9 @@ import {
   MI_SESSION_ENDED_REPLY,
   CHECKIN_RESET_EXPLAIN_REPLY,
   MI_CHECKIN_PHOTO_NOT_SAVED_REPLY,
+  MI_ASK_KIND,
+  MI_ACK_REASK,
+  MI_ACK_QUESTION_DC,
 } from '@/lib/whatsapp/flows/material-inward-strings'
 import {
   buildCaptureKit,
@@ -123,8 +131,24 @@ interface RouteExtra {
   media?: Array<{ url: string; contentType: string }>
 }
 
+// C4a: every call carries a unique message SID (a live 'invoice' session now reaches the handler, whose RPC requires one).
+let sidCounter = 0
+
+/** Run `fn` with CAPTURE_DIGIT4_TEST_PHONES set to `phones`, restoring the previous value afterwards. */
+async function withAllowlist<T>(phones: string, fn: () => Promise<T>): Promise<T> {
+  const saved = process.env.CAPTURE_DIGIT4_TEST_PHONES
+  process.env.CAPTURE_DIGIT4_TEST_PHONES = phones
+  try {
+    return await fn()
+  } finally {
+    if (saved === undefined) delete process.env.CAPTURE_DIGIT4_TEST_PHONES
+    else process.env.CAPTURE_DIGIT4_TEST_PHONES = saved
+  }
+}
+
 function route(phone: string, message: string, now: Date, client: SupabaseClient, extra: RouteExtra = {}) {
   return routeInboundMessage({
+    messageSid: kit.sid(`c4a-router-${++sidCounter}`),
     phoneNumber: phone,
     tenantId: kit.tenantA,
     userId: kit.uid('eng'),
@@ -142,7 +166,8 @@ async function seedInvoice(phone: string, o: { updatedAt: Date; expiresAt: Date;
   await seedSession(kit, phone, {
     flow: 'invoice',
     step: o.step ?? 3,
-    context: { mi_kind: 'dc', mi_document_id: 'doc-x', mi_last_sid: 'sid-y', mi_reask: 0 },
+    // C4a: a valid uuid (was 'doc-x'). A live row now reaches apply_material_inward_turn, which casts mi_document_id to uuid.
+    context: { mi_kind: 'dc', mi_document_id: crypto.randomUUID(), mi_last_sid: 'sid-y', mi_reask: 0 },
     updatedAt: o.updatedAt,
     expiresAt: o.expiresAt,
   })
@@ -283,7 +308,9 @@ describe('T-D1: D1(d) one-shot ended reply', () => {
     // CONTROL: last turn 29:59 ago (expires_at = now + 1s): the router does not send the ended reply.
     const p2 = kit.phone('d1-1-control')
     await seedInvoice(p2, { updatedAt: new Date(NOON.getTime() - (30 * MIN - 1000)), expiresAt: new Date(NOON.getTime() + 1000) })
-    const r2 = await route(p2, '1', NOON, spyClient().client)
+    // C4a: 'hello', not '1' (was '1'): a live row now reaches the handler, and '1' would be an ack against a document
+    // that does not exist in this seed. The point of the control is only "29:59 is not ended".
+    const r2 = await route(p2, 'hello', NOON, spyClient().client)
     expect(r2.reply).not.toBe(MI_SESSION_ENDED_REPLY)
   })
 
@@ -376,6 +403,65 @@ describe('T-D1: D1(d) one-shot ended reply', () => {
     expect(r.reply).not.toBe(MI_SESSION_ENDED_REPLY)
     expect(calls[0]?.name).toBe('expire_stale_material_inward')
     expect((await getSession(kit, phone))!.current_flow).toBe('invoice')
+  })
+
+  // C4a. Aravind's rev 2: a bare "4" right after the session ended, on a phone where digit 4 is live, starts the flow at
+  // once -- no ended reply. Control in the same test: "1" in the same state still gets the ended reply.
+  it.each([
+    ['expiry', { updatedAt: ago(NOON, 31), expiresAt: ago(NOON, 1), now: NOON }],
+    [
+      'IST-day crossing',
+      {
+        updatedAt: new Date('2026-08-19T23:50:00+05:30'),
+        expiresAt: new Date('2026-08-20T00:20:00+05:30'),
+        now: new Date('2026-08-20T00:05:00+05:30'),
+      },
+    ],
+  ])('T-D1-6 (%s) allowlisted phone: "4" after the session ended starts a new session at step 1, no ended reply', async (label, seed) => {
+    const phone = kit.phone(`d1-6-${label.slice(0, 3)}`)
+    await withAllowlist(phone, async () => {
+      await seedInvoice(phone, { updatedAt: seed.updatedAt, expiresAt: seed.expiresAt })
+      const { client, calls } = spyClient()
+      const r = await route(phone, '4', seed.now, client)
+      expect(r.reply).toBe(MI_ASK_KIND)
+      expect(r.reply).not.toBe(MI_SESSION_ENDED_REPLY)
+      expect(r.resolvedFlow).toBe('invoice')
+      const s = await getSession(kit, phone)
+      expect(s!.current_flow).toBe('invoice')
+      expect(s!.current_step).toBe(1)
+      const apply = calls.filter((c) => c.name === 'apply_material_inward_turn')
+      expect(apply).toHaveLength(1)
+      expect(apply[0]!.args.p_start_flow).toBe(true)
+
+      // CONTROL: "1" in the same state is still the one-shot ended reply (and the row is cleared).
+      const p2 = kit.phone(`d1-6-${label.slice(0, 3)}-control`)
+      await withAllowlist(`${phone},${p2}`, async () => {
+        await seedInvoice(p2, { updatedAt: seed.updatedAt, expiresAt: seed.expiresAt })
+        const r2 = await route(p2, '1', seed.now, spyClient().client)
+        expect(r2.reply).toBe(MI_SESSION_ENDED_REPLY)
+        expect((await getSession(kit, p2))!.current_flow).toBeNull()
+      })
+    })
+  })
+
+  it('T-D1-6d dark phone (no allowlist): "4" after expiry is still the ended reply -- the switch gates the skip', async () => {
+    delete process.env.CAPTURE_DIGIT4_TEST_PHONES
+    const phone = kit.phone('d1-6d')
+    await seedInvoice(phone, { updatedAt: ago(NOON, 31), expiresAt: ago(NOON, 1) })
+    const { client, calls } = spyClient()
+    const r = await route(phone, '4', NOON, client)
+    expect(r.reply).toBe(MI_SESSION_ENDED_REPLY)
+    expect(calls.map((c) => c.name)).not.toContain('apply_material_inward_turn')
+    expect((await getSession(kit, phone))!.current_flow).toBeNull()
+  })
+
+  it('T-D1-6e a photo (or any media) after expiry is the ended reply even on a live phone', async () => {
+    const phone = kit.phone('d1-6e')
+    await withAllowlist(phone, async () => {
+      await seedInvoice(phone, { updatedAt: ago(NOON, 31), expiresAt: ago(NOON, 1) })
+      const r = await route(phone, '4', NOON, spyClient().client, PHOTO)
+      expect(r.reply).toBe(MI_SESSION_ENDED_REPLY)
+    })
   })
 })
 
@@ -470,6 +556,24 @@ describe('T-S3: invoice_reset_guard photo guard', () => {
     expect((await getSession(kit, phone))!.context.invoice_reset_guard).toBe('morning')
     expect(await mediaJobCount()).toBe(0)
   })
+
+  // C4a (plan item 3): the reply carries the PLAIN question for the step, not build*Reply('reask', step). The guard can
+  // only exist at step 1 in production, so this seeds an artificial step-2 row to tell the two apart: evening's 'reask'
+  // at step 2 is "Sorry, I didn't catch a number there...", which would be wrong (nothing was misunderstood).
+  it('T-S3-7 evening guard + photo at step 2: the plain question, never the "Sorry, I didn\'t catch" re-ask', async () => {
+    const phone = kit.phone('s3-7')
+    await seedSession(kit, phone, {
+      flow: 'evening',
+      step: 2,
+      context: { invoice_reset_guard: 'evening' },
+      updatedAt: ago(NOON, 1),
+      expiresAt: new Date(NOON.getTime() + 29 * MIN),
+    })
+    const r = await route(phone, '', NOON, spyClient().client, PHOTO)
+    expect(r.reply).toBe([MI_CHECKIN_PHOTO_NOT_SAVED_REPLY, CHECKIN_RESET_EXPLAIN_REPLY, EVENING_QUESTIONS[2]].join('\n'))
+    expect(r.reply).not.toContain("Sorry, I didn't catch")
+    expect(await mediaJobCount()).toBe(0)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -505,21 +609,23 @@ describe('T-N13-W: capture_deferred reply', () => {
 })
 
 // ---------------------------------------------------------------------------
-// T-INV-LIVE: a live 'invoice' / 'safety' row has no handler in C3
+// T-HANDLE-ROUTE-1 (C4a: replaces T-INV-LIVE's first case, which pinned the C3 stub) and the 'safety' case (unchanged)
 // ---------------------------------------------------------------------------
 
-describe('T-INV-LIVE: no handler yet', () => {
-  it("a live, unexpired 'invoice' row: one Sentry ERROR (no phone, no body), then the idle reply path", async () => {
-    const phone = kit.phone('inv-live')
+describe('live invoice / safety rows', () => {
+  it("T-HANDLE-ROUTE-1 (C4a, replaces the C3 stub test) a live, unexpired 'invoice' row goes to the handler, not the idle path", async () => {
+    const phone = kit.phone('handle-route-1')
     await seedInvoice(phone, { updatedAt: ago(NOON, 1), expiresAt: new Date(NOON.getTime() + 29 * MIN) })
-    const r = await route(phone, 'secret body text', NOON, spyClient().client)
-    expect(r.reply).toBe(buildIdleReply('unrecognized', header(NOON)))
-    expect(captureMessage).toHaveBeenCalledTimes(1)
-    const [, opts] = captureMessage.mock.calls[0] as [string, { fingerprint: string[]; level: string }]
-    expect(opts.fingerprint).toEqual(['capture-router', 'invoice_without_handler'])
-    expect(opts.level).toBe('error')
-    const text = sentryText()
-    for (const needle of [phone, phone.replace('+', ''), 'secret body text']) expect(text).not.toContain(needle)
+    const { client, calls } = spyClient()
+    const r = await route(phone, 'hello', NOON, client)
+    // step 3, non-ack text, first miss: the one re-ask, then the same ack question
+    expect(r.reply).toBe(`${MI_ACK_REASK}\n${MI_ACK_QUESTION_DC}`)
+    expect(r.resolvedFlow).toBe('invoice')
+    expect(calls.filter((c) => c.name === 'apply_material_inward_turn')).toHaveLength(1)
+    expect((await getSession(kit, phone))!.current_flow).toBe('invoice')
+    // the C3 stub's event is gone
+    expect(captureMessage).not.toHaveBeenCalled()
+    expect(r.reply).not.toBe(buildIdleReply('unrecognized', header(NOON)))
   })
 
   it("a live 'safety' row: one Sentry WARNING, then the idle reply path", async () => {
@@ -550,6 +656,22 @@ describe('AT-DARK: no engineer-visible change', () => {
     expect(r.resolvedFlow).toBeNull()
     expect(await getSession(kit, phone)).toBeNull()
     expect(calls.map((c) => c.name)).not.toContain('apply_material_inward_turn')
+  })
+
+  // C4a: the allowlisted-start CONTROL of AT-DARK-1 -- same call, phone allowlisted: the flow starts and the reply differs.
+  it('AT-DARK-1c control: the same call with the phone allowlisted starts the flow', async () => {
+    const phone = kit.phone('dark-1c')
+    await withAllowlist(phone, async () => {
+      const { client, calls } = spyClient()
+      const r = await route(phone, '4', NOON, client)
+      expect(r.reply).toBe(MI_ASK_KIND)
+      expect(r.reply).not.toBe(buildIdleReply('item_reserved', header(NOON)))
+      expect(r.resolvedFlow).toBe('invoice')
+      const s = await getSession(kit, phone)
+      expect(s!.current_flow).toBe('invoice')
+      expect(s!.current_step).toBe(1)
+      expect(calls.filter((c) => c.name === 'apply_material_inward_turn')).toHaveLength(1)
+    })
   })
 
   it('AT-DARK-2 the idle menu text is byte-identical to origin/main for every header state', () => {

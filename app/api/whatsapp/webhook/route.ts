@@ -341,6 +341,7 @@ export async function handleWebhookPost(
     userId: user.id,
     projectId,
     message: messageBody,
+    messageSid,
     isPhoto,
     ...(media !== undefined ? { media } : {}),
     supabaseClient: supabase,
