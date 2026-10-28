@@ -22,6 +22,8 @@ const m = vi.hoisted(() => ({
   handleHindranceMediaIngestJob: vi.fn(),
   markHindranceMediaIngestFailed: vi.fn(),
   captureMessage: vi.fn(),
+  handleCaptureIngestJob: vi.fn(),
+  markCaptureIngestFailed: vi.fn(),
 }))
 
 vi.mock('@/lib/queue/jobs', () => ({ claimJobs: m.claimJobs, completeJob: m.completeJob, failJob: m.failJob }))
@@ -39,6 +41,10 @@ vi.mock('@/lib/media/ingest', () => ({
 vi.mock('@/lib/media/hindrance-ingest', () => ({
   handleHindranceMediaIngestJob: m.handleHindranceMediaIngestJob,
   markHindranceMediaIngestFailed: m.markHindranceMediaIngestFailed,
+}))
+vi.mock('@/lib/media/capture-ingest', () => ({
+  handleCaptureIngestJob: m.handleCaptureIngestJob,
+  markCaptureIngestFailed: m.markCaptureIngestFailed,
 }))
 vi.mock('@/lib/daily-logs/morning-cutoff-sweep', () => ({
   sweepStaleMorningSessions: vi.fn(async () => ({})),
@@ -182,5 +188,63 @@ describe('tick dispatch: dead-letter branches fire only when retries are exhaust
     expect(m[handler]).toHaveBeenCalledTimes(2)
     expect(m[handler]).toHaveBeenLastCalledWith(PAYLOAD, { supabaseClient: client, forceSendWithoutPhotos: true })
     expect(m.captureMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('tick dispatch: capture_ingest (PR-C C5, plan 3.9)', () => {
+  beforeEach(() => {
+    m.handleCaptureIngestJob.mockReset()
+    m.handleCaptureIngestJob.mockResolvedValue(undefined)
+    m.markCaptureIngestFailed.mockReset()
+    m.markCaptureIngestFailed.mockResolvedValue(undefined)
+  })
+
+  it('T-TICK-CI-1: reaches handleCaptureIngestJob(payload, {supabaseClient}) and completes', async () => {
+    const r = await tick('capture_ingest')
+    expect(m.failJob).not.toHaveBeenCalled() // before the edit this shows "Unknown job type: capture_ingest"
+    expect(m.handleCaptureIngestJob).toHaveBeenCalledTimes(1)
+    expect(m.handleCaptureIngestJob).toHaveBeenCalledWith(PAYLOAD, { supabaseClient: client })
+    expect(m.completeJob).toHaveBeenCalledWith('job-1', client)
+    expect(r.results).toEqual([{ id: 'job-1', status: 'succeeded' }])
+  })
+
+  it('T-TICK-CI-1b: no other handler is called for it', async () => {
+    await tick('capture_ingest')
+    for (const k of [
+      'handleDprGenerateJob',
+      'handleOwnerDeliverJob',
+      'handleHindrancePmNotifyJob',
+      'handleMediaIngestJob',
+      'handleHindranceMediaIngestJob',
+    ] as const) {
+      expect(m[k]).not.toHaveBeenCalled()
+    }
+  })
+
+  it('T-TICK-CI-2: the dead letter runs only when retries are exhausted, and receives job.id', async () => {
+    m.handleCaptureIngestJob.mockRejectedValue(new Error('capture_files ingest: 1 of 1 files not completed (download:1)'))
+    await tick('capture_ingest', { willRetry: true })
+    expect(m.markCaptureIngestFailed).not.toHaveBeenCalled()
+    await tick('capture_ingest', { willRetry: false })
+    expect(m.markCaptureIngestFailed).toHaveBeenCalledTimes(1)
+    expect(m.markCaptureIngestFailed).toHaveBeenCalledWith(
+      client,
+      PAYLOAD,
+      'capture_files ingest: 1 of 1 files not completed (download:1)',
+      'job-1',
+    )
+  })
+
+  it('T-TICK-CI-3 (review N2): a throwing dead letter sends ONE counts-only event and does not reject the tick', async () => {
+    m.handleCaptureIngestJob.mockRejectedValue(new Error('boom'))
+    m.markCaptureIngestFailed.mockRejectedValue(new Error('https://api.twilio.com/leak +19995550000 payload-1'))
+    const r = await tick('capture_ingest', { willRetry: false })
+    expect(r.results[0]).toMatchObject({ id: 'job-1', status: 'failed', willRetry: false })
+    expect(m.captureMessage).toHaveBeenCalledTimes(1)
+    const [, opts] = m.captureMessage.mock.calls[0]
+    expect(opts.level).toBe('error')
+    expect(opts.fingerprint).toEqual(['capture-ingest', 'dead_letter_failed'])
+    expect(opts.extra).toEqual({ table: 'capture_files', jobId: 'job-1' })
+    expect(JSON.stringify(m.captureMessage.mock.calls)).not.toMatch(/twilio|\+1999|payload-1/)
   })
 })
