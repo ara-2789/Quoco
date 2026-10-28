@@ -1,0 +1,331 @@
+### commit SHA under test:
+f7702a6c91e5a08b37d5ad443cdfac688b7797c5
+### git status --porcelain (empty line follows = clean tree):
+### (end porcelain)
+### project-ref:
+exfccwlrhoutkgrlikod
+### npx tsc --noEmit
+tsc exit=0
+### npx eslint --max-warnings 0 (touched files)
+eslint exit=0
+### npx vitest run (3 C5 files) --reporter=verbose
+
+ RUN  v3.2.7 /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c5-ingest
+
+stdout | test/capture-ingest.test.ts > T-PRE-1 (U3): the capture-documents bucket on test-db matches migration 049 > has the approved settings
+T-PRE-1 RAW bucket: {"id":"capture-documents","name":"capture-documents","owner":"","public":false,"file_size_limit":16777216,"allowed_mime_types":["application/pdf","image/jpeg","image/png","image/webp"],"created_at":"2026-10-12T07:20:45.883Z","updated_at":"2026-10-12T07:20:45.883Z"}
+
+ ✓ test/capture-ingest.test.ts > T-PRE-1 (U3): the capture-documents bucket on test-db matches migration 049 > has the approved settings 335ms
+stdout | test/capture-ingest.test.ts > T-PRE-1 (U3): the capture-documents bucket on test-db matches migration 049 > T-S2-REAL: the bucket refuses a non-allowed content type (why uploadOnce must pass contentType)
+T-S2-REAL RAW error: {"status":400,"statusCode":"415","message":"mime type text/plain is not supported"}
+
+ ✓ test/capture-ingest.test.ts > T-PRE-1 (U3): the capture-documents bucket on test-db matches migration 049 > T-S2-REAL: the bucket refuses a non-allowed content type (why uploadOnce must pass contentType) 2624ms
+ ✓ test/capture-ingest.test.ts > T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path 4577ms
+ ✓ test/capture-ingest.test.ts > T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > handles every kind of file independently and writes the right shape for each 9027ms
+ ✓ test/capture-ingest.test.ts > T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > S4: %PDF- only after byte 1024 is wrong_type, nothing stored 3215ms
+ ✓ test/capture-ingest.test.ts > T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > T-SIZE-4 / S5: too_large records reject_reason AND the type detected on the first chunk; byte_size stays NULL; nothing stored 3416ms
+ ✓ test/capture-ingest.test.ts > T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > T-SIZE-1: a file of exactly 16777216 bytes is stored (the bucket limit is the same number) 10900ms
+ ✓ test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-1 cross-tenant: the payload names tenant B for tenant A's files 2587ms
+ ✓ test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2a wrong project 2762ms
+ ✓ test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2b wrong document 2768ms
+ ✓ test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2c wrong message SID 2432ms
+ ✓ test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2d a file id that does not exist 2702ms
+ ✓ test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-3 one mismatched file poisons the whole job (the other two are NOT processed) 2647ms
+ ✓ test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-4 an invalid payload is a payload_invalid event, no database call 1ms
+ ✓ test/capture-ingest.test.ts > T-SKIP: stored and rejected rows are skipped (no download, no storage call, no write) > T-SKIP-1/2: a second run over a stored and a rejected row touches nothing 4103ms
+ ✓ test/capture-ingest.test.ts > T-SKIP: stored and rejected rows are skipped (no download, no storage call, no write) > CONTROL: the same payload over PENDING rows does fetch 2873ms
+stdout | test/capture-ingest.test.ts > T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C4-1 + control: with the status filter a stored row is 0 rows and NO error; without it the 051 trigger answers QE011
+T-C5-2 RAW QE011 error.code from test-db: {"code":"QE011","message":"E11"}
+
+ ✓ test/capture-ingest.test.ts > T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C4-1 + control: with the status filter a stored row is 0 rows and NO error; without it the 051 trigger answers QE011 4187ms
+ ✓ test/capture-ingest.test.ts > T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code QE011 is ONE event, exactly one update attempt, the job completes (no retry) 2798ms
+ ✓ test/capture-ingest.test.ts > T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code QE009 is ONE event, exactly one update attempt, the job completes (no retry) 2934ms
+ ✓ test/capture-ingest.test.ts > T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code QE014 is ONE event, exactly one update attempt, the job completes (no retry) 3269ms
+ ✓ test/capture-ingest.test.ts > T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code 23514 is ONE event, exactly one update attempt, the job completes (no retry) 2983ms
+ ✓ test/capture-ingest.test.ts > T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code 42501 is ONE event, exactly one update attempt, the job completes (no retry) 3039ms
+ ✓ test/capture-ingest.test.ts > T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > CONTROL: a code outside the set takes the retry path (the handler throws) 2696ms
+ ✓ test/capture-ingest.test.ts > T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-1: the row becomes stored (different sha) between the step-2 read and the UPDATE -> update_noop, not counted 4008ms
+ ✓ test/capture-ingest.test.ts > T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-2: the row became stored with the SAME sha256 and storage_path -> "already done", not a fresh store, no event 3907ms
+ ✓ test/capture-ingest.test.ts > T-S2: a deterministic storage 4xx other than duplicate ends the file as failed + one event, no retry > mime/size-style rejection 3071ms
+ ✓ test/capture-ingest.test.ts > T-S2: a deterministic storage 4xx other than duplicate ends the file as failed + one event, no retry > a 5xx storage error is retryable and writes nothing 2829ms
+stdout | test/capture-ingest.test.ts > T-RETRY: the object already exists at the row-owned path > T-RETRY-1 (U2): equal bytes -> certified without a second write; the raw duplicate error is printed
+U2 RAW duplicate-upload error object from test-db: {"name":"StorageApiError","status":400,"statusCode":"409","message":"The resource already exists"}
+
+ ✓ test/capture-ingest.test.ts > T-RETRY: the object already exists at the row-owned path > T-RETRY-1 (U2): equal bytes -> certified without a second write; the raw duplicate error is printed 4838ms
+ ✓ test/capture-ingest.test.ts > T-RETRY: the object already exists at the row-owned path > T-RETRY-2: DIFFERENT bytes -> the row is failed, one object_conflict event, the existing object is NOT overwritten 5302ms
+ ✓ test/capture-ingest.test.ts > T-RETRY: the object already exists at the row-owned path > CONTROL for T-RETRY-2: a raw upsert:true DOES overwrite, so the byte read-back assertion can fail 4306ms
+ ✓ test/capture-ingest.test.ts > T-RETRY: the object already exists at the row-owned path > T-RETRY-3: the existing-object download fails -> retryable, row stays pending, the object is untouched 3488ms
+ ✓ test/capture-ingest.test.ts > T-RETRY: the object already exists at the row-owned path > T-RETRY-4: upload ok, UPDATE fails -> attempt 2 certifies the same object; one object, one row, upsert:false throughout 6233ms
+ ✓ test/capture-ingest.test.ts > T-MULTI / T-S3: per-file independence and the per-job deadline > T-MULTI-1/2: a failing file does not block the others; the retry only touches what is unfinished 4608ms
+ ✓ test/capture-ingest.test.ts > T-MULTI / T-S3: per-file independence and the per-job deadline > T-MULTI-3: after the start gate (20 s) no NEW file is started; the rest are deferred and stay pending 3164ms
+ ✓ test/capture-ingest.test.ts > T-MULTI / T-S3: per-file independence and the per-job deadline > T-S3-1: the 90 s job deadline passes before the upload -> NO upload, the file is deferred, the row stays pending 2582ms
+ ✓ test/capture-ingest.test.ts > T-MULTI / T-S3: per-file independence and the per-job deadline > T-S3-2: the deadline passes between the upload and the UPDATE -> no UPDATE; the retry certifies the identical object 6950ms
+ ✓ test/capture-ingest.test.ts > T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-1: 3 pending -> failed, the stored one is untouched, one counts-only event 3893ms
+ ✓ test/capture-ingest.test.ts > T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-1b: nothing pending -> no event, no error 3378ms
+ ✓ test/capture-ingest.test.ts > T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-2: a payload naming ANOTHER tenant cannot move this tenant's rows 2766ms
+ ✓ test/capture-ingest.test.ts > T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-3: a database error throws (the tick wraps it and sends its own event) 2150ms
+ ✓ test/capture-ingest.test.ts > T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-4 / T-R5-1: the engineer receives nothing -- every fetch in this file is a GET of a media URL 2ms
+ ✓ test/capture-ingest.test.ts > T-TW: the download > T-TW-2: HTTP 401 writes nothing, stays pending, and the message carries the digits only 2558ms
+ ✓ test/capture-ingest.test.ts > T-TW: the download > T-TW-2: HTTP 404 writes nothing, stays pending, and the message carries the digits only 2973ms
+ ✓ test/capture-ingest.test.ts > T-TW: the download > T-TW-2: HTTP 410 writes nothing, stays pending, and the message carries the digits only 2855ms
+ ✓ test/capture-ingest.test.ts > T-TW: the download > T-TW-2: HTTP 429 writes nothing, stays pending, and the message carries the digits only 2716ms
+ ✓ test/capture-ingest.test.ts > T-TW: the download > T-TW-2: HTTP 500 writes nothing, stays pending, and the message carries the digits only 2717ms
+ ✓ test/capture-ingest.test.ts > T-TW: the download > T-TW-2: HTTP 503 writes nothing, stays pending, and the message carries the digits only 2694ms
+ ✓ test/capture-ingest.test.ts > T-TW: the download > T-TW-5: a url with the wrong http scheme is never fetched; the row is failed with one url_guard event 2836ms
+ ✓ test/capture-ingest.test.ts > T-TW: the download > T-TW-5: a url with the wrong other host is never fetched; the row is failed with one url_guard event 2905ms
+ ✓ test/capture-ingest.test.ts > T-TW: the download > T-TW-5: a url with the wrong other account is never fetched; the row is failed with one url_guard event 3035ms
+ ✓ test/capture-ingest.test.ts > T-C6-1 / T-NET-1: nothing sensitive in any event or thrown message; the table is always named > scans every Sentry event and every thrown message produced by this file 2ms
+ ✓ test/capture-ingest.test.ts > T-C6-1 / T-NET-1: nothing sensitive in any event or thrown message; the table is always named > CONTROL: a planted event carrying a URL is caught by the same scan 0ms
+ ✓ test/capture-ingest.test.ts > T-C6-1 / T-NET-1: nothing sensitive in any event or thrown message; the table is always named > every handler call used only the fake fetch (no network): registered urls only 1ms
+stdout | test/capture-ingest.test.ts
+T-HYG-1 rows: start=0 peak=63 after=0; objects: start=0 peak=29 after=0; jobs after=0; tracked paths=64
+U2 RAW duplicate-upload error object from test-db: {"name":"StorageApiError","status":400,"statusCode":"409","message":"The resource already exists"}
+
+ ✓ test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > recognises the four accepted types 1ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects html 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects empty 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects two-byte jpeg head 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects RIFF/WAVE (not WebP) 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects png with a corrupted 8th byte 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects pdf header too short 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > S4: %PDF- is found anywhere in the first 1024 bytes, and not after 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > analysePdf (T-PDF-2): byte-level only, original bytes are never changed > plain PDF is previewable; the /Encrypt token alone flips it 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > analysePdf (T-PDF-2): byte-level only, original bytes are never changed > no %%EOF in the last 1024 bytes is not previewable (unparseable) 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > isTwilioMediaUrl (review item 2): our credentials go only to our Twilio media URLs > accepts a Twilio media url of the same account 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > isTwilioMediaUrl (review item 2): our credentials go only to our Twilio media URLs > rejects http scheme 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > isTwilioMediaUrl (review item 2): our credentials go only to our Twilio media URLs > rejects other host 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > isTwilioMediaUrl (review item 2): our credentials go only to our Twilio media URLs > rejects look-alike host 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > isTwilioMediaUrl (review item 2): our credentials go only to our Twilio media URLs > rejects userinfo trick 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > isTwilioMediaUrl (review item 2): our credentials go only to our Twilio media URLs > rejects other account 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > isTwilioMediaUrl (review item 2): our credentials go only to our Twilio media URLs > rejects explicit port 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > isTwilioMediaUrl (review item 2): our credentials go only to our Twilio media URLs > rejects not a url 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > classifyStorageError (review S2) > duplicate by status, by statusCode, or by message 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > classifyStorageError (review S2) > a deterministic 4xx other than duplicate is not retried 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > classifyStorageError (review S2) > 408, 429, 5xx and non-HTTP errors retry 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > sanitiseCode / parsePayload (N1, no zod) > keeps only five-character SQLSTATE-shaped codes 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > sanitiseCode / parsePayload (N1, no zod) > accepts 1 to 20 files 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > sanitiseCode / parsePayload (N1, no zod) > rejects no files 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > sanitiseCode / parsePayload (N1, no zod) > rejects 21 files 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > sanitiseCode / parsePayload (N1, no zod) > rejects bad tenant uuid 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > sanitiseCode / parsePayload (N1, no zod) > rejects duplicate file ids 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > sanitiseCode / parsePayload (N1, no zod) > rejects non-integer file_no 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > sanitiseCode / parsePayload (N1, no zod) > rejects empty url 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > sanitiseCode / parsePayload (N1, no zod) > rejects not an object 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > sanitiseCode / parsePayload (N1, no zod) > rejects null 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > sends the Authorization header it is given, as a plain GET with an abort signal 1ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > stores the type of the bytes, not the HTTP header, and keeps the bytes untouched 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > S4: header at byte 0 and after a 200-byte prefix are accepted; only after 1024 is wrong_type 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > wrong magic is rejected as wrong_type and the body is abandoned after the first chunk 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > an empty body and a bodyless 200 are wrong_type 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > boundary: exactly 16777216 bytes is accepted, 16777217 is too_large with the detected type (S5) 38ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > an endless body is abandoned after about 16 MiB: the cap is enforced while streaming 1ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > CONTROL for the cap test: a naive arrayBuffer() reader pulls the WHOLE body, so the counter can tell the designs apart 7ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > a lying Content-Length does not defeat the cap 11ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > an honest huge Content-Length is an early-out after the magic check 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > wrong_type beats too_large (fixed precedence) 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > HTTP 401 is retryable and reports the status digits only 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > HTTP 404 is retryable and reports the status digits only 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > HTTP 410 is retryable and reports the status digits only 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > HTTP 429 is retryable and reports the status digits only 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > HTTP 500 is retryable and reports the status digits only 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > HTTP 503 is retryable and reports the status digits only 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > a thrown fetch is retryable "network"; its message is discarded 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > T-TW-3: a fetch that honours the signal and never resolves is aborted at the timeout 27ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > a fetch that ignores the signal still times out 27ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > a body that stalls after the first chunk times out 42ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > U-C2-static / U-C6-static / T-R5-1: no overwrite, delete, console or send path in the module 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > CONTROL: the scanner sees each planted construct 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > T-R5-1: the only import from lib/whatsapp is readCredentials from outbound/send 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > T-C1-static: every upload passes upsert:false and a contentType 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > U-C7-1: the exported column list is exactly the 051 grant 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > U-DARK-1: nothing in TypeScript creates a capture_ingest job (only migration 050 does) > no file under app/ or lib/ enqueues or inserts one 7ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > U-DARK-1: nothing in TypeScript creates a capture_ingest job (only migration 050 does) > CONTROL: the scanner sees a planted producer 0ms
+ ✓ test/unit/capture-ingest-bytes.test.ts > C6 leak scanner > flags a url, a phone, a Twilio sid, the token and a known literal 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: existing job types reach their own handler (T-TICK-EXIST-1) > dpr_generate -> handleDprGenerateJob(payload, job.id, {supabaseClient}) 1ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: existing job types reach their own handler (T-TICK-EXIST-1) > owner_deliver -> handleOwnerDeliverJob(payload, {supabaseClient}) 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: existing job types reach their own handler (T-TICK-EXIST-1) > hindrance_pm_notify -> handleHindrancePmNotifyJob(payload, {supabaseClient}) 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: existing job types reach their own handler (T-TICK-EXIST-1) > media_ingest -> handleMediaIngestJob(payload, {supabaseClient}) 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: existing job types reach their own handler (T-TICK-EXIST-1) > hindrance_media_ingest -> handleHindranceMediaIngestJob(payload, {supabaseClient}) 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: existing job types reach their own handler (T-TICK-EXIST-1) > each type calls ONLY its own handler 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: placeholders and unknown types throw (T-TICK-EXIST-2) > template_send -> "No handler implemented yet" 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: placeholders and unknown types throw (T-TICK-EXIST-2) > morning_trigger -> "No handler implemented yet" 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: placeholders and unknown types throw (T-TICK-EXIST-2) > evening_trigger -> "No handler implemented yet" 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: placeholders and unknown types throw (T-TICK-EXIST-2) > nudge -> "No handler implemented yet" 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: placeholders and unknown types throw (T-TICK-EXIST-2) > an unknown type -> "Unknown job type" 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: dead-letter branches fire only when retries are exhausted (T-TICK-EXIST-3) > dpr_generate 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: dead-letter branches fire only when retries are exhausted (T-TICK-EXIST-3) > media_ingest 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: dead-letter branches fire only when retries are exhausted (T-TICK-EXIST-3) > hindrance_media_ingest 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: dead-letter branches fire only when retries are exhausted (T-TICK-EXIST-3) > hindrance_pm_notify: one forced second call on exhaustion, then a Sentry event if that also fails 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: dead-letter branches fire only when retries are exhausted (T-TICK-EXIST-3) > owner_deliver: one forced second call on exhaustion, then a Sentry event if that also fails 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: capture_ingest (PR-C C5, plan 3.9) > T-TICK-CI-1: reaches handleCaptureIngestJob(payload, {supabaseClient}) and completes 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: capture_ingest (PR-C C5, plan 3.9) > T-TICK-CI-1b: no other handler is called for it 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: capture_ingest (PR-C C5, plan 3.9) > T-TICK-CI-2: the dead letter runs only when retries are exhausted, and receives job.id 0ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts > tick dispatch: capture_ingest (PR-C C5, plan 3.9) > T-TICK-CI-3 (review N2): a throwing dead letter sends ONE counts-only event and does not reject the tick 0ms
+
+ Test Files  3 passed (3)
+      Tests  133 passed (133)
+   Start at  18:45:13
+   Duration  188.88s (transform 123ms, setup 0ms, collect 173ms, tests 188.40s, environment 0ms, prepare 53ms)
+
+vitest exit=0
+### npx vitest run test/unit
+
+ RUN  v3.2.7 /Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c5-ingest
+
+ ✓ test/unit/morning-cutoff-sweep.test.ts (15 tests) 39252ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > step 1 — attendance unanswered: no daily_logs row, session closed, morning_submitted NOT set  1128ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > step 2 — attendance already present is preserved untouched, submission stamped  1201ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > step 3 — plan already captured is preserved untouched, submission stamped  991ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > step 4 — workers already captured is preserved untouched, submission stamped  988ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > step 5 — holiday follow-up unanswered: INSERTs absent, defaulted=true, raw=null, is_holiday=false  1449ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > idempotency — a second sweep after the first is a genuine no-op, does not re-stamp  797ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > B1 (external review round 1, BLOCKING) — a session parked YESTERDAY, swept TODAY: stamps the correct historical row, leaves TODAY clean, engineer starts a fresh flow  3478ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > legacy q2_reask is stripped alongside the four current reask keys, an unrelated key survives  3074ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > pre-15:00 IST — no-op, nothing touched  1742ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > missing-row guard — a step 2-4 session with no daily_logs row surfaces it, still closes, does not fail the sweep  1843ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > the TypeScript wrapper (sweepStaleMorningSessions) calls the same RPC and maps its result  1946ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > evening sessions are never touched  1102ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > project-membership count — do not guess a project > multi-project engineer is SKIPPED and counted, nothing written, session untouched  2787ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > project-membership count — do not guess a project > zero-membership engineer is SKIPPED and counted, nothing written, session untouched  1593ms
+   ✓ sweep_stale_morning_sessions — B3, the 15:00 IST morning cutoff sweep > project-membership count — do not guess a project > single-project engineer sweeps normally -- the count check does not regress the normal case  2196ms
+ ✓ test/unit/morning-flow-mirror.test.ts (20 tests) 30480ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q1 yes -> attendance=present, advances to step 2 > SQL (apply_morning_flow_turn) matches the expected outcome  1052ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q1 yes -> attendance=present, advances to step 2 > TS mirror (dispatchMorningFlow) matches the SAME expected outcome  584ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q1 no -> advances to step 5 (holiday follow-up), no write > SQL (apply_morning_flow_turn) matches the expected outcome  1119ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q1 no -> advances to step 5 (holiday follow-up), no write > TS mirror (dispatchMorningFlow) matches the SAME expected outcome  508ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q1 unclassifiable -> reask, step unchanged > SQL (apply_morning_flow_turn) matches the expected outcome  1138ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q1 unclassifiable -> reask, step unchanged > TS mirror (dispatchMorningFlow) matches the SAME expected outcome  511ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q1 unclassifiable, budget exhausted -> DEFAULTS TO YES (DECIDED 2026-08-23) > SQL (apply_morning_flow_turn) matches the expected outcome  1127ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q1 unclassifiable, budget exhausted -> DEFAULTS TO YES (DECIDED 2026-08-23) > TS mirror (dispatchMorningFlow) matches the SAME expected outcome  493ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Holiday follow-up yes -> attendance=site_holiday, completes > SQL (apply_morning_flow_turn) matches the expected outcome  1008ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Holiday follow-up yes -> attendance=site_holiday, completes > TS mirror (dispatchMorningFlow) matches the SAME expected outcome  547ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Holiday follow-up no -> attendance=absent, completes > SQL (apply_morning_flow_turn) matches the expected outcome  1126ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Holiday follow-up no -> attendance=absent, completes > TS mirror (dispatchMorningFlow) matches the SAME expected outcome  512ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Holiday follow-up unclassifiable, budget exhausted -> DEFAULTS TO absent (unchanged direction) > SQL (apply_morning_flow_turn) matches the expected outcome  1074ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Holiday follow-up unclassifiable, budget exhausted -> DEFAULTS TO absent (unchanged direction) > TS mirror (dispatchMorningFlow) matches the SAME expected outcome  563ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q2 (plan, free text) -> advances to step 3 > SQL (apply_morning_flow_turn) matches the expected outcome  1095ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q2 (plan, free text) -> advances to step 3 > TS mirror (dispatchMorningFlow) matches the SAME expected outcome  553ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q3 (parsed labour) -> advances to step 4 > SQL (apply_morning_flow_turn) matches the expected outcome  1117ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q3 (parsed labour) -> advances to step 4 > TS mirror (dispatchMorningFlow) matches the SAME expected outcome  512ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q4 (parsed equipment) -> completes directly (not step 5) > SQL (apply_morning_flow_turn) matches the expected outcome  1023ms
+   ✓ morning flow mirror agreement (SQL vs. TS, one fixture, one expectation each) > Q4 (parsed equipment) -> completes directly (not step 5) > TS mirror (dispatchMorningFlow) matches the SAME expected outcome  614ms
+ ✓ test/unit/yesno-mirror.test.ts (77 tests) 21375ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "yes" -> met=true ok=true  384ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "yeah" -> met=true ok=true  356ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "ok" -> met=true ok=true  336ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "okay" -> met=true ok=true  308ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "completed" -> met=true ok=true  447ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "complete" -> met=true ok=true  309ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "finished" -> met=true ok=true  307ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "ama" -> met=true ok=true  307ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "aam" -> met=true ok=true  307ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "half-day" -> met=true ok=true  355ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "late" -> met=true ok=true  308ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "coming" -> met=true ok=true  307ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "come" -> met=true ok=true  307ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "half day today" -> met=true ok=true  307ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "coming late" -> met=true ok=true  306ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "on the way" -> met=true ok=true  363ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "incomplete" -> met=false ok=true  309ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "pending" -> met=false ok=true  306ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "partially" -> met=false ok=true  307ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "zero" -> met=false ok=true  355ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "0" -> met=false ok=true  308ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "-" -> met=false ok=true  306ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "illa" -> met=false ok=true  308ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "illai" -> met=false ok=true  369ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "no, half only" -> met=false ok=true  337ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "yes but only half" -> met=true ok=true  309ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "" -> met=false ok=false  337ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "still unclear" -> met=false ok=false  357ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "dunno" -> met=false ok=false  307ms
+   ✓ yes/no classification mirror agreement (classifyYesNo vs quoco_classify_yes_no) > "5" -> met=false ok=false  307ms
+ ✓ test/unit/checkin-escalations-sweep.test.ts (8 tests) 14441ms
+   ✓ fetchDueRoster — against real data > excludes the holiday engineer but includes the blocked engineer (Decision 1)  538ms
+   ✓ sweepEngineerHalf — guarded upsert against real data > creates a row and advances it from awaited to escalated  948ms
+   ✓ sweepEngineerHalf — guarded upsert against real data > double-invocation with the same target leaves the timestamp UNCHANGED (Correction 2) — not merely the status  1432ms
+   ✓ sweepEngineerHalf — guarded upsert against real data > a submitted row is never overwritten by a later not_submitted target — the one invariant named in the task  1538ms
+   ✓ runCheckinEscalationSweep — multi-engineer roster, both halves, against real data > morning half, now inside the escalate window: whole roster (holiday excluded) advances to escalated  2150ms
+   ✓ runCheckinEscalationSweep — multi-engineer roster, both halves, against real data > evening half, same roster, same now: NO escalation stage (Decision 3) -- target is awaited, not escalated  1897ms
+ ✓ test/unit/project-resolution.test.ts (7 tests) 3872ms
+   ✓ resolveEngineerProject > reports zero_memberships when the engineer has no project_members row  322ms
+ ✓ test/unit/capture-ingest-bytes.test.ts (60 tests) 165ms
+ ✓ test/unit/sentry-call-sites-no-phone.test.ts (2 tests) 63ms
+ ✓ test/unit/lint-no-auth-uid-as-users-id.test.ts (30 tests) 60ms
+ ✓ test/unit/capture-fixtures-clock.test.ts (4 tests) 20ms
+ ✓ test/unit/sentry-config.test.ts (24 tests) 17ms
+ ✓ test/unit/route-stale-flow.test.ts (6 tests) 10ms
+ ✓ test/unit/checkin-escalations-status.test.ts (18 tests) 10ms
+ ✓ test/unit/morning-cutoff-sweep-sentry.test.ts (9 tests) 10ms
+ ✓ test/unit/daily-logs-status.test.ts (16 tests) 9ms
+ ✓ test/unit/hindrance-pm-notify.test.ts (9 tests) 9ms
+ ✓ test/unit/dpr-delivery-copy.test.ts (9 tests) 9ms
+ ✓ test/unit/hindrance-queue.test.ts (10 tests) 9ms
+ ✓ test/unit/no-app-delete-invariant.test.ts (2 tests) 7ms
+ ✓ test/unit/outbound-send.test.ts (12 tests) 4ms
+ ✓ test/unit/email-send.test.ts (12 tests) 4ms
+ ✓ test/unit/jobs-tick-dispatch.test.ts (20 tests) 4ms
+ ✓ test/unit/morning-dispatch.test.ts (24 tests) 3ms
+ ✓ test/unit/scrub-pii.test.ts (40 tests) 3ms
+ ✓ test/unit/dpr-render.test.ts (32 tests) 3ms
+ ✓ test/unit/spelling-correction.test.ts (27 tests) 3ms
+ ✓ test/unit/assemble-dpr-facts.test.ts (29 tests) 3ms
+ ✓ test/unit/outbound-coverage-sweep-sentry.test.ts (17 tests) 3ms
+ ✓ test/unit/dpr-containment.test.ts (36 tests) 3ms
+ ✓ test/unit/outbound-checkpoint-trigger.test.ts (8 tests) 3ms
+ ✓ test/unit/outbound-roster.test.ts (18 tests) 3ms
+ ✓ test/unit/run-scoped-fixtures.test.ts (21 tests) 3ms
+ ✓ test/unit/idle-hours-parser.test.ts (15 tests) 2ms
+ ✓ test/unit/quantities-parser.test.ts (18 tests) 2ms
+ ✓ test/unit/equipment-parser.test.ts (22 tests) 2ms
+ ✓ test/unit/capture-error-phone-scrub.test.ts (8 tests) 2ms
+ ✓ test/unit/dpr-generate-schema.test.ts (15 tests) 2ms
+ ✓ test/unit/accountability.test.ts (16 tests) 2ms
+ ✓ test/unit/labour-parser.test.ts (13 tests) 2ms
+ ✓ test/unit/productivity-parser.test.ts (32 tests) 2ms
+ ✓ test/unit/twilio-signature.test.ts (10 tests) 2ms
+ ✓ test/unit/render-engineer-report.test.ts (23 tests) 2ms
+ ✓ test/unit/yesno-classifier.test.ts (43 tests) 2ms
+ ✓ test/unit/jobs-claim-index.test.ts (8 tests) 2ms
+ ✓ test/unit/media-reply.test.ts (30 tests) 2ms
+ ✓ test/unit/equipment-hours-parser.test.ts (13 tests) 2ms
+ ✓ test/unit/render-email.test.ts (10 tests) 2ms
+ ✓ test/unit/equipment-label.test.ts (26 tests) 2ms
+ ✓ test/unit/dpr-validate.test.ts (7 tests) 2ms
+ ✓ test/unit/section-42-unmatched-capture.test.ts (6 tests) 2ms
+ ✓ test/unit/field-row-state.test.ts (13 tests) 2ms
+ ✓ test/unit/owner-no-report.test.ts (6 tests) 2ms
+ ✓ test/unit/hindrance-flow.test.ts (15 tests) 1ms
+ ✓ test/unit/media-reply-capture.test.ts (22 tests) 2ms
+ ✓ test/unit/capture-switch.test.ts (11 tests) 2ms
+ ✓ test/unit/generate-engineer-verdict.test.ts (7 tests) 1ms
+ ✓ test/unit/project-manager.test.ts (5 tests) 2ms
+ ✓ test/unit/idle-cost.test.ts (7 tests) 1ms
+ ✓ test/unit/outbound-status-callback.test.ts (11 tests) 2ms
+ ✓ test/unit/column-contract.test.ts (4 tests) 1ms
+ ✓ test/unit/merge-engineer-dpr-facts.test.ts (7 tests) 1ms
+ ✓ test/unit/outbound-trigger-cas-invariant.test.ts (4 tests) 1ms
+ ✓ test/unit/adhoc-menu-spec-sync.test.ts (3 tests) 1ms
+ ✓ test/unit/owner-deliver-dispatch.test.ts (8 tests) 1ms
+ ✓ test/unit/reactivate-copy.test.ts (12 tests) 1ms
+ ✓ test/unit/hindrance-relative-time.test.ts (10 tests) 1ms
+ ✓ test/unit/checkin-escalations-roster.test.ts (4 tests) 1ms
+ ✓ test/unit/rpc-error-mapping.test.ts (6 tests) 1ms
+ ✓ test/unit/checkin-escalations-reachability.test.ts (4 tests) 1ms
+ ✓ test/unit/owner-delivery-route.test.ts (6 tests) 1ms
+ ✓ test/unit/outbound-templates.test.ts (2 tests) 1ms
+ ✓ test/unit/material-inward-strings.test.ts (4 tests) 1ms
+ ✓ test/unit/dispatch-completion.test.ts (11 tests) 1ms
+ ✓ test/unit/dpr-archive-status.test.ts (7 tests) 1ms
+ ✓ test/unit/cron-auth.test.ts (5 tests) 1ms
+ ✓ test/unit/test-trigger.test.ts (6 tests) 1ms
+ ✓ test/unit/reactivation.test.ts (6 tests) 1ms
+ ✓ test/unit/yesno-corpus-completeness.test.ts (2 tests) 1ms
+ ✓ test/unit/dispatch.test.ts (1 test) 1ms
+
+ Test Files  78 passed (78)
+      Tests  1146 passed (1146)
+   Start at  18:48:22
+   Duration  117.51s (transform 364ms, setup 0ms, collect 1.77s, tests 109.93s, environment 4ms, prepare 1.36s)
+
+vitest-unit exit=0

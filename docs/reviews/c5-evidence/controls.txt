@@ -1,0 +1,750 @@
+
+### CONTROL C1 upsert:false -> upsert:true  (18:15:45)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+{ upsert: false, contentType: type }
+AFTER:
+{ upsert: true, contentType: type }
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 2 failed | 50 skipped) 25002ms
+   × T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path 4421ms
+     → expected { upsert: true, …(1) } to deeply equal { upsert: false, …(1) }
+   × T-RETRY: the object already exists at the row-owned path > T-RETRY-2: DIFFERENT bytes -> the row is failed, one object_conflict event, the existing object is NOT overwritten 3421ms
+     → expected [] to deeply equal [ 'object_conflict' ]
+ ❯ test/unit/capture-ingest-bytes.test.ts (60 tests | 2 failed | 58 skipped) 5ms
+   × static guards on lib/media/capture-ingest.ts > U-C2-static / U-C6-static / T-R5-1: no overwrite, delete, console or send path in the module 3ms
+     → expected [ 'upsert true' ] to deeply equal []
+   × static guards on lib/media/capture-ingest.ts > T-C1-static: every upload passes upsert:false and a contentType 1ms
+     → expected '.upload(storagePath, bytes, { upsert:…' to contain 'upsert: false'
+ Test Files  2 failed (2)
+      Tests  4 failed | 1 passed | 108 skipped (113)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path
+AssertionError: expected { upsert: true, …(1) } to deeply equal { upsert: false, …(1) }
+ ❯ test/capture-ingest.test.ts:367:37
+ FAIL  test/capture-ingest.test.ts > T-RETRY: the object already exists at the row-owned path > T-RETRY-2: DIFFERENT bytes -> the row is failed, one object_conflict event, the existing object is NOT overwritten
+AssertionError: expected [] to deeply equal [ 'object_conflict' ]
+ ❯ test/capture-ingest.test.ts:690:24
+ FAIL  test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > U-C2-static / U-C6-static / T-R5-1: no overwrite, delete, console or send path in the module
+AssertionError: expected [ 'upsert true' ] to deeply equal []
+ ❯ test/unit/capture-ingest-bytes.test.ts:310:39
+ FAIL  test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > T-C1-static: every upload passes upsert:false and a contentType
+AssertionError: expected '.upload(storagePath, bytes, { upsert:…' to contain 'upsert: false'
+ ❯ test/unit/capture-ingest-bytes.test.ts:330:24
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL C2 plant a storage remove() in the module  (18:16:30)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+  const storagePath = rowPath(row)
+AFTER:
+  const storagePath = rowPath(row)
+  void ctx.supabase.storage.from(CAPTURE_BUCKET).remove([storagePath])
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/unit/capture-ingest-bytes.test.ts (60 tests | 1 failed | 59 skipped) 4ms
+   × static guards on lib/media/capture-ingest.ts > U-C2-static / U-C6-static / T-R5-1: no overwrite, delete, console or send path in the module 4ms
+     → expected [ 'storage remove' ] to deeply equal []
+ Test Files  1 failed (1)
+      Tests  1 failed | 59 skipped (60)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > U-C2-static / U-C6-static / T-R5-1: no overwrite, delete, console or send path in the module
+AssertionError: expected [ 'storage remove' ] to deeply equal []
+ ❯ test/unit/capture-ingest-bytes.test.ts:310:39
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL S2 uploadOnce drops contentType (bucket refuses text/plain)  (18:16:31)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+{ upsert: false, contentType: type }
+AFTER:
+{ upsert: false }
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 52 skipped) 13508ms
+   × T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path 3687ms
+     → expected { files: 1, stored: +0, …(6) } to match object { files: 1, stored: 1, …(2) }
+ ❯ test/unit/capture-ingest-bytes.test.ts (60 tests | 1 failed | 59 skipped) 4ms
+   × static guards on lib/media/capture-ingest.ts > T-C1-static: every upload passes upsert:false and a contentType 3ms
+     → expected '.upload(storagePath, bytes, { upsert:…' to contain 'contentType: type'
+ Test Files  2 failed (2)
+      Tests  2 failed | 111 skipped (113)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path
+AssertionError: expected { files: 1, stored: +0, …(6) } to match object { files: 1, stored: 1, …(2) }
+ ❯ test/capture-ingest.test.ts:345:22
+ FAIL  test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > T-C1-static: every upload passes upsert:false and a contentType
+AssertionError: expected '.upload(storagePath, bytes, { upsert:…' to contain 'contentType: type'
+ ❯ test/unit/capture-ingest-bytes.test.ts:331:24
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.3 analysePdf ignores the /Encrypt token  (18:16:45)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+  if (buf.includes('/Encrypt')) return 'not_previewable'
+AFTER:
+  // mutant: /Encrypt ignored
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/unit/capture-ingest-bytes.test.ts (60 tests | 1 failed | 58 skipped) 3ms
+   × analysePdf (T-PDF-2): byte-level only, original bytes are never changed > plain PDF is previewable; the /Encrypt token alone flips it 3ms
+     → expected 'previewable' to be 'not_previewable' // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 58 skipped (60)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/unit/capture-ingest-bytes.test.ts > analysePdf (T-PDF-2): byte-level only, original bytes are never changed > plain PDF is previewable; the /Encrypt token alone flips it
+AssertionError: expected 'previewable' to be 'not_previewable' // Object.is equality
+ ❯ test/unit/capture-ingest-bytes.test.ts:72:29
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL S4 byte-0-only mutant (PDF window shrunk to 5 bytes)  (18:16:46)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+const window = head.subarray(0, PDF_HEADER_WINDOW)
+AFTER:
+const window = head.subarray(0, 5)
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 51 skipped) 17713ms
+   × T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > handles every kind of file independently and writes the right shape for each 5144ms
+     → expected { files: 6, stored: 4, …(6) } to match object { stored: 5, rejected: 1 }
+ ❯ test/unit/capture-ingest-bytes.test.ts (60 tests | 2 failed | 58 skipped) 5ms
+   × detectContentType: the BYTES decide (T-PDF-1) > S4: %PDF- is found anywhere in the first 1024 bytes, and not after 3ms
+     → expected null to be 'application/pdf' // Object.is equality
+   × downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > S4: header at byte 0 and after a 200-byte prefix are accepted; only after 1024 is wrong_type 2ms
+     → expected 'rejected' to be 'ok' // Object.is equality
+ Test Files  2 failed (2)
+      Tests  3 failed | 1 passed | 109 skipped (113)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > handles every kind of file independently and writes the right shape for each
+AssertionError: expected { files: 6, stored: 4, …(6) } to match object { stored: 5, rejected: 1 }
+ ❯ test/capture-ingest.test.ts:399:22
+ FAIL  test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > S4: %PDF- is found anywhere in the first 1024 bytes, and not after
+AssertionError: expected null to be 'application/pdf' // Object.is equality
+ ❯ test/unit/capture-ingest-bytes.test.ts:61:58
+ FAIL  test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > S4: header at byte 0 and after a 200-byte prefix are accepted; only after 1024 is wrong_type
+AssertionError: expected 'rejected' to be 'ok' // Object.is equality
+ ❯ test/unit/capture-ingest-bytes.test.ts:176:83
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.2 detectContentType accepts anything as JPEG (magic check removed)  (18:17:24)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+if (startsWith(head, JPEG)) return 'image/jpeg'
+AFTER:
+if (true) return 'image/jpeg'
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/unit/capture-ingest-bytes.test.ts (60 tests | 13 failed | 31 skipped) 11109ms
+   × detectContentType: the BYTES decide (T-PDF-1) > recognises the four accepted types 3ms
+     → expected 'image/jpeg' to be 'image/png' // Object.is equality
+   × detectContentType: the BYTES decide (T-PDF-1) > rejects html 0ms
+     → expected 'image/jpeg' to be null
+   × detectContentType: the BYTES decide (T-PDF-1) > rejects empty 0ms
+     → expected 'image/jpeg' to be null
+   × detectContentType: the BYTES decide (T-PDF-1) > rejects two-byte jpeg head 0ms
+     → expected 'image/jpeg' to be null
+   × detectContentType: the BYTES decide (T-PDF-1) > rejects RIFF/WAVE (not WebP) 0ms
+     → expected 'image/jpeg' to be null
+   × detectContentType: the BYTES decide (T-PDF-1) > rejects png with a corrupted 8th byte 0ms
+     → expected 'image/jpeg' to be null
+   × detectContentType: the BYTES decide (T-PDF-1) > rejects pdf header too short 0ms
+     → expected 'image/jpeg' to be null
+   × detectContentType: the BYTES decide (T-PDF-1) > S4: %PDF- is found anywhere in the first 1024 bytes, and not after 0ms
+     → expected 'image/jpeg' to be 'application/pdf' // Object.is equality
+   × downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > stores the type of the bytes, not the HTTP header, and keeps the bytes untouched 0ms
+     → expected 'image/jpeg' to be 'application/pdf' // Object.is equality
+   × downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > S4: header at byte 0 and after a 200-byte prefix are accepted; only after 1024 is wrong_type 0ms
+     → expected 'ok' to be 'rejected' // Object.is equality
+   × downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > wrong magic is rejected as wrong_type and the body is abandoned after the first chunk 8413ms
+     → expected { kind: 'ok', …(2) } to deeply equal { kind: 'rejected', …(1) }
+   × downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > an empty body and a bodyless 200 are wrong_type 2ms
+     → expected { kind: 'ok', bytes: Buffer[], …(1) } to deeply equal { kind: 'rejected', …(1) }
+   × downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > wrong_type beats too_large (fixed precedence) 0ms
+     → expected { kind: 'rejected', …(2) } to deeply equal { kind: 'rejected', …(1) }
+ Test Files  1 failed (1)
+      Tests  13 failed | 16 passed | 31 skipped (60)
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > recognises the four accepted types
+AssertionError: expected 'image/jpeg' to be 'image/png' // Object.is equality
+ ❯ test/unit/capture-ingest-bytes.test.ts:43:45
+ FAIL  test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects html
+ FAIL  test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects empty
+ FAIL  test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects two-byte jpeg head
+ FAIL  test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects RIFF/WAVE (not WebP)
+ FAIL  test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects png with a corrupted 8th byte
+ FAIL  test/unit/capture-ingest-bytes.test.ts > detectContentType: the BYTES decide (T-PDF-1) > rejects pdf header too short
+AssertionError: expected 'image/jpeg' to be null
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.2 trust claimed_content_type instead of the bytes  (18:17:38)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+  const { bytes, type } = dl
+AFTER:
+  const { bytes } = dl
+  const type = (file.claimed_content_type ?? 'image/jpeg') as CaptureContentType
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 52 skipped) 16555ms
+   × T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > handles every kind of file independently and writes the right shape for each 6575ms
+     → expected { …(17) } to match object { ingest_status: 'stored', …(3) }
+ Test Files  1 failed (1)
+      Tests  1 failed | 52 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > handles every kind of file independently and writes the right shape for each
+AssertionError: expected { …(17) } to match object { ingest_status: 'stored', …(3) }
+ ❯ test/capture-ingest.test.ts:403:20
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.2 size cap raised 1000x (cap not enforced at 16 MiB while streaming)  (18:17:56)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+if (total > maxBytes && type) {
+AFTER:
+if (total > maxBytes * 1000 && type) {
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+Error: Channel closed
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.8 Authorization header removed  (18:18:14)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+{ headers: { Authorization: authorization }, signal: controller.signal }
+AFTER:
+{ headers: {}, signal: controller.signal }
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 52 skipped) 14125ms
+   × T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path 4795ms
+     → expected [ { …(3) } ] to deeply equal [ { …(3) } ]
+ ❯ test/unit/capture-ingest-bytes.test.ts (60 tests | 1 failed | 59 skipped) 5ms
+   × downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > sends the Authorization header it is given, as a plain GET with an abort signal 4ms
+     → expected {} to deeply equal { Authorization: 'Basic dGVzdDp0ZXN0' }
+ Test Files  2 failed (2)
+      Tests  2 failed | 111 skipped (113)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path
+AssertionError: expected [ { …(3) } ] to deeply equal [ { …(3) } ]
+ ❯ test/capture-ingest.test.ts:379:21
+ FAIL  test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > sends the Authorization header it is given, as a plain GET with an abort signal
+AssertionError: expected {} to deeply equal { Authorization: 'Basic dGVzdDp0ZXN0' }
+ ❯ test/unit/capture-ingest-bytes.test.ts:153:26
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.7 / T-R5-1 planted send import  (18:18:28)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+import { readCredentials } from '@/lib/whatsapp/outbound/send'
+AFTER:
+import { readCredentials, sendWhatsAppTemplate } from '@/lib/whatsapp/outbound/send'
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/unit/capture-ingest-bytes.test.ts (60 tests | 2 failed | 55 skipped) 5ms
+   × static guards on lib/media/capture-ingest.ts > U-C2-static / U-C6-static / T-R5-1: no overwrite, delete, console or send path in the module 3ms
+     → expected [ 'send path' ] to deeply equal []
+   × static guards on lib/media/capture-ingest.ts > T-R5-1: the only import from lib/whatsapp is readCredentials from outbound/send 0ms
+     → expected 'import { createHash } from \'node:cry…' to match /import \{ readCredentials \} from…/lib\
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 passed | 55 skipped (60)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > U-C2-static / U-C6-static / T-R5-1: no overwrite, delete, console or send path in the module
+AssertionError: expected [ 'send path' ] to deeply equal []
+ ❯ test/unit/capture-ingest-bytes.test.ts:310:39
+ FAIL  test/unit/capture-ingest-bytes.test.ts > static guards on lib/media/capture-ingest.ts > T-R5-1: the only import from lib/whatsapp is readCredentials from outbound/send
+AssertionError: expected 'import { createHash } from \'node:cry…' to match /import \{ readCredentials \} from…/lib\
+ ❯ test/unit/capture-ingest-bytes.test.ts:324:18
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.10 U-DARK-1 planted TypeScript producer  (18:18:29)
+FILE: lib/queue/jobs.ts
+BEFORE:
+  | 'capture_ingest'
+AFTER:
+  | 'capture_ingest'
+// enqueueJob('capture_ingest', {})
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/unit/capture-ingest-bytes.test.ts (60 tests | 1 failed | 58 skipped) 22ms
+   × U-DARK-1: nothing in TypeScript creates a capture_ingest job (only migration 050 does) > no file under app/ or lib/ enqueues or inserts one 21ms
+     → expected [ Array(1) ] to deeply equal []
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 58 skipped (60)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/unit/capture-ingest-bytes.test.ts > U-DARK-1: nothing in TypeScript creates a capture_ingest job (only migration 050 does) > no file under app/ or lib/ enqueues or inserts one
+AssertionError: expected [ Array(1) ] to deeply equal []
+ ❯ test/unit/capture-ingest-bytes.test.ts:363:23
+AFTER REVERT: git diff --stat -- lib/queue/jobs.ts => []  (empty = reverted)
+
+### CONTROL 3.2 size cap raised 1000x, rerun (cap not enforced at 16 MiB while streaming)  (18:18:42)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+if (total > maxBytes && type) {
+AFTER:
+if (total > maxBytes * 1000 && type) {
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+Error: Channel closed
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.2 size cap raised 1000x, rerun after the test fix (cap not enforced at 16 MiB while streaming)  (18:19:30)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+if (total > maxBytes && type) {
+AFTER:
+if (total > maxBytes * 1000 && type) {
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/unit/capture-ingest-bytes.test.ts (60 tests | 2 failed | 58 skipped) 46ms
+   × downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > boundary: exactly 16777216 bytes is accepted, 16777217 is too_large with the detected type (S5) 26ms
+     → expected { kind: 'ok', length: 16777217, …(1) } to deeply equal { kind: 'rejected', …(2) }
+   × downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > a lying Content-Length does not defeat the cap 20ms
+     → expected { kind: 'ok', length: 20971520, …(1) } to deeply equal { kind: 'rejected', …(2) }
+ Test Files  1 failed (1)
+      Tests  2 failed | 58 skipped (60)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > boundary: exactly 16777216 bytes is accepted, 16777217 is too_large with the detected type (S5)
+AssertionError: expected { kind: 'ok', length: 16777217, …(1) } to deeply equal { kind: 'rejected', …(2) }
+ ❯ test/unit/capture-ingest-bytes.test.ts:210:84
+ FAIL  test/unit/capture-ingest-bytes.test.ts > downloadChecked: type from bytes, size cap enforced WHILE streaming (T-SIZE-1, T-PDF-1) > a lying Content-Length does not defeat the cap
+AssertionError: expected { kind: 'ok', length: 20971520, …(1) } to deeply equal { kind: 'rejected', …(2) }
+ ❯ test/unit/capture-ingest-bytes.test.ts:243:83
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL C3 terminal details not in the status UPDATE (status only)  (18:19:47)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+    content_type: type,
+    byte_size: bytes.length,
+    sha256,
+    storage_path: storagePath,
+    preview_state: previewStateFor(type, bytes),
+  }
+AFTER:
+  }
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 52 skipped) 12645ms
+   × T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path 3043ms
+     → expected { files: 1, stored: +0, …(6) } to match object { files: 1, stored: 1, …(2) }
+ Test Files  1 failed (1)
+      Tests  1 failed | 52 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path
+AssertionError: expected { files: 1, stored: +0, …(6) } to match object { files: 1, stored: 1, …(2) }
+ ❯ test/capture-ingest.test.ts:345:22
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL C4 status filter removed from guardedUpdate  (18:20:00)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+    .in('ingest_status', ['pending', 'failed'])
+  if (onlyPending)
+AFTER:
+  if (onlyPending)
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 4 failed | 48 skipped) 27582ms
+   × T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path 4034ms
+     → expected [ [ 'in', 'id', …(1) ], …(2) ] to deep equally contain [ 'in', 'ingest_status', …(1) ]
+   × T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-1: the row becomes stored (different sha) between the step-2 read and the UPDATE -> update_noop, not counted 3104ms
+     → expected [ 'db_refused' ] to deeply equal [ 'update_noop' ]
+   × T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-2: the row became stored with the SAME sha256 and storage_path -> "already done", not a fresh store, no event 3072ms
+     → expected { files: 1, stored: +0, …(6) } to match object { stored: +0, alreadyDone: 1, …(1) }
+   × T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-1: 3 pending -> failed, the stored one is untouched, one counts-only event 3810ms
+     → expected [ [ 'in', 'id', [ …(4) ] ], …(3) ] to deep equally contain [ 'in', 'ingest_status', …(1) ]
+ Test Files  1 failed (1)
+      Tests  4 failed | 1 passed | 48 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path
+AssertionError: expected [ [ 'in', 'id', …(1) ], …(2) ] to deep equally contain [ 'in', 'ingest_status', …(1) ]
+ ❯ test/capture-ingest.test.ts:377:16
+ FAIL  test/capture-ingest.test.ts > T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-1: the row becomes stored (different sha) between the step-2 read and the UPDATE -> update_noop, not counted
+AssertionError: expected [ 'db_refused' ] to deeply equal [ 'update_noop' ]
+ ❯ test/capture-ingest.test.ts:602:24
+ FAIL  test/capture-ingest.test.ts > T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-2: the row became stored with the SAME sha256 and storage_path -> "already done", not a fresh store, no event
+AssertionError: expected { files: 1, stored: +0, …(6) } to match object { stored: +0, alreadyDone: 1, …(1) }
+ ❯ test/capture-ingest.test.ts:613:22
+ FAIL  test/capture-ingest.test.ts > T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-1: 3 pending -> failed, the stored one is untouched, one counts-only event
+AssertionError: expected [ [ 'in', 'id', [ …(4) ] ], …(3) ] to deep equally contain [ 'in', 'ingest_status', …(1) ]
+ ❯ test/capture-ingest.test.ts:849:37
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL C5 QE011 treated as retryable (removed from the alert-not-retry set)  (18:20:28)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+new Set(['QE011', 'QE009', 'QE014', '23514', '42501'])
+AFTER:
+new Set(['QE009', 'QE014', '23514', '42501'])
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 48 skipped) 26959ms
+   × T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code QE011 is ONE event, exactly one update attempt, the job completes (no retry) 3288ms
+     → expected CaptureIngestIncompleteError: capture_fil… to be undefined
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed | 48 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-C4-1 / T-C5: filtered updates touch 0 rows on a terminal row; a refusal is an alert, never a retry > T-C5-1: error code QE011 is ONE event, exactly one update attempt, the job completes (no retry)
+AssertionError: expected CaptureIngestIncompleteError: capture_fil… to be undefined
+ ❯ test/capture-ingest.test.ts:563:21
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL C7 SET list gains ingested_at (outside the 051 grant)  (18:20:56)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+    content_type: type,
+    byte_size: bytes.length,
+AFTER:
+    content_type: type,
+    ingested_at: new Date().toISOString(),
+    byte_size: bytes.length,
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 2 failed | 51 skipped) 20255ms
+   × T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path 3095ms
+     → expected { files: 1, stored: +0, …(6) } to match object { files: 1, stored: 1, …(2) }
+   × T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > handles every kind of file independently and writes the right shape for each 6398ms
+     → expected { files: 6, stored: +0, …(6) } to match object { stored: 5, rejected: 1 }
+ Test Files  1 failed (1)
+      Tests  2 failed | 51 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path
+AssertionError: expected { files: 1, stored: +0, …(6) } to match object { files: 1, stored: 1, …(2) }
+ ❯ test/capture-ingest.test.ts:345:22
+ FAIL  test/capture-ingest.test.ts > T-PDF / T-SIZE-4: types from bytes, rejections, preview_state (one document, six files) > handles every kind of file independently and writes the right shape for each
+AssertionError: expected { files: 6, stored: +0, …(6) } to match object { stored: 5, rejected: 1 }
+ ❯ test/capture-ingest.test.ts:399:22
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.1 identity verification disabled  (18:21:17)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+if (mismatches > 0 || rows.length !== payload.files.length) {
+AFTER:
+if (false) {
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 6 failed | 46 skipped) 24277ms
+   × T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-1 cross-tenant: the payload names tenant B for tenant A's files 2474ms
+     → expected [] to deeply equal [ 'identity_mismatch' ]
+   × T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2a wrong project 2339ms
+     → expected CaptureIngestIncompleteError: capture_fil… to be undefined
+   × T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2b wrong document 2539ms
+     → expected CaptureIngestIncompleteError: capture_fil… to be undefined
+   × T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2c wrong message SID 2387ms
+     → expected CaptureIngestIncompleteError: capture_fil… to be undefined
+   × T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2d a file id that does not exist 2445ms
+     → expected [] to deeply equal [ 'identity_mismatch' ]
+   × T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-3 one mismatched file poisons the whole job (the other two are NOT processed) 2563ms
+     → expected CaptureIngestIncompleteError: capture_fil… to be undefined
+ Test Files  1 failed (1)
+      Tests  6 failed | 1 passed | 46 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-1 cross-tenant: the payload names tenant B for tenant A's files
+ FAIL  test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2d a file id that does not exist
+AssertionError: expected [] to deeply equal [ 'identity_mismatch' ]
+ FAIL  test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2a wrong project
+ FAIL  test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2b wrong document
+ FAIL  test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-2c wrong message SID
+ FAIL  test/capture-ingest.test.ts > T-ID: the payload is checked against the rows BEFORE any download (the whole job fails closed) > T-ID-3 one mismatched file poisons the whole job (the other two are NOT processed)
+AssertionError: expected CaptureIngestIncompleteError: capture_fil… to be undefined
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.4 duplicate object certified without comparing hashes  (18:21:54)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+if (existingSha !== sha256) return markFailed(ctx, row, 'object_conflict')
+AFTER:
+if (false) return markFailed(ctx, row, 'object_conflict')
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 51 skipped) 18159ms
+   × T-RETRY: the object already exists at the row-owned path > T-RETRY-2: DIFFERENT bytes -> the row is failed, one object_conflict event, the existing object is NOT overwritten 4420ms
+     → expected [] to deeply equal [ 'object_conflict' ]
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 51 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-RETRY: the object already exists at the row-owned path > T-RETRY-2: DIFFERENT bytes -> the row is failed, one object_conflict event, the existing object is NOT overwritten
+AssertionError: expected [] to deeply equal [ 'object_conflict' ]
+ ❯ test/capture-ingest.test.ts:690:24
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.5 terminal rows are not skipped  (18:22:13)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+if (row.ingest_status === 'stored' || row.ingest_status === 'rejected') {
+AFTER:
+if (false) {
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 51 skipped) 18169ms
+   × T-SKIP: stored and rejected rows are skipped (no download, no storage call, no write) > T-SKIP-1/2: a second run over a stored and a rejected row touches nothing 4092ms
+     → expected CaptureIngestIncompleteError: capture_fil… to be undefined
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 51 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-SKIP: stored and rejected rows are skipped (no download, no storage call, no write) > T-SKIP-1/2: a second run over a stored and a rejected row touches nothing
+AssertionError: expected CaptureIngestIncompleteError: capture_fil… to be undefined
+ ❯ test/capture-ingest.test.ts:512:21
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.6 fail-fast: stop the loop at the first retryable file  (18:22:32)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+      case 'retry':
+        bumpRetry(outcome.code)
+        break
+AFTER:
+      case 'retry':
+        bumpRetry(outcome.code)
+        throw new CaptureIngestIncompleteError('capture_files ingest: mutant fail-fast')
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 52 skipped) 11744ms
+   × T-MULTI / T-S3: per-file independence and the per-job deadline > T-MULTI-1/2: a failing file does not block the others; the retry only touches what is unfinished 2366ms
+     → expected 'capture_files ingest: mutant fail-fast' to be 'capture_files ingest: 1 of 3 files no…' // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 52 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-MULTI / T-S3: per-file independence and the per-job deadline > T-MULTI-1/2: a failing file does not block the others; the retry only touches what is unfinished
+AssertionError: expected 'capture_files ingest: mutant fail-fast' to be 'capture_files ingest: 1 of 3 files no…' // Object.is equality
+ ❯ test/capture-ingest.test.ts:762:31
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.7 dead letter updates no rows (call neutralised)  (18:22:44)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+{ ids: payload.files.map((f) => f.file_id), tenantId: payload.tenant_id, documentId: payload.document_id },
+AFTER:
+{ ids: [], tenantId: payload.tenant_id, documentId: payload.document_id },
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 51 skipped) 18067ms
+   × T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-1: 3 pending -> failed, the stored one is untouched, one counts-only event 4367ms
+     → expected [ 'pending', 'pending', …(2) ] to deeply equal [ 'failed', 'failed', 'failed', …(1) ]
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 51 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-DL: after the last attempt, rows still pending are moved to failed in ONE update > T-DL-1: 3 pending -> failed, the stored one is untouched, one counts-only event
+AssertionError: expected [ 'pending', 'pending', …(2) ] to deeply equal [ 'failed', 'failed', 'failed', …(1) ]
+ ❯ test/capture-ingest.test.ts:850:63
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL 3.8 URL guard disabled  (18:23:03)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+if (!isTwilioMediaUrl(file.url, ctx.accountSid)) return markFailed(ctx, row, 'url_guard')
+AFTER:
+if (false) return markFailed(ctx, row, 'url_guard')
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 3 failed | 50 skipped) 17436ms
+   × T-TW: the download > T-TW-5: a url with the wrong http scheme is never fetched; the row is failed with one url_guard event 2674ms
+     → expected [ { …(3) } ] to have a length of +0 but got 1
+   × T-TW: the download > T-TW-5: a url with the wrong other host is never fetched; the row is failed with one url_guard event 2484ms
+     → expected [ { …(3) } ] to have a length of +0 but got 1
+   × T-TW: the download > T-TW-5: a url with the wrong other account is never fetched; the row is failed with one url_guard event 2421ms
+     → expected [ { …(3) } ] to have a length of +0 but got 1
+ Test Files  1 failed (1)
+      Tests  3 failed | 50 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-TW: the download > T-TW-5: a url with the wrong http scheme is never fetched; the row is failed with one url_guard event
+ FAIL  test/capture-ingest.test.ts > T-TW: the download > T-TW-5: a url with the wrong other host is never fetched; the row is failed with one url_guard event
+ FAIL  test/capture-ingest.test.ts > T-TW: the download > T-TW-5: a url with the wrong other account is never fetched; the row is failed with one url_guard event
+AssertionError: expected [ { …(3) } ] to have a length of +0 but got 1
+ ❯ test/capture-ingest.test.ts:913:21
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL Q3 path gains an extension  (18:23:21)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+  return `${row.tenant_id}/${row.project_id}/${row.document_id}/${row.id}`
+AFTER:
+  return `${row.tenant_id}/${row.project_id}/${row.document_id}/${row.id}.jpg`
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 52 skipped) 14304ms
+   × T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path 3316ms
+     → expected 'c7b85436-383a-446b-9974-ae6e1b4f1109/…' to be 'c7b85436-383a-446b-9974-ae6e1b4f1109/…' // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 52 skipped (53)
+ FAIL  test/capture-ingest.test.ts [ test/capture-ingest.test.ts ]
+AssertionError: expected 1 to be +0 // Object.is equality
+ ❯ test/capture-ingest.test.ts:304:24
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-OK-1: one JPEG is downloaded, checked, stored and certified in ONE update > stores the original bytes at the row-owned extensionless path
+AssertionError: expected 'c7b85436-383a-446b-9974-ae6e1b4f1109/…' to be 'c7b85436-383a-446b-9974-ae6e1b4f1109/…' // Object.is equality
+ ❯ test/capture-ingest.test.ts:359:30
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL S1 a 0-row UPDATE treated as success  (18:23:35)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+  // 0 rows: someone else finished this row, or it is no longer pending/failed.
+AFTER:
+  if (res.rows === 0) return { kind: 'stored' }
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 2 failed | 51 skipped) 17777ms
+   × T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-1: the row becomes stored (different sha) between the step-2 read and the UPDATE -> update_noop, not counted 3557ms
+     → expected { files: 1, stored: 1, …(6) } to match object { stored: +0, alreadyDone: +0, …(1) }
+   × T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-2: the row became stored with the SAME sha256 and storage_path -> "already done", not a fresh store, no event 3722ms
+     → expected { files: 1, stored: 1, …(6) } to match object { stored: +0, alreadyDone: 1, …(1) }
+ Test Files  1 failed (1)
+      Tests  2 failed | 51 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-1: the row becomes stored (different sha) between the step-2 read and the UPDATE -> update_noop, not counted
+AssertionError: expected { files: 1, stored: 1, …(6) } to match object { stored: +0, alreadyDone: +0, …(1) }
+ ❯ test/capture-ingest.test.ts:601:22
+ FAIL  test/capture-ingest.test.ts > T-S1: a 0-row UPDATE is re-read and is never counted as a fresh store > T-S1-2: the row became stored with the SAME sha256 and storage_path -> "already done", not a fresh store, no event
+AssertionError: expected { files: 1, stored: 1, …(6) } to match object { stored: +0, alreadyDone: 1, …(1) }
+ ❯ test/capture-ingest.test.ts:613:22
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL S3 deadline guard before the upload removed  (18:23:54)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+  ctx.budget.guard()
+  let uploadError: unknown = null
+AFTER:
+  let uploadError: unknown = null
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed | 52 skipped) 13825ms
+   × T-MULTI / T-S3: per-file independence and the per-job deadline > T-S3-1: the 90 s job deadline passes before the upload -> NO upload, the file is deferred, the row stays pending 2509ms
+     → expected 'capture_files ingest: 1 of 1 files no…' to be 'capture_files ingest: 1 of 1 files no…' // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 52 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-MULTI / T-S3: per-file independence and the per-job deadline > T-S3-1: the 90 s job deadline passes before the upload -> NO upload, the file is deferred, the row stays pending
+AssertionError: expected 'capture_files ingest: 1 of 1 files no…' to be 'capture_files ingest: 1 of 1 files no…' // Object.is equality
+ ❯ test/capture-ingest.test.ts:796:30
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+NOTE: orphan from the Q3 mutant (T-HYG-1 caught it as 'expected 1 to be 0') removed; test-db bucket has 0 orphan objects
+
+### CONTROL 3.9 tick dead letter fires even when retries remain  (18:24:56)
+FILE: app/api/jobs/tick/route.ts
+BEFORE:
+if (!willRetry && job.type === 'capture_ingest') {
+AFTER:
+if (job.type === 'capture_ingest') {
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/unit/jobs-tick-dispatch.test.ts (20 tests | 1 failed) 6ms
+   × tick dispatch: capture_ingest (PR-C C5, plan 3.9) > T-TICK-CI-2: the dead letter runs only when retries are exhausted, and receives job.id 2ms
+     → expected "spy" to not be called at all, but actually been called 1 times[90m
+ Test Files  1 failed (1)
+      Tests  1 failed | 19 passed (20)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/unit/jobs-tick-dispatch.test.ts > tick dispatch: capture_ingest (PR-C C5, plan 3.9) > T-TICK-CI-2: the dead letter runs only when retries are exhausted, and receives job.id
+AssertionError: expected "spy" to not be called at all, but actually been called 1 times[90m
+ ❯ test/unit/jobs-tick-dispatch.test.ts:227:43
+AFTER REVERT: git diff --stat -- app/api/jobs/tick/route.ts => []  (empty = reverted)
+
+### CONTROL 3.9 tick dead letter not wrapped (N2): a throwing dead letter rejects the tick  (18:24:57)
+FILE: app/api/jobs/tick/route.ts
+BEFORE:
+          try {
+            await markCaptureIngestFailed(client, payload, message, job.id)
+          } catch {
+AFTER:
+          try {
+            await markCaptureIngestFailed(client, payload, message, job.id)
+          } catch (e) {
+            throw e
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/unit/jobs-tick-dispatch.test.ts (20 tests | 1 failed) 7ms
+   × tick dispatch: capture_ingest (PR-C C5, plan 3.9) > T-TICK-CI-3 (review N2): a throwing dead letter sends ONE counts-only event and does not reject the tick 3ms
+     → expected Error: https://api.twilio.com/leak +19995… to match object { id: 'job-1', status: 'failed', …(1) }
+ Test Files  1 failed (1)
+      Tests  1 failed | 19 passed (20)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/unit/jobs-tick-dispatch.test.ts > tick dispatch: capture_ingest (PR-C C5, plan 3.9) > T-TICK-CI-3 (review N2): a throwing dead letter sends ONE counts-only event and does not reject the tick
+AssertionError: expected Error: https://api.twilio.com/leak +19995… to match object { id: 'job-1', status: 'failed', …(1) }
+ ❯ test/unit/jobs-tick-dispatch.test.ts:242:26
+AFTER REVERT: git diff --stat -- app/api/jobs/tick/route.ts => []  (empty = reverted)
+
+### CONTROL 3.11 T-HYG-1: test teardown does not remove the objects it wrote  (18:24:57)
+FILE: test/capture-ingest.test.ts
+BEFORE:
+  for (let i = 0; i < paths.length; i += 100) await kit.svc.storage.from(CAPTURE_BUCKET).remove(paths.slice(i, i + 100))
+AFTER:
+  // mutant: objects are left behind
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 52 skipped) 14213ms
+ Test Files  1 failed (1)
+      Tests  1 passed | 52 skipped (53)
+ FAIL  test/capture-ingest.test.ts [ test/capture-ingest.test.ts ]
+AssertionError: expected 1 to be +0 // Object.is equality
+ ❯ test/capture-ingest.test.ts:304:24
+AFTER REVERT: git diff --stat -- test/capture-ingest.test.ts => []  (empty = reverted)
+NOTE: the T-HYG-1 mutant left one object by design; removed, test-db bucket has 0 orphan objects
+
+### CONTROL C6 an event carries a media URL  (18:25:39)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+mismatchCount: Math.max(mismatches, 1) })
+AFTER:
+mismatchCount: Math.max(mismatches, 1), first: payload.files[0].url })
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed) 184866ms
+   × T-C6-1 / T-NET-1: nothing sensitive in any event or thrown message; the table is always named > scans every Sentry event and every thrown message produced by this file 10ms
+     → expected [ 'url', 'twilio-sid' ] to deeply equal []
+ Test Files  1 failed (1)
+      Tests  1 failed | 52 passed (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-C6-1 / T-NET-1: nothing sensitive in any event or thrown message; the table is always named > scans every Sentry event and every thrown message produced by this file
+AssertionError: expected [ 'url', 'twilio-sid' ] to deeply equal []
+ ❯ test/capture-ingest.test.ts:930:76
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+NOTE (re-run): the branch was rebuilt locally after GitHub push protection flagged the dummy account SID; the controls below were re-run at the new tip because their tests use the changed dummy SID
+
+### CONTROL 3.8 URL guard disabled (RE-RUN after dummy SID change)  (18:50:34)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+if (!isTwilioMediaUrl(file.url, ctx.accountSid)) return markFailed(ctx, row, 'url_guard')
+AFTER:
+if (false) return markFailed(ctx, row, 'url_guard')
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 3 failed | 50 skipped) 17936ms
+   × T-TW: the download > T-TW-5: a url with the wrong http scheme is never fetched; the row is failed with one url_guard event 2654ms
+     → expected [ { …(3) } ] to have a length of +0 but got 1
+   × T-TW: the download > T-TW-5: a url with the wrong other host is never fetched; the row is failed with one url_guard event 2650ms
+     → expected [ { …(3) } ] to have a length of +0 but got 1
+   × T-TW: the download > T-TW-5: a url with the wrong other account is never fetched; the row is failed with one url_guard event 2581ms
+     → expected [ { …(3) } ] to have a length of +0 but got 1
+ Test Files  1 failed (1)
+      Tests  3 failed | 50 skipped (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-TW: the download > T-TW-5: a url with the wrong http scheme is never fetched; the row is failed with one url_guard event
+ FAIL  test/capture-ingest.test.ts > T-TW: the download > T-TW-5: a url with the wrong other host is never fetched; the row is failed with one url_guard event
+ FAIL  test/capture-ingest.test.ts > T-TW: the download > T-TW-5: a url with the wrong other account is never fetched; the row is failed with one url_guard event
+AssertionError: expected [ { …(3) } ] to have a length of +0 but got 1
+ ❯ test/capture-ingest.test.ts:913:21
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
+
+### CONTROL C6 an event carries a media URL (RE-RUN after dummy SID change)  (18:50:52)
+FILE: lib/media/capture-ingest.ts
+BEFORE:
+mismatchCount: Math.max(mismatches, 1) })
+AFTER:
+mismatchCount: Math.max(mismatches, 1), first: payload.files[0].url })
+
+RAW RED OUTPUT (filtered to failures and the summary; exit code 1):
+ ❯ test/capture-ingest.test.ts (53 tests | 1 failed) 192021ms
+   × T-C6-1 / T-NET-1: nothing sensitive in any event or thrown message; the table is always named > scans every Sentry event and every thrown message produced by this file 11ms
+     → expected [ 'url', 'twilio-sid' ] to deeply equal []
+ Test Files  1 failed (1)
+      Tests  1 failed | 52 passed (53)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/capture-ingest.test.ts > T-C6-1 / T-NET-1: nothing sensitive in any event or thrown message; the table is always named > scans every Sentry event and every thrown message produced by this file
+AssertionError: expected [ 'url', 'twilio-sid' ] to deeply equal []
+ ❯ test/capture-ingest.test.ts:930:76
+AFTER REVERT: git diff --stat -- lib/media/capture-ingest.ts => []  (empty = reverted)
