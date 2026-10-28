@@ -90,6 +90,8 @@ Rev 4, 2026-10-28, per Aravind: C4 is split into **C4a** (this PR: the handler, 
 - Q11: `test/capture-router.test.ts` is edited as planned, each edit marked "C4a:"; T-S3-5 stays unedited in C4a.
 - Q12: split into C4a and C4b (this note).
 
+2026-10-28, per Aravind: C4a merged as `f55431c8c846ff35a48d3f5c972219fc03b16b3d` (PR #342), CI https://github.com/ara-2789/Quoco/actions/runs/40640956232 (headSha `ae09071d`, success). Residual risk: a post-RPC read failure after a committed RPC tells the engineer to resend, so the PM may see a duplicate file `[inferred, T-SF-1c]`. C6 blocker added: `wrong_flow` over a hindrance/safety row throws (no approved string): a string is owed, or silence is accepted. C4b (this branch) decisions: Q5, video / audio-in-a-later-item / image+video / untyped media stay stopped at the webhook with today's reply even inside an 'invoice' session; Q9, if the router throws on a PDF message the webhook answers `UNSUPPORTED_MEDIA_REPLY` plus today's Sentry event.
+
 ---
 
 ## 3. Blockers

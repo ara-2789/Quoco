@@ -9,7 +9,13 @@ import { routeInboundMessage } from '@/lib/whatsapp/inbound-start'
 import { isTestStartTrigger } from '@/lib/whatsapp/flows/test-trigger'
 import { decideInboundGate, clearMessagingBlock } from '@/lib/whatsapp/reactivation'
 import { validateTwilioSignature } from '@/lib/whatsapp/twilio-signature'
-import { classifyMediaReply, replyForMediaKind, extractMediaItems } from '@/lib/whatsapp/media-reply'
+import {
+  classifyMediaReply,
+  replyForMediaKind,
+  extractMediaItems,
+  classifyCaptureDocument,
+  extractCaptureMediaItems,
+} from '@/lib/whatsapp/media-reply'
 import { resolveEngineerProject, replyForProjectResolution } from '@/lib/whatsapp/project-resolution'
 
 // NFR-11: validate every inbound request is genuinely from Twilio before
@@ -59,6 +65,22 @@ function notRegisteredResponse(): NextResponse {
     '<Response><Message>This number is not registered with Quoco. Contact your Project Manager.</Message></Response>',
     { status: 200, headers: { 'Content-Type': 'text/xml' } },
   )
+}
+
+// The unsupported-media reply and its Sentry event. MOVED VERBATIM (C4b) from handleWebhookPost's
+// `mediaKind === 'unsupported'` block; nothing in the body changed.
+function unsupportedMediaResponse(params: Record<string, string>): NextResponse {
+  const numMedia = Number(params.NumMedia ?? '0')
+  const contentTypes: string[] = []
+  for (let i = 0; i < numMedia; i++) contentTypes.push(params[`MediaContentType${i}`] ?? '')
+  // Content types and counts ONLY -- no URL, phone, tenant/user id or body.
+  Sentry.captureMessage('Unsupported inbound media', {
+    level: 'warning',
+    fingerprint: ['inbound-media', 'unsupported'],
+    tags: { feature: 'inbound-media' },
+    extra: { contentTypes, numMedia },
+  })
+  return twimlMessage(replyForMediaKind('unsupported'))
 }
 
 // Shape of the single gate lookup. Used to carry project_members(project_id)
@@ -259,17 +281,29 @@ export async function handleWebhookPost(
   }
   // 2026-10-05 (Block E): only images enter photo ingest -- anything else (pdf, video, untyped, mixed with a non-image) gets the unsupported reply and nothing is stored.
   if (mediaKind === 'unsupported') {
-    const numMedia = Number(params.NumMedia ?? '0')
-    const contentTypes: string[] = []
-    for (let i = 0; i < numMedia; i++) contentTypes.push(params[`MediaContentType${i}`] ?? '')
-    // Content types and counts ONLY -- no URL, phone, tenant/user id or body.
-    Sentry.captureMessage('Unsupported inbound media', {
-      level: 'warning',
-      fingerprint: ['inbound-media', 'unsupported'],
-      tags: { feature: 'inbound-media' },
-      extra: { contentTypes, numMedia },
-    })
-    return twimlMessage(replyForMediaKind('unsupported'))
+    // PR-C C4b: a PDF (or image+PDF) may be a material-inward file. It reaches the router ONLY so the router can
+    // decide: inside a live 'invoice' session the handler takes it; anywhere else the router hands it straight back
+    // (result.unsupportedMedia) and the reply and event below are exactly what they always were. Video, untyped and
+    // every other unsupported shape never leave this function (decision Q5).
+    if (classifyCaptureDocument(params) === null) return unsupportedMediaResponse(params)
+    let routed: Awaited<ReturnType<typeof routeInboundMessage>>
+    try {
+      routed = await routeInboundMessage({
+        phoneNumber: fromNumber,
+        tenantId: user.tenant_id,
+        userId: user.id,
+        projectId,
+        message: params.Body ?? '',
+        messageSid,
+        documentMedia: extractCaptureMediaItems(params),
+        supabaseClient: supabase,
+      })
+    } catch {
+      // Decision Q9: if the router throws on a PDF message (e.g. its routing read), answer as before C4b.
+      return unsupportedMediaResponse(params)
+    }
+    if (routed.unsupportedMedia) return unsupportedMediaResponse(params)
+    return routed.reply === '' ? twimlEmpty() : twimlMessage(routed.reply)
   }
   // A photo's media items are extracted here (still upstream, since
   // NumMedia/MediaUrl{i} are raw webhook fields routeInboundMessage's own

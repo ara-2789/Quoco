@@ -173,3 +173,39 @@ export function extractMediaItems(params: Record<string, string | undefined>): M
   }
   return items
 }
+
+// PR-C C4b (docs/plans/pr-c-plan.md section 4 / C4 plan item 6). ADDITIVE: classifyMediaReply and extractMediaItems
+// above are unchanged. A message is 'document' when it may be a material-inward (DC / invoice) file: item 0 is not
+// audio, EVERY item is an image/* or exactly application/pdf (trimmed, lower-cased; parameters such as "; x=y" make it
+// not match), and at least one item is a PDF. Anything else (video, untyped, a later audio item, image+video) is null
+// and stays stopped at the webhook with today's reply, even inside an 'invoice' session (decision Q5).
+// A 'document' message reaches routeInboundMessage only so the router can decide: inside a live 'invoice' session it is
+// handled; anywhere else the webhook answers exactly as it did before (UNSUPPORTED_MEDIA_REPLY + its event).
+export function classifyCaptureDocument(params: Record<string, string | undefined>): 'document' | null {
+  const numMedia = Number(params.NumMedia ?? '0')
+  if (!Number.isFinite(numMedia) || numMedia < 1) return null
+  if (contentTypeOf(params, 0).startsWith('audio/')) return null
+  let sawPdf = false
+  for (let i = 0; i < numMedia; i++) {
+    const ct = contentTypeOf(params, i)
+    if (ct === 'application/pdf') sawPdf = true
+    else if (!ct.startsWith('image/')) return null
+  }
+  return sawPdf ? 'document' : null
+}
+
+/** Items of a 'document' message that have a URL and an allowed type (image/* or application/pdf). */
+export function extractCaptureMediaItems(params: Record<string, string | undefined>): MediaItem[] {
+  const numMedia = Number(params.NumMedia ?? '0')
+  if (!Number.isFinite(numMedia) || numMedia < 1) return []
+  const items: MediaItem[] = []
+  for (let i = 0; i < numMedia; i++) {
+    const url = params[`MediaUrl${i}`]
+    if (!url) continue
+    const contentType = params[`MediaContentType${i}`] ?? ''
+    const ct = contentType.trim().toLowerCase()
+    if (ct !== 'application/pdf' && !ct.startsWith('image/')) continue
+    items.push({ url, contentType })
+  }
+  return items
+}

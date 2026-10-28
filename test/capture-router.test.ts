@@ -7,7 +7,7 @@
 // C4a (2026-10-28): the live-'invoice' stub is gone and the real handler is wired (plan rev 4). Edits made in C4a, each
 // marked "C4a:" below: T-INV-LIVE's first case replaced by T-HANDLE-ROUTE-1; seedInvoice uses a valid random uuid;
 // route() supplies a unique messageSid; T-D1-1's control sends 'hello'. New here: T-D1-6, T-D1-6d, AT-DARK-1c, T-S3-7.
-// T-S3-5 is deliberately UNEDITED (PDFs still never reach the router until C4b).
+// C4b: T-S3-5 rewritten (PDFs now reach the router as documentMedia; see its comment).
 //
 // SCOPE (rev 3, now delivered in C4a): the digit-4 START branch, T-D1-6 and the allowlisted-start control of AT-DARK-1 are C4's. In C3 a bare
 // "4" always gets today's item_reserved reply. T-D1-4's PDF part is C4's (the webhook blocks PDFs before routing).
@@ -17,12 +17,10 @@
 // that mixed an unchanged-behaviour check with the new behaviour must still go red against the old router.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 
 const { captureMessage, captureException } = vi.hoisted(() => ({
-  captureMessage: vi.fn((_m: string, _o?: Record<string, unknown>) => 'mock-event-id'),
-  captureException: vi.fn((_e: unknown, _o?: Record<string, unknown>) => 'mock-event-id'),
+  captureMessage: vi.fn<(message: string, options?: Record<string, unknown>) => string>(() => 'mock-event-id'),
+  captureException: vi.fn<(error: unknown, options?: Record<string, unknown>) => string>(() => 'mock-event-id'),
 }))
 vi.mock('@sentry/nextjs', () => ({ captureMessage, captureException }))
 
@@ -37,7 +35,6 @@ import { mapSessionFlowToCheckinFlow, type SessionFlow } from '@/lib/whatsapp/se
 import { applyHindranceFlowTurn, HINDRANCE_QUESTIONS } from '@/lib/whatsapp/flows/hindrance'
 import { MORNING_QUESTIONS, buildMorningReply } from '@/lib/whatsapp/flows/morning'
 import { EVENING_QUESTIONS, buildEveningReply } from '@/lib/whatsapp/flows/evening'
-import { classifyMediaReply, replyForMediaKind, UNSUPPORTED_MEDIA_REPLY } from '@/lib/whatsapp/media-reply'
 import { istParts } from '@/lib/daily-logs/status'
 import {
   MI_SESSION_ENDED_REPLY,
@@ -129,6 +126,7 @@ function header(now: Date, state?: IdleHeaderState): IdleHeaderState {
 interface RouteExtra {
   isPhoto?: boolean
   media?: Array<{ url: string; contentType: string }>
+  documentMedia?: Array<{ url: string; contentType: string }>
 }
 
 // C4a: every call carries a unique message SID (a live 'invoice' session now reaches the handler, whose RPC requires one).
@@ -531,19 +529,24 @@ describe('T-S3: invoice_reset_guard photo guard', () => {
     expect(await dailyLogCount()).toBe(1)
   })
 
-  it('T-S3-5 a PDF never reaches the router (the webhook refuses it first); the guard still refuses a photo', async () => {
-    // Unchanged route (RT:256-273): classification is by content type, before routing.
-    expect(classifyMediaReply({ NumMedia: '1', MediaContentType0: 'application/pdf' })).toBe('unsupported')
-    const routeSource = readFileSync(resolve(__dirname, '../app/api/whatsapp/webhook/route.ts'), 'utf8')
-    const gate = routeSource.indexOf("replyForMediaKind('unsupported')")
-    expect(gate).toBeGreaterThan(-1)
-    expect(gate).toBeLessThan(routeSource.indexOf('await routeInboundMessage('))
-    expect(replyForMediaKind('unsupported')).toBe(UNSUPPORTED_MEDIA_REPLY)
-    // ...and with the guard set, a photo is still refused by the router (the new behaviour this test pins).
+  // C4b: REWRITTEN (was: "a PDF never reaches the router", a source-order check on route.ts). From C4b a PDF-bearing message
+  // DOES reach the router (as documentMedia), but only a live 'invoice' session may consume it. With the S-3 guard set the
+  // router hands it straight back (unsupportedMedia:true, so the webhook answers UNSUPPORTED_MEDIA_REPLY as before): no
+  // S-3 reply, no check-in photo, nothing stored, no Sentry event of its own, and the guard is left alone.
+  it('T-S3-5 (C4b) a PDF while the guard is set: unsupportedMedia, nothing stored, guard untouched', async () => {
     const phone = kit.phone('s3-5')
     await seedCheckin(phone, 'morning', { invoice_reset_guard: 'morning' }, NOON)
-    expect((await route(phone, '', NOON, spyClient().client, PHOTO)).reply).toBe(S3_MORNING)
+    const before = await getSession(kit, phone)
+    const { client, calls } = spyClient()
+    const r = await route(phone, 'caption', NOON, client, { documentMedia: [{ url: 'https://example.invalid/m/0', contentType: 'application/pdf' }] })
+    expect(r).toEqual({ reply: '', resolvedFlow: null, unsupportedMedia: true })
+    expect(calls).toEqual([])
+    expect(await photoRowCount()).toBe(0)
     expect(await mediaJobCount()).toBe(0)
+    expect(await dailyLogCount()).toBe(0)
+    expect(await getSession(kit, phone)).toEqual(before)
+    expect(captureMessage).not.toHaveBeenCalled()
+    expect(captureException).not.toHaveBeenCalled()
   })
 
   it('T-S3-6 isPhoto with zero extractable items while the guard is set: not dispatched as an answer', async () => {

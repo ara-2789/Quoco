@@ -15,8 +15,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const { captureMessage, captureException } = vi.hoisted(() => ({
-  captureMessage: vi.fn((_m: string, _o?: Record<string, unknown>) => 'mock-event-id'),
-  captureException: vi.fn((_e: unknown, _o?: Record<string, unknown>) => 'mock-event-id'),
+  captureMessage: vi.fn<(message: string, options?: Record<string, unknown>) => string>(() => 'mock-event-id'),
+  captureException: vi.fn<(error: unknown, options?: Record<string, unknown>) => string>(() => 'mock-event-id'),
 }))
 vi.mock('@sentry/nextjs', () => ({ captureMessage, captureException }))
 

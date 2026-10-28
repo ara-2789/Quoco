@@ -390,6 +390,11 @@ export interface InboundRouteResult {
   reply: string
   /** Null for every fallback branch (nothing here starts morning/evening any more -- the cron is the sole starter for those). 'hindrance' as of 2026-09-07: the item1 branch below is the one real exception, since a leading "1" genuinely does start a flow directly from idle -- see that branch's own comment for why item 1 is different from morning/evening here. Non-null otherwise only via dispatchInboundTurn's own delegation when a flow is already active. */
   resolvedFlow: 'morning' | 'evening' | 'hindrance' | 'invoice' | null
+  /**
+   * C4b: set (with reply '') when a PDF-bearing message (RouteParams.documentMedia) is NOT for a live material-inward
+   * session. The webhook then answers exactly as it did before C4b (UNSUPPORTED_MEDIA_REPLY + its Sentry event).
+   */
+  unsupportedMedia?: true
 }
 
 interface RouteParams {
@@ -404,6 +409,13 @@ interface RouteParams {
    * 'invoice' session); optional here so the other callers and tests are unchanged.
    */
   messageSid?: string
+  /**
+   * C4b: usable items (image/* or application/pdf) of a message that carries at least one PDF -- the webhook's
+   * classifyCaptureDocument said 'document'. Such a message is handled ONLY inside a live 'invoice' session; every
+   * other state returns { unsupportedMedia: true } before any dispatch, S-3, idle-photo or nudge branch.
+   * isPhoto is false for these.
+   */
+  documentMedia?: MediaItem[]
   /**
    * Whether route.ts's classifyMediaReply resolved this message as a
    * PHOTO (never voice -- that's intercepted upstream, unconditionally,
@@ -729,6 +741,13 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
   const now = params.now !== undefined ? new Date(params.now) : new Date()
   const state = await readRoutingState(params.phoneNumber, now, supabase)
 
+  // C4b: a PDF-bearing message that is not for a live material-inward row goes straight back to the webhook, which
+  // answers exactly as before C4b. Placed BEFORE the expire step, the 'safety' warning, the S-3 guard, the idle-photo
+  // nudge and every dispatch, so it writes nothing and raises no event of its own.
+  if (params.documentMedia !== undefined && state.currentFlow !== 'invoice') {
+    return { reply: '', resolvedFlow: null, unsupportedMedia: true }
+  }
+
   // EXPIRE FIRST (PR-C C3, docs/plans/pr-c-plan.md sections 3c and 3f). A
   // material-inward ('invoice') session that has expired is cleared BEFORE any
   // other flow function can see the row: any other flow's turn over an
@@ -746,7 +765,7 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
       // processed; the engineer gets the one-shot ended reply. The row is
       // already cleared, so the next message takes the ordinary idle path and
       // this reply never repeats.
-      const media = params.media ?? []
+      const media = params.documentMedia ?? params.media ?? []
       // C4a (plan section 3f step 3, Aravind's rev 2): a TEXT-ONLY leading "4"
       // right after the session ended, on a phone where digit 4 is live, starts
       // the flow at once instead of getting the ended reply. The row is cleared,
@@ -755,6 +774,7 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
       const startsFresh =
         media.length === 0 &&
         params.isPhoto !== true &&
+        params.documentMedia === undefined &&
         isLeadingDigitFour(params.message) &&
         isCaptureDigit4Live(params.phoneNumber)
       if (!startsFresh) {
@@ -777,8 +797,9 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
           projectId: params.projectId,
           message: params.message,
           messageSid: params.messageSid,
-          isPhoto: params.isPhoto === true,
-          media: params.media ?? [],
+          // C4b: a PDF message counts as "files present" even if no item was extractable (-> MI_UNSUPPORTED_FILE_REPLY).
+          isPhoto: params.isPhoto === true || params.documentMedia !== undefined,
+          media: params.documentMedia ?? params.media ?? [],
           ...(params.now !== undefined ? { now: params.now } : {}),
           expiresAt: state.expiresAt,
         },
