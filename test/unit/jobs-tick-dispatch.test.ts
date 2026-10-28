@@ -203,7 +203,7 @@ describe('tick dispatch: capture_ingest (PR-C C5, plan 3.9)', () => {
     const r = await tick('capture_ingest')
     expect(m.failJob).not.toHaveBeenCalled() // before the edit this shows "Unknown job type: capture_ingest"
     expect(m.handleCaptureIngestJob).toHaveBeenCalledTimes(1)
-    expect(m.handleCaptureIngestJob).toHaveBeenCalledWith(PAYLOAD, { supabaseClient: client })
+    expect(m.handleCaptureIngestJob).toHaveBeenCalledWith(PAYLOAD, { supabaseClient: client, jobId: 'job-1' })
     expect(m.completeJob).toHaveBeenCalledWith('job-1', client)
     expect(r.results).toEqual([{ id: 'job-1', status: 'succeeded' }])
   })

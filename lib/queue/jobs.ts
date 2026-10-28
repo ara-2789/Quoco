@@ -18,6 +18,9 @@ export type JobType =
   // already established as its own type beside `dpr_generate`/
   // `owner_deliver` rather than a generalized "notify" job.
   | 'hindrance_media_ingest'
+  // PR-C C5 (docs/plans/pr-c-c5-plan.md) -- enqueued only by migration 050's
+  // apply_material_inward_turn (SQL), never from TypeScript.
+  | 'capture_ingest'
 
 export type JobStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
