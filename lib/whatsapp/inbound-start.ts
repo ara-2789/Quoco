@@ -5,16 +5,18 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
 import { readRoutingState, expireStaleMaterialInward, mapSessionFlowToCheckinFlow, claimMediaNudge } from './session'
+import { isCaptureDigit4Live } from './capture-switch'
 import {
   MI_SESSION_ENDED_REPLY,
   CHECKIN_RESET_EXPLAIN_REPLY,
   MI_CHECKIN_PHOTO_NOT_SAVED_REPLY,
 } from './flows/material-inward-strings'
 import { dispatchInboundTurn } from './dispatch'
+import { handleMaterialInwardTurn, startMaterialInward, reportFileAfterSessionEnded } from './flows/material-inward'
 import { applyHindranceFlowTurn, buildHindranceReply } from './flows/hindrance'
 import { MEDIA_NUDGE_REPLY, MEDIA_NUDGE_PROGRESS_LINE, MEDIA_NUDGE_WINDOW_SECONDS, type MediaItem } from './media-reply'
-import { buildMorningReply, buildMorningCompleteReply } from './flows/morning'
-import { buildEveningReply, buildEveningCompleteReply, fetchMorningEquipmentEcho } from './flows/evening'
+import { buildMorningReply, buildMorningCompleteReply, MORNING_QUESTIONS } from './flows/morning'
+import { buildEveningReply, buildEveningCompleteReply, fetchMorningEquipmentEcho, EVENING_QUESTIONS } from './flows/evening'
 import { enqueueJob } from '@/lib/queue/jobs'
 import {
   resolveDailyLogId,
@@ -269,6 +271,16 @@ export function classifyAdhocInput(body: string): AdhocInputKind {
   return 'unrecognized' // 0, 8, 9 -- never assigned to any item
 }
 
+/**
+ * PR-C C4a (plan section 4, decision Q1): the material-inward start digit. SAME rule as classifyAdhocInput's
+ * leading-digit regex ("4 bags" counts, "44" does not). A separate predicate, not a new AdhocInputKind:
+ * classifyAdhocInput('4') stays 'item_reserved' so the dark path and adhoc-menu-spec-sync are untouched.
+ */
+export function isLeadingDigitFour(body: string): boolean {
+  const match = body.trimStart().match(/^([0-9])(?!\d)/)
+  return match !== null && match[1] === '4'
+}
+
 // --- Header (docs/plans/adhoc-menu-spec.md §a, the 5-row table -- still
 // live; the list-picker delivery mechanism built around it is not) --------
 export type IdleHeaderState = 'awaiting_morning' | 'morning_closed' | 'site_holiday' | 'complete' | 'none'
@@ -377,7 +389,7 @@ export function buildIdleReply(kind: Exclude<AdhocInputKind, 'item1'>, headerSta
 export interface InboundRouteResult {
   reply: string
   /** Null for every fallback branch (nothing here starts morning/evening any more -- the cron is the sole starter for those). 'hindrance' as of 2026-09-07: the item1 branch below is the one real exception, since a leading "1" genuinely does start a flow directly from idle -- see that branch's own comment for why item 1 is different from morning/evening here. Non-null otherwise only via dispatchInboundTurn's own delegation when a flow is already active. */
-  resolvedFlow: 'morning' | 'evening' | 'hindrance' | null
+  resolvedFlow: 'morning' | 'evening' | 'hindrance' | 'invoice' | null
 }
 
 interface RouteParams {
@@ -387,6 +399,11 @@ interface RouteParams {
   projectId: string
   message: string
   now?: string
+  /**
+   * The Twilio MessageSid (C4a). Required by the material-inward RPC (digit-4 start and every turn of a live
+   * 'invoice' session); optional here so the other callers and tests are unchanged.
+   */
+  messageSid?: string
   /**
    * Whether route.ts's classifyMediaReply resolved this message as a
    * PHOTO (never voice -- that's intercepted upstream, unconditionally,
@@ -730,26 +747,43 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
       // already cleared, so the next message takes the ordinary idle path and
       // this reply never repeats.
       const media = params.media ?? []
-      if (media.length > 0) {
+      // C4a (plan section 3f step 3, Aravind's rev 2): a TEXT-ONLY leading "4"
+      // right after the session ended, on a phone where digit 4 is live, starts
+      // the flow at once instead of getting the ended reply. The row is cleared,
+      // so the idle path below reaches the digit-4 start branch. Anything else
+      // (another text, a photo, a dark phone) still gets the ended reply.
+      const startsFresh =
+        media.length === 0 &&
+        params.isPhoto !== true &&
+        isLeadingDigitFour(params.message) &&
+        isCaptureDigit4Live(params.phoneNumber)
+      if (!startsFresh) {
         // Decision Q11: counts only. No phone, URL, body, tenant or user id.
-        Sentry.captureMessage('file received after the material-inward session ended', {
-          level: 'info',
-          fingerprint: ['capture-router', 'file_after_session_ended'],
-          tags: { feature: 'capture-router' },
-          extra: { mediaCount: media.length, contentTypes: media.map((m) => m.contentType) },
-        })
+        reportFileAfterSessionEnded(media)
+        return { reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }
       }
-      return { reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }
-    }
-    if (!state.dayStale) {
-      // Live and unexpired, but C3 has no handler for it (C4 adds one; nothing
-      // can create such a row while digit 4 is dark). Report and take the idle
-      // path rather than hand it to a check-in flow function.
-      Sentry.captureMessage('live invoice session reached the router with no handler', {
-        level: 'error',
-        fingerprint: ['capture-router', 'invoice_without_handler'],
-        tags: { feature: 'capture-router' },
-      })
+    } else {
+      // Live (or a day-stale row a late turn refreshed): the material-inward
+      // handler. The RPC re-reads the row under its lock and arbitrates a
+      // race ('expired' / 'idle' outcomes), so dayStale does not matter here.
+      if (!params.messageSid) {
+        throw new Error('routeInboundMessage: invoice session turn without a message SID')
+      }
+      return handleMaterialInwardTurn(
+        {
+          phoneNumber: params.phoneNumber,
+          tenantId: params.tenantId,
+          userId: params.userId,
+          projectId: params.projectId,
+          message: params.message,
+          messageSid: params.messageSid,
+          isPhoto: params.isPhoto === true,
+          media: params.media ?? [],
+          ...(params.now !== undefined ? { now: params.now } : {}),
+          expiresAt: state.expiresAt,
+        },
+        supabase,
+      )
     }
   } else if (state.currentFlow === 'safety' && !state.dayStale) {
     // 'safety' is never written by anything (SessionFlow's pre-provisioned,
@@ -799,12 +833,16 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
         )
       }
       if (guardRow) {
-        const question =
-          firstFlow === 'morning'
-            ? buildMorningReply('reask', guardRow.current_step)
-            : buildEveningReply('reask', guardRow.current_step)
+        // C4a (plan item 3): the PLAIN question for the step, not build*Reply('reask', step).
+        // Evening 'reask' at steps 2-4 is "Sorry, I didn't catch that..." (EVENING_REASK_MESSAGES), which is wrong
+        // here: nothing was misunderstood. At step 1 (the only step the guard can exist at) the two are
+        // byte-identical, so this changes nothing an engineer sees today.
+        const questions = firstFlow === 'morning' ? MORNING_QUESTIONS : EVENING_QUESTIONS
+        const question = questions[guardRow.current_step] ?? ''
         return {
-          reply: [MI_CHECKIN_PHOTO_NOT_SAVED_REPLY, CHECKIN_RESET_EXPLAIN_REPLY, question].join('\n'),
+          reply: [MI_CHECKIN_PHOTO_NOT_SAVED_REPLY, CHECKIN_RESET_EXPLAIN_REPLY, question]
+            .filter((part) => part !== '')
+            .join('\n'),
           resolvedFlow: firstFlow,
         }
       }
@@ -1040,6 +1078,30 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
       reply: buildHindranceReply(result.outcome, result.currentStep, result.wasExhausted),
       resolvedFlow: 'hindrance',
     }
+  }
+
+  // PR-C C4a: the material-inward start. DARK: both conditions must hold --
+  // a leading "4" AND the digit-4 switch live for THIS phone (capture-switch.ts;
+  // the constant is false and the allowlist is empty by default). Otherwise "4"
+  // falls through exactly as before (item_reserved reply below).
+  if (adhocKind === 'item_reserved' && isLeadingDigitFour(params.message) && isCaptureDigit4Live(params.phoneNumber)) {
+    if (!params.messageSid) {
+      throw new Error('routeInboundMessage: digit-4 start without a message SID')
+    }
+    const started = await startMaterialInward(
+      {
+        phoneNumber: params.phoneNumber,
+        tenantId: params.tenantId,
+        userId: params.userId,
+        projectId: params.projectId,
+        message: params.message,
+        messageSid: params.messageSid,
+        ...(params.now !== undefined ? { now: params.now } : {}),
+      },
+      supabase,
+    )
+    // null = the RPC refused to start (another flow went live in between): fall through to today's reply.
+    if (started !== null) return started
   }
 
   // "Both submitted" is NOT special-cased to a bare static string here --
