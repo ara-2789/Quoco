@@ -286,22 +286,18 @@ export async function handleWebhookPost(
     // (result.unsupportedMedia) and the reply and event below are exactly what they always were. Video, untyped and
     // every other unsupported shape never leave this function (decision Q5).
     if (classifyCaptureDocument(params) === null) return unsupportedMediaResponse(params)
-    let routed: Awaited<ReturnType<typeof routeInboundMessage>>
-    try {
-      routed = await routeInboundMessage({
-        phoneNumber: fromNumber,
-        tenantId: user.tenant_id,
-        userId: user.id,
-        projectId,
-        message: params.Body ?? '',
-        messageSid,
-        documentMedia: extractCaptureMediaItems(params),
-        supabaseClient: supabase,
-      })
-    } catch {
-      // Decision Q9: if the router throws on a PDF message (e.g. its routing read), answer as before C4b.
-      return unsupportedMediaResponse(params)
-    }
+    // A throw from the HANDLER propagates (500), like every other flow. Only the router's routing read is caught,
+    // inside the router (decision Q9, narrowed), and reported as unsupportedMedia.
+    const routed = await routeInboundMessage({
+      phoneNumber: fromNumber,
+      tenantId: user.tenant_id,
+      userId: user.id,
+      projectId,
+      message: params.Body ?? '',
+      messageSid,
+      documentMedia: extractCaptureMediaItems(params),
+      supabaseClient: supabase,
+    })
     if (routed.unsupportedMedia) return unsupportedMediaResponse(params)
     return routed.reply === '' ? twimlEmpty() : twimlMessage(routed.reply)
   }

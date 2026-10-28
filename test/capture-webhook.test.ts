@@ -30,6 +30,7 @@ import {
   MI_CAPTURE_FAILED_REPLY,
   MI_FILE_RECEIVED,
   MI_SESSION_ENDED_REPLY,
+  MI_UNSUPPORTED_FILE_REPLY,
 } from '@/lib/whatsapp/flows/material-inward-strings'
 import { buildCaptureKit, getSession, seedSession, teardownCaptureKit, type CaptureKit } from './helpers/capture-fixtures'
 
@@ -92,7 +93,7 @@ interface Posted {
 }
 
 async function post(
-  media: Array<{ type: string | undefined; url?: string }>,
+  media: Array<{ type: string | undefined; url?: string; noUrl?: boolean }>,
   o: { body?: string; client?: SupabaseClient; sid?: string } = {},
 ): Promise<Posted> {
   const sid = o.sid ?? kit.sid(`c4b-wh-${++sidN}`)
@@ -104,7 +105,7 @@ async function post(
   }
   media.forEach((m, i) => {
     if (m.type !== undefined) params[`MediaContentType${i}`] = m.type
-    params[`MediaUrl${i}`] = m.url ?? `https://example.invalid/m/${sid}/${i}`
+    if (!m.noUrl) params[`MediaUrl${i}`] = m.url ?? `https://example.invalid/m/${sid}/${i}`
   })
   const res = await handleWebhookPost(request(params), { supabaseClient: o.client ?? kit.svc })
   const xml = await res.text()
@@ -253,18 +254,28 @@ describe('T-D1-4 (PDF half)', () => {
 
 // ---------------------------------------------------------------------------
 
-describe('T-Q9: the router throws on a PDF message', () => {
-  it('a failing routing read: UNSUPPORTED_MEDIA_REPLY and the same unsupported event, HTTP 200', async () => {
-    const failing = {
-      select: () => failing,
-      eq: () => failing,
-      maybeSingle: async () => ({ data: null, error: { code: '57014', message: 'canceling statement' } }),
-    }
-    const { client } = rpcSpy(undefined, (table) => (table === 'whatsapp_sessions' ? failing : undefined))
-    const r = await post([PDF], { client })
+describe('T-Q9 (narrowed): only the routing READ is caught', () => {
+  const failingChain = {
+    select: () => failingChain,
+    eq: () => failingChain,
+    maybeSingle: async () => ({ data: null, error: { code: '57014', message: 'canceling statement' } }),
+  }
+
+  it('a failing routing read on a PDF: UNSUPPORTED_MEDIA_REPLY, HTTP 200, the unsupported warning PLUS one routing_read_failed error, neither carrying phone/URL/body/ids', async () => {
+    const { client } = rpcSpy(undefined, (table) => (table === 'whatsapp_sessions' ? failingChain : undefined))
+    const r = await post([PDF], { client, body: 'secret body text' })
     expect(r.status).toBe(200)
     expect(r.text).toBe(UNSUPPORTED_MEDIA_REPLY)
     expect(captureMessage.mock.calls).toEqual([
+      [
+        'capture routing read failed on a document',
+        {
+          level: 'error',
+          fingerprint: ['capture-inbound', 'routing_read_failed'],
+          tags: { feature: 'capture-inbound' },
+          extra: { mediaCount: 1, contentTypes: ['application/pdf'] },
+        },
+      ],
       [
         'Unsupported inbound media',
         {
@@ -275,8 +286,67 @@ describe('T-Q9: the router throws on a PDF message', () => {
         },
       ],
     ])
+    expect(captureException).not.toHaveBeenCalled()
+    const text = JSON.stringify(captureMessage.mock.calls)
+    for (const needle of [enginePhone, enginePhone.replace('+', ''), 'example.invalid', 'secret body text', 'canceling statement', kit.tenantA, kit.uid('eng')]) {
+      expect(text).not.toContain(needle)
+    }
+  })
+
+  // The wrong_flow-over-hindrance seed cannot be reached through the router (it hands a non-invoice row straight back),
+  // so the RPC is stubbed to report what it would return if a hindrance flow took over between the router's read and
+  // the RPC's lock: the handler then throws (outside the S-F catch, by design).
+  it('T-Q9b a handler throw on a PDF in a live invoice session propagates (no UNSUPPORTED_MEDIA_REPLY, no routing_read_failed event)', async () => {
+    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    const wrongFlowHindrance = (name: string) =>
+      name === 'apply_material_inward_turn'
+        ? { data: { outcome: 'wrong_flow', current_flow: 'hindrance', current_step: 1 }, error: null }
+        : undefined
+    const err = await post([PDF], { client: rpcSpy(wrongFlowHindrance).client }).then(
+      () => null,
+      (e: unknown) => e as Error,
+    )
+    expect(err).toBeInstanceOf(Error)
+    for (const needle of [enginePhone, enginePhone.replace('+', ''), kit.tenantA, kit.uid('eng')]) expect(err!.message).not.toContain(needle)
+    expect(captureMessage).not.toHaveBeenCalled() // in particular no 'Unsupported inbound media' and no routing_read_failed
   })
 })
+
+describe('T-PDF-CAPTION / T-PDF-NOITEMS', () => {
+  it('T-PDF-CAPTION a PDF with Body text in a live invoice session stores it as capture_documents.caption, like a photo', async () => {
+    const pdfText = `DC 4471 Sharma Traders ${kit.runTag}-pdf`
+    const photoText = `DC 4472 Sharma Traders ${kit.runTag}-photo`
+    const captionOf = async (sid: string) => {
+      const { data, error } = await kit.svc.from('capture_documents').select('caption').eq('tenant_id', kit.tenantA).eq('source_message_sid', sid)
+      if (error) throw new Error(error.message)
+      return (data ?? []).map((d) => (d as { caption: string | null }).caption)
+    }
+    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    const pdf = await post([PDF], { body: pdfText })
+    expect(pdf.text).toBe([MI_FILE_RECEIVED(1), MI_ACK_QUESTION_DC].join('\n'))
+    expect(await captionOf(pdf.sid)).toEqual([pdfText])
+
+    await kit.svc.from('whatsapp_sessions').delete().eq('phone_number', enginePhone)
+    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    const photo = await post([JPEG], { body: photoText })
+    expect(photo.text).toBe([MI_FILE_RECEIVED(1), MI_ACK_QUESTION_DC].join('\n'))
+    expect(await captionOf(photo.sid)).toEqual([photoText]) // control: the photo path stores its caption the same way
+  })
+
+  it('T-PDF-NOITEMS a PDF whose items carry no URL, in a live invoice session: MI_UNSUPPORTED_FILE_REPLY, the RPC is not called', async () => {
+    await seed('invoice', 2, { mi_kind: 'dc', mi_reask: 0 })
+    const [d0, f0, j0] = [await docs(), await files(), await ingestJobs()]
+    const { client, calls } = rpcSpy()
+    const r = await post([{ type: 'application/pdf', noUrl: true }], { client })
+    expect(r.status).toBe(200)
+    expect(r.text).toBe(MI_UNSUPPORTED_FILE_REPLY)
+    expect(calls).not.toContain('apply_material_inward_turn')
+    expect([await docs(), await files(), await ingestJobs()]).toEqual([d0, f0, j0])
+    expect((await getSession(kit, enginePhone))!.current_step).toBe(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 
