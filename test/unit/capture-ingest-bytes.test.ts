@@ -11,6 +11,7 @@ import {
   classifyStorageError,
   detectContentType,
   downloadChecked,
+  type DownloadResult,
   isTwilioMediaUrl,
   parsePayload,
   sanitiseCode,
@@ -32,6 +33,11 @@ import {
 const MiB = 1024 * 1024
 const AUTH = 'Basic dGVzdDp0ZXN0'
 const URL1 = twilioUrl('unit', 1)
+
+/** A failed assertion must never try to pretty-print a 16 MiB Buffer (it kills the worker): compare this instead. */
+function brief(r: DownloadResult): unknown {
+  return r.kind === 'ok' ? { kind: 'ok', length: r.bytes.length, type: r.type } : r
+}
 
 function fetchReturning(res: Response): typeof fetch {
   return (async () => res) as unknown as typeof fetch
@@ -201,7 +207,7 @@ describe('downloadChecked: type from bytes, size cap enforced WHILE streaming (T
     expect(okR.kind).toBe('ok')
     if (okR.kind === 'ok') expect(okR.bytes.length).toBe(CAPTURE_MAX_BYTES)
     const over = streamResponse(chunked(jpegBytes(CAPTURE_MAX_BYTES + 1), 1 * MiB)).res
-    expect(await downloadChecked(fetchReturning(over), URL1, AUTH, 20_000)).toEqual({ kind: 'rejected', reason: 'too_large', type: 'image/jpeg' })
+    expect(brief(await downloadChecked(fetchReturning(over), URL1, AUTH, 20_000))).toEqual({ kind: 'rejected', reason: 'too_large', type: 'image/jpeg' })
   })
 
   it('an endless body is abandoned after about 16 MiB: the cap is enforced while streaming', async () => {
@@ -234,7 +240,7 @@ describe('downloadChecked: type from bytes, size cap enforced WHILE streaming (T
 
   it('a lying Content-Length does not defeat the cap', async () => {
     const { res } = streamResponse(chunked(jpegBytes(20 * MiB), 1 * MiB), { headers: { 'content-length': '100' } })
-    expect(await downloadChecked(fetchReturning(res), URL1, AUTH, 20_000)).toEqual({ kind: 'rejected', reason: 'too_large', type: 'image/jpeg' })
+    expect(brief(await downloadChecked(fetchReturning(res), URL1, AUTH, 20_000))).toEqual({ kind: 'rejected', reason: 'too_large', type: 'image/jpeg' })
   })
 
   it('an honest huge Content-Length is an early-out after the magic check', async () => {
