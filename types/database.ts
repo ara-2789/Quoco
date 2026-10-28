@@ -270,6 +270,7 @@ export type Database = {
           file_no: number
           id: string
           ingest_status: string
+          ingested_at: string | null
           media_index: number
           preview_state: string | null
           project_id: string
@@ -288,6 +289,7 @@ export type Database = {
           file_no: number
           id?: string
           ingest_status?: string
+          ingested_at?: string | null
           media_index: number
           preview_state?: string | null
           project_id: string
@@ -306,6 +308,7 @@ export type Database = {
           file_no?: number
           id?: string
           ingest_status?: string
+          ingested_at?: string | null
           media_index?: number
           preview_state?: string | null
           project_id?: string

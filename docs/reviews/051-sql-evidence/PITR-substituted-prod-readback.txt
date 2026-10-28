@@ -1,0 +1,316 @@
+== PITR-substituted readback of public.capture_files on PROD (051 pre-apply) ==
+generated: 2026-10-28T03:49:31Z
+$ cat /tmp/quoco/cli-prod-051/supabase/.temp/project-ref   (must equal jvxwqignooseazzmwhvl)
+jvxwqignooseazzmwhvl
+SELECT only. No write is issued.
+
+---- 1. constraints (name, validated, definition)
+SQL: SELECT conname, convalidated, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'public.capture_files'::regclass ORDER BY conname;
+{
+  "rows": [
+    {
+      "conname": "capture_files_content_type_chk",
+      "convalidated": true,
+      "def": "CHECK (((content_type IS NULL) OR (content_type = ANY (ARRAY['application/pdf'::text, 'image/jpeg'::text, 'image/png'::text, 'image/webp'::text]))))"
+    },
+    {
+      "conname": "capture_files_document_file_no_key",
+      "convalidated": true,
+      "def": "UNIQUE (document_id, file_no)"
+    },
+    {
+      "conname": "capture_files_document_fk",
+      "convalidated": true,
+      "def": "FOREIGN KEY (document_id, project_id, tenant_id) REFERENCES capture_documents(id, project_id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    },
+    {
+      "conname": "capture_files_file_no_check",
+      "convalidated": true,
+      "def": "CHECK ((file_no \u003e 0))"
+    },
+    {
+      "conname": "capture_files_ingest_status_check",
+      "convalidated": true,
+      "def": "CHECK ((ingest_status = ANY (ARRAY['pending'::text, 'stored'::text, 'rejected'::text, 'failed'::text])))"
+    },
+    {
+      "conname": "capture_files_media_index_check",
+      "convalidated": true,
+      "def": "CHECK ((media_index \u003e= 0))"
+    },
+    {
+      "conname": "capture_files_pkey",
+      "convalidated": true,
+      "def": "PRIMARY KEY (id)"
+    },
+    {
+      "conname": "capture_files_preview_state_check",
+      "convalidated": true,
+      "def": "CHECK ((preview_state = ANY (ARRAY['previewable'::text, 'not_previewable'::text])))"
+    },
+    {
+      "conname": "capture_files_reject_reason_check",
+      "convalidated": true,
+      "def": "CHECK ((reject_reason = ANY (ARRAY['wrong_type'::text, 'too_large'::text])))"
+    },
+    {
+      "conname": "capture_files_rejected_reason_chk",
+      "convalidated": true,
+      "def": "CHECK (((ingest_status \u003c\u003e 'rejected'::text) OR (reject_reason IS NOT NULL)))"
+    },
+    {
+      "conname": "capture_files_sha256_chk",
+      "convalidated": true,
+      "def": "CHECK (((sha256 IS NULL) OR (sha256 ~ '^[0-9a-f]{64}$'::text)))"
+    },
+    {
+      "conname": "capture_files_sid_media_index_key",
+      "convalidated": true,
+      "def": "UNIQUE (source_message_sid, media_index)"
+    },
+    {
+      "conname": "capture_files_storage_path_prefix_chk",
+      "convalidated": true,
+      "def": "CHECK (((storage_path IS NULL) OR starts_with(storage_path, ((((((tenant_id)::text || '/'::text) || (project_id)::text) || '/'::text) || (document_id)::text) || '/'::text))))"
+    },
+    {
+      "conname": "capture_files_stored_complete_chk",
+      "convalidated": true,
+      "def": "CHECK (((ingest_status \u003c\u003e 'stored'::text) OR ((storage_path IS NOT NULL) AND (content_type IS NOT NULL) AND (byte_size IS NOT NULL) AND (sha256 IS NOT NULL))))"
+    },
+    {
+      "conname": "capture_files_stored_size_chk",
+      "convalidated": true,
+      "def": "CHECK (((ingest_status \u003c\u003e 'stored'::text) OR (byte_size \u003c= 16777216)))"
+    },
+    {
+      "conname": "capture_files_tenant_id_fkey",
+      "convalidated": true,
+      "def": "FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    }
+  ],
+}
+
+---- 2. columns
+SQL: SELECT attnum, attname, format_type(atttypid, atttypmod) AS type, attnotnull, atthasdef FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attnum > 0 AND NOT attisdropped ORDER BY attnum;
+{
+  "rows": [
+    {
+      "atthasdef": true,
+      "attname": "id",
+      "attnotnull": true,
+      "attnum": 1,
+      "type": "uuid"
+    },
+    {
+      "atthasdef": true,
+      "attname": "created_at",
+      "attnotnull": true,
+      "attnum": 2,
+      "type": "timestamp with time zone"
+    },
+    {
+      "atthasdef": false,
+      "attname": "tenant_id",
+      "attnotnull": true,
+      "attnum": 3,
+      "type": "uuid"
+    },
+    {
+      "atthasdef": false,
+      "attname": "project_id",
+      "attnotnull": true,
+      "attnum": 4,
+      "type": "uuid"
+    },
+    {
+      "atthasdef": false,
+      "attname": "document_id",
+      "attnotnull": true,
+      "attnum": 5,
+      "type": "uuid"
+    },
+    {
+      "atthasdef": false,
+      "attname": "file_no",
+      "attnotnull": true,
+      "attnum": 6,
+      "type": "integer"
+    },
+    {
+      "atthasdef": false,
+      "attname": "source_message_sid",
+      "attnotnull": true,
+      "attnum": 7,
+      "type": "text"
+    },
+    {
+      "atthasdef": false,
+      "attname": "media_index",
+      "attnotnull": true,
+      "attnum": 8,
+      "type": "integer"
+    },
+    {
+      "atthasdef": false,
+      "attname": "claimed_content_type",
+      "attnotnull": false,
+      "attnum": 9,
+      "type": "text"
+    },
+    {
+      "atthasdef": false,
+      "attname": "content_type",
+      "attnotnull": false,
+      "attnum": 10,
+      "type": "text"
+    },
+    {
+      "atthasdef": false,
+      "attname": "byte_size",
+      "attnotnull": false,
+      "attnum": 11,
+      "type": "bigint"
+    },
+    {
+      "atthasdef": false,
+      "attname": "sha256",
+      "attnotnull": false,
+      "attnum": 12,
+      "type": "text"
+    },
+    {
+      "atthasdef": false,
+      "attname": "storage_path",
+      "attnotnull": false,
+      "attnum": 13,
+      "type": "text"
+    },
+    {
+      "atthasdef": true,
+      "attname": "ingest_status",
+      "attnotnull": true,
+      "attnum": 14,
+      "type": "text"
+    },
+    {
+      "atthasdef": false,
+      "attname": "reject_reason",
+      "attnotnull": false,
+      "attnum": 15,
+      "type": "text"
+    },
+    {
+      "atthasdef": false,
+      "attname": "preview_state",
+      "attnotnull": false,
+      "attnum": 16,
+      "type": "text"
+    }
+  ],
+}
+
+---- 3. table ACL, owner, RLS flags
+SQL: SELECT relacl::text AS table_acl, relowner::regrole::text AS owner, relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'public.capture_files'::regclass;
+{
+  "rows": [
+    {
+      "owner": "postgres",
+      "relforcerowsecurity": false,
+      "relrowsecurity": true,
+      "table_acl": "{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}"
+    }
+  ],
+}
+
+---- 4. column ACLs
+SQL: SELECT attname, attacl::text AS column_acl FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attacl IS NOT NULL ORDER BY attname;
+{
+  "rows": [],
+}
+
+---- 5. triggers (all, including internal)
+SQL: SELECT tgname, tgisinternal, tgenabled, pg_get_triggerdef(oid) AS def FROM pg_trigger WHERE tgrelid = 'public.capture_files'::regclass ORDER BY tgname;
+{
+  "rows": [
+    {
+      "def": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_27490\" AFTER INSERT ON public.capture_files FROM tenants NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+      "tgenabled": "O",
+      "tgisinternal": true,
+      "tgname": "RI_ConstraintTrigger_c_27490"
+    },
+    {
+      "def": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_27491\" AFTER UPDATE ON public.capture_files FROM tenants NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+      "tgenabled": "O",
+      "tgisinternal": true,
+      "tgname": "RI_ConstraintTrigger_c_27491"
+    },
+    {
+      "def": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_27495\" AFTER INSERT ON public.capture_files FROM capture_documents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+      "tgenabled": "O",
+      "tgisinternal": true,
+      "tgname": "RI_ConstraintTrigger_c_27495"
+    },
+    {
+      "def": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_27496\" AFTER UPDATE ON public.capture_files FROM capture_documents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+      "tgenabled": "O",
+      "tgisinternal": true,
+      "tgname": "RI_ConstraintTrigger_c_27496"
+    }
+  ],
+}
+
+---- 6. table and column comments
+SQL: SELECT obj_description('public.capture_files'::regclass, 'pg_class') AS table_comment, (SELECT string_agg(a.attname || '=' || coalesce(col_description(a.attrelid, a.attnum), '-'), ',' ORDER BY a.attnum) FROM pg_attribute a WHERE a.attrelid = 'public.capture_files'::regclass AND a.attnum > 0 AND NOT a.attisdropped) AS column_comments;
+{
+  "rows": [
+    {
+      "column_comments": "id=-,created_at=-,tenant_id=-,project_id=-,document_id=-,file_no=-,source_message_sid=-,media_index=-,claimed_content_type=-,content_type=-,byte_size=-,sha256=-,storage_path=-,ingest_status=-,reject_reason=-,preview_state=-",
+      "table_comment": "Capture engine slice 1a: one row per page/photo of a capture_documents row. Bytes live in the capture-documents bucket."
+    }
+  ],
+}
+
+---- 7. indexes
+SQL: SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'capture_files' ORDER BY indexname;
+{
+  "rows": [
+    {
+      "indexdef": "CREATE UNIQUE INDEX capture_files_document_file_no_key ON public.capture_files USING btree (document_id, file_no)",
+      "indexname": "capture_files_document_file_no_key"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX capture_files_pkey ON public.capture_files USING btree (id)",
+      "indexname": "capture_files_pkey"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX capture_files_sid_media_index_key ON public.capture_files USING btree (source_message_sid, media_index)",
+      "indexname": "capture_files_sid_media_index_key"
+    }
+  ],
+}
+
+---- 8. RLS policies
+SQL: SELECT policyname, cmd, roles::text, qual FROM pg_policies WHERE schemaname = 'public' AND tablename = 'capture_files' ORDER BY policyname;
+{
+  "rows": [
+    {
+      "cmd": "SELECT",
+      "policyname": "capture_files_select",
+      "qual": "((tenant_id = get_user_tenant_id()) AND (EXISTS ( SELECT 1\n   FROM (project_members pm\n     JOIN users u ON ((u.id = pm.user_id)))\n  WHERE ((pm.project_id = capture_files.project_id) AND (pm.role = 'pm'::text) AND (u.auth_id = ( SELECT auth.uid() AS uid)) AND (u.status = 'active'::text)))))",
+      "roles": "{authenticated}"
+    }
+  ],
+}
+
+---- 9. row count
+SQL: SELECT count(*) AS total_rows FROM public.capture_files;
+{
+  "rows": [
+    {
+      "total_rows": 0
+    }
+  ],
+}
+
+== end ==
