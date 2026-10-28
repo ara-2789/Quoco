@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/nextjs'
 import { createServiceClient } from '@/lib/supabase/service'
 import { istParts } from '@/lib/daily-logs/status'
 import { CHECKIN_CHECKPOINTS } from '@/lib/daily-logs/cutoffs'
-import { readRoutingState, expireStaleMaterialInward, mapSessionFlowToCheckinFlow, claimMediaNudge } from './session'
+import { readRoutingState, expireStaleMaterialInward, mapSessionFlowToCheckinFlow, claimMediaNudge, type RoutingState } from './session'
 import { isCaptureDigit4Live } from './capture-switch'
 import {
   MI_SESSION_ENDED_REPLY,
@@ -390,6 +390,11 @@ export interface InboundRouteResult {
   reply: string
   /** Null for every fallback branch (nothing here starts morning/evening any more -- the cron is the sole starter for those). 'hindrance' as of 2026-09-07: the item1 branch below is the one real exception, since a leading "1" genuinely does start a flow directly from idle -- see that branch's own comment for why item 1 is different from morning/evening here. Non-null otherwise only via dispatchInboundTurn's own delegation when a flow is already active. */
   resolvedFlow: 'morning' | 'evening' | 'hindrance' | 'invoice' | null
+  /**
+   * C4b: set (with reply '') when a PDF-bearing message (RouteParams.documentMedia) is NOT for a live material-inward
+   * session. The webhook then answers exactly as it did before C4b (UNSUPPORTED_MEDIA_REPLY + its Sentry event).
+   */
+  unsupportedMedia?: true
 }
 
 interface RouteParams {
@@ -404,6 +409,13 @@ interface RouteParams {
    * 'invoice' session); optional here so the other callers and tests are unchanged.
    */
   messageSid?: string
+  /**
+   * C4b: usable items (image/* or application/pdf) of a message that carries at least one PDF -- the webhook's
+   * classifyCaptureDocument said 'document'. Such a message is handled ONLY inside a live 'invoice' session; every
+   * other state returns { unsupportedMedia: true } before any dispatch, S-3, idle-photo or nudge branch.
+   * isPhoto is false for these.
+   */
+  documentMedia?: MediaItem[]
   /**
    * Whether route.ts's classifyMediaReply resolved this message as a
    * PHOTO (never voice -- that's intercepted upstream, unconditionally,
@@ -718,6 +730,21 @@ async function handleIdlePhoto(params: RouteParams, supabase: SupabaseClient): P
 }
 
 /**
+ * C4b (decision Q9, narrowed): the router's routing read (readRoutingState / expireStaleMaterialInward) threw on a
+ * PDF-bearing message. One counts-only error event -- never err.message (it embeds the phone), no URL, body or ids --
+ * then hand the message back to the webhook, which answers exactly as before C4b.
+ */
+function documentRoutingReadFailed(media: readonly MediaItem[]): InboundRouteResult {
+  Sentry.captureMessage('capture routing read failed on a document', {
+    level: 'error',
+    fingerprint: ['capture-inbound', 'routing_read_failed'],
+    tags: { feature: 'capture-inbound' },
+    extra: { mediaCount: media.length, contentTypes: media.map((m) => m.contentType) },
+  })
+  return { reply: '', resolvedFlow: null, unsupportedMedia: true }
+}
+
+/**
  * Route an inbound message: delegate to dispatchInboundTurn if a flow is
  * already active, otherwise dispatch a leading "1" into item 1's flow, or
  * return the composed idle reply for everything else. See this file's own
@@ -727,7 +754,20 @@ async function handleIdlePhoto(params: RouteParams, supabase: SupabaseClient): P
 export async function routeInboundMessage(params: RouteParams): Promise<InboundRouteResult> {
   const supabase = params.supabaseClient ?? createServiceClient()
   const now = params.now !== undefined ? new Date(params.now) : new Date()
-  const state = await readRoutingState(params.phoneNumber, now, supabase)
+  let state: RoutingState
+  try {
+    state = await readRoutingState(params.phoneNumber, now, supabase)
+  } catch (err) {
+    if (params.documentMedia === undefined) throw err
+    return documentRoutingReadFailed(params.documentMedia)
+  }
+
+  // C4b: a PDF-bearing message that is not for a live material-inward row goes straight back to the webhook, which
+  // answers exactly as before C4b. Placed BEFORE the expire step, the 'safety' warning, the S-3 guard, the idle-photo
+  // nudge and every dispatch, so it writes nothing and raises no event of its own.
+  if (params.documentMedia !== undefined && state.currentFlow !== 'invoice') {
+    return { reply: '', resolvedFlow: null, unsupportedMedia: true }
+  }
 
   // EXPIRE FIRST (PR-C C3, docs/plans/pr-c-plan.md sections 3c and 3f). A
   // material-inward ('invoice') session that has expired is cleared BEFORE any
@@ -740,13 +780,21 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
   if (state.currentFlow === 'invoice') {
     const expiresMs = state.expiresAt !== null ? new Date(state.expiresAt).getTime() : now.getTime()
     const asOf = state.dayStale ? new Date(Math.max(now.getTime(), expiresMs)) : now
-    const cleared = await expireStaleMaterialInward(params.phoneNumber, asOf, supabase)
+    let cleared: boolean
+    try {
+      cleared = await expireStaleMaterialInward(params.phoneNumber, asOf, supabase)
+    } catch (err) {
+      // C4b (decision Q9, narrowed): only the ROUTING reads of a PDF message are caught here. The handler call below
+      // is deliberately outside any catch.
+      if (params.documentMedia === undefined) throw err
+      return documentRoutingReadFailed(params.documentMedia)
+    }
     if (cleared) {
       // D1(d): the inbound message -- text, photo, any media -- is NOT
       // processed; the engineer gets the one-shot ended reply. The row is
       // already cleared, so the next message takes the ordinary idle path and
       // this reply never repeats.
-      const media = params.media ?? []
+      const media = params.documentMedia ?? params.media ?? []
       // C4a (plan section 3f step 3, Aravind's rev 2): a TEXT-ONLY leading "4"
       // right after the session ended, on a phone where digit 4 is live, starts
       // the flow at once instead of getting the ended reply. The row is cleared,
@@ -755,6 +803,7 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
       const startsFresh =
         media.length === 0 &&
         params.isPhoto !== true &&
+        params.documentMedia === undefined &&
         isLeadingDigitFour(params.message) &&
         isCaptureDigit4Live(params.phoneNumber)
       if (!startsFresh) {
@@ -777,8 +826,9 @@ export async function routeInboundMessage(params: RouteParams): Promise<InboundR
           projectId: params.projectId,
           message: params.message,
           messageSid: params.messageSid,
-          isPhoto: params.isPhoto === true,
-          media: params.media ?? [],
+          // C4b: a PDF message counts as "files present" even if no item was extractable (-> MI_UNSUPPORTED_FILE_REPLY).
+          isPhoto: params.isPhoto === true || params.documentMedia !== undefined,
+          media: params.documentMedia ?? params.media ?? [],
           ...(params.now !== undefined ? { now: params.now } : {}),
           expiresAt: state.expiresAt,
         },
