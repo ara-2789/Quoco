@@ -75,6 +75,21 @@ Order: **C1 → C3 → C2 (review → test-db apply → DOWN rehearsal → CI �
 
 Rev 3, 2026-10-26 (design review; Aravind approved the C3 block): the digit-4 start branch, T-D1-6 and the allowlisted-start control of AT-DARK-1 move from C3 to C4. In C3 a live 'invoice' session has no handler: Sentry error + idle path (T-INV-LIVE), unreachable in prod because nothing creates one. T-D1-4's PDF part moves to C4.
 
+Rev 4, 2026-10-28, per Aravind: C4 is split into **C4a** (this PR: the handler, the digit-4 start branch, the S-F-1 catch, the S-3 plain question list, the race outcomes, `messageSid` passed from the webhook; all dark) and **C4b** (the webhook PDF gate, item 6; T-D1-4's PDF half; T-PDF-GATE-*; the T-S3-5 rewrite). Answers to the C4 plan's questions, one line each:
+- Q1: the "4" rule is the `classifyAdhocInput` regex; a new predicate `isLeadingDigitFour`, `classifyAdhocInput` unchanged.
+- Q2: `MI_MENU_LINE` is defined in `material-inward-strings.ts` (unused until C6); a test asserts `buildIdleMenu` does not contain it.
+- Q3: the separator between composed parts is "\n".
+- Q4: `MI_FILE_RECEIVED` is one function (n = 1 and n > 1 texts); `file_attached` replies with the file line, "\n", then the same prompt again (ack question at step 3, note prompt at step 4).
+- Q5: not applicable in C4a (no webhook gate change); `MI_UNSUPPORTED_FILE_REPLY` is defined and used only for "files present but none usable" inside the handler.
+- Q6a: `wrong_flow` replies `CHECKIN_RESET_EXPLAIN_REPLY`, "\n", the current check-in question (`MORNING_QUESTIONS` / `EVENING_QUESTIONS[current_step]`); any other `current_flow` throws an error with no phone or ids.
+- Q6b: an RPC failure on a TEXT turn propagates (500) like the other flows; the S-F catch covers file turns only.
+- Q7: S-F Sentry `extra` = `{mediaCount, contentTypes, errorCode}`; `errorCode` is `error.code` only if it matches `/^[A-Z0-9]{5}$/`, else `'unknown'`; never `error.message`.
+- Q8: S-F wraps the handler's RPC and post-RPC reads only, not the router's reads.
+- Q9: not applicable in C4a.
+- Q10: `messageSid` is added to `RouteParams` and `'invoice'` to `InboundRouteResult.resolvedFlow`; `documentMedia` and `unsupportedMedia` wait for C4b.
+- Q11: `test/capture-router.test.ts` is edited as planned, each edit marked "C4a:"; T-S3-5 stays unedited in C4a.
+- Q12: split into C4a and C4b (this note).
+
 ---
 
 ## 3. Blockers
@@ -192,7 +207,7 @@ The IST-midnight case (23:59 session answered at 00:01) is not practical by hand
 **Router flow (C3), inside `routeInboundMessage` before any flow dispatch:**
 1. `row = readRoutingState(phone, now)`; `dayStale = istDate(now) !== istDate(row.updated_at)` (the SS:100 comparison).
 2. If `row.current_flow === 'invoice'`: `cleared = expire_stale_material_inward(phone, dayStale ? max(now, row.expires_at) : now)`.
-3. If `cleared` → return `{ reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }`. ~~The inbound message — text, photo, PDF or a bare `4` — is NOT processed (OQ1, OQ11).~~ Rev 2, 2026-10-26, per Aravind: The inbound message — text, photo or PDF — is NOT processed (OQ11). **A bare 4 sent as the first message after the session ended starts the flow at once. It does not get MI_SESSION_ENDED_REPLY.** Mechanism `[inferred]`: after `cleared` is true, if `classifyAdhocInput` (IS:257-265) returns the digit-4 kind and the phone's switch is live (section 4), the router skips the ended reply and falls into the start branch; any other message gets the ended reply. `classifyAdhocInput` is a leading-digit rule (IS:258), so "4 bags" would also count; whether that is wanted is an unknown, listed in the Appendix.
+3. If `cleared` → return `{ reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }`. ~~The inbound message — text, photo, PDF or a bare `4` — is NOT processed (OQ1, OQ11).~~ Rev 2, 2026-10-26, per Aravind: The inbound message — text, photo or PDF — is NOT processed (OQ11). **A bare 4 sent as the first message after the session ended starts the flow at once. It does not get MI_SESSION_ENDED_REPLY.** Mechanism `[inferred]`: after `cleared` is true, ~~if `classifyAdhocInput` (IS:257-265) returns the digit-4 kind and the phone's switch is live (section 4), the router skips the ended reply and falls into the start branch; any other message gets the ended reply. `classifyAdhocInput` is a leading-digit rule (IS:258), so "4 bags" would also count; whether that is wanted is an unknown, listed in the Appendix.~~ DATED CORRECTION (2026-10-28, C4a, per Aravind): there is no "digit-4 kind". `AdhocInputKind` is `item1|item2|item_reserved|unrecognized` and `classifyAdhocInput('4')` is `item_reserved` (IS:260-270); `classifyAdhocInput` is unchanged. A separate predicate `isLeadingDigitFour(body)` (same regex, `/^([0-9])(?!\d)/` after `trimStart`, so "4 bags" counts, decision Q1) is used: after `cleared`, if the message has no media, `isLeadingDigitFour` is true and the switch is live for the phone, the router skips the ended reply and falls into the start branch; any other message gets the ended reply.
 4. Detection of (i): `cleared` with `dayStale=false`. Detection of (ii): `cleared` with `dayStale=true`. Both use the same reply.
 5. Race outcomes inside the handler (C4): RPC outcome `expired` (S050:154-162) → the same reply; RPC outcome `idle` from a day-stale in-memory reset (S050:178-179) → clear as in step 2, then the same reply `[inferred]`. These two are race paths: CI-only "not verified locally" (CM §0).
 6. Morning, evening and hindrance rows that are day-stale keep today's behaviour: null → idle path, no ended reply (T-A27-7, V3:269).
