@@ -12,7 +12,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 
 const { captureMessage, captureException } = vi.hoisted(() => ({
   captureMessage: vi.fn<(message: string, options?: Record<string, unknown>) => string>(() => 'mock-event-id'),
@@ -546,10 +546,32 @@ function sourcesMentioning(root: string, needle: string): string[] {
   return hits
 }
 
+// 2026-10-29 CI fix-up (PR-C C5, PR #344): this guard used to say NO file under lib/ or app/ mentions capture_files; its
+// comment above said it held "until C5". C5 is that planned exception: lib/media/capture-ingest.ts is the one writer
+// of capture_files (UPDATE only, through the 051 column grant) and app/api/jobs/tick/route.ts names the table only in
+// an event field. The guard is narrowed, not removed: exactly those two files, no insert/upsert/delete anywhere in the
+// writer, and the tick route never queries the table itself.
+const C5_ALLOWED = ['app/api/jobs/tick/route.ts', 'lib/media/capture-ingest.ts']
+
 describe('T-NOWRITE-1', () => {
-  it('no file under lib/ or app/ mentions capture_files', () => {
-    const root = resolve(__dirname, '..')
-    expect([...sourcesMentioning(join(root, 'lib'), 'capture_files'), ...sourcesMentioning(join(root, 'app'), 'capture_files')]).toEqual([])
+  const root = resolve(__dirname, '..')
+  const rel = (p: string) => relative(root, p).split(sep).join('/')
+
+  it('(a) exactly two files under lib/ and app/ mention capture_files: the C5 handler and the tick route', () => {
+    const hits = [...sourcesMentioning(join(root, 'lib'), 'capture_files'), ...sourcesMentioning(join(root, 'app'), 'capture_files')]
+    expect(hits.map(rel).sort()).toEqual(C5_ALLOWED)
+  })
+
+  it('(b) the C5 handler never inserts, upserts or deletes on any table', () => {
+    const src = readFileSync(join(root, 'lib/media/capture-ingest.ts'), 'utf8')
+    expect(src).not.toMatch(/\.insert\(/)
+    expect(src).not.toMatch(/\.upsert\(/)
+    expect(src).not.toMatch(/\.delete\(/)
+  })
+
+  it("(c) the tick route never queries capture_files itself (it may only name the table in an event field)", () => {
+    const src = readFileSync(join(root, 'app/api/jobs/tick/route.ts'), 'utf8')
+    expect(src).not.toMatch(/\.from\(\s*['"]capture_files['"]\s*\)/)
   })
 
   it('control: the scanner does find a file that mentions it (this test file)', () => {

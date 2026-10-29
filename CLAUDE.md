@@ -806,7 +806,7 @@ their FLOWS and dashboard views are not built in the Spine.
       is not a live warning against work still to be sized now that both
       halves are built and scheduled.
 - Billing: Razorpay payment links — NOT Stripe (Stripe paused India onboarding)
-- Deployment: Vercel Pro — required for 6 IST cron times + 60s function timeout
+- Deployment: Vercel Pro — required for 6 IST cron times + ~~60s function timeout~~ (2026-10-28: Vercel project default observed 300 s (per Aravind, console screenshot))
 - Email: Resend — DPR delivery to owner
    (full incident evidence: `docs/claude-rules-history/env-and-stack-decisions.md`)
   THE CONSTRAINT THIS CARRIES, recorded so it isn't rediscovered as a

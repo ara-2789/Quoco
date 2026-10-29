@@ -13,6 +13,11 @@ import {
   type HindranceMediaIngestJobPayload,
 } from '@/lib/media/hindrance-ingest'
 import {
+  handleCaptureIngestJob,
+  markCaptureIngestFailed,
+  type CaptureIngestJobPayload,
+} from '@/lib/media/capture-ingest'
+import {
   sweepStaleMorningSessions,
   reportMorningSweepAnomalies,
   reportMorningSweepError,
@@ -71,6 +76,14 @@ async function dispatchJob(job: Job, client: SupabaseClient): Promise<void> {
       // A sibling of media_ingest, not a branch inside it.
       await handleHindranceMediaIngestJob(job.payload as unknown as HindranceMediaIngestJobPayload, {
         supabaseClient: client,
+      })
+      return
+    case 'capture_ingest':
+      // PR-C C5 (docs/plans/pr-c-c5-plan.md) -- see lib/media/capture-ingest.ts's own header. Created only by
+      // migration 050's apply_material_inward_turn; nothing creates one while digit 4 is dark.
+      await handleCaptureIngestJob(job.payload as unknown as CaptureIngestJobPayload, {
+        supabaseClient: client,
+        jobId: job.id,
       })
       return
     // Placeholder handler — proves the claim/complete/fail loop works
@@ -245,6 +258,22 @@ export async function runJobsTick(client: SupabaseClient) {
         if (!willRetry && job.type === 'hindrance_media_ingest') {
           const payload = job.payload as unknown as HindranceMediaIngestJobPayload
           await markHindranceMediaIngestFailed(client, payload, message)
+        }
+        // capture_ingest dead letter (PR-C C5) -- see markCaptureIngestFailed. Wrapped (review N2): if the dead-letter
+        // write itself fails, the tick must not reject and silently lose the alert; it sends ONE counts-only event
+        // (table and job id only -- no payload, no error text, which could carry identifiers).
+        if (!willRetry && job.type === 'capture_ingest') {
+          const payload = job.payload as unknown as CaptureIngestJobPayload
+          try {
+            await markCaptureIngestFailed(client, payload, message, job.id)
+          } catch {
+            Sentry.captureMessage('capture_ingest: dead-letter write failed', {
+              level: 'error',
+              fingerprint: ['capture-ingest', 'dead_letter_failed'],
+              tags: { feature: 'capture-ingest' },
+              extra: { table: 'capture_files', jobId: job.id },
+            })
+          }
         }
         return { id: job.id, status: 'failed', willRetry, error: message }
       }

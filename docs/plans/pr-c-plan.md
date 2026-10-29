@@ -92,6 +92,12 @@ Rev 4, 2026-10-28, per Aravind: C4 is split into **C4a** (this PR: the handler, 
 
 2026-10-28, per Aravind: C4a merged as `f55431c8c846ff35a48d3f5c972219fc03b16b3d` (PR #342), CI https://github.com/ara-2789/Quoco/actions/runs/40640956232 (headSha `ae09071d`, success). Residual risk: a post-RPC read failure after a committed RPC tells the engineer to resend, so the PM may see a duplicate file `[inferred, T-SF-1c]`. C6 blocker added: `wrong_flow` over a hindrance/safety row throws (no approved string): a string is owed, or silence is accepted. C4b (this branch) decisions: Q5, video / audio-in-a-later-item / image+video / untyped media stay stopped at the webhook with today's reply even inside an 'invoice' session; Q9, if the router throws on a PDF message the webhook answers `UNSUPPORTED_MEDIA_REPLY` plus today's Sentry event.
 
+Rev 5, 2026-10-28, per Aravind: the C5 decisions (answers Q1-Q16, review rulings S1-S5, N1, N2) are in `docs/plans/pr-c-c5-plan.md`, section "Decisions and review amendments, 2026-10-28"; the external design review is `docs/reviews/c5-plan-review-round-1.md` (GO). Carried into this plan:
+- **PITR for C5 = option (b):** a hashed "PITR substituted" readback (`capture_files` by status, `jobs` of type `capture_ingest` by status, the object count under the bucket) taken just before the D-30 test, when the first real rows could appear. Record the word "substituted".
+- **C6 entry gate gains two items.** (1) A scan for jobs stuck in `running` (no reaper exists; `claimJobs` selects only `pending`/`failed`) with a deduplicated alert, or a reaper, and the same scan or the PM page's 15-minute rule (V3:119) covering `capture_files` rows left `pending` after a non-retryable alert, unless PR-D's 15-minute rule is already live. (2) The D-30 test includes one PDF from a scanner app (some write a prefix before `%PDF-`; C5 accepts the header anywhere in the first 1024 bytes).
+- **Runbook line (C5 rollback):** after a C5 revert, in-flight `capture_ingest` jobs burn their attempts and die with no data change; their files stay `pending`. Never run 051's DOWN.
+- **C5 order:** Q14 ("merge C5 before C4b") was overtaken: C4b merged as `a84f6e53` before the review.
+
 ---
 
 ## 3. Blockers
