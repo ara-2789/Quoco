@@ -1184,6 +1184,25 @@ same shape as this file's other seven rules; it verifies the DOWN section
 is INERT when the file is applied normally, not that its SQL is correct
 (only a real rehearsal, the rule immediately above, can verify that).
 
+Testing and session rules added 2026-10-30 (C5 and S1 retrospectives; the evidence is in
+docs/reviews/c5-review-package.md "2026-10-29 CI fix-up" and docs/reviews/s1-build-record.md)
+- DUMMY CREDENTIALS NEVER LOOK REAL. Test account SIDs, tokens, keys and ids are obviously fake
+  placeholders (for example `ACxxxxS1TEST`, `S1-TENANT-0000`), never a real-shaped value such as `AC` plus
+  32 hex digits: GitHub push protection rightly refuses those, and a scanner cannot tell a fixture from a leak.
+- CONTROLS PRINT HEAD SHA AND FILE SHA256. Every control run (a mutation, or an env switch that
+  neutralises a file) prints `git rev-parse HEAD` and the sha256 of the file it mutates or neutralises, and
+  must go RED at the row it is meant to hit, not merely somewhere.
+- PII GUARDS NEED ENVELOPE-LEVEL TESTS, NOT MOCKED SENTRY. A test that mocks `@sentry/nextjs` only sees what
+  the code explicitly passes to it; what auto-instrumentation adds (breadcrumbs, span names and attributes,
+  URLs) exists only in the envelopes a REAL client produces. A PII guard is tested against captured envelopes.
+- RUN EVERY TEST FILE IN THE SLICE'S FAMILY BEFORE CLAIMING GREEN. A slice that changes `capture-*` code runs
+  all `test/capture-*.test.ts` and `test/unit/capture-*.test.ts` (plus the tick-dispatch test), not only the
+  files it wrote. (C5's first push failed CI on `T-NOWRITE-1` in a file the slice did not run.)
+- SEARCH FOR "until <slice>" GUARDS BEFORE A CODE GO. `grep` for comments and tests that say a rule holds
+  "until C5" (or any slice name) before approving code that is that slice: such a guard fails the moment the
+  slice lands.
+- `git pull --ff-only` ON `main` BEFORE EVERY SESSION, and print HEAD against the expected SHA before any work.
+
 How to verify locally (ask me to run these; show me the command)
 - DB change: run migrations against a Supabase BRANCH first, never prod.
   Confirm no errors, then I review before it touches the real database.
