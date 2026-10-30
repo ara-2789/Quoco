@@ -10,12 +10,17 @@ import {
   scrubSpan,
   scrubTransactionEvent,
 } from "./lib/observability/scrub-pii";
+import { ownOriginTraceTargets } from "./lib/observability/trace-targets";
 
 Sentry.init({
   dsn: "https://0ee933a1c02d1564624fb888891080f3@o4511670684483584.ingest.us.sentry.io/4511670692347904",
 
   // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
   tracesSampleRate: 1,
+
+  // S1: sentry-trace and baggage go to the app's own origin only (NEXT_PUBLIC_APP_URL is inlined at build) and
+  // to relative same-origin URLs. Unset, they go to every host. Never leave this undefined.
+  tracePropagationTargets: ownOriginTraceTargets(process.env.NEXT_PUBLIC_APP_URL),
   // Enable logs to be sent to Sentry
   enableLogs: true,
 
