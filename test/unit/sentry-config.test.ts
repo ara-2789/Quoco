@@ -20,7 +20,17 @@ vi.mock('@sentry/nextjs', () => ({
   captureRequestError: vi.fn(),
 }))
 
+// S1 additions (plan A4, B, J6): tracePropagationTargets limited to own origin in all three
+// runtimes, and tracesSampler (0.02 for the tick, 1 otherwise) in the server runtime only.
+//   TARGETS_CONTROL=undefined  deletes tracePropagationTargets before asserting (propagate-to-all)
+//   TARGETS_CONTROL=all        substitutes /.*/ (the third-party "does not match" assertions must FAIL)
+//   SAMPLER_CONTROL=const1     replaces tracesSampler with () => 1 (the tick sampler wiring row must FAIL)
+const APP_URL = 'https://app.example.test'
+
 type InitOptions = {
+  tracesSampleRate?: unknown
+  tracesSampler?: unknown
+  tracePropagationTargets?: unknown
   dataCollection?: Record<string, unknown>
   beforeSend?: unknown
   beforeBreadcrumb?: unknown
@@ -42,11 +52,18 @@ async function initOptionsFor(load: () => Promise<unknown>): Promise<{ options: 
   // instance the config file just imported (identity comparison below).
   vi.resetModules()
   init.mockClear()
+  process.env.NEXT_PUBLIC_APP_URL = APP_URL
   await load()
   expect(init).toHaveBeenCalledTimes(1)
   const scrub = await import('@/lib/observability/scrub-pii')
   let options = init.mock.calls[0][0] as InitOptions
   if (process.env.CONFIG_CONTROL === 'empty') options = { ...options, dataCollection: {} }
+  if (process.env.TARGETS_CONTROL === 'undefined') {
+    options = { ...options }
+    delete options.tracePropagationTargets
+  }
+  if (process.env.TARGETS_CONTROL === 'all') options = { ...options, tracePropagationTargets: [/.*/] }
+  if (process.env.SAMPLER_CONTROL === 'const1' && options.tracesSampler !== undefined) options = { ...options, tracesSampler: () => 1 }
   if (process.env.HOOKS_CONTROL === 'none') {
     options = { ...options }
     for (const hook of HOOK_NAMES) delete options[hook]
@@ -70,7 +87,7 @@ const PHONE = '+919876543210'
 const PHONE_DIGITS = '9876543210'
 type Hook = (item: unknown) => unknown
 
-describe.each(RUNTIMES)('Sentry init options: %s runtime', (_name, load) => {
+describe.each(RUNTIMES)('Sentry init options: %s runtime', (runtimeName, load) => {
   let options: InitOptions
   let scrub: Scrub
   beforeEach(async () => {
@@ -91,6 +108,39 @@ describe.each(RUNTIMES)('Sentry init options: %s runtime', (_name, load) => {
 
   it('leaves frameContextLines at its default', () => {
     expect(options.dataCollection).not.toHaveProperty('frameContextLines')
+  })
+
+  it('tracePropagationTargets is a defined array limited to the own origin (S1/A4)', () => {
+    const targets = options.tracePropagationTargets
+    expect(Array.isArray(targets), 'tracePropagationTargets must be set (unset = propagate to every host)').toBe(true)
+    const matches = (url: string) => (targets as (string | RegExp)[]).some((t) => (typeof t === 'string' ? url.includes(t) : t.test(url)))
+    expect(matches(`${APP_URL}/api/x`)).toBe(true)
+    expect(matches('/api/x')).toBe(true)
+    for (const third of [
+      'https://api.twilio.com/x',
+      'https://xyz.supabase.co/rest/v1/x',
+      'https://api.anthropic.com/v1/messages',
+      'https://api.resend.com/emails',
+      'https://evil-app.example.test/',
+      '//attacker.test/x',
+    ]) {
+      expect(matches(third), third).toBe(false)
+    }
+  })
+
+  it('sampling: the server runtime has the tick tracesSampler and NO tracesSampleRate; edge and client keep tracesSampleRate 1 and no sampler (S1/B)', () => {
+    if (runtimeName === 'server') {
+      expect(options.tracesSampler).toBeTypeOf('function')
+      expect(options).not.toHaveProperty('tracesSampleRate')
+      const inheritOrSampleWith = (fallback: number) => fallback
+      const tick = { name: 'GET /api/jobs/tick', attributes: { 'http.target': '/api/jobs/tick' }, inheritOrSampleWith }
+      const other = { name: 'GET /api/x', attributes: { 'http.target': '/api/x' }, inheritOrSampleWith }
+      expect((options.tracesSampler as (c: unknown) => number)(tick)).toBe(0.02)
+      expect((options.tracesSampler as (c: unknown) => number)(other)).toBe(1)
+    } else {
+      expect(options.tracesSampleRate).toBe(1)
+      expect(options.tracesSampler).toBeUndefined()
+    }
   })
 
   it('wires the scrubber into all five hooks', () => {
