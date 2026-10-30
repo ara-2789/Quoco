@@ -484,7 +484,7 @@ type FileOutcome =
   | { kind: 'stored' }
   | { kind: 'rejected' }
   | { kind: 'already_done' }
-  | { kind: 'quarantined'; event: string; code?: string }
+  | { kind: 'quarantined'; event: string; code?: string; marked: boolean }
   | { kind: 'anomaly'; event: string; code?: string }
   | { kind: 'retry'; code: string }
 
@@ -540,6 +540,7 @@ async function finishFile(ctx: JobContext, row: FileRow, set: UpdateSet & { inge
       if (set.ingest_status === 'stored' && cur.ingest_status === 'stored' && cur.sha256 === set.sha256 && cur.storage_path === set.storage_path) {
         return { kind: 'already_done' }
       }
+      // Rejected rows compare reject_reason only (not content_type), unlike stored rows above (c5 review N2).
       if (set.ingest_status === 'rejected' && cur.ingest_status === 'rejected' && cur.reject_reason === set.reject_reason) {
         return { kind: 'already_done' }
       }
@@ -555,7 +556,7 @@ async function markFailed(ctx: JobContext, row: FileRow, event: string, code?: s
   const where = { ids: [row.id], tenantId: row.tenant_id, documentId: row.document_id }
   const res = await guardedUpdate(ctx.supabase, ctx.budget, ctx.limits, where, { ingest_status: 'failed' })
   if (res.errored && !NON_RETRY_DB_CODES.has(res.errorCode ?? '')) return { kind: 'retry', code: 'update' }
-  return { kind: 'quarantined', event, code }
+  return { kind: 'quarantined', event, code, marked: !res.errored && res.rows === 1 }
 }
 
 async function processOneFile(ctx: JobContext, row: FileRow, file: CaptureIngestFile): Promise<FileOutcome> {
@@ -710,7 +711,7 @@ export async function handleCaptureIngestJob(rawPayload: unknown, deps: CaptureI
   }
 
   const ctx: JobContext = { supabase, fetchFn, budget, limits, authorization, accountSid }
-  const eventCounts = new Map<string, { n: number; code?: string }>()
+  const eventCounts = new Map<string, { n: number; code?: string; marked: number; quarantine: boolean }>()
   const retryCodes = new Map<string, number>()
   const bumpRetry = (code: string): void => {
     counts.retryable++
@@ -755,8 +756,9 @@ export async function handleCaptureIngestJob(rawPayload: unknown, deps: CaptureI
       case 'anomaly': {
         if (outcome.kind === 'quarantined') counts.quarantined++
         else counts.anomalies++
-        const cur = eventCounts.get(outcome.event) ?? { n: 0 }
+        const cur = eventCounts.get(outcome.event) ?? { n: 0, marked: 0, quarantine: outcome.kind === 'quarantined' }
         cur.n++
+        if (outcome.kind === 'quarantined' && outcome.marked) cur.marked++
         if (outcome.code && !cur.code) cur.code = outcome.code
         eventCounts.set(outcome.event, cur)
         break
@@ -767,8 +769,13 @@ export async function handleCaptureIngestJob(rawPayload: unknown, deps: CaptureI
     }
   }
 
-  for (const [kind, { n, code }] of eventCounts) {
-    captureEvent(kind, jobId, { fileCount: payload.files.length, count: n, ...(code ? { errorCode: code } : {}) })
+  for (const [kind, { n, code, marked, quarantine }] of eventCounts) {
+    captureEvent(kind, jobId, {
+      fileCount: payload.files.length,
+      count: n,
+      ...(quarantine ? { markedCount: marked } : {}),
+      ...(code ? { errorCode: code } : {}),
+    })
   }
 
   if (counts.retryable > 0) {

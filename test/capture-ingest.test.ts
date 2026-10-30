@@ -628,7 +628,7 @@ describe('T-S2: a deterministic storage 4xx other than duplicate ends the file a
     const r = await run(payload, f.fn, inst)
     expect(r.error).toBeUndefined()
     expect(kindsOf(r)).toEqual(['storage_rejected'])
-    expect(extraOf(r.events[0])).toMatchObject({ errorCode: '415', count: 1 })
+    expect(extraOf(r.events[0])).toMatchObject({ errorCode: '415', count: 1, markedCount: 1 })
     expect(r.counts).toMatchObject({ quarantined: 1, retryable: 0 })
     expect((await rowsOf(docId))[0]).toMatchObject({ ingest_status: 'failed', content_type: null, byte_size: null, storage_path: null })
     expect(Object.keys(inst.updates[0].set)).toEqual(['ingest_status'])
@@ -688,6 +688,7 @@ describe('T-RETRY: the object already exists at the row-owned path', () => {
     const r = await run(payload, f.fn, inst)
     expect(r.error).toBeUndefined()
     expect(kindsOf(r)).toEqual(['object_conflict'])
+    expect(extraOf(r.events[0])).toMatchObject({ count: 1, markedCount: 1 })
     expect(r.counts).toMatchObject({ quarantined: 1, stored: 0 })
     expect((await rowsOf(docId))[0]).toMatchObject({ ingest_status: 'failed', sha256: null, storage_path: null })
     const got = await objectBytes(path)
@@ -913,6 +914,7 @@ describe('T-TW: the download', () => {
     expect(f.calls).toHaveLength(0)
     expect(r.error).toBeUndefined()
     expect(kindsOf(r)).toEqual(['url_guard'])
+    expect(extraOf(r.events[0])).toMatchObject({ count: 1, markedCount: 1 })
     expect(Object.keys(inst.updates[0].set)).toEqual(['ingest_status'])
     expect((await rowsOf(docId))[0].ingest_status).toBe('failed')
   })
@@ -929,7 +931,7 @@ describe('T-C6-1 / T-NET-1: nothing sensitive in any event or thrown message; th
     for (const e of allEvents) {
       expect(leakFindings({ message: e.message, opts: e.opts }, literals)).toEqual([])
       expect(extraOf(e).table).toBe('capture_files')
-      expect(Object.keys(extraOf(e)).sort().every((k) => ['table', 'jobId', 'fileCount', 'count', 'errorCode', 'mismatchCount', 'failedCount', 'lastError', 'phase'].includes(k))).toBe(true)
+      expect(Object.keys(extraOf(e)).sort().every((k) => ['table', 'jobId', 'fileCount', 'count', 'markedCount', 'errorCode', 'mismatchCount', 'failedCount', 'lastError', 'phase'].includes(k))).toBe(true)
     }
     for (const m of allThrown) {
       expect(leakFindings(m, literals)).toEqual([])

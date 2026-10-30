@@ -37,4 +37,4 @@ Deployment "verified" by Aravind. Not checked by me. Which branch Vercel treats 
 
 ## Process note: merged inside the no-push window (per Aravind)
 
-The merge happened inside the no-push window. This was a habit breach of the window rule. No harm was seen (the counts above did not move and CI on `main` was green). Recorded so the pattern is visible; nothing here changes the deploy.
+The no-push window is 23:15-00:15 IST (per Aravind). The merge happened inside the no-push window. This was a habit breach of the window rule. No harm was seen (the counts above did not move and CI on `main` was green). Recorded so the pattern is visible; nothing here changes the deploy.
