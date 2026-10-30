@@ -628,7 +628,7 @@ describe('T-S2: a deterministic storage 4xx other than duplicate ends the file a
     const r = await run(payload, f.fn, inst)
     expect(r.error).toBeUndefined()
     expect(kindsOf(r)).toEqual(['storage_rejected'])
-    expect(extraOf(r.events[0])).toMatchObject({ errorCode: '415', count: 1 })
+    expect(extraOf(r.events[0])).toMatchObject({ errorCode: '415', count: 1, markedCount: 1 })
     expect(r.counts).toMatchObject({ quarantined: 1, retryable: 0 })
     expect((await rowsOf(docId))[0]).toMatchObject({ ingest_status: 'failed', content_type: null, byte_size: null, storage_path: null })
     expect(Object.keys(inst.updates[0].set)).toEqual(['ingest_status'])
@@ -688,6 +688,7 @@ describe('T-RETRY: the object already exists at the row-owned path', () => {
     const r = await run(payload, f.fn, inst)
     expect(r.error).toBeUndefined()
     expect(kindsOf(r)).toEqual(['object_conflict'])
+    expect(extraOf(r.events[0])).toMatchObject({ count: 1, markedCount: 1 })
     expect(r.counts).toMatchObject({ quarantined: 1, stored: 0 })
     expect((await rowsOf(docId))[0]).toMatchObject({ ingest_status: 'failed', sha256: null, storage_path: null })
     const got = await objectBytes(path)
@@ -913,8 +914,48 @@ describe('T-TW: the download', () => {
     expect(f.calls).toHaveLength(0)
     expect(r.error).toBeUndefined()
     expect(kindsOf(r)).toEqual(['url_guard'])
+    expect(extraOf(r.events[0])).toMatchObject({ count: 1, markedCount: 1 })
     expect(Object.keys(inst.updates[0].set)).toEqual(['ingest_status'])
     expect((await rowsOf(docId))[0].ingest_status).toBe('failed')
+  })
+})
+
+describe('T-MARK-1: markedCount counts only quarantined rows whose failed-write was confirmed as exactly one row', () => {
+  const badUrls = (payload: CaptureIngestJobPayload) => ({
+    ...payload,
+    files: payload.files.map((f) => ({ ...f, url: f.url.replace('api.twilio.com', 'example.invalid') })),
+  })
+
+  it('the failed-write matches 0 rows -> one url_guard event, count 1, markedCount 0', async () => {
+    const { docId, payload } = await seed('mark0', 1)
+    const inst = instrument(kit.svc, { replaceUpdate: () => ({ data: [], error: null }) })
+    const r = await run(badUrls(payload), noFetch().fn, inst)
+    expect(r.error).toBeUndefined()
+    expect(kindsOf(r)).toEqual(['url_guard'])
+    expect(extraOf(r.events[0])).toMatchObject({ count: 1, markedCount: 0 })
+    expect(r.counts).toMatchObject({ quarantined: 1 })
+    expect((await rowsOf(docId))[0].ingest_status).toBe('pending')
+  })
+
+  it('the failed-write is refused by the database (42501) -> count 1, markedCount 0', async () => {
+    const { docId, payload } = await seed('markerr', 1)
+    const inst = instrument(kit.svc, { replaceUpdate: () => ({ data: null, error: { code: '42501', message: 'denied' } }) })
+    const r = await run(badUrls(payload), noFetch().fn, inst)
+    expect(r.error).toBeUndefined()
+    expect(kindsOf(r)).toEqual(['url_guard'])
+    expect(extraOf(r.events[0])).toMatchObject({ count: 1, markedCount: 0 })
+    expect((await rowsOf(docId))[0].ingest_status).toBe('pending')
+  })
+
+  it('mixed: two url_guard rows, the first marked and the second matching 0 rows -> count 2, markedCount 1', async () => {
+    const { docId, payload } = await seed('markmix', 2)
+    const inst = instrument(kit.svc, { replaceUpdate: (n) => (n === 2 ? { data: [], error: null } : undefined) })
+    const r = await run(badUrls(payload), noFetch().fn, inst)
+    expect(r.error).toBeUndefined()
+    expect(kindsOf(r)).toEqual(['url_guard'])
+    expect(extraOf(r.events[0])).toMatchObject({ count: 2, markedCount: 1 })
+    expect(r.counts).toMatchObject({ quarantined: 2 })
+    expect((await rowsOf(docId)).map((x) => x.ingest_status).sort()).toEqual(['failed', 'pending'])
   })
 })
 
@@ -929,7 +970,7 @@ describe('T-C6-1 / T-NET-1: nothing sensitive in any event or thrown message; th
     for (const e of allEvents) {
       expect(leakFindings({ message: e.message, opts: e.opts }, literals)).toEqual([])
       expect(extraOf(e).table).toBe('capture_files')
-      expect(Object.keys(extraOf(e)).sort().every((k) => ['table', 'jobId', 'fileCount', 'count', 'errorCode', 'mismatchCount', 'failedCount', 'lastError', 'phase'].includes(k))).toBe(true)
+      expect(Object.keys(extraOf(e)).sort().every((k) => ['table', 'jobId', 'fileCount', 'count', 'markedCount', 'errorCode', 'mismatchCount', 'failedCount', 'lastError', 'phase'].includes(k))).toBe(true)
     }
     for (const m of allThrown) {
       expect(leakFindings(m, literals)).toEqual([])

@@ -569,9 +569,29 @@ describe('T-NOWRITE-1', () => {
     expect(src).not.toMatch(/\.delete\(/)
   })
 
-  it("(c) the tick route never queries capture_files itself (it may only name the table in an event field)", () => {
-    const src = readFileSync(join(root, 'app/api/jobs/tick/route.ts'), 'utf8')
+  // (c), tightened after C5 code review: "never queries" was too loose (a second mention in a comment, a
+  // string or a helper would pass). The tick route names the table in exactly ONE place, the dead-letter
+  // event's extra: `extra: { table: 'capture_files', jobId: job.id }`. T_NOWRITE_CONTROL=second-mention
+  // appends a second mention IN MEMORY (the route file is not touched) so the run goes RED visibly.
+  function tickRouteMentions(src: string): { count: number; insideEventExtra: boolean } {
+    const count = src.split('capture_files').length - 1
+    return { count, insideEventExtra: /extra:\s*\{[^}]*\btable:\s*'capture_files'/.test(src) }
+  }
+
+  it('(c) capture_files appears exactly once in the tick route, inside the event extra', () => {
+    const real = readFileSync(join(root, 'app/api/jobs/tick/route.ts'), 'utf8')
+    const src = process.env.T_NOWRITE_CONTROL === 'second-mention' ? `${real}\n// capture_files\n` : real
+    expect(tickRouteMentions(src)).toEqual({ count: 1, insideEventExtra: true })
     expect(src).not.toMatch(/\.from\(\s*['"]capture_files['"]\s*\)/)
+  })
+
+  it('(c) CONTROL: a tick route with a second mention fails the same check (a comment, a string, a query)', () => {
+    const real = readFileSync(join(root, 'app/api/jobs/tick/route.ts'), 'utf8')
+    for (const extra of ['\n// capture_files\n', "\nconst t = 'capture_files'\n", "\nclient.from('capture_files')\n"]) {
+      expect(tickRouteMentions(real + extra)).not.toEqual({ count: 1, insideEventExtra: true })
+    }
+    // and a route with NO event extra naming the table fails it too
+    expect(tickRouteMentions(real.replace("table: 'capture_files'", "table: 'x'"))).not.toEqual({ count: 1, insideEventExtra: true })
   })
 
   it('control: the scanner does find a file that mentions it (this test file)', () => {
