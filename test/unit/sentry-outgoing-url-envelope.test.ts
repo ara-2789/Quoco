@@ -37,17 +37,20 @@ const captured = vi.hoisted(() => ({ bodies: [] as string[] }))
 // undefined on the mock). A Proxy over the real module forwards every export except `init`.
 vi.mock('@sentry/nextjs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sentry/nextjs')>()
-  const init = (options: Parameters<typeof actual.init>[0]) => {
-    const next = { ...options }
+  type InitOptions = Parameters<typeof actual.init>[0]
+  type TransportOptions = Parameters<typeof actual.createTransport>[0]
+  const init = (options: InitOptions) => {
+    // skipOpenTelemetrySetup is a NodeOptions field the @sentry/nextjs init type does not list
+    const next: Record<string, unknown> = { ...options }
     if (process.env.TRIPWIRE_CONTROL === 'skip') next.skipOpenTelemetrySetup = true
     if (process.env.TARGETS_CONTROL === 'undefined') delete next.tracePropagationTargets
     return actual.init({
-      ...next,
-      transport: (transportOptions) =>
+      ...(next as InitOptions),
+      transport: ((transportOptions: TransportOptions) =>
         actual.createTransport(transportOptions, async (request) => {
           captured.bodies.push(typeof request.body === 'string' ? request.body : Buffer.from(request.body).toString('utf8'))
           return { statusCode: 200 }
-        }),
+        })) as InitOptions['transport'],
     })
   }
   return new Proxy(actual, {
