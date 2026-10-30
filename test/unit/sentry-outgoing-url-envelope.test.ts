@@ -90,6 +90,10 @@ vi.mock('@/lib/observability/scrub-url', async (importOriginal) => {
     swapped.classifyOutgoing = rev2Classify
     swapped.applyTier2 = rev2Transform
   }
+  // S7: the classifier ALONE (the real Tier 2 transform stays). The rename guard hides a misclassification
+  // from J2.1, but a presence-based classifier makes Tier 2 delete http.target on the Next root, so J2.2
+  // (and the "Next root span is Tier 1 only" unit row in scrub-url.test.ts) must fail.
+  if (process.env.CLASSIFIER_CONTROL === 'rev2-classifier') swapped.classifyOutgoing = rev2Classify
   if (process.env.URL_SCRUB_CONTROL === 'identity') {
     swapped.applyTier1 = <T,>(item: T): T => item
     swapped.applyTier2 = <T,>(item: T): T => item
@@ -293,7 +297,7 @@ describe('S1 real-client envelope test', () => {
     })
 
     it('A1 raw envelope text: none of the S1 canaries or Twilio-shaped path pieces', () => {
-      const all = envelopes.map((e) => e.raw.replace(/"dsn":"[^"]*"/g, '')).join('\n')
+      const all = envelopes.map((e) => e.raw).join('\n')
       for (const needle of ['S1CANARY_PATH', 'S1CANARY_QUERY', 'ACxxxxS1TEST', 'MMxxxxS1TEST', 'MExxxxS1TEST', '/2010-04-01']) {
         expect(all.includes(needle), `envelope text contains ${needle}`).toBe(false)
       }

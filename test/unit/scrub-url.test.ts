@@ -22,10 +22,22 @@ import type { SpanJSON, TransactionEvent } from '@/lib/observability/scrub-pii'
 //   URL_SCRUB_CONTROL=identity   vi.mock makes applyTier1/applyTier2 no-ops: the tier, B2 and N7 rows must FAIL
 //   URL_TEXT_CONTROL=identity    vi.mock makes reduceUrlsInText a no-op: the free-text rows must FAIL
 //   SEAM_CONTROL=show            the two J5 seam controls run their assertion un-inverted, so they FAIL visibly
+//   CLASSIFIER_CONTROL=rev2-classifier   (S7) vi.mock swaps ONLY the classifier for Rev 2's presence-based one
+//                                        (the real Tier 2 stays): "Next root span is Tier 1 only" must FAIL
+
+// Rev 2's presence-based classifier, transcribed: any key from Rev 2's URL_KEYS makes an item "outgoing".
+// A function declaration with its key list INSIDE it: this vi.mock factory runs while scrub-pii.ts is being
+// imported (before any top-level const here is initialised), so it may not read a top-level const.
+function rev2Classify(item: { data?: unknown }): boolean {
+  const keys = ['url', 'url.full', 'http.url', 'url.path', 'http.target', 'url.query', 'http.query', 'url.fragment', 'http.fragment', 'url.template', 'next.span_name']
+  const data = item.data
+  return typeof data === 'object' && data !== null && keys.some((k) => k in data)
+}
 
 vi.mock('@/lib/observability/scrub-url', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/observability/scrub-url')>()
   const swapped: Record<string, unknown> = { ...actual }
+  if (process.env.CLASSIFIER_CONTROL === 'rev2-classifier') swapped.classifyOutgoing = rev2Classify
   if (process.env.URL_SCRUB_CONTROL === 'identity') {
     swapped.applyTier1 = <T,>(item: T): T => item
     swapped.applyTier2 = <T,>(item: T): T => item

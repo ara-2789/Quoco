@@ -155,8 +155,11 @@ function minimalEvent<T extends ErrorEvent | TransactionEvent>(event: T): T {
   return { message: SCRUBBER_FAILED, level: 'error', event_id: event?.event_id } as unknown as T
 }
 
-// The trace context of an event (contexts.trace) carries the root span's attributes, including
-// http.target = req.url WITH its query, on error events as well as transactions.
+// Defence in depth. On a TRANSACTION, contexts.trace carries the root span's attributes, including
+// http.target = req.url WITH its query. @sentry 10.63.0 error events carry ids only (their trace context
+// comes from spanToTraceContext: trace_id, span_id, parent_span_id, no data), so on an error event this is a
+// no-op today. Kept because it is idempotent, fails closed through the existing catch, and guards against an
+// SDK change that puts span attributes on an error event's trace context.
 function withUrlTiersOnTraceContext<T extends { contexts?: unknown }>(event: T): T {
   const contexts = event.contexts
   if (typeof contexts !== 'object' || contexts === null) return event

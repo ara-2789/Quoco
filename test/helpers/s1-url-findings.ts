@@ -100,17 +100,16 @@ function walk(path: string, value: unknown, owner: Record<string, unknown> | nul
   }
 }
 
-/** The envelope header's dsn is a URL with userinfo and a path by design; it is not scanned. */
-function withoutDsn(raw: string): string {
-  return raw.replace(/"dsn":"[^"]*"/g, '')
-}
-
-/** Per-location findings over every item of every envelope, then a raw-text pass over what was not enumerated. */
+/**
+ * Per-location findings over every item of every envelope, then a raw-text pass over what was not enumerated.
+ * The raw text is scanned as-is: the envelope header carries the dsn (a URL with userinfo and a path) only
+ * when a tunnel is set (@sentry/core envelope.js), and none is, so a dsn in a scanned body would be a real finding.
+ */
 export function scanEnvelopes(envelopes: ParsedEnvelope[]): Finding[] {
   const out: Finding[] = []
   envelopes.forEach((env, ei) => {
     env.items.forEach((item, ii) => walk(`envelope[${ei}].${item.type}[${ii}]`, item.payload, null, out))
-    for (const rule of composedFindings(withoutDsn(env.raw))) out.push({ location: `envelope[${ei}].<raw text>`, rule })
+    for (const rule of composedFindings(env.raw)) out.push({ location: `envelope[${ei}].<raw text>`, rule })
   })
   return out
 }
