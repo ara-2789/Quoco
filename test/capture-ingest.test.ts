@@ -920,6 +920,45 @@ describe('T-TW: the download', () => {
   })
 })
 
+describe('T-MARK-1: markedCount counts only quarantined rows whose failed-write was confirmed as exactly one row', () => {
+  const badUrls = (payload: CaptureIngestJobPayload) => ({
+    ...payload,
+    files: payload.files.map((f) => ({ ...f, url: f.url.replace('api.twilio.com', 'example.invalid') })),
+  })
+
+  it('the failed-write matches 0 rows -> one url_guard event, count 1, markedCount 0', async () => {
+    const { docId, payload } = await seed('mark0', 1)
+    const inst = instrument(kit.svc, { replaceUpdate: () => ({ data: [], error: null }) })
+    const r = await run(badUrls(payload), noFetch().fn, inst)
+    expect(r.error).toBeUndefined()
+    expect(kindsOf(r)).toEqual(['url_guard'])
+    expect(extraOf(r.events[0])).toMatchObject({ count: 1, markedCount: 0 })
+    expect(r.counts).toMatchObject({ quarantined: 1 })
+    expect((await rowsOf(docId))[0].ingest_status).toBe('pending')
+  })
+
+  it('the failed-write is refused by the database (42501) -> count 1, markedCount 0', async () => {
+    const { docId, payload } = await seed('markerr', 1)
+    const inst = instrument(kit.svc, { replaceUpdate: () => ({ data: null, error: { code: '42501', message: 'denied' } }) })
+    const r = await run(badUrls(payload), noFetch().fn, inst)
+    expect(r.error).toBeUndefined()
+    expect(kindsOf(r)).toEqual(['url_guard'])
+    expect(extraOf(r.events[0])).toMatchObject({ count: 1, markedCount: 0 })
+    expect((await rowsOf(docId))[0].ingest_status).toBe('pending')
+  })
+
+  it('mixed: two url_guard rows, the first marked and the second matching 0 rows -> count 2, markedCount 1', async () => {
+    const { docId, payload } = await seed('markmix', 2)
+    const inst = instrument(kit.svc, { replaceUpdate: (n) => (n === 2 ? { data: [], error: null } : undefined) })
+    const r = await run(badUrls(payload), noFetch().fn, inst)
+    expect(r.error).toBeUndefined()
+    expect(kindsOf(r)).toEqual(['url_guard'])
+    expect(extraOf(r.events[0])).toMatchObject({ count: 2, markedCount: 1 })
+    expect(r.counts).toMatchObject({ quarantined: 2 })
+    expect((await rowsOf(docId)).map((x) => x.ingest_status).sort()).toEqual(['failed', 'pending'])
+  })
+})
+
 // ---------------------------------------------------------------------------------------------------------------
 // C6 and the network
 // ---------------------------------------------------------------------------------------------------------------
