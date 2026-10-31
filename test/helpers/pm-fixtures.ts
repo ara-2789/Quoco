@@ -13,6 +13,8 @@ import {
   captureAnon,
   makeDoc,
   ack,
+  miTurn,
+  jpegMedia,
   teardownCaptureKit,
   type CaptureKit,
   type CaptureUserLabel,
@@ -151,4 +153,58 @@ export async function activeLinkIds(kit: CaptureKit, invoiceDocId: string): Prom
     .is('unlinked_at', null)
   if (error) throw new Error(`activeLinkIds failed: ${error.message}`)
   return (data ?? []) as Array<{ id: string; delivery_id: string; link_source: string }>
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// D-30 shapes (docs/reviews/d30-record.md, table of the five real documents; F4: the WhatsApp FILE NAME is stored as
+// capture_documents.caption). Built through the REAL engineer function so every row is what production would hold:
+//   * a document with MORE THAN ONE file (the record has an invoice with 3 images);
+//   * a file-name caption (the engine keeps the trimmed text of the file turn as the caption, 050:325);
+//   * an invoice with its automatic self-link and an awaiting_pm automatic delivery (invoice acked "yes").
+// Only this run's own kit is touched.
+// ---------------------------------------------------------------------------------------------------------------
+export interface MultiFileDoc extends MadeDoc {
+  fileIds: string[]
+}
+
+/** Like makeDoc, but the file turn carries `caption` as its text and `nFiles` files. Files are left `pending`. */
+export async function makeDocWithCaption(
+  kit: CaptureKit,
+  kind: 'dc' | 'invoice',
+  label: string,
+  caption: string,
+  nFiles: number,
+  o: { tenantId?: string; projectId?: string; userId?: string } = {},
+): Promise<MultiFileDoc> {
+  const phone = kit.phone(label)
+  const base = { ...(o.tenantId ? { tenantId: o.tenantId } : {}), ...(o.projectId ? { projectId: o.projectId } : {}), ...(o.userId ? { userId: o.userId } : {}) }
+  await miTurn(kit, phone, '4', kit.sid(`${label}-s0`), { ...base, start: true })
+  await miTurn(kit, phone, kind === 'dc' ? '1' : '2', kit.sid(`${label}-s1`), base)
+  const fileSid = kit.sid(`${label}-s2`)
+  const r = await miTurn(kit, phone, caption, fileSid, { ...base, media: jpegMedia(nFiles) })
+  if (!r.document_id || !r.delivery_id) throw new Error(`makeDocWithCaption(${label}): no document_id/delivery_id in ${JSON.stringify(r)}`)
+  const files = await filesOfDoc(kit, r.document_id)
+  if (files.length !== nFiles) throw new Error(`makeDocWithCaption(${label}): expected ${nFiles} files, got ${files.length}`)
+  return { phone, docId: r.document_id, deliveryId: r.delivery_id, fileSid, fileIds: files.map((f) => f.id) }
+}
+
+export const D30_CAPTION_JPEG = 'WhatsApp Image 2026-10-05 at 10.00.00.jpeg'
+export const D30_CAPTION_PDF = 'phone pdf.pdf'
+
+export interface D30Shapes {
+  /** DC, 2 stored files, caption = a WhatsApp image file name, acked "yes" -> awaiting_pm */
+  dcTwoFiles: MultiFileDoc
+  /** invoice, 3 stored files, caption = a pdf file name, acked "yes" -> its automatic delivery is awaiting_pm with ONE active self-link */
+  invThreeFiles: MultiFileDoc
+}
+
+/** Build both shapes in project P1 (engineer `eng`). Call after any exact-list assertions on P1 have run. */
+export async function makeD30Shapes(kit: CaptureKit): Promise<D30Shapes> {
+  const dcTwoFiles = await makeDocWithCaption(kit, 'dc', 'd30-dc2', D30_CAPTION_JPEG, 2)
+  for (const id of dcTwoFiles.fileIds) await storeFile(kit, id)
+  await ack(kit, dcTwoFiles, '1', 'd30-dc2')
+  const invThreeFiles = await makeDocWithCaption(kit, 'invoice', 'd30-inv3', D30_CAPTION_PDF, 3)
+  for (const id of invThreeFiles.fileIds) await storeFile(kit, id)
+  await ack(kit, invThreeFiles, '1', 'd30-inv3')
+  return { dcTwoFiles, invThreeFiles }
 }
