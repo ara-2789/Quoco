@@ -13,7 +13,7 @@ import {
   type MadeDoc,
 } from './helpers/pm-fixtures'
 import { getDeliveryDetail, getMaterialInwardList } from '@/lib/capture/pm-queries'
-import { runApprove, runSetDetails, type PmActionDeps } from '@/lib/capture/pm-actions'
+import { runApprove, runLink, runReject, runSetDetails, type PmActionDeps } from '@/lib/capture/pm-actions'
 
 // T-R-1..4 (PR-D): the PM page reads, through lib/capture/pm-queries.ts, with the signed-in user's client (never raw table
 // selects). Shared test-db; every row belongs to this run's own tenants A and B (zz-test-capture-*).
@@ -149,76 +149,118 @@ describe('T-R-4: anon sees nothing', () => {
 })
 
 // ---------------------------------------------------------------------------------------------------------------
-// C3: list order. incomplete / awaiting_pm first, then the rest; newest received_at first inside each group; the cap is
-// applied to that order. Project P2 (PM-A2): the beforeAll's own dcA2 (incomplete, received at the suite's noon base) plus
-// three documents made here with explicit past `received_at` values:
-//   oldAwait  awaiting_pm, 10 days ago   (the one the old date-only order loses)
-//   n1        approved,     1 day ago
-//   n2        approved,     2 hours ago
+// Helpers for the C3 / picker blocks: act as a PM with an injected client, and read back received_at / status with the
+// service client (read only). Nothing is written outside the kit's own flow.
+// ---------------------------------------------------------------------------------------------------------------
+const actAs = async (label: 'pm1' | 'pm2'): Promise<PmActionDeps> => ({
+  client: (await kit.jwt(label)) as unknown as PmActionDeps['client'],
+  profile: readerOf(kit, label),
+})
+
+/** Set a type (so approval is possible) and approve a delivery as the given PM. */
+async function approveAs(label: 'pm1' | 'pm2', deliveryId: string) {
+  const row = await deliveryRow(kit, deliveryId)
+  const set = await runSetDetails(await actAs(label), {
+    deliveryId,
+    loaded: { status: row.status as string, deliveryType: null, vehicleNumber: null, dcNumber: null, dcDate: null },
+    next: { deliveryType: 'supplier', vehicleNumber: null, dcNumber: null, dcDate: null },
+  })
+  expect(set).toEqual({ status: 'ok' })
+  expect(await runApprove(await actAs(label), { deliveryId })).toEqual({ status: 'ok' })
+}
+
+async function listFacts(deliveryIds: string[]) {
+  const { data, error } = await kit.svc.from('deliveries').select('id, status, received_at').in('id', deliveryIds)
+  if (error) throw new Error(`listFacts failed: ${error.message}`)
+  return new Map((data ?? []).map((r: { id: string; status: string; received_at: string }) => [r.id, r]))
+}
+
+/** open (incomplete/awaiting_pm) rows first; inside each group received_at never increases down the list. */
+async function expectGroupOrder(listedIds: string[]) {
+  const facts = await listFacts(listedIds)
+  const isOpen = (id: string) => ['incomplete', 'awaiting_pm'].includes(facts.get(id)!.status)
+  let seenNonOpen = false
+  for (let i = 0; i < listedIds.length; i++) {
+    const open = isOpen(listedIds[i])
+    if (!open) seenNonOpen = true
+    expect(open && seenNonOpen, `open delivery ${listedIds[i]} listed after a non-open one`).toBe(false)
+    if (i > 0 && isOpen(listedIds[i - 1]) === open) {
+      expect(
+        new Date(facts.get(listedIds[i - 1])!.received_at).getTime(),
+        `received_at must not increase within a group (${listedIds[i - 1]} then ${listedIds[i]})`,
+      ).toBeGreaterThanOrEqual(new Date(facts.get(listedIds[i])!.received_at).getTime())
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// E1 / C3: list order. incomplete / awaiting_pm first, then the rest; newest received_at first inside each group; the cap is
+// applied to that order. `received_at` is processed_messages.created_at of the file message (050:315-318), i.e. the REAL
+// insert time, so the only way to make a delivery old is to create it first. Project P2 (PM-A2), in creation order:
+//   dcA2      (main beforeAll) incomplete -> approved here, so it leaves the open group
+//   oldAwait  awaiting_pm, created FIRST of the C3 documents  -> the oldest received_at of the open group (and its only member)
+//   n1, n2    approved, created after it                      -> both NEWER than oldAwait
+// With limit 2 the date-only order is [n2, n1] and loses oldAwait; the grouped order is [oldAwait, n2].
 // ---------------------------------------------------------------------------------------------------------------
 describe('C3: an old awaiting_pm delivery is not pushed off the capped list by newer approved ones', () => {
-  const day = 24 * 3600 * 1000
   let oldAwait: MadeDoc & { fileId: string }
   let n1: MadeDoc & { fileId: string }
   let n2: MadeDoc & { fileId: string }
-  const asPm2 = async (): Promise<PmActionDeps> => ({
-    client: (await kit.jwt('pm2')) as unknown as PmActionDeps['client'],
-    profile: readerOf(kit, 'pm2'),
-  })
-
-  async function approve(d: MadeDoc) {
-    const row = await deliveryRow(kit, d.deliveryId)
-    const set = await runSetDetails(await asPm2(), {
-      deliveryId: d.deliveryId,
-      loaded: { status: row.status as string, deliveryType: null, vehicleNumber: null, dcNumber: null, dcDate: null },
-      next: { deliveryType: 'supplier', vehicleNumber: null, dcNumber: null, dcDate: null },
-    })
-    expect(set).toEqual({ status: 'ok' })
-    expect(await runApprove(await asPm2(), { deliveryId: d.deliveryId })).toEqual({ status: 'ok' })
-  }
 
   beforeAll(async () => {
-    await setup // the main setup (and kit) must exist first
-    const t = Date.now()
+    await setup // the main setup (and the kit) must exist first
     const p2 = { projectId: kit.p2, userId: kit.uid('engP2') }
-    oldAwait = await timed('c3 oldAwait doc', () => makeDocWithFile(kit, 'dc', 'q-c3-old', 'stored', { ...p2, now: new Date(t - 10 * day) }))
-    await timed('c3 oldAwait ack', () => ack(kit, oldAwait, '1', 'q-c3-old', new Date(t - 10 * day)))
-    n1 = await timed('c3 n1 doc', () => makeDocWithFile(kit, 'dc', 'q-c3-n1', 'stored', { ...p2, now: new Date(t - 1 * day) }))
-    n2 = await timed('c3 n2 doc', () => makeDocWithFile(kit, 'dc', 'q-c3-n2', 'stored', { ...p2, now: new Date(t - 2 * 3600 * 1000) }))
-    await timed('c3 approve n1', () => approve(n1))
-    await timed('c3 approve n2', () => approve(n2))
+    oldAwait = await timed('c3 oldAwait doc (created first)', () => makeDocWithFile(kit, 'dc', 'q-c3-old', 'stored', p2))
+    await timed('c3 oldAwait ack', () => ack(kit, oldAwait, '1', 'q-c3-old'))
+    await timed('c3 approve dcA2', () => approveAs('pm2', dcA2.deliveryId))
+    n1 = await timed('c3 n1 doc', () => makeDocWithFile(kit, 'dc', 'q-c3-n1', 'stored', p2))
+    n2 = await timed('c3 n2 doc', () => makeDocWithFile(kit, 'dc', 'q-c3-n2', 'stored', p2))
+    await timed('c3 approve n1', () => approveAs('pm2', n1.deliveryId))
+    await timed('c3 approve n2', () => approveAs('pm2', n2.deliveryId))
   }, HOOK_TIMEOUT_MS)
 
-  it('the fixture is what the test says it is (statuses)', async () => {
-    expect((await deliveryRow(kit, oldAwait.deliveryId)).status).toBe('awaiting_pm')
-    expect((await deliveryRow(kit, n1.deliveryId)).status).toBe('approved')
-    expect((await deliveryRow(kit, n2.deliveryId)).status).toBe('approved')
-    expect((await deliveryRow(kit, dcA2.deliveryId)).status).toBe('incomplete')
+  it('the fixture is what the test says it is: statuses, and oldAwait has the OLDEST real received_at', async () => {
+    const facts = await listFacts([oldAwait.deliveryId, n1.deliveryId, n2.deliveryId, dcA2.deliveryId])
+    expect(facts.get(oldAwait.deliveryId)!.status).toBe('awaiting_pm')
+    for (const d of [n1, n2, dcA2]) expect(facts.get(d.deliveryId)!.status).toBe('approved')
+    const t = (id: string) => new Date(facts.get(id)!.received_at).getTime()
+    expect(t(oldAwait.deliveryId), 'oldAwait must be older than n1').toBeLessThan(t(n1.deliveryId))
+    expect(t(n1.deliveryId), 'n1 must be older than n2').toBeLessThan(t(n2.deliveryId))
   })
 
-  it('limit 2: the open deliveries fill the cap (dcA2, then the OLD awaiting_pm one); newer approved ones do not push it off', async () => {
+  it('(a) limit 2: the old open delivery is FIRST, the newest approved one follows, and the list is marked truncated', async () => {
     const r = await getMaterialInwardList(await kit.jwt('pm2'), readerOf(kit, 'pm2'), NOW, { limit: 2 })
     expect(r.status).toBe('ok')
-    expect(ids(r)).toEqual([dcA2.deliveryId, oldAwait.deliveryId])
+    expect(ids(r)).toEqual([oldAwait.deliveryId, n2.deliveryId])
     expect(ids(r)).not.toContain(n1.deliveryId)
-    expect(ids(r)).not.toContain(n2.deliveryId)
+    expect(ids(r)).not.toContain(dcA2.deliveryId)
     expect(r.status === 'ok' && r.truncated).toBe(true)
   })
 
-  it('limit 3: the old awaiting_pm delivery is ahead of the newer approved one; groups newest-first', async () => {
+  it('limit 3: open first, then approved newest-first (n2, then n1); still truncated (dcA2 is beyond the cap)', async () => {
     const r = await getMaterialInwardList(await kit.jwt('pm2'), readerOf(kit, 'pm2'), NOW, { limit: 3 })
-    expect(ids(r)).toEqual([dcA2.deliveryId, oldAwait.deliveryId, n2.deliveryId])
-    expect(r.status === 'ok' && r.truncated).toBe(true) // n1 is still beyond the cap
+    expect(ids(r)).toEqual([oldAwait.deliveryId, n2.deliveryId, n1.deliveryId])
+    expect(r.status === 'ok' && r.truncated).toBe(true)
   })
 
-  it('limit 4 holds everything in P2, open group first, then approved newest first, and is not truncated', async () => {
-    const r = await getMaterialInwardList(await kit.jwt('pm2'), readerOf(kit, 'pm2'), NOW, { limit: 4 })
-    expect(ids(r)).toEqual([dcA2.deliveryId, oldAwait.deliveryId, n2.deliveryId, n1.deliveryId])
-    expect(r.status === 'ok' && r.truncated).toBe(false)
+  it('limit 4 holds all of P2 and is not truncated; the default cap shows the same four', async () => {
+    const r4 = await getMaterialInwardList(await kit.jwt('pm2'), readerOf(kit, 'pm2'), NOW, { limit: 4 })
+    expect(ids(r4)).toEqual([oldAwait.deliveryId, n2.deliveryId, n1.deliveryId, dcA2.deliveryId])
+    expect(r4.status === 'ok' && r4.truncated).toBe(false)
+    expect(ids(await getMaterialInwardList(await kit.jwt('pm2'), readerOf(kit, 'pm2'), NOW))).toEqual(ids(r4))
   })
 
-  it('POSITIVE CONTROL: the OLD date-only order with the same cap would have dropped it', async () => {
-    // the previous implementation: one query, newest received_at first, limit 2
+  it('within the open group the order is newest received_at first (P1 has two open deliveries); groups never interleave', async () => {
+    const list = await getMaterialInwardList(await kit.jwt('pm1'), readerOf(kit, 'pm1'), NOW)
+    const listed = ids(list)
+    expect(listed).toContain(dcA1.deliveryId)
+    expect(listed).toContain(invA1.deliveryId) // both incomplete: dcA1 was created before invA1
+    expect(listed.indexOf(invA1.deliveryId)).toBeLessThan(listed.indexOf(dcA1.deliveryId))
+    await expectGroupOrder(listed)
+    await expectGroupOrder(ids(await getMaterialInwardList(await kit.jwt('pm2'), readerOf(kit, 'pm2'), NOW)))
+  })
+
+  it('POSITIVE CONTROL (data form): the date-only order with the same cap DOES drop it, because n1 and n2 are newer', async () => {
     const { data, error } = await (await kit.jwt('pm2'))
       .from('deliveries')
       .select('id')
@@ -226,12 +268,90 @@ describe('C3: an old awaiting_pm delivery is not pushed off the capped list by n
       .order('received_at', { ascending: false })
       .limit(2)
     expect(error).toBeNull()
-    expect((data ?? []).map((d: { id: string }) => d.id)).not.toContain(oldAwait.deliveryId)
-    // while the new order keeps it (previous test): the two differ exactly on this row
+    expect((data ?? []).map((d: { id: string }) => d.id)).toEqual([n2.deliveryId, n1.deliveryId])
+    // The mutation form (swap the comparator in pm-queries.ts so this file goes RED at test (a)) is the controls run.
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// E2 / E3: link pickers. Project P1, in creation order (dcA1 and invA1 come from the main setup and are the OLDEST):
+//   x1  DC, internal_transfer           ineligible (QE003)
+//   x2  DC, rejected                    ineligible (QE005)
+//   x3  DC, linked to inv2              ineligible (already has its one active link, QE008)
+//   inv2        invoice, linked to x3 (its automatic delivery is cancelled by the link)
+//   invApproved invoice whose automatic delivery is APPROVED (linking it would fail with QE011)
+// ---------------------------------------------------------------------------------------------------------------
+describe('E2/E3: link pickers apply every eligibility rule BEFORE the cap', () => {
+  let x1: MadeDoc & { fileId: string }
+  let x2: MadeDoc & { fileId: string }
+  let x3: MadeDoc & { fileId: string }
+  let inv2: MadeDoc & { fileId: string }
+  let invApproved: MadeDoc & { fileId: string }
+
+  beforeAll(async () => {
+    await setup
+    x1 = await timed('picker x1 doc', () => makeDocWithFile(kit, 'dc', 'q-p-x1', 'stored'))
+    x2 = await timed('picker x2 doc', () => makeDocWithFile(kit, 'dc', 'q-p-x2', 'stored'))
+    x3 = await timed('picker x3 doc', () => makeDocWithFile(kit, 'dc', 'q-p-x3', 'stored'))
+    inv2 = await timed('picker inv2 doc', () => makeDocWithFile(kit, 'invoice', 'q-p-inv2', 'stored'))
+    invApproved = await timed('picker invApproved doc', () => makeDocWithFile(kit, 'invoice', 'q-p-invok', 'stored'))
+    const set = await runSetDetails(await actAs('pm1'), {
+      deliveryId: x1.deliveryId,
+      loaded: { status: 'incomplete', deliveryType: null, vehicleNumber: null, dcNumber: null, dcDate: null },
+      next: { deliveryType: 'internal_transfer', vehicleNumber: null, dcNumber: null, dcDate: null },
+    })
+    expect(set).toEqual({ status: 'ok' })
+    expect(await runReject(await actAs('pm1'), { deliveryId: x2.deliveryId, reason: 'ZZTestCapture picker' })).toEqual({ status: 'ok' })
+    expect(await runLink(await actAs('pm1'), { invoiceDocumentId: inv2.docId, deliveryIds: [x3.deliveryId] })).toEqual({ status: 'ok' })
+    await timed('picker approve invApproved auto delivery', () => approveAs('pm1', invApproved.deliveryId))
+  }, HOOK_TIMEOUT_MS)
+
+  const candidateIds = (r: Awaited<ReturnType<typeof getDeliveryDetail>>) => (r.status === 'ok' ? r.detail.candidates.map((c) => c.id) : [])
+
+  it('E2: invoice page, cap 2, THREE ineligible DCs are newer than the one eligible DC: the older eligible DC is still offered', async () => {
+    const r = await getDeliveryDetail(await kit.jwt('pm1'), readerOf(kit, 'pm1'), invA1.deliveryId, NOW, { candidateLimit: 2 })
+    expect(r.status).toBe('ok')
+    expect(candidateIds(r)).toEqual([dcA1.deliveryId])
+    for (const x of [x1, x2, x3]) expect(candidateIds(r)).not.toContain(x.deliveryId)
   })
 
-  it('the default cap is the documented 100', async () => {
-    const r = await getMaterialInwardList(await kit.jwt('pm2'), readerOf(kit, 'pm2'), NOW)
-    expect(ids(r)).toHaveLength(4) // dcA2, oldAwait, n1, n2: all of P2 fits under 100
+  it('POSITIVE CONTROL (data form): the previous query shape (cap first, filters afterwards) would have offered nothing here', async () => {
+    const { data, error } = await (await kit.jwt('pm1'))
+      .from('deliveries')
+      .select('id, delivery_type')
+      .eq('project_id', kit.p1)
+      .not('dc_document_id', 'is', null)
+      .not('status', 'in', '(rejected,cancelled)')
+      .order('received_at', { ascending: false })
+      .limit(2)
+    expect(error).toBeNull()
+    const top = (data ?? []) as Array<{ id: string; delivery_type: string | null }>
+    expect(top.map((t) => t.id)).not.toContain(dcA1.deliveryId) // dcA1 is cut by the cap...
+    expect(top.map((t) => t.id).sort()).toEqual([x1.deliveryId, x3.deliveryId].sort()) // ...behind two rows that are not eligible
+  })
+
+  it('E2: with the default cap the picker holds exactly the eligible DC (an internal transfer, a rejected DC and a linked DC are all out)', async () => {
+    const r = await getDeliveryDetail(await kit.jwt('pm1'), readerOf(kit, 'pm1'), invA1.deliveryId, NOW)
+    expect(candidateIds(r)).toEqual([dcA1.deliveryId])
+  })
+
+  it('E3: DC page: the invoice whose automatic delivery is APPROVED is not offered; the others are', async () => {
+    const r = await getDeliveryDetail(await kit.jwt('pm1'), readerOf(kit, 'pm1'), dcA1.deliveryId, NOW)
+    expect(r.status).toBe('ok')
+    expect(candidateIds(r)).not.toContain(invApproved.docId)
+    expect(candidateIds(r)).toContain(invA1.docId)
+    expect(candidateIds(r)).toContain(inv2.docId) // already linked elsewhere is allowed (many-to-many); its auto delivery is cancelled, not approved
+  })
+
+  it('E3: the exclusion happens BEFORE the cap: with cap 1 the newest invoice is the approved one, and it is skipped for the next', async () => {
+    const r = await getDeliveryDetail(await kit.jwt('pm1'), readerOf(kit, 'pm1'), dcA1.deliveryId, NOW, { candidateLimit: 1 })
+    expect(candidateIds(r)).toEqual([inv2.docId])
+  })
+
+  it('POSITIVE CONTROL: the approved-automatic invoice really is newer than the one offered, and really is approved', async () => {
+    const { data } = await kit.svc.from('capture_documents').select('id, created_at').in('id', [inv2.docId, invApproved.docId])
+    const at = new Map((data ?? []).map((r: { id: string; created_at: string }) => [r.id, new Date(r.created_at).getTime()]))
+    expect(at.get(invApproved.docId)!).toBeGreaterThan(at.get(inv2.docId)!)
+    expect((await deliveryRow(kit, invApproved.deliveryId)).status).toBe('approved')
   })
 })

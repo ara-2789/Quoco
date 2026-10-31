@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import type { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -40,6 +40,13 @@ let invPdfA1: MadeDoc & { fileId: string }
 // invoice PDF, ~3 s). 90 s = the measured ~30-33 s plus headroom for a slower CI runner; it is a ceiling, not a target.
 // One timing line per step is kept so a future overrun is attributable.
 const HOOK_TIMEOUT_MS = 90_000
+
+// TEST TIMEOUT (this file only; vitest.config.ts keeps 30 s for every other file). In the pinned run pm-pinned-2 (31 Oct,
+// HEAD 0afbc41) the T-FILE-CTRL test "same swap, a qs member of A1 asking for A1's stored file" took 17,801 ms against
+// ~1.5 s for its sibling tests: a one-off stall of unknown cause [inferred: network] that came within 12 s of the 30 s
+// default. Every test here makes live HTTP calls (sign-in, PostgREST, Storage, a fetch of the signed URL), so the file gets
+// 60 s per test as a ceiling for such stalls; it is not a target.
+vi.setConfig({ testTimeout: 60_000 })
 
 async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
   const t0 = Date.now()

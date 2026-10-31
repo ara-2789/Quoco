@@ -269,11 +269,25 @@ export interface PmDetail {
 
 export type PmDetailResult = { status: 'error' } | { status: 'not-found' } | { status: 'ok'; detail: PmDetail }
 
-const CANDIDATE_LIMIT = 50
+/** Link-picker cap. Applied AFTER every eligibility filter (the filters are in the queries), so an older eligible row is
+ *  never hidden behind newer ineligible ones. */
+export const PM_CANDIDATE_LIMIT = 50
 
-export async function getDeliveryDetail(client: Client, reader: PmReader, deliveryId: string, now: Date): Promise<PmDetailResult> {
+/** PostgREST list literal of uuids that came from the database: `(id1,id2)`. */
+function uuidList(ids: string[]): string {
+  return `(${ids.filter((i) => UUID_RE.test(i)).join(',')})`
+}
+
+export async function getDeliveryDetail(
+  client: Client,
+  reader: PmReader,
+  deliveryId: string,
+  now: Date,
+  opts: { candidateLimit?: number } = {},
+): Promise<PmDetailResult> {
   if (reader.tenant_id === null) return { status: 'not-found' }
   const tenantId = reader.tenant_id
+  const candidateLimit = opts.candidateLimit ?? PM_CANDIDATE_LIMIT
   // deliveryId comes from the URL and is interpolated into a PostgREST `or(...)` filter below: only a UUID gets in.
   if (!UUID_RE.test(deliveryId)) return { status: 'not-found' }
 
@@ -376,37 +390,48 @@ export async function getDeliveryDetail(client: Client, reader: PmReader, delive
         receivedAt: byId.get(l.deliveryId)?.received_at ?? '',
       }))
     }
-    const { data: cand, error: cErr } = await client
+    // Invoice page -> DC deliveries to link. EVERY eligibility rule is in the query, so the cap is applied to eligible rows only
+    // and an older eligible DC is never hidden behind newer ineligible ones:
+    //   * a DC delivery (dc_document_id not null; automatic deliveries are not link targets, QE004);
+    //   * status not rejected/cancelled (QE005);
+    //   * type not internal_transfer (QE003); NULL type is allowed;
+    //   * no active link (a delivery has at most one, uq_dil_active_per_delivery -> QE008): the ids that do are fetched first.
+    // Order: newest received_at first, id as the tie-break.
+    const { data: taken, error: tErr } = await client
+      .from('delivery_invoice_links')
+      .select('delivery_id')
+      .eq('tenant_id', tenantId)
+      .eq('project_id', d.project_id)
+      .is('unlinked_at', null)
+    if (tErr) return reportRead('candidate links', tErr)
+    const takenIds = (taken ?? []).map((t) => t.delivery_id)
+    let candQuery = client
       .from('deliveries')
-      .select('id, dc_number, received_at, delivery_type, status, dc_document_id, reported_by')
+      .select('id, dc_number, received_at, dc_document_id')
       .eq('tenant_id', tenantId)
       .eq('project_id', d.project_id)
       .not('dc_document_id', 'is', null)
       .not('status', 'in', '(rejected,cancelled)')
+      .or('delivery_type.is.null,delivery_type.neq.internal_transfer')
+    if (takenIds.length > 0) candQuery = candQuery.not('id', 'in', uuidList(takenIds))
+    const { data: cand, error: cErr } = await candQuery
       .order('received_at', { ascending: false })
-      .limit(CANDIDATE_LIMIT)
+      .order('id', { ascending: false })
+      .limit(candidateLimit)
     if (cErr) return reportRead('candidate deliveries', cErr)
-    const eligible = (cand ?? []).filter((c) => c.delivery_type !== 'internal_transfer')
+    const eligible = cand ?? []
     if (eligible.length > 0) {
-      const ids = eligible.map((c) => c.id)
       const dcIds = eligible.map((c) => c.dc_document_id).filter((v): v is string => v !== null)
-      const [act, dcDocs] = await Promise.all([
-        client.from('delivery_invoice_links').select('delivery_id').eq('tenant_id', tenantId).in('delivery_id', ids).is('unlinked_at', null),
-        client.from('capture_documents').select('id, engineer_ack').eq('tenant_id', tenantId).in('id', dcIds),
-      ])
-      if (act.error) return reportRead('candidate links', act.error)
+      const dcDocs = await client.from('capture_documents').select('id, engineer_ack').eq('tenant_id', tenantId).in('id', dcIds)
       if (dcDocs.error) return reportRead('candidate documents', dcDocs.error)
-      const taken = new Set((act.data ?? []).map((a) => a.delivery_id))
       const ackByDoc = new Map((dcDocs.data ?? []).map((x) => [x.id, asAck(x.engineer_ack)]))
-      detail.candidates = eligible
-        .filter((c) => !taken.has(c.id))
-        .map((c) => ({
-          id: c.id,
-          receivedAt: c.received_at,
-          dcNumber: c.dc_number,
-          ack: c.dc_document_id ? (ackByDoc.get(c.dc_document_id) ?? null) : null,
-          engineerName: null,
-        }))
+      detail.candidates = eligible.map((c) => ({
+        id: c.id,
+        receivedAt: c.received_at,
+        dcNumber: c.dc_number,
+        ack: c.dc_document_id ? (ackByDoc.get(c.dc_document_id) ?? null) : null,
+        engineerName: null,
+      }))
     }
   } else {
     // DC page: its active invoice link, or the invoices it could be linked to.
@@ -422,14 +447,28 @@ export async function getDeliveryDetail(client: Client, reader: PmReader, delive
       if (error) return reportRead('linked invoice', error)
       if (inv) detail.linkedInvoice = { ack: asAck(inv.engineer_ack), receivedAt: inv.created_at }
     } else if (open && d.delivery_type !== 'internal_transfer') {
-      const { data: invs, error } = await client
+      // DC page -> invoices to link. Invoices whose AUTOMATIC delivery is approved are left out: linking one fails with QE011
+      // (050:869-870). Their ids are fetched first so the cap applies to the rest. Order: newest first, id as the tie-break.
+      const { data: approvedAuto, error: aErr } = await client
+        .from('deliveries')
+        .select('created_from_invoice_id')
+        .eq('tenant_id', tenantId)
+        .eq('project_id', d.project_id)
+        .eq('status', 'approved')
+        .not('created_from_invoice_id', 'is', null)
+      if (aErr) return reportRead('approved automatic deliveries', aErr)
+      const blockedInvoiceIds = (approvedAuto ?? []).map((a) => a.created_from_invoice_id).filter((v): v is string => v !== null)
+      let invQuery = client
         .from('capture_documents')
         .select('id, engineer_ack, created_at')
         .eq('tenant_id', tenantId)
         .eq('project_id', d.project_id)
         .eq('kind', 'invoice')
+      if (blockedInvoiceIds.length > 0) invQuery = invQuery.not('id', 'in', uuidList(blockedInvoiceIds))
+      const { data: invs, error } = await invQuery
         .order('created_at', { ascending: false })
-        .limit(CANDIDATE_LIMIT)
+        .order('id', { ascending: false })
+        .limit(candidateLimit)
       if (error) return reportRead('candidate invoices', error)
       detail.candidates = (invs ?? []).map((i) => ({
         id: i.id,

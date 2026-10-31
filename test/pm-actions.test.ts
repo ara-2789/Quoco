@@ -144,6 +144,36 @@ describe('T-ACT-4: link', () => {
   })
 })
 
+// E4: does the DATABASE allow linking an invoice to a DC that is already APPROVED? The picker offers approved DCs
+// (status not rejected/cancelled); 049's TR2 refuses rejected/cancelled targets (QE005) and the 050 legend says nothing
+// about approved ones. This test RECORDS the raw result; it does not decide the answer. It asserts only that the call
+// returned either ok or a coded error, and that the DC itself is unchanged.
+describe('T-ACT-4b: link to an approved DC (raw result recorded)', () => {
+  it('approved DC: PM-A1 links an invoice to an APPROVED DC; the raw RPC result is printed', async () => {
+    const dc = await newDc('e4d')
+    expect(await setType(dc.deliveryId, 'supplier')).toEqual({ status: 'ok' })
+    expect(await runApprove(await as('pm1'), { deliveryId: dc.deliveryId })).toEqual({ status: 'ok' })
+    expect((await deliveryRow(kit, dc.deliveryId)).status).toBe('approved')
+    const inv = await newInvoice('e4i')
+
+    const jwt = await kit.jwt('pm1')
+    const raw = await jwt.rpc('pm_link_invoice', { p_invoice_document_id: inv.docId, p_delivery_ids: [dc.deliveryId] })
+    const links = await activeLinkIds(kit, inv.docId)
+    console.log(
+      '[E4 raw] ' +
+        JSON.stringify({
+          data: raw.data,
+          error: raw.error ? { code: raw.error.code, message: raw.error.message } : null,
+          activeLinksOfInvoiceAfter: links.map((l) => ({ source: l.link_source, delivery_is_the_approved_dc: l.delivery_id === dc.deliveryId })),
+          dcStatusAfter: (await deliveryRow(kit, dc.deliveryId)).status,
+          invoiceAutomaticDeliveryStatusAfter: (await deliveryRow(kit, inv.deliveryId)).status,
+        }),
+    )
+    expect(raw.error === null || typeof raw.error.code === 'string').toBe(true)
+    expect((await deliveryRow(kit, dc.deliveryId)).status).toBe('approved') // a link never changes the DC's own status
+  })
+})
+
 describe('T-ACT-5: unlink', () => {
   it('PM-A1 unlinks; the automatic delivery is restored with a new self-link', async () => {
     const inv = await newInvoice('a5i')
