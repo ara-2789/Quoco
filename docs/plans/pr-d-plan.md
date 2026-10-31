@@ -1,0 +1,120 @@
+# PR-D plan, draft 3: PM page "Material Inward"
+Worktree ~/Desktop/quocoai-pm-ui, HEAD fe75d6cd. PLAN ONLY; no git commands run this round; ~/Desktop/quocoai untouched. **[read]** = file text; nothing here is **[observed]**; **[inferred]** and **UNPROVEN** are marked. Raw quotes in `pr-d-plan-evidence.txt` (EV), same file:line.
+Decisions applied (per Aravind, 31 Oct): no supplier name; TTL 60 s; redirect, `Cache-Control: no-store` + `Referrer-Policy: no-referrer`; `force-dynamic` on both pages and the route; nav hidden until C6 gate; no DOM test dependency; UUID in path accepted; no thumbnails; build-phase setup per Q9 (section 9).
+
+## 0. Tier and review
+FULL. Reasons: tenant data reads plus five writes (slice-1a-plan-v3.md §8 PR-D row); a new private-bucket access path; tenant isolation (CLAUDE.md §0, 2026-09-19 correction); SWITCH TRIGGER expected in this slice. Review path (kickoff doc, 31 Oct): **external design review of this plan before any code, then code review of the PR.** Then tests RED, build, test-db run, CI green at the PR HEAD sha, regular merge commit.
+
+## 1. Screens and the action map
+`/material-inward` (list) and `/material-inward/[deliveryId]` (detail). `PM_PAGE_TITLE` = "Material Inward". List: deliveries of the PM's projects: type, DC number, vehicle, date, engineer, ack, status, "invoice expected" (DC without active link; never "DC missing", v3 A16), file count; cancelled-by-link stays listed. Detail: files (open links), ack + note, active links, actions. Edited fields are only type, vehicle (≤64), DC no. (≤64), DC date (no supplier name).
+| Action | Function | Args | Success return [read] | Grant |
+|---|---|---|---|---|
+| Set details | `pm_set_delivery_details` | id, type, vehicle, dc_no, dc_date | `{delivery_id}` 050:536 | authenticated, 050:1878-1881 |
+| Approve | `pm_approve_delivery` | id | `{delivery_id,status:'approved'}` 050:608 | 050:1882-1885 |
+| Reject | `pm_reject_delivery` | id, reason (≤1000) | `{delivery_id,status:'rejected',restored_automatic}` 050:765 | 050:1886-1889 |
+| Link | `pm_link_invoice` | invoice_id, delivery_ids[1..20] (050:796) | `{invoice_document_id,linked,superseded_automatic}` 050:903 | 050:1890-1893 |
+| Unlink | `pm_unlink_invoice` | link_id | `{link_id,restored_automatic}` 050:1019 | 050:1894-1897 |
+**Success vs silent no-op:** every refusal is a RAISE (E-codes), so success = `error === null` AND `data` is an object whose id key equals the submitted id (`delivery_id` / `invoice_document_id` / `link_id`). Null, missing key or wrong id = `PM_ERR_SAVE_FAILED` + Sentry, never shown as success. Actions use the user client; no service role. D-20 audience re-checked inside each function (050:507, 576, 656: active user, same tenant, `project_members.role='pm'` on the row's project).
+
+## 2. Reads (RLS user client; zero service-role reads on the pages)
+Policies, quoted in EV 049:921-960 and 906-919: `capture_documents/files`, `deliveries`, `delivery_invoice_links` SELECT = `tenant_id = get_user_tenant_id()` AND an `EXISTS` of `project_members.role='pm'` joined to `users` with `auth_id = auth.uid()` AND `u.status = 'active'`. SELECT grants: authenticated + service_role (049:978-981). Names: `users_select` = own row OR same tenant (007:216-219). **`projects_select` is tenant-wide, not membership-scoped** (002:91-93; the only later change found by grep is 047:231 dropping `projects_delete`; live policy state UNPROVEN, not observed) and `project_members_select` is tenant-wide (002:114-116). So project names are readable by any tenant user; the page shows only projects reached through PM-scoped delivery rows.
+Page entry: `getProfile()` redirects only when there is no session. It does **not** refuse inactive users: `PROFILE_COLUMNS = 'id, tenant_id, full_name, role'`, lookup by `auth_id` only, no `status` read (profile-query.ts:17-39; `grep status` returns nothing, EV). An inactive user therefore gets past the page entry and sees the empty "not a PM" state because RLS returns no rows (049 policy `u.status='active'`; `users.status` values `pending|active|deactivated`, 012:45-46). Actions are refused by the RPC (QE015).
+**R5 pattern:** reads live in `lib/capture/pm-queries.ts` as functions taking `(client, profile, ...)`, like `getHindranceQueue(supabase, profile.id, now)`; tests call them with `jwtClient`, never raw selects. Action logic lives in `lib/capture/pm-actions.ts` as `runApprove(deps, input)` etc. with `deps = { client, profile }`; `app/(dashboard)/material-inward/actions.ts` is a thin `'use server'` wrapper that builds deps from `createClient()` + `getProfile()`. Reason: a `deps` parameter on an exported Server Action is client-controlled input; the shape mirrors `handlePhotoGet(request, params, deps)` (photos route.ts:86-114) without exposing deps to callers. (Deviates from hindrances/actions.ts, which holds logic in the action and is untestable under vitest because of `cookies()`.)
+
+## 3. File access (route `GET /api/capture-files/[fileId]`)
+**R2 DEVIATION, NEEDS ARAVIND'S APPROVAL.** pr-c-plan.md:406-407 (Q9, answered 26 Oct): the `capture` kind moves into `lib/storage/photo-access.ts` and the photo route, PR-D being its consumer. This plan does **not** do that. Reasons: (1) the photo boundary reads rows with service_role (photo-access.ts:11-21 "ENTIRE access-control boundary"); this route reads with the user client first, so tenant + PM + active come from RLS; (2) `photo-access.ts` and `app/api/photos/**` stay untouched, so the live photo path cannot regress; (3) different tables and a different bucket. Proof no half-built kind exists: `grep -rniE capture lib/storage/photo-access.ts app/api/photos` gives 2 hits only, a comment ("capability", photo-access.ts:5) and `Sentry.captureException` (route.ts:161) (raw, EV).
+Order: **1** UUID check; `auth.getUser()`; `profileForAuthId`; per-user rate limit. **2** Read the `capture_files` row with the **user client** (RLS = tenant + active + PM on that project). No row = refuse. **3** App check, no trust in step 2 beyond what it proves: `row.tenant_id === profile.tenant_id` (profile value, not row); `ingest_status==='stored'`; `storage_path === tenant_id/project_id/document_id/id` with all four taken from the row and tenant from the profile (exact equality; the writer builds exactly this string, capture-ingest.ts:500-502, and 051 CHECK enforces the prefix, **051:173-174**: your cite of 051:247 is the status-transition line, not the path CHECK); `isProjectPm(userClient, profile.id, row.project_id)`. **`isProjectPm` checks `project_members.role='pm'` only (is-project-pm.ts:18-30): no status, no tenant check; step 3 relies on step 2 for active status and tenant.** Signature is `(client, userId, projectId)`, corrected from draft 2. User client is enough: `project_members_select` is tenant-wide (002:114-116); a false deny fails closed and T-FILE-1 catches it. **4** `serviceClient.storage.from(CAPTURE_BUCKET).createSignedUrl(path, 60)`; 302. Service role signs only, written reason: 049:1016-1017 has no `storage.objects` policy ("access is service_role plus app membership checks"), so a user JWT cannot sign [inferred; T-SIGN-0 observes].
+Every response (including refusals, one shape: 404) sends `Cache-Control: no-store` and `Referrer-Policy: no-referrer`; `export const dynamic='force-dynamic'`. Link is a plain `<a target="_blank" rel="noopener noreferrer">`, minted on click. Files not `stored` (pending, rejected, failed) have `storage_path` NULL (051:168-169), no object, so no link, only a label.
+**Upload facts:** objects are uploaded `{ upsert:false, contentType: <detected type> }` (capture-ingest.ts:596, comment :590). Storage should serve that Content-Type, so images and PDFs open inline in the new tab [inferred; verify at build]. The path has no extension, so any download filename comes from us (`dc-<file_no>.<ext from content_type>`), never the path. `download` option of `createSignedUrl` in supabase-js ^2.108.2: **UNPROVEN** until `npm ci` lets me read the types.
+
+## 4. The 15-minute rule
+v3:119: "A `pending` file older than 15 minutes shows as failed on the PM page." Dependents: pr-c-plan.md:97, pr-c-c5-plan.md:359 and Q16 (needed live, or a stuck-`running` scan, before C6). Pure display derivation: `ingest_status='pending' AND now - created_at > 15 min` renders `PM_LABEL_FILE_FAILED`; uses `capture_files.created_at` (`ingested_at` is NULL while pending, 051 stored-only CHECK, 051:168-169). No write, no DB change. 051 allows pending->stored and failed->stored later (051:247-250), so the label is not final. Constant `PM_PENDING_TIMEOUT_MINUTES = 15`.
+
+## 5. DB change: **No**
+Tables readable, functions callable, names readable (sections 1-2); bucket private by design. Supplier name is out (Q1). The two-PM overwrite on `pm_set_delivery_details` stays a known risk (R7), not a DB change. `types/database.ts`: **never touched; if regen shows drift, stop and report.** Anything else needing a migration = stop for design review.
+
+## 6. Error mapping (keys only; SQLSTATE in RPC `error.code` [inferred; T-ERR-1 observes])
+QE015 `PM_ERR_NOT_AVAILABLE`; QE011 `PM_ERR_STATE_CHANGED` (variants `PM_ERR_LINK_AUTO_APPROVED`, `PM_ERR_ALREADY_UNLINKED`); QE016 `PM_ERR_TYPE_REQUIRED`; QE017 `PM_ERR_REJECT_REASON`; QE012/23514/23503 `PM_ERR_INVALID_INPUT`; QE008 `PM_ERR_ALREADY_LINKED`; QE010 `PM_ERR_SELF_LINK_FIXED`; QE006 `PM_ERR_RETYPE_LINKED`; QE007 `PM_ERR_RETYPE_AUTOMATIC`; QE003/004/005 `PM_ERR_LINK_TARGET_INELIGIBLE`; QE001/002/009/013/014 and anything else `PM_ERR_SAVE_FAILED` + Sentry. Stale form (R7) `PM_ERR_STATE_CHANGED`.
+
+## 7. String slots (no wording; all "Tamil owed", each comes to Aravind first)
+Page: `PM_PAGE_TITLE`, `PM_EMPTY_STATE`, `PM_NOT_A_PM_STATE`, `PM_LOAD_ERROR`. Status x5 `PM_STATUS_*`. Types `PM_TYPE_SUPPLIER/_INTERNAL_TRANSFER`. Labels `PM_LABEL_CREATED_FROM_INVOICE`, `_CANCELLED_REASON`, `_INVOICE_EXPECTED(+_DAYS)`, `PM_INVOICES_HEADING`. Files `PM_LABEL_PDF_NOT_PREVIEWABLE`, `PM_LABEL_FILE_REJECTED_TYPE/_SIZE/_PENDING/_FAILED`, `PM_FILE_UNAVAILABLE`, `PM_FILE_OPEN`, `PM_FILE_DOWNLOAD`. Actions `PM_ACTION_APPROVE/_REJECT/_LINK_INVOICE/_UNLINK/_SAVE_DETAILS`, `PM_FIELD_*`, `PM_CONFIRM_REJECT`, `PM_CONFIRM_UNLINK`, `PM_PENDING_ACTION`. Errors: section 6. Approve-without-file: `PM_WARN_APPROVE_NO_FILE`, `PM_BLOCK_APPROVE_NO_FILE`, `PM_CONFIRM_APPROVE_ANYWAY` (R6).
+**R1 ack slots, separate per document type.** DB values: `engineer_ack IN ('yes','no','partial','unclear')`, NULL until answered (049:289; EV). v3:224 (full line in EV) lists ONE shared set: "ack labels (yes, no, partial, unclear, **not acknowledged**)"; that is **superseded** by your rule. Slots: `PM_ACK_INVOICE_YES/_NO/_PARTIAL` (matches / does not match / partly matches: constraint, not text); `PM_ACK_DC_YES/_NO/_PARTIAL` (all arrived / not arrived / part arrived); `PM_ACK_NONE` (NULL, "not acknowledged"). **OPEN, Aravind has not decided:** the label for `unclear` and whether it exists for both types: reserved `PM_ACK_INVOICE_UNCLEAR` and `PM_ACK_DC_UNCLEAR` (or one shared), none built until decided. Selection is `ACK_LABEL[document.kind][engineer_ack]`, typed `Record<'dc'|'invoice', Record<Ack, string>>` so a new DB value is a compile error. An invoice's ack is never shown as arrival evidence (v3 §2.2, Q7). No string says "DC missing" or "paid".
+
+## 8. Tests (shared test-db; Vitest 3, node env, `.env.test`, `fileParallelism:false`, vitest.config.ts:18-36)
+Fixtures: `test/helpers/db.ts` (`ensureTwoTenantFixtures`, `jwtClient`, `testClient`), `test/helpers/capture-fixtures.ts` (`buildCaptureKit`, `makeDoc`; names read, bodies not). Actors: PM-A1, PM-A2 (other project, same tenant), PM-B (tenant B), non-PM member, inactive user (`users.status='deactivated'`), PM removed from project, anon. Markers `ZZTestCapture-${RUN_TAG}-`. Every row has a positive control shown RED first via a weakened variant; controls print HEAD sha, sha256 of the mutated file, empty `git status --porcelain`, and must go red at the intended row.
+| ID | Layer | What |
+|---|---|---|
+| T-R-1..4 | test-db, via `pm-queries` + jwtClient | PM-A1 sees A1 rows; PM-A2, PM-B, non-PM, inactive, removed-PM, anon see zero |
+| T-ACT-1..5 | test-db, via `runX(deps)` | each RPC: PM-A1 ok + success shape; PM-A2, PM-B, non-PM refused QE015, row unchanged |
+| T-FILE-1..8 | test-db | stored file by PM-A1 = 302 + both headers; PM-A2 / PM-B / non-PM / anon / inactive user / PM removed from project / pending / rejected / failed / bad id = identical 404 |
+| **T-FILE-CTRL (R4)** | test-db + unit | route with step 2 swapped to a service-role read: PM-A1 requests tenant B's real stored file; step 3 alone must refuse (tenant mismatch). Control: remove step 3 -> RED (signs). A real cross-tenant stored row can exist (its path is its own tenant's, 051:173-174). A row whose path names a **different** tenant than its own cannot exist on test-db (that CHECK), so step-3 path equality is a **unit test on an injected forged row**, plus this control |
+| T-SIGN-0 | test-db | user-JWT `createSignedUrl` on the bucket fails |
+| T-ERR-1 | test-db | each reachable QE code -> its key; unknown -> `PM_ERR_SAVE_FAILED` |
+| T-REPEAT-1..5 | test-db, sequential | repeat and other-PM-changed-it per RPC (section 9.E) |
+| T-STALE-1 (R7) | test-db | load form, other PM changes a field, submit -> `PM_ERR_STATE_CHANGED`, no RPC, row unchanged; control: unchanged values -> ok |
+| T-15-1 | unit | 14:59 vs 15:01 pending; stored; failed; fixed clock |
+| T-ACK-1 (R1) | unit, `renderToStaticMarkup` | for each kind x each ack value, markup holds that kind's slot text and never the other kind's; constants differ across kinds; null -> `PM_ACK_NONE` |
+| T-RENDER-1 | unit | no signed URL / token / storage host; file links are `/api/capture-files/<uuid>`; no `next/image`, no `next/link`; no "DC missing"/"paid" |
+| T-CACHE-1 | unit on handler | `no-store` + `no-referrer` on 302 and 404; `dynamic='force-dynamic'` present |
+| T-CONC-1 | **CI-only** | two PMs concurrently (local pass is not evidence, CLAUDE.md §7) |
+No DOM tests (Q6): `grep jsdom|testing-library|happy-dom|playwright package.json` = none (EV). Repeat-call safety = T-REPEAT; button busy state (`useTransition`, `disabled={isPending}`, ack-controls.tsx:59,111,130) = **manual check**.
+
+## 9. Behaviours, risks
+**E. Repeat / other PM changed it** (all lock then re-check): set_details: repeat = same overwrite, ok; after reject QE011 (050:523-524); after approved/cancelled the trigger raises QE011 (legend 049:161 + comment 050:518; trigger body **UNPROVEN**, T-REPEAT observes). approve: repeat or other PM acted -> QE011 (050:593); type cleared -> QE016. reject: auto path QE011 (050:675); DC path QE011 (050:725-726, quoted EV). link: delivery already linked -> 23505 -> QE008 (050:898); auto delivery approved -> QE011 (050:869-870); target rejected/cancelled -> QE005 per legend 049:152 (trigger body **UNPROVEN**). unlink: already unlinked -> QE011 (050:968-971); self-link -> QE010 (050:963).
+**R7 stale-form check:** the set-details form carries the values it loaded (type, vehicle, DC no., DC date, status). The action re-reads the row (user client) and returns `PM_ERR_STATE_CHANGED` if any differ, **before** the RPC. **This is non-atomic**: another PM can write between the re-read and the RPC, and the function is a full overwrite with no version check (050:518-532). The two-PM race is a known, accepted risk with no DB change; T-CONC-1 (CI-only) documents it.
+**R6 approve without a readable file. OPEN for Aravind: block, warn or allow.** Cases with no stored file: (a) all files `pending` and under 15 min; (b) all `pending` over 15 min (derived failed); (c) all `failed`; (d) all `rejected` (`wrong_type`/`too_large`); (e) any mix of a-d; (f) zero `capture_files` rows (not expected, rows are created in the engineer transaction, pr-c-c5-plan.md:17; UNPROVEN on prod). A delivery with at least one `stored` file is out of scope. `pm_approve_delivery` checks only status and type (050:593-599), so any block is UI-only.
+Other risks: file route is the access boundary of a new bucket (highest); URL in the new tab's history for 60 s; S1b out of scope in the S1 record (s1-build-record.md:82): no query strings or fragments on PM pages, ids as path segments only (accepted). D-30 could change: real file mix and counts, how often files sit pending/failed (copy), DC/invoice pairing, ack text length, volume (pagination). Schema does not change.
+**Q9 build-phase setup (not now):** copy `.env.test` only (never `.env.local`; copied without printing it); `npm ci`; print sha256 of `package-lock.json` before and after and prove equal; print `supabase/.temp/project-ref`: **it does not exist in this worktree** (EV), so I stop and ask rather than link; the test guard hard-allows one ref, `exfccwlrhoutkgrlikod` (test/setup/guard.ts), which I would name as the shared test-db before any test.
+
+## 10. Files
+Create: `app/(dashboard)/material-inward/{page.tsx,[deliveryId]/page.tsx,actions.ts,*-controls.tsx}`; `app/api/capture-files/[fileId]/route.ts`; `lib/capture/{pm-queries,pm-actions,pm-errors,pm-file-access,pm-copy}.ts`; `components/material-inward/*`; `test/pm-*.test.ts(x)`; `docs/plans/pr-d-plan.md` + review package. **No nav change** (Q5): `sidebar-nav.tsx`/`mobile-nav.tsx` untouched; page reachable by URL; the nav entry is added to the C6 entry gate (C6's list, not edited here).
+Must not touch: `supabase/migrations/**`, `types/database.ts`, `lib/storage/photo-access.ts`, `app/api/photos/**`, `lib/media/capture-ingest.ts`, `lib/whatsapp/**`, capture-switch, `lib/observability/**`, `proxy.ts`, `vercel.json`, CLAUDE.md, sidebar/mobile nav, ~/Desktop/quocoai.
+
+## Mapping from draft 2 (sections and rules)
+| Draft 2 | Status |
+|---|---|
+| 0 Tier | changed by R8 (migration-gate reasoning removed; design review then code review) |
+| 1 Screens/map | changed: Q1 (no supplier name, drift note dropped), R9 (success returns) |
+| 2 Reads | changed by R3 (projects/project_members policies, quotes), R5, R9 (inactive users) |
+| 3 File access | changed by R2, R4, R9, Q2/Q3/Q4 (TTL 60, headers, force-dynamic) |
+| 4 15-minute rule | kept (051 line cite sharpened) |
+| 5 DB change | changed: types/database.ts never touched (R9), Storage policy and version check stay "no" |
+| 6 Error mapping | kept; stale-form variant added (R7) |
+| 7 Strings | changed by R1 (per-type ack, `unclear` OPEN), R6 (warn/block slots) |
+| 8 Tests | changed by R4, R5, R7, R9 (inactive/removed PM), Q6 (no DOM) |
+| 9 Risks | changed: S1b, UUID accepted (Q7); "body not read" claims now quoted or marked UNPROVEN (R3) |
+| 10 Files | changed: nav files dropped on purpose (Q5), photos kind dropped on purpose (R2) |
+| A signing | kept; reasoning sharpened (R2, R9) |
+| B caching | changed by Q4 (force-dynamic confirmed, question closed) |
+| C leaks | changed by Q3 (`Referrer-Policy` header decided); `next/link` ban kept |
+| D file types | kept; upload contentType added (R9); thumbnails dropped (Q8) |
+| E repeat/concurrent | changed by R7; QE005 and trigger bodies marked UNPROVEN |
+| F harness | changed by Q6, R5 |
+| Questions | answered (Q1-Q9); new ones below |
+
+## Questions for Aravind
+1. R2: approve the new `/api/capture-files/[fileId]` route instead of the `capture` kind in photo-access (deviation from pr-c-plan.md:406-407)?
+2. R1: label for `unclear`, and does it apply to both document types?
+3. R6: approve with no stored file: block, warn, or allow?
+4. Q9: `supabase/.temp/project-ref` is absent in the worktree. OK to rely on the guard's single allowed ref (`exfccwlrhoutkgrlikod`) as the "shared test-db" proof, or do you want the project-ref file present (needs a link, which the CLI rule says only on your named ref)?
+5. Fixture: is there a way to create a `deactivated` user and remove a PM from a project in the capture kit, or may the build add helpers under `test/helpers/` (new file)?
+
+## Build deviations (31 Oct build; the build instruction wins over draft 3 where they differ)
+Answers to the questions above, from the build instruction: route APPROVED (D4); approve-without-file = warn and allow (D10); fixtures = new `test/helpers/pm-fixtures.ts` on top of the existing capture kit (which already has `deact` and `admMem`). The `unclear` ack label stays OPEN.
+1. **Hand-written validators, not Zod (D7).** `zod` is not a declared dependency (it is hoisted only transitively, v4.4.3, and no repo code imports it) and `package.json` is out of scope. Rules mirror the DB (vehicle and DC number <= 64, reason non-blank and <= 1000, 1-20 distinct delivery ids, ISO date, type in the CHECK set). Swap to Zod once it is declared in its own change.
+2. **`PM_CAPTURE_BUCKET` is a local constant**, not imported from `lib/media/capture-ingest.ts` (draft 3 said import it): that module pulls the Twilio send path into the file route. `test/pm-unit.test.ts` asserts the two strings are equal.
+3. **No block slot and no confirm-anyway slot** (`PM_BLOCK_APPROVE_NO_FILE`, `PM_CONFIRM_APPROVE_ANYWAY` from draft 3's R6): D10 is warn and allow, so only `PM_WARN_APPROVE_NO_FILE` exists. Asserted in `test/pm-render.test.tsx` (T-WARN-1).
+4. **Derived 15-minute state has its own label**, `PM_LABEL_FILE_PENDING_TIMEOUT`, separate from a real `failed` (`PM_LABEL_FILE_FAILED`), because the file can still flip to stored (D9).
+5. **Download file name is `dc-<file_no>.<ext>` for every document kind (D5)**, so a not-previewable PDF attached to an INVOICE is also named `dc-N.pdf`. Needs a one-line decision if that is wrong.
+6. **Test-only `rowClient` dependency** on `handleCaptureFileGet` (swaps the step-2 read for a service-role read) so T-FILE-CTRL can prove the app check refuses on its own. Production never sets it.
+7. **The file route reproduces the photo route's in-memory rate limiter** (120/min per user): the original is module-private and `app/api/photos/**` is out of scope. Same non-distributed limitation.
+8. **List cap of 100 deliveries (newest first) with `PM_LIST_TRUNCATED`** (not in draft 3), so `in(...)` filters stay under URL limits. No pagination in v1.
+9. **Extra display constants** not named in draft 3 (`PM_FIELD_*`, `PM_KIND_*`, `PM_TYPE_NOT_SET`, `PM_BACK_TO_LIST`, `PM_LINK_*`, `PM_LINKED_DELIVERIES_HEADING`); full list and where each appears: `/tmp/quoco/pr-d-strings.txt` at build time.
+10. **Link pickers.** On an invoice page the PM picks 1-20 DC deliveries (checkboxes); on a DC page the PM picks one invoice (radio) and the call is `pm_link_invoice(picked_invoice, [this_delivery])`. Candidate labels show date, DC number and ack only (the schema has no invoice number). Candidates are a convenience filter; the database remains the gate.
+11. **Stale-form check also compares `status`** (not only the four editable fields).
+12. **Server Action wrappers revalidate the list and the detail route on success AND on refusal**, so a STATE_CHANGED answer is followed by fresh data.
+13. **Reject asks twice** (`PM_CONFIRM_REJECT`) because a rejection is final (050:523-524); unlink asks twice (`PM_CONFIRM_UNLINK`).
+14. **Controls use an env switch** (`PM_CONTROL=service`, `test/helpers/pm-fixtures.ts negClient` and `pm-file-route.test.ts`) to swap negative actors for the service-role client; this is the "RED first" mechanism for the RLS-dependent negatives.
+15. **Branch** was created with `git switch -c pr-d-material-inward origin/main` because `main` is checked out in the other worktree.
+16. **`npm ci` warned** that install scripts for esbuild, fsevents and unrs-resolver did not run ("allow-scripts"); `package-lock.json` hash was identical before and after (`/tmp/quoco/pr-d-build-setup.txt`). Not acted on.
+17. **T-CONC-1 is not verified locally** (CI-only, CLAUDE.md section 0); it is `it.skip` unless `CI` is set.
