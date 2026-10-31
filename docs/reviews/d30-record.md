@@ -79,7 +79,7 @@ invalid (phone sanity n=0); superseded by `d30-after2-result.csv`.
 
 | # | Finding | Owner / next step |
 |---|---|---|
-| F1 | Multi-photo: one reply per inbound message (3 photos gave 3 replies, F row 2: 3 message SIDs). Q5 (pr-c decisions 2026-10-26 #5) is decided by D-30: change. | Strings owed (Aravind). |
+| F1 | Multi-photo: one reply per inbound message (3 photos gave 3 replies, F row 2: 3 message SIDs). Decision Q5, recorded per Aravind on 26 Oct 2026 in the design-review project notes (not in this repo): "Reply per extra file: decide after the D-30 test. Default: one reply per inbound message." D-30 decided: change the default. | Strings owed (Aravind). |
 | F2 | An unsupported file in a live invoice session gets `UNSUPPORTED_MEDIA_REPLY`: the webhook (`app/api/whatsapp/webhook/route.ts:288`) decides before reading session state. The approved `MI_UNSUPPORTED_FILE_REPLY` (#17) is unused for this case. | Bug, no new string. |
 | F3 | A photo at the kind step is dropped (`050:203-205`, by design) with only the kind re-ask; the engineer is not told. | String owed (Aravind). |
 | F4 | Document file names are stored as `capture_documents.caption` (lengths 13 and 46 match the file names). | PR-D must not present them as engineer text. |
