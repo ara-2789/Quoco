@@ -103,9 +103,26 @@ export type PmListResult =
   | { status: 'not-a-pm' }
   | { status: 'ok'; items: PmListItem[]; truncated: boolean }
 
-export async function getMaterialInwardList(client: Client, reader: PmReader, now: Date): Promise<PmListResult> {
+/** The deliveries a PM can still act on (050: approve and reject accept only these, 050:593 / 675). They list first. */
+const OPEN_STATUSES = ['incomplete', 'awaiting_pm'] as const
+const DELIVERY_COLUMNS =
+  'id, project_id, status, delivery_type, vehicle_number, dc_number, delivery_date, received_at, cancel_reason, reported_by, dc_document_id, created_from_invoice_id'
+
+/**
+ * ORDER: incomplete and awaiting_pm deliveries first, then every other status; inside each group newest `received_at`
+ * first. The cap (`opts.limit`, default PM_LIST_LIMIT) is applied to that combined order, so an old delivery still waiting
+ * for the PM is never pushed off the list by newer approved ones. Two queries (PostgREST cannot order by a condition):
+ * the open group fills the cap first; the rest fills what is left.
+ */
+export async function getMaterialInwardList(
+  client: Client,
+  reader: PmReader,
+  now: Date,
+  opts: { limit?: number } = {},
+): Promise<PmListResult> {
   if (reader.tenant_id === null) return { status: 'not-a-pm' }
   const tenantId = reader.tenant_id
+  const limit = opts.limit ?? PM_LIST_LIMIT
 
   const { data: mem, error: memErr } = await client
     .from('project_members')
@@ -117,18 +134,27 @@ export async function getMaterialInwardList(client: Client, reader: PmReader, no
   const projectIds = [...new Set((mem ?? []).map((m) => m.project_id))]
   if (projectIds.length === 0) return { status: 'not-a-pm' }
 
-  const { data: deliveries, error: delErr } = await client
-    .from('deliveries')
-    .select(
-      'id, project_id, status, delivery_type, vehicle_number, dc_number, delivery_date, received_at, cancel_reason, reported_by, dc_document_id, created_from_invoice_id',
-    )
-    .eq('tenant_id', tenantId)
-    .in('project_id', projectIds)
+  const base = () => client.from('deliveries').select(DELIVERY_COLUMNS).eq('tenant_id', tenantId).in('project_id', projectIds)
+
+  const { data: openRows, error: openErr } = await base()
+    .in('status', [...OPEN_STATUSES])
     .order('received_at', { ascending: false })
-    .limit(PM_LIST_LIMIT + 1)
-  if (delErr) return reportRead('deliveries', delErr)
-  const truncated = (deliveries ?? []).length > PM_LIST_LIMIT
-  const rows = (deliveries ?? []).slice(0, PM_LIST_LIMIT)
+    .order('created_at', { ascending: false })
+    .limit(limit + 1)
+  if (openErr) return reportRead('deliveries (open)', openErr)
+  let rows = (openRows ?? []).slice(0, limit)
+  let truncated = (openRows ?? []).length > limit
+  if (!truncated) {
+    const room = limit - rows.length
+    const { data: otherRows, error: otherErr } = await base()
+      .not('status', 'in', `(${OPEN_STATUSES.join(',')})`)
+      .order('received_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(room + 1)
+    if (otherErr) return reportRead('deliveries (other)', otherErr)
+    rows = rows.concat((otherRows ?? []).slice(0, room))
+    truncated = (otherRows ?? []).length > room
+  }
   if (rows.length === 0) return { status: 'ok', items: [], truncated: false }
 
   const docIdOf = (d: { dc_document_id: string | null; created_from_invoice_id: string | null }) =>

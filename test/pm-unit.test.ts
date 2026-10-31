@@ -150,12 +150,13 @@ describe('T-FILE-CTRL (unit half): the app check refuses forged rows with no DB'
     })
     expect(asked).toBe(PROJECT)
   })
-  it('download file name: dc-<file_no>.<ext>, never the storage path', () => {
-    expect(downloadFileName(3, 'application/pdf')).toBe('dc-3.pdf')
-    expect(downloadFileName(1, 'image/jpeg')).toBe('dc-1.jpg')
-    expect(downloadFileName(2, 'image/png')).toBe('dc-2.png')
-    expect(downloadFileName(2, 'image/webp')).toBe('dc-2.webp')
-    expect(downloadFileName(1, null)).toBe('dc-1.bin')
+  it('download file name: <document kind>-<file_no>.<ext> with the raw kind value, never the storage path', () => {
+    expect(downloadFileName('dc', 3, 'application/pdf')).toBe('dc-3.pdf')
+    expect(downloadFileName('invoice', 3, 'application/pdf')).toBe('invoice-3.pdf')
+    expect(downloadFileName('dc', 1, 'image/jpeg')).toBe('dc-1.jpg')
+    expect(downloadFileName('invoice', 2, 'image/png')).toBe('invoice-2.png')
+    expect(downloadFileName('invoice', 2, 'image/webp')).toBe('invoice-2.webp')
+    expect(downloadFileName('dc', 1, null)).toBe('dc-1.bin')
   })
   it('bucket constant equals the writer (lib/media/capture-ingest.ts) and TTL is 60 s (D1)', () => {
     expect(PM_CAPTURE_BUCKET).toBe(CAPTURE_BUCKET)

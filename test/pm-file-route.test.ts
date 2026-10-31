@@ -31,13 +31,15 @@ let dcB: MadeDoc & { fileId: string }
 let pending: MadeDoc & { fileId: string }
 let failed: MadeDoc & { fileId: string }
 let rejected: MadeDoc & { fileId: string }
+let invPdfA1: MadeDoc & { fileId: string }
 
 // HOOK TIMEOUT (this file only). The default hookTimeout (30 s, vitest.config.ts) is too tight for this setup. Measured on
 // test-db, 31 Oct 2026 (diagnostic run, raw timings in /tmp/quoco/pr-d-tests.txt): buildPmKit 11.4 s (six logins minted),
 // then seven makeDocWithFile at 1.9-3.2 s each (three engineer RPC turns plus an upload), TOTAL 29.5 s. No step hangs or
-// retries; it is simply slow, and the first run missed 30 s by a hair. 60 s is about 2x the measured total.
+// retries; it is simply slow, and the first run missed 30 s by a hair. The setup has since gained one more document (the
+// invoice PDF, ~3 s). 90 s = the measured ~30-33 s plus headroom for a slower CI runner; it is a ceiling, not a target.
 // One timing line per step is kept so a future overrun is attributable.
-const HOOK_TIMEOUT_MS = 60_000
+const HOOK_TIMEOUT_MS = 90_000
 
 async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
   const t0 = Date.now()
@@ -62,6 +64,7 @@ beforeAll(() => {
     pending = await timed('makeDocWithFile f-pend (pending)', () => makeDocWithFile(kit, 'dc', 'f-pend', 'pending'))
     failed = await timed('makeDocWithFile f-fail (failed)', () => makeDocWithFile(kit, 'dc', 'f-fail', 'failed'))
     rejected = await timed('makeDocWithFile f-rej (rejected)', () => makeDocWithFile(kit, 'dc', 'f-rej', 'rejected_type'))
+    invPdfA1 = await timed('makeDocWithFile f-invpdf (invoice, stored_pdf)', () => makeDocWithFile(kit, 'invoice', 'f-invpdf', 'stored_pdf'))
   })()
   return setup
 }, HOOK_TIMEOUT_MS)
@@ -135,6 +138,37 @@ describe('T-FILE-1: PM-A1 opens a stored file', () => {
     expect(out.status).toBe(200)
     expect(out.headers.get('content-disposition') ?? '').toMatch(/attachment/i)
     expect(out.headers.get('content-disposition') ?? '').toContain('dc-1.pdf')
+  })
+  it('a not-previewable INVOICE pdf downloads as invoice-<file_no>.pdf (the raw capture_documents.kind value, 049:286)', async () => {
+    const res = await handleCaptureFileGet(req(invPdfA1.fileId), { fileId: invPdfA1.fileId }, {
+      supabaseClient: await kit.jwt('pm1'),
+      serviceClient: kit.svc,
+      rateLimit: { store: new Map() },
+    })
+    expect(res.status).toBe(302)
+    const loc = res.headers.get('location')!
+    expect(loc).toContain('download=invoice-1.pdf')
+    expect(loc).not.toContain('download=dc-')
+    const out = await fetch(loc)
+    expect(out.status).toBe(200)
+    expect(out.headers.get('content-disposition') ?? '').toMatch(/attachment/i)
+    expect(out.headers.get('content-disposition') ?? '').toContain('invoice-1.pdf')
+  })
+  it('a not-previewable pdf is refused if its document kind cannot be read (the route never guesses a name)', async () => {
+    // A client that sees the file row but not the document: an RLS-less anon client sees neither, so use a stub row client.
+    const rowOnly = {
+      from: (table: string) =>
+        table === 'capture_files'
+          ? kit.svc.from('capture_files')
+          : { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { kind: 'receipt' }, error: null }) }) }) }) },
+    } as unknown as SupabaseClient
+    const res = await handleCaptureFileGet(req(pdfA1.fileId), { fileId: pdfA1.fileId }, {
+      supabaseClient: await kit.jwt('pm1'),
+      rowClient: rowOnly,
+      serviceClient: kit.svc,
+      rateLimit: { store: new Map() },
+    })
+    await expectRefusal(res)
   })
   it('the TTL on the signed URL is 60 seconds', async () => {
     const res = await handleCaptureFileGet(req(dcA1.fileId), { fileId: dcA1.fileId }, {

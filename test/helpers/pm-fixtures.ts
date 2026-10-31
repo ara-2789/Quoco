@@ -115,7 +115,7 @@ export async function makeDocWithFile(
   kind: 'dc' | 'invoice',
   label: string,
   fileState: 'stored' | 'pending' | 'failed' | 'rejected_type' | 'stored_pdf',
-  o: { tenantId?: string; projectId?: string; userId?: string } = {},
+  o: { tenantId?: string; projectId?: string; userId?: string; now?: Date } = {},
 ): Promise<MadeDoc & { fileId: string }> {
   const d = await makeDoc(kit, kind, label, o)
   const files = await filesOfDoc(kit, d.docId)

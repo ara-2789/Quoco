@@ -116,10 +116,16 @@ const EXT_BY_CONTENT_TYPE: Record<string, string> = {
   'image/webp': 'webp',
 }
 
-/** Download file name for a not-previewable file: dc-<file_no>.<ext> (D5). Never derived from the storage path. */
-export function downloadFileName(fileNo: number, contentType: string | null): string {
+/** The raw value of capture_documents.kind: CHECK (kind IN ('dc', 'invoice')), supabase/migrations/049_capture_tables.sql:286. */
+export type CaptureDocumentKind = 'dc' | 'invoice'
+
+/**
+ * Download file name for a not-previewable file: <kind>-<file_no>.<ext>, where <kind> is the raw document-type value
+ * ('dc' or 'invoice'). Never derived from the storage path.
+ */
+export function downloadFileName(kind: CaptureDocumentKind, fileNo: number, contentType: string | null): string {
   const ext = (contentType && EXT_BY_CONTENT_TYPE[contentType]) || 'bin'
-  return `dc-${fileNo}.${ext}`
+  return `${kind}-${fileNo}.${ext}`
 }
 
 export interface CaptureFileDeps {
@@ -173,8 +179,22 @@ export async function handleCaptureFileGet(
     const path = await appCheckCaptureFile(row, profile, (projectId) => isProjectPm(session, profile.id, projectId))
     if (!path) return refusal()
 
+    // A not-previewable file downloads as <kind>-<file_no>.<ext>. The kind is the DOCUMENT's raw type value, read here with
+    // the same client as step 2 (RLS) and the profile's tenant. Anything other than the two CHECK values is refused: the
+    // route never guesses a name.
+    let download: string | undefined
+    if (row.preview_state === 'not_previewable') {
+      const { data: doc, error: docErr } = await (deps.rowClient ?? session)
+        .from('capture_documents')
+        .select('kind')
+        .eq('id', row.document_id)
+        .eq('tenant_id', profile.tenant_id as string)
+        .maybeSingle<{ kind: string }>()
+      if (docErr || !doc || (doc.kind !== 'dc' && doc.kind !== 'invoice')) return refusal()
+      download = downloadFileName(doc.kind, row.file_no, row.content_type)
+    }
+
     const service = deps.serviceClient ?? createServiceClient()
-    const download = row.preview_state === 'not_previewable' ? downloadFileName(row.file_no, row.content_type) : undefined
     const { data: signed, error: signErr } = await service.storage
       .from(PM_CAPTURE_BUCKET)
       .createSignedUrl(path, PM_FILE_URL_TTL_SECONDS, download ? { download } : undefined)
