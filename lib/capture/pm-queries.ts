@@ -252,7 +252,7 @@ export interface PmDetail {
     kind: PmDocKind
     ack: PmAck | null
     ackNote: string | null
-    caption: string | null
+    // No `caption` on purpose (D-30 F4): capture_documents.caption holds the WhatsApp FILE NAME, not engineer text.
   }
   files: PmFileItem[]
   hasStoredFile: boolean
@@ -305,7 +305,7 @@ export async function getDeliveryDetail(
   if (!docId) return { status: 'not-found' }
 
   const [doc, files, links, project, reporter] = await Promise.all([
-    client.from('capture_documents').select('id, kind, engineer_ack, engineer_ack_note, caption').eq('tenant_id', tenantId).eq('id', docId).maybeSingle(),
+    client.from('capture_documents').select('id, kind, engineer_ack, engineer_ack_note').eq('tenant_id', tenantId).eq('id', docId).maybeSingle(),
     client
       .from('capture_files')
       .select('id, file_no, ingest_status, reject_reason, preview_state, content_type, created_at')
@@ -362,7 +362,6 @@ export async function getDeliveryDetail(
       kind,
       ack: asAck(doc.data.engineer_ack),
       ackNote: doc.data.engineer_ack_note,
-      caption: doc.data.caption,
     },
     files: fileItems,
     hasStoredFile: fileItems.some((f) => f.display === 'stored'),

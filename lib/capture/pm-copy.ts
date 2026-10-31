@@ -85,7 +85,6 @@ export const PM_FIELD_RECEIVED = '[PM_FIELD_RECEIVED]' // Tamil owed, NOT approv
 export const PM_FIELD_ENGINEER = '[PM_FIELD_ENGINEER]' // Tamil owed, NOT approved
 export const PM_FIELD_ACK = '[PM_FIELD_ACK]' // Tamil owed, NOT approved
 export const PM_FIELD_ACK_NOTE = '[PM_FIELD_ACK_NOTE]' // Tamil owed, NOT approved
-export const PM_FIELD_CAPTION = '[PM_FIELD_CAPTION]' // Tamil owed, NOT approved
 export const PM_FIELD_FILES = '[PM_FIELD_FILES]' // Tamil owed, NOT approved
 export const PM_FIELD_PROJECT = '[PM_FIELD_PROJECT]' // Tamil owed, NOT approved
 

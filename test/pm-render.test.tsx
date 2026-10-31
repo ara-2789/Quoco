@@ -19,7 +19,8 @@ import { DecisionControls } from '@/app/(dashboard)/material-inward/decision-con
 import { DetailsControls } from '@/app/(dashboard)/material-inward/details-controls'
 import { LinkControls } from '@/app/(dashboard)/material-inward/link-controls'
 import * as copy from '@/lib/capture/pm-copy'
-import type { PmFileItem, PmListItem } from '@/lib/capture/pm-queries'
+import { DetailView } from '@/components/material-inward/detail-view'
+import type { PmDetail, PmFileItem, PmListItem } from '@/lib/capture/pm-queries'
 
 // PR-D rendered-output tests (react-dom/server renderToStaticMarkup, the photo-sections-render.test.tsx idiom). No DB,
 // no network, no DOM library. T-ACK-1, T-RENDER-1, T-WARN-1.
@@ -172,5 +173,81 @@ describe('controls render only copy constants', () => {
     // A DC page offers INVOICES, so its candidate label is an invoice ack and never a DC one.
     expect(htmls[2]).toContain('[PM_ACK_INVOICE_YES]')
     expect(htmls[2]).not.toContain('[PM_ACK_DC_')
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// H2 / D-30 F4: `capture_documents.caption` holds the WhatsApp FILE NAME of a forwarded document, not text the engineer
+// wrote. The PM page must not show it anywhere. PmDetail and PmListItem do not carry it; these tests inject it anyway (as a
+// regression would) and require that no view renders it.
+// ---------------------------------------------------------------------------------------------------------------
+describe('H2: a caption that is a file name is never rendered', () => {
+  const FILE_NAMES = ['phone pdf.pdf', 'WhatsApp Image 2026-10-05 at 10.00.00.jpeg']
+
+  function detail(kind: 'dc' | 'invoice', caption: string): PmDetail {
+    const document = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind, ack: 'yes', ackNote: null, caption }
+    const base = {
+      id: DEL_ID,
+      projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      projectName: 'P',
+      status: 'awaiting_pm',
+      deliveryType: 'supplier',
+      vehicleNumber: 'TN01',
+      dcNumber: 'DC-1',
+      dcDate: '2026-10-30',
+      deliveryDate: '2026-10-30',
+      receivedAt: '2026-10-30T05:00:00Z',
+      cancelReason: null,
+      rejectReason: null,
+      createdFromInvoice: kind === 'invoice',
+      engineerName: 'E',
+      document,
+      files: [{ id: FILE_ID, fileNo: 1, display: 'stored', contentType: 'image/jpeg', previewState: 'previewable' }],
+      hasStoredFile: true,
+      activeLinks: [],
+      linkedDeliveries: [],
+      linkedInvoice: null,
+      candidates: [],
+      invoiceExpectedDays: null,
+    }
+    return base as unknown as PmDetail
+  }
+
+  for (const name of FILE_NAMES) {
+    for (const kind of ['dc', 'invoice'] as const) {
+      it(`detail view (${kind}) with caption "${name}" renders neither the name nor any caption label`, () => {
+        const html = renderToStaticMarkup(<DetailView d={detail(kind, name)} />)
+        expect(html).not.toContain(name)
+        expect(html).not.toMatch(/caption/i)
+      })
+    }
+    it(`list row with caption "${name}" renders neither the name nor any caption label`, () => {
+      const html = renderToStaticMarkup(<DeliveryRow item={{ ...item({}), caption: name } as unknown as PmListItem} />)
+      expect(html).not.toContain(name)
+      expect(html).not.toMatch(/caption/i)
+    })
+  }
+
+  it('POSITIVE CONTROL (sanity): the detail view DOES render the other engineer-visible text it is given (the ack note)', () => {
+    const d = detail('dc', 'phone pdf.pdf')
+    ;(d.document as { ackNote: string | null }).ackNote = 'ZZ-visible-note'
+    expect(renderToStaticMarkup(<DetailView d={d} />)).toContain('ZZ-visible-note')
+  })
+
+  it('no caption copy constant exists, and no code of this feature selects or reads a caption', () => {
+    expect('PM_FIELD_CAPTION' in copy).toBe(false)
+    const root = resolve(__dirname, '..')
+    const walk = (d: string): string[] =>
+      readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]))
+    const dirs = ['lib/capture', 'components/material-inward', 'app/(dashboard)/material-inward']
+    for (const dir of dirs) {
+      for (const f of walk(resolve(root, dir)).filter((p) => /\.(tsx|ts)$/.test(p))) {
+        const code = readFileSync(f, 'utf8')
+          .split('\n')
+          .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)) // comments may explain WHY; code may not use it
+          .join('\n')
+        expect(code, f).not.toMatch(/caption/i)
+      }
+    }
   })
 })
