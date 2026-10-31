@@ -32,22 +32,47 @@ let pending: MadeDoc & { fileId: string }
 let failed: MadeDoc & { fileId: string }
 let rejected: MadeDoc & { fileId: string }
 
-beforeAll(async () => {
-  kit = await buildPmKit('pmf', ['admMem'])
-  dcA1 = await makeDocWithFile(kit, 'dc', 'f-dca1', 'stored')
-  pdfA1 = await makeDocWithFile(kit, 'dc', 'f-pdf', 'stored_pdf')
-  dcA2 = await makeDocWithFile(kit, 'dc', 'f-dca2', 'stored', { projectId: kit.p2, userId: kit.uid('engP2') })
-  dcB = await makeDocWithFile(kit, 'dc', 'f-dcb', 'stored', { tenantId: kit.tenantB, projectId: kit.p3, userId: kit.uid('engB') })
-  pending = await makeDocWithFile(kit, 'dc', 'f-pend', 'pending')
-  failed = await makeDocWithFile(kit, 'dc', 'f-fail', 'failed')
-  rejected = await makeDocWithFile(kit, 'dc', 'f-rej', 'rejected_type')
-})
+// HOOK TIMEOUT (this file only). The default hookTimeout (30 s, vitest.config.ts) is too tight for this setup. Measured on
+// test-db, 31 Oct 2026 (diagnostic run, raw timings in /tmp/quoco/pr-d-tests.txt): buildPmKit 11.4 s (six logins minted),
+// then seven makeDocWithFile at 1.9-3.2 s each (three engineer RPC turns plus an upload), TOTAL 29.5 s. No step hangs or
+// retries; it is simply slow, and the first run missed 30 s by a hair. 60 s is about 2x the measured total.
+// One timing line per step is kept so a future overrun is attributable.
+const HOOK_TIMEOUT_MS = 60_000
+
+async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  const t0 = Date.now()
+  try {
+    return await fn()
+  } finally {
+    console.log(`[pm-file-route] ${label}: ${Date.now() - t0} ms`)
+  }
+}
+
+// The setup promise is kept so afterAll can WAIT for it. A beforeAll that times out does not stop the async function: it
+// keeps creating documents and uploading objects while afterAll runs, and anything created after the cleanup is leaked.
+let setup: Promise<void> | undefined
+
+beforeAll(() => {
+  setup = (async () => {
+    kit = await timed('buildPmKit', () => buildPmKit('pmf', ['admMem']))
+    dcA1 = await timed('makeDocWithFile f-dca1 (stored)', () => makeDocWithFile(kit, 'dc', 'f-dca1', 'stored'))
+    pdfA1 = await timed('makeDocWithFile f-pdf (stored_pdf)', () => makeDocWithFile(kit, 'dc', 'f-pdf', 'stored_pdf'))
+    dcA2 = await timed('makeDocWithFile f-dca2 (stored, P2)', () => makeDocWithFile(kit, 'dc', 'f-dca2', 'stored', { projectId: kit.p2, userId: kit.uid('engP2') }))
+    dcB = await timed('makeDocWithFile f-dcb (stored, tenant B)', () => makeDocWithFile(kit, 'dc', 'f-dcb', 'stored', { tenantId: kit.tenantB, projectId: kit.p3, userId: kit.uid('engB') }))
+    pending = await timed('makeDocWithFile f-pend (pending)', () => makeDocWithFile(kit, 'dc', 'f-pend', 'pending'))
+    failed = await timed('makeDocWithFile f-fail (failed)', () => makeDocWithFile(kit, 'dc', 'f-fail', 'failed'))
+    rejected = await timed('makeDocWithFile f-rej (rejected)', () => makeDocWithFile(kit, 'dc', 'f-rej', 'rejected_type'))
+  })()
+  return setup
+}, HOOK_TIMEOUT_MS)
 
 afterAll(async () => {
+  // Let an in-flight (possibly timed-out) setup finish first, so every object it uploads is tracked before we remove them.
+  if (setup) await setup.catch(() => undefined)
   if (!kit) return
-  await removeStoredObjects(kit)
-  await teardownCaptureKit(kit)
-})
+  await timed('removeStoredObjects', () => removeStoredObjects(kit))
+  await timed('teardownCaptureKit', () => teardownCaptureKit(kit))
+}, HOOK_TIMEOUT_MS)
 
 const req = (id: string) => new NextRequest(`http://localhost/api/capture-files/${id}`)
 

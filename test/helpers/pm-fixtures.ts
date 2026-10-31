@@ -79,9 +79,11 @@ export async function storeFile(kit: CaptureKit, fileId: string, kind: 'png' | '
   const path = `${row.tenant_id}/${row.project_id}/${row.document_id}/${row.id}`
   const bytes = kind === 'png' ? PNG_BYTES : PDF_BYTES
   const contentType = kind === 'png' ? 'image/png' : 'application/pdf'
+  // Tracked BEFORE the upload: if the upload lands but the call fails or times out, afterAll still removes the object
+  // (removing a path that does not exist is harmless).
+  uploaded.set(kit, [...(uploaded.get(kit) ?? []), path])
   const up = await kit.svc.storage.from(PM_BUCKET).upload(path, bytes, { upsert: false, contentType })
   if (up.error) throw new Error(`storeFile upload failed: ${up.error.message}`)
-  uploaded.set(kit, [...(uploaded.get(kit) ?? []), path])
   const upd = await kit.svc
     .from('capture_files')
     .update({
