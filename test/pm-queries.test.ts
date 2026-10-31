@@ -355,3 +355,45 @@ describe('E2/E3: link pickers apply every eligibility rule BEFORE the cap', () =
     expect((await deliveryRow(kit, invApproved.deliveryId)).status).toBe('approved')
   })
 })
+
+// ---------------------------------------------------------------------------------------------------------------
+// F1: the invoice-page DC picker when the "no active link" list is EMPTY. That filter is
+// `.not('id','in', <active-link delivery ids of the project>)`; an empty list would be `not.in.()`. The code skips the filter
+// when the list is empty (pm-queries.ts, `if (takenIds.length > 0)`); this proves the empty case against PostgREST.
+// An invoice normally has an active self-link (its automatic delivery points at it), so the list is empty only when the
+// viewed invoice's own delivery has been REJECTED (rejection soft-unlinks the self-link, 050 reject path 3) and nothing else in
+// the project is linked. Project P3 (tenant B, PM-B): the beforeAll's dcB (a DC, incomplete, no link) plus an invoice made
+// here and rejected. No pm_manual link is ever created in P3.
+// ---------------------------------------------------------------------------------------------------------------
+describe('F1: the invoice-page picker when the project has no active links at all', () => {
+  let invB: MadeDoc & { fileId: string }
+
+  beforeAll(async () => {
+    await setup
+    invB = await timed('f1 invoice in P3', () =>
+      makeDocWithFile(kit, 'invoice', 'q-f1-invb', 'stored', { tenantId: kit.tenantB, projectId: kit.p3, userId: kit.uid('engB') }),
+    )
+    const rejected = await runReject(
+      { client: (await kit.jwt('pmB')) as unknown as PmActionDeps['client'], profile: readerOf(kit, 'pmB') },
+      { deliveryId: invB.deliveryId, reason: 'ZZTestCapture f1' },
+    )
+    expect(rejected).toEqual({ status: 'ok' })
+  }, HOOK_TIMEOUT_MS)
+
+  it('premise: project P3 has NO active link of any kind (so the not-in list is empty)', async () => {
+    const { data, error } = await kit.svc.from('delivery_invoice_links').select('id, link_source').eq('project_id', kit.p3).is('unlinked_at', null)
+    expect(error).toBeNull()
+    expect(data ?? []).toEqual([])
+  })
+
+  it('the DC is offered and no error comes back (the not-in filter is skipped when the list is empty)', async () => {
+    const r = await getDeliveryDetail(await kit.jwt('pmB'), readerOf(kit, 'pmB'), invB.deliveryId, NOW)
+    expect(r.status).toBe('ok') // 'error' would mean a read failed, e.g. a malformed not.in.() filter
+    expect(r.status === 'ok' ? r.detail.candidates.map((c) => c.id) : []).toEqual([dcB.deliveryId])
+  })
+
+  it('same result with a small injected cap', async () => {
+    const r = await getDeliveryDetail(await kit.jwt('pmB'), readerOf(kit, 'pmB'), invB.deliveryId, NOW, { candidateLimit: 1 })
+    expect(r.status === 'ok' ? r.detail.candidates.map((c) => c.id) : []).toEqual([dcB.deliveryId])
+  })
+})
