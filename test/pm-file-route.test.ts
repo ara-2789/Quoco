@@ -254,6 +254,18 @@ describe('T-FILE-CTRL: step 2 swapped for a SERVICE-ROLE read; the app check alo
     })
     await expectRefusal(res)
   })
+  // Review round 1, S1: a DEACTIVATED PM of the project. profileForAuthId ignores users.status and isProjectPm checks the
+  // membership role only, so with the step-2 read swapped for a service-role read nothing but an explicit status check
+  // stops this request. Added RED first (it returned 302 before the fix).
+  it('same swap, a DEACTIVATED PM of A1 asking for A1\'s stored file: 404 (active status must not rest on RLS alone)', async () => {
+    const res = await handleCaptureFileGet(req(dcA1.fileId), { fileId: dcA1.fileId }, {
+      supabaseClient: await kit.jwt('deact'),
+      rowClient: kit.svc,
+      serviceClient: kit.svc,
+      rateLimit: { store: new Map() },
+    })
+    await expectRefusal(res)
+  })
   it('POSITIVE CONTROL: the owning PM with the same swap still gets the 302', async () => {
     const res = await handleCaptureFileGet(req(dcA1.fileId), { fileId: dcA1.fileId }, {
       supabaseClient: await kit.jwt('pm1'),
