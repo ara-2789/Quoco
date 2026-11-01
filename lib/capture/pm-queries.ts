@@ -319,6 +319,8 @@ export async function getDeliveryDetail(
       .is('unlinked_at', null)
       .or(`delivery_id.eq.${deliveryId},invoice_document_id.eq.${docId}`),
     client.from('projects').select('name').eq('tenant_id', tenantId).eq('id', d.project_id).maybeSingle(),
+    // profile-lookup-guard:allow-id-eq -- d.reported_by is a resolved users.id (deliveries.reported_by, a plain FK column
+    // to users.id, 049), never an auth uid; same reasoning as lib/hindrance/pm-notify.ts and owner-deliver-dispatch.ts.
     client.from('users').select('full_name').eq('tenant_id', tenantId).eq('id', d.reported_by).maybeSingle(),
   ])
   for (const [where, r] of [['document', doc], ['files', files], ['links', links], ['project', project], ['reporter', reporter]] as const) {
