@@ -553,13 +553,47 @@ function sourcesMentioning(root: string, needle: string): string[] {
 // writer, and the tick route never queries the table itself.
 const C5_ALLOWED = ['app/api/jobs/tick/route.ts', 'lib/media/capture-ingest.ts']
 
+// 2026-11-01 (PR-D1, PR #348; scope expansion approved by Aravind for THIS block only): the PM page READS capture_files
+// (file lists, states, one row to authorise a file link). The guard keeps its purpose (nothing but the C5 handler and the tick
+// route WRITES that table) and now also names the read-only files. Each READERS entry needs a one-line reason; a file that
+// mentions capture_files and is on neither list fails (a), and every READER is held to select-only by (e).
+const READERS: Record<string, string> = {
+  'lib/capture/pm-file-access.ts': 'PR-D1 file route: reads ONE capture_files row (select, RLS client) to authorise and sign a file; never writes',
+  'lib/capture/pm-queries.ts': 'PR-D1 PM page reads: file lists, counts and states per document (select only)',
+}
+// Anything that could write a table. READERS files may contain none of these ANYWHERE (stricter than "on capture_files").
+const WRITE_CALLS = /\.(insert|update|upsert|delete)\(|\.rpc\(/
+
 describe('T-NOWRITE-1', () => {
   const root = resolve(__dirname, '..')
   const rel = (p: string) => relative(root, p).split(sep).join('/')
+  const mentioning = () =>
+    [...sourcesMentioning(join(root, 'lib'), 'capture_files'), ...sourcesMentioning(join(root, 'app'), 'capture_files')].map(rel).sort()
 
-  it('(a) exactly two files under lib/ and app/ mention capture_files: the C5 handler and the tick route', () => {
-    const hits = [...sourcesMentioning(join(root, 'lib'), 'capture_files'), ...sourcesMentioning(join(root, 'app'), 'capture_files')]
-    expect(hits.map(rel).sort()).toEqual(C5_ALLOWED)
+  it('(a) the WRITER set is exactly the C5 handler and the tick route; every other file under lib/ and app/ that mentions capture_files is a named READER', () => {
+    // A file on neither list stays in this filtered set and fails the equality.
+    expect(mentioning().filter((f) => !(f in READERS))).toEqual(C5_ALLOWED)
+  })
+
+  it('(a2) every READERS entry still mentions capture_files and carries a reason (a stale entry fails)', () => {
+    const hits = mentioning()
+    for (const [file, reason] of Object.entries(READERS)) {
+      expect(hits, `READERS entry ${file} no longer mentions capture_files: remove it`).toContain(file)
+      expect(reason.length, `${file} needs a one-line reason`).toBeGreaterThan(20)
+    }
+  })
+
+  it('(e) READERS are read-only: every from(capture_files) is directly followed by .select(, and the file has no insert, update, upsert, delete or rpc', () => {
+    for (const file of Object.keys(READERS)) {
+      const code = readFileSync(join(root, file), 'utf8')
+        .split('\n')
+        .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)) // comments may explain; code may not write
+        .join('\n')
+      const froms = code.match(/from\(\s*['"]capture_files['"]\s*\)/g) ?? []
+      const selects = code.match(/from\(\s*['"]capture_files['"]\s*\)\s*\.select\(/g) ?? []
+      expect(selects.length, `${file}: every from('capture_files') must be followed directly by .select(`).toBe(froms.length)
+      expect(code, `${file}: must not write`).not.toMatch(WRITE_CALLS)
+    }
   })
 
   it('(b) the C5 handler never inserts, upserts or deletes on any table', () => {
