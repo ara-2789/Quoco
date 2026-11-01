@@ -27,6 +27,14 @@ import {
 import { getDeliveryDetail, getMaterialInwardList } from '@/lib/capture/pm-queries'
 import { handleCaptureFileGet } from '@/lib/capture/pm-file-access'
 import { DetailView } from '@/components/material-inward/detail-view'
+import * as copy from '@/lib/capture/pm-copy'
+
+// The REAL approved values (2 Nov), compared whole (the two 'unclear' values share a prefix).
+const DC_ACK_VALUES = Object.values(copy.PM_ACK_LABEL.dc)
+const INVOICE_ACK_VALUES = Object.values(copy.PM_ACK_LABEL.invoice)
+function expectNoneOf(text: string, values: string[]) {
+  for (const v of values) expect(text, `must not contain ${JSON.stringify(v)}`).not.toContain(v)
+}
 
 // H3: the shapes the real D-30 test produced (docs/reviews/d30-record.md): a document with several stored files, a
 // file-name caption, and an invoice with its automatic self-link and an awaiting_pm automatic delivery. Shared test-db,
@@ -144,8 +152,8 @@ describe('rendering the REAL detail objects of those shapes', () => {
     expect([...html.matchAll(/href="\/api\/capture-files\//g)]).toHaveLength(3)
     // The invoice's OWN ack element renders an invoice label and never a DC one. (The page also lists DC deliveries to link,
     // and each of those rows carries ITS OWN DC label: see the next test. So this test looks at the own-ack element only.)
-    expect(ownAck(html)).toBe('[PM_ACK_INVOICE_YES]')
-    expect(ownAck(html)).not.toContain('[PM_ACK_DC_')
+    expect(ownAck(html)).toBe(copy.PM_ACK_INVOICE_YES)
+    expectNoneOf(ownAck(html), DC_ACK_VALUES)
     expect(html).not.toContain(D30_CAPTION_PDF)
     expect(html).not.toMatch(/caption/i)
   })
@@ -160,18 +168,18 @@ describe('rendering the REAL detail objects of those shapes', () => {
     const rows = [...html.matchAll(/<label class="flex items-center gap-2[^>]*>.*?<\/label>/g)].map((m) => m[0])
     expect(rows.length).toBe(r.detail.candidates.length)
     for (const row of rows) {
-      expect(row).toMatch(/\[PM_ACK_DC_(YES|NO|PARTIAL|UNCLEAR)\]|\[PM_ACK_NONE\]/)
-      expect(row).not.toContain('[PM_ACK_INVOICE_')
+      expect([...DC_ACK_VALUES, copy.PM_ACK_NONE].some((v) => row.includes(v)), 'the row carries a DC ack value or the no-answer value').toBe(true)
+      expectNoneOf(row, INVOICE_ACK_VALUES)
     }
-    expect(rows.some((row) => row.includes('[PM_ACK_DC_YES]'))).toBe(true) // the positive expectation
+    expect(rows.some((row) => row.includes(copy.PM_ACK_DC_YES))).toBe(true) // the positive expectation
   })
 
   it('the DC page: its own ack never renders an invoice label', async () => {
     const r = await getDeliveryDetail(await kit.jwt('pm1'), readerOf(kit, 'pm1'), shapes.dcTwoFiles.deliveryId, NOW)
     if (r.status !== 'ok') throw new Error('detail not ok')
     const html = renderToStaticMarkup(<DetailView d={r.detail} />)
-    expect(ownAck(html)).toBe('[PM_ACK_DC_YES]')
-    expect(ownAck(html)).not.toContain('[PM_ACK_INVOICE_')
+    expect(ownAck(html)).toBe(copy.PM_ACK_DC_YES)
+    expectNoneOf(ownAck(html), INVOICE_ACK_VALUES)
   })
 })
 

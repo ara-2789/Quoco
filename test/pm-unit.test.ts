@@ -221,11 +221,12 @@ describe('T-CACHE-1 (static + no-DB half): D1/D2', () => {
   })
 })
 
-describe('strings: placeholders only, nothing invented (Aravind, 31 Oct)', () => {
+describe('strings: approved English, no placeholder left (Aravind, 2 Nov; exact values are pinned in pm-strings-approved.test.ts)', () => {
   const entries = Object.entries(copy).filter(([, v]) => typeof v === 'string') as Array<[string, string]>
   it('the module has string constants', () => expect(entries.length).toBeGreaterThan(70))
-  it.each(entries.filter(([k]) => k !== 'PM_PAGE_TITLE'))('%s is the literal placeholder [KEY]', (key, value) => {
-    expect(value).toBe(`[${key}]`)
+  it.each(entries)('%s is a non-empty string and not a placeholder', (key, value) => {
+    expect(value.trim()).not.toBe('')
+    expect(value).not.toBe(`[${key}]`)
   })
   it('PM_PAGE_TITLE is the one approved string', () => expect(copy.PM_PAGE_TITLE).toBe('Material Inward'))
   it('no string contains "DC missing" or "paid" (A16 / A17)', () => {
@@ -236,11 +237,11 @@ describe('strings: placeholders only, nothing invented (Aravind, 31 Oct)', () =>
   })
   it('ack slots exist for every DB value of BOTH kinds, and differ across kinds', () => {
     for (const ack of ['yes', 'no', 'partial', 'unclear'] as const) {
-      expect(PM_ACK_LABEL.invoice[ack]).toMatch(/^\[PM_ACK_INVOICE_/)
-      expect(PM_ACK_LABEL.dc[ack]).toMatch(/^\[PM_ACK_DC_/)
+      expect(PM_ACK_LABEL.invoice[ack]).toBe(copy[`PM_ACK_INVOICE_${ack.toUpperCase() as 'YES' | 'NO' | 'PARTIAL' | 'UNCLEAR'}`])
+      expect(PM_ACK_LABEL.dc[ack]).toBe(copy[`PM_ACK_DC_${ack.toUpperCase() as 'YES' | 'NO' | 'PARTIAL' | 'UNCLEAR'}`])
       expect(PM_ACK_LABEL.invoice[ack]).not.toBe(PM_ACK_LABEL.dc[ack])
     }
-    expect(copy.PM_ACK_NONE).toBe('[PM_ACK_NONE]')
+    expect(copy.PM_ACK_NONE).toBe('No answer yet')
   })
 })
 

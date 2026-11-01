@@ -28,6 +28,13 @@ import type { PmDetail, PmFileItem, PmListItem } from '@/lib/capture/pm-queries'
 const FILE_ID = '88888888-8888-4888-8888-888888888888'
 const DEL_ID = '99999999-9999-4999-8999-999999999999'
 const ACKS = ['yes', 'no', 'partial', 'unclear'] as const
+// The REAL approved values (2 Nov), compared whole. Never a prefix of a placeholder: the two 'unclear' values share the words
+// "Answer unclear." so only the full string tells the kinds apart.
+const DC_ACK_VALUES = Object.values(copy.PM_ACK_LABEL.dc)
+const INVOICE_ACK_VALUES = Object.values(copy.PM_ACK_LABEL.invoice)
+function expectNoneOf(text: string, values: string[]) {
+  for (const v of values) expect(text, `must not contain ${JSON.stringify(v)}`).not.toContain(v)
+}
 // The opening of an image element, built so this file contains no image markup of its own.
 const IMG_OPEN = '<' + 'img'
 
@@ -57,19 +64,19 @@ describe('T-ACK-1: an invoice never renders a DC ack label and a DC never render
     it(`invoice, ack=${ack}`, () => {
       const html = renderToStaticMarkup(<DeliveryRow item={item({ kind: 'invoice', ack })} />)
       expect(html).toContain(ack === null ? copy.PM_ACK_NONE : copy.PM_ACK_LABEL.invoice[ack])
-      expect(html).not.toContain('[PM_ACK_DC_')
+      expectNoneOf(html, DC_ACK_VALUES)
     })
     it(`dc, ack=${ack}`, () => {
       const html = renderToStaticMarkup(<DeliveryRow item={item({ kind: 'dc', ack })} />)
       expect(html).toContain(ack === null ? copy.PM_ACK_NONE : copy.PM_ACK_LABEL.dc[ack])
-      expect(html).not.toContain('[PM_ACK_INVOICE_')
+      expectNoneOf(html, INVOICE_ACK_VALUES)
     })
   }
   it('POSITIVE CONTROL: the kind drives the label (same ack, different kind, different slot)', () => {
     const a = renderToStaticMarkup(<DeliveryRow item={item({ kind: 'invoice', ack: 'yes' })} />)
     const b = renderToStaticMarkup(<DeliveryRow item={item({ kind: 'dc', ack: 'yes' })} />)
-    expect(a).toContain('[PM_ACK_INVOICE_YES]')
-    expect(b).toContain('[PM_ACK_DC_YES]')
+    expect(a).toContain(copy.PM_ACK_INVOICE_YES)
+    expect(b).toContain(copy.PM_ACK_DC_YES)
     expect(a).not.toBe(b)
   })
 })
@@ -136,7 +143,7 @@ describe('T-WARN-1: approve with no stored file shows the warning AND still allo
   it('no stored file: warning present, approve button present and not disabled', () => {
     const html = renderToStaticMarkup(<DecisionControls deliveryId={DEL_ID} hasStoredFile={false} />)
     expect(html).toContain(copy.PM_WARN_APPROVE_NO_FILE)
-    const approve = html.match(/<button[^>]*>\[PM_ACTION_APPROVE\]<\/button>/)
+    const approve = html.match(new RegExp('<button[^>]*>' + copy.PM_ACTION_APPROVE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '</button>'))
     expect(approve).not.toBeNull()
     // the class list contains "disabled:opacity-60"; the ATTRIBUTE is `disabled=""` or a bare ` disabled`
     expect(approve![0]).not.toMatch(/\sdisabled(?=[\s=>])/)
@@ -152,7 +159,7 @@ describe('T-WARN-1: approve with no stored file shows the warning AND still allo
 })
 
 describe('controls render only copy constants', () => {
-  it('details, decision and link controls contain no signed URL and only placeholder text', () => {
+  it('details, decision and link controls contain no signed URL and no "DC missing" / "paid" wording', () => {
     const loaded = { status: 'incomplete', deliveryType: null, vehicleNumber: null, dcNumber: null, dcDate: null }
     const htmls = [
       renderToStaticMarkup(<DetailsControls deliveryId={DEL_ID} loaded={loaded} />),
@@ -168,11 +175,13 @@ describe('controls render only copy constants', () => {
       ),
     ]
     for (const html of htmls) {
-      for (const bad of ['token=', 'supabase.co', '/storage/v1', 'DC missing', ' paid']) expect(html).not.toContain(bad)
+      for (const bad of ['token=', 'supabase.co', '/storage/v1']) expect(html).not.toContain(bad)
+      expect(html).not.toMatch(/dc missing/i)
+      expect(html).not.toMatch(/\bpaid\b/i)
     }
     // A DC page offers INVOICES, so its candidate label is an invoice ack and never a DC one.
-    expect(htmls[2]).toContain('[PM_ACK_INVOICE_YES]')
-    expect(htmls[2]).not.toContain('[PM_ACK_DC_')
+    expect(htmls[2]).toContain(copy.PM_ACK_INVOICE_YES)
+    expectNoneOf(htmls[2], DC_ACK_VALUES)
   })
 })
 
@@ -296,12 +305,12 @@ describe('M1: the own-ack element', () => {
     it(`invoice, ack=${ack}: the own-ack element is the invoice label and not a DC one`, () => {
       const t = ownAck(view('invoice', ack))
       expect(t).toBe(copy.PM_ACK_LABEL.invoice[ack])
-      expect(t).not.toContain('[PM_ACK_DC_')
+      expectNoneOf(t, DC_ACK_VALUES)
     })
     it(`dc, ack=${ack}: the own-ack element is the DC label and not an invoice one`, () => {
       const t = ownAck(view('dc', ack))
       expect(t).toBe(copy.PM_ACK_LABEL.dc[ack])
-      expect(t).not.toContain('[PM_ACK_INVOICE_')
+      expectNoneOf(t, INVOICE_ACK_VALUES)
     })
   }
   it('no ack: both kinds show the no-ack slot', () => {
