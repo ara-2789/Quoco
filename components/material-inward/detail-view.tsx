@@ -73,7 +73,7 @@ export function DetailView({ d }: { d: PmDetail }) {
           <Row label={PM_FIELD_PROJECT} value={d.projectName} />
           <Row label={PM_FIELD_RECEIVED} value={formatIstDate(d.receivedAt)} />
           <Row label={PM_FIELD_ENGINEER} value={d.engineerName ?? '—'} />
-          <Row label={PM_FIELD_ACK} value={ackLabel(kind, d.document.ack)} />
+          <Row label={PM_FIELD_ACK} value={ackLabel(kind, d.document.ack)} testId="own-ack" />
           {d.document.ackNote && <Row label={PM_FIELD_ACK_NOTE} value={d.document.ackNote} />}
           {d.rejectReason && <Row label={PM_FIELD_REJECT_REASON} value={d.rejectReason} />}
         </dl>
@@ -124,11 +124,13 @@ export function DetailView({ d }: { d: PmDetail }) {
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, testId }: { label: string; value: string; testId?: string }) {
   return (
     <div className="flex flex-col">
       <dt className="text-xs text-gray-700">{label}</dt>
-      <dd className="text-gray-900">{value}</dd>
+      <dd className="text-gray-900" data-testid={testId}>
+        {value}
+      </dd>
     </div>
   )
 }

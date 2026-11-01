@@ -142,12 +142,45 @@ describe('rendering the REAL detail objects of those shapes', () => {
     if (r.status !== 'ok') throw new Error('detail not ok')
     const html = renderToStaticMarkup(<DetailView d={r.detail} />)
     expect([...html.matchAll(/href="\/api\/capture-files\//g)]).toHaveLength(3)
-    expect(html).toContain('[PM_ACK_INVOICE_YES]')
-    expect(html).not.toContain('[PM_ACK_DC_')
+    // The invoice's OWN ack element renders an invoice label and never a DC one. (The page also lists DC deliveries to link,
+    // and each of those rows carries ITS OWN DC label: see the next test. So this test looks at the own-ack element only.)
+    expect(ownAck(html)).toBe('[PM_ACK_INVOICE_YES]')
+    expect(ownAck(html)).not.toContain('[PM_ACK_DC_')
     expect(html).not.toContain(D30_CAPTION_PDF)
     expect(html).not.toMatch(/caption/i)
   })
+
+  it('the invoice page: every picker candidate row (a DC delivery) renders its DC ack label', async () => {
+    const r = await getDeliveryDetail(await kit.jwt('pm1'), readerOf(kit, 'pm1'), shapes.invThreeFiles.deliveryId, NOW)
+    if (r.status !== 'ok') throw new Error('detail not ok')
+    // the multi-file DC (acked yes, awaiting_pm, no link) is an eligible candidate for this invoice
+    expect(r.detail.candidates.map((c) => c.id)).toContain(shapes.dcTwoFiles.deliveryId)
+    expect(r.detail.candidates.every((c) => c.ack === null || ['yes', 'no', 'partial', 'unclear'].includes(c.ack))).toBe(true)
+    const html = renderToStaticMarkup(<DetailView d={r.detail} />)
+    const rows = [...html.matchAll(/<label class="flex items-center gap-2[^>]*>.*?<\/label>/g)].map((m) => m[0])
+    expect(rows.length).toBe(r.detail.candidates.length)
+    for (const row of rows) {
+      expect(row).toMatch(/\[PM_ACK_DC_(YES|NO|PARTIAL|UNCLEAR)\]|\[PM_ACK_NONE\]/)
+      expect(row).not.toContain('[PM_ACK_INVOICE_')
+    }
+    expect(rows.some((row) => row.includes('[PM_ACK_DC_YES]'))).toBe(true) // the positive expectation
+  })
+
+  it('the DC page: its own ack never renders an invoice label', async () => {
+    const r = await getDeliveryDetail(await kit.jwt('pm1'), readerOf(kit, 'pm1'), shapes.dcTwoFiles.deliveryId, NOW)
+    if (r.status !== 'ok') throw new Error('detail not ok')
+    const html = renderToStaticMarkup(<DetailView d={r.detail} />)
+    expect(ownAck(html)).toBe('[PM_ACK_DC_YES]')
+    expect(ownAck(html)).not.toContain('[PM_ACK_INVOICE_')
+  })
 })
+
+/** The text of the detail view's own-ack element (data-testid="own-ack"), and nothing else on the page. */
+function ownAck(html: string): string {
+  const m = /data-testid="own-ack">([^<]*)</.exec(html)
+  if (!m) throw new Error('own-ack element not found in the markup')
+  return m[1]
+}
 
 describe('the file route on a multi-file document', () => {
   const req = (id: string) => new NextRequest(`http://localhost/api/capture-files/${id}`)

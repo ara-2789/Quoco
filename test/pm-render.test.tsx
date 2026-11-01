@@ -251,3 +251,61 @@ describe('H2: a caption that is a file name is never rendered', () => {
     }
   })
 })
+
+// M1: the detail view's OWN ack element (data-testid="own-ack") renders the label of the document's own kind and never the
+// other kind's. (Picker candidate rows on the same page carry the OTHER kind's labels by design; this looks at one element only.)
+describe('M1: the own-ack element', () => {
+  const ownAck = (html: string) => {
+    const m = /data-testid="own-ack">([^<]*)</.exec(html)
+    if (!m) throw new Error('own-ack element not found')
+    return m[1]
+  }
+  const view = (kind: 'dc' | 'invoice', ack: string | null) =>
+    renderToStaticMarkup(
+      <DetailView
+        d={
+          {
+            id: DEL_ID,
+            projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            projectName: 'P',
+            status: 'awaiting_pm',
+            deliveryType: 'supplier',
+            vehicleNumber: null,
+            dcNumber: null,
+            dcDate: null,
+            deliveryDate: '2026-10-30',
+            receivedAt: '2026-10-30T05:00:00Z',
+            cancelReason: null,
+            rejectReason: null,
+            createdFromInvoice: kind === 'invoice',
+            engineerName: 'E',
+            document: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind, ack, ackNote: null },
+            files: [],
+            hasStoredFile: false,
+            activeLinks: [],
+            linkedDeliveries: [],
+            linkedInvoice: null,
+            candidates: [],
+            invoiceExpectedDays: null,
+          } as unknown as PmDetail
+        }
+      />,
+    )
+
+  for (const ack of ACKS) {
+    it(`invoice, ack=${ack}: the own-ack element is the invoice label and not a DC one`, () => {
+      const t = ownAck(view('invoice', ack))
+      expect(t).toBe(copy.PM_ACK_LABEL.invoice[ack])
+      expect(t).not.toContain('[PM_ACK_DC_')
+    })
+    it(`dc, ack=${ack}: the own-ack element is the DC label and not an invoice one`, () => {
+      const t = ownAck(view('dc', ack))
+      expect(t).toBe(copy.PM_ACK_LABEL.dc[ack])
+      expect(t).not.toContain('[PM_ACK_INVOICE_')
+    })
+  }
+  it('no ack: both kinds show the no-ack slot', () => {
+    expect(ownAck(view('invoice', null))).toBe(copy.PM_ACK_NONE)
+    expect(ownAck(view('dc', null))).toBe(copy.PM_ACK_NONE)
+  })
+})
