@@ -23,6 +23,7 @@ import {
   TEST_007_PASSWORD,
 } from './helpers/db'
 import { getRunId, deriveRunScopedEmail } from './helpers/run-scoped-fixtures'
+import { deleteAuthUserAndProfile } from './helpers/auth-user-teardown'
 
 // Stage 5a (docs/reviews/stage5a-review-package.md, D6, §7; verdict Q1/
 // Q2/Q5). Integration tests for app/api/photos/[kind]/[photoId] --
@@ -74,6 +75,10 @@ describe('app/api/photos/[kind]/[photoId] — route (stage 5a, D6/C5/C6)', () =>
   let clientQsA: SupabaseClient
   let clientNullTenant: SupabaseClient
   let nullTenantUserId: string
+  // The two run-scoped AUTH users this suite creates; assigned right after creation so afterAll can remove them
+  // even if a later seed step throws (they were never deleted before, five leaked users per full run).
+  let qsAuthUserId: string | undefined
+  let nullTenantAuthUserId: string | undefined
   let dailyLogAId: string
   let hindranceAId: string
   let dlPhotoId: string
@@ -143,6 +148,7 @@ describe('app/api/photos/[kind]/[photoId] — route (stage 5a, D6/C5/C6)', () =>
     if (pmBErr) throw new Error(`seed pmB membership failed: ${pmBErr.message}`)
 
     const qsAuthId = await ensureAuthUserLocal(db, qsAEmail, TEST_007_PASSWORD)
+    qsAuthUserId = qsAuthId
     qsAId = await claimQsProfile(db, qsAuthId)
     const { error: qsMemberErr } = await db.from('project_members').upsert(
       { tenant_id: TEST_TENANT_A_ID, project_id: TEST_PROJECT_A_ID, user_id: qsAId, role: 'qs' },
@@ -158,6 +164,7 @@ describe('app/api/photos/[kind]/[photoId] — route (stage 5a, D6/C5/C6)', () =>
     // NOT claimed via claimProfile, so handle_new_user()'s trigger-created
     // stub (id, auth_id only) is left with tenant_id NULL.
     const nullTenantAuthId = await ensureAuthUserLocal(db, nullTenantEmail, TEST_007_PASSWORD)
+    nullTenantAuthUserId = nullTenantAuthId
     const { data: nullTenantStub, error: nullTenantErr } = await db
       .from('users')
       .select('id, tenant_id')
@@ -309,7 +316,19 @@ describe('app/api/photos/[kind]/[photoId] — route (stage 5a, D6/C5/C6)', () =>
       await db.from('users').delete().eq('id', nullTenantUserId)
     }
     await db.from('project_members').delete().in('project_id', [TEST_PROJECT_A_ID, TEST_PROJECT_B_ID])
+    // The two auth users: public.users row first (users_auth_id_fkey is RESTRICT), then the auth user. Every step
+    // runs even if one throws, then the first failure is reported, so a leak fails this hook instead of passing.
+    const teardownErrors: string[] = []
+    for (const authUserId of [qsAuthUserId, nullTenantAuthUserId]) {
+      if (!authUserId) continue
+      try {
+        await deleteAuthUserAndProfile(db, authUserId)
+      } catch (err) {
+        teardownErrors.push(err instanceof Error ? err.message : 'unknown teardown error')
+      }
+    }
     await removeTwoTenantFixtures()
+    if (teardownErrors.length > 0) throw new Error(teardownErrors.join(' | '))
   })
 
   it('a PM on the owning project gets a 302 redirect to a signed URL, with Cache-Control: no-store', async () => {

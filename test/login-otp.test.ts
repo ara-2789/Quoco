@@ -36,6 +36,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createHash } from 'node:crypto'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { getRunId, deriveRunScopedEmail } from './helpers/run-scoped-fixtures'
+import { deleteAuthUserAndProfile } from './helpers/auth-user-teardown'
 import * as authCopy from '@/lib/auth/copy'
 
 // T-OTP-07 needs to render app/(auth)/login/page.tsx's default export, but
@@ -151,8 +152,11 @@ describe('login OTP', () => {
 
   afterAll(async () => {
     if (knownUserId) {
-      const db = serviceClient()
-      await db.auth.admin.deleteUser(knownUserId)
+      // admin.createUser fired on_auth_user_created, so a public.users stub references this auth user and
+      // users_auth_id_fkey is RESTRICT: a bare deleteUser (what this hook used to do, unchecked) silently deletes
+      // nothing and leaked one user per run. Stub first, then the auth user, both error-checked (same ordering
+      // T-OTP-04 below applies inline).
+      await deleteAuthUserAndProfile(serviceClient(), knownUserId)
     }
   })
 
