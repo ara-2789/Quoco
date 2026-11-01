@@ -49,10 +49,16 @@ export function DetailView({ d }: { d: PmDetail }) {
   // What can be unlinked here: only pm_manual links (the automatic self-link is fixed, QE010).
   const unlinkable =
     kind === 'invoice'
-      ? d.linkedDeliveries.map((l) => ({ linkId: l.linkId, receivedAt: l.receivedAt, dcNumber: l.dcNumber }))
+      ? d.linkedDeliveries.map((l) => ({ linkId: l.linkId, receivedAt: l.receivedAt, documentCreatedAt: null, dcNumber: l.dcNumber }))
       : d.activeLinks
           .filter((l) => l.linkSource === 'pm_manual')
-          .map((l) => ({ linkId: l.linkId, receivedAt: d.linkedInvoice?.receivedAt ?? d.receivedAt, dcNumber: null }))
+          .map((l) => ({
+            linkId: l.linkId,
+            receivedAt: null,
+            // the linked INVOICE's document time (capture_documents.created_at); this DC's own received time is not it
+            documentCreatedAt: d.linkedInvoice?.documentCreatedAt ?? null,
+            dcNumber: null,
+          }))
 
   return (
     <div className="flex flex-col gap-6">

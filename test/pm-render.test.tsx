@@ -162,7 +162,7 @@ describe('controls render only copy constants', () => {
           mode="dc"
           invoiceDocumentId={null}
           deliveryId={DEL_ID}
-          candidates={[{ id: FILE_ID, receivedAt: '2026-10-30T05:00:00Z', dcNumber: null, ack: 'yes', engineerName: null }]}
+          candidates={[{ id: FILE_ID, receivedAt: null, documentCreatedAt: '2026-10-30T05:00:00Z', dcNumber: null, ack: 'yes', engineerName: null }]}
           unlinkable={[]}
         />,
       ),

@@ -6,7 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import * as copy from '@/lib/capture/pm-copy'
 import { PM_ACK_LABEL, PM_ERR_MESSAGES, PM_PENDING_TIMEOUT_MINUTES } from '@/lib/capture/pm-copy'
 import { isReportableErr, mapPmRpcError } from '@/lib/capture/pm-errors'
-import { asKind, fileDisplayState, getDeliveryDetail, getMaterialInwardList, istDaysSince } from '@/lib/capture/pm-queries'
+import { asKind, fileDisplayState, getDeliveryDetail, getMaterialInwardList, istDaysSince, uuidList } from '@/lib/capture/pm-queries'
 import { ackLabel } from '@/components/material-inward/labels'
 import {
   appCheckCaptureFile,
@@ -112,7 +112,7 @@ describe('T-FILE-CTRL (unit half): the app check refuses forged rows with no DB'
   }
   const pm = async () => true
   const notPm = async () => false
-  const profile = { tenant_id: TENANT }
+  const profile = { tenant_id: TENANT, status: 'active' as string | null }
 
   it('POSITIVE CONTROL: the exact row and a PM returns the path', async () => {
     expect(await appCheckCaptureFile(good, profile, pm)).toBe(good.storage_path)
@@ -141,7 +141,23 @@ describe('T-FILE-CTRL (unit half): the app check refuses forged rows with no DB'
     expect(await appCheckCaptureFile({ ...good, storage_path: null }, profile, pm)).toBeNull()
   })
   it('a null-tenant profile is refused', async () => {
-    expect(await appCheckCaptureFile(good, { tenant_id: null }, pm)).toBeNull()
+    expect(await appCheckCaptureFile(good, { tenant_id: null, status: 'active' }, pm)).toBeNull()
+  })
+  // Review round 1, S1: the pure check covers the caller's users.status. `pm` below always says "is a PM", so only the status
+  // can be what refuses.
+  it.each(['deactivated', 'pending', '', 'ACTIVE', ' active'])('S1: users.status %j is refused even for a PM of the right project', async (status) => {
+    expect(await appCheckCaptureFile(good, { tenant_id: TENANT, status }, pm)).toBeNull()
+  })
+  it('S1: an unreadable (null) users.status is refused', async () => {
+    expect(await appCheckCaptureFile(good, { tenant_id: TENANT, status: null }, pm)).toBeNull()
+  })
+  it('S1: the status is checked BEFORE the membership query (a refused status never asks about the project)', async () => {
+    let asked = false
+    expect(await appCheckCaptureFile(good, { tenant_id: TENANT, status: 'deactivated' }, async () => { asked = true; return true })).toBeNull()
+    expect(asked).toBe(false)
+  })
+  it('S1: POSITIVE CONTROL: the same row and PM with status active returns the path', async () => {
+    expect(await appCheckCaptureFile(good, { tenant_id: TENANT, status: 'active' }, pm)).toBe(good.storage_path)
   })
   it('not a PM on the project is refused (and is asked about the ROW project)', async () => {
     expect(await appCheckCaptureFile(good, profile, notPm)).toBeNull()
@@ -472,5 +488,49 @@ describe('L2: a document with no known kind is left out; nothing is guessed', ()
     expect(resolveDownloadName('dc', 4, 'application/pdf')).toBe('dc-4.pdf')
     expect(resolveDownloadName('invoice', 4, 'application/pdf')).toBe('invoice-4.pdf')
     expect(resolveDownloadName('receipt', 4, 'application/pdf')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Review round 1: N4 (uuidList throws instead of dropping) and N6 (runReject trims BEFORE the 1000-character check). DB-free.
+// ---------------------------------------------------------------------------------------------------------------
+describe('N4: uuidList throws on a non-uuid instead of dropping it', () => {
+  const A = '11111111-1111-4111-8111-111111111111'
+  const B = '22222222-2222-4222-8222-222222222222'
+  it('POSITIVE CONTROL: uuids come back as a PostgREST list literal', () => {
+    expect(uuidList([A, B])).toBe(`(${A},${B})`)
+    expect(uuidList([])).toBe('()')
+  })
+  it.each([['not-a-uuid'], [''], ['x,y'], [`${A},${B}`], ["1' or '1'='1"]])('a non-uuid %j throws', (bad) => {
+    expect(() => uuidList([A, bad])).toThrow(/not a uuid/)
+    expect(() => uuidList([bad])).toThrow()
+  })
+  it('a non-uuid is never silently dropped (the old behaviour returned the list without it)', () => {
+    let out: string | null = null
+    try {
+      out = uuidList([A, 'oops'])
+    } catch {
+      /* expected */
+    }
+    expect(out).toBeNull()
+  })
+})
+
+describe('N6: runReject trims before the 1000-character check', () => {
+  it('1000 characters plus trailing spaces is accepted and the TRIMMED text is sent', async () => {
+    const reason = 'x'.repeat(1000)
+    const c = canned({ data: { delivery_id: ID, status: 'rejected', restored_automatic: false }, error: null })
+    expect(await runReject(c.deps, { deliveryId: ID, reason: `${reason}      ` })).toEqual({ status: 'ok' })
+    expect(c.calls[0][1]).toEqual({ p_delivery_id: ID, p_reason: reason })
+  })
+  it('leading and trailing spaces around a 1000-character text are both trimmed', async () => {
+    const reason = 'y'.repeat(1000)
+    const c = canned({ data: { delivery_id: ID, status: 'rejected', restored_automatic: false }, error: null })
+    expect(await runReject(c.deps, { deliveryId: ID, reason: `   ${reason}   ` })).toEqual({ status: 'ok' })
+    expect(c.calls[0][1]).toEqual({ p_delivery_id: ID, p_reason: reason })
+  })
+  it('1001 non-space characters are still refused (no client call), and so is whitespace only', async () => {
+    expect(await runReject(untouched(), { deliveryId: ID, reason: 'x'.repeat(1001) })).toMatchObject({ key: 'PM_ERR_REJECT_REASON' })
+    expect(await runReject(untouched(), { deliveryId: ID, reason: ' '.repeat(2000) })).toMatchObject({ key: 'PM_ERR_REJECT_REASON' })
   })
 })

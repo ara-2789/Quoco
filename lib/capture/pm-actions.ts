@@ -180,9 +180,11 @@ export async function runApprove(deps: PmActionDeps, input: { deliveryId: string
 export async function runReject(deps: PmActionDeps, input: { deliveryId: string; reason: string }): Promise<PmActionResult> {
   return guarded('reject', async () => {
     if (!isUuid(input.deliveryId)) return pmError('PM_ERR_INVALID_INPUT')
-    const reason = typeof input.reason === 'string' ? input.reason : ''
-    if (reason.trim() === '' || reason.length > 1000) return pmError('PM_ERR_REJECT_REASON')
-    const { data, error } = await deps.client.rpc('pm_reject_delivery', { p_delivery_id: input.deliveryId, p_reason: reason.trim() })
+    // Trim FIRST, then check the length (review round 1, N6): the database caps the value it is given (050 N-4) and we send the
+    // trimmed text, so a 1001-character reason that is only 1000 after trimming is valid and must not be refused.
+    const reason = (typeof input.reason === 'string' ? input.reason : '').trim()
+    if (reason === '' || reason.length > 1000) return pmError('PM_ERR_REJECT_REASON')
+    const { data, error } = await deps.client.rpc('pm_reject_delivery', { p_delivery_id: input.deliveryId, p_reason: reason })
     return settle('reject', { data, error }, 'delivery_id', input.deliveryId)
   })
 }

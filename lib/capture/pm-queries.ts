@@ -233,7 +233,10 @@ export interface PmLinkItem {
 export interface PmCandidate {
   /** invoice document id (DC page) or delivery id (invoice page) */
   id: string
-  receivedAt: string
+  /** Invoice page (a DC delivery): deliveries.received_at. null for an invoice candidate. */
+  receivedAt: string | null
+  /** DC page (an invoice document): capture_documents.created_at, NOT a delivery time. null for a DC candidate. */
+  documentCreatedAt: string | null
   dcNumber: string | null
   ack: PmAck | null
   engineerName: string | null
@@ -268,7 +271,7 @@ export interface PmDetail {
   /** Invoice page: active PM links from this invoice to DC deliveries. DC page: unused. */
   linkedDeliveries: Array<PmLinkItem & { dcNumber: string | null; receivedAt: string }>
   /** DC page: the invoice behind its active link, if any. */
-  linkedInvoice: { ack: PmAck | null; receivedAt: string } | null
+  linkedInvoice: { ack: PmAck | null; documentCreatedAt: string } | null
   /** Invoice page: DC deliveries that could be linked. DC page: invoices that could be linked (only when it has no active link). */
   candidates: PmCandidate[]
   invoiceExpectedDays: number | null
@@ -280,9 +283,14 @@ export type PmDetailResult = { status: 'error' } | { status: 'not-found' } | { s
  *  never hidden behind newer ineligible ones. */
 export const PM_CANDIDATE_LIMIT = 50
 
-/** PostgREST list literal of uuids that came from the database: `(id1,id2)`. */
-function uuidList(ids: string[]): string {
-  return `(${ids.filter((i) => UUID_RE.test(i)).join(',')})`
+/**
+ * PostgREST list literal of uuids that came from the database: `(id1,id2)`. THROWS on anything that is not a uuid (review round 1,
+ * N4): in an exclusion list a silently dropped id becomes an INCLUDED candidate, so a surprise must fail loudly, not quietly.
+ */
+export function uuidList(ids: string[]): string {
+  const bad = ids.find((i) => !UUID_RE.test(i))
+  if (bad !== undefined) throw new Error('uuidList: a value is not a uuid')
+  return `(${ids.join(',')})`
 }
 
 export async function getDeliveryDetail(
@@ -326,8 +334,9 @@ export async function getDeliveryDetail(
       .is('unlinked_at', null)
       .or(`delivery_id.eq.${deliveryId},invoice_document_id.eq.${docId}`),
     client.from('projects').select('name').eq('tenant_id', tenantId).eq('id', d.project_id).maybeSingle(),
-    // profile-lookup-guard:allow-id-eq -- d.reported_by is a resolved users.id (deliveries.reported_by, a plain FK column
-    // to users.id, 049), never an auth uid; same reasoning as lib/hindrance/pm-notify.ts and owner-deliver-dispatch.ts.
+    // profile-lookup-guard:allow-id-eq -- d.reported_by is a resolved users.id, never an auth uid: written by 050 as p_user_id, and
+    // constrained by the COMPOSITE same-tenant FK deliveries_reported_by_fk (reported_by, tenant_id) -> users (id, tenant_id) (049);
+    // same reasoning as lib/hindrance/pm-notify.ts and owner-deliver-dispatch.ts.
     client.from('users').select('full_name').eq('tenant_id', tenantId).eq('id', d.reported_by).maybeSingle(),
   ])
   for (const [where, r] of [['document', doc], ['files', files], ['links', links], ['project', project], ['reporter', reporter]] as const) {
@@ -438,6 +447,7 @@ export async function getDeliveryDetail(
       detail.candidates = eligible.filter((c) => c.dc_document_id !== null && dcKindOk.has(c.dc_document_id)).map((c) => ({
         id: c.id,
         receivedAt: c.received_at,
+        documentCreatedAt: null,
         dcNumber: c.dc_number,
         ack: c.dc_document_id ? (ackByDoc.get(c.dc_document_id) ?? null) : null,
         engineerName: null,
@@ -456,7 +466,7 @@ export async function getDeliveryDetail(
         .not('kind', 'is', null)
         .maybeSingle()
       if (error) return reportRead('linked invoice', error)
-      if (inv) detail.linkedInvoice = { ack: asAck(inv.engineer_ack), receivedAt: inv.created_at }
+      if (inv) detail.linkedInvoice = { ack: asAck(inv.engineer_ack), documentCreatedAt: inv.created_at }
     } else if (open && d.delivery_type !== 'internal_transfer') {
       // DC page -> invoices to link. Invoices whose AUTOMATIC delivery is approved are left out: linking one fails with QE011
       // (050:869-870). Their ids are fetched first so the cap applies to the rest. Order: newest first, id as the tie-break.
@@ -483,7 +493,8 @@ export async function getDeliveryDetail(
       if (error) return reportRead('candidate invoices', error)
       detail.candidates = (invs ?? []).map((i) => ({
         id: i.id,
-        receivedAt: i.created_at,
+        receivedAt: null,
+        documentCreatedAt: i.created_at,
         dcNumber: null,
         ack: asAck(i.engineer_ack),
         engineerName: null,

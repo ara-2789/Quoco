@@ -23,7 +23,8 @@ import {
 
 export interface UnlinkableItem {
   linkId: string
-  receivedAt: string
+  receivedAt: string | null
+  documentCreatedAt: string | null
   dcNumber: string | null
 }
 
@@ -85,7 +86,7 @@ export function LinkControls({
           {unlinkable.map((u) => (
             <li key={u.linkId} className="flex flex-wrap items-center gap-3 text-sm text-gray-900">
               <span>
-                {formatIstDate(u.receivedAt)} {u.dcNumber ?? ''}
+                {formatIstDate(u.receivedAt ?? u.documentCreatedAt)} {u.dcNumber ?? ''}
               </span>
               <button
                 type="button"
@@ -113,7 +114,7 @@ export function LinkControls({
                 onChange={() => toggle(c.id)}
               />
               <span>
-                {formatIstDate(c.receivedAt)} {c.dcNumber ?? ''} {ackLabel(candidateKind, c.ack)}
+                {formatIstDate(c.receivedAt ?? c.documentCreatedAt)} {c.dcNumber ?? ''} {ackLabel(candidateKind, c.ack)}
               </span>
             </label>
           ))}

@@ -605,7 +605,14 @@ function statementEnd(src: string, start: number): number {
   return src.length
 }
 
-describe('T-NOWRITE-1', () => {
+// WHAT THIS BLOCK PROVES, AND WHAT IT DOES NOT (PR-D1 review round 1, S3). It proves one narrow thing: no TypeScript under lib/ or
+// app/ writes the table through a direct from('capture_files') chain, outside the C5 handler and the tick route. It does NOT
+// replace the control. The real write boundary is the GRANT LAYER (migration 051): service_role holds UPDATE on 7 columns only,
+// there are no INSERT or DELETE grants for it, and the rows are inserted only by the SECURITY DEFINER engineer function. This
+// walk also does not see writers outside lib/ and app/, .js/.mjs/.cjs files, components/, or an .rpc() writer in a non-reader
+// file (widening the walk is deferred, owner: backend chat, see docs/plans/pr-d-plan.md "Deferred"). The storage bucket has its
+// own guard: test/pm-bucket-guard.test.ts (T-NOBUCKET-1).
+describe("T-NOWRITE-1: no direct from('capture_files') write outside C5", () => {
   const root = resolve(__dirname, '..')
   const rel = (p: string) => relative(root, p).split(sep).join('/')
   const mentioning = () =>

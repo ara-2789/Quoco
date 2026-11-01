@@ -13,8 +13,9 @@ import { isProjectPm } from '@/lib/auth/is-project-pm'
 // RLS read with the USER's client first, instead of a service-role lookup; (2) lib/storage/photo-access.ts and
 // app/api/photos/** stay untouched, so the live photo path cannot regress; (3) different tables, different bucket.
 //
-// ORDER (D5): UUID check -> auth.getUser -> profile -> rate limit -> read the file row with the USER client
-// (RLS) -> app check -> service-role createSignedUrl -> 302.
+// ORDER (D5): UUID check -> auth.getUser -> profile -> rate limit -> the caller's own users.status (session client) -> read
+// the file row with the USER client (RLS) -> app check (status, tenant, stored, exact path, PM) -> service-role
+// createSignedUrl -> 302.
 //
 // The service role signs and does nothing else: 049:1016-1017 creates NO storage.objects policy ("access is
 // service_role plus app membership checks"), so a user JWT cannot sign. This module is the access boundary for the
@@ -88,8 +89,11 @@ const FILE_COLUMNS = 'id, tenant_id, project_id, document_id, file_no, ingest_st
  *
  * NOTE what it can and cannot rely on: `isProjectPm` checks project_members.role = 'pm' ONLY (lib/auth/is-project-pm.ts
  * :18-30: no users.status, no tenant), and the profile lookup ignores users.status (lib/auth/profile-query.ts selects
- * 'id, tenant_id, full_name, role' by auth_id). So ACTIVE status relies on the RLS read in step 2 (049 policy:
- * `u.status = 'active'`), and tenant is compared here explicitly, against the PROFILE's tenant, not the row's.
+ * 'id, tenant_id, full_name, role' by auth_id). The ACTIVE status therefore no longer rests on the RLS read in step 2
+ * alone (049 policy: `u.status = 'active'`): the route reads users.status for the profile with the session client and
+ * passes it in as `profile.status`, and THIS check refuses unless it is 'active' (review round 1, S1). That matters
+ * because this route's output is a URL minted by the service role: its application check must be complete on its own.
+ * Tenant is compared here explicitly, against the PROFILE's tenant, not the row's.
  *
  * The path must EQUAL what the writer produces: `${tenant_id}/${project_id}/${document_id}/${id}`, no extension
  * (lib/media/capture-ingest.ts:500-502, rowPath). Migration 051 pins the same string as a PREFIX CHECK
@@ -97,9 +101,10 @@ const FILE_COLUMNS = 'id, tenant_id, project_id, document_id, file_no, ingest_st
  */
 export async function appCheckCaptureFile(
   row: CaptureFileRow,
-  profile: { tenant_id: string | null },
+  profile: { tenant_id: string | null; status: string | null },
   isPm: (projectId: string) => Promise<boolean>,
 ): Promise<string | null> {
+  if (profile.status !== 'active') return null // pending, deactivated, unknown or unreadable: never signs
   if (profile.tenant_id === null) return null
   if (row.tenant_id !== profile.tenant_id) return null
   if (row.ingest_status !== 'stored') return null
@@ -179,6 +184,19 @@ export async function handleCaptureFileGet(
     }
     if (isRateLimited(profile.id, limit)) return refusal()
 
+    // The caller's own users.status, read with the SESSION client (users_select lets a user read their own row). The profile
+    // lookup ignores status and this module may not change lib/auth/**, so the status is read here and handed to the
+    // pure check. A read error, a missing row or any value other than 'active' is the same single refusal.
+    if (profile.tenant_id === null) return refusal()
+    // profile-lookup-guard:allow-id-eq -- profile.id is a resolved users.id (public.users.id from profileForAuthId), never an auth uid.
+    const { data: me, error: meErr } = await session
+      .from('users')
+      .select('status')
+      .eq('id', profile.id)
+      .eq('tenant_id', profile.tenant_id)
+      .maybeSingle<{ status: string | null }>()
+    if (meErr || !me) return refusal()
+
     // Step 2: RLS read (tenant + active + PM on the project). Keyed by id only; the tenant is compared in the app
     // check below, which is what makes T-FILE-CTRL meaningful when this client is swapped for a service-role one.
     const { data: row, error: rowErr } = await (deps.rowClient ?? session)
@@ -188,7 +206,11 @@ export async function handleCaptureFileGet(
       .maybeSingle<CaptureFileRow>()
     if (rowErr || !row) return refusal()
 
-    const path = await appCheckCaptureFile(row, profile, (projectId) => isProjectPm(session, profile.id, projectId))
+    const path = await appCheckCaptureFile(
+      row,
+      { tenant_id: profile.tenant_id, status: me.status },
+      (projectId) => isProjectPm(session, profile.id, projectId),
+    )
     if (!path) return refusal()
 
     // A not-previewable file downloads as <kind>-<file_no>.<ext>. The kind is the DOCUMENT's raw type value, read here with
