@@ -561,8 +561,49 @@ const READERS: Record<string, string> = {
   'lib/capture/pm-file-access.ts': 'PR-D1 file route: reads ONE capture_files row (select, RLS client) to authorise and sign a file; never writes',
   'lib/capture/pm-queries.ts': 'PR-D1 PM page reads: file lists, counts and states per document (select only)',
 }
-// Anything that could write a table. READERS files may contain none of these ANYWHERE (stricter than "on capture_files").
-const WRITE_CALLS = /\.(insert|update|upsert|delete)\(|\.rpc\(/
+// Anything that writes through the query builder. READERS files may contain none of these in code ANYWHERE (defence in depth
+// on top of the per-chain rule in (e)).
+const WRITE_CALLS = /\.(insert|update|upsert|delete)\(/
+// RPCs a READER may call (function name -> one-line reason). EMPTY today: a reader that calls .rpc( for anything not listed
+// here fails (e2). An RPC can write a table without the table name appearing, so each entry is a reviewed decision.
+const RPC_ALLOW: Record<string, string> = {}
+
+/**
+ * Index where the statement that contains `start` ends: a `;` or `,` at bracket depth 0, a closer that would take the depth
+ * below 0 (the enclosing array / call), or a newline at depth 0 whose next significant text is not a `.` continuation (line
+ * comments between chain parts are skipped). String literals are skipped so brackets and commas inside them do not count.
+ */
+function statementEnd(src: string, start: number): number {
+  let depth = 0
+  let i = start
+  while (i < src.length) {
+    const c = src[i]
+    if (c === "'" || c === '"' || c === '`') {
+      i++
+      while (i < src.length && src[i] !== c) {
+        if (src[i] === '\\') i++
+        i++
+      }
+      i++
+      continue
+    }
+    if (c === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') i++
+      continue
+    }
+    if (c === '(' || c === '[' || c === '{') depth++
+    else if (c === ')' || c === ']' || c === '}') {
+      depth--
+      if (depth < 0) return i
+    } else if (depth === 0 && (c === ';' || c === ',')) return i
+    else if (depth === 0 && c === '\n') {
+      const next = /^(?:\s+|\/\/[^\n]*(?:\n|$))*(\S)/.exec(src.slice(i + 1))
+      if (!next || next[1] !== '.') return i
+    }
+    i++
+  }
+  return src.length
+}
 
 describe('T-NOWRITE-1', () => {
   const root = resolve(__dirname, '..')
@@ -583,17 +624,51 @@ describe('T-NOWRITE-1', () => {
     }
   })
 
-  it('(e) READERS are read-only: every from(capture_files) is directly followed by .select(, and the file has no insert, update, upsert, delete or rpc', () => {
+  it('(e) READERS: EVERY occurrence of the string is the argument of from(...) and its chain is select-only (comments are NOT exempt)', () => {
     for (const file of Object.keys(READERS)) {
-      const code = readFileSync(join(root, file), 'utf8')
+      const src = readFileSync(join(root, file), 'utf8')
+      const total = src.split('capture_files').length - 1
+      let accounted = 0
+      for (const m of src.matchAll(/\bfrom\(\s*(['"])capture_files\1\s*\)/g)) {
+        accounted++
+        const chain = src.slice(m.index, statementEnd(src, m.index + m[0].length))
+        expect(chain, `${file}: this from() chain, up to the end of its statement, must contain .select(`).toContain('.select(')
+        for (const w of ['.insert(', '.update(', '.upsert(', '.delete(']) {
+          expect(chain, `${file}: this from() chain must not contain ${w}`).not.toContain(w)
+        }
+      }
+      expect(
+        accounted,
+        `${file}: every occurrence of the string must be the argument of from('capture_files'); a variable, constant, template string, object key or COMMENT that names the table fails`,
+      ).toBe(total)
+      const code = src
         .split('\n')
-        .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)) // comments may explain; code may not write
+        .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
         .join('\n')
-      const froms = code.match(/from\(\s*['"]capture_files['"]\s*\)/g) ?? []
-      const selects = code.match(/from\(\s*['"]capture_files['"]\s*\)\s*\.select\(/g) ?? []
-      expect(selects.length, `${file}: every from('capture_files') must be followed directly by .select(`).toBe(froms.length)
-      expect(code, `${file}: must not write`).not.toMatch(WRITE_CALLS)
+      expect(code, `${file}: must not call insert, update, upsert or delete anywhere`).not.toMatch(WRITE_CALLS)
     }
+  })
+
+  it('(e2) READERS call .rpc( only for a function on the named RPC_ALLOW list (empty today)', () => {
+    for (const [fn, reason] of Object.entries(RPC_ALLOW)) expect(reason.length, `RPC_ALLOW ${fn} needs a one-line reason`).toBeGreaterThan(20)
+    for (const file of Object.keys(READERS)) {
+      const src = readFileSync(join(root, file), 'utf8') // whole file, comments included
+      for (const m of src.matchAll(/\.rpc\(/g)) {
+        const named = /^\.rpc\(\s*(['"])([A-Za-z0-9_]+)\1/.exec(src.slice(m.index))
+        expect(named, `${file}: .rpc( must name a literal function`).not.toBeNull()
+        expect(Object.keys(RPC_ALLOW), `${file}: .rpc('${named?.[2]}') is not on RPC_ALLOW`).toContain(named?.[2])
+      }
+    }
+  })
+
+  it('(e3) the chain scanner itself: it ends a statement where it should, and sees a write that hides after a comment line', () => {
+    const real = "a(client.from('capture_files').select('x, y').eq('k', v), other)\nnext()"
+    expect(real.slice(real.indexOf('from('), statementEnd(real, real.indexOf('from(') + "from('capture_files')".length))).toBe(
+      "from('capture_files').select('x, y').eq('k', v)",
+    )
+    const hidden = "const r = await c\n  .from('capture_files')\n  // note\n  .update({})\n  .eq('a', 1)\nnext()"
+    const start = hidden.indexOf('from(')
+    expect(hidden.slice(start, statementEnd(hidden, start + "from('capture_files')".length))).toContain('.update(')
   })
 
   it('(b) the C5 handler never inserts, upserts or deletes on any table', () => {

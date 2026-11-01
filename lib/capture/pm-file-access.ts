@@ -13,7 +13,7 @@ import { isProjectPm } from '@/lib/auth/is-project-pm'
 // RLS read with the USER's client first, instead of a service-role lookup; (2) lib/storage/photo-access.ts and
 // app/api/photos/** stay untouched, so the live photo path cannot regress; (3) different tables, different bucket.
 //
-// ORDER (D5): UUID check -> auth.getUser -> profile -> rate limit -> read the capture_files row with the USER client
+// ORDER (D5): UUID check -> auth.getUser -> profile -> rate limit -> read the file row with the USER client
 // (RLS) -> app check -> service-role createSignedUrl -> 302.
 //
 // The service role signs and does nothing else: 049:1016-1017 creates NO storage.objects policy ("access is
@@ -93,7 +93,7 @@ const FILE_COLUMNS = 'id, tenant_id, project_id, document_id, file_no, ingest_st
  *
  * The path must EQUAL what the writer produces: `${tenant_id}/${project_id}/${document_id}/${id}`, no extension
  * (lib/media/capture-ingest.ts:500-502, rowPath). Migration 051 pins the same string as a PREFIX CHECK
- * (051:173-174, capture_files_storage_path_row_chk). tenant_id comes from the profile; the other three from the row.
+ * (051:173-174, the "storage_path_row" check constraint on the file table). tenant_id comes from the profile; the other three from the row.
  */
 export async function appCheckCaptureFile(
   row: CaptureFileRow,
