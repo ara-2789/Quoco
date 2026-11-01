@@ -2,6 +2,8 @@ import type { StatusVariant } from '@/components/ui/status-chip'
 import {
   PM_ACK_LABEL,
   PM_ACK_NONE,
+  PM_LABEL_INVOICE_EXPECTED,
+  PM_LABEL_INVOICE_EXPECTED_DAYS,
   PM_STATUS_APPROVED,
   PM_STATUS_AWAITING_PM,
   PM_STATUS_CANCELLED,
@@ -21,6 +23,17 @@ export function ackLabel(kind: PmDocKind | null, ack: PmAck | null): string {
   // No known kind (null-kind tolerance, PR-D2 / MI-KIND-REMOVAL): no kind-specific label exists, so show the existing "no ack" slot.
   if (kind === null || ack === null) return PM_ACK_NONE
   return PM_ACK_LABEL[kind][ack]
+}
+
+/**
+ * The one line shown for a DC that is waiting for an invoice (the caller shows it only when the query reported a day count,
+ * i.e. an open DC with no invoice linked). n = whole IST calendar days since the DC was received (pm-queries.ts istDaysSince).
+ *   n >= 2          -> PM_LABEL_INVOICE_EXPECTED_DAYS with "{n}" replaced by n, and nothing else on the line.
+ *   n is 0, 1 or not a finite number -> PM_LABEL_INVOICE_EXPECTED only.
+ */
+export function invoiceWaitLabel(n: number): string {
+  if (!Number.isFinite(n) || n < 2) return PM_LABEL_INVOICE_EXPECTED
+  return PM_LABEL_INVOICE_EXPECTED_DAYS.replace('{n}', String(Math.floor(n)))
 }
 
 export const STATUS_CHIP: Record<string, { variant: StatusVariant; label: string }> = {

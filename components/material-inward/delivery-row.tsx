@@ -11,10 +11,8 @@ import {
   PM_KIND_INVOICE,
   PM_LABEL_CANCELLED_REASON,
   PM_LABEL_CREATED_FROM_INVOICE,
-  PM_LABEL_INVOICE_EXPECTED,
-  PM_LABEL_INVOICE_EXPECTED_DAYS,
 } from '@/lib/capture/pm-copy'
-import { STATUS_CHIP, ackLabel, formatIstDate, typeLabel } from './labels'
+import { STATUS_CHIP, ackLabel, formatIstDate, invoiceWaitLabel, typeLabel } from './labels'
 
 // One row of the Material Inward list. Links to the detail PAGE (an ordinary page route); file links live on the detail
 // page only and are plain <a> tags (components/material-inward/file-list.tsx).
@@ -53,9 +51,7 @@ export function DeliveryRow({ item }: { item: PmListItem }) {
             {item.createdFromInvoice && <span>{PM_LABEL_CREATED_FROM_INVOICE}</span>}
             {item.cancelReason && <span>{PM_LABEL_CANCELLED_REASON}</span>}
             {item.invoiceExpectedDays !== null && (
-              <span>
-                {PM_LABEL_INVOICE_EXPECTED} {PM_LABEL_INVOICE_EXPECTED_DAYS} {item.invoiceExpectedDays}
-              </span>
+              <span>{invoiceWaitLabel(item.invoiceExpectedDays)}</span>
             )}
           </div>
         )}

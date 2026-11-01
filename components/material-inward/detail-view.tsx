@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card'
 import { StatusChip } from '@/components/ui/status-chip'
 import type { PmDetail } from '@/lib/capture/pm-queries'
 import { FileList } from './file-list'
-import { STATUS_CHIP, ackLabel, formatIstDate, isOpenStatus, typeLabel } from './labels'
+import { STATUS_CHIP, ackLabel, formatIstDate, invoiceWaitLabel, isOpenStatus, typeLabel } from './labels'
 import {
   PM_BACK_TO_LIST,
   PM_FIELD_ACK,
@@ -18,8 +18,6 @@ import {
   PM_KIND_INVOICE,
   PM_LABEL_CANCELLED_REASON,
   PM_LABEL_CREATED_FROM_INVOICE,
-  PM_LABEL_INVOICE_EXPECTED,
-  PM_LABEL_INVOICE_EXPECTED_DAYS,
   PM_LINKED_DELIVERIES_HEADING,
   PM_PAGE_TITLE,
 } from '@/lib/capture/pm-copy'
@@ -88,9 +86,7 @@ export function DetailView({ d }: { d: PmDetail }) {
             {d.createdFromInvoice && <span>{PM_LABEL_CREATED_FROM_INVOICE}</span>}
             {d.cancelReason && <span>{PM_LABEL_CANCELLED_REASON}</span>}
             {d.invoiceExpectedDays !== null && (
-              <span>
-                {PM_LABEL_INVOICE_EXPECTED} {PM_LABEL_INVOICE_EXPECTED_DAYS} {d.invoiceExpectedDays}
-              </span>
+              <span>{invoiceWaitLabel(d.invoiceExpectedDays)}</span>
             )}
           </div>
         )}

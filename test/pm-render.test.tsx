@@ -318,3 +318,89 @@ describe('M1: the own-ack element', () => {
     expect(ownAck(view('dc', null))).toBe(copy.PM_ACK_NONE)
   })
 })
+
+// ---------------------------------------------------------------------------------------------------------------
+// H2 (2 Nov): the "invoice pending" line of a DC that waits for an invoice. n >= 2 renders ONLY the approved
+// "Invoice pending for {n} days" with n substituted; n of 0 or 1 renders ONLY "Invoice expected". The label is never doubled,
+// no "{n}" ever reaches the page, and no bare number follows it. List row and detail view both go through invoiceWaitLabel.
+// ---------------------------------------------------------------------------------------------------------------
+describe('H2: the invoice-pending day count (list row and detail view)', () => {
+  const EXPECTED = copy.PM_LABEL_INVOICE_EXPECTED
+  const pending = (n: number) => copy.PM_LABEL_INVOICE_EXPECTED_DAYS.replace('{n}', String(n))
+  const count = (hay: string, needle: string) => hay.split(needle).length - 1
+  // the text of every span in the small "extra labels" line of a row / detail card (flagged by its text-xs class)
+  const waitLine = (html: string): string => {
+    const m = /<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">(.*?)<\/div>/.exec(html)
+    if (!m) throw new Error('the extra-labels line was not rendered')
+    return [...m[1].matchAll(/<span>([^<]*)<\/span>/g)].map((s) => s[1]).join('|')
+  }
+  const row = (n: number) => renderToStaticMarkup(<DeliveryRow item={item({ kind: 'dc', invoiceExpectedDays: n })} />)
+  const detail = (n: number) =>
+    renderToStaticMarkup(
+      <DetailView
+        d={
+          {
+            id: DEL_ID,
+            projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            projectName: 'P',
+            status: 'awaiting_pm',
+            deliveryType: 'supplier',
+            vehicleNumber: null,
+            dcNumber: null,
+            dcDate: null,
+            deliveryDate: '2026-10-30',
+            receivedAt: '2026-10-30T05:00:00Z',
+            cancelReason: null,
+            rejectReason: null,
+            createdFromInvoice: false,
+            engineerName: 'E',
+            document: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind: 'dc', ack: 'yes', ackNote: null },
+            files: [],
+            hasStoredFile: false,
+            activeLinks: [],
+            linkedDeliveries: [],
+            linkedInvoice: null,
+            candidates: [],
+            invoiceExpectedDays: n,
+          } as unknown as PmDetail
+        }
+      />,
+    )
+
+  for (const [name, render] of [['list row', row], ['detail view', detail]] as const) {
+    it(`${name}, n=7: exactly "${'Invoice pending for 7 days'}" and nothing else on the line`, () => {
+      const html = render(7)
+      expect(pending(7)).toBe('Invoice pending for 7 days')
+      expect(waitLine(html)).toBe('Invoice pending for 7 days')
+      expect(html).not.toContain(EXPECTED)
+    })
+    it(`${name}, n=2: the day-count line (the first n that shows a count)`, () => {
+      expect(waitLine(render(2))).toBe('Invoice pending for 2 days')
+    })
+    it(`${name}, n=1: exactly "${'Invoice expected'}", no count`, () => {
+      const html = render(1)
+      expect(waitLine(html)).toBe('Invoice expected')
+      expect(html).not.toContain('Invoice pending')
+    })
+    it(`${name}, n=0: exactly "Invoice expected", no count`, () => {
+      const html = render(0)
+      expect(waitLine(html)).toBe('Invoice expected')
+      expect(html).not.toContain('Invoice pending')
+    })
+    it(`${name}: no "{n}" anywhere and the label never appears twice, for n = 0, 1, 2, 7`, () => {
+      for (const n of [0, 1, 2, 7]) {
+        const html = render(n)
+        expect(html, `n=${n}`).not.toContain('{n}')
+        expect(count(html, EXPECTED), `n=${n}: "${EXPECTED}" count`).toBe(n >= 2 ? 0 : 1)
+        expect(count(html, 'Invoice pending'), `n=${n}: "Invoice pending" count`).toBe(n >= 2 ? 1 : 0)
+        // no bare number left after the label (the old concatenation printed "<label> <label-days> <n>")
+        expect(waitLine(html), `n=${n}`).not.toMatch(/\d\s*\|?\s*\d/)
+      }
+    })
+  }
+  it('a DC with no day count (an invoice is linked, or it is not a DC) renders no wait line at all', () => {
+    const html = renderToStaticMarkup(<DeliveryRow item={item({ kind: 'dc', invoiceExpectedDays: null })} />)
+    expect(html).not.toContain(EXPECTED)
+    expect(html).not.toContain('Invoice pending')
+  })
+})

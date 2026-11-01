@@ -1,6 +1,6 @@
 // PR-D (PM page "Material Inward"). EVERY user-facing string of this page is a named constant here and nowhere
-// else. English wording approved by Aravind on 2 Nov (docs: claude/2026-11-02-pr-d1-strings-approved.md). Tamil is
-// owed and NOT approved. PM_LABEL_INVOICE_EXPECTED_DAYS holds a literal {n} for the day count (see the PR notes).
+// else. English wording approved by Aravind on 2 Nov (docs/plans/pr-d1-strings-approved.md). Tamil is owed and NOT
+// approved. PM_LABEL_INVOICE_EXPECTED_DAYS holds a literal {n} for the day count (rendered only when n >= 2).
 //
 // Constraints any final wording must meet (rules, not text):
 //   * Ack labels are separate per document type. Invoice ack: matches / does not match / partly matches.
@@ -68,7 +68,8 @@ export const PM_ACK_LABEL: Record<PmDocKind, Record<PmAck, string>> = {
 export const PM_LABEL_CREATED_FROM_INVOICE = 'From invoice (no DC)' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_LABEL_CANCELLED_REASON = 'Replaced by a linked DC' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_LABEL_INVOICE_EXPECTED = 'Invoice expected' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
-export const PM_LABEL_INVOICE_EXPECTED_DAYS = 'Invoice expected for {n} days' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
+// {n} is the day count; components/material-inward/labels.ts (invoiceWaitLabel) substitutes it and renders this ONLY when n >= 2.
+export const PM_LABEL_INVOICE_EXPECTED_DAYS = 'Invoice pending for {n} days' // English approved (Aravind, 2 Nov; changed from "expected for" the same day). Tamil owed, NOT approved.
 export const PM_INVOICES_HEADING = 'Linked invoices' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_LINKED_DELIVERIES_HEADING = 'Linked DCs' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_LINK_SELECT_INVOICE = 'Choose the invoice for this DC' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.

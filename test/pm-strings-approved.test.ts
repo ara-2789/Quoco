@@ -15,7 +15,7 @@ const APPROVED: Record<string, string> = {
   PM_LABEL_CREATED_FROM_INVOICE: "From invoice (no DC)",
   PM_LABEL_CANCELLED_REASON: "Replaced by a linked DC",
   PM_LABEL_INVOICE_EXPECTED: "Invoice expected",
-  PM_LABEL_INVOICE_EXPECTED_DAYS: "Invoice expected for {n} days",
+  PM_LABEL_INVOICE_EXPECTED_DAYS: "Invoice pending for {n} days",
   PM_FIELD_VEHICLE: "Vehicle no.",
   PM_FIELD_ENGINEER: "Site engineer",
   PM_FIELD_ACK: "Engineer's answer",
