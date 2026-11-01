@@ -16,6 +16,7 @@ import {
   TEST_007_PASSWORD,
 } from './helpers/db'
 import { getRunId, deriveRunScopedEmail } from './helpers/run-scoped-fixtures'
+import { deleteAuthUserAndProfile } from './helpers/auth-user-teardown'
 
 // Stage 1 of the media capability, external review round 1, item 6
 // (docs/reviews/043-review-package.md §9's own reviewer checklist item 4),
@@ -57,6 +58,10 @@ describe('photo boundary agreement — RLS policy and getAuthorizedPhotoPath() (
   let pmBId: string
   let qsAId: string
   let nullTenantUserId: string
+  // The two run-scoped AUTH users this suite creates; assigned right after creation so afterAll can remove them
+  // even if a later seed step throws (they were never deleted before, five leaked users per full run).
+  let qsAuthUserId: string | undefined
+  let nullTenantAuthUserId: string | undefined
   let clientA: SupabaseClient
   let clientB: SupabaseClient
   let clientQsA: SupabaseClient
@@ -133,6 +138,7 @@ describe('photo boundary agreement — RLS policy and getAuthorizedPhotoPath() (
     // Same-tenant, non-PM member of project A -- real auth-backed 'qs'
     // user, can carry a real JWT for the RLS half.
     const qsAuthId = await ensureAuthUserLocal(db, qsAEmail, TEST_007_PASSWORD)
+    qsAuthUserId = qsAuthId
     qsAId = await claimQsProfile(db, qsAuthId)
     const { error: qsMemberErr } = await db.from('project_members').upsert(
       { tenant_id: TEST_TENANT_A_ID, project_id: TEST_PROJECT_A_ID, user_id: qsAId, role: 'qs' },
@@ -148,6 +154,7 @@ describe('photo boundary agreement — RLS policy and getAuthorizedPhotoPath() (
     // nullable since 005_auth_trigger.sql:20) and role NULL by default --
     // exactly the shape this case needs, with no synthetic row required.
     const nullTenantAuthId = await ensureAuthUserLocal(db, nullTenantEmail, TEST_007_PASSWORD)
+    nullTenantAuthUserId = nullTenantAuthId
     const { data: nullTenantStub, error: nullTenantErr } = await db
       .from('users')
       .select('id, tenant_id')
@@ -304,7 +311,19 @@ describe('photo boundary agreement — RLS policy and getAuthorizedPhotoPath() (
       await db.from('users').delete().eq('id', nullTenantUserId)
     }
     await db.from('project_members').delete().in('project_id', [TEST_PROJECT_A_ID, TEST_PROJECT_B_ID])
+    // The two auth users: public.users row first (users_auth_id_fkey is RESTRICT), then the auth user. Every step
+    // runs even if one throws, then the failures are reported, so a leak fails this hook instead of passing.
+    const teardownErrors: string[] = []
+    for (const authUserId of [qsAuthUserId, nullTenantAuthUserId]) {
+      if (!authUserId) continue
+      try {
+        await deleteAuthUserAndProfile(db, authUserId)
+      } catch (err) {
+        teardownErrors.push(err instanceof Error ? err.message : 'unknown teardown error')
+      }
+    }
     await removeTwoTenantFixtures()
+    if (teardownErrors.length > 0) throw new Error(teardownErrors.join(' | '))
   })
 
   async function rlsVisibleCount(client: SupabaseClient, kind: PhotoKind, photoId: string): Promise<number> {
