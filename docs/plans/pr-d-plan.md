@@ -134,6 +134,15 @@ Answers to the questions above, from the build instruction: route APPROVED (D4);
 30. **H3: D-30-shaped fixtures** in `test/helpers/pm-fixtures.ts` (`makeDocWithCaption`, `makeD30Shapes`): a DC with 2 stored files and a file-name caption, and an invoice with 3 stored files, a file-name caption, one active self-link and an awaiting_pm automatic delivery. Used by the new `test/pm-d30-shapes.test.tsx` (not yet run on test-db).
 31. **H5: T-CONC-1 and CI.** It is skipped unless `process.env.CI` is set (`test/pm-actions.test.ts:329`). `.github/workflows/ci.yml` runs `npm test` (line 413) and sets only the test-db variables there; I found no explicit `CI:` setting in the workflow. Whether it runs depends on GitHub's own default `CI=true` on runners, which I have not verified. Unresolved.
 
+32. **L1: scope is PR-D1** (per Aravind, 1 Nov); see "Scope: PR-D1" below. PR title: "PR-D1: Material Inward PM page (kind-independent)".
+33. **L2: null-kind tolerance** (defensive; `capture_documents.kind` is NOT NULL today, `049:286`). `asKind` returns null for a missing or unknown kind (`lib/capture/pm-queries.ts`); the list drops such rows, the detail is not-found, the DC picker and the linked-invoice read leave them out; `downloadFileName(null, n, type)` is `file-<n>.<ext>` and `resolveDownloadName` still refuses any non-null value other than `dc`/`invoice` (`lib/capture/pm-file-access.ts`); `ackLabel(null, …)` is the existing `PM_ACK_NONE` slot (`components/material-inward/labels.ts`). No new string. Unit tests inject null-kind rows through a fake client (`test/pm-unit.test.ts`, "L2"); a test-db row cannot exist yet. Mutation controls (guard removed, RED): `l2-list-null`, `l2-detail-null`, `l2-candidates-null`, `l2-filename-null`, `l2-ack-null`.
+34. **L3 note: MI-KIND-REMOVAL must not create kind-less documents on prod before PR-D2 merges (backend rule); L2 only stops the page from breaking if that slips.**
+
+## Scope: PR-D1
+- **In PR-D1 (kind-independent):** the Material Inward list and detail of EXISTING deliveries; opening files (the `/api/capture-files/[fileId]` route); the five actions (set details, approve, reject, link, unlink); the link pickers; the 15-minute display rule; error mapping; placeholder strings.
+- **Moves to PR-D2 (not started, not in this PR):** the unclassified list, the classify action, and the neutral answer labels (kind-independent wording of the engineer's answer).
+- **MI-KIND-REMOVAL is a backend migration and is not in this PR.** This PR makes no database change.
+
 ## Later
 - The same photo (same sha256) can sit under two documents (D-30 F5). A PM-page duplicate flag comes after PR-D. No code in this PR.
 
