@@ -123,9 +123,21 @@ export type CaptureDocumentKind = 'dc' | 'invoice'
  * Download file name for a not-previewable file: <kind>-<file_no>.<ext>, where <kind> is the raw document-type value
  * ('dc' or 'invoice'). Never derived from the storage path.
  */
-export function downloadFileName(kind: CaptureDocumentKind, fileNo: number, contentType: string | null): string {
+export function downloadFileName(kind: CaptureDocumentKind | null, fileNo: number, contentType: string | null): string {
   const ext = (contentType && EXT_BY_CONTENT_TYPE[contentType]) || 'bin'
+  // Null kind (tolerated for PR-D2 / MI-KIND-REMOVAL; the column is NOT NULL today): a neutral name, file-<file_no>.<ext>.
+  if (kind === null) return `file-${fileNo}.${ext}`
   return `${kind}-${fileNo}.${ext}`
+}
+
+/**
+ * The download name for a document whose kind was read as `docKind`: 'dc' / 'invoice' -> <kind>-<n>.<ext>; null ->
+ * file-<n>.<ext>; ANY other value is unknown and returns null, which the route turns into the one refusal (never a guessed name).
+ */
+export function resolveDownloadName(docKind: string | null, fileNo: number, contentType: string | null): string | null {
+  if (docKind === null) return downloadFileName(null, fileNo, contentType)
+  if (docKind === 'dc' || docKind === 'invoice') return downloadFileName(docKind, fileNo, contentType)
+  return null
 }
 
 export interface CaptureFileDeps {
@@ -189,9 +201,11 @@ export async function handleCaptureFileGet(
         .select('kind')
         .eq('id', row.document_id)
         .eq('tenant_id', profile.tenant_id as string)
-        .maybeSingle<{ kind: string }>()
-      if (docErr || !doc || (doc.kind !== 'dc' && doc.kind !== 'invoice')) return refusal()
-      download = downloadFileName(doc.kind, row.file_no, row.content_type)
+        .maybeSingle<{ kind: string | null }>()
+      if (docErr || !doc) return refusal()
+      const name = resolveDownloadName(doc.kind, row.file_no, row.content_type)
+      if (name === null) return refusal() // a non-null kind that is not 'dc' or 'invoice'
+      download = name
     }
 
     const service = deps.serviceClient ?? createServiceClient()

@@ -6,13 +6,15 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import * as copy from '@/lib/capture/pm-copy'
 import { PM_ACK_LABEL, PM_ERR_MESSAGES, PM_PENDING_TIMEOUT_MINUTES } from '@/lib/capture/pm-copy'
 import { isReportableErr, mapPmRpcError } from '@/lib/capture/pm-errors'
-import { fileDisplayState, istDaysSince } from '@/lib/capture/pm-queries'
+import { asKind, fileDisplayState, getDeliveryDetail, getMaterialInwardList, istDaysSince } from '@/lib/capture/pm-queries'
+import { ackLabel } from '@/components/material-inward/labels'
 import {
   appCheckCaptureFile,
   downloadFileName,
   handleCaptureFileGet,
   PM_CAPTURE_BUCKET,
   PM_FILE_URL_TTL_SECONDS,
+  resolveDownloadName,
   type CaptureFileRow,
 } from '@/lib/capture/pm-file-access'
 import { runApprove, runLink, runReject, runSetDetails, runUnlink, type PmActionDeps } from '@/lib/capture/pm-actions'
@@ -321,5 +323,154 @@ describe('D7: an unknown result is never reported as success', () => {
     const c = canned({ data: { delivery_id: ID, status: 'rejected', restored_automatic: false }, error: null })
     expect(await runReject(c.deps, { deliveryId: ID, reason: '  too late  ' })).toEqual({ status: 'ok' })
     expect(c.calls[0][1]).toEqual({ p_delivery_id: ID, p_reason: 'too late' })
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// L2: null-kind tolerance. capture_documents.kind is NOT NULL today (049:286), so a null-kind row cannot exist on test-db yet;
+// these tests inject rows through a fake client. No database, no network.
+// ---------------------------------------------------------------------------------------------------------------
+type FakeRows = unknown[]
+function fakeClient(tables: Record<string, FakeRows | ((callIndex: number) => FakeRows)>) {
+  const counts: Record<string, number> = {}
+  class Chain implements PromiseLike<{ data: unknown; error: null }> {
+    private idx: number
+    constructor(private table: string) {
+      counts[table] = (counts[table] ?? -1) + 1
+      this.idx = counts[table]
+    }
+    private rows(): FakeRows {
+      const t = tables[this.table]
+      return t === undefined ? [] : typeof t === 'function' ? t(this.idx) : t
+    }
+    select(): this { return this }
+    eq(): this { return this }
+    in(): this { return this }
+    not(): this { return this }
+    is(): this { return this }
+    or(): this { return this }
+    order(): this { return this }
+    limit(): this { return this }
+    maybeSingle() { return Promise.resolve({ data: this.rows()[0] ?? null, error: null }) }
+    then<R1 = { data: unknown; error: null }, R2 = never>(
+      onfulfilled?: ((v: { data: unknown; error: null }) => R1 | PromiseLike<R1>) | null,
+      onrejected?: ((reason: unknown) => R2 | PromiseLike<R2>) | null,
+    ): PromiseLike<R1 | R2> {
+      return Promise.resolve({ data: this.rows(), error: null as null }).then(onfulfilled, onrejected)
+    }
+  }
+  return { from: (t: string) => new Chain(t) } as unknown as Parameters<typeof getMaterialInwardList>[0]
+}
+
+const READER = { id: 'u-1', tenant_id: 't-1' }
+const delivery = (id: string, docId: string) => ({
+  id,
+  project_id: 'p-1',
+  status: 'awaiting_pm',
+  delivery_type: null,
+  vehicle_number: null,
+  dc_number: null,
+  dc_date: null,
+  delivery_date: '2026-10-30',
+  received_at: '2026-10-30T05:00:00Z',
+  cancel_reason: null,
+  reject_reason: null,
+  reported_by: 'u-2',
+  dc_document_id: docId,
+  created_from_invoice_id: null,
+})
+
+describe('L2: a document with no known kind is left out; nothing is guessed', () => {
+  const list = (docKind2: string | null) =>
+    getMaterialInwardList(
+      fakeClient({
+        project_members: [{ project_id: 'p-1' }],
+        deliveries: (call) => (call === 0 ? [delivery('d1', 'doc1'), delivery('d2', 'doc2')] : []),
+        capture_documents: [
+          { id: 'doc1', kind: 'dc', engineer_ack: 'yes' },
+          { id: 'doc2', kind: docKind2, engineer_ack: 'yes' },
+        ],
+        projects: [{ id: 'p-1', name: 'P' }],
+      }),
+      READER,
+      NOW,
+    )
+  it('POSITIVE CONTROL: with a known kind both deliveries are listed', async () => {
+    const r = await list('dc')
+    expect(r.status === 'ok' ? r.items.map((i) => i.id) : []).toEqual(['d1', 'd2'])
+  })
+  it('list: the delivery whose document kind is null is not listed', async () => {
+    const r = await list(null)
+    expect(r.status === 'ok' ? r.items.map((i) => i.id) : []).toEqual(['d1'])
+  })
+  it('list: an unknown non-null kind is not listed either', async () => {
+    const r = await list('receipt')
+    expect(r.status === 'ok' ? r.items.map((i) => i.id) : []).toEqual(['d1'])
+  })
+
+  const detail = (docKind: string | null) =>
+    getDeliveryDetail(
+      fakeClient({
+        deliveries: [delivery('d2', 'doc2')],
+        capture_documents: [{ id: 'doc2', kind: docKind, engineer_ack: 'yes', engineer_ack_note: null }],
+        projects: [{ name: 'P' }],
+        users: [{ full_name: 'E' }],
+      }),
+      READER,
+      '66666666-6666-4666-8666-666666666666',
+      NOW,
+    )
+  it('POSITIVE CONTROL: detail with a known kind is ok', async () => {
+    expect((await detail('dc')).status).toBe('ok')
+  })
+  it('detail: a null document kind is not-found', async () => {
+    expect((await detail(null)).status).toBe('not-found')
+  })
+
+  it('invoice page: a DC candidate whose document kind is null is not offered; the DC with a known kind is', async () => {
+    const r = await getDeliveryDetail(
+      fakeClient({
+        deliveries: (call) =>
+          call === 0
+            ? [{ ...delivery('inv-d', 'x'), dc_document_id: null, created_from_invoice_id: 'inv1' }]
+            : [
+                { id: 'c1', dc_number: 'N1', received_at: '2026-10-30T05:00:00Z', dc_document_id: 'dcdoc1' },
+                { id: 'c2', dc_number: 'N2', received_at: '2026-10-30T04:00:00Z', dc_document_id: 'dcdoc2' },
+              ],
+        capture_documents: (call) =>
+          call === 0
+            ? [{ id: 'inv1', kind: 'invoice', engineer_ack: 'yes', engineer_ack_note: null }]
+            : [
+                { id: 'dcdoc1', kind: 'dc', engineer_ack: 'yes' },
+                { id: 'dcdoc2', kind: null, engineer_ack: 'yes' },
+              ],
+        projects: [{ name: 'P' }],
+        users: [{ full_name: 'E' }],
+      }),
+      READER,
+      '66666666-6666-4666-8666-666666666666',
+      NOW,
+    )
+    expect(r.status).toBe('ok')
+    expect(r.status === 'ok' ? r.detail.candidates.map((c) => c.id) : []).toEqual(['c1'])
+  })
+
+  it('asKind: only the two known values; ackLabel: a null kind shows the existing no-ack slot, never a kind label', () => {
+    expect(asKind('dc')).toBe('dc')
+    expect(asKind('invoice')).toBe('invoice')
+    expect(asKind(null)).toBeNull()
+    expect(asKind(undefined)).toBeNull()
+    expect(asKind('receipt')).toBeNull()
+    expect(ackLabel(null, 'yes')).toBe(copy.PM_ACK_NONE)
+    expect(ackLabel(null, null)).toBe(copy.PM_ACK_NONE)
+    expect(ackLabel('dc', 'yes')).toBe(copy.PM_ACK_DC_YES) // POSITIVE CONTROL
+  })
+
+  it('download name: a null kind gets the neutral file-<n>.<ext>; dc / invoice keep their raw value; anything else is refused', () => {
+    expect(downloadFileName(null, 2, 'application/pdf')).toBe('file-2.pdf')
+    expect(resolveDownloadName(null, 4, 'application/pdf')).toBe('file-4.pdf')
+    expect(resolveDownloadName('dc', 4, 'application/pdf')).toBe('dc-4.pdf')
+    expect(resolveDownloadName('invoice', 4, 'application/pdf')).toBe('invoice-4.pdf')
+    expect(resolveDownloadName('receipt', 4, 'application/pdf')).toBeNull()
   })
 })

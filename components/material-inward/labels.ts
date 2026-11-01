@@ -17,8 +17,10 @@ import {
 // Pure mapping from DB values to copy constants and chip variants. No user-facing text is defined here.
 
 /** The ack label for a document of the given kind. An invoice never gets a DC label and the reverse (PM_ACK_LABEL is keyed by kind). */
-export function ackLabel(kind: PmDocKind, ack: PmAck | null): string {
-  return ack === null ? PM_ACK_NONE : PM_ACK_LABEL[kind][ack]
+export function ackLabel(kind: PmDocKind | null, ack: PmAck | null): string {
+  // No known kind (null-kind tolerance, PR-D2 / MI-KIND-REMOVAL): no kind-specific label exists, so show the existing "no ack" slot.
+  if (kind === null || ack === null) return PM_ACK_NONE
+  return PM_ACK_LABEL[kind][ack]
 }
 
 export const STATUS_CHIP: Record<string, { variant: StatusVariant; label: string }> = {

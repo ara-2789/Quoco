@@ -59,8 +59,13 @@ export function istDaysSince(deliveryDate: string, now: Date): number {
 function asAck(v: string | null): PmAck | null {
   return v === 'yes' || v === 'no' || v === 'partial' || v === 'unclear' ? v : null
 }
-function asKind(v: string): PmDocKind {
-  return v === 'invoice' ? 'invoice' : 'dc'
+/**
+ * The document kind, or null when it is missing or not one of the two known values. The column is NOT NULL today
+ * (049:286), so null cannot occur yet; PR-D1 is tolerant of it anyway (PR-D2 / MI-KIND-REMOVAL): a row with no known kind
+ * is left out of every list, detail and picker rather than guessed at.
+ */
+export function asKind(v: string | null | undefined): PmDocKind | null {
+  return v === 'invoice' ? 'invoice' : v === 'dc' ? 'dc' : null
 }
 
 function reportRead(where: string, err: { code?: string | null; message?: string | null }): { status: 'error' } {
@@ -186,12 +191,14 @@ export async function getMaterialInwardList(
   const nameById = new Map((users.data ?? []).map((u) => [u.id, u.full_name]))
   const projectName = new Map((projects.data ?? []).map((p) => [p.id, p.name]))
 
-  const items: PmListItem[] = rows.map((r) => {
+  const items: PmListItem[] = rows.flatMap((r): PmListItem[] => {
     const docId = docIdOf(r)
     const doc = docId ? docById.get(docId) : undefined
+    const kind = doc ? asKind(doc.kind) : null
+    if (kind === null) return [] // no known document kind: not listed (null-kind tolerance)
     const isDc = r.dc_document_id !== null
     const open = r.status !== 'rejected' && r.status !== 'cancelled'
-    return {
+    return [{
       id: r.id,
       projectName: projectName.get(r.project_id) ?? '—',
       status: r.status,
@@ -200,14 +207,14 @@ export async function getMaterialInwardList(
       dcNumber: r.dc_number,
       deliveryDate: r.delivery_date,
       receivedAt: r.received_at,
-      kind: doc ? asKind(doc.kind) : isDc ? 'dc' : 'invoice',
+      kind,
       ack: doc ? asAck(doc.engineer_ack) : null,
       createdFromInvoice: r.created_from_invoice_id !== null,
       cancelReason: r.cancel_reason,
       engineerName: nameById.get(r.reported_by) ?? null,
       fileCount: docId ? (fileCount.get(docId) ?? 0) : 0,
       invoiceExpectedDays: isDc && open && !linked.has(r.id) && r.delivery_date ? istDaysSince(r.delivery_date, now) : null,
-    }
+    }]
   })
   return { status: 'ok', items, truncated }
 }
@@ -328,6 +335,7 @@ export async function getDeliveryDetail(
   }
   if (!doc.data) return { status: 'not-found' }
   const kind = asKind(doc.data.kind)
+  if (kind === null) return { status: 'not-found' } // no known document kind: not shown (null-kind tolerance)
 
   const fileItems: PmFileItem[] = (files.data ?? []).map((f) => ({
     id: f.id,
@@ -423,10 +431,11 @@ export async function getDeliveryDetail(
     const eligible = cand ?? []
     if (eligible.length > 0) {
       const dcIds = eligible.map((c) => c.dc_document_id).filter((v): v is string => v !== null)
-      const dcDocs = await client.from('capture_documents').select('id, engineer_ack').eq('tenant_id', tenantId).in('id', dcIds)
+      const dcDocs = await client.from('capture_documents').select('id, engineer_ack, kind').eq('tenant_id', tenantId).in('id', dcIds)
       if (dcDocs.error) return reportRead('candidate documents', dcDocs.error)
       const ackByDoc = new Map((dcDocs.data ?? []).map((x) => [x.id, asAck(x.engineer_ack)]))
-      detail.candidates = eligible.map((c) => ({
+      const dcKindOk = new Set((dcDocs.data ?? []).filter((x) => asKind(x.kind) === 'dc').map((x) => x.id))
+      detail.candidates = eligible.filter((c) => c.dc_document_id !== null && dcKindOk.has(c.dc_document_id)).map((c) => ({
         id: c.id,
         receivedAt: c.received_at,
         dcNumber: c.dc_number,
@@ -444,6 +453,7 @@ export async function getDeliveryDetail(
         .select('id, engineer_ack, created_at')
         .eq('tenant_id', tenantId)
         .eq('id', mine.invoiceDocumentId)
+        .not('kind', 'is', null)
         .maybeSingle()
       if (error) return reportRead('linked invoice', error)
       if (inv) detail.linkedInvoice = { ack: asAck(inv.engineer_ack), receivedAt: inv.created_at }
