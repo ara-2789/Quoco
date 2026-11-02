@@ -3,7 +3,14 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { profileForAuthId } from '@/lib/auth/profile'
 import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
-import { LatchedForm, SubmitButton, HaveCodeButton } from './pending-controls'
+import * as Sentry from '@sentry/nextjs'
+import {
+  LatchedForm,
+  LatchScope,
+  SubmitButton,
+  HaveCodeButton,
+  loginFormKey,
+} from './pending-controls'
 
 // Known error keys this page redirects with. An unrecognised or tampered
 // ?error= value always falls through to GENERIC below via errorMessageFor's
@@ -157,13 +164,19 @@ export default async function LoginPage({
 }) {
   const params = await searchParams
 
-  // B6 (docs/plans/login-otp-ux-plan.md): a user who is already signed in
-  // does not get the sign-in form. ONLY the lookups are inside the try. The
-  // target is computed there and redirect() is called OUTSIDE it, because
-  // redirect() works by throwing NEXT_REDIRECT -- a redirect inside this try
-  // would be caught by the catch below and the signed-in user would still
-  // see the form. Any lookup failure (no session, no profile row, a thrown
-  // error) falls through to the form, so /login can never become unusable.
+  // B6 (docs/plans/login-otp-ux-plan.md, narrowed in §12): a user who is
+  // already signed in AND has a tenant goes to /dashboard instead of seeing
+  // the sign-in form. ONLY the lookups are inside the try. The target is
+  // computed there and redirect() is called OUTSIDE it, because redirect()
+  // works by throwing NEXT_REDIRECT -- a redirect inside this try would be
+  // caught by the catch below and the signed-in user would still see the form.
+  //
+  // Everything else renders the form: no session, a session whose profile has
+  // NO tenant (NOT sent to /onboarding: that page has no sign-out, so /login
+  // is the only way such a user can switch address), or a failed lookup. A
+  // failed lookup is also REPORTED (the missing-profile-row invariant
+  // profileForAuthId throws on should not be silent), by error name only:
+  // never the auth id, email or a token.
   let signedInTarget: string | null = null
   try {
     const supabase = await createClient()
@@ -172,12 +185,35 @@ export default async function LoginPage({
     } = await supabase.auth.getUser()
     if (user) {
       const profile = await profileForAuthId(supabase, user.id)
-      signedInTarget = profile.tenant_id ? '/dashboard' : '/onboarding'
+      signedInTarget = profile.tenant_id ? '/dashboard' : null
     }
-  } catch {
+  } catch (err) {
     signedInTarget = null
+    Sentry.captureMessage('login: signed-in lookup failed', {
+      level: 'error',
+      tags: { feature: 'login-b6' },
+      extra: { errorName: err instanceof Error ? err.name : typeof err },
+    })
   }
   if (signedInTarget) redirect(signedInTarget)
+
+  // Review round 1, B1: forms are keyed by the params a redirect changes, so a
+  // same-route redirect (e.g. to ?error=...) remounts them with a fresh latch.
+  // The key is RENDERED (data-latch-key), so it only ever carries values this
+  // page already trusts: a known error key (anything else collapses to
+  // GENERIC, exactly like errorMessageFor), and the email only on the code
+  // step, where it is validated below before anything renders. A raw
+  // query-string value must never reach the HTML (T-OTP-07 / T-OTP-08).
+  const formKey = loginFormKey({
+    step: params.step === 'code' ? 'code' : undefined,
+    error:
+      params.error === undefined
+        ? undefined
+        : Object.prototype.hasOwnProperty.call(ERROR_MESSAGES, params.error)
+          ? params.error
+          : 'GENERIC',
+    email: params.step === 'code' ? params.email : undefined,
+  })
 
   if (params.step === 'code') {
     const email = params.email ?? ''
@@ -206,7 +242,10 @@ export default async function LoginPage({
           </div>
         )}
 
-        <LatchedForm action={verifyCode} className="space-y-4">
+        {/* Verify + resend share ONE latch (LatchScope): while either is in
+            flight both buttons are disabled and a tap on the other is refused. */}
+        <LatchScope key={formKey}>
+        <LatchedForm action={verifyCode} className="space-y-4" latchKey={formKey}>
           <input type="hidden" name="email" value={email} />
           <div>
             <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1">
@@ -230,7 +269,7 @@ export default async function LoginPage({
           />
         </LatchedForm>
 
-        <LatchedForm action={resendCode} className="mt-4">
+        <LatchedForm action={resendCode} className="mt-4" latchKey={formKey}>
           <input type="hidden" name="email" value={email} />
           <SubmitButton
             label={codeStep.resendLabel}
@@ -238,6 +277,7 @@ export default async function LoginPage({
             className="w-full text-center text-sm text-blue-600 hover:underline disabled:opacity-60 disabled:cursor-not-allowed"
           />
         </LatchedForm>
+        </LatchScope>
 
         <p className="mt-4 text-center text-sm text-gray-700">
           <a href="/login" className="text-blue-600 hover:underline">
@@ -259,7 +299,7 @@ export default async function LoginPage({
         </div>
       )}
 
-      <LatchedForm action={requestCode} className="space-y-4">
+      <LatchedForm key={formKey} action={requestCode} className="space-y-4" latchKey={formKey}>
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
             Email address
@@ -280,7 +320,9 @@ export default async function LoginPage({
           className="w-full bg-blue-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         />
         {/* AFTER "Send code" in DOM order, so Enter in the email field still
-            sends. type="button": never submits, never calls requestCode. */}
+            sends. A GET submitter (formMethod=get, formAction=/login): it
+            replaces the form's server action for its own submission, so it
+            never calls requestCode and needs no JS. */}
         <HaveCodeButton
           label={emailStep.haveCodeLabel}
           className="w-full text-center text-sm text-blue-600 hover:underline disabled:opacity-60 disabled:cursor-not-allowed"

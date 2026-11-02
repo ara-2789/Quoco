@@ -1,3 +1,4 @@
+> Status 2 Nov 2026: built; see §10–§12 addenda, which supersede the header and earlier sections where they conflict.
 # LOGIN OTP FIX — PLAN v2 (plan only; no code, no branch, no commits). Tier FULL (auth page). External code review of the PR only (per Aravind, 2 Nov).
 Base: origin/main = 408a35c042444816cf10733ea66811876da2efbd (re-checked 2 Nov: unchanged; `git log 408a35c..origin/main` empty; worktree clean). Claims are READ from `git show origin/main:<path>` unless marked. Evidence: /tmp/quoco/login-otp-evidence.txt
 Supersedes v1. v1 map of the code (v1 section 1) still stands; line numbers below are origin/main's `app/(auth)/login/page.tsx` unless stated.
@@ -111,3 +112,12 @@ U9 `test/setup/run-id.ts` globalSetup not read; assumed env-only like guard.ts. 
 - s5 strings: APPROVED (English) by Aravind, 2 Nov 2026. Comment in code: "English approved by Aravind 2 Nov 2026; Tamil owed".
 - s9 U3: RESOLVED, per Aravind's dashboard screenshot 2 Nov: the Magic link / OTP template body contains {{ .Token }} and no link.
 - Tests as built: test/login-ux.test.tsx (T-UX-2..5), test/submit-latch.test.ts (T-UX-1). test/login-otp.test.ts unchanged and not run locally (test-db held by backend at build time); CI runs it.
+
+## 12. ADDENDUM — 2 Nov 2026, review round 1 (per Aravind's rulings)
+- §10 B4 reversed: the have-code control is again the GET submitter (reviewer showed R5(i) at react-dom 19.2.4 source: a string formAction submits natively and never calls the action). Works before hydration. Guard: manual email count.
+- B6 narrowed: redirect only for a user with a tenant. No-tenant, no-user, or lookup failure -> the form. Reason: /onboarding has no sign-out (review B2).
+- B1 robustness: forms keyed by step|error|email so a same-route redirect remounts them; 20 s safety release.
+- S2: verify and resend share one latch and one pending source.
+- S3: the B6 catch reports the error (no auth id, email or token).
+- S4: test/login-otp.test.ts gains an add-only mock of @/lib/supabase/server.
+- Residual (S1): the latch does not exist before hydration; a double tap before hydration can send two requests (second gets the existing rate-limit error + have-code button). Measured /login load time on throttled 3G: to be recorded from Aravind's manual run.

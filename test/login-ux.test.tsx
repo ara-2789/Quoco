@@ -14,12 +14,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as authCopy from '@/lib/auth/copy'
+import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase/server'
 import { profileForAuthId } from '@/lib/auth/profile'
 import {
   HaveCodeButtonView,
   SubmitButtonView,
-  haveCodeUrl,
+  loginFormKey,
 } from '@/app/(auth)/login/pending-controls'
 import LoginPage from '@/app/(auth)/login/page'
 
@@ -27,6 +28,8 @@ import LoginPage from '@/app/(auth)/login/page'
 // test/login-otp.test.ts documents); both modules are mocked, never called for real.
 vi.mock('@/lib/auth/profile', () => ({ profileForAuthId: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
+// The B6 catch reports through Sentry.captureMessage (review round 1, S3).
+vi.mock('@sentry/nextjs', () => ({ captureMessage: vi.fn() }))
 
 type Params = { step?: string; email?: string; error?: string }
 type FakeProfile = Awaited<ReturnType<typeof profileForAuthId>>
@@ -63,6 +66,7 @@ function buttonWithLabel(html: string, label: string): string | null {
 beforeEach(() => {
   vi.mocked(createClient).mockReset()
   vi.mocked(profileForAuthId).mockReset()
+  vi.mocked(Sentry.captureMessage).mockReset()
   signInWithOtp.mockReset()
   mockSession(null) // default: signed out
 })
@@ -145,14 +149,24 @@ describe('T-UX-2: busy state (presentational views)', () => {
 describe('T-UX-3: have-code control', () => {
   const HAVE_CODE = authCopy.emailStep.haveCodeLabel
 
-  it('email step: type="button", no formaction, no formmethod, placed AFTER Send code', async () => {
+  // GET submitter (review round 1, S1): a string formAction replaces the form's
+  // server action for this submission, so the browser submits natively and
+  // requestCode is never called. Needs no JS (works before hydration).
+  function expectGetSubmitter(button: string) {
+    const tag = button.toLowerCase()
+    expect(tag).toContain('type="submit"')
+    expect(tag).toContain('formmethod="get"')
+    expect(tag).toContain('formaction="/login"')
+    expect(tag).toContain('name="step"')
+    expect(tag).toContain('value="code"')
+    expect(tag).toContain('data-no-latch')
+  }
+
+  it('email step: GET submitter (type=submit formmethod=get formaction=/login name=step value=code), placed AFTER Send code', async () => {
     const html = await renderLogin({})
     const haveCode = buttonWithLabel(html, HAVE_CODE)
     expect(haveCode, 'have-code button must be rendered on the email step').not.toBeNull()
-    expect(haveCode).toContain('type="button"')
-    expect(haveCode!.toLowerCase()).not.toContain('formaction')
-    expect(haveCode!.toLowerCase()).not.toContain('formmethod')
-    expect(haveCode!.toLowerCase()).not.toContain('type="submit"')
+    expectGetSubmitter(haveCode!)
 
     const send = buttonWithLabel(html, authCopy.emailStep.submitLabel)
     expect(send, 'Send code button must be rendered').not.toBeNull()
@@ -166,8 +180,16 @@ describe('T-UX-3: have-code control', () => {
     const haveCode = buttonWithLabel(html, HAVE_CODE)
     expect(errorAt).toBeGreaterThanOrEqual(0)
     expect(haveCode).not.toBeNull()
-    expect(haveCode).toContain('type="button"')
+    expectGetSubmitter(haveCode!)
     expect(html.indexOf(haveCode!)).toBeGreaterThan(errorAt)
+  })
+
+  it('the have-code submitter sits in the SAME form as Send code (it submits the typed email)', async () => {
+    const html = await renderLogin({})
+    const form = html.match(/<form[\s\S]*?<\/form>/)?.[0] ?? ''
+    expect(form).toContain(authCopy.emailStep.submitLabel)
+    expect(form).toContain(HAVE_CODE)
+    expect(form).toContain('name="email"')
   })
 
   it('rendering the email step and the code step sends nothing', async () => {
@@ -177,13 +199,10 @@ describe('T-UX-3: have-code control', () => {
     expect(signInWithOtp).not.toHaveBeenCalled()
   })
 
-  it('URL builder encodes + and @ so the address survives the round trip', () => {
-    const email = 'ar.rcpl+otptest@gmail.com'
-    const url = haveCodeUrl(email)
-    expect(url).toBe('/login?step=code&email=ar.rcpl%2Botptest%40gmail.com')
-    expect(new URL(url, 'http://ux.invalid').searchParams.get('email')).toBe(email)
-    expect(haveCodeUrl('  a@b.co  ')).toBe('/login?step=code&email=a%40b.co')
-  })
+  // haveCodeUrl() and its "URL builder encodes + and @" row are DELETED: the
+  // browser now builds the query string natively from the form fields (the
+  // GET submitter), so there is no app-side URL builder left to test. The
+  // page's own server-side isValidEmail guard on step=code is unchanged.
 })
 
 describe('T-UX-4: signed-in user on /login (B6)', () => {
@@ -203,10 +222,16 @@ describe('T-UX-4: signed-in user on /login (B6)', () => {
     )
   })
 
-  it('user, no tenant -> NEXT_REDIRECT to /onboarding', async () => {
+  // Review round 1, B2: /onboarding has no sign-out, so a signed-in user with
+  // NO tenant must keep reaching this form (the only way to switch address).
+  // 2 of the 4 prod accounts are in this state (build log round 2, B2 count).
+  it('user, no tenant -> the form renders (NOT redirected to /onboarding)', async () => {
     mockSession({ id: 'UX-AUTH-USER-0000' })
     vi.mocked(profileForAuthId).mockResolvedValue({ tenant_id: null } as FakeProfile)
-    expect(await redirectDigestOf({})).toMatch(REDIRECT('/onboarding'))
+    expect(await redirectDigestOf({})).toBe('NO-THROW (page rendered)')
+    const html = await renderLogin({})
+    expect(html).toContain(authCopy.emailStep.heading)
+    expect(html).toContain(authCopy.emailStep.submitLabel)
   })
 
   it('no user -> the form renders, no redirect', async () => {
@@ -237,6 +262,97 @@ describe('T-UX-4: signed-in user on /login (B6)', () => {
     vi.mocked(createClient).mockRejectedValue(new Error('cookies() outside a request scope'))
     const html = await renderLogin({})
     expect(html).toContain(authCopy.emailStep.heading)
+  })
+})
+
+describe('T-UX-7: the B6 catch reports the failure (review round 1, S3)', () => {
+  const AUTH_ID = 'UX-AUTH-USER-0000'
+  const EMAIL = 'ux-secret@example.com'
+
+  it('profile lookup throws -> reported ONCE, by error name only (no auth id / email / message)', async () => {
+    mockSession({ id: AUTH_ID })
+    vi.mocked(profileForAuthId).mockRejectedValue(
+      new TypeError(`profile row missing for auth id ${AUTH_ID} (${EMAIL})`),
+    )
+    const html = await renderLogin({})
+    expect(html).toContain(authCopy.emailStep.heading) // still falls through to the form
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1)
+    const payload = JSON.stringify(vi.mocked(Sentry.captureMessage).mock.calls[0])
+    expect(payload).toContain('TypeError')
+    expect(payload).not.toContain(AUTH_ID)
+    expect(payload).not.toContain(EMAIL)
+    expect(payload).not.toContain('profile row missing')
+  })
+
+  it('no user -> NOT reported (signed out is normal)', async () => {
+    mockSession(null)
+    await renderLogin({})
+    expect(Sentry.captureMessage).not.toHaveBeenCalled()
+  })
+
+  it('user + tenant (redirect) and user with no tenant -> NOT reported', async () => {
+    mockSession({ id: AUTH_ID })
+    vi.mocked(profileForAuthId).mockResolvedValue({ tenant_id: 'UX-TENANT-0000' } as FakeProfile)
+    await redirectDigestOf({})
+    vi.mocked(profileForAuthId).mockResolvedValue({ tenant_id: null } as FakeProfile)
+    await renderLogin({})
+    expect(Sentry.captureMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('T-UX-8: forms are keyed by the params a redirect changes (review round 1, B1)', () => {
+  function latchKeysIn(html: string): string[] {
+    return [...html.matchAll(/data-latch-key="([^"]*)"/g)].map((m) => m[1])
+  }
+
+  it('the key differs between (email step, no error), (email step, RESEND_RATE_LIMITED) and (code step, WRONG_CODE)', () => {
+    const plain = loginFormKey({})
+    const rateLimited = loginFormKey({ error: 'RESEND_RATE_LIMITED' })
+    const wrongCode = loginFormKey({ step: 'code', error: 'WRONG_CODE', email: 'ux-test@example.com' })
+    expect(plain).toBe('||')
+    expect(rateLimited).toBe('|RESEND_RATE_LIMITED|')
+    expect(wrongCode).toBe('code|WRONG_CODE|ux-test@example.com')
+    expect(new Set([plain, rateLimited, wrongCode]).size).toBe(3)
+  })
+
+  it('the rendered form carries that key in data-latch-key (inspected in the HTML)', async () => {
+    const plain = latchKeysIn(await renderLogin({}))
+    const rateLimited = latchKeysIn(await renderLogin({ error: 'RESEND_RATE_LIMITED' }))
+    const wrongCode = latchKeysIn(
+      await renderLogin({ step: 'code', error: 'WRONG_CODE', email: 'ux-test@example.com' }),
+    )
+    expect(plain).toEqual(['||'])
+    expect(rateLimited).toEqual(['|RESEND_RATE_LIMITED|'])
+    expect(wrongCode).toEqual([
+      'code|WRONG_CODE|ux-test@example.com',
+      'code|WRONG_CODE|ux-test@example.com',
+    ])
+    expect(new Set([...plain, ...rateLimited, ...wrongCode]).size).toBe(3)
+  })
+
+  // The key is rendered into the HTML, so it must never carry a raw
+  // query-string value (the T-OTP-07 / T-OTP-08 reflected-text rule).
+  it('an unknown ?error= collapses to GENERIC and an ?email= on the email step is dropped: nothing raw is rendered', async () => {
+    const html = await renderLogin({ error: 'NOT_A_REAL_KEY', email: 'Your account is suspended' })
+    expect(latchKeysIn(html)).toEqual(['|GENERIC|'])
+    expect(html).not.toContain('NOT_A_REAL_KEY')
+    expect(html).not.toContain('Your account is suspended')
+  })
+})
+
+describe('T-UX-10 (render part): the code step shares ONE latch (review round 1, S2)', () => {
+  function latchIdsIn(html: string): string[] {
+    return [...html.matchAll(/data-latch-id="([^"]*)"/g)].map((m) => m[1])
+  }
+
+  it('verify and resend forms carry the SAME latch id; the email step has one form', async () => {
+    const code = latchIdsIn(await renderLogin({ step: 'code', email: 'ux-test@example.com' }))
+    expect(code).toHaveLength(2)
+    expect(code[0]).not.toBe('')
+    expect(code[1]).toBe(code[0])
+
+    const email = latchIdsIn(await renderLogin({}))
+    expect(email).toHaveLength(1)
   })
 })
 
