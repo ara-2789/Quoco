@@ -105,3 +105,9 @@ U6 React 19.2.4 / Next 16.2.11: R5 (i)-(iii), plus `useFormStatus` pending acros
 U7 Where PM notification deep links point (`lib/hindrance/pm-notify.ts` unread). Owner: deferred (gates the B5 PR).
 U8 When test-db is free for UI-side runs of `test/login-otp.test.ts`. Owner: Aravind / backend.
 U9 `test/setup/run-id.ts` globalSetup not read; assumed env-only like guard.ts. Owner: build-time (read before first run).
+
+## 10. ADDENDUM — 2 Nov 2026, at build (per Aravind). Supersedes the lines named below; earlier text left as written.
+- B4 (s3) and test 4 (s6), R5 (i): the have-code control is NOT a submit button with formAction/formMethod. Built as <button type="button">: on click it runs the email input's checkValidity() (reportValidity() on failure, no navigation), then window.location.assign('/login?step=code&email=' + encodeURIComponent(email)). It never submits the requestCode form and cannot send a code. Reason: a string formAction inside a server-action form was an unverified framework behaviour (R5 i); if wrong, the button would send a new code and invalidate the one the PM holds. The data-skip-latch bypass is therefore unused by B4. Tested by T-UX-3 (type="button", no formaction/formmethod; control: type="submit" -> red).
+- s5 strings: APPROVED (English) by Aravind, 2 Nov 2026. Comment in code: "English approved by Aravind 2 Nov 2026; Tamil owed".
+- s9 U3: RESOLVED, per Aravind's dashboard screenshot 2 Nov: the Magic link / OTP template body contains {{ .Token }} and no link.
+- Tests as built: test/login-ux.test.tsx (T-UX-2..5), test/submit-latch.test.ts (T-UX-1). test/login-otp.test.ts unchanged and not run locally (test-db held by backend at build time); CI runs it.

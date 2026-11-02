@@ -1,0 +1,335 @@
+### STEP 0 2026-11-02T05:37:35Z
+$ git status --short
+[end status]
+$ git fetch origin
+$ git rev-parse origin/main
+408a35c042444816cf10733ea66811876da2efbd
+$ git worktree list
+/Users/aravindanrajamani/Desktop/quocoai                                                       fe75d6c [main]
+/Users/aravindanrajamani/Desktop/quoco-1a-plan-v2                                              5789b9c (detached HEAD) prunable
+/Users/aravindanrajamani/Desktop/quoco-docs-1010                                               743edf9 [docs/capture-1a-decisions-2026-10-10] prunable
+/Users/aravindanrajamani/Desktop/quoco-docs-1010b                                              345f249 [docs/capture-1a-decisions-2026-10-10b] prunable
+/Users/aravindanrajamani/Desktop/quoco-docs-1a                                                 3cc50e5 [docs/capture-1a-decisions-2026-10-06] prunable
+/Users/aravindanrajamani/Desktop/quoco-p0-sentry                                               ef2b18f [fix/sentry-phone-scrub] prunable
+/Users/aravindanrajamani/Desktop/quoco-slice1-plan                                             5b7c588 (detached HEAD) prunable
+/Users/aravindanrajamani/Desktop/quocoai-pm-ui                                                 408a35c (detached HEAD)
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/036-037-review-package              93f09ab [worktree-036-037-review-package]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/050-pr-b                            b1acbf2 [docs/050-closeout]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/add-engineer-plan                   caab70b [feat/add-engineer-plan]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/add-engineer-slice1                 aac5552 [feat/add-engineer-slice1]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/adhoc-menu-item1-migration          17452ca [worktree-adhoc-menu-item1-migration]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/adhoc-menu-spec-corrections         98e10ef [worktree-adhoc-menu-spec-corrections]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/b3-sweep-first-exercise             07210bf [worktree-b3-sweep-first-exercise]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c1-fixed-clock                      bcda30e [test/c1-fixed-clock]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c4a-handler                         ae09071 [feat/pr-c-c4a-handler]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c4b-pdf-gate                        41e8db6 [feat/pr-c-c4b-pdf-gate]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/capture-block-a-findings            a2cedcf [docs/capture-engine-block-a-findings]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/checkin-escalation-sweep-wiring     ddae31b [docs/dpr-regeneration-decision-and-spec]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/chore+test-db-ledger-042-046        590b051 [chore/test-db-ledger-042-046]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/d30-record                          98b3a9e [docs/d30-record]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/dash-01-pm-exceptions-home          ddfa21d [feat/dash-01-pm-exceptions-home]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs+stage5-scope-and-login-backlog 45a2f52 [docs/stage5-scope-and-login-backlog]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs-rules-and-split                b18dca9 [worktree-docs-rules-and-split]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs-stage5a-b1-b2-records          bef3852 [docs/stage5a-b1-b2-records]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs-stage5a-d5-correction          4fb3b06 [docs/stage5a-d5-correction]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs-stage5a-review-package         30f97be [docs/stage5a-review-package]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs-tier-rule                      7ba18a1 [docs/tier-rule]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/engineer-append-correction-decision f99bd18 [worktree-engineer-append-correction-decision]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/evening-q5-caption-reversal         b1e06d3 [worktree-evening-q5-caption-reversal]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/evening-q5-tomorrow-needs           6b48420 [worktree-evening-q5-tomorrow-needs]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat+ui-slice5-today                03d9b6a [feat/ui-slice5-today]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat+ui-slice6-log-card             de8ed83 [feat/ui-slice6-log-card]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat-stage5a-b1-photo-route         ad5e0e7 [feat/stage5a-b1-photo-route]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat-stage5a-b2-selector-split      151a07d [feat/stage5a-b2-selector-split]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat-ui-shell-restyle               86c659d [feat/ui-shell-restyle]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat-ui-slice2-logs-dates           5a4e2b5 [feat/ui-slice2-logs-dates]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat-ui-slice3-list-and-dates       9248d24 [feat/ui-slice3-list-and-dates]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/fix-daily-log-card-date             8dfe27f [fix/daily-log-card-date]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/fix-test-user-teardown              583460f [fix/test-user-teardown]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/fix-text-contrast                   e0bf020 [fix/text-contrast]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/lint-sql-auth-uid                   11a6938 [docs/ci-time-record]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/media-image-only                    03240a3 [fix/media-image-only]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/mellow-hatching-curry               c42ac20 [docs/044-date-and-backlog]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/migration-037-pm-notified-at        c65cd6b [docs/submitted-via-vocabulary-ledger]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/migration-043-prod-apply-paperwork  7167b3a [docs/043-prod-apply-paperwork-wt]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/owner-deliver-backfill-scope        e7828ad [worktree-owner-deliver-backfill-scope]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/plan-pr-c                           4477df3 [plan/pr-c]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/remove-not-asked-yet-leak           8d643f3 [research/not-on-site-evening-gate]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/retire-item3-docs                   0e71930 [worktree-retire-item3-docs]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/stage1-photo-intake-build           37b7d51 [worktree-stage1-photo-intake-build]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/stage5a-b3-pages                    62f5e4d [feat/stage5a-b3-pages]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/stage5a-b4-photo-presentation       93ed868 [feat/stage5a-b4-photo-presentation]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/test-db-fixture-teardown-fix        fb16b5a [fix/test-fixture-teardown-engineer-scope]
+
+### STEP 0 (cont.) branch + plan copy
+branch fix/login-otp-ux, HEAD 408a35c042444816cf10733ea66811876da2efbd (git switch set tracking to origin/main; NO push will be made)
+plan sha256, both copies, cmp byte-identical: 9957443f87e40918890348116a5fa41004d696b7850f0dfe871175654b51f866
+(differs from bfa5387e.. printed earlier only because one cross-reference s8->s9 was fixed after that hash)
+----- BEGIN RAW PLAN -----
+# LOGIN OTP FIX — PLAN v2 (plan only; no code, no branch, no commits). Tier FULL (auth page). External code review of the PR only (per Aravind, 2 Nov).
+Base: origin/main = 408a35c042444816cf10733ea66811876da2efbd (re-checked 2 Nov: unchanged; `git log 408a35c..origin/main` empty; worktree clean). Claims are READ from `git show origin/main:<path>` unless marked. Evidence: /tmp/quoco/login-otp-evidence.txt
+Supersedes v1. v1 map of the code (v1 section 1) still stands; line numbers below are origin/main's `app/(auth)/login/page.tsx` unless stated.
+
+## 1. RULE MAP (v1 -> v2)
+| v1 item | v2 |
+| s1 code map | KEPT as is |
+| B1 latch + disabled button | KEPT (s3) |
+| B1 fix (ii): rate-limit remaps to code step + `notices.recentSend` + "sent a moment ago" string | DROPPED (Aravind). Rate-limit keeps today's `RESEND_RATE_LIMITED` error on the email step; recovery = have-code button below it |
+| B2 | REDUCED: only fewer sends (B1 + B4). Optional resend warning + `codeStep.resendWarning` DROPPED |
+| B3 busy state | KEPT, narrowed (s4) |
+| B4 have-code GET button | KEPT, plus must render below the rate-limit error (s3) |
+| B5 return path, v1 s3 (algorithm), `return-path.ts`, `next` hidden fields, tests 5/6/8 | DROPPED. Own PR, design review, after U7 |
+| B6 signed-in redirect | KEPT, CORRECTED (redirect() outside try; no `next`; s3) |
+| D1 (move send actions) | MOOT: actions stay byte-identical in place |
+| D2 (P1/P2 proxy/layout change) | REJECTED. proxy.ts and dashboard layout untouched |
+| D3 (carry `next` in verify error branch) | MOOT |
+| v1 strings table (6 rows) | CUT to 3 (s5) |
+| v1 test 1 (latch) | KEPT (s6 test 1) |
+| v1 test 2 (busy) | UPDATED: verify label unchanged, have-code disabled (s6 test 2) |
+| v1 test 3 (rate-limit lands on code step) | REPLACED (s6 test 3) |
+| v1 test 4 (have-code sends nothing) | UPDATED: control is a mutation, since requestCode is not callable (s6 test 4) |
+| v1 tests 5, 6, 8 | DROPPED with B5 |
+| v1 test 7 (signed-in) | UPDATED + redirect-in-try control (s6 test 6) |
+| v1 test 9 (verify untouched) | KEPT, redefined as name-based hashes (s2) |
+| v1 U1 | RESOLVED-BY-DESIGN (s9) |
+
+## 2. FILES CHANGED / BYTE-UNCHANGED, AND HOW EACH IS PROVEN AT BUILD
+Changed (and only these):
+- `app/(auth)/login/page.tsx`: LoginPage render section (lines 152-265) + the B6 check at its top + ONE added import line for the new client components (inserted after line 5). `createClient` (:3), `profileForAuthId` (:4), `redirect` (:2) are already imported — no other import edits.
+- NEW `app/(auth)/login/pending-controls.tsx` (`'use client'`): `LatchedForm`, `SubmitButton`, `HaveCodeButton`, plus presentational `*View` components for tests.
+- NEW `lib/auth/submit-latch.ts` (pure, `createSubmitLatch()`).
+- `lib/auth/copy.ts`: ADD-ONLY (3 constants, s5). Existing lines byte-identical (diff shows only `+` lines).
+- Tests: NEW `test/login-ui.test.tsx` (test-db-free), NEW `test/submit-latch.test.ts`; EDIT `test/login-otp.test.ts` only to add mocks for T-OTP-07/08 (see s6).
+Byte-unchanged (explicit): `proxy.ts`, `app/(auth)/auth/callback/route.ts`, `app/(auth)/layout.tsx`, `app/(dashboard)/layout.tsx`, `lib/auth/profile.ts`, `lib/auth/profile-query.ts`, `lib/supabase/*`, everything under `app/(dashboard)/` and `app/(onboarding)/`.
+Proofs, all printed with `git rev-parse HEAD` + `git status --porcelain` (empty) at PR head:
+a. `git diff --stat origin/main -- <every byte-unchanged path>` = empty; `git diff --name-only origin/main` equals exactly the changed list above, nothing else.
+b. page.tsx pre-LoginPage code: line numbers WILL shift by the added import line, so a bare `lines 1-150` hash is not used. Instead extract by name from both sides (`ERROR_MESSAGES`, `errorMessageFor`, `HTML5_EMAIL_RE`, `isValidEmail`, `requestErrorKey`, `verifyErrorKey`, `requestCode`, `resendCode`, `verifyCode`) and compare sha256 per block: all identical. Also print `diff` of origin/main vs head restricted to lines 1-150 of the base: the only hunk is the one `+import` line.
+c. copy.ts diff has zero `-` lines.
+Limit stated: this proves the text is unchanged, not that behaviour is unchanged by a new caller; behaviour of the three actions is unchanged because nothing in them or their imports changes.
+
+## 3. FIXES IN SCOPE (root cause READ -> fix)
+B1 Double tap. Cause: `<form action={requestCode}>` (:241) + plain button (:256-261); no pending state, two POSTs; 2nd hits the per-address cooldown -> `requestErrorKey` `over_email_send_rate_limit` -> `RESEND_RATE_LIMITED` (:54-55) -> `redirect('/login?error=...')` (:96) = email step + error though a code was sent. Fix: `LatchedForm` wraps each of the 3 forms: `<form action={serverAction} onSubmit=...>` keeps the server action directly as `action` (no-JS still works). `onSubmit` calls `latch.tryEnter()`; false -> `event.preventDefault()`. Released by an inner watcher: `useFormStatus().pending` true->false (`useEffect`). Submits whose `nativeEvent.submitter` carries `data-skip-latch` (the have-code button) bypass the latch. Residual: a double tap that still gets through yields today's error + have-code button (B4), not a dead end.
+B3 Busy. See s4.
+B4 Have-code. On the email step, inside the SAME form as "Send code", AFTER it in DOM order: `<button type="submit" formMethod="get" formAction="/login" name="step" value="code" data-skip-latch>` labelled `emailStep.haveCodeLabel`. Submits the typed email as GET `/login?step=code&email=..`: no server action, no send. Existing guard :171 re-validates the email and bounces bad ones to `/login`. Enter in the field triggers the first button (Send), as before. Position: the form is rendered below the error block (:235-240), so the button is below the `RESEND_RATE_LIMITED` message. Disabled while a send is pending: `HaveCodeButton` is a client component INSIDE the requestCode form and reads `useFormStatus().pending` (that hook reflects the enclosing form's action submission); `disabled={pending}`. Clicking it is a GET navigation, not an action, so it never sets pending itself. Same email-in-URL behaviour as today (:98).
+B2 Addressed only by sending less (B1 + B4). No change to what any send does.
+B6 Signed-in user on /login. In `LoginPage`, before any render branch:
+```
+let target: string | null = null
+try {                                   // ONLY the lookups are inside try
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) { const p = await profileForAuthId(supabase, user.id); target = p.tenant_id ? '/dashboard' : '/onboarding' }
+} catch { target = null }               // lookup failed -> fall through to the form
+if (target) redirect(target)            // OUTSIDE any try: redirect() throws NEXT_REDIRECT
+```
+v1 wrapped the redirect in the try; that swallows the throw and the signed-in user still sees the form. Not repeated. The check is in page.tsx, not proxy (untouched). Applies to every step (email, code). No `next`; target is only `/dashboard` or `/onboarding` (same two targets as :149).
+
+## 4. BUSY STATES
+- "Send code" (`emailStep.submitLabel`): while pending -> disabled + `emailStep.submitBusyLabel`.
+- "Send a new code" (`codeStep.resendLabel`): while pending -> disabled + `codeStep.resendBusyLabel`.
+- "Sign in" (`codeStep.submitLabel`): while pending -> disabled, label UNCHANGED. No new string.
+- Have-code button: disabled while the requestCode form is pending (B4). The resend/verify forms have no have-code button; they are separate forms.
+Pending ends when the action settles (redirect or return). `SubmitButton` = thin `useFormStatus` wrapper over `SubmitButtonView({pending,label,busyLabel?})`.
+
+## 5. STRINGS (proposed, NOT approved; each carries `// Tamil owed, NOT approved`; added to `lib/auth/copy.ts`)
+`emailStep.haveCodeLabel` = "Already have a code? Enter it here" · `emailStep.submitBusyLabel` = "Sending code…" · `codeStep.resendBusyLabel` = "Sending code…"
+No other user-facing text. `test/auth-copy.test.ts` iterates all exports, so the 3 new constants are covered automatically (must be non-empty strings). Nothing else seems to need text; if the build finds otherwise it STOPS and lists it.
+
+## 6. TESTS, each shown RED first. Every control run prints `git rev-parse HEAD` + sha256 of the mutated/neutralised file and must go red AT the named row.
+Env: node only, no jsdom (U4). UI tests use `renderToStaticMarkup` + `vi.mock('@/lib/supabase/server')`, `@/lib/auth/profile`; redirect() throws, assert `err.digest` matches `/^NEXT_REDIRECT;[a-z]+;<target>;/`.
+1. Latch (`submit-latch.test.ts`): 2nd `tryEnter` while held = false; released after settle and after a thrown error. Control: always-true latch -> red.
+2. Busy (`login-ui.test.tsx`): `SubmitButtonView pending` -> HTML has `disabled` and the busy label for Send code and for resend; verify view pending -> `disabled`, label still "Sign in"; `HaveCodeButtonView pending` -> `disabled`. pending=false -> none. Control: view ignores `pending` -> red on each row. Gap: hook-to-view wiring and the latch-release effect are NOT unit-testable here (U4/U6) -> manual s7.
+3. REPLACES v1 test 3. (a) `LoginPage({error:'RESEND_RATE_LIMITED'})` HTML contains `errors.resendRateLimited` AND the have-code button, with the button index AFTER the error text. Control: neutralise the button -> red. (b) "requestCode with over_email_send_rate_limit still redirects to /login?error=RESEND_RATE_LIMITED" CANNOT be a call-the-action test: `requestCode` is a non-exported inline action in a page module and the decision forbids moving it. Its non-change is proven by s2b (sha256 of `requestCode` + `requestErrorKey` identical), and the mapping was READ (:54-55, :96). Stated openly as a proof-by-hash, not a behavioural test.
+4. Have-code sends nothing: email-step HTML has the second button with `formmethod="get" formaction="/login" name="step" value="code"`, after the Send button, inside the same form; rendering email step and `{step:'code',email}` leaves a mocked `signInWithOtp` at 0 calls. Control (requestCode is not callable): temporary mutation of LoginPage to call `signInWithOtp` during render -> count 1 -> red.
+5. (v1 5/6/8 dropped with B5.)
+6. B6 / v1 test 7: user+tenant -> NEXT_REDIRECT `/dashboard`; user, no tenant -> `/onboarding`; no user -> form renders; `getUser` throws -> form; `profileForAuthId` throws -> form (lockout guard). Controls: (A) origin/main's LoginPage with a signed-in mock renders the form = red; (B) mutation wrapping `redirect()` inside the try -> the user+tenant row goes red (renders form, no NEXT_REDIRECT).
+7. Verify untouched: s2 proofs (a)-(c), build-time, printed raw.
+Family run before claiming green: `test/login-otp*.test.*`, `test/auth-copy.test.ts`, new files, JSON reporter (CLAUDE.md s7 missing-line note). T-OTP-07/08 re-run green with the added mocks.
+TEST-DB: `test/login-otp.test.ts` hits test-db: T-OTP-01/01b/02/03/04 call Supabase Auth directly, T-OTP-04 sends ONE real email (to Aravind's address); and its describe-level `beforeAll` (:141) creates a test-db user, so even running only T-OTP-07/08 from that file touches test-db. Test-db belongs to the backend now: the file is run only after the backend says it is free. Test-db-free: `submit-latch.test.ts`, `login-ui.test.tsx`, `auth-copy.test.ts` (vitest globalSetup `test/setup/guard.ts` reads env vars only, no network, READ; `run-id.ts` not read -> U9). Until the backend frees test-db, T-OTP-07/08 are reported NOT RUN, never green.
+
+## 7. MANUAL PREVIEW CHECKLIST (own address only; screenshot each marked step)
+1. Double-tap "Send code" fast (phone and desktop). Expect: button disabled + "Sending code…" at once; ONE email in the inbox; page lands on code step. [screenshot busy state; screenshot landed step; note email count + timestamps]
+2. Back, then "Send code" again within 60 s. Expect: email step with the rate-limit error AND the have-code button below it. [screenshot]
+3. Type the code from step 1 into the have-code path: click it (email already typed) -> code step -> enter code -> lands on dashboard. Expect no new email sent. [screenshot code step; inbox count unchanged]
+4. While a send is pending (throttle network), the have-code button is disabled. [screenshot]
+5. "Send a new code" shows "Sending code…" and disables. "Sign in" disables on submit, label unchanged.
+6. Signed in, open /login -> lands on Today (`/dashboard`); also /login?step=code&email=x. Signed out, /login shows the form. [screenshot]
+7. Verifies the U6 items below (formAction GET vs action; preventDefault; pending across redirect).
+
+## 8. RISKS
+R1 Lockout: (a) B6 redirect-swallow bug (v1): redirect() throws NEXT_REDIRECT, a try around it hides it and B6 silently does nothing — fixed by structure + test 6 control B. (b) a session whose profile row is missing: `profileForAuthId` throws -> caught -> form renders, so /login always remains usable. (c) loop /login <-> a page bouncing to /login: every bounce site is `if (!user)` on `getUser()` (READ: dashboard layout :77, dprs/[id]:68, projects/[id]:48, onboarding:24, getProfile:26), same function B6 uses, so none fires for a user B6 redirects. (d) a stuck latch (action never settles) keeps one form dead until reload; other forms and the have-code GET stay usable.
+R4 Valid code unusable: with the remap dropped, a rate-limited PM sees "Wait a minute before asking again" and may not notice the have-code button below it; copy for the error is unchanged by decision. Latch must release on error (test 1). Typo'd email on have-code -> normal wrong-code message; nothing sent, nothing invalidated.
+R5 Framework behaviour assumed, not verified: (i) a submitter with a STRING `formAction` + `formMethod=get` inside a form whose `action` is a server action submits natively (does not invoke the action); (ii) `preventDefault` in `onSubmit` suppresses the action; (iii) Next runs queued server actions one after another, so `disabled` alone may not stop a second queued tap — hence the latch. All three = U6, checked on the preview (s7). If (i) fails the have-code button would send a code (bad): s7 step 3 counts emails for exactly this.
+R6 Hidden-field/URL: email stays in the URL as today; nothing new carried.
+R7 Scope: the file-list proof in s2a is the control; any need for an edit outside the changed list STOPS the build.
+
+## 9. UNKNOWNS (owner)
+U1 RESOLVED-BY-DESIGN: no remap, so the page never claims "a code was sent"; per-address cooldown and project-wide cap both show today's error + have-code button. No wording depends on which limit fired.
+U2 Whether a new send invalidates the previous code (from Aravind's Supabase log only). Owner: deferred / build-time test-db probe once the backend frees test-db. The PR text must not assert it.
+U3 Dashboard email template flipped to `{{ .Token }}`? Owner: Aravind (dashboard). Not blocking; matters for the deferred B5 PR (magic links bypass any return path).
+U4 No jsdom/@testing-library; hook wiring untestable in unit tests. Owner: build-time -> manual checklist s7.
+U5 Cross-tenant destination behaviour of a return path. Owner: deferred (B5 PR).
+U6 React 19.2.4 / Next 16.2.11: R5 (i)-(iii), plus `useFormStatus` pending across `redirect()`. Owner: build-time, on the preview.
+U7 Where PM notification deep links point (`lib/hindrance/pm-notify.ts` unread). Owner: deferred (gates the B5 PR).
+U8 When test-db is free for UI-side runs of `test/login-otp.test.ts`. Owner: Aravind / backend.
+U9 `test/setup/run-id.ts` globalSetup not read; assumed env-only like guard.ts. Owner: build-time (read before first run).
+----- END RAW PLAN -----
+
+### CONTROL C1 (T-UX-1, always-true latch)
+HEAD 408a35c042444816cf10733ea66811876da2efbd (uncommitted build tree)
+mutated lib/auth/submit-latch.ts sha256 4e587928c54e6be893ef75d25f4babd5bf3f32829273b874716de76438b9e807
+FAIL  test/submit-latch.test.ts > T-UX-1: submit latch > the first enter wins; a second enter while held is refused
+AssertionError: expected true to be false // Object.is equality
+(3 tests failed in total, as intended)
+restored; sha256 7e56dd780c637864b06c515e5ae7652f781e8c6da00d3f2e0fbc963b9b7a2864 == original
+
+### CONTROL C2 (T-UX-2, SubmitButtonView ignores pending)
+HEAD 408a35c042444816cf10733ea66811876da2efbd (uncommitted build tree)
+mutated app/(auth)/login/pending-controls.tsx sha256 775484e7e8c628c21b316796498d6bd7af5442305a59ccbfc9cbd3f64d6f52a0
+FAIL  test/login-ux.test.tsx > T-UX-2: busy state (presentational views) > Sign in: pending -> disabled, label UNCHANGED (no busy label)
+AssertionError: expected  to contain  -> expected (button type=submit, Sign in) to contain disabled
+(3 failed | 1 passed | 14 skipped: Send code, Send a new code, Sign in rows red; have-code row unaffected, as intended)
+restored; sha256 6e8d8c8dd4db79490a726df350cb793534766c7f971728ecf2d4a68972de2567 == original
+
+### CONTROL C3 (T-UX-3, have-code rendered as type=submit)
+HEAD 408a35c042444816cf10733ea66811876da2efbd (uncommitted build tree)
+mutated app/(auth)/login/pending-controls.tsx sha256 55c89c5eb993f50fd0f3f92796fcfc47859eedee35e9cb9cabc23be4d21b9c85
+FAIL  test/login-ux.test.tsx > T-UX-3: have-code control > email step: type="button", no formaction, no formmethod, placed AFTER Send code
+AssertionError: expected (button type=submit class=w-full t...) to contain type="button"
+(2 failed | 2 passed | 14 skipped: both HTML rows red; URL-builder and no-send rows unaffected)
+restored; sha256 6e8d8c8dd4db79490a726df350cb793534766c7f971728ecf2d4a68972de2567 == original
+
+### CONTROL C4a (T-UX-4, origin/main LoginPage with signed-in mock)
+HEAD 408a35c042444816cf10733ea66811876da2efbd (uncommitted build tree)
+page.tsx replaced by git show origin/main:app/(auth)/login/page.tsx, sha256 876ff16f02fb097cf1caacba4cf94bf6907c8344eed496c3a926baa880d5be81 (equals origin/main blob content)
+FAIL  test/login-ux.test.tsx > T-UX-4: signed-in user on /login (B6) > user + tenant -> NEXT_REDIRECT to /dashboard
+AssertionError: expected NO-THROW (page rendered) to match /^NEXT_REDIRECT;[a-z]+;\/dashboard;/
+(3 failed | 4 passed | 11 skipped: the three signed-in rows red; the four form-renders rows pass on both, as intended)
+restored; sha256 ae91771ca89148b37fd8bc787ba7cc3277176aa75ae68460e7696d9b2acee6b1 == build version
+
+### CONTROL C4b (T-UX-4, redirect() moved inside the try)
+HEAD 408a35c042444816cf10733ea66811876da2efbd (uncommitted build tree)
+mutated app/(auth)/login/page.tsx sha256 06aaca2f24ff57c6ee9a6c245d8a94a085b6a34935117818aacf06d4ce375428
+FAIL  test/login-ux.test.tsx > T-UX-4: signed-in user on /login (B6) > user + tenant -> NEXT_REDIRECT to /dashboard
+AssertionError: expected NO-THROW (page rendered) to match /^NEXT_REDIRECT;[a-z]+;\/dashboard;/
+(3 failed | 4 passed | 11 skipped: the swallow bug is real and the test catches it)
+restored; sha256 ae91771ca89148b37fd8bc787ba7cc3277176aa75ae68460e7696d9b2acee6b1 == build version
+
+### STATIC CHECKS (build tree, HEAD 408a35c, uncommitted)
+$ npx tsc --noEmit  -> exit=0, 0 lines of output
+$ npm run lint  -> exit=0; summary line: "317 problems (0 errors, 317 warnings)" repo-wide; 0 of them in changed files
+$ npx eslint "app/(auth)/login" lib/auth/submit-latch.ts lib/auth/copy.ts test/login-ux.test.tsx test/submit-latch.test.ts -> exit=0, no output
+$ npm run check:profile-lookups -> exit=0: "profile-lookup guard: no from(users) + .eq(id, ...) in app/ or lib/"
+$ npm run lint:migrations -> exit=0: "migration-lint: clean. 107 known violation(s), all exempted."
+$ npm run lint:filesize -> exit=0: "file-size-lint: clean (197 files checked, no hard failures)."
+$ npm run lint:fixture-literals -> exit=0: "lint-retired-fixture-literals: clean (9 retired literal(s) checked, 0 stragglers under test/)."
+(every lint:* and check:* script in package.json was run; there is no other lint:* script)
+
+### TEST RUN (new files + auth-copy only)
+$ npx vitest run test/submit-latch.test.ts test/login-ux.test.tsx test/auth-copy.test.ts
+ ok test/login-ux.test.tsx (18 tests) / ok test/submit-latch.test.ts (4 tests) / ok test/auth-copy.test.ts (21 tests)
+ Test Files  3 passed (3) | Tests  43 passed (43)
+test-db check, READ: test/setup/guard.ts only reads SUPABASE_TEST_* env vars and compares the project ref (no network call); test/setup/run-id.ts only calls randomUUID() and project.provide(); login-ux.test.tsx mocks @/lib/supabase/server and @/lib/auth/profile and imports no db helper; nothing sends email.
+test/login-otp.test.ts (T-OTP-*): NOT RUN (touches test-db; test-db held by backend).
+
+### STEP 5 PROOFS (at committed HEAD)
+$ git rev-parse HEAD; git status --porcelain
+f2a067c22c0ee202931631d807269e03a9c80271
+[end porcelain: empty above = clean]
+
+$ git diff --name-only origin/main   (EVERY changed file)
+app/(auth)/login/page.tsx
+app/(auth)/login/pending-controls.tsx
+docs/plans/login-otp-ux-plan.md
+lib/auth/copy.ts
+lib/auth/submit-latch.ts
+test/login-ux.test.tsx
+test/submit-latch.test.ts
+
+$ git diff --stat origin/main
+ app/(auth)/login/page.tsx             |  74 +++++++---
+ app/(auth)/login/pending-controls.tsx | 144 ++++++++++++++++++
+ docs/plans/login-otp-ux-plan.md       | 107 ++++++++++++++
+ lib/auth/copy.ts                      |   6 +
+ lib/auth/submit-latch.ts              |  44 ++++++
+ test/login-ux.test.tsx                | 269 ++++++++++++++++++++++++++++++++++
+ test/submit-latch.test.ts             |  49 +++++++
+ 7 files changed, 669 insertions(+), 24 deletions(-)
+
+$ git diff origin/main --stat -- proxy.ts 'app/(auth)/auth/callback/route.ts' 'app/(auth)/layout.tsx' 'app/(dashboard)' 'app/(onboarding)' lib/auth/profile.ts lib/auth/profile-query.ts lib/supabase test/login-otp.test.ts   [expect: empty]
+[end: nothing printed above = empty]
+
+$ git diff -U0 origin/main -- lib/auth/copy.ts
+diff --git a/lib/auth/copy.ts b/lib/auth/copy.ts
+index 2b20094..b24c6fe 100644
+--- a/lib/auth/copy.ts
++++ b/lib/auth/copy.ts
+@@ -26,0 +27,4 @@ export const emailStep = {
++  // English approved by Aravind 2 Nov 2026; Tamil owed
++  haveCodeLabel: 'Already have a code? Enter it here',
++  // English approved by Aravind 2 Nov 2026; Tamil owed
++  submitBusyLabel: 'Sending code…',
+@@ -35,0 +40,2 @@ export const codeStep = {
++  // English approved by Aravind 2 Nov 2026; Tamil owed
++  resendBusyLabel: 'Sending code…',
+removed-line count (lines starting with a single '-', excluding the --- header):
+0
+
+$ node extract-blocks.mjs <git show origin/main:page.tsx>   [same method both sides]
+d4e1591683e7369ae3d7c265d5c48e867b0b3f32fbde5fbad4630d56d092dc9d ERROR_MESSAGES
+5ea578828fc0cdcc66382d1372696bb00f8424aa26b3232b960148eb5f60e547 errorMessageFor
+9efa543d26a3037baf0fcd556e74a5e5a68f17ba1d32a551d055d0479f015a1f HTML5_EMAIL_RE
+6dcbefe9393642b7adbd0ad429595658f344d5f3e4f1adcc567f097fbb212651 isValidEmail
+e462ceeb4d04468f78a64ceecf17af256ba411272f8e45a20102198ea69f3bd8 requestErrorKey
+aa9ae18415a1a068dac0e0121e6b1a9fcd0bd581bdfddb450cc56c1f2c73d50c verifyErrorKey
+63e1ad092cbe7ca4bcc94cd6519c62c0bc7e9fa5ff77166816d5c626d08c93b3 requestCode
+bc7a1cdd63c4a032d5f1d9c1fd96ac64e3647cc2f65563fc92ec0a1d6b0619c1 resendCode
+ea3c8ab4502c47351c2263938dcccaf5861b09ad5f6aa853491557acc3ef717d verifyCode
+03395c8ca64baad9b90970129e99f6ac4393e7eef7c88db58b3fb889ec0f4581 PRE-LOGINPAGE
+
+$ node extract-blocks.mjs <git show HEAD:page.tsx>
+d4e1591683e7369ae3d7c265d5c48e867b0b3f32fbde5fbad4630d56d092dc9d ERROR_MESSAGES
+5ea578828fc0cdcc66382d1372696bb00f8424aa26b3232b960148eb5f60e547 errorMessageFor
+9efa543d26a3037baf0fcd556e74a5e5a68f17ba1d32a551d055d0479f015a1f HTML5_EMAIL_RE
+6dcbefe9393642b7adbd0ad429595658f344d5f3e4f1adcc567f097fbb212651 isValidEmail
+e462ceeb4d04468f78a64ceecf17af256ba411272f8e45a20102198ea69f3bd8 requestErrorKey
+aa9ae18415a1a068dac0e0121e6b1a9fcd0bd581bdfddb450cc56c1f2c73d50c verifyErrorKey
+63e1ad092cbe7ca4bcc94cd6519c62c0bc7e9fa5ff77166816d5c626d08c93b3 requestCode
+bc7a1cdd63c4a032d5f1d9c1fd96ac64e3647cc2f65563fc92ec0a1d6b0619c1 resendCode
+ea3c8ab4502c47351c2263938dcccaf5861b09ad5f6aa853491557acc3ef717d verifyCode
+03395c8ca64baad9b90970129e99f6ac4393e7eef7c88db58b3fb889ec0f4581 PRE-LOGINPAGE
+
+$ diff of the two hash lists (name + sha only):
+IDENTICAL: all 9 named blocks + pre-LoginPage region match
+
+$ git diff -U0 origin/main -- 'app/(auth)/login/page.tsx' | grep '^@@'   [hunk headers; base lines 1-150 may only be touched by the import hunk]
+@@ -5,0 +6 @@ import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
+@@ -158,0 +160,22 @@ export default async function LoginPage({
+@@ -186 +209 @@ export default async function LoginPage({
+@@ -203,7 +226,6 @@ export default async function LoginPage({
+@@ -211 +233 @@ export default async function LoginPage({
+@@ -213,7 +235,6 @@ export default async function LoginPage({
+@@ -241 +262 @@ export default async function LoginPage({
+@@ -256,7 +277,12 @@ export default async function LoginPage({
+
+$ the import hunk:
+diff --git a/app/(auth)/login/page.tsx b/app/(auth)/login/page.tsx
+index f2c258f..77edfd9 100644
+--- a/app/(auth)/login/page.tsx
++++ b/app/(auth)/login/page.tsx
+@@ -5,0 +6 @@ import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
++import { LatchedForm, SubmitButton, HaveCodeButton } from './pending-controls'
+@@ -158,0 +160,22 @@ export default async function LoginPage({
++  // B6 (docs/plans/login-otp-ux-plan.md): a user who is already signed in
++  // does not get the sign-in form. ONLY the lookups are inside the try. The
+
+### FINAL STATE
+plan blob at HEAD sha256:
+9957443f87e40918890348116a5fa41004d696b7850f0dfe871175654b51f866  -
+$ git log --oneline origin/main..HEAD
+f2a067c fix(login): tap latch, busy state, have-code path, signed-in redirect
+$ git rev-parse HEAD; git branch -vv (this branch); remote branch exists?
+f2a067c22c0ee202931631d807269e03a9c80271
+* fix/login-otp-ux f2a067c [origin/main: ahead 1] fix(login): tap latch, busy state, have-code path, signed-in redirect
+0 remote heads named fix/login-otp-ux (0 = not pushed)
+upstream merge ref (set by git switch): refs/heads/main
