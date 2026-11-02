@@ -4,7 +4,13 @@ import { createClient } from '@/lib/supabase/server'
 import { profileForAuthId } from '@/lib/auth/profile'
 import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
 import * as Sentry from '@sentry/nextjs'
-import { LatchedForm, LatchScope, SubmitButton, HaveCodeButton } from './pending-controls'
+import {
+  LatchedForm,
+  LatchScope,
+  SubmitButton,
+  HaveCodeButton,
+  EmailInput,
+} from './pending-controls'
 import { loginFormKey } from '@/lib/auth/login-form-key'
 
 // Known error keys this page redirects with. An unrecognised or tampered
@@ -294,20 +300,20 @@ export default async function LoginPage({
         </div>
       )}
 
-      <LatchedForm key={formKey} action={requestCode} className="space-y-4" latchKey={formKey}>
+      <LatchedForm
+        key={formKey}
+        action={requestCode}
+        className="space-y-4"
+        latchKey={formKey}
+        rememberEmail
+      >
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
             Email address
           </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            required
-            autoComplete="email"
-            placeholder="you@company.com"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+          {/* Client component, rendered as JSX only: restores the email saved
+              before the error redirect into this (empty) field. */}
+          <EmailInput className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
         </div>
         <SubmitButton
           label={emailStep.submitLabel}

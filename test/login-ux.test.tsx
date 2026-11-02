@@ -353,6 +353,45 @@ describe('T-UX-10 (render part): the code step shares ONE latch (review round 1,
   })
 })
 
+describe('T-UX-12: the email step still renders the same email field (section 14)', () => {
+  // The field became a client component that restores the saved address on
+  // mount. Server HTML must still carry every attribute the plain input had
+  // (a no-JS submit and browser validation depend on them) and must not
+  // pre-fill anything (the restore happens on the client).
+  it('input id=email name=email type=email required autocomplete=email, placeholder kept, empty, and the have-code GET button after Send code', async () => {
+    const html = await renderLogin({})
+    const input = html.match(/<input[^>]*id="email"[^>]*>/)?.[0] ?? ''
+    expect(input, 'email input must be rendered').not.toBe('')
+    const tag = input.toLowerCase()
+    expect(tag).toContain('type="email"')
+    expect(tag).toContain('name="email"')
+    expect(tag).toMatch(/\srequired(=""|\s|\/|>)/)
+    expect(tag).toContain('autocomplete="email"')
+    expect(tag).toContain('placeholder="you@company.com"')
+    expect(tag).not.toMatch(/\svalue=/) // uncontrolled and empty on the server
+
+    const send = buttonWithLabel(html, authCopy.emailStep.submitLabel)
+    const haveCode = buttonWithLabel(html, authCopy.emailStep.haveCodeLabel)
+    expect(send).not.toBeNull()
+    expect(haveCode).not.toBeNull()
+    expect(haveCode!.toLowerCase()).toContain('formmethod="get"')
+    expect(html.indexOf(input)).toBeLessThan(html.indexOf(send!))
+    expect(html.indexOf(send!)).toBeLessThan(html.indexOf(haveCode!))
+  })
+
+  it('also present, still empty, after a rate-limit error redirect', async () => {
+    const html = await renderLogin({ error: 'RESEND_RATE_LIMITED' })
+    const input = html.match(/<input[^>]*id="email"[^>]*>/)?.[0] ?? ''
+    expect(input).not.toBe('')
+    expect(input.toLowerCase()).not.toMatch(/\svalue=/)
+  })
+
+  it('a hostile ?email= on the email step is never put into the field or the page', async () => {
+    const html = await renderLogin({ email: 'Your account is suspended' })
+    expect(html).not.toContain('Your account is suspended')
+  })
+})
+
 describe('T-UX-5: approved strings (English approved by Aravind 2 Nov 2026; Tamil owed)', () => {
   it('the three constants exist with the exact text', () => {
     expect(authCopy.emailStep.haveCodeLabel).toBe('Already have a code? Enter it here')

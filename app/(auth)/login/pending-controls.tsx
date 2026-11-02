@@ -14,6 +14,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type FormEvent,
@@ -25,6 +26,7 @@ import {
   createSubmitLatch,
   type SubmitLatch,
 } from '@/lib/auth/submit-latch'
+import { browserSessionStorage, readSavedEmail, saveEmail } from '@/lib/auth/saved-email'
 
 // NOTE: nothing in this 'use client' file may be CALLED by page.tsx (a server
 // component); page.tsx may only render the components exported here. Pure
@@ -131,6 +133,33 @@ export function HaveCodeButton(props: { label: string; className?: string }) {
   return <HaveCodeButtonView pending={useLatchHeld()} {...props} />
 }
 
+// The email field of the requestCode form (section 14). Same attributes as the
+// plain input it replaces; UNCONTROLLED (ref, no value prop), so a no-JS submit
+// still works. On mount, if the field is empty (a remount after the error
+// redirect), the address saved by LatchedForm's onSubmit is put back. A field
+// the browser already autofilled is left alone.
+export function EmailInput({ className }: { className?: string }) {
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const field = ref.current
+    if (!field || field.value !== '') return
+    const saved = readSavedEmail(browserSessionStorage())
+    if (saved !== '') field.value = saved
+  }, [])
+  return (
+    <input
+      ref={ref}
+      id="email"
+      name="email"
+      type="email"
+      required
+      autoComplete="email"
+      placeholder="you@company.com"
+      className={className}
+    />
+  )
+}
+
 function PendingWatcher({ onPending }: { onPending: (pending: boolean) => void }) {
   const { pending } = useFormStatus()
   useEffect(() => {
@@ -143,12 +172,15 @@ export function LatchedForm({
   action,
   className,
   latchKey,
+  rememberEmail,
   children,
 }: {
   action: (formData: FormData) => void | Promise<void>
   className?: string
   /** loginFormKey(params); rendered as data-latch-key so the wiring is inspectable. */
   latchKey: string
+  /** The requestCode form only: save the typed email to sessionStorage on submit (section 14). */
+  rememberEmail?: boolean
   children: ReactNode
 }) {
   const scope = useContext(LatchContext)
@@ -160,6 +192,15 @@ export function LatchedForm({
   const [observe] = useState(() => createPendingObserver(latch))
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
+    // Save the typed email for BOTH submitters (Send code and the have-code
+    // GET button), BEFORE the latch decision: even a tap the latch refuses
+    // carries the same address, and the have-code path returns just below.
+    // A submit only fires once browser validation has passed, so an invalid
+    // field is never saved (and saveEmail ignores non-emails anyway).
+    if (rememberEmail) {
+      const field = event.currentTarget.elements.namedItem('email')
+      if (field instanceof HTMLInputElement) saveEmail(browserSessionStorage(), field.value)
+    }
     const submitter = (event.nativeEvent as SubmitEvent).submitter
     // The have-code GET submission is not a send: no latch, no preventDefault.
     if (submitter?.hasAttribute('data-no-latch')) return

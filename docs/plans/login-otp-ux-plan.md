@@ -126,3 +126,8 @@ U9 `test/setup/run-id.ts` globalSetup not read; assumed env-only like guard.ts. 
 - Observed on a local production build against prod: every GET /login crashed ("Attempted to call loginFormKey() from the server but loginFormKey is on the client", digest 3459261400). Unit tests ran outside Next and could not see the 'use client' boundary.
 - Fix: loginFormKey moved to a plain module (lib/auth/login-form-key.ts).
 - New gate: scripts/smoke-login.sh builds the app, starts it, and requires HTTP 200 and the expected heading on five /login URLs. Shown failing on the broken head, passing on the fix. To be run before every push of this PR.
+
+## 14. ADDENDUM — 2 Nov 2026, manual run (per Aravind)
+- Observed at ba3dd3d: after a rate-limited Send code, the email field rendered empty, so the have-code recovery path required retyping the email (browser showed "Please fill in this field.").
+- Fix: the typed email is saved to sessionStorage (tab-scoped) on submit of the email form (Send code and have-code) and restored into the empty field on mount. Client-only. No change to the nine server blocks. No new user-facing text. The email is not added to any message.
+- Manual-run results so far (per Aravind, 12:40 IST, ba3dd3d): row 1 (double tap -> one email, code step) PASS; row 6 (Sign in then Send a new code inside the pending window -> no extra email) PASS; row 2 error + enabled have-code PASS, empty email field FAIL (this fix).
