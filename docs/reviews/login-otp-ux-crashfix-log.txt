@@ -1,0 +1,143 @@
+### CRASHFIX STEP 0
+cwd /Users/aravindanrajamani/Desktop/quocoai-pm-ui; branch fix/login-otp-ux; status clean
+HEAD b1ed980034c57e4da3405dbf40a1b8881aed7304 (as expected)
+lsof -ti tcp:3000 -> 1365 and 57855 (something LISTENS on 3000)
+lsof -ti tcp:3100 -> nothing
+STOP per instruction: nothing was built, started or changed.
+
+### CRASHFIX STEP 0 (re-check after Aravind stopped PID 57855)
+lsof -ti tcp:3000 -sTCP:LISTEN -> (nothing); lsof -ti tcp:3100 -sTCP:LISTEN -> (nothing)
+git status clean; HEAD b1ed980034c57e4da3405dbf40a1b8881aed7304
+(the earlier STOP line above is superseded by this re-check)
+
+### CRASHFIX STEP 2: POSITIVE CONTROL, scripts/smoke-login.sh on the BROKEN head
+HEAD b1ed980034c57e4da3405dbf40a1b8881aed7304 (clean tree)
+sha256 app/(auth)/login/page.tsx            d71b94c1367ec56fd81db3d01d96c0703848fc6e8cd628baceb2ce9d0663cea5
+sha256 app/(auth)/login/pending-controls.tsx d8abb65f41b92d571242f96336677c197496974c701dc543446aa62194ccc517
+sha256 scripts/smoke-login.sh               06534d03ceeda70647df2164cf769324a0697d4a2017bd70162a4489ea1a077e
+$ scripts/smoke-login.sh   -> exit=1 (FAIL, as the control must)
+build: "Compiled successfully in 3.1s" (the defect is invisible to the build)
+--- raw output of the run (requests + result):
+== waiting for http://localhost:3100/login (max 60 s)
+== requests (signed-out GETs only; no action is called, no email is sent)
+500 http://localhost:3100/login
+    'Application error': not found
+    'Sign in to Quoco': NOT FOUND  <-- FAIL
+500 http://localhost:3100/login?error=RESEND_RATE_LIMITED
+    'Application error': not found
+    'Sign in to Quoco': NOT FOUND  <-- FAIL
+500 http://localhost:3100/login?error=NOT_A_REAL_KEY
+    'Application error': not found
+    'Sign in to Quoco': NOT FOUND  <-- FAIL
+    'NOT_A_REAL_KEY' must be absent: FOUND  <-- FAIL
+500 http://localhost:3100/login?step=code&email=smoke%40example.com
+    'Application error': not found
+    'Enter your code': NOT FOUND  <-- FAIL
+500 http://localhost:3100/login?step=code&email=smoke%40example.com&error=WRONG_CODE
+    'Application error': not found
+    'Enter your code': NOT FOUND  <-- FAIL
+== RESULT: FAIL
+
+server log (first error, raw; the same error repeats for every request, digest identical):
+⨯ Error: Attempted to call loginFormKey() from the server but loginFormKey is on the client. It's not possible to invoke a client function from the server, it can only be rendered as a Component or passed to props of a Client Component.
+    at <unknown> (.next/server/chunks/ssr/app_(auth)_login_1m2ltbv._.js:2:5268)
+    at q (.next/server/chunks/ssr/app_(auth)_login_1m2ltbv._.js:2:8405) {
+  digest: '3459261400'
+ROWS RED: all 5 rows, status 500 and heading NOT FOUND (plus NOT_A_REAL_KEY present in the 500 body). 'Application error' is the CLIENT-side message and is not in the 500 body; the non-200 status and missing heading are what catch the crash here. Port 3100 after the run: no listener (trap cleaned up).
+
+### CRASHFIX STEP 3: FIX + AUDIT
+fix: loginFormKey moved from app/(auth)/login/pending-controls.tsx (use client) to lib/auth/login-form-key.ts (plain module: no use client, no React import). Behaviour identical.
+AUDIT: every import page.tsx takes from ./pending-controls, and how it is used:
+  LatchedForm  -> JSX only (lines 248, 272, 302)
+  LatchScope   -> JSX only (line 247)
+  SubmitButton -> JSX only (lines 266, 274, 317)
+  HaveCodeButton -> JSX only (line 326)
+  loginFormKey -> was CALLED as a function (line 207): the crash. Now imported from @/lib/auth/login-form-key.
+  Nothing else is imported from the client module; no other page/lib file imports pending-controls (git grep: page.tsx, test/login-ux.test.tsx only; lib/auth/submit-latch.ts mentions it in a comment).
+  pending-controls.tsx itself never used loginFormKey, so it needs no import of the new module.
+other pure helpers page.tsx calls during server render: none from client modules (ERROR_MESSAGES, errorMessageFor, isValidEmail, requestErrorKey, verifyErrorKey are page-local; profileForAuthId/createClient are server modules).
+
+### CRASHFIX STEP 4a: FIRST RUN ON THE FIXED TREE, AND A CORRECTION TO MY OWN CHECK
+fixed tree (uncommitted), page.tsx sha256 149aee4b6226db72787cc41a826ef3c65420e2585dbb320c60220cc334dd63df, pending-controls.tsx sha256 22c02eda74fce75bdee7001fae02d3117d2c1ecfa969c8010cc0585a10b76234, lib/auth/login-form-key.ts sha256 cfb3c7358149e0d43f0400901567f94520646f46a09b0c4edf05ab30f96dc87f
+$ scripts/smoke-login.sh (script sha256 06534d03...) -> exit=1. Raw rows: all five 200, 'Application error' not found, headings found. The single FAIL was my own extra check:
+    'NOT_A_REAL_KEY' must be absent: FOUND  <-- FAIL        (on /login?error=NOT_A_REAL_KEY)
+INVESTIGATION (probe: one GET of that URL on the built fixed tree, body saved, server stopped):
+    3 matches of NOT_A_REAL_KEY in the body, 0 matches outside <script> tags. All three are inside Next's own self.__next_f.push router payload, raw:
+    ...\"c\":[\"\",\"login?error=NOT_A_REAL_KEY\"],\"q\":\"?error=NOT_A_REAL_KEY\"... \"__PAGE__?{\\\"error\\\":\\\"NOT_A_REAL_KEY\\\"}\"
+    The visible message is the generic one ("Something went wrong. Please try again."). The same string was also in the 500 body on the broken head, i.e. it comes from the framework, not from this PR's code.
+CONCLUSION: not a leak by this page. My check was stricter than T-OTP-07's rule (what the page RENDERS). Changed: the "absent" check now strips <script>...</script> blocks first and greps visible markup only (documented in the script). Also added rm -rf of the script's temp dir (trap and abort path).
+FINAL SCRIPT sha256 1bfcc38a5045288cd9d134be610e38f8d52175ec2c5fdd15749c9f716cdfe2ba
+
+### CRASHFIX STEP 2 (REPEATED): POSITIVE CONTROL WITH THE FINAL SCRIPT, on the BROKEN source
+(HEAD b1ed980034c57e4da3405dbf40a1b8881aed7304; page.tsx and pending-controls.tsx temporarily set to `git show HEAD:...`, sha256 d71b94c1367ec56fd81db3d01d96c0703848fc6e8cd628baceb2ce9d0663cea5 / d8abb65f41b92d571242f96336677c197496974c701dc543446aa62194ccc517; script sha256 1bfcc38a...)
+$ scripts/smoke-login.sh -> exit=1. Raw: 500 on all five URLs, headings NOT FOUND on all five; 'NOT_A_REAL_KEY' absent from visible markup: absent (no longer a false alarm).
+server log: Error: Attempted to call loginFormKey() from the server but loginFormKey is on the client ... digest: '3459261400'
+restored: page.tsx 149aee4b... and pending-controls.tsx 22c02eda... (== fixed tree); port 3100 no listener; no leftover smoke temp dir.
+
+### CRASHFIX STEP 4b: scripts/smoke-login.sh (FINAL, sha256 1bfcc38a...) ON THE FIXED TREE
+page.tsx 149aee4b6226db72787cc41a826ef3c65420e2585dbb320c60220cc334dd63df, pending-controls.tsx 22c02eda74fce75bdee7001fae02d3117d2c1ecfa969c8010cc0585a10b76234
+$ scripts/smoke-login.sh -> exit=0
+200 http://localhost:3100/login                                                      'Application error': not found | 'Sign in to Quoco': found
+200 http://localhost:3100/login?error=RESEND_RATE_LIMITED                            'Application error': not found | 'Sign in to Quoco': found
+200 http://localhost:3100/login?error=NOT_A_REAL_KEY                                 'Application error': not found | 'Sign in to Quoco': found | 'NOT_A_REAL_KEY' absent from visible markup: absent
+200 http://localhost:3100/login?step=code&email=smoke%40example.com                  'Application error': not found | 'Enter your code': found
+200 http://localhost:3100/login?step=code&email=smoke%40example.com&error=WRONG_CODE 'Application error': not found | 'Enter your code': found
+== RESULT: PASS
+
+### CRASHFIX STEP 4c: STATIC CHECKS AND TESTS ON THE FIXED TREE (uncommitted, on top of HEAD b1ed980)
+$ npx vitest run test/submit-latch.test.ts test/login-ux.test.tsx test/auth-copy.test.ts -> Test Files 3 passed (3), Tests 56 passed (56)   [test/login-otp.test.ts NOT run: touches test-db]
+$ npx tsc --noEmit -> exit=0, no output
+$ npm run lint -> exit=0; "317 problems (0 errors, 317 warnings)" (same count as before); scoped eslint on app/(auth)/login, lib/auth, test/login-ux.test.tsx, test/submit-latch.test.ts -> exit=0, no output
+$ npm run check:profile-lookups -> exit=0 (profile-lookup guard OK)
+$ npm run lint:migrations -> exit=0 (migration-lint: clean. 107 known violation(s), all exempted.)
+$ npm run lint:filesize -> exit=0 (clean, 198 files checked, no hard failures)
+$ npm run lint:fixture-literals -> exit=0 (clean, 9 retired literal(s), 0 stragglers)
+(every lint:* and check:* script in package.json was run)
+
+### CRASHFIX STEP 4d: PROOFS (staged tree to be committed on top of b1ed980; compared with origin/main 408a35c)
+$ git diff --cached --name-only origin/main   (cumulative PR file list, every file)
+app/(auth)/login/page.tsx
+app/(auth)/login/pending-controls.tsx
+docs/plans/login-otp-ux-plan.md
+docs/reviews/login-otp-ux-build-log-round2.txt
+docs/reviews/login-otp-ux-build-log.txt
+docs/reviews/login-otp-ux-review-round-1.md
+lib/auth/copy.ts
+lib/auth/login-form-key.ts
+lib/auth/submit-latch.ts
+scripts/smoke-login.sh
+test/login-otp.test.ts
+test/login-ux.test.tsx
+test/submit-latch.test.ts
+
+$ git diff --cached origin/main --stat -- proxy.ts 'app/(auth)/auth/callback/route.ts' 'app/(auth)/layout.tsx' 'app/(dashboard)' 'app/(onboarding)' lib/auth/profile.ts lib/auth/profile-query.ts lib/supabase   -> (empty)
+
+$ name-based sha256 of the nine page.tsx blocks + pre-LoginPage region (staged page.tsx):
+d4e1591683e7369ae3d7c265d5c48e867b0b3f32fbde5fbad4630d56d092dc9d ERROR_MESSAGES
+5ea578828fc0cdcc66382d1372696bb00f8424aa26b3232b960148eb5f60e547 errorMessageFor
+9efa543d26a3037baf0fcd556e74a5e5a68f17ba1d32a551d055d0479f015a1f HTML5_EMAIL_RE
+6dcbefe9393642b7adbd0ad429595658f344d5f3e4f1adcc567f097fbb212651 isValidEmail
+e462ceeb4d04468f78a64ceecf17af256ba411272f8e45a20102198ea69f3bd8 requestErrorKey
+aa9ae18415a1a068dac0e0121e6b1a9fcd0bd581bdfddb450cc56c1f2c73d50c verifyErrorKey
+63e1ad092cbe7ca4bcc94cd6519c62c0bc7e9fa5ff77166816d5c626d08c93b3 requestCode
+bc7a1cdd63c4a032d5f1d9c1fd96ac64e3647cc2f65563fc92ec0a1d6b0619c1 resendCode
+ea3c8ab4502c47351c2263938dcccaf5861b09ad5f6aa853491557acc3ef717d verifyCode
+03395c8ca64baad9b90970129e99f6ac4393e7eef7c88db58b3fb889ec0f4581 PRE-LOGINPAGE
+diff against the origin/main list -> IDENTICAL (all 9 blocks + region)
+
+$ git diff -U0 --cached origin/main -- page.tsx | grep '^@@'   (first hunk is the only change before LoginPage: the import lines)
+@@ -5,0 +6,3 @@ import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
+@@ -158,0 +162,51 @@ export default async function LoginPage({
+@@ -186 +240,4 @@ export default async function LoginPage({
+@@ -203,7 +260,6 @@ export default async function LoginPage({
+@@ -211 +267 @@ export default async function LoginPage({
+@@ -213,7 +269,7 @@ export default async function LoginPage({
+@@ -241 +297 @@ export default async function LoginPage({
+@@ -256,7 +312,14 @@ export default async function LoginPage({
+
+### CRASHFIX NOTES
+1. test/login-otp.test.ts NOT RUN (touches test-db; held by the backend). Unchanged in this commit.
+2. Why nothing earlier caught this: vitest imports 'use client' files as ordinary modules, so a server component calling loginFormKey() worked in every unit test; `next build` also succeeded ("Compiled successfully") because the call is only illegal at request time. Only a real build + start + GET sees it, which is what scripts/smoke-login.sh now does. Round-2's "all green" was true of what it measured and blind to this.
+3. The smoke script uses .env.local as is (prod Supabase URL/anon key), signed-out GETs only: no action, no email, no authenticated call. It starts on port 3100 (refuses to run if 3100 is occupied), and always stops the server and removes its temp dir via trap. It was run three times in this session (broken, broken with final script, fixed with final script) and left no listener and no temp dir.
+4. The log copy committed as docs/reviews/login-otp-ux-crashfix-log.txt is a byte copy of this file as of the commit (it cannot contain its own commit SHA; the pushed head SHA is in the report).
+5. Not covered by the gate (still manual): behaviour of the forms in a browser (latch release, pending after redirect, GET have-code URL), and any signed-in path (the gate is signed-out only).

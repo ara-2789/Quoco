@@ -121,3 +121,8 @@ U9 `test/setup/run-id.ts` globalSetup not read; assumed env-only like guard.ts. 
 - S3: the B6 catch reports the error (no auth id, email or token).
 - S4: test/login-otp.test.ts gains an add-only mock of @/lib/supabase/server.
 - Residual (S1): the latch does not exist before hydration; a double tap before hydration can send two requests (second gets the existing rate-limit error + have-code button). Measured /login load time on throttled 3G: to be recorded from Aravind's manual run.
+
+## 13. ADDENDUM — 2 Nov 2026, crash found in the manual run (per Aravind)
+- Observed on a local production build against prod: every GET /login crashed ("Attempted to call loginFormKey() from the server but loginFormKey is on the client", digest 3459261400). Unit tests ran outside Next and could not see the 'use client' boundary.
+- Fix: loginFormKey moved to a plain module (lib/auth/login-form-key.ts).
+- New gate: scripts/smoke-login.sh builds the app, starts it, and requires HTTP 200 and the expected heading on five /login URLs. Shown failing on the broken head, passing on the fix. To be run before every push of this PR.

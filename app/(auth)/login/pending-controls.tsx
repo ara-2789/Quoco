@@ -26,15 +26,10 @@ import {
   type SubmitLatch,
 } from '@/lib/auth/submit-latch'
 
-// Key for the login forms (review round 1, B1). A server action that redirects
-// to the SAME route with different search params keeps the form's React
-// instance alive, so a latch held across the redirect would stay held. Keying
-// each form by the params a redirect changes makes a redirect to a different
-// URL remount the form: fresh latch, fresh pending. Strings from params, ''
-// when absent.
-export function loginFormKey(params: { step?: string; error?: string; email?: string }): string {
-  return `${params.step ?? ''}|${params.error ?? ''}|${params.email ?? ''}`
-}
+// NOTE: nothing in this 'use client' file may be CALLED by page.tsx (a server
+// component); page.tsx may only render the components exported here. Pure
+// helpers it needs while rendering live in plain modules (see
+// lib/auth/login-form-key.ts, which used to be here and crashed every /login).
 
 // ---------------------------------------------------------------------------
 // Presentational views. No hooks, so the node-env tests can render them with

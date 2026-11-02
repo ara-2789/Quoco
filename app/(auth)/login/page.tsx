@@ -4,13 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { profileForAuthId } from '@/lib/auth/profile'
 import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
 import * as Sentry from '@sentry/nextjs'
-import {
-  LatchedForm,
-  LatchScope,
-  SubmitButton,
-  HaveCodeButton,
-  loginFormKey,
-} from './pending-controls'
+import { LatchedForm, LatchScope, SubmitButton, HaveCodeButton } from './pending-controls'
+import { loginFormKey } from '@/lib/auth/login-form-key'
 
 // Known error keys this page redirects with. An unrecognised or tampered
 // ?error= value always falls through to GENERIC below via errorMessageFor's

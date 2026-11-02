@@ -17,11 +17,8 @@ import * as authCopy from '@/lib/auth/copy'
 import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase/server'
 import { profileForAuthId } from '@/lib/auth/profile'
-import {
-  HaveCodeButtonView,
-  SubmitButtonView,
-  loginFormKey,
-} from '@/app/(auth)/login/pending-controls'
+import { HaveCodeButtonView, SubmitButtonView } from '@/app/(auth)/login/pending-controls'
+import { loginFormKey } from '@/lib/auth/login-form-key'
 import LoginPage from '@/app/(auth)/login/page'
 
 // 'server-only' is not an installed package under vitest (same constraint
