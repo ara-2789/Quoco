@@ -553,13 +553,129 @@ function sourcesMentioning(root: string, needle: string): string[] {
 // writer, and the tick route never queries the table itself.
 const C5_ALLOWED = ['app/api/jobs/tick/route.ts', 'lib/media/capture-ingest.ts']
 
-describe('T-NOWRITE-1', () => {
+// 2026-11-01 (PR-D1, PR #348; scope expansion approved by Aravind for THIS block only): the PM page READS capture_files
+// (file lists, states, one row to authorise a file link). The guard keeps its purpose (nothing but the C5 handler and the tick
+// route WRITES that table) and now also names the read-only files. Each READERS entry needs a one-line reason; a file that
+// mentions capture_files and is on neither list fails (a), and every READER is held to select-only by (e).
+const READERS: Record<string, string> = {
+  'lib/capture/pm-file-access.ts': 'PR-D1 file route: reads ONE capture_files row (select, RLS client) to authorise and sign a file; never writes',
+  'lib/capture/pm-queries.ts': 'PR-D1 PM page reads: file lists, counts and states per document (select only)',
+}
+// Anything that writes through the query builder. READERS files may contain none of these in code ANYWHERE (defence in depth
+// on top of the per-chain rule in (e)).
+const WRITE_CALLS = /\.(insert|update|upsert|delete)\(/
+// RPCs a READER may call (function name -> one-line reason). EMPTY today: a reader that calls .rpc( for anything not listed
+// here fails (e2). An RPC can write a table without the table name appearing, so each entry is a reviewed decision.
+const RPC_ALLOW: Record<string, string> = {}
+
+/**
+ * Index where the statement that contains `start` ends: a `;` or `,` at bracket depth 0, a closer that would take the depth
+ * below 0 (the enclosing array / call), or a newline at depth 0 whose next significant text is not a `.` continuation (line
+ * comments between chain parts are skipped). String literals are skipped so brackets and commas inside them do not count.
+ */
+function statementEnd(src: string, start: number): number {
+  let depth = 0
+  let i = start
+  while (i < src.length) {
+    const c = src[i]
+    if (c === "'" || c === '"' || c === '`') {
+      i++
+      while (i < src.length && src[i] !== c) {
+        if (src[i] === '\\') i++
+        i++
+      }
+      i++
+      continue
+    }
+    if (c === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') i++
+      continue
+    }
+    if (c === '(' || c === '[' || c === '{') depth++
+    else if (c === ')' || c === ']' || c === '}') {
+      depth--
+      if (depth < 0) return i
+    } else if (depth === 0 && (c === ';' || c === ',')) return i
+    else if (depth === 0 && c === '\n') {
+      const next = /^(?:\s+|\/\/[^\n]*(?:\n|$))*(\S)/.exec(src.slice(i + 1))
+      if (!next || next[1] !== '.') return i
+    }
+    i++
+  }
+  return src.length
+}
+
+// WHAT THIS BLOCK PROVES, AND WHAT IT DOES NOT (PR-D1 review round 1, S3). It proves one narrow thing: no TypeScript under lib/ or
+// app/ writes the table through a direct from('capture_files') chain, outside the C5 handler and the tick route. It does NOT
+// replace the control. The real write boundary is the GRANT LAYER (migration 051): service_role holds UPDATE on 7 columns only,
+// there are no INSERT or DELETE grants for it, and the rows are inserted only by the SECURITY DEFINER engineer function. This
+// walk also does not see writers outside lib/ and app/, .js/.mjs/.cjs files, components/, or an .rpc() writer in a non-reader
+// file (widening the walk is deferred, owner: backend chat, see docs/plans/pr-d-plan.md "Deferred"). The storage bucket has its
+// own guard: test/pm-bucket-guard.test.ts (T-NOBUCKET-1).
+describe("T-NOWRITE-1: no direct from('capture_files') write outside C5", () => {
   const root = resolve(__dirname, '..')
   const rel = (p: string) => relative(root, p).split(sep).join('/')
+  const mentioning = () =>
+    [...sourcesMentioning(join(root, 'lib'), 'capture_files'), ...sourcesMentioning(join(root, 'app'), 'capture_files')].map(rel).sort()
 
-  it('(a) exactly two files under lib/ and app/ mention capture_files: the C5 handler and the tick route', () => {
-    const hits = [...sourcesMentioning(join(root, 'lib'), 'capture_files'), ...sourcesMentioning(join(root, 'app'), 'capture_files')]
-    expect(hits.map(rel).sort()).toEqual(C5_ALLOWED)
+  it('(a) the WRITER set is exactly the C5 handler and the tick route; every other file under lib/ and app/ that mentions capture_files is a named READER', () => {
+    // A file on neither list stays in this filtered set and fails the equality.
+    expect(mentioning().filter((f) => !(f in READERS))).toEqual(C5_ALLOWED)
+  })
+
+  it('(a2) every READERS entry still mentions capture_files and carries a reason (a stale entry fails)', () => {
+    const hits = mentioning()
+    for (const [file, reason] of Object.entries(READERS)) {
+      expect(hits, `READERS entry ${file} no longer mentions capture_files: remove it`).toContain(file)
+      expect(reason.length, `${file} needs a one-line reason`).toBeGreaterThan(20)
+    }
+  })
+
+  it('(e) READERS: EVERY occurrence of the string is the argument of from(...) and its chain is select-only (comments are NOT exempt)', () => {
+    for (const file of Object.keys(READERS)) {
+      const src = readFileSync(join(root, file), 'utf8')
+      const total = src.split('capture_files').length - 1
+      let accounted = 0
+      for (const m of src.matchAll(/\bfrom\(\s*(['"])capture_files\1\s*\)/g)) {
+        accounted++
+        const chain = src.slice(m.index, statementEnd(src, m.index + m[0].length))
+        expect(chain, `${file}: this from() chain, up to the end of its statement, must contain .select(`).toContain('.select(')
+        for (const w of ['.insert(', '.update(', '.upsert(', '.delete(']) {
+          expect(chain, `${file}: this from() chain must not contain ${w}`).not.toContain(w)
+        }
+      }
+      expect(
+        accounted,
+        `${file}: every occurrence of the string must be the argument of from('capture_files'); a variable, constant, template string, object key or COMMENT that names the table fails`,
+      ).toBe(total)
+      const code = src
+        .split('\n')
+        .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+        .join('\n')
+      expect(code, `${file}: must not call insert, update, upsert or delete anywhere`).not.toMatch(WRITE_CALLS)
+    }
+  })
+
+  it('(e2) READERS call .rpc( only for a function on the named RPC_ALLOW list (empty today)', () => {
+    for (const [fn, reason] of Object.entries(RPC_ALLOW)) expect(reason.length, `RPC_ALLOW ${fn} needs a one-line reason`).toBeGreaterThan(20)
+    for (const file of Object.keys(READERS)) {
+      const src = readFileSync(join(root, file), 'utf8') // whole file, comments included
+      for (const m of src.matchAll(/\.rpc\(/g)) {
+        const named = /^\.rpc\(\s*(['"])([A-Za-z0-9_]+)\1/.exec(src.slice(m.index))
+        expect(named, `${file}: .rpc( must name a literal function`).not.toBeNull()
+        expect(Object.keys(RPC_ALLOW), `${file}: .rpc('${named?.[2]}') is not on RPC_ALLOW`).toContain(named?.[2])
+      }
+    }
+  })
+
+  it('(e3) the chain scanner itself: it ends a statement where it should, and sees a write that hides after a comment line', () => {
+    const real = "a(client.from('capture_files').select('x, y').eq('k', v), other)\nnext()"
+    expect(real.slice(real.indexOf('from('), statementEnd(real, real.indexOf('from(') + "from('capture_files')".length))).toBe(
+      "from('capture_files').select('x, y').eq('k', v)",
+    )
+    const hidden = "const r = await c\n  .from('capture_files')\n  // note\n  .update({})\n  .eq('a', 1)\nnext()"
+    const start = hidden.indexOf('from(')
+    expect(hidden.slice(start, statementEnd(hidden, start + "from('capture_files')".length))).toContain('.update(')
   })
 
   it('(b) the C5 handler never inserts, upserts or deletes on any table', () => {
