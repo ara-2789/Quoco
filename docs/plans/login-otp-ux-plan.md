@@ -136,3 +136,10 @@ U9 `test/setup/run-id.ts` globalSetup not read; assumed env-only like guard.ts. 
 - Observed at 15e83ea: a "Send a new code" tap during a pending "Sign in" was not refused; it ran after verify's redirect and sent a new code (details: docs/reviews/login-otp-ux-manual-run.md, Run 3).
 - Fix: the code step is one form; Sign in and Send a new code are submitters with formAction={verifyCode} / formAction={resendCode} (resend formNoValidate). One latch and one pending source; both buttons disabled while either action is pending. Server blocks unchanged.
 - Diagnosis of why the round-1 shared latch failed: see docs/reviews/login-otp-ux-s2fix-log.txt.
+
+## 16. ADDENDUM — 2 Nov 2026, S2 accepted as a residual (per Aravind)
+- S2 is NOT fixed in this PR. A "Send a new code" tap during a pending "Sign in" can still run after verify finishes and send a new code; the previous code then stops working (U2, unconfirmed). Manual evidence: docs/reviews/login-otp-ux-manual-run.md, Runs 3 and 4.
+- Not a regression: origin/main has no guard on the code step at all.
+- PM-visible effect: a second code email; the screen still reads "We sent a 6-digit code to {email}"; the newest code works.
+- Kept: the single code-step form from §15 (no observed harm; one form is simpler).
+- Follow-up (own PR, after merge): instrument the code step (temporary console logging of submit events, submitter, latch state, defaultPrevented, action start) on a local production build, observe, then fix. Review round 1 permits an S item to be "recorded in a dated addendum with the stated residual before merge".

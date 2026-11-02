@@ -24,3 +24,9 @@ Environment: local production build (`npm run build && npm start`) on Aravind's 
 - Row 6 (S2) at 15e83ea, first attempt: no new email, but the final URL ended error=RESEND_RATE_LIMITED, i.e. the resend action ran and was stopped only by Supabase's 60 s cooldown. Inconclusive.
 - Row 6 (S2) retest: 70 s after the last send, throttle 3G, 000000 + Sign in, then Send a new code within 1 s. Network: two server-action POSTs (303, 2.10 s from step=code; 303, 3.05 s from step=code&error=WRONG_CODE). Final URL without error = resend succeeded. FAIL. The earlier row 6 PASS at ba3dd3d is withdrawn (masked by the cooldown).
 - Fix: verify and resend in one form with one latch (plan §15). Retest pending.
+
+## Run 4 — head ae95bbf (13:59 IST, per Aravind)
+- S2 retest with a nonexistent address (no email, no cooldown): /login?step=code&email=s2probe%40example.com, DevTools throttle 3G, 000000 + Sign in, then Send a new code within 1 s.
+- Network (filter "login"): document 200; then TWO server-action fetches, 303 (2.10 s) and 303 (2.09 s). Final URL: /login?step=code&email=s2probe%40example.com&error=UNKNOWN_EMAIL = resendCode ran. FAIL.
+- The one-form design (plan §15) did not stop the second action. Root cause unknown (code reading in docs/reviews/login-otp-ux-s2fix-log.txt found none).
+- Evidence the email-step guard works: Run 1 row 1 (double tap Send code) ended on the code step; a second action would have redirected to /login?error=RESEND_RATE_LIMITED.
