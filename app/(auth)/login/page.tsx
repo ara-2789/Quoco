@@ -6,7 +6,6 @@ import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
 import * as Sentry from '@sentry/nextjs'
 import {
   LatchedForm,
-  LatchScope,
   SubmitButton,
   HaveCodeButton,
   EmailInput,
@@ -243,10 +242,12 @@ export default async function LoginPage({
           </div>
         )}
 
-        {/* Verify + resend share ONE latch (LatchScope): while either is in
-            flight both buttons are disabled and a tap on the other is refused. */}
-        <LatchScope key={formKey}>
-        <LatchedForm action={verifyCode} className="space-y-4" latchKey={formKey}>
+        {/* ONE form for the whole code step (plan section 15): Sign in and Send
+            a new code are two submitters of it, each with its own formAction.
+            One latch, one pending source: while either action is in flight
+            BOTH buttons are disabled and a second submit from either is
+            cancelled. The form's own action (verifyCode) is what Enter uses. */}
+        <LatchedForm key={formKey} action={verifyCode} className="space-y-4" latchKey={formKey}>
           <input type="hidden" name="email" value={email} />
           <div>
             <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1">
@@ -266,19 +267,19 @@ export default async function LoginPage({
           {/* Pending: disabled, label unchanged (no busyLabel). */}
           <SubmitButton
             label={codeStep.submitLabel}
+            formAction={verifyCode}
             className="w-full bg-blue-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           />
-        </LatchedForm>
-
-        <LatchedForm action={resendCode} className="mt-4" latchKey={formKey}>
-          <input type="hidden" name="email" value={email} />
+          {/* formNoValidate: an empty code field must not block a resend. */}
           <SubmitButton
             label={codeStep.resendLabel}
             busyLabel={codeStep.resendBusyLabel}
+            submitId="resend"
+            formAction={resendCode}
+            formNoValidate
             className="w-full text-center text-sm text-blue-600 hover:underline disabled:opacity-60 disabled:cursor-not-allowed"
           />
         </LatchedForm>
-        </LatchScope>
 
         <p className="mt-4 text-center text-sm text-gray-700">
           <a href="/login" className="text-blue-600 hover:underline">

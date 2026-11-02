@@ -24,6 +24,8 @@ import { useFormStatus } from 'react-dom'
 import {
   createPendingObserver,
   createSubmitLatch,
+  decideSubmit,
+  isSubmitterBusy,
   type SubmitLatch,
 } from '@/lib/auth/submit-latch'
 import { browserSessionStorage, readSavedEmail, saveEmail } from '@/lib/auth/saved-email'
@@ -43,12 +45,21 @@ export function SubmitButtonView({
   label,
   busyLabel,
   className,
+  submitId,
+  formAction,
+  formNoValidate,
 }: {
   pending: boolean
   label: string
   /** Shown instead of `label` while pending. Omit to keep the label unchanged. */
   busyLabel?: string
   className?: string
+  /** Names this submitter (data-submit-id) so the form can tell which button started a send. */
+  submitId?: string
+  /** A submitter-level action: overrides the form's `action` for this button's submissions. */
+  formAction?: (formData: FormData) => void | Promise<void>
+  /** Skip browser validation for this submitter (Send a new code must work with an empty code field). */
+  formNoValidate?: boolean
 }) {
   return (
     <button
@@ -56,6 +67,9 @@ export function SubmitButtonView({
       disabled={pending}
       aria-busy={pending ? true : undefined}
       className={className}
+      data-submit-id={submitId}
+      formAction={formAction}
+      formNoValidate={formNoValidate}
     >
       {pending && busyLabel ? busyLabel : label}
     </button>
@@ -97,7 +111,16 @@ export function HaveCodeButtonView({
 // Latch wiring.
 // ---------------------------------------------------------------------------
 
-type LatchContextValue = { latch: SubmitLatch; id: string }
+// ONE latch per form, and (S2, plan section 15) the code step is now ONE form:
+// Sign in and Send a new code are both submitters of the same <form>, so they
+// share this latch, this useFormStatus and this host transition by
+// construction. (The earlier design put them in two forms that shared a latch
+// through context; a resend tap made while Sign in was pending still ran.)
+type LatchContextValue = {
+  latch: SubmitLatch
+  /** data-submit-id of the submitter that took the latch; only meaningful while it is held. */
+  activeSubmitId: string | null
+}
 const LatchContext = createContext<LatchContextValue | null>(null)
 
 function useOwnedLatch(): SubmitLatch {
@@ -107,30 +130,43 @@ function useOwnedLatch(): SubmitLatch {
   return latch
 }
 
-function useLatchHeld(): boolean {
+function useLatchState(): { held: boolean; activeSubmitId: string | null } {
   const ctx = useContext(LatchContext)
   const fallback = useState(() => createSubmitLatch())[0]
   const latch = ctx?.latch ?? fallback
-  return useSyncExternalStore(latch.subscribe, latch.isHeld, () => false)
+  const held = useSyncExternalStore(latch.subscribe, latch.isHeld, () => false)
+  return { held, activeSubmitId: ctx?.activeSubmitId ?? null }
 }
 
-// Shared by the code step's two forms (verify, resend): ONE latch, so while
-// either is in flight both buttons are disabled and a tap on the other is
-// refused (review round 1, S2).
-export function LatchScope({ children }: { children: ReactNode }) {
-  const latch = useOwnedLatch()
-  const id = useId()
-  const value = useMemo(() => ({ latch, id }), [latch, id])
-  return <LatchContext.Provider value={value}>{children}</LatchContext.Provider>
-}
-
-export function SubmitButton(props: { label: string; busyLabel?: string; className?: string }) {
-  return <SubmitButtonView pending={useLatchHeld()} {...props} />
+export function SubmitButton({
+  busyLabel,
+  submitId,
+  ...props
+}: {
+  label: string
+  busyLabel?: string
+  className?: string
+  submitId?: string
+  formAction?: (formData: FormData) => void | Promise<void>
+  formNoValidate?: boolean
+}) {
+  const { held, activeSubmitId } = useLatchState()
+  // Every button in the form is disabled while the latch is held; only the
+  // submitter that started the send shows its busy label.
+  const busy = isSubmitterBusy(held, activeSubmitId, submitId)
+  return (
+    <SubmitButtonView
+      pending={held}
+      busyLabel={busy ? busyLabel : undefined}
+      submitId={submitId}
+      {...props}
+    />
+  )
 }
 
 export function HaveCodeButton(props: { label: string; className?: string }) {
   // Disabled while a send is pending, so a PM cannot leave mid-send.
-  return <HaveCodeButtonView pending={useLatchHeld()} {...props} />
+  return <HaveCodeButtonView pending={useLatchState().held} {...props} />
 }
 
 // The email field of the requestCode form (section 14). Same attributes as the
@@ -183,12 +219,10 @@ export function LatchedForm({
   rememberEmail?: boolean
   children: ReactNode
 }) {
-  const scope = useContext(LatchContext)
-  const ownLatch = useOwnedLatch()
-  const ownId = useId()
-  const own = useMemo(() => ({ latch: ownLatch, id: ownId }), [ownLatch, ownId])
-  const { latch, id } = scope ?? own
-  // One observer per form, over a latch that may be shared (see submit-latch.ts).
+  const latch = useOwnedLatch()
+  const id = useId()
+  const [activeSubmitId, setActiveSubmitId] = useState<string | null>(null)
+  const ctx = useMemo(() => ({ latch, activeSubmitId }), [latch, activeSubmitId])
   const [observe] = useState(() => createPendingObserver(latch))
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -202,15 +236,19 @@ export function LatchedForm({
       if (field instanceof HTMLInputElement) saveEmail(browserSessionStorage(), field.value)
     }
     const submitter = (event.nativeEvent as SubmitEvent).submitter
-    // The have-code GET submission is not a send: no latch, no preventDefault.
-    if (submitter?.hasAttribute('data-no-latch')) return
-    // First submit enters the latch; any further submit before the action
-    // settles is cancelled, so it never becomes a second request.
-    if (!latch.tryEnter()) event.preventDefault()
+    // The have-code GET submission is not a send ('bypass'): no latch, no
+    // preventDefault. Otherwise the FIRST submit from ANY submitter takes the
+    // latch; every further submit, from either button, is cancelled until the
+    // action settles, so it never becomes a second request.
+    const decision = decideSubmit(latch, submitter?.hasAttribute('data-no-latch') ?? false)
+    if (decision === 'refuse') event.preventDefault()
+    // Remember which button started the send (its busy label shows; the others
+    // are only disabled). Buttons without a data-submit-id leave it null.
+    if (decision === 'allow') setActiveSubmitId(submitter?.getAttribute('data-submit-id') ?? null)
   }
 
   return (
-    <LatchContext.Provider value={scope ?? own}>
+    <LatchContext.Provider value={ctx}>
       <form
         action={action}
         onSubmit={onSubmit}

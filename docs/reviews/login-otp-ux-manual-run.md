@@ -18,3 +18,9 @@ Environment: local production build (`npm run build && npm start`) on Aravind's 
 
 ## Observation (not a PR #350 defect)
 - Sign-in -> Today felt slow on the local build. The local server runs in Chennai; the database is in Sydney, so every query crosses that distance. Prod functions run in syd1 since 2 Nov. To be measured on prod after merge.
+
+## Run 3 — head 15e83ea (13:10–13:19 IST, per Aravind)
+- S1 residual: /login with DevTools throttle 3G: DOMContentLoaded 2.12 s, Load 2.12 s, Finish 5.69 s, 20 requests, 31.5 kB transferred. Scripts served from disk cache, so a first-ever visit is slower than this.
+- Row 6 (S2) at 15e83ea, first attempt: no new email, but the final URL ended error=RESEND_RATE_LIMITED, i.e. the resend action ran and was stopped only by Supabase's 60 s cooldown. Inconclusive.
+- Row 6 (S2) retest: 70 s after the last send, throttle 3G, 000000 + Sign in, then Send a new code within 1 s. Network: two server-action POSTs (303, 2.10 s from step=code; 303, 3.05 s from step=code&error=WRONG_CODE). Final URL without error = resend succeeded. FAIL. The earlier row 6 PASS at ba3dd3d is withdrawn (masked by the cooldown).
+- Fix: verify and resend in one form with one latch (plan §15). Retest pending.

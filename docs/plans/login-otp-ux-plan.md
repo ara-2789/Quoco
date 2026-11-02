@@ -131,3 +131,8 @@ U9 `test/setup/run-id.ts` globalSetup not read; assumed env-only like guard.ts. 
 - Observed at ba3dd3d: after a rate-limited Send code, the email field rendered empty, so the have-code recovery path required retyping the email (browser showed "Please fill in this field.").
 - Fix: the typed email is saved to sessionStorage (tab-scoped) on submit of the email form (Send code and have-code) and restored into the empty field on mount. Client-only. No change to the nine server blocks. No new user-facing text. The email is not added to any message.
 - Manual-run results so far (per Aravind, 12:40 IST, ba3dd3d): row 1 (double tap -> one email, code step) PASS; row 6 (Sign in then Send a new code inside the pending window -> no extra email) PASS; row 2 error + enabled have-code PASS, empty email field FAIL (this fix).
+
+## 15. ADDENDUM — 2 Nov 2026, S2 failed in the manual run (per Aravind)
+- Observed at 15e83ea: a "Send a new code" tap during a pending "Sign in" was not refused; it ran after verify's redirect and sent a new code (details: docs/reviews/login-otp-ux-manual-run.md, Run 3).
+- Fix: the code step is one form; Sign in and Send a new code are submitters with formAction={verifyCode} / formAction={resendCode} (resend formNoValidate). One latch and one pending source; both buttons disabled while either action is pending. Server blocks unchanged.
+- Diagnosis of why the round-1 shared latch failed: see docs/reviews/login-otp-ux-s2fix-log.txt.

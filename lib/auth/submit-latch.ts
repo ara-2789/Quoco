@@ -87,3 +87,37 @@ export function createPendingObserver(latch: SubmitLatch): (pending: boolean) =>
     previous = pending
   }
 }
+
+// ---------------------------------------------------------------------------
+// S2 (plan section 15): the code step is ONE form with two submitters (Sign in,
+// Send a new code). These two pure functions are the decisions LatchedForm
+// makes on every submit, extracted so they are testable without a browser.
+// ---------------------------------------------------------------------------
+
+/**
+ * What a submit should do:
+ *  - 'bypass': not a send (the have-code GET submitter). The latch is not
+ *    touched and the submit is not cancelled.
+ *  - 'allow':  this submit now HOLDS the latch; let it through.
+ *  - 'refuse': the latch is already held; cancel this submit (preventDefault),
+ *    whichever submitter it came from.
+ */
+export function decideSubmit(latch: SubmitLatch, bypass: boolean): 'allow' | 'refuse' | 'bypass' {
+  if (bypass) return 'bypass'
+  return latch.tryEnter() ? 'allow' : 'refuse'
+}
+
+/**
+ * Whether a submit button should show its busy label. Every button in the form
+ * is DISABLED while the latch is held; only the submitter that started the
+ * send shows its busy label. A button without a submit id (the email step's
+ * only latch submitter) shows it whenever the latch is held.
+ */
+export function isSubmitterBusy(
+  held: boolean,
+  activeSubmitId: string | null,
+  submitId: string | undefined,
+): boolean {
+  if (!held) return false
+  return submitId === undefined || activeSubmitId === submitId
+}

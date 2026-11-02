@@ -320,10 +320,8 @@ describe('T-UX-8: forms are keyed by the params a redirect changes (review round
     )
     expect(plain).toEqual(['||'])
     expect(rateLimited).toEqual(['|RESEND_RATE_LIMITED|'])
-    expect(wrongCode).toEqual([
-      'code|WRONG_CODE|ux-test@example.com',
-      'code|WRONG_CODE|ux-test@example.com',
-    ])
+    // ONE form on the code step now (plan section 15), so one key.
+    expect(wrongCode).toEqual(['code|WRONG_CODE|ux-test@example.com'])
     expect(new Set([...plain, ...rateLimited, ...wrongCode]).size).toBe(3)
   })
 
@@ -337,19 +335,67 @@ describe('T-UX-8: forms are keyed by the params a redirect changes (review round
   })
 })
 
-describe('T-UX-10 (render part): the code step shares ONE latch (review round 1, S2)', () => {
-  function latchIdsIn(html: string): string[] {
-    return [...html.matchAll(/data-latch-id="([^"]*)"/g)].map((m) => m[1])
+// REPLACES the old "two forms share a latch id" render test (plan section 15).
+describe('T-UX-13: the code step is ONE form with two submitters (S2)', () => {
+  const CODE_STEP = { step: 'code', email: 'ux-test@example.com' }
+
+  function countForms(html: string): number {
+    return (html.match(/<form[\s>]/g) ?? []).length
   }
 
-  it('verify and resend forms carry the SAME latch id; the email step has one form', async () => {
-    const code = latchIdsIn(await renderLogin({ step: 'code', email: 'ux-test@example.com' }))
-    expect(code).toHaveLength(2)
-    expect(code[0]).not.toBe('')
-    expect(code[1]).toBe(code[0])
+  it('exactly ONE <form>; it holds the code input, a Sign in submit and a Send a new code submit', async () => {
+    const html = await renderLogin(CODE_STEP)
+    expect(countForms(html)).toBe(1)
 
-    const email = latchIdsIn(await renderLogin({}))
-    expect(email).toHaveLength(1)
+    const form = html.match(/<form[\s\S]*?<\/form>/)?.[0] ?? ''
+    expect(form).toContain('id="code"')
+    expect(form).toContain('name="code"')
+    expect(form).toContain('name="email"') // the hidden address, once, in this form
+
+    const signIn = buttonWithLabel(form, authCopy.codeStep.submitLabel)
+    const resend = buttonWithLabel(form, authCopy.codeStep.resendLabel)
+    expect(signIn, 'Sign in must be inside the one form').not.toBeNull()
+    expect(resend, 'Send a new code must be inside the one form').not.toBeNull()
+    expect(signIn!.toLowerCase()).toContain('type="submit"')
+    expect(resend!.toLowerCase()).toContain('type="submit"')
+    // Both carry their own submitter-level action.
+    expect(signIn!.toLowerCase()).toContain('formaction')
+    expect(resend!.toLowerCase()).toContain('formaction')
+    // Order: Sign in first (Enter in the code field uses the first submit button).
+    expect(form.indexOf(signIn!)).toBeLessThan(form.indexOf(resend!))
+  })
+
+  it('the resend submitter carries formnovalidate (an empty code field must not block a resend); Sign in does not', async () => {
+    const html = await renderLogin(CODE_STEP)
+    const signIn = buttonWithLabel(html, authCopy.codeStep.submitLabel)!.toLowerCase()
+    const resend = buttonWithLabel(html, authCopy.codeStep.resendLabel)!.toLowerCase()
+    expect(resend).toContain('formnovalidate')
+    expect(resend).toContain('data-submit-id="resend"')
+    expect(signIn).not.toContain('formnovalidate')
+  })
+
+  it('also one form, and the same buttons, after a WRONG_CODE redirect', async () => {
+    const html = await renderLogin({ ...CODE_STEP, error: 'WRONG_CODE' })
+    expect(countForms(html)).toBe(1)
+    expect(buttonWithLabel(html, authCopy.codeStep.submitLabel)).not.toBeNull()
+    expect(buttonWithLabel(html, authCopy.codeStep.resendLabel)).not.toBeNull()
+  })
+
+  it('the email step is unchanged: one form, Send code then the have-code GET submitter', async () => {
+    const html = await renderLogin({})
+    expect(countForms(html)).toBe(1)
+    expect(buttonWithLabel(html, authCopy.emailStep.submitLabel)).not.toBeNull()
+    expect(buttonWithLabel(html, authCopy.emailStep.haveCodeLabel)!.toLowerCase()).toContain(
+      'formmethod="get"',
+    )
+  })
+
+  it('"Use a different email" stays outside the form, as a plain link to /login', async () => {
+    const html = await renderLogin(CODE_STEP)
+    const form = html.match(/<form[\s\S]*?<\/form>/)?.[0] ?? ''
+    expect(form).not.toContain(authCopy.codeStep.startOverLabel)
+    expect(html).toContain(`href="/login"`)
+    expect(html).toContain(authCopy.codeStep.startOverLabel)
   })
 })
 

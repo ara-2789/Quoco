@@ -8,6 +8,8 @@ import {
   LATCH_SAFETY_RELEASE_MS,
   createPendingObserver,
   createSubmitLatch,
+  decideSubmit,
+  isSubmitterBusy,
 } from '@/lib/auth/submit-latch'
 
 beforeEach(() => {
@@ -112,23 +114,61 @@ describe('T-UX-9: safety release', () => {
   })
 })
 
-describe('T-UX-10 (pure part): the code step shares one latch', () => {
-  it('held by verify -> resend is refused; released only by the form that was pending', () => {
-    const shared = createSubmitLatch()
-    const observeVerify = createPendingObserver(shared)
-    const observeResend = createPendingObserver(shared)
+// REPLACED (plan section 15): the code step is now ONE form with two submitters
+// (Sign in, Send a new code). The decision LatchedForm makes on every submit is
+// decideSubmit(); the pending source is the one form's useFormStatus, observed
+// by one observer. These rows test that decision for either submitter.
+describe('T-UX-10: one form, one latch, two submitters (S2)', () => {
+  it('a second submit from EITHER submitter is refused while the first is held', () => {
+    const latch = createSubmitLatch()
+    // Sign in taps first, Send a new code taps inside the pending window.
+    expect(decideSubmit(latch, false)).toBe('allow') // Sign in
+    expect(decideSubmit(latch, false)).toBe('refuse') // Send a new code
+    expect(decideSubmit(latch, false)).toBe('refuse') // Sign in again
 
-    expect(shared.tryEnter()).toBe(true) // verify tapped
-    expect(shared.tryEnter()).toBe(false) // resend tapped inside the pending window
+    // And the other way round, after the first send settles.
+    const observe = createPendingObserver(latch)
+    observe(true)
+    observe(false)
+    expect(decideSubmit(latch, false)).toBe('allow') // Send a new code
+    expect(decideSubmit(latch, false)).toBe('refuse') // Sign in
+  })
 
-    observeVerify(true)
-    observeResend(false) // the resend form never ran: it must not release verify's hold
-    expect(shared.isHeld()).toBe(true)
-    observeResend(false)
-    expect(shared.isHeld()).toBe(true)
+  it('the have-code GET submitter bypasses the latch and never takes or cancels it', () => {
+    const latch = createSubmitLatch()
+    expect(decideSubmit(latch, true)).toBe('bypass')
+    expect(latch.isHeld()).toBe(false)
+    expect(decideSubmit(latch, false)).toBe('allow')
+    expect(decideSubmit(latch, true)).toBe('bypass') // even while a send is held
+    expect(latch.isHeld()).toBe(true)
+  })
 
-    observeVerify(false) // verify settled
-    expect(shared.isHeld()).toBe(false)
-    expect(shared.tryEnter()).toBe(true)
+  it('one pending source releases the one latch (true -> false), whichever button started it', () => {
+    const latch = createSubmitLatch()
+    const observe = createPendingObserver(latch)
+    expect(decideSubmit(latch, false)).toBe('allow')
+    observe(true)
+    expect(latch.isHeld()).toBe(true)
+    observe(false)
+    expect(latch.isHeld()).toBe(false)
+  })
+})
+
+describe('T-UX-14: which button shows the busy label (S2)', () => {
+  it('nothing is busy while the latch is free', () => {
+    expect(isSubmitterBusy(false, 'resend', 'resend')).toBe(false)
+    expect(isSubmitterBusy(false, null, undefined)).toBe(false)
+  })
+
+  it('Send a new code started the send: it is busy', () => {
+    expect(isSubmitterBusy(true, 'resend', 'resend')).toBe(true)
+  })
+
+  it('Sign in started the send (no submit id, so active is null): Send a new code is only disabled, not busy', () => {
+    expect(isSubmitterBusy(true, null, 'resend')).toBe(false)
+  })
+
+  it('a button without a submit id (the email step Send code) is busy whenever the latch is held', () => {
+    expect(isSubmitterBusy(true, null, undefined)).toBe(true)
   })
 })
