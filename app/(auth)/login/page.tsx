@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { profileForAuthId } from '@/lib/auth/profile'
 import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
+import { LatchedForm, SubmitButton, HaveCodeButton } from './pending-controls'
 
 // Known error keys this page redirects with. An unrecognised or tampered
 // ?error= value always falls through to GENERIC below via errorMessageFor's
@@ -156,6 +157,28 @@ export default async function LoginPage({
 }) {
   const params = await searchParams
 
+  // B6 (docs/plans/login-otp-ux-plan.md): a user who is already signed in
+  // does not get the sign-in form. ONLY the lookups are inside the try. The
+  // target is computed there and redirect() is called OUTSIDE it, because
+  // redirect() works by throwing NEXT_REDIRECT -- a redirect inside this try
+  // would be caught by the catch below and the signed-in user would still
+  // see the form. Any lookup failure (no session, no profile row, a thrown
+  // error) falls through to the form, so /login can never become unusable.
+  let signedInTarget: string | null = null
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (user) {
+      const profile = await profileForAuthId(supabase, user.id)
+      signedInTarget = profile.tenant_id ? '/dashboard' : '/onboarding'
+    }
+  } catch {
+    signedInTarget = null
+  }
+  if (signedInTarget) redirect(signedInTarget)
+
   if (params.step === 'code') {
     const email = params.email ?? ''
 
@@ -183,7 +206,7 @@ export default async function LoginPage({
           </div>
         )}
 
-        <form action={verifyCode} className="space-y-4">
+        <LatchedForm action={verifyCode} className="space-y-4">
           <input type="hidden" name="email" value={email} />
           <div>
             <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1">
@@ -200,23 +223,21 @@ export default async function LoginPage({
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-blue-700 active:bg-blue-800 transition-colors"
-          >
-            {codeStep.submitLabel}
-          </button>
-        </form>
+          {/* Pending: disabled, label unchanged (no busyLabel). */}
+          <SubmitButton
+            label={codeStep.submitLabel}
+            className="w-full bg-blue-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          />
+        </LatchedForm>
 
-        <form action={resendCode} className="mt-4">
+        <LatchedForm action={resendCode} className="mt-4">
           <input type="hidden" name="email" value={email} />
-          <button
-            type="submit"
-            className="w-full text-center text-sm text-blue-600 hover:underline"
-          >
-            {codeStep.resendLabel}
-          </button>
-        </form>
+          <SubmitButton
+            label={codeStep.resendLabel}
+            busyLabel={codeStep.resendBusyLabel}
+            className="w-full text-center text-sm text-blue-600 hover:underline disabled:opacity-60 disabled:cursor-not-allowed"
+          />
+        </LatchedForm>
 
         <p className="mt-4 text-center text-sm text-gray-700">
           <a href="/login" className="text-blue-600 hover:underline">
@@ -238,7 +259,7 @@ export default async function LoginPage({
         </div>
       )}
 
-      <form action={requestCode} className="space-y-4">
+      <LatchedForm action={requestCode} className="space-y-4">
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
             Email address
@@ -253,13 +274,18 @@ export default async function LoginPage({
             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
-        <button
-          type="submit"
-          className="w-full bg-blue-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-blue-700 active:bg-blue-800 transition-colors"
-        >
-          {emailStep.submitLabel}
-        </button>
-      </form>
+        <SubmitButton
+          label={emailStep.submitLabel}
+          busyLabel={emailStep.submitBusyLabel}
+          className="w-full bg-blue-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        />
+        {/* AFTER "Send code" in DOM order, so Enter in the email field still
+            sends. type="button": never submits, never calls requestCode. */}
+        <HaveCodeButton
+          label={emailStep.haveCodeLabel}
+          className="w-full text-center text-sm text-blue-600 hover:underline disabled:opacity-60 disabled:cursor-not-allowed"
+        />
+      </LatchedForm>
     </div>
   )
 }
