@@ -1,0 +1,237 @@
+### ROUND 2 STEP 0-1
+cwd /Users/aravindanrajamani/Desktop/quocoai-pm-ui; branch fix/login-otp-ux; status clean
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde; origin/main 408a35c042444816cf10733ea66811876da2efbd
+git log --oneline origin/main..HEAD: 7178632 docs(login)...; f2a067c fix(login)... (no email-keep commit exists)
+review saved verbatim: /tmp/quoco/login-otp-review-round-1.md -> docs/reviews/login-otp-ux-review-round-1.md (cmp identical)
+sha256 review (both) b9fa59d08b86d184be08a5ff933b7ee6f36b2073f1e37fb9160cfe2d7d32a440
+
+### S4 CHECK (scratch copy, deleted afterwards)
+The real test/login-otp.test.ts was NOT run: its describe-level beforeAll creates a test-db user and T-OTP-04 sends a real email. The instruction listed it as "test-db free"; it is not (read at test/login-otp.test.ts beforeAll + T-OTP-01..04). Flagged, not run.
+Instead: a scratch file built from the real file own lines 1-59 (imports + the new S4 mock) + lines 301-336 (T-OTP-07 and T-OTP-08 verbatim), no helper that talks to a db. First cut dropped the LoginPage import line (scratch mistake, 2 failed: LoginPage is not defined); rebuilt with lines 1-59.
+$ npx vitest run test/zz-scratch-s4.test.ts -> 1 file, 2 tests passed (T-OTP-07, T-OTP-08 with the S4 mock). Scratch file removed (git status shows only the intended changes).
+
+### ROUND 2 STATIC CHECKS (build tree before commit, base HEAD 7178632)
+$ npx tsc --noEmit -> exit=0, no output
+$ npm run lint -> exit=0; "317 problems (0 errors, 317 warnings)" repo-wide (same count as round 1); scoped eslint on the changed files incl. test/login-otp.test.ts -> exit=0, no output
+$ npm run check:profile-lookups -> exit=0 (profile-lookup guard OK)
+$ npm run lint:migrations -> exit=0 (migration-lint: clean. 107 known violation(s), all exempted.)
+$ npm run lint:filesize -> exit=0 (clean, 198 files checked, no hard failures)
+$ npm run lint:fixture-literals -> exit=0 (clean, 9 retired literal(s), 0 stragglers)
+(every lint:* and check:* script in package.json was run)
+$ npx vitest run test/submit-latch.test.ts test/login-ux.test.tsx test/auth-copy.test.ts -> 3 files passed, 56 tests passed (login-ux 25, submit-latch 10, auth-copy 21)
+
+### R2 CONTROL C1 (T-UX-1 / T-UX-10 pure, latch never refuses)
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde (uncommitted round-2 tree)
+mutated lib/auth/submit-latch.ts sha256 6c66e04924dd630675084da74a1a418fb7b21d816a5a7bfc1f17121987406366
+FAIL  test/submit-latch.test.ts > T-UX-1: submit latch > the first enter wins; a second enter while held is refused
+AssertionError: expected true to be false // Object.is equality
+(5 failed | 5 passed: T-UX-1 x3, T-UX-9 19999 row, T-UX-10 pure row)
+restored sha256 02ebb98513791b6504e102ef741fa055f725388de65d1d07123bb28c53be05b9 == pre-control
+
+### R2 CONTROL C7 (T-UX-9, safety timer removed)
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde (uncommitted round-2 tree)
+mutated lib/auth/submit-latch.ts sha256 cb3b1a41cd2145f30b30f86f4fd81071ce6d016ff456d9a72354c6c226da480d
+FAIL  test/submit-latch.test.ts > T-UX-9: safety release > a held latch releases at 20 000 ms, not at 19 999
+AssertionError: expected true to be false // Object.is equality
+(3 failed | 7 passed: exactly the three T-UX-9 timer rows)
+restored sha256 02ebb98513791b6504e102ef741fa055f725388de65d1d07123bb28c53be05b9 == pre-control
+
+### R2 CONTROL C2 (T-UX-2, SubmitButtonView ignores pending)
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde (uncommitted round-2 tree)
+mutated app/(auth)/login/pending-controls.tsx sha256 889888d8ecfc70e7e5891bcff361a25b0e410a485916c31709b116fdc8480523
+FAIL  test/login-ux.test.tsx > T-UX-2: busy state (presentational views) > Sign in: pending -> disabled, label UNCHANGED (no busy label)
+AssertionError: expected (button type=submit, Sign in) to contain disabled
+(3 failed | 1 passed | 21 skipped: Send code, Send a new code, Sign in rows; have-code row unaffected)
+restored sha256 d8abb65f41b92d571242f96336677c197496974c701dc543446aa62194ccc517 == pre-control
+
+### R2 CONTROL C3 (T-UX-3, formMethod dropped from the GET submitter)
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde (uncommitted round-2 tree)
+mutated app/(auth)/login/pending-controls.tsx sha256 1b874679c969f8abbb39da89031c134442246238dc92c2bba13d7affe9cebc26
+FAIL  test/login-ux.test.tsx > T-UX-3: have-code control > email step: GET submitter (type=submit formmethod=get formaction=/login name=step value=code), placed AFTER Send code
+AssertionError: expected (button type=submit value=code da...) to contain formmethod="get"
+(2 failed | 2 passed | 21 skipped: both attribute rows; the same-form and no-send rows unaffected)
+restored sha256 d8abb65f41b92d571242f96336677c197496974c701dc543446aa62194ccc517 == pre-control
+
+### R2 CONTROL C8 (T-UX-10 render part, LatchedForm ignores the shared scope = two separate latches)
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde (uncommitted round-2 tree)
+mutated app/(auth)/login/pending-controls.tsx sha256 d60e3b14afb59245dd39aa9f61f47968080a45201cf9c785c1d1658d7479b63a
+FAIL  test/login-ux.test.tsx > T-UX-10 (render part): the code step shares ONE latch (review round 1, S2) > verify and resend forms carry the SAME latch id; the email step has one form
+AssertionError: expected _R_1c_ to be _R_s_ // Object.is equality
+(1 failed | 24 skipped)
+restored sha256 d8abb65f41b92d571242f96336677c197496974c701dc543446aa62194ccc517 == pre-control
+
+### R2 CONTROL C6 (T-UX-8, loginFormKey returns a constant)
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde (uncommitted round-2 tree)
+mutated app/(auth)/login/pending-controls.tsx sha256 b68b238ef23e31bc60f8e8fd93cec2d74cda846ad75fc27355c8fae24811958e
+FAIL  test/login-ux.test.tsx > T-UX-8: forms are keyed by the params a redirect changes (review round 1, B1) > the key differs between (email step, no error), (email step, RESEND_RATE_LIMITED) and (code step, WRONG_CODE)
+AssertionError: expected  to be || // Object.is equality
+(3 failed | 22 skipped: all three T-UX-8 rows)
+restored sha256 d8abb65f41b92d571242f96336677c197496974c701dc543446aa62194ccc517 == pre-control
+
+### R2 CONTROL C4a (T-UX-4, origin/main LoginPage with a signed-in mock)
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde (uncommitted round-2 tree)
+page.tsx replaced by git show origin/main:app/(auth)/login/page.tsx, sha256 876ff16f02fb097cf1caacba4cf94bf6907c8344eed496c3a926baa880d5be81
+FAIL  test/login-ux.test.tsx > T-UX-4: signed-in user on /login (B6) > user + tenant -> NEXT_REDIRECT to /dashboard
+AssertionError: expected NO-THROW (page rendered) to match /^NEXT_REDIRECT;[a-z]+;\/dashboard;/
+(2 failed | 5 passed | 18 skipped: the two user+tenant rows; the no-tenant row now passes on origin/main too, because "renders the form" is also the pre-PR behaviour; C4c carries that row)
+restored sha256 d71b94c1367ec56fd81db3d01d96c0703848fc6e8cd628baceb2ce9d0663cea5 == pre-control
+
+### R2 CONTROL C4b (T-UX-4, redirect() moved inside the try)
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde (uncommitted round-2 tree)
+mutated app/(auth)/login/page.tsx sha256 c3453f186448e68945850bf3adc54543a15f5e2902e18ed8e08c161e03ab2b43
+FAIL  test/login-ux.test.tsx > T-UX-4: signed-in user on /login (B6) > user + tenant -> NEXT_REDIRECT to /dashboard
+AssertionError: expected NO-THROW (page rendered) to match /^NEXT_REDIRECT;[a-z]+;\/dashboard;/
+(2 failed | 5 passed | 18 skipped)
+restored sha256 d71b94c1367ec56fd81db3d01d96c0703848fc6e8cd628baceb2ce9d0663cea5 == pre-control
+
+### R2 CONTROL C4c (T-UX-4 B2 row, no-tenant redirects to /onboarding = the round-1 code)
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde (uncommitted round-2 tree)
+mutated app/(auth)/login/page.tsx sha256 556c1c2d9e7f78506fdc46f2c817ac1ab00046baf32bb0f4c12b1b1128e4ffcb
+FAIL  test/login-ux.test.tsx > T-UX-4: signed-in user on /login (B6) > user, no tenant -> the form renders (NOT redirected to /onboarding)
+AssertionError: expected NEXT_REDIRECT;replace;/onboarding;307; to be NO-THROW (page rendered) // Object.is equality
+(2 failed: the B2 row, plus the T-UX-7 not-reported row that also renders a no-tenant user)
+restored sha256 d71b94c1367ec56fd81db3d01d96c0703848fc6e8cd628baceb2ce9d0663cea5 == pre-control
+
+### R2 CONTROL C5 (T-UX-7, the B6 catch no longer reports)
+HEAD 717863208833f2bf4ecdf41f8f7853abedfbfbde (uncommitted round-2 tree)
+mutated app/(auth)/login/page.tsx sha256 87092f341726d4aa808cbdbd9fee1d4f9a4d3ff0dca7bd11b9e9a86fbb1dcdea
+FAIL  test/login-ux.test.tsx > T-UX-7: the B6 catch reports the failure (review round 1, S3) > profile lookup throws -> reported ONCE, by error name only (no auth id / email / message)
+AssertionError: expected "spy" to be called 1 times, but got 0 times
+(1 failed | 2 passed | 22 skipped)
+restored sha256 d71b94c1367ec56fd81db3d01d96c0703848fc6e8cd628baceb2ce9d0663cea5 == pre-control
+
+All 10 controls restored to the pre-control hashes: submit-latch.ts 02ebb985..., pending-controls.tsx d8abb65f..., page.tsx d71b94c1... (the three files hashed before the first mutation).
+
+### R2 STEP 5 PROOFS (committed code HEAD)
+$ git rev-parse HEAD; git status --porcelain
+946d22e56b4e4ff583ce8d3e6c86f5eed9bfc0e1
+[end porcelain: empty above = clean]
+
+$ git diff --name-only origin/main   (EVERY changed file vs origin/main)
+app/(auth)/login/page.tsx
+app/(auth)/login/pending-controls.tsx
+docs/plans/login-otp-ux-plan.md
+docs/reviews/login-otp-ux-build-log.txt
+docs/reviews/login-otp-ux-review-round-1.md
+lib/auth/copy.ts
+lib/auth/submit-latch.ts
+test/login-otp.test.ts
+test/login-ux.test.tsx
+test/submit-latch.test.ts
+
+$ git diff --stat origin/main
+ app/(auth)/login/page.tsx                   | 116 +++++++--
+ app/(auth)/login/pending-controls.tsx       | 190 ++++++++++++++
+ docs/plans/login-otp-ux-plan.md             | 123 +++++++++
+ docs/reviews/login-otp-ux-build-log.txt     | 335 ++++++++++++++++++++++++
+ docs/reviews/login-otp-ux-review-round-1.md | 120 +++++++++
+ lib/auth/copy.ts                            |   6 +
+ lib/auth/submit-latch.ts                    |  89 +++++++
+ test/login-otp.test.ts                      |   9 +
+ test/login-ux.test.tsx                      | 385 ++++++++++++++++++++++++++++
+ test/submit-latch.test.ts                   | 134 ++++++++++
+ 10 files changed, 1483 insertions(+), 24 deletions(-)
+
+$ git diff origin/main --stat -- proxy.ts 'app/(auth)/auth/callback/route.ts' 'app/(auth)/layout.tsx' 'app/(dashboard)' 'app/(onboarding)' lib/auth/profile.ts lib/auth/profile-query.ts lib/supabase   [expect: empty]
+[end: nothing printed above = empty]
+
+$ node extract-blocks.mjs <git show origin/main:page.tsx>  (name-based sha256, same method both sides)
+d4e1591683e7369ae3d7c265d5c48e867b0b3f32fbde5fbad4630d56d092dc9d ERROR_MESSAGES
+5ea578828fc0cdcc66382d1372696bb00f8424aa26b3232b960148eb5f60e547 errorMessageFor
+9efa543d26a3037baf0fcd556e74a5e5a68f17ba1d32a551d055d0479f015a1f HTML5_EMAIL_RE
+6dcbefe9393642b7adbd0ad429595658f344d5f3e4f1adcc567f097fbb212651 isValidEmail
+e462ceeb4d04468f78a64ceecf17af256ba411272f8e45a20102198ea69f3bd8 requestErrorKey
+aa9ae18415a1a068dac0e0121e6b1a9fcd0bd581bdfddb450cc56c1f2c73d50c verifyErrorKey
+63e1ad092cbe7ca4bcc94cd6519c62c0bc7e9fa5ff77166816d5c626d08c93b3 requestCode
+bc7a1cdd63c4a032d5f1d9c1fd96ac64e3647cc2f65563fc92ec0a1d6b0619c1 resendCode
+ea3c8ab4502c47351c2263938dcccaf5861b09ad5f6aa853491557acc3ef717d verifyCode
+03395c8ca64baad9b90970129e99f6ac4393e7eef7c88db58b3fb889ec0f4581 PRE-LOGINPAGE
+
+$ node extract-blocks.mjs <git show HEAD:page.tsx>
+d4e1591683e7369ae3d7c265d5c48e867b0b3f32fbde5fbad4630d56d092dc9d ERROR_MESSAGES
+5ea578828fc0cdcc66382d1372696bb00f8424aa26b3232b960148eb5f60e547 errorMessageFor
+9efa543d26a3037baf0fcd556e74a5e5a68f17ba1d32a551d055d0479f015a1f HTML5_EMAIL_RE
+6dcbefe9393642b7adbd0ad429595658f344d5f3e4f1adcc567f097fbb212651 isValidEmail
+e462ceeb4d04468f78a64ceecf17af256ba411272f8e45a20102198ea69f3bd8 requestErrorKey
+aa9ae18415a1a068dac0e0121e6b1a9fcd0bd581bdfddb450cc56c1f2c73d50c verifyErrorKey
+63e1ad092cbe7ca4bcc94cd6519c62c0bc7e9fa5ff77166816d5c626d08c93b3 requestCode
+bc7a1cdd63c4a032d5f1d9c1fd96ac64e3647cc2f65563fc92ec0a1d6b0619c1 resendCode
+ea3c8ab4502c47351c2263938dcccaf5861b09ad5f6aa853491557acc3ef717d verifyCode
+03395c8ca64baad9b90970129e99f6ac4393e7eef7c88db58b3fb889ec0f4581 PRE-LOGINPAGE
+
+$ diff of the two hash lists:
+IDENTICAL: all 9 named blocks + pre-LoginPage region match origin/main
+
+$ git diff -U0 origin/main -- 'app/(auth)/login/page.tsx' | grep '^@@'
+@@ -5,0 +6,8 @@ import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
+@@ -158,0 +167,51 @@ export default async function LoginPage({
+@@ -186 +245,4 @@ export default async function LoginPage({
+@@ -203,7 +265,6 @@ export default async function LoginPage({
+@@ -211 +272 @@ export default async function LoginPage({
+@@ -213,7 +274,7 @@ export default async function LoginPage({
+@@ -241 +302 @@ export default async function LoginPage({
+@@ -256,7 +317,14 @@ export default async function LoginPage({
+
+$ git diff -U0 origin/main -- test/login-otp.test.ts   [must be + lines only]
+diff --git a/test/login-otp.test.ts b/test/login-otp.test.ts
+index 0e08e6f..6667d91 100644
+--- a/test/login-otp.test.ts
++++ b/test/login-otp.test.ts
+@@ -49,0 +50,9 @@ vi.mock('@/lib/auth/profile', () => ({ profileForAuthId: vi.fn() }))
++// Review round 1, S4: LoginPage's B6 check calls createClient().auth.getUser().
++// Mocked so T-OTP-07/08 take the "no session" path on purpose, instead of
++// passing only because the real createClient() throws outside a request scope
++// and B6's catch swallows it.
++vi.mock('@/lib/supabase/server', () => ({
++  createClient: vi.fn(async () => ({
++    auth: { getUser: async () => ({ data: { user: null } }) },
++  })),
++}))
+removed-line count:
+0
+
+$ copy.ts removed-line count vs origin/main:
+0
+
+$ plan removed-line count vs origin/main (file is new there; vs 7178632):
+0
+
+### N3 (review round 1): PR head pins, 2 Nov 2026
+PR head 7178632 = f2a067c (code) + docs only. $ git diff --stat f2a067c 7178632
+ docs/plans/login-otp-ux-plan.md         |   6 +
+ docs/reviews/login-otp-ux-build-log.txt | 335 ++++++++++++++++++++++++++++++++
+ 2 files changed, 341 insertions(+)
+
+Round-1 code proofs (build log FINAL STATE) were pinned to f2a067c; they carry over to 7178632 (docs only, as shown). The round-1 --name-only list omitted docs/reviews/login-otp-ux-build-log.txt itself (added in 7178632).
+Round 2 code commit: 946d22e ($ git diff --stat 7178632 946d22e):
+ app/(auth)/login/page.tsx                   |  70 ++++++++++---
+ app/(auth)/login/pending-controls.tsx       | 156 ++++++++++++++++++----------
+ docs/plans/login-otp-ux-plan.md             |  10 ++
+ docs/reviews/login-otp-ux-review-round-1.md | 120 +++++++++++++++++++++
+ lib/auth/submit-latch.ts                    |  61 +++++++++--
+ test/login-otp.test.ts                      |   9 ++
+ test/login-ux.test.tsx                      | 148 +++++++++++++++++++++++---
+ test/submit-latch.test.ts                   | 105 +++++++++++++++++--
+ 8 files changed, 576 insertions(+), 103 deletions(-)
+
+PR head after this round = 946d22e (code + docs) + one docs-only commit that adds docs/reviews/login-otp-ux-build-log-round2.txt (this file; it cannot name its own commit SHA, so the final head SHA is stated in the PR report).
+
+### B2 PRODUCTION COUNT (per Aravind, 2 Nov 2026, prod SQL editor, read-only; raw result as pasted)
+query:
+select count(*) as auth_users,
+       count(*) filter (where u.id is null) as no_profile_row,
+       count(*) filter (where u.id is not null and u.tenant_id is null) as profile_no_tenant
+from auth.users a
+left join public.users u on u.auth_id = a.id;
+result:
+| auth_users | no_profile_row | profile_no_tenant |
+| 4          | 0              | 2                 |
+Consequence: 2 of 4 prod accounts would have been redirected to /onboarding (no sign-out) by the round-1 B6. Round-2 B6 renders the form for them.
+
+### BUILD NOTES, ROUND 2 (deviations and flags, 2 Nov 2026)
+1. DEVIATION FROM THE KEY SPEC (caught by the test-db-free T-OTP-07 restatement, T-UX-6, first run, 1 failed / 54 passed): the spec'd key `${step}|${error}|${email}` rendered the RAW ?error= value into the form's data-latch-key attribute, so `?error=NOT_A_REAL_KEY` reached the HTML. That is exactly what T-OTP-07 forbids (it asserts the raw key is never rendered), so the real T-OTP-07 would have failed in CI. Fix: the page passes loginFormKey only values it already trusts: step only when 'code'; error only if it is a key of ERROR_MESSAGES, otherwise 'GENERIC' (the same collapse errorMessageFor does); email only on the code step, where isValidEmail runs before anything renders. The key still differs for (email step, no error) = "||", (email step, RESEND_RATE_LIMITED) = "|RESEND_RATE_LIMITED|", (code step, WRONG_CODE) = "code|WRONG_CODE|<email>". Pinned by a new T-UX-8 row (unknown error + hostile email on the email step render key "|GENERIC|", raw text absent from the HTML); control C6 turns T-UX-8 red.
+2. FLAG, instruction vs repo: step 5 lists test/login-otp.test.ts as "test-db free". It is not: its describe-level beforeAll creates a test-db user, T-OTP-01/01b/02/03/04 call Supabase Auth on test-db, and T-OTP-04 sends one real email. test-db is held by the backend (052 rehearsal). NOT RUN. S4 was verified instead with a scratch file made of the real file's lines 1-59 (imports + the new mock) and 301-336 (T-OTP-07 and T-OTP-08 verbatim): 2 passed, then deleted. CI runs the real file.
+3. HAVE-CODE AS A GET SUBMITTER: the browser submits every named field of the requestCode form, so the React server-action hidden inputs ($ACTION_REF_1, $ACTION_1:0, $ACTION_KEY ...) will appear in the query string next to email= and step=code (the page ignores unknown params). Not observed running; the manual run shows the real URL. If it is too long or unwanted, say so.
+4. Latch timing edge (not tested, not fixed): if an action runs longer than 20 s the safety release re-enables the buttons while it is still in flight, and its late pending true->false then releases a NEWER hold early.
+5. The data-latch-id / data-latch-key attributes exist only so the wiring is inspectable in static HTML (T-UX-8, T-UX-10). They carry no user data (React useId + the sanitised key).
+6. The saved review is docs/reviews/login-otp-ux-review-round-1.md (sha256 b9fa59d08b86d184be08a5ff933b7ee6f36b2073f1e37fb9160cfe2d7d32a440, cmp identical to /tmp/quoco/login-otp-review-round-1.md).
