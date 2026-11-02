@@ -56,8 +56,30 @@ export function readSavedEmail(storage: StorageLike | null | undefined): string 
   }
 }
 
+/** A StorageLike that can also delete a key (window.sessionStorage can). */
+export type ClearableStorageLike = StorageLike & {
+  removeItem: (key: string) => void
+}
+
+/**
+ * Forgets the saved address. Called when the code step mounts (review round 2,
+ * N1): once a code has been sent (or the have-code path was taken) the address
+ * is no longer needed, and it must not outlive that on a shared computer, e.g.
+ * showing the previous PM's address in /login after a sign-out in the same tab.
+ * The email step's restore is unaffected (the rate-limit error path never
+ * reaches the code step). Never throws.
+ */
+export function clearSavedEmail(storage: ClearableStorageLike | null | undefined): void {
+  try {
+    if (!storage) return
+    storage.removeItem(SAVED_EMAIL_KEY)
+  } catch {
+    // Storage blocked: nothing to clear that we could have written.
+  }
+}
+
 /** window.sessionStorage, or null when unavailable (SSR, or access throws). Never throws. */
-export function browserSessionStorage(): StorageLike | null {
+export function browserSessionStorage(): ClearableStorageLike | null {
   try {
     return typeof window === 'undefined' ? null : window.sessionStorage
   } catch {

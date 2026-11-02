@@ -28,7 +28,12 @@ import {
   isSubmitterBusy,
   type SubmitLatch,
 } from '@/lib/auth/submit-latch'
-import { browserSessionStorage, readSavedEmail, saveEmail } from '@/lib/auth/saved-email'
+import {
+  browserSessionStorage,
+  clearSavedEmail,
+  readSavedEmail,
+  saveEmail,
+} from '@/lib/auth/saved-email'
 
 // NOTE: nothing in this 'use client' file may be CALLED by page.tsx (a server
 // component); page.tsx may only render the components exported here. Pure
@@ -194,6 +199,20 @@ export function EmailInput({ className }: { className?: string }) {
       className={className}
     />
   )
+}
+
+// Rendered on the CODE step only (review round 2, N1). Once a code has been
+// sent (or the have-code path taken) the saved address has done its job, so it
+// is dropped on mount: a later /login in the same tab (e.g. after a sign-out on
+// a shared computer) must not show the previous PM's address. The email step
+// never renders this, so the rate-limit error path still restores the address.
+// The hidden marker element exists only so the wiring is visible in the server
+// HTML (a node-env test cannot run the effect); it has no text and no layout.
+export function ClearSavedEmailOnMount() {
+  useEffect(() => {
+    clearSavedEmail(browserSessionStorage())
+  }, [])
+  return <span hidden aria-hidden="true" data-clear-saved-email="" />
 }
 
 function PendingWatcher({ onPending }: { onPending: (pending: boolean) => void }) {

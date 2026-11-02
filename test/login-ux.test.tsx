@@ -438,6 +438,28 @@ describe('T-UX-12: the email step still renders the same email field (section 14
   })
 })
 
+describe('T-UX-15 (render part): the code step clears the saved email, the email step does not (review round 2, N1)', () => {
+  const MARKER = 'data-clear-saved-email'
+
+  it('the code step HTML includes the clearing component (marker attribute), hidden and textless', async () => {
+    const html = await renderLogin({ step: 'code', email: 'ux-test@example.com' })
+    expect(html).toContain(MARKER)
+    const marker = html.match(/<span[^>]*data-clear-saved-email[^>]*>/)?.[0] ?? ''
+    expect(marker).toContain('hidden')
+    expect(html).toContain('<span hidden="" aria-hidden="true" data-clear-saved-email=""></span>')
+  })
+
+  it('also present after a WRONG_CODE redirect', async () => {
+    const html = await renderLogin({ step: 'code', email: 'ux-test@example.com', error: 'WRONG_CODE' })
+    expect(html).toContain(MARKER)
+  })
+
+  it('the EMAIL step does not clear it: the rate-limit error path must still restore the address', async () => {
+    expect(await renderLogin({})).not.toContain(MARKER)
+    expect(await renderLogin({ error: 'RESEND_RATE_LIMITED' })).not.toContain(MARKER)
+  })
+})
+
 describe('T-UX-5: approved strings (English approved by Aravind 2 Nov 2026; Tamil owed)', () => {
   it('the three constants exist with the exact text', () => {
     expect(authCopy.emailStep.haveCodeLabel).toBe('Already have a code? Enter it here')

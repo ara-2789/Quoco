@@ -4,8 +4,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   SAVED_EMAIL_KEY,
+  clearSavedEmail,
   readSavedEmail,
   saveEmail,
+  type ClearableStorageLike,
   type StorageLike,
 } from '@/lib/auth/saved-email'
 
@@ -78,5 +80,54 @@ describe('T-UX-11: saved email helpers', () => {
     saveEmail(storage, 'nope')
     saveEmail(storage, `${'a'.repeat(250)}@b.co`)
     expect(readSavedEmail(storage)).toBe('first@example.com')
+  })
+})
+
+// T-UX-15 (labelled 15, not 14: T-UX-14 is the busy-label rule in
+// test/submit-latch.test.ts). Review round 2, N1: the saved address is dropped
+// when the code step mounts, so a later /login in the same tab (e.g. after a
+// sign-out on a shared computer) shows an empty field.
+describe('T-UX-15: clearing the saved email', () => {
+  function clearableStorage(
+    initial: Record<string, string> = {},
+  ): ClearableStorageLike & { data: Record<string, string> } {
+    const base = memoryStorage(initial)
+    return {
+      ...base,
+      removeItem: (key) => {
+        delete base.data[key]
+      },
+    }
+  }
+
+  it('save, then clear, then read returns ""', () => {
+    const storage = clearableStorage()
+    saveEmail(storage, 'ux-test@example.com')
+    expect(readSavedEmail(storage)).toBe('ux-test@example.com')
+    clearSavedEmail(storage)
+    expect(readSavedEmail(storage)).toBe('')
+    expect(Object.keys(storage.data)).toEqual([])
+  })
+
+  it('clearing an empty storage, or no storage at all, does nothing and does not throw', () => {
+    expect(() => clearSavedEmail(clearableStorage())).not.toThrow()
+    expect(() => clearSavedEmail(null)).not.toThrow()
+    expect(() => clearSavedEmail(undefined)).not.toThrow()
+  })
+
+  it('a storage whose removeItem THROWS: clear does not throw', () => {
+    const throwing: ClearableStorageLike = {
+      ...throwingStorage,
+      removeItem: () => {
+        throw new Error('SecurityError: storage blocked')
+      },
+    }
+    expect(() => clearSavedEmail(throwing)).not.toThrow()
+  })
+
+  it('clear removes only its own key', () => {
+    const storage = clearableStorage({ [SAVED_EMAIL_KEY]: 'ux-test@example.com', other: 'keep' })
+    clearSavedEmail(storage)
+    expect(storage.data).toEqual({ other: 'keep' })
   })
 })

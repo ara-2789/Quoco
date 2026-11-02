@@ -9,6 +9,7 @@ import {
   SubmitButton,
   HaveCodeButton,
   EmailInput,
+  ClearSavedEmailOnMount,
 } from './pending-controls'
 import { loginFormKey } from '@/lib/auth/login-form-key'
 
@@ -233,6 +234,9 @@ export default async function LoginPage({
 
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+        {/* Client component, rendered as JSX only: drops the saved email now
+            that a code has been sent (the email step's restore is unaffected). */}
+        <ClearSavedEmailOnMount />
         <h2 className="text-xl font-semibold text-gray-900 mb-1">{codeStep.heading}</h2>
         <p className="text-gray-700 text-sm mb-6">{codeStep.body.replace('{email}', email)}</p>
 

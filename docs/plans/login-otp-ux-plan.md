@@ -143,3 +143,10 @@ U9 `test/setup/run-id.ts` globalSetup not read; assumed env-only like guard.ts. 
 - PM-visible effect: a second code email; the screen still reads "We sent a 6-digit code to {email}"; the newest code works.
 - Kept: the single code-step form from §15 (no observed harm; one form is simpler).
 - Follow-up (own PR, after merge): instrument the code step (temporary console logging of submit events, submitter, latch state, defaultPrevented, action start) on a local production build, observe, then fix. Review round 1 permits an S item to be "recorded in a dated addendum with the stated residual before merge".
+
+## 17. ADDENDUM — 2 Nov 2026, review round 2 (per Aravind)
+- Amends §16 (dated): the residual's effects also include the CORRECT-code case. Tenant user: verify lands on Today; the queued resend then sends a code email to a signed-in user, redirects to /login?step=code, and B6 bounces back to Today. No-tenant user (2 of 4 prod accounts): verify lands on /onboarding; the queued resend then pulls them onto the code screen while signed in (B6 renders the form for no-tenant users). Confusing, not harmful.
+- ~~§16 / Run 4: "The one-form design did not stop the second action"~~ 2 Nov 2026: not proven. Run 4 did not record which build the browser executed (stale :3000 listeners were seen twice this session). Re-probe with BUILD_ID and a DOM/event log: see the manual run at the final head.
+- S2 follow-up: owner Aravind, target 9 Nov 2026. Must separate H1 (stale build), H2 (taps before hydration), H3 (latch released early), per review round 2.
+- N1 fixed: the saved email is cleared when the code step mounts (no previous PM's address after sign-out on a shared laptop).
+- Backlog (not this PR): S-a wire scripts/smoke-login.sh into CI before the next login change (owner Aravind); S-b identify the Supabase project behind preview deployments and fix preview env vars (owner Aravind); N2 add a non-PII discriminator (e.g. PostgREST code) to the B6 Sentry report; N4 /onboarding has no sign-out (pre-existing; 2 no-tenant prod accounts reach it via verifyCode).
