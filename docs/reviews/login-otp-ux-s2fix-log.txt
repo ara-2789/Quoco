@@ -1,0 +1,122 @@
+### S2FIX STEP 0
+cwd /Users/aravindanrajamani/Desktop/quocoai-pm-ui; branch fix/login-otp-ux; status clean
+HEAD 15e83eaf6ad7553c78eb636aa08965b23f0e7f1d (as expected)
+lsof -ti tcp:3000 -sTCP:LISTEN -> 60579 (a LISTENER); tcp:3100 -> nothing
+STOP per instruction. Nothing was read, built, started or changed after the check.
+
+### S2FIX STEP 0 (re-check after Aravind stopped PID 60579)
+lsof 3000 LISTEN -> nothing; 3100 LISTEN -> nothing; clean; HEAD 15e83eaf6ad7553c78eb636aa08965b23f0e7f1d
+(the STOP line above is superseded)
+
+### S2FIX STEP 2: DIAGNOSIS (READ only: code at HEAD 15e83ea; nothing was run or observed)
+1. HOW THE LATCH IS "SHARED" (READ).
+   app/(auth)/login/page.tsx:248  <LatchScope key={formKey}> wraps BOTH forms (:249-271 verify LatchedForm, :273-280 resend LatchedForm, closed at :281).
+   app/(auth)/login/pending-controls.tsx:120-125  LatchScope creates ONE latch (useOwnedLatch) and puts {latch,id} in React context.
+   pending-controls.tsx:186  const scope = useContext(LatchContext);  :190  const { latch, id } = scope ?? own  -> both forms use the scope's latch.
+   pending-controls.tsx:209  if (!latch.tryEnter()) event.preventDefault()   (the refusal)
+   pending-controls.tsx:110-115  useLatchHeld() reads that same latch through context -> every SubmitButton in either form is disabled while held.
+   pending-controls.tsx:192  one pending-observer PER form over the shared latch; the resend form's observer only ever sees pending=false (it never ran), so it cannot release verify's hold.
+   Conclusion by READ: the two forms share one latch object, and the JSX nesting is correct.
+2. KEYS (READ). formKey (page.tsx:208-217) is applied to the LatchScope (:248), so verify and resend are children of ONE scope instance, not separate instances. Verify's redirect to ?error=WRONG_CODE changes the key ("code||<email>" -> "code|WRONG_CODE|<email>"), so the scope REMOUNTS when the redirect commits: a fresh, free latch and enabled buttons. That is after the response, not mid-flight; a tap during flight is still on the old scope.
+3. DID THE RESEND TAP'S onSubmit RUN BEFORE THE REDIRECT? Not decidable by reading. If the resend button was disabled (latch held, pending-controls.tsx:110-115), no submit event fires at all. If it was enabled and submitted, onSubmit would call tryEnter() -> false -> preventDefault (:209), and per the reviewer's reading of react-dom 19.2.4 (round-1 review, R5(ii); NOT re-verified by me) the form-action plugin then never calls the action. By READ the observed sequence should therefore be impossible; so either the latch was NOT held / the button was NOT disabled at the moment of the resend tap, or the tap landed after the remount.
+4. HOW REACT/NEXT QUEUED IT. The Network rows list the URL the POST was sent to, and a server action is POSTed to the page's CURRENT URL when Next executes it. POST 2 showing ...&error=WRONG_CODE means it executed after verify's redirect committed. That fits an action that was CALLED at tap time and queued behind verify (Next runs server actions one after another: believed, not verified here) as well as a tap made after the remount; the rows cannot tell the two apart.
+5. WHAT IS KNOWN TO WORK. The same latch mechanism on a SINGLE form has been observed working in the browser: row 1 (double tap Send code -> one email) and row 7 (throttled double tap -> one email) in docs/reviews/login-otp-ux-manual-run.md. The failing case is the only one with two forms (two <form> elements, two useFormStatus, two host transitions) sharing a latch through context.
+6. RELEASE PATHS I CHECKED (READ): observer true->false (:163-169 + createPendingObserver), unmount cleanup (useOwnedLatch effect), 20 s safety timer (submit-latch.ts). None of them can fire within ~1 s of the tap on the code step.
+VERDICT: the root cause is NOT PROVEN by reading. The shared-latch design is correct on paper and the code has no path I can point to that releases it early. What differs from the passing case is the two-form arrangement, which the requested fix removes: ONE form, ONE latch, ONE useFormStatus, with Sign in and Send a new code as submitters (formAction). No smaller, clearly correct fix is visible, so I am building the requested one, and the retest must discriminate (see report).
+
+### S2FIX CONTROL C13 (T-UX-13, old two-form layout: resend submitter moved into a second LatchedForm)
+HEAD 15e83eaf6ad7553c78eb636aa08965b23f0e7f1d (uncommitted tree)
+mutated app/(auth)/login/page.tsx sha256 d6a4c5d6ba3269de52a06ae0620e85e5aaa0efd470864da30a8b9ea9f1069bfa
+FAIL  test/login-ux.test.tsx > T-UX-13: the code step is ONE form with two submitters (S2) > exactly ONE <form>; it holds the code input, a Sign in submit and a Send a new code submit
+AssertionError: expected 2 to be 1 // Object.is equality
+(2 failed | 3 passed | 27 skipped: the two form-count rows)
+restored sha256 6fd4ec2c725d527fa32f75ecfd1534861f04de7eb277467b821e4a7ca5a25771 == pre-control
+
+### S2FIX CONTROL C10 (T-UX-10, decideSubmit never refuses)
+HEAD 15e83eaf6ad7553c78eb636aa08965b23f0e7f1d (uncommitted tree)
+mutated lib/auth/submit-latch.ts sha256 9a32fb8dd45daeff735bb900dd570e8163433aecabf2dfc1b6d9646506f5d157
+FAIL  test/submit-latch.test.ts > T-UX-10: one form, one latch, two submitters (S2) > a second submit from EITHER submitter is refused while the first is held
+AssertionError: expected allow to be refuse // Object.is equality
+(3 failed | 13 skipped: all three T-UX-10 rows)
+restored sha256 013ead1db0b6fdeb6c84afc9852e057e436e1d86dc205e394be613b1214324c2 == pre-control
+
+### S2FIX CONTROL C14 (T-UX-14, isSubmitterBusy ignores which button started the send)
+HEAD 15e83eaf6ad7553c78eb636aa08965b23f0e7f1d (uncommitted tree)
+mutated lib/auth/submit-latch.ts sha256 50dc5d212d9a761d8d30ef2a017705cb93f0bc6fcbdbba82bca8c60fe4256e13
+FAIL  test/submit-latch.test.ts > T-UX-14: which button shows the busy label (S2) > Sign in started the send (no submit id, so active is null): Send a new code is only disabled, not busy
+AssertionError: expected true to be false // Object.is equality
+(1 failed | 3 passed | 12 skipped)
+restored sha256 013ead1db0b6fdeb6c84afc9852e057e436e1d86dc205e394be613b1214324c2 == pre-control; pending-controls.tsx 09404444... and page.tsx 6fd4ec2c... also == pre-control
+
+### S2FIX STEP 3-4: BUILD, TESTS, STATIC CHECKS, SMOKE (tree on top of HEAD 15e83ea, uncommitted)
+changes: app/(auth)/login/page.tsx (code step = ONE LatchedForm; Sign in and Send a new code are SubmitButtons with formAction={verifyCode}/{resendCode}; resend formNoValidate + submitId="resend"; LatchScope import dropped), app/(auth)/login/pending-controls.tsx (LatchScope DELETED; LatchedForm owns its latch + active-submitter state and uses decideSubmit; SubmitButton shows its busy label only if it started the send, via isSubmitterBusy; SubmitButtonView gained submitId/formAction/formNoValidate), lib/auth/submit-latch.ts (decideSubmit, isSubmitterBusy added; nothing removed), test/submit-latch.test.ts, test/login-ux.test.tsx.
+sha256 (final): submit-latch.ts 013ead1db0b6fdeb6c84afc9852e057e436e1d86dc205e394be613b1214324c2 | pending-controls.tsx 0940444419152d56935c1e4533ba4bcc70926ed4b8449e0bc464e6fc4ae46976 | page.tsx 6fd4ec2c725d527fa32f75ecfd1534861f04de7eb277467b821e4a7ca5a25771
+BUSY LABEL: which button is pending is tracked by minimal state in LatchedForm: onSubmit records the submitter's data-submit-id (only the resend button has one) when the latch is taken; "Send a new code" shows codeStep.resendBusyLabel only if held AND it is the recorded submitter; every button is disabled while held. Sign in has no busy label, so it is only disabled. No new user-facing text.
+$ npx vitest run test/submit-latch.test.ts test/login-ux.test.tsx test/auth-copy.test.ts test/saved-email.test.ts -> Test Files 4 passed (4), Tests 76 passed (76)  (login-ux 32, submit-latch 16, saved-email 7, auth-copy 21)   [test/login-otp.test.ts NOT run: touches test-db]
+$ npx tsc --noEmit -> exit=0, no output
+$ npm run lint -> exit=0; "317 problems (0 errors, 317 warnings)" (same count as before); scoped eslint on app/(auth)/login, lib/auth, test/login-ux.test.tsx, test/submit-latch.test.ts, test/saved-email.test.ts -> exit=0, no output
+$ npm run check:profile-lookups -> exit=0 | lint:migrations -> exit=0 (clean, 107 exempted) | lint:filesize -> exit=0 (clean, 199 files) | lint:fixture-literals -> exit=0 (clean, 9 retired literals, 0 stragglers)   (every lint:* and check:* script was run)
+$ scripts/smoke-login.sh (sha256 1bfcc38a5045288cd9d134be610e38f8d52175ec2c5fdd15749c9f716cdfe2ba) -> exit=0
+200 http://localhost:3100/login                                                      'Application error': not found | 'Sign in to Quoco': found
+200 http://localhost:3100/login?error=RESEND_RATE_LIMITED                            'Application error': not found | 'Sign in to Quoco': found
+200 http://localhost:3100/login?error=NOT_A_REAL_KEY                                 'Application error': not found | 'Sign in to Quoco': found | 'NOT_A_REAL_KEY' absent from visible markup: absent
+200 http://localhost:3100/login?step=code&email=smoke%40example.com                  'Application error': not found | 'Enter your code': found
+200 http://localhost:3100/login?step=code&email=smoke%40example.com&error=WRONG_CODE 'Application error': not found | 'Enter your code': found
+== RESULT: PASS ; port 3100 after the run: no listener.
+
+### S2FIX: REAL PRODUCTION-BUILD HTML OF THE CODE STEP (one GET of /login?step=code&email=probe%40example.com on the built tree; <script> blocks stripped; server stopped afterwards)
+forms: 1
+<form class="space-y-4" data-latch-key="code||probe@example.com" data-latch-id="_R_4av5uivb_" action="" encType="multipart/form-data" method="POST">
+button 1 (Sign in): type=submit ... name="$ACTION_ID_404028e9414f6dddce458d1bb539ff7eae7ba176e4" formAction="" formEncType="multipart/form-data" formMethod="POST"
+button 2 (Send a new code): type=submit ... data-submit-id="resend" formNoValidate="" name="$ACTION_ID_40220a1f8bd3a35e893f6aa33dfd0187402855055b" formAction="" formEncType="multipart/form-data" formMethod="POST"  >Send a new code</button>
+inputs: hidden name="$ACTION_ID_404028e9..." (the form's own action = verifyCode, same id as the Sign in button) ; hidden name="email" ; id="code" required maxLength=6
+Reading: one form; the two submitters carry DIFFERENT server-action ids (404028e9... vs 40220a1f...), i.e. the resend button posts resendCode and Sign in posts verifyCode; the resend button has formNoValidate. This is the no-JS shape; the JS path (React submitter formAction) was not exercised here.
+
+### S2FIX STEP 5: PROOFS (staged tree, on top of 15e83ea; compared with origin/main 408a35c)
+$ git diff --cached --name-only origin/main   (cumulative PR file list, every file)
+app/(auth)/login/page.tsx
+app/(auth)/login/pending-controls.tsx
+docs/plans/login-otp-ux-plan.md
+docs/reviews/login-otp-ux-build-log-round2.txt
+docs/reviews/login-otp-ux-build-log.txt
+docs/reviews/login-otp-ux-crashfix-log.txt
+docs/reviews/login-otp-ux-email-keep-log.txt
+docs/reviews/login-otp-ux-manual-run.md
+docs/reviews/login-otp-ux-review-round-1.md
+lib/auth/copy.ts
+lib/auth/login-form-key.ts
+lib/auth/saved-email.ts
+lib/auth/submit-latch.ts
+scripts/smoke-login.sh
+test/login-otp.test.ts
+test/login-ux.test.tsx
+test/saved-email.test.ts
+test/submit-latch.test.ts
+
+$ git diff --cached origin/main --stat -- proxy.ts 'app/(auth)/auth/callback/route.ts' 'app/(auth)/layout.tsx' 'app/(dashboard)' 'app/(onboarding)' lib/auth/profile.ts lib/auth/profile-query.ts lib/supabase   -> (empty)
+
+$ name-based sha256 of the nine page.tsx blocks + pre-LoginPage region (staged page.tsx):
+d4e1591683e7369ae3d7c265d5c48e867b0b3f32fbde5fbad4630d56d092dc9d ERROR_MESSAGES
+5ea578828fc0cdcc66382d1372696bb00f8424aa26b3232b960148eb5f60e547 errorMessageFor
+9efa543d26a3037baf0fcd556e74a5e5a68f17ba1d32a551d055d0479f015a1f HTML5_EMAIL_RE
+6dcbefe9393642b7adbd0ad429595658f344d5f3e4f1adcc567f097fbb212651 isValidEmail
+e462ceeb4d04468f78a64ceecf17af256ba411272f8e45a20102198ea69f3bd8 requestErrorKey
+aa9ae18415a1a068dac0e0121e6b1a9fcd0bd581bdfddb450cc56c1f2c73d50c verifyErrorKey
+63e1ad092cbe7ca4bcc94cd6519c62c0bc7e9fa5ff77166816d5c626d08c93b3 requestCode
+bc7a1cdd63c4a032d5f1d9c1fd96ac64e3647cc2f65563fc92ec0a1d6b0619c1 resendCode
+ea3c8ab4502c47351c2263938dcccaf5861b09ad5f6aa853491557acc3ef717d verifyCode
+03395c8ca64baad9b90970129e99f6ac4393e7eef7c88db58b3fb889ec0f4581 PRE-LOGINPAGE
+diff against the origin/main list -> IDENTICAL (all 9 blocks + region). verifyCode and resendCode are only passed as formAction props; they are not edited.
+$ git diff -U0 --cached origin/main -- page.tsx | grep '^@@' (first hunk = import lines only, the only change before LoginPage):
+@@ -5,0 +6,8 @@ import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
+@@ -158,0 +167,51 @@ export default async function LoginPage({
+docs: manual-run.md and plan appended (append-only, 0 removed lines each)
+
+### S2FIX NOTES
+1. THE ROOT CAUSE IS NOT PROVEN (see the step 2 diagnosis). This change removes the one structural difference between the case seen working (single email-step form, rows 1 and 7) and the case seen failing (two forms sharing a latch through context). It is a fix by construction, not a fix for an identified fault. If the retest still fails, the cause is NOT the two-form arrangement and the next step is to observe the DOM (is the resend button disabled at the moment of the tap? does onSubmit run?), not to change the design again.
+2. RETEST THAT CANNOT BE MASKED (recommended): the earlier row 6 passed at ba3dd3d only because Supabase's 60 s per-address cooldown stopped the resend. To avoid both the cooldown and any real email, use an address that does NOT exist, for example /login?step=code&email=s2probe%40example.com (valid format, no account): Sign in with 000000 ends at error=WRONG_CODE; a resend of that address ends at error=UNKNOWN_EMAIL ("We could not find that email") and sends NOTHING. With DevTools throttled to 3G: type 000000, tap Sign in, then tap Send a new code within 1 s. PASS = exactly ONE server-action POST and the final URL ends error=WRONG_CODE. FAIL = a second POST, or a final URL ending error=UNKNOWN_EMAIL (the resend action ran). Also: while Sign in is pending both buttons must look disabled, and Send a new code must NOT show "Sending code…".
+3. NOT EXERCISED: the JavaScript path (React using each submitter's formAction function, preventDefault from onSubmit, useFormStatus across the redirect). Unit tests cover the decision functions and the server HTML; the real production HTML shape is recorded above; the browser behaviour is the manual retest.
+4. test/login-otp.test.ts NOT run (touches test-db; held by the backend). Unchanged in this commit.
+5. Smoke gate is signed-out/server-side only: it proves /login still renders (and now that the one-form code step renders 200 with server-action formAction props in a real build), not the latch.
+6. LatchScope was DELETED (no longer used anywhere); the earlier T-UX-10 render rows (two forms share a latch id) were replaced by T-UX-13 (exactly one form) and the T-UX-10 decision rows; T-UX-8's code-step expectation changed from two data-latch-key attributes to one.
+7. The log copy committed as docs/reviews/login-otp-ux-s2fix-log.txt is a byte copy of this file as of the commit (it cannot contain its own commit SHA; the pushed head SHA is in the report).

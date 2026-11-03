@@ -1,0 +1,93 @@
+### EMAIL-KEEP STEP 0
+cwd /Users/aravindanrajamani/Desktop/quocoai-pm-ui; branch fix/login-otp-ux; status clean
+HEAD ba3dd3d30405ed9414b55ca73da9fb669d5728d1 (as expected); remote head identical
+lsof -ti tcp:3000 -sTCP:LISTEN -> 59246 (a LISTENER); tcp:3100 -> nothing
+lib/auth/saved-email.ts: does not exist
+git log --grep=email origin/main..HEAD: one hit, 946d22e (its message mentions the email only in the B2/S4 context, not keeping the typed email) -> no earlier email-keep commit
+STOP per instruction (3000 is occupied). Nothing was built, started or changed.
+
+### EMAIL-KEEP STEP 0 (re-check after Aravind stopped PID 59246)
+lsof -ti tcp:3000 -sTCP:LISTEN -> (nothing); tcp:3100 -> (nothing); status clean; HEAD ba3dd3d30405ed9414b55ca73da9fb669d5728d1
+(the STOP line above is superseded by this re-check)
+
+### EMAIL-KEEP CONTROL A (T-UX-11, readSavedEmail ignores storage)
+HEAD ba3dd3d30405ed9414b55ca73da9fb669d5728d1 (uncommitted tree)
+mutated lib/auth/saved-email.ts sha256 3a084650edc6604b3b99f7048aca92a1eb2e0c9e78198c8900a0b9c5936fd659
+FAIL  test/saved-email.test.ts > T-UX-11: saved email helpers > save then read returns the TRIMMED email
+AssertionError: expected "" to be "ux-test+tag@example.com" // Object.is equality
+(3 failed | 4 passed: the three rows that need a real read)
+restored sha256 f2757355111e49edc1280cda2859d6f909627847c1f5b3fb19d16c48216b3e06 == pre-control
+
+### EMAIL-KEEP CONTROL B (T-UX-12, EmailInput without `required`)
+HEAD ba3dd3d30405ed9414b55ca73da9fb669d5728d1 (uncommitted tree)
+mutated app/(auth)/login/pending-controls.tsx sha256 42cc93cbb1e06bc82f32669b45dceb1d2f4d609362c457be9609db0625c1dcb0
+FAIL  test/login-ux.test.tsx > T-UX-12: the email step still renders the same email field (section 14) > input id=email name=email type=email required autocomplete=email, placeholder kept, empty, and the have-code GET button after Send code
+AssertionError: expected (input id=email type=email autoco...) to match /\srequired(=""|\s|\/|>)/
+(1 failed | 2 passed | 25 skipped)
+restored sha256 73d6e7717d809e1c996397ea679331ce0a591d2f974cc272ee106e8e58edb14e == pre-control
+
+### EMAIL-KEEP STEP 3-4: TESTS, STATIC CHECKS, SMOKE GATE (tree on top of HEAD ba3dd3d, uncommitted)
+new files: lib/auth/saved-email.ts sha256 f2757355111e49edc1280cda2859d6f909627847c1f5b3fb19d16c48216b3e06 (plain module: no use client, no React import); test/saved-email.test.ts
+changed: app/(auth)/login/pending-controls.tsx sha256 73d6e7717d809e1c996397ea679331ce0a591d2f974cc272ee106e8e58edb14e (EmailInput component; rememberEmail prop; save in onSubmit before the latch decision, for BOTH submitters); app/(auth)/login/page.tsx sha256 9221a8506f786dca58254f6e645ccf6b8e3b642fa313e1e6ec5ce7781893d6d1 (<EmailInput/> JSX in place of the plain <input>; rememberEmail on the requestCode LatchedForm; import)
+AUDIT: page.tsx takes LatchedForm, LatchScope, SubmitButton, HaveCodeButton, EmailInput from the client module: all five used ONLY as JSX. Its single function call into project helpers is loginFormKey (plain module lib/auth/login-form-key.ts). saveEmail/readSavedEmail/browserSessionStorage are not referenced in page.tsx.
+$ npx vitest run test/submit-latch.test.ts test/login-ux.test.tsx test/auth-copy.test.ts test/saved-email.test.ts -> Test Files 4 passed (4), Tests 66 passed (66)  (login-ux 28, submit-latch 10, saved-email 7, auth-copy 21)   [test/login-otp.test.ts NOT run: touches test-db]
+$ npx tsc --noEmit -> exit=0, no output
+$ npm run lint -> exit=0; "317 problems (0 errors, 317 warnings)" (same count as before); scoped eslint on app/(auth)/login, lib/auth, test/login-ux.test.tsx, test/saved-email.test.ts, test/submit-latch.test.ts -> exit=0, no output
+$ npm run check:profile-lookups -> exit=0 (guard OK)
+$ npm run lint:migrations -> exit=0 (migration-lint: clean. 107 known violation(s), all exempted.)
+$ npm run lint:filesize -> exit=0 (clean, 198 files checked, no hard failures)
+$ npm run lint:fixture-literals -> exit=0 (clean, 9 retired literal(s), 0 stragglers)
+(every lint:* and check:* script in package.json was run)
+$ scripts/smoke-login.sh (sha256 1bfcc38a5045288cd9d134be610e38f8d52175ec2c5fdd15749c9f716cdfe2ba) -> exit=0
+200 http://localhost:3100/login                                                      'Application error': not found | 'Sign in to Quoco': found
+200 http://localhost:3100/login?error=RESEND_RATE_LIMITED                            'Application error': not found | 'Sign in to Quoco': found
+200 http://localhost:3100/login?error=NOT_A_REAL_KEY                                 'Application error': not found | 'Sign in to Quoco': found | 'NOT_A_REAL_KEY' absent from visible markup: absent
+200 http://localhost:3100/login?step=code&email=smoke%40example.com                  'Application error': not found | 'Enter your code': found
+200 http://localhost:3100/login?step=code&email=smoke%40example.com&error=WRONG_CODE 'Application error': not found | 'Enter your code': found
+== RESULT: PASS
+port 3100 after the run: no listener.
+
+### EMAIL-KEEP STEP 5: PROOFS (staged tree, on top of b1ed980..ba3dd3d; compared with origin/main 408a35c)
+$ git diff --cached --name-only origin/main   (cumulative PR file list, every file)
+app/(auth)/login/page.tsx
+app/(auth)/login/pending-controls.tsx
+docs/plans/login-otp-ux-plan.md
+docs/reviews/login-otp-ux-build-log-round2.txt
+docs/reviews/login-otp-ux-build-log.txt
+docs/reviews/login-otp-ux-crashfix-log.txt
+docs/reviews/login-otp-ux-review-round-1.md
+lib/auth/copy.ts
+lib/auth/login-form-key.ts
+lib/auth/saved-email.ts
+lib/auth/submit-latch.ts
+scripts/smoke-login.sh
+test/login-otp.test.ts
+test/login-ux.test.tsx
+test/saved-email.test.ts
+test/submit-latch.test.ts
+
+$ git diff --cached origin/main --stat -- proxy.ts 'app/(auth)/auth/callback/route.ts' 'app/(auth)/layout.tsx' 'app/(dashboard)' 'app/(onboarding)' lib/auth/profile.ts lib/auth/profile-query.ts lib/supabase   -> (empty)
+
+$ name-based sha256 of the nine page.tsx blocks + pre-LoginPage region (staged page.tsx):
+d4e1591683e7369ae3d7c265d5c48e867b0b3f32fbde5fbad4630d56d092dc9d ERROR_MESSAGES
+5ea578828fc0cdcc66382d1372696bb00f8424aa26b3232b960148eb5f60e547 errorMessageFor
+9efa543d26a3037baf0fcd556e74a5e5a68f17ba1d32a551d055d0479f015a1f HTML5_EMAIL_RE
+6dcbefe9393642b7adbd0ad429595658f344d5f3e4f1adcc567f097fbb212651 isValidEmail
+e462ceeb4d04468f78a64ceecf17af256ba411272f8e45a20102198ea69f3bd8 requestErrorKey
+aa9ae18415a1a068dac0e0121e6b1a9fcd0bd581bdfddb450cc56c1f2c73d50c verifyErrorKey
+63e1ad092cbe7ca4bcc94cd6519c62c0bc7e9fa5ff77166816d5c626d08c93b3 requestCode
+bc7a1cdd63c4a032d5f1d9c1fd96ac64e3647cc2f65563fc92ec0a1d6b0619c1 resendCode
+ea3c8ab4502c47351c2263938dcccaf5861b09ad5f6aa853491557acc3ef717d verifyCode
+03395c8ca64baad9b90970129e99f6ac4393e7eef7c88db58b3fb889ec0f4581 PRE-LOGINPAGE
+diff against the origin/main list -> IDENTICAL (all 9 blocks + region)
+$ git diff -U0 --cached origin/main -- page.tsx | grep '^@@' (first hunk = import lines only, the only change before LoginPage):
+@@ -5,0 +6,9 @@ import { emailStep, codeStep, errors as errorCopy } from '@/lib/auth/copy'
+@@ -158,0 +168,51 @@ export default async function LoginPage({
+
+### EMAIL-KEEP NOTES
+1. NOT unit-testable in this repo (node env, no jsdom): the EmailInput mount effect (reads sessionStorage into the empty field) and the save inside onSubmit (reads the field, writes sessionStorage). The pure helpers (T-UX-11) and the server HTML (T-UX-12: same attributes, empty value) are tested; the browser behaviour is a MANUAL check: with a rate-limited Send code, the field must come back filled, and "Already have a code? Enter it here" must navigate without the "Please fill in this field." message.
+2. The smoke gate is signed-out/server-side only: it proves /login still renders (the crash class of ba3dd3d), not the restore itself.
+3. test/login-otp.test.ts NOT run (test-db held by the backend). Unchanged in this commit.
+4. Privacy: the address lives in sessionStorage (tab-scoped, cleared when the tab closes), key quoco.login.email, written only from the email form's submit. It is never put in the URL, a cookie, a request other than the form's own, or any message. On a shared computer it persists until the tab closes; a different PM signing in on the same tab after a failed attempt would see the previous address pre-filled in the email field.
+5. Edge: the restore skips a field the browser already autofilled (non-empty on mount). The have-code GET button, like Send code, saves before navigating (its submit event fires), so a have-code click also remembers the address.
+6. The log copy committed as docs/reviews/login-otp-ux-email-keep-log.txt is a byte copy of this file as of the commit (it cannot contain its own commit SHA; the pushed head SHA is in the report).

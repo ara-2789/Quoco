@@ -47,6 +47,15 @@ import * as authCopy from '@/lib/auth/copy'
 // an unrecognised ?error= value, which never invokes profileForAuthId (that
 // only runs inside the verifyCode Server Action, never during render).
 vi.mock('@/lib/auth/profile', () => ({ profileForAuthId: vi.fn() }))
+// Review round 1, S4: LoginPage's B6 check calls createClient().auth.getUser().
+// Mocked so T-OTP-07/08 take the "no session" path on purpose, instead of
+// passing only because the real createClient() throws outside a request scope
+// and B6's catch swallows it.
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: vi.fn(async () => ({
+    auth: { getUser: async () => ({ data: { user: null } }) },
+  })),
+}))
 import LoginPage from '@/app/(auth)/login/page'
 
 function serviceClient(): SupabaseClient {

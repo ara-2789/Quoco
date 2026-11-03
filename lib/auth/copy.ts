@@ -24,6 +24,10 @@ export const emailStep = {
   heading: 'Sign in to Quoco',
   body: 'Enter your email and we will send you a 6-digit code.',
   submitLabel: 'Send code',
+  // English approved by Aravind 2 Nov 2026; Tamil owed
+  haveCodeLabel: 'Already have a code? Enter it here',
+  // English approved by Aravind 2 Nov 2026; Tamil owed
+  submitBusyLabel: 'Sending code…',
 } as const
 
 export const codeStep = {
@@ -33,6 +37,8 @@ export const codeStep = {
   submitLabel: 'Sign in',
   resendLabel: 'Send a new code',
   startOverLabel: 'Use a different email',
+  // English approved by Aravind 2 Nov 2026; Tamil owed
+  resendBusyLabel: 'Sending code…',
 } as const
 
 export const errors = {
