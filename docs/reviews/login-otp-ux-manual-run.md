@@ -30,3 +30,15 @@ Environment: local production build (`npm run build && npm start`) on Aravind's 
 - Network (filter "login"): document 200; then TWO server-action fetches, 303 (2.10 s) and 303 (2.09 s). Final URL: /login?step=code&email=s2probe%40example.com&error=UNKNOWN_EMAIL = resendCode ran. FAIL.
 - The one-form design (plan §15) did not stop the second action. Root cause unknown (code reading in docs/reviews/login-otp-ux-s2fix-log.txt found none).
 - Evidence the email-step guard works: Run 1 row 1 (double tap Send code) ended on the code step; a second action would have redirected to /login?error=RESEND_RATE_LIMITED.
+
+## Run 5 — head d484fb935b738125a6aa3e03e5c37cbc9c7d73bc (per Aravind, 2 Nov 2026, 22:30–22:37 IST)
+Local production build via scripts/login-manual-check.sh against prod Supabase. .next/BUILD_ID = nzjMEyP6Z_hPoIai6w6OW; served page BUILD_ID MATCH (script output pasted in chat).
+All PASS, per Aravind (no screenshots):
+1. Double tap Send code -> one email, code screen.
+2. Wrong code 000000 -> wrong-code message; correct code -> Today.
+3. Sign out -> /login email field empty (N1).
+4. Rate limit -> email kept -> have-code -> code screen -> sign in -> Today.
+5. Send a new code with empty code field -> exactly one email.
+Not captured: the have-code URL (review round 2 N3).
+Review condition 2 (S2 probe with logger): not run; moved to the S2 follow-up (owner Aravind, by 9 Nov 2026, plan §17).
+Also posted as a comment on PR #350.
