@@ -5,4 +5,8 @@
 - Shipped: B1 tap latch + busy labels (email step), B3, B4 "Already have a code? Enter it here" (GET), B6 signed-in redirect for users WITH a tenant only, typed email kept after an error (cleared when the code step mounts), crash fix (loginFormKey), Sentry report on the B6 lookup catch. Strings approved 2 Nov (English); Tamil owed.
 - Known residuals: S2 (resend during a pending Sign in can still run; owner Aravind, target 9 Nov 2026, plan §16–§17); pre-hydration double tap; 20 s slow-action release edge; have-code URL carries Next's hidden $ACTION_* fields.
 - Backlog (plan §17): wire scripts/smoke-login.sh into CI; identify the Supabase project behind preview deployments; non-PII discriminator in the B6 Sentry report; /onboarding has no sign-out (2 no-tenant prod accounts).
-- OWED: production sign-in after merge (merge protocol) — to be recorded by Aravind as a comment on this docs PR: deploy of 5e8e014 Ready, sign-in by code works, seconds from Sign in to Today.
+- ~~OWED: production sign-in after merge (merge protocol) — to be recorded by Aravind as a comment on this docs PR: deploy of 5e8e014 Ready, sign-in by code works, seconds from Sign in to Today.~~ 3 Nov 2026: recorded below.
+
+## PRODUCTION SIGN-IN AFTER MERGE (per Aravind, 3 Nov 2026, ~14:00 IST)
+- Signed in on app.quoco.co.in with an emailed code after the 5e8e014 deploy. Sign-in worked and landed on Today.
+- Speed: "very quick, did not notice any lag" (Aravind's words; not timed). Functions run in syd1 next to the database since 2 Nov.
