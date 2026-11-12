@@ -1,0 +1,9 @@
+manual-run environment, written by scripts/login-manual-check.sh
+when:            2026-11-12 14:58:31 +0530
+HEAD:            3e378e187bb87c412fc1e12b639781ba35a202af
+git status:      clean
+.next/BUILD_ID:  JrDWZU6aPjVNFyweEY5k5
+served BUILD_ID: JrDWZU6aPjVNFyweEY5k5
+served-match:    MATCH
+server PID:      95036 (listening on :3000; PID file /tmp/quoco/manual-run-server.pid)
+pattern:         \\"b\\":\\"([A-Za-z0-9_-]+)\\"

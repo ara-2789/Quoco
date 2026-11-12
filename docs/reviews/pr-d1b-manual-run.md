@@ -143,3 +143,23 @@ delivery `06b89cbc-f2bf-4380-a212-323cd0e19bf6` is `awaiting_pm`, `cancel_reason
     before and after. The fake is a stand-in for the router, so the real behaviour is re-checked on a new build (re-run checklist R1-R6, results below once run).
 - Follow-up, out of scope: the thumbnail loads the full-size image (about 5 s on 3G).
 - Follow-up, out of scope: the browser tab title is "Create Next App" app-wide.
+
+## 4. Re-run after the hash fix (12 Nov 2026)
+
+Per Aravind, 12 Nov, against BUILD_ID `JrDWZU6aPjVNFyweEY5k5` at `3e378e1` (local production build against prod, `scripts/login-manual-check.sh`,
+served-match MATCH). Same test delivery `b9995385-c2da-476b-9cec-fa4ab989fdd9`.
+
+| Check | Result |
+|-------|--------|
+| R1 repro: open, Back, Forward, Close, change DC no., Save details | PASS: the URL does not end in `#photo-` |
+| R2 Back closes and stays on the page; Forward reopens; Close closes | PASS |
+| R3 Esc closes; focus returns to the thumbnail | PASS |
+| R4 Rotate x4 returns to start, no new request | PASS |
+| R5 Reload while open: overlay stays closed, no `#photo-` in the URL | PASS. The Back-press count was NOT recorded |
+| R6 Prod row after save | `awaiting_pm`, vehicle `Test-veh1`, dc_number `test DC3`, dc_date null, delivery_type `supplier`. Vehicle PRESERVED |
+
+Hash finding: CLOSED by `d9ad29f` (positive control RED at `d9ad29f`; `viewer-logic.ts` sha256 `d39fee15d92102b3ce96309739caa0ca94c91622802bc0de99f91bd16465b85b`
+before = after).
+
+Note: the first-run results (section 3) were taken at `c94b421`, before the fix. The fix changes only the history calls in `file-viewer.tsx` /
+`viewer-logic.ts`; R1-R6 re-cover every check those calls affect.

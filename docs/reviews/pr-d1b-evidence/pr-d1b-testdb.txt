@@ -1,0 +1,5 @@
+SUPABASE_TEST_URL host = exfccwlrhoutkgrlikod.supabase.co
+NEXT_PUBLIC_SUPABASE_URL host = <unset>
+SUPABASE_URL host = <unset>
+service-role key set = false anon key set = false
+P1: only .env.test loaded (vitest.config.ts:9), globalSetup guard.ts+run-id.ts, no setupFiles. P2: 2 hits, both comments in test/helpers/db.ts:27-28. P3 hosts above.
