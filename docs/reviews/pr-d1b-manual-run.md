@@ -135,5 +135,11 @@ delivery `06b89cbc-f2bf-4380-a212-323cd0e19bf6` is `awaiting_pm`, `cancel_reason
     `__NA`, else sync `canonicalUrl`). Assert that after open and after close `canonicalUrl` equals the fake's real URL, and that a simulated router refresh
     (`replaceState(canonicalUrl)`) leaves the URL unchanged. Positive control: put `window.history.state` back as the data argument; the assertion must go RED.
     Re-run the manual checks 7 and (c) after the fix (a new build).
+  - **FIX APPLIED (commit `d9ad29f`, 12 Nov): the three history calls moved into `viewer-logic.ts` (`pushViewerEntry`, `clearViewerHash`,
+    `stripViewerHashOnMount`, `closeViewerEntry`) and pass `null` as data.** Test `test/pm-viewer-history.test.ts` (fake of Next 16.2.11's patch, rules
+    quoted in its header): after open, Back, Forward, Close and a simulated router refresh the real URL equals the router's URL and no `#photo-` is left; a
+    refresh while open keeps the hash; mount strips a leftover hash. Positive control: `history.state` (an object with `__NA: true`) put back as data in the
+    three calls; 4 of 5 tests went RED, including the repro; restored, `viewer-logic.ts` sha256 `d39fee15d92102b3ce96309739caa0ca94c91622802bc0de99f91bd16465b85b`
+    before and after. The fake is a stand-in for the router, so the real behaviour is re-checked on a new build (re-run checklist R1-R6, results below once run).
 - Follow-up, out of scope: the thumbnail loads the full-size image (about 5 s on 3G).
 - Follow-up, out of scope: the browser tab title is "Create Next App" app-wide.
