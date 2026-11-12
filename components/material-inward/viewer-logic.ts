@@ -33,3 +33,52 @@ export function nextRotation(deg: number): number {
 export function isViewableImage(f: Pick<PmFileItem, 'display' | 'contentType' | 'previewState'>): boolean {
   return f.display === 'stored' && (f.contentType ?? '').startsWith('image/') && f.previewState !== 'not_previewable'
 }
+
+// ---- history calls (PR-D1b, fix for the leftover #photo hash)
+//
+// Next 16.2.11 patches window.history.pushState / replaceState (node_modules/next/dist/client/components/app-router.js:252-276). A call whose
+// data carries Next's own marker (`__NA` / `_N`, which is what `window.history.state` holds) is passed straight through and the router is NOT
+// told about the new URL (:255, :271). A call with any other data (null) reaches applyUrlFromHistoryPushReplace(url) (:237-247), which keeps the
+// router's canonicalUrl equal to the real URL. The router rewrites the URL from its canonicalUrl on every state change (:64-66, e.g. after a server
+// action), so the viewer must always use the second kind: data is null in all three calls below, never window.history.state.
+
+export interface HistoryLike {
+  pushState(data: unknown, unused: string, url?: string | null): void
+  replaceState(data: unknown, unused: string, url?: string | null): void
+  back(): void
+}
+export interface LocationLike {
+  pathname: string
+  search: string
+  hash: string
+}
+
+/** Open: one new entry whose URL carries the viewer hash. */
+export function pushViewerEntry(history: HistoryLike, fileId: string): void {
+  history.pushState(null, '', viewerHash(fileId))
+}
+
+/** The current entry's URL without the hash (no new entry). */
+export function clearViewerHash(history: HistoryLike, location: Pick<LocationLike, 'pathname' | 'search'>): void {
+  history.replaceState(null, '', location.pathname + location.search)
+}
+
+/** Mount: a leftover viewer hash (a reload while open, a pasted link) is stripped, never opened. Returns whether it stripped one. */
+export function stripViewerHashOnMount(history: HistoryLike, location: LocationLike): boolean {
+  if (!isViewerHash(location.hash)) return false
+  clearViewerHash(history, location)
+  return true
+}
+
+/**
+ * Close / Esc. history.back() only when THIS document pushed the entry ('back': the popstate listener then closes the overlay);
+ * otherwise the hash is cleared in place ('cleared': the caller closes the overlay itself).
+ */
+export function closeViewerEntry(history: HistoryLike, location: LocationLike, pushedByThisDocument: boolean): 'back' | 'cleared' {
+  if (pushedByThisDocument) {
+    history.back()
+    return 'back'
+  }
+  clearViewerHash(history, location)
+  return 'cleared'
+}

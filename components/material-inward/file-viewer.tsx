@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PM_FILE_PREVIEW_ALT, PM_VIEWER_CLOSE, PM_VIEWER_ROTATE } from '@/lib/capture/pm-copy'
-import { isViewerHash, nextRotation, parseViewerHash, viewerHash } from './viewer-logic'
+import { closeViewerEntry, nextRotation, parseViewerHash, pushViewerEntry, stripViewerHashOnMount } from './viewer-logic'
 
 // PR-D1b photo viewer for ONE stored image: a thumbnail button, and a full-screen overlay in the same tab.
 //
@@ -66,9 +66,7 @@ export function FileImage({ fileId }: { fileId: string }) {
 
   // R3: a leftover viewer hash on load is cleared, never opened.
   useEffect(() => {
-    if (isViewerHash(window.location.hash)) {
-      window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
-    }
+    stripViewerHashOnMount(window.history, window.location)
   }, [])
 
   // Back / Forward: open exactly when the hash names this file.
@@ -92,7 +90,7 @@ export function FileImage({ fileId }: { fileId: string }) {
   }, [open])
 
   const openViewer = useCallback(() => {
-    window.history.pushState(window.history.state, '', viewerHash(fileId))
+    pushViewerEntry(window.history, fileId)
     pushed.current = true
     setRotation(0)
     setOpen(true)
@@ -100,12 +98,8 @@ export function FileImage({ fileId }: { fileId: string }) {
 
   const closeViewer = useCallback(() => {
     setRotation(0)
-    if (pushed.current) {
-      window.history.back() // popstate -> sync() closes it
-    } else {
-      window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
-      setOpen(false)
-    }
+    // 'back': the popstate listener (sync) closes the overlay. 'cleared': the hash was removed in place, so close it here.
+    if (closeViewerEntry(window.history, window.location, pushed.current) === 'cleared') setOpen(false)
   }, [])
 
   return (
