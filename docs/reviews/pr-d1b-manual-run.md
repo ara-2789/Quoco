@@ -57,7 +57,8 @@ next keeps the stored vehicle` in `test/pm-actions.test.ts`: JSON status `passed
 
 ## 2. Manual run (local production build against prod)
 
-Status at build time: NOT RUN. It needs a signed-in session, which only Aravind can provide (OTP).
+Status: RUN on 12 Nov by Aravind; results in section 3. (At build time it was NOT RUN: it needs a signed-in session, which only Aravind can provide.)
+The table below is the checklist as planned; section 3 is the record.
 
 Start with `scripts/login-manual-check.sh`, unchanged: clean HEAD, `npm run build`, `npm start -p 3000`, served BUILD_ID must equal
 `.next/BUILD_ID` (written to `/tmp/quoco/manual-run-env.txt`). Paste that file into the result below. Approve and Reject are NOT exercised on prod.
@@ -77,3 +78,62 @@ Start with `scripts/login-manual-check.sh`, unchanged: clean HEAD, `npm run buil
 | 11 | Hydrated DOM after opening the overlay: `document.documentElement.outerHTML` contains none of `token=`, `supabase.co`, `/storage/v1`; `img.currentSrc` is still the route path | |
 | 12 | Next 16 router: opening the overlay (pushState) and Back do not trigger a route navigation or a re-render of the page data | |
 | 13 | Android: a real handset Back gesture (emulation cannot show it) | |
+
+## 3. Manual run results (12 Nov 2026)
+
+All results are per Aravind, 12 Nov, from screenshots, against BUILD_ID `B9tAt1Q_eg5nNdKj8hU9Y` at `c94b421` (local production build against prod,
+`scripts/login-manual-check.sh`, served-match MATCH). Test delivery `b9995385-c2da-476b-9cec-fa4ab989fdd9`. "Before" on prod (Aravind, 12 Nov 11:24):
+`awaiting_pm`, vehicle `Test-veh1`, dc_number null, dc_date null, delivery_type `internal_transfer`.
+
+| Check | Result |
+|-------|--------|
+| (a) Pre-condition: save form visible, at least one thumbnail | PASS (form visible, one photo thumbnail) |
+| Page load requests | One `/api/capture-files/<id>` 302 per thumbnail, then one storage jpeg (156 kB, about 5.2 s on DevTools 3G). Opening the overlay: no new request |
+| Layout | 394 px and 725 px: stacked (photo above form). Full desktop width: side by side |
+| Open | Same tab; URL gains `#photo-<id>` |
+| (g) Hydrated DOM | `outerHTML.match(/token=\|supabase\.co\|\/storage\/v1/g)` returned `null`. `dialog img` `currentSrc` = `http://localhost:3000/api/capture-files/6e229d28-4792-45fd-be2f-c1293f082967` |
+| 5 Rotate x4 | PASS (returns to start, no new request) |
+| 6 Esc / Close / focus | PASS |
+| 7 Back closes and stays on the page; Forward reopens | PASS |
+| 8 Approve / Reject disabled while DC no. is unsaved, enabled after clearing | PASS |
+| (c)/(d) Save and vehicle | Prod row after save: `awaiting_pm`, vehicle `Test-veh1`, dc_number `test DC1`, dc_date null, delivery_type `supplier`. Vehicle PRESERVED |
+| (e) Picker label | "31 Oct 2026, 12:29 pm · Vikram Rao · Matches" and "31 Oct 2026, 11:53 am · Vikram Rao · Matches" |
+| 10 Failed image | `GET /api/capture-files/00000000-0000-4000-8000-000000000000` returned 404 (observed). The on-screen look was NOT recorded |
+| 14 Reload while open | Overlay did not reopen; URL has no `#photo-<id>`. The Back-press count was NOT recorded |
+| 12 Router | No `?_rsc` request for the detail page on open/close. The `material-inward?_rsc=` requests are for the LIST page (Link prefetch of "Back to Material Inward"). INFERRED from screenshots, not traced |
+| 13 PDF | NOT COVERED |
+| Android handset Back | DEFERRED to the post-deploy prod check |
+
+Out of the checklist: Aravind linked and unlinked an invoice on the test delivery and reported pass. Prod state after (SQL on prod): one `pm_manual`
+link to invoice `3bf3f3e7-b343-4f3a-a40c-5c745163acd9`, `linked_at` 2026-11-12 09:05:24Z, `unlinked_at` 2026-11-12 09:05:35Z. The invoice's automatic
+delivery `06b89cbc-f2bf-4380-a212-323cd0e19bf6` is `awaiting_pm`, `cancel_reason` null. No residual change.
+
+### Findings
+
+- **OPEN: the hash stays in the URL with the overlay closed after "Save details".** Observed (screenshots): after Save details the overlay is closed but
+  the URL still ends in `#photo-6e229d28-4792-45fd-be2f-c1293f082967`; after a reload the hash is gone and the overlay stays closed.
+  Diagnosis below is READ, NOT OBSERVED (no fix applied; a code change would void this run).
+  - Our code (`components/material-inward/file-viewer.tsx`) calls `window.history.pushState(window.history.state, '', viewerHash(fileId))` on open (`:95`),
+    `window.history.replaceState(window.history.state, '', <path+search>)` on close when it did not push (`:106`) and on mount (`:70`). It passes the CURRENT
+    history state, which Next's router owns and which carries `__NA: true`.
+  - Next 16.2.11 (`node_modules/next/dist/client/components/app-router.js`): the patched `pushState` / `replaceState` do `if (data?.__NA || data?._N) { return
+    originalPushState(data, _unused, url) }` (`:255`, `:271`), i.e. the router is NOT told about the new URL. Only calls without `__NA` reach
+    `applyUrlFromHistoryPushReplace(url)` (`:237-247`), which updates the router's `canonicalUrl`. Separately, on every router state change (a server action with
+    `revalidatePath` is one) the router runs `window.history.replaceState(historyState, '', canonicalUrl)` (`:64-66`), re-applying ITS URL.
+  - The path that matches the screenshots (the checklist order): Back (overlay closes) then Forward (Next's popstate handler takes `window.location.href`,
+    hash included, as `canonicalUrl`; our `sync()` reopens, `pushed.current` is false) then Close (`closeViewer` takes the `replaceState` branch with an
+    `__NA` state, so the URL becomes clean but the router's `canonicalUrl` still has the hash) then Save details (server action, router refresh, `:64-66`
+    writes `canonicalUrl` back) gives hash set, overlay closed.
+  - User-visible effect: a URL with `#photo-<id>` and nothing open; the first Back press goes to the previous same-URL entry with no visible change, so one
+    extra Back press is needed to leave the page. A reload clears it (the mount effect, R3).
+  - Same root cause, second symptom (inferred, not observed): Save details while the overlay is OPEN makes the router rewrite the URL without the hash while
+    the overlay stays open; Close then calls `history.back()` (`pushed.current` is true) and leaves the page.
+  - Smallest fix (NOT applied): pass `null`, not `window.history.state`, in those three calls, so the router's patch runs `applyUrlFromHistoryPushReplace`
+    and its `canonicalUrl` always equals the real URL (Next copies its own internal state onto the new entry itself, `copyNextJsInternalHistoryState`).
+  - Test that would catch it, with a positive control: move the three history calls behind functions that take a history-like object (in
+    `components/material-inward/viewer-logic.ts`) and test them in node against a fake that reproduces the router's patch above (bypass when the data carries
+    `__NA`, else sync `canonicalUrl`). Assert that after open and after close `canonicalUrl` equals the fake's real URL, and that a simulated router refresh
+    (`replaceState(canonicalUrl)`) leaves the URL unchanged. Positive control: put `window.history.state` back as the data argument; the assertion must go RED.
+    Re-run the manual checks 7 and (c) after the fix (a new build).
+- Follow-up, out of scope: the thumbnail loads the full-size image (about 5 s on 3G).
+- Follow-up, out of scope: the browser tab title is "Create Next App" app-wide.
