@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useContext, useState, useTransition } from 'react'
+import { DetailsDirtyContext } from '@/components/material-inward/details-dirty'
 import { approveDeliveryAction, rejectDeliveryAction } from './actions'
 import type { PmActionResult } from '@/lib/capture/pm-errors'
 import {
@@ -21,6 +22,9 @@ import {
 
 export function DecisionControls({ deliveryId, hasStoredFile }: { deliveryId: string; hasStoredFile: boolean }) {
   const [isPending, startTransition] = useTransition()
+  // R1: unsaved edits in the details form disable both buttons (label unchanged).
+  const dirty = useContext(DetailsDirtyContext)
+  const blocked = isPending || dirty
   const [error, setError] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   // A rejection is final (nothing leaves 'rejected', 050:523-524), so the button asks twice.
@@ -45,7 +49,7 @@ export function DecisionControls({ deliveryId, hasStoredFile }: { deliveryId: st
         {!hasStoredFile && <p className="text-sm text-amber-800">{PM_WARN_APPROVE_NO_FILE}</p>}
         <button
           type="button"
-          disabled={isPending}
+          disabled={blocked}
           onClick={() => run(() => approveDeliveryAction(deliveryId))}
           className="inline-flex w-fit items-center justify-center rounded-md bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
         >
@@ -66,7 +70,7 @@ export function DecisionControls({ deliveryId, hasStoredFile }: { deliveryId: st
         />
         <button
           type="button"
-          disabled={isPending}
+          disabled={blocked}
           onClick={() => {
             if (!confirmingReject) {
               setConfirmingReject(true)

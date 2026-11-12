@@ -27,7 +27,7 @@ import { isProjectPm } from '@/lib/auth/is-project-pm'
 /** Same string as CAPTURE_BUCKET in lib/media/capture-ingest.ts (the writer). Not imported: that module pulls the
  *  Twilio send path into this route. test/pm-file-route.test.ts asserts the two are equal. */
 export const PM_CAPTURE_BUCKET = 'capture-documents'
-/** D1: 60 s. Minted on click only, never on render. */
+// D1: 60 s. Minted on render for image thumbnails (PR-D1b, a dated reversal of D1 per Aravind, 12 Nov), on click for Open/Download.
 export const PM_FILE_URL_TTL_SECONDS = 60
 export const PM_FILE_RATE_LIMIT_MAX_REQUESTS = 120
 export const PM_FILE_RATE_LIMIT_WINDOW_MS = 60_000

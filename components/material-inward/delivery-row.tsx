@@ -6,7 +6,6 @@ import {
   PM_FIELD_ACK,
   PM_FIELD_ENGINEER,
   PM_FIELD_FILES,
-  PM_FIELD_VEHICLE,
   PM_KIND_DC,
   PM_KIND_INVOICE,
   PM_LABEL_CANCELLED_REASON,
@@ -31,11 +30,6 @@ export function DeliveryRow({ item }: { item: PmListItem }) {
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-700">
           {item.dcNumber && <span>{item.dcNumber}</span>}
-          {item.vehicleNumber && (
-            <span>
-              {PM_FIELD_VEHICLE} {item.vehicleNumber}
-            </span>
-          )}
           <span>
             {PM_FIELD_ENGINEER} {item.engineerName ?? '—'}
           </span>
