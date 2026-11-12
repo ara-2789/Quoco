@@ -129,9 +129,9 @@ export const PM_ERR_REJECT_REASON = 'Write a reason for rejecting, up to 1000 ch
 export const PM_ERR_INVALID_INPUT = 'Some details are not valid. Check them and try again.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_ERR_ALREADY_LINKED = 'This DC already has an invoice linked.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_ERR_SELF_LINK_FIXED = 'An invoice\'s link to its own delivery cannot be removed.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
-export const PM_ERR_RETYPE_LINKED = 'Unlink the invoice before you change this to an internal transfer.' // Proposed English, NOT approved (word swap of the 2 Nov text). Tamil owed, NOT approved.
-export const PM_ERR_RETYPE_AUTOMATIC = 'A delivery created from an invoice cannot be an internal transfer.' // Proposed English, NOT approved (word swap of the 2 Nov text). Tamil owed, NOT approved.
-export const PM_ERR_LINK_TARGET_INELIGIBLE = 'This DC cannot take an invoice. It is an internal transfer, created from an invoice, or rejected.' // Proposed English, NOT approved (word swap of the 2 Nov text). Tamil owed, NOT approved.
+export const PM_ERR_RETYPE_LINKED = 'Unlink the invoice before you change this to an internal transfer.' // English approved (Aravind, 12 Nov; was "internal GRN" in the 2 Nov text). Tamil owed.
+export const PM_ERR_RETYPE_AUTOMATIC = 'A delivery created from an invoice cannot be an internal transfer.' // English approved (Aravind, 12 Nov; was "internal GRN" in the 2 Nov text). Tamil owed.
+export const PM_ERR_LINK_TARGET_INELIGIBLE = 'This DC cannot take an invoice. It is an internal transfer, created from an invoice, or rejected.' // English approved (Aravind, 12 Nov; was "internal GRN" in the 2 Nov text). Tamil owed.
 export const PM_ERR_SAVE_FAILED = 'Something went wrong and nothing was saved. Try again.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 
 /** The display-side error table: key name -> string. The name is what tests assert on; the string is the placeholder. */

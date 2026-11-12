@@ -80,16 +80,16 @@ const APPROVED: Record<string, string> = {
   PM_ERR_REJECT_REASON: "Write a reason for rejecting, up to 1000 characters.",
   PM_ERR_ALREADY_LINKED: "This DC already has an invoice linked.",
   PM_ERR_LINK_AUTO_APPROVED: "This invoice is already approved on its own, so it cannot be linked to a DC.",
-  PM_ERR_LINK_TARGET_INELIGIBLE: "This DC cannot take an invoice. It is an internal transfer, created from an invoice, or rejected.", // PROPOSED, NOT approved
+  PM_ERR_LINK_TARGET_INELIGIBLE: "This DC cannot take an invoice. It is an internal transfer, created from an invoice, or rejected.", // per Aravind, 12 Nov
   PM_ERR_ALREADY_UNLINKED: "This link was already removed.",
   PM_ERR_SELF_LINK_FIXED: "An invoice's link to its own delivery cannot be removed.",
-  PM_ERR_RETYPE_LINKED: "Unlink the invoice before you change this to an internal transfer.", // PROPOSED, NOT approved
-  PM_ERR_RETYPE_AUTOMATIC: "A delivery created from an invoice cannot be an internal transfer.", // PROPOSED, NOT approved
+  PM_ERR_RETYPE_LINKED: "Unlink the invoice before you change this to an internal transfer.", // per Aravind, 12 Nov
+  PM_ERR_RETYPE_AUTOMATIC: "A delivery created from an invoice cannot be an internal transfer.", // per Aravind, 12 Nov
 }
 
 const strings = Object.entries(copy).filter(([, v]) => typeof v === 'string') as Array<[string, string]>
 
-describe('PR-D1 / PR-D1b approved English strings (Aravind, 2 and 3 Nov; the three PM_ERR_* internal-transfer strings are PROPOSED, not approved)', () => {
+describe('PR-D1 / PR-D1b approved English strings (Aravind, 2, 3 and 12 Nov)', () => {
   it('the approved list has 79 keys', () => expect(Object.keys(APPROVED)).toHaveLength(79))
 
   it('pm-copy.ts exports exactly the approved keys plus PM_PAGE_TITLE as strings: no key added, none missing', () => {

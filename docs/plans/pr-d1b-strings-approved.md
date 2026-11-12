@@ -29,19 +29,15 @@ candidate's own kind.
 `PM_FIELD_VEHICLE` ("Vehicle no.") is deleted (per Aravind, 12 Nov): the vehicle field left the form and the list. The stored value is passed
 through unchanged on every save. Git history holds the old line.
 
-## NOT approved (proposed text, Tamil owed, NOT approved)
+## Approved (per Aravind, 12 Nov 2026): the three internal-transfer error strings
 
-A word swap of the 2 Nov text ("internal GRN" to "internal transfer"). No earlier "internal transfer" wording exists in the history to restore.
-Aravind has not approved this wording.
+A word swap of the 2 Nov text ("internal GRN" to "internal transfer"); approved on 12 Nov. Tamil owed. The values did not change from the
+text proposed earlier; only their comments in `lib/capture/pm-copy.ts` changed.
 
 ```
-PM_ERR_LINK_TARGET_INELIGIBLE
-  now:      "This DC cannot take an invoice. It is an internal GRN, created from an invoice, or rejected."
-  proposed: "This DC cannot take an invoice. It is an internal transfer, created from an invoice, or rejected."
-PM_ERR_RETYPE_LINKED
-  now:      "Unlink the invoice before you change this to an internal GRN."
-  proposed: "Unlink the invoice before you change this to an internal transfer."
-PM_ERR_RETYPE_AUTOMATIC
-  now:      "A delivery created from an invoice cannot be an internal GRN."
-  proposed: "A delivery created from an invoice cannot be an internal transfer."
+PM_ERR_LINK_TARGET_INELIGIBLE = "This DC cannot take an invoice. It is an internal transfer, created from an invoice, or rejected."
+PM_ERR_RETYPE_LINKED = "Unlink the invoice before you change this to an internal transfer."
+PM_ERR_RETYPE_AUTOMATIC = "A delivery created from an invoice cannot be an internal transfer."
 ```
+Previous (2 Nov) wording, for the record: "…It is an internal GRN, created from an invoice, or rejected." / "…change this to an internal GRN." /
+"…cannot be an internal GRN."
