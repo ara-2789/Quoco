@@ -37,6 +37,24 @@ HEAD for all four: `b0a9e5add8eae1ac6b3ce2e495843725b9236ae5`. Raw output: `/tmp
 | C3 R4 tenant filter dropped on the engineer-name read | `lib/capture/pm-queries.ts` | `919bdb8456630a1465d076febb70a4d106c2dd0629d0056fa0330c1a9da4d13b` | `test/pm-engineer-names.test.ts > R4 > TENANT B's user never shows B's name to a tenant A reader`: `expected true to be false` (1 failed) |
 | C4 F1 dirty check compares raw values (no `normaliseField`) | `components/material-inward/details-next.ts` | `768a998d015f6783af6f26560d80ef091488c43e01bedcad0463b37ce57f262d` | `test/pm-d1b-ui.test.tsx > F1: a delivery with no details yet starts clean > all-null loaded values, form as first rendered: Approve and Reject are enabled` (4 failed, also 3 in `pm-d1b-pure.test.ts`) |
 
+## 1c. Test-db run (12 Nov 2026), OBSERVED
+
+Test database: project ref `exfccwlrhoutkgrlikod` (host of `SUPABASE_TEST_URL`; the repo's `test/setup/guard.ts` aborts on any other ref). Prod
+(`jvxwqignooseazzmwhvl`) was not reachable: vitest loads only `.env.test` (`vitest.config.ts:9`); `NEXT_PUBLIC_SUPABASE_URL` is unset as vitest
+sees it; the only grep hits for the prod-reaching names in the 13 files and `test/helpers/**` are two comments in `test/helpers/db.ts:27-28`.
+`supabase/.temp/project-ref` was not used for this run (per Aravind, 12 Nov; vitest does not use the CLI link).
+
+13 test-db files, one process each time, JSON reporter (`/tmp/quoco/pr-d1b-testdb.json`, `pr-d1b-testdb-baseline.json`):
+
+| Run | Tests | Passed | Failed | Skipped |
+|-----|-------|--------|--------|---------|
+| Baseline, origin/main `78ba82e` | 414 | 407 | 0 | 7 |
+| Branch, `7461cc1` | 415 | 408 | 0 | 7 |
+
+The only difference is the new test, `T-ACT-1: set details > PR-D1b VEHICLE PASS-THROUGH: saving a new DC no. and date with the form's own
+next keeps the stored vehicle` in `test/pm-actions.test.ts`: JSON status `passed`. No failure, so no flake re-run.
+`test/capture-races.test.ts` (concurrency) was NOT run: CI-only, not verified locally.
+
 ## 2. Manual run (local production build against prod)
 
 Status at build time: NOT RUN. It needs a signed-in session, which only Aravind can provide (OTP).
