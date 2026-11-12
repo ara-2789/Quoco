@@ -23,6 +23,20 @@ React preload links (read, not observed): when a page renders an `<img>`, React 
 The server-HTML test (test/pm-d1b-ui.test.tsx, F2) shows 3 images give 3 image elements and 3 such links, each pointing at the route path. They are
 React-generated for the thumbnails. Whether the browser makes one request or two per thumbnail is NOT observed; manual check 3 reads the Network panel.
 
+## 1b. Controls at b0a9e5a (12 Nov 2026)
+
+Earlier controls at 05bba02 superseded; branch history was squashed before push (12 Nov).
+
+Each control: mutate one file, run only the named test file, see RED, restore with `git checkout -- <file>`, hash after equals hash before.
+HEAD for all four: `b0a9e5add8eae1ac6b3ce2e495843725b9236ae5`. Raw output: `/tmp/quoco/pr-d1b-ctl-2.txt`.
+
+| Control | Mutated file | sha256 before = after | FAIL line (one of the failing tests) |
+|---------|--------------|-----------------------|--------------------------------------|
+| C1 T-RENDER: viewer emits a signed-URL-shaped src (x.supabase.co, token=abc) | `components/material-inward/file-viewer.tsx` | `2ac5d48b41f4540944dec6f75504dab2b149caeb503d1c54a5d74fe0239c68f5` | `test/pm-render.test.tsx > T-RENDER: no signed URL, token, storage host or optimiser path anywhere (server HTML)`: `expected '<link rel="preload" as="image" href="…' not to contain 'token='` (3 failed) |
+| C2 vehicle pass-through: `buildDetailsNext` sends `''` | `components/material-inward/details-next.ts` | `768a998d015f6783af6f26560d80ef091488c43e01bedcad0463b37ce57f262d` | `test/pm-d1b-pure.test.ts > R1 / vehicle pass-through > a delivery with no vehicle stays with no vehicle`: `expected '' to be null` (2 failed) |
+| C3 R4 tenant filter dropped on the engineer-name read | `lib/capture/pm-queries.ts` | `919bdb8456630a1465d076febb70a4d106c2dd0629d0056fa0330c1a9da4d13b` | `test/pm-engineer-names.test.ts > R4 > TENANT B's user never shows B's name to a tenant A reader`: `expected true to be false` (1 failed) |
+| C4 F1 dirty check compares raw values (no `normaliseField`) | `components/material-inward/details-next.ts` | `768a998d015f6783af6f26560d80ef091488c43e01bedcad0463b37ce57f262d` | `test/pm-d1b-ui.test.tsx > F1: a delivery with no details yet starts clean > all-null loaded values, form as first rendered: Approve and Reject are enabled` (4 failed, also 3 in `pm-d1b-pure.test.ts`) |
+
 ## 2. Manual run (local production build against prod)
 
 Status at build time: NOT RUN. It needs a signed-in session, which only Aravind can provide (OTP).
