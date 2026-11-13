@@ -12,6 +12,7 @@ components/material-inward/{detail-view,file-list,delivery-row,labels}.tsx|ts ·
 New: components/material-inward/file-viewer.tsx (client overlay) · components/material-inward/details-next.ts (pure "build next" fn, so the pass-through is testable in node) ·
 docs/plans/pr-d1b-strings-approved.md · docs/reviews/pr-d1b-latency-and-manual-run.md · tests (§9).
 Never touched: app/api/capture-files/**, lib/capture/pm-file-access.ts, lib/capture/pm-actions.ts, supabase/**, types/database.ts, package.json, next.config.ts, proxy.ts, vercel.json, decision-controls.tsx, docs/plans/pr-d1-strings-approved.md (kept as history; the new record says which keys it supersedes).
+DATED CORRECTION (13 Nov 2026, per Aravind, review round 1 N6): the "Never touched" list above is stale for two files. `decision-controls.tsx` WAS touched by R1 (it reads DetailsDirtyContext; see Revision 2 mapping). The review-round-1 S2 fix did not change it (S2 lives in detail-view.tsx and details-controls.tsx). `lib/capture/pm-file-access.ts` WAS touched, comment-only (F3, the D1 note on PM_FILE_URL_TTL_SECONDS: 60 s is now minted on render for image thumbnails, a dated reversal of D1); no code change. Struck-through text is not edited, per this project's correction discipline.
 Proof: `git diff --name-only origin/main...HEAD | sort | diff - /tmp/quoco/pr-d1b-expected-files.txt` must print nothing (the expected list is written at build time, from this section).
 
 ## 2. Behaviour, item by item

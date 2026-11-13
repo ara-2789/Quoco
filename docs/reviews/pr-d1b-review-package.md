@@ -95,3 +95,20 @@ Latency measurement (own PR); the thumbnail loads the full-size image (about 5 s
 ## 10. Post-merge checks owed
 
 Android Back on a handset; `curl -sI` of a prod page for CSP / headers; observe one thumbnail on prod (one 302 then one image).
+Added per review round 1 (per Aravind, 13 Nov): Android Back after a Forward-reopen (Back there goes through the dialog `cancel`/`close` route, not `popstate`); the first prod thumbnail makes one 302 then one image request, preload included.
+
+## 11. Review round 1 — disposition
+
+Review: `docs/reviews/pr-d1b-review-round-1.md` (verbatim, GO conditional, no blockers; reviewed head `3aed093`).
+
+- S1 (native dialog closes without React knowing): fixed (`fc4d983`), per Aravind, 13 Nov. `onClose` on the dialog runs the same close sequence as Close when React still says open; `openViewer` calls `showModal()` directly when the element exists but is closed. Pure helpers `nativeCloseOutOfSync` / `dialogNeedsShowModal` tested in node; the DOM wiring is proved by the manual S1 run, not by a test.
+- S2 (save wipes the typed reject reason): fixed (`fc4d983`), per Aravind, 13 Nov. Neither literal reviewer option fits the interleaved layout (Approve / Reject sit between the type field and "More details"), so the key is REMOVED from `DetailsControls` instead and it resets its own draft in place when `loaded` changes (D8 kept). Nothing remounts, so `DecisionControls` keeps its state. Test is structural (source check), because a remount cannot be observed in `renderToStaticMarkup`; the manual S2 run is the behavioural proof.
+- N1 (invisible reason for disabled buttons): fixed, no new string (`fc4d983`), per Aravind, 13 Nov. "More details (optional)" is opened and cannot be collapsed while it holds an unsaved DC no. / DC date edit; it is never forced closed when clean.
+- N5 (history tests model Next by hand): added (`fc4d983`), per Aravind, 13 Nov. Test asserts `package.json` `dependencies.next === "16.2.11"`, with the failure message naming R1-R3 and the fake router.
+- N2: decision, per Aravind, 13 Nov. Images no longer have an "Open" new-tab link; the full-screen viewer shows the same file with Rotate. Recorded on purpose. (PDFs are unchanged.)
+- N3: decision, per Aravind, 13 Nov. `vehicle_number` has no reader or writer in the app after this PR. Owner: Aravind. Decide in PR-D2: drop the column or restore the field.
+- N4: deferred to PR-D2, per Aravind, 13 Nov. Route `pm-queries.ts` `:197` through `readEngineerNames`. Owner: Aravind.
+- N6: done, per Aravind, 13 Nov. `docs/plans/pr-d1b-plan.md` §1 carries a dated line: `decision-controls.tsx` touched by R1 (not changed by the S2 fix); `pm-file-access.ts` comment-only change (F3, D1 note).
+- N7: decision, per Aravind, 3 Nov (recorded again 13 Nov). The picker label has no DC number; two same-day DCs from one engineer differ only by time. Recorded trade-off.
+- Post-deploy checks added (see section 10): Android Back after a Forward-reopen; first prod thumbnail makes one 302 then one image request, preload included.
+- Reviewer condition 3 (CI run confirmed green at the FINAL head SHA, not an earlier push) is OPEN until the push; nothing has been pushed in this round.
