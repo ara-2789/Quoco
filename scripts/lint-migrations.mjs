@@ -117,7 +117,7 @@
 // script's own no-file-wide-exemptions discipline, not silently excluded
 // from the scan.
 
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { join, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ruleNoAuthUidAsUsersId } from './lint-rules/no-auth-uid-as-users-id.mjs'
@@ -797,4 +797,14 @@ function main() {
 // Entry-point guard (052): lets a test import the pure rule functions without
 // running main(). Direct `node scripts/lint-migrations.mjs` runs main() as before.
 export { extractDefinedFunctionNames, ruleFunctionRedefinitionRequiresCapture }
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()
+// SQL review round 1, S-1: compare REAL paths. Node realpaths import.meta.url but not argv[1], so through a
+// symlinked directory (macOS /tmp -> /private/tmp) a plain comparison skipped main() and exited 0 silently.
+function isEntryPoint() {
+  if (!process.argv[1]) return false
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
+  } catch {
+    return false
+  }
+}
+if (isEntryPoint()) main()

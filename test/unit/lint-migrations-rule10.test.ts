@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
@@ -81,6 +83,29 @@ describe('Rule 10 — function-redefinition-requires-capture, schema-aware', () 
   it('a baseline line without the capture command still flags', () => {
     const raw = '-- body_md5 (pre-052): cecc170b26208d4b820402879e020271 h\n' + fn('private.h')
     expect(run(entry('a.sql', fn('private.h')), entry('b.sql', raw))).toHaveLength(1)
+  })
+})
+
+describe('lint-migrations entry guard (SQL review round 1, S-1)', () => {
+  it('runs main() when invoked through a symlinked directory (a gate must never be green without running)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lintlink-'))
+    try {
+      const link = join(dir, 'scripts-link')
+      symlinkSync(join(__dirname, '..', '..', 'scripts'), link)
+      let out = ''
+      let status = 0
+      try {
+        out = execFileSync('node', [join(link, 'lint-migrations.mjs')], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      } catch (e) {
+        const err = e as { stdout?: string; stderr?: string; status?: number }
+        out = `${err.stdout ?? ''}${err.stderr ?? ''}`
+        status = err.status ?? 1
+      }
+      expect(status === 0 || status === 1).toBe(true)
+      expect(out).toMatch(/^migration-lint:/m)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
