@@ -139,7 +139,7 @@ describe('T-SESS-1 / T-N2-KEY: a scheduled start over a live invoice session', (
   it('T-A27-4 a stale (expired) invoice row plus a scheduled start: the check-in starts normally, order does not matter', async () => {
     const base = noonIst()
     const phone = kit.phone('n2-stale')
-    await seedSession(kit, phone, { flow: 'invoice', step: 2, context: { mi_kind: 'dc' }, updatedAt: base, expiresAt: new Date(base.getTime() - 3600 * 1000) })
+    await seedSession(kit, phone, { flow: 'invoice', step: 2, context: {}, updatedAt: base, expiresAt: new Date(base.getTime() - 3600 * 1000) })
     const r = await morning(phone, '', true, new Date(base.getTime() + 60 * 1000))
     expect(r).toMatchObject({ outcome: 'start', current_flow: 'morning' })
   })
@@ -233,7 +233,7 @@ describe('A27 interactions with the other flows (SQL halves; the router half is 
   it('T-A27-3 a stale invoice row blocks the hindrance start until expire_stale_material_inward clears it; then the hindrance flow STARTS', async () => {
     const base = noonIst()
     const phone = kit.phone('a27-3')
-    await seedSession(kit, phone, { flow: 'invoice', step: 2, context: { mi_kind: 'dc' }, updatedAt: base, expiresAt: new Date(base.getTime() - 60 * 1000) })
+    await seedSession(kit, phone, { flow: 'invoice', step: 2, context: {}, updatedAt: base, expiresAt: new Date(base.getTime() - 60 * 1000) })
     const late = new Date(base.getTime() + 60 * 1000)
     // RED / the bug N9 describes: without the clear, the hindrance start sees a live flow and re-asks
     expect((await hindrance(phone, '', true, late)).outcome).toBe('reask')
@@ -251,7 +251,7 @@ describe('A27 interactions with the other flows (SQL halves; the router half is 
   it('A27 / N9 any other flow\'s turn over an invoice row REFRESHES its expiry (why the router must call expire_stale_material_inward first)', async () => {
     const base = noonIst()
     const phone = kit.phone('a27-refresh')
-    await seedSession(kit, phone, { flow: 'invoice', step: 2, context: { mi_kind: 'dc' }, updatedAt: base, expiresAt: new Date(base.getTime() - 60 * 1000) })
+    await seedSession(kit, phone, { flow: 'invoice', step: 2, context: {}, updatedAt: base, expiresAt: new Date(base.getTime() - 60 * 1000) })
     const late = new Date(base.getTime() + 60 * 1000)
     expect((await hindrance(phone, '', true, late)).outcome).toBe('reask')
     const s = await getSession(kit, phone)

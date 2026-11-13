@@ -18,6 +18,7 @@ import {
   linksOfDelivery,
   linksOfInvoice,
   makeDoc,
+  makeUnclassifiedDoc,
   miTurnRaw,
   noonIst,
   teardownCaptureKit,
@@ -264,7 +265,6 @@ describe('engineer-side races', () => {
     for (let i = 0; i < ROUNDS; i++) {
       const phone = kit.phone(`rdupf${i}`)
       await miTurnRaw(kit, phone, '4', kit.sid(`rdupf${i}-s0`), { start: true })
-      await miTurnRaw(kit, phone, '1', kit.sid(`rdupf${i}-s1`))
       const sid = kit.sid(`rdupf${i}-s2`)
       const rs = await Promise.all([
         miTurnRaw(kit, phone, null, sid, { media: jpegMedia(1) }),
@@ -283,7 +283,6 @@ describe('engineer-side races', () => {
     for (let i = 0; i < ROUNDS; i++) {
       const phone = kit.phone(`ra27-${i}`)
       await miTurnRaw(kit, phone, '4', kit.sid(`ra27-${i}-s0`), { start: true, now: base })
-      await miTurnRaw(kit, phone, '1', kit.sid(`ra27-${i}-s1`), { now: base })
       const late = new Date(base.getTime() + 31 * 60 * 1000)
       const [t, e] = await Promise.all([
         miTurnRaw(kit, phone, null, kit.sid(`ra27-${i}-s2`), { media: jpegMedia(1), now: late }),
@@ -305,4 +304,34 @@ describe('DOWN versus a live turn', () => {
   // deadlock, SHARE ROW EXCLUSIVE does, lock_timeout 3s gives up cleanly) is recorded from two real psql sessions on the
   // local scaffold in docs/reviews/050-sql-evidence/transcripts/S5-down.txt. That is rehearsal evidence, NOT a CI result.
   it.skip(`T-DOWN-1 concurrent-turn case (needs an owner connection; see the scaffold transcript)${CI_ONLY}`, () => {})
+
+  // 052 (plan F, T-C-4): the classification is serialised by FOR UPDATE on the document row. Two callers at once: exactly one
+  // creates the delivery. NOT a forced interleaving: the rehearsal's 40 runs (docs/reviews/052-test-db-apply-record.md) always had
+  // the first-issued caller win, so which caller wins is not controlled here; the invariants below are what must hold for either.
+  it(`T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way${CI_ONLY}`, async () => {
+    const pm = await kit.jwt('pm1')
+    const deliveriesOf = async (docId: string) => {
+      const { data } = await kit.svc.from('deliveries').select('id').or(`dc_document_id.eq.${docId},created_from_invoice_id.eq.${docId}`)
+      return (data ?? []).length
+    }
+    for (let i = 0; i < ROUNDS; i++) {
+      const same = await makeUnclassifiedDoc(kit, `rc4s${i}`)
+      const rs = await raceCalls('T-C-4-same', i, [
+        ['A', () => pm.rpc('pm_classify_document', { p_document_id: same.docId, p_kind: 'dc' })],
+        ['B', () => pm.rpc('pm_classify_document', { p_document_id: same.docId, p_kind: 'dc' })],
+      ])
+      for (const r of rs) expect(r.error).toBeNull()
+      expect(rs.map((r) => (r.data as { already_classified: boolean }).already_classified).sort()).toEqual([false, true])
+      expect(await deliveriesOf(same.docId)).toBe(1)
+
+      const diff = await makeUnclassifiedDoc(kit, `rc4d${i}`)
+      const ds = await raceCalls('T-C-4-diff', i, [
+        ['dc', () => pm.rpc('pm_classify_document', { p_document_id: diff.docId, p_kind: 'dc' })],
+        ['invoice', () => pm.rpc('pm_classify_document', { p_document_id: diff.docId, p_kind: 'invoice' })],
+      ])
+      expect(ds.filter((r) => r.error === null)).toHaveLength(1)
+      expect(ds.filter((r) => r.error?.code === 'QE011')).toHaveLength(1)
+      expect(await deliveriesOf(diff.docId)).toBe(1)
+    }
+  })
 })

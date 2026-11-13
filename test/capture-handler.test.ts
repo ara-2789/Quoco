@@ -150,19 +150,15 @@ function sentryText(): string {
 const APPROVED: Record<string, string> = {
   MI_SESSION_ENDED_REPLY: 'That DC or invoice question has ended. Your answer was not recorded. Reply 4 to start again.',
   MI_MENU_LINE: 'You can send a DC or invoice — reply 4.',
-  MI_ASK_KIND: 'Is it a DC or an invoice?\nReply 1 for DC\nReply 2 for invoice',
-  MI_ASK_FILE_DC: 'Send one DC. A PDF, or photos of all its pages together.',
-  MI_ASK_FILE_INVOICE: 'Send one invoice. A PDF, or photos of all its pages together.',
-  MI_ACK_QUESTION_DC:
-    'Did the material on this DC arrive?\nReply 1 for all arrived\nReply 2 for not arrived\nReply 3 for part arrived',
-  MI_ACK_QUESTION_INVOICE:
-    'Does this invoice match the material received at site?\nReply 1 for matches\nReply 2 for does not match\nReply 3 for partly matches',
+  // 052 (plan section D): the two new texts, "Tamil owed, NOT approved"; the six kind-specific texts are retired.
+  MI_ASK_FILE: 'Send one DC or invoice. A PDF, or photos of all its pages together.',
+  MI_ACK_QUESTION:
+    'Does the material at site match this document?\nReply 1 for matches\nReply 2 for does not match\nReply 3 for partly matches',
   MI_ASK_NOTE_NO: 'What is wrong? Describe it in your own words.',
   MI_ASK_NOTE_PARTIAL: 'What is missing or different? Describe it in your own words.',
   MI_ACK_REASK: "Sorry, I didn't catch that.",
   MI_NOT_UNDERSTOOD_CLOSE: '✅ Your reply is recorded as a note. Your Project Manager will see it.',
   MI_DONE: '✅ Done. Your Project Manager will see it. To send another DC or invoice, reply 4.',
-  MI_KIND_REASK: "Sorry, I didn't catch that.",
   MI_FILE_REASK: "Sorry, I didn't get a file. Send a PDF, or photos of all its pages.",
   MI_NOTHING_RECORDED_CLOSE: 'Nothing was recorded. To send a DC or invoice, reply 4.',
   MI_UNSUPPORTED_FILE_REPLY: "This file type isn't supported. Nothing was recorded. Send a PDF or a photo instead.",
@@ -173,7 +169,7 @@ const APPROVED: Record<string, string> = {
 }
 
 describe('T-STR: approved strings, byte for byte', () => {
-  it('T-STR-1 every approved constant equals plan section 7 exactly', () => {
+  it('T-STR-1 every approved constant equals plan section 7 exactly (15 kept byte-identical; the 2 new 052 texts pinned, NOT approved)', () => {
     const mod = strings as unknown as Record<string, unknown>
     for (const [name, expected] of Object.entries(APPROVED)) {
       expect(mod[name], name).toBe(expected)
@@ -184,10 +180,14 @@ describe('T-STR: approved strings, byte for byte', () => {
     expect(strings.MI_FILE_RECEIVED(10)).toBe('✅ 10 files received.')
   })
 
-  it('T-STR-2 the module exports exactly the approved MI_* / CHECKIN_* names (21 rows) and nothing else', () => {
+  it('T-STR-2 the module exports exactly the approved MI_* / CHECKIN_* names (17 rows: 21 minus 6 retired plus 2 new, 052) and nothing else', () => {
     const exported = Object.keys(strings).filter((k) => /^(MI_|CHECKIN_)/.test(k)).sort()
     expect(exported).toEqual([...Object.keys(APPROVED), 'MI_FILE_RECEIVED'].sort())
-    expect(exported).toHaveLength(21)
+    expect(exported).toHaveLength(17)
+    // control: the six retired names are really gone
+    for (const gone of ['MI_ASK_KIND', 'MI_KIND_REASK', 'MI_ASK_FILE_DC', 'MI_ASK_FILE_INVOICE', 'MI_ACK_QUESTION_DC', 'MI_ACK_QUESTION_INVOICE']) {
+      expect(exported).not.toContain(gone)
+    }
   })
 
   it('menu: buildIdleMenu / buildIdleReply never contain MI_MENU_LINE (the idle menu is untouched until C6)', () => {
@@ -208,38 +208,35 @@ describe('T-STR: approved strings, byte for byte', () => {
 // ---------------------------------------------------------------------------
 
 describe('outcome map (real RPC, real router)', () => {
-  it('DC conversation: kind re-ask, kind, file re-ask, 2 photos, 1 more photo, ack re-ask, unclear close', async () => {
+  it('conversation: file re-ask, 2 photos, 1 more photo, ack re-ask, unclear close (052: no kind turn)', async () => {
     const phone = await startSession('map-dc')
     const { client } = spyClient()
     const docs0 = await docCount()
     const files0 = await fileCount()
 
-    expect((await say(phone, 'hello', client)).reply).toBe([strings.MI_KIND_REASK, strings.MI_ASK_KIND].join('\n'))
-    expect((await say(phone, '1', client)).reply).toBe(strings.MI_ASK_FILE_DC)
     expect((await say(phone, 'no file here', client)).reply).toBe(strings.MI_FILE_REASK)
 
     const two = await say(phone, '', client, 2)
-    expect(two.reply).toBe([strings.MI_FILE_RECEIVED(2), strings.MI_ACK_QUESTION_DC].join('\n'))
+    expect(two.reply).toBe([strings.MI_FILE_RECEIVED(2), strings.MI_ACK_QUESTION].join('\n'))
     expect(two.resolvedFlow).toBe('invoice')
     expect(await docCount()).toBe(docs0 + 1)
     expect(await fileCount()).toBe(files0 + 2)
 
     // further file at step 3: file line + the same prompt again (decision Q4)
     const more = await say(phone, '', client, 1)
-    expect(more.reply).toBe([strings.MI_FILE_RECEIVED(1), strings.MI_ACK_QUESTION_DC].join('\n'))
+    expect(more.reply).toBe([strings.MI_FILE_RECEIVED(1), strings.MI_ACK_QUESTION].join('\n'))
     expect(await docCount()).toBe(docs0 + 1)
     expect(await fileCount()).toBe(files0 + 3)
 
-    expect((await say(phone, 'x', client)).reply).toBe([strings.MI_ACK_REASK, strings.MI_ACK_QUESTION_DC].join('\n'))
+    expect((await say(phone, 'x', client)).reply).toBe([strings.MI_ACK_REASK, strings.MI_ACK_QUESTION].join('\n'))
     expect((await say(phone, 'y', client)).reply).toBe(strings.MI_NOT_UNDERSTOOD_CLOSE)
     expect((await getSession(kit, phone))!.current_flow).toBeNull()
   })
 
-  it('invoice conversation: kind 2, one photo, ack 2 -> "what is wrong", a photo at the note step, the note -> done', async () => {
+  it('conversation: one photo, ack 2 -> "what is wrong", a photo at the note step, the note -> done (052: the same neutral question for any document)', async () => {
     const phone = await startSession('map-inv')
     const { client } = spyClient()
-    expect((await say(phone, '2', client)).reply).toBe(strings.MI_ASK_FILE_INVOICE)
-    expect((await say(phone, '', client, 1)).reply).toBe([strings.MI_FILE_RECEIVED(1), strings.MI_ACK_QUESTION_INVOICE].join('\n'))
+    expect((await say(phone, '', client, 1)).reply).toBe([strings.MI_FILE_RECEIVED(1), strings.MI_ACK_QUESTION].join('\n'))
     expect((await say(phone, '2', client)).reply).toBe(strings.MI_ASK_NOTE_NO)
     // file at step 4: file line + the note prompt again
     expect((await say(phone, '', client, 1)).reply).toBe([strings.MI_FILE_RECEIVED(1), strings.MI_ASK_NOTE_NO].join('\n'))
@@ -250,22 +247,20 @@ describe('outcome map (real RPC, real router)', () => {
   it('ack 3 -> "what is missing", note -> done; ack 1 -> done', async () => {
     const partial = await startSession('map-partial')
     const { client } = spyClient()
-    await say(partial, '1', client)
     await say(partial, '', client, 1)
     expect((await say(partial, '3', client)).reply).toBe(strings.MI_ASK_NOTE_PARTIAL)
     expect((await say(partial, 'short by ten', client)).reply).toBe(strings.MI_DONE)
 
     const yes = await startSession('map-yes')
-    await say(yes, '1', client)
     await say(yes, '', client, 1)
     expect((await say(yes, '1', client)).reply).toBe(strings.MI_DONE)
   })
 
-  it('two misses at step 1 close the flow with nothing recorded', async () => {
+  it('two misses at the file step close the flow with nothing recorded (052: step 1 is retired)', async () => {
     const phone = await startSession('map-closed')
     const { client } = spyClient()
     const docs0 = await docCount()
-    expect((await say(phone, 'a', client)).reply).toBe([strings.MI_KIND_REASK, strings.MI_ASK_KIND].join('\n'))
+    expect((await say(phone, 'a', client)).reply).toBe(strings.MI_FILE_REASK)
     expect((await say(phone, 'b', client)).reply).toBe(strings.MI_NOTHING_RECORDED_CLOSE)
     expect((await getSession(kit, phone))!.current_flow).toBeNull()
     expect(await docCount()).toBe(docs0)
@@ -276,14 +271,13 @@ describe('outcome map (real RPC, real router)', () => {
     const { client } = spyClient()
     const sid = await consumedSid('dup')
     const first = await say(phone, 'hello', client, 0, tick(), sid)
-    expect(first.reply).toBe([strings.MI_KIND_REASK, strings.MI_ASK_KIND].join('\n'))
+    expect(first.reply).toBe(strings.MI_FILE_REASK)
     const second = await say(phone, 'hello', client, 0, tick(), sid)
     expect(second.reply).toBe('')
   })
 
   it('files present but none usable: MI_UNSUPPORTED_FILE_REPLY, the RPC is not called', async () => {
     const phone = await startSession('map-nofile')
-    await miTurn(kit, phone, '1', kit.sid('c4a-nofile-kind'), { now: tick() })
     const { client, calls } = spyClient()
     const r = await routeInboundMessage({
       phoneNumber: phone,
@@ -357,9 +351,8 @@ describe('S-F-1: record and alert on a failed file turn', () => {
     name === 'apply_material_inward_turn' ? { data: null, error: { code, message: FAILING_MESSAGE, details: '', hint: '', name: 'PostgrestError' } } : undefined
 
   async function atStep2(label: string): Promise<string> {
-    const phone = await startSession(label)
-    await miTurn(kit, phone, '1', kit.sid(`c4a-${label}-kind`), { now: tick() })
-    return phone
+    // 052: the start lands on the file step; there is no kind turn
+    return startSession(label)
   }
 
   it('T-SF-1 a failing RPC on a photo: MI_CAPTURE_FAILED_REPLY, one counts-only Sentry error, no phone/URL/body/ids anywhere', async () => {
@@ -397,22 +390,30 @@ describe('S-F-1: record and alert on a failed file turn', () => {
     }
   })
 
+  // 052 (meaning kept, mechanism changed): the post-RPC read that used to fail here was the session read of the kind, which no
+  // longer exists. The post-RPC read that remains in a file turn is the document read of the ack at step 4 (the note prompt).
   it('T-SF-1c a failing post-RPC read (after the RPC committed) is inside the same catch', async () => {
     const phone = await atStep2('sf-1c')
-    let sessionReads = 0
+    const { client: ok } = spyClient()
+    await say(phone, '', ok, 1) // file -> step 3
+    expect((await say(phone, '2', ok)).reply).toBe(strings.MI_ASK_NOTE_NO) // ack "no" -> step 4
     const failingChain = {
       select: () => failingChain,
       eq: () => failingChain,
       maybeSingle: async () => ({ data: null, error: { code: '57014', message: 'canceling statement' } }),
     }
-    // read 1 is the router's routing read; read 2 is the handler's kind read
-    const { client } = spyClient(undefined, (table) => (table === 'whatsapp_sessions' && ++sessionReads === 2 ? failingChain : undefined))
-    const docs0 = await docCount()
-    const r = await say(phone, '', client, 1)
+    const { client } = spyClient(undefined, (table) => (table === 'capture_documents' ? failingChain : undefined))
+    const files0 = await fileCount()
+    const r = await say(phone, '', client, 1) // a file at step 4: the RPC attaches it, then the document read fails
     expect(r.reply).toBe(strings.MI_CAPTURE_FAILED_REPLY)
-    expect(await docCount()).toBe(docs0 + 1) // the RPC had committed: documented consequence of wrapping the reads (Q8)
+    expect(await fileCount()).toBe(files0 + 1) // the RPC had committed: documented consequence of wrapping the reads (Q8)
     const [, opts] = captureMessage.mock.calls[0] as [string, { extra: Record<string, unknown> }]
     expect(opts.extra).toEqual({ mediaCount: 1, contentTypes: ['image/jpeg'], errorCode: '57014' })
+    // CONTROL: the same step-4 file turn with a working read is answered with the file line and the note prompt, no event
+    captureMessage.mockClear()
+    const fine = await say(phone, '', spyClient().client, 1)
+    expect(fine.reply).toBe([strings.MI_FILE_RECEIVED(1), strings.MI_ASK_NOTE_NO].join('\n'))
+    expect(captureMessage).not.toHaveBeenCalled()
   })
 
   it('T-SF-1d a failing RPC on a TEXT turn propagates (Q6b): no S-F event, and the thrown text carries no phone, ids or provider message', async () => {
@@ -467,7 +468,7 @@ describe('S-F-1: record and alert on a failed file turn', () => {
     // CONTROL: with the SID row present the same turn is accepted and raises no event
     captureMessage.mockClear()
     const ok = await say(phone, '', client, 1)
-    expect(ok.reply).toBe([strings.MI_FILE_RECEIVED(1), strings.MI_ACK_QUESTION_DC].join('\n'))
+    expect(ok.reply).toBe([strings.MI_FILE_RECEIVED(1), strings.MI_ACK_QUESTION].join('\n'))
     expect(captureMessage).not.toHaveBeenCalled()
     expect(await docCount()).toBe(docs0 + 1)
   })
@@ -486,7 +487,7 @@ describe('T-A27-6: the RPC says expired / idle after the router read the row as 
     await seedSession(kit, phone, {
       flow: 'invoice',
       step: 3,
-      context: { mi_kind: 'dc', mi_document_id: crypto.randomUUID(), mi_last_sid: 'sid-y', mi_reask: 0 },
+      context: { mi_document_id: crypto.randomUUID(), mi_last_sid: 'sid-y', mi_reask: 0 },
       updatedAt: new Date(t.getTime() - 31 * MIN),
       expiresAt: new Date(t.getTime() - 1 * MIN),
     })
@@ -511,7 +512,7 @@ describe('T-A27-6: the RPC says expired / idle after the router read the row as 
     await seedSession(kit, phone, {
       flow: 'invoice',
       step: 3,
-      context: { mi_kind: 'dc', mi_document_id: crypto.randomUUID(), mi_last_sid: 'sid-y', mi_reask: 0 },
+      context: { mi_document_id: crypto.randomUUID(), mi_last_sid: 'sid-y', mi_reask: 0 },
       updatedAt,
       expiresAt,
     })

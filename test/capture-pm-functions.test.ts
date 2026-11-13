@@ -468,25 +468,34 @@ describe('vitest c, d, f (049 package line 267): the test-only helpers, and thei
     if (nonFixtureTenant) await kit.svc.from('tenants').delete().eq('id', nonFixtureTenant)
   })
 
-  it('c. helper insert: quoco_test_capture_insert inserts a capture_documents row for a fixture tenant and the 049 triggers still fire', async () => {
-    const { data, error } = await kit.svc.rpc('quoco_test_capture_insert', {
-      p_table: 'capture_documents',
-      p_row: { tenant_id: kit.tenantA, project_id: kit.p1, kind: 'dc', sent_by: kit.uid('eng'), source_message_sid: kit.sid('helper-c') },
-    })
+  // 052 (inventory row :471, meaning changed): an INSERT may no longer carry a kind (A4b, QE012) and received_at is NOT NULL,
+  // so the helper inserts an UNCLASSIFIED document with received_at. The refusal of a kind on INSERT is paired with the
+  // passing insert in the same test.
+  const helperDoc = (sid: string, extra: Record<string, unknown> = {}) => ({
+    tenant_id: kit.tenantA,
+    project_id: kit.p1,
+    sent_by: kit.uid('eng'),
+    source_message_sid: sid,
+    received_at: new Date(Date.now() - 3600 * 1000).toISOString(),
+    ...extra,
+  })
+
+  it('c. helper insert: quoco_test_capture_insert inserts an unclassified capture_documents row for a fixture tenant and the 049/052 triggers still fire', async () => {
+    const { data, error } = await kit.svc.rpc('quoco_test_capture_insert', { p_table: 'capture_documents', p_row: helperDoc(kit.sid('helper-c')) })
     expect(error).toBeNull()
-    expect(data).toMatchObject({ tenant_id: kit.tenantA, kind: 'dc', source_message_sid: kit.sid('helper-c') })
+    expect(data).toMatchObject({ tenant_id: kit.tenantA, kind: null, kind_source: null, source_message_sid: kit.sid('helper-c') })
     // the trigger still fires through the helper: an ack carried on INSERT is refused (F4-2 / QE012)
-    const bad = await kit.svc.rpc('quoco_test_capture_insert', {
-      p_table: 'capture_documents',
-      p_row: { tenant_id: kit.tenantA, project_id: kit.p1, kind: 'dc', sent_by: kit.uid('eng'), source_message_sid: kit.sid('helper-c-ack'), engineer_ack: 'yes' },
-    })
+    const bad = await kit.svc.rpc('quoco_test_capture_insert', { p_table: 'capture_documents', p_row: helperDoc(kit.sid('helper-c-ack'), { engineer_ack: 'yes' }) })
     expect(bad.error?.code).toBe('QE012')
+    // 052 (A4b): so does a kind carried on INSERT, even through the owner-level helper
+    const withKind = await kit.svc.rpc('quoco_test_capture_insert', { p_table: 'capture_documents', p_row: helperDoc(kit.sid('helper-c-kind'), { kind: 'dc' }) })
+    expect(withKind.error?.code).toBe('QE012')
   })
 
   it('d. tenant guard: the helper refuses a tenant that is not a zz-test-capture-* fixture tenant (insert, update and cleanup)', async () => {
     const ins = await kit.svc.rpc('quoco_test_capture_insert', {
       p_table: 'capture_documents',
-      p_row: { tenant_id: nonFixtureTenant, project_id: kit.p1, kind: 'dc', sent_by: kit.uid('eng'), source_message_sid: kit.sid('helper-d') },
+      p_row: helperDoc(kit.sid('helper-d'), { tenant_id: nonFixtureTenant }),
     })
     expect(ins.error?.message).toContain('HELPER_TENANT_NOT_FIXTURE')
     const clean = await kit.svc.rpc('quoco_test_capture_cleanup', { p_tenant_id: nonFixtureTenant })
@@ -498,12 +507,17 @@ describe('vitest c, d, f (049 package line 267): the test-only helpers, and thei
   })
 
   it('f. N-4 E12 via the helper: a delivery INSERT that is not "incomplete" / carries PM fields is refused QE012', async () => {
-    const doc = await kit.svc.rpc('quoco_test_capture_insert', {
-      p_table: 'capture_documents',
-      p_row: { tenant_id: kit.tenantA, project_id: kit.p1, kind: 'dc', sent_by: kit.uid('eng'), source_message_sid: kit.sid('helper-f') },
-    })
+    const doc = await kit.svc.rpc('quoco_test_capture_insert', { p_table: 'capture_documents', p_row: helperDoc(kit.sid('helper-f')) })
     expect(doc.error).toBeNull()
     const docId = (doc.data as { id: string }).id
+    // 052: a delivery needs a CLASSIFIED document (composite FK on kind). The owner-level helper sets the kind the one way
+    // the update trigger allows (NULL -> kind, 'pm', set_by); no delivery is created, which the real wrapper never leaves.
+    const classified = await kit.svc.rpc('quoco_test_capture_update', {
+      p_table: 'capture_documents',
+      p_id: docId,
+      p_set: { kind: 'dc', kind_source: 'pm', kind_set_by: kit.uid('pm1') },
+    })
+    expect(classified.error).toBeNull()
     const bad = await kit.svc.rpc('quoco_test_capture_insert', {
       p_table: 'deliveries',
       p_row: {

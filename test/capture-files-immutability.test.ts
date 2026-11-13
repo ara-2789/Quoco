@@ -363,23 +363,205 @@ function functionBody051(sql: string): string {
   return sql.slice(open + 2, close)
 }
 
-describe('T-D8-11 overload rule (static)', () => {
-  const texts = sqlSources().map((s) => s.text)
+// ---------------------------------------------------------------------------
+// T-D8-11, REWRITTEN for migration 052 (plan section B, "T-D8-11 (Q4, S7)"): the test used to count definitions, which cannot
+// survive the 052 DOWN files (they carry the pre-052 bodies) and the held file (a CREATE OR REPLACE). Its real purpose is the
+// OVERLOAD hazard: CREATE OR REPLACE with a changed argument list silently creates a SECOND function (CLAUDE.md section 6).
+// So it pins the NORMALISED HEADER (schema, name, argument-type list) of each 050-052 function, and asserts that EVERY
+// definition of one of these names, in ANY schema, across supabase/migrations/ and docs/reviews/*.sql, carries exactly that
+// header. The in-file pg_proc count = 1 assertion (A6 of the held file) stays the authority at apply time.
+// Body-md5 pins are dropped on purpose (they would force a re-pin on every review edit).
+// ---------------------------------------------------------------------------
 
-  it.each(NAMES_050)('exactly one definition of %s across supabase/migrations/ and docs/reviews/*.sql', (name) => {
-    expect(countDefinitions(name, texts)).toBe(1)
+// Typed from the live catalog (pg_get_function_identity_arguments, test-db, 14 Nov 2026), NOT from the SQL files; the readback
+// is docs/reviews/052-code-evidence/step6-catalog-signatures.txt.
+const HEADER_PINS: Record<string, string> = {
+  apply_material_inward_turn: 'public.apply_material_inward_turn(text, uuid, uuid, uuid, text, text, jsonb, boolean, timestamp with time zone, integer)',
+  expire_stale_material_inward: 'public.expire_stale_material_inward(text, timestamp with time zone)',
+  pm_set_delivery_details: 'public.pm_set_delivery_details(uuid, text, text, text, date)',
+  pm_approve_delivery: 'public.pm_approve_delivery(uuid)',
+  pm_reject_delivery: 'public.pm_reject_delivery(uuid, text)',
+  pm_link_invoice: 'public.pm_link_invoice(uuid, uuid[])',
+  pm_unlink_invoice: 'public.pm_unlink_invoice(uuid)',
+  trg_capture_files_before_update: 'public.trg_capture_files_before_update()',
+  trg_capture_documents_before_insert: 'public.trg_capture_documents_before_insert()',
+  trg_capture_documents_before_update: 'public.trg_capture_documents_before_update()',
+  pm_classify_document: 'public.pm_classify_document(uuid, text)',
+  capture_apply_classification: 'private.capture_apply_classification(uuid, text, uuid)',
+}
+
+// The alias table (S1): the spelled-out pg_get_functiondef text that the DOWN files carry must compare equal to the source form.
+const TYPE_ALIASES: Record<string, string> = {
+  timestamptz: 'timestamp with time zone',
+  timestamp: 'timestamp without time zone',
+  int: 'integer',
+  int4: 'integer',
+  bool: 'boolean',
+  varchar: 'character varying',
+  float8: 'double precision',
+  decimal: 'numeric',
+  char: 'character',
+  bpchar: 'character',
+}
+
+function stripSqlComments(text: string): string {
+  return text
+    .split('\n')
+    .map((l) => l.replace(/--.*$/, ''))
+    .join('\n')
+}
+
+function normaliseType(raw: string): string {
+  let t = raw.trim().toLowerCase().replace(/\s+/g, ' ').replace(/\b(public|pg_catalog)\./g, '')
+  const arr = /((?:\[\d*\])+)$/.exec(t)
+  const suffix = arr ? arr[1].replace(/\d+/g, '') : ''
+  if (arr) t = t.slice(0, t.length - arr[1].length).trim()
+  t = t.replace(/\(.*\)$/, '').trim() // a type modifier such as (12,2) or (10)
+  return `${TYPE_ALIASES[t] ?? t}${suffix}`
+}
+
+/** Split an argument list on commas that are not inside parentheses or single quotes. */
+function splitTopLevel(args: string): string[] {
+  const out: string[] = []
+  let depth = 0
+  let quoted = false
+  let cur = ''
+  for (const ch of args) {
+    if (ch === "'") quoted = !quoted
+    if (!quoted) {
+      if (ch === '(') depth++
+      if (ch === ')') depth--
+      if (ch === ',' && depth === 0) {
+        out.push(cur)
+        cur = ''
+        continue
+      }
+    }
+    cur += ch
+  }
+  if (cur.trim() !== '') out.push(cur)
+  return out
+}
+
+/** Parameter names, modes and DEFAULT expressions dropped; aliases, case, whitespace and public./pg_catalog. normalised. */
+function normaliseArgTypes(args: string): string {
+  if (args.trim() === '') return ''
+  return splitTopLevel(args)
+    .map((p) => {
+      let q = p.trim().replace(/\s+/g, ' ').replace(/^(in|inout|variadic) /i, '')
+      q = q.replace(/\s+default\s.*$/i, '').replace(/\s*=\s.*$/, '')
+      const sp = q.indexOf(' ') // every parameter in these files is named: the first token is the name
+      return normaliseType(sp < 0 ? q : q.slice(sp + 1))
+    })
+    .join(', ')
+}
+
+interface FnHeader {
+  path: string
+  schema: string
+  name: string
+  header: string
+}
+
+/** Every CREATE [OR REPLACE] FUNCTION in the given sources, in ANY schema (an optional schema before the name is captured). */
+function functionHeaders(sources: Array<{ path: string; text: string }>): FnHeader[] {
+  const out: FnHeader[] = []
+  const re = /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:"?(\w+)"?\s*\.\s*)?"?(\w+)"?\s*\(/gi
+  for (const { path, text } of sources) {
+    const code = stripSqlComments(text)
+    let m: RegExpExecArray | null
+    while ((m = re.exec(code)) !== null) {
+      let depth = 1
+      let i = re.lastIndex
+      let quoted = false
+      const open = i
+      for (; i < code.length && depth > 0; i++) {
+        const ch = code[i]
+        if (ch === "'") quoted = !quoted
+        if (!quoted) {
+          if (ch === '(') depth++
+          if (ch === ')') depth--
+        }
+      }
+      const schema = (m[1] ?? 'public').toLowerCase()
+      const name = m[2].toLowerCase()
+      out.push({ path, schema, name, header: `${schema}.${name}(${normaliseArgTypes(code.slice(open, i - 1))})` })
+    }
+  }
+  return out
+}
+
+/** Violations: any definition of a pinned name whose normalised header differs from the pin (a second schema or argument list). */
+function headerViolations(sources: Array<{ path: string; text: string }>): string[] {
+  const out: string[] = []
+  for (const h of functionHeaders(sources)) {
+    const pin = HEADER_PINS[h.name]
+    if (pin !== undefined && h.header !== pin) out.push(`${h.path}: ${h.header} (pinned: ${pin})`)
+  }
+  return out
+}
+
+describe('T-D8-11 overload rule (static; rewritten for 052: pinned normalised headers, every schema)', () => {
+  const sources = sqlSources()
+
+  it.each(Object.keys(HEADER_PINS))('%s: at least one definition exists and every definition, in any schema, carries the pinned header', (name) => {
+    const defs = functionHeaders(sources).filter((h) => h.name === name)
+    expect(defs.length, `no definition of ${name} found in the sources`).toBeGreaterThan(0)
+    expect(defs.filter((d) => d.header !== HEADER_PINS[name]).map((d) => `${d.path}: ${d.header}`)).toEqual([])
+  })
+
+  it('the real sources have no header violation at all', () => {
+    expect(headerViolations(sources)).toEqual([])
   })
 
   it('051 adds exactly one function, and its name is not one of the seven 050 names', () => {
     expect(NAMES_050 as readonly string[]).not.toContain(NAME_051)
-    expect(countDefinitions(NAME_051, texts)).toBe(1)
+    expect(countDefinitions(NAME_051, sources.map((s) => s.text))).toBe(1)
   })
 
-  it('control: a planted second definition is counted (so a duplicate would fail the tests above)', () => {
-    const planted = 'CREATE OR REPLACE FUNCTION public.pm_approve_delivery(p_id uuid) RETURNS void LANGUAGE sql AS $$ SELECT 1 $$;'
-    expect(countDefinitions('pm_approve_delivery', [...texts, planted])).toBe(2)
-    const commentOnly = '-- CREATE FUNCTION public.pm_approve_delivery(uuid) is described here only'
-    expect(countDefinitions('pm_approve_delivery', [...texts, commentOnly])).toBe(1)
+  it('control (alias table): the spelled-out pg_get_functiondef form and the source form normalise equal', () => {
+    expect(normaliseArgTypes('p_now timestamptz DEFAULT now(), p_n int DEFAULT NULL, p_f bool, p_v varchar, p_d float8, p_c decimal, p_ts timestamp')).toBe(
+      'timestamp with time zone, integer, boolean, character varying, double precision, numeric, timestamp without time zone',
+    )
+    expect(normaliseArgTypes('p_now timestamp with time zone DEFAULT now(), p_n integer DEFAULT NULL::integer, p_m jsonb DEFAULT NULL::jsonb')).toBe(
+      'timestamp with time zone, integer, jsonb',
+    )
+    expect(normaliseArgTypes('p_ids public.uuid[], p_x pg_catalog.text')).toBe('uuid[], text')
+    expect(normaliseArgTypes('')).toBe('')
+  })
+
+  it('control (real 050 header): the spelled-out header the 052 DOWN carries for apply_material_inward_turn normalises equal to the 050 source header', () => {
+    const defs = functionHeaders(sources).filter((h) => h.name === 'apply_material_inward_turn')
+    const fromDown = defs.filter((d) => /052-down-/.test(d.path))
+    const from050 = defs.filter((d) => /050_/.test(d.path) && /supabase\/migrations/.test(d.path))
+    expect(fromDown.length, 'a 052 DOWN definition').toBeGreaterThan(0)
+    expect(from050.length, 'the 050 migration definition').toBeGreaterThan(0)
+    expect(new Set([...fromDown, ...from050].map((d) => d.header)).size).toBe(1)
+    expect(fromDown[0]!.header).toBe(HEADER_PINS.apply_material_inward_turn)
+  })
+
+  it('control: a planted overload of apply_material_inward_turn is RED', () => {
+    const planted = { path: 'docs/reviews/999_planted.sql', text: 'CREATE OR REPLACE FUNCTION public.apply_material_inward_turn(p_phone_number text, p_extra integer) RETURNS jsonb LANGUAGE sql AS $$ SELECT 1 $$;' }
+    expect(headerViolations([...sources, planted])).toHaveLength(1)
+    expect(headerViolations([...sources, planted])[0]).toContain('999_planted.sql')
+    // and the SAME header as the pin is not a violation (a plain CREATE OR REPLACE of an unchanged signature)
+    const same = { path: 'docs/reviews/999_same.sql', text: 'CREATE OR REPLACE FUNCTION public.pm_approve_delivery(p_delivery_id uuid) RETURNS void LANGUAGE sql AS $$ SELECT 1 $$;' }
+    expect(headerViolations([...sources, same])).toEqual([])
+  })
+
+  it('control (every schema): a planted stray public.capture_apply_classification and a planted second private. copy are both RED', () => {
+    const strayPublic = { path: 'docs/reviews/999_stray.sql', text: 'CREATE FUNCTION public.capture_apply_classification(p_document_id uuid, p_kind text, p_set_by uuid) RETURNS jsonb LANGUAGE sql AS $$ SELECT NULL::jsonb $$;' }
+    const secondPrivate = { path: 'docs/reviews/999_second.sql', text: 'CREATE OR REPLACE FUNCTION private.capture_apply_classification(p_document_id uuid) RETURNS jsonb LANGUAGE sql AS $$ SELECT NULL::jsonb $$;' }
+    expect(headerViolations([...sources, strayPublic]).map((v) => v.split(':')[0])).toEqual(['docs/reviews/999_stray.sql'])
+    expect(headerViolations([...sources, secondPrivate]).map((v) => v.split(':')[0])).toEqual(['docs/reviews/999_second.sql'])
+    // positive control for the same planted shapes: the legal private. definition (the pinned header) is not a violation
+    const legal = { path: 'docs/reviews/999_legal.sql', text: 'CREATE OR REPLACE FUNCTION private.capture_apply_classification(p_document_id uuid, p_kind text, p_set_by uuid) RETURNS jsonb LANGUAGE sql AS $$ SELECT NULL::jsonb $$;' }
+    expect(headerViolations([...sources, legal])).toEqual([])
+  })
+
+  it('control: a comment that names a CREATE FUNCTION is not a definition', () => {
+    const commentOnly = { path: 'docs/reviews/999_comment.sql', text: '-- CREATE FUNCTION public.pm_approve_delivery(p_other text) is described here only' }
+    expect(headerViolations([...sources, commentOnly])).toEqual([])
   })
 })
 
