@@ -1,0 +1,15 @@
+timestamp(UTC): 2026-11-13T17:09:57Z
+HEAD: 1901be540add25ebe1898f57ad00dd1eb573999c
+project-ref (supabase/.temp/project-ref of --workdir <main-checkout>): exfccwlrhoutkgrlikod
+git status --porcelain: []
+script: b2a.cjs sha256 7b6025cbebc62eba087145e4f1be934b9835af1288c5c0fc8a52e9084504037a  subcommand: setup
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+target ref (from SUPABASE_TEST_URL): exfccwlrhoutkgrlikod
+kit built: run tag f5c4d2cd-dfbe-4a59-aa43-b6d86d91a02c | tenants zz-test-capture-b2a-{a,b}-<runTag> | users engS,pm1,pm1b,admNon,pmB
+4k d1: start turn -> {"outcome":"start","delivery_id":null,"document_id":null,"current_flow":"invoice","current_step":2}
+4k d1: file turn  -> keys=[outcome,delivery_id,document_id,current_flow,current_step] document_id=present delivery_id=null
+4k d1: DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+4k d2: start turn -> {"outcome":"start","delivery_id":null,"document_id":null,"current_flow":"invoice","current_step":2}
+4k d2: file turn  -> keys=[outcome,delivery_id,document_id,current_flow,current_step] document_id=present delivery_id=null
+4k d2: DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+[exit 0]

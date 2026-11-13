@@ -1,0 +1,76 @@
+timestamp(UTC): 2026-11-13T17:11:49Z
+HEAD: 1901be540add25ebe1898f57ad00dd1eb573999c
+project-ref (supabase/.temp/project-ref of --workdir <main-checkout>): exfccwlrhoutkgrlikod
+git status --porcelain: []
+documents created for this step:
+created lockdoc: document 4b9fd3c7-e4a1-4d15-9440-3f36f6d3da3f | doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+created ctldoc: document d81b8353-8f19-4f68-b855-4281e745c4ff | doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+
+================ 5.0a POSITIVE CONTROL for the race harness: can a PostgREST call observe a lock held by ANOTHER session?
+S1 (CLI session): BEGIN; SELECT ... FOR UPDATE on ctldoc; pg_sleep(12); COMMIT.  Meanwhile the PostgREST classify call on ctldoc is issued.
+If PostgREST is served while S1 holds the lock, the call returns only after S1 commits (latency of several seconds).
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+S1 start 2026-11-13T17:11:49.618Z
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+{
+  "rows": [
+    {
+      "s1": "S1 committed (PostgREST positive control)"
+    }
+  ],
+}
+S1 end 2026-11-13T17:12:04.777Z
+PostgREST classify call issued at 2026-11-13T17:11:57.613Z
+PostgREST classify call returned at 2026-11-13T17:12:04.222Z | latency ms = 6609
+result
+    HTTP 200 | code=- | message=
+    DB after: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0
+
+================ 5.0b FOR UPDATE proof on test-db: lock modes between two separate sessions (lockdoc)
+---- CONTROL: S1 holds FOR NO KEY UPDATE; S2 FOR KEY SHARE (lock_timeout 2s) must be ACQUIRED
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+S1 start 2026-11-13T17:12:05.110Z
+S2 start 2026-11-13T17:12:12.144Z
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+{
+  "rows": [
+    {
+      "s2_acquired_for_key_share": "2026-11-13 17:12:14.67767+00"
+    }
+  ],
+}
+S2 end 2026-11-13T17:12:15.345Z [exit 0]
+{
+  "rows": [
+    {
+      "s1": "S1 committed (control)"
+    }
+  ],
+}
+S1 end 2026-11-13T17:12:20.018Z
+lockdoc after control: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+
+---- TEST: S1 classifies lockdoc as the PM (JWT claims set, role authenticated) and holds the transaction open; S2 FOR KEY SHARE must TIME OUT (55P03)
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+S1 start 2026-11-13T17:12:20.039Z
+S2 start 2026-11-13T17:12:27.061Z
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+{"_tag":"Error","error":{"code":"LegacyDbQueryUnexpectedStatusError","message":"unexpected status 400: {\"message\":\"Failed to run sql query: ERROR:  55P03: canceling statement due to lock timeout\\nCONTEXT:  while locking tuple (1,10) in relation \\\"capture_documents\\\"\\n\"}"}}
+S2 end 2026-11-13T17:12:32.400Z [exit 1]
+{
+  "rows": [
+    {
+      "s1": "S1 committed (test)"
+    }
+  ],
+}
+S1 end 2026-11-13T17:12:34.811Z
+---- S2 again AFTER S1 committed: must be acquired
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+{
+  "rows": [
+    {
+      "s2_acquired_for_key_share": "2026-11-13 17:12:37.366475+00"
+    }
+  ],
+}

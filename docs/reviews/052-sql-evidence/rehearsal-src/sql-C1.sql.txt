@@ -1,0 +1,2 @@
+SELECT (SELECT count(*) FROM public.whatsapp_sessions WHERE current_flow = 'invoice') AS invoice_sessions,
+       (SELECT count(*) FROM public.whatsapp_sessions) AS total_sessions;

@@ -1,0 +1,2 @@
+SELECT p.oid::regprocedure::text AS fn, has_function_privilege('anon',p.oid,'EXECUTE') AS anon, has_function_privilege('authenticated',p.oid,'EXECUTE') AS authenticated, has_function_privilege('service_role',p.oid,'EXECUTE') AS service_role
+  FROM pg_proc p WHERE p.proname IN ('pm_classify_document','capture_apply_classification','apply_material_inward_turn','trg_capture_documents_before_insert','trg_capture_documents_before_update') ORDER BY 1;

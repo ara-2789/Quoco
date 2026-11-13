@@ -1,0 +1,34 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+F=$OUT/step2-apply.txt
+MON=$OUT/step2-lock-monitor.txt
+ts() { perl -MTime::HiRes=time -MPOSIX -e 'my $t=time; printf "%s.%03dZ\n", strftime("%FT%T",gmtime($t)), ($t*1000)%1000'; }
+SQL=$WT/docs/reviews/052_mi_kind_deferred.sql
+cd $WT
+{
+hdr
+echo "TIME RULE: IST now = $(TZ=Asia/Kolkata date +%H:%M) (barred 08:25-08:40 and 18:25-18:40)"
+echo "CI in progress: $(gh run list --status in_progress --json databaseId --jq length) ; queued: $(gh run list --status queued --json databaseId --jq length)"
+echo "held file sha256: $(shasum -a 256 $SQL | cut -d' ' -f1) (expected 2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e)"
+if [ "$(shasum -a 256 $SQL | cut -d' ' -f1)" != "2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e" ]; then echo "STOP sha mismatch"; exit 98; fi
+Q "2-pre md5s again, same frame" $T/sql/1a.sql
+Q "2-pre invoice sessions again" $T/sql/1d.sql
+} > $F 2>&1
+grep -E "STOP|CI in progress|TIME" $F
+if grep -q "STOP" $F; then exit 98; fi
+# lock monitor: READ-ONLY, backgrounded on purpose (second connection). The apply below is foreground.
+( chkref; echo "monitor script start $(ts)"; supabase --workdir $MAIN db query --linked -f $T/sql/mon.sql 2>&1; echo "[exit $?]"; echo "monitor script end $(ts)" ) > $MON 2>&1 &
+MONPID=$!
+sleep 7
+{
+echo; echo "================ APPLY (foreground, one run) ================"
+chkref
+echo "apply start (UTC): $(ts)"
+supabase --workdir $MAIN db query --linked -f $SQL 2>&1
+RC=$?
+echo "apply end (UTC): $(ts)"
+echo "[apply exit $RC]"
+} >> $F 2>&1
+wait $MONPID
+echo "---- apply tail"; tail -40 $F
+echo "---- monitor"; grep -v -E "Initialising" $MON

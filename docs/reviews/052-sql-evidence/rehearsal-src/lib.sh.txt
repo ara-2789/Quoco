@@ -1,0 +1,9 @@
+WT=<worktree>
+MAIN=<main-checkout>
+OUT=$HOME/quoco-records/052-build/b2a
+T=$HOME/.claude/jobs/2a6b4d65/tmp
+REF=exfccwlrhoutkgrlikod
+hdr() { echo "timestamp(UTC): $(date -u +%FT%TZ)"; echo "HEAD: $(git -C $WT rev-parse HEAD)"; echo "project-ref (supabase/.temp/project-ref of --workdir $MAIN): $(cat $MAIN/supabase/.temp/project-ref)"; echo "git status --porcelain: [$(git -C $WT status --porcelain | tr '\n' ';')]"; }
+chkref() { r=$(cat $MAIN/supabase/.temp/project-ref); echo "\$ cat supabase/.temp/project-ref  -> $r"; if [ "$r" != "$REF" ]; then echo "STOP: ref mismatch"; exit 99; fi; }
+# Q label sqlfile : print SQL, run foreground via db query --linked -f, print exit
+Q() { chkref; echo "---- $1"; echo "SQL:"; cat "$2"; echo "RESULT:"; supabase --workdir $MAIN db query --linked -f "$2" 2>&1; echo "[exit $?]"; }

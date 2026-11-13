@@ -1,0 +1,4 @@
+SELECT to_regnamespace('private') IS NULL AS private_schema_absent,
+       to_regprocedure('public.pm_classify_document(uuid,text)') IS NULL AS wrapper_absent,
+       to_regprocedure('private.capture_apply_classification(uuid,text,uuid)') IS NULL AS helper_absent,
+       (SELECT count(*) FROM pg_proc WHERE proname IN ('pm_classify_document','capture_apply_classification')) AS same_name_any_schema;

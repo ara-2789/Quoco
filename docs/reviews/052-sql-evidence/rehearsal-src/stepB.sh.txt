@@ -1,0 +1,10 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+{
+hdr
+echo "Backup sha256: $(shasum -a 256 $OUT/leaked-invoice-sessions-backup.json | cut -d' ' -f1)"
+echo "Authorised per Aravind, 13 Nov 2026. Before: total sessions 654, invoice 50 (from stepA-precheck.txt)"
+Q "B delete (foreground, one run; count asserted in-block)" $T/sql/B.sql
+Q "C1 after" $T/sql/C1.sql
+} > $OUT/stepB-delete.txt 2>&1
+grep -v -E "Initialising|boundary|warning" $OUT/stepB-delete.txt

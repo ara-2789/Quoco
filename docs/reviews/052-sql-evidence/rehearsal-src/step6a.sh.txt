@@ -1,0 +1,22 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+F=$OUT/step6a-down-refused.txt
+DOWN=$WT/docs/reviews/052-down-testdb.sql
+ts() { perl -MTime::HiRes=time -MPOSIX -e 'my $t=time; printf "%s.%03dZ\n", strftime("%FT%T",gmtime($t)), ($t*1000)%1000'; }
+{
+hdr
+echo "TIME RULE: IST now = $(TZ=Asia/Kolkata date +%H:%M) (barred 08:25-08:40 and 18:25-18:40)"
+echo "DOWN sha256: $(shasum -a 256 $DOWN | cut -d' ' -f1) (expected bb21dfe0b7c358c1c36a95a3cc17d457526e9d3dd0e7580da915182cb530907f)"
+[ "$(shasum -a 256 $DOWN | cut -d' ' -f1)" = bb21dfe0b7c358c1c36a95a3cc17d457526e9d3dd0e7580da915182cb530907f ] || { echo "STOP sha mismatch"; exit 98; }
+echo "################ STATE BEFORE the DOWN (an unclassified document exists: d2 from step 4k)"
+bash $T/state.sh
+echo "################ DOWN, run 1 (foreground). Expect DOWN_PRECONDITION_052_UNCLASSIFIED and a non-zero exit."
+chkref
+echo "DOWN start $(ts)"
+supabase --workdir $MAIN db query --linked -f $DOWN 2>&1
+echo "[down exit $?]"
+echo "DOWN end $(ts)"
+echo "################ STATE AFTER the refused DOWN"
+bash $T/state.sh
+} > $F 2>&1
+grep -E "STOP|DOWN_PRECONDITION|down exit|DOWN (start|end)" $F | cut -c1-500

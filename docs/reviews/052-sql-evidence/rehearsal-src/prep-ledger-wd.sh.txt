@@ -1,0 +1,12 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+W=/tmp/quoco/cli-wd-052
+rm -rf $W
+mkdir -p $W/supabase/migrations $W/supabase/.temp
+cp $WT/docs/reviews/052_mi_kind_deferred.sql $W/supabase/migrations/052_mi_kind_deferred.sql
+cp $MAIN/supabase/.temp/project-ref $W/supabase/.temp/project-ref
+echo "workdir: $W"
+echo "project-ref in workdir: $(cat $W/supabase/.temp/project-ref)"
+echo "sha256 of the copy:     $(shasum -a 256 $W/supabase/migrations/052_mi_kind_deferred.sql | cut -d' ' -f1)"
+echo "sha256 of the held file: $(shasum -a 256 $WT/docs/reviews/052_mi_kind_deferred.sql | cut -d' ' -f1)"
+ls -R $W | head

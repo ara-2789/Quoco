@@ -1,0 +1,21 @@
+#!/bin/bash
+# readback.sh <outfile> : the step-3 read-back (also reused after DOWN / re-apply)
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+S=$T/sql
+{
+hdr
+echo "post-052 md5 expected (dryrun-r1-12): apply_material_inward_turn e32797b63fee8fceca1934be700609c3 | trg_capture_documents_before_insert 4f83a28f16956ebae830361c4f898899 | trg_capture_documents_before_update cfcd59258a5039acc395dd8136328ca5"
+echo "pre-052 md5 (step 1a):                  apply_material_inward_turn cecc170b26208d4b820402879e020271 | trg_capture_documents_before_insert b5467b20392b7e26449602acb9da2d00 | trg_capture_documents_before_update 4a7f470362e0bc7b7687737860d112f4"
+echo "pre-052 baseline: fingerprint fa50d7fd831aea1eb8f4271e3f25bac6 | comments hash 9b773b739dc533485331dd0dc2c56134"
+Q "three function md5s" $S/1a.sql
+Q "new functions (schema, owner, secdef, search_path, ACL)" $S/3b.sql
+Q "EXECUTE matrix" $S/3c.sql
+Q "schema private privileges" $S/3d.sql
+Q "capture_documents columns" $S/3e.sql
+Q "capture_documents 052 constraints" $S/3f.sql
+Q "capture_documents table grants per role" $S/3g.sql
+Q "schema fingerprint" $S/fp.sql
+Q "comments hash" $S/cm.sql
+Q "ledger tail (must still end at 051: ledger NOT written by this block)" $S/1f.sql
+} > "$1" 2>&1
+grep -v -E "Initialising|boundary|warning|^(SQL:|RESULT:)" "$1" | grep -E '^(timestamp|HEAD|post-|pre-)|^----|"|exit' | grep -v -E '^\s*(\{|\}|\],?)$'

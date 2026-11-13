@@ -1,0 +1,56 @@
+#!/bin/bash
+# 5.0 concurrency positive control + FOR UPDATE proof (test-db). The only backgrounded commands hold a row lock with a SELECT
+# (no write to any table); each runs to completion inside this script.
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+F=$OUT/step5-0-concurrency-and-for-update.txt
+ts() { perl -MTime::HiRes=time -MPOSIX -e 'my $t=time; printf "%s.%03dZ\n", strftime("%FT%T",gmtime($t)), ($t*1000)%1000'; }
+N=$T/nodestep.sh
+B2A_LABEL=lockdoc bash $N mkdoc $T/mk1.log > /dev/null 2>&1
+B2A_LABEL=ctldoc bash $N mkdoc $T/mk2.log > /dev/null 2>&1
+bash $N sql5 $T/sql5.log > /dev/null 2>&1
+{
+hdr
+echo "documents created for this step:"; grep -h "^created" $T/mk1.log $T/mk2.log
+echo
+echo "================ 5.0a POSITIVE CONTROL for the race harness: can a PostgREST call observe a lock held by ANOTHER session?"
+echo "S1 (CLI session): BEGIN; SELECT ... FOR UPDATE on ctldoc; pg_sleep(12); COMMIT.  Meanwhile the PostgREST classify call on ctldoc is issued."
+echo "If PostgREST is served while S1 holds the lock, the call returns only after S1 commits (latency of several seconds)."
+chkref
+echo "S1 start $(ts)"
+( supabase --workdir $MAIN db query --linked -f $T/sql/lock-ctl2-s1.sql 2>&1 | grep -v -E "Initialising|boundary|warning"; echo "S1 end $(ts)" ) > $T/s1a.out 2>&1 &
+P1=$!
+sleep 7
+chkref
+B2A_LABEL=ctldoc bash $N ctl $T/ctl.log > /dev/null 2>&1
+wait $P1
+cat $T/s1a.out
+grep -E "PostgREST|result|HTTP|DB after|ERROR" $T/ctl.log
+echo
+echo "================ 5.0b FOR UPDATE proof on test-db: lock modes between two separate sessions (lockdoc)"
+echo "---- CONTROL: S1 holds FOR NO KEY UPDATE; S2 FOR KEY SHARE (lock_timeout 2s) must be ACQUIRED"
+chkref
+echo "S1 start $(ts)"
+( supabase --workdir $MAIN db query --linked -f $T/sql/lock-ctl-s1.sql 2>&1 | grep -v -E "Initialising|boundary|warning"; echo "S1 end $(ts)" ) > $T/s1b.out 2>&1 &
+P1=$!
+sleep 7
+echo "S2 start $(ts)"; chkref
+supabase --workdir $MAIN db query --linked -f $T/sql/lock-s2.sql 2>&1 | grep -v -E "Initialising|boundary|warning"
+echo "S2 end $(ts) [exit ${PIPESTATUS[0]}]"
+wait $P1; cat $T/s1b.out
+echo "lockdoc after control: $(grep -h 'created lockdoc' $T/mk1.log | sed 's/.*| //')"
+echo
+echo "---- TEST: S1 classifies lockdoc as the PM (JWT claims set, role authenticated) and holds the transaction open; S2 FOR KEY SHARE must TIME OUT (55P03)"
+chkref
+echo "S1 start $(ts)"
+( supabase --workdir $MAIN db query --linked -f $T/sql/lock-test-s1.sql 2>&1 | grep -v -E "Initialising|boundary|warning"; echo "S1 end $(ts)" ) > $T/s1c.out 2>&1 &
+P1=$!
+sleep 7
+echo "S2 start $(ts)"; chkref
+supabase --workdir $MAIN db query --linked -f $T/sql/lock-s2.sql 2>&1 | grep -v -E "Initialising|boundary|warning"
+echo "S2 end $(ts) [exit ${PIPESTATUS[0]}]"
+wait $P1; cat $T/s1c.out
+echo "---- S2 again AFTER S1 committed: must be acquired"
+chkref
+supabase --workdir $MAIN db query --linked -f $T/sql/lock-s2.sql 2>&1 | grep -v -E "Initialising|boundary|warning"
+} > $F 2>&1
+cat $F | cut -c1-420

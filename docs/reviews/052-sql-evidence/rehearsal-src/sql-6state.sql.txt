@@ -1,0 +1,13 @@
+SELECT (SELECT count(*) FROM public.capture_documents) AS documents,
+       (SELECT count(*) FROM public.capture_documents WHERE kind IS NULL) AS unclassified,
+       (SELECT count(*) FROM public.deliveries) AS deliveries,
+       (SELECT count(*) FROM public.delivery_invoice_links) AS links,
+       (SELECT count(*) FROM public.whatsapp_sessions) AS sessions_total,
+       (SELECT count(*) FROM public.whatsapp_sessions WHERE current_flow = 'invoice') AS sessions_invoice,
+       (SELECT to_regnamespace('private') IS NOT NULL) AS schema_private_exists,
+       (SELECT to_regprocedure('public.pm_classify_document(uuid,text)') IS NOT NULL) AS wrapper_exists,
+       (SELECT to_regprocedure('private.capture_apply_classification(uuid,text,uuid)') IS NOT NULL) AS helper_exists,
+       (SELECT count(*) FROM pg_attribute WHERE attrelid = 'public.capture_documents'::regclass AND NOT attisdropped AND attname IN ('kind_source','kind_set_at','kind_set_by','received_at')) AS new_columns,
+       (SELECT count(*) FROM pg_constraint WHERE conrelid = 'public.capture_documents'::regclass AND conname IN ('capture_documents_kind_provenance_chk','capture_documents_kind_set_order_chk','capture_documents_received_order_chk','capture_documents_kind_set_by_fk')) AS new_constraints,
+       (SELECT attnotnull FROM pg_attribute WHERE attrelid = 'public.capture_documents'::regclass AND attname = 'kind') AS kind_not_null,
+       (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '052') AS ledger_052;

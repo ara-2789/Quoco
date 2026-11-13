@@ -1,0 +1,3 @@
+SELECT n.nspname AS schema, p.proname, pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS security_definer, p.proconfig::text AS config, coalesce(p.proacl::text,'NULL') AS acl
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE p.proname IN ('pm_classify_document','capture_apply_classification') ORDER BY 1,2;

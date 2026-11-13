@@ -1,0 +1,2 @@
+SELECT conname, convalidated AS validated, pg_get_constraintdef(oid) AS def FROM pg_constraint
+ WHERE conrelid='public.capture_documents'::regclass AND conname IN ('capture_documents_kind_provenance_chk','capture_documents_kind_set_order_chk','capture_documents_received_order_chk','capture_documents_kind_set_by_fk') ORDER BY conname;

@@ -1,0 +1,5 @@
+SELECT s.tenant_id, t.slug AS tenant_slug, count(*) AS n, min(s.updated_at) AS min_updated, max(s.updated_at) AS max_updated,
+       count(*) FILTER (WHERE s.expires_at > now()) AS expires_in_future, (SELECT count(*) FROM public.whatsapp_sessions WHERE current_flow = 'invoice') AS total_invoice,
+       (SELECT count(*) FROM public.whatsapp_sessions) AS total_sessions, now() AS db_now
+  FROM public.whatsapp_sessions s LEFT JOIN public.tenants t ON t.id = s.tenant_id
+ WHERE s.current_flow = 'invoice' GROUP BY s.tenant_id, t.slug ORDER BY t.slug;

@@ -1,0 +1,5 @@
+BEGIN;
+GRANT USAGE ON SCHEMA private TO authenticated;
+SET LOCAL ROLE authenticated;
+SELECT private.capture_apply_classification('f0fd7e63-d7c5-42f0-8c11-86197e64f863', 'dc', 'aa1ec77f-ece1-4e21-a099-cbfbbc12a38f');
+ROLLBACK;

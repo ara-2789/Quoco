@@ -1,0 +1,4 @@
+SELECT left(md5(s.phone_number), 12) AS phone_md5_12, s.current_step, s.updated_at, s.expires_at, (s.expires_at < now()) AS expired, t.slug AS tenant_slug,
+       (s.context ? 'mi_kind') AS has_mi_kind_key
+  FROM public.whatsapp_sessions s LEFT JOIN public.tenants t ON t.id = s.tenant_id
+ WHERE s.current_flow = 'invoice' ORDER BY s.updated_at;

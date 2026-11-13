@@ -1,0 +1,4 @@
+SELECT p.proname, count(*) AS n, string_agg(md5(pg_get_functiondef(p.oid)), ',') AS md5
+FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+ AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_insert','trg_capture_documents_before_update')
+GROUP BY p.proname ORDER BY p.proname;

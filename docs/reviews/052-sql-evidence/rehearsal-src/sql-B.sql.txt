@@ -1,0 +1,16 @@
+BEGIN;
+DO $$
+DECLARE n integer;
+BEGIN
+  DELETE FROM public.whatsapp_sessions
+   WHERE current_flow = 'invoice'
+     AND tenant_id IN ('5c7afef6-7e33-4a6f-b62b-1dcf3ca4285c', '9fc193a0-2fbe-444d-9402-1892cc13671e')
+     AND expires_at <= now();
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 50 THEN
+    RAISE EXCEPTION 'CLEANUP_ABORT: deleted % rows, expected exactly 50 (rolled back)', n;
+  END IF;
+  RAISE NOTICE 'deleted % rows', n;
+END;
+$$;
+COMMIT;

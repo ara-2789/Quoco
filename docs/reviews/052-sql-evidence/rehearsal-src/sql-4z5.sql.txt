@@ -1,0 +1,2 @@
+SELECT count(*) FILTER (WHERE kind IS NULL) AS unclassified_documents_in_b2a_tenants, count(*) AS documents
+  FROM public.capture_documents WHERE tenant_id IN (SELECT id FROM public.tenants WHERE slug LIKE 'zz-test-capture-b2a-%');

@@ -1,0 +1,6 @@
+SET lock_timeout = '2s';
+BEGIN;
+SELECT clock_timestamp() AS s2_started;
+SELECT id FROM public.capture_documents WHERE id = '4b9fd3c7-e4a1-4d15-9440-3f36f6d3da3f' FOR KEY SHARE;
+SELECT clock_timestamp() AS s2_acquired_for_key_share;
+COMMIT;

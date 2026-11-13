@@ -1,0 +1,1 @@
+SELECT count(*) AS invoice_sessions_any_expiry FROM public.whatsapp_sessions WHERE current_flow = 'invoice';

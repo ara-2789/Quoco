@@ -1,0 +1,5 @@
+SELECT d.id AS document_id, t.slug AS tenant_slug, d.kind,
+       (SELECT count(*) FROM public.deliveries x WHERE x.dc_document_id = d.id OR x.created_from_invoice_id = d.id) AS n_del
+  FROM public.capture_documents d JOIN public.tenants t ON t.id = d.tenant_id
+ WHERE (SELECT count(*) FROM public.deliveries x WHERE x.dc_document_id = d.id OR x.created_from_invoice_id = d.id) <> 1
+ ORDER BY d.created_at;

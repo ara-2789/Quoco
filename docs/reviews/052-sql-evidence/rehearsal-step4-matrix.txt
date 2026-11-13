@@ -1,0 +1,86 @@
+timestamp(UTC): 2026-11-13T17:10:14Z
+HEAD: 1901be540add25ebe1898f57ad00dd1eb573999c
+project-ref (supabase/.temp/project-ref of --workdir <main-checkout>): exfccwlrhoutkgrlikod
+git status --porcelain: []
+script: b2a.cjs sha256 7b6025cbebc62eba087145e4f1be934b9835af1288c5c0fc8a52e9084504037a  subcommand: matrix
+$ cat supabase/.temp/project-ref  -> exfccwlrhoutkgrlikod
+target ref (from SUPABASE_TEST_URL): exfccwlrhoutkgrlikod
+callers: anon (anon key), pm1 (PM of P1), engS (engineer who sent the documents, with login), admNon (admin, no membership), pmB (PM of another tenant), service_role
+documents: d1, d2 unclassified at start. d1 state: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0 | d2 state: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+
+== a. anon -> rpc pm_classify_document (expect 42501)
+a
+    HTTP 401 | code=42501 | message=permission denied for function pm_classify_document
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+
+== b. any role -> private helper, NO Content-Profile header (expect 404)
+b anon
+    HTTP 404 | code=PGRST202 | message=Could not find the function public.capture_apply_classification(p_document_id, p_kind, p_set_by) in the schema cache
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+b pm1
+    HTTP 404 | code=PGRST202 | message=Could not find the function public.capture_apply_classification(p_document_id, p_kind, p_set_by) in the schema cache
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+b service
+    HTTP 404 | code=PGRST202 | message=Could not find the function public.capture_apply_classification(p_document_id, p_kind, p_set_by) in the schema cache
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+
+== c. authenticated -> private helper WITH Content-Profile: private (print exactly what comes back)
+c
+    HTTP 406 | code=PGRST106 | message=Invalid schema: private
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+    raw body: {"code":"PGRST106","details":null,"hint":"Only the following schemas are exposed: public, graphql_public","message":"Invalid schema: private"}
+c (service_role, same header)
+    HTTP 406 | code=PGRST106 | message=Invalid schema: private
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+    raw body: {"code":"PGRST106","details":null,"hint":"Only the following schemas are exposed: public, graphql_public","message":"Invalid schema: private"}
+
+== d. PM of the project -> pm_classify_document on unclassified d1 (POSITIVE CONTROL)
+d
+    HTTP 200 | code=- | message=
+    DB after: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0
+    result keys: kind,delivery_id,document_id,self_link_id,already_classified | already_classified= false
+
+== e. same call again (expect already_classified true, no new rows)
+e
+    HTTP 200 | code=- | message=
+    DB after: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0
+    result keys: kind,delivery_id,document_id,self_link_id,already_classified | already_classified= true
+
+== f. same document, a different kind (expect QE011)
+f
+    HTTP 400 | code=QE011 | message=E11
+    DB after: doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0
+
+== g. S-5: the ENGINEER who sent the document -> QE015, d2 stays unclassified
+g
+    HTTP 400 | code=QE015 | message=E15
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+
+== h. S-5: admin without PM membership -> QE015
+h
+    HTTP 400 | code=QE015 | message=E15
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+
+== i. PM of another tenant -> QE015 (same code as not-found)
+i
+    HTTP 400 | code=QE015 | message=E15
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+i-control: unknown document id as pm1 (same code expected)
+    HTTP 400 | code=QE015 | message=E15
+
+== j. service_role direct writes to capture_documents through the API (each must be refused)
+j INSERT
+    HTTP 403 | code=42501 | message=permission denied for table capture_documents
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+j UPDATE
+    HTTP 403 | code=42501 | message=permission denied for table capture_documents
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+j DELETE
+    HTTP 403 | code=42501 | message=permission denied for table capture_documents
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+j service_role wrapper pm_classify_document (EXECUTE revoked)
+    HTTP 403 | code=42501 | message=permission denied for function pm_classify_document
+    DB after: doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+
+final: d1 doc{kind=dc,source=pm,set_by=set,set_at=set,received_at=set} deliveries=1(incomplete) links=0 | d2 doc{kind=null,source=null,set_by=null,set_at=null,received_at=set} deliveries=0 links=0
+[exit 0]

@@ -1,0 +1,3 @@
+SELECT r AS role, string_agg(pr, ',' ORDER BY pr) FILTER (WHERE has_table_privilege(r,'public.capture_documents',pr)) AS table_privileges_on_capture_documents,
+       (SELECT coalesce(relacl::text,'NULL') FROM pg_class WHERE oid='public.capture_documents'::regclass) AS relacl
+  FROM unnest(array['anon','authenticated','service_role']) r CROSS JOIN unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) pr GROUP BY r ORDER BY r;

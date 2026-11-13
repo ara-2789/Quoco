@@ -1,0 +1,22 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+S=$T/sql
+F=$OUT/step1-preapply.txt
+{
+hdr
+echo "STEP 1: pre-apply probes. Every statement is a SELECT. Nothing is written."
+echo "Held file sha256: $(shasum -a 256 $WT/docs/reviews/052_mi_kind_deferred.sql)"
+echo "DOWN  file sha256: $(shasum -a 256 $WT/docs/reviews/052-down-testdb.sql)"
+echo "Expected md5s: apply_material_inward_turn cecc170b26208d4b820402879e020271 | trg_capture_documents_before_insert b5467b20392b7e26449602acb9da2d00 | trg_capture_documents_before_update 4a7f470362e0bc7b7687737860d112f4"
+Q "1a three function md5s" $S/1a.sql
+Q "1b N-2 private schema / wrapper / helper absent" $S/1b.sql
+Q "1c.1 N-2 counts" $S/1c1.sql
+Q "1c.2 N-2 A3b deliveries per document" $S/1c2.sql
+Q "1c.3 N-2 A3b offending documents (rows below = offenders; empty = none)" $S/1c3.sql
+Q "1d A0 invoice sessions" $S/1d.sql
+Q "1e.1 schema fingerprint (pre-052 baseline)" $S/fp.sql
+Q "1e.2 comments hash (pre-052 baseline)" $S/cm.sql
+Q "1f ledger tail" $S/1f.sql
+Q "1g #349 baseline: leftover test identities" $S/1g.sql
+} > $F 2>&1
+echo "wrote $F"

@@ -1,0 +1,2 @@
+b2a.cjs executed-original sha256: 37b7b934767bd37b267f9e6f92a8b54b2d889c659f15d0dd5b7af8b0268acc30 (setup ran at 7b6025cb..., before 3 subcommands were appended; per-step files print the sha used)
+Copies are path-sanitised (<home>, <worktree> etc.); the executed originals lived in the job tmp dir. No secret is in any of them: URL and keys are read from the main checkout's gitignored .env.test at run time.
