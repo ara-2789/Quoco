@@ -609,17 +609,32 @@ function ruleDownSectionCommented(file, raw) {
 // for the baseline/capture evidence in the RAW text, since that evidence
 // lives in comments by construction.
 // ---------------------------------------------------------------------------
+// SCHEMA-AWARE (052 S-B, design review round 3, 2026-11-13). An optional schema
+// qualifier is captured and the key is `schema.name` (default `public`), so a
+// function in another schema (e.g. `private.capture_apply_classification`) is
+// recorded as first-defined and a later redefinition of it is caught. The
+// UNQUALIFIED / `public.` forms still key as `public.<name>`.
 function extractDefinedFunctionNames(strippedSql) {
   const names = new Set()
-  const re = /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?(\w+)\s*\(/gi
+  const re = /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:(\w+)\.)?(\w+)\s*\(/gi
   let m
-  while ((m = re.exec(strippedSql))) names.add(m[1].toLowerCase())
+  while ((m = re.exec(strippedSql))) {
+    names.add(`${(m[1] ?? 'public').toLowerCase()}.${m[2].toLowerCase()}`)
+  }
   return names
+}
+
+// S-D (verification pass, 2026-11-13): the violation object keeps the BARE name
+// for `public` and emits `schema.name` only for other schemas, so the 11
+// existing Rule 10 entries of scripts/migration-lint-exceptions.json (keyed on
+// bare names) keep matching. That file is NOT edited.
+function violationName(key) {
+  return key.startsWith('public.') ? key.slice('public.'.length) : key
 }
 
 function ruleFunctionRedefinitionRequiresCapture(orderedEntries) {
   const violations = []
-  const firstDefinedIn = new Map() // lowercase function name -> file that first defined it
+  const firstDefinedIn = new Map() // lowercase schema.name -> file that first defined it
   for (const { qualified, raw, sql } of orderedEntries) {
     const namesHere = extractDefinedFunctionNames(sql)
     if (namesHere.size > 0) {
@@ -630,7 +645,7 @@ function ruleFunctionRedefinitionRequiresCapture(orderedEntries) {
         if (md5Count < redefined.length || !hasCaptureCommand) {
           violations.push({
             file: qualified,
-            object: `uncaptured-redefinition-${redefined.join(',')}`,
+            object: `uncaptured-redefinition-${redefined.map(violationName).join(',')}`,
             rule: 'function-redefinition-requires-capture',
           })
         }
@@ -779,4 +794,7 @@ function main() {
   console.log(`migration-lint: clean. ${violations.length} known violation(s), all exempted.`)
 }
 
-main()
+// Entry-point guard (052): lets a test import the pure rule functions without
+// running main(). Direct `node scripts/lint-migrations.mjs` runs main() as before.
+export { extractDefinedFunctionNames, ruleFunctionRedefinitionRequiresCapture }
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()
