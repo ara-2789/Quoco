@@ -1,0 +1,18 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+S=$T/sql
+bash $T/nodestep.sh teardown $OUT/step7-teardown.txt > /dev/null 2>&1
+{
+hdr
+echo "TIME RULE: IST now = $(TZ=Asia/Kolkata date +%H:%M)"
+echo "baseline (1g, step1): 12 @quoco.test auth users, 18 auth users total, 2383 public users, 4 ZZTestCapture- users, 4 zz-test-capture- tenants"
+Q "#349 counts after teardown" $S/1g.sql
+Q "b2a leftovers (tenants, docs, sessions, auth users, public users)" $S/7left.sql
+Q "invoice-flow sessions (must be 0)" $S/1d.sql
+Q "state: md5s" $S/1a.sql
+Q "state: objects and row counts" $S/6state.sql
+Q "state: fingerprint (post-052 expected 6c69c545704f5d72dc776a55863feca9)" $S/fp.sql
+Q "ledger tail" $S/1f.sql
+} > $OUT/step7-after-teardown.txt 2>&1
+tail -3 $OUT/step7-teardown.txt
+grep -v -E "Initialising|boundary|warning|^(SQL:|RESULT:)" $OUT/step7-after-teardown.txt | grep -E '^(TIME|baseline)|^----|"|exit' | grep -v -E '^\s*(\{|\}|\],?)$|"rows"' | cut -c1-200

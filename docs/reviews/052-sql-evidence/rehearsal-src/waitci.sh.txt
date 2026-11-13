@@ -1,0 +1,8 @@
+#!/bin/bash
+cd <worktree>
+for i in $(seq 1 400); do
+  n=$(gh run list --status in_progress --json databaseId --jq length); q=$(gh run list --status queued --json databaseId --jq length)
+  if [ "$n" = "0" ] && [ "$q" = "0" ]; then echo "CI idle at $(date -u +%T)Z (in_progress 0, queued 0)"; exit 0; fi
+  sleep 30
+done
+echo "CI still busy at $(date -u +%T)Z: in_progress=$n queued=$q"; exit 1

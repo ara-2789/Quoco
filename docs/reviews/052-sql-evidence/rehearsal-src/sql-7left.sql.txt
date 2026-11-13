@@ -1,0 +1,7 @@
+SELECT (SELECT count(*) FROM public.tenants WHERE slug LIKE 'zz-test-capture-b2a-%') AS b2a_tenants,
+       (SELECT count(*) FROM public.users WHERE full_name LIKE 'ZZTestCapture-f5c4d2cd-%') AS b2a_public_users,
+       (SELECT count(*) FROM auth.users WHERE email LIKE 'zz-b2a-%@quoco.test') AS b2a_auth_users,
+       (SELECT count(*) FROM public.capture_documents d JOIN public.tenants t ON t.id = d.tenant_id WHERE t.slug LIKE 'zz-test-capture-b2a-%') AS b2a_documents,
+       (SELECT count(*) FROM public.jobs WHERE type = 'capture_ingest' AND payload::text LIKE '%f5c4d2cd%') AS b2a_jobs,
+       (SELECT count(*) FROM public.processed_messages WHERE message_sid LIKE 'ZZTestCapture-f5c4d2cd-%') AS b2a_processed_messages,
+       (SELECT count(*) FROM public.whatsapp_sessions WHERE phone_number LIKE '+19995552%') AS sessions_in_the_b2a_phone_range;

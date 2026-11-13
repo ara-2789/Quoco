@@ -1,0 +1,2 @@
+SELECT d.id AS unclassified_document_id, t.slug AS tenant_slug
+  FROM public.capture_documents d JOIN public.tenants t ON t.id = d.tenant_id WHERE d.kind IS NULL ORDER BY d.created_at;

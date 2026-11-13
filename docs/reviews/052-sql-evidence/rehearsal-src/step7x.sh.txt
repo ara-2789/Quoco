@@ -1,0 +1,4 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+{ hdr; Q "public users created since 16:00Z on 13 Nov (step 1 baseline was taken 16:59Z)" $T/sql/7extra.sql; } > $OUT/step7-extra-public-users.txt 2>&1
+grep -E '^\s+"|exit' $OUT/step7-extra-public-users.txt | grep -v -E 'warning|boundary|"rows"'

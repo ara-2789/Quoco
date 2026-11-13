@@ -1,0 +1,2 @@
+SELECT coalesce(t.slug, '(no tenant)') AS tenant_slug, count(*) AS invoice_sessions, min(s.updated_at) AS min_updated, max(s.updated_at) AS max_updated, count(*) FILTER (WHERE s.expires_at > now()) AS unexpired
+  FROM public.whatsapp_sessions s LEFT JOIN public.tenants t ON t.id = s.tenant_id WHERE s.current_flow = 'invoice' GROUP BY t.slug ORDER BY 1;

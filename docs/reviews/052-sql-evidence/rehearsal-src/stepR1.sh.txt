@@ -1,0 +1,4 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+{ hdr; echo "TIME RULE: IST now = $(TZ=Asia/Kolkata date +%H:%M) (barred 08:25-08:40 and 18:25-18:40)"; Q "R1 ledger tail" $T/sql/1f.sql; } > $OUT/stepR1-ledger.txt 2>&1
+grep -E "TIME|\"(version|name|statements)\"|exit" $OUT/stepR1-ledger.txt

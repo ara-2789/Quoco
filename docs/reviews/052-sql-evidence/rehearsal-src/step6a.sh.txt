@@ -1,6 +1,6 @@
 #!/bin/bash
 . $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
-F=$OUT/step6a-down-refused.txt
+F=$OUT/step6a2-down-refused-unclassified.txt
 DOWN=$WT/docs/reviews/052-down-testdb.sql
 ts() { perl -MTime::HiRes=time -MPOSIX -e 'my $t=time; printf "%s.%03dZ\n", strftime("%FT%T",gmtime($t)), ($t*1000)%1000'; }
 {

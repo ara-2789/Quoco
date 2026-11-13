@@ -5,3 +5,4 @@ Q "state: three function md5s" $T/sql/1a.sql
 Q "state: objects and row counts" $T/sql/6state.sql
 Q "state: fingerprint" $T/sql/fp.sql
 Q "state: comments hash" $T/sql/cm.sql
+Q "state: ledger tail" $T/sql/1f.sql

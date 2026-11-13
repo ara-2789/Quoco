@@ -1,0 +1,20 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+bash $T/nodestep.sh sql6b $T/sql6b-gen.log > /dev/null 2>&1
+cat > $T/sql/6b-pre.sql <<'EOF'
+SELECT d.id AS unclassified_document_id, t.slug AS tenant_slug
+  FROM public.capture_documents d JOIN public.tenants t ON t.id = d.tenant_id WHERE d.kind IS NULL ORDER BY d.created_at;
+EOF
+cat > $T/sql/6b-post.sql <<'EOF'
+SELECT count(*) FILTER (WHERE kind IS NULL) AS unclassified_all_tenants, count(*) AS documents,
+       (SELECT count(*) FROM public.whatsapp_sessions WHERE current_flow = 'invoice') AS invoice_flow_sessions FROM public.capture_documents;
+EOF
+{
+hdr
+echo "TIME RULE: IST now = $(TZ=Asia/Kolkata date +%H:%M)"
+echo "These are TEST rows in the run-scoped tenant zz-test-capture-b2a-a-<run tag>; the kind 'dc' is a rehearsal choice, not a real decision."
+Q "6b.0 unclassified documents on test-db (all tenants; scope is only this run's)" $T/sql/6b-pre.sql
+Q "6b.1 classify each of this run's unclassified documents as postgres via private.capture_apply_classification, p_set_by = the run's PM users.id" $T/sql/gen-sql6b.sql
+Q "6b.2 after" $T/sql/6b-post.sql
+} > $OUT/step6b-classify.txt 2>&1
+grep -v -E "Initialising|boundary|warning" $OUT/step6b-classify.txt | grep -E '^----|"|exit|TIME|^These' | cut -c1-400

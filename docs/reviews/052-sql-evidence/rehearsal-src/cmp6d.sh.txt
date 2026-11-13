@@ -1,0 +1,14 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+bash $T/readback.sh $OUT/step6d-readback.txt > /dev/null 2>&1
+mkdir -p $T/cmp
+for f in step3-readback.txt step6d-readback.txt; do
+  grep -E '^\s+"' $OUT/$f | grep -v -E '"(warning|boundary)"' > $T/cmp/$f
+done
+if diff $T/cmp/step3-readback.txt $T/cmp/step6d-readback.txt > $T/cmp/diff.txt; then
+  echo "READBACK VALUE LINES IDENTICAL to step 3 ($(wc -l < $T/cmp/step3-readback.txt | tr -d ' ') lines)"
+else
+  echo "DIFFERENCES vs step 3:"; cat $T/cmp/diff.txt
+fi
+grep -E 'schema_fingerprint|comments_hash' $OUT/step6d-readback.txt | tr -d ' '
+echo "ledger tail after re-apply:"; grep -E '"version"' $OUT/step6d-readback.txt | tr -d ' '
