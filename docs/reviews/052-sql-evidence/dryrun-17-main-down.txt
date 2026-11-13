@@ -1,0 +1,13 @@
+== 3c.4b DOWN
+down exit=0
+== state after DOWN (md5s must equal cecc170b.../b5467b20.../4a7f4703...)
+ md5 apply_material_inward_turn cecc170b26208d4b820402879e020271
+ md5 trg_capture_documents_before_insert b5467b20392b7e26449602acb9da2d00
+ md5 trg_capture_documents_before_update 4a7f470362e0bc7b7687737860d112f4
+
+ 052 objects: schema_private=false wrapper=false helper=false new_columns=0 constraints=0 kind_not_null=true ledger_052=false
+
+ rows: documents=3 deliveries=3 links=2 sessions_invoice=0
+
+== session +91900000009 after DOWN (invoice session cleared, unrelated key kept)
+NULL/0 {"unrelated": "keep"}

@@ -18,3 +18,11 @@ No database was contacted for any file here. Nothing was executed as SQL.
 
 Source of the pre-052 bodies: read from test-db by a SELECT on 13 Nov 2026; their md5 equals the three md5 Aravind pasted from the prod SQL editor.
 That the paste came from prod is not established.
+
+## Block 1b additions
+| File | What it is |
+|---|---|
+| s1-lint-after-fk-entry.txt | lint after the one FK coverage entry: clean, 107 exempted |
+| 3b-dump-record.txt | the read-only test-db structure dump: ref, sha256, credential scan, 051 evidence (the dump itself is not committed) |
+| dryrun-00 ... dryrun-40 | the local PG17 dry-run, one file per step (label: local PG17, structure-only dump of test-db, no roles/PostgREST); local paths replaced by `<local-path>` |
+| dryrun-src/ | the scenario SQL and runner scripts |

@@ -1,0 +1,16 @@
+3b: read-only structure dump of test-db (block 1b). LABEL: structure-only, public schema, no data.
+supabase/.temp/project-ref (main checkout, used via --workdir): exfccwlrhoutkgrlikod   (must equal exfccwlrhoutkgrlikod)
+command: supabase db dump --linked --workdir <main checkout> --schema public --dry-run  -> script file (never printed: it embeds a password)
+         then that script was run, which is pg_dump --schema-only --schema=public through sed filters (read-only)
+dry-run exit 0; variable NAMES only in the script: export PGHOST= export PGPORT= export PGUSER= export PGPASSWORD= export PGDATABASE= 
+dump: 6890 lines, 307699 bytes, sha256 04da3bd4fb2dcfba903d60b29d92e006d9a97d852d9c9fef71a6f7d6c0c73fd4   (kept outside the repo, not committed)
+pg_dump stderr bytes: 0
+credential-pattern scan of the dump (password|JWT|postgres://|secret), count: 0
+-- The ledger is not part of a public-only dump, and no remote ledger read was made. Evidence that the dump reflects 051 is STRUCTURAL:
+   mentions of trg_capture_files_before_update : 4
+   constraint capture_files_details_terminal_only_chk (051 rev 3): 1 mention(s)
+   column capture_files.ingested_at (051 rev 2): 2 mention(s)
+   052 objects absent: pm_classify_document=0 capture_apply_classification=0 kind_source=0
+   the dump's three function bodies hash to the pre-052 baselines (read from the loaded scaffold): see dryrun-10-main-pre.txt
+load into a fresh local PG17 database: ERROR lines = 0
+named stubs: roles anon/authenticated/service_role(BYPASSRLS)/supabase_auth_admin; schema auth (auth.users(id), auth.uid() reading request.jwt.claim.sub); extension vector in public (pgvector is not in a structure-only dump); table supabase_migrations.schema_migrations (ledger stub).
