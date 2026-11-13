@@ -1,0 +1,10 @@
+== 1c-1 exceptions file untouched
+HEAD f007f61dc900b0d6c3ba997c5c93c628fb7f6c93 (working tree has the uncommitted Rule 10 change)
+b7ee67e636f80c87df3dde0cfbc90b83b7ccd19c36119d02bf4821368f72d005  scripts/lint-migrations.mjs
+d7c8303252604781db8309296492601d9c367fd390225ff6ff723ac277a64d2b  scripts/migration-lint-exceptions.json
+git diff --stat origin/main -- scripts/migration-lint-exceptions.json:
+[end, empty above = pass]
+
+== 1c-2 lint again
+
+migration-lint: clean. 107 known violation(s), all exempted.
