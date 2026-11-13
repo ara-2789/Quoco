@@ -1,0 +1,1588 @@
+kind-removal-evidence.txt -- raw quotes, read-only. Repo: origin/main f536fe2 (worktree tree identical; git diff HEAD origin/main is empty).
+Companion to /tmp/quoco/kind-removal-plan.md. Impact study sha256 d84cf2145f9f497c3103a4fc62855c4ceac77fa35dbdd057443d0de8ab5e14a5
+
+##### E1 capture_documents DDL  [supabase/migrations/049_capture_tables.sql:281-297]
+281: CREATE TABLE public.capture_documents (
+282:   id                 uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+283:   created_at         timestamptz NOT NULL DEFAULT now(),
+284:   tenant_id          uuid        NOT NULL REFERENCES public.tenants(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+285:   project_id         uuid        NOT NULL,
+286:   kind               text        NOT NULL CHECK (kind IN ('dc', 'invoice')),
+287:   sent_by            uuid        NOT NULL,
+288:   source_message_sid text        NOT NULL,
+289:   engineer_ack       text        CHECK (engineer_ack IN ('yes', 'no', 'partial', 'unclear')),
+290:   engineer_ack_at    timestamptz,
+291:   engineer_ack_note  text,
+292:   caption            text,
+293:   CONSTRAINT capture_documents_source_message_sid_key UNIQUE (source_message_sid),
+294:   CONSTRAINT capture_documents_id_tenant_key UNIQUE (id, tenant_id),
+295:   CONSTRAINT capture_documents_id_project_tenant_key UNIQUE (id, project_id, tenant_id),
+296:   CONSTRAINT capture_documents_id_project_tenant_kind_key UNIQUE (id, project_id, tenant_id, kind),
+297:   CONSTRAINT capture_documents_project_fk FOREIGN KEY (project_id, tenant_id) REFERENCES public.projects (id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+
+##### E2 deliveries kind-pin columns  [supabase/migrations/049_capture_tables.sql:359-364]
+359:   dc_date                 date,
+360:   dc_document_id          uuid,
+361:   dc_doc_kind             text        NOT NULL DEFAULT 'dc' CHECK (dc_doc_kind = 'dc'),
+362:   created_from_invoice_id uuid,
+363:   inv_doc_kind            text        NOT NULL DEFAULT 'invoice' CHECK (inv_doc_kind = 'invoice'),
+364:   approved_by             uuid,
+
+##### E3 deliveries FKs and CHECKs  [supabase/migrations/049_capture_tables.sql:379-391]
+379:   CONSTRAINT deliveries_dc_document_fk FOREIGN KEY (dc_document_id, project_id, tenant_id, dc_doc_kind) REFERENCES public.capture_documents (id, project_id, tenant_id, kind) ON UPDATE RESTRICT ON DELETE RESTRICT,
+380:   CONSTRAINT deliveries_invoice_document_fk FOREIGN KEY (created_from_invoice_id, project_id, tenant_id, inv_doc_kind) REFERENCES public.capture_documents (id, project_id, tenant_id, kind) ON UPDATE RESTRICT ON DELETE RESTRICT,
+381:   CONSTRAINT deliveries_one_document_chk CHECK (num_nonnulls(dc_document_id, created_from_invoice_id) = 1),
+382:   CONSTRAINT deliveries_approved_pair_chk CHECK ((approved_by IS NULL) = (approved_at IS NULL)),
+383:   CONSTRAINT deliveries_approved_requires_chk CHECK (status <> 'approved' OR (approved_by IS NOT NULL AND delivery_type IS NOT NULL)),
+384:   CONSTRAINT deliveries_unapproved_no_approver_chk CHECK (status NOT IN ('incomplete', 'awaiting_pm', 'rejected') OR approved_by IS NULL),
+385:   CONSTRAINT deliveries_rejected_requires_chk CHECK (status <> 'rejected' OR (rejected_by IS NOT NULL AND rejected_at IS NOT NULL AND reject_reason IS NOT NULL AND btrim(reject_reason) <> '')),
+386:   CONSTRAINT deliveries_rejected_clear_chk CHECK (status = 'rejected' OR (rejected_by IS NULL AND rejected_at IS NULL AND reject_reason IS NULL)),
+387:   CONSTRAINT deliveries_cancelled_at_chk CHECK ((status = 'cancelled') = (cancelled_at IS NOT NULL)),
+388:   CONSTRAINT deliveries_cancelled_reason_chk CHECK ((cancelled_at IS NOT NULL) = (cancel_reason IS NOT NULL)),
+389:   CONSTRAINT deliveries_cancelled_auto_only_chk CHECK (status <> 'cancelled' OR created_from_invoice_id IS NOT NULL),
+390:   CONSTRAINT deliveries_auto_not_internal_chk CHECK (created_from_invoice_id IS NULL OR delivery_type IS DISTINCT FROM 'internal_transfer'),
+391:   CONSTRAINT deliveries_received_order_chk CHECK (received_at <= created_at),
+
+##### E4 delivery_invoice_links doc_kind and FK  [supabase/migrations/049_capture_tables.sql:410-423]
+410:   doc_kind                text        NOT NULL DEFAULT 'invoice' CHECK (doc_kind = 'invoice'),
+411:   link_source             text        NOT NULL CHECK (link_source IN ('created_from_invoice', 'pm_manual')),
+412:   linked_by               uuid,
+413:   linked_at               timestamptz NOT NULL DEFAULT now(),
+414:   unlinked_at             timestamptz,
+415:   unlinked_by             uuid,
+416:   unlink_reason           text        CHECK (unlink_reason IN ('superseded_by_link', 'pm_unlinked', 'delivery_rejected')),
+417:   superseded_from_status  text        DEFAULT NULL::text CHECK (superseded_from_status IN ('incomplete', 'awaiting_pm', 'approved')),
+418:   superseded_approval_by  uuid,
+419:   superseded_approval_at  timestamptz,
+420:   self_invoice_id         uuid        GENERATED ALWAYS AS (CASE WHEN link_source = 'created_from_invoice' THEN invoice_document_id END) STORED,
+421:   CONSTRAINT dil_delivery_fk FOREIGN KEY (delivery_id, project_id, tenant_id) REFERENCES public.deliveries (id, project_id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+422:   CONSTRAINT dil_invoice_document_fk FOREIGN KEY (invoice_document_id, project_id, tenant_id, doc_kind) REFERENCES public.capture_documents (id, project_id, tenant_id, kind) ON UPDATE RESTRICT ON DELETE RESTRICT,
+423:   CONSTRAINT dil_self_link_fk FOREIGN KEY (delivery_id, self_invoice_id) REFERENCES public.deliveries (id, created_from_invoice_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+
+##### E5 trg_capture_documents_before_update (kind immutable, ack once)  [supabase/migrations/049_capture_tables.sql:770-815]
+770: CREATE FUNCTION public.trg_capture_documents_before_update()
+771: RETURNS trigger
+772: LANGUAGE plpgsql
+773: SECURITY DEFINER
+774: SET search_path = ''
+775: AS $$
+776: BEGIN
+777:   -- B3: first statement.
+778:   IF current_setting('transaction_isolation') <> 'read committed' THEN
+779:     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+780:   END IF;
+781: 
+782:   -- S-1 (SQL review r1): id and created_at added to the immutable set.
+783:   IF NEW.id IS DISTINCT FROM OLD.id
+784:      OR NEW.created_at IS DISTINCT FROM OLD.created_at
+785:      OR NEW.kind IS DISTINCT FROM OLD.kind
+786:      OR NEW.project_id IS DISTINCT FROM OLD.project_id
+787:      OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+788:      OR NEW.sent_by IS DISTINCT FROM OLD.sent_by
+789:      OR NEW.source_message_sid IS DISTINCT FROM OLD.source_message_sid THEN
+790:     RAISE EXCEPTION USING ERRCODE = 'QE009', MESSAGE = 'E9';
+791:   END IF;
+792: 
+793:   -- The acknowledgement is settable once; the note is settable once.
+794:   IF OLD.engineer_ack IS NOT NULL THEN
+795:     IF NEW.engineer_ack IS DISTINCT FROM OLD.engineer_ack
+796:        OR NEW.engineer_ack_at IS DISTINCT FROM OLD.engineer_ack_at THEN
+797:       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+798:     END IF;
+799:   END IF;
+800:   IF OLD.engineer_ack_note IS NOT NULL THEN
+801:     IF NEW.engineer_ack_note IS DISTINCT FROM OLD.engineer_ack_note THEN
+802:       RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';
+803:     END IF;
+804:   END IF;
+805: 
+806:   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the acknowledgement time
+807:   -- is stamped by the database when the ack is first set; a caller-supplied
+808:   -- value is overwritten. It drives the D-12 clock.
+809:   IF OLD.engineer_ack IS NULL AND NEW.engineer_ack IS NOT NULL THEN
+810:     NEW.engineer_ack_at := now();
+811:   END IF;
+812: 
+813:   RETURN NEW;
+814: END;
+815: $$;
+
+##### E6 trg_deliveries_before_insert (INSERT only incomplete)  [supabase/migrations/049_capture_tables.sql:822-852]
+822: CREATE FUNCTION public.trg_deliveries_before_insert()
+823: RETURNS trigger
+824: LANGUAGE plpgsql
+825: SECURITY DEFINER
+826: SET search_path = ''
+827: AS $$
+828: BEGIN
+829:   -- B3: first statement.
+830:   IF current_setting('transaction_isolation') <> 'read committed' THEN
+831:     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+832:   END IF;
+833: 
+834:   IF NEW.status IS DISTINCT FROM 'incomplete'
+835:      OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL
+836:      OR NEW.rejected_by IS NOT NULL OR NEW.rejected_at IS NOT NULL OR NEW.reject_reason IS NOT NULL
+837:      OR NEW.cancelled_at IS NOT NULL OR NEW.cancel_reason IS NOT NULL
+838:      OR NEW.delivery_type IS NOT NULL OR NEW.vehicle_number IS NOT NULL
+839:      OR NEW.dc_number IS NOT NULL OR NEW.dc_date IS NOT NULL THEN
+840:     -- N-4 (SQL review r3, Option A per Aravind 12 Oct): the PM-owned fields
+841:     -- (delivery_type, vehicle_number, dc_number, dc_date) are also NULL at
+842:     -- INSERT; the engineer path cannot pre-fill them. Set only through UPDATE.
+843:     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+844:   END IF;
+845: 
+846:   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at is the anchor every
+847:   -- ordering CHECK is measured against; the database stamps it, never NEW.
+848:   NEW.created_at := now();
+849: 
+850:   RETURN NEW;
+851: END;
+852: $$;
+
+##### E7 trg_deliveries_before_update TR4a (pointer columns immutable)  [supabase/migrations/049_capture_tables.sql:644-655]
+644:   -- TR4a: immutable columns (S-1, SQL review r1: id and created_at added --
+645:   -- every ordering CHECK is measured against created_at).
+646:   IF NEW.id IS DISTINCT FROM OLD.id
+647:      OR NEW.created_at IS DISTINCT FROM OLD.created_at
+648:      OR NEW.created_from_invoice_id IS DISTINCT FROM OLD.created_from_invoice_id
+649:      OR NEW.dc_document_id IS DISTINCT FROM OLD.dc_document_id
+650:      OR NEW.project_id IS DISTINCT FROM OLD.project_id
+651:      OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+652:      OR NEW.reported_by IS DISTINCT FROM OLD.reported_by
+653:      OR NEW.received_at IS DISTINCT FROM OLD.received_at THEN
+654:     RAISE EXCEPTION USING ERRCODE = 'QE009', MESSAGE = 'E9';
+655:   END IF;
+
+##### E8 049 DOWN Guard 2 (functions naming capture tables)  [supabase/migrations/049_capture_tables.sql:1133-1151]
+1133: --   -- Guard 2 (intensional, R8; restricted to non-system namespaces, S-D): no
+1134: --   -- function other than 049's own four trigger functions may name these
+1135: --   -- tables. plpgsql bodies record no dependency, so DROP TABLE alone would
+1136: --   -- leave broken functions behind. Catches renamed or later PR-B/PR-C/PR-D
+1137: --   -- functions without listing them.
+1138: --   SELECT string_agg(n.nspname || '.' || p.proname, ', ')
+1139: --     INTO v_names
+1140: --     FROM pg_proc p
+1141: --     JOIN pg_namespace n ON n.oid = p.pronamespace
+1142: --    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+1143: --      AND n.nspname !~ '^pg_'
+1144: --      AND p.prosrc ~ '\m(deliveries|capture_documents|capture_files|delivery_invoice_links)\M'
+1145: --      AND NOT (n.nspname = 'public' AND p.proname IN (
+1146: --            'trg_dil_before_insert', 'trg_dil_before_update',
+1147: --            'trg_deliveries_before_update', 'trg_capture_documents_before_update',
+1148: --            'trg_deliveries_before_insert', 'trg_capture_documents_before_insert'));
+1149: --   IF v_names IS NOT NULL THEN
+1150: --     RAISE EXCEPTION 'DOWN_GUARD_FUNCTIONS: %', v_names;
+1151: --   END IF;
+
+##### E9 050 RPC: expiry, start, IST-day  [supabase/migrations/050_material_inward_functions.sql:147-192]
+147:   IF NOT public.quoco_same_ist_day(p_now, v_session.updated_at) THEN
+148:     v_session.current_flow  := NULL;
+149:     v_session.current_step  := 0;
+150:     v_session.context       := '{}'::jsonb;
+151:     v_session.pending_flows := '[]'::jsonb;
+152:   END IF;
+153: 
+154:   IF v_session.current_flow = 'invoice' AND v_session.expires_at <= p_now THEN
+155:     -- A27: 30 idle minutes end the flow. The clear is subtract-only and is the ONLY write; the
+156:     -- caller replies via the idle path. expires_at / updated_at are deliberately not touched.
+157:     UPDATE public.whatsapp_sessions
+158:        SET current_flow = NULL,
+159:            current_step = 0,
+160:            context      = v_session.context - c_mi_keys
+161:      WHERE id = v_session.id;
+162:     RETURN jsonb_build_object('outcome', 'expired', 'current_flow', NULL, 'current_step', 0);
+163: 
+164:   ELSIF p_start_flow THEN
+165:     IF v_session.current_flow IS NULL THEN
+166:       v_session.current_flow := 'invoice';
+167:       v_session.current_step := 1;
+168:       v_session.context      := v_session.context - c_mi_keys;
+169:       v_outcome := 'start';
+170:       v_touch   := true;
+171:     ELSIF v_session.current_flow = 'invoice' THEN
+172:       v_outcome := 'reask';
+173:       v_touch   := true;
+174:     ELSE
+175:       v_outcome := 'reask';          -- never create this flow over a live other-flow session
+176:     END IF;
+177: 
+178:   ELSIF v_session.current_flow IS NULL THEN
+179:     v_outcome := 'idle';
+180: 
+181:   ELSIF v_session.current_flow = 'invoice' THEN
+182:     v_touch  := true;
+183:     v_kind   := v_session.context ->> 'mi_kind';
+184:     v_doc_id := NULLIF(v_session.context ->> 'mi_document_id', '')::uuid;
+185:     v_reask  := COALESCE((v_session.context ->> 'mi_reask')::int, 0);
+186:     -- [SQL review r1, per Aravind 18 Oct] N-1: the shared normalisation (decided 18 Oct): strip the keycap marks, then ONE trailing '.' or ')'.
+187:     v_norm   := btrim(regexp_replace(translate(v_text, E'\uFE0F\u20E3', ''), '[.)]$', ''));
+188: 
+189:     IF v_text = '' AND v_media_n = 0 THEN
+190:       v_outcome := 'reask';
+191: 
+192:     ELSIF v_session.current_step = 1 THEN
+
+##### E10 050 RPC: S1 kind parser and S2 file step  [supabase/migrations/050_material_inward_functions.sql:193-232]
+193:       -- S1 kind parsing (decided 18 Oct): '1' / 'dc' / 'challan' = delivery challan; '2' / 'invoice' / 'bill'
+194:       -- = invoice. A file at S1 is not an answer. One re-ask, then close with nothing recorded.
+195:       IF v_media_n = 0 AND lower(v_norm) IN ('1', 'dc', 'challan') THEN
+196:         v_session.current_step := 2;
+197:         v_session.context      := v_session.context || jsonb_build_object('mi_kind', 'dc', 'mi_reask', 0);
+198:         v_outcome := 'advance';
+199:       ELSIF v_media_n = 0 AND lower(v_norm) IN ('2', 'invoice', 'bill') THEN
+200:         v_session.current_step := 2;
+201:         v_session.context      := v_session.context || jsonb_build_object('mi_kind', 'invoice', 'mi_reask', 0);
+202:         v_outcome := 'advance';
+203:       ELSIF v_reask < 1 THEN
+204:         v_session.context := v_session.context || jsonb_build_object('mi_reask', v_reask + 1);
+205:         v_outcome := 'reask';
+206:       ELSE
+207:         v_session.current_flow := NULL;
+208:         v_session.current_step := 0;
+209:         v_session.context      := v_session.context - 'mi_kind' - 'mi_document_id' - 'mi_reask';
+210:         v_outcome := 'closed';
+211:       END IF;
+212: 
+213:     ELSIF v_session.current_step = 2 THEN
+214:       -- S2 file(s). Text without a file: one re-ask, then close with nothing recorded.
+215:       IF v_media_n > 0 THEN
+216:         v_create := true;
+217:       ELSIF v_reask < 1 THEN
+218:         v_session.context := v_session.context || jsonb_build_object('mi_reask', v_reask + 1);
+219:         v_outcome := 'reask';
+220:       ELSE
+221:         v_session.current_flow := NULL;
+222:         v_session.current_step := 0;
+223:         v_session.context      := v_session.context - 'mi_kind' - 'mi_document_id' - 'mi_reask';
+224:         v_outcome := 'closed';
+225:       END IF;
+226: 
+227:     ELSIF v_session.current_step = 3 THEN
+228:       -- S3 ack. A file attaches to the same document and the step stays (D-11): a file is never an answer.
+229:       IF v_media_n > 0 THEN
+230:         v_attach := true;
+231:       ELSE
+232:         -- S3: the ONE ack parser (review r1 S3; forms decided 18 Oct). Accepts 1 / 2 / 3, optionally followed by
+
+##### E11 050 RPC: S3 ack parser, ack UPDATE, delivery move, S4 note  [supabase/migrations/050_material_inward_functions.sql:233-296]
+233:         -- a single '.' or ')', and the keycap forms (digit + U+FE0F + U+20E3). Anything else is not an ack.
+234:         v_ack := CASE v_norm WHEN '1' THEN 'yes' WHEN '2' THEN 'no' WHEN '3' THEN 'partial' ELSE NULL END;
+235:         IF v_ack IS NULL AND v_reask < 1 THEN
+236:           v_session.context := v_session.context || jsonb_build_object('mi_reask', v_reask + 1);
+237:           v_outcome := 'reask';
+238:         ELSE
+239:           IF v_ack IS NULL THEN
+240:             v_ack  := 'unclear';
+241:             v_note := left(v_text, 1000);          -- the raw text is kept as the note (v3:91)
+242:           END IF;
+243:           -- The ack is ALWAYS stored on the document (B1).
+244:           UPDATE public.capture_documents
+245:              SET engineer_ack      = v_ack,
+246:                  engineer_ack_note = v_note
+247:            WHERE id = v_doc_id;
+248:           -- [SQL review r1, per Aravind 18 Oct] N-2: exactly one document row must have been updated. If mi_document_id were ever missing,
+249:           -- the UPDATE would touch 0 rows and the flow would still answer 'complete' with no ack stored.
+250:           GET DIAGNOSTICS v_rows = ROW_COUNT;
+251:           IF v_rows <> 1 THEN
+252:             RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+253:           END IF;
+254:           -- The delivery moves to awaiting_pm ONLY WHERE its status is 'incomplete'; any other
+255:           -- status is left alone (B1). Do NOT clear cancelled_* to force a move.
+256:           UPDATE public.deliveries
+257:              SET status = 'awaiting_pm'
+258:            WHERE status = 'incomplete'
+259:              AND (dc_document_id = v_doc_id OR created_from_invoice_id = v_doc_id);
+260:           IF v_ack IN ('no', 'partial') THEN
+261:             v_session.current_step := 4;
+262:             v_session.context      := v_session.context || jsonb_build_object('mi_reask', 0);
+263:             v_outcome := 'advance';
+264:           ELSE
+265:             -- 'yes' closes; 'unclear' CLOSES and never goes to S4 (the raw text is already the note;
+266:             -- a second note would raise QE011 from TR5).
+267:             v_session.current_flow := NULL;
+268:             v_session.current_step := 0;
+269:             v_session.context      := v_session.context - 'mi_kind' - 'mi_document_id' - 'mi_reask';
+270:             v_outcome := 'complete';
+271:           END IF;
+272:         END IF;
+273:       END IF;
+274: 
+275:     ELSIF v_session.current_step = 4 THEN
+276:       -- S4 note. A file attaches and the step stays (D-11).
+277:       IF v_media_n > 0 THEN
+278:         v_attach := true;
+279:       ELSE
+280:         UPDATE public.capture_documents
+281:            SET engineer_ack_note = left(v_text, 1000)
+282:          WHERE id = v_doc_id;
+283:         -- N-2 applied to the note UPDATE too (same reasoning; the reviewer named the ack UPDATE): one row or QE012.
+284:         GET DIAGNOSTICS v_rows = ROW_COUNT;
+285:         IF v_rows <> 1 THEN
+286:           RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+287:         END IF;
+288:         v_session.current_flow := NULL;
+289:         v_session.current_step := 0;
+290:         v_session.context      := v_session.context - 'mi_kind' - 'mi_document_id' - 'mi_reask';
+291:         v_outcome := 'complete';
+292:       END IF;
+293: 
+294:     ELSE
+295:       v_outcome := 'reask';
+296:     END IF;
+
+##### E12 050 RPC: create block (document, delivery, self-link)  [supabase/migrations/050_material_inward_functions.sql:297-346]
+297: 
+298:   ELSE
+299:     v_outcome := 'wrong_flow';
+300:   END IF;
+301: 
+302:   -- Rows for a file turn: S2 creates the document (+ delivery, + self-link for an invoice) and the
+303:   -- file rows; S3 / S4 attach further files to the same document.
+304:   IF v_create OR v_attach THEN
+305:     IF v_create THEN
+306:       -- [SQL review r1, per Aravind 18 Oct] S-1: the engineer must be a member of THIS project as an engineer. The composite FKs on
+307:       -- sent_by / reported_by catch another TENANT's user; nothing else catches the right tenant with the wrong
+308:       -- PROJECT. Refused with QE012 before anything is written.
+309:       IF NOT EXISTS (SELECT 1 FROM public.project_members m
+310:                       WHERE m.project_id = p_project_id AND m.user_id = p_user_id AND m.role = 'engineer') THEN
+311:         RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+312:       END IF;
+313:       -- Q2-6: ONE SID for both the received_at lookup and source_message_sid. A missing
+314:       -- processed_messages row (or a NULL created_at) is refused.
+315:       SELECT pm.created_at INTO v_received
+316:         FROM public.processed_messages pm
+317:        WHERE pm.message_sid = p_message_sid;
+318:       IF v_received IS NULL THEN
+319:         RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+320:       END IF;
+321: 
+322:       INSERT INTO public.capture_documents
+323:         (tenant_id, project_id, kind, sent_by, source_message_sid, caption)
+324:       VALUES
+325:         (p_tenant_id, p_project_id, v_kind, p_user_id, p_message_sid, NULLIF(left(v_text, 1000), ''))
+326:       RETURNING id INTO v_doc_id;
+327: 
+328:       IF v_kind = 'dc' THEN
+329:         INSERT INTO public.deliveries
+330:           (tenant_id, project_id, reported_by, received_at, dc_document_id)
+331:         VALUES
+332:           (p_tenant_id, p_project_id, p_user_id, v_received, v_doc_id)
+333:         RETURNING id INTO v_delivery_id;
+334:       ELSE
+335:         -- A28: every invoice creates one automatic delivery and one active self-link, one transaction.
+336:         INSERT INTO public.deliveries
+337:           (tenant_id, project_id, reported_by, received_at, created_from_invoice_id)
+338:         VALUES
+339:           (p_tenant_id, p_project_id, p_user_id, v_received, v_doc_id)
+340:         RETURNING id INTO v_delivery_id;
+341:         INSERT INTO public.delivery_invoice_links
+342:           (tenant_id, project_id, delivery_id, invoice_document_id, link_source)
+343:         VALUES
+344:           (p_tenant_id, p_project_id, v_delivery_id, v_doc_id, 'created_from_invoice');
+345:       END IF;
+346:       v_next_file_no := 1;
+
+##### E13 050 RPC: files insert, ingest job, outcome  [supabase/migrations/050_material_inward_functions.sql:347-396]
+347:     ELSE
+348:       SELECT COALESCE(max(f.file_no), 0) + 1 INTO v_next_file_no
+349:         FROM public.capture_files f
+350:        WHERE f.document_id = v_doc_id;
+351:     END IF;
+352: 
+353:     INSERT INTO public.capture_files
+354:       (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type)
+355:     SELECT p_tenant_id, p_project_id, v_doc_id,
+356:            v_next_file_no + (t.ord::int - 1),
+357:            p_message_sid,
+358:            COALESCE((t.e ->> 'index')::int, t.ord::int - 1),
+359:            t.e ->> 'content_type'
+360:       FROM jsonb_array_elements(p_media) WITH ORDINALITY AS t(e, ord);
+361: 
+362:     -- The ingest job (payload: a contract with PR-C, plan section 14). jobs.type has no CHECK.
+363:     SELECT jsonb_agg(
+364:              jsonb_build_object(
+365:                'file_id',              f.id,
+366:                'file_no',              f.file_no,
+367:                'media_index',          f.media_index,
+368:                'claimed_content_type', f.claimed_content_type,
+369:                'url',                  m.e ->> 'url')
+370:              ORDER BY f.file_no)
+371:       INTO v_files
+372:       FROM public.capture_files f
+373:       JOIN (SELECT e, COALESCE((e ->> 'index')::int, ord::int - 1) AS idx
+374:               FROM jsonb_array_elements(p_media) WITH ORDINALITY AS t(e, ord)) m
+375:         ON m.idx = f.media_index
+376:      WHERE f.source_message_sid = p_message_sid;
+377: 
+378:     INSERT INTO public.jobs (type, payload)
+379:     VALUES ('capture_ingest',
+380:             jsonb_build_object(
+381:               'tenant_id',          p_tenant_id,
+382:               'project_id',         p_project_id,
+383:               'document_id',        v_doc_id,
+384:               'source_message_sid', p_message_sid,
+385:               'files',              v_files));
+386: 
+387:     IF v_create THEN
+388:       v_session.current_step := 3;
+389:       v_session.context      := v_session.context || jsonb_build_object('mi_document_id', v_doc_id::text, 'mi_reask', 0);
+390:       v_outcome := 'advance';
+391:     ELSE
+392:       v_outcome := 'file_attached';
+393:     END IF;
+394:   END IF;
+395: 
+396:   -- Persist a processed turn: N8 (every processed turn, including 'reask', writes expires_at and
+
+##### E14 050 pm_link_invoice kind check  [supabase/migrations/050_material_inward_functions.sql:805-815]
+805:   END IF;
+806: 
+807:   -- Unlocked read of the invoice's immutable project_id / tenant_id (TR5), then authorise.
+808:   SELECT c.project_id, c.tenant_id, c.kind INTO v_project, v_tenant, v_kind
+809:     FROM public.capture_documents c
+810:    WHERE c.id = p_invoice_document_id;
+811:   IF NOT FOUND OR v_kind IS DISTINCT FROM 'invoice' THEN
+812:     RAISE EXCEPTION USING ERRCODE = 'QE015', MESSAGE = 'E15';
+813:   END IF;
+814: 
+815:   SELECT u.id INTO v_caller
+
+##### E15 050 pm_unlink_invoice / reject: CASE WHEN v_has_ack (unlink path)  [supabase/migrations/050_material_inward_functions.sql:744-760]
+744:         IF v_auto_status = 'cancelled' AND v_auto_cancel = 'superseded_by_link' THEN
+745:           SELECT (c.engineer_ack IS NOT NULL) INTO v_has_ack
+746:             FROM public.capture_documents c WHERE c.id = v_inv;
+747:           -- Restore FIRST (clearing cancelled_* and approved_*), THEN insert the new self-link.
+748:           UPDATE public.deliveries
+749:              SET status       = CASE WHEN v_has_ack THEN 'awaiting_pm' ELSE 'incomplete' END,
+750:                  cancelled_at = NULL,
+751:                  cancel_reason = NULL,
+752:                  approved_by  = NULL,
+753:                  approved_at  = NULL
+754:            WHERE id = v_auto_id;
+755:           INSERT INTO public.delivery_invoice_links
+756:             (tenant_id, project_id, delivery_id, invoice_document_id, link_source)
+757:           VALUES
+758:             (v_tenant, v_project, v_auto_id, v_inv, 'created_from_invoice');
+759:           v_restored := true;
+760:         END IF;
+
+##### E16 050 pm_set_delivery_details authorisation order (S1 then lock)  [supabase/migrations/050_material_inward_functions.sql:484-515]
+484: BEGIN
+485:   IF p_delivery_id IS NULL THEN
+486:     RAISE EXCEPTION USING ERRCODE = 'QE015', MESSAGE = 'E15';
+487:   END IF;
+488: 
+489:   -- S1: unlocked read of the immutable project_id / tenant_id, authorise, refuse with QE015, then lock.
+490:   SELECT d.project_id, d.tenant_id, d.created_from_invoice_id
+491:     INTO v_project, v_tenant, v_auto_inv
+492:     FROM public.deliveries d
+493:    WHERE d.id = p_delivery_id;
+494:   IF NOT FOUND THEN
+495:     RAISE EXCEPTION USING ERRCODE = 'QE015', MESSAGE = 'E15';
+496:   END IF;
+497: 
+498:   -- B2: 049's D-20 audience. Active user found by auth_id = auth.uid(), same tenant, and a
+499:   -- project_members row with role = 'pm' on the row's OWN project. Admins count only as PM members.
+500:   SELECT u.id INTO v_caller
+501:     FROM public.users u
+502:     JOIN public.project_members m ON m.user_id = u.id
+503:    WHERE u.auth_id   = auth.uid()
+504:      AND u.status    = 'active'
+505:      AND u.tenant_id = v_tenant
+506:      AND m.project_id = v_project
+507:      AND m.role      = 'pm';
+508:   IF v_caller IS NULL THEN
+509:     RAISE EXCEPTION USING ERRCODE = 'QE015', MESSAGE = 'E15';
+510:   END IF;
+511: 
+512:   -- Path 6: a DC delivery updates its own row only; an automatic delivery locks the invoice first.
+513:   IF v_auto_inv IS NOT NULL THEN
+514:     PERFORM 1 FROM public.capture_documents d WHERE d.id = v_auto_inv FOR NO KEY UPDATE;
+515:   END IF;
+
+##### E17 050 grants  [supabase/migrations/050_material_inward_functions.sql:1867-1897]
+1867: -- service_role only:
+1868: REVOKE ALL ON FUNCTION public.apply_material_inward_turn(text, uuid, uuid, uuid, text, text, jsonb, boolean, timestamptz, integer)
+1869:   FROM PUBLIC, anon, authenticated, service_role;
+1870: GRANT EXECUTE ON FUNCTION public.apply_material_inward_turn(text, uuid, uuid, uuid, text, text, jsonb, boolean, timestamptz, integer)
+1871:   TO service_role;
+1872: REVOKE ALL ON FUNCTION public.expire_stale_material_inward(text, timestamptz)
+1873:   FROM PUBLIC, anon, authenticated, service_role;
+1874: GRANT EXECUTE ON FUNCTION public.expire_stale_material_inward(text, timestamptz)
+1875:   TO service_role;
+1876: 
+1877: -- authenticated only (048 pattern: REVOKE FROM PUBLIC, anon, service_role; GRANT TO authenticated):
+1878: REVOKE EXECUTE ON FUNCTION public.pm_set_delivery_details(uuid, text, text, text, date)
+1879:   FROM PUBLIC, anon, service_role;
+1880: GRANT EXECUTE ON FUNCTION public.pm_set_delivery_details(uuid, text, text, text, date)
+1881:   TO authenticated;
+1882: REVOKE EXECUTE ON FUNCTION public.pm_approve_delivery(uuid)
+1883:   FROM PUBLIC, anon, service_role;
+1884: GRANT EXECUTE ON FUNCTION public.pm_approve_delivery(uuid)
+1885:   TO authenticated;
+1886: REVOKE EXECUTE ON FUNCTION public.pm_reject_delivery(uuid, text)
+1887:   FROM PUBLIC, anon, service_role;
+1888: GRANT EXECUTE ON FUNCTION public.pm_reject_delivery(uuid, text)
+1889:   TO authenticated;
+1890: REVOKE EXECUTE ON FUNCTION public.pm_link_invoice(uuid, uuid[])
+1891:   FROM PUBLIC, anon, service_role;
+1892: GRANT EXECUTE ON FUNCTION public.pm_link_invoice(uuid, uuid[])
+1893:   TO authenticated;
+1894: REVOKE EXECUTE ON FUNCTION public.pm_unlink_invoice(uuid)
+1895:   FROM PUBLIC, anon, service_role;
+1896: GRANT EXECUTE ON FUNCTION public.pm_unlink_invoice(uuid)
+1897:   TO authenticated;
+
+##### E18 050 assertion block specs  [supabase/migrations/050_material_inward_functions.sql:1927-1939]
+1927:   FOR v_spec IN
+1928:     SELECT * FROM (VALUES
+1929:       -- name, regprocedure signature, expected proconfig, anon, authenticated, service_role
+1930:       ('apply_material_inward_turn',   'public.apply_material_inward_turn(text,uuid,uuid,uuid,text,text,jsonb,boolean,timestamptz,integer)', 'search_path=""',       false, false, true),
+1931:       ('expire_stale_material_inward', 'public.expire_stale_material_inward(text,timestamptz)',                                              'search_path=""',       false, false, true),
+1932:       ('pm_set_delivery_details',      'public.pm_set_delivery_details(uuid,text,text,text,date)',                                           'search_path=""',       false, true,  false),
+1933:       ('pm_approve_delivery',          'public.pm_approve_delivery(uuid)',                                                                   'search_path=""',       false, true,  false),
+1934:       ('pm_reject_delivery',           'public.pm_reject_delivery(uuid,text)',                                                               'search_path=""',       false, true,  false),
+1935:       ('pm_link_invoice',              'public.pm_link_invoice(uuid,uuid[])',                                                                'search_path=""',       false, true,  false),
+1936:       ('pm_unlink_invoice',            'public.pm_unlink_invoice(uuid)',                                                                     'search_path=""',       false, true,  false),
+1937:       ('apply_morning_flow_turn',      'public.apply_morning_flow_turn(text,uuid,uuid,uuid,text,boolean,jsonb,boolean,jsonb,boolean,timestamptz,integer)', 'search_path=public', false, false, true),
+1938:       ('apply_evening_flow_turn',      'public.apply_evening_flow_turn(text,uuid,uuid,uuid,text,boolean,jsonb,jsonb,timestamptz,integer)',   'search_path=public',   false, false, true)
+1939:     ) AS t(fname, sig, cfg, e_anon, e_auth, e_svc)
+
+##### E19 050 DOWN guard (prod DOWN artifact)  [docs/reviews/050-down-prod.sql:20-31]
+20: --    A second run (or a run against a database that never had 050) would otherwise restore bodies and report success on nothing.
+21: DO $$
+22: DECLARE
+23:   v_n int;
+24: BEGIN
+25:   SELECT count(*) INTO v_n FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+26:     AND p.proname IN ('apply_material_inward_turn','expire_stale_material_inward','pm_set_delivery_details',
+27:                       'pm_approve_delivery','pm_reject_delivery','pm_link_invoice','pm_unlink_invoice');
+28:   IF NOT EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '050') OR v_n <> 7 THEN
+29:     RAISE EXCEPTION 'DOWN_PRECONDITION_050: ledger_050=% functions_found=%',
+30:       EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '050'), v_n;
+31:   END IF;
+
+##### E20 T-D8-11 overload rule (static)  [test/capture-files-immutability.test.ts:318-384]
+318: const ROOT = resolve(__dirname, '..')
+319: const NAMES_050 = [
+320:   'apply_material_inward_turn',
+321:   'expire_stale_material_inward',
+322:   'pm_set_delivery_details',
+323:   'pm_approve_delivery',
+324:   'pm_reject_delivery',
+325:   'pm_link_invoice',
+326:   'pm_unlink_invoice',
+327: ] as const
+328: const NAME_051 = 'trg_capture_files_before_update'
+329: 
+330: function sqlSources(): Array<{ path: string; text: string }> {
+331:   const out: Array<{ path: string; text: string }> = []
+332:   for (const dir of ['supabase/migrations', 'docs/reviews']) {
+333:     const abs = resolve(ROOT, dir)
+334:     if (!existsSync(abs)) continue
+335:     for (const f of readdirSync(abs)) {
+336:       if (f.endsWith('.sql')) out.push({ path: `${dir}/${f}`, text: readFileSync(resolve(abs, f), 'utf8') })
+337:     }
+338:   }
+339:   return out
+340: }
+341: 
+342: /** Definitions of public.<name> in the given texts. Comment lines are dropped first, so prose naming a function does not count. */
+343: function countDefinitions(name: string, texts: string[]): number {
+344:   const re = new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+public\\.${name}\\s*\\(`, 'gi')
+345:   let n = 0
+346:   for (const t of texts) {
+347:     const code = t
+348:       .split('\n')
+349:       .map((l) => l.replace(/--.*$/, ''))
+350:       .join('\n')
+351:     n += (code.match(re) ?? []).length
+352:   }
+353:   return n
+354: }
+355: 
+356: /** The $$ ... $$ body of the 051 function, comments included (Guard 2 matches on the raw prosrc, comments and all). */
+357: function functionBody051(sql: string): string {
+358:   const start = sql.indexOf(`CREATE FUNCTION public.${NAME_051}()`)
+359:   if (start < 0) throw new Error('051 CREATE FUNCTION not found')
+360:   const open = sql.indexOf('$$', start)
+361:   const close = sql.indexOf('$$', open + 2)
+362:   if (open < 0 || close < 0) throw new Error('051 function body delimiters not found')
+363:   return sql.slice(open + 2, close)
+364: }
+365: 
+366: describe('T-D8-11 overload rule (static)', () => {
+367:   const texts = sqlSources().map((s) => s.text)
+368: 
+369:   it.each(NAMES_050)('exactly one definition of %s across supabase/migrations/ and docs/reviews/*.sql', (name) => {
+370:     expect(countDefinitions(name, texts)).toBe(1)
+371:   })
+372: 
+373:   it('051 adds exactly one function, and its name is not one of the seven 050 names', () => {
+374:     expect(NAMES_050 as readonly string[]).not.toContain(NAME_051)
+375:     expect(countDefinitions(NAME_051, texts)).toBe(1)
+376:   })
+377: 
+378:   it('control: a planted second definition is counted (so a duplicate would fail the tests above)', () => {
+379:     const planted = 'CREATE OR REPLACE FUNCTION public.pm_approve_delivery(p_id uuid) RETURNS void LANGUAGE sql AS $$ SELECT 1 $$;'
+380:     expect(countDefinitions('pm_approve_delivery', [...texts, planted])).toBe(2)
+381:     const commentOnly = '-- CREATE FUNCTION public.pm_approve_delivery(uuid) is described here only'
+382:     expect(countDefinitions('pm_approve_delivery', [...texts, commentOnly])).toBe(1)
+383:   })
+384: })
+
+##### E21 app: readKind, promptForStep  [lib/whatsapp/flows/material-inward.ts:159-215]
+159: async function readKind(supabase: SupabaseClient, phoneNumber: string, tenantId: string): Promise<'dc' | 'invoice'> {
+160:   const { data, error } = await supabase
+161:     .from('whatsapp_sessions')
+162:     .select('context')
+163:     .eq('phone_number', phoneNumber)
+164:     .eq('tenant_id', tenantId)
+165:     .maybeSingle<{ context: Record<string, unknown> | null }>()
+166:   if (error) throw new MaterialInwardDbError('material-inward session read', error.code)
+167:   const kind = data?.context?.mi_kind
+168:   if (kind !== 'dc' && kind !== 'invoice') throw new Error('material-inward session has no kind')
+169:   return kind
+170: }
+171: 
+172: async function readAck(supabase: SupabaseClient, documentId: string, tenantId: string): Promise<string | null> {
+173:   const { data, error } = await supabase
+174:     .from('capture_documents')
+175:     .select('engineer_ack')
+176:     .eq('id', documentId)
+177:     .eq('tenant_id', tenantId)
+178:     .maybeSingle<{ engineer_ack: string | null }>()
+179:   if (error) throw new MaterialInwardDbError('material-inward document read', error.code)
+180:   if (!data) throw new Error('material-inward document not found')
+181:   return data.engineer_ack
+182: }
+183: 
+184: interface ReplyContext {
+185:   supabase: SupabaseClient
+186:   phoneNumber: string
+187:   tenantId: string
+188:   documentId: string | null
+189: }
+190: 
+191: /** The question the engineer owes at `step`, as plain approved text. */
+192: async function promptForStep(step: number, ctx: ReplyContext): Promise<string> {
+193:   switch (step) {
+194:     case 1:
+195:       return MI_ASK_KIND
+196:     case 2:
+197:       return (await readKind(ctx.supabase, ctx.phoneNumber, ctx.tenantId)) === 'invoice'
+198:         ? MI_ASK_FILE_INVOICE
+199:         : MI_ASK_FILE_DC
+200:     case 3:
+201:       return (await readKind(ctx.supabase, ctx.phoneNumber, ctx.tenantId)) === 'invoice'
+202:         ? MI_ACK_QUESTION_INVOICE
+203:         : MI_ACK_QUESTION_DC
+204:     case 4: {
+205:       if (ctx.documentId === null) throw new Error('material-inward step 4 without a document')
+206:       const ack = await readAck(ctx.supabase, ctx.documentId, ctx.tenantId)
+207:       if (ack === 'no') return MI_ASK_NOTE_NO
+208:       if (ack === 'partial') return MI_ASK_NOTE_PARTIAL
+209:       throw new Error('material-inward step 4 without a no/partial ack')
+210:     }
+211:     default:
+212:       throw new Error('material-inward prompt for an unknown step')
+213:   }
+214: }
+215: 
+
+##### E22 app: handleMaterialInwardTurn reply switch  [lib/whatsapp/flows/material-inward.ts:240-330]
+240:  * Text turns are NOT wrapped: a failure propagates (500), like the other flows (decision Q6b).
+241:  */
+242: export async function handleMaterialInwardTurn(
+243:   params: MaterialInwardTurnParams,
+244:   supabaseClient?: SupabaseClient,
+245: ): Promise<MaterialInwardReply> {
+246:   const supabase = supabaseClient ?? createServiceClient()
+247:   const filesPresent = params.isPhoto || params.media.length > 0
+248: 
+249:   // Files present but none usable (e.g. a photo whose MediaUrl was missing): nothing to record, no RPC.
+250:   if (filesPresent && params.media.length === 0) {
+251:     return { reply: MI_UNSUPPORTED_FILE_REPLY, resolvedFlow: 'invoice' }
+252:   }
+253: 
+254:   const run = async (): Promise<MaterialInwardReply | WrongFlowMarker> => {
+255:     const result = await applyMaterialInwardTurn({
+256:       phoneNumber: params.phoneNumber,
+257:       tenantId: params.tenantId,
+258:       userId: params.userId,
+259:       projectId: params.projectId,
+260:       message: params.message,
+261:       messageSid: params.messageSid,
+262:       media: params.media,
+263:       startFlow: false,
+264:       ...(params.now !== undefined ? { now: params.now } : {}),
+265:       supabaseClient: supabase,
+266:     })
+267:     const ctx: ReplyContext = {
+268:       supabase,
+269:       phoneNumber: params.phoneNumber,
+270:       tenantId: params.tenantId,
+271:       documentId: result.documentId,
+272:     }
+273:     const n = params.media.length
+274:     const reply = (text: string): MaterialInwardReply => ({ reply: text, resolvedFlow: 'invoice' })
+275: 
+276:     switch (result.outcome) {
+277:       case 'start':
+278:         return reply(MI_ASK_KIND)
+279:       case 'advance':
+280:         if (result.currentStep === 3) {
+281:           return reply([MI_FILE_RECEIVED(n), await promptForStep(3, ctx)].join('\n'))
+282:         }
+283:         return reply(await promptForStep(result.currentStep, ctx))
+284:       case 'file_attached':
+285:         return reply([MI_FILE_RECEIVED(n), await promptForStep(result.currentStep, ctx)].join('\n'))
+286:       case 'reask':
+287:         if (result.currentStep === 1) return reply([MI_KIND_REASK, MI_ASK_KIND].join('\n'))
+288:         if (result.currentStep === 2) return reply(MI_FILE_REASK)
+289:         if (result.currentStep === 3) return reply([MI_ACK_REASK, await promptForStep(3, ctx)].join('\n'))
+290:         return reply(await promptForStep(result.currentStep, ctx))
+291:       case 'closed':
+292:         return reply(MI_NOTHING_RECORDED_CLOSE)
+293:       case 'complete': {
+294:         if (result.documentId === null) throw new Error('material-inward complete without a document')
+295:         const ack = await readAck(supabase, result.documentId, params.tenantId)
+296:         return reply(ack === 'unclear' ? MI_NOT_UNDERSTOOD_CLOSE : MI_DONE)
+297:       }
+298:       case 'duplicate':
+299:         // The SID was already handled (webhook idempotency's second line of defence): no second reply.
+300:         return { reply: '', resolvedFlow: 'invoice' }
+301:       case 'expired':
+302:         // Race: the router read the row as live, the RPC found it expired under the lock and cleared it.
+303:         reportFileAfterSessionEnded(params.media)
+304:         return { reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }
+305:       case 'idle': {
+306:         // Race: a day-stale reset happened in memory inside the RPC and the row is still 'invoice' (or was cleared
+307:         // meanwhile). Clear it as the router does -- p_now = max(now, expires_at) -- so the ended reply never repeats.
+308:         const now = params.now !== undefined ? new Date(params.now) : new Date()
+309:         const expiresMs = params.expiresAt !== null ? new Date(params.expiresAt).getTime() : now.getTime()
+310:         await expireStaleMaterialInward(params.phoneNumber, new Date(Math.max(now.getTime(), expiresMs)), supabase)
+311:         reportFileAfterSessionEnded(params.media)
+312:         return { reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }
+313:       }
+314:       case 'wrong_flow': {
+315:         // A check-in started between the router's read and the RPC's lock: the file/answer was not recorded.
+316:         // Decision Q6a: explanation + the current check-in question; no new string.
+317:         const questions =
+318:           result.currentFlow === 'morning'
+319:             ? MORNING_QUESTIONS
+320:             : result.currentFlow === 'evening'
+321:               ? EVENING_QUESTIONS
+322:               : null
+323:         if (questions === null) return { kind: 'wrong_flow_unmapped' }
+324:         return { reply: [CHECKIN_RESET_EXPLAIN_REPLY, questions[result.currentStep] ?? ''].join('\n'), resolvedFlow: null }
+325:       }
+326:     }
+327:   }
+328: 
+329:   let outcome: MaterialInwardReply | WrongFlowMarker
+330:   if (!filesPresent) {
+
+##### E23 app: startMaterialInward  [lib/whatsapp/flows/material-inward.ts:372-410]
+372:   const result = await applyMaterialInwardTurn({
+373:     phoneNumber: params.phoneNumber,
+374:     tenantId: params.tenantId,
+375:     userId: params.userId,
+376:     projectId: params.projectId,
+377:     message: params.message,
+378:     messageSid: params.messageSid,
+379:     startFlow: true,
+380:     ...(params.now !== undefined ? { now: params.now } : {}),
+381:     supabaseClient: supabase,
+382:   })
+383:   const ctx: ReplyContext = {
+384:     supabase,
+385:     phoneNumber: params.phoneNumber,
+386:     tenantId: params.tenantId,
+387:     documentId: result.documentId,
+388:   }
+389:   switch (result.outcome) {
+390:     case 'start':
+391:       return { reply: MI_ASK_KIND, resolvedFlow: 'invoice' }
+392:     case 'reask':
+393:       // Another flow is live (race) -> null. A live 'invoice' session (a concurrent start) -> its current question.
+394:       if (result.currentFlow !== 'invoice') return null
+395:       return { reply: await promptForStep(result.currentStep, ctx), resolvedFlow: 'invoice' }
+396:     case 'duplicate':
+397:       return { reply: '', resolvedFlow: 'invoice' }
+398:     case 'expired':
+399:       return { reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }
+400:     default:
+401:       // advance / closed / complete / file_attached / idle / wrong_flow cannot follow a start request.
+402:       return null
+403:   }
+404: }
+
+##### E24 strings: kind and ack constants  [lib/whatsapp/flows/material-inward-strings.ts:1-60]
+1: // Engineer-facing strings for the material-inward (DC / invoice) capture flow:
+2: // docs/plans/pr-c-plan.md section 7, all 21 rows. C3 added rows 1, 20, 21; C4a adds rows 2-19.
+3: //
+4: // Composition (plan section 7), "\n" separator, same as buildIdleReply:
+5: //   S-3 reply     = MI_CHECKIN_PHOTO_NOT_SAVED_REPLY + "\n" + CHECKIN_RESET_EXPLAIN_REPLY + "\n" + <current check-in question>
+6: //   N13 deferral  = CHECKIN_RESET_EXPLAIN_REPLY + "\n" + <step-1 question>
+7: //   file + prompt = MI_FILE_RECEIVED(n) + "\n" + <ack question | note prompt>
+8: //   re-asks       = MI_KIND_REASK / MI_ACK_REASK + "\n" + <the same question>
+9: //
+10: // Every constant here is approved text. Do not add a string without Aravind's approval (T-STR-2 fails on any
+11: // exported MI_* / CHECKIN_* name outside the approved set).
+12: 
+13: // Row 1. APPROVED 2026-10-26 (Aravind). Tamil owed.
+14: export const MI_SESSION_ENDED_REPLY =
+15:   'That DC or invoice question has ended. Your answer was not recorded. Reply 4 to start again.'
+16: 
+17: // Row 2. APPROVED 2026-10-26 (Aravind). Tamil owed. Defined, unused until C6 (the idle menu does not carry it).
+18: export const MI_MENU_LINE = 'You can send a DC or invoice — reply 4.'
+19: 
+20: // Row 3. APPROVED 2026-10-26 (Aravind). Tamil owed.
+21: export const MI_ASK_KIND = 'Is it a DC or an invoice?\nReply 1 for DC\nReply 2 for invoice'
+22: 
+23: // Row 4. APPROVED 2026-10-26 (Aravind). Tamil owed.
+24: export const MI_ASK_FILE_DC = 'Send one DC. A PDF, or photos of all its pages together.'
+25: 
+26: // Row 5. APPROVED 2026-10-26 (Aravind). Tamil owed.
+27: export const MI_ASK_FILE_INVOICE = 'Send one invoice. A PDF, or photos of all its pages together.'
+28: 
+29: // Row 6. APPROVED 2026-10-26 (Aravind). Tamil owed. One function, two approved texts (n = 1, n > 1).
+30: export function MI_FILE_RECEIVED(n: number): string {
+31:   return n === 1 ? '✅ 1 file received.' : `✅ ${n} files received.`
+32: }
+33: 
+34: // Row 7. APPROVED 2026-10-26 (Aravind). Tamil owed.
+35: export const MI_ACK_QUESTION_DC =
+36:   'Did the material on this DC arrive?\nReply 1 for all arrived\nReply 2 for not arrived\nReply 3 for part arrived'
+37: 
+38: // Row 8. APPROVED 2026-10-26 (Aravind). Tamil owed.
+39: export const MI_ACK_QUESTION_INVOICE =
+40:   'Does this invoice match the material received at site?\nReply 1 for matches\nReply 2 for does not match\nReply 3 for partly matches'
+41: 
+42: // Row 9. APPROVED 2026-10-26 (Aravind). Tamil owed.
+43: export const MI_ASK_NOTE_NO = 'What is wrong? Describe it in your own words.'
+44: 
+45: // Row 10. APPROVED 2026-10-26 (Aravind). Tamil owed.
+46: export const MI_ASK_NOTE_PARTIAL = 'What is missing or different? Describe it in your own words.'
+47: 
+48: // Row 11. APPROVED 2026-10-26 (Aravind). Tamil owed. Followed by "\n" and the same ack question.
+49: export const MI_ACK_REASK = "Sorry, I didn't catch that."
+50: 
+51: // Row 12. APPROVED 2026-10-26 (Aravind). Tamil owed.
+52: export const MI_NOT_UNDERSTOOD_CLOSE = '✅ Your reply is recorded as a note. Your Project Manager will see it.'
+53: 
+54: // Row 13. APPROVED 2026-10-26 (Aravind). Tamil owed.
+55: export const MI_DONE = '✅ Done. Your Project Manager will see it. To send another DC or invoice, reply 4.'
+56: 
+57: // Row 14. APPROVED 2026-10-26 (Aravind). Tamil owed. Followed by "\n" and MI_ASK_KIND.
+58: export const MI_KIND_REASK = "Sorry, I didn't catch that."
+59: 
+60: // Row 15. APPROVED 2026-10-26 (Aravind). Tamil owed.
+
+##### E25 strings tests: APPROVED map and export set  [test/capture-handler.test.ts:150-192]
+150: const APPROVED: Record<string, string> = {
+151:   MI_SESSION_ENDED_REPLY: 'That DC or invoice question has ended. Your answer was not recorded. Reply 4 to start again.',
+152:   MI_MENU_LINE: 'You can send a DC or invoice — reply 4.',
+153:   MI_ASK_KIND: 'Is it a DC or an invoice?\nReply 1 for DC\nReply 2 for invoice',
+154:   MI_ASK_FILE_DC: 'Send one DC. A PDF, or photos of all its pages together.',
+155:   MI_ASK_FILE_INVOICE: 'Send one invoice. A PDF, or photos of all its pages together.',
+156:   MI_ACK_QUESTION_DC:
+157:     'Did the material on this DC arrive?\nReply 1 for all arrived\nReply 2 for not arrived\nReply 3 for part arrived',
+158:   MI_ACK_QUESTION_INVOICE:
+159:     'Does this invoice match the material received at site?\nReply 1 for matches\nReply 2 for does not match\nReply 3 for partly matches',
+160:   MI_ASK_NOTE_NO: 'What is wrong? Describe it in your own words.',
+161:   MI_ASK_NOTE_PARTIAL: 'What is missing or different? Describe it in your own words.',
+162:   MI_ACK_REASK: "Sorry, I didn't catch that.",
+163:   MI_NOT_UNDERSTOOD_CLOSE: '✅ Your reply is recorded as a note. Your Project Manager will see it.',
+164:   MI_DONE: '✅ Done. Your Project Manager will see it. To send another DC or invoice, reply 4.',
+165:   MI_KIND_REASK: "Sorry, I didn't catch that.",
+166:   MI_FILE_REASK: "Sorry, I didn't get a file. Send a PDF, or photos of all its pages.",
+167:   MI_NOTHING_RECORDED_CLOSE: 'Nothing was recorded. To send a DC or invoice, reply 4.',
+168:   MI_UNSUPPORTED_FILE_REPLY: "This file type isn't supported. Nothing was recorded. Send a PDF or a photo instead.",
+169:   MI_IDLE_DOCUMENT_NUDGE: 'File not saved. To send a DC or invoice, reply 4 first.',
+170:   MI_CAPTURE_FAILED_REPLY: "Sorry, I couldn't receive that file. Please send it again.",
+171:   CHECKIN_RESET_EXPLAIN_REPLY: 'Your DC or invoice was stopped for the check-in. Files already received are kept.',
+172:   MI_CHECKIN_PHOTO_NOT_SAVED_REPLY: 'Photo not saved.',
+173: }
+174: 
+175: describe('T-STR: approved strings, byte for byte', () => {
+176:   it('T-STR-1 every approved constant equals plan section 7 exactly', () => {
+177:     const mod = strings as unknown as Record<string, unknown>
+178:     for (const [name, expected] of Object.entries(APPROVED)) {
+179:       expect(mod[name], name).toBe(expected)
+180:     }
+181:     // row 6 is one function with the two approved texts
+182:     expect(strings.MI_FILE_RECEIVED(1)).toBe('✅ 1 file received.')
+183:     expect(strings.MI_FILE_RECEIVED(2)).toBe('✅ 2 files received.')
+184:     expect(strings.MI_FILE_RECEIVED(10)).toBe('✅ 10 files received.')
+185:   })
+186: 
+187:   it('T-STR-2 the module exports exactly the approved MI_* / CHECKIN_* names (21 rows) and nothing else', () => {
+188:     const exported = Object.keys(strings).filter((k) => /^(MI_|CHECKIN_)/.test(k)).sort()
+189:     expect(exported).toEqual([...Object.keys(APPROVED), 'MI_FILE_RECEIVED'].sort())
+190:     expect(exported).toHaveLength(21)
+191:   })
+192: 
+
+##### E26 types: capture_documents Row kind  [types/database.ts:200-236]
+200:         Row: {
+201:           caption: string | null
+202:           created_at: string
+203:           engineer_ack: string | null
+204:           engineer_ack_at: string | null
+205:           engineer_ack_note: string | null
+206:           id: string
+207:           kind: string
+208:           project_id: string
+209:           sent_by: string
+210:           source_message_sid: string
+211:           tenant_id: string
+212:         }
+213:         Insert: {
+214:           caption?: string | null
+215:           created_at?: string
+216:           engineer_ack?: string | null
+217:           engineer_ack_at?: string | null
+218:           engineer_ack_note?: string | null
+219:           id?: string
+220:           kind: string
+221:           project_id: string
+222:           sent_by: string
+223:           source_message_sid: string
+224:           tenant_id: string
+225:         }
+226:         Update: {
+227:           caption?: string | null
+228:           created_at?: string
+229:           engineer_ack?: string | null
+230:           engineer_ack_at?: string | null
+231:           engineer_ack_note?: string | null
+232:           id?: string
+233:           kind?: string
+234:           project_id?: string
+235:           sent_by?: string
+236:           source_message_sid?: string
+
+##### E27 plan: stuck-row gate (C6 item)   [docs/plans/pr-c-plan.md:97-97]
+97: - **C6 entry gate gains two items.** (1) ~~A scan for jobs stuck in `running` (no reaper exists; `claimJobs` selects only `pending`/`failed`) with a deduplicated alert, or a reaper, and the same scan or the PM page's 15-minute rule (V3:119) covering `capture_files` rows left `pending` after a non-retryable alert, unless PR-D's 15-minute rule is already live.~~ **DATED CORRECTION (2026-10-30, per Aravind, Rev 5 C6 gate):** the stuck scan is **ROW-based**, not job-based: `capture_files` rows in `pending` or `failed` that are older than N minutes, with the alert deduplicated per day (N is set when the scan is built); **or** PR-D's 15-minute rule is live. The running-jobs wording above is struck. (2) The D-30 test includes one PDF from a scanner app (some write a prefix before `%PDF-`; C5 accepts the header anywhere in the first 1024 bytes).
+
+##### E28 plan: 15-minute rule (V3:119)  [docs/plans/slice-1a-plan-v3.md:119-119]
+119: - Rows and the ingest job are created inside the engineer RPC transaction (v2 §3.3 `[GUESS]`, kept). A `pending` file older than 15 minutes shows as failed on the PM page.
+
+##### E29 reservations: last entries (050, 051)  [scripts/migration-number-reservations.json:76-90]
+76:   },
+77:   {
+78:     "number": "050",
+79:     "claimedBy": "supabase/migrations/050_material_inward_functions.sql",
+80:     "note": "PR-B of slice 1a: the material-inward functions (apply_material_inward_turn, pm_set_delivery_details, pm_approve_delivery, pm_reject_delivery, pm_link_invoice, pm_unlink_invoice, expire_stale_material_inward) plus the N2 start-branches in apply_morning_flow_turn (038) and apply_evening_flow_turn (040). Branch feat/050-material-inward-fns. STATUS: RESERVED 2026-10-12, no file written yet, NOT applied to any database; the claimedBy path is where the held file will live (held in docs/reviews/ until applied, per CLAUDE.md section 6). Plan: docs/plans/pr-b-050-plan.md. Confirmed against origin/main 4b419f6: supabase/migrations/ ends at 049 and no reservation numbered above 049 existed. NOT checked against sibling worktrees (named as a limit on this reservation, per this file practice). TIER FULL; external-review triggers (a) and (b) tripped. DATED CORRECTION (2026-10-19, block 14): APPLIED TO TEST-DB (exfccwlrhoutkgrlikod) ONLY -- supersedes 'NOT applied to any database' above. SQL sha256 1e09730d26aec0dcd46fefd09601651bad149138326c351556b8405acec0fade applied by supabase db query --linked -f (foreground, one run, exit 0, in-file assertion block passed). DOWN rehearsed on test-db (docs/reviews/050-down-testdb.sql, sha256 c7f13299441ce26c2fa7f63a396a6dfa2c571bbd3d64b0c6ab7451e6ecc83bd6) with a live in-flight session, then 050 re-applied. Ledger row written by Aravind in his own terminal with supabase --workdir <throwaway workdir holding a sha-identical copy of the file> migration repair --status applied 050 --linked (31 statements); the file STAYS in docs/reviews/ (held) until the prod apply. NOT applied to prod; no prod GO exists. Record: docs/reviews/050-test-db-apply-record.md. DATED CORRECTION (2026-10-25, block 21): APPLIED TO PROD (jvxwqignooseazzmwhvl) -- supersedes 'NOT applied to prod; no prod GO exists' above. Same SQL sha256 1e09730d26aec0dcd46fefd09601651bad149138326c351556b8405acec0fade, supabase db query --linked -f, foreground, one run, 17:27:47Z-17:27:53Z, exit 0, in-file assertion block passed; ledger row written by Aravind via supabase --workdir <workdir> migration repair --status applied 050 --linked (31 statements; ledger ends 050). Live morning/evening md5 now cf2e78881f03d4e03a0dc51fd9b6008e / 9987ab905a5563f94f9226445fbcef8b, equal to test-db. The file moved from docs/reviews/ to supabase/migrations/ (git mv, sha unchanged) in the apply commit. PITR not observed (substituted by 050-prod-live-*.sql and 050-down-prod.sql). Record: docs/reviews/050-prod-apply-record.md."
+81:   },
+82:   {
+83:     "number": "051",
+84:     "claimedBy": "supabase/migrations/051_capture_files_immutability.sql",
+85:     "note": "PR-C step C2 of slice 1a: capture_files immutability. Creates trg_capture_files_before_update (a BEFORE UPDATE row trigger on capture_files, SECURITY DEFINER, search_path empty): identity columns never change (QE009), stored and rejected are terminal (QE011), failed may move only to stored or rejected, no move back to pending, QE014 for non-READ-COMMITTED writers; and grants service_role UPDATE on 7 columns only (ingest_status, content_type, byte_size, sha256, storage_path, reject_reason, preview_state). D-8 (docs/reviews/049-plan-review-package.md:33) and the BLOCKING item at docs/reviews/049-review-package.md:145. Branch feat/c2-capture-files-lock, PR #339 (draft). STATUS: RESERVED and HELD 2026-10-27, NOT applied to any database; no apply GO exists. The claimedBy path is where the held file lives (held in docs/reviews/ until applied, per CLAUDE.md section 6). Plan: docs/plans/pr-c-plan.md section 3d. SQL sha256 debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9. Confirmed against origin/main 10cd3a3047d281c34a5e34cbae13d016dd0aa276: supabase/migrations/ ends at 050 and no reservation numbered above 050 existed. NOT checked against sibling worktrees (named as a limit on this reservation, per this file practice). TIER FULL; external-review triggers (a) and (b) tripped; external review pending; package docs/reviews/051-review-package.md. The file moves into supabase/migrations/ only in the prod-apply commit. REV 2, 2026-10-27, after external review round 1 (docs/reviews/051-external-review-round-1.md, sha256 08e1516d06cd28cead094ac812efa68578ca98624d97513dd55b459aece62c7b): adds capture_files.ingested_at (database-stamped, not granted) and four CHECK constraints; the sha256 above WAS the rev 2 file (superseded by REV 3 below, which names the current file); rev 1 was 70ef913cb3a111246ed73f3946dfebedfd690343aaaa92ae2e0edb2551c349d2. Still NOT applied to any database; no apply GO exists. REV 3, 2026-10-27, after external review round 2 (docs/reviews/051-external-review-round-2.md, sha256 f681927322fd968c295dfb93c66b4033fdcbb5eb64269ea4c639566dae9977a1): adds capture_files_details_terminal_only_chk (content_type and byte_size only on stored or rejected), extends the trigger to BEFORE INSERT OR UPDATE (an INSERT must be a blank pending row), and makes the DOWN refuse over terminal rows (terminal_rows=N). The sha256 in this note's SQL-sha256 sentence (debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9) is the rev 3 file; rev 2 was fbd3b3a535db3c9af41991c1b324ae0e7fe26fb5e5713a1de0e6b7a824c15907. Still NOT applied to any database; no apply GO exists. DATED CORRECTION (2026-10-27, Part B): APPLIED TO TEST-DB ONLY (exfccwlrhoutkgrlikod) -- supersedes 'NOT applied to any database' above; NOT applied to prod; no prod GO exists. SQL sha256 debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9 applied by supabase db query --linked -f (foreground, one run, 14:47:48Z-14:47:53Z, exit 0, in-file post-condition block passed). DOWN rehearsed on test-db (docs/reviews/051-down-testdb.sql, sha256 672a422f895bc7b1425e21ae274ad9792c12ed4b1b2d12f334540b06a721da3a, exit 0; fingerprint and comments hash back to the pre-apply values), then 051 re-applied (exit 0, fingerprint equal to the first apply). Ledger row written twice by Aravind via supabase --workdir <throwaway workdir holding a sha-identical copy> migration repair --status applied 051 --linked (15 statements; ledger ends 051). The file STAYS in docs/reviews/ (held) until the prod apply. Record: docs/reviews/051-test-db-apply-record.md. DATED CORRECTION (2026-10-28): APPLIED TO PROD (jvxwqignooseazzmwhvl) -- supersedes 'NOT applied to prod; no prod GO exists' above. Same SQL sha256 debe97f051f4414c72f2bb1f6c45ca37ee59dd1bec43e5cefecca8a74ce22df9 (bytes from git show origin/main at the #339 merge commit 9f3cfb51ccab3fc68a0714f459e70ce47c8f944a), supabase db query --linked -f from a throwaway workdir, foreground, one run, 03:50:27Z-03:50:32Z, exit 0, in-file post-condition block passed. Prod fingerprint 91a1865dd1fd0b98de6a9d9333008593 -> 19102bc8020867d2650e13c6fddd13c0, comments hash 80b77da945cc55890da3acee8182eca2 -> b97d2e3b734f6c002fd5c0a57a06e643 (both equal test-db). Ledger row written by Aravind via supabase --workdir <workdir> migration repair --status applied 051 --linked (15 statements; prod ledger ends 051, 47 rows). The file moved from docs/reviews/ to supabase/migrations/ (git mv, sha unchanged) in the apply commit; claimedBy updated. PITR not observed (substituted by docs/reviews/051-sql-evidence/PITR-substituted-prod-readback.txt and docs/reviews/051-down-prod.sql). Record: docs/reviews/051-prod-apply-record.md."
+86:   }
+87: ]
+
+##### E30 pm_unlink_invoice CASE WHEN v_has_ack  [supabase/migrations/050_material_inward_functions.sql:996-1012]
+996:     FROM public.delivery_invoice_links l
+997:    WHERE l.invoice_document_id = v_inv AND l.link_source = 'pm_manual' AND l.unlinked_at IS NULL;
+998:   IF v_pm_links = 0 AND v_auto_id IS NOT NULL THEN
+999:     SELECT d.status, d.cancel_reason INTO v_auto_status, v_auto_cancel
+1000:       FROM public.deliveries d WHERE d.id = v_auto_id;
+1001:     IF v_auto_status = 'cancelled' AND v_auto_cancel = 'superseded_by_link' THEN
+1002:       SELECT (c.engineer_ack IS NOT NULL) INTO v_has_ack
+1003:         FROM public.capture_documents c WHERE c.id = v_inv;
+1004:       UPDATE public.deliveries
+1005:          SET status        = CASE WHEN v_has_ack THEN 'awaiting_pm' ELSE 'incomplete' END,
+1006:              cancelled_at  = NULL,
+1007:              cancel_reason = NULL,
+1008:              approved_by   = NULL,
+1009:              approved_at   = NULL
+1010:        WHERE id = v_auto_id;
+1011:       INSERT INTO public.delivery_invoice_links
+1012:         (tenant_id, project_id, delivery_id, invoice_document_id, link_source)
+
+##### E31 capture-switch (C6 not flipped; Aravind phone only)  [lib/whatsapp/capture-switch.ts:1-27]
+1: // Digit-4 (material-inward capture) go-live switch. docs/plans/pr-c-plan.md section 4.
+2: //
+3: // DARK in C3: nothing outside this module's own tests calls isCaptureDigit4Live.
+4: // C4 wires the digit-4 start branch to it; C6 flips the constant.
+5: 
+6: export const CAPTURE_DIGIT_4_LIVE = false
+7: 
+8: // E.164: "+" then 8-15 digits.
+9: const E164 = /^\+\d{8,15}$/
+10: 
+11: /**
+12:  * Parse CAPTURE_DIGIT4_TEST_PHONES strictly: comma-separated E.164, whitespace
+13:  * around entries tolerated. ANY malformed entry (including an empty entry from
+14:  * a stray comma) -> empty list, i.e. fail closed. Unset or blank -> empty list.
+15:  */
+16: export function parseCaptureTestPhones(raw: string | undefined): string[] {
+17:   if (raw === undefined || raw.trim() === '') return []
+18:   const entries = raw.split(',').map((e) => e.trim())
+19:   if (!entries.every((e) => E164.test(e))) return []
+20:   return entries
+21: }
+22: 
+23: /** True only if the constant is on, or this phone is on the strict allowlist. */
+24: export function isCaptureDigit4Live(phone: string): boolean {
+25:   if (CAPTURE_DIGIT_4_LIVE) return true
+26:   return parseCaptureTestPhones(process.env.CAPTURE_DIGIT4_TEST_PHONES).includes(phone)
+27: }
+
+##### E32 router digit-4 start call site  [lib/whatsapp/inbound-start.ts:1130-1165]
+1130:     }
+1131:   }
+1132: 
+1133:   // PR-C C4a: the material-inward start. DARK: both conditions must hold --
+1134:   // a leading "4" AND the digit-4 switch live for THIS phone (capture-switch.ts;
+1135:   // the constant is false and the allowlist is empty by default). Otherwise "4"
+1136:   // falls through exactly as before (item_reserved reply below).
+1137:   if (adhocKind === 'item_reserved' && isLeadingDigitFour(params.message) && isCaptureDigit4Live(params.phoneNumber)) {
+1138:     if (!params.messageSid) {
+1139:       throw new Error('routeInboundMessage: digit-4 start without a message SID')
+1140:     }
+1141:     const started = await startMaterialInward(
+1142:       {
+1143:         phoneNumber: params.phoneNumber,
+1144:         tenantId: params.tenantId,
+1145:         userId: params.userId,
+1146:         projectId: params.projectId,
+1147:         message: params.message,
+1148:         messageSid: params.messageSid,
+1149:         ...(params.now !== undefined ? { now: params.now } : {}),
+1150:       },
+1151:       supabase,
+1152:     )
+1153:     // null = the RPC refused to start (another flow went live in between): fall through to today's reply.
+1154:     if (started !== null) return started
+1155:   }
+1156: 
+1157:   // "Both submitted" is NOT special-cased to a bare static string here --
+1158:   // computeIdleHeaderState already maps it to 'complete', and it goes
+1159:   // through the SAME three-line composition as every other state (the
+1160:   // approved design's whole point: one structural reply, never a splinter
+1161:   // case). dispatchInboundTurn/evening.ts's own EVENING_ALREADY_COMPLETE_
+1162:   // REPLY constant is a DIFFERENT call site (a real completed-evening-turn
+1163:   // RPC outcome) and is deliberately not reused here.
+1164:   //
+1165:   // EXTRACTED, stage 3: this used to be an inline daily_logs lookup +
+
+##### E33 router: live invoice session branch (no switch check) and expiry clear  [lib/whatsapp/inbound-start.ts:776-836]
+776:   // row from a previous IST day (not yet expired by the clock, e.g. a turn at
+777:   // 23:50 with expires_at 00:20) p_now is max(now, expires_at), which makes the
+778:   // same locked, subtract-only clear apply; a late turn that refreshed
+779:   // expires_at in between makes it return false (safe).
+780:   if (state.currentFlow === 'invoice') {
+781:     const expiresMs = state.expiresAt !== null ? new Date(state.expiresAt).getTime() : now.getTime()
+782:     const asOf = state.dayStale ? new Date(Math.max(now.getTime(), expiresMs)) : now
+783:     let cleared: boolean
+784:     try {
+785:       cleared = await expireStaleMaterialInward(params.phoneNumber, asOf, supabase)
+786:     } catch (err) {
+787:       // C4b (decision Q9, narrowed): only the ROUTING reads of a PDF message are caught here. The handler call below
+788:       // is deliberately outside any catch.
+789:       if (params.documentMedia === undefined) throw err
+790:       return documentRoutingReadFailed(params.documentMedia)
+791:     }
+792:     if (cleared) {
+793:       // D1(d): the inbound message -- text, photo, any media -- is NOT
+794:       // processed; the engineer gets the one-shot ended reply. The row is
+795:       // already cleared, so the next message takes the ordinary idle path and
+796:       // this reply never repeats.
+797:       const media = params.documentMedia ?? params.media ?? []
+798:       // C4a (plan section 3f step 3, Aravind's rev 2): a TEXT-ONLY leading "4"
+799:       // right after the session ended, on a phone where digit 4 is live, starts
+800:       // the flow at once instead of getting the ended reply. The row is cleared,
+801:       // so the idle path below reaches the digit-4 start branch. Anything else
+802:       // (another text, a photo, a dark phone) still gets the ended reply.
+803:       const startsFresh =
+804:         media.length === 0 &&
+805:         params.isPhoto !== true &&
+806:         params.documentMedia === undefined &&
+807:         isLeadingDigitFour(params.message) &&
+808:         isCaptureDigit4Live(params.phoneNumber)
+809:       if (!startsFresh) {
+810:         // Decision Q11: counts only. No phone, URL, body, tenant or user id.
+811:         reportFileAfterSessionEnded(media)
+812:         return { reply: MI_SESSION_ENDED_REPLY, resolvedFlow: null }
+813:       }
+814:     } else {
+815:       // Live (or a day-stale row a late turn refreshed): the material-inward
+816:       // handler. The RPC re-reads the row under its lock and arbitrates a
+817:       // race ('expired' / 'idle' outcomes), so dayStale does not matter here.
+818:       if (!params.messageSid) {
+819:         throw new Error('routeInboundMessage: invoice session turn without a message SID')
+820:       }
+821:       return handleMaterialInwardTurn(
+822:         {
+823:           phoneNumber: params.phoneNumber,
+824:           tenantId: params.tenantId,
+825:           userId: params.userId,
+826:           projectId: params.projectId,
+827:           message: params.message,
+828:           messageSid: params.messageSid,
+829:           // C4b: a PDF message counts as "files present" even if no item was extractable (-> MI_UNSUPPORTED_FILE_REPLY).
+830:           isPhoto: params.isPhoto === true || params.documentMedia !== undefined,
+831:           media: params.documentMedia ?? params.media ?? [],
+832:           ...(params.now !== undefined ? { now: params.now } : {}),
+833:           expiresAt: state.expiresAt,
+834:         },
+835:         supabase,
+836:       )
+
+##### E34 dark-path reply for digit 4 (item_reserved)  [lib/whatsapp/inbound-start.ts:362-370]
+362: // Nothing enforces the two staying in sync automatically -- if this file's
+363: // copy changes, the spec's prose needs a matching edit, never the other
+364: // way around.
+365: const CORRECTION_LINE: Record<Exclude<AdhocInputKind, 'item1'>, string> = {
+366:   unrecognized: "I didn't understand that. Nothing was recorded.",
+367:   item_reserved: "That option isn't available yet. Nothing was recorded.",
+368:   item2:
+369:     'Safety reporting is not available here. If someone is hurt or in danger, call your site supervisor now.',
+370: }
+
+##### E35 sole caller of the RPC (applyMaterialInwardTurn)  [lib/whatsapp/flows/material-inward.ts:105-125]
+105:   startFlow: boolean
+106:   now?: string
+107:   supabaseClient?: SupabaseClient
+108: }
+109: 
+110: /** Wraps apply_material_inward_turn (migration 050, service_role only). */
+111: export async function applyMaterialInwardTurn(params: ApplyParams): Promise<MaterialInwardTurnResult> {
+112:   const supabase = params.supabaseClient ?? createServiceClient()
+113:   const media = params.media ?? []
+114:   const { data, error } = await supabase.rpc('apply_material_inward_turn', {
+115:     p_phone_number: params.phoneNumber,
+116:     p_tenant_id: params.tenantId,
+117:     p_user_id: params.userId,
+118:     p_project_id: params.projectId,
+119:     p_message: params.message,
+120:     p_message_sid: params.messageSid,
+121:     // `index` is omitted on purpose: the RPC then uses the ordinal (S050 COALESCE(index, ord - 1)).
+122:     p_media:
+123:       media.length > 0
+124:         ? (media.map((m) => ({ content_type: m.contentType.trim().toLowerCase(), url: m.url })) as unknown as Json)
+125:         : undefined,
+
+##### E36 GitHub state read 2026-11-01 (git branch -r | grep -E "fix/mi-|fix/error-summary"; gh pr list --state open)
+remote branches matching fix/mi-multi-photo-reply, fix/mi-unsupported-file-reply, fix/error-summary: NONE (not on origin). Remote branch pr-d-material-inward: present.
+open PRs (7, all docs): 203 docs/pr-c4-proposal-and-rediscovery-finding; 195 docs/pr-c3-proposal; 193 docs/claude-md-migration-consumer-rule; 190 docs/dpr-column-audit; 189 docs/equipment-parser-lexicon-debt; 185 worktree-036-037-review-package; 184 worktree-engineer-append-correction-decision
+
+##### E37 users composite key used by the new FK: supabase/migrations/017_rls_column_bounding.sql:58  ADD CONSTRAINT users_id_tenant_id_key UNIQUE (id, tenant_id);
+
+##### E38 048 helper grant pattern (REVOKE; GRANT TO postgres)  [supabase/migrations/048_engineer_registration.sql:198-204]
+198: -- Rule 1 (every SECURITY DEFINER function needs a REVOKE and a GRANT) and changes
+199: -- the effective ACL not at all -- postgres already owns the function -- so this
+200: -- helper is NOT callable by any other role.
+201: REVOKE EXECUTE ON FUNCTION public.engineer_admin_gate(uuid)
+202:   FROM PUBLIC, anon, authenticated, service_role;
+203: GRANT EXECUTE ON FUNCTION public.engineer_admin_gate(uuid) TO postgres;
+204: 
+
+##### E39 048 public function grant pattern (REVOKE FROM PUBLIC, anon, service_role; GRANT TO authenticated)  [supabase/migrations/048_engineer_registration.sql:376-386]
+376: $$;
+377: 
+378: -- Public function: REVOKE from PUBLIC and, BY NAME, anon and service_role; GRANT to
+379: -- authenticated (Class 2 in 020's convention -- the caller is derived and re-checked
+380: -- in the body, the ACL is defence-in-depth in front of it, not instead of it).
+381: REVOKE EXECUTE ON FUNCTION public.add_engineers_to_project(uuid, jsonb, boolean, boolean)
+382:   FROM PUBLIC, anon, service_role;
+383: GRANT EXECUTE ON FUNCTION public.add_engineers_to_project(uuid, jsonb, boolean, boolean)
+384:   TO authenticated;
+385: 
+386: COMMIT;
+
+##### E40 049 RLS: capture_documents_select / capture_files_select (no reference to kind)  [supabase/migrations/049_capture_tables.sql:896-934]
+896: -- policy exists: service_role bypasses RLS, so for it the grant layer below
+897: -- is the only barrier.
+898: -- -----------------------------------------------------------------------------
+899: -- [src: D-20, R7, C-30]
+900: ALTER TABLE public.capture_documents ENABLE ROW LEVEL SECURITY;
+901: ALTER TABLE public.capture_files ENABLE ROW LEVEL SECURITY;
+902: ALTER TABLE public.deliveries ENABLE ROW LEVEL SECURITY;
+903: ALTER TABLE public.delivery_invoice_links ENABLE ROW LEVEL SECURITY;
+904: 
+905: -- [src: D-20, R7, C-30, D-5]
+906: CREATE POLICY capture_documents_select ON public.capture_documents
+907:   FOR SELECT TO authenticated
+908:   USING (
+909:     tenant_id = public.get_user_tenant_id()
+910:     AND EXISTS (
+911:       SELECT 1 FROM public.project_members pm
+912:       JOIN public.users u ON u.id = pm.user_id
+913:       WHERE pm.project_id = capture_documents.project_id
+914:         AND pm.role = 'pm'
+915:         AND u.auth_id = (SELECT auth.uid())
+916:         AND u.status = 'active'
+917:     )
+918:   );
+919: 
+920: -- [src: D-20, R7, C-30, D-5]
+921: CREATE POLICY capture_files_select ON public.capture_files
+922:   FOR SELECT TO authenticated
+923:   USING (
+924:     tenant_id = public.get_user_tenant_id()
+925:     AND EXISTS (
+926:       SELECT 1 FROM public.project_members pm
+927:       JOIN public.users u ON u.id = pm.user_id
+928:       WHERE pm.project_id = capture_files.project_id
+929:         AND pm.role = 'pm'
+930:         AND u.auth_id = (SELECT auth.uid())
+931:         AND u.status = 'active'
+932:     )
+933:   );
+934: 
+
+##### E41 v3 section 2.2: ack lives on the document, not evidence for linked DCs  [docs/plans/slice-1a-plan-v3.md:118-118]
+118: - **The ack lives on the document, never copied to a delivery.** For an invoice the ack is shown on the invoice record only, labelled as the engineer's reply about that invoice. It is **not** evidence that the linked DCs arrived; each DC's own ack is (Q7).
+
+##### E42 v3 Q7: wording risk, invoice slot should not assert arrival  [docs/plans/slice-1a-plan-v3.md:353-357]
+353: ### Q7. A28 case 3 — wording risk only
+354: 
+355: The A18 question asks whether goods **arrived**. An invoice that bills goods received earlier on DCs may not describe an arrival at all: the engineer might answer "Yes" to mean "the invoice is fine", or "No" because the invoice quantities differ, or "Partially" because only some DCs were seen. Three effects to flag: (1) the invoice-question slot (`MI_ACK_QUESTION_INVOICE`) should not assert arrival; (2) the ack is stored on the **invoice document**, not copied to the DCs, so it cannot be misread as evidence the earlier DCs arrived (each DC's own ack is that evidence); (3) in case 2 (invoice-only) the question *is* an arrival question, so one slot may need two meanings. **Whether site engineers send such invoices at all is an open question for Aravind** (§12 D5). I have not drafted or proposed wording.
+356: 
+357: ### Q8. Revised PR breakdown — see §8. Tiers and reasons are in the table. Engineers are switched on only after PR-D.
+
+##### E43 v3 R7  [docs/plans/slice-1a-plan-v3.md:410-410]
+410: - **R7.** Case 3's invoice ack (Q7) can be misread as arrival evidence on the PM page if the label is vague.
+
+##### E44 049 grants on capture tables (service_role SELECT only)  [supabase/migrations/049_capture_tables.sql:973-980]
+973: REVOKE ALL ON public.capture_documents FROM anon, authenticated, service_role;
+974: REVOKE ALL ON public.capture_files FROM anon, authenticated, service_role;
+975: REVOKE ALL ON public.deliveries FROM anon, authenticated, service_role;
+976: REVOKE ALL ON public.delivery_invoice_links FROM anon, authenticated, service_role;
+977: 
+978: GRANT SELECT ON public.capture_documents TO authenticated, service_role;
+979: GRANT SELECT ON public.capture_files TO authenticated, service_role;
+980: GRANT SELECT ON public.deliveries TO authenticated, service_role;
+
+##### E45 050 ack stored incl. unclear, then delivery move  [supabase/migrations/050_material_inward_functions.sql:233-262]
+233:         -- a single '.' or ')', and the keycap forms (digit + U+FE0F + U+20E3). Anything else is not an ack.
+234:         v_ack := CASE v_norm WHEN '1' THEN 'yes' WHEN '2' THEN 'no' WHEN '3' THEN 'partial' ELSE NULL END;
+235:         IF v_ack IS NULL AND v_reask < 1 THEN
+236:           v_session.context := v_session.context || jsonb_build_object('mi_reask', v_reask + 1);
+237:           v_outcome := 'reask';
+238:         ELSE
+239:           IF v_ack IS NULL THEN
+240:             v_ack  := 'unclear';
+241:             v_note := left(v_text, 1000);          -- the raw text is kept as the note (v3:91)
+242:           END IF;
+243:           -- The ack is ALWAYS stored on the document (B1).
+244:           UPDATE public.capture_documents
+245:              SET engineer_ack      = v_ack,
+246:                  engineer_ack_note = v_note
+247:            WHERE id = v_doc_id;
+248:           -- [SQL review r1, per Aravind 18 Oct] N-2: exactly one document row must have been updated. If mi_document_id were ever missing,
+249:           -- the UPDATE would touch 0 rows and the flow would still answer 'complete' with no ack stored.
+250:           GET DIAGNOSTICS v_rows = ROW_COUNT;
+251:           IF v_rows <> 1 THEN
+252:             RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+253:           END IF;
+254:           -- The delivery moves to awaiting_pm ONLY WHERE its status is 'incomplete'; any other
+255:           -- status is left alone (B1). Do NOT clear cancelled_* to force a move.
+256:           UPDATE public.deliveries
+257:              SET status = 'awaiting_pm'
+258:            WHERE status = 'incomplete'
+259:              AND (dc_document_id = v_doc_id OR created_from_invoice_id = v_doc_id);
+260:           IF v_ack IN ('no', 'partial') THEN
+261:             v_session.current_step := 4;
+262:             v_session.context      := v_session.context || jsonb_build_object('mi_reask', 0);
+
+##### E46 PR-D1 branch origin/pr-d-material-inward @ 4d5bea3 (UNMERGED, read-only): file-list.tsx lines 19-23 and labels.ts lines 19-23
+17: 
+18: const NOT_STORED_LABEL: Record<Exclude<PmFileItem['display'], 'stored'>, string> = {
+19:   pending: PM_LABEL_FILE_PENDING,
+20:   pending_timeout: PM_LABEL_FILE_PENDING_TIMEOUT,
+21:   failed: PM_LABEL_FILE_FAILED,
+22:   rejected_type: PM_LABEL_FILE_REJECTED_TYPE,
+23:   rejected_size: PM_LABEL_FILE_REJECTED_SIZE,
+24: }
+25: 
+17: // Pure mapping from DB values to copy constants and chip variants. No user-facing text is defined here.
+18: 
+19: /** The ack label for a document of the given kind. An invoice never gets a DC label and the reverse (PM_ACK_LABEL is keyed by kind). */
+20: export function ackLabel(kind: PmDocKind | null, ack: PmAck | null): string {
+21:   // No known kind (null-kind tolerance, PR-D2 / MI-KIND-REMOVAL): no kind-specific label exists, so show the existing "no ack" slot.
+22:   if (kind === null || ack === null) return PM_ACK_NONE
+23:   return PM_ACK_LABEL[kind][ack]
+24: }
+25: 
+
+##### E47 PR-D1 branch origin/pr-d-material-inward @ 4d5bea3 (UNMERGED, read-only): lib/capture/pm-copy.ts lines 4-9 and 50-62 (ack labels are per document kind)
+4: //
+5: // Constraints any final wording must meet (rules, not text):
+6: //   * Ack labels are separate per document type. Invoice ack: matches / does not match / partly matches.
+7: //     DC ack: all arrived / not arrived / part arrived. An invoice's ack is never evidence that goods arrived.
+8: //   * No string says "DC missing" or "paid" (slice-1a-plan-v3.md A16 / A17; asserted by test/pm-render.test.tsx).
+9: //   * 'unclear' (both ack types) is OPEN: Aravind has not decided its label or whether it applies to both types.
+50: // Typed so a new DB ack value or document kind is a compile error, and so a kind can never fall through to the
+51: // other kind's label.
+52: export const PM_ACK_LABEL: Record<PmDocKind, Record<PmAck, string>> = {
+53:   invoice: {
+54:     yes: PM_ACK_INVOICE_YES,
+55:     no: PM_ACK_INVOICE_NO,
+56:     partial: PM_ACK_INVOICE_PARTIAL,
+57:     unclear: PM_ACK_INVOICE_UNCLEAR,
+58:   },
+59:   dc: {
+60:     yes: PM_ACK_DC_YES,
+61:     no: PM_ACK_DC_NO,
+62:     partial: PM_ACK_DC_PARTIAL,
+
+##### E48 049 capture_documents insert trigger (refuses ack values at INSERT)  [supabase/migrations/049_capture_tables.sql:855-876]
+855: CREATE FUNCTION public.trg_capture_documents_before_insert()
+856: RETURNS trigger
+857: LANGUAGE plpgsql
+858: SECURITY DEFINER
+859: SET search_path = ''
+860: AS $$
+861: BEGIN
+862:   -- B3: first statement.
+863:   IF current_setting('transaction_isolation') <> 'read committed' THEN
+864:     RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';
+865:   END IF;
+866: 
+867:   IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN
+868:     RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+869:   END IF;
+870: 
+871:   -- S-4 (SQL review r3, per Aravind 12 Oct): created_at stamped by the database.
+872:   NEW.created_at := now();
+873: 
+874:   RETURN NEW;
+875: END;
+876: $$;
+
+##### E49 050 DOWN pattern: lock_timeout + LOCK TABLE whatsapp_sessions IN EXCLUSIVE MODE  [docs/reviews/050-down-prod.sql:12-18]
+12: BEGIN;
+13: 
+14: SET LOCAL lock_timeout = '3s';
+15: -- EXCLUSIVE, not SHARE ROW EXCLUSIVE: the latter does not conflict with the ROW SHARE lock of a turn's
+16: -- SELECT ... FOR UPDATE and DEADLOCKS (review r2, proven on a stub); EXCLUSIVE waits for in-flight turns.
+17: LOCK TABLE public.whatsapp_sessions IN EXCLUSIVE MODE;
+18: 
+
+##### E50a D-30 A1 prod readback: apply_material_inward_turn function row (md5_prosrc, md5_def)  [docs/reviews/d30-evidence/d30-a1-prod.csv:5-5]
+5: 1,apply_material_inward_turn  /  10 function (owner secdef config acl md5_prosrc md5_def),"pg_proc_count=1 owner=postgres secdef=true config={""search_path=\""\""""} acl={postgres=X/postgres,service_role=X/postgres} md5_prosrc=d7a0c5222aaaa14e68c1544ee268cb5d md5_def=cecc170b26208d4b820402879e020271",77f0c84549171c8b8ee7327f0476f47c,"md5_def=cecc170b26208d4b820402879e020271 acl={postgres=X/postgres,service_role=X/postgres}","050-prod-apply-record.md:43,49-51",MATCH
+
+##### E50b D-30 A1 prod readback: apply_material_inward_turn OBJECT md5 row  [docs/reviews/d30-evidence/d30-a1-prod.csv:136-136]
+136: 2,OBJECT md5  /  apply_material_inward_turn,513acf57ec85f4267f9c9bef1671f83e,513acf57ec85f4267f9c9bef1671f83e,null,null,BASELINE ONLY (first readback)
+
+##### E51 D-12: 049 comments, and v3 INVOICE_OVERDUE_DAYS / D12 (threshold has no value)  [supabase/migrations/049_capture_tables.sql:486-489]
+486: 
+487:   -- F4-1 (per Aravind 11 Oct): linked_at is stamped by the database, never
+488:   -- trusted from NEW (it feeds the D-12 clock and the unlinked_at >= linked_at CHECK).
+489:   NEW.linked_at := now();
+
+##### E51b 049 comment: engineer_ack_at drives D-12  [supabase/migrations/049_capture_tables.sql:806-811]
+806:   -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the acknowledgement time
+807:   -- is stamped by the database when the ack is first set; a caller-supplied
+808:   -- value is overwritten. It drives the D-12 clock.
+809:   IF OLD.engineer_ack IS NULL AND NEW.engineer_ack IS NOT NULL THEN
+810:     NEW.engineer_ack_at := now();
+811:   END IF;
+
+##### E51c v3 overdue constant  [docs/plans/slice-1a-plan-v3.md:176-180]
+176: | internal transfer | never "invoice expected" |
+177: | invoice linked | "invoice expected" gone; invoice reference shown |
+178: | any state | **never a "DC missing" text** (A16); never "paid" (A17) |
+179: 
+180: `INVOICE_OVERDUE_DAYS` is declared with **no value** (A16: TBD); no overdue styling ships.
+
+##### E51d v3 open decision D12  [docs/plans/slice-1a-plan-v3.md:400-400]
+400: - **D12.** Overdue threshold for "invoice expected" is TBD (A16): the constant has no value.
+
+##### E52 d30-record: allowlist set, dark-control case 7, jobs RLS item  [docs/reviews/d30-record.md:13-16]
+13:   `acef67fe-e775-439d-82b8-5b8526868d6d`, 31 Oct 2026.
+14: - Release `fe75d6c` (`main`).
+15: - `CAPTURE_DIGIT4_TEST_PHONES` set to Aravind's number only. Reported: Vercel prod scope, redeployed after the change.
+16: - Snapshot used by the after-checks: `2026-10-31 06:15:00+00` (observed in both result files).
+
+##### E52b d30-record cases 1-7  [docs/reviews/d30-record.md:33-41]
+33: Reported by Aravind (screenshots in chat, not committed).
+34: 
+35: 1. DC, 1 photo, ack 1.
+36: 2. Invoice, 3 photos, ack 1. Three separate "1 file received" replies.
+37: 3. A photo sent at the kind step, then "dC"; DC, 1 photo, ack 2 with a note.
+38: 4. Invoice, 1 scanner-app PDF, ack 1 (the scanner app is per Aravind).
+39: 5. A .pptx inside a live session got the generic `UNSUPPORTED_MEDIA_REPLY`.
+40: 6. JPEG sent as a document, DC, ack 3 with a note.
+41: 7. Control: the cofounder's phone sent "4" and got the dark reply.
+
+##### E52c d30-record Also recorded (jobs RLS)  [docs/reviews/d30-record.md:90-94]
+90: Also recorded:
+91: 
+92: - `jobs` RLS is enabled out-of-band (see section 2). This is a FULL-tier item to resolve before the switch trigger.
+93: - Kind-question UX: per Aravind's decision in chat, a neutral question after A10/A18; OCR comes in slice 1b, asynchronous
+94:   and PM-confirmed.
+
+##### E53 test fixture makeDoc (drives 4 -> kind -> file; requires delivery_id)  [test/helpers/capture-fixtures.ts:336-354]
+336: /**
+337:  * Drive the REAL engineer function to S3 (document + delivery + files exist; the ack is still pending):
+338:  * start (4) -> kind ('1' = DC, '2' = invoice) -> file. `label` keeps SIDs and the phone unique per scenario.
+339:  */
+340: export async function makeDoc(
+341:   kit: CaptureKit,
+342:   kind: 'dc' | 'invoice',
+343:   label: string,
+344:   o: { now?: Date; tenantId?: string; projectId?: string; userId?: string } = {},
+345: ): Promise<MadeDoc> {
+346:   const phone = kit.phone(label)
+347:   const base = { ...(o.now ? { now: o.now } : {}), ...(o.tenantId ? { tenantId: o.tenantId } : {}), ...(o.projectId ? { projectId: o.projectId } : {}), ...(o.userId ? { userId: o.userId } : {}) }
+348:   await miTurn(kit, phone, '4', kit.sid(`${label}-s0`), { ...base, start: true })
+349:   await miTurn(kit, phone, kind === 'dc' ? '1' : '2', kit.sid(`${label}-s1`), base)
+350:   const fileSid = kit.sid(`${label}-s2`)
+351:   const r = await miTurn(kit, phone, null, fileSid, { ...base, media: jpegMedia(1) })
+352:   if (!r.document_id || !r.delivery_id) throw new Error(`makeDoc(${label}): no document_id/delivery_id in ${JSON.stringify(r)}`)
+353:   return { phone, docId: r.document_id, deliveryId: r.delivery_id, fileSid }
+354: }
+
+##### E54 grep results read 2026-11-01 (raw)
+ls supabase/config.toml -> No such file or directory (no PostgREST exposed-schema config in the repo; the hosted setting is a Supabase console value)
+grep -rniE "CREATE SCHEMA" supabase/migrations -> no matches (no schema other than public/auth/storage is created by any migration)
+grep -rnE "INVOICE_OVERDUE_DAYS" lib app -> no matches on main; none in pm-copy.ts on origin/pr-d-material-inward
+makeDoc( call count in test/: 61 across capture-pm-functions, capture-races, capture-checkin-n2-n13, capture-engineer-flow, capture-files-immutability, unit/capture-fixtures-clock, helpers/capture-fixtures
+
+##### E55 050 create block: processed_messages lookup and refusal (kept unchanged in 052)  [supabase/migrations/050_material_inward_functions.sql:312-321]
+312:       END IF;
+313:       -- Q2-6: ONE SID for both the received_at lookup and source_message_sid. A missing
+314:       -- processed_messages row (or a NULL created_at) is refused.
+315:       SELECT pm.created_at INTO v_received
+316:         FROM public.processed_messages pm
+317:        WHERE pm.message_sid = p_message_sid;
+318:       IF v_received IS NULL THEN
+319:         RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';
+320:       END IF;
+321: 
+
+##### E56 fixtures delete processed_messages rows (teardown)  [test/helpers/capture-fixtures.ts:236-242]
+236:     if (jobErr) throw new Error(`teardown jobs failed: ${jobErr.message}`)
+237:     const { error: logErr } = await svc.from('daily_logs').delete().eq('tenant_id', tenantId)
+238:     if (logErr) throw new Error(`teardown daily_logs failed: ${logErr.message}`)
+239:   }
+240:   const { error: pmErr } = await svc.from('processed_messages').delete().like('message_sid', `ZZTestCapture-${kit.runTag}-%`)
+241:   if (pmErr) throw new Error(`teardown processed_messages failed: ${pmErr.message}`)
+242:   if (kit.phones.length > 0) {
+
+##### E57 047 revokes DELETE on processed_messages from anon, authenticated only  [supabase/migrations/047_revoke_unused_table_rights.sql:199-202]
+199: REVOKE TRUNCATE, TRIGGER, REFERENCES, MAINTAIN, DELETE ON public.outbound_sends FROM anon, authenticated;
+200: REVOKE TRUNCATE, TRIGGER, REFERENCES, MAINTAIN, DELETE ON public.owner_email_verifications FROM anon, authenticated;
+201: REVOKE TRUNCATE, TRIGGER, REFERENCES, MAINTAIN, DELETE ON public.processed_messages FROM anon, authenticated;
+202: REVOKE TRUNCATE, TRIGGER, REFERENCES, MAINTAIN, DELETE ON public.project_members FROM anon, authenticated;
+
+##### E58 pr-c-plan S-F-2: un-consume on failure deletes the processed_messages row  [docs/plans/pr-c-plan.md:114-114]
+114: - **S-F-2: un-consume on failure.** Delete the `processed_messages` row and return 500 so Twilio's retry reprocesses; the RPC's SID check makes this safe. Costs: `received_at` shifts to the retry time `[inferred]`; needs `service_role` DELETE on `processed_messages` — 047 revoked DELETE only from anon/authenticated (047:201) and the default ACL gives `service_role` everything (CM §6, per-role rule), so likely held `[inferred]`, unverified (no DB access).
+
+##### E59 lint Rule 10: function-redefinition-requires-capture (body_md5 (pre-nnn): + pg_get_functiondef)  [scripts/lint-migrations.mjs:596-644]
+596: // an actual rehearsal, after the fact. Mechanical, textual half of the fix:
+597: // any migration that contains CREATE (OR REPLACE) FUNCTION for a name
+598: // ALREADY DEFINED in an earlier migration (applied or held, in true
+599: // chronological order -- every applied file, in order, then every held
+600: // file, in order) must itself textually contain, for that redefinition, a
+601: // `body_md5 (pre-<nnn>):` baseline line AND the capture command that
+602: // produced it (`pg_get_functiondef`). Enforces only that a capture WAS
+603: // TAKEN and recorded -- never that the hash is correct or still matches
+604: // live, which stays procedural (CLAUDE.md §7's own rehearsal discipline; a
+605: // text-only regex has no database to check against). A function's OWN
+606: // FIRST-EVER definition needs no baseline -- there is nothing prior to have
+607: // captured. Detects redefinitions from the comment-STRIPPED sql (a bare
+608: // mention of a function's name in prose is never a definition) but checks
+609: // for the baseline/capture evidence in the RAW text, since that evidence
+610: // lives in comments by construction.
+611: // ---------------------------------------------------------------------------
+612: function extractDefinedFunctionNames(strippedSql) {
+613:   const names = new Set()
+614:   const re = /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?(\w+)\s*\(/gi
+615:   let m
+616:   while ((m = re.exec(strippedSql))) names.add(m[1].toLowerCase())
+617:   return names
+618: }
+619: 
+620: function ruleFunctionRedefinitionRequiresCapture(orderedEntries) {
+621:   const violations = []
+622:   const firstDefinedIn = new Map() // lowercase function name -> file that first defined it
+623:   for (const { qualified, raw, sql } of orderedEntries) {
+624:     const namesHere = extractDefinedFunctionNames(sql)
+625:     if (namesHere.size > 0) {
+626:       const redefined = [...namesHere].filter((n) => firstDefinedIn.has(n))
+627:       if (redefined.length > 0) {
+628:         const md5Count = (raw.match(/body_md5\s*\(pre-\d+\)\s*:/gi) ?? []).length
+629:         const hasCaptureCommand = /pg_get_functiondef/i.test(raw)
+630:         if (md5Count < redefined.length || !hasCaptureCommand) {
+631:           violations.push({
+632:             file: qualified,
+633:             object: `uncaptured-redefinition-${redefined.join(',')}`,
+634:             rule: 'function-redefinition-requires-capture',
+635:           })
+636:         }
+637:       }
+638:       for (const n of namesHere) {
+639:         if (!firstDefinedIn.has(n)) firstDefinedIn.set(n, qualified)
+640:       }
+641:     }
+642:   }
+643:   return violations
+644: }
+
+##### E59b lint Rule 8: held-migration-reservation-required  [scripts/lint-migrations.mjs:527-550]
+527: // Rule 8 — held-migration-reservation-required (NEW, 2026-08-31)
+528: // ---------------------------------------------------------------------------
+529: // Every held file (docs/reviews/*.sql matching the migration filename
+530: // shape) must have a matching entry in scripts/migration-number-
+531: // reservations.json: the entry's `number` must equal the file's own prefix,
+532: // AND its `claimedBy` must equal this file's qualified path exactly — a
+533: // missing entry, or one pointing at a DIFFERENT file than the one actually
+534: // using that number, both fail. This is what makes a plan-time reservation
+535: // (CLAUDE.md §3's own informal "031 reserved" prose, once) mechanically
+536: // checked instead of dependent on a later author reading the right
+537: // paragraph before numbering their own file.
+538: function ruleHeldMigrationReservationRequired(heldEntries, reservations) {
+539:   const byNumber = new Map(reservations.map((r) => [r.number, r]))
+540:   const violations = []
+541:   for (const e of heldEntries) {
+542:     const m = /^(\d+)_/.exec(e.name)
+543:     if (!m) continue
+544:     const number = m[1]
+545:     const entry = byNumber.get(number)
+546:     if (!entry) {
+547:       violations.push({ file: e.qualified, object: `unreserved-${number}`, rule: 'held-migration-reservation-required' })
+548:     } else if (entry.claimedBy !== e.qualified) {
+549:       violations.push({ file: e.qualified, object: `reservation-mismatch-${number}`, rule: 'held-migration-reservation-required' })
+550:     }
+
+##### E60 pg_get_functiondef-form headers in 050 (spelled-out types, DEFAULT NULL::jsonb)  [supabase/migrations/050_material_inward_functions.sql:1026-1026]
+1026: CREATE OR REPLACE FUNCTION public.apply_morning_flow_turn(p_phone_number text, p_tenant_id uuid, p_user_id uuid, p_project_id uuid, p_message text, p_start_flow boolean, p_manpower jsonb DEFAULT NULL::jsonb, p_manpower_ok boolean DEFAULT NULL::boolean, p_equipment jsonb DEFAULT NULL::jsonb, p_equipment_ok boolean DEFAULT NULL::boolean, p_now timestamp with time zone DEFAULT now(), p_test_sleep_ms integer DEFAULT NULL::integer)
+
+##### E60b same, evening  [supabase/migrations/050_material_inward_functions.sql:1363-1363]
+1363: CREATE OR REPLACE FUNCTION public.apply_evening_flow_turn(p_phone_number text, p_tenant_id uuid, p_user_id uuid, p_project_id uuid, p_message text, p_start_flow boolean, p_parse jsonb DEFAULT NULL::jsonb, p_parse_ok jsonb DEFAULT NULL::jsonb, p_now timestamp with time zone DEFAULT now(), p_test_sleep_ms integer DEFAULT NULL::integer)
+
+##### E60c 050 source header of apply_material_inward_turn (source form: timestamptz)  [supabase/migrations/050_material_inward_functions.sql:68-79]
+68: CREATE FUNCTION public.apply_material_inward_turn(
+69:   p_phone_number  text,
+70:   p_tenant_id     uuid,
+71:   p_user_id       uuid,
+72:   p_project_id    uuid,
+73:   p_message       text,
+74:   p_message_sid   text,
+75:   p_media         jsonb       DEFAULT NULL,
+76:   p_start_flow    boolean     DEFAULT false,
+77:   p_now           timestamptz DEFAULT now(),
+78:   p_test_sleep_ms integer     DEFAULT NULL
+79: )
+
+##### E61 deliveries UNIQUE on both pointers; delivery_invoice_links one active self-link per invoice  [supabase/migrations/049_capture_tables.sql:369-374]
+369:   cancelled_at            timestamptz,
+370:   cancel_reason           text        CHECK (cancel_reason IN ('superseded_by_link')),
+371:   CONSTRAINT deliveries_dc_document_id_key UNIQUE (dc_document_id),
+372:   CONSTRAINT deliveries_created_from_invoice_id_key UNIQUE (created_from_invoice_id),
+373:   CONSTRAINT deliveries_id_project_tenant_key UNIQUE (id, project_id, tenant_id),
+374:   CONSTRAINT deliveries_id_created_from_invoice_key UNIQUE (id, created_from_invoice_id),
+
+##### E61b one active self-link per invoice (unique index)  [supabase/migrations/049_capture_tables.sql:447-449]
+447: CREATE UNIQUE INDEX uq_dil_active_per_delivery ON public.delivery_invoice_links (delivery_id) WHERE unlinked_at IS NULL;
+448: CREATE UNIQUE INDEX uq_dil_active_self_per_invoice ON public.delivery_invoice_links (invoice_document_id) WHERE link_source = 'created_from_invoice' AND unlinked_at IS NULL;
+449: CREATE INDEX idx_dil_active_invoice ON public.delivery_invoice_links (invoice_document_id) WHERE unlinked_at IS NULL;

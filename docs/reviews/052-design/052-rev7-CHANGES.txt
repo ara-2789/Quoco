@@ -1,0 +1,224 @@
+052 rev 6 -> rev 7: line-level CHANGES (answers design review round 2)
+rev 6 sha256 ab345047df79edd7b66042c9305ca9b0fb2b24f541c7217a6dd5ba51bd1b86dd (104 lines)   rev 7 sha256 5e117c92f17a697ee5cb5ec0bd97cd3276671ad1cf53851ed93710ad626f04f9 (119 lines)
+Method: /tmp/quoco/mk-rev7.py applies the replacements below, in this order, to the rev 6 file; each is a single-occurrence replacement. Line numbers: "rev6 Ln" is where the old text starts in rev 6, "rev7 Ln" where the new text starts in rev 7.
+
+01 [H1] bookkeeping: revision number
+    rev6 L1 -> rev7 L1
+    - OLD: # MI-KIND-REMOVAL plan, revision 6 (FULL tier, design review round 1 answered)
+    + NEW: # MI-KIND-REMOVAL plan, revision 7 (FULL tier, design review round 2 answered)
+
+02 [H2] bookkeeping: supersedes line, evidence range E1-E61b, round-2 review saved (+ note that its text starts mid-document)
+    rev6 L3 -> rev7 L3
+    - OLD: Supersedes rev 5 (sha256 `15626888…`; rev 5 was written). Raw quotes `/tmp/quoco/kind-removal-evidence.txt` (E1-E54). Reviews saved verbatim: `/tmp/quoco/052-pr-d2-review-round-1.md`, `/tmp/quoco/052-design-review-round-1.md` (STOP: package not received; direction sound).
+    + NEW: Supersedes rev 6 (sha256 `ab345047…`). **Rev 7 is exactly the round-2 delta** (line-level list: `/tmp/quoco/052-rev7-CHANGES.txt`). Raw quotes `/tmp/quoco/kind-removal-evidence.txt` (E1-E61b). Reviews saved verbatim: `/tmp/quoco/052-pr-d2-review-round-1.md`, `/tmp/quoco/052-design-review-round-1.md` (STOP: package not received; direction sound), `/tmp/quoco/052-design-review-round-2.md` (STOP, one round short; the text received starts at "private schema non-exposure", so its sections 1-3 and verdict header are not in the file).
+
+03 [MAP] requested bookkeeping: rule map rev 6 -> rev 7
+    rev6 L6 -> rev7 L6
+    - OLD: ## Rule map (rev 5 -> rev 6)
+      | rev 5 rule | rev 6 |
+      |---|---|
+      | A1 nullable, A2 keys/FKs unchanged | kept; A2 gains the mechanical argument and two tests |
+      | A3 `kind_set_at`/`kind_set_by` + CHECK | **changed**: adds `kind_source`, a 3-way table CHECK, an order CHECK, explicit FK actions (A3) |
+      | A4 trigger carve-out | **changed**: all OLD NULL -> all NEW non-NULL with source `pm`, `kind_set_at` DB-stamped, other immutables still checked (A4) |
+      | A4b insert trigger | **changed**: also refuses non-NULL `kind`/`kind_source` (A4b) |
+      | A5 D-30 rows keep NULL `kind_set_*` | **changed**: backfilled `kind_source='engineer_declared'` before the trigger replace (A3, A5) |
+      | B rewrite; T-D8-11 md5 pins of statement text | rewrite kept; **body-md5 pins dropped on purpose**, replaced by a header pin (B) |
+      | C wrapper + helper in `public`; "later service_role/OCR entry, `p_set_by = NULL`" | **changed**: helper in schema `private`; the OCR/system entry and "NULL means system" are **dropped on purpose** (4c) |
+      | C lock `FOR UPDATE`, `already_classified`, fixed 5-key result | kept; steps re-ordered to the review (C) |
+      | S mapping table, option B, 4a, 4b, Q, D | kept (Q gains N1/S8 lines, 4b gains N2) |
+      | E DOWN, apply | **changed**: DOWN precondition, hash, consequence (E) |
+      | F tests | extended (F) |
+      | R rollout | **changed**: in-migration abort (B2), dark-control evidence (S5) |
+      | Still open | rewritten |
+      
+      
+    + NEW: ## Rule map (rev 6 -> rev 7)
+      | rev 6 rule | rev 7 |
+      |---|---|
+      | A0 abort snippet | **changed**: the count is selected into a variable first (N3) |
+      | A3 columns, backfill, constraints | **changed**: adds `received_at` (nullable add, backfill from the document's own delivery, `SET NOT NULL`, `received_at <= created_at`) and the step order (B1) |
+      | A4 immutable list | **changed**: `received_at` joins it (B1) |
+      | A4b insert trigger | **changed**: states how `received_at` is accepted, only as written by the RPC (B1) |
+      | A5 probes | **changed**: adds "each D-30 document has exactly one delivery" (B1) |
+      | A6 catalog check | **changed**: helper and wrapper names counted across all non-system schemas (S1) |
+      | B create block | **changed**: the `050:313-320` lookup and refusal stay, the INSERT writes `received_at` (B1) |
+      | B T-D8-11 | **changed**: alias table, two controls, every-schema regex (S1) |
+      | C helper step 4 (reads `processed_messages` at classify time) | **dropped on purpose**: replaced by a copy from the locked document row (B1) |
+      | C result on the `already_classified` path | **changed**: `delivery_id` and `self_link_id` defined with their queries (N5) |
+      | C private-schema observation | **changed**: adds the no-`Content-Profile` 404 case |
+      | E sequence | **changed**: prod body capture moves before the SQL review (N1); reservation (N2) |
+      | E DOWN, apply | **changed**: DOWN lock (N4), drops `received_at` too, lock-hold measurement and abort semantics (N6) |
+      | F tests | **changed**: T-C-1 equality, T-C-9, T-E-1 (B1, S2), T-D8-11 controls (S1), the 404 case, the test inventory (S2) |
+      | Still open | **changed**: design GO now asked on rev 7 |
+      | everything else (A1, A2, B rewrite, S, 4a-4d, Q, D, R, G/H) | unchanged |
+      
+      
+
+04 [FT2] requested bookkeeping: findings table for round 2
+    rev6 L34 -> rev7 L37
+    - OLD: | S1 five legacy rows | A3, A5 | rejected | none |
+      
+    + NEW: | S1 five legacy rows | A3, A5 | rejected | none |
+      
+      ## Findings table (design review round 2 -> plan; none rejected)
+      | Item | Answer | Item | Answer |
+      |---|---|---|---|
+      | B1 `received_at` stored at write time | A3, A4, A4b, A5, B, C (step 4), F (T-C-1, T-C-9, T-E-1) | N3 A0 snippet | A0 |
+      | S1 header pin, alias table, every schema, A6 | B (T-D8-11), A6, F | N4 DOWN lock | E (DOWN) |
+      | S2 tests whose meaning flips | F (T-E-1, inventory) | N5 `already_classified` result | C (result) |
+      | N1 lint Rule 10 capture | E (sequence, prod body capture) | N6 lock hold, abort semantics | E (apply) |
+      | N2 reservation | E (sequence) | private-schema 404 case | C (private schema), F (T-C-3) |
+      
+
+05 [A-order] B1: step order of the received_at backfill / NOT NULL relative to the old triggers, backfills and new triggers
+    rev6 L36 -> rev7 L48
+    - OLD: ## A. Schema (052 UP, one transaction, in this order)
+    + NEW: ## A. Schema (052 UP, one transaction, in this order)
+      Order: A0 lock + abort -> `ADD COLUMN`s (nullable) -> backfills with assertions (`kind_source`, `received_at`) -> `SET NOT NULL` and `ADD CONSTRAINT`s -> schema `private`, helper, wrapper, grants -> replace the two triggers -> replace the RPC -> A6 assertions -> `COMMIT`. The **old triggers stay in force during the backfills**; they name none of the new columns, so the backfill UPDATEs pass them. The old RPC (which does not write `received_at`) cannot run between `SET NOT NULL` and the RPC replace: one transaction, and every turn queues on the A0 lock.
+
+06 [N3] N3: A0 selects the count into a variable before RAISE
+    rev6 L37 -> rev7 L50
+    - OLD: then `DO $$ ... IF EXISTS (SELECT 1 FROM public.whatsapp_sessions WHERE current_flow = 'invoice') THEN RAISE EXCEPTION 'APPLY_ABORT_052: invoice sessions exist: %', n; END IF; $$;`
+    + NEW: then `DO $$ DECLARE v_n integer; BEGIN SELECT count(*) INTO v_n FROM public.whatsapp_sessions WHERE current_flow = 'invoice'; IF v_n > 0 THEN RAISE EXCEPTION 'APPLY_ABORT_052: invoice sessions exist: %', v_n; END IF; END $$;`
+
+07 [A3-cols] B1: received_at column added
+    rev6 L40 -> rev7 L53
+    - OLD: A3. `ADD COLUMN kind_source text, ADD COLUMN kind_set_at timestamptz, ADD COLUMN kind_set_by uuid` (nullable, no default).
+    + NEW: A3. `ADD COLUMN kind_source text, ADD COLUMN kind_set_at timestamptz, ADD COLUMN kind_set_by uuid, ADD COLUMN received_at timestamptz` (all nullable, no default; `received_at` is made NOT NULL below).
+
+08 [A3b] B1: received_at backfill, assertions, NOT NULL, order CHECK
+    rev6 L42 -> rev7 L55
+    - OLD: A4. `CREATE OR REPLACE trg_capture_documents_before_update()`
+    + NEW: A3b (B1). **`received_at` is stored on the document when the document is written**, not looked up at classify time (round-2 B1: `processed_messages` is a dedup table; `service_role` can delete from it, 047 revoked DELETE only from anon and authenticated, `047:201`; fixtures delete from it; `pr-c-plan.md:114` S-F-2 proposes deleting the row; a retention job could too; E56-E58). Backfill, after the `kind_source` backfill and before the trigger replace: `UPDATE public.capture_documents d SET received_at = x.received_at FROM public.deliveries x WHERE d.received_at IS NULL AND (x.dc_document_id = d.id OR x.created_from_invoice_id = d.id);` guarded by an in-file `DO` assertion that **every document has exactly one delivery** (`count(*) = 0` of documents whose delivery count `<> 1`; D-19, both pointers are UNIQUE, `049:371-372`, E61) and by a pre-apply probe pinning the same 5 documents (PROCEED/STOP). It is a lossless copy, not a guess: the delivery's `received_at` was `processed_messages.created_at` of the same SID (`050:315-317`). A second `DO` assertion: no `received_at IS NULL` row remains. Then `ALTER COLUMN received_at SET NOT NULL` and `ADD CONSTRAINT capture_documents_received_order_chk CHECK (received_at <= created_at)` (holds for the 5 rows: the delivery and the document were created in one transaction, and `deliveries_received_order_chk` already bounds the delivery's value by its `created_at`).
+      A4. `CREATE OR REPLACE trg_capture_documents_before_update()`
+
+09 [A4-anchor] no-op anchor check (old text == new text); not a change
+
+10 [A4-list] B1: received_at joins the 049 QE009 immutable list
+    rev6 L42 -> rev7 L56
+    - OLD: `kind` leaves that list (id, created_at, project_id, tenant_id, sent_by, source_message_sid stay, checked in the same UPDATE)
+    + NEW: `kind` leaves that list and **`received_at` joins it** (`OR NEW.received_at IS DISTINCT FROM OLD.received_at -> QE009`); id, created_at, project_id, tenant_id, sent_by, source_message_sid stay, all checked in the same UPDATE
+
+11 [A4b] B1: insert trigger accepts received_at only as written by the RPC
+    rev6 L45 -> rev7 L59
+    - OLD: so no insert path can bring back an unattributed kind. No fixture inserts directly (they drive the RPC, E53).
+    + NEW: so no insert path can bring back an unattributed kind. No fixture inserts directly (they drive the RPC, E53). **`received_at` is accepted only as written by the RPC (B1):** the column is NOT NULL, the refusal list does not touch it, and the only insert path is `050:322`, a service_role-only definer function (no role holds INSERT on the table, `049:973-979`, E44), which writes it from the unchanged lookup (B). No value check is added in the trigger.
+
+12 [A5] B1: probe that each D-30 document has exactly one delivery
+    rev6 L46 -> rev7 L60
+    - OLD: Pre-apply probe: `count(*) WHERE kind IS NULL` = 0.
+    + NEW: Pre-apply probes: `count(*) WHERE kind IS NULL` = 0, and each of the 5 documents has exactly one delivery (A3b).
+
+13 [A6] S1: helper and wrapper names counted across all non-system schemas
+    rev6 L47 -> rev7 L61
+    - OLD: exactly one `pg_proc` row by name in its schema,
+    + NEW: exactly one `pg_proc` row by name in its schema and, for the helper and wrapper names, exactly one across **all non-system schemas** (`n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_'`, so a stray `public.capture_apply_classification` fails it),
+
+14 [B-create] B1: create block keeps the 050:313-320 lookup and refusal and writes received_at
+    rev6 L50 -> rev7 L64
+    - OLD: Create block (replaces `:312-346`): `INSERT INTO capture_documents (tenant_id, project_id, sent_by, source_message_sid, caption)`: **no kind, no delivery, no self-link**.
+    + NEW: Create block (replaces `:322-346`; the lookup and refusal `:313-320` stay **unchanged**, so the engineer turn still guarantees the `processed_messages` row exists when the document is written, E55): `INSERT INTO capture_documents (tenant_id, project_id, sent_by, source_message_sid, received_at, caption)` with `received_at = v_received`: **no kind, no delivery, no self-link**.
+
+15 [B-T-D8-11] S1: alias table, real-050-header control, planted overload, every-schema regex
+    rev6 L51 -> rev7 L65
+    - OLD: the existing planted-duplicate/comment-only control stays.
+    + NEW: the existing planted-duplicate/comment-only control stays. **S1:** the normaliser has an **alias table** (`timestamptz` = `timestamp with time zone`, `timestamp` = `timestamp without time zone`, `int`/`int4` = `integer`, `bool` = `boolean`, `varchar` = `character varying`, `float8` = `double precision`, `decimal` = `numeric`, `char`/`bpchar` = `character`), drops parameter names and `DEFAULT ...` expressions (`DEFAULT NULL::jsonb`, `DEFAULT now()`), lower-cases, collapses whitespace and strips `public.`/`pg_catalog.` on types, so the spelled-out `pg_get_functiondef` text that `052-down-prod.sql` will carry compares equal to the source form (E60). Controls: (i) the `pg_get_functiondef` header of the real 050 `apply_material_inward_turn` normalises equal to its source header (`050:68-79`, E60c) once the prod capture exists (step 0 of E); until then the spelled-out headers of `apply_morning_flow_turn`/`apply_evening_flow_turn` (`050:1026`, `:1363`) are the in-repo control; (ii) a planted overload still fails; (iii) the definition regex captures an optional schema before the name, so **every schema** is covered, and the test asserts one schema and one argument-type list per name: a planted stray `public.capture_apply_classification` and a planted second `private.` copy both go RED.
+
+16 [C-404] private-schema case: no Content-Profile header must return 404
+    rev6 L55 -> rev7 L69
+    - OLD: (a real PostgREST call to the helper with `Content-Profile: private`, anon and service key, must be refused)
+    + NEW: (a real PostgREST call to the helper with `Content-Profile: private`, anon and service key, must be refused; **and** a call to `/rpc/capture_apply_classification` with **no** `Content-Profile` header must return **404**, not 42501, which proves the function is not in `public`)
+
+17 [C-step1] B1: helper reads received_at from the locked row
+    rev6 L58 -> rev7 L72
+    - OLD: 1 `SELECT tenant_id, project_id, sent_by, source_message_sid, kind, engineer_ack FROM capture_documents
+    + NEW: 1 `SELECT tenant_id, project_id, sent_by, source_message_sid, received_at, kind, engineer_ack FROM capture_documents
+
+18 [C-step4] B1: helper step 4 no longer reads processed_messages
+    rev6 L58 -> rev7 L72
+    - OLD: 4 `received_at` = `processed_messages.created_at WHERE message_sid = source_message_sid` (never `now()`); missing -> QE012.
+    + NEW: 4 `received_at` is **copied from the locked document row** (written at the document insert, B1); the helper **never reads `processed_messages`**, so a deleted dedup row can no longer make a document unclassifiable.
+
+19 [C-step5] B1: delivery received_at comes from the document row
+    rev6 L58 -> rev7 L72
+    - OLD: 5 `INSERT INTO deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id | created_from_invoice_id)` with `reported_by = sent_by`, **never the PM**
+    + NEW: 5 `INSERT INTO deliveries (tenant_id, project_id, reported_by, received_at, dc_document_id | created_from_invoice_id)` with `received_at` from the document row, `reported_by = sent_by`, **never the PM**
+
+20 [N5] N5: delivery_id and self_link_id on the already_classified path, with queries
+    rev6 L59 -> rev7 L73
+    - OLD: (`self_link_id` NULL for a DC). Codes:
+    + NEW: (`self_link_id` NULL for a DC). **On the `already_classified` path (N5)** both ids are read, nothing is created: `delivery_id` = `SELECT id FROM public.deliveries WHERE dc_document_id = p_document_id OR created_from_invoice_id = p_document_id` (at most one, both pointers UNIQUE, E61; always present for a classified document: the D-30 rows and every classify result have one); `self_link_id` = `SELECT id FROM public.delivery_invoice_links WHERE invoice_document_id = p_document_id AND link_source = 'created_from_invoice' AND unlinked_at IS NULL` (at most one active, `uq_dil_active_self_per_invoice`, `049:448`, E61b), or NULL when none is active: a DC, or an invoice whose self-link has since been unlinked or superseded. Codes:
+
+21 [E-seq] N1 + N2: prod body capture moves before the SQL review; 052 reserved in the same commit as the held file; re-verify at promotion
+    rev6 L83 -> rev7 L97
+    - OLD: Sequence: design review -> write 052 in `docs/reviews/` and PG17 dry-run from a structure-only dump -> SQL review -> read-only prod capture of the bodies 052 replaces (`apply_material_inward_turn`, both trigger functions) with md5 + sha256 and `052-down-*.sql` -> test-db apply,
+    + NEW: Sequence: design review -> **step 0, read-only prod body capture (below)** -> write 052 in `docs/reviews/` with the capture's `body_md5 (pre-052):` lines, **reserving 052 in `scripts/migration-number-reservations.json` in the same commit** (the file at `f536fe2` ends at 051, E29; lint Rule 8 fires otherwise, `lint-migrations.mjs:527-549`, E59b; the number is re-verified at promotion against `ls supabase/migrations/` and the reservations file on `origin/main`) and PG17 dry-run from a structure-only dump -> SQL review -> `052-down-*.sql` built from the captured text -> test-db apply,
+
+22 [E-step0] N1: the prod body capture written as a step (not run now)
+    rev6 L83 -> rev7 L97
+    - OLD: No other capture PR touches test-db meanwhile.
+    + NEW: No other capture PR touches test-db meanwhile.
+      **Step 0, prod body capture (N1), written as a step and not run now:** read-only SQL that Aravind runs in the Supabase SQL editor on prod (project ref printed first, output to a file, not the transcript): `SELECT p.oid::regprocedure, md5(pg_get_functiondef(p.oid)), pg_get_functiondef(p.oid) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_update','trg_capture_documents_before_insert');` The output is kept outside the repo with its sha256; the three md5s become `body_md5 (pre-052): <md5> <name>` lines and the text "captured with pg_get_functiondef" in the 052 header. Lint Rule 10 (`lint-migrations.mjs:620-644`, E59) needs one such line per redefined name plus the `pg_get_functiondef` mention, so doing this before the PR opens keeps CI from going red on that rule.
+
+23 [E-down] N4: DOWN lock + lock_timeout; B1: DOWN drops received_at
+    rev6 L84 -> rev7 L99
+    - OLD: drop the three columns with their CHECKs and FK, `ALTER COLUMN kind SET NOT NULL`, clear `invoice` sessions subtract-only, delete ledger row 052. **Named consequence:** dropping `kind_source`, `kind_set_at`, `kind_set_by` destroys PM attribution and the `engineer_declared` marker.
+    + NEW: drop the four columns (`kind_source`, `kind_set_at`, `kind_set_by`, `received_at`) with their CHECKs and FK, `ALTER COLUMN kind SET NOT NULL`, clear `invoice` sessions subtract-only **under the same `SET LOCAL lock_timeout = '3s'` and `LOCK TABLE public.whatsapp_sessions IN EXCLUSIVE MODE` as A0 and the 050 DOWN (N4)**, delete ledger row 052. **Named consequence:** dropping `kind_source`, `kind_set_at`, `kind_set_by` destroys PM attribution and the `engineer_declared` marker; dropping `received_at` loses nothing, each delivery keeps its own.
+
+24 [N6] N6: measured lock hold; abort semantics and re-run rule
+    rev6 L85 -> rev7 L100
+    - OLD: "PITR substituted" (accepted, 051 precedent): test data only.
+    + NEW: "PITR substituted" (accepted, 051 precedent): test data only. **N6:** the test-db rehearsal records the **measured lock hold** (from `LOCK TABLE` to `COMMIT`); webhook RPCs queue behind it. The likely failure is a clean abort from `lock_timeout` or deadlock detection (the new FK takes `SHARE ROW EXCLUSIVE` on `users`): the transaction rolls back and **changes nothing**, the apply record says so, and a re-run means re-probe, then re-apply as a new run, never a resume.
+
+25 [F-K2] B1: test, received_at change -> QE009
+    rev6 L88 -> rev7 L103
+    - OLD: T-K-2 trigger: NULL -> all four once, `pm` only;
+    + NEW: T-K-2 trigger: NULL -> all four once, `pm` only; a change of `received_at` -> QE009;
+
+26 [F-M2] B1: test, backfill of received_at
+    rev6 L88 -> rev7 L103
+    - OLD: T-M-2 backfill touches exactly the engineer-declared rows and the provenance CHECK then holds.
+    + NEW: T-M-2 backfill touches exactly the engineer-declared rows, each document's `received_at` equals its delivery's, and the provenance and order CHECKs then hold.
+
+27 [F-C1] B1: T-C-1 equality of delivery and document received_at
+    rev6 L89 -> rev7 L104
+    - OLD: `received_at` = `processed_messages.created_at`; `reported_by` = `sent_by` (not the PM);
+    + NEW: the delivery's `received_at` **equals the document's `received_at`**, which equals `processed_messages.created_at` for its SID; `reported_by` = `sent_by` (not the PM);
+
+28 [F-404] private-schema case: 404 test
+    rev6 L89 -> rev7 L104
+    - OLD: service_role cannot call the wrapper. T-C-4
+    + NEW: service_role cannot call the wrapper; a call to `/rpc/capture_apply_classification` with no `Content-Profile` header returns 404. T-C-4
+
+29 [F-C9] B1: T-C-9, classify after the processed_messages row is deleted
+    rev6 L89 -> rev7 L104
+    - OLD: T-C-8** both orders (ack-then-classify, classify-then-ack): assert end state (`awaiting_pm`, ack stored, one delivery, link count).
+    + NEW: T-C-8** both orders (ack-then-classify, classify-then-ack): assert end state (`awaiting_pm`, ack stored, one delivery, link count). **T-C-9 (B1)** delete the `processed_messages` row after the file turn, then classify: it succeeds and the delivery's `received_at` equals the document's.
+
+30 [F-E1] S2 + B1: T-E-1 asserts 0 deliveries / 0 links / kind NULL (RED against current 050) and the QE012 refusal when the row is missing
+    rev6 L89 -> rev7 L104
+    - OLD: T-E-1 engineer flow without kind (ack 1, ack 2/3 + note, attach at S3/S4, text at S2, stray step-1 session, duplicate SID, S-1 membership, expiry, IST midnight, N2/N13).
+    + NEW: **T-E-1 asserts the new facts directly (S2, B1): after a file turn there are 0 deliveries, 0 links and `kind` NULL, written RED against the current 050 (which creates a delivery), and the engineer turn still refuses QE012 and writes nothing when the `processed_messages` row is missing (the `050:313-320` refusal, kept).** The same file covers the flow without kind (ack 1, ack 2/3 + note, attach at S3/S4, text at S2, stray step-1 session, duplicate SID, S-1 membership, expiry, IST midnight, N2/N13).
+
+31 [F-static] S1: static controls
+    rev6 L89 -> rev7 L104
+    - OLD: Static: header-pin T-D8-11 with planted overload, ACL matrix (A6),
+    + NEW: Static: header-pin T-D8-11 with the alias-table control, the real-050-header control, the planted overload and the planted stray `public.` and second `private.` copies (B), ACL matrix (A6),
+
+32 [F-S2] S2: makeDoc absorbs setup only; test inventory file
+    rev6 L89 -> rev7 L104
+    - OLD: returns `deliveryId` from the result.
+    + NEW: returns `deliveryId` from the result. **S2:** `makeDoc` absorbs setup only; no test is edited just to compile. Every existing test whose assertion changes meaning or whose turn sequence changes is listed in `/tmp/quoco/052-tests-changing-meaning.txt` (79 of 272 capture tests flagged by pattern, a superset with per-test flags; the 34 flagged MAKEDOC-only keep their meaning, the rest are rewritten as tests), in the review package for the reviewer to check against the diff.
+
+33 [open3] Still open: design GO asked on rev 7
+    rev6 L104 -> rev7 L119
+    - OLD: (3) Reviewer: design GO on rev 6 (B2, B3, S1 as stated here);
+    + NEW: (3) Reviewer: design GO on rev 7 (the round-2 delta: B1, S1, S2, N1-N6);
+
+CONFIRMATION
+- replacements applied: 33 (one is a no-op anchor check, so 32 real changes).
+- forward replay of the list on rev 6 reproduces rev 7 byte for byte: YES.
+- reverse replay (undo every NEW with its OLD on rev 7) reproduces rev 6 byte for byte: YES. So no text outside the listed replacements differs between rev 6 and rev 7.
+- every replacement above maps to a round-2 item (B1, S1, S2, N1-N6, the private-schema 404 case) or to the two bookkeeping tables the instruction asked for (rule map, round-2 findings table) and the header/Still-open lines that name rev 7. Items outside the round-2 delta: none.
+- evidence file: E1-E54 are a byte-identical prefix of the new file: YES; E55-E61b are appended (new quotes only: the 050 lookup, fixtures teardown, 047 revoke, S-F-2, lint Rules 10 and 8, the pg_get_functiondef-form headers, the UNIQUE keys).
+- other new files in the package (not part of the plan text): 052-design-review-round-2.md (as received, from "private schema non-exposure" onward, without the trailing shell EOF line), 052-tests-changing-meaning.txt (S2 inventory), this file.
