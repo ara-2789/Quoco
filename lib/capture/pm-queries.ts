@@ -49,6 +49,23 @@ export function fileDisplayState(
   }
 }
 
+/**
+ * Site-engineer names for the link picker (PR-D1b, R4). A NEW tenant-scoped read: the lookup is filtered by the READER's
+ * tenant, so a user id that belongs to another tenant resolves to nothing and the candidate shows no name (the label's
+ * em dash); the candidate itself stays in the list. Only id and full_name are selected (no phone, no email).
+ */
+export async function readEngineerNames(
+  client: Client,
+  tenantId: string,
+  ids: string[],
+): Promise<{ ok: true; names: Map<string, string | null> } | { ok: false; error: { code?: string | null; message?: string | null } }> {
+  const unique = [...new Set(ids)]
+  if (unique.length === 0) return { ok: true, names: new Map() }
+  const { data, error } = await client.from('users').select('id, full_name').eq('tenant_id', tenantId).in('id', unique)
+  if (error) return { ok: false, error }
+  return { ok: true, names: new Map((data ?? []).map((u) => [u.id, u.full_name])) }
+}
+
 /** Whole IST calendar days from a delivery_date ('YYYY-MM-DD') to today in IST. */
 export function istDaysSince(deliveryDate: string, now: Date): number {
   const [y1, m1, d1] = deliveryDate.split('-').map(Number)
@@ -425,7 +442,7 @@ export async function getDeliveryDetail(
     const takenIds = (taken ?? []).map((t) => t.delivery_id)
     let candQuery = client
       .from('deliveries')
-      .select('id, dc_number, received_at, dc_document_id')
+      .select('id, dc_number, received_at, dc_document_id, reported_by')
       .eq('tenant_id', tenantId)
       .eq('project_id', d.project_id)
       .not('dc_document_id', 'is', null)
@@ -444,13 +461,16 @@ export async function getDeliveryDetail(
       if (dcDocs.error) return reportRead('candidate documents', dcDocs.error)
       const ackByDoc = new Map((dcDocs.data ?? []).map((x) => [x.id, asAck(x.engineer_ack)]))
       const dcKindOk = new Set((dcDocs.data ?? []).filter((x) => asKind(x.kind) === 'dc').map((x) => x.id))
-      detail.candidates = eligible.filter((c) => c.dc_document_id !== null && dcKindOk.has(c.dc_document_id)).map((c) => ({
+      const shown = eligible.filter((c) => c.dc_document_id !== null && dcKindOk.has(c.dc_document_id))
+      const dcNames = await readEngineerNames(client, tenantId, shown.map((c) => c.reported_by))
+      if (!dcNames.ok) return reportRead('candidate engineers', dcNames.error)
+      detail.candidates = shown.map((c) => ({
         id: c.id,
         receivedAt: c.received_at,
         documentCreatedAt: null,
         dcNumber: c.dc_number,
         ack: c.dc_document_id ? (ackByDoc.get(c.dc_document_id) ?? null) : null,
-        engineerName: null,
+        engineerName: dcNames.names.get(c.reported_by) ?? null,
       }))
     }
   } else {
@@ -481,7 +501,7 @@ export async function getDeliveryDetail(
       const blockedInvoiceIds = (approvedAuto ?? []).map((a) => a.created_from_invoice_id).filter((v): v is string => v !== null)
       let invQuery = client
         .from('capture_documents')
-        .select('id, engineer_ack, created_at')
+        .select('id, engineer_ack, created_at, sent_by')
         .eq('tenant_id', tenantId)
         .eq('project_id', d.project_id)
         .eq('kind', 'invoice')
@@ -491,13 +511,15 @@ export async function getDeliveryDetail(
         .order('id', { ascending: false })
         .limit(candidateLimit)
       if (error) return reportRead('candidate invoices', error)
+      const invNames = await readEngineerNames(client, tenantId, (invs ?? []).map((i) => i.sent_by))
+      if (!invNames.ok) return reportRead('candidate invoice senders', invNames.error)
       detail.candidates = (invs ?? []).map((i) => ({
         id: i.id,
         receivedAt: null,
         documentCreatedAt: i.created_at,
         dcNumber: null,
         ack: asAck(i.engineer_ack),
-        engineerName: null,
+        engineerName: invNames.names.get(i.sent_by) ?? null,
       }))
     }
     if (open && !mine && d.delivery_date) detail.invoiceExpectedDays = istDaysSince(d.delivery_date, now)

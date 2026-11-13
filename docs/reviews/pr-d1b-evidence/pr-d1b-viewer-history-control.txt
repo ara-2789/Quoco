@@ -1,0 +1,96 @@
+
+ RUN  v3.2.7 /Users/aravindanrajamani/Desktop/quocoai-pm-ui
+
+ ❯ test/pm-viewer-history.test.ts (5 tests | 4 failed) 5ms
+   × PR-D1b hash sync with the router (fake of Next 16.2.11) > REPRO of the manual run: open, Back, Forward, Close, router refresh (Save details): no #photo- left, URL equals the router's URL at every step 3ms
+     → expected 'http://localhost:3000/material-inward…' to be 'http://localhost:3000/material-inward…' // Object.is equality
+   × PR-D1b hash sync with the router (fake of Next 16.2.11) > a router refresh while the overlay is OPEN keeps the hash (the second symptom: Close must still find its entry) 1ms
+     → expected 'http://localhost:3000/material-inward…' to contain '#photo-88888888-8888-4888-8888-888888…'
+   ✓ PR-D1b hash sync with the router (fake of Next 16.2.11) > open then Close (the normal path): back to the clean entry, URL equals canonicalUrl, refresh keeps it clean 0ms
+   × PR-D1b hash sync with the router (fake of Next 16.2.11) > mount strips a leftover hash (R3), and a refresh does not bring it back 0ms
+     → expected 'http://localhost:3000/material-inward…' to be 'http://localhost:3000/material-inward…' // Object.is equality
+   × PR-D1b hash sync with the router (fake of Next 16.2.11) > the three calls pass NULL data: no Next marker (__NA / _N) ever reaches the patched history 1ms
+     → expected [ undefined, undefined, undefined ] to deeply equal [ null, null, null ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/pm-viewer-history.test.ts > PR-D1b hash sync with the router (fake of Next 16.2.11) > REPRO of the manual run: open, Back, Forward, Close, router refresh (Save details): no #photo- left, URL equals the router's URL at every step
+AssertionError: expected 'http://localhost:3000/material-inward…' to be 'http://localhost:3000/material-inward…' // Object.is equality
+
+Expected: [32m"http://localhost:3000/material-inward/b9995385-c2da-476b-9cec-fa4ab989fdd9"[39m
+Received: [31m"http://localhost:3000/material-inward/b9995385-c2da-476b-9cec-fa4ab989fdd9[7m#photo-88888888-8888-4888-8888-888888888888[27m"[39m
+
+ ❯ same test/pm-viewer-history.test.ts:125:44
+    123|     const b = makeBrowser(PAGE)
+    124|     const m = mountViewer(b)
+    125|     const same = () => expect(b.realUrl()).toBe(b.router.canonicalUrl)
+       |                                            ^
+    126| 
+    127|     m.open()
+ ❯ test/pm-viewer-history.test.ts:129:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/pm-viewer-history.test.ts > PR-D1b hash sync with the router (fake of Next 16.2.11) > a router refresh while the overlay is OPEN keeps the hash (the second symptom: Close must still find its entry)
+AssertionError: expected 'http://localhost:3000/material-inward…' to contain '#photo-88888888-8888-4888-8888-888888…'
+
+Expected: [32m"#photo-88888888-8888-4888-8888-888888888888"[39m
+Received: [31m"http://localhost:3000/material-inward/b9995385-c2da-476b-9cec-fa4ab989fdd9"[39m
+
+ ❯ test/pm-viewer-history.test.ts:151:25
+    149|     m.open()
+    150|     b.routerRefresh()
+    151|     expect(b.realUrl()).toContain(`#photo-${FILE_ID}`)
+       |                         ^
+    152|     expect(b.realUrl()).toBe(b.router.canonicalUrl)
+    153|     m.close() // pushed: history.back()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/pm-viewer-history.test.ts > PR-D1b hash sync with the router (fake of Next 16.2.11) > mount strips a leftover hash (R3), and a refresh does not bring it back
+AssertionError: expected 'http://localhost:3000/material-inward…' to be 'http://localhost:3000/material-inward…' // Object.is equality
+
+Expected: [32m"http://localhost:3000/material-inward/b9995385-c2da-476b-9cec-fa4ab989fdd9[7m#photo-88888888-8888-4888-8888-888888888888[27m"[39m
+Received: [31m"http://localhost:3000/material-inward/b9995385-c2da-476b-9cec-fa4ab989fdd9"[39m
+
+ ❯ test/pm-viewer-history.test.ts:176:25
+    174|     expect(m.v.open).toBe(false)
+    175|     expect(b.realUrl()).toBe(BASE + PAGE)
+    176|     expect(b.realUrl()).toBe(b.router.canonicalUrl)
+       |                         ^
+    177|     b.routerRefresh()
+    178|     expect(b.realUrl()).toBe(BASE + PAGE)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  test/pm-viewer-history.test.ts > PR-D1b hash sync with the router (fake of Next 16.2.11) > the three calls pass NULL data: no Next marker (__NA / _N) ever reaches the patched history
+AssertionError: expected [ undefined, undefined, undefined ] to deeply equal [ null, null, null ]
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  [[22m
+[32m-   null,[39m
+[32m-   null,[39m
+[32m-   null,[39m
+[31m+   undefined,[39m
+[31m+   undefined,[39m
+[31m+   undefined,[39m
+[2m  ][22m
+
+ ❯ test/pm-viewer-history.test.ts:192:18
+    190|     stripViewerHashOnMount(spy, loc)
+    191|     closeViewerEntry(spy, loc, false)
+    192|     expect(seen).toEqual([null, null, null])
+       |                  ^
+    193|   })
+    194| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 1 passed (5)
+   Start at  14:57:47
+   Duration  124ms (transform 23ms, setup 0ms, collect 9ms, tests 5ms, environment 0ms, prepare 18ms)
+

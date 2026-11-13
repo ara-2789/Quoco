@@ -92,36 +92,39 @@ export function DetailView({ d }: { d: PmDetail }) {
         )}
       </Card>
 
-      <Card className="flex flex-col gap-3 p-4">
-        <h2 className="text-base font-semibold text-gray-900">{PM_FIELD_FILES}</h2>
-        <FileList files={d.files} />
-      </Card>
-
-      {open && (
-        <Card className="p-4">
-          {/* Remount on any change of the loaded values so the form never keeps a stale draft (D8). */}
-          <DetailsControls key={JSON.stringify(loaded)} deliveryId={d.id} loaded={loaded} />
-        </Card>
-      )}
-
-      {open && (
-        <Card className="p-4">
-          <DecisionControls deliveryId={d.id} hasStoredFile={d.hasStoredFile} />
-        </Card>
-      )}
-
-      {(unlinkable.length > 0 || d.candidates.length > 0 || open) && (
+      {/* PR-D1b: the photo beside the form on wide screens, above it on narrow ones (single column first, two from lg). */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
         <Card className="flex flex-col gap-3 p-4">
-          <h2 className="text-base font-semibold text-gray-900">{kind === 'invoice' ? PM_LINKED_DELIVERIES_HEADING : PM_INVOICES_HEADING}</h2>
-          <LinkControls
-            mode={kind === 'invoice' ? 'invoice' : 'dc'}
-            invoiceDocumentId={kind === 'invoice' ? d.document.id : null}
-            deliveryId={d.id}
-            candidates={d.candidates}
-            unlinkable={unlinkable}
-          />
+          <h2 className="text-base font-semibold text-gray-900">{PM_FIELD_FILES}</h2>
+          <FileList files={d.files} />
         </Card>
-      )}
+
+        <div className="flex flex-col gap-6">
+          {open && (
+            <Card className="p-4">
+              {/* NO key here (review round 1, S2): a key on this element remounted Approve / Reject on every save and wiped the typed
+                  reject reason. DetailsControls resets its own draft when `loaded` changes (D8). Order: delivery type,
+                  Approve / Reject (the children), then the collapsed "More details (optional)". */}
+              <DetailsControls deliveryId={d.id} loaded={loaded}>
+                <DecisionControls deliveryId={d.id} hasStoredFile={d.hasStoredFile} />
+              </DetailsControls>
+            </Card>
+          )}
+
+          {(unlinkable.length > 0 || d.candidates.length > 0 || open) && (
+            <Card className="flex flex-col gap-3 p-4">
+              <h2 className="text-base font-semibold text-gray-900">{kind === 'invoice' ? PM_LINKED_DELIVERIES_HEADING : PM_INVOICES_HEADING}</h2>
+              <LinkControls
+                mode={kind === 'invoice' ? 'invoice' : 'dc'}
+                invoiceDocumentId={kind === 'invoice' ? d.document.id : null}
+                deliveryId={d.id}
+                candidates={d.candidates}
+                unlinkable={unlinkable}
+              />
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

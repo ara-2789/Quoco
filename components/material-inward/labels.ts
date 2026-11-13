@@ -4,6 +4,7 @@ import {
   PM_ACK_NONE,
   PM_LABEL_INVOICE_EXPECTED,
   PM_LABEL_INVOICE_EXPECTED_DAYS,
+  PM_LINK_OPTION,
   PM_STATUS_APPROVED,
   PM_STATUS_AWAITING_PM,
   PM_STATUS_CANCELLED,
@@ -54,6 +55,36 @@ export function typeLabel(t: string | null): string {
 export function formatIstDate(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+}
+
+/**
+ * IST wall-clock time, 12-hour, lowercase am/pm, e.g. "10:33 am". 00:xx is "12:xx am", 12:xx is "12:xx pm".
+ * Computed from the instant shifted by +05:30 (India has no DST), not from the machine's zone or the ICU's am/pm casing.
+ */
+export function formatIstTime(iso: string | null): string {
+  if (!iso) return '—'
+  const ms = new Date(iso).getTime()
+  if (!Number.isFinite(ms)) return '—'
+  const ist = new Date(ms + 330 * 60_000)
+  const h24 = ist.getUTCHours()
+  const mm = String(ist.getUTCMinutes()).padStart(2, '0')
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+  return `${h12}:${mm} ${h24 < 12 ? 'am' : 'pm'}`
+}
+
+/** The picker option line (PM_LINK_OPTION). One pass, so text inside a value is never treated as a placeholder. */
+export function linkOptionLabel(
+  c: { receivedAt: string | null; documentCreatedAt: string | null; engineerName: string | null; ack: PmAck | null },
+  kind: PmDocKind,
+): string {
+  const at = c.receivedAt ?? c.documentCreatedAt
+  const values: Record<string, string> = {
+    date: formatIstDate(at),
+    time: formatIstTime(at),
+    engineer: c.engineerName ?? '—',
+    answer: ackLabel(kind, c.ack),
+  }
+  return PM_LINK_OPTION.replace(/\{(date|time|engineer|answer)\}/g, (_m, k: string) => values[k])
 }
 
 /** Status values the PM can still act on (050: approve and reject accept only these, 050:593 / 675). */

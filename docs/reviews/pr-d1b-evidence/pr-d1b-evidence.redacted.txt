@@ -1,0 +1,127 @@
+## base check Thu Nov 12 10:27:13 IST 2026
+/Users/aravindanrajamani/Desktop/quocoai-pm-ui
+From https://github.com/ara-2789/Quoco
+   5e8e014..78ba82e    main       -> origin/main
+$ git rev-parse origin/main
+78ba82e110193266a6f33a7d364729d242e89849
+$ git log -1 --format=%H %P origin/main
+78ba82e110193266a6f33a7d364729d242e89849 5e8e01431e6267606d28406ca4d6a6688fea33c8 756fc736309a1e103ea4e466221eb38beb8256da
+$ git status --short
+(end status)
+$ branch
+docs/closing-pr-d1-and-login
+/Users/aravindanrajamani/Desktop/quocoai                                                       fe75d6c [main]
+/Users/aravindanrajamani/Desktop/quoco-1a-plan-v2                                              5789b9c (detached HEAD) prunable
+/Users/aravindanrajamani/Desktop/quoco-docs-1010                                               743edf9 [docs/capture-1a-decisions-2026-10-10] prunable
+/Users/aravindanrajamani/Desktop/quoco-docs-1010b                                              345f249 [docs/capture-1a-decisions-2026-10-10b] prunable
+/Users/aravindanrajamani/Desktop/quoco-docs-1a                                                 3cc50e5 [docs/capture-1a-decisions-2026-10-06] prunable
+/Users/aravindanrajamani/Desktop/quoco-p0-sentry                                               ef2b18f [fix/sentry-phone-scrub] prunable
+/Users/aravindanrajamani/Desktop/quoco-slice1-plan                                             5b7c588 (detached HEAD) prunable
+/Users/aravindanrajamani/Desktop/quocoai-pm-ui                                                 756fc73 [docs/closing-pr-d1-and-login]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/036-037-review-package              93f09ab [worktree-036-037-review-package]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/050-pr-b                            b1acbf2 [docs/050-closeout]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/add-engineer-plan                   caab70b [feat/add-engineer-plan]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/add-engineer-slice1                 aac5552 [feat/add-engineer-slice1]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/adhoc-menu-item1-migration          17452ca [worktree-adhoc-menu-item1-migration]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/adhoc-menu-spec-corrections         98e10ef [worktree-adhoc-menu-spec-corrections]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/b3-sweep-first-exercise             07210bf [worktree-b3-sweep-first-exercise]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c1-fixed-clock                      bcda30e [test/c1-fixed-clock]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c4a-handler                         ae09071 [feat/pr-c-c4a-handler]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/c4b-pdf-gate                        41e8db6 [feat/pr-c-c4b-pdf-gate]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/capture-block-a-findings            a2cedcf [docs/capture-engine-block-a-findings]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/checkin-escalation-sweep-wiring     ddae31b [docs/dpr-regeneration-decision-and-spec]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/chore+test-db-ledger-042-046        590b051 [chore/test-db-ledger-042-046]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/d30-record                          98b3a9e [docs/d30-record]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/dash-01-pm-exceptions-home          ddfa21d [feat/dash-01-pm-exceptions-home]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs+stage5-scope-and-login-backlog 45a2f52 [docs/stage5-scope-and-login-backlog]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs-rules-and-split                b18dca9 [worktree-docs-rules-and-split]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs-stage5a-b1-b2-records          bef3852 [docs/stage5a-b1-b2-records]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs-stage5a-d5-correction          4fb3b06 [docs/stage5a-d5-correction]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs-stage5a-review-package         30f97be [docs/stage5a-review-package]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/docs-tier-rule                      7ba18a1 [docs/tier-rule]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/engineer-append-correction-decision f99bd18 [worktree-engineer-append-correction-decision]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/evening-q5-caption-reversal         b1e06d3 [worktree-evening-q5-caption-reversal]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/evening-q5-tomorrow-needs           6b48420 [worktree-evening-q5-tomorrow-needs]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat+ui-slice5-today                03d9b6a [feat/ui-slice5-today]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat+ui-slice6-log-card             de8ed83 [feat/ui-slice6-log-card]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat-stage5a-b1-photo-route         ad5e0e7 [feat/stage5a-b1-photo-route]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat-stage5a-b2-selector-split      151a07d [feat/stage5a-b2-selector-split]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat-ui-shell-restyle               86c659d [feat/ui-shell-restyle]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat-ui-slice2-logs-dates           5a4e2b5 [feat/ui-slice2-logs-dates]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/feat-ui-slice3-list-and-dates       9248d24 [feat/ui-slice3-list-and-dates]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/fix-daily-log-card-date             8dfe27f [fix/daily-log-card-date]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/fix-test-user-teardown              583460f [fix/test-user-teardown]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/fix-text-contrast                   e0bf020 [fix/text-contrast]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/lint-sql-auth-uid                   11a6938 [docs/ci-time-record]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/media-image-only                    03240a3 [fix/media-image-only]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/mellow-hatching-curry               c42ac20 [docs/044-date-and-backlog]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/migration-037-pm-notified-at        c65cd6b [docs/submitted-via-vocabulary-ledger]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/migration-043-prod-apply-paperwork  7167b3a [docs/043-prod-apply-paperwork-wt]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/owner-deliver-backfill-scope        e7828ad [worktree-owner-deliver-backfill-scope]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/plan-pr-c                           4477df3 [plan/pr-c]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/remove-not-asked-yet-leak           8d643f3 [research/not-on-site-evening-gate]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/retire-item3-docs                   0e71930 [worktree-retire-item3-docs]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/stage1-photo-intake-build           37b7d51 [worktree-stage1-photo-intake-build]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/stage5a-b3-pages                    62f5e4d [feat/stage5a-b3-pages]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/stage5a-b4-photo-presentation       93ed868 [feat/stage5a-b4-photo-presentation]
+/Users/aravindanrajamani/Desktop/quocoai/.claude/worktrees/test-db-fixture-teardown-fix        fb16b5a [fix/test-fixture-teardown-engineer-scope]
+
+## CSP search (read, not observed) — repo at origin/main
+$ git grep -n -i "img-src\|Content-Security-Policy\|connect-src" origin/main -- . :!docs :!package-lock.json | grep -v "^origin/main:.\(agents\|claude\)/"
+(exit=1 ; empty output above = no CSP/img-src anywhere outside the two skill dirs)
+$ git grep -n "headers()\|async headers\|securityHeaders" origin/main -- *.ts *.tsx (non-skill)
+(empty = no headers() config)
+
+## signed-URL host (test/pm-file-route.test.ts:120-121)
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer')
+    const loc = res.headers.get('location') ?? ''
+    expect(loc).toContain(`/storage/v1/object/sign/${PM_BUCKET}/`)
+    expect(loc).toContain('token-param=')
+    expect(loc).not.toContain('download=') // an image opens inline
+
+## tests that currently forbid <img> / next/image (will change deliberately)
+origin/main:test/pm-render.test.tsx:39:const IMG_OPEN = '<' + 'img'
+origin/main:test/pm-render.test.tsx:106:    for (const bad of ['token-param=', 'supabase.co', '/storage/v1', IMG_OPEN, '_next/image', 'data-nimg', 'srcset']) {
+origin/main:test/pm-render.test.tsx:126:  it('no component or page of this feature imports next/image or uses an img element, and file links never use next/link', () => {
+origin/main:test/pm-render.test.tsx:135:        expect(src, f).not.toMatch(new RegExp(IMG_OPEN + '[\\s>]'))
+
+## .env.local present in pm-ui worktree (name only):
+present
+
+## candidates engineerName is null today (pm-queries.ts:453,500)
+453:        engineerName: null,
+500:        engineerName: null,
+
+## prior wording check: pm-copy.ts before 5699af6 held placeholders only
+125:export const PM_ERR_RETYPE_LINKED = '[PM_ERR_RETYPE_LINKED]' // Tamil owed, NOT approved
+126:export const PM_ERR_RETYPE_AUTOMATIC = '[PM_ERR_RETYPE_AUTOMATIC]' // Tamil owed, NOT approved
+127:export const PM_ERR_LINK_TARGET_INELIGIBLE = '[PM_ERR_LINK_TARGET_INELIGIBLE]' // Tamil owed, NOT approved
+
+## vitest env
+19:    environment: 'node',
+23:    // existing real-test-db .ts files, same node environment, same guard.
+0
+
+## BUILD base
+origin/main=78ba82e110193266a6f33a7d364729d242e89849 (== plan base)
+git status --short: (empty)
+
+## BUILD results (12 Nov)
+Branch feat/pr-d1b-mi-usability, commits 05bba02 (feature) and 4ae612e (test-db pass-through test, not run). NOT pushed. Base origin/main 78ba82e (== plan base).
+R0: pm-render.test.tsx:101-102 REQUIRES target="_blank" rel="noopener noreferrer"; :106/:134-135 forbid an image element and next/image; file-list.tsx:35-38 anchor has target="_blank". PDF link behaviour unchanged.
+
+### Controls (each: HEAD 05bba02061d187d82013a5cd6d0a57ab1adcbb49)
+1 T-RENDER  file components/material-inward/file-viewer.tsx sha256 before 2ac5d48b41f4540944dec6f75504dab2b149caeb503d1c54a5d74fe0239c68f5, mutated b8a1b6a7..., after restore 2ac5d48b41f4540944dec6f75504dab2b149caeb503d1c54a5d74fe0239c68f5
+   FAIL: AssertionError: expected '<link rel="preload" as="image" href="https://x.supabase.co/storage/v1/object/sign/b/8888...?token-param=abc"/>...' not to contain 'token-param='  (test/pm-render.test.tsx:109, 3 tests failed)
+2 vehicle   file components/material-inward/details-next.ts sha256 before 768a998d015f6783af6f26560d80ef091488c43e01bedcad0463b37ce57f262d, mutated ed753d13..., after 768a998d015f6783af6f26560d80ef091488c43e01bedcad0463b37ce57f262d
+   FAIL: test/pm-d1b-pure.test.ts > R1 / vehicle pass-through: buildDetailsNext > a delivery with no vehicle stays with no vehicle -> AssertionError: expected '' to be null  (2 failed)
+3 R4 tenant file lib/capture/pm-queries.ts sha256 before 919bdb8456630a1465d076febb70a4d106c2dd0629d0056fa0330c1a9da4d13b, mutated 63f6d5ca..., after 919bdb8456630a1465d076febb70a4d106c2dd0629d0056fa0330c1a9da4d13b
+   FAIL: test/pm-engineer-names.test.ts > R4 ... > TENANT B's user never shows B's name to a tenant A reader -> AssertionError: expected true to be false  (1 failed)
+Raw: /tmp/quoco/pr-d1b-ctl-render.txt, pr-d1b-ctl-vehicle.txt, pr-d1b-ctl-tenant.txt
+
+### Tests
+node-only (no import of test/helpers/pm-fixtures or capture-fixtures, no createClient on SUPABASE_TEST_*): pm-strings-approved, pm-render, pm-unit, pm-bucket-guard, pm-d1b-pure, pm-d1b-ui, pm-engineer-names, capture-static-guards, unit/capture-error-phone-scrub, unit/capture-ingest-bytes, unit/capture-switch, unit/capture-fixtures-clock.
+test-db (import helpers/pm-fixtures or helpers/capture-fixtures, or createClient with SUPABASE_TEST_*; NOT run): pm-d30-shapes, pm-queries, pm-actions, pm-file-route, capture-checkin-n2-n13, capture-engineer-flow, capture-files-immutability, capture-handler, capture-ingest, capture-pm-functions, capture-races (concurrency: CI-only), capture-router, capture-tables, capture-webhook.
+Run later: npx vitest run test/pm-d30-shapes.test.tsx test/pm-queries.test.ts test/pm-actions.test.ts test/pm-file-route.test.ts test/capture-checkin-n2-n13.test.ts test/capture-engineer-flow.test.ts test/capture-files-immutability.test.ts test/capture-handler.test.ts test/capture-ingest.test.ts test/capture-pm-functions.test.ts test/capture-races.test.ts test/capture-router.test.ts test/capture-tables.test.ts test/capture-webhook.test.ts
+Totals: baseline origin/main 78ba82e (9 files that exist there): 427 passed (427). Branch: 12 files, 482 passed (482). tsc --noEmit clean (0 lines). eslint on the touched dirs clean.
+Scope: git diff --name-only origin/main...HEAD | sort | diff - /tmp/quoco/pr-d1b-expected-files.txt -> no output, exit 0. git status --short empty.

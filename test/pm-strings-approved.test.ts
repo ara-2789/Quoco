@@ -10,13 +10,12 @@ const APPROVED: Record<string, string> = {
   PM_NOT_A_PM_STATE: "You are not a PM on any project, so there is nothing to show here.",
   PM_LOAD_ERROR: "This page could not load. Refresh to try again.",
   PM_LIST_TRUNCATED: "Showing the latest 100 deliveries. Open ones are listed first.",
-  PM_KIND_DC: "DC",
+  PM_KIND_DC: "DC / GRN", // per Aravind, 3 Nov
   PM_KIND_INVOICE: "Invoice",
   PM_LABEL_CREATED_FROM_INVOICE: "From invoice (no DC)",
   PM_LABEL_CANCELLED_REASON: "Replaced by a linked DC",
   PM_LABEL_INVOICE_EXPECTED: "Invoice expected",
   PM_LABEL_INVOICE_EXPECTED_DAYS: "Invoice pending for {n} days",
-  PM_FIELD_VEHICLE: "Vehicle no.",
   PM_FIELD_ENGINEER: "Site engineer",
   PM_FIELD_ACK: "Engineer's answer",
   PM_FIELD_FILES: "Files",
@@ -26,7 +25,7 @@ const APPROVED: Record<string, string> = {
   PM_STATUS_REJECTED: "Rejected",
   PM_STATUS_CANCELLED: "Cancelled",
   PM_TYPE_SUPPLIER: "Supplier",
-  PM_TYPE_INTERNAL_TRANSFER: "Internal GRN (from another site)",
+  PM_TYPE_INTERNAL_TRANSFER: "Internal transfer", // per Aravind, 3 Nov
   PM_TYPE_NOT_SET: "Type not set",
   PM_ACK_DC_YES: "All arrived",
   PM_ACK_DC_NO: "Not arrived",
@@ -38,12 +37,16 @@ const APPROVED: Record<string, string> = {
   PM_ACK_INVOICE_UNCLEAR: "Answer unclear. Check the invoice with the engineer before you approve.",
   PM_ACK_NONE: "No answer yet",
   PM_BACK_TO_LIST: "Back to Material Inward",
+  PM_DETAILS_TOGGLE: "More details (optional)", // per Aravind, 3 Nov
   PM_FIELD_PROJECT: "Project",
   PM_FIELD_RECEIVED: "Received",
   PM_FIELD_ACK_NOTE: "Engineer's note",
   PM_FIELD_REJECT_REASON: "Reason for rejecting",
   PM_INVOICES_HEADING: "Linked invoices",
   PM_LINKED_DELIVERIES_HEADING: "Linked DCs",
+  PM_FILE_PREVIEW_ALT: "Photo of the document", // per Aravind, 3 Nov
+  PM_VIEWER_CLOSE: "Close", // per Aravind, 3 Nov
+  PM_VIEWER_ROTATE: "Rotate", // per Aravind, 3 Nov
   PM_FILE_OPEN: "Open",
   PM_FILE_DOWNLOAD: "Download",
   PM_FILE_UNAVAILABLE: "This file cannot be opened right now. Try again in a minute.",
@@ -64,6 +67,7 @@ const APPROVED: Record<string, string> = {
   PM_ACTION_LINK_INVOICE: "Link invoice",
   PM_LINK_SELECT_INVOICE: "Choose the invoice for this DC",
   PM_LINK_SELECT_DELIVERIES: "Choose the DCs this invoice covers (up to 20)",
+  PM_LINK_OPTION: "{date}, {time} · {engineer} · {answer}", // per Aravind, 3 Nov
   PM_LINK_NO_CANDIDATES: "Nothing to link right now.",
   PM_ACTION_UNLINK: "Unlink",
   PM_CONFIRM_UNLINK: "Confirm unlink",
@@ -76,17 +80,17 @@ const APPROVED: Record<string, string> = {
   PM_ERR_REJECT_REASON: "Write a reason for rejecting, up to 1000 characters.",
   PM_ERR_ALREADY_LINKED: "This DC already has an invoice linked.",
   PM_ERR_LINK_AUTO_APPROVED: "This invoice is already approved on its own, so it cannot be linked to a DC.",
-  PM_ERR_LINK_TARGET_INELIGIBLE: "This DC cannot take an invoice. It is an internal GRN, created from an invoice, or rejected.",
+  PM_ERR_LINK_TARGET_INELIGIBLE: "This DC cannot take an invoice. It is an internal transfer, created from an invoice, or rejected.", // per Aravind, 12 Nov
   PM_ERR_ALREADY_UNLINKED: "This link was already removed.",
   PM_ERR_SELF_LINK_FIXED: "An invoice's link to its own delivery cannot be removed.",
-  PM_ERR_RETYPE_LINKED: "Unlink the invoice before you change this to an internal GRN.",
-  PM_ERR_RETYPE_AUTOMATIC: "A delivery created from an invoice cannot be an internal GRN.",
+  PM_ERR_RETYPE_LINKED: "Unlink the invoice before you change this to an internal transfer.", // per Aravind, 12 Nov
+  PM_ERR_RETYPE_AUTOMATIC: "A delivery created from an invoice cannot be an internal transfer.", // per Aravind, 12 Nov
 }
 
 const strings = Object.entries(copy).filter(([, v]) => typeof v === 'string') as Array<[string, string]>
 
-describe('PR-D1 approved English strings (Aravind, 2 Nov)', () => {
-  it('the approved list has 75 keys', () => expect(Object.keys(APPROVED)).toHaveLength(75))
+describe('PR-D1 / PR-D1b approved English strings (Aravind, 2, 3 and 12 Nov)', () => {
+  it('the approved list has 79 keys', () => expect(Object.keys(APPROVED)).toHaveLength(79))
 
   it('pm-copy.ts exports exactly the approved keys plus PM_PAGE_TITLE as strings: no key added, none missing', () => {
     expect(strings.map(([k]) => k).filter((k) => k !== 'PM_PAGE_TITLE').sort()).toEqual(Object.keys(APPROVED).sort())
@@ -95,6 +99,8 @@ describe('PR-D1 approved English strings (Aravind, 2 Nov)', () => {
   it.each(Object.entries(APPROVED))('%s equals the approved text exactly', (key, text) => {
     expect((copy as Record<string, unknown>)[key]).toBe(text)
   })
+
+  it('PM_FIELD_VEHICLE is deleted (PR-D1b): nothing renders the vehicle any more', () => expect('PM_FIELD_VEHICLE' in copy).toBe(false))
 
   it('PM_PAGE_TITLE is unchanged', () => expect(copy.PM_PAGE_TITLE).toBe('Material Inward'))
 

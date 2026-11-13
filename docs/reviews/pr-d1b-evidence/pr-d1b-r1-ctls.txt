@@ -1,0 +1,45 @@
+=== CONTROL S2
+HEAD fc4d98356e308ca26f50c840e46a9ff86d35543f
+sha256 before: 5f1cfb51f1fe2b529368bf412d0e0a20501b7a84e676153cf989d001fa3fe145
+sha256 mutated: 35d8322363b8f8d74c4a9df3c3eb989ebc8fa25e589348b3b1db46ca06ff6afa
+vitest exit: 1
+FAIL line (first):
+   × S2: DecisionControls is not inside a keyed element > detail-view.tsx: the DetailsControls element that wraps DecisionControls carries no key 2ms
+failed count: 4
+sha256 after:  5f1cfb51f1fe2b529368bf412d0e0a20501b7a84e676153cf989d001fa3fe145
+=== CONTROL N5
+HEAD fc4d98356e308ca26f50c840e46a9ff86d35543f
+sha256 before: 920b2f580c4091b92997ddd68f20a42d7f9d76103581614fd760a90f2e410265
+sha256 mutated: ea4b0824076daa010d0dba527aa52c28143c2a133aac06b300d2dae2dd7db9c1
+vitest exit: 1
+FAIL line (first):
+   × N5 (review round 1): the fake router above models one exact Next version > next is pinned at 16.2.11 2ms
+failed count: 2
+sha256 after:  920b2f580c4091b92997ddd68f20a42d7f9d76103581614fd760a90f2e410265
+=== CONTROL S1-pure
+HEAD fc4d98356e308ca26f50c840e46a9ff86d35543f
+sha256 before: fa6d32372d69c6040a840e96a99815981d6d11f59aceb681d5a43eb149abcb73
+sha256 mutated: 03e6a8b441f64e7086f284db789ec77c7d8f5ddc8de6bdf8848c981bf5becaf8
+vitest exit: 1
+FAIL line (first):
+   × S1 (review round 1): a native dialog close that skipped `cancel` must sync React > close fired, React still open, dialog no longer open: the close sequence must run 2ms
+failed count: 2
+sha256 after:  fa6d32372d69c6040a840e96a99815981d6d11f59aceb681d5a43eb149abcb73
+=== CONTROL S1-wiring
+HEAD fc4d98356e308ca26f50c840e46a9ff86d35543f
+sha256 before: 1a347ba4768a0e7ec995a88c7c92d1f69840a4b4a0d2d81b56a83427f9fd08e6
+sha256 mutated: b02f619fa116c67bc0c3abba003cd9b7a37fe4e120dd4a9f6a1aa9bbc8e1253b
+vitest exit: 1
+FAIL line (first):
+   × S1 (review round 1): a native dialog close that skipped `cancel` must sync React > the dialog element is wired to both helpers (source check: the DOM wiring itself is the manual S1 run) 2ms
+failed count: 2
+sha256 after:  1a347ba4768a0e7ec995a88c7c92d1f69840a4b4a0d2d81b56a83427f9fd08e6
+=== CONTROL N1
+HEAD fc4d98356e308ca26f50c840e46a9ff86d35543f
+sha256 before: e1022d3a4a031bbf279504aa5bbec9d6af708f94270f949697b50afacedd419d
+sha256 mutated: 06a20834dbe70dedee5fc24a5b1983c2407a5615d0ff2db17b02be3d0f507879
+vitest exit: 1
+FAIL line (first):
+   × N1 (review round 1): isMoreDetailsDirty (DC no. / DC date only) > a changed DC no. or DC date is dirty 2ms
+failed count: 2
+sha256 after:  e1022d3a4a031bbf279504aa5bbec9d6af708f94270f949697b50afacedd419d
