@@ -1,0 +1,14 @@
+== 3c.4a DOWN with an unclassified document present (expect the plan's refusal)
+DOWN sha256 bb21dfe0b7c358c1c36a95a3cc17d457526e9d3dd0e7580da915182cb530907f
+psql:<local-path>:65: ERROR:  DOWN_PRECONDITION_052_UNCLASSIFIED: 1 document(s) have no kind; a kind is never guessed
+CONTEXT:  PL/pgSQL function inline_code_block line 28 at RAISE
+down exit=3
+== state after the refused DOWN (must equal the state before it)
+ md5 apply_material_inward_turn e32797b63fee8fceca1934be700609c3
+ md5 trg_capture_documents_before_insert 4f83a28f16956ebae830361c4f898899
+ md5 trg_capture_documents_before_update cfcd59258a5039acc395dd8136328ca5
+
+ 052 objects: schema_private=true wrapper=true helper=true new_columns=4 constraints=4 kind_not_null=false ledger_052=true
+
+ rows: documents=4 deliveries=3 links=1 sessions_invoice=3
+

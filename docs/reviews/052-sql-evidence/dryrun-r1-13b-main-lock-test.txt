@@ -1,0 +1,28 @@
+== N-5 lock-mode test (two raw psql sessions). LABEL: local PG17, structure-only dump of test-db, no roles/PostgREST. Owed at test-db: the two-caller race through PostgREST.
+document m-e2 = d5cb4dc6-08d4-4f87-8707-e41ec5562623 (unclassified: t)
+
+=== CONTROL: session 1 holds only FOR NO KEY UPDATE (the lock a non-key update takes); session 2 FOR KEY SHARE must NOT block
+S2 start 15:35:46.563
+d5cb4dc6-08d4-4f87-8707-e41ec5562623
+S2 acquired FOR KEY SHARE 15:35:46.564
+S1 begin 15:35:45.044
+d5cb4dc6-08d4-4f87-8707-e41ec5562623
+S1 holds NO KEY UPDATE 15:35:45.044
+
+S1 commit 15:35:50.046
+
+=== TEST: session 1 classifies the document (as the PM) and has NOT committed; session 2 FOR KEY SHARE must time out
+-- session 2 while session 1 holds the uncommitted classify:
+S2 start 15:35:52.083
+ERROR:  canceling statement due to lock timeout
+CONTEXT:  while locking tuple (0,10) in relation "capture_documents"
+S1 begin 15:35:50.072
+OK {"kind": "dc", "delivery_id": "ea995c8a-b81c-426f-a4f2-c40f85b3c0d9", "document_id": "d5cb4dc6-08d4-4f87-8707-e41ec5562623", "self_link_id": null, "already_classified": false}
+S1 classified, NOT committed 15:35:50.076
+
+S1 commit 15:35:56.078
+-- session 2 again AFTER session 1 committed:
+S2 start 15:35:56.103
+d5cb4dc6-08d4-4f87-8707-e41ec5562623
+S2 acquired FOR KEY SHARE 15:35:56.103
+-- state: document now classified by the PM: dc/pm

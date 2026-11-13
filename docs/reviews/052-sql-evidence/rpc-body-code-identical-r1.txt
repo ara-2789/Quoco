@@ -1,0 +1,3 @@
+'--' inside a string literal in either segment (would invalidate the strip): 0
+code lines at a122d30: 254  now: 254  identical: True
+comment-or-blank lines at a122d30: 62  now: 65

@@ -1,0 +1,41 @@
+== 3c.5 re-apply 052
+apply exit=0
+== read-back
+LABEL: local PG17, structure-only dump of test-db, no roles/PostgREST
+db=main
+== three function md5s
+apply_material_inward_turn e32797b63fee8fceca1934be700609c3
+trg_capture_documents_before_insert 4f83a28f16956ebae830361c4f898899
+trg_capture_documents_before_update cfcd59258a5039acc395dd8136328ca5
+== new functions: schema, name, owner, secdef, config, acl
+private | capture_apply_classification | postgres | t | {"search_path=\"\""} | {postgres=X/postgres}
+public | pm_classify_document | postgres | t | {"search_path=\"\""} | {postgres=X/postgres,authenticated=X/postgres}
+== EXECUTE matrix (anon, authenticated, service_role) for the five functions
+apply_material_inward_turn(text,uuid,uuid,uuid,text,text,jsonb,boolean,timestamp with time zone,integer) | f | f | t
+pm_classify_document(uuid,text) | f | t | f
+private.capture_apply_classification(uuid,text,uuid) | f | f | f
+trg_capture_documents_before_insert() | f | f | f
+trg_capture_documents_before_update() | f | f | f
+== schema private privileges
+anon | f | f
+authenticated | f | f
+service_role | f | f
+== capture_documents columns (new + kind)
+kind | text | f
+kind_set_at | timestamp with time zone | f
+kind_set_by | uuid | f
+kind_source | text | f
+received_at | timestamp with time zone | t
+== constraints (052)
+capture_documents_kind_provenance_chk :: CHECK ((((kind IS NULL) AND (kind_source IS NULL) AND (kind_set_at IS NULL) AND (kind_set_by IS NULL)) OR ((kind IS NOT NULL) AND (kind_source = 'pm'::text) AND (kind_set_at IS NOT NULL) AND (kind_set_by IS NOT NULL)) OR ((kind IS NOT NULL) AND (kind_source = 'engineer_declared'::text) AND (kind_set_at IS NULL) AND (kind_set_by IS NULL))))
+capture_documents_kind_set_by_fk :: FOREIGN KEY (kind_set_by, tenant_id) REFERENCES users(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT
+capture_documents_kind_set_order_chk :: CHECK (((kind_set_at IS NULL) OR (kind_set_at >= created_at)))
+capture_documents_received_order_chk :: CHECK ((received_at <= created_at))
+ md5 apply_material_inward_turn e32797b63fee8fceca1934be700609c3
+ md5 trg_capture_documents_before_insert 4f83a28f16956ebae830361c4f898899
+ md5 trg_capture_documents_before_update cfcd59258a5039acc395dd8136328ca5
+
+ 052 objects: schema_private=true wrapper=true helper=true new_columns=4 constraints=4 kind_not_null=false ledger_052=false
+
+ rows: documents=4 deliveries=4 links=2 sessions_invoice=0
+

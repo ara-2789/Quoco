@@ -1,0 +1,334 @@
+== 3c.3 seed + exercise (main.sql)
+== M1 engineer turn: start goes to step 2; file creates a document with received_at set, kind NULL, no delivery
+                                                    start                                                     
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+                        ok                         
+---------------------------------------------------
+ PASS: start: flow=invoice step=2 (step 1 retired)
+(1 row)
+
+                                                                    file_turn                                                                     
+--------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": "413ba417-3e5f-4dc4-9b73-2b22e4a8b253", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+                                           ok                                            
+-----------------------------------------------------------------------------------------
+ PASS: document created: kind NULL, kind_source NULL, kind_set_at NULL, kind_set_by NULL
+(1 row)
+
+                                   ok                                   
+------------------------------------------------------------------------
+ PASS: received_at equals processed_messages.created_at of the same SID
+(1 row)
+
+               ok                
+---------------------------------
+ PASS: received_at <= created_at
+(1 row)
+
+                       ok                        
+-------------------------------------------------
+ PASS: 0 deliveries and 0 links for the document
+(1 row)
+
+                     ok                      
+---------------------------------------------
+ PASS: 2 files pending, 1 capture_ingest job
+(1 row)
+
+                     ok                      
+---------------------------------------------
+ PASS: session at step 3 with mi_document_id
+(1 row)
+
+                                                                     ack1                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "complete", "delivery_id": null, "document_id": "413ba417-3e5f-4dc4-9b73-2b22e4a8b253", "current_flow": null, "current_step": 0}
+(1 row)
+
+                           ok                           
+--------------------------------------------------------
+ PASS: ack stored (yes), flow closed, still no delivery
+(1 row)
+
+== M2 flow variants: stray step-1 session read as step 2; text at step 2 re-asks once then closes
+                                                                 stray_step1_file                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": "959196c4-8b5a-4cb1-a6a7-23138a36a600", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+                             ok                              
+-------------------------------------------------------------
+ PASS: stray step-1 session + file: document created, step 3
+(1 row)
+
+                                                    start3                                                    
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+                                                    text1                                                     
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "reask", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+                            ok                            
+----------------------------------------------------------
+ PASS: text at step 2: first is a re-ask, flow still open
+(1 row)
+
+                                                  text2                                                   
+----------------------------------------------------------------------------------------------------------
+ {"outcome": "closed", "delivery_id": null, "document_id": null, "current_flow": null, "current_step": 0}
+(1 row)
+
+                         ok                          
+-----------------------------------------------------
+ PASS: second text closes the flow, nothing recorded
+(1 row)
+
+                                                    start4                                                    
+--------------------------------------------------------------------------------------------------------------
+ {"outcome": "start", "delivery_id": null, "document_id": null, "current_flow": "invoice", "current_step": 2}
+(1 row)
+
+                                                                      file4                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "advance", "delivery_id": null, "document_id": "adb4b475-6d51-4db9-8d0c-4b8786f8bd4d", "current_flow": "invoice", "current_step": 3}
+(1 row)
+
+                ok                 
+-----------------------------------
+ PASS: third document unclassified
+(1 row)
+
+== M3 pm_classify_document: refusals first (each leaves kind NULL and writes nothing)
+                    r                     
+------------------------------------------
+ PM2 (other project)        ERR QE015 E15
+(1 row)
+
+                    r                     
+------------------------------------------
+ QS1 (qs)                   ERR QE015 E15
+(1 row)
+
+                    r                     
+------------------------------------------
+ DPM (deactivated pm)       ERR QE015 E15
+(1 row)
+
+                    r                     
+------------------------------------------
+ PM3 (other tenant)         ERR QE015 E15
+(1 row)
+
+                    r                     
+------------------------------------------
+ no auth uid                ERR QE015 E15
+(1 row)
+
+                    r                     
+------------------------------------------
+ unknown document id        ERR QE015 E15
+(1 row)
+
+                    r                     
+------------------------------------------
+ NULL document id           ERR QE015 E15
+(1 row)
+
+                    r                     
+------------------------------------------
+ PM1 bad kind               ERR QE012 E12
+(1 row)
+
+                    r                     
+------------------------------------------
+ PM1 NULL kind              ERR QE012 E12
+(1 row)
+
+                                            r                                             
+------------------------------------------------------------------------------------------
+ anon on wrapper            ERR 42501 permission denied for function pm_classify_document
+(1 row)
+
+                                            r                                             
+------------------------------------------------------------------------------------------
+ service_role on wrapper    ERR 42501 permission denied for function pm_classify_document
+(1 row)
+
+                                     r                                     
+---------------------------------------------------------------------------
+ authenticated on helper    ERR 42501 permission denied for schema private
+(1 row)
+
+                                     r                                     
+---------------------------------------------------------------------------
+ service_role on helper     ERR 42501 permission denied for schema private
+(1 row)
+
+== M3b (S-5) the engineer who SENT the document (same tenant, same project) and an admin with no PM membership are refused
+                                 r                                 
+-------------------------------------------------------------------
+ ENG1 (engineer, sent m-a2, same tenant and project) ERR QE015 E15
+(1 row)
+
+                                r                                 
+------------------------------------------------------------------
+ ADMN (admin, no project_members row)               ERR QE015 E15
+(1 row)
+
+                                              note                                               
+-------------------------------------------------------------------------------------------------
+ ADMP (admin WITH a pm membership on P1: the allowed shape, on an unclassified doc, rolled back)
+(1 row)
+
+                                                                                    admp_result                                                                                     
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ OK {"kind": "dc", "delivery_id": "8df858dd-ab14-4fb9-91f1-076c0e990178", "document_id": "adb4b475-6d51-4db9-8d0c-4b8786f8bd4d", "self_link_id": null, "already_classified": false}
+(1 row)
+
+                                ok                                
+------------------------------------------------------------------
+ PASS: S-5: both refusals left m-a2 unclassified with no delivery
+(1 row)
+
+                                    ok                                     
+---------------------------------------------------------------------------
+ PASS: all refusals left every document unclassified and wrote no delivery
+(1 row)
+
+== M4 pm_classify_document: success paths
+                                                                                                      r                                                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PM1 classifies m-a2 as dc OK {"kind": "dc", "delivery_id": "40b9e77b-156b-44f7-a1d2-7d68e8b6780f", "document_id": "413ba417-3e5f-4dc4-9b73-2b22e4a8b253", "self_link_id": null, "already_classified": false}
+(1 row)
+
+                                              ok                                              
+----------------------------------------------------------------------------------------------
+ PASS: dc: kind, source pm, set_by = PM1 users.id, kind_set_at stamped, one delivery, 0 links
+(1 row)
+
+                                                               ok                                                               
+--------------------------------------------------------------------------------------------------------------------------------
+ PASS: delivery: reported_by = ENG1 (not the PM), received_at = document received_at, status awaiting_pm (ack was stored first)
+(1 row)
+
+                                                                                                      r                                                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PM1 again, same kind       OK {"kind": "dc", "delivery_id": "40b9e77b-156b-44f7-a1d2-7d68e8b6780f", "document_id": "413ba417-3e5f-4dc4-9b73-2b22e4a8b253", "self_link_id": null, "already_classified": true}
+(1 row)
+
+                        ok                         
+---------------------------------------------------
+ PASS: second call: no new rows (still 1 delivery)
+(1 row)
+
+                    r                     
+------------------------------------------
+ PM1 again, other kind      ERR QE011 E11
+(1 row)
+
+                                                                                                                                 r                                                                                                                                  
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PM1 classifies m-b2 invoice (no ack yet) OK {"kind": "invoice", "delivery_id": "58ead74a-a6df-4800-9697-221dce0791af", "document_id": "959196c4-8b5a-4cb1-a6a7-23138a36a600", "self_link_id": "7f3d7d40-3bb6-4e17-adcf-e3de904356b5", "already_classified": false}
+(1 row)
+
+                                      ok                                       
+-------------------------------------------------------------------------------
+ PASS: invoice: 1 automatic delivery (incomplete, no ack) + 1 active self-link
+(1 row)
+
+                                                                                                                                          r                                                                                                                                          
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ PM1 again on invoice: ids from the already_classified path OK {"kind": "invoice", "delivery_id": "58ead74a-a6df-4800-9697-221dce0791af", "document_id": "959196c4-8b5a-4cb1-a6a7-23138a36a600", "self_link_id": "7f3d7d40-3bb6-4e17-adcf-e3de904356b5", "already_classified": true}
+(1 row)
+
+                                                              ack_after_classify                                                              
+----------------------------------------------------------------------------------------------------------------------------------------------
+ {"outcome": "complete", "delivery_id": null, "document_id": "959196c4-8b5a-4cb1-a6a7-23138a36a600", "current_flow": null, "current_step": 0}
+(1 row)
+
+                                          ok                                          
+--------------------------------------------------------------------------------------
+ PASS: classify-then-ack: the existing ack path moves the new delivery to awaiting_pm
+(1 row)
+
+                                      ok                                       
+-------------------------------------------------------------------------------
+ PASS: classify created no jobs beyond the 3 ingest jobs and no outbound sends
+(1 row)
+
+== M5 triggers (as owner; transactions rolled back)
+                            r                             
+----------------------------------------------------------
+ UPDATE kind on a classified document        ERR QE009 E9
+(1 row)
+
+                            r                             
+----------------------------------------------------------
+ UPDATE kind_set_by on a classified document ERR QE009 E9
+(1 row)
+
+                            r                             
+----------------------------------------------------------
+ UPDATE received_at                          ERR QE009 E9
+(1 row)
+
+                            r                             
+----------------------------------------------------------
+ UPDATE engineer_declared onto unclassified  ERR QE009 E9
+(1 row)
+
+                            r                             
+----------------------------------------------------------
+ UPDATE kind without kind_set_by             ERR QE009 E9
+(1 row)
+
+                             r                             
+-----------------------------------------------------------
+ INSERT carrying a kind                      ERR QE012 E12
+(1 row)
+
+                                                                           r                                                                           
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+ INSERT without received_at                  ERR 23502 null value in column "received_at" of relation "capture_documents" violates not-null constraint
+(1 row)
+
+                                                                                r                                                                                
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ INSERT with received_at in the future       ERR 23514 new row for relation "capture_documents" violates check constraint "capture_documents_received_order_chk"
+(1 row)
+
+                                                                            r                                                                             
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ a delivery on the unclassified document     ERR 23503 insert or update on table "deliveries" violates foreign key constraint "deliveries_dc_document_fk"
+(1 row)
+
+                                ok                                
+------------------------------------------------------------------
+ PASS: caller-supplied kind_set_at is overwritten by the database
+(1 row)
+
+                     ok                     
+--------------------------------------------
+ PASS: rolled back: m-d2 still unclassified
+(1 row)
+
+                                 ok                                  
+---------------------------------------------------------------------
+ PASS: service_role has no UPDATE/INSERT/DELETE on capture_documents
+(1 row)
+
+== M6 state before the DOWN
+                      ?column?                       
+-----------------------------------------------------
+ documents=3 unclassified=1 engineer_declared=0 pm=2
+(1 row)
+
+exit=0

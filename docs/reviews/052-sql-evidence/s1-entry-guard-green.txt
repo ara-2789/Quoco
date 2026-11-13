@@ -1,0 +1,14 @@
+S-1 GREEN: entry guard fixed (realpathSync both sides)
+HEAD b205e56a660f4123909b1b1778eae1dddbf3a89a
+git status --porcelain (excluding node_modules): [ M scripts/lint-migrations.mjs; M test/unit/lint-migrations-rule10.test.ts;]
+node v26.5.0
+bbbdc75aa3493df5c977dba5d5f6026e4575454df1046488b2ace7671422b3b0  scripts/lint-migrations.mjs
+8449d73ec038ab84a7328113907d837300087fd8354e8ac6841a81c639d98a94  test/unit/lint-migrations-rule10.test.ts
+-- direct reproduction: run the script through a symlinked directory
+exit=0
+output bytes:       61
+migration-lint: clean. 107 known violation(s), all exempted.
+-- test file (config without global setup, no env file, no database)
+ ✓ test/unit/lint-migrations-rule10.test.ts (12 tests) 131ms
+ Test Files  1 passed (1)
+      Tests  12 passed (12)

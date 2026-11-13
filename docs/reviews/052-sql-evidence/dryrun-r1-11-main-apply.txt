@@ -1,0 +1,2 @@
+== 3c.1 apply held 052, one transaction (psql -v ON_ERROR_STOP=1 -f)
+apply exit=0

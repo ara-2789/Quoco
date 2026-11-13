@@ -1,6 +1,6 @@
 # 052 MI-KIND-REMOVAL: SQL review package (build blocks 1 and 1b of 2)
 
-**Status: HELD. NOT applied to any database (test-db or prod). SQL review pending. Tier FULL.**
+**Status: HELD. NOT applied to any database (test-db or prod). SQL review round 1: GO (conditional) to the test-db rehearsal, NOT an apply GO. Tier FULL.**
 The SQL was executed only on a LOCAL throwaway PG17 built from a structure-only dump of test-db (section "Local dry-run"). The only remote action in block 1b was that read-only dump.
 
 ## Repo-state header
@@ -10,12 +10,12 @@ The SQL was executed only on a LOCAL throwaway PG17 built from a structure-only 
 | Item | Value |
 |---|---|
 | Branch | `feat/052-mi-kind-removal` |
-| Commits | lint `2ca8c33`; held files `a122d30ae836b1da274f742bca57e0d6d7e73d9f` (unchanged since); test fix `a63370e`; FK coverage entry `75facad`. This package and the dry-run evidence are in the commit after those; the PR head is in the PR body. |
-| `docs/reviews/052_mi_kind_deferred.sql` | sha256 `cb5ca25780ddd33be3e23fdea84f6164dbdd480d2f990a3a6c4383eac412ae5d`, 965 lines |
-| `docs/reviews/052-down-testdb.sql` | sha256 `378d533c5e8ad800bfed967a28bf5cc4c823d063acd696b92af25376a33e2584`, 573 lines |
-| `docs/reviews/052-down-prod.sql` | sha256 `003c0fbf49e081f8f8f7d013d977288b995bef0a3916c92cb9c364a673544910`, 573 lines (differs from the test-db file in 3 header lines only) |
+| Commits | lint `2ca8c33`; held files first cut `a122d30` (= the file SQL review round 1 reviewed); FK entry `75facad`; review round 1 saved `b205e56`; lint entry guard `4e39627`; held-file and DOWN-header edits after the review `beb0d21`. This package, the evidence and the reservation update are in the commit after those; the PR head is in the PR body. |
+| `docs/reviews/052_mi_kind_deferred.sql` | sha256 `2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e`, 1000 lines (round 1 reviewed `cb5ca257…ae5d`, 965 lines) |
+| `docs/reviews/052-down-testdb.sql` | sha256 `bb21dfe0b7c358c1c36a95a3cc17d457526e9d3dd0e7580da915182cb530907f`, 578 lines (was `378d533c…2584`) |
+| `docs/reviews/052-down-prod.sql` | sha256 `344f4b2e5a1fe42c0502a63a47feee9e3980e830adbc2d03a9288610991cc43a`, 578 lines (was `003c0fbf…4910`; differs from the test-db file in 3 header lines only) |
 | Plan | `docs/reviews/052-design/kind-removal-plan.md` rev 8.1, sha256 `0cb3bc14afc70e3052d98c7dd75badc510019a4c3e2ae32a0fb9e52c0eeb83ed` |
-| Review state | design round 3 = Design GO (conditional); verification pass = GO stands. This SQL has had no review. |
+| Review state | design round 3 = Design GO (conditional); verification pass = GO stands. SQL review round 1 (`docs/reviews/052-sql-review-round-1.md`, verbatim, sha256 `d6f38e7c6321d2f6dd9364037158c9ce17f850920c3111e2e5436802fe7ed915`): GO (conditional) to the test-db rehearsal. **Reviewed WITH CHANGES:** the current held file is the reviewed file plus the round 1 edits, so it is NOT byte-identical to what was reviewed and has not itself been approved. |
 | `scripts/shared-fixture-fk-coverage.json` | sha256 `22de09ec744f5fa30a7b44702df190bd98c6b79f9ffe0d9cf8207a69d1bfefab` (one entry added, block 1b) |
 | test-db structure dump (not committed) | sha256 `04da3bd4fb2dcfba903d60b29d92e006d9a97d852d9c9fef71a6f7d6c0c73fd4`, 6890 lines |
 Verify the held files with `git show a122d30:<path> | shasum -a 256`.
@@ -24,6 +24,7 @@ Verify the held files with `git show a122d30:<path> | shasum -a 256`.
 1. **A0** lock `whatsapp_sessions` EXCLUSIVE (3 s timeout); abort if any `invoice` session exists. 2. **A1/A3** `kind` nullable; add `kind_source`, `kind_set_at`, `kind_set_by`, `received_at`. 3. Backfill `kind_source = 'engineer_declared'` (assertion: none left). 4. **A3b** assert every document has exactly one delivery, copy `received_at` from that delivery, assert none NULL. 5. `received_at` NOT NULL; three CHECKs and the same-tenant FK to `users`. 6. **C** schema `private` (no role privileges); `private.capture_apply_classification` (postgres only); `public.pm_classify_document` (authenticated; PM of the document's project, QE015 otherwise). 7. **A4/A4b** replace the two trigger functions. 8. **B** replace `apply_material_inward_turn` (same signature; the engineer turn makes no kind, no delivery, no self-link). 9. **A6** assertion block. The RPC change, line by line: `052-sql-evidence/rpc-body-diff.txt` (every unchanged line is the captured text).
 
 ## Plan rule -> line in the held file (`052_mi_kind_deferred.sql`)
+Line numbers are for the first cut (`a122d30`, the file round 1 reviewed). Round 1 edits insert comment lines and an A6 block, so later rows shift by up to 35 lines; `git diff a122d30 beb0d21 -- docs/reviews/052_mi_kind_deferred.sql` shows every insertion.
 | Plan rule | Lines | Plan rule | Lines |
 |---|---|---|---|
 | A0 lock + invoice abort | 74-87 | C wrapper, authorise before lock, QE015 both cases | 316-368 |
@@ -65,19 +66,27 @@ Method as 050/051: read-only `supabase db dump --linked --schema public --dry-ru
 - **Legacy data (`dryrun-20`):** 2 seeded pre-052 rows (a DC and an invoice with delivery and self-link): backfills ran on real rows (`engineer_declared`, `received_at` equals each delivery's), classify returns `already_classified` with both ids, DOWN over them clean.
 - **Aborts, nothing left behind:** an invoice session -> `APPLY_ABORT_052` (applies once removed); a document with no delivery -> `BACKFILL_ASSERT_052` (`dryrun-30`, `-31`).
 - **Positive control (`dryrun-40`):** a scratch copy with one expected value flipped (the wrapper's `authenticated` EXECUTE true -> false) aborts with `ACL_ASSERT_052: pm_classify_document:authenticated` at the final block and leaves no 052 object (md5s back to baseline).
-- **Defects found in the held migration or DOWN: none.** The held files are unchanged (sha256 above).
+- **Defects found in the held migration or DOWN: none** (block 1b, on `a122d30`).
+- **Re-run after the round 1 edits (block 1c, on `beb0d21`, fresh cluster; `dryrun-r1-*.txt`):** every step above repeated with the revised files and passed: apply exit 0, exercise 23 PASS 0 FAIL, refused then executed DOWN (md5s back to `cecc170b…`/`b5467b20…`/`4a7f4703…`), re-apply read-back identical, legacy-data run, both aborts. New: S-5 (the engineer who sent the document, and an admin without PM membership, both QE015, document stays unclassified; an admin who is a PM member is allowed); N-5 lock mode (control: `FOR NO KEY UPDATE` held, session 2 `FOR KEY SHARE` acquired in 1 ms; test: classify uncommitted, session 2 times out; after commit acquired at once: `dryrun-r1-13b`; NOT a test of the two-caller race, which stays owed); S-3 positive control (`dryrun-r1-41`: one table-privilege expectation flipped, `ACL_ASSERT_052: table_grant:authenticated:SELECT table_grant:service_role:SELECT`, no 052 object left); the earlier function-ACL control repeated (`dryrun-r1-40`). The `capture_documents` grants in the dump are SELECT-only for authenticated and service_role, as the new expectations say.
 - **Still OWED at the test-db rehearsal (not shown here):** the privilege matrix through the API incl. anon 42501 and the no-`Content-Profile` 404 (roles here are stubs, no PostgREST); the measured lock hold; the `FOR UPDATE` key-update claim and any two-caller race (a local run is not evidence for these); the S5 dark-control record; the external probe before apply; the apply against real prod-shaped data; the ledger row.
 
 ## Open questions (reviewer decision needed)
-1. **N-C wording.** "Exactly one `INSERT INTO public.capture_documents` across `supabase/migrations/` and `docs/reviews/*.sql`" sees 4 hits: `supabase/migrations/050_material_inward_functions.sql:322` (the applied 050 forward definition: has `kind`, no `received_at`); `docs/reviews/052_mi_kind_deferred.sql:724` (the held 052 forward definition: has `received_at`); `docs/reviews/052-down-testdb.sql:314` and `docs/reviews/052-down-prod.sql:314` (the old 050 body restored by each DOWN: has `kind`, no `received_at`). Proposed reading, for the reviewer to confirm or replace: the tripwire reads the LATEST forward definition of every function (highest-numbered migration or held file that defines it; DOWN files and superseded definitions excluded) and asserts (a) exactly one function inserts into `public.capture_documents`, (b) that function contains exactly one such INSERT, (c) its column list includes `received_at`. The tripwire is written in block 2 after the reviewer answers.
+1. N-C wording: **ruled in SQL review round 1, answer 1** (replace it). The ruled specification is in the Addendum below; the tripwire is block 2, before merge.
 
-## Choices made where the plan is silent
+## Choices made where the plan is silent (accepted in SQL review round 1, answer 2, with conditions in the Addendum)
 - The RPC keeps the `delivery_id` result key (always NULL after 052), so the result contract is unchanged; `makeDocWithCaption` throws without it today (block 2 rebuilds it).
-- `mi_kind` stays in `c_mi_keys` and the close clauses: it only subtracts a stale key from sessions.
+- `mi_kind` stays in `c_mi_keys` and the close clauses. Corrected reason (round 1): the source of a stale key is the restored 050 body after a DOWN (it writes `mi_kind` at S1), so a DOWN then re-UP cycle leaves one behind; A0 guarantees none exists at apply. Same for the stray step-1 read.
 - A session at step 1 is read as step 2; a text turn there gets the S2 one re-ask, then close.
 - One `v_norm` comment in the RPC was edited because it named the retired S1 parser (first hunk of `rpc-body-diff.txt`).
 - The pre-052 body text was read from test-db; only its md5 ties it to the prod paste, and that the paste came from prod is not established.
 
-## Apply GO list (round 3)
-Done LOCALLY only (see "Local dry-run"; the test-db rehearsal repeats them): the PG17 dry-run from a structure-only dump; the executed DOWN incl. the seeded unclassified refusal.
-OWED AT THE TEST-DB REHEARSAL, none done: privilege matrix through the API incl. anon 42501 and the no-`Content-Profile` 404; measured lock hold (`LOCK TABLE` to `COMMIT`); S5 dark-control record; external probe output immediately before apply; test-db proof of the `FOR UPDATE` key-update claim.
+## Apply GO list (round 3), unchanged by round 1
+Done LOCALLY only (the test-db rehearsal repeats them): the PG17 dry-run, the executed DOWN incl. the seeded unclassified refusal, the lock-mode half of the FOR UPDATE claim.
+OWED AT THE TEST-DB REHEARSAL, none done: privilege matrix through the API incl. anon 42501 and the no-`Content-Profile` 404; measured lock hold (`LOCK TABLE` to `COMMIT`); the two-caller race and the FOR UPDATE proof on test-db; S5 dark-control record; external probe output immediately before apply; plus round 1's S-4, S-5 on test-db, N-2 (both probes) and the prod helper probe (`to_regprocedure('public.quoco_test_capture_insert(text,jsonb)')` and `quoco_test_capture_update` IS NULL on prod).
+
+## Addendum 2026-11-13, after SQL review round 1
+Per-item status of every review item (S-1..S-7, N-1..N-5, answers 1-3, the prod helper probe): `052-sql-evidence/review-round-1-status.md`.
+- **N-3, cross-references.** Plan rev 8.1 section H names `052-review-package.md`; the file is `052-sql-review-package.md`. `scripts/shared-fixture-fk-coverage.json` is outside plan H (one `not-applicable` entry for `capture_documents.kind_set_by -> users`, commit `75facad`); the reviewer checked the teardown order and accepted it (round 1, answer 3). Plan rev 8.1 is merged and is not edited.
+- **N-4, recorded, not fixed.** No index on `capture_documents (kind_set_by, tenant_id)`: a RESTRICT check on a user delete scans the table. Offboarding is deactivation-only.
+- **Rider on `delivery_id`.** Drop the key and the dead `v_delivery_id` in the next migration that touches this RPC (in the held file header). Block 2: T-E-1 asserts the key is present and NULL after a file turn, and every app read of it is removed.
+- **N-C tripwire, as ruled (block 2, before merge).** Forward set: `supabase/migrations/*.sql` plus every `claimedBy` path in the reservations file (DOWNs fall out as non-forward files). One latest definition per `schema.name` in apply order; a later DROP removes it. Matcher, case-insensitive on comment-stripped text: `(INSERT|MERGE)\s+INTO\s+("?public"?\s*\.\s*)?"?capture_documents"?\b`, and any `EXECUTE` naming `capture_documents` with INSERT or MERGE. Asserts: exactly one hit, inside `public.apply_material_inward_turn`; its column list has `received_at`; the same function holds the `processed_messages` lookup keyed on `p_message_sid`. Also scan `scripts/test-db-only-*.sql` with one named allow-list entry, `quoco_test_capture_insert` (test-db only; absence from prod probed). Seven RED/GREEN controls: a second inserting function; the forward INSERT without `received_at`; a planted `MERGE`; a lowercase unqualified INSERT; a dynamic `EXECUTE`; a later `DROP` of the inserting function (zero sites, RED); a final run with the DOWN files present (GREEN).

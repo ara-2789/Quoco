@@ -51,6 +51,18 @@ SELECT 'anon on wrapper            ' || t.try_as('anon', NULL, format('select pu
 SELECT 'service_role on wrapper    ' || t.try_as('service_role', NULL, format('select public.pm_classify_document(%L,%L)::text', t.docid('m-a2'), 'dc')) AS r;
 SELECT 'authenticated on helper    ' || t.try_as('authenticated', '40000000-0000-0000-0000-000000000001', format('select private.capture_apply_classification(%L,%L,%L)::text', t.docid('m-a2'), 'dc', '30000000-0000-0000-0000-000000000001')) AS r;
 SELECT 'service_role on helper     ' || t.try_as('service_role', NULL, format('select private.capture_apply_classification(%L,%L,%L)::text', t.docid('m-a2'), 'dc', '30000000-0000-0000-0000-000000000001')) AS r;
+\echo == M3b (S-5) the engineer who SENT the document (same tenant, same project) and an admin with no PM membership are refused
+-- ENG1 has no login in the fixture; give the same users row an auth identity so the wrapper's auth.uid() lookup can find it.
+INSERT INTO auth.users (id) VALUES ('40000000-0000-0000-0000-00000000000a');
+UPDATE public.users SET auth_id = '40000000-0000-0000-0000-00000000000a' WHERE id = '30000000-0000-0000-0000-000000000002';
+SELECT 'ENG1 (engineer, sent m-a2, same tenant and project) ' || t.try_as('authenticated', '40000000-0000-0000-0000-00000000000a', format('select public.pm_classify_document(%L,%L)::text', t.docid('m-a2'), 'dc')) AS r;
+SELECT 'ADMN (admin, no project_members row)               ' || t.try_as('authenticated', '40000000-0000-0000-0000-000000000005', format('select public.pm_classify_document(%L,%L)::text', t.docid('m-a2'), 'dc')) AS r;
+SELECT 'ADMP (admin WITH a pm membership on P1: the allowed shape, on an unclassified doc, rolled back)' AS note;
+BEGIN;
+SELECT t.try_as('authenticated', '40000000-0000-0000-0000-000000000006', format('select public.pm_classify_document(%L,%L)::text', t.docid('m-d2'), 'dc')) AS admp_result;
+ROLLBACK;
+SELECT t.ok('S-5: both refusals left m-a2 unclassified with no delivery',
+  (SELECT kind IS NULL FROM public.capture_documents WHERE id = t.docid('m-a2')) AND (SELECT count(*) = 0 FROM public.deliveries));
 SELECT t.ok('all refusals left every document unclassified and wrote no delivery',
   (SELECT count(*) = 0 FROM public.capture_documents WHERE kind IS NOT NULL) AND (SELECT count(*) = 0 FROM public.deliveries));
 
