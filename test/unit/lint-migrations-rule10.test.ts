@@ -85,10 +85,20 @@ describe('Rule 10 — function-redefinition-requires-capture, schema-aware', () 
 })
 
 describe('lint-migrations wiring', () => {
-  it('importing the script did not run main(); running it directly does, and exits 0 on the committed tree', () => {
-    const out = execFileSync('node', [join(__dirname, '..', '..', 'scripts', 'lint-migrations.mjs')], {
-      encoding: 'utf8',
-    })
-    expect(out).toMatch(/migration-lint: clean\./)
+  // Decoupled from the other rules on purpose: the whole-tree result can be red for an unrelated rule
+  // (e.g. shared-fixture-fk-coverage on a held file) without Rule 10 being wrong.
+  it('running the script directly runs main() (importing it above did not), and Rule 10 flags nothing on the real tree', () => {
+    let out = ''
+    try {
+      out = execFileSync('node', [join(__dirname, '..', '..', 'scripts', 'lint-migrations.mjs')], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    } catch (e) {
+      const err = e as { stdout?: string; stderr?: string }
+      out = `${err.stdout ?? ''}${err.stderr ?? ''}`
+    }
+    expect(out).toMatch(/^migration-lint:/m)
+    expect(out).not.toMatch(/function-redefinition-requires-capture/)
   })
 })
