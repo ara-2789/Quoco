@@ -14,8 +14,13 @@
 --   4a7f470362e0bc7b7687737860d112f4 trg_capture_documents_before_update
 -- The closing assertion re-reads md5(pg_get_functiondef(oid)) for all three and aborts on any difference.
 --
--- ROLLBACK ORDER: 052 DOWN, then 050 DOWN, then 049 DOWN. Never run at 08:25-08:40 or 18:25-18:40 IST.
+-- ROLLBACK ORDER (SQL review round 1, S-6b):
+--   1. Revert the PR-D2 deploy (the PM page reads columns and a function this DOWN drops; merge is deploy).
+--   2. This 052 DOWN, then the 050 DOWN, then the 049 DOWN. Never run at 08:25-08:40 or 18:25-18:40 IST.
 -- A DOWN over an unclassified document is REFUSED (DOWN_PRECONDITION_052_UNCLASSIFIED): a kind is never guessed.
+-- DOWN_PRECONDITION_052_UNCLASSIFIED is expected once digit 4 is live. Resolution: Aravind opens each unclassified
+-- document and calls private.capture_apply_classification as postgres with his own PM users.id. Each call is recorded in
+-- the apply record as a human decision. A kind is never guessed. (SQL review round 1, S-6a)
 -- NAMED CONSEQUENCE: dropping kind_source, kind_set_at and kind_set_by destroys PM attribution and the
 -- engineer_declared marker. Dropping received_at loses nothing: each delivery keeps its own.
 -- Every invoice-flow session is cleared (subtract-only), so no session can be mid-flow on the restored function.

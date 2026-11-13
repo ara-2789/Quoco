@@ -50,6 +50,10 @@
 --   A6  in-file assertion blocks: backfill extensions, per-name function counts across ALL non-system
 --       schemas, the full per-role EXECUTE matrix, schema USAGE, constraint presence, body markers.
 --
+-- RIDER (SQL review round 1, answer 2): drop the delivery_id result key and the dead v_delivery_id in the next
+-- migration that touches apply_material_inward_turn. After 052 the engineer turn creates no delivery, so the key
+-- is always NULL; it is kept now only so the result contract stays stable while the app side is rewritten.
+--
 -- WHAT IT DOES NOT DO: no row of any table is deleted; no WhatsApp message and no jobs row is written;
 -- no grant on a table changes; types/database.ts and the app code are separate (PR block 2).
 --
@@ -445,9 +449,12 @@ GRANT EXECUTE ON FUNCTION public.trg_capture_documents_before_update()
 -- =============================================================================
 -- A4b (S3). trg_capture_documents_before_insert: the QE012 refusal also covers a non-NULL kind,
 -- kind_source, kind_set_at or kind_set_by, so no insert path can bring back an unattributed kind.
--- received_at is accepted only as written by the RPC (the only insert path, service_role-only definer
--- function; no role holds INSERT on the table). No value check on received_at is added here (declined,
--- design review round 3, note 2): the one-insert-path invariant is guarded by a source tripwire test.
+-- received_at is accepted only as written by the RPC. On PROD the RPC is the only insert path (a
+-- service_role-only definer function; no role holds INSERT on the table). On TEST-DB, quoco_test_capture_insert
+-- (scripts/test-db-only-capture-helpers.sql) is a second, test-only insert path that can reach this table;
+-- on prod its absence is probed before apply (SQL review round 1, Known limits). No value check on
+-- received_at is added here (declined, design review round 3, note 2): the one-insert-path invariant is
+-- guarded by a source tripwire test (block 2).
 -- =============================================================================
 CREATE OR REPLACE FUNCTION public.trg_capture_documents_before_insert()
 RETURNS trigger
@@ -510,7 +517,7 @@ DECLARE
   v_touch         boolean := false;   -- true once the session row is to be persisted (a processed turn)
   v_media_n       integer := 0;
   v_doc_id        uuid;
-  v_delivery_id   uuid;
+  v_delivery_id   uuid;   -- 052: never assigned now (always NULL in the result); see the header rider
   v_reask         integer;
   v_ack           text;
   v_norm          text;     -- [SQL review r1, per Aravind 18 Oct] N-1: ONE normalised reply, used by the S3 ack parser (052: the S1 kind parser is retired)
@@ -521,7 +528,9 @@ DECLARE
   v_received      timestamptz;
   v_next_file_no  integer;
   v_files         jsonb;
-  -- The flow-owned context keys (decided 18 Oct).
+  -- The flow-owned context keys (decided 18 Oct). 052: 'mi_kind' stays in this list and in the clear clauses below.
+  -- Source of a stray key: the restored 050 body after a DOWN, which writes mi_kind at S1; a DOWN then re-UP cycle
+  -- is the case that leaves it behind (A0 guarantees no invoice session exists at apply). SQL review round 1, answer 2.
   c_mi_keys CONSTANT text[] := ARRAY['mi_last_sid', 'mi_kind', 'mi_document_id', 'mi_reask'];
 BEGIN
   -- Input shape. A SID is mandatory: it is both the duplicate key and the received_at key (Q2-6).
@@ -609,8 +618,9 @@ BEGIN
       v_outcome := 'reask';
 
     ELSIF v_session.current_step IN (1, 2) THEN
-      -- 052: step 1 (kind) is retired -- the kind is set later, by the PM only. A stray step-1 row
-      -- (a session started before the apply) is read as step 2.
+      -- 052: step 1 (kind) is retired -- the kind is set later, by the PM only. A stray step-1 row is read as
+      -- step 2. Same source as the mi_kind key above: the restored 050 body writes step 1 after a DOWN, so a
+      -- DOWN then re-UP cycle can leave one (A0 guarantees none exists at apply). SQL review round 1, answer 2.
       -- S2 file(s). Text without a file: one re-ask, then close with nothing recorded.
       IF v_media_n > 0 THEN
         v_create := true;
@@ -820,6 +830,7 @@ DECLARE
   v_n    integer;
   v_src  text;
   v_role text;
+  v_priv text;
 BEGIN
   -- (1) Per function: exactly one pg_proc row by name in its schema; for the two new names, exactly one
   -- across ALL non-system schemas (so a stray public.capture_apply_classification fails here).
@@ -878,6 +889,29 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- (2b) Table grants the invariants rest on (SQL review round 1, S-3): "one insert path" and "only definer
+  -- functions can UPDATE" both depend on these (049:973-979). No role may INSERT, UPDATE, DELETE or TRUNCATE
+  -- capture_documents, at table or column level; authenticated and service_role keep SELECT. Runs at apply time,
+  -- where the platform default ACLs actually exist. A failure names the role and the privilege.
+  FOREACH v_role IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+    FOREACH v_priv IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] LOOP
+      IF has_table_privilege(v_role, 'public.capture_documents', v_priv) THEN
+        v_bad := v_bad || ' table_grant:' || v_role || ':' || v_priv;
+      END IF;
+    END LOOP;
+    IF has_any_column_privilege(v_role, 'public.capture_documents', 'INSERT') THEN
+      v_bad := v_bad || ' column_grant:' || v_role || ':INSERT';
+    END IF;
+    IF has_any_column_privilege(v_role, 'public.capture_documents', 'UPDATE') THEN
+      v_bad := v_bad || ' column_grant:' || v_role || ':UPDATE';
+    END IF;
+  END LOOP;
+  FOREACH v_role IN ARRAY ARRAY['authenticated', 'service_role'] LOOP
+    IF NOT has_table_privilege(v_role, 'public.capture_documents', 'SELECT') THEN
+      v_bad := v_bad || ' table_select_missing:' || v_role || ':SELECT';
+    END IF;
+  END LOOP;
+
   -- (3) Constraints and column shape.
   SELECT count(*) INTO v_n FROM pg_constraint c
    WHERE c.conrelid = 'public.capture_documents'::regclass
@@ -907,21 +941,22 @@ BEGIN
     v_bad := v_bad || ' new_columns_found=' || v_n;
   END IF;
 
-  -- (4) Body markers (the replaced bodies are the new text, not the old one).
+  -- (4) Body markers (the replaced bodies are the new text, not the old one). strpos, not LIKE: in LIKE an
+  -- underscore matches any character (SQL review round 1, N-1).
   SELECT p.prosrc INTO v_src FROM pg_proc p
    WHERE p.oid = 'public.apply_material_inward_turn(text,uuid,uuid,uuid,text,text,jsonb,boolean,timestamptz,integer)'::regprocedure;
-  IF v_src LIKE '%v_kind%' OR v_src LIKE '%INSERT INTO public.deliveries%'
-     OR v_src NOT LIKE '%(tenant_id, project_id, sent_by, source_message_sid, received_at, caption)%' THEN
+  IF strpos(v_src, 'v_kind') > 0 OR strpos(v_src, 'INSERT INTO public.deliveries') > 0
+     OR strpos(v_src, '(tenant_id, project_id, sent_by, source_message_sid, received_at, caption)') = 0 THEN
     v_bad := v_bad || ' rpc_body_marker';
   END IF;
   SELECT p.prosrc INTO v_src FROM pg_proc p
    WHERE p.oid = 'public.trg_capture_documents_before_update()'::regprocedure;
-  IF v_src NOT LIKE '%kind_source%' OR v_src NOT LIKE '%NEW.received_at IS DISTINCT FROM OLD.received_at%' THEN
+  IF strpos(v_src, 'kind_source') = 0 OR strpos(v_src, 'NEW.received_at IS DISTINCT FROM OLD.received_at') = 0 THEN
     v_bad := v_bad || ' trg_update_body_marker';
   END IF;
   SELECT p.prosrc INTO v_src FROM pg_proc p
    WHERE p.oid = 'public.trg_capture_documents_before_insert()'::regprocedure;
-  IF v_src NOT LIKE '%NEW.kind_set_by IS NOT NULL%' THEN
+  IF strpos(v_src, 'NEW.kind_set_by IS NOT NULL') = 0 THEN
     v_bad := v_bad || ' trg_insert_body_marker';
   END IF;
 
