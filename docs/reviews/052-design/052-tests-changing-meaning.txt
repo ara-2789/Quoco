@@ -1,97 +1,197 @@
-052 existing capture tests touched by the kind removal (pattern-generated; a SUPERSET the reviewer triages; nothing is hidden by grouping)
-Scanned 272 it()/test() blocks in 16 files (test/capture-*.test.ts, test/unit/capture-*.test.ts, test/unit/material-inward-strings.test.ts). One row per flagged test: file:line | test name | flags.
-KIND-STEP/RETIRED-CONST  names the kind step, a retired constant (MI_ASK_KIND, MI_KIND_REASK, MI_ASK_FILE_DC/INVOICE, MI_ACK_QUESTION_DC/INVOICE), mi_kind, or has "kind" in its name: the assertion is retired or rewritten.
-STEP1                    seeds or asserts an invoice-flow session at current_step 1: step 1 is retired (read as step 2), so the meaning changes.
-ASSERTS-DELIVERY/KIND-AFTER-ENGINEER-TURN  drives the engineer function, router or handler and asserts on deliveries, links or kind: after 052 a file turn creates none of them, so the assertion changes meaning unless the test classifies first. Rewritten as a test, never absorbed by the fixture.
-STARTS-FLOW-BY-HAND       starts the flow itself (start: true / startMaterialInward) and then follows the old step sequence (start -> kind -> file ...): the sequence of turns changes (no kind turn; start lands on step 2), so the test is rewritten.
-MAKEDOC                  calls makeDoc(...): the setup is absorbed (start -> file -> classify as the PM). If MAKEDOC is the ONLY flag the assertion keeps its meaning; it must not be edited to pass.
-Counts: KIND-STEP/RETIRED-CONST 28, STEP1 6, ASSERTS-DELIVERY/KIND-AFTER-ENGINEER-TURN 6, STARTS-FLOW-BY-HAND 14, MAKEDOC 38, MAKEDOC-only 34.
+052 rev 8 test inventory: every existing test or fixture whose assertion changes meaning, or whose turn sequence changes, under the kind removal (pattern-generated; a SUPERSET the reviewer triages; nothing is hidden by grouping)
+rev 8, date 2026-11-13. Supersedes the rev 7 inventory, sha256 193cfa123d6bfdc304194aec5557c0c0c1e8d3f8c4cd901370e1768a23538d60 (scanned 16 files only; review round 3, S-A).
+Glob: test/**/*.ts and test/**/*.tsx (includes test/helpers/**, test/unit/**, and the PR-D1 suites). File count: 184 files scanned.
+Scanned 1943 it()/test() blocks and 470 top-level helper functions. A block runs from its it(/test( line to the next it(/test(/describe( line; a helper runs to the next top-level declaration. Flags are regex matches on that text; a miss is possible in unusual layouts, a false flag is possible by design.
+Classes: DIRECT = a test block with at least one flag other than MAKEDOC; MAKEDOC-only = its ONLY flag is MAKEDOC (the setup is absorbed, the assertion keeps its meaning, it must not be edited to pass); FIXTURE = a helper function (not a test) that carries a flag and is rebuilt or must be checked.
+Coverage vs rev 7: all 79 rev 7 rows are present except ONE deliberate exclusion: test/capture-ingest.test.ts "handles every kind of file independently..." (flagged in rev 7 only because the English phrase "kind of file" matched the word kind; it has no capture-domain content).
+NOTE: classes are assigned by pattern, not by running the suite. MAKEDOC-only means no other flag matched; it is the builder's and reviewer's job to confirm the assertion keeps its meaning once makeDoc absorbs the setup (start -> file -> classify as the PM).
+Flags:
+  KIND-STEP/RETIRED                    names the kind step or a retired string/constant: assertion retired or rewritten
+  KIND-TURN-SENT                       sends the kind turn (1=DC / 2=invoice at step 1): no kind turn exists after 052
+  STEP1                                step 1 retired (a stray step-1 row reads as step 2)
+  FILE-TURN-THEN-DELIVERY/LINK/KIND    a file turn no longer creates a delivery, link or kind: 0 deliveries / 0 links / kind NULL until the PM classifies
+  READS-DOC-KIND                       capture_documents.kind is NULL after a file turn; non-NULL only after classify
+  DELIVERY-ID-FROM-FILE-TURN           the file turn result carries no delivery_id after 052
+  STARTS-FLOW-BY-HAND                  start lands on step 2 and there is no kind turn: the turn sequence changes
+  MAKEDOC                              setup absorbed (start -> file -> classify as the PM); keeps its meaning if this is the only flag; do not edit to pass
+  CALLS-FIXTURE                        calls a flagged fixture helper (seeds a step-1 / kind-step invoice session): the seeded state changes meaning
+
+Counts per class: DIRECT 79, MAKEDOC-only 35, FIXTURE 17. Rows total 131.
+Counts per flag: KIND-STEP/RETIRED 39, KIND-TURN-SENT 17, STEP1 19, FILE-TURN-THEN-DELIVERY/LINK/KIND 7, READS-DOC-KIND 11, DELIVERY-ID-FROM-FILE-TURN 4, STARTS-FLOW-BY-HAND 24, MAKEDOC 50, CALLS-FIXTURE 13
+Files with at least one row: 18. Files NEW compared with the rev 7 inventory (9 files had rows): 9: test/capture-files-immutability.test.ts, test/helpers/capture-fixtures.ts, test/helpers/pm-fixtures.ts, test/pm-actions.test.ts, test/pm-d30-shapes.test.tsx, test/pm-file-route.test.ts, test/pm-queries.test.ts, test/pm-render.test.tsx, test/pm-unit.test.ts
+
+== makeDocWithFile call sites (helper test/helpers/pm-fixtures.ts, wraps makeDoc, so absorbed): file:line | enclosing test | class
+  test/pm-actions.test.ts:58 | async function newDc(p: string) { | MAKEDOC-only (setup helper async function newDc(p: string) {)
+  test/pm-actions.test.ts:62 | async function newInvoice(p: string) { | MAKEDOC-only (setup helper async function newInvoice(p: string) {)
+  test/pm-file-route.test.ts:67 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-file-route.test.ts:68 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-file-route.test.ts:69 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-file-route.test.ts:70 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-file-route.test.ts:71 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-file-route.test.ts:72 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-file-route.test.ts:73 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-file-route.test.ts:74 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:51 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:52 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:53 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:54 | beforeAll(() => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:213 | beforeAll(async () => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:216 | beforeAll(async () => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:217 | beforeAll(async () => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:293 | beforeAll(async () => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:294 | beforeAll(async () => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:295 | beforeAll(async () => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:296 | beforeAll(async () => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:297 | beforeAll(async () => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  test/pm-queries.test.ts:374 | beforeAll(async () => { | MAKEDOC-only (setup in beforeAll; the tests using its result keep their meaning)
+  total call sites: 23
 
 == test/capture-checkin-n2-n13.test.ts
-  :105 | MORNING: outcome start, capture_discarded = true, check-in at step 1 with the morning guard, flow-ow | KIND-STEP/RETIRED-CONST, STEP1
-  :116 | EVENING: outcome start, capture_discarded = true, evening step 1 with the evening guard | STEP1
-  :124 | already_complete: the half is already submitted -> the session is cleared, no check-in starts, no gu | KIND-STEP/RETIRED-CONST
-  :139 | T-A27-4 a stale (expired) invoice row plus a scheduled start: the check-in starts normally, order do | KIND-STEP/RETIRED-CONST
-  :160 | T-N13-2 MORNING first message %j is deferred: reask + capture_deferred, no attendance, q1_reask not  | STEP1
-  :172 | T-N13-1 EVENING first message %j is deferred: reask + capture_deferred, daily_logs.evening_output NO | STEP1
-  :233 | T-A27-3 a stale invoice row blocks the hindrance start until expire_stale_material_inward clears it; | KIND-STEP/RETIRED-CONST
-  :251 | A27 / N9 any other flow\ | KIND-STEP/RETIRED-CONST
-  :279 | T-A27-8 the IST-day rule still ends an invoice session at midnight: started 23:50, message 00:05 nex | STARTS-FLOW-BY-HAND
+  :73 | hindrance | FIXTURE | STARTS-FLOW-BY-HAND
+  :88 | liveInvoiceSession | FIXTURE | MAKEDOC
+  :105 | MORNING: outcome start, capture_discarded = true, check-in at step 1 with the morning guard, flow-ow | DIRECT | KIND-STEP/RETIRED, STEP1
+  :116 | EVENING: outcome start, capture_discarded = true, evening step 1 with the evening guard | DIRECT | STEP1
+  :124 | already_complete: the half is already submitted -> the session is cleared, no check-in starts, no gu | DIRECT | KIND-STEP/RETIRED
+  :139 | T-A27-4 a stale (expired) invoice row plus a scheduled start: the check-in starts normally, order do | DIRECT | KIND-STEP/RETIRED
+  :160 | T-N13-2 MORNING first message %j is deferred: reask + capture_deferred, no attendance, q1_reask not  | DIRECT | STEP1
+  :172 | T-N13-1 EVENING first message %j is deferred: reask + capture_deferred, daily_logs.evening_output NO | DIRECT | STEP1
+  :206 | T-N13-4 scoping: a flag set by the MORNING check-in does not defer the evening step 1 | DIRECT | STEP1
+  :233 | T-A27-3 a stale invoice row blocks the hindrance start until expire_stale_material_inward clears it; | DIRECT | KIND-STEP/RETIRED
+  :251 | A27 / N9 any other flow\ | DIRECT | KIND-STEP/RETIRED
+  :279 | T-A27-8 the IST-day rule still ends an invoice session at midnight: started 23:50, message 00:05 nex | DIRECT | KIND-TURN-SENT, STARTS-FLOW-BY-HAND
 == test/capture-engineer-flow.test.ts
-  :42 | T-FLOW-1 DC path: start -> kind -> two files -> ack 1 closes; rows exist from S2, delivery incomplet | KIND-STEP/RETIRED-CONST, STEP1, ASSERTS-DELIVERY/KIND-AFTER-ENGINEER-TURN, STARTS-FLOW-BY-HAND
-  :68 | T-A28-1 / T-A18-1 invoice path: the file creates exactly one automatic delivery and one active self- | ASSERTS-DELIVERY/KIND-AFTER-ENGINEER-TURN, MAKEDOC
-  :83 | T-A18-1 the same numbered question path runs after a DC and after an invoice; the engineer is never  | MAKEDOC
-  :91 | T-FLOW-2 ack 3 -> partial, step 4; a further file at S4 attaches to the same document (D-11) and the | MAKEDOC
-  :101 | T-FLOW-2 a file at S3 attaches to the same document and the session stays at S3 (D-11) | MAKEDOC
-  :122 | T-S3-ACK-PARSE "12" is NOT an ack: one re-ask, nothing stored | MAKEDOC
-  :129 | T-FLOW-2 garbage at S3: one re-ask, then ack=unclear with the raw text as the note, and the flow CLO | MAKEDOC
-  :143 | T-FLOW-2 garbage at S1 and at S2: one re-ask, then close with nothing recorded | STARTS-FLOW-BY-HAND
-  :158 | T-SID-DUP a repeated FILE SID writes nothing and returns the duplicate outcome | MAKEDOC
-  :171 | T-SID-DUP-TEXT a repeated ACK SID writes nothing and raises nothing (the second ack would otherwise  | MAKEDOC
-  :181 | T-SID-DUP-TEXT a repeated text SID in the middle of the flow (S1 kind) is a duplicate, not a second  | KIND-STEP/RETIRED-CONST, STARTS-FLOW-BY-HAND
-  :190 | Q2-6 received_at is the processed_messages.created_at of the SAME SID; a missing processed_messages  | ASSERTS-DELIVERY/KIND-AFTER-ENGINEER-TURN, MAKEDOC
-  :221 | S-1 (SQL review r1) a P2 engineer sending the file into a P1 session is refused QE012 and NOTHING is | ASSERTS-DELIVERY/KIND-AFTER-ENGINEER-TURN, MAKEDOC
-  :240 | S-4 (SQL review r2) an engineer whose ONLY membership has role qs (not engineer) is refused QE012 an | KIND-STEP/RETIRED-CONST, ASSERTS-DELIVERY/KIND-AFTER-ENGINEER-TURN, STARTS-FLOW-BY-HAND
-  :268 | N-1 contrast: "12" is not a kind (re-ask, still step 1) | KIND-STEP/RETIRED-CONST, STARTS-FLOW-BY-HAND
-  :274 | N-2 (SQL review r1) an ack with mi_document_id missing is refused QE012; nothing changes | KIND-STEP/RETIRED-CONST
-  :283 | capture_ingest job contract: one job per file turn, payload carries tenant, project, document, SID a | MAKEDOC
-  :298 | N8 every processed turn, including a re-ask, writes expires_at = p_now + 30 min and updated_at = p_n | STARTS-FLOW-BY-HAND
-  :313 | T-A27-1 / T-A27-2 expiry boundary: 29:59 idle is still active, 30:01 idle is expired (never tested a | STARTS-FLOW-BY-HAND
-  :328 | T-A27-1 the delivery of an expired session stays exactly as it was ("not acknowledged") | ASSERTS-DELIVERY/KIND-AFTER-ENGINEER-TURN, MAKEDOC
-  :337 | T-A27-6 (SQL half) a turn that reaches the RPC after expiry writes ONLY the clear: expires_at / upda | STARTS-FLOW-BY-HAND
-  :349 | expire_stale_material_inward: clears an expired invoice row once (true), then false; returns false f | STARTS-FLOW-BY-HAND
-  :373 | a start over a live OTHER-flow session never creates this flow (reask) and an idle non-start is idle | STARTS-FLOW-BY-HAND
+  :42 | T-FLOW-1 DC path: start -> kind -> two files -> ack 1 closes; rows exist from S2, delivery incomplet | DIRECT | KIND-STEP/RETIRED, KIND-TURN-SENT, STEP1, FILE-TURN-THEN-DELIVERY/LINK/KIND, DELIVERY-ID-FROM-FILE-TURN, STARTS-FLOW-BY-HAND
+  :68 | T-A28-1 / T-A18-1 invoice path: the file creates exactly one automatic delivery and one active self- | MAKEDOC-only | MAKEDOC
+  :83 | T-A18-1 the same numbered question path runs after a DC and after an invoice; the engineer is never  | MAKEDOC-only | MAKEDOC
+  :91 | T-FLOW-2 ack 3 -> partial, step 4; a further file at S4 attaches to the same document (D-11) and the | MAKEDOC-only | MAKEDOC
+  :101 | T-FLOW-2 a file at S3 attaches to the same document and the session stays at S3 (D-11) | MAKEDOC-only | MAKEDOC
+  :108 | (unnamed / computed title) | MAKEDOC-only | MAKEDOC
+  :122 | T-S3-ACK-PARSE "12" is NOT an ack: one re-ask, nothing stored | MAKEDOC-only | MAKEDOC
+  :129 | T-FLOW-2 garbage at S3: one re-ask, then ack=unclear with the raw text as the note, and the flow CLO | MAKEDOC-only | MAKEDOC
+  :143 | T-FLOW-2 garbage at S1 and at S2: one re-ask, then close with nothing recorded | DIRECT | KIND-TURN-SENT, STEP1, STARTS-FLOW-BY-HAND
+  :158 | T-SID-DUP a repeated FILE SID writes nothing and returns the duplicate outcome | MAKEDOC-only | MAKEDOC
+  :171 | T-SID-DUP-TEXT a repeated ACK SID writes nothing and raises nothing (the second ack would otherwise  | MAKEDOC-only | MAKEDOC
+  :181 | T-SID-DUP-TEXT a repeated text SID in the middle of the flow (S1 kind) is a duplicate, not a second  | DIRECT | KIND-STEP/RETIRED, KIND-TURN-SENT, STEP1, STARTS-FLOW-BY-HAND
+  :190 | Q2-6 received_at is the processed_messages.created_at of the SAME SID; a missing processed_messages  | DIRECT | KIND-TURN-SENT, FILE-TURN-THEN-DELIVERY/LINK/KIND, STARTS-FLOW-BY-HAND, MAKEDOC
+  :205 | (unnamed / computed title) | DIRECT | KIND-TURN-SENT, FILE-TURN-THEN-DELIVERY/LINK/KIND, DELIVERY-ID-FROM-FILE-TURN, STARTS-FLOW-BY-HAND
+  :221 | S-1 (SQL review r1) a P2 engineer sending the file into a P1 session is refused QE012 and NOTHING is | DIRECT | KIND-TURN-SENT, FILE-TURN-THEN-DELIVERY/LINK/KIND, STARTS-FLOW-BY-HAND, MAKEDOC
+  :240 | S-4 (SQL review r2) an engineer whose ONLY membership has role qs (not engineer) is refused QE012 an | DIRECT | KIND-TURN-SENT, FILE-TURN-THEN-DELIVERY/LINK/KIND, STARTS-FLOW-BY-HAND
+  :253 | (unnamed / computed title) | DIRECT | KIND-STEP/RETIRED, KIND-TURN-SENT, STARTS-FLOW-BY-HAND
+  :268 | N-1 contrast: "12" is not a kind (re-ask, still step 1) | DIRECT | KIND-STEP/RETIRED, KIND-TURN-SENT, STEP1, STARTS-FLOW-BY-HAND
+  :274 | N-2 (SQL review r1) an ack with mi_document_id missing is refused QE012; nothing changes | DIRECT | KIND-STEP/RETIRED
+  :283 | capture_ingest job contract: one job per file turn, payload carries tenant, project, document, SID a | MAKEDOC-only | MAKEDOC
+  :298 | N8 every processed turn, including a re-ask, writes expires_at = p_now + 30 min and updated_at = p_n | DIRECT | STARTS-FLOW-BY-HAND
+  :313 | T-A27-1 / T-A27-2 expiry boundary: 29:59 idle is still active, 30:01 idle is expired (never tested a | DIRECT | KIND-TURN-SENT, STARTS-FLOW-BY-HAND
+  :328 | T-A27-1 the delivery of an expired session stays exactly as it was ("not acknowledged") | MAKEDOC-only | MAKEDOC
+  :337 | T-A27-6 (SQL half) a turn that reaches the RPC after expiry writes ONLY the clear: expires_at / upda | DIRECT | KIND-TURN-SENT, STARTS-FLOW-BY-HAND
+  :349 | expire_stale_material_inward: clears an expired invoice row once (true), then false; returns false f | DIRECT | STARTS-FLOW-BY-HAND
+  :373 | a start over a live OTHER-flow session never creates this flow (reask) and an idle non-start is idle | DIRECT | STARTS-FLOW-BY-HAND
+== test/capture-files-immutability.test.ts
+  :55 | newPending | FIXTURE | MAKEDOC
 == test/capture-handler.test.ts
-  :211 | DC conversation: kind re-ask, kind, file re-ask, 2 photos, 1 more photo, ack re-ask, unclear close | KIND-STEP/RETIRED-CONST
-  :238 | invoice conversation: kind 2, one photo, ack 2 -> "what is wrong", a photo at the note step, the not | KIND-STEP/RETIRED-CONST
-  :264 | two misses at step 1 close the flow with nothing recorded | KIND-STEP/RETIRED-CONST
-  :274 | a replayed SID is a no-op: empty reply, no second reply | KIND-STEP/RETIRED-CONST
-  :454 | T-SF-3 a QE012 refusal on a photo through the router is an S-F event and the failure reply, not a sw | KIND-STEP/RETIRED-CONST
-  :483 | T-A27-6a 'expired': ended reply, row cleared by the RPC, counts-only event for a photo, the next mes | KIND-STEP/RETIRED-CONST
-  :506 | T-A27-6b 'idle' from a day-stale reset: the handler clears the row with p_now = max(now, expires_at) | KIND-STEP/RETIRED-CONST
+  :125 | startSession | FIXTURE | STARTS-FLOW-BY-HAND
+  :211 | DC conversation: kind re-ask, kind, file re-ask, 2 photos, 1 more photo, ack re-ask, unclear close | DIRECT | KIND-STEP/RETIRED
+  :238 | invoice conversation: kind 2, one photo, ack 2 -> "what is wrong", a photo at the note step, the not | DIRECT | KIND-STEP/RETIRED
+  :264 | two misses at step 1 close the flow with nothing recorded | DIRECT | KIND-STEP/RETIRED, STEP1
+  :274 | a replayed SID is a no-op: empty reply, no second reply | DIRECT | KIND-STEP/RETIRED
+  :454 | T-SF-3 a QE012 refusal on a photo through the router is an S-F event and the failure reply, not a sw | DIRECT | KIND-STEP/RETIRED
+  :483 | T-A27-6a 'expired': ended reply, row cleared by the RPC, counts-only event for a photo, the next mes | DIRECT | KIND-STEP/RETIRED
+  :506 | T-A27-6b 'idle' from a day-stale reset: the handler clears the row with p_now = max(now, expires_at) | DIRECT | KIND-STEP/RETIRED
 == test/capture-ingest.test.ts
-  :386 | handles every kind of file independently and writes the right shape for each | KIND-STEP/RETIRED-CONST
+  :86 | seed | FIXTURE | KIND-TURN-SENT, STARTS-FLOW-BY-HAND
 == test/capture-pm-functions.test.ts
-  :155 | B2 positive controls: a PM member and an admin who is also a PM member both succeed | MAKEDOC
-  :229 | T-S1-UNLINK a nonexistent link id, another project\ | MAKEDOC
-  :241 | T-A28-2 link to two DC deliveries: two pm_manual rows, the automatic delivery cancelled (superseded_ | MAKEDOC
-  :258 | E8 -> QE008 (049 package section 10 item 2) and T-A28-2 control: a second invoice linking an already | MAKEDOC
-  :278 | T-A28-5 (X6/D-9) linking an invoice whose automatic delivery is APPROVED is refused (QE011) and noth | MAKEDOC
-  :291 | T-A28-4 unlink: another PM link remains -> nothing restored; the LAST PM link goes -> automatic deli | MAKEDOC
-  :318 | a PM cannot unlink an automatic self-link (QE010) | MAKEDOC
-  :325 | T-LINK-1 refusals by the 049 triggers through the function: internal transfer (QE003), automatic del | MAKEDOC
-  :339 | T-Q3-1 retype to internal transfer with an active link is refused (QE006); an AUTOMATIC delivery can | MAKEDOC
-  :387 | Path 3: rejecting an AUTOMATIC delivery soft-unlinks its self-link as delivery_rejected | MAKEDOC
-  :397 | Path 4: rejecting the only linked DC delivery rejects it AND restores the automatic delivery with a  | MAKEDOC
-  :436 | T-B1-LINK-THEN-ACK ack stored; the cancelled automatic delivery STAYS cancelled with cancelled_at /  | MAKEDOC
-  :537 | T-A28-3 a pm_manual link while the invoice has an active self-link is refused QE001; a self-link whi | MAKEDOC
-  :570 | T-A28-3 a SECOND active self-link for one invoice is refused (unique index), even with the function  | MAKEDOC
-  :583 | T-Q3-1 / T-LINK-1 with the function bypassed: retype to internal transfer with an active link is ref | MAKEDOC
-  :637 | N-3 pm_set_delivery_details on a REJECTED delivery is refused QE011 and the content is unchanged | MAKEDOC
-  :650 | N-4 reject_reason is capped at 1000 characters: 1001 -> QE017 (nothing changes), 1000 is accepted | MAKEDOC
+  :60 | typedDc | FIXTURE | MAKEDOC
+  :155 | B2 positive controls: a PM member and an admin who is also a PM member both succeed | MAKEDOC-only | MAKEDOC
+  :187 | T-S1-FOREIGN-ID a delivery of another project is QE015, NOT an FK 23503 | DIRECT | STEP1
+  :193 | T-S1-FOREIGN-ID a delivery of another tenant is QE015, NOT an FK 23503 | DIRECT | STEP1
+  :199 | T-S1-FOREIGN-ID one good id plus one foreign id: the whole call is refused, the good id is not linke | DIRECT | STEP1
+  :217 | T-S1-ARRAY-SHAPE a NULL array and a nonexistent invoice -> QE015 | DIRECT | STEP1
+  :229 | T-S1-UNLINK a nonexistent link id, another project\ | DIRECT | STEP1, MAKEDOC
+  :241 | T-A28-2 link to two DC deliveries: two pm_manual rows, the automatic delivery cancelled (superseded_ | MAKEDOC-only | MAKEDOC
+  :258 | E8 -> QE008 (049 package section 10 item 2) and T-A28-2 control: a second invoice linking an already | MAKEDOC-only | MAKEDOC
+  :278 | T-A28-5 (X6/D-9) linking an invoice whose automatic delivery is APPROVED is refused (QE011) and noth | MAKEDOC-only | MAKEDOC
+  :291 | T-A28-4 unlink: another PM link remains -> nothing restored; the LAST PM link goes -> automatic deli | MAKEDOC-only | MAKEDOC
+  :318 | a PM cannot unlink an automatic self-link (QE010) | MAKEDOC-only | MAKEDOC
+  :325 | T-LINK-1 refusals by the 049 triggers through the function: internal transfer (QE003), automatic del | MAKEDOC-only | MAKEDOC
+  :339 | T-Q3-1 retype to internal transfer with an active link is refused (QE006); an AUTOMATIC delivery can | MAKEDOC-only | MAKEDOC
+  :387 | Path 3: rejecting an AUTOMATIC delivery soft-unlinks its self-link as delivery_rejected | MAKEDOC-only | MAKEDOC
+  :397 | Path 4: rejecting the only linked DC delivery rejects it AND restores the automatic delivery with a  | MAKEDOC-only | MAKEDOC
+  :436 | T-B1-LINK-THEN-ACK ack stored; the cancelled automatic delivery STAYS cancelled with cancelled_at /  | MAKEDOC-only | MAKEDOC
+  :471 | c. helper insert: quoco_test_capture_insert inserts a capture_documents row for a fixture tenant and | DIRECT | READS-DOC-KIND
+  :486 | d. tenant guard: the helper refuses a tenant that is not a zz-test-capture-* fixture tenant (insert, | DIRECT | READS-DOC-KIND
+  :500 | f. N-4 E12 via the helper: a delivery INSERT that is not "incomplete" / carries PM fields is refused | DIRECT | READS-DOC-KIND
+  :537 | T-A28-3 a pm_manual link while the invoice has an active self-link is refused QE001; a self-link whi | MAKEDOC-only | MAKEDOC
+  :570 | T-A28-3 a SECOND active self-link for one invoice is refused (unique index), even with the function  | MAKEDOC-only | MAKEDOC
+  :583 | T-Q3-1 / T-LINK-1 with the function bypassed: retype to internal transfer with an active link is ref | MAKEDOC-only | MAKEDOC
+  :637 | N-3 pm_set_delivery_details on a REJECTED delivery is refused QE011 and the content is unchanged | MAKEDOC-only | MAKEDOC
+  :650 | N-4 reject_reason is capped at 1000 characters: 1001 -> QE017 (nothing changes), 1000 is accepted | MAKEDOC-only | MAKEDOC
 == test/capture-races.test.ts
-  :111 | path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 | MAKEDOC
-  :138 | path 1 x path 3: linking an invoice while its AUTOMATIC delivery is being rejected -> the end state  | MAKEDOC
-  :152 | path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race | MAKEDOC
-  :173 | path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invar | MAKEDOC
-  :195 | path 5 x path 1: approving the automatic delivery while an invoice link is being made -> X6 holds (n | MAKEDOC
-  :214 | path 6 x path 1: retyping a DC to internal transfer while it is being linked -> never both (QE006 /  | MAKEDOC
-  :232 | B1 race: the engineer's ack and a PM link of the same invoice at the same time -> the ack is always  | MAKEDOC
-  :252 | duplicate-SID race: the same text SID delivered twice at once -> exactly one is processed, the other | MAKEDOC
-  :263 | duplicate-SID race (file turn): the same file SID delivered twice at once -> one document, one set o | STARTS-FLOW-BY-HAND
-  :281 | T-A27-6 a turn that reaches the RPC after expiry while the router clears the row (expire_stale) -> t | STARTS-FLOW-BY-HAND
+  :78 | typedDc | FIXTURE | MAKEDOC
+  :111 | path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 | MAKEDOC-only | MAKEDOC
+  :138 | path 1 x path 3: linking an invoice while its AUTOMATIC delivery is being rejected -> the end state  | MAKEDOC-only | MAKEDOC
+  :152 | path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race | MAKEDOC-only | MAKEDOC
+  :173 | path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invar | MAKEDOC-only | MAKEDOC
+  :195 | path 5 x path 1: approving the automatic delivery while an invoice link is being made -> X6 holds (n | MAKEDOC-only | MAKEDOC
+  :214 | path 6 x path 1: retyping a DC to internal transfer while it is being linked -> never both (QE006 /  | MAKEDOC-only | MAKEDOC
+  :232 | B1 race: the engineer's ack and a PM link of the same invoice at the same time -> the ack is always  | MAKEDOC-only | MAKEDOC
+  :252 | duplicate-SID race: the same text SID delivered twice at once -> exactly one is processed, the other | MAKEDOC-only | MAKEDOC
+  :263 | duplicate-SID race (file turn): the same file SID delivered twice at once -> one document, one set o | DIRECT | KIND-TURN-SENT, STARTS-FLOW-BY-HAND
+  :281 | T-A27-6 a turn that reaches the RPC after expiry while the router clears the row (expire_stale) -> t | DIRECT | KIND-TURN-SENT, STARTS-FLOW-BY-HAND
 == test/capture-router.test.ts
-  :206 | T-C3-1 an expired invoice row is cleared and the ended reply is sent; hindrance does NOT start | STARTS-FLOW-BY-HAND
-  :396 | T-D1-5 a message 29:59 after the last turn is not treated as ended; the expire RPC ran and returned  | KIND-STEP/RETIRED-CONST
-  :619 | T-HANDLE-ROUTE-1 (C4a, replaces the C3 stub test) a live, unexpired 'invoice' row goes to the handle | KIND-STEP/RETIRED-CONST
-  :665 | AT-DARK-1c control: the same call with the phone allowlisted starts the flow | KIND-STEP/RETIRED-CONST
+  :163 | seedInvoice | FIXTURE | KIND-STEP/RETIRED
+  :206 | T-C3-1 an expired invoice row is cleared and the ended reply is sent; hindrance does NOT start | DIRECT | CALLS-FIXTURE(seedInvoice)
+  :235 | T-C3-2 the first RPC after the routing read is expire_stale_material_inward; no flow RPC precedes it | DIRECT | CALLS-FIXTURE(seedInvoice)
+  :294 | T-D1-1 expired at step 3: exact ended reply, row cleared, no ack written, no other flow RPC | DIRECT | CALLS-FIXTURE(seedInvoice)
+  :315 | T-D1-2 IST-day crossing: updated 23:50 D-1, expires 00:20 D, now 00:05 D -> ended once, row cleared  | DIRECT | CALLS-FIXTURE(seedInvoice)
+  :335 | (unnamed / computed title) | DIRECT | CALLS-FIXTURE(seedInvoice)
+  :375 | T-D1-4 (photo part) a photo as the first message after expiry: ended reply, nothing stored, no nudge | DIRECT | CALLS-FIXTURE(seedInvoice)
+  :396 | T-D1-5 a message 29:59 after the last turn is not treated as ended; the expire RPC ran and returned  | DIRECT | CALLS-FIXTURE(seedInvoice)
+  :408 | (unnamed / computed title) | DIRECT | KIND-STEP/RETIRED, STEP1, STARTS-FLOW-BY-HAND, CALLS-FIXTURE(seedInvoice)
+  :445 | T-D1-6d dark phone (no allowlist): "4" after expiry is still the ended reply -- the switch gates the | DIRECT | CALLS-FIXTURE(seedInvoice)
+  :456 | T-D1-6e a photo (or any media) after expiry is the ended reply even on a live phone | DIRECT | CALLS-FIXTURE(seedInvoice)
+  :619 | T-HANDLE-ROUTE-1 (C4a, replaces the C3 stub test) a live, unexpired 'invoice' row goes to the handle | DIRECT | KIND-STEP/RETIRED, CALLS-FIXTURE(seedInvoice)
+  :665 | AT-DARK-1c control: the same call with the phone allowlisted starts the flow | DIRECT | KIND-STEP/RETIRED, STEP1
 == test/capture-webhook.test.ts
-  :166 | a PDF at step 2: ack question; +1 document, +1 pending file, +1 capture_ingest job; no unsupported r | KIND-STEP/RETIRED-CONST
-  :181 | jpeg + pdf in one message: one document, two files | KIND-STEP/RETIRED-CONST
-  :231 | a PDF as the first message after expiry: the ended reply, nothing stored, no nudge, one counts-only  | KIND-STEP/RETIRED-CONST
-  :299 | T-Q9b a handler throw on a PDF in a live invoice session propagates (no UNSUPPORTED_MEDIA_REPLY, no  | KIND-STEP/RETIRED-CONST, STEP1
-  :316 | T-PDF-CAPTION a PDF with Body text in a live invoice session stores it as capture_documents.caption, | KIND-STEP/RETIRED-CONST
-  :336 | T-PDF-NOITEMS a PDF whose items carry no URL, in a live invoice session: MI_UNSUPPORTED_FILE_REPLY,  | KIND-STEP/RETIRED-CONST
-  :354 | a failing RPC on a PDF: HTTP 200, MI_CAPTURE_FAILED_REPLY, SID row present; a resend with a NEW SID  | KIND-STEP/RETIRED-CONST
+  :166 | a PDF at step 2: ack question; +1 document, +1 pending file, +1 capture_ingest job; no unsupported r | DIRECT | KIND-STEP/RETIRED
+  :181 | jpeg + pdf in one message: one document, two files | DIRECT | KIND-STEP/RETIRED
+  :231 | a PDF as the first message after expiry: the ended reply, nothing stored, no nudge, one counts-only  | DIRECT | KIND-STEP/RETIRED
+  :299 | T-Q9b a handler throw on a PDF in a live invoice session propagates (no UNSUPPORTED_MEDIA_REPLY, no  | DIRECT | KIND-STEP/RETIRED, STEP1
+  :316 | T-PDF-CAPTION a PDF with Body text in a live invoice session stores it as capture_documents.caption, | DIRECT | KIND-STEP/RETIRED
+  :336 | T-PDF-NOITEMS a PDF whose items carry no URL, in a live invoice session: MI_UNSUPPORTED_FILE_REPLY,  | DIRECT | KIND-STEP/RETIRED
+  :354 | a failing RPC on a PDF: HTTP 200, MI_CAPTURE_FAILED_REPLY, SID row present; a resend with a NEW SID  | DIRECT | KIND-STEP/RETIRED
+== test/helpers/capture-fixtures.ts
+  :304 | miTurnRaw | FIXTURE | STARTS-FLOW-BY-HAND
+  :340 | makeDoc | FIXTURE | KIND-TURN-SENT, FILE-TURN-THEN-DELIVERY/LINK/KIND, DELIVERY-ID-FROM-FILE-TURN, STARTS-FLOW-BY-HAND, MAKEDOC
+== test/helpers/pm-fixtures.ts
+  :115 | makeDocWithFile | FIXTURE | MAKEDOC
+  :171 | makeDocWithCaption | FIXTURE | KIND-TURN-SENT, FILE-TURN-THEN-DELIVERY/LINK/KIND, DELIVERY-ID-FROM-FILE-TURN, STARTS-FLOW-BY-HAND, MAKEDOC
+  :202 | makeD30Shapes | FIXTURE | MAKEDOC
+== test/pm-actions.test.ts
+  :57 | newDc | FIXTURE | MAKEDOC
+  :61 | newInvoice | FIXTURE | MAKEDOC
+== test/pm-d30-shapes.test.tsx
+  :51 | timed | FIXTURE | MAKEDOC
+  :76 | DC: two stored files, the caption is the WhatsApp file name, awaiting_pm | DIRECT | READS-DOC-KIND
+  :83 | invoice: three stored files, caption is a file name, awaiting_pm automatic delivery with exactly ONE | DIRECT | READS-DOC-KIND
+  :108 | detail of the invoice: three stored files, created from the invoice, its self-link is the only activ | DIRECT | READS-DOC-KIND
+== test/pm-file-route.test.ts
+  :149 | a not-previewable INVOICE pdf downloads as invoice-<file_no>.pdf (the raw capture_documents.kind val | DIRECT | KIND-STEP/RETIRED, READS-DOC-KIND
+  :164 | a not-previewable pdf is refused if its document kind cannot be read (the route never guesses a name | DIRECT | KIND-STEP/RETIRED
+== test/pm-queries.test.ts
+  :78 | detail: the DC delivery with its stored file, the invoice delivery with its pending file | DIRECT | READS-DOC-KIND
+  :383 | premise: project P3 has NO active link of any kind (so the not-in list is empty) | DIRECT | KIND-STEP/RETIRED
+== test/pm-render.test.tsx
+  :75 | POSITIVE CONTROL: the kind drives the label (same ack, different kind, different slot) | DIRECT | KIND-STEP/RETIRED
+== test/pm-unit.test.ts
+  :171 | download file name: <document kind>-<file_no>.<ext> with the raw kind value, never the storage path | DIRECT | KIND-STEP/RETIRED
+  :335 | link echoes invoice_document_id; unlink echoes link_id; reject echoes delivery_id | DIRECT | READS-DOC-KIND
+  :415 | POSITIVE CONTROL: with a known kind both deliveries are listed | DIRECT | KIND-STEP/RETIRED
+  :419 | list: the delivery whose document kind is null is not listed | DIRECT | KIND-STEP/RETIRED
+  :423 | list: an unknown non-null kind is not listed either | DIRECT | KIND-STEP/RETIRED, READS-DOC-KIND
+  :447 | invoice page: a DC candidate whose document kind is null is not offered; the DC with a known kind is | DIRECT | KIND-STEP/RETIRED, READS-DOC-KIND
+  :475 | asKind: only the two known values; ackLabel: a null kind shows the existing no-ack slot, never a kin | DIRECT | KIND-STEP/RETIRED
+  :486 | download name: a null kind gets the neutral file-<n>.<ext>; dc / invoice keep their raw value; anyth | DIRECT | KIND-STEP/RETIRED
 == test/unit/capture-fixtures-clock.test.ts
-  :53 | T-CLK-1 makeDoc with no now: every RPC carries the same p_now on one IST date, across 18:30Z | MAKEDOC
+  :18 | fakeKit | FIXTURE | STEP1
+  :53 | T-CLK-1 makeDoc with no now: every RPC carries the same p_now on one IST date, across 18:30Z | DIRECT | MAKEDOC, CALLS-FIXTURE(fakeKit)
+  :81 | T-CLK-3 an explicit now is sent unchanged as p_now (the override still wins) | DIRECT | CALLS-FIXTURE(fakeKit)
