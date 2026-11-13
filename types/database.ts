@@ -204,8 +204,12 @@ export type Database = {
           engineer_ack_at: string | null
           engineer_ack_note: string | null
           id: string
-          kind: string
+          kind: string | null
+          kind_set_at: string | null
+          kind_set_by: string | null
+          kind_source: string | null
           project_id: string
+          received_at: string
           sent_by: string
           source_message_sid: string
           tenant_id: string
@@ -217,8 +221,12 @@ export type Database = {
           engineer_ack_at?: string | null
           engineer_ack_note?: string | null
           id?: string
-          kind: string
+          kind?: string | null
+          kind_set_at?: string | null
+          kind_set_by?: string | null
+          kind_source?: string | null
           project_id: string
+          received_at: string
           sent_by: string
           source_message_sid: string
           tenant_id: string
@@ -230,13 +238,24 @@ export type Database = {
           engineer_ack_at?: string | null
           engineer_ack_note?: string | null
           id?: string
-          kind?: string
+          kind?: string | null
+          kind_set_at?: string | null
+          kind_set_by?: string | null
+          kind_source?: string | null
           project_id?: string
+          received_at?: string
           sent_by?: string
           source_message_sid?: string
           tenant_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "capture_documents_kind_set_by_fk"
+            columns: ["kind_set_by", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "tenant_id"]
+          },
           {
             foreignKeyName: "capture_documents_project_fk"
             columns: ["project_id", "tenant_id"]
@@ -2689,6 +2708,10 @@ export type Database = {
       }
       get_user_tenant_id: { Args: never; Returns: string }
       pm_approve_delivery: { Args: { p_delivery_id: string }; Returns: Json }
+      pm_classify_document: {
+        Args: { p_document_id: string; p_kind: string }
+        Returns: Json
+      }
       pm_link_invoice: {
         Args: { p_delivery_ids: string[]; p_invoice_document_id: string }
         Returns: Json
