@@ -3,7 +3,7 @@ rev 8, date 2026-11-13. Supersedes the rev 7 inventory, sha256 193cfa123d6bfdc30
 Glob: test/**/*.ts and test/**/*.tsx (includes test/helpers/**, test/unit/**, and the PR-D1 suites). File count: 184 files scanned.
 Scanned 1943 it()/test() blocks and 470 top-level helper functions. A block runs from its it(/test( line to the next it(/test(/describe( line; a helper runs to the next top-level declaration. Flags are regex matches on that text; a miss is possible in unusual layouts, a false flag is possible by design.
 Classes: DIRECT = a test block with at least one flag other than MAKEDOC; MAKEDOC-only = its ONLY flag is MAKEDOC (the setup is absorbed, the assertion keeps its meaning, it must not be edited to pass); FIXTURE = a helper function (not a test) that carries a flag and is rebuilt or must be checked.
-Coverage vs rev 7: all 79 rev 7 rows are present except ONE deliberate exclusion: test/capture-ingest.test.ts "handles every kind of file independently..." (flagged in rev 7 only because the English phrase "kind of file" matched the word kind; it has no capture-domain content).
+Coverage vs rev 7: all 79 rev 7 rows are present except ONE deliberate exclusion: test/capture-ingest.test.ts "handles every kind of file independently..." ~~(flagged in rev 7 only because the English phrase "kind of file" matched the word kind; it has no capture-domain content)~~ [2026-11-13, verification pass note 1: capture-ingest.test.ts:386 seeds through seed() (:86-102), which sends the retired kind turn at :89 and is flagged as FIXTURE :86; its assertions concern ingest only, so its meaning does not change].
 NOTE: classes are assigned by pattern, not by running the suite. MAKEDOC-only means no other flag matched; it is the builder's and reviewer's job to confirm the assertion keeps its meaning once makeDoc absorbs the setup (start -> file -> classify as the PM).
 Flags:
   KIND-STEP/RETIRED                    names the kind step or a retired string/constant: assertion retired or rewritten
@@ -98,7 +98,7 @@ Files with at least one row: 18. Files NEW compared with the rev 7 inventory (9 
   :483 | T-A27-6a 'expired': ended reply, row cleared by the RPC, counts-only event for a photo, the next mes | DIRECT | KIND-STEP/RETIRED
   :506 | T-A27-6b 'idle' from a day-stale reset: the handler clears the row with p_now = max(now, expires_at) | DIRECT | KIND-STEP/RETIRED
 == test/capture-ingest.test.ts
-  :86 | seed | FIXTURE | KIND-TURN-SENT, STARTS-FLOW-BY-HAND
+  :86 | seed | FIXTURE | KIND-TURN-SENT, STARTS-FLOW-BY-HAND | in H (N-E)
 == test/capture-pm-functions.test.ts
   :60 | typedDc | FIXTURE | MAKEDOC
   :155 | B2 positive controls: a PM member and an admin who is also a PM member both succeed | MAKEDOC-only | MAKEDOC
@@ -192,6 +192,6 @@ Files with at least one row: 18. Files NEW compared with the rev 7 inventory (9 
   :475 | asKind: only the two known values; ackLabel: a null kind shows the existing no-ack slot, never a kin | DIRECT | KIND-STEP/RETIRED
   :486 | download name: a null kind gets the neutral file-<n>.<ext>; dc / invoice keep their raw value; anyth | DIRECT | KIND-STEP/RETIRED
 == test/unit/capture-fixtures-clock.test.ts
-  :18 | fakeKit | FIXTURE | STEP1
+  :18 | fakeKit | FIXTURE | STEP1 | in H (N-E)
   :53 | T-CLK-1 makeDoc with no now: every RPC carries the same p_now on one IST date, across 18:30Z | DIRECT | MAKEDOC, CALLS-FIXTURE(fakeKit)
   :81 | T-CLK-3 an explicit now is sent unchanged as p_now (the override still wins) | DIRECT | CALLS-FIXTURE(fakeKit)
