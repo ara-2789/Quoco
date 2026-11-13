@@ -1,0 +1,45 @@
+timestamp(UTC): 2026-11-13T18:52:47Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-checkin-n2-n13.test.ts; M test/capture-engineer-flow.test.ts; M test/capture-handler.test.ts; M test/capture-ingest.test.ts; M test/capture-races.test.ts; M test/capture-router.test.ts; M test/capture-webhook.test.ts; M test/helpers/capture-fixtures.ts; M test/unit/capture-fixtures-clock.test.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-router.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ✓ test/capture-router.test.ts (28 tests) 76449ms
+   ✓ T-C3: expire first > T-C3-1 an expired invoice row is cleared and the ended reply is sent; hindrance does NOT start  2488ms
+   ✓ T-C3: expire first > T-C3-2 the first RPC after the routing read is expire_stale_material_inward; no flow RPC precedes it  1711ms
+   ✓ T-C3: expire first > T-C3-3 every SessionFlow value goes through the exhaustive mapping; a sixth value fails tsc  818ms
+   ✓ T-C3: expire first > T-C3-4 morning, evening and hindrance rows idle 31 minutes are NOT cleared  5153ms
+   ✓ T-D1: D1(d) one-shot ended reply > T-D1-1 expired at step 3: exact ended reply, row cleared, no ack written, no other flow RPC  3347ms
+   ✓ T-D1: D1(d) one-shot ended reply > T-D1-2 IST-day crossing: updated 23:50 D-1, expires 00:20 D, now 00:05 D -> ended once, row cleared (p_now = max(now, expires_at))  2993ms
+   ✓ T-D1: D1(d) one-shot ended reply > T-D1-3a (after T-D1-1): "hello" gets the idle reply, "1" starts hindrance, the ended reply never repeats  2967ms
+   ✓ T-D1: D1(d) one-shot ended reply > T-D1-3b (after T-D1-2): "hello" gets the idle reply, "1" starts hindrance, the ended reply never repeats  3163ms
+   ✓ T-D1: D1(d) one-shot ended reply > T-D1-4 (photo part) a photo as the first message after expiry: ended reply, nothing stored, no nudge claimed  2449ms
+   ✓ T-D1: D1(d) one-shot ended reply > T-D1-5 a message 29:59 after the last turn is not treated as ended; the expire RPC ran and returned false  2150ms
+   ✓ T-D1: D1(d) one-shot ended reply > T-D1-6 (expiry) allowlisted phone: "4" after the session ended starts a new session at step 2 (the file step), no ended reply  3174ms
+   ✓ T-D1: D1(d) one-shot ended reply > T-D1-6 (IST-day crossing) allowlisted phone: "4" after the session ended starts a new session at step 2 (the file step), no ended reply  3175ms
+   ✓ T-D1: D1(d) one-shot ended reply > T-D1-6d dark phone (no allowlist): "4" after expiry is still the ended reply -- the switch gates the skip  1862ms
+   ✓ T-D1: D1(d) one-shot ended reply > T-D1-6e a photo (or any media) after expiry is the ended reply even on a live phone  1434ms
+   ✓ T-S3: invoice_reset_guard photo guard > T-S3-1 morning guard + photo: nothing stored, guard stays, S-3 reply  2708ms
+   ✓ T-S3: invoice_reset_guard photo guard > T-S3-2 evening mirror  2595ms
+   ✓ T-S3: invoice_reset_guard photo guard > T-S3-3 inert: a morning guard on an EVENING session is handled as today (contrast: the matching guard is not)  4754ms
+   ✓ T-S3: invoice_reset_guard photo guard > T-S3-4 POSITIVE CONTROL: after the first text clears the guard, the next photo is a normal check-in photo  4486ms
+   ✓ T-S3: invoice_reset_guard photo guard > T-S3-5 (C4b) a PDF while the guard is set: unsupportedMedia, nothing stored, guard untouched  2638ms
+   ✓ T-S3: invoice_reset_guard photo guard > T-S3-6 isPhoto with zero extractable items while the guard is set: not dispatched as an answer  2274ms
+   ✓ T-S3: invoice_reset_guard photo guard > T-S3-7 evening guard + photo at step 2: the plain question, never the "Sorry, I didn't catch" re-ask  1822ms
+   ✓ T-N13-W: capture_deferred reply > morning: deferred first message -> explanation + the step-1 question; control: no flag -> the plain question  2151ms
+   ✓ T-N13-W: capture_deferred reply > evening mirror; control: no flag -> unchanged advance reply  2457ms
+   ✓ live invoice / safety rows > T-HANDLE-ROUTE-1 (C4a, replaces the C3 stub test) a live, unexpired 'invoice' row goes to the handler, not the idle path  2047ms
+   ✓ live invoice / safety rows > a live 'safety' row: one Sentry WARNING, then the idle reply path  1558ms
+   ✓ AT-DARK: no engineer-visible change > AT-DARK-1 (C3 part): no allowlist, no session, "4" -> today's item_reserved reply; nothing started  1616ms
+   ✓ AT-DARK: no engineer-visible change > AT-DARK-1c control: the same call with the phone allowlisted starts the flow  1674ms
+   ✓ AT-DARK: no engineer-visible change > AT-DARK-2 the idle menu text is byte-identical to origin/main for every header state  674ms
+
+ Test Files  1 passed (1)
+      Tests  28 passed (28)
+   Start at  00:22:48
+   Duration  76.68s (transform 88ms, setup 0ms, collect 108ms, tests 76.45s, environment 0ms, prepare 18ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-13T18:54:04Z

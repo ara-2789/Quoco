@@ -1,0 +1,75 @@
+'use strict'
+// 6c PR-time mechanical control (plan F, S-A): every it(/test( block whose body changes in `git diff origin/main` must appear in
+// docs/reviews/052-design/052-tests-changing-meaning.txt. Blocks: from an it(/test( line to the next it(/test(/describe( line
+// (the inventory's own definition). Matching is by file + a normalised title key (the inventory truncates titles).
+const { execFileSync } = require('child_process')
+const fs = require('fs')
+const ROOT = process.cwd()
+const BASE = process.argv[2] || 'origin/main'
+const git = (...a) => execFileSync('git', a, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+const key = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 40)
+
+function blocks(text) {
+  const lines = text.split('\n')
+  const starts = []
+  lines.forEach((l, i) => { if (/^\s*(it|test|describe)(\.each|\.skip|\.skipIf|\.only)?[\s(]/.test(l)) starts.push(i) })
+  const out = []
+  starts.forEach((s, n) => {
+    if (!/^\s*(it|test)\b/.test(lines[s])) return
+    // the block ends at its OWN closing line (same indent, '})' or '}, ms)'), else at the next it/test/describe line
+    const indent = /^(\s*)/.exec(lines[s])[1]
+    let end = n + 1 < starts.length ? starts[n + 1] : lines.length
+    for (let j = s; j < end; j++) {
+      const l = lines[j]
+      if (j > s && (l.startsWith(indent + '})') || l.startsWith(indent + '}, '))) { end = j + 1; break }
+      if (j === s && /\)\s*$/.test(l) && (l.match(/\(/g) || []).length === (l.match(/\)/g) || []).length) { end = j + 1; break }
+    }
+    const body = lines.slice(s, end).join('\n')
+    let m
+    if (/\.each/.test(lines[s].split('(')[0] + lines[s])) m = /\]\s*\)\s*\(\s*(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/.exec(body) || /\(\s*(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/.exec(body)
+    else m = /\(\s*(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/.exec(body)
+    out.push({ title: m ? m[2] : `(unnamed @${s + 1})`, body, line: s + 1 })
+  })
+  return out
+}
+
+// inventory
+const inv = fs.readFileSync(ROOT + '/docs/reviews/052-design/052-tests-changing-meaning.txt', 'utf8').split('\n')
+const invRows = {} // file -> Set(key)
+const invLines = {} // file -> Set(line)
+let cur = null
+for (const l of inv) {
+  const h = /^== (test\/\S+)/.exec(l)
+  if (h) { cur = h[1]; invRows[cur] ||= new Set(); invLines[cur] ||= new Set(); continue }
+  if (l.startsWith('== makeDocWithFile')) { cur = null; continue }
+  const r = /^\s+:(\d+) \| (.*?) \| (DIRECT|MAKEDOC-only|FIXTURE)/.exec(l)
+  if (r && cur) { invRows[cur].add(key(r[2])); invLines[cur].add(Number(r[0].trim().slice(1).split(' ')[0])) }
+}
+
+const changed = git('diff', '--name-only', BASE, '--', 'test/').split('\n').filter((f) => /\.(ts|tsx)$/.test(f))
+const rows = []
+for (const f of changed) {
+  let oldText = ''
+  try { oldText = git('show', `${BASE}:${f}`) } catch { oldText = null }
+  const newText = fs.existsSync(ROOT + '/' + f) ? fs.readFileSync(ROOT + '/' + f, 'utf8') : null
+  const oldB = oldText ? blocks(oldText) : []
+  const newB = newText ? blocks(newText) : []
+  const newByTitle = new Map(newB.map((b) => [b.title, b]))
+  const oldByTitle = new Map(oldB.map((b) => [b.title, b]))
+  for (const ob of oldB) {
+    const nb = newByTitle.get(ob.title)
+    const status = !nb ? 'REMOVED-OR-RENAMED' : nb.body !== ob.body ? 'BODY-CHANGED' : null
+    if (!status) continue
+    const found = (invRows[f] && invRows[f].has(key(ob.title))) || (invLines[f] && invLines[f].has(ob.line))
+    rows.push({ f, line: ob.line, title: ob.title, status, found: !!found })
+  }
+  for (const nb of newB) if (!oldByTitle.has(nb.title)) rows.push({ f, line: nb.line, title: nb.title, status: 'NEW-BLOCK', found: null })
+}
+const out = []
+out.push(`base ${BASE} (${git('rev-parse', BASE).trim()}), head ${git('rev-parse', 'HEAD').trim()}; changed test files: ${changed.length}`)
+for (const r of rows.filter((r) => r.status !== 'NEW-BLOCK')) out.push(`${r.found ? 'FOUND  ' : 'MISSING'} | ${r.f}:${r.line} | ${r.status} | ${r.title.slice(0, 110)}`)
+out.push('')
+out.push(`counts: changed-or-removed blocks ${rows.filter((r) => r.status !== 'NEW-BLOCK').length} (FOUND ${rows.filter((r) => r.found === true).length}, MISSING ${rows.filter((r) => r.found === false).length}); new blocks ${rows.filter((r) => r.status === 'NEW-BLOCK').length}`)
+out.push('NEW blocks (additions, not required in the inventory):')
+for (const r of rows.filter((r) => r.status === 'NEW-BLOCK')) out.push(`NEW | ${r.f}:${r.line} | ${r.title.slice(0, 110)}`)
+console.log(out.join('\n'))

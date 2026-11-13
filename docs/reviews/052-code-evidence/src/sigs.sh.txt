@@ -1,0 +1,5 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+OUT=$HOME/quoco-records/052-build/b2b
+{ hdr; Q "catalog signatures (identity arguments) of the 050-052 functions" $T/sql/sigs.sql; } > $OUT/step6-catalog-signatures.txt 2>&1
+grep -E '"(name|identity_args)"' $OUT/step6-catalog-signatures.txt

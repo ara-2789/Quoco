@@ -1,0 +1,31 @@
+timestamp(UTC): 2026-11-13T19:15:30Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-checkin-n2-n13.test.ts; M test/capture-engineer-flow.test.ts; M test/capture-files-immutability.test.ts; M test/capture-handler.test.ts; M test/capture-ingest.test.ts; M test/capture-pm-functions.test.ts; M test/capture-races.test.ts; M test/capture-router.test.ts; M test/capture-webhook.test.ts; M test/helpers/capture-fixtures.ts; M test/unit/capture-fixtures-clock.test.ts;?? test/capture-classify.test.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-classify.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ✓ test/capture-classify.test.ts (14 tests) 71043ms
+   ✓ T-C-1 classification creates the delivery (and for an invoice the self-link) from the locked document row > a DC: exactly the 5 result keys; 1 delivery, 0 links; received_at equals the document and the dedup row; reported_by is the ENGINEER; kind_set_by is the PM  3896ms
+   ✓ T-C-1 classification creates the delivery (and for an invoice the self-link) from the locked document row > an invoice: 1 delivery created from the invoice and 1 ACTIVE self-link, the same 5 keys, self_link_id is the link  1844ms
+   ✓ T-C-1 classification creates the delivery (and for an invoice the self-link) from the locked document row > T-C-1b the status table: no ack -> incomplete; yes / no / partial / unclear -> awaiting_pm (the ack is read from the document under the lock)  11783ms
+   ✓ T-C-2 set-once > the same kind again is already_classified with both ids and creates nothing; a different kind is QE011; the columns never change  3299ms
+   ✓ T-C-3 refusals leave the document unclassified and write nothing > other-tenant PM, other-project PM, qs, deactivated PM, admin without PM membership: QE015 (identical to an unknown id); the PM of the project then succeeds  6186ms
+   ✓ T-C-3 refusals leave the document unclassified and write nothing > a bad or NULL kind is QE012 and writes nothing; a good kind then works  4536ms
+   ✓ T-C-3 refusals leave the document unclassified and write nothing > anon is refused 42501 on the wrapper; service_role is refused 42501 on the wrapper; the PM of the project is not (control)  2068ms
+   ✓ T-C-3 refusals leave the document unclassified and write nothing > the private helper is not reachable: no Content-Profile -> 404 PGRST202; Content-Profile: private -> 406 PGRST106; for an authenticated PM and for service_role alike  3531ms
+   ✓ S-5 (SQL review round 1): the engineer who sent the document, and an admin without PM membership, cannot classify it > QE015 for both, the document stays unclassified; an admin who IS a PM member of the project is allowed  3890ms
+   ✓ T-C-5 / T-C-6 / T-C-7 > T-C-5 a classification sends nothing and queues nothing: 0 new jobs and 0 new outbound_sends for the tenant  2410ms
+   ✓ T-C-5 / T-C-6 / T-C-7 > T-C-6 a document whose only file was rejected can still be classified (the helper never reads capture_files)  1990ms
+   ✓ T-C-5 / T-C-6 / T-C-7 > T-C-7 RLS: a PM of the project reads an unclassified document (kind NULL); a PM of another project or tenant does not  3019ms
+   ✓ T-C-8 both orders of the ack and the classification end in the same state > classify-then-ack: the ack moves the NEW delivery to awaiting_pm; one delivery, one self-link; the ack is stored  3196ms
+   ✓ T-C-9 (B1) received_at is stored on the document: classification does not depend on the dedup table > deleting the processed_messages row after the file turn does not stop the classification; the delivery gets the document received_at  2337ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  00:45:31
+   Duration  71.23s (transform 39ms, setup 0ms, collect 40ms, tests 71.04s, environment 0ms, prepare 23ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-13T19:16:42Z

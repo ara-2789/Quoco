@@ -1,0 +1,33 @@
+timestamp(UTC): 2026-11-13T18:58:57Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-checkin-n2-n13.test.ts; M test/capture-engineer-flow.test.ts; M test/capture-handler.test.ts; M test/capture-ingest.test.ts; M test/capture-races.test.ts; M test/capture-router.test.ts; M test/capture-webhook.test.ts; M test/helpers/capture-fixtures.ts; M test/unit/capture-fixtures-clock.test.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-handler.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ✓ test/capture-handler.test.ts (28 tests) 60315ms
+   ✓ outcome map (real RPC, real router) > conversation: file re-ask, 2 photos, 1 more photo, ack re-ask, unclear close (052: no kind turn)  7860ms
+   ✓ outcome map (real RPC, real router) > conversation: one photo, ack 2 -> "what is wrong", a photo at the note step, the note -> done (052: the same neutral question for any document)  5835ms
+   ✓ outcome map (real RPC, real router) > ack 3 -> "what is missing", note -> done; ack 1 -> done  7508ms
+   ✓ outcome map (real RPC, real router) > two misses at the file step close the flow with nothing recorded (052: step 1 is retired)  3416ms
+   ✓ outcome map (real RPC, real router) > a replayed SID is a no-op: empty reply, no second reply  2491ms
+   ✓ outcome map (real RPC, real router) > files present but none usable: MI_UNSUPPORTED_FILE_REPLY, the RPC is not called  1329ms
+   ✓ outcome map (real RPC, real router) > wrong_flow (a check-in took over between the router and the RPC): explanation + the current check-in question  2278ms
+   ✓ outcome map (real RPC, real router) > wrong_flow with a current_flow that is not morning/evening throws, with no phone or id in the text, and is not an S-F event  1306ms
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-1 a failing RPC on a photo: MI_CAPTURE_FAILED_REPLY, one counts-only Sentry error, no phone/URL/body/ids anywhere  1810ms
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-1b errorCode is error.code only when it is exactly five upper-case letters/digits, else "unknown"  4443ms
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-1c a failing post-RPC read (after the RPC committed) is inside the same catch  5804ms
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-1d a failing RPC on a TEXT turn propagates (Q6b): no S-F event, and the thrown text carries no phone, ids or provider message  1357ms
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-2 ordering: the webhook consumes the SID before routing, and the RPC still refuses a file turn with no SID row (QE012)  1453ms
+   ✓ S-F-1: record and alert on a failed file turn > T-SF-3 a QE012 refusal on a photo through the router is an S-F event and the failure reply, not a swallowed network error  3154ms
+   ✓ T-A27-6: the RPC says expired / idle after the router read the row as live > T-A27-6a 'expired': ended reply, row cleared by the RPC, counts-only event for a photo, the next message takes the idle path  2187ms
+   ✓ T-A27-6: the RPC says expired / idle after the router read the row as live > T-A27-6b 'idle' from a day-stale reset: the handler clears the row with p_now = max(now, expires_at), then the ended reply, once  2383ms
+
+ Test Files  1 passed (1)
+      Tests  28 passed (28)
+   Start at  00:28:58
+   Duration  60.54s (transform 88ms, setup 0ms, collect 107ms, tests 60.31s, environment 0ms, prepare 18ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-13T18:59:58Z

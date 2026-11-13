@@ -1,0 +1,72 @@
+timestamp(UTC): 2026-11-13T19:51:59Z
+HEAD: 1940690674e97ee286169c968c39c792eed66219
+$ grep -rn -E "delivery_id|deliveryId" lib app   (ALL of lib/ and app/, PM paths included)
+lib/capture/pm-queries.ts:185:  const deliveryIds = rows.map((r) => r.id)
+lib/capture/pm-queries.ts:193:      .select('delivery_id')
+lib/capture/pm-queries.ts:195:      .in('delivery_id', deliveryIds)
+lib/capture/pm-queries.ts:207:  const linked = new Set((links.data ?? []).map((l) => l.delivery_id))
+lib/capture/pm-queries.ts:247:  deliveryId: string
+lib/capture/pm-queries.ts:316:  deliveryId: string,
+lib/capture/pm-queries.ts:323:  // deliveryId comes from the URL and is interpolated into a PostgREST `or(...)` filter below: only a UUID gets in.
+lib/capture/pm-queries.ts:324:  if (!UUID_RE.test(deliveryId)) return { status: 'not-found' }
+lib/capture/pm-queries.ts:332:    .eq('id', deliveryId)
+lib/capture/pm-queries.ts:349:      .select('id, delivery_id, invoice_document_id, link_source')
+lib/capture/pm-queries.ts:352:      .or(`delivery_id.eq.${deliveryId},invoice_document_id.eq.${docId}`),
+lib/capture/pm-queries.ts:377:    deliveryId: l.delivery_id,
+lib/capture/pm-queries.ts:379:  const activeLinks = allLinks.filter((l) => l.deliveryId === deliveryId)
+lib/capture/pm-queries.ts:419:        .in('id', pmLinks.map((l) => l.deliveryId))
+lib/capture/pm-queries.ts:424:        dcNumber: byId.get(l.deliveryId)?.dc_number ?? null,
+lib/capture/pm-queries.ts:425:        receivedAt: byId.get(l.deliveryId)?.received_at ?? '',
+lib/capture/pm-queries.ts:437:      .select('delivery_id')
+lib/capture/pm-queries.ts:442:    const takenIds = (taken ?? []).map((t) => t.delivery_id)
+lib/capture/pm-actions.ts:19:// delivery_ids 1..20 distinct (050:796-804).
+lib/capture/pm-actions.ts:99:  deliveryId: string
+lib/capture/pm-actions.ts:125:    if (!isUuid(input.deliveryId)) return pmError('PM_ERR_INVALID_INPUT')
+lib/capture/pm-actions.ts:142:      .eq('id', input.deliveryId)
+lib/capture/pm-actions.ts:158:      p_delivery_id: input.deliveryId,
+lib/capture/pm-actions.ts:164:    return settle('set_details', { data, error }, 'delivery_id', input.deliveryId)
+lib/capture/pm-actions.ts:172:export async function runApprove(deps: PmActionDeps, input: { deliveryId: string }): Promise<PmActionResult> {
+lib/capture/pm-actions.ts:174:    if (!isUuid(input.deliveryId)) return pmError('PM_ERR_INVALID_INPUT')
+lib/capture/pm-actions.ts:175:    const { data, error } = await deps.client.rpc('pm_approve_delivery', { p_delivery_id: input.deliveryId })
+lib/capture/pm-actions.ts:176:    return settle('approve', { data, error }, 'delivery_id', input.deliveryId)
+lib/capture/pm-actions.ts:180:export async function runReject(deps: PmActionDeps, input: { deliveryId: string; reason: string }): Promise<PmActionResult> {
+lib/capture/pm-actions.ts:182:    if (!isUuid(input.deliveryId)) return pmError('PM_ERR_INVALID_INPUT')
+lib/capture/pm-actions.ts:187:    const { data, error } = await deps.client.rpc('pm_reject_delivery', { p_delivery_id: input.deliveryId, p_reason: reason })
+lib/capture/pm-actions.ts:188:    return settle('reject', { data, error }, 'delivery_id', input.deliveryId)
+lib/capture/pm-actions.ts:196:export async function runLink(deps: PmActionDeps, input: { invoiceDocumentId: string; deliveryIds: string[] }): Promise<PmActionResult> {
+lib/capture/pm-actions.ts:198:    const ids = input.deliveryIds
+lib/capture/pm-actions.ts:205:      p_delivery_ids: ids,
+app/(dashboard)/material-inward/decision-controls.tsx:23:export function DecisionControls({ deliveryId, hasStoredFile }: { deliveryId: string; hasStoredFile: boolean }) {
+app/(dashboard)/material-inward/decision-controls.tsx:53:          onClick={() => run(() => approveDeliveryAction(deliveryId))}
+app/(dashboard)/material-inward/decision-controls.tsx:60:        <label className="text-sm font-medium text-gray-900" htmlFor={`reject-reason-${deliveryId}`}>
+app/(dashboard)/material-inward/decision-controls.tsx:64:          id={`reject-reason-${deliveryId}`}
+app/(dashboard)/material-inward/decision-controls.tsx:80:            run(() => rejectDeliveryAction(deliveryId, reason))
+app/(dashboard)/material-inward/actions.ts:32:  revalidatePath('/material-inward/[deliveryId]', 'page')
+app/(dashboard)/material-inward/actions.ts:36:export async function approveDeliveryAction(deliveryId: string): Promise<PmActionResult> {
+app/(dashboard)/material-inward/actions.ts:37:  return refresh(await runApprove(await buildDeps(), { deliveryId }))
+app/(dashboard)/material-inward/actions.ts:40:export async function rejectDeliveryAction(deliveryId: string, reason: string): Promise<PmActionResult> {
+app/(dashboard)/material-inward/actions.ts:41:  return refresh(await runReject(await buildDeps(), { deliveryId, reason }))
+app/(dashboard)/material-inward/actions.ts:48:export async function linkInvoiceAction(invoiceDocumentId: string, deliveryIds: string[]): Promise<PmActionResult> {
+app/(dashboard)/material-inward/actions.ts:49:  return refresh(await runLink(await buildDeps(), { invoiceDocumentId, deliveryIds }))
+app/(dashboard)/material-inward/details-controls.tsx:34:  deliveryId,
+app/(dashboard)/material-inward/details-controls.tsx:38:  deliveryId: string
+app/(dashboard)/material-inward/details-controls.tsx:74:        deliveryId,
+app/(dashboard)/material-inward/link-controls.tsx:34:  deliveryId,
+app/(dashboard)/material-inward/link-controls.tsx:41:  deliveryId: string
+app/(dashboard)/material-inward/link-controls.tsx:73:        : linkInvoiceAction(picked[0], [deliveryId]),
+app/(dashboard)/material-inward/link-controls.tsx:112:                name={`link-candidate-${deliveryId}`}
+app/(dashboard)/material-inward/[deliveryId]/page.tsx:13:export default async function MaterialInwardDetailPage({ params }: { params: Promise<{ deliveryId: string }> }) {
+app/(dashboard)/material-inward/[deliveryId]/page.tsx:14:  const { deliveryId } = await params
+app/(dashboard)/material-inward/[deliveryId]/page.tsx:17:  const result = await getDeliveryDetail(supabase, { id: profile.id, tenant_id: profile.tenant_id }, deliveryId, new Date())
+[end of grep]
+
+$ grep -rn -E "apply_material_inward_turn" lib app   (every caller of the engineer RPC)
+lib/queue/jobs.ts:22:  // apply_material_inward_turn (SQL), never from TypeScript.
+lib/whatsapp/flows/material-inward.ts:106:/** Wraps apply_material_inward_turn (migration 050, service_role only). */
+lib/whatsapp/flows/material-inward.ts:110:  const { data, error } = await supabase.rpc('apply_material_inward_turn', {
+lib/whatsapp/flows/material-inward.ts:125:  if (error) throw new MaterialInwardDbError('apply_material_inward_turn', error.code)
+lib/whatsapp/flows/material-inward.ts:130:    throw new Error('apply_material_inward_turn returned an unexpected outcome')
+app/api/jobs/tick/route.ts:83:      // migration 050's apply_material_inward_turn; nothing creates one while digit 4 is dark.
+[end of grep]
+
+reading: applyMaterialInwardTurn (lib/whatsapp/flows/material-inward.ts) is the only app caller of the engineer RPC; it maps outcome, current_flow, current_step and document_id and never read delivery_id. Any delivery_id hit above is a read of a deliveries ROW or a PM RPC argument, not of the engineer RPC result.

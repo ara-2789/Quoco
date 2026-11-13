@@ -1,0 +1,110 @@
+
+================ CONTROL 1 second inserting function in a planted held file (expected: RED)
+HEAD: dcca8b6ec32270be90ec42fd3f3f912a511d49dc
+git status --porcelain BEFORE: []
+planted file: supabase/migrations/999_planted_control.sql sha256 94cfd8470a9c90bdec08ad393851cb83133f679ffa1cdc1c9b21f134bb88b03a
+planted text:
+CREATE FUNCTION public.second_inserter() RETURNS void LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.capture_documents (tenant_id, received_at) VALUES (NULL, now()); END; $$;
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > the forward set contains the live migrations and the held 052 file, in apply order, and no DOWN file
+   × S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > THE TRIPWIRE: exactly one insert site, inside public.apply_material_inward_turn, whose column list has received_at, with the processed_messages lookup keyed on p_message_sid 8ms
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > scripts/test-db-only-*.sql: the only insert site is the one allow-listed entry, quoco_test_capture_insert (and that entry is not dead)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 1 (RED): a second inserting function in a planted held file
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 2 (RED): a later redefinition whose forward INSERT has no received_at
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 3 (RED): a planted MERGE
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4 (RED): a lowercase, unqualified INSERT (and a quoted, aliased one)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4b (RED): a top-level INSERT outside any function (a backfill) is counted too
+vitest exit: 1  => RED  (expected RED)
+planted file removed; git status --porcelain AFTER: []
+
+================ CONTROL 2 forward INSERT without received_at (a later redefinition of the RPC) (expected: RED)
+HEAD: dcca8b6ec32270be90ec42fd3f3f912a511d49dc
+git status --porcelain BEFORE: []
+planted file: supabase/migrations/999_planted_control.sql sha256 68fa098b5eff6ac9b37166f2f5241d20b3a8abc46161abac42b34c5f5e3ef504
+planted text:
+CREATE OR REPLACE FUNCTION public.apply_material_inward_turn(p_phone_number text, p_tenant_id uuid, p_user_id uuid, p_project_id uuid, p_message text, p_message_sid text, p_media jsonb DEFAULT NULL::jsonb, p_start_flow boolean DEFAULT false, p_now timestamp with time zone DEFAULT now(), p_test_sleep_ms integer DEFAULT NULL::integer) RETURNS jsonb LANGUAGE plpgsql AS $$ DECLARE v_r timestamptz; BEGIN SELECT pm.created_at INTO v_r FROM public.processed_messages pm WHERE pm.message_sid = p_message_sid; INSERT INTO public.capture_documents (tenant_id, project_id, sent_by, source_message_sid) VALUES (p_tenant_id, p_project_id, p_user_id, p_message_sid); RETURN NULL; END; $$;
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > the forward set contains the live migrations and the held 052 file, in apply order, and no DOWN file
+   × S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > THE TRIPWIRE: exactly one insert site, inside public.apply_material_inward_turn, whose column list has received_at, with the processed_messages lookup keyed on p_message_sid 7ms
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > scripts/test-db-only-*.sql: the only insert site is the one allow-listed entry, quoco_test_capture_insert (and that entry is not dead)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 1 (RED): a second inserting function in a planted held file
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 2 (RED): a later redefinition whose forward INSERT has no received_at
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 3 (RED): a planted MERGE
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4 (RED): a lowercase, unqualified INSERT (and a quoted, aliased one)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4b (RED): a top-level INSERT outside any function (a backfill) is counted too
+vitest exit: 1  => RED  (expected RED)
+planted file removed; git status --porcelain AFTER: []
+
+================ CONTROL 3 planted MERGE (expected: RED)
+HEAD: dcca8b6ec32270be90ec42fd3f3f912a511d49dc
+git status --porcelain BEFORE: []
+planted file: supabase/migrations/999_planted_control.sql sha256 1eb8350bd376ef260f900d8d3aaf33cc83436b742c80c09cd8e1dfee56132fd2
+planted text:
+CREATE FUNCTION public.merger() RETURNS void LANGUAGE plpgsql AS $$ BEGIN MERGE INTO public.capture_documents d USING (SELECT 1) s ON false WHEN NOT MATCHED THEN INSERT (tenant_id) VALUES (NULL); END; $$;
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > the forward set contains the live migrations and the held 052 file, in apply order, and no DOWN file
+   × S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > THE TRIPWIRE: exactly one insert site, inside public.apply_material_inward_turn, whose column list has received_at, with the processed_messages lookup keyed on p_message_sid 8ms
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > scripts/test-db-only-*.sql: the only insert site is the one allow-listed entry, quoco_test_capture_insert (and that entry is not dead)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 1 (RED): a second inserting function in a planted held file
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 2 (RED): a later redefinition whose forward INSERT has no received_at
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 3 (RED): a planted MERGE
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4 (RED): a lowercase, unqualified INSERT (and a quoted, aliased one)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4b (RED): a top-level INSERT outside any function (a backfill) is counted too
+vitest exit: 1  => RED  (expected RED)
+planted file removed; git status --porcelain AFTER: []
+
+================ CONTROL 4 lowercase unqualified INSERT (expected: RED)
+HEAD: dcca8b6ec32270be90ec42fd3f3f912a511d49dc
+git status --porcelain BEFORE: []
+planted file: supabase/migrations/999_planted_control.sql sha256 86132278f12ebaf62e9b59c5cb3a8892515b57429af34c42fdee5defc2ad19f3
+planted text:
+create function public.lc() returns void language sql as $$ insert into capture_documents (tenant_id) values (null) $$;
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > the forward set contains the live migrations and the held 052 file, in apply order, and no DOWN file
+   × S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > THE TRIPWIRE: exactly one insert site, inside public.apply_material_inward_turn, whose column list has received_at, with the processed_messages lookup keyed on p_message_sid 8ms
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > scripts/test-db-only-*.sql: the only insert site is the one allow-listed entry, quoco_test_capture_insert (and that entry is not dead)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 1 (RED): a second inserting function in a planted held file
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 2 (RED): a later redefinition whose forward INSERT has no received_at
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 3 (RED): a planted MERGE
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4 (RED): a lowercase, unqualified INSERT (and a quoted, aliased one)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4b (RED): a top-level INSERT outside any function (a backfill) is counted too
+vitest exit: 1  => RED  (expected RED)
+planted file removed; git status --porcelain AFTER: []
+
+================ CONTROL 5 dynamic EXECUTE naming the table (expected: RED)
+HEAD: dcca8b6ec32270be90ec42fd3f3f912a511d49dc
+git status --porcelain BEFORE: []
+planted file: supabase/migrations/999_planted_control.sql sha256 d6aae3dd77b486f93c006fb3e1384bdd76fd9d5ce4bcc6596d619c0966cac84c
+planted text:
+CREATE FUNCTION public.dyn() RETURNS void LANGUAGE plpgsql AS $$ BEGIN EXECUTE format('INSERT INTO public.%I (tenant_id) VALUES (NULL)', 'capture_documents'); END; $$;
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > the forward set contains the live migrations and the held 052 file, in apply order, and no DOWN file
+   × S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > THE TRIPWIRE: exactly one insert site, inside public.apply_material_inward_turn, whose column list has received_at, with the processed_messages lookup keyed on p_message_sid 8ms
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > scripts/test-db-only-*.sql: the only insert site is the one allow-listed entry, quoco_test_capture_insert (and that entry is not dead)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 1 (RED): a second inserting function in a planted held file
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 2 (RED): a later redefinition whose forward INSERT has no received_at
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 3 (RED): a planted MERGE
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4 (RED): a lowercase, unqualified INSERT (and a quoted, aliased one)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4b (RED): a top-level INSERT outside any function (a backfill) is counted too
+vitest exit: 1  => RED  (expected RED)
+planted file removed; git status --porcelain AFTER: []
+
+================ CONTROL 6 a later DROP of the inserting function (zero sites) (expected: RED)
+HEAD: dcca8b6ec32270be90ec42fd3f3f912a511d49dc
+git status --porcelain BEFORE: []
+planted file: supabase/migrations/999_planted_control.sql sha256 2bc9e283b4c64aa435448f6dfcb677261a43ad4778fb382f742310c3fb66a9ea
+planted text:
+DROP FUNCTION IF EXISTS public.apply_material_inward_turn(text, uuid, uuid, uuid, text, text, jsonb, boolean, timestamp with time zone, integer);
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > the forward set contains the live migrations and the held 052 file, in apply order, and no DOWN file
+   × S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > THE TRIPWIRE: exactly one insert site, inside public.apply_material_inward_turn, whose column list has received_at, with the processed_messages lookup keyed on p_message_sid 8ms
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > scripts/test-db-only-*.sql: the only insert site is the one allow-listed entry, quoco_test_capture_insert (and that entry is not dead)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 1 (RED): a second inserting function in a planted held file
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 2 (RED): a later redefinition whose forward INSERT has no received_at
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 3 (RED): a planted MERGE
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4 (RED): a lowercase, unqualified INSERT (and a quoted, aliased one)
+   ↓ S-2 / N-C source tripwire: capture_documents has exactly one insert path (static) > control 4b (RED): a top-level INSERT outside any function (a backfill) is counted too
+vitest exit: 1  => RED  (expected RED)
+planted file removed; git status --porcelain AFTER: []
+
+================ CONTROL 7 final run, DOWN files present, nothing planted (expected: GREEN)
+HEAD: dcca8b6ec32270be90ec42fd3f3f912a511d49dc
+git status --porcelain BEFORE: []
+no planted file (real tree, DOWN files present: docs/reviews/052-down-prod.sql docs/reviews/052-down-testdb.sql )
+      Tests  1 passed | 12 skipped (13)
+vitest exit: 0  => GREEN  (expected GREEN)
+planted file removed; git status --porcelain AFTER: []

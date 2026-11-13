@@ -1,0 +1,40 @@
+207c207,210
+<           kind: string
+---
+>           kind: string | null
+>           kind_set_at: string | null
+>           kind_set_by: string | null
+>           kind_source: string | null
+208a212
+>           received_at: string
+220c224,227
+<           kind: string
+---
+>           kind?: string | null
+>           kind_set_at?: string | null
+>           kind_set_by?: string | null
+>           kind_source?: string | null
+221a229
+>           received_at: string
+233c241,244
+<           kind?: string
+---
+>           kind?: string | null
+>           kind_set_at?: string | null
+>           kind_set_by?: string | null
+>           kind_source?: string | null
+234a246
+>           received_at?: string
+240a253,259
+>             foreignKeyName: "capture_documents_kind_set_by_fk"
+>             columns: ["kind_set_by", "tenant_id"]
+>             isOneToOne: false
+>             referencedRelation: "users"
+>             referencedColumns: ["id", "tenant_id"]
+>           },
+>           {
+2691a2711,2714
+>       pm_classify_document: {
+>         Args: { p_document_id: string; p_kind: string }
+>         Returns: Json
+>       }

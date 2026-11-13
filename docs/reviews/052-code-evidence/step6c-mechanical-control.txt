@@ -1,0 +1,119 @@
+fatal: path 'test/capture-classify.test.ts' exists on disk, but not in 'origin/main'
+fatal: path 'test/capture-kind-deferred.test.ts' exists on disk, but not in 'origin/main'
+fatal: path 'test/capture-teardown-leak.test.ts' exists on disk, but not in 'origin/main'
+fatal: path 'test/unit/lint-migrations-rule10.test.ts' exists on disk, but not in 'origin/main'
+base origin/main (f007f61dc900b0d6c3ba997c5c93c628fb7f6c93), head 1940690674e97ee286169c968c39c792eed66219; changed test files: 16
+FOUND   | test/capture-checkin-n2-n13.test.ts:139 | BODY-CHANGED | T-A27-4 a stale (expired) invoice row plus a scheduled start: the check-in starts normally, order does not mat
+FOUND   | test/capture-checkin-n2-n13.test.ts:233 | BODY-CHANGED | T-A27-3 a stale invoice row blocks the hindrance start until expire_stale_material_inward clears it; then the 
+FOUND   | test/capture-checkin-n2-n13.test.ts:251 | BODY-CHANGED | A27 / N9 any other flow\'s turn over an invoice row REFRESHES its expiry (why the router must call expire_stal
+FOUND   | test/capture-engineer-flow.test.ts:42 | REMOVED-OR-RENAMED | T-FLOW-1 DC path: start -> kind -> two files -> ack 1 closes; rows exist from S2, delivery incomplete until th
+FOUND   | test/capture-engineer-flow.test.ts:143 | REMOVED-OR-RENAMED | T-FLOW-2 garbage at S1 and at S2: one re-ask, then close with nothing recorded
+FOUND   | test/capture-engineer-flow.test.ts:181 | REMOVED-OR-RENAMED | T-SID-DUP-TEXT a repeated text SID in the middle of the flow (S1 kind) is a duplicate, not a second advance
+FOUND   | test/capture-engineer-flow.test.ts:190 | REMOVED-OR-RENAMED | Q2-6 received_at is the processed_messages.created_at of the SAME SID; a missing processed_messages row is ref
+FOUND   | test/capture-engineer-flow.test.ts:205 | BODY-CHANGED | T-DATE-1 delivery_date is the IST date of received_at: processed_messages.created_at %s -> %s (a UTC implement
+FOUND   | test/capture-engineer-flow.test.ts:221 | BODY-CHANGED | S-1 (SQL review r1) a P2 engineer sending the file into a P1 session is refused QE012 and NOTHING is written
+FOUND   | test/capture-engineer-flow.test.ts:240 | BODY-CHANGED | S-4 (SQL review r2) an engineer whose ONLY membership has role qs (not engineer) is refused QE012 and nothing 
+FOUND   | test/capture-engineer-flow.test.ts:253 | REMOVED-OR-RENAMED | N-1 (SQL review r1) S1 kind parsing shares the ack normalisation: %j -> %s
+FOUND   | test/capture-engineer-flow.test.ts:268 | REMOVED-OR-RENAMED | N-1 contrast: "12" is not a kind (re-ask, still step 1)
+FOUND   | test/capture-engineer-flow.test.ts:274 | BODY-CHANGED | N-2 (SQL review r1) an ack with mi_document_id missing is refused QE012; nothing changes
+FOUND   | test/capture-engineer-flow.test.ts:313 | BODY-CHANGED | T-A27-1 / T-A27-2 expiry boundary: 29:59 idle is still active, 30:01 idle is expired (never tested at exactly 
+MISSING | test/capture-files-immutability.test.ts:369 | REMOVED-OR-RENAMED | exactly one definition of %s across supabase/migrations/ and docs/reviews/*.sql
+MISSING | test/capture-files-immutability.test.ts:373 | BODY-CHANGED | 051 adds exactly one function, and its name is not one of the seven 050 names
+MISSING | test/capture-files-immutability.test.ts:378 | REMOVED-OR-RENAMED | control: a planted second definition is counted (so a duplicate would fail the tests above)
+MISSING | test/capture-handler.test.ts:176 | REMOVED-OR-RENAMED | T-STR-1 every approved constant equals plan section 7 exactly
+MISSING | test/capture-handler.test.ts:187 | REMOVED-OR-RENAMED | T-STR-2 the module exports exactly the approved MI_* / CHECKIN_* names (21 rows) and nothing else
+FOUND   | test/capture-handler.test.ts:211 | REMOVED-OR-RENAMED | DC conversation: kind re-ask, kind, file re-ask, 2 photos, 1 more photo, ack re-ask, unclear close
+FOUND   | test/capture-handler.test.ts:238 | REMOVED-OR-RENAMED | invoice conversation: kind 2, one photo, ack 2 -> "what is wrong", a photo at the note step, the note -> done
+MISSING | test/capture-handler.test.ts:250 | BODY-CHANGED | ack 3 -> "what is missing", note -> done; ack 1 -> done
+FOUND   | test/capture-handler.test.ts:264 | REMOVED-OR-RENAMED | two misses at step 1 close the flow with nothing recorded
+FOUND   | test/capture-handler.test.ts:274 | BODY-CHANGED | a replayed SID is a no-op: empty reply, no second reply
+MISSING | test/capture-handler.test.ts:284 | BODY-CHANGED | files present but none usable: MI_UNSUPPORTED_FILE_REPLY, the RPC is not called
+MISSING | test/capture-handler.test.ts:400 | BODY-CHANGED | T-SF-1c a failing post-RPC read (after the RPC committed) is inside the same catch
+FOUND   | test/capture-handler.test.ts:454 | BODY-CHANGED | T-SF-3 a QE012 refusal on a photo through the router is an S-F event and the failure reply, not a swallowed ne
+FOUND   | test/capture-handler.test.ts:483 | BODY-CHANGED | T-A27-6a 'expired': ended reply, row cleared by the RPC, counts-only event for a photo, the next message takes
+FOUND   | test/capture-handler.test.ts:506 | BODY-CHANGED | T-A27-6b 'idle' from a day-stale reset: the handler clears the row with p_now = max(now, expires_at), then the
+FOUND   | test/capture-pm-functions.test.ts:471 | REMOVED-OR-RENAMED | c. helper insert: quoco_test_capture_insert inserts a capture_documents row for a fixture tenant and the 049 t
+FOUND   | test/capture-pm-functions.test.ts:486 | BODY-CHANGED | d. tenant guard: the helper refuses a tenant that is not a zz-test-capture-* fixture tenant (insert, update an
+FOUND   | test/capture-pm-functions.test.ts:500 | BODY-CHANGED | f. N-4 E12 via the helper: a delivery INSERT that is not "incomplete" / carries PM fields is refused QE012
+FOUND   | test/capture-races.test.ts:263 | BODY-CHANGED | duplicate-SID race (file turn): the same file SID delivered twice at once -> one document, one set of files, o
+FOUND   | test/capture-races.test.ts:281 | BODY-CHANGED | T-A27-6 a turn that reaches the RPC after expiry while the router clears the row (expire_stale) -> the row end
+FOUND   | test/capture-router.test.ts:408 | REMOVED-OR-RENAMED | T-D1-6 (%s) allowlisted phone: "4" after the session ended starts a new session at step 1, no ended reply
+FOUND   | test/capture-router.test.ts:619 | BODY-CHANGED | T-HANDLE-ROUTE-1 (C4a, replaces the C3 stub test) a live, unexpired 'invoice' row goes to the handler, not the
+FOUND   | test/capture-router.test.ts:665 | BODY-CHANGED | AT-DARK-1c control: the same call with the phone allowlisted starts the flow
+FOUND   | test/capture-webhook.test.ts:166 | BODY-CHANGED | a PDF at step 2: ack question; +1 document, +1 pending file, +1 capture_ingest job; no unsupported reply
+FOUND   | test/capture-webhook.test.ts:181 | BODY-CHANGED | jpeg + pdf in one message: one document, two files
+FOUND   | test/capture-webhook.test.ts:231 | BODY-CHANGED | a PDF as the first message after expiry: the ended reply, nothing stored, no nudge, one counts-only event
+FOUND   | test/capture-webhook.test.ts:299 | BODY-CHANGED | T-Q9b a handler throw on a PDF in a live invoice session propagates (no UNSUPPORTED_MEDIA_REPLY, no routing_re
+FOUND   | test/capture-webhook.test.ts:316 | BODY-CHANGED | T-PDF-CAPTION a PDF with Body text in a live invoice session stores it as capture_documents.caption, like a ph
+FOUND   | test/capture-webhook.test.ts:336 | BODY-CHANGED | T-PDF-NOITEMS a PDF whose items carry no URL, in a live invoice session: MI_UNSUPPORTED_FILE_REPLY, the RPC is
+FOUND   | test/capture-webhook.test.ts:354 | BODY-CHANGED | a failing RPC on a PDF: HTTP 200, MI_CAPTURE_FAILED_REPLY, SID row present; a resend with a NEW SID creates ex
+FOUND   | test/unit/capture-fixtures-clock.test.ts:53 | BODY-CHANGED | T-CLK-1 makeDoc with no now: every RPC carries the same p_now on one IST date, across 18:30Z
+
+counts: changed-or-removed blocks 45 (FOUND 37, MISSING 8); new blocks 66
+NEW blocks (additions, not required in the inventory):
+NEW | test/capture-classify.test.ts:84 | a DC: exactly the 5 result keys; 1 delivery, 0 links; received_at equals the document and the dedup row; repor
+NEW | test/capture-classify.test.ts:112 | an invoice: 1 delivery created from the invoice and 1 ACTIVE self-link, the same 5 keys, self_link_id is the l
+NEW | test/capture-classify.test.ts:125 | T-C-1b the status table: no ack -> incomplete; yes / no / partial / unclear -> awaiting_pm (the ack is read fr
+NEW | test/capture-classify.test.ts:146 | the same kind again is already_classified with both ids and creates nothing; a different kind is QE011; the co
+NEW | test/capture-classify.test.ts:167 | other-tenant PM, other-project PM, qs, deactivated PM, admin without PM membership: QE015 (identical to an unk
+NEW | test/capture-classify.test.ts:188 | a bad or NULL kind is QE012 and writes nothing; a good kind then works
+NEW | test/capture-classify.test.ts:198 | anon is refused 42501 on the wrapper; service_role is refused 42501 on the wrapper; the PM of the project is n
+NEW | test/capture-classify.test.ts:208 | the private helper is not reachable: no Content-Profile -> 404 PGRST202; Content-Profile: private -> 406 PGRST
+NEW | test/capture-classify.test.ts:231 | QE015 for both, the document stays unclassified; an admin who IS a PM member of the project is allowed
+NEW | test/capture-classify.test.ts:250 | T-C-5 a classification sends nothing and queues nothing: 0 new jobs and 0 new outbound_sends for the tenant
+NEW | test/capture-classify.test.ts:264 | T-C-6 a document whose only file was rejected can still be classified (the helper never reads capture_files)
+NEW | test/capture-classify.test.ts:273 | T-C-7 RLS: a PM of the project reads an unclassified document (kind NULL); a PM of another project or tenant d
+NEW | test/capture-classify.test.ts:288 | classify-then-ack: the ack moves the NEW delivery to awaiting_pm; one delivery, one self-link; the ack is stor
+NEW | test/capture-classify.test.ts:304 | deleting the processed_messages row after the file turn does not stop the classification; the delivery gets th
+NEW | test/capture-engineer-flow.test.ts:47 | T-E-1 / T-FLOW-1 start -> two files -> ack 1 closes: after the file turn 0 deliveries, 0 links, kind NULL, del
+NEW | test/capture-engineer-flow.test.ts:87 | T-E-1 the file turn still refuses QE012 and writes nothing when the processed_messages row is missing (050:313
+NEW | test/capture-engineer-flow.test.ts:100 | T-E-2 a stray step-1 session (a row left by the old flow) is read as step 2: a file turn works, a text re-asks
+NEW | test/capture-engineer-flow.test.ts:191 | T-FLOW-2 text at the file step (S2): one re-ask, then close with nothing recorded
+NEW | test/capture-engineer-flow.test.ts:228 | T-SID-DUP-TEXT a repeated text SID in the middle of the flow (S2, a text at the file step) is a duplicate, not
+NEW | test/capture-engineer-flow.test.ts:240 | Q2-6 received_at is the processed_messages.created_at of the SAME SID, stored on the document and copied to th
+NEW | test/capture-engineer-flow.test.ts:301 | N-1 (retired parser) %j at the file step is not a kind: re-ask, still step 2, no mi_kind stored
+NEW | test/capture-files-immutability.test.ts:507 | %s: at least one definition exists and every definition, in any schema, carries the pinned header
+NEW | test/capture-files-immutability.test.ts:513 | the real sources have no header violation at all
+NEW | test/capture-files-immutability.test.ts:522 | control (alias table): the spelled-out pg_get_functiondef form and the source form normalise equal
+NEW | test/capture-files-immutability.test.ts:533 | control (real 050 header): the spelled-out header the 052 DOWN carries for apply_material_inward_turn normalis
+NEW | test/capture-files-immutability.test.ts:543 | control: a planted overload of apply_material_inward_turn is RED
+NEW | test/capture-files-immutability.test.ts:552 | control (every schema): a planted stray public.capture_apply_classification and a planted second private. copy
+NEW | test/capture-files-immutability.test.ts:562 | control: a comment that names a CREATE FUNCTION is not a definition
+NEW | test/capture-handler.test.ts:172 | T-STR-1 every approved constant equals plan section 7 exactly (15 kept byte-identical; the 2 new 052 texts pin
+NEW | test/capture-handler.test.ts:183 | T-STR-2 the module exports exactly the approved MI_* / CHECKIN_* names (17 rows: 21 minus 6 retired plus 2 new
+NEW | test/capture-handler.test.ts:211 | conversation: file re-ask, 2 photos, 1 more photo, ack re-ask, unclear close (052: no kind turn)
+NEW | test/capture-handler.test.ts:236 | conversation: one photo, ack 2 -> "what is wrong", a photo at the note step, the note -> done (052: the same n
+NEW | test/capture-handler.test.ts:259 | two misses at the file step close the flow with nothing recorded (052: step 1 is retired)
+NEW | test/capture-kind-deferred.test.ts:207 | the forward set contains the live migrations and the held 052 file, in apply order, and no DOWN file
+NEW | test/capture-kind-deferred.test.ts:217 | THE TRIPWIRE: exactly one insert site, inside public.apply_material_inward_turn, whose column list has receive
+NEW | test/capture-kind-deferred.test.ts:225 | scripts/test-db-only-*.sql: the only insert site is the one allow-listed entry, quoco_test_capture_insert (and
+NEW | test/capture-kind-deferred.test.ts:232 | control 1 (RED): a second inserting function in a planted held file
+NEW | test/capture-kind-deferred.test.ts:239 | control 2 (RED): a later redefinition whose forward INSERT has no received_at
+NEW | test/capture-kind-deferred.test.ts:248 | control 3 (RED): a planted MERGE
+NEW | test/capture-kind-deferred.test.ts:253 | control 4 (RED): a lowercase, unqualified INSERT (and a quoted, aliased one)
+NEW | test/capture-kind-deferred.test.ts:258 | control 4b (RED): a top-level INSERT outside any function (a backfill) is counted too
+NEW | test/capture-kind-deferred.test.ts:262 | control 5 (RED): a dynamic EXECUTE naming the table
+NEW | test/capture-kind-deferred.test.ts:267 | control 6 (RED, zero sites): a later DROP of the inserting function removes it from the set
+NEW | test/capture-kind-deferred.test.ts:276 | control 6b: a comment that mentions an INSERT is not a hit
+NEW | test/capture-kind-deferred.test.ts:280 | control 7 (GREEN): with the DOWN files present on disk the real tree still passes, because they are not forwar
+NEW | test/capture-kind-deferred.test.ts:290 | control (test-db-only): a second dynamic inserter in a test-db-only script is flagged; removing the allow-list
+NEW | test/capture-pm-functions.test.ts:483 | c. helper insert: quoco_test_capture_insert inserts an unclassified capture_documents row for a fixture tenant
+NEW | test/capture-races.test.ts:311 | T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false a
+NEW | test/capture-router.test.ts:408 | T-D1-6 (%s) allowlisted phone: "4" after the session ended starts a new session at step 2 (the file step), no 
+NEW | test/capture-teardown-leak.test.ts:56 | T-LEAK-1 an engineer turn leaves an invoice-flow session; the teardown with a failing cleanup RPC throws AND l
+NEW | test/unit/lint-migrations-rule10.test.ts:27 | keys unqualified and public. forms identically, as public.<name>
+NEW | test/unit/lint-migrations-rule10.test.ts:31 | keys another schema as schema.name
+NEW | test/unit/lint-migrations-rule10.test.ts:36 | is case-insensitive
+NEW | test/unit/lint-migrations-rule10.test.ts:42 | a first definition in private is never a violation
+NEW | test/unit/lint-migrations-rule10.test.ts:46 | RED: a later redefinition of a private function with no baseline line is flagged, schema-qualified key (S-B)
+NEW | test/unit/lint-migrations-rule10.test.ts:57 | RED: a public redefinition keeps the BARE-name key, so existing exemptions keep matching (S-D)
+NEW | test/unit/lint-migrations-rule10.test.ts:64 | multiple redefined names join with a comma, public bare and other schemas qualified
+NEW | test/unit/lint-migrations-rule10.test.ts:72 | GREEN: a redefinition carrying its body_md5 line and the capture command is clean
+NEW | test/unit/lint-migrations-rule10.test.ts:79 | the same bare name in two schemas are two functions: private.h does not make public.h a redefinition
+NEW | test/unit/lint-migrations-rule10.test.ts:83 | a baseline line without the capture command still flags
+NEW | test/unit/lint-migrations-rule10.test.ts:90 | runs main() when invoked through a symlinked directory (a gate must never be green without running)
+NEW | test/unit/lint-migrations-rule10.test.ts:115 | running the script directly runs main() (importing it above did not), and Rule 10 flags nothing on the real tr
+NEW | test/unit/material-inward-strings.test.ts:53 | MI_ASK_FILE is exactly the plan text
+NEW | test/unit/material-inward-strings.test.ts:56 | MI_ACK_QUESTION is exactly the plan text, including its three \\n characters
+NEW | test/unit/material-inward-strings.test.ts:68 | control: a one-character change, and the one-line form, fail the comparison
+NEW | test/unit/material-inward-strings.test.ts:73 | the six retired kind-specific constants are no longer exported

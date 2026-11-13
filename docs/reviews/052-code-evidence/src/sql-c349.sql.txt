@@ -1,0 +1,11 @@
+SELECT 'auth_users_at_quoco.test' AS k, count(*)::text AS v FROM auth.users WHERE email LIKE '%@quoco.test'
+UNION ALL SELECT 'auth_users_total', count(*)::text FROM auth.users
+UNION ALL SELECT 'public_users_ZZTestCapture (stubs and claimed)', count(*)::text FROM public.users WHERE full_name LIKE 'ZZTestCapture-%'
+UNION ALL SELECT 'tenants_zz-test-capture', count(*)::text FROM public.tenants WHERE slug LIKE 'zz-test-capture-%'
+UNION ALL SELECT 'tenants_zz-test-all', count(*)::text FROM public.tenants WHERE slug LIKE 'zz-test-%'
+UNION ALL SELECT 'invoice_flow_sessions', count(*)::text FROM public.whatsapp_sessions WHERE current_flow = 'invoice'
+UNION ALL SELECT 'users_in_zz-outbound-send', count(*)::text FROM public.users u JOIN public.tenants t ON t.id = u.tenant_id WHERE t.slug = 'zz-outbound-send'
+UNION ALL SELECT 'capture_documents_total', count(*)::text FROM public.capture_documents
+UNION ALL SELECT 'capture_documents_unclassified', count(*)::text FROM public.capture_documents WHERE kind IS NULL
+UNION ALL SELECT 'whatsapp_sessions_total', count(*)::text FROM public.whatsapp_sessions
+ORDER BY 1;

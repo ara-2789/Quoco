@@ -1,0 +1,10 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+OUT=$HOME/quoco-records/052-build/b2b
+chkref
+echo "supabase gen types typescript --linked --schema public  (workdir $MAIN; test-db; read-only)"
+supabase --workdir $MAIN gen types typescript --linked --schema public > $OUT/types-test-db-gen.ts 2> $OUT/types-test-db-gen.err
+echo "[exit $?] bytes: $(wc -c < $OUT/types-test-db-gen.ts) stderr bytes: $(wc -c < $OUT/types-test-db-gen.err)"
+cd $WT
+diff <(cat types/database.ts) $OUT/types-test-db-gen.ts > $OUT/types-diff.txt
+echo "diff lines: $(wc -l < $OUT/types-diff.txt)"

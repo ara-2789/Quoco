@@ -1,0 +1,18 @@
+#!/bin/bash
+. $HOME/.claude/jobs/2a6b4d65/tmp/lib.sh
+OUT=$HOME/quoco-records/052-build/b2b
+mkdir -p $OUT
+cat > $T/sql/p4b.sql <<'EOF'
+SELECT to_regprocedure('public.pm_classify_document(uuid,text)') IS NOT NULL AS wrapper_exists,
+       to_regprocedure('private.capture_apply_classification(uuid,text,uuid)') IS NOT NULL AS helper_exists;
+EOF
+{
+hdr
+echo "TIME: IST $(TZ=Asia/Kolkata date +%H:%M)"
+echo "expected post-052 md5s (docs/reviews/052-test-db-apply-record.md): apply_material_inward_turn e32797b63fee8fceca1934be700609c3 | trg_capture_documents_before_insert 4f83a28f16956ebae830361c4f898899 | trg_capture_documents_before_update cfcd59258a5039acc395dd8136328ca5"
+Q "P4 md5s" $T/sql/1a.sql
+Q "P4 wrapper and helper exist" $T/sql/p4b.sql
+Q "P4 ledger tail (must end 052)" $T/sql/1f.sql
+Q "P4 fingerprint (expected 6c69c545704f5d72dc776a55863feca9)" $T/sql/fp.sql
+} > $OUT/p4-testdb-state.txt 2>&1
+grep -v -E "Initialising|boundary|warning|^(SQL:|RESULT:)" $OUT/p4-testdb-state.txt | grep -E '^(TIME|expected)|^----|"|exit' | grep -v -E '^\s*(\{|\}|\],?)$|"rows"'

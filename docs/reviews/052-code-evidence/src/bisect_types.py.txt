@@ -1,0 +1,26 @@
+import subprocess, sys, shutil
+WT = '<worktree>'
+GEN = '<records>/052-build/b2b/types-test-db-gen.ts'
+orig = subprocess.run(['git', 'show', 'HEAD:types/database.ts'], cwd=WT, capture_output=True, text=True).stdout
+gen = open(GEN).read()
+mode = sys.argv[1]
+if mode == 'tables-only':
+    # the generated file minus the pm_classify_document function entry
+    start = gen.index('      pm_classify_document: {')
+    end = gen.index('      }\n', gen.index('Returns: Json', start)) + len('      }\n')
+    out = gen[:start] + gen[end:]
+elif mode == 'function-only':
+    # the ORIGINAL file plus only the function entry
+    start = gen.index('      pm_classify_document: {')
+    end = gen.index('      }\n', gen.index('Returns: Json', start)) + len('      }\n')
+    entry = gen[start:end]
+    # insert at the same position as in gen: before the entry that follows it in gen
+    nxt = gen[end:end + 80].split('\n')[0]
+    pos = orig.index(nxt, orig.index('Functions: {'))
+    out = orig[:pos] + entry + orig[pos:]
+elif mode == 'orig':
+    out = orig
+else:
+    out = gen
+open(WT + '/types/database.ts', 'w').write(out)
+print('wrote', mode, len(out))

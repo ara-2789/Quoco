@@ -1,0 +1,16 @@
+timestamp(UTC): 2026-11-13T19:51:11Z
+HEAD: 1940690674e97ee286169c968c39c792eed66219
+block start: 20bd085301b4a9b5d301788f5d8d7345e3f8fcae
+$ git diff --stat 20bd085301b4a9b5d301788f5d8d7345e3f8fcae -- <held file> <both DOWN files> supabase/migrations scripts/migration-lint-exceptions.json scripts/shared-fixture-fk-coverage.json scripts/lint-migrations.mjs .github/workflows test/helpers/pm-fixtures.ts test/pm-{actions,d30-shapes,file-route,queries,render,unit} lib/capture lib/whatsapp/capture-switch.ts app
+[nothing printed above this line = every one of those paths is untouched since the block start]
+2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e  docs/reviews/052_mi_kind_deferred.sql
+bb21dfe0b7c358c1c36a95a3cc17d457526e9d3dd0e7580da915182cb530907f  docs/reviews/052-down-testdb.sql
+344f4b2e5a1fe42c0502a63a47feee9e3980e830adbc2d03a9288610991cc43a  docs/reviews/052-down-prod.sql
+expected: 2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e / bb21dfe0b7c358c1c36a95a3cc17d457526e9d3dd0e7580da915182cb530907f / 344f4b2e5a1fe42c0502a63a47feee9e3980e830adbc2d03a9288610991cc43a
+--- digit-4 allowlist (lib/whatsapp/capture-switch.ts): untouched, relevant lines:
+3:// DARK in C3: nothing outside this module's own tests calls isCaptureDigit4Live.
+6:export const CAPTURE_DIGIT_4_LIVE = false
+12: * Parse CAPTURE_DIGIT4_TEST_PHONES strictly: comma-separated E.164, whitespace
+16:export function parseCaptureTestPhones(raw: string | undefined): string[] {
+24:export function isCaptureDigit4Live(phone: string): boolean {
+26:  return parseCaptureTestPhones(process.env.CAPTURE_DIGIT4_TEST_PHONES).includes(phone)

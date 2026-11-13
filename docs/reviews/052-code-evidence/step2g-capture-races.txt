@@ -1,0 +1,268 @@
+timestamp(UTC): 2026-11-13T19:16:58Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-checkin-n2-n13.test.ts; M test/capture-engineer-flow.test.ts; M test/capture-files-immutability.test.ts; M test/capture-handler.test.ts; M test/capture-ingest.test.ts; M test/capture-pm-functions.test.ts; M test/capture-races.test.ts; M test/capture-router.test.ts; M test/capture-webhook.test.ts; M test/helpers/capture-fixtures.ts; M test/unit/capture-fixtures-clock.test.ts;?? test/capture-classify.test.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-races.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=0 invA setup_ms=1803
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=0 invB setup_ms=3243
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=0 dc setup_ms=5395
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=0 jwt setup_ms=5808
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=0 call=link-A start=+0ms end=+304ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=0 call=link-B start=+1ms end=+552ms error=QE008
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=1 invA setup_ms=1251
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=1 invB setup_ms=2697
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=1 dc setup_ms=4541
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=1 jwt setup_ms=4872
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=1 call=link-A start=+0ms end=+325ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=1 call=link-B start=+0ms end=+589ms error=QE008
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=2 invA setup_ms=1228
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=2 invB setup_ms=2661
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=2 dc setup_ms=4575
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=2 jwt setup_ms=4902
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=2 call=link-A start=+0ms end=+287ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=2 call=link-B start=+0ms end=+593ms error=QE008
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=3 invA setup_ms=1406
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=3 invB setup_ms=2636
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=3 dc setup_ms=4650
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=3 jwt setup_ms=5092
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=3 call=link-A start=+0ms end=+376ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only
+[race-diag] p1xp1 round=3 call=link-B start=+0ms end=+613ms error=QE008
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=0 inv setup_ms=1461
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=0 d1+d2 setup_ms=5776
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=0 jwt+first-link setup_ms=6441
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=0 call=reject-d1 start=+0ms end=+251ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=0 call=link-d2 start=+0ms end=+623ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=1 inv setup_ms=1262
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=1 d1+d2 setup_ms=5270
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=1 jwt+first-link setup_ms=5946
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=1 call=reject-d1 start=+0ms end=+336ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=1 call=link-d2 start=+0ms end=+570ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=2 inv setup_ms=1429
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=2 d1+d2 setup_ms=5630
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=2 jwt+first-link setup_ms=6232
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=2 call=reject-d1 start=+0ms end=+347ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=2 call=link-d2 start=+0ms end=+587ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=3 inv setup_ms=1352
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=3 d1+d2 setup_ms=5623
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=3 jwt+first-link setup_ms=6233
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=3 call=reject-d1 start=+0ms end=+338ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp4 round=3 call=link-d2 start=+0ms end=+572ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=0 inv setup_ms=1330
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=0 d1+d2 setup_ms=5287
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=0 jwt+first-link setup_ms=6274
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=0 call=unlink start=+0ms end=+278ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=0 call=link-d2 start=+0ms end=+585ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=1 inv setup_ms=1360
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=1 d1+d2 setup_ms=5755
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=1 jwt+first-link setup_ms=6720
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=1 call=unlink start=+0ms end=+347ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=1 call=link-d2 start=+0ms end=+652ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=2 inv setup_ms=1303
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=2 d1+d2 setup_ms=5229
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=2 jwt+first-link setup_ms=6248
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=2 call=unlink start=+0ms end=+307ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=2 call=link-d2 start=+0ms end=+614ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=3 inv setup_ms=1499
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=3 d1+d2 setup_ms=5691
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=3 jwt+first-link setup_ms=6520
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=3 call=unlink start=+0ms end=+236ms error=none
+
+stdout | test/capture-races.test.ts > 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only
+[race-diag] p1xp2 round=3 call=link-d2 start=+0ms end=+478ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-same round=0 call=A start=+0ms end=+268ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-same round=0 call=B start=+0ms end=+502ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-diff round=0 call=dc start=+0ms end=+288ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-diff round=0 call=invoice start=+0ms end=+617ms error=QE011
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-same round=1 call=A start=+0ms end=+241ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-same round=1 call=B start=+0ms end=+512ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-diff round=1 call=dc start=+0ms end=+271ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-diff round=1 call=invoice start=+0ms end=+580ms error=QE011
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-same round=2 call=A start=+0ms end=+306ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-same round=2 call=B start=+0ms end=+713ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-diff round=2 call=dc start=+0ms end=+244ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-diff round=2 call=invoice start=+0ms end=+633ms error=QE011
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-same round=3 call=A start=+0ms end=+297ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-same round=3 call=B start=+0ms end=+537ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-diff round=3 call=dc start=+0ms end=+243ms error=none
+
+stdout | test/capture-races.test.ts > DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only
+[race-diag] T-C-4-diff round=3 call=invoice start=+0ms end=+513ms error=QE011
+
+ ✓ test/capture-races.test.ts (12 tests | 1 skipped) 225184ms
+   ✓ 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 1: two invoices linking the SAME DC delivery -> exactly one wins, the loser gets QE008 and cancels nothing -- NOT verified locally, CI-only  28640ms
+   ✓ 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 3: linking an invoice while its AUTOMATIC delivery is being rejected -> the end state satisfies the invariants, no deadlock -- NOT verified locally, CI-only  19149ms
+   ✓ 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 4: linking a second DC to an invoice while a linked DC is being rejected (restore race) -> invariants hold -- NOT verified locally, CI-only  29286ms
+   ✓ 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 1 x path 2: linking while the last PM link is being removed (unlink-with-restore race) -> invariants hold -- NOT verified locally, CI-only  30206ms
+   ✓ 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 5 x path 1: approving the automatic delivery while an invoice link is being made -> X6 holds (never a link over an approved automatic delivery) -- NOT verified locally, CI-only  23244ms
+   ✓ 049 lock paths 1-6 under concurrency (PostgREST, two real sessions) > path 6 x path 1: retyping a DC to internal transfer while it is being linked -> never both (QE006 / QE003 decide) -- NOT verified locally, CI-only  22032ms
+   ✓ engineer-side races > B1 race: the engineer's ack and a PM link of the same invoice at the same time -> the ack is always stored and no error is raised by either -- NOT verified locally, CI-only  22308ms
+   ✓ engineer-side races > duplicate-SID race: the same text SID delivered twice at once -> exactly one is processed, the other is a duplicate, no QE011 -- NOT verified locally, CI-only  10443ms
+   ✓ engineer-side races > duplicate-SID race (file turn): the same file SID delivered twice at once -> one document, one set of files, one job -- NOT verified locally, CI-only  9015ms
+   ✓ engineer-side races > T-A27-6 a turn that reaches the RPC after expiry while the router clears the row (expire_stale) -> the row ends cleared, nothing raised, no document created -- NOT verified locally, CI-only  7919ms
+   ✓ DOWN versus a live turn > T-C-4 two callers classify the SAME unclassified document at once: same kind -> one already_classified=false and one true; different kinds -> one QE011; exactly one delivery either way -- NOT verified locally, CI-only  15833ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed | 1 skipped (12)
+   Start at  00:46:58
+   Duration  225.34s (transform 35ms, setup 0ms, collect 30ms, tests 225.18s, environment 0ms, prepare 18ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-13T19:20:43Z

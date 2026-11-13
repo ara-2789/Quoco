@@ -1,0 +1,31 @@
+timestamp(UTC): 2026-11-13T18:54:04Z
+HEAD: 99e594d5b66fe9bf9ef72db074fe7f0ea8c4fd70
+git status --porcelain: [ M test/capture-checkin-n2-n13.test.ts; M test/capture-engineer-flow.test.ts; M test/capture-handler.test.ts; M test/capture-ingest.test.ts; M test/capture-races.test.ts; M test/capture-router.test.ts; M test/capture-webhook.test.ts; M test/helpers/capture-fixtures.ts; M test/unit/capture-fixtures-clock.test.ts;?? test/capture-teardown-leak.test.ts;]
+project ref (SUPABASE_TEST_PROJECT_REF of .env.test): exfccwlrhoutkgrlikod  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)
+command: npx vitest run test/capture-webhook.test.ts
+
+ RUN  v3.2.7 <worktree>
+
+ ✓ test/capture-webhook.test.ts (14 tests) 65007ms
+   ✓ T-PDF-GATE-1: a PDF inside a live invoice session is accepted > a PDF at step 2: ack question; +1 document, +1 pending file, +1 capture_ingest job; no unsupported reply  4920ms
+   ✓ T-PDF-GATE-1: a PDF inside a live invoice session is accepted > jpeg + pdf in one message: one document, two files  4099ms
+   ✓ T-PDF-GATE-2: outside an invoice session a PDF gets today's reply and today's event, nothing else > PDF at idle (no session)  4512ms
+   ✓ T-PDF-GATE-2: outside an invoice session a PDF gets today's reply and today's event, nothing else > PDF mid-morning (active morning session)  4765ms
+   ✓ T-PDF-GATE-2: outside an invoice session a PDF gets today's reply and today's event, nothing else > jpeg + pdf at idle  4338ms
+   ✓ T-PDF-GATE-2: outside an invoice session a PDF gets today's reply and today's event, nothing else > PDF with a live 'safety' row  4586ms
+   ✓ T-PDF-GATE-2: outside an invoice session a PDF gets today's reply and today's event, nothing else > PDF with the S-3 guard set  4431ms
+   ✓ T-PDF-GATE-2: outside an invoice session a PDF gets today's reply and today's event, nothing else > PDF with a caption at idle  4427ms
+   ✓ T-D1-4 (PDF half) > a PDF as the first message after expiry: the ended reply, nothing stored, no nudge, one counts-only event  4649ms
+   ✓ T-Q9 (narrowed): only the routing READ is caught > a failing routing read on a PDF: UNSUPPORTED_MEDIA_REPLY, HTTP 200, the unsupported warning PLUS one routing_read_failed error, neither carrying phone/URL/body/ids  1306ms
+   ✓ T-Q9 (narrowed): only the routing READ is caught > T-Q9b a handler throw on a PDF in a live invoice session propagates (no UNSUPPORTED_MEDIA_REPLY, no routing_read_failed event)  2373ms
+   ✓ T-PDF-CAPTION / T-PDF-NOITEMS > T-PDF-CAPTION a PDF with Body text in a live invoice session stores it as capture_documents.caption, like a photo  5315ms
+   ✓ T-PDF-CAPTION / T-PDF-NOITEMS > T-PDF-NOITEMS a PDF whose items carry no URL, in a live invoice session: MI_UNSUPPORTED_FILE_REPLY, the RPC is not called  4003ms
+   ✓ T-SF-1 (webhook half) > a failing RPC on a PDF: HTTP 200, MI_CAPTURE_FAILED_REPLY, SID row present; a resend with a NEW SID creates exactly one document  5119ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  00:24:05
+   Duration  65.26s (transform 93ms, setup 0ms, collect 133ms, tests 65.01s, environment 0ms, prepare 18ms)
+
+[vitest exit 0]
+finished(UTC): 2026-11-13T18:55:10Z

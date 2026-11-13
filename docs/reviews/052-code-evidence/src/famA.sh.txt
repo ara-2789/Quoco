@@ -1,0 +1,4 @@
+#!/bin/bash
+# family A: the capture family, ONE process (CLAUDE.md section 7: every test file in the slice's family before claiming green)
+cd <worktree>
+LINES_MAX=60 bash $HOME/.claude/jobs/2a6b4d65/tmp/vt.sh step6a-familyA-capture test/capture-*.test.ts test/unit/capture-*.test.ts test/unit/jobs-tick-dispatch.test.ts test/unit/material-inward-strings.test.ts test/unit/media-reply.test.ts test/unit/media-reply-capture.test.ts test/unit/section-42-unmatched-capture.test.ts

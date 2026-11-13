@@ -1,0 +1,18 @@
+#!/bin/bash
+# vt.sh <label> <vitest args...> : one vitest process; raw output to ~/quoco-records/052-build/b2b/<label>.txt; prints the summary lines only
+WT=<worktree>
+OUT=$HOME/quoco-records/052-build/b2b
+mkdir -p $OUT
+label=$1; shift
+cd $WT
+{
+echo "timestamp(UTC): $(date -u +%FT%TZ)"
+echo "HEAD: $(git rev-parse HEAD)"
+echo "git status --porcelain: [$(git status --porcelain | tr '\n' ';')]"
+echo "project ref (SUPABASE_TEST_PROJECT_REF of .env.test): $(grep -E '^SUPABASE_TEST_PROJECT_REF=' .env.test | cut -d= -f2)  (the vitest guard aborts unless it is exfccwlrhoutkgrlikod)"
+echo "command: npx vitest run $*"
+npx vitest run "$@" 2>&1
+echo "[vitest exit $?]"
+echo "finished(UTC): $(date -u +%FT%TZ)"
+} > $OUT/$label.txt 2>&1
+grep -E "^(timestamp|HEAD|project ref)|Test Files|Tests  |\[vitest exit|T-LEAK-1 invoice|FAIL|AssertionError|Error:" $OUT/$label.txt | cut -c1-260 | head -${LINES_MAX:-40}
