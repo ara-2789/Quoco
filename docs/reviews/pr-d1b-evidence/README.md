@@ -9,7 +9,8 @@ Raw captures from the build and checks (12 Nov 2026). Nothing here holds a key, 
 | `pr-d1b-viewer-history-control.txt` | The viewer-history control at `d9ad29f`: `history.state` put back as data, 4 of 5 tests RED |
 | `pr-d1b-testdb.txt` | Test-db pre-check: how vitest loads env (P1), the P2 grep result, the P3 hosts (host names only) |
 | `pr-d1b-tests-node-only-latest.txt` | The 13 node-only test files run on the hash-fix code just before it was committed as `d9ad29f`: 13 files, 493 passed |
-| `manual-run-env.txt` | The CURRENT manual-run environment: HEAD `3e378e1`, BUILD_ID `JrDWZU6aPjVNFyweEY5k5`, served-match MATCH. The first run's file (BUILD_ID `B9tAt1Q_eg5nNdKj8hU9Y` at `c94b421`) was overwritten by the second run; its values are in `docs/reviews/pr-d1b-manual-run.md` section 3 |
+| `pr-d1b-r1-ctls.txt` | Review round 1 controls (S2, N5, S1 pure, S1 wiring, N1) at `fc4d983`: HEAD, sha256 before / mutated / after, first FAIL line. `grep -n "token=\|eyJ"` on it was empty, so it is not redacted |
+| `manual-run-env.txt` | The CURRENT manual-run environment (review round 1 re-run): HEAD `16afc93`, BUILD_ID `tqv_swQpi2tX_lwDXe_LP`, served-match MATCH. The earlier run's values (HEAD `3e378e1`, BUILD_ID `JrDWZU6aPjVNFyweEY5k5`) are in `docs/reviews/pr-d1b-manual-run.md` section 4. The first run's file (BUILD_ID `B9tAt1Q_eg5nNdKj8hU9Y` at `c94b421`) was overwritten by the second run; its values are in `docs/reviews/pr-d1b-manual-run.md` section 3 |
 
 ## The two REDACTED files
 

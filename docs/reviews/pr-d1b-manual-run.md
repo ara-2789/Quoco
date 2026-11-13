@@ -163,3 +163,21 @@ before = after).
 
 Note: the first-run results (section 3) were taken at `c94b421`, before the fix. The fix changes only the history calls in `file-viewer.tsx` /
 `viewer-logic.ts`; R1-R6 re-cover every check those calls affect.
+
+## 5. Review round 1 re-run (13 Nov 2026)
+
+Per Aravind, 13 Nov 2026. Local production build, BUILD_ID `tqv_swQpi2tX_lwDXe_LP` at `16afc93` (`docs/reviews/pr-d1b-evidence/manual-run-env.txt`, served-match MATCH). Test delivery `b9995385-c2da-476b-9cec-fa4ab989fdd9`. Approve, Reject and Link invoice were not pressed.
+
+| Check | Result |
+|-------|--------|
+| S1: tap, Esc, Forward (reopens), Esc, tap thumbnail: overlay reopens; URL does not end in `#photo-` after close | pass |
+| S2: typed reject reason survives a type change + Save details | pass |
+| S2b: after Save the type field shows the saved type and Approve is enabled | pass |
+| N1: "More details" stays open while DC no. is unsaved (mouse) | pass |
+| N1b: same with the keyboard (Tab + Enter) | pass |
+| R1: open, Back, Forward, Close, Save: URL does not end in `#photo-` | pass (DC no. was not changed; the Save was the S2 type change) |
+| R2: Back closes and stays on the page; Forward reopens; Close closes | pass |
+| R3: Esc closes; focus returns to the thumbnail | pass |
+| R6: prod row after the S2 save | status `awaiting_pm`, `vehicle_number` `Test-veh1`, `dc_number` "test DC3", `dc_date` null, `delivery_type` `internal_transfer`. The type change persisted; the vehicle was preserved. |
+
+Not covered by this run: Android Back after a Forward-reopen, and the prod thumbnail request count (both post-deploy checks, `docs/reviews/pr-d1b-review-package.md` section 10).
