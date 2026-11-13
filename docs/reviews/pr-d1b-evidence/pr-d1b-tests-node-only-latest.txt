@@ -1,0 +1,25 @@
+
+ RUN  v3.2.7 /Users/aravindanrajamani/Desktop/quocoai-pm-ui
+
+ ✓ test/unit/capture-ingest-bytes.test.ts (60 tests) 171ms
+ ✓ test/pm-bucket-guard.test.ts (5 tests) 47ms
+ ✓ test/pm-render.test.tsx (53 tests) 43ms
+ ✓ test/unit/capture-fixtures-clock.test.ts (4 tests) 21ms
+ ✓ test/pm-unit.test.ts (199 tests) 19ms
+ ✓ test/pm-d1b-pure.test.ts (28 tests) 10ms
+stdout | test/pm-d1b-ui.test.tsx > F2: a closed overlay requests no image; one image per thumbnail > N=3 stored images: exactly N image elements, each the route path
+F2 counts: img=3 preload-image-links=3
+
+ ✓ test/pm-d1b-ui.test.tsx (16 tests) 9ms
+ ✓ test/pm-engineer-names.test.ts (5 tests) 9ms
+ ✓ test/capture-static-guards.test.ts (11 tests) 4ms
+ ✓ test/pm-strings-approved.test.ts (88 tests) 4ms
+ ✓ test/unit/capture-error-phone-scrub.test.ts (8 tests) 2ms
+ ✓ test/pm-viewer-history.test.ts (5 tests) 2ms
+ ✓ test/unit/capture-switch.test.ts (11 tests) 2ms
+
+ Test Files  13 passed (13)
+      Tests  493 passed (493)
+   Start at  14:57:30
+   Duration  2.18s (transform 197ms, setup 0ms, collect 839ms, tests 344ms, environment 1ms, prepare 226ms)
+

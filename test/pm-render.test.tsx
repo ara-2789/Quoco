@@ -14,6 +14,8 @@ vi.mock('@/app/(dashboard)/material-inward/actions', () => ({
 }))
 
 import { FileList } from '@/components/material-inward/file-list'
+import { ViewerPanel } from '@/components/material-inward/file-viewer'
+import { DetailsDirtyContext } from '@/components/material-inward/details-dirty'
 import { DeliveryRow } from '@/components/material-inward/delivery-row'
 import { DecisionControls } from '@/app/(dashboard)/material-inward/decision-controls'
 import { DetailsControls } from '@/app/(dashboard)/material-inward/details-controls'
@@ -95,17 +97,40 @@ describe('T-RENDER-1: files render as plain links and nothing signed', () => {
 
   it('every link is /api/capture-files/<uuid>, a new tab, noopener noreferrer', () => {
     const anchors = [...html.matchAll(/<a [^>]*>/g)].map((m) => m[0])
-    expect(anchors).toHaveLength(2) // only the two STORED files are links
+    expect(anchors).toHaveLength(1) // PR-D1b: the stored IMAGE is a viewer button, so only the PDF keeps a link
     for (const a of anchors) {
       expect(a).toMatch(/href="\/api\/capture-files\/[0-9a-f-]{36}"/)
       expect(a).toContain('target="_blank"')
       expect(a).toContain('rel="noopener noreferrer"')
     }
   })
-  it('no signed URL, token, storage host, image tag or optimiser path anywhere', () => {
-    for (const bad of ['token=', 'supabase.co', '/storage/v1', IMG_OPEN, '_next/image', 'data-nimg', 'srcset']) {
+  it('T-RENDER: no signed URL, token, storage host or optimiser path anywhere (server HTML)', () => {
+    for (const bad of ['token=', 'supabase.co', '/storage/v1', '_next/image', 'data-nimg', 'srcset']) {
       expect(html).not.toContain(bad)
     }
+  })
+  it('T-RENDER: the stored image is a plain image element whose src is exactly the route path, with the approved alt', () => {
+    const imgs = [...html.matchAll(/<img [^>]*>/g)].map((m) => m[0])
+    expect(imgs).toHaveLength(1)
+    expect(imgs[0]).toContain(`src="/api/capture-files/${FILE_ID}"`)
+    expect(imgs[0]).toContain(`alt="${copy.PM_FILE_PREVIEW_ALT}"`)
+    expect(html).toMatch(/<button[^>]*><img /) // a thumbnail button, not a link
+    expect(html).not.toContain('<dialog') // the overlay is not in the page until it is opened
+  })
+  it('T-RENDER: the OPEN overlay content has the same route src, the approved Close / Rotate labels, and no signed URL', () => {
+    const open = renderToStaticMarkup(<ViewerPanel fileId={FILE_ID} rotation={90} onClose={() => {}} onRotate={() => {}} />)
+    expect(open).toContain(`src="/api/capture-files/${FILE_ID}"`)
+    expect(open).toContain(copy.PM_VIEWER_CLOSE)
+    expect(open).toContain(copy.PM_VIEWER_ROTATE)
+    expect(open).toContain('rotate(90deg)')
+    for (const bad of ['token=', 'supabase.co', '/storage/v1', '_next/image', 'data-nimg', 'srcset']) expect(open).not.toContain(bad)
+  })
+  it('PDFs and locked files keep today\'s anchor exactly (new tab, noopener noreferrer), one anchor per non-image stored file', () => {
+    const anchors = [...html.matchAll(/<a [^>]*>[^<]*<\/a>/g)].map((m) => m[0])
+    expect(anchors).toHaveLength(1)
+    expect(anchors[0]).toContain('target="_blank"')
+    expect(anchors[0]).toContain(`href="/api/capture-files/88888888-8888-4888-8888-888888888881"`)
+    expect(anchors[0]).toContain(copy.PM_FILE_DOWNLOAD)
   })
   it('not-stored files are labels only (no anchor)', () => {
     for (const label of [copy.PM_LABEL_FILE_PENDING, copy.PM_LABEL_FILE_PENDING_TIMEOUT, copy.PM_LABEL_FILE_FAILED, copy.PM_LABEL_FILE_REJECTED_TYPE, copy.PM_LABEL_FILE_REJECTED_SIZE]) {
@@ -123,7 +148,7 @@ describe('T-RENDER-1: files render as plain links and nothing signed', () => {
     const row = renderToStaticMarkup(<DeliveryRow item={item({})} />)
     expect([...row.matchAll(/href="([^"]+)"/g)].map((m) => m[1])).toEqual([`/material-inward/${DEL_ID}`])
   })
-  it('no component or page of this feature imports next/image or uses an img element, and file links never use next/link', () => {
+  it('no component or page of this feature imports next/image; an image element exists ONLY in file-viewer.tsx and only with the route src; file links never use next/link', () => {
     const root = resolve(__dirname, '..')
     const dirs = ['components/material-inward', 'app/(dashboard)/material-inward']
     const walk = (d: string): string[] =>
@@ -132,7 +157,13 @@ describe('T-RENDER-1: files render as plain links and nothing signed', () => {
       for (const f of walk(resolve(root, dir)).filter((p) => /\.(tsx|ts)$/.test(p))) {
         const src = readFileSync(f, 'utf8')
         expect(src, f).not.toMatch(/from 'next\/image'/)
-        expect(src, f).not.toMatch(new RegExp(IMG_OPEN + '[\\s>]'))
+        if (f.endsWith('components/material-inward/file-viewer.tsx')) {
+          const tags = src.match(new RegExp(IMG_OPEN + '[\\s>][^>]*>', 'g')) ?? []
+          expect(tags.length).toBeGreaterThan(0)
+          for (const t of tags) expect(t).toContain('src={IMG_PATH(fileId)}')
+        } else {
+          expect(src, f).not.toMatch(new RegExp(IMG_OPEN + '[\\s>]'))
+        }
       }
     }
     expect(readFileSync(resolve(root, 'components/material-inward/file-list.tsx'), 'utf8')).not.toMatch(/from 'next\/link'/)

@@ -1,0 +1,386 @@
+===== C1 (HEAD b0a9e5add8eae1ac6b3ce2e495843725b9236ae5) =====
+
+ RUN  v3.2.7 /Users/aravindanrajamani/Desktop/quocoai-pm-ui
+
+ ❯ test/pm-render.test.tsx (53 tests | 3 failed) 46ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > invoice, ack=yes 9ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > dc, ack=yes 1ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > invoice, ack=no 0ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > dc, ack=no 0ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > invoice, ack=partial 0ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > dc, ack=partial 0ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > invoice, ack=unclear 0ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > dc, ack=unclear 0ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > invoice, ack=null 0ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > dc, ack=null 0ms
+   ✓ T-ACK-1: an invoice never renders a DC ack label and a DC never renders an invoice one > POSITIVE CONTROL: the kind drives the label (same ack, different kind, different slot) 1ms
+   ✓ T-RENDER-1: files render as plain links and nothing signed > every link is /api/capture-files/<uuid>, a new tab, noopener noreferrer 0ms
+   × T-RENDER-1: files render as plain links and nothing signed > T-RENDER: no signed URL, token, storage host or optimiser path anywhere (server HTML) 3ms
+     → expected '<link rel="preload" as="image" href="…' not to contain 'token-param='
+   × T-RENDER-1: files render as plain links and nothing signed > T-RENDER: the stored image is a plain image element whose src is exactly the route path, with the approved alt 1ms
+     → expected '<img src="https://x.supabase.co/stora…' to contain 'src="/api/capture-files/88888888-8888…'
+   × T-RENDER-1: files render as plain links and nothing signed > T-RENDER: the OPEN overlay content has the same route src, the approved Close / Rotate labels, and no signed URL 1ms
+     → expected '<link rel="preload" as="image" href="…' to contain 'src="/api/capture-files/88888888-8888…'
+   ✓ T-RENDER-1: files render as plain links and nothing signed > PDFs and locked files keep today's anchor exactly (new tab, noopener noreferrer), one anchor per non-image stored file 0ms
+   ✓ T-RENDER-1: files render as plain links and nothing signed > not-stored files are labels only (no anchor) 0ms
+   ✓ T-RENDER-1: files render as plain links and nothing signed > a not-previewable PDF says so and offers the download slot 0ms
+   ✓ T-RENDER-1: files render as plain links and nothing signed > the 15-minute state and a real failure are different labels 0ms
+   ✓ T-RENDER-1: files render as plain links and nothing signed > the list row links to the detail PAGE only, never to the file route 0ms
+   ✓ T-RENDER-1: files render as plain links and nothing signed > no component or page of this feature imports next/image; an image element exists ONLY in file-viewer.tsx and only with the route src; file links never use next/link 1ms
+   ✓ T-WARN-1: approve with no stored file shows the warning AND still allows the approve (D10) > no stored file: warning present, approve button present and not disabled 0ms
+   ✓ T-WARN-1: approve with no stored file shows the warning AND still allows the approve (D10) > POSITIVE CONTROL: with a stored file the warning is absent 0ms
+   ✓ T-WARN-1: approve with no stored file shows the warning AND still allows the approve (D10) > there is no block slot (the decision is warn-and-allow) 0ms
+   ✓ controls render only copy constants > details, decision and link controls contain no signed URL and no "DC missing" / "paid" wording 1ms
+   ✓ H2: a caption that is a file name is never rendered > detail view (dc) with caption "phone pdf.pdf" renders neither the name nor any caption label 1ms
+   ✓ H2: a caption that is a file name is never rendered > detail view (invoice) with caption "phone pdf.pdf" renders neither the name nor any caption label 1ms
+   ✓ H2: a caption that is a file name is never rendered > list row with caption "phone pdf.pdf" renders neither the name nor any caption label 0ms
+   ✓ H2: a caption that is a file name is never rendered > detail view (dc) with caption "WhatsApp Image 2026-10-05 at 10.00.00.jpeg" renders neither the name nor any caption label 1ms
+   ✓ H2: a caption that is a file name is never rendered > detail view (invoice) with caption "WhatsApp Image 2026-10-05 at 10.00.00.jpeg" renders neither the name nor any caption label 1ms
+   ✓ H2: a caption that is a file name is never rendered > list row with caption "WhatsApp Image 2026-10-05 at 10.00.00.jpeg" renders neither the name nor any caption label 0ms
+   ✓ H2: a caption that is a file name is never rendered > POSITIVE CONTROL (sanity): the detail view DOES render the other engineer-visible text it is given (the ack note) 2ms
+   ✓ H2: a caption that is a file name is never rendered > no caption copy constant exists, and no code of this feature selects or reads a caption 1ms
+   ✓ M1: the own-ack element > invoice, ack=yes: the own-ack element is the invoice label and not a DC one 1ms
+   ✓ M1: the own-ack element > dc, ack=yes: the own-ack element is the DC label and not an invoice one 1ms
+   ✓ M1: the own-ack element > invoice, ack=no: the own-ack element is the invoice label and not a DC one 1ms
+   ✓ M1: the own-ack element > dc, ack=no: the own-ack element is the DC label and not an invoice one 1ms
+   ✓ M1: the own-ack element > invoice, ack=partial: the own-ack element is the invoice label and not a DC one 1ms
+   ✓ M1: the own-ack element > dc, ack=partial: the own-ack element is the DC label and not an invoice one 1ms
+   ✓ M1: the own-ack element > invoice, ack=unclear: the own-ack element is the invoice label and not a DC one 1ms
+   ✓ M1: the own-ack element > dc, ack=unclear: the own-ack element is the DC label and not an invoice one 1ms
+   ✓ M1: the own-ack element > no ack: both kinds show the no-ack slot 1ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > list row, n=7: exactly "Invoice pending for 7 days" and nothing else on the line 0ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > list row, n=2: the day-count line (the first n that shows a count) 0ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > list row, n=1: exactly "Invoice expected", no count 0ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > list row, n=0: exactly "Invoice expected", no count 0ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > list row: no "{n}" anywhere and the label never appears twice, for n = 0, 1, 2, 7 1ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > detail view, n=7: exactly "Invoice pending for 7 days" and nothing else on the line 1ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > detail view, n=2: the day-count line (the first n that shows a count) 1ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > detail view, n=1: exactly "Invoice expected", no count 1ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > detail view, n=0: exactly "Invoice expected", no count 1ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > detail view: no "{n}" anywhere and the label never appears twice, for n = 0, 1, 2, 7 3ms
+   ✓ H2: the invoice-pending day count (list row and detail view) > a DC with no day count (an invoice is linked, or it is not a DC) renders no wait line at all 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/pm-render.test.tsx > T-RENDER-1: files render as plain links and nothing signed > T-RENDER: no signed URL, token, storage host or optimiser path anywhere (server HTML)
+AssertionError: expected '<link rel="preload" as="image" href="…' not to contain 'token-param='
+
+Expected: [32m"token-param="[39m
+Received: [31m"<link rel="preload" as="image" href="https://x.supabase.co/storage/v1/object/sign/b/88888888-8888-4888-8888-888888888888?token-param=abc"/><ul class="flex flex-col gap-2"><li class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-900"><span class="font-medium">1</span><button type="button" class="rounded-md border border-brand-border p-1"><img src="https://x.supabase.co/storage/v1/object/sign/b/88888888-8888-4888-8888-888888888888?token-param=abc" alt="Photo of the document" class="max-h-64 w-auto max-w-full rounded object-contain"/></button></li><li class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-900"><span class="font-medium">2</span><a href="/api/capture-files/88888888-8888-4888-8888-888888888881" target="_blank" rel="noopener noreferrer" class="text-blue-700 underline">Download</a><span class="text-gray-700">Locked or damaged PDF. Download it to view.</span></li><li class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-900"><span class="font-medium">3</span><span class="text-gray-700">Receiving file</span></li><li class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-900"><span class="font-medium">4</span><span class="text-gray-700">Not received yet. It may still arrive.</span></li><li class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-900"><span class="font-medium">5</span><span class="text-gray-700">Could not save this file yet. If it does not appear soon, ask the engineer to send it again.</span></li><li class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-900"><span class="font-medium">6</span><span class="text-gray-700">Not kept. Only PDF, JPEG, PNG and WEBP files are accepted.</span></li><li class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-900"><span class="font-medium">7</span><span class="text-gray-700">Not kept. The file is larger than 16 MB.</span></li></ul>"[39m
+
+ ❯ test/pm-render.test.tsx:109:24
+    107|   it('T-RENDER: no signed URL, token, storage host or optimiser path a…
+    108|     for (const bad of ['token-param=', 'supabase.co', '/storage/v1', '_next/…
+    109|       expect(html).not.toContain(bad)
+       |                        ^
+    110|     }
+    111|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/pm-render.test.tsx > T-RENDER-1: files render as plain links and nothing signed > T-RENDER: the stored image is a plain image element whose src is exactly the route path, with the approved alt
+AssertionError: expected '<img src="https://x.supabase.co/stora…' to contain 'src="/api/capture-files/88888888-8888…'
+
+Expected: [32m"src="/api/capture-files/88888888-8888-4888-8888-888888888888""[39m
+Received: [31m"<img src="https://x.supabase.co/storage/v1/object/sign/b/88888888-8888-4888-8888-888888888888?token-param=abc" alt="Photo of the document" class="max-h-64 w-auto max-w-full rounded object-contain"/>"[39m
+
+ ❯ test/pm-render.test.tsx:115:21
+    113|     const imgs = [...html.matchAll(/<img [^>]*>/g)].map((m) => m[0])
+    114|     expect(imgs).toHaveLength(1)
+    115|     expect(imgs[0]).toContain(`src="/api/capture-files/${FILE_ID}"`)
+       |                     ^
+    116|     expect(imgs[0]).toContain(`alt="${copy.PM_FILE_PREVIEW_ALT}"`)
+    117|     expect(html).toMatch(/<button[^>]*><img /) // a thumbnail button, …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/pm-render.test.tsx > T-RENDER-1: files render as plain links and nothing signed > T-RENDER: the OPEN overlay content has the same route src, the approved Close / Rotate labels, and no signed URL
+AssertionError: expected '<link rel="preload" as="image" href="…' to contain 'src="/api/capture-files/88888888-8888…'
+
+Expected: [32m"src="/api/capture-files/88888888-8888-4888-8888-888888888888""[39m
+Received: [31m"<link rel="preload" as="image" href="https://x.supabase.co/storage/v1/object/sign/b/88888888-8888-4888-8888-888888888888?token-param=abc"/><div class="flex h-full w-full flex-col items-center gap-3 p-3"><div class="flex gap-3"><button type="button" autofocus="" class="inline-flex items-center justify-center rounded-md bg-white px-4 py-3 text-sm font-medium text-gray-900">Close</button><button type="button" class="inline-flex items-center justify-center rounded-md bg-white px-4 py-3 text-sm font-medium text-gray-900">Rotate</button></div><div class="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden"><img src="https://x.supabase.co/storage/v1/object/sign/b/88888888-8888-4888-8888-888888888888?token-param=abc" alt="Photo of the document" class="object-contain" style="transform:rotate(90deg);max-width:80vh;max-height:90vw"/></div></div>"[39m
+
+ ❯ test/pm-render.test.tsx:122:18
+    120|   it('T-RENDER: the OPEN overlay content has the same route src, the a…
+    121|     const open = renderToStaticMarkup(<ViewerPanel fileId={FILE_ID} ro…
+    122|     expect(open).toContain(`src="/api/capture-files/${FILE_ID}"`)
+       |                  ^
+    123|     expect(open).toContain(copy.PM_VIEWER_CLOSE)
+    124|     expect(open).toContain(copy.PM_VIEWER_ROTATE)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 50 passed (53)
+   Start at  11:04:45
+   Duration  338ms (transform 62ms, setup 0ms, collect 180ms, tests 46ms, environment 0ms, prepare 17ms)
+
+===== C2 (HEAD b0a9e5add8eae1ac6b3ce2e495843725b9236ae5) =====
+
+ RUN  v3.2.7 /Users/aravindanrajamani/Desktop/quocoai-pm-ui
+
+ ❯ test/pm-d1b-pure.test.ts (28 tests | 2 failed) 13ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T05:03:00Z -> 10:33 am 1ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T18:30:00Z -> 12:00 am 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T18:45:00Z -> 12:15 am 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T06:30:00Z -> 12:00 pm 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T07:05:00Z -> 12:35 pm 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T07:30:00Z -> 1:00 pm 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T17:29:00Z -> 10:59 pm 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T00:05:00Z -> 5:35 am 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > a UTC instant that crosses the IST date line: the date and the time both move to the next IST day 7ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > missing or invalid input is an em dash, never "NaN" 0ms
+   ✓ R2 / item 8: the picker option line > is "{date}, {time} · {engineer} · {answer}", with the answer of the candidate's own kind 0ms
+   ✓ R2 / item 8: the picker option line > an invoice candidate uses its document time; no engineer is an em dash; no answer is the no-answer label 0ms
+   ✓ R2 / item 8: the picker option line > text inside a name is never treated as a placeholder or a replacement pattern 0ms
+   × R1 / vehicle pass-through: buildDetailsNext > PASS-THROUGH: changing DC no. and DC date sends the LOADED vehicle unchanged 3ms
+     → expected { deliveryType: 'supplier', …(3) } to deeply equal { deliveryType: 'supplier', …(3) }
+   × R1 / vehicle pass-through: buildDetailsNext > a delivery with no vehicle stays with no vehicle 0ms
+     → expected '' to be null
+   ✓ R1: isDetailsDirty > the loaded values are clean 0ms
+   ✓ R1: isDetailsDirty > each form field makes it dirty 0ms
+   ✓ R1: isDetailsDirty > null and empty are the same, and surrounding spaces do not count (the server trims) 0ms
+   ✓ R1: isDetailsDirty > F1: all-null loaded values and the form state as FIRST RENDERED (null -> empty string, as DetailsControls initialises it) are NOT dirty 0ms
+   ✓ R1: isDetailsDirty > F1: whitespace-only input against null is NOT dirty, for every text field 0ms
+   ✓ R1: isDetailsDirty > the vehicle is not a form field, so it can never make the form dirty 0ms
+   ✓ R3: the viewer hash > round trip: a hash made for a known id parses back to it 0ms
+   ✓ R3: the viewer hash > is case-insensitive on the id and returns the id as it is in the list 0ms
+   ✓ R3: the viewer hash > an id that is not in this delivery's viewable images does not parse 0ms
+   ✓ R3: the viewer hash > anything else does not parse: empty, no prefix, other prefix, short id, extra text 0ms
+   ✓ R3: the viewer hash > isViewerHash: any #photo-* is the viewer's family (cleared on mount, even a malformed one) 0ms
+   ✓ item 7: rotation is 90-degree steps and wraps > 0 -> 90 -> 180 -> 270 -> 0 0ms
+   ✓ item 3: which files get an inline image > only a stored image that is previewable 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/pm-d1b-pure.test.ts > R1 / vehicle pass-through: buildDetailsNext > PASS-THROUGH: changing DC no. and DC date sends the LOADED vehicle unchanged
+AssertionError: expected { deliveryType: 'supplier', …(3) } to deeply equal { deliveryType: 'supplier', …(3) }
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  {[22m
+[2m    "dcDate": "2026-11-02",[22m
+[2m    "dcNumber": "DC-2",[22m
+[2m    "deliveryType": "supplier",[22m
+[32m-   "vehicleNumber": "TN01AB1234",[39m
+[31m+   "vehicleNumber": "",[39m
+[2m  }[22m
+
+ ❯ test/pm-d1b-pure.test.ts:54:18
+     52|   it('PASS-THROUGH: changing DC no. and DC date sends the LOADED vehic…
+     53|     const next = buildDetailsNext(loaded, { deliveryType: 'supplier', …
+     54|     expect(next).toEqual({ deliveryType: 'supplier', vehicleNumber: 'T…
+       |                  ^
+     55|     expect(next.vehicleNumber).toBe('TN01AB1234')
+     56|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/pm-d1b-pure.test.ts > R1 / vehicle pass-through: buildDetailsNext > a delivery with no vehicle stays with no vehicle
+AssertionError: expected '' to be null
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+""
+
+ ❯ test/pm-d1b-pure.test.ts:58:128
+     56|   })
+     57|   it('a delivery with no vehicle stays with no vehicle', () => {
+     58|     expect(buildDetailsNext({ ...loaded, vehicleNumber: null }, { deli…
+       |                                                                                                                                ^
+     59|   })
+     60| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 26 passed (28)
+   Start at  11:04:51
+   Duration  207ms (transform 33ms, setup 0ms, collect 84ms, tests 13ms, environment 0ms, prepare 18ms)
+
+===== C3 (HEAD b0a9e5add8eae1ac6b3ce2e495843725b9236ae5) =====
+
+ RUN  v3.2.7 /Users/aravindanrajamani/Desktop/quocoai-pm-ui
+
+ ❯ test/pm-engineer-names.test.ts (5 tests | 1 failed) 3ms
+   ✓ R4: readEngineerNames is scoped to the reader's tenant > a same-tenant engineer resolves to their name 0ms
+   × R4: readEngineerNames is scoped to the reader's tenant > TENANT B's user never shows B's name to a tenant A reader: no name, and the picker label shows an em dash 2ms
+     → expected true to be false // Object.is equality
+   ✓ R4: readEngineerNames is scoped to the reader's tenant > POSITIVE CONTROL: the same lookup for tenant B DOES return B's name (the fixture really holds it) 0ms
+   ✓ R4: readEngineerNames is scoped to the reader's tenant > selects only id and full_name from users (no phone, no email) 0ms
+   ✓ R4: readEngineerNames is scoped to the reader's tenant > no ids: no query at all 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/pm-engineer-names.test.ts > R4: readEngineerNames is scoped to the reader's tenant > TENANT B's user never shows B's name to a tenant A reader: no name, and the picker label shows an em dash
+AssertionError: expected true to be false // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+ ❯ test/pm-engineer-names.test.ts:69:33
+     67|     const r = await readEngineerNames(fakeClient(USERS, []), TENANT_A,…
+     68|     if (!r.ok) throw new Error('lookup failed')
+     69|     expect(r.names.has(USER_B)).toBe(false)
+       |                                 ^
+     70|     expect([...r.names.values()]).not.toContain('Bharath B')
+     71|     const label = linkOptionLabel(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  11:04:58
+   Duration  137ms (transform 36ms, setup 0ms, collect 24ms, tests 3ms, environment 0ms, prepare 18ms)
+
+===== C4 (HEAD b0a9e5add8eae1ac6b3ce2e495843725b9236ae5) =====
+
+ RUN  v3.2.7 /Users/aravindanrajamani/Desktop/quocoai-pm-ui
+
+ ❯ test/pm-d1b-pure.test.ts (28 tests | 3 failed) 13ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T05:03:00Z -> 10:33 am 1ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T18:30:00Z -> 12:00 am 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T18:45:00Z -> 12:15 am 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T06:30:00Z -> 12:00 pm 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T07:05:00Z -> 12:35 pm 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T07:30:00Z -> 1:00 pm 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T17:29:00Z -> 10:59 pm 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > 2026-11-02T00:05:00Z -> 5:35 am 0ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > a UTC instant that crosses the IST date line: the date and the time both move to the next IST day 7ms
+   ✓ R2: formatIstTime (12-hour IST, lowercase am/pm) > missing or invalid input is an em dash, never "NaN" 0ms
+   ✓ R2 / item 8: the picker option line > is "{date}, {time} · {engineer} · {answer}", with the answer of the candidate's own kind 0ms
+   ✓ R2 / item 8: the picker option line > an invoice candidate uses its document time; no engineer is an em dash; no answer is the no-answer label 0ms
+   ✓ R2 / item 8: the picker option line > text inside a name is never treated as a placeholder or a replacement pattern 0ms
+   ✓ R1 / vehicle pass-through: buildDetailsNext > PASS-THROUGH: changing DC no. and DC date sends the LOADED vehicle unchanged 0ms
+   ✓ R1 / vehicle pass-through: buildDetailsNext > a delivery with no vehicle stays with no vehicle 0ms
+   ✓ R1: isDetailsDirty > the loaded values are clean 0ms
+   ✓ R1: isDetailsDirty > each form field makes it dirty 0ms
+   × R1: isDetailsDirty > null and empty are the same, and surrounding spaces do not count (the server trims) 2ms
+     → expected true to be false // Object.is equality
+   × R1: isDetailsDirty > F1: all-null loaded values and the form state as FIRST RENDERED (null -> empty string, as DetailsControls initialises it) are NOT dirty 0ms
+     → expected true to be false // Object.is equality
+   × R1: isDetailsDirty > F1: whitespace-only input against null is NOT dirty, for every text field 0ms
+     → expected true to be false // Object.is equality
+   ✓ R1: isDetailsDirty > the vehicle is not a form field, so it can never make the form dirty 0ms
+   ✓ R3: the viewer hash > round trip: a hash made for a known id parses back to it 0ms
+   ✓ R3: the viewer hash > is case-insensitive on the id and returns the id as it is in the list 0ms
+   ✓ R3: the viewer hash > an id that is not in this delivery's viewable images does not parse 0ms
+   ✓ R3: the viewer hash > anything else does not parse: empty, no prefix, other prefix, short id, extra text 0ms
+   ✓ R3: the viewer hash > isViewerHash: any #photo-* is the viewer's family (cleared on mount, even a malformed one) 0ms
+   ✓ item 7: rotation is 90-degree steps and wraps > 0 -> 90 -> 180 -> 270 -> 0 0ms
+   ✓ item 3: which files get an inline image > only a stored image that is previewable 0ms
+stdout | test/pm-d1b-ui.test.tsx > F2: a closed overlay requests no image; one image per thumbnail > N=3 stored images: exactly N image elements, each the route path
+F2 counts: img=3 preload-image-links=3
+
+ ❯ test/pm-d1b-ui.test.tsx (16 tests | 1 failed) 12ms
+   ✓ R1: Approve and Reject are disabled while the form differs from the loaded values > DIRTY form: both buttons disabled, labels unchanged 1ms
+   ✓ R1: Approve and Reject are disabled while the form differs from the loaded values > CLEAN (saved) form: both buttons enabled 0ms
+   ✓ R1: Approve and Reject are disabled while the form differs from the loaded values > wiring: DetailsControls with the loaded values as rendered is clean, so the Approve inside it is enabled 0ms
+   × F1: a delivery with no details yet starts clean > all-null loaded values, form as first rendered: Approve and Reject are enabled 3ms
+     → expected true to be false // Object.is equality
+   ✓ F2: a closed overlay requests no image; one image per thumbnail > N=3 stored images: exactly N image elements, each the route path 1ms
+   ✓ F2: a closed overlay requests no image; one image per thumbnail > at most N image preload links, each pointing at /api/capture-files/<id> 0ms
+   ✓ F2: a closed overlay requests no image; one image per thumbnail > the overlay (dialog and its full-screen image) is not in the page while closed 0ms
+   ✓ item 1 / 2: the form order, the collapsed block, and no vehicle > order: delivery type, then Approve, then Reject, then the "More details (optional)" block with DC no. and DC date 0ms
+   ✓ item 1 / 2: the form order, the collapsed block, and no vehicle > the DC fields are inside a <details> that is collapsed (no open attribute) 0ms
+   ✓ item 1 / 2: the form order, the collapsed block, and no vehicle > two "Save details" buttons: one under the type, one inside the collapsed block 0ms
+   ✓ item 1 / 2: the form order, the collapsed block, and no vehicle > no vehicle field and no stored vehicle value is rendered by the form 0ms
+   ✓ item 2: the list row no longer shows a vehicle > a row with a vehicle number renders neither the number nor a vehicle label 1ms
+   ✓ item 4 / 9: the detail page order, the photo above or beside the form, and the DC / GRN label > a DC shows "DC / GRN"; an invoice still shows "Invoice"; an internal transfer shows "Internal transfer" 2ms
+   ✓ item 4 / 9: the detail page order, the photo above or beside the form, and the DC / GRN label > the Files card comes before the form in the markup (above on a narrow screen), in a two-column grid from lg 1ms
+   ✓ item 4 / 9: the detail page order, the photo above or beside the form, and the DC / GRN label > the page puts delivery type, Approve, Reject, then More details, in that order 1ms
+   ✓ item 8: the picker option line, rendered > a DC page lists invoices as "{date}, {time} · {engineer} · {answer}" 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/pm-d1b-pure.test.ts > R1: isDetailsDirty > null and empty are the same, and surrounding spaces do not count (the server trims)
+AssertionError: expected true to be false // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+ ❯ test/pm-d1b-pure.test.ts:73:86
+     71|   it('null and empty are the same, and surrounding spaces do not count…
+     72|     const empty = { deliveryType: null, vehicleNumber: null, dcNumber:…
+     73|     expect(isDetailsDirty(empty, { deliveryType: '', dcNumber: '   ', …
+       |                                                                                      ^
+     74|     expect(isDetailsDirty(loaded, { ...same, dcNumber: ' DC-1 ' })).to…
+     75|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/pm-d1b-pure.test.ts > R1: isDetailsDirty > F1: all-null loaded values and the form state as FIRST RENDERED (null -> empty string, as DetailsControls initialises it) are NOT dirty
+AssertionError: expected true to be false // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+ ❯ test/pm-d1b-pure.test.ts:79:53
+     77|     const loadedNull = { deliveryType: null, vehicleNumber: null, dcNu…
+     78|     const firstRender = { deliveryType: loadedNull.deliveryType ?? '',…
+     79|     expect(isDetailsDirty(loadedNull, firstRender)).toBe(false)
+       |                                                     ^
+     80|   })
+     81|   it('F1: whitespace-only input against null is NOT dirty, for every t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/pm-d1b-pure.test.ts > R1: isDetailsDirty > F1: whitespace-only input against null is NOT dirty, for every text field
+AssertionError: expected true to be false // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+ ❯ test/pm-d1b-pure.test.ts:83:93
+     81|   it('F1: whitespace-only input against null is NOT dirty, for every t…
+     82|     const loadedNull = { deliveryType: null, vehicleNumber: null, dcNu…
+     83|     expect(isDetailsDirty(loadedNull, { deliveryType: ' ', dcNumber: '…
+       |                                                                                             ^
+     84|   })
+     85|   it('the vehicle is not a form field, so it can never make the form d…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  test/pm-d1b-ui.test.tsx > F1: a delivery with no details yet starts clean > all-null loaded values, form as first rendered: Approve and Reject are enabled
+AssertionError: expected true to be false // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+ ❯ test/pm-d1b-ui.test.tsx:74:65
+     72|       </DetailsControls>,
+     73|     )
+     74|     expect(isDisabled(buttonTag(html, copy.PM_ACTION_APPROVE))).toBe(f…
+       |                                                                 ^
+     75|     expect(isDisabled(buttonTag(html, copy.PM_ACTION_REJECT))).toBe(fa…
+     76|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 40 passed (44)
+   Start at  11:05:06
+   Duration  330ms (transform 57ms, setup 0ms, collect 125ms, tests 24ms, environment 0ms, prepare 35ms)
+

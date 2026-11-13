@@ -26,11 +26,11 @@ export const PM_STATUS_CANCELLED = 'Cancelled' // English approved (Aravind, 2 N
 
 // ---- delivery type (deliveries.delivery_type CHECK: supplier, internal_transfer; NULL until set)
 export const PM_TYPE_SUPPLIER = 'Supplier' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
-export const PM_TYPE_INTERNAL_TRANSFER = 'Internal GRN (from another site)' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
+export const PM_TYPE_INTERNAL_TRANSFER = 'Internal transfer' // English approved (Aravind, 3 Nov; was "Internal GRN (from another site)"). Tamil owed.
 export const PM_TYPE_NOT_SET = 'Type not set' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 
 // ---- document kind
-export const PM_KIND_DC = 'DC' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
+export const PM_KIND_DC = 'DC / GRN' // English approved (Aravind, 3 Nov; was "DC"). Tamil owed. A GRN that arrives "as it comes" is stored as kind 'dc'.
 export const PM_KIND_INVOICE = 'Invoice' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 
 // ---- ack (capture_documents.engineer_ack CHECK: yes, no, partial, unclear; NULL until answered). Separate per type.
@@ -74,11 +74,13 @@ export const PM_INVOICES_HEADING = 'Linked invoices' // English approved (Aravin
 export const PM_LINKED_DELIVERIES_HEADING = 'Linked DCs' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_LINK_SELECT_INVOICE = 'Choose the invoice for this DC' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_LINK_SELECT_DELIVERIES = 'Choose the DCs this invoice covers (up to 20)' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
+// {date} formatIstDate, {time} 12-hour IST lowercase am/pm, {engineer} site engineer name or an em dash, {answer} the engineer's ack label of the candidate's own kind.
+export const PM_LINK_OPTION = '{date}, {time} · {engineer} · {answer}' // English approved (Aravind, 3 Nov). Tamil owed.
 export const PM_LINK_NO_CANDIDATES = 'Nothing to link right now.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 
 // ---- field labels
 export const PM_FIELD_TYPE = 'Delivery type' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
-export const PM_FIELD_VEHICLE = 'Vehicle no.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
+// PM_FIELD_VEHICLE deleted 3 Nov (PR-D1b): the vehicle field left the form and the list. The value is still stored and passed through unchanged.
 export const PM_FIELD_DC_NUMBER = 'DC no.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_FIELD_DC_DATE = 'DC date' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_FIELD_REJECT_REASON = 'Reason for rejecting' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
@@ -87,6 +89,7 @@ export const PM_FIELD_ENGINEER = 'Site engineer' // English approved (Aravind, 2
 export const PM_FIELD_ACK = 'Engineer\'s answer' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_FIELD_ACK_NOTE = 'Engineer\'s note' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_FIELD_FILES = 'Files' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
+export const PM_DETAILS_TOGGLE = 'More details (optional)' // English approved (Aravind, 3 Nov). Tamil owed.
 export const PM_FIELD_PROJECT = 'Project' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 
 // ---- files
@@ -98,6 +101,9 @@ export const PM_LABEL_FILE_PENDING = 'Receiving file' // English approved (Aravi
 export const PM_LABEL_FILE_PENDING_TIMEOUT = 'Not received yet. It may still arrive.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_LABEL_FILE_FAILED = 'Could not save this file yet. If it does not appear soon, ask the engineer to send it again.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_FILE_UNAVAILABLE = 'This file cannot be opened right now. Try again in a minute.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
+export const PM_FILE_PREVIEW_ALT = 'Photo of the document' // English approved (Aravind, 3 Nov). Tamil owed. Also the viewer dialog's accessible name.
+export const PM_VIEWER_CLOSE = 'Close' // English approved (Aravind, 3 Nov). Tamil owed.
+export const PM_VIEWER_ROTATE = 'Rotate' // English approved (Aravind, 3 Nov). Tamil owed.
 export const PM_FILE_OPEN = 'Open' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_FILE_DOWNLOAD = 'Download' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 
@@ -123,9 +129,9 @@ export const PM_ERR_REJECT_REASON = 'Write a reason for rejecting, up to 1000 ch
 export const PM_ERR_INVALID_INPUT = 'Some details are not valid. Check them and try again.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_ERR_ALREADY_LINKED = 'This DC already has an invoice linked.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 export const PM_ERR_SELF_LINK_FIXED = 'An invoice\'s link to its own delivery cannot be removed.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
-export const PM_ERR_RETYPE_LINKED = 'Unlink the invoice before you change this to an internal GRN.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
-export const PM_ERR_RETYPE_AUTOMATIC = 'A delivery created from an invoice cannot be an internal GRN.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
-export const PM_ERR_LINK_TARGET_INELIGIBLE = 'This DC cannot take an invoice. It is an internal GRN, created from an invoice, or rejected.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
+export const PM_ERR_RETYPE_LINKED = 'Unlink the invoice before you change this to an internal transfer.' // English approved (Aravind, 12 Nov; was "internal GRN" in the 2 Nov text). Tamil owed.
+export const PM_ERR_RETYPE_AUTOMATIC = 'A delivery created from an invoice cannot be an internal transfer.' // English approved (Aravind, 12 Nov; was "internal GRN" in the 2 Nov text). Tamil owed.
+export const PM_ERR_LINK_TARGET_INELIGIBLE = 'This DC cannot take an invoice. It is an internal transfer, created from an invoice, or rejected.' // English approved (Aravind, 12 Nov; was "internal GRN" in the 2 Nov text). Tamil owed.
 export const PM_ERR_SAVE_FAILED = 'Something went wrong and nothing was saved. Try again.' // English approved (Aravind, 2 Nov). Tamil owed, NOT approved.
 
 /** The display-side error table: key name -> string. The name is what tests assert on; the string is the placeholder. */

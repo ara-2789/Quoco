@@ -21,6 +21,7 @@ import {
   type PmActionDeps,
   type PmDetailsFields,
 } from '@/lib/capture/pm-actions'
+import { buildDetailsNext } from '@/components/material-inward/details-next'
 
 // T-ACT-1..5, T-ERR-1 (database half), T-REPEAT-1..5, T-STALE-1, T-CONC-1 (CI-only) for PR-D.
 // pm-actions functions are called with an injected signed-in client (the same shape the 'use server' wrappers build).
@@ -82,6 +83,27 @@ describe('T-ACT-1: set details', () => {
     expect(r).toEqual({ status: 'ok' })
     const row = await deliveryRow(kit, d.deliveryId)
     expect(row).toMatchObject({ delivery_type: 'supplier', vehicle_number: `ZZTestCapture-${kit.runTag}-veh`, dc_number: 'DC-77', dc_date: '2026-10-30' })
+  })
+  it('PR-D1b VEHICLE PASS-THROUGH: saving a new DC no. and date with the form\'s own `next` keeps the stored vehicle', async () => {
+    const d = await newDc('a1v')
+    const vehicle = `ZZTestCapture-${kit.runTag}-keep`
+    expect(
+      await runSetDetails(await as('pm1'), {
+        deliveryId: d.deliveryId,
+        loaded: { status: 'incomplete', ...EMPTY },
+        next: { deliveryType: 'supplier', vehicleNumber: vehicle, dcNumber: 'DC-1', dcDate: '2026-10-30' },
+      }),
+    ).toEqual({ status: 'ok' })
+    const row = await deliveryRow(kit, d.deliveryId)
+    const loaded = { status: row.status as string, deliveryType: row.delivery_type as string | null, vehicleNumber: row.vehicle_number as string | null, dcNumber: row.dc_number as string | null, dcDate: row.dc_date as string | null }
+    expect(loaded.vehicleNumber).toBe(vehicle)
+    const r = await runSetDetails(await as('pm1'), {
+      deliveryId: d.deliveryId,
+      loaded,
+      next: buildDetailsNext(loaded, { deliveryType: 'supplier', dcNumber: 'DC-88', dcDate: '2026-11-02' }), // what the form sends: no vehicle field
+    })
+    expect(r).toEqual({ status: 'ok' })
+    expect(await deliveryRow(kit, d.deliveryId)).toMatchObject({ vehicle_number: vehicle, dc_number: 'DC-88', dc_date: '2026-11-02' })
   })
   it.each(NEGATIVES)('%s is refused (NOT_AVAILABLE) and the row is unchanged', async (who) => {
     const d = await newDc('a1n')

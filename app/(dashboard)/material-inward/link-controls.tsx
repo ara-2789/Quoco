@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { linkInvoiceAction, unlinkInvoiceAction } from './actions'
 import type { PmActionResult } from '@/lib/capture/pm-errors'
 import type { PmCandidate } from '@/lib/capture/pm-queries'
-import { ackLabel, formatIstDate } from '@/components/material-inward/labels'
+import { formatIstDate, linkOptionLabel } from '@/components/material-inward/labels'
 import {
   PM_ACTION_LINK_INVOICE,
   PM_ACTION_UNLINK,
@@ -113,9 +113,7 @@ export function LinkControls({
                 checked={picked.includes(c.id)}
                 onChange={() => toggle(c.id)}
               />
-              <span>
-                {formatIstDate(c.receivedAt ?? c.documentCreatedAt)} {c.dcNumber ?? ''} {ackLabel(candidateKind, c.ack)}
-              </span>
+              <span>{linkOptionLabel(c, candidateKind)}</span>
             </label>
           ))}
           <button

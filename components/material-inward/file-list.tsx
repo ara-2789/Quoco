@@ -10,10 +10,15 @@ import {
   PM_LABEL_FILE_REJECTED_TYPE,
   PM_LABEL_PDF_NOT_PREVIEWABLE,
 } from '@/lib/capture/pm-copy'
+import { FileImage } from './file-viewer'
+import { isViewableImage } from './viewer-logic'
 
-// D3: a stored file is opened ONLY through a plain <a target="_blank" rel="noopener noreferrer"> pointing at
-// /api/capture-files/<id>. No next/image, no next/link to the route, no image element, no signed URL anywhere in this markup:
-// the URL is minted by the route when the PM clicks. Files that are not stored have no object, so no link, only a label.
+// D3 (kept for PDFs and every non-image file): a stored file is opened ONLY through a plain
+// <a target="_blank" rel="noopener noreferrer"> pointing at /api/capture-files/<id>. No next/image, no next/link to the route,
+// no signed URL anywhere in this markup: the URL is minted by the route when the browser asks. Files that are not stored have
+// no object, so no link, only a label.
+// PR-D1b (a dated, deliberate change to D3, images only): a stored IMAGE is shown as a plain image element of the same route path
+// with a same-tab full-screen viewer (file-viewer.tsx). PDFs and locked/damaged files keep today's Open / Download link.
 
 const NOT_STORED_LABEL: Record<Exclude<PmFileItem['display'], 'stored'>, string> = {
   pending: PM_LABEL_FILE_PENDING,
@@ -30,7 +35,9 @@ export function FileList({ files }: { files: PmFileItem[] }) {
       {files.map((f) => (
         <li key={f.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-900">
           <span className="font-medium">{f.fileNo}</span>
-          {f.display === 'stored' ? (
+          {isViewableImage(f) ? (
+            <FileImage fileId={f.id} />
+          ) : f.display === 'stored' ? (
             <>
               <a
                 href={`/api/capture-files/${f.id}`}
