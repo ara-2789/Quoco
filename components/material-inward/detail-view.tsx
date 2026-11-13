@@ -102,9 +102,10 @@ export function DetailView({ d }: { d: PmDetail }) {
         <div className="flex flex-col gap-6">
           {open && (
             <Card className="p-4">
-              {/* Remount on any change of the loaded values so the form never keeps a stale draft (D8). Order: delivery type,
+              {/* NO key here (review round 1, S2): a key on this element remounted Approve / Reject on every save and wiped the typed
+                  reject reason. DetailsControls resets its own draft when `loaded` changes (D8). Order: delivery type,
                   Approve / Reject (the children), then the collapsed "More details (optional)". */}
-              <DetailsControls key={JSON.stringify(loaded)} deliveryId={d.id} loaded={loaded}>
+              <DetailsControls deliveryId={d.id} loaded={loaded}>
                 <DecisionControls deliveryId={d.id} hasStoredFile={d.hasStoredFile} />
               </DetailsControls>
             </Card>

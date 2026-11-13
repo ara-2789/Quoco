@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useTransition, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
 import { setDeliveryDetailsAction } from './actions'
 import type { PmDetailsFields } from '@/lib/capture/pm-actions'
-import { DetailsDirtyContext } from '@/components/material-inward/details-dirty'
+import { DetailsDirtyContext, isMoreDetailsDirty } from '@/components/material-inward/details-dirty'
 import { buildDetailsNext, isDetailsDirty } from '@/components/material-inward/details-next'
 import {
   PM_ACTION_SAVE_DETAILS,
@@ -18,8 +18,9 @@ import {
 } from '@/lib/capture/pm-copy'
 
 // Set-details form. D8: the form sends back the values it was RENDERED with (`loaded`, including the status) next to
-// the new ones; the action re-reads the row and answers PM_ERR_STATE_CHANGED if anything differs, before the RPC. The
-// parent keys this component on `loaded`, so after a save or a refresh it remounts with the current values.
+// the new ones; the action re-reads the row and answers PM_ERR_STATE_CHANGED if anything differs, before the RPC. When `loaded`
+// changes (after a save or a refresh) this component RESETS its own draft to the new values in place. It is NOT remounted: the
+// parent used to key it, which remounted the Approve / Reject children and wiped the typed reject reason (review round 1, S2).
 // An empty field clears that field (full overwrite, 050:456). The vehicle is NOT a form field any more: buildDetailsNext
 // sends the loaded vehicle back unchanged.
 //
@@ -44,8 +45,27 @@ export function DetailsControls({
   const [dcNumber, setDcNumber] = useState(loaded.dcNumber ?? '')
   const [dcDate, setDcDate] = useState(loaded.dcDate ?? '')
 
+  // Reset the draft when the loaded values change (D8: never keep a stale draft). Adjusting state while rendering is the React
+  // pattern for this; the children (Approve / Reject) stay mounted, so their own state (the reject reason) survives.
+  const loadedKey = JSON.stringify(loaded)
+  const [seenKey, setSeenKey] = useState(loadedKey)
+  if (seenKey !== loadedKey) {
+    setSeenKey(loadedKey)
+    setType(loaded.deliveryType ?? '')
+    setDcNumber(loaded.dcNumber ?? '')
+    setDcDate(loaded.dcDate ?? '')
+    setError(null)
+  }
+
   const form = { deliveryType: type, dcNumber, dcDate }
   const dirty = isDetailsDirty(loaded, form)
+  // N1: while an unsaved edit sits inside "More details (optional)", that block is open and cannot be collapsed, so the reason
+  // Approve / Reject are disabled is visible. It is never forced closed when clean (the PM may have opened it).
+  const moreDirty = isMoreDetailsDirty(loaded, form)
+  const moreRef = useRef<HTMLDetailsElement>(null)
+  useEffect(() => {
+    if (moreDirty && moreRef.current) moreRef.current.open = true
+  }, [moreDirty])
 
   function submit(at: ErrorAt) {
     startTransition(async () => {
@@ -93,8 +113,15 @@ export function DetailsControls({
           {save('type')}
         </div>
         {children}
-        <details className="rounded-md border border-brand-border px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium text-gray-900">{PM_DETAILS_TOGGLE}</summary>
+        <details ref={moreRef} className="rounded-md border border-brand-border px-3 py-2">
+          <summary
+            onClick={(e) => {
+              if (moreDirty) e.preventDefault() // N1: no collapse while it holds an unsaved edit
+            }}
+            className="cursor-pointer text-sm font-medium text-gray-900"
+          >
+            {PM_DETAILS_TOGGLE}
+          </summary>
           <div className="mt-3 flex flex-col gap-3">
             <label className="flex flex-col gap-1 text-sm font-medium text-gray-900">
               {PM_FIELD_DC_NUMBER}

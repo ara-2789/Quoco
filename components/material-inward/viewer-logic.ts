@@ -82,3 +82,19 @@ export function closeViewerEntry(history: HistoryLike, location: LocationLike, p
   clearViewerHash(history, location)
   return 'cleared'
 }
+
+// ---- native dialog sync (PR-D1b review round 1, S1)
+//
+// Esc and the Android Back gesture are "close requests". Chrome only fires a cancellable `cancel` event if the page has had user
+// activation since the last cancelled close; without it the <dialog> closes NATIVELY and only `close` fires. So the viewer also
+// listens to `close`, and re-opens through showModal() directly rather than relying on a React state change that may be a no-op.
+
+/** `close` fired but React still thinks the viewer is open: the dialog was closed natively and the close sequence must run. */
+export function nativeCloseOutOfSync(reactOpen: boolean, dialogOpen: boolean): boolean {
+  return reactOpen && !dialogOpen
+}
+
+/** The dialog element exists but is not showing (closed natively): it must be shown again directly on the next open. */
+export function dialogNeedsShowModal(dialog: { open: boolean } | null): boolean {
+  return dialog !== null && !dialog.open
+}

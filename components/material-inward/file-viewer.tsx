@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PM_FILE_PREVIEW_ALT, PM_VIEWER_CLOSE, PM_VIEWER_ROTATE } from '@/lib/capture/pm-copy'
-import { closeViewerEntry, nextRotation, parseViewerHash, pushViewerEntry, stripViewerHashOnMount } from './viewer-logic'
+import { closeViewerEntry, dialogNeedsShowModal, nativeCloseOutOfSync, nextRotation, parseViewerHash, pushViewerEntry, stripViewerHashOnMount } from './viewer-logic'
 
 // PR-D1b photo viewer for ONE stored image: a thumbnail button, and a full-screen overlay in the same tab.
 //
@@ -94,6 +94,10 @@ export function FileImage({ fileId }: { fileId: string }) {
     pushed.current = true
     setRotation(0)
     setOpen(true)
+    // S1: the dialog can have been closed natively while `open` is still true; then setOpen(true) changes nothing and the
+    // [open] effect never runs, so show it directly.
+    const dlg = dialogRef.current
+    if (dlg && dialogNeedsShowModal(dlg)) dlg.showModal()
   }, [fileId])
 
   const closeViewer = useCallback(() => {
@@ -115,6 +119,10 @@ export function FileImage({ fileId }: { fileId: string }) {
           onCancel={(e) => {
             e.preventDefault() // Esc: go through the same close path as the Close button
             closeViewer()
+          }}
+          onClose={(e) => {
+            // S1: a close that skipped `cancel` (no user activation since the last cancelled close). Same close sequence as Close.
+            if (nativeCloseOutOfSync(open, e.currentTarget.open)) closeViewer()
           }}
           className="m-0 h-dvh max-h-none w-dvw max-w-none bg-black/90 p-0 text-white"
         >

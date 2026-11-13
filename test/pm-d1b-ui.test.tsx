@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 vi.mock('@/app/(dashboard)/material-inward/actions', () => ({
   approveDeliveryAction: vi.fn(),
@@ -195,5 +197,32 @@ describe('item 8: the picker option line, rendered', () => {
       />,
     )
     expect(html).toContain(`${formatIstDate('2026-11-02T05:03:00Z')}, 10:33 am · Ravi · ${copy.PM_ACK_INVOICE_YES}`)
+  })
+})
+
+// S2 (review round 1): a save or STATE_CHANGED refresh must not remount Approve / Reject, or the typed reject reason is lost.
+// A remount needs a React `key` that changes with the loaded values, on an element that CONTAINS DecisionControls. renderToStaticMarkup
+// cannot show a remount, so this is a structural check on the source of the two files that place it. The behaviour itself is the
+// manual S2 run (type a reason, change the type, Save: the reason stays).
+describe('S2: DecisionControls is not inside a keyed element', () => {
+  const root = resolve(__dirname, '..')
+  const detailView = readFileSync(resolve(root, 'components/material-inward/detail-view.tsx'), 'utf8')
+  const detailsControls = readFileSync(resolve(root, 'app/(dashboard)/material-inward/details-controls.tsx'), 'utf8')
+  const code = (src: string) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/^\s*\/\/.*$/gm, '')
+
+  it('detail-view.tsx: the DetailsControls element that wraps DecisionControls carries no key', () => {
+    const open = code(detailView).match(/<DetailsControls\b[^>]*>/)
+    expect(open).not.toBeNull()
+    expect(open![0]).not.toMatch(/\bkey=/)
+  })
+  it('detail-view.tsx: no key={...} anywhere on the way from the card to DecisionControls', () => {
+    const between = code(detailView).split('<DetailsControls')[1]?.split('</DetailsControls>')[0] ?? ''
+    expect(between).not.toMatch(/\bkey=/)
+  })
+  it('details-controls.tsx: {children} is not rendered inside a keyed element', () => {
+    expect(code(detailsControls)).not.toMatch(/\bkey=/)
+  })
+  it('details-controls.tsx resets its own draft when the loaded values change (D8 kept without a remount)', () => {
+    expect(code(detailsControls)).toMatch(/seenKey !== loadedKey/)
   })
 })

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { formatIstTime, formatIstDate, linkOptionLabel } from '@/components/material-inward/labels'
 import { buildDetailsNext, isDetailsDirty } from '@/components/material-inward/details-next'
 import { isViewableImage, isViewerHash, nextRotation, parseViewerHash, viewerHash } from '@/components/material-inward/viewer-logic'
+import { isMoreDetailsDirty } from '@/components/material-inward/details-dirty'
 import * as copy from '@/lib/capture/pm-copy'
 
 // PR-D1b pure tests. Node only: no database, no DOM, no network.
@@ -128,5 +129,21 @@ describe('item 3: which files get an inline image', () => {
     expect(isViewableImage({ display: 'stored', contentType: 'image/webp', previewState: 'not_previewable' })).toBe(false)
     expect(isViewableImage({ display: 'pending', contentType: 'image/jpeg', previewState: null })).toBe(false)
     expect(isViewableImage({ display: 'stored', contentType: null, previewState: null })).toBe(false)
+  })
+})
+
+describe('N1 (review round 1): isMoreDetailsDirty (DC no. / DC date only)', () => {
+  const loaded = { deliveryType: 'supplier', vehicleNumber: 'V', dcNumber: 'DC-1', dcDate: '2026-10-30' }
+  const same = { deliveryType: 'supplier', dcNumber: 'DC-1', dcDate: '2026-10-30' }
+  it('clean', () => expect(isMoreDetailsDirty(loaded, same)).toBe(false))
+  it('a changed DC no. or DC date is dirty', () => {
+    expect(isMoreDetailsDirty(loaded, { ...same, dcNumber: 'DC-2' })).toBe(true)
+    expect(isMoreDetailsDirty(loaded, { ...same, dcDate: '2026-10-31' })).toBe(true)
+  })
+  it('a changed delivery type alone is NOT a "More details" edit (that field is outside the block)', () => {
+    expect(isMoreDetailsDirty(loaded, { ...same, deliveryType: 'internal_transfer' })).toBe(false)
+  })
+  it('whitespace-only differences are clean, as the server compares', () => {
+    expect(isMoreDetailsDirty(loaded, { ...same, dcNumber: ' DC-1 ' })).toBe(false)
   })
 })

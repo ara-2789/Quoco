@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { closeViewerEntry, parseViewerHash, pushViewerEntry, stripViewerHashOnMount, type HistoryLike, type LocationLike } from '@/components/material-inward/viewer-logic'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { closeViewerEntry, dialogNeedsShowModal, nativeCloseOutOfSync, parseViewerHash, pushViewerEntry, stripViewerHashOnMount, type HistoryLike, type LocationLike } from '@/components/material-inward/viewer-logic'
 
 // PR-D1b: the leftover "#photo-<id>" after Save details (manual run, 12 Nov). Node only, no DOM.
 //
@@ -190,5 +192,37 @@ describe('PR-D1b hash sync with the router (fake of Next 16.2.11)', () => {
     stripViewerHashOnMount(spy, loc)
     closeViewerEntry(spy, loc, false)
     expect(seen).toEqual([null, null, null])
+  })
+})
+
+describe('S1 (review round 1): a native dialog close that skipped `cancel` must sync React', () => {
+  it('close fired, React still open, dialog no longer open: the close sequence must run', () => {
+    expect(nativeCloseOutOfSync(true, false)).toBe(true)
+  })
+  it('React already closed (our own close path): nothing to sync', () => {
+    expect(nativeCloseOutOfSync(false, false)).toBe(false)
+  })
+  it('dialog still open: nothing to sync', () => {
+    expect(nativeCloseOutOfSync(true, true)).toBe(false)
+  })
+  it('openViewer shows an element that exists but is closed; never one that is already showing or absent', () => {
+    expect(dialogNeedsShowModal({ open: false })).toBe(true)
+    expect(dialogNeedsShowModal({ open: true })).toBe(false)
+    expect(dialogNeedsShowModal(null)).toBe(false)
+  })
+  it('the dialog element is wired to both helpers (source check: the DOM wiring itself is the manual S1 run)', () => {
+    const src = readFileSync(resolve(__dirname, '../components/material-inward/file-viewer.tsx'), 'utf8')
+    expect(src).toMatch(/onClose=\{[\s\S]*?nativeCloseOutOfSync\(open, e\.currentTarget\.open\)/)
+    expect(src).toContain('dialogNeedsShowModal(dlg)')
+  })
+})
+
+describe('N5 (review round 1): the fake router above models one exact Next version', () => {
+  it('next is pinned at 16.2.11', () => {
+    const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf8')) as { dependencies: Record<string, string> }
+    expect(
+      pkg.dependencies.next,
+      "Next version changed: re-run PR-D1b manual checks R1–R3 (viewer history) and update test/pm-viewer-history.test.ts's fake router.",
+    ).toBe('16.2.11')
   })
 })
