@@ -72,3 +72,11 @@ Key: the anon-role key from the main checkout's `.env.local` (its `NEXT_PUBLIC_S
 - The dark control's deployment id and Vercel env listing were waived by Aravind (`apply-go-package/p1-notes.md`, [R]); the reviewer accepted the waiver.
 - Closing artifact still open: the first PM classification of a real unclassified document on prod after PR-D2.
 - Named finding carried from `p1-notes.md` (not 052): "Automatically expose new tables" is ON in prod, a blocker before the switch trigger. Not changed.
+
+## Dated additions (14 Nov 2026, A2 confirmation pass)
+
+- Reviewer confirmation pass: CONFIRMED. See 052-apply-confirmation.md.
+- #356 was merged before the confirmation pass (per Aravind). Reviewer accepted: records-only PR.
+- Types regenerated from test-db, not prod.
+- Prod-linked workdir deleted 14 Nov (per Aravind).
+- CI on #356 head 0bc41e5: https://github.com/ara-2789/Quoco/actions/runs/43572996649
