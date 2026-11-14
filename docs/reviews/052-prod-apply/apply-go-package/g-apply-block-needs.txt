@@ -1,0 +1,9 @@
+G. What the 052 prod apply block needs (written 14 Nov 2026, main 8e90cb5)
+- Windows to avoid: 08:25-08:40 and 18:25-18:40 IST (052-apply.sql:60, 052-down-prod.sql:19; same as 051). Also gate: gh run list in_progress=0 queued=0.
+- Immediately before apply: re-run invoice-session count (must be 0), re-read the 3 md5s, ref printed in the same frame, apply sha 2c4ee3bc..., Aravind's explicit "go".
+- 052 aborts itself on invoice sessions (APPLY_ABORT_052, 052-apply.sql:79-90) after SET LOCAL lock_timeout='3s' + LOCK whatsapp_sessions EXCLUSIVE.
+- T-M-1 abort-half evidence on file: docs/reviews/052-sql-evidence/dryrun-r1-30-abort-invoice-session.txt (local PG17 scaffold, apply exit=3, nothing changed),
+  docs/reviews/052-sql-evidence/dryrun-30-abort-invoice-session.txt (also local scaffold). CORRECTED 14 Nov (P1b): rehearsal-step1d-invoice-sessions.txt is a test-db invoice-session count, NOT abort evidence; no test-db abort evidence found. Prod itself has no invoice session to exercise it (count 0).
+- Prod dry run (BEGIN; apply; ROLLBACK): NOT in the plan. grep "dry" of kind-removal-plan.md rev 8.1 hits only line 98, "PG17 dry-run from a structure-only dump" (local scaffold). Not run.
+- Ledger: 052-apply.sql does not insert a ledger row (051 method: Aravind runs `supabase migration repair --status applied 052 --linked` afterwards).
+- Plan R step 1 (remove CAPTURE_DIGIT4_TEST_PHONES, redeploy, "4" retest) was done per p1-notes.md; deployment id and env listing waived by Aravind.

@@ -1,0 +1,19 @@
+ts=2026-11-14T07:48:44Z HEAD=8e90cb5a357f1a41074874203a6f8c4a8d4f0448 ref=jvxwqignooseazzmwhvl (step 7; anon key from main-checkout .env.local, not printed)
+
+---- 7a anon POST pm_classify_document
+ref: jvxwqignooseazzmwhvl
+POST /rest/v1/rpc/pm_classify_document body={"p_document_id":"00000000-0000-0000-0000-000000000000","p_kind":"dc"}
+{"code":"42501","details":null,"hint":null,"message":"permission denied for function pm_classify_document"}
+HTTP 401
+
+---- 7b helper, no profile
+ref: jvxwqignooseazzmwhvl
+POST /rest/v1/rpc/capture_apply_classification
+{"code":"PGRST202","details":"Searched for the function public.capture_apply_classification with parameters p_document_id, p_kind, p_set_by or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache.","hint":"Perhaps you meant to call the function public.acquire_and_transition_session","message":"Could not find the function public.capture_apply_classification(p_document_id, p_kind, p_set_by) in the schema cache"}
+HTTP 404
+
+---- 7b helper, Content-Profile: private
+ref: jvxwqignooseazzmwhvl
+POST /rest/v1/rpc/capture_apply_classification Content-Profile: private
+{"code":"PGRST106","details":null,"hint":"Only the following schemas are exposed: public, graphql_public","message":"Invalid schema: private"}
+HTTP 406

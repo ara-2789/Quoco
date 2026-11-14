@@ -1,0 +1,123 @@
+ts=2026-11-14T07:48:07Z HEAD=8e90cb5a357f1a41074874203a6f8c4a8d4f0448 ref=jvxwqignooseazzmwhvl (step 6 b,d,e read-only)
+
+---- r6b ref=jvxwqignooseazzmwhvl
+SQL: SELECT p.proname, n.nspname, count(*) OVER (PARTITION BY p.proname) AS count_all_schemas FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE p.proname IN ('capture_apply_classification','pm_classify_document','trg_capture_documents_before_update','trg_capture_documents_before_insert','apply_material_inward_turn') ORDER BY 1;
+{
+  "rows": [
+    {
+      "count_all_schemas": 1,
+      "nspname": "public",
+      "proname": "apply_material_inward_turn"
+    },
+    {
+      "count_all_schemas": 1,
+      "nspname": "private",
+      "proname": "capture_apply_classification"
+    },
+    {
+      "count_all_schemas": 1,
+      "nspname": "public",
+      "proname": "pm_classify_document"
+    },
+    {
+      "count_all_schemas": 1,
+      "nspname": "public",
+      "proname": "trg_capture_documents_before_insert"
+    },
+    {
+      "count_all_schemas": 1,
+      "nspname": "public",
+      "proname": "trg_capture_documents_before_update"
+    }
+  ],
+}
+
+---- r6d ref=jvxwqignooseazzmwhvl
+SQL: SELECT d.id, d.kind, d.kind_source, d.kind_set_by, d.kind_set_at, d.received_at FROM public.capture_documents d ORDER BY d.id;
+{
+  "rows": [
+    {
+      "id": "27b59445-26d3-48c5-8684-c82df45f5d73",
+      "kind": "dc",
+      "kind_set_at": null,
+      "kind_set_by": null,
+      "kind_source": "engineer_declared",
+      "received_at": "2026-10-31 06:18:40.18269+00"
+    },
+    {
+      "id": "3411c2a8-b3af-4492-804c-f885eb776ee5",
+      "kind": "dc",
+      "kind_set_at": null,
+      "kind_set_by": null,
+      "kind_source": "engineer_declared",
+      "received_at": "2026-10-31 06:25:57.358019+00"
+    },
+    {
+      "id": "3bf3f3e7-b343-4f3a-a40c-5c745163acd9",
+      "kind": "invoice",
+      "kind_set_at": null,
+      "kind_set_by": null,
+      "kind_source": "engineer_declared",
+      "received_at": "2026-10-31 06:59:57.22895+00"
+    },
+    {
+      "id": "90faaec0-3926-423f-a708-e86c7a4dec13",
+      "kind": "invoice",
+      "kind_set_at": null,
+      "kind_set_by": null,
+      "kind_source": "engineer_declared",
+      "received_at": "2026-10-31 06:23:39.924393+00"
+    },
+    {
+      "id": "f7f95bb0-1bfc-4356-8448-d4d655a272a7",
+      "kind": "dc",
+      "kind_set_at": null,
+      "kind_set_by": null,
+      "kind_source": "engineer_declared",
+      "received_at": "2026-10-31 07:02:51.636316+00"
+    }
+  ],
+}
+
+---- r6d2 ref=jvxwqignooseazzmwhvl
+SQL: SELECT d.id, (d.received_at = x.received_at) AS received_at_equals_delivery, x.received_at AS delivery_received_at FROM public.capture_documents d JOIN public.deliveries x ON (x.dc_document_id=d.id OR x.created_from_invoice_id=d.id) ORDER BY d.id;
+{
+  "rows": [
+    {
+      "delivery_received_at": "2026-10-31 06:18:40.18269+00",
+      "id": "27b59445-26d3-48c5-8684-c82df45f5d73",
+      "received_at_equals_delivery": true
+    },
+    {
+      "delivery_received_at": "2026-10-31 06:25:57.358019+00",
+      "id": "3411c2a8-b3af-4492-804c-f885eb776ee5",
+      "received_at_equals_delivery": true
+    },
+    {
+      "delivery_received_at": "2026-10-31 06:59:57.22895+00",
+      "id": "3bf3f3e7-b343-4f3a-a40c-5c745163acd9",
+      "received_at_equals_delivery": true
+    },
+    {
+      "delivery_received_at": "2026-10-31 06:23:39.924393+00",
+      "id": "90faaec0-3926-423f-a708-e86c7a4dec13",
+      "received_at_equals_delivery": true
+    },
+    {
+      "delivery_received_at": "2026-10-31 07:02:51.636316+00",
+      "id": "f7f95bb0-1bfc-4356-8448-d4d655a272a7",
+      "received_at_equals_delivery": true
+    }
+  ],
+}
+
+---- r6e ref=jvxwqignooseazzmwhvl
+SQL: SELECT (SELECT count(*) FROM public.deliveries) AS deliveries, (SELECT count(*) FROM public.delivery_invoice_links) AS delivery_invoice_links;
+{
+  "rows": [
+    {
+      "deliveries": 5,
+      "delivery_invoice_links": 4
+    }
+  ],
+}

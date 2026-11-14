@@ -1,3 +1,6 @@
+-- DATED NOTE (14 Nov 2026): Applied to prod 14 Nov 2026, Apply GO by external reviewer; see 052-prod-apply-record.md
+-- (docs/reviews/052-prod-apply/052-prod-apply-record.md). The header below is the held-file text as certified at 2c4ee3bc...; the
+-- HELD / NOT APPLIED lines below are historical and superseded by this note.
 -- =============================================================================
 -- 052_mi_kind_deferred.sql
 -- MI-KIND-REMOVAL: the engineer no longer declares a document's kind (DC or

@@ -1,0 +1,325 @@
+######## 052 P0 PROD PROBES (read-only) 2026-11-14T07:11:50Z
+workdir ref: jvxwqignooseazzmwhvl
+main HEAD: 8e90cb5
+All statements wrapped BEGIN READ ONLY ... ROLLBACK.
+
+---- 0. read-only/db
+SQL: SELECT current_setting('transaction_read_only') AS ro, current_database(), version();
+{
+  "rows": [
+    {
+      "current_database": "postgres",
+      "ro": "on",
+      "version": "PostgreSQL 17.6 on aarch64-unknown-linux-gnu, compiled by gcc (GCC) 15.2.0, 64-bit"
+    }
+  ],
+}
+[exit ]
+
+---- 1. ledger tail (last 3)
+SQL: SELECT version, name FROM supabase_migrations.schema_migrations ORDER BY version DESC LIMIT 3;
+{
+  "rows": [
+    {
+      "name": "capture_files_immutability",
+      "version": "051"
+    },
+    {
+      "name": "material_inward_functions",
+      "version": "050"
+    },
+    {
+      "name": "capture_tables",
+      "version": "049"
+    }
+  ],
+}
+[exit ]
+
+---- 1b. any 052 ledger row
+SQL: SELECT count(*) AS rows_052 FROM supabase_migrations.schema_migrations WHERE version='052';
+{
+  "rows": [
+    {
+      "rows_052": 0
+    }
+  ],
+}
+[exit ]
+
+---- 2. apply_material_inward_turn signature + md5 (all overloads)
+SQL: SELECT p.oid::regprocedure::text AS sig, md5(pg_get_functiondef(p.oid)) AS def_md5 FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname='apply_material_inward_turn';
+{
+  "rows": [
+    {
+      "def_md5": "cecc170b26208d4b820402879e020271",
+      "sig": "apply_material_inward_turn(text,uuid,uuid,uuid,text,text,jsonb,boolean,timestamp with time zone,integer)"
+    }
+  ],
+}
+[exit ]
+
+---- 2b. 052-created objects absent
+SQL: SELECT to_regprocedure('public.pm_classify_document(uuid,text)') AS pm_classify, to_regprocedure('private.capture_apply_classification(uuid,text,uuid)') AS helper, to_regnamespace('private') AS private_ns;
+{
+  "rows": [
+    {
+      "helper": null,
+      "pm_classify": null,
+      "private_ns": null
+    }
+  ],
+}
+[exit ]
+
+---- 3. md5 of the three functions DOWN restores
+SQL: SELECT p.oid::regprocedure::text AS sig, md5(pg_get_functiondef(p.oid)) AS def_md5 FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_update','trg_capture_documents_before_insert') ORDER BY 1;
+{
+  "rows": [
+    {
+      "def_md5": "cecc170b26208d4b820402879e020271",
+      "sig": "apply_material_inward_turn(text,uuid,uuid,uuid,text,text,jsonb,boolean,timestamp with time zone,integer)"
+    },
+    {
+      "def_md5": "b5467b20392b7e26449602acb9da2d00",
+      "sig": "trg_capture_documents_before_insert()"
+    },
+    {
+      "def_md5": "4a7f470362e0bc7b7687737860d112f4",
+      "sig": "trg_capture_documents_before_update()"
+    }
+  ],
+}
+[exit ]
+
+---- 4. invoice-flow sessions (ALL, ignoring expires_at)
+SQL: SELECT count(*) AS invoice_sessions FROM public.whatsapp_sessions WHERE current_flow='invoice';
+{
+  "rows": [
+    {
+      "invoice_sessions": 0
+    }
+  ],
+}
+[exit ]
+
+---- 5. private namespace
+SQL: SELECT to_regnamespace('private') IS NULL AS private_absent;
+{
+  "rows": [
+    {
+      "private_absent": true
+    }
+  ],
+}
+[exit ]
+
+---- 6. test helpers absent
+SQL: SELECT to_regprocedure('public.quoco_test_capture_insert(text,jsonb)') IS NULL AS insert_absent, to_regprocedure('public.quoco_test_capture_update(text,uuid,jsonb)') IS NULL AS update_absent;
+{
+  "rows": [
+    {
+      "insert_absent": true,
+      "update_absent": true
+    }
+  ],
+}
+[exit ]
+
+---- 6b. any quoco_test_* function present
+SQL: SELECT p.oid::regprocedure::text FROM pg_proc p WHERE p.proname LIKE 'quoco\_test\_%' ESCAPE '\' ORDER BY 1;
+{
+  "rows": [],
+}
+[exit ]
+
+---- 7a. capture_documents columns
+SQL: SELECT attnum, attname, format_type(atttypid, atttypmod) AS type, attnotnull FROM pg_attribute WHERE attrelid='public.capture_documents'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum;
+{
+  "rows": [
+    {
+      "attname": "id",
+      "attnotnull": true,
+      "attnum": 1,
+      "type": "uuid"
+    },
+    {
+      "attname": "created_at",
+      "attnotnull": true,
+      "attnum": 2,
+      "type": "timestamp with time zone"
+    },
+    {
+      "attname": "tenant_id",
+      "attnotnull": true,
+      "attnum": 3,
+      "type": "uuid"
+    },
+    {
+      "attname": "project_id",
+      "attnotnull": true,
+      "attnum": 4,
+      "type": "uuid"
+    },
+    {
+      "attname": "kind",
+      "attnotnull": true,
+      "attnum": 5,
+      "type": "text"
+    },
+    {
+      "attname": "sent_by",
+      "attnotnull": true,
+      "attnum": 6,
+      "type": "uuid"
+    },
+    {
+      "attname": "source_message_sid",
+      "attnotnull": true,
+      "attnum": 7,
+      "type": "text"
+    },
+    {
+      "attname": "engineer_ack",
+      "attnotnull": false,
+      "attnum": 8,
+      "type": "text"
+    },
+    {
+      "attname": "engineer_ack_at",
+      "attnotnull": false,
+      "attnum": 9,
+      "type": "timestamp with time zone"
+    },
+    {
+      "attname": "engineer_ack_note",
+      "attnotnull": false,
+      "attnum": 10,
+      "type": "text"
+    },
+    {
+      "attname": "caption",
+      "attnotnull": false,
+      "attnum": 11,
+      "type": "text"
+    }
+  ],
+}
+[exit ]
+
+---- 7b. any 052 columns present
+SQL: SELECT attname FROM pg_attribute WHERE attrelid='public.capture_documents'::regclass AND attname IN ('kind_source','kind_set_at','kind_set_by','received_at') AND NOT attisdropped;
+{
+  "rows": [],
+}
+[exit ]
+
+---- 8a. 051 fingerprint, capture_files (051 record post-apply: 19102bc8020867d2650e13c6fddd13c0)
+SQL: SELECT md5(concat_ws('|', (SELECT coalesce(string_agg(pg_get_functiondef(p.oid), '' ORDER BY p.oid), '-') FROM pg_proc p WHERE p.proname = 'trg_capture_files_before_update'), (SELECT coalesce(string_agg(p.proacl::text, ',' ORDER BY p.oid), '-') FROM pg_proc p WHERE p.proname = 'trg_capture_files_before_update'), (SELECT coalesce(string_agg(pg_get_triggerdef(g.oid), ';' ORDER BY g.tgname), '-') FROM pg_trigger g WHERE g.tgrelid = 'public.capture_files'::regclass AND NOT g.tgisinternal), (SELECT relacl::text FROM pg_class WHERE oid = 'public.capture_files'::regclass), (SELECT coalesce(string_agg(attname || ':' || attacl::text, ',' ORDER BY attname), '-') FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attacl IS NOT NULL), (SELECT coalesce(string_agg(conname || ':' || pg_get_constraintdef(oid) || ':' || convalidated::text, ';' ORDER BY conname), '-') FROM pg_constraint WHERE conrelid = 'public.capture_files'::regclass), (SELECT coalesce(string_agg(attname || ':' || format_type(atttypid, atttypmod) || ':' || attnotnull::text || ':' || atthasdef::text, ',' ORDER BY attnum), '-') FROM pg_attribute WHERE attrelid = 'public.capture_files'::regclass AND attnum > 0 AND NOT attisdropped))) AS preapply_fingerprint;
+{
+  "rows": [
+    {
+      "preapply_fingerprint": "19102bc8020867d2650e13c6fddd13c0"
+    }
+  ],
+}
+[exit ]
+
+---- 8b. 051 comments hash, capture_files (051 record: b97d2e3b734f6c002fd5c0a57a06e643)
+SQL: SELECT md5(concat_ws('|', coalesce(obj_description('public.capture_files'::regclass, 'pg_class'), '-'), (SELECT coalesce(string_agg(a.attname || '=' || coalesce(col_description(a.attrelid, a.attnum), '-'), ',' ORDER BY a.attnum), '-') FROM pg_attribute a WHERE a.attrelid = 'public.capture_files'::regclass AND a.attnum > 0 AND NOT a.attisdropped), (SELECT coalesce(string_agg(coalesce(obj_description(p.oid, 'pg_proc'), '-'), ',' ORDER BY p.oid), '-') FROM pg_proc p WHERE p.proname = 'trg_capture_files_before_update'))) AS preapply_comments_hash;
+{
+  "rows": [
+    {
+      "preapply_comments_hash": "b97d2e3b734f6c002fd5c0a57a06e643"
+    }
+  ],
+}
+[exit ]
+
+---- 8c. same fingerprint query shape on capture_documents (NEW pre-apply reference; fn trg_capture_documents_before_update)
+SQL: SELECT md5(concat_ws('|', (SELECT coalesce(string_agg(pg_get_functiondef(p.oid), '' ORDER BY p.oid), '-') FROM pg_proc p WHERE p.proname = 'trg_capture_documents_before_update'), (SELECT coalesce(string_agg(p.proacl::text, ',' ORDER BY p.oid), '-') FROM pg_proc p WHERE p.proname = 'trg_capture_documents_before_update'), (SELECT coalesce(string_agg(pg_get_triggerdef(g.oid), ';' ORDER BY g.tgname), '-') FROM pg_trigger g WHERE g.tgrelid = 'public.capture_documents'::regclass AND NOT g.tgisinternal), (SELECT relacl::text FROM pg_class WHERE oid = 'public.capture_documents'::regclass), (SELECT coalesce(string_agg(attname || ':' || attacl::text, ',' ORDER BY attname), '-') FROM pg_attribute WHERE attrelid = 'public.capture_documents'::regclass AND attacl IS NOT NULL), (SELECT coalesce(string_agg(conname || ':' || pg_get_constraintdef(oid) || ':' || convalidated::text, ';' ORDER BY conname), '-') FROM pg_constraint WHERE conrelid = 'public.capture_documents'::regclass), (SELECT coalesce(string_agg(attname || ':' || format_type(atttypid, atttypmod) || ':' || attnotnull::text || ':' || atthasdef::text, ',' ORDER BY attnum), '-') FROM pg_attribute WHERE attrelid = 'public.capture_documents'::regclass AND attnum > 0 AND NOT attisdropped))) AS preapply_fingerprint;
+{
+  "rows": [
+    {
+      "preapply_fingerprint": "304ecc877acda84fc6d6c27d920ae627"
+    }
+  ],
+}
+[exit ]
+
+---- 8d. same comments-hash shape on capture_documents (NEW pre-apply reference)
+SQL: SELECT md5(concat_ws('|', coalesce(obj_description('public.capture_documents'::regclass, 'pg_class'), '-'), (SELECT coalesce(string_agg(a.attname || '=' || coalesce(col_description(a.attrelid, a.attnum), '-'), ',' ORDER BY a.attnum), '-') FROM pg_attribute a WHERE a.attrelid = 'public.capture_documents'::regclass AND a.attnum > 0 AND NOT a.attisdropped), (SELECT coalesce(string_agg(coalesce(obj_description(p.oid, 'pg_proc'), '-'), ',' ORDER BY p.oid), '-') FROM pg_proc p WHERE p.proname = 'trg_capture_documents_before_update'))) AS preapply_comments_hash;
+{
+  "rows": [
+    {
+      "preapply_comments_hash": "b01b22fe64e03eee313b8fccf2d54d9b"
+    }
+  ],
+}
+[exit ]
+
+---- 7c. capture_documents rows: kind counts (pre-apply form; kind_source column does not exist yet)
+SQL: SELECT kind, count(*) FROM public.capture_documents GROUP BY 1 ORDER BY 1;
+{
+  "rows": [
+    {
+      "count": 3,
+      "kind": "dc"
+    },
+    {
+      "count": 2,
+      "kind": "invoice"
+    }
+  ],
+}
+[exit ]
+
+---- 7d. kind IS NULL
+SQL: SELECT count(*) AS kind_null FROM public.capture_documents WHERE kind IS NULL;
+{
+  "rows": [
+    {
+      "kind_null": 0
+    }
+  ],
+}
+[exit ]
+
+---- 7e. documents whose delivery count <> 1 (A3b assertion)
+SQL: SELECT count(*) AS docs_not_exactly_one_delivery FROM public.capture_documents d WHERE (SELECT count(*) FROM public.deliveries x WHERE x.dc_document_id=d.id OR x.created_from_invoice_id=d.id) <> 1;
+{
+  "rows": [
+    {
+      "docs_not_exactly_one_delivery": 0
+    }
+  ],
+}
+[exit ]
+
+---- 7f. total docs / deliveries
+SQL: SELECT (SELECT count(*) FROM public.capture_documents) AS docs, (SELECT count(*) FROM public.deliveries) AS deliveries;
+{
+  "rows": [
+    {
+      "deliveries": 5,
+      "docs": 5
+    }
+  ],
+}
+[exit ]
+
+---- 9. sessions by flow (all)
+SQL: SELECT current_flow, count(*) FROM public.whatsapp_sessions GROUP BY 1 ORDER BY 1;
+{
+  "rows": [
+    {
+      "count": 1,
+      "current_flow": "morning"
+    },
+    {
+      "count": 1,
+      "current_flow": null
+    }
+  ],
+}
+[exit ]

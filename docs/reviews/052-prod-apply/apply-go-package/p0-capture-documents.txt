@@ -1,0 +1,8 @@
+# P0 item 7 pre-apply values, prod jvxwqignooseazzmwhvl, 2026-11-14T07:13:43Z, ref jvxwqignooseazzmwhvl
+# SQL: SELECT d.id, d.kind, '(column absent pre-052; kind_source will be backfilled engineer_declared)' AS kind_source_pre, d.created_at AS doc_created_at, x.received_at AS delivery_received_at FROM public.capture_documents d JOIN public.deliveries x ON (x.dc_document_id=d.id OR x.created_from_invoice_id=d.id) ORDER BY d.id
+# NOTE: kind_source/kind_set_*/received_at columns do not exist on capture_documents before 052; received_at below is the document's DELIVERY received_at (the value 052 A3b copies). Columns: id kind kind_source(pre) doc_created_at delivery_received_at
+27b59445-26d3-48c5-8684-c82df45f5d73	dc	(column absent pre-052; kind_source will be backfilled engineer_declared)	2026-10-31 06:18:42.041908+00	2026-10-31 06:18:40.18269+00
+3411c2a8-b3af-4492-804c-f885eb776ee5	dc	(column absent pre-052; kind_source will be backfilled engineer_declared)	2026-10-31 06:25:58.780498+00	2026-10-31 06:25:57.358019+00
+3bf3f3e7-b343-4f3a-a40c-5c745163acd9	invoice	(column absent pre-052; kind_source will be backfilled engineer_declared)	2026-10-31 06:59:59.134601+00	2026-10-31 06:59:57.22895+00
+90faaec0-3926-423f-a708-e86c7a4dec13	invoice	(column absent pre-052; kind_source will be backfilled engineer_declared)	2026-10-31 06:23:42.201757+00	2026-10-31 06:23:39.924393+00
+f7f95bb0-1bfc-4356-8448-d4d655a272a7	dc	(column absent pre-052; kind_source will be backfilled engineer_declared)	2026-10-31 07:02:53.089762+00	2026-10-31 07:02:51.636316+00

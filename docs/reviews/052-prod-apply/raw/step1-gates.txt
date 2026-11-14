@@ -1,0 +1,9 @@
+ts=2026-11-14T07:41:28Z HEAD=8e90cb5a357f1a41074874203a6f8c4a8d4f0448 ref=jvxwqignooseazzmwhvl (step 1 gates, no DB touched)
+workdir=/Users/aravindanrajamani/.claude/jobs/31237c84/tmp/cli-prod-052
+TZ=Asia/Kolkata: Sat Nov 14 13:11:28 IST 2026
+ci: in_progress= 0 queued= 0
+workdir project-ref: jvxwqignooseazzmwhvl
+apply sha256: 2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e
+expected    : 2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e
+main-tree ref (untouched): exfccwlrhoutkgrlikod
+ledger-side copy in records equal? 2c4ee3bca72fc6f89ec37821594de565490bf65740be701470d5e8789586357e

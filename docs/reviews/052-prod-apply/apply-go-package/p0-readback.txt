@@ -1,0 +1,425 @@
+# 052 PRE-APPLY READBACK (PITR substituted; rollback record with 052-down-prod.sql)
+# prod ref jvxwqignooseazzmwhvl  2026-11-14T07:13:58Z  main 8e90cb5  all statements BEGIN READ ONLY..ROLLBACK
+
+==== capture_documents table ACL, owner, RLS
+SQL: SELECT relacl::text, relowner::regrole::text AS owner, relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid='public.capture_documents'::regclass
+{
+  "rows": [
+    {
+      "owner": "postgres",
+      "relacl": "{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}",
+      "relforcerowsecurity": false,
+      "relrowsecurity": true
+    }
+  ],
+}
+
+==== capture_documents column ACLs
+SQL: SELECT attname, attacl::text FROM pg_attribute WHERE attrelid='public.capture_documents'::regclass AND attacl IS NOT NULL ORDER BY attname
+{
+  "rows": [],
+}
+
+==== capture_documents triggers
+SQL: SELECT tgname, tgenabled, pg_get_triggerdef(oid) AS def FROM pg_trigger WHERE tgrelid='public.capture_documents'::regclass AND NOT tgisinternal ORDER BY tgname
+{
+  "rows": [
+    {
+      "def": "CREATE TRIGGER tr_capture_documents_before_insert BEFORE INSERT ON public.capture_documents FOR EACH ROW EXECUTE FUNCTION trg_capture_documents_before_insert()",
+      "tgenabled": "O",
+      "tgname": "tr_capture_documents_before_insert"
+    },
+    {
+      "def": "CREATE TRIGGER tr_capture_documents_before_update BEFORE UPDATE ON public.capture_documents FOR EACH ROW EXECUTE FUNCTION trg_capture_documents_before_update()",
+      "tgenabled": "O",
+      "tgname": "tr_capture_documents_before_update"
+    }
+  ],
+}
+
+==== capture_documents constraints
+SQL: SELECT conname, convalidated, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid='public.capture_documents'::regclass ORDER BY conname
+{
+  "rows": [
+    {
+      "conname": "capture_documents_ack_at_order_chk",
+      "convalidated": true,
+      "def": "CHECK (((engineer_ack_at IS NULL) OR (engineer_ack_at \u003e= created_at)))"
+    },
+    {
+      "conname": "capture_documents_ack_note_len_chk",
+      "convalidated": true,
+      "def": "CHECK ((char_length(engineer_ack_note) \u003c= 1000))"
+    },
+    {
+      "conname": "capture_documents_ack_note_scope_chk",
+      "convalidated": true,
+      "def": "CHECK (((engineer_ack_note IS NULL) OR COALESCE((engineer_ack = ANY (ARRAY['no'::text, 'partial'::text, 'unclear'::text])), false)))"
+    },
+    {
+      "conname": "capture_documents_ack_pair_chk",
+      "convalidated": true,
+      "def": "CHECK (((engineer_ack IS NULL) = (engineer_ack_at IS NULL)))"
+    },
+    {
+      "conname": "capture_documents_caption_len_chk",
+      "convalidated": true,
+      "def": "CHECK ((char_length(caption) \u003c= 1000))"
+    },
+    {
+      "conname": "capture_documents_engineer_ack_check",
+      "convalidated": true,
+      "def": "CHECK ((engineer_ack = ANY (ARRAY['yes'::text, 'no'::text, 'partial'::text, 'unclear'::text])))"
+    },
+    {
+      "conname": "capture_documents_id_project_tenant_key",
+      "convalidated": true,
+      "def": "UNIQUE (id, project_id, tenant_id)"
+    },
+    {
+      "conname": "capture_documents_id_project_tenant_kind_key",
+      "convalidated": true,
+      "def": "UNIQUE (id, project_id, tenant_id, kind)"
+    },
+    {
+      "conname": "capture_documents_id_tenant_key",
+      "convalidated": true,
+      "def": "UNIQUE (id, tenant_id)"
+    },
+    {
+      "conname": "capture_documents_kind_check",
+      "convalidated": true,
+      "def": "CHECK ((kind = ANY (ARRAY['dc'::text, 'invoice'::text])))"
+    },
+    {
+      "conname": "capture_documents_pkey",
+      "convalidated": true,
+      "def": "PRIMARY KEY (id)"
+    },
+    {
+      "conname": "capture_documents_project_fk",
+      "convalidated": true,
+      "def": "FOREIGN KEY (project_id, tenant_id) REFERENCES projects(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    },
+    {
+      "conname": "capture_documents_sent_by_fk",
+      "convalidated": true,
+      "def": "FOREIGN KEY (sent_by, tenant_id) REFERENCES users(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    },
+    {
+      "conname": "capture_documents_source_message_sid_key",
+      "convalidated": true,
+      "def": "UNIQUE (source_message_sid)"
+    },
+    {
+      "conname": "capture_documents_tenant_id_fkey",
+      "convalidated": true,
+      "def": "FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    }
+  ],
+}
+
+==== capture_documents indexes
+SQL: SELECT indexname, indexdef FROM pg_indexes WHERE schemaname='public' AND tablename='capture_documents' ORDER BY 1
+{
+  "rows": [
+    {
+      "indexdef": "CREATE UNIQUE INDEX capture_documents_id_project_tenant_key ON public.capture_documents USING btree (id, project_id, tenant_id)",
+      "indexname": "capture_documents_id_project_tenant_key"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX capture_documents_id_project_tenant_kind_key ON public.capture_documents USING btree (id, project_id, tenant_id, kind)",
+      "indexname": "capture_documents_id_project_tenant_kind_key"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX capture_documents_id_tenant_key ON public.capture_documents USING btree (id, tenant_id)",
+      "indexname": "capture_documents_id_tenant_key"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX capture_documents_pkey ON public.capture_documents USING btree (id)",
+      "indexname": "capture_documents_pkey"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX capture_documents_source_message_sid_key ON public.capture_documents USING btree (source_message_sid)",
+      "indexname": "capture_documents_source_message_sid_key"
+    }
+  ],
+}
+
+==== capture_documents policies
+SQL: SELECT policyname, cmd, roles::text, qual FROM pg_policies WHERE schemaname='public' AND tablename='capture_documents' ORDER BY 1
+{
+  "rows": [
+    {
+      "cmd": "SELECT",
+      "policyname": "capture_documents_select",
+      "qual": "((tenant_id = get_user_tenant_id()) AND (EXISTS ( SELECT 1\n   FROM (project_members pm\n     JOIN users u ON ((u.id = pm.user_id)))\n  WHERE ((pm.project_id = capture_documents.project_id) AND (pm.role = 'pm'::text) AND (u.auth_id = ( SELECT auth.uid() AS uid)) AND (u.status = 'active'::text)))))",
+      "roles": "{authenticated}"
+    }
+  ],
+}
+
+==== capture_documents comments
+SQL: SELECT obj_description('public.capture_documents'::regclass,'pg_class') AS tbl, (SELECT string_agg(a.attname||'='||coalesce(col_description(a.attrelid,a.attnum),'-'),',' ORDER BY a.attnum) FROM pg_attribute a WHERE a.attrelid='public.capture_documents'::regclass AND a.attnum>0 AND NOT a.attisdropped) AS cols
+{
+  "rows": [
+    {
+      "cols": "id=-,created_at=-,tenant_id=-,project_id=-,kind=-,sent_by=-,source_message_sid=-,engineer_ack=-,engineer_ack_at=-,engineer_ack_note=-,caption=-",
+      "tbl": "Capture engine slice 1a: one document (DC or invoice) per capture flow. Written only by PR-B definer functions. Business record, never pruned (D-29)."
+    }
+  ],
+}
+
+==== deliveries FKs/constraints touching capture_documents/users
+SQL: SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid='public.deliveries'::regclass ORDER BY conname
+{
+  "rows": [
+    {
+      "conname": "deliveries_approved_at_order_chk",
+      "def": "CHECK (((approved_at IS NULL) OR (approved_at \u003e= created_at)))"
+    },
+    {
+      "conname": "deliveries_approved_by_fk",
+      "def": "FOREIGN KEY (approved_by, tenant_id) REFERENCES users(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    },
+    {
+      "conname": "deliveries_approved_pair_chk",
+      "def": "CHECK (((approved_by IS NULL) = (approved_at IS NULL)))"
+    },
+    {
+      "conname": "deliveries_approved_requires_chk",
+      "def": "CHECK (((status \u003c\u003e 'approved'::text) OR ((approved_by IS NOT NULL) AND (delivery_type IS NOT NULL))))"
+    },
+    {
+      "conname": "deliveries_auto_not_internal_chk",
+      "def": "CHECK (((created_from_invoice_id IS NULL) OR (delivery_type IS DISTINCT FROM 'internal_transfer'::text)))"
+    },
+    {
+      "conname": "deliveries_cancel_reason_check",
+      "def": "CHECK ((cancel_reason = 'superseded_by_link'::text))"
+    },
+    {
+      "conname": "deliveries_cancelled_at_chk",
+      "def": "CHECK (((status = 'cancelled'::text) = (cancelled_at IS NOT NULL)))"
+    },
+    {
+      "conname": "deliveries_cancelled_at_order_chk",
+      "def": "CHECK (((cancelled_at IS NULL) OR (cancelled_at \u003e= created_at)))"
+    },
+    {
+      "conname": "deliveries_cancelled_auto_only_chk",
+      "def": "CHECK (((status \u003c\u003e 'cancelled'::text) OR (created_from_invoice_id IS NOT NULL)))"
+    },
+    {
+      "conname": "deliveries_cancelled_reason_chk",
+      "def": "CHECK (((cancelled_at IS NOT NULL) = (cancel_reason IS NOT NULL)))"
+    },
+    {
+      "conname": "deliveries_created_from_invoice_id_key",
+      "def": "UNIQUE (created_from_invoice_id)"
+    },
+    {
+      "conname": "deliveries_dc_doc_kind_check",
+      "def": "CHECK ((dc_doc_kind = 'dc'::text))"
+    },
+    {
+      "conname": "deliveries_dc_document_fk",
+      "def": "FOREIGN KEY (dc_document_id, project_id, tenant_id, dc_doc_kind) REFERENCES capture_documents(id, project_id, tenant_id, kind) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    },
+    {
+      "conname": "deliveries_dc_document_id_key",
+      "def": "UNIQUE (dc_document_id)"
+    },
+    {
+      "conname": "deliveries_dc_number_check",
+      "def": "CHECK ((char_length(dc_number) \u003c= 64))"
+    },
+    {
+      "conname": "deliveries_delivery_type_check",
+      "def": "CHECK ((delivery_type = ANY (ARRAY['supplier'::text, 'internal_transfer'::text])))"
+    },
+    {
+      "conname": "deliveries_id_created_from_invoice_key",
+      "def": "UNIQUE (id, created_from_invoice_id)"
+    },
+    {
+      "conname": "deliveries_id_project_tenant_key",
+      "def": "UNIQUE (id, project_id, tenant_id)"
+    },
+    {
+      "conname": "deliveries_inv_doc_kind_check",
+      "def": "CHECK ((inv_doc_kind = 'invoice'::text))"
+    },
+    {
+      "conname": "deliveries_invoice_document_fk",
+      "def": "FOREIGN KEY (created_from_invoice_id, project_id, tenant_id, inv_doc_kind) REFERENCES capture_documents(id, project_id, tenant_id, kind) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    },
+    {
+      "conname": "deliveries_one_document_chk",
+      "def": "CHECK ((num_nonnulls(dc_document_id, created_from_invoice_id) = 1))"
+    },
+    {
+      "conname": "deliveries_pkey",
+      "def": "PRIMARY KEY (id)"
+    },
+    {
+      "conname": "deliveries_project_fk",
+      "def": "FOREIGN KEY (project_id, tenant_id) REFERENCES projects(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    },
+    {
+      "conname": "deliveries_received_order_chk",
+      "def": "CHECK ((received_at \u003c= created_at))"
+    },
+    {
+      "conname": "deliveries_rejected_at_order_chk",
+      "def": "CHECK (((rejected_at IS NULL) OR (rejected_at \u003e= created_at)))"
+    },
+    {
+      "conname": "deliveries_rejected_by_fk",
+      "def": "FOREIGN KEY (rejected_by, tenant_id) REFERENCES users(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    },
+    {
+      "conname": "deliveries_rejected_clear_chk",
+      "def": "CHECK (((status = 'rejected'::text) OR ((rejected_by IS NULL) AND (rejected_at IS NULL) AND (reject_reason IS NULL))))"
+    },
+    {
+      "conname": "deliveries_rejected_requires_chk",
+      "def": "CHECK (((status \u003c\u003e 'rejected'::text) OR ((rejected_by IS NOT NULL) AND (rejected_at IS NOT NULL) AND (reject_reason IS NOT NULL) AND (btrim(reject_reason) \u003c\u003e ''::text))))"
+    },
+    {
+      "conname": "deliveries_reported_by_fk",
+      "def": "FOREIGN KEY (reported_by, tenant_id) REFERENCES users(id, tenant_id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    },
+    {
+      "conname": "deliveries_status_check",
+      "def": "CHECK ((status = ANY (ARRAY['incomplete'::text, 'awaiting_pm'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])))"
+    },
+    {
+      "conname": "deliveries_tenant_id_fkey",
+      "def": "FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+    },
+    {
+      "conname": "deliveries_unapproved_no_approver_chk",
+      "def": "CHECK (((status \u003c\u003e ALL (ARRAY['incomplete'::text, 'awaiting_pm'::text, 'rejected'::text])) OR (approved_by IS NULL)))"
+    },
+    {
+      "conname": "deliveries_vehicle_number_check",
+      "def": "CHECK ((char_length(vehicle_number) \u003c= 64))"
+    }
+  ],
+}
+
+==== function ACL/attrs (3 replaced fns)
+SQL: SELECT p.oid::regprocedure::text AS sig, p.prosecdef, p.proowner::regrole::text AS owner, p.proconfig::text, p.proacl::text AS acl, obj_description(p.oid,'pg_proc') AS comment FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_update','trg_capture_documents_before_insert') ORDER BY 1
+{
+  "rows": [
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "comment": null,
+      "owner": "postgres",
+      "proconfig": "{\"search_path=\\\"\\\"\"}",
+      "prosecdef": true,
+      "sig": "apply_material_inward_turn(text,uuid,uuid,uuid,text,text,jsonb,boolean,timestamp with time zone,integer)"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "comment": null,
+      "owner": "postgres",
+      "proconfig": "{\"search_path=\\\"\\\"\"}",
+      "prosecdef": true,
+      "sig": "trg_capture_documents_before_insert()"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "comment": null,
+      "owner": "postgres",
+      "proconfig": "{\"search_path=\\\"\\\"\"}",
+      "prosecdef": true,
+      "sig": "trg_capture_documents_before_update()"
+    }
+  ],
+}
+
+==== function EXECUTE matrix
+SQL: SELECT p.proname, has_function_privilege('anon',p.oid,'EXECUTE') anon_x, has_function_privilege('authenticated',p.oid,'EXECUTE') auth_x, has_function_privilege('service_role',p.oid,'EXECUTE') svc_x FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_update','trg_capture_documents_before_insert') ORDER BY 1
+{
+  "rows": [
+    {
+      "anon_x": false,
+      "auth_x": false,
+      "proname": "apply_material_inward_turn",
+      "svc_x": true
+    },
+    {
+      "anon_x": false,
+      "auth_x": false,
+      "proname": "trg_capture_documents_before_insert",
+      "svc_x": false
+    },
+    {
+      "anon_x": false,
+      "auth_x": false,
+      "proname": "trg_capture_documents_before_update",
+      "svc_x": false
+    }
+  ],
+}
+
+==== function definitions (full text; md5 in header)
+SQL: SELECT p.proname, md5(pg_get_functiondef(p.oid)) AS md5, pg_get_functiondef(p.oid) AS def FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('apply_material_inward_turn','trg_capture_documents_before_update','trg_capture_documents_before_insert') ORDER BY 1
+{
+  "rows": [
+    {
+      "def": "CREATE OR REPLACE FUNCTION public.apply_material_inward_turn(p_phone_number text, p_tenant_id uuid, p_user_id uuid, p_project_id uuid, p_message text, p_message_sid text, p_media jsonb DEFAULT NULL::jsonb, p_start_flow boolean DEFAULT false, p_now timestamp with time zone DEFAULT now(), p_test_sleep_ms integer DEFAULT NULL::integer)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nDECLARE\n  v_session       public.whatsapp_sessions;\n  v_text          text;\n  v_outcome       text;\n  v_touch         boolean := false;   -- true once the session row is to be persisted (a processed turn)\n  v_media_n       integer := 0;\n  v_kind          text;\n  v_doc_id        uuid;\n  v_delivery_id   uuid;\n  v_reask         integer;\n  v_ack           text;\n  v_norm          text;     -- [SQL review r1, per Aravind 18 Oct] N-1: ONE normalised reply, used by BOTH the S1 kind parser and the S3 ack parser\n  v_rows          integer;  -- [SQL review r1, per Aravind 18 Oct] N-2\n  v_note          text;\n  v_create        boolean := false;\n  v_attach        boolean := false;\n  v_received      timestamptz;\n  v_next_file_no  integer;\n  v_files         jsonb;\n  -- The flow-owned context keys (decided 18 Oct).\n  c_mi_keys CONSTANT text[] := ARRAY['mi_last_sid', 'mi_kind', 'mi_document_id', 'mi_reask'];\nBEGIN\n  -- Input shape. A SID is mandatory: it is both the duplicate key and the received_at key (Q2-6).\n  IF p_message_sid IS NULL OR btrim(p_message_sid) = '' THEN\n    RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';       -- malformed call\n  END IF;\n  IF p_media IS NOT NULL AND jsonb_typeof(p_media) \u003c\u003e 'array' THEN\n    RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';\n  END IF;\n  v_media_n := CASE WHEN p_media IS NULL THEN 0 ELSE jsonb_array_length(p_media) END;\n  v_text    := btrim(COALESCE(p_message, ''));\n\n  -- Session row: same insert-or-lock pattern as the live check-in functions (038/040).\n  INSERT INTO public.whatsapp_sessions AS s\n    (phone_number, tenant_id, user_id, pending_flows, expires_at, updated_at)\n  VALUES\n    (p_phone_number, p_tenant_id, p_user_id, '[]'::jsonb, p_now + INTERVAL '30 minutes', p_now)\n  ON CONFLICT (phone_number) DO UPDATE\n    SET phone_number = s.phone_number\n  RETURNING * INTO v_session;\n\n  IF p_test_sleep_ms IS NOT NULL THEN\n    PERFORM pg_sleep(p_test_sleep_ms / 1000.0);\n  END IF;\n\n  v_session.context := COALESCE(v_session.context, '{}'::jsonb);\n\n  -- SID idempotency (D-5, review r1 S5; second line of defence after the webhook's processed_messages\n  -- check). A SID already handled -- the last one this flow processed, or one that already owns a\n  -- document or file row -- writes nothing and returns 'duplicate'. Runs under the session lock,\n  -- BEFORE the expiry and IST-day checks (a duplicate must not re-clear a session).\n  IF (v_session.context -\u003e\u003e 'mi_last_sid') = p_message_sid\n     OR EXISTS (SELECT 1 FROM public.capture_documents d WHERE d.source_message_sid = p_message_sid)\n     OR EXISTS (SELECT 1 FROM public.capture_files f WHERE f.source_message_sid = p_message_sid) THEN\n    RETURN jsonb_build_object(\n      'outcome',      'duplicate',\n      'current_flow', v_session.current_flow,\n      'current_step', v_session.current_step\n    );\n  END IF;\n\n  -- IST-day rule first (v3 line 342): a session from a previous IST day is reset in memory.\n  IF NOT public.quoco_same_ist_day(p_now, v_session.updated_at) THEN\n    v_session.current_flow  := NULL;\n    v_session.current_step  := 0;\n    v_session.context       := '{}'::jsonb;\n    v_session.pending_flows := '[]'::jsonb;\n  END IF;\n\n  IF v_session.current_flow = 'invoice' AND v_session.expires_at \u003c= p_now THEN\n    -- A27: 30 idle minutes end the flow. The clear is subtract-only and is the ONLY write; the\n    -- caller replies via the idle path. expires_at / updated_at are deliberately not touched.\n    UPDATE public.whatsapp_sessions\n       SET current_flow = NULL,\n           current_step = 0,\n           context      = v_session.context - c_mi_keys\n     WHERE id = v_session.id;\n    RETURN jsonb_build_object('outcome', 'expired', 'current_flow', NULL, 'current_step', 0);\n\n  ELSIF p_start_flow THEN\n    IF v_session.current_flow IS NULL THEN\n      v_session.current_flow := 'invoice';\n      v_session.current_step := 1;\n      v_session.context      := v_session.context - c_mi_keys;\n      v_outcome := 'start';\n      v_touch   := true;\n    ELSIF v_session.current_flow = 'invoice' THEN\n      v_outcome := 'reask';\n      v_touch   := true;\n    ELSE\n      v_outcome := 'reask';          -- never create this flow over a live other-flow session\n    END IF;\n\n  ELSIF v_session.current_flow IS NULL THEN\n    v_outcome := 'idle';\n\n  ELSIF v_session.current_flow = 'invoice' THEN\n    v_touch  := true;\n    v_kind   := v_session.context -\u003e\u003e 'mi_kind';\n    v_doc_id := NULLIF(v_session.context -\u003e\u003e 'mi_document_id', '')::uuid;\n    v_reask  := COALESCE((v_session.context -\u003e\u003e 'mi_reask')::int, 0);\n    -- [SQL review r1, per Aravind 18 Oct] N-1: the shared normalisation (decided 18 Oct): strip the keycap marks, then ONE trailing '.' or ')'.\n    v_norm   := btrim(regexp_replace(translate(v_text, E'\\uFE0F\\u20E3', ''), '[.)]$', ''));\n\n    IF v_text = '' AND v_media_n = 0 THEN\n      v_outcome := 'reask';\n\n    ELSIF v_session.current_step = 1 THEN\n      -- S1 kind parsing (decided 18 Oct): '1' / 'dc' / 'challan' = delivery challan; '2' / 'invoice' / 'bill'\n      -- = invoice. A file at S1 is not an answer. One re-ask, then close with nothing recorded.\n      IF v_media_n = 0 AND lower(v_norm) IN ('1', 'dc', 'challan') THEN\n        v_session.current_step := 2;\n        v_session.context      := v_session.context || jsonb_build_object('mi_kind', 'dc', 'mi_reask', 0);\n        v_outcome := 'advance';\n      ELSIF v_media_n = 0 AND lower(v_norm) IN ('2', 'invoice', 'bill') THEN\n        v_session.current_step := 2;\n        v_session.context      := v_session.context || jsonb_build_object('mi_kind', 'invoice', 'mi_reask', 0);\n        v_outcome := 'advance';\n      ELSIF v_reask \u003c 1 THEN\n        v_session.context := v_session.context || jsonb_build_object('mi_reask', v_reask + 1);\n        v_outcome := 'reask';\n      ELSE\n        v_session.current_flow := NULL;\n        v_session.current_step := 0;\n        v_session.context      := v_session.context - 'mi_kind' - 'mi_document_id' - 'mi_reask';\n        v_outcome := 'closed';\n      END IF;\n\n    ELSIF v_session.current_step = 2 THEN\n      -- S2 file(s). Text without a file: one re-ask, then close with nothing recorded.\n      IF v_media_n \u003e 0 THEN\n        v_create := true;\n      ELSIF v_reask \u003c 1 THEN\n        v_session.context := v_session.context || jsonb_build_object('mi_reask', v_reask + 1);\n        v_outcome := 'reask';\n      ELSE\n        v_session.current_flow := NULL;\n        v_session.current_step := 0;\n        v_session.context      := v_session.context - 'mi_kind' - 'mi_document_id' - 'mi_reask';\n        v_outcome := 'closed';\n      END IF;\n\n    ELSIF v_session.current_step = 3 THEN\n      -- S3 ack. A file attaches to the same document and the step stays (D-11): a file is never an answer.\n      IF v_media_n \u003e 0 THEN\n        v_attach := true;\n      ELSE\n        -- S3: the ONE ack parser (review r1 S3; forms decided 18 Oct). Accepts 1 / 2 / 3, optionally followed by\n        -- a single '.' or ')', and the keycap forms (digit + U+FE0F + U+20E3). Anything else is not an ack.\n        v_ack := CASE v_norm WHEN '1' THEN 'yes' WHEN '2' THEN 'no' WHEN '3' THEN 'partial' ELSE NULL END;\n        IF v_ack IS NULL AND v_reask \u003c 1 THEN\n          v_session.context := v_session.context || jsonb_build_object('mi_reask', v_reask + 1);\n          v_outcome := 'reask';\n        ELSE\n          IF v_ack IS NULL THEN\n            v_ack  := 'unclear';\n            v_note := left(v_text, 1000);          -- the raw text is kept as the note (v3:91)\n          END IF;\n          -- The ack is ALWAYS stored on the document (B1).\n          UPDATE public.capture_documents\n             SET engineer_ack      = v_ack,\n                 engineer_ack_note = v_note\n           WHERE id = v_doc_id;\n          -- [SQL review r1, per Aravind 18 Oct] N-2: exactly one document row must have been updated. If mi_document_id were ever missing,\n          -- the UPDATE would touch 0 rows and the flow would still answer 'complete' with no ack stored.\n          GET DIAGNOSTICS v_rows = ROW_COUNT;\n          IF v_rows \u003c\u003e 1 THEN\n            RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';\n          END IF;\n          -- The delivery moves to awaiting_pm ONLY WHERE its status is 'incomplete'; any other\n          -- status is left alone (B1). Do NOT clear cancelled_* to force a move.\n          UPDATE public.deliveries\n             SET status = 'awaiting_pm'\n           WHERE status = 'incomplete'\n             AND (dc_document_id = v_doc_id OR created_from_invoice_id = v_doc_id);\n          IF v_ack IN ('no', 'partial') THEN\n            v_session.current_step := 4;\n            v_session.context      := v_session.context || jsonb_build_object('mi_reask', 0);\n            v_outcome := 'advance';\n          ELSE\n            -- 'yes' closes; 'unclear' CLOSES and never goes to S4 (the raw text is already the note;\n            -- a second note would raise QE011 from TR5).\n            v_session.current_flow := NULL;\n            v_session.current_step := 0;\n            v_session.context      := v_session.context - 'mi_kind' - 'mi_document_id' - 'mi_reask';\n            v_outcome := 'complete';\n          END IF;\n        END IF;\n      END IF;\n\n    ELSIF v_session.current_step = 4 THEN\n      -- S4 note. A file attaches and the step stays (D-11).\n      IF v_media_n \u003e 0 THEN\n        v_attach := true;\n      ELSE\n        UPDATE public.capture_documents\n           SET engineer_ack_note = left(v_text, 1000)\n         WHERE id = v_doc_id;\n        -- N-2 applied to the note UPDATE too (same reasoning; the reviewer named the ack UPDATE): one row or QE012.\n        GET DIAGNOSTICS v_rows = ROW_COUNT;\n        IF v_rows \u003c\u003e 1 THEN\n          RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';\n        END IF;\n        v_session.current_flow := NULL;\n        v_session.current_step := 0;\n        v_session.context      := v_session.context - 'mi_kind' - 'mi_document_id' - 'mi_reask';\n        v_outcome := 'complete';\n      END IF;\n\n    ELSE\n      v_outcome := 'reask';\n    END IF;\n\n  ELSE\n    v_outcome := 'wrong_flow';\n  END IF;\n\n  -- Rows for a file turn: S2 creates the document (+ delivery, + self-link for an invoice) and the\n  -- file rows; S3 / S4 attach further files to the same document.\n  IF v_create OR v_attach THEN\n    IF v_create THEN\n      -- [SQL review r1, per Aravind 18 Oct] S-1: the engineer must be a member of THIS project as an engineer. The composite FKs on\n      -- sent_by / reported_by catch another TENANT's user; nothing else catches the right tenant with the wrong\n      -- PROJECT. Refused with QE012 before anything is written.\n      IF NOT EXISTS (SELECT 1 FROM public.project_members m\n                      WHERE m.project_id = p_project_id AND m.user_id = p_user_id AND m.role = 'engineer') THEN\n        RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';\n      END IF;\n      -- Q2-6: ONE SID for both the received_at lookup and source_message_sid. A missing\n      -- processed_messages row (or a NULL created_at) is refused.\n      SELECT pm.created_at INTO v_received\n        FROM public.processed_messages pm\n       WHERE pm.message_sid = p_message_sid;\n      IF v_received IS NULL THEN\n        RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';\n      END IF;\n\n      INSERT INTO public.capture_documents\n        (tenant_id, project_id, kind, sent_by, source_message_sid, caption)\n      VALUES\n        (p_tenant_id, p_project_id, v_kind, p_user_id, p_message_sid, NULLIF(left(v_text, 1000), ''))\n      RETURNING id INTO v_doc_id;\n\n      IF v_kind = 'dc' THEN\n        INSERT INTO public.deliveries\n          (tenant_id, project_id, reported_by, received_at, dc_document_id)\n        VALUES\n          (p_tenant_id, p_project_id, p_user_id, v_received, v_doc_id)\n        RETURNING id INTO v_delivery_id;\n      ELSE\n        -- A28: every invoice creates one automatic delivery and one active self-link, one transaction.\n        INSERT INTO public.deliveries\n          (tenant_id, project_id, reported_by, received_at, created_from_invoice_id)\n        VALUES\n          (p_tenant_id, p_project_id, p_user_id, v_received, v_doc_id)\n        RETURNING id INTO v_delivery_id;\n        INSERT INTO public.delivery_invoice_links\n          (tenant_id, project_id, delivery_id, invoice_document_id, link_source)\n        VALUES\n          (p_tenant_id, p_project_id, v_delivery_id, v_doc_id, 'created_from_invoice');\n      END IF;\n      v_next_file_no := 1;\n    ELSE\n      SELECT COALESCE(max(f.file_no), 0) + 1 INTO v_next_file_no\n        FROM public.capture_files f\n       WHERE f.document_id = v_doc_id;\n    END IF;\n\n    INSERT INTO public.capture_files\n      (tenant_id, project_id, document_id, file_no, source_message_sid, media_index, claimed_content_type)\n    SELECT p_tenant_id, p_project_id, v_doc_id,\n           v_next_file_no + (t.ord::int - 1),\n           p_message_sid,\n           COALESCE((t.e -\u003e\u003e 'index')::int, t.ord::int - 1),\n           t.e -\u003e\u003e 'content_type'\n      FROM jsonb_array_elements(p_media) WITH ORDINALITY AS t(e, ord);\n\n    -- The ingest job (payload: a contract with PR-C, plan section 14). jobs.type has no CHECK.\n    SELECT jsonb_agg(\n             jsonb_build_object(\n               'file_id',              f.id,\n               'file_no',              f.file_no,\n               'media_index',          f.media_index,\n               'claimed_content_type', f.claimed_content_type,\n               'url',                  m.e -\u003e\u003e 'url')\n             ORDER BY f.file_no)\n      INTO v_files\n      FROM public.capture_files f\n      JOIN (SELECT e, COALESCE((e -\u003e\u003e 'index')::int, ord::int - 1) AS idx\n              FROM jsonb_array_elements(p_media) WITH ORDINALITY AS t(e, ord)) m\n        ON m.idx = f.media_index\n     WHERE f.source_message_sid = p_message_sid;\n\n    INSERT INTO public.jobs (type, payload)\n    VALUES ('capture_ingest',\n            jsonb_build_object(\n              'tenant_id',          p_tenant_id,\n              'project_id',         p_project_id,\n              'document_id',        v_doc_id,\n              'source_message_sid', p_message_sid,\n              'files',              v_files));\n\n    IF v_create THEN\n      v_session.current_step := 3;\n      v_session.context      := v_session.context || jsonb_build_object('mi_document_id', v_doc_id::text, 'mi_reask', 0);\n      v_outcome := 'advance';\n    ELSE\n      v_outcome := 'file_attached';\n    END IF;\n  END IF;\n\n  -- Persist a processed turn: N8 (every processed turn, including 'reask', writes expires_at and\n  -- updated_at) and the last processed SID for the text-turn duplicate check.\n  IF v_touch THEN\n    v_session.context := v_session.context || jsonb_build_object('mi_last_sid', p_message_sid);\n    UPDATE public.whatsapp_sessions\n       SET current_flow  = v_session.current_flow,\n           current_step  = v_session.current_step,\n           context       = v_session.context,\n           pending_flows = v_session.pending_flows,\n           tenant_id     = COALESCE(whatsapp_sessions.tenant_id, p_tenant_id),\n           user_id       = COALESCE(whatsapp_sessions.user_id, p_user_id),\n           expires_at    = p_now + INTERVAL '30 minutes',\n           updated_at    = p_now\n     WHERE id = v_session.id\n    RETURNING * INTO v_session;\n  END IF;\n\n  RETURN jsonb_build_object(\n    'outcome',      v_outcome,\n    'current_flow', v_session.current_flow,\n    'current_step', v_session.current_step,\n    'document_id',  v_doc_id,\n    'delivery_id',  v_delivery_id\n  );\nEND;\n$function$\n",
+      "md5": "cecc170b26208d4b820402879e020271",
+      "proname": "apply_material_inward_turn"
+    },
+    {
+      "def": "CREATE OR REPLACE FUNCTION public.trg_capture_documents_before_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nBEGIN\n  -- B3: first statement.\n  IF current_setting('transaction_isolation') \u003c\u003e 'read committed' THEN\n    RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';\n  END IF;\n\n  IF NEW.engineer_ack IS NOT NULL OR NEW.engineer_ack_at IS NOT NULL OR NEW.engineer_ack_note IS NOT NULL THEN\n    RAISE EXCEPTION USING ERRCODE = 'QE012', MESSAGE = 'E12';\n  END IF;\n\n  -- S-4 (SQL review r3, per Aravind 12 Oct): created_at stamped by the database.\n  NEW.created_at := now();\n\n  RETURN NEW;\nEND;\n$function$\n",
+      "md5": "b5467b20392b7e26449602acb9da2d00",
+      "proname": "trg_capture_documents_before_insert"
+    },
+    {
+      "def": "CREATE OR REPLACE FUNCTION public.trg_capture_documents_before_update()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nBEGIN\n  -- B3: first statement.\n  IF current_setting('transaction_isolation') \u003c\u003e 'read committed' THEN\n    RAISE EXCEPTION USING ERRCODE = 'QE014', MESSAGE = 'E14';\n  END IF;\n\n  -- S-1 (SQL review r1): id and created_at added to the immutable set.\n  IF NEW.id IS DISTINCT FROM OLD.id\n     OR NEW.created_at IS DISTINCT FROM OLD.created_at\n     OR NEW.kind IS DISTINCT FROM OLD.kind\n     OR NEW.project_id IS DISTINCT FROM OLD.project_id\n     OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id\n     OR NEW.sent_by IS DISTINCT FROM OLD.sent_by\n     OR NEW.source_message_sid IS DISTINCT FROM OLD.source_message_sid THEN\n    RAISE EXCEPTION USING ERRCODE = 'QE009', MESSAGE = 'E9';\n  END IF;\n\n  -- The acknowledgement is settable once; the note is settable once.\n  IF OLD.engineer_ack IS NOT NULL THEN\n    IF NEW.engineer_ack IS DISTINCT FROM OLD.engineer_ack\n       OR NEW.engineer_ack_at IS DISTINCT FROM OLD.engineer_ack_at THEN\n      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';\n    END IF;\n  END IF;\n  IF OLD.engineer_ack_note IS NOT NULL THEN\n    IF NEW.engineer_ack_note IS DISTINCT FROM OLD.engineer_ack_note THEN\n      RAISE EXCEPTION USING ERRCODE = 'QE011', MESSAGE = 'E11';\n    END IF;\n  END IF;\n\n  -- S-3 (SQL review r2, Option A per Aravind 11 Oct): the acknowledgement time\n  -- is stamped by the database when the ack is first set; a caller-supplied\n  -- value is overwritten. It drives the D-12 clock.\n  IF OLD.engineer_ack IS NULL AND NEW.engineer_ack IS NOT NULL THEN\n    NEW.engineer_ack_at := now();\n  END IF;\n\n  RETURN NEW;\nEND;\n$function$\n",
+      "md5": "4a7f470362e0bc7b7687737860d112f4",
+      "proname": "trg_capture_documents_before_update"
+    }
+  ],
+}
+
+==== schemas present (private expected absent)
+SQL: SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg\_%' AND nspname<>'information_schema' ORDER BY 1
+{
+  "rows": [
+    {
+      "nspname": "auth"
+    },
+    {
+      "nspname": "extensions"
+    },
+    {
+      "nspname": "graphql"
+    },
+    {
+      "nspname": "graphql_public"
+    },
+    {
+      "nspname": "pgbouncer"
+    },
+    {
+      "nspname": "public"
+    },
+    {
+      "nspname": "realtime"
+    },
+    {
+      "nspname": "storage"
+    },
+    {
+      "nspname": "supabase_migrations"
+    },
+    {
+      "nspname": "vault"
+    }
+  ],
+}
