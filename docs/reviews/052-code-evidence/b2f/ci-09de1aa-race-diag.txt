@@ -1,0 +1,88 @@
+Test (real test-db)	Run npm test	2026-11-14T05:45:44.1021158Z ^[[22m^[[39m[race-diag] p1xp1 round=0 invA setup_ms=1172
+Test (real test-db)	Run npm test	2026-11-14T05:45:44.9695553Z ^[[22m^[[39m[race-diag] p1xp1 round=0 invB setup_ms=2041
+Test (real test-db)	Run npm test	2026-11-14T05:45:46.3424895Z ^[[22m^[[39m[race-diag] p1xp1 round=0 dc setup_ms=3414
+Test (real test-db)	Run npm test	2026-11-14T05:45:46.6053619Z ^[[22m^[[39m[race-diag] p1xp1 round=0 jwt setup_ms=3677
+Test (real test-db)	Run npm test	2026-11-14T05:45:46.8172790Z ^[[22m^[[39m[race-diag] p1xp1 round=0 call=link-B start=+0ms end=+212ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:45:46.8296355Z ^[[22m^[[39m[race-diag] p1xp1 round=0 call=link-A start=+0ms end=+224ms error=QE008
+Test (real test-db)	Run npm test	2026-11-14T05:45:48.5916643Z ^[[22m^[[39m[race-diag] p1xp1 round=1 invA setup_ms=888
+Test (real test-db)	Run npm test	2026-11-14T05:45:49.4529718Z ^[[22m^[[39m[race-diag] p1xp1 round=1 invB setup_ms=1749
+Test (real test-db)	Run npm test	2026-11-14T05:45:50.7935168Z ^[[22m^[[39m[race-diag] p1xp1 round=1 dc setup_ms=3090
+Test (real test-db)	Run npm test	2026-11-14T05:45:51.0533936Z ^[[22m^[[39m[race-diag] p1xp1 round=1 jwt setup_ms=3350
+Test (real test-db)	Run npm test	2026-11-14T05:45:51.2858260Z ^[[22m^[[39m[race-diag] p1xp1 round=1 call=link-B start=+0ms end=+233ms error=QE008
+Test (real test-db)	Run npm test	2026-11-14T05:45:51.2862511Z ^[[22m^[[39m[race-diag] p1xp1 round=1 call=link-A start=+0ms end=+233ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:45:53.0037488Z ^[[22m^[[39m[race-diag] p1xp1 round=2 invA setup_ms=858
+Test (real test-db)	Run npm test	2026-11-14T05:45:53.8761485Z ^[[22m^[[39m[race-diag] p1xp1 round=2 invB setup_ms=1731
+Test (real test-db)	Run npm test	2026-11-14T05:45:55.2002499Z ^[[22m^[[39m[race-diag] p1xp1 round=2 dc setup_ms=3055
+Test (real test-db)	Run npm test	2026-11-14T05:45:55.4623624Z ^[[22m^[[39m[race-diag] p1xp1 round=2 jwt setup_ms=3317
+Test (real test-db)	Run npm test	2026-11-14T05:45:55.6778110Z ^[[22m^[[39m[race-diag] p1xp1 round=2 call=link-B start=+0ms end=+216ms error=QE008
+Test (real test-db)	Run npm test	2026-11-14T05:45:55.6780463Z ^[[22m^[[39m[race-diag] p1xp1 round=2 call=link-A start=+0ms end=+216ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:45:57.3942829Z ^[[22m^[[39m[race-diag] p1xp1 round=3 invA setup_ms=865
+Test (real test-db)	Run npm test	2026-11-14T05:45:58.2512469Z ^[[22m^[[39m[race-diag] p1xp1 round=3 invB setup_ms=1722
+Test (real test-db)	Run npm test	2026-11-14T05:45:59.5715475Z ^[[22m^[[39m[race-diag] p1xp1 round=3 dc setup_ms=3042
+Test (real test-db)	Run npm test	2026-11-14T05:45:59.8373687Z ^[[22m^[[39m[race-diag] p1xp1 round=3 jwt setup_ms=3308
+Test (real test-db)	Run npm test	2026-11-14T05:46:00.0500571Z ^[[22m^[[39m[race-diag] p1xp1 round=3 call=link-B start=+0ms end=+213ms error=QE008
+Test (real test-db)	Run npm test	2026-11-14T05:46:00.0529301Z ^[[22m^[[39m[race-diag] p1xp1 round=3 call=link-A start=+0ms end=+216ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:13.8336283Z ^[[22m^[[39m[race-diag] p1xp4 round=0 inv setup_ms=871
+Test (real test-db)	Run npm test	2026-11-14T05:46:16.7270570Z ^[[22m^[[39m[race-diag] p1xp4 round=0 d1+d2 setup_ms=3765
+Test (real test-db)	Run npm test	2026-11-14T05:46:17.1935064Z ^[[22m^[[39m[race-diag] p1xp4 round=0 jwt+first-link setup_ms=4231
+Test (real test-db)	Run npm test	2026-11-14T05:46:17.3748396Z ^[[22m^[[39m[race-diag] p1xp4 round=0 call=reject-d1 start=+0ms end=+182ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:17.3751449Z ^[[22m^[[39m[race-diag] p1xp4 round=0 call=link-d2 start=+0ms end=+182ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:18.6087472Z ^[[22m^[[39m[race-diag] p1xp4 round=1 inv setup_ms=860
+Test (real test-db)	Run npm test	2026-11-14T05:46:21.2615513Z ^[[22m^[[39m[race-diag] p1xp4 round=1 d1+d2 setup_ms=3513
+Test (real test-db)	Run npm test	2026-11-14T05:46:21.7231393Z ^[[22m^[[39m[race-diag] p1xp4 round=1 jwt+first-link setup_ms=3975
+Test (real test-db)	Run npm test	2026-11-14T05:46:21.8954841Z ^[[22m^[[39m[race-diag] p1xp4 round=1 call=link-d2 start=+0ms end=+172ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:21.8990473Z ^[[22m^[[39m[race-diag] p1xp4 round=1 call=reject-d1 start=+0ms end=+176ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:23.1146908Z ^[[22m^[[39m[race-diag] p1xp4 round=2 inv setup_ms=871
+Test (real test-db)	Run npm test	2026-11-14T05:46:25.8347750Z ^[[22m^[[39m[race-diag] p1xp4 round=2 d1+d2 setup_ms=3591
+Test (real test-db)	Run npm test	2026-11-14T05:46:26.3032287Z ^[[22m^[[39m[race-diag] p1xp4 round=2 jwt+first-link setup_ms=4060
+Test (real test-db)	Run npm test	2026-11-14T05:46:26.4797977Z ^[[22m^[[39m[race-diag] p1xp4 round=2 call=reject-d1 start=+0ms end=+176ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:26.4805303Z ^[[22m^[[39m[race-diag] p1xp4 round=2 call=link-d2 start=+0ms end=+177ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:27.6864932Z ^[[22m^[[39m[race-diag] p1xp4 round=3 inv setup_ms=862
+Test (real test-db)	Run npm test	2026-11-14T05:46:30.3326329Z ^[[22m^[[39m[race-diag] p1xp4 round=3 d1+d2 setup_ms=3508
+Test (real test-db)	Run npm test	2026-11-14T05:46:30.8073602Z ^[[22m^[[39m[race-diag] p1xp4 round=3 jwt+first-link setup_ms=3983
+Test (real test-db)	Run npm test	2026-11-14T05:46:30.9808174Z ^[[22m^[[39m[race-diag] p1xp4 round=3 call=reject-d1 start=+0ms end=+174ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:30.9821953Z ^[[22m^[[39m[race-diag] p1xp4 round=3 call=link-d2 start=+0ms end=+175ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:32.1771361Z ^[[22m^[[39m[race-diag] p1xp2 round=0 inv setup_ms=854
+Test (real test-db)	Run npm test	2026-11-14T05:46:34.8321364Z ^[[22m^[[39m[race-diag] p1xp2 round=0 d1+d2 setup_ms=3509
+Test (real test-db)	Run npm test	2026-11-14T05:46:35.4701985Z ^[[22m^[[39m[race-diag] p1xp2 round=0 jwt+first-link setup_ms=4147
+Test (real test-db)	Run npm test	2026-11-14T05:46:35.6414539Z ^[[22m^[[39m[race-diag] p1xp2 round=0 call=link-d2 start=+0ms end=+171ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:35.6469225Z ^[[22m^[[39m[race-diag] p1xp2 round=0 call=unlink start=+0ms end=+177ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:36.8657256Z ^[[22m^[[39m[race-diag] p1xp2 round=1 inv setup_ms=878
+Test (real test-db)	Run npm test	2026-11-14T05:46:39.6208465Z ^[[22m^[[39m[race-diag] p1xp2 round=1 d1+d2 setup_ms=3633
+Test (real test-db)	Run npm test	2026-11-14T05:46:40.2603228Z ^[[22m^[[39m[race-diag] p1xp2 round=1 jwt+first-link setup_ms=4273
+Test (real test-db)	Run npm test	2026-11-14T05:46:40.4316916Z ^[[22m^[[39m[race-diag] p1xp2 round=1 call=link-d2 start=+0ms end=+171ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:40.4420598Z ^[[22m^[[39m[race-diag] p1xp2 round=1 call=unlink start=+0ms end=+182ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:41.6441317Z ^[[22m^[[39m[race-diag] p1xp2 round=2 inv setup_ms=856
+Test (real test-db)	Run npm test	2026-11-14T05:46:44.3010328Z ^[[22m^[[39m[race-diag] p1xp2 round=2 d1+d2 setup_ms=3512
+Test (real test-db)	Run npm test	2026-11-14T05:46:44.9404593Z ^[[22m^[[39m[race-diag] p1xp2 round=2 jwt+first-link setup_ms=4152
+Test (real test-db)	Run npm test	2026-11-14T05:46:45.1164395Z ^[[22m^[[39m[race-diag] p1xp2 round=2 call=link-d2 start=+0ms end=+176ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:45.1315030Z ^[[22m^[[39m[race-diag] p1xp2 round=2 call=unlink start=+0ms end=+191ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:46.3313473Z ^[[22m^[[39m[race-diag] p1xp2 round=3 inv setup_ms=857
+Test (real test-db)	Run npm test	2026-11-14T05:46:49.0029687Z ^[[22m^[[39m[race-diag] p1xp2 round=3 d1+d2 setup_ms=3528
+Test (real test-db)	Run npm test	2026-11-14T05:46:49.6455556Z ^[[22m^[[39m[race-diag] p1xp2 round=3 jwt+first-link setup_ms=4171
+Test (real test-db)	Run npm test	2026-11-14T05:46:49.8201386Z ^[[22m^[[39m[race-diag] p1xp2 round=3 call=link-d2 start=+0ms end=+175ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:46:49.8226496Z ^[[22m^[[39m[race-diag] p1xp2 round=3 call=unlink start=+0ms end=+178ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:46.3382308Z ^[[22m^[[39m[race-diag] T-C-4-same round=0 call=admMem start=+0ms end=+213ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:46.3407578Z ^[[22m^[[39m[race-diag] T-C-4-same round=0 call=pm1 start=+0ms end=+216ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:46.3411935Z ^[[22m^[[39m[race-diag] T-C-4-same round=0 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+Test (real test-db)	Run npm test	2026-11-14T05:47:47.5867165Z ^[[22m^[[39m[race-diag] T-C-4-diff round=0 call=pm1/dc start=+0ms end=+181ms error=QE011
+Test (real test-db)	Run npm test	2026-11-14T05:47:47.5874180Z ^[[22m^[[39m[race-diag] T-C-4-diff round=0 call=admMem/invoice start=+0ms end=+183ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:47.5907353Z ^[[22m^[[39m[race-diag] T-C-4-diff round=0 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+Test (real test-db)	Run npm test	2026-11-14T05:47:48.8018994Z ^[[22m^[[39m[race-diag] T-C-4-same round=1 call=admMem start=+0ms end=+174ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:48.8032108Z ^[[22m^[[39m[race-diag] T-C-4-same round=1 call=pm1 start=+0ms end=+175ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:48.8035068Z ^[[22m^[[39m[race-diag] T-C-4-same round=1 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+Test (real test-db)	Run npm test	2026-11-14T05:47:50.0212796Z ^[[22m^[[39m[race-diag] T-C-4-diff round=1 call=pm1/dc start=+0ms end=+175ms error=QE011
+Test (real test-db)	Run npm test	2026-11-14T05:47:50.0215904Z ^[[22m^[[39m[race-diag] T-C-4-diff round=1 call=admMem/invoice start=+0ms end=+175ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:50.0219112Z ^[[22m^[[39m[race-diag] T-C-4-diff round=1 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+Test (real test-db)	Run npm test	2026-11-14T05:47:51.2345690Z ^[[22m^[[39m[race-diag] T-C-4-same round=2 call=admMem start=+0ms end=+171ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:51.2378689Z ^[[22m^[[39m[race-diag] T-C-4-same round=2 call=pm1 start=+0ms end=+175ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:51.2382938Z ^[[22m^[[39m[race-diag] T-C-4-same round=2 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+Test (real test-db)	Run npm test	2026-11-14T05:47:52.4457512Z ^[[22m^[[39m[race-diag] T-C-4-diff round=2 call=admMem/invoice start=+0ms end=+181ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:52.4489733Z ^[[22m^[[39m[race-diag] T-C-4-diff round=2 call=pm1/dc start=+0ms end=+184ms error=QE011
+Test (real test-db)	Run npm test	2026-11-14T05:47:52.4493674Z ^[[22m^[[39m[race-diag] T-C-4-diff round=2 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539
+Test (real test-db)	Run npm test	2026-11-14T05:47:53.6650996Z ^[[22m^[[39m[race-diag] T-C-4-same round=3 call=pm1 start=+0ms end=+172ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:53.6659803Z ^[[22m^[[39m[race-diag] T-C-4-same round=3 call=admMem start=+0ms end=+173ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:53.6664995Z ^[[22m^[[39m[race-diag] T-C-4-same round=3 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b
+Test (real test-db)	Run npm test	2026-11-14T05:47:54.8674073Z ^[[22m^[[39m[race-diag] T-C-4-diff round=3 call=pm1/dc start=+0ms end=+174ms error=none
+Test (real test-db)	Run npm test	2026-11-14T05:47:54.8677083Z ^[[22m^[[39m[race-diag] T-C-4-diff round=3 call=admMem/invoice start=+0ms end=+174ms error=QE011
+Test (real test-db)	Run npm test	2026-11-14T05:47:54.8679983Z ^[[22m^[[39m[race-diag] T-C-4-diff round=3 callerA=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b callerB=admMem:17d15ea3-1f16-4e06-a398-6e7c935c0539 winner=pm1:3e68be56-a475-4dea-959b-ed4de1d3350b
